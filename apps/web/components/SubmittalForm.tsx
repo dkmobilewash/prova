@@ -1,18 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { createSubmittal } from "@/lib/actions";
+import { ActionForm } from "@/components/ActionForm";
 import { inputClass, labelClass, type JobOption } from "@/components/RfiFields";
 import { SubmittalFields } from "@/components/SubmittalFields";
-import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
-import { Spinner } from "@/components/Spinner";
+import { SubmitButton } from "@/components/SubmitButton";
 
+/**
+ * The worked example for field-level errors and drafts: `createSubmittal`
+ * returns `fieldErrors` (via `InputError(message, field)` and `failOn`), and
+ * `ActionForm` puts each one under its input. `draftKey` is the same key the
+ * hand-rolled `useFormDraft` used, so a draft saved before this change still
+ * comes back.
+ */
 export function SubmittalForm({ jobs, defaultJobId }: { jobs: JobOption[]; defaultJobId?: string }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const draft = useFormDraft("submittal:create");
 
   if (jobs.length === 0) {
     return (
@@ -45,31 +49,14 @@ export function SubmittalForm({ jobs, defaultJobId }: { jobs: JobOption[]; defau
   }
 
   return (
-    <form
-      ref={draft.formRef}
-      onChange={draft.save}
-      onSubmit={(event) => {
-        event.preventDefault();
-        setError(null);
-        const formData = new FormData(event.currentTarget);
-        startTransition(async () => {
-          // Actions in this module return their failures instead of
-          // throwing — a thrown message is redacted to a digest in
-          // production builds, verified 2026-08-27.
-          const result = await createSubmittal(formData);
-          if (result.ok) {
-            draft.clear();
-            draft.resetForm();
-            setIsOpen(false);
-          } else {
-            setError(result.error);
-          }
-        });
-      }}
+    <ActionForm
+      action={createSubmittal}
+      draftKey="submittal:create"
+      onSuccess={() => setIsOpen(false)}
+      errorClassName="text-sm text-red-400"
       className="flex flex-col gap-3 rounded-lg border border-line-card bg-surface p-4"
     >
       <h2 className="text-sm font-semibold text-ink-label">Log a submittal</h2>
-      <FormDraftNotice draft={draft} />
 
       <SubmittalFields
         jobs={jobs}
@@ -98,35 +85,21 @@ export function SubmittalForm({ jobs, defaultJobId }: { jobs: JobOption[]; defau
         </label>
       </div>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
-
       <div className="flex gap-2">
-        <button
+        <SubmitButton
           type="submit"
-          disabled={isPending}
           className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
-          {isPending ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Spinner />
-              Saving…
-            </span>
-          ) : (
-            "Save submittal"
-          )}
-        </button>
+          Save submittal
+        </SubmitButton>
         <button
           type="button"
-          disabled={isPending}
-          onClick={() => {
-            setIsOpen(false);
-            setError(null);
-          }}
+          onClick={() => setIsOpen(false)}
           className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
         >
           Cancel
         </button>
       </div>
-    </form>
+    </ActionForm>
   );
 }

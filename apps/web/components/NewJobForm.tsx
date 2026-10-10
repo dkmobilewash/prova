@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { createJob } from "@/lib/actions";
+import { ActionForm } from "@/components/ActionForm";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export interface GcOption {
   id: string;
@@ -37,14 +39,10 @@ const field =
  */
 export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
   const [isNewContact, setIsNewContact] = useState(contacts.length === 0);
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
 
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        const formData = new FormData(event.currentTarget);
+    <ActionForm
+      action={(formData) => {
         // Whichever half of the picker is not in use contributes nothing,
         // so the server never has to guess which one the person meant.
         if (isNewContact) {
@@ -53,13 +51,8 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
           formData.delete("contactName");
           formData.delete("contactEmail");
         }
-        setError(null);
-        startTransition(async () => {
-          const result = await createJob(formData);
-          if (!result.ok) setError(result.error);
-        });
+        return createJob(formData);
       }}
-      onInput={() => setError(null)}
       className="flex flex-col gap-4"
     >
       <label className="flex flex-col gap-1 text-sm text-ink-label" data-tour="new-job-name">
@@ -86,10 +79,7 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
         ) : isNewContact ? (
           <button
             type="button"
-            onClick={() => {
-              setIsNewContact(false);
-              setError(null);
-            }}
+            onClick={() => setIsNewContact(false)}
             className="self-start text-sm text-link hover:underline"
           >
             ← Pick one you already work with
@@ -97,10 +87,7 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
         ) : (
           <button
             type="button"
-            onClick={() => {
-              setIsNewContact(true);
-              setError(null);
-            }}
+            onClick={() => setIsNewContact(true)}
             className="self-start text-sm text-link hover:underline"
           >
             + Add a new GC
@@ -145,9 +132,8 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
         )}
       </div>
 
-      <button
+      <SubmitButton
         type="submit"
-        disabled={isPending}
         data-tour="new-job-create"
         className="mt-2 inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
       >
@@ -156,14 +142,8 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
             moves to the screen for putting work on it. A label that names
             the destination is the difference between a button somebody
             presses and one somebody hesitates over. */}
-        {isPending ? "Starting it…" : "Start the job — add the work next →"}
-      </button>
-
-      {error && (
-        <p role="alert" className="text-sm text-tag-rose-ink">
-          {error}
-        </p>
-      )}
-    </form>
+        Start the job — add the work next →
+      </SubmitButton>
+    </ActionForm>
   );
 }
