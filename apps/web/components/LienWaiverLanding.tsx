@@ -324,7 +324,6 @@ export function LienWaiverLanding({ toolUrl }: { toolUrl?: string }) {
             questions, preview the whole form, and download a clean PDF for the GC.
           </p>
           <SignUpRow />
-        <ToolLink toolUrl={toolUrl} />
           <ToolLink toolUrl={toolUrl} />
           <p className="mt-10 text-xs font-semibold uppercase tracking-[0.12em] text-ink-muted">Built for</p>
           <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Trades this is built for">
@@ -410,6 +409,7 @@ export function LienWaiverLanding({ toolUrl }: { toolUrl?: string }) {
           ))}
         </ul>
         <SignUpRow />
+        <ToolLink toolUrl={toolUrl} />
       </Reveal>
 
       {/* The usual way against this one. */}

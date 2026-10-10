@@ -70,6 +70,13 @@ describe("/lien-waiver", () => {
     expect(html).toContain("opening soon");
   });
 
+  it("puts exactly one tool line under each sign-up row, never two in a row", () => {
+    const rows = html.split(/data-lien-waiver-tool=/).length - 1;
+    const signUps = (html.match(/<a[^>]*bg-brand[^>]*>/g) ?? []).length - 1; // minus the header button
+    expect(rows).toBe(signUps);
+    expect(html).not.toMatch(/data-lien-waiver-tool="soon"[\s\S]{0,400}data-lien-waiver-tool="soon"/);
+  });
+
   it("links every tool line to LIEN_WAIVER_TOOL_URL when it is set, and keeps the yellow buttons on sign-up", () => {
     const url = "https://tool.example.test";
     process.env.LIEN_WAIVER_TOOL_URL = `  ${url}  `;
