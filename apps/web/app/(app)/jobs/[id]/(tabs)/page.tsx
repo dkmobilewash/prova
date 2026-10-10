@@ -174,7 +174,11 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
         {showsJobManagement && (
           <section className="mb-10" data-tour="job-status">
             <h2 className="mb-3 text-lg font-semibold text-ink">Job status</h2>
-            <JobStatusControl jobId={job.id} status={job.status as JobStatusValue} />
+            <JobStatusControl
+              jobId={job.id}
+              status={job.status as JobStatusValue}
+              showsEstimateTab={showsJobMoney}
+            />
           </section>
         )}
 

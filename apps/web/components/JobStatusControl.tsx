@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { setJobStatus } from "@/lib/actions";
 import { StatusBadge } from "@prova/ui";
@@ -29,9 +30,14 @@ import { Spinner } from "@/components/Spinner";
 export function JobStatusControl({
   jobId,
   status,
+  showsEstimateTab = true,
 }: {
   jobId: string;
   status: JobStatusValue;
+  /** Whether this viewer has the Estimate tab, where "Mark contracted"
+   * lives. Without it the sentence names the step but links nothing — a
+   * link to a page that refuses is a door that will not open. */
+  showsEstimateTab?: boolean;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -77,9 +83,16 @@ export function JobStatusControl({
 
       {status === "ESTIMATE" ? (
         <p className="mt-2 text-sm text-ink-muted">
-          An estimate becomes a contracted job further down this page, once the contract is
-          executed — either the GC signs it in C Stream or you record the executed subcontract they
-          sent.
+          An estimate becomes a contracted job with{" "}
+          {showsEstimateTab ? (
+            <Link href={`/jobs/${jobId}/estimate#job-lock-in`} className="text-link hover:underline">
+              Mark contracted, at the bottom of the Estimate tab
+            </Link>
+          ) : (
+            "Mark contracted, at the bottom of the Estimate tab"
+          )}
+          , once the contract is executed — either the GC signs it in C Stream or you record the
+          executed subcontract they sent, under Contract signature below.
         </p>
       ) : (
         <p className="mt-2 text-sm text-ink-muted">

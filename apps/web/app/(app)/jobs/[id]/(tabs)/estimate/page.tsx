@@ -1167,7 +1167,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
             </form>
           </section>
 
-          <section className="mb-10 rounded-lg border border-line-card bg-surface p-4" data-tour="job-lock-in">
+          <section id="job-lock-in" className="mb-10 scroll-mt-4 rounded-lg border border-line-card bg-surface p-4" data-tour="job-lock-in">
             <h2 className="mb-2 text-lg font-semibold text-ink">Ready to lock this in?</h2>
             <p className="mb-3 text-sm text-ink-body">
               Once contracted, line items can only change through a change order — this keeps an audit trail of
