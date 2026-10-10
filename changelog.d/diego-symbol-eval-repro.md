@@ -41,4 +41,22 @@ has not read the file where it was closed. The entry now says, in its own
 heading, not to run it a third time — and says what the next run worth paying
 for actually is.
 
+#### And the stale claim it turned up
+
+`FEATURE-AUDIT.md`'s CV-takeoff row said the symbol-counting question was *"an
+open question with zero code behind it."* **Struck** — it has been asked and
+answered twice, and the row now carries the answer: correct on clean sheets,
+OVERCLAIMS on cluttered ones, and no confidence band is safe to ship.
+
+The row stays **Missing**, for a stronger reason than deferral: it was measured
+and refused. That distinction is the whole point of correcting it — "untried"
+invites somebody to try it, and this one has a bill attached.
+
+The row also now says plainly that **wall detection from the PDF's own line work
+is a different thing and has SHIPPED** (`wallsFromBothEngines`, the "Find the
+walls" button). I conflated the two myself today — told Diego that detection was
+unwired, from a planning note that predates the work, while the button has been
+on the toolbar the whole time. Reading a document instead of the code, which is
+the mistake this file exists to prevent.
+
 No code change. No schema change.
