@@ -43,7 +43,6 @@ import {
   type WallCluster,
 } from "@/lib/takeoff/wallVectors";
 import { wallsFromBothEngines } from "@/lib/takeoff/wallRuns";
-import { roomsInBox, COLUMN_NOTICE, type DetectedRoom } from "@/lib/takeoff/roomAreas";
 import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 import { wallTypeTags, namesForClusters, tagSentence } from "@/lib/takeoff/wallTags";
@@ -173,12 +172,6 @@ export function TakeoffPlanViewer({
   // somebody chose. That also means switching sheets or reloading simply
   // forgets them, which is the correct behaviour for a proposal nobody acted on.
   const [found, setFound] = useState<WallCluster[] | null>(null);
-  /** Rooms found inside the box, and the box being dragged for them. The box
-   *  is not a convenience — `roomAreas.ts` records the three automatic
-   *  discriminators that were built and measured and all failed. */
-  const [rooms, setRooms] = useState<DetectedRoom[] | null>(null);
-  const [boxing, setBoxing] = useState(false);
-  const [boxDraft, setBoxDraft] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   /**
    * The assembly names the drawing gives each group, parallel to `found`.
    *
@@ -364,21 +357,10 @@ export function TakeoffPlanViewer({
   );
 
   const drawing = tool !== "pan";
-  /** The overlay takes pointer events while measuring OR while a room box is
-   *  being dragged; otherwise it stays out of the way of panning. */
-  const interactive = drawing || boxing;
   const kindOf = (id: ToolId): MeasurementKind | null =>
     id === "linear" ? "LINEAR" : id === "area" ? "AREA" : id === "count" ? "COUNT" : null;
 
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (boxing) {
-      const point = pointAt(event);
-      if (!point) return;
-      event.preventDefault();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      setBoxDraft({ x0: point.x, y0: point.y, x1: point.x, y1: point.y });
-      return;
-    }
     if (!drawing) return;
     const point = pointAt(event);
     if (!point) return;
@@ -391,26 +373,6 @@ export function TakeoffPlanViewer({
       }
       return { xs: [...current.xs, point.x], ys: [...current.ys, point.y] };
     });
-  };
-
-  const onPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (!boxing || !boxDraft) return;
-    const point = pointAt(event);
-    if (!point) return;
-    setBoxDraft((current) => (current ? { ...current, x1: point.x, y1: point.y } : current));
-  };
-
-  const onPointerUp = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (!boxing || !boxDraft) return;
-    const box = boxDraft;
-    setBoxing(false);
-    setBoxDraft(null);
-    // A TAP IS NOT A BOX. Without this a stray click runs the finder over a
-    // sliver and reports "no rooms", which reads as the feature being broken
-    // rather than as nothing having been drawn.
-    if (Math.abs(box.x1 - box.x0) < 0.02 || Math.abs(box.y1 - box.y0) < 0.02) return;
-    event.preventDefault();
-    void onFindRooms(box);
   };
 
   const undoPoint = () =>
@@ -456,9 +418,6 @@ export function TakeoffPlanViewer({
     setFinding(true);
     setFindError(null);
     setFound(null);
-    setRooms(null);
-    setBoxing(false);
-    setBoxDraft(null);
     setTagNames([]);
     try {
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -558,74 +517,6 @@ export function TakeoffPlanViewer({
     } finally {
       setFinding(false);
     }
-  }
-
-  /**
-   * ── THE ROOMS INSIDE A BOX THE ESTIMATOR DRAGS ──
-   *
-   * Area is the last big quantity still traced entirely by hand. The engine
-   * for it already existed — `rooms.ts` finds enclosed regions and the wall
-   * finder above already uses them — and the only thing missing was knowing
-   * WHICH PART OF THE SHEET is the plan.
-   *
-   * That is what the box is, and it is a fix rather than a shortcut.
-   * `roomAreas.ts` carries the measurements: run over a whole sheet the
-   * region finder returns the margin, the notes panel, the legend and every
-   * title-block cell, because at 1/8in=1ft a line between two table cells is
-   * the same shape as a wall. Three automatic discriminators were built and
-   * all three failed. Cropping does not hide the margin, it removes the
-   * category: the paper around the building now reaches the edge of the grid
-   * and is marked `open`, which was always excluded.
-   *
-   * Runs on the strokes already in hand, in the browser, in under a second on
-   * the sheets measured — so there is no round trip and nothing stored until
-   * somebody accepts.
-   */
-  async function onFindRooms(box: { x0: number; y0: number; x1: number; y1: number }) {
-    const doc = docRef.current;
-    if (!doc || !pageSize || feetPerUnit === null) return;
-    setFinding(true);
-    setFindError(null);
-    setRooms(null);
-    try {
-      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-      const page = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(pageNumber);
-      const { segments } = await segmentsFromOpenPage(page, pdfjs, pageNumber);
-      setStrokesSeen(segments.length);
-      const inUnits = segments.map((segment) => ({
-        x1: segment.x1 / pageSize.widthPt,
-        y1: segment.y1 / pageSize.widthPt,
-        x2: segment.x2 / pageSize.widthPt,
-        y2: segment.y2 / pageSize.widthPt,
-      }));
-      const aspect = pageSize.heightPt / pageSize.widthPt;
-      const detected = roomsInBox(inUnits, 1, aspect, feetPerUnit, box);
-      setRooms(detected);
-      if (detected.length === 0) {
-        setFindError(
-          "No rooms in that box. Try drawing it around the floor plan itself — and check the sheet is a plan rather than an elevation or a detail.",
-        );
-      }
-    } catch {
-      setFindError("The lines on this sheet couldn't be read. Trace the areas by hand as usual.");
-    } finally {
-      setFinding(false);
-    }
-  }
-
-  /** Accepting the rooms writes them as ordinary AREA measurements, so the
-   *  measurement list, the recipes and the estimate lines all take them with
-   *  no part of this involved. */
-  async function onAcceptRooms() {
-    if (!rooms || rooms.length === 0 || !sheet) return;
-    const body = new FormData();
-    body.set("pageId", sheet.id);
-    body.set("kind", "AREA");
-    body.set("label", "Room");
-    for (const room of rooms) body.append("shape", JSON.stringify({ xs: room.xs, ys: room.ys }));
-    const result = await saveTakeoffMeasurements(jobId, body);
-    if (!result.ok) return setFindError(result.error);
-    setRooms(null);
   }
 
   /** Accepting a group writes its runs as ordinary LINEAR measurements, which
@@ -804,34 +695,29 @@ export function TakeoffPlanViewer({
           {finding ? "Reading the lines…" : "Find the walls"}
         </button>
 
-        {/* FIND THE ROOMS — the same guard as the walls, for the same reason:
-            a room's size bound is in square feet of building, so without a
-            calibration it means nothing. Disabled rather than hidden, which
-            is the posture the button beside it records a defect report for.
+        {/* ── THERE IS NO "FIND THE ROOMS" BUTTON, AND THAT IS DELIBERATE ──
+            #702 shipped one and it was clicked on real sheets the same day.
+            It runs, it is fast, and ITS ANSWER IS WRONG in a way that reads as
+            right: on a West Herr floor plan it reported 46 rooms and 4,555 sf
+            for a building about 290 ft across, having missed Showroom 101,
+            Sales 103, Hospitality 105, New Car Delivery 140 and the whole
+            right-hand wing — while outlining a parked car, the gaps between
+            dimension strings, and two keynote tags.
 
-            It arms a BOX rather than running immediately, and `roomAreas.ts`
-            carries why: run over a whole sheet the region finder cannot tell
-            a floor plan from a notes panel, because at 1/8in=1ft the line
-            between two table cells is the same shape as a wall. */}
-        <button
-          type="button"
-          onClick={() => {
-            setRooms(null);
-            setFindError(null);
-            setBoxing((on) => !on);
-            setBoxDraft(null);
-          }}
-          disabled={finding || !calibration}
-          data-takeoff="find-rooms"
-          title={calibration ? undefined : "Set the scale on this sheet first — room size is measured in square feet of building."}
-          className={`min-h-[36px] rounded-md border px-3 text-xs font-medium disabled:opacity-40 ${
-            boxing
-              ? "border-tag-amber-ink bg-tag-amber text-tag-amber-ink"
-              : "border-line-card bg-surface text-ink-body hover:bg-rail-hover"
-          }`}
-        >
-          {boxing ? "Drag a box round the plan" : "Find the rooms"}
-        </button>
+            That is the worst shape a takeoff can have: a confident number that
+            is far too low. An estimator who trusts it bids half a building.
+
+            The cause is known and is not a threshold. `roomAreas.ts` rasterises
+            EVERY stroke, so a leader line crossing a room cuts the region in
+            half and a dimension string encloses one of its own. The wall finder
+            has `wallsNotLettering`, `wallsInTheBuilding` and
+            `wallsNotTheSheetBorder` for exactly this; the room finder has none
+            of them. See `roomAreas.ts`'s header.
+
+            `roomAreas.ts` and its tests stay: the geometry is right and the fix
+            is to what reaches it. The BUTTON is gone until the numbers say it
+            is fit to use, and `takeoffRoomFinder.test.tsx` now asserts it is
+            absent so it cannot come back without somebody reading this. */}
 
         {/* WHICH FLOOR THIS SHEET DRAWS, beside the scale because that is the
             other thing about a sheet an estimator has to know before tracing
@@ -991,77 +877,6 @@ export function TakeoffPlanViewer({
         </div>
       )}
 
-      {/* ── THE ROOMS FOUND IN THE BOX ───────────────────────────────── */}
-      {rooms !== null && rooms.length > 0 && (
-        <div className="mb-3 rounded-lg border border-line-card bg-surface p-3" data-takeoff="rooms-panel">
-          <p className="text-sm font-medium text-ink">
-            {rooms.length} {rooms.length === 1 ? "room" : "rooms"} ·{" "}
-            {Math.round(rooms.reduce((t, r) => t + r.squareFeet, 0)).toLocaleString()} sf
-          </p>
-          <p className="mt-1 text-xs text-ink-muted">
-            Drawn on the sheet. Check they sit where the rooms are before adding them — a wrong one is a
-            shape in the wrong place.
-          </p>
-
-          <ul className="mt-2 space-y-1">
-            {rooms.slice(0, 8).map((room, index) => (
-              <li key={room.id} className="flex items-center gap-2">
-                <span
-                  aria-hidden
-                  className="h-3 w-3 shrink-0 rounded-sm border"
-                  style={{
-                    borderColor: room.columnsIncluded > COLUMN_NOTICE ? "#f0b429" : "#34d399",
-                    background: room.columnsIncluded > COLUMN_NOTICE ? "rgba(240,180,41,0.3)" : "rgba(52,211,153,0.3)",
-                  }}
-                />
-                <span className="text-sm text-ink-body">{Math.round(room.squareFeet).toLocaleString()} sf</span>
-                {room.columnsIncluded > COLUMN_NOTICE && (
-                  // SAID OUT LOUD rather than silently corrected. The outline
-                  // is the room's OUTER boundary, so anything standing inside
-                  // it — a column, a stair core, a shaft — is inside the
-                  // number. That is right for some trades and wrong for
-                  // others, and only the estimator knows which.
-                  <span className="text-xs text-tag-amber-ink">
-                    includes something standing in it
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setRooms((current) => (current ?? []).filter((_, i) => i !== index))}
-                  className="ml-auto min-h-[36px] rounded-md px-2 text-xs text-ink-muted underline hover:text-ink-body"
-                >
-                  Not a room
-                </button>
-              </li>
-            ))}
-          </ul>
-          {rooms.length > 8 && (
-            <p className="mt-2 text-xs text-ink-muted">
-              And {rooms.length - 8} smaller, holding{" "}
-              {Math.round(rooms.slice(8).reduce((t, r) => t + r.squareFeet, 0)).toLocaleString()} sf between them.
-            </p>
-          )}
-
-          <div className="mt-3 flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void onAcceptRooms()}
-              data-takeoff="accept-rooms"
-              className="min-h-[36px] rounded-md border border-line-card px-3 text-xs font-medium text-ink-body hover:bg-rail-hover"
-            >
-              Add {rooms.length === 1 ? "this room" : `these ${rooms.length} rooms`}
-            </button>
-            <button
-              type="button"
-              onClick={() => setRooms(null)}
-              className="text-xs text-ink-muted underline hover:text-ink-body"
-            >
-              Clear what was found
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* ── The sheet ─────────────────────────────────────────────── */}
       {/* The height reserve shrinks to 11rem once the panel is beside rather
           than above; that reserve is the toolbar and the page's own padding,
@@ -1087,10 +902,8 @@ export function TakeoffPlanViewer({
               viewBox={`0 0 1 ${aspect}`}
               preserveAspectRatio="none"
               style={{ width: cssWidth ? `${cssWidth}px` : "100%", height: cssWidth ? `${cssWidth * aspect}px` : "100%" }}
-              className={`absolute left-0 top-0 ${interactive ? "cursor-crosshair touch-none" : "pointer-events-none"}`}
+              className={`absolute left-0 top-0 ${drawing ? "cursor-crosshair touch-none" : "pointer-events-none"}`}
               onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
             >
               {/* The calibration line, redrawn over the sheet so the scale is
                   something a reviewer can SEE rather than take on faith. */}
@@ -1106,42 +919,6 @@ export function TakeoffPlanViewer({
                   vectorEffect="non-scaling-stroke"
                 />
               )}
-
-              {/* The box being dragged for the room finder. */}
-              {boxDraft && (
-                <rect
-                  x={Math.min(boxDraft.x0, boxDraft.x1)}
-                  y={Math.min(boxDraft.y0, boxDraft.y1)}
-                  width={Math.abs(boxDraft.x1 - boxDraft.x0)}
-                  height={Math.abs(boxDraft.y1 - boxDraft.y0)}
-                  fill="rgba(56,189,248,0.08)"
-                  stroke="#38bdf8"
-                  strokeWidth={STROKE_PX}
-                  strokeDasharray={`${STROKE_PX * 3} ${STROKE_PX * 2}`}
-                  vectorEffect="non-scaling-stroke"
-                />
-              )}
-
-              {/* ROOMS FOUND, DRAWN ON THE SHEET. This is the verification
-                  channel and the whole safety argument for the feature: a
-                  wrong room is a shape sitting where no room is, which an
-                  estimator catches in a glance on a drawing they are already
-                  looking at. A panel reporting "15,596 sf" and nothing else
-                  would be asking them to take it on faith.
-
-                  It is also how the two worst bugs here were caught — rings
-                  with diagonal chords across rooms, and outlines weaving
-                  around furniture — neither of which any test could see. */}
-              {(rooms ?? []).map((room) => (
-                <polygon
-                  key={room.id}
-                  points={room.xs.map((x, i) => `${x},${room.ys[i]}`).join(" ")}
-                  fill={room.columnsIncluded > COLUMN_NOTICE ? "rgba(240,180,41,0.16)" : "rgba(52,211,153,0.16)"}
-                  stroke={room.columnsIncluded > COLUMN_NOTICE ? "#f0b429" : "#34d399"}
-                  strokeWidth={STROKE_PX}
-                  vectorEffect="non-scaling-stroke"
-                />
-              ))}
 
               {(sheet?.measurements ?? []).map((m) => (
                 <Shape key={m.id} kind={m.kind} xs={m.xs} ys={m.ys} colour={m.postedAt ? "#6b7280" : "#38bdf8"} />

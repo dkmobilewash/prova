@@ -106,7 +106,10 @@ describe("the sheet's floor on the takeoff toolbar", () => {
   it("leaves the rest of the toolbar alone", () => {
     const el = paint({ 1: "Roof" });
     expect(el.querySelector('[data-takeoff="find-walls"]')).not.toBeNull();
-    expect(el.querySelector('[data-takeoff="find-rooms"]')).not.toBeNull();
+    // The room finder is deliberately NOT on the toolbar — it shipped in #702
+    // and was taken off the same day for reporting 4,555 sf on a building
+    // about 290 ft across. `takeoffRoomFinder.test.tsx` holds it off.
+    expect(el.querySelector('[data-takeoff="find-rooms"]')).toBeNull();
   });
 });
 

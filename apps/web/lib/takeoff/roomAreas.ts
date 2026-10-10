@@ -1,3 +1,46 @@
+/**
+ * ── NOTHING CALLS THIS, AND THE REASON IS A MEASUREMENT ──
+ *
+ * #702 wired it to a button. It was clicked on real sheets the same day and
+ * the answer was wrong in the way that matters most: **confidently low**. On a
+ * West Herr floor plan it reported 46 rooms and 4,555 sf for a building about
+ * 290 ft across, having missed Showroom 101, Sales 103, Hospitality 105, New
+ * Car Delivery 140 and the whole right-hand wing — while outlining a parked
+ * car, the gaps between dimension strings, and two keynote tags. On Augusta,
+ * Conference 1102 came back cut in half along its own 15ft-8in dimension line,
+ * and an outline ran diagonally across Mechanical 1101 along the "EXISTING
+ * HVAC" leader.
+ *
+ * ── EVERY ONE OF THOSE IS THE SAME CAUSE, AND IT IS NOT A THRESHOLD ──
+ *
+ * This file rasterises EVERY STROKE the sheet carries, and a floor plan is not
+ * only walls:
+ *
+ *   a leader line crossing a room   cuts its region in two
+ *   a dimension string              encloses a region of its own
+ *   a keynote tag, a car, a desk    is a closed outline, so a region
+ *   the biggest rooms               are the most crossed, so the most
+ *                                   fragmented — which is why they are the
+ *                                   ones that vanish
+ *
+ * `wallVectors.ts` has `wallsNotLettering`, `wallsInTheBuilding` and
+ * `wallsNotTheSheetBorder` for exactly this, each added after somebody looked
+ * at real output. THIS HAS NONE OF THEM, and the box does not help: every one
+ * of those strokes is inside the box, drawn on top of the plan.
+ *
+ * The geometry below is right — `traceRing` and the ring maths are tested and
+ * mutation-held. What is wrong is WHAT REACHES THEM. That is the fix, and
+ * until its numbers say otherwise there is no button:
+ * `takeoffRoomFinder.test.tsx` asserts the toolbar offers none.
+ *
+ * ── THE CHECK I SHOULD HAVE MADE AND DID NOT ──
+ *
+ * I rendered the regions as flat colour and asked "do these look like rooms".
+ * They did. The question that finds this in a minute is the other one: IS
+ * SHOWROOM 101 AMONG THEM? A detector is judged by what it MISSES, and a
+ * picture of what it found cannot show that.
+ */
+
 import { openingsInWalls } from "./openings";
 import { straighten } from "./skeleton";
 import { roomGrid, wallsFromRooms, SMALLEST_ROOM_SQFT, WIDEST_WALL_INCHES, type RoomGrid } from "./rooms";
