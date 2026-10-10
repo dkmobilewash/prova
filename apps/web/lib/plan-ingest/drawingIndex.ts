@@ -202,6 +202,30 @@ export type ProposedSheet = {
   acceptedSheetNumber: string | null;
 };
 
+/**
+ * How many pages of the set still have no sheet number.
+ *
+ * PURE, because the two ways to get this wrong both live in a Server Action
+ * that nothing could test, and mutation found both of them green:
+ *
+ *   - feeding a constant zero, which is the production bug straight back;
+ *   - counting PROPOSALS rather than NUMBERED ones, so a page the model read
+ *     and could not name counts as read. That page's sheet is then reported
+ *     missing, which is this bug wearing a different hat.
+ *
+ * `pageCount` is one row per page — `PlanSheetText`, which `sheetIndexFor`
+ * builds the review screen's population from. Proposals exist only for pages
+ * `TITLE_BLOCK` has reached.
+ */
+export function unreadPageCount(pageCount: number, sheets: readonly ProposedSheet[]): number {
+  const numbered = sheets.filter(
+    (sheet) => ((sheet.acceptedSheetNumber ?? sheet.proposedSheetNumber) ?? "").trim() !== "",
+  ).length;
+  // NEVER NEGATIVE. More proposals than pages means a page carries two — a
+  // re-run of the reader — and that is not a reason to claim unread pages.
+  return Math.max(0, pageCount - numbered);
+}
+
 export type IndexCheckResult = {
   sentence: string;
   /** Null means the set's index COULD NOT BE READ — never "nothing missing". */
@@ -224,10 +248,45 @@ export type IndexCheckResult = {
  *     one conclusion that is never safe here, and `null` is how it stays
  *     unsayable.
  */
-export function indexCheck(index: DrawingIndex | null, sheets: readonly ProposedSheet[]): IndexCheckResult {
+export function indexCheck(
+  index: DrawingIndex | null,
+  sheets: readonly ProposedSheet[],
+  unreadPages = 0,
+): IndexCheckResult {
   if (index === null) {
     return { sentence: indexSentence(null, null), missing: null, unlisted: null, onPage: null };
   }
+
+  // ── A PAGE NOBODY HAS READ IS NOT A MISSING SHEET ──
+  //
+  // Found on production the day this shipped. Reading had paused at 21 of 55
+  // sheets, so 34 pages had no number yet — and every sheet the index listed
+  // for them came back as NOT IN WHAT WAS UPLOADED. The screen named twelve
+  // real drawings, said "and 27 more", and every one of them was sitting in
+  // the file.
+  //
+  // This is the distinction this module was built around, applied in the
+  // wrong direction. It was careful that "the index could not be read" must
+  // never read as "nothing is missing" — and then let "the PAGES have not
+  // been read" read as "everything is missing", which is the same error
+  // pointing the other way and louder.
+  //
+  // So the comparison is refused outright rather than qualified. Half an
+  // answer here is worse than none: an estimator who is told four sheets are
+  // missing goes to the GC, and finding them in the file is how a check stops
+  // being read at all.
+  if (unreadPages > 0) {
+    return {
+      sentence:
+        `${unreadPages} sheet${unreadPages === 1 ? "" : "s"} in this set ${unreadPages === 1 ? "has" : "have"} not been read yet, ` +
+        `so this can't tell you what is missing — anything unread would be reported as absent. ` +
+        `Let the reading finish, then check again.`,
+      missing: null,
+      unlisted: null,
+      onPage: index.pageNumber,
+    };
+  }
+
   const numbers = sheets.map((sheet) => sheet.acceptedSheetNumber ?? sheet.proposedSheetNumber);
   const comparison = compareIndex(index, numbers);
   return {
