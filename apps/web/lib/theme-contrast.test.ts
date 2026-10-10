@@ -39,6 +39,43 @@ const GROUNDS = [
   ["rail", colors.rail],
 ] as const;
 
+describe("which tag pairs keep a light ground", () => {
+  // ── A CONTRAST RATIO IS SYMMETRIC, WHICH IS THE GAP THIS CLOSES ──
+  //
+  // Found by mutation while renaming `tag-blue` to `tag-brand`: swapping a
+  // pair's ground and ink leaves every contrast assertion in this file green,
+  // because 9.5:1 is 9.5:1 whichever way round it is read. The pair would then
+  // render yellow text on dark brown instead of dark text on yellow — not a
+  // readability failure, a different chip entirely, and indistinguishable from
+  // `tag-brand-soft`.
+  //
+  // `tailwind.config.ts` says `tag-brand` is "the one pair that keeps a LIGHT
+  // ground". That is a claim about luminance, so it can be a check rather than
+  // a comment.
+  const pairs = Object.keys(colors)
+    .filter((key) => key.startsWith("tag-") && !key.endsWith("-ink"))
+    .filter((key) => `${key}-ink` in colors);
+
+  it("finds the tag pairs at all", () => {
+    // The size assertion. A filter matching nothing would make the assertion
+    // below vacuously true — nothing is ever wrong in an empty set.
+    expect(pairs.length, "no tag pairs parsed — the naming convention moved").toBeGreaterThanOrEqual(5);
+  });
+
+  it("KEEPS tag-brand light-on-dark-ink, and every other tag pair the other way", () => {
+    const LIGHT_GROUND = new Set(["tag-brand"]);
+    for (const key of pairs) {
+      const ground = luminance(colors[key]);
+      const ink = luminance(colors[`${key}-ink`]);
+      if (LIGHT_GROUND.has(key)) {
+        expect(ground, `${key} is documented as the light-ground pair`).toBeGreaterThan(ink);
+      } else {
+        expect(ground, `${key} should be a dark ground under a light ink`).toBeLessThan(ink);
+      }
+    }
+  });
+});
+
 describe("theme contrast", () => {
   it("computes a known ratio correctly", () => {
     // Black on white is 21:1 by definition — a check on the checker.
@@ -88,7 +125,7 @@ describe("theme contrast", () => {
 
   /** Tag pairs are a ground and an ink used only together.
    * tag-rose-ink #f97066 on #3a1518 — 5.8; tag-amber-ink #f0c464 on
-   * #3a2a08 — 8.4; tag-green-ink #7ee2a8 on #143a26 — 8.0; tag-blue-ink
+   * #3a2a08 — 8.4; tag-green-ink #7ee2a8 on #143a26 — 8.0; tag-brand-ink
    * #422006 on #facc15 — 9.5 (the one light-ground pair: a brand fill
    * keeps its dark label); tag-slate-ink #9fb6c9 on #23282f — 7.1. */
   it("reads every tag ink on its own tag ground", () => {

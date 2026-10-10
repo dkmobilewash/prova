@@ -187,7 +187,7 @@ export default async function PipelinePage() {
                     <span
                       className={`rounded px-1.5 py-0.5 text-xs ${
                         bidRow.status === "SUBMITTED"
-                          ? "bg-tag-blue text-tag-blue-ink"
+                          ? "bg-tag-brand text-tag-brand-ink"
                           : "bg-neutral-800 text-ink-label"
                       }`}
                     >
@@ -238,7 +238,7 @@ export default async function PipelinePage() {
                       </span>
                     )}
                     {row.record.outstanding > 0 && row.record.overdue === 0 && (
-                      <span className="rounded bg-tag-blue px-1.5 py-0.5 text-xs text-tag-blue-ink">
+                      <span className="rounded bg-tag-brand px-1.5 py-0.5 text-xs text-tag-brand-ink">
                         {row.record.outstanding} live
                       </span>
                     )}

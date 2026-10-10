@@ -175,7 +175,7 @@ export function TakeoffMeasurementList({
                 {row.packageLabel !== null && row.packageLabel.trim() !== "" && (
                   <span
                     data-takeoff="measurement-package"
-                    className="ml-1 shrink-0 rounded bg-tag-blue px-1.5 py-0.5 text-[11px] font-medium text-tag-blue-ink"
+                    className="ml-1 shrink-0 rounded bg-tag-brand px-1.5 py-0.5 text-[11px] font-medium text-tag-brand-ink"
                   >
                     {row.packageLabel}
                   </span>

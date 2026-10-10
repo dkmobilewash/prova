@@ -236,7 +236,7 @@ export function ComplianceDocumentRow({
               {doc.status === "RECEIVED" ? "Received" : "Pending"}
             </span>
             {doc.aiExtracted && (
-              <span className="inline-flex items-center rounded-full bg-tag-blue px-2 py-0.5 text-xs font-medium text-tag-blue-ink">
+              <span className="inline-flex items-center rounded-full bg-tag-brand px-2 py-0.5 text-xs font-medium text-tag-brand-ink">
                 AI-extracted — verify
               </span>
             )}
