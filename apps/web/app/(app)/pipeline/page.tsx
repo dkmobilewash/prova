@@ -2,6 +2,7 @@ import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
+import { bidStandings, standingLines } from "@/lib/bid-standing";
 import { loadBidPipeline } from "@/lib/bid-pipeline-query";
 import { valueIsPartial, winRateLabel } from "@/lib/bid-pipeline";
 import { money } from "@/lib/money";
@@ -50,7 +51,24 @@ export default async function PipelinePage() {
     loadLinkableInvitations(context.company.id),
   ]);
 
-  const overdueCount = live.filter((b) => b.overdue).length;
+  // ── WHAT EACH LIVE BID NEEDS TODAY ──
+  //
+  // This was `live.filter((b) => b.overdue).length`, and `overdue` is
+  // `dueDate < today` with NO STATUS IN IT. A bid submitted on time and
+  // waiting on the GC — the normal state of every bid anybody has sent —
+  // counted as overdue from the day after the deadline, forever. A desk with
+  // ten bids out for award read "10 past the date they asked for" in red with
+  // nothing wrong, and the one bid that was never sent was hiding in it.
+  //
+  // See `bid-standing.ts`. The three things that DO want somebody are kept
+  // apart, because they want different people.
+  const standings = bidStandings(live, today);
+  const lines = standingLines(standings);
+  // Keyed for the rows below, so a date is only coloured when its colour
+  // carries a meaning somebody can act on.
+  const byId = new Map(
+    [...standings.dueSoon, ...standings.missed, ...standings.cold].map((one) => [one.bid.id, one.standing]),
+  );
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
@@ -120,12 +138,27 @@ export default async function PipelinePage() {
           <section className="mb-8" data-tour="pipeline-waiting">
             <div className="mb-3 flex items-baseline gap-3">
               <h2 className="text-sm font-medium text-ink-label">Waiting on us</h2>
-              {overdueCount > 0 && (
+              {standings.missed.length > 0 && (
                 <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">
-                  {overdueCount} past the date they asked for
+                  {standings.missed.length} past the deadline and never sent
                 </span>
               )}
             </div>
+
+            {/* ONE LINE PER THING THAT WANTS DOING, above the list rather than
+                beside a row: each is about the desk, not about one bid. */}
+            {lines.length > 0 && (
+              <ul data-pipeline="standings" className="mb-3 flex flex-col gap-1">
+                {lines.map((line) => (
+                  <li
+                    key={line}
+                    className="rounded-md border border-line-card bg-surface p-2 text-xs text-ink-body"
+                  >
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            )}
 
             {live.length === 0 ? (
               <p className="rounded-lg border border-line-card bg-surface p-4 text-sm text-ink-body">
@@ -155,7 +188,19 @@ export default async function PipelinePage() {
                       {bidRow.dueDate === null ? (
                         <span className="text-ink-muted">no date given</span>
                       ) : (
-                        <span className={bidRow.overdue ? "text-tag-rose-ink" : undefined}>
+                        // RED ONLY WHEN IT MEANS SOMETHING. `overdue` is
+                        // `dueDate < today` with no status in it, so this used
+                        // to redden the date on every submitted bid waiting on
+                        // a GC — the normal state of a bid, shown as a problem.
+                        <span
+                          className={
+                            byId.get(bidRow.id) === "MISSED"
+                              ? "text-tag-rose-ink"
+                              : byId.get(bidRow.id) === "DUE_SOON"
+                                ? "text-tag-amber-ink"
+                                : undefined
+                          }
+                        >
                           due {bidRow.dueDate}
                         </span>
                       )}
