@@ -214,7 +214,10 @@ describe("indexSentence", () => {
 
 describe("indexCheck", () => {
   const index: DrawingIndex = { pageNumber: 2, listed: ["A100", "A101", "A102"] };
-  const sheet = (proposed: string | null, accepted: string | null = null) => ({
+  const sheet = (proposed: string | null, accepted: string | null = null, page = 1) => ({
+    // The page is what the counter counts, so a fixture without one collapses
+    // every sheet onto page `undefined` and the count comes out at 1.
+    pageNumber: page,
     proposedSheetNumber: proposed,
     acceptedSheetNumber: accepted,
   });
@@ -252,9 +255,20 @@ describe("indexCheck", () => {
 
 describe("sheets nobody has read yet", () => {
   const unreadIndex: DrawingIndex = { pageNumber: 2, listed: ["A100", "A101", "A102", "A103"] };
+  let nextPage = 0;
   const unreadSheet = (proposed: string | null) => ({
+    pageNumber: (nextPage += 1),
     proposedSheetNumber: proposed,
     acceptedSheetNumber: null,
+  });
+  // A set with `n` pages of which `unread` have no number, written as the
+  // counter returns it. Spelling the shape out per test is what caught the
+  // production bug being fed a constant.
+  const unread = (pages: number, total: number, unnamed = 0) => ({
+    pages,
+    total,
+    noReading: total - unnamed,
+    unnamed,
   });
 
   it("REFUSES THE COMPARISON rather than calling unread sheets missing", () => {
@@ -267,59 +281,105 @@ describe("sheets nobody has read yet", () => {
     // way: careful that "the index could not be read" must never read as
     // "nothing is missing", and then letting "the PAGES have not been read"
     // read as "everything is missing".
-    const result = indexCheck(unreadIndex, [unreadSheet("A100")], 34);
+    const result = indexCheck(unreadIndex, [unreadSheet("A100")], unread(35, 34));
     expect(result.missing).toBeNull();
     expect(result.unlisted).toBeNull();
-    expect(result.sentence).toContain("34 sheets");
-    expect(result.sentence).toContain("not been read yet");
+    expect(result.sentence).toContain("34 of these 35 sheets");
+    expect(result.sentence).toContain("no number yet");
+    // THE ACTION, not a wait — see the Naples case below.
+    expect(result.sentence).toContain("Read the title blocks");
   });
 
   it("does not quietly report a PARTIAL answer", () => {
     // Half an answer is worse than none: an estimator told four sheets are
     // missing goes to the GC, and finding them in the file is how a check
     // stops being read at all.
-    const result = indexCheck(unreadIndex, [unreadSheet("A100")], 3);
+    const result = indexCheck(unreadIndex, [unreadSheet("A100")], unread(4, 3));
     expect(result.sentence).not.toContain("NOT in what was uploaded");
     expect(result.missing).toBeNull();
   });
 
   it("still says WHERE the index was, which is true either way", () => {
-    expect(indexCheck(unreadIndex, [unreadSheet("A100")], 3).onPage).toBe(2);
+    expect(indexCheck(unreadIndex, [unreadSheet("A100")], unread(4, 3)).onPage).toBe(2);
   });
 
   it("gets the singular right for one unread sheet", () => {
-    expect(indexCheck(unreadIndex, [unreadSheet("A100")], 1).sentence).toContain(
-      "1 sheet in this set has not been read",
+    expect(indexCheck(unreadIndex, [unreadSheet("A100")], unread(2, 1)).sentence).toContain(
+      "1 of these 2 sheets has no number yet",
     );
   });
 
+  it("NAMES THE TITLE-BLOCK READ, not a wait, on a set whose pages ARE all read", () => {
+    // Naples, found by a browser run. The review line above said
+    // "53 of 53 sheets (100%) — 1 couldn't be read · Finished" and this said
+    // "let the reading finish". Page reading HAD finished; what had not run
+    // was the title-block read, which is the stage that assigns numbers and is
+    // a button somebody has to press.
+    //
+    // Pointing at a wait for something already done is this module's own
+    // failure mode a third time: a sentence that sounds true and sends nobody
+    // anywhere useful.
+    const result = indexCheck(unreadIndex, [unreadSheet("A100")], unread(53, 52));
+    expect(result.sentence).toContain("Read the title blocks");
+    expect(result.sentence, "nothing is waiting on the page read").not.toContain("reading finish");
+    expect(result.missing).toBeNull();
+  });
+
+  it("RECONCILES WITH THE REVIEW LINE by naming the split out loud", () => {
+    // Augusta, same run: this said 25 and the line above it said 23. Both
+    // right, counting different things, and the screen looked broken. The
+    // parenthetical is what makes the arithmetic followable.
+    const result = indexCheck(unreadIndex, [unreadSheet("A100")], unread(55, 25, 2));
+    expect(result.sentence).toContain("25 of these 55 sheets");
+    expect(result.sentence).toContain("23 not read");
+    expect(result.sentence).toContain("2 the reader couldn't name");
+  });
+
+  it("spends no words on the split when there is nothing to reconcile", () => {
+    // Every unread page is simply unreached, so there is no second number on
+    // the screen to disagree with and no parenthetical earns its space.
+    const result = indexCheck(unreadIndex, [unreadSheet("A100")], unread(55, 25, 0));
+    expect(result.sentence).toContain("25 of these 55 sheets");
+    expect(result.sentence).not.toContain("not read,");
+  });
+
+  it("AN UNREADABLE INDEX STILL WINS over unread pages", () => {
+    // Both are "cannot check", and the index one is the more fundamental: with
+    // no index there is nothing to compare against however much has been read.
+    // Mutation found this order was reversible with every test green.
+    const result = indexCheck(null, [unreadSheet("A100")], unread(55, 25));
+    expect(result.sentence).toContain("Couldn't read");
+    expect(result.sentence).not.toContain("no number yet");
+    expect(result.onPage).toBeNull();
+  });
+
   it("COMPARES NORMALLY once everything has been read", () => {
-    const result = indexCheck(unreadIndex, ["A100", "A101", "A102", "A103"].map(unreadSheet), 0);
+    const result = indexCheck(unreadIndex, ["A100", "A101", "A102", "A103"].map(unreadSheet), unread(4, 0));
     expect(result.missing).toEqual([]);
     expect(result.sentence).toContain("all 4 are here");
   });
 
   it("names what is missing once everything has been read", () => {
-    const result = indexCheck(unreadIndex, [unreadSheet("A100"), unreadSheet("A101")], 0);
+    const result = indexCheck(unreadIndex, [unreadSheet("A100"), unreadSheet("A101")], unread(2, 0));
     expect(result.missing).toEqual(["A102", "A103"]);
   });
 
   it("an unreadable index still wins over an unread count", () => {
     // Nothing can be said about a set whose index nobody could read, however
     // many of its pages have been.
-    const result = indexCheck(null, [unreadSheet("A100")], 34);
+    const result = indexCheck(null, [unreadSheet("A100")], unread(35, 34));
     expect(result.sentence).toContain("Couldn't read");
     expect(result.onPage).toBeNull();
   });
 });
 
 describe("unreadPageCount", () => {
-  const read = (n: string) => ({ proposedSheetNumber: n, acceptedSheetNumber: null });
-  const nameless = { proposedSheetNumber: null, acceptedSheetNumber: null };
+  const read = (n: string, page = 1) => ({ pageNumber: page, proposedSheetNumber: n, acceptedSheetNumber: null });
+  const nameless = (page: number) => ({ pageNumber: page, proposedSheetNumber: null, acceptedSheetNumber: null });
 
   it("counts the pages with no number against the pages in the set", () => {
-    expect(unreadPageCount(55, [read("A100"), read("A101")])).toBe(53);
-    expect(unreadPageCount(2, [read("A100"), read("A101")])).toBe(0);
+    expect(unreadPageCount(55, [read("A100", 1), read("A101", 2)]).total).toBe(53);
+    expect(unreadPageCount(2, [read("A100", 1), read("A101", 2)]).total).toBe(0);
   });
 
   it("COUNTS A PAGE THE READER COULD NOT NAME AS UNREAD", () => {
@@ -327,25 +387,66 @@ describe("unreadPageCount", () => {
     // every test, and a page the model read but could not name would count as
     // read — so the index's entry for it comes back MISSING. That is the
     // production bug wearing a different hat.
-    expect(unreadPageCount(3, [read("A100"), nameless, nameless])).toBe(2);
+    expect(unreadPageCount(3, [read("A100", 1), nameless(2), nameless(3)]).total).toBe(2);
+  });
+
+  // ── THE SPLIT, AND WHY IT IS NOT DECORATION ────────────────────────────
+  //
+  // A browser run found the first version's single number CONTRADICTING the
+  // review line above it: this said 25 unread, that said "23 need their
+  // numbers typed in". Both were right about different things. The split is
+  // what lets the sentence say so instead of looking broken.
+
+  it("SEPARATES pages nobody reached from pages it could not name", () => {
+    const counts = unreadPageCount(10, [read("A100", 1), nameless(2), nameless(3)]);
+    expect(counts.total, "nine pages have no number").toBe(9);
+    expect(counts.unnamed, "two were reached and came back nameless").toBe(2);
+    expect(counts.noReading, "seven were never reached").toBe(7);
+    expect(counts.noReading + counts.unnamed, "the split has to add up").toBe(counts.total);
+  });
+
+  it("carries the page total, which is what the sentence anchors on", () => {
+    expect(unreadPageCount(55, [read("A100", 1)]).pages).toBe(55);
+  });
+
+  it("reports no unnamed pages when every proposal has a number", () => {
+    const counts = unreadPageCount(10, [read("A100", 1), read("A101", 2)]);
+    expect(counts.unnamed).toBe(0);
+    expect(counts.noReading).toBe(8);
   });
 
   it("treats a blank number as no number", () => {
-    expect(unreadPageCount(2, [read("A100"), { proposedSheetNumber: "   ", acceptedSheetNumber: null }])).toBe(1);
+    expect(
+      unreadPageCount(2, [read("A100", 1), { pageNumber: 2, proposedSheetNumber: "   ", acceptedSheetNumber: null }])
+        .total,
+    ).toBe(1);
   });
 
   it("takes an accepted number when the proposal had none", () => {
-    expect(unreadPageCount(1, [{ proposedSheetNumber: null, acceptedSheetNumber: "A100" }])).toBe(0);
+    expect(unreadPageCount(1, [{ pageNumber: 1, proposedSheetNumber: null, acceptedSheetNumber: "A100" }]).total).toBe(
+      0,
+    );
   });
 
-  it("IS NEVER NEGATIVE when a page carries two proposals", () => {
-    // A re-run of the reader leaves two rows on one page. That is not a reason
-    // to claim pages are unread, and a negative would read as "everything is
-    // read" to any caller testing `> 0`.
-    expect(unreadPageCount(2, [read("A100"), read("A100"), read("A101")])).toBe(0);
+  it("COUNTS PAGES, NOT PROPOSALS, when the reader has been re-run", () => {
+    // A re-run leaves two rows on one page. Counting rows made two pages look
+    // read when one was, so the unread count came out LOW — and `Math.max(0,
+    // …)` hid it by flooring the answer at nothing to do.
+    expect(unreadPageCount(3, [read("A100", 1), read("A100", 1), read("A101", 2)]).total).toBe(1);
+  });
+
+  it("IS NEVER NEGATIVE when there are more read pages than page rows", () => {
+    // A negative would read as "everything is read" to any caller testing
+    // `> 0`, which is the production bug with a sign on it.
+    const counts = unreadPageCount(1, [read("A100", 1), read("A101", 2), read("A102", 3)]);
+    expect(counts.total).toBe(0);
+    expect(counts.noReading).toBe(0);
   });
 
   it("says every page is unread when nothing has been read", () => {
-    expect(unreadPageCount(55, [])).toBe(55);
+    const counts = unreadPageCount(55, []);
+    expect(counts.total).toBe(55);
+    expect(counts.noReading, "none of them was reached, so none is unnamed").toBe(55);
+    expect(counts.unnamed).toBe(0);
   });
 });

@@ -197,7 +197,13 @@ describe("the call site", () => {
     const { readFileSync } = await import("node:fs");
     const { resolve } = await import("node:path");
     const action = readFileSync(resolve(process.cwd(), "lib/actions/planSheets.ts"), "utf8");
-    expect(action).toContain("unreadPageCount(pages, sheets)");
+    expect(action).toContain("unreadPageCount(pageRows, sheets)");
+    // THE PAGE NUMBER HAS TO BE SELECTED, or the counter sees `undefined` for
+    // every proposal, collapses them onto one page, and reports almost the
+    // whole set unread. Found while fixing the count: the type demanded it, so
+    // this is the one half the compiler already guards — kept because a future
+    // `select` edit is exactly how it would go missing again.
+    expect(action).toContain("pageNumber: true");
     expect(action).toContain("planSheetText.count(");
     // And it reaches `indexCheck`, rather than being computed and dropped.
     expect(action).toContain("indexCheck(readDrawingIndex(pageTexts), sheets, unreadPages)");

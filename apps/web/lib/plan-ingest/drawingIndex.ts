@@ -198,12 +198,19 @@ export function indexSentence(index: DrawingIndex | null, comparison: IndexCompa
 /** A sheet as the review screen stores it: what the machine proposed, and what
  *  a person said it is. */
 export type ProposedSheet = {
+  /**
+   * WHICH PAGE, because the count below is a count of PAGES and a page can
+   * carry more than one proposal — a re-run of the reader leaves two. Counting
+   * proposals under-reported the unread pages, and `Math.max(0, …)` hid it by
+   * flooring the result at nothing to do.
+   */
+  pageNumber: number;
   proposedSheetNumber: string | null;
   acceptedSheetNumber: string | null;
 };
 
 /**
- * How many pages of the set still have no sheet number.
+ * How many pages of the set still have no sheet number, SPLIT BY WHY.
  *
  * PURE, because the two ways to get this wrong both live in a Server Action
  * that nothing could test, and mutation found both of them green:
@@ -216,14 +223,53 @@ export type ProposedSheet = {
  * `pageCount` is one row per page — `PlanSheetText`, which `sheetIndexFor`
  * builds the review screen's population from. Proposals exist only for pages
  * `TITLE_BLOCK` has reached.
+ *
+ * ── WHY THE SPLIT, AND NOT JUST A TOTAL ──
+ *
+ * The first version returned one number and a browser run caught it
+ * CONTRADICTING THE LINE DIRECTLY ABOVE IT: this said 25 unread where
+ * `sheetIndexSentence` said "23 need their numbers typed in". Both were right.
+ * They were counting different things — 23 pages have no proposal at all, and
+ * 2 more have a proposal the reader could not name. For comparing against an
+ * index those are the same problem, which is why the total is 25; for somebody
+ * reading two sentences together they are a contradiction with no explanation.
+ *
+ * So the split is returned and the sentence spends the words on it. Two numbers
+ * about the same set on one screen have to reconcile out loud or one of them
+ * stops being believed — and this one is a check whose only job is to be
+ * believed.
  */
-export function unreadPageCount(pageCount: number, sheets: readonly ProposedSheet[]): number {
-  const numbered = sheets.filter(
-    (sheet) => ((sheet.acceptedSheetNumber ?? sheet.proposedSheetNumber) ?? "").trim() !== "",
-  ).length;
-  // NEVER NEGATIVE. More proposals than pages means a page carries two — a
-  // re-run of the reader — and that is not a reason to claim unread pages.
-  return Math.max(0, pageCount - numbered);
+export type UnreadPages = {
+  /** Every page in the set. Carried so the sentence can say "25 of these 55",
+   *  which is what anchors it against the review line above it instead of
+   *  floating a number next to a different one. */
+  pages: number;
+  /** Pages with no sheet number, by either route. The index cannot be checked
+   *  against any of them. */
+  total: number;
+  /** Pages `TITLE_BLOCK` has not reached. The review screen's "need their
+   *  numbers typed in". */
+  noReading: number;
+  /** Pages it reached and could not name. The difference the split exists for. */
+  unnamed: number;
+};
+
+export function unreadPageCount(pageCount: number, sheets: readonly ProposedSheet[]): UnreadPages {
+  // PAGES, not proposals. A page carrying two proposals is one page.
+  const pagesWithANumber = new Set<number>();
+  const pagesRead = new Set<number>();
+  for (const sheet of sheets) {
+    pagesRead.add(sheet.pageNumber);
+    if (((sheet.acceptedSheetNumber ?? sheet.proposedSheetNumber) ?? "").trim() !== "") {
+      pagesWithANumber.add(sheet.pageNumber);
+    }
+  }
+  // NEVER NEGATIVE. A set can carry proposals for pages `PlanSheetText` has no
+  // row for; that is not a reason to claim a negative number of unread pages,
+  // and a negative would read as "all read" to any caller testing `> 0`.
+  const total = Math.max(0, pageCount - pagesWithANumber.size);
+  const unnamed = Math.max(0, pagesRead.size - pagesWithANumber.size);
+  return { pages: pageCount, total, noReading: Math.max(0, total - unnamed), unnamed };
 }
 
 export type IndexCheckResult = {
@@ -251,7 +297,7 @@ export type IndexCheckResult = {
 export function indexCheck(
   index: DrawingIndex | null,
   sheets: readonly ProposedSheet[],
-  unreadPages = 0,
+  unreadPages: UnreadPages = { pages: 0, total: 0, noReading: 0, unnamed: 0 },
 ): IndexCheckResult {
   if (index === null) {
     return { sentence: indexSentence(null, null), missing: null, unlisted: null, onPage: null };
@@ -275,12 +321,33 @@ export function indexCheck(
   // answer here is worse than none: an estimator who is told four sheets are
   // missing goes to the GC, and finding them in the file is how a check stops
   // being read at all.
-  if (unreadPages > 0) {
+  if (unreadPages.total > 0) {
+    const { pages, total, noReading, unnamed } = unreadPages;
+    // ── THE SPLIT IS SPOKEN ALOUD, AND A BROWSER RUN IS WHY ──
+    //
+    // The first version said "25 sheets have not been read yet" directly under
+    // a line reading "23 need their numbers typed in". Both numbers were
+    // right about different things and the screen looked broken. A page the
+    // reader REACHED and could not name is unread for this purpose and read
+    // for that one, so the words have to carry the difference.
+    const why =
+      unnamed > 0 && noReading > 0
+        ? ` (${noReading} not read, ${unnamed} the reader couldn't name)`
+        : unnamed > 0
+          ? ` — the reader couldn't make out ${unnamed === 1 ? "its number" : "their numbers"}`
+          : "";
     return {
       sentence:
-        `${unreadPages} sheet${unreadPages === 1 ? "" : "s"} in this set ${unreadPages === 1 ? "has" : "have"} not been read yet, ` +
-        `so this can't tell you what is missing — anything unread would be reported as absent. ` +
-        `Let the reading finish, then check again.`,
+        `${total} of these ${pages} sheets ${total === 1 ? "has" : "have"} no number yet${why}, ` +
+        `so this can't tell you what is missing — anything without a number would be reported as absent. ` +
+        // THE ACTION, NOT A WAIT. This said "let the reading finish", and a
+        // browser run found it on a set whose page reading WAS finished —
+        // "53 of 53 sheets (100%) · Finished" directly above it. What had not
+        // run was the title-block read, which is the stage that assigns
+        // numbers and is a button somebody has to press. Telling them to wait
+        // for something already done is this module's own failure mode again:
+        // a true-sounding sentence pointing away from the fix.
+        `Read the title blocks, then check again.`,
       missing: null,
       unlisted: null,
       onPage: index.pageNumber,
