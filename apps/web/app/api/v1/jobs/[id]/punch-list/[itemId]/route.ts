@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
+import { ownerRefusal } from "@/lib/actions/shared";
 
 /**
  * PATCH /api/v1/jobs/[id]/punch-list/[itemId] — the phone's "it's fixed"
@@ -116,4 +117,74 @@ export async function PATCH(
   });
 
   return NextResponse.json(toJson(updated));
+}
+
+/**
+ * DELETE /api/v1/jobs/[id]/punch-list/[itemId] — taking an item off the
+ * list that should never have been on it. Issue #592: the phone could add
+ * an item and had no way at all to remove one, so a typo or an item logged
+ * against the wrong job could only be toggled between three states forever.
+ *
+ * OWNER-ONLY, AND THAT IS PARITY RATHER THAN A CHOICE MADE HERE. The web's
+ * `deletePunchListItem` (lib/actions/punchLists.ts) refuses anybody who is
+ * not the account owner, through this same `ownerRefusal` — the predicate is
+ * imported rather than restated so the two surfaces cannot drift into
+ * disagreeing about who may destroy a field record.
+ *
+ * SO THIS DOES NOT SOLVE #592's OWN HEADLINE CASE, and that is deliberate,
+ * not an oversight: the issue is about a CREW MEMBER who typos an item, and
+ * a crew member still cannot delete from the phone — they get the sentence
+ * below. Widening it is a product decision about who may destroy evidence a
+ * GC may later be shown, and if the answer comes back "crew may remove
+ * their own", the change belongs HERE AND IN `punchLists.ts` TOGETHER. A
+ * phone that can delete what the web refuses is the worse of the two bugs.
+ *
+ * ORDER OF THE TWO GUARDS, both before any query: MANAGE_FIELD is "punch
+ * items are part of your work at all", OWNER is "you may destroy one" —
+ * same order as the action. Nobody refused gets a database round trip, and
+ * nobody refused learns whether an id exists. `lib/mobile-api-guards.test.ts`
+ * reads this handler's own body for the capability and asserts that
+ * ordering.
+ *
+ * A MISSING ITEM IS A 404 HERE WHERE PATCH ANSWERS 400 FOR THE SAME
+ * CONDITION, and the difference is load-bearing rather than untidy. The
+ * phone REPLAYS this request from its queue, and "the row you asked me to
+ * remove is already gone" is the one 4xx that means the caller got exactly
+ * what it wanted. 404 is what lets the queue settle such a delete as done
+ * instead of parking it in "needs attention" forever — the
+ * `punch-list:delete` case in `apps/mobile/lib/sync-queue.ts` is the other
+ * half of this sentence, and it is matched on the STATUS. 400 stays
+ * reserved for a request that is wrong.
+ *
+ * What happens to what hung off the item is the schema's answer, not this
+ * handler's: `Media.punchListItemId` and `SheetPin.punchItemId` are both
+ * `onDelete: SetNull`, so a photo of the fix outlives the item it was taken
+ * against — identically to the web action, which also just deletes the row.
+ */
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string; itemId: string }> },
+) {
+  const context = await requireApiContext();
+  if (!context) return jsonError("Not authenticated", 401);
+  if (!can(context, "MANAGE_FIELD")) return jsonError(FIELD_ONLY, 403);
+
+  // The same refusal the web row renders, word for word, so a crew member
+  // who is told no on one surface is told the same thing on the other.
+  const refusal = ownerRefusal(context, "Only the account owner can remove a punch list item");
+  if (refusal) return jsonError(refusal.error, 403);
+
+  const { id, itemId } = await params;
+
+  const item = await prisma.punchListItem.findUnique({ where: { id: itemId } });
+  if (!item || item.companyId !== context.companyId || item.jobId !== id) {
+    return jsonError("Punch list item not found", 404);
+  }
+
+  await prisma.punchListItem.delete({ where: { id: itemId } });
+
+  // A body rather than a 204: `request` in apps/mobile/lib/api.ts reads the
+  // response as JSON, and a route that answers every other call with an
+  // object has no reason to be the one that does not.
+  return NextResponse.json({ ok: true });
 }

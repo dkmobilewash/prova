@@ -173,7 +173,29 @@ export type UpdateOp = {
   fields: FieldReportFields;
 };
 
-export type PendingOp = CreateOp | UpdateOp;
+/**
+ * REMOVING a record — the third kind of op, and the first one whose
+ * correctness depends on what ELSE is in the queue.
+ *
+ * It carries no `clientOperationId` for the same reason `punch-list:status`
+ * carries none: deleting the same row twice lands on the same row, so there
+ * is nothing for the server to dedupe. The server's own 404 is what makes a
+ * replay safe, and `runOp` below reads it as "done" rather than as a
+ * refusal — see its comment.
+ *
+ * `itemId` IS WHATEVER THE SCREEN IS DRAWING AS THAT ROW'S IDENTITY, which
+ * is a server id for every row that has been synced and, on a screen that
+ * renders queued creates optimistically, the create's own
+ * `clientOperationId` for one that has not. `cancelledByDelete` below is
+ * what keeps the second case off the wire.
+ */
+export type DeleteOp = {
+  type: "punch-list:delete";
+  jobId: string;
+  itemId: string;
+};
+
+export type PendingOp = CreateOp | UpdateOp | DeleteOp;
 
 /** A queued write and its own local id.
  *
@@ -398,7 +420,21 @@ export async function flushQueue(token: string): Promise<void> {
  * and the server had never heard of it. */
 async function drain(token: string): Promise<void> {
   await ensureIds();
-  const ops = await read();
+  const all = await read();
+
+  // SETTLED ON THIS PHONE, BEFORE THE RADIO IS TOUCHED: a delete can make
+  // writes ahead of it pointless, and can itself be pointless. Done here
+  // rather than at `enqueue` so that one place reasons about the queue as a
+  // whole, and so it cannot run while a send is in flight — `flushQueue`
+  // allows exactly one drain at a time. See `cancelledByDelete`.
+  const cancelled = cancelledByDelete(all);
+  // `removeHandled` despite the name: what it does is take exactly these
+  // ids off the CURRENT queue, re-read rather than remembered, so anything
+  // enqueued since survives. Persisted before the first send, so a flush
+  // that dies mid-pass does not leave a cancelled pair to be sent later.
+  if (cancelled.size > 0) await removeHandled(cancelled);
+
+  const ops = all.filter((op) => !cancelled.has(op.opId));
   const handled = new Set<string>();
   const refused: RefusedOp[] = [];
   /** Per-op state changes to persist: attempts, the server's words, when
@@ -479,6 +515,78 @@ async function drain(token: string): Promise<void> {
   await recordRefused(refused);
   await removeHandled(handled);
   await applyMarks(marked);
+}
+
+/**
+ * The ops a queued DELETE makes pointless — including, sometimes, itself.
+ *
+ * THE CASE THIS EXISTS FOR: an item added with no signal and then removed
+ * with no signal, which is the whole of #592's story — somebody typos an
+ * item standing in front of the wall and fixes it two taps later, in a
+ * basement, so neither write has been anywhere. Three ways that could be
+ * handled, and the choice is deliberate:
+ *
+ *   1. SEND BOTH. Correct in the end, and it means a POST and a DELETE over
+ *      a radio for a row that existed for four seconds. It also writes a
+ *      punch item into the company's records and then removes it, so a
+ *      typo leaves a trace in whatever watched the table.
+ *   2. SEND ONLY THE DELETE. Wrong, and the specific way it is wrong is the
+ *      reason this function is not optional: the row has no server id yet,
+ *      so the only id the screen can be holding is the create's
+ *      `clientOperationId`. Sending it names a record that has never
+ *      existed anywhere. The server answers 404, `runOp` reads that as
+ *      "already gone", and the queue reports success for a deletion that
+ *      deleted nothing — while the create it was supposed to undo is still
+ *      sitting in front of it, about to make the row for real.
+ *   3. CANCEL BOTH, which is what this does. Neither write is ever sent,
+ *      the outbox stops showing a waiting item the person has already
+ *      changed their mind about, and the server never hears about a typo.
+ *
+ * The pairing is `delete.itemId === create.clientOperationId`, which is the
+ * identity an optimistic row already has on every screen in this app that
+ * draws one (`queuedOperationIds` is what they filter on — see
+ * app/time/[jobId].tsx and app/photos/[jobId].tsx). A real server id is a
+ * cuid and a `clientOperationId` is a uuid, so the two cannot be confused
+ * for one another by accident.
+ *
+ * ALSO DROPPED: an earlier `punch-list:status` for the same item. A tick on
+ * a row that is being removed is a write the server would answer 404 to
+ * once the delete has landed — or worse, one that sits in backoff, is
+ * SKIPPED past the delete by the head-of-line fix in `drain`, and then
+ * arrives at "needs attention" claiming a change was not saved for an item
+ * the person deliberately deleted. Nothing is lost: the row is going away,
+ * and its status is a fact about a row.
+ *
+ * THE BOUND, because this is a race and the honest answer is not "never":
+ * the pairing can only see a create that is STILL QUEUED. A create that
+ * went up on an earlier pass is gone from the queue, so a delete tapped on
+ * an optimistic row in the window between its create being sent and the
+ * screen re-reading the list from the server (`syncOnce` refreshes
+ * immediately after a flush, so that window is short) carries a
+ * `clientOperationId`, 404s, and settles as done while the item survives on
+ * the server. Closing that properly needs a clientOperationId -> server id
+ * mapping recorded when the create's response comes back, which is a bigger
+ * change than #592 and is NOT built here. A row that has ever been drawn
+ * from the server is unaffected: its id is the server's.
+ */
+function cancelledByDelete(ops: QueuedOp[]): Set<string> {
+  const cancelled = new Set<string>();
+  ops.forEach((op, index) => {
+    if (op.type !== "punch-list:delete") return;
+    // Only what is AHEAD of the delete in the queue: the queue is the order
+    // the person performed these in, and a write queued after a delete is
+    // about something that happened after it.
+    for (const earlier of ops.slice(0, index)) {
+      if (earlier.type === "punch-list:status" && earlier.itemId === op.itemId) {
+        cancelled.add(earlier.opId);
+      }
+      if (earlier.type === "punch-list:create" && earlier.clientOperationId === op.itemId) {
+        cancelled.add(earlier.opId);
+        cancelled.add(op.opId);
+      }
+    }
+  });
+  return cancelled;
 }
 
 /** Writes the per-op state back onto the CURRENT queue, leaving anything
@@ -587,6 +695,27 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
       return;
     case "punch-list:status":
       await api.setPunchListItemStatus(op.jobId, op.itemId, op.status, token);
+      return;
+    case "punch-list:delete":
+      try {
+        await api.deletePunchListItem(op.jobId, op.itemId, token);
+      } catch (error) {
+        // ALREADY GONE IS DONE, NOT REFUSED. `isFinalRefusal` is true of a
+        // 404, so without this the ordinary replay — the delete went up,
+        // the response never came back, the phone tries again — would land
+        // in "needs attention" telling somebody their deletion was not
+        // saved, about the one request whose goal has demonstrably been
+        // met. The route answers 404 rather than 400 for a missing item
+        // precisely so this can be decided on the status; its comment is
+        // the other half of this one.
+        //
+        // Nothing else is swallowed: a 403 (a crew member, who may not
+        // delete) still reaches the refused list with the server's own
+        // sentence, which is the only way the person finds out they need
+        // the owner.
+        if (error instanceof api.ApiError && error.status === 404) return;
+        throw error;
+      }
       return;
     case "ticket:create":
       await api.createTmTicket(
