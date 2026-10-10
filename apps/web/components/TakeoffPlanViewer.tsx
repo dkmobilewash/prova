@@ -41,8 +41,10 @@ import {
   wallsNotLettering,
   wallsNotTheSheetBorder,
   type WallCluster,
+  type StrokeSegment,
 } from "@/lib/takeoff/wallVectors";
 import { wallsFromBothEngines } from "@/lib/takeoff/wallRuns";
+import { pagesToSample, templateFromSheets, withoutTemplate } from "@/lib/takeoff/sheetTemplate";
 import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 import { wallTypeTags, namesForClusters, tagSentence } from "@/lib/takeoff/wallTags";
@@ -160,6 +162,9 @@ export function TakeoffPlanViewer({
 }) {
   const [pageNumber, setPageNumber] = useState(1);
   const [pageCount, setPageCount] = useState<number | null>(null);
+  /** How many strokes the set's own template accounted for, so the panel can
+   *  SAY it rather than quietly returning a smaller number. */
+  const [templateStrokes, setTemplateStrokes] = useState(0);
   // FIT by default. A sheet opens showing all of itself, which is what
   // somebody opening a drawing wants to see first; they zoom IN to measure.
   const [zoom, setZoom] = useState<Zoom>(FIT);
@@ -455,16 +460,66 @@ export function TakeoffPlanViewer({
         width: item.width / pageSize.widthPt,
         height: item.height / pageSize.widthPt,
       }));
-      const inUnits = segments.map((segment) => ({
-        x1: segment.x1 / pageSize.widthPt,
-        y1: segment.y1 / pageSize.widthPt,
-        x2: segment.x2 / pageSize.widthPt,
-        y2: segment.y2 / pageSize.widthPt,
-        // NOT divided by the page width. The pen is compared against other
-        // pens on the same sheet, never against a distance — scaling it into
-        // page-width units would be arithmetic with no meaning.
-        width: segment.width,
-      }));
+      // Page-width units: every stored figure is a fraction of THIS page's
+      // width, and `width` is deliberately left in points — the pen is compared
+      // against other pens on the same sheet, never against a distance, so
+      // scaling it would be arithmetic with no meaning.
+      const unitsOf = (over: number) => (one: StrokeSegment): StrokeSegment => ({
+        x1: one.x1 / over,
+        y1: one.y1 / over,
+        x2: one.x2 / over,
+        y2: one.y2 / over,
+        width: one.width,
+      });
+      const allInUnits = segments.map(unitsOf(pageSize.widthPt));
+
+      // ── THE SET'S OWN TEMPLATE, READ FROM OTHER SHEETS ──
+      //
+      // #722 fixed the drawing FRAME by geometry and said plainly that the
+      // title-block cells were still counted as walls: they are short runs
+      // inside the border, and every cheap way to guess that corner also drops
+      // real wall, because a plan is routinely drawn right up to it.
+      //
+      // This is the fix that needs no guess. The frame, the title block and the
+      // logo are the only geometry at the SAME page position on every sheet of
+      // a set. A wall is not.
+      //
+      // It costs a few extra page parses. `pagesToSample` spreads them across
+      // the whole document rather than taking neighbours, which is the
+      // identical-floors guard — levels 3 to 10 of a tower repeat their REAL
+      // walls, and evenly spaced samples cross disciplines, where nothing but
+      // the template survives. `sheetTemplate.ts` carries the reasoning and the
+      // fail-safe: too few sheets read and it filters nothing, because "cannot
+      // tell" must not mean "drop it".
+      let inUnits = allInUnits;
+      let templateDropped = 0;
+      try {
+        const sampled: StrokeSegment[][] = [];
+        for (const n of pagesToSample(doc.numPages, pageNumber)) {
+          if (n === pageNumber) {
+            sampled.push(allInUnits);
+            continue;
+          }
+          const other = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(n);
+          const read = await segmentsFromOpenPage(other, pdfjs, n);
+          // ITS OWN width, not this sheet's. A set with a mixed page size would
+          // otherwise compare one sheet's coordinates against another's scale.
+          sampled.push(read.segments.map(unitsOf(read.widthPt || pageSize.widthPt)));
+        }
+        const template = templateFromSheets(sampled);
+        if (template.size > 0) {
+          const kept = withoutTemplate(allInUnits, template);
+          templateDropped = allInUnits.length - kept.length;
+          inUnits = kept;
+        }
+      } catch {
+        // A page that will not parse is not a reason to refuse the sheet in
+        // front of somebody. Falling through leaves the geometric filters,
+        // which is exactly what this sheet had before.
+        inUnits = allInUnits;
+        templateDropped = 0;
+      }
+      setTemplateStrokes(templateDropped);
       // BOTH ENGINES, MERGED. Pairing asks "are these two lines a wall" and
       // needs no room to close; the room engine asks which enclosed regions are
       // thin AND separate two different spaces, and does not care how the wall
@@ -828,6 +883,19 @@ export function TakeoffPlanViewer({
                 Found {found.reduce((n, c) => n + c.runs.length, 0)} runs of wall. Each group is drawn on the
                 sheet in its own colour — check it sits on real walls before adding it.
               </p>
+              {/* WHAT THE TEMPLATE ACCOUNTED FOR, SAID OUT LOUD.
+                  A filter that quietly returns a smaller number is how the next
+                  unexplained figure gets created — the same rule the drawing-index
+                  check learned the hard way. If this number is large and the panel
+                  is empty, the filter is the first thing to suspect rather than the
+                  sheet. */}
+              {templateStrokes > 0 && (
+                <p className="mb-2 text-xs text-ink-muted">
+                  {templateStrokes.toLocaleString()} line{templateStrokes === 1 ? "" : "s"} on this sheet also
+                  appear in the same place on the rest of the set — the border, the title block and the logo —
+                  so they were left out.
+                </p>
+              )}
               <ul className="flex flex-col gap-1">
                 {found.slice(0, 6).map((cluster, index) => (
                   <li
