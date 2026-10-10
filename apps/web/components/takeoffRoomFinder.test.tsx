@@ -6,18 +6,33 @@ import { TakeoffPlanViewer } from "./TakeoffPlanViewer";
 import type { PlanSheet } from "@/lib/takeoff-plan-view";
 
 /**
- * THE ROOM FINDER'S CONTROL HAS TO BE ON THE SCREEN AN ESTIMATOR IS ON.
+ * THERE IS NO ROOM FINDER ON THE TAKEOFF TOOLBAR, AND THIS HOLDS IT THERE.
  *
- * Same shape as `takeoffWallFinder.test.tsx` and the same reason — #665 shipped
- * a button that existed, called the right action, sat in the right branch and
- * appeared on no screen anybody used. A census proves the code is THERE; only
- * rendering proves somebody can reach it.
+ * #702 shipped one. It was clicked on real sheets the same day and its answer
+ * was wrong in the way that matters most — confidently low. On a West Herr
+ * floor plan it reported **46 rooms and 4,555 sf** for a building about 290 ft
+ * across, having missed Showroom 101, Sales 103, Hospitality 105, New Car
+ * Delivery 140 and the whole right-hand wing, while outlining a parked car,
+ * the gaps between dimension strings, and two keynote tags.
  *
- * What this does NOT cover is the detection, which needs a real PDF and pdf.js.
- * That is measured in `roomAreas.test.ts` and against real drawings — the
- * numbers are in the changelog. This covers the seam: the button is reachable
- * when it can work, says why when it cannot, and ARMS A BOX rather than
- * running, which is the one thing about this feature a reader would not guess.
+ * An estimator who trusts that bids half a building.
+ *
+ * ── WHY THIS FILE INVERTED INSTEAD OF BEING DELETED ──
+ *
+ * The old version of this file asserted the button WAS reachable, hidden
+ * neither by an attribute nor a class, with a census of its call site. Every
+ * one of those assertions was true the whole time the feature was broken,
+ * because a control being reachable says nothing about whether its answer is
+ * right. Deleting the file would leave nothing between the next person and
+ * re-adding a button that is three lines of JSX away.
+ *
+ * `roomAreas.ts` and its own tests stay: the geometry is correct and the fix
+ * is to WHAT REACHES IT — the room finder rasterises every stroke, including
+ * the leader lines that cut a room in half and the dimension strings that
+ * enclose one of their own. See its header and `wallsNotLettering` for the
+ * filtering the wall finder has and this does not.
+ *
+ * When the numbers say it is fit to use, this file flips back.
  */
 
 const sheet = (over: Partial<PlanSheet> = {}): PlanSheet =>
@@ -69,79 +84,33 @@ function paint(sheets: PlanSheet[]) {
   return host;
 }
 
-const findRooms = (el: HTMLElement) => el.querySelector('[data-takeoff="find-rooms"]') as HTMLButtonElement | null;
-
-describe("the room finder's control", () => {
-  it("is on the toolbar once the sheet is calibrated, AND NOT HIDDEN", () => {
-    // `querySelector` finds a node with `hidden` on it just as happily as a
-    // visible one — found by mutation: adding `hidden` to this button left
-    // every assertion in this file green, which is #665 exactly, in the test
-    // written to prevent #665.
-    //
-    // happy-dom does no layout, so this cannot see a button pushed off
-    // screen or covered by something; it can see the ways a control gets
-    // hidden IN THE SOURCE, which is how it has actually happened here.
-    const button = findRooms(paint([sheet()]));
-    expect(button).not.toBeNull();
-    expect(button?.hidden).toBe(false);
-    expect(button?.getAttribute("aria-hidden")).toBeNull();
-    expect(button?.className).not.toContain("hidden");
-  });
-
-  it("is SHOWN BUT DISABLED with no scale set — visible, not hidden", () => {
-    // The button beside it shipped hidden and was reported the same day: an
-    // absence reads as "this feature does not exist", never as "this sheet
-    // needs a scale first". The gate is structural either way — a room's size
-    // bound is in square feet of building, so without a calibration it means
-    // nothing.
-    const button = findRooms(paint([sheet({ calibration: null } as Partial<PlanSheet>)]));
-    expect(button).not.toBeNull();
-    expect(button?.disabled).toBe(true);
-  });
-
-  it("says WHY it is disabled rather than leaving somebody to guess", () => {
-    const button = findRooms(paint([sheet({ calibration: null } as Partial<PlanSheet>)]));
-    expect(button?.getAttribute("title")).toContain("Set the scale");
-  });
-
-  it("is enabled once the sheet has a scale", () => {
-    expect(findRooms(paint([sheet()]))?.disabled).toBe(false);
-  });
-
-  it("says what it does in words an estimator reads, not a tool name", () => {
-    expect(findRooms(paint([sheet()]))?.textContent).toBe("Find the rooms");
-  });
-
-  it("ARMS A BOX rather than running, and says so on the button", () => {
-    // The one thing about this feature nobody would guess, so it is the one
-    // thing the button has to say. Pressing it does not detect anything: it
-    // waits for a box, because run over a whole sheet the region finder
-    // cannot tell a floor plan from a notes panel — see `roomAreas.ts`, which
-    // carries the three discriminators that were measured and failed.
+describe("the room finder is off the toolbar", () => {
+  it("OFFERS NO BUTTON, so nobody can take a wrong number off it", () => {
     const el = paint([sheet()]);
-    act(() => {
-      findRooms(el)?.click();
-    });
-    expect(findRooms(el)?.textContent).toBe("Drag a box round the plan");
-    // And nothing was detected by pressing it.
+    expect(el.querySelector('[data-takeoff="find-rooms"]')).toBeNull();
+    expect(el.textContent).not.toContain("Find the rooms");
+    expect(el.textContent).not.toContain("Drag a box round the plan");
+  });
+
+  it("shows no results panel and no way to accept rooms", () => {
+    const el = paint([sheet()]);
     expect(el.querySelector('[data-takeoff="rooms-panel"]')).toBeNull();
+    expect(el.querySelector('[data-takeoff="accept-rooms"]')).toBeNull();
   });
 
-  it("disarms when pressed again, so it is not a trap", () => {
+  it("LEAVES THE WALL FINDER WORKING, which is the point of taking only this out", () => {
+    // Wall detection is measured at 94.5% recall on real sheets and is not
+    // affected: it has the stroke filtering the room finder lacks.
     const el = paint([sheet()]);
-    act(() => findRooms(el)?.click());
-    act(() => findRooms(el)?.click());
-    expect(findRooms(el)?.textContent).toBe("Find the rooms");
+    const walls = el.querySelector('[data-takeoff="find-walls"]') as HTMLButtonElement | null;
+    expect(walls).not.toBeNull();
+    expect(walls?.disabled).toBe(false);
   });
 
-  it("shows no results panel until it has been asked", () => {
-    expect(paint([sheet()]).querySelector('[data-takeoff="rooms-panel"]')).toBeNull();
-    expect(paint([sheet()]).querySelector('[data-takeoff="accept-rooms"]')).toBeNull();
-  });
-
-  it("leaves the wall finder alone", () => {
-    // Both buttons sit on the same toolbar and the room one was added beside
-    // it; a regression here is somebody deleting the wrong line.
-    expect(paint([sheet()]).querySelector('[data-takeoff="find-walls"]')).not.toBeNull();
+  it("leaves the manual measuring tools alone", () => {
+    // Tracing an area by hand is how this was done before #702 and how it is
+    // done now. Nothing about that changed.
+    const el = paint([sheet()]);
+    expect(el.textContent).toContain("Area");
   });
 });
