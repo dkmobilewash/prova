@@ -43,7 +43,7 @@
 
 import { openingsInWalls } from "./openings";
 import { straighten } from "./skeleton";
-import { roomGrid, wallsFromRooms, SMALLEST_ROOM_SQFT, WIDEST_WALL_INCHES, type RoomGrid } from "./rooms";
+import { roomGrid, SMALLEST_ROOM_SQFT, WIDEST_WALL_INCHES, type RoomGrid } from "./rooms";
 import type { StrokeSegment } from "./wallVectors";
 
 /**
@@ -53,10 +53,12 @@ import type { StrokeSegment } from "./wallVectors";
  * flooring and paint all need it, and on a 20,000 sf plan it is a hundred-odd
  * polygons drawn one corner at a time.
  *
- * `rooms.ts` already finds enclosed regions and `wallsFromRooms` already knows
- * which ones a wall separates. This turns those into AREA measurements, and the
- * only thing it adds is the box — which is not a convenience, it is the whole
- * reason the feature works at all.
+ * `rooms.ts` already finds enclosed regions. This turns them into AREA
+ * measurements, and the only thing it adds is the box — which is not a
+ * convenience, it is the whole reason the feature works at all.
+ *
+ * It used to lean on `wallsFromRooms` as well, to ask whether a detected wall
+ * bounded each region. That was measured out: see `roomRegionIds`.
  *
  * ── WHY THERE IS A BOX, MEASURED RATHER THAN ASSUMED ──
  *
@@ -352,21 +354,51 @@ function ringArea(ring: { x: number; y: number }[]): number {
   return Math.abs(sum) / 2;
 }
 
-/** Which regions in a grid are rooms: enclosed, big enough to stand in, not
- *  wall-shaped, and bounded by something the wall finder calls a wall. */
+/**
+ * Which regions in a grid are rooms: enclosed, big enough to stand in, and not
+ * wall-shaped.
+ *
+ * ── IT NO LONGER ASKS WHETHER A DETECTED WALL BOUNDS THEM ──
+ *
+ * It used to, and that cost more than it earned. Measured against the room
+ * tags printed on real sheets, the wall-bounded requirement was the single
+ * largest cause of a missed room — **16 tags across two sheets**, more than
+ * merging on Augusta and level with it on West Herr:
+ *
+ * | | wall-bounded | dropped |
+ * | --- | --- | --- |
+ * | West Herr p21 | 27% | **41%** |
+ * | Augusta p11 | 73% | 73% |
+ * | both | 47% | **55%** |
+ *
+ * The filter was added so that a notes panel could not come back as a room.
+ * **The box already does that job**, and does it without a threshold: cropping
+ * makes the paper around the drawing reach the edge of the grid, where `open`
+ * excludes it. Keeping both meant paying twice for one guarantee.
+ *
+ * ── IT IS NOT FREE, AND THE COST IS RECORDED RATHER THAN HIDDEN ──
+ *
+ * On West Herr it admits 36 more regions (59 -> 95) for 6 more correctly
+ * placed tags, and the extras average about 30 square feet — some are real
+ * closets and toilets, some are not. On Augusta it admits 8 more and gains
+ * NOTHING. So this is a recall trade with a precision cost, taken because the
+ * feature's failure is overwhelmingly one of omission: a room nobody finds is
+ * invisible, and a region nobody wants is one click to reject.
+ *
+ * That trade would be the wrong way round if the button were on. It is off
+ * (`takeoffRoomFinder.test.tsx`), and at 61% at the very best this is a
+ * recorded step rather than a feature returning.
+ */
 export function roomRegionIds(grid: RoomGrid): Set<number> {
   const sqft = grid.feetPerCell ** 2;
-  const bounded = new Set<number>();
-  for (const wall of wallsFromRooms(grid)) for (const id of wall.separates) bounded.add(id);
 
   const ids = new Set<number>();
   for (const region of grid.regions) {
     // `open` is the paper around the drawing. Inside a cropped box that is
     // exactly the margin, which is why the box removes it for free.
     if (region.open) continue;
-    if (!bounded.has(region.id)) continue;
-    // `separates` can name a thin region when it is a neighbour of some other
-    // wall, so the wall-shape test still has to run.
+    // Not wall-SHAPED: a thin elongated region is the cavity inside a wall,
+    // not a space anybody stands in.
     if (region.minor * grid.feetPerCell * 12 <= WIDEST_WALL_INCHES) continue;
     if (region.area * sqft < SMALLEST_ROOM_SQFT) continue;
     ids.add(region.id);
