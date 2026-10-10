@@ -87,6 +87,20 @@ The suite had run for months without one because every earlier case creates
 measurements directly in the fixture, so nothing had ever taken the path that
 stamps an author.
 
+**And the fixture's new `User` row broke the suite's teardown — caught by CI,
+not by me.** `User.companyId` is a RESTRICT child, so `company.deleteMany`
+failed with `P2003` on `User_companyId_fkey`. That is the `InvoiceCounter` trap
+CLAUDE.md records, arriving in a fixture: adding a child row is two edits, the
+row and the teardown.
+
+**It passed locally and failed in CI, and that difference is the lesson.**
+Running ONE dbtest file writes and tears down its own data; CI runs the whole
+suite, so a teardown that cannot complete only shows up against everything
+else — and it fails the PROCESS rather than a test, so the log reads "705
+passed" directly above the error. A green single-file run is not evidence that a
+fixture cleans up after itself. Verified by running the full suite the way CI
+does, to exit 0 with zero `P2003`.
+
 **`clusterTag.test.tsx`'s census needed updating, not weakening.** It pinned
 `setTagNames(namesForClusters(` and both the names and the match now come from
 ONE pass (`taggedFeetForClusters`), because two walks of the same runs would be

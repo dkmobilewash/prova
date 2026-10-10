@@ -136,6 +136,18 @@ afterAll(async () => {
   await prisma.lineItemCatalogEntry.deleteMany({ where: { companyId } });
   await prisma.job.deleteMany({ where: { companyId } });
   await prisma.contact.deleteMany({ where: { companyId } });
+  // THE USER, BEFORE THE COMPANY. `User.companyId` is a RESTRICT child, so
+  // leaving it behind makes `company.deleteMany` fail with P2003 on
+  // `User_companyId_fkey` — which is the `InvoiceCounter` trap in CLAUDE.md
+  // arriving in a fixture: adding a child row is two edits, the row and the
+  // teardown.
+  //
+  // IT PASSED LOCALLY AND FAILED IN CI, and that difference is the thing worth
+  // remembering: running ONE dbtest file writes and tears down its own data,
+  // while CI runs the whole suite, so a teardown that cannot complete only
+  // shows up against everything else. A green single-file run is not evidence
+  // that a fixture cleans up after itself.
+  await prisma.user.deleteMany({ where: { companyId } });
   await prisma.company.deleteMany({ where: { id: companyId } });
   await prisma.$disconnect();
 });
