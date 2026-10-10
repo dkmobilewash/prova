@@ -298,3 +298,150 @@ describe("the panel says the footage is gross, because no test can see a screen"
     expect(viewer).toContain("openings === 0 ? null :");
   });
 });
+
+describe("a corridor is not a doorway, and is NARROWER than a double door", () => {
+  // ── WHAT THE FIRST VERSION DID, COUNTED ON THE DRAWING ──
+  //
+  // School-01 A-101, the region hand-counted the day before: seven runs crossed
+  // the 5'-7" corridor in front of exam rooms 110-114, joining each north
+  // partition to its matching south partition across open floor. About 39 feet
+  // of wall nobody can build, in one region, and the same again on the south
+  // side. The grid B wall became one 91-foot run from exterior to exterior.
+  //
+  // THE BOUND CANNOT FIX THIS. An egress corridor runs to 3'-8" and a double
+  // door is 6'-0", so no width separates them. What does is on the drawing: a
+  // corridor has its own two walls running across the ends of the gap.
+
+  /** Two exam partitions either side of a corridor, with the corridor's own
+   *  two walls running across. Lengths in feet, one unit per foot. */
+  const corridorScene = () => [
+    // The two partitions, north and south of the corridor, on one line.
+    wall(50, 0, 50, 20), // south partition
+    wall(50, 25.58, 50, 45), // north partition, 5'-7" away
+    // The corridor's own walls, running perpendicular across both ends.
+    wall(20, 20, 90, 20),
+    wall(20, 25.58, 90, 25.58),
+  ];
+
+  it("REFUSES to join two partitions across a corridor", () => {
+    const merged = mergeWalls(corridorScene(), 1);
+    const vertical = merged.filter((m) => Math.abs(m.x2 - m.x1) < 0.01);
+    expect(vertical, "the partitions were joined through open floor").toHaveLength(2);
+    for (const run of vertical) {
+      expect(run.lengthFeet, "a run spans the corridor").toBeLessThan(25);
+    }
+  });
+
+  it("STILL JOINS A DOORWAY in a wall with no corridor crossing it", () => {
+    // The same geometry with the corridor walls taken away is a door, and the
+    // whole point of this change is that it joins. Without this the fix would
+    // be a revert wearing a test.
+    const merged = mergeWalls(
+      [wall(50, 0, 50, 20), wall(50, 25.58, 50, 45)],
+      1,
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0].lengthFeet).toBeCloseTo(45, 4);
+  });
+
+  it("JOINS ACROSS A T-JUNCTION, where ONE wall meets but nothing crosses", () => {
+    // The case that makes "any perpendicular wall nearby" the wrong rule. A
+    // wall meeting this one side-on does not stop it, and refusing here would
+    // put back the fragmentation this change exists to remove.
+    const merged = mergeWalls(
+      [wall(50, 0, 50, 20), wall(50, 23, 50, 45), wall(20, 20, 50, 20)],
+      1,
+    );
+    const vertical = merged.filter((m) => Math.abs(m.x2 - m.x1) < 0.01);
+    expect(vertical).toHaveLength(1);
+    expect(vertical[0].lengthFeet).toBeCloseTo(45, 4);
+  });
+
+  it("JOINS ACROSS A COLUMN, which has no perpendicular wall at all", () => {
+    // The grid B case from the same count: "the stretch near the column".
+    const merged = mergeWalls([wall(50, 0, 50, 20), wall(50, 21.5, 50, 45)], 1);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].lengthFeet).toBeCloseTo(45, 4);
+  });
+
+  it("needs TWO DIFFERENT walls — a DOORWAY AT A T-JUNCTION still joins", () => {
+    // The `atFrom !== atTo` branch, and it is reachable: a 2ft gap is short
+    // enough that ONE perpendicular wall crossing it sits within the bounding
+    // distance of BOTH ends. That is a door right where another wall meets —
+    // common at a corridor return — and the wall plainly continues through it.
+    //
+    // The first version of this test used a PARALLEL wall, which the
+    // perpendicularity filter discards before any of this runs, so it passed
+    // without exercising the branch at all.
+    const merged = mergeWalls(
+      [wall(50, 0, 50, 20), wall(50, 22, 50, 45), wall(20, 21, 50, 21)],
+      1,
+    );
+    const vertical = merged.filter((m) => Math.abs(m.x2 - m.x1) < 0.01);
+    expect(vertical, "a door at a T-junction was refused as a corridor").toHaveLength(1);
+    expect(vertical[0].lengthFeet).toBeCloseTo(45, 4);
+  });
+
+  it("IGNORES WALLS PARALLEL TO THE RUN, which are not the sides of a corridor", () => {
+    // Found by mutation: dropping the perpendicularity filter left every test
+    // green, because every scene above only has perpendicular walls near a
+    // gap. A chase or a furring wall running ALONGSIDE a doorway is two walls
+    // near the two ends and is not a crossing — the corridor's defining
+    // feature is that its walls run ACROSS.
+    const merged = mergeWalls(
+      [
+        wall(50, 0, 50, 20),
+        wall(50, 25.58, 50, 45),
+        // Two separate stubs, parallel to the run, one beside each jamb.
+        wall(48.8, 17, 48.8, 20.5),
+        wall(48.8, 25, 48.8, 28),
+      ],
+      1,
+    );
+    const inLine = merged.filter((m) => Math.abs(m.x2 - m.x1) < 0.01 && Math.abs(m.x1 - 50) < 0.3);
+    expect(inLine, "a parallel wall beside the door was read as a corridor").toHaveLength(1);
+    expect(inLine[0].lengthFeet).toBeCloseTo(45, 4);
+  });
+
+  it("MEASURES TO THE SEGMENT, not to the line it lies on", () => {
+    // Also found by mutation. A perpendicular wall somewhere else in the
+    // building can lie on a line that passes right through this gap — gridlines
+    // make that the normal case, not a freak one. Without clamping to the
+    // segment, a wall fifty feet away refuses a doorway here.
+    const merged = mergeWalls(
+      [
+        wall(50, 0, 50, 20),
+        wall(50, 25.58, 50, 45),
+        // Perpendicular, on lines through both gap ends, but far to the east.
+        wall(120, 20, 170, 20),
+        wall(120, 25.58, 170, 25.58),
+      ],
+      1,
+    );
+    const inLine = merged.filter((m) => Math.abs(m.x2 - m.x1) < 0.01);
+    expect(inLine, "a wall fifty feet away refused this doorway").toHaveLength(1);
+    expect(inLine[0].lengthFeet).toBeCloseTo(45, 4);
+  });
+
+  it("DEGRADES THE SAFE WAY when the corridor's walls were never detected", () => {
+    // Nothing bounds the gap, so the join goes ahead — the same answer as
+    // before this existed, rather than refusing everything on a missing input.
+    const merged = mergeWalls([wall(50, 0, 50, 20), wall(50, 25.58, 50, 45)], 1);
+    expect(merged).toHaveLength(1);
+  });
+
+  it("refuses a corridor at a coarse scale too, where it is narrow in page units", () => {
+    // Four feet per unit: the corridor is 1.4 units across and still a
+    // corridor. A test that only worked at one foot per unit would pass on a
+    // detail sheet and fail on a plan.
+    const scene = [
+      wall(50, 0, 50, 5),
+      wall(50, 6.4, 50, 11),
+      wall(20, 5, 90, 5),
+      wall(20, 6.4, 90, 6.4),
+    ];
+    const merged = mergeWalls(scene, 4);
+    const vertical = merged.filter((m) => Math.abs(m.x2 - m.x1) < 0.01);
+    expect(vertical).toHaveLength(2);
+  });
+});
