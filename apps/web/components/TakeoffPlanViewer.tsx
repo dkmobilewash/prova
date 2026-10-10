@@ -945,6 +945,23 @@ export function TakeoffPlanViewer({
                     <span className="text-sm text-ink-body">
                       {cluster.runs.length} {cluster.runs.length === 1 ? "run" : "runs"} ·{" "}
                       {Math.round(cluster.feet).toLocaleString()} ft
+                      {/* ── THE FOOTAGE IS GROSS, AND IT SAYS SO ──
+                          A run joined across a doorway reports the whole wall,
+                          which is the correct take-off: `takeoff.ts` deducts
+                          nothing under 32 sq ft because a door still costs
+                          labour to cut and finish around, and the framing runs
+                          through it as a header. But a bigger number with no
+                          explanation is the next unexplained figure, so the
+                          openings it includes are counted here. */}
+                      {(() => {
+                        const openings = cluster.runs.reduce((n, run) => n + (run.openings?.length ?? 0), 0);
+                        return openings === 0 ? null : (
+                          <span className="text-ink-muted">
+                            {" "}
+                            · includes {openings} opening{openings === 1 ? "" : "s"}, not deducted
+                          </span>
+                        );
+                      })()}
                     </span>
                     {/* ── WHAT THE BUTTON PROMISES IS WHAT IT DOES ──
                         A matched group goes straight onto the estimate PRICED,

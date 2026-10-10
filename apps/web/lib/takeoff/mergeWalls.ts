@@ -55,6 +55,44 @@ const SAME_ANGLE = 0.05;
  */
 const SAME_LINE_FEET = 0.5;
 
+/**
+ * THE WIDEST GAP ON ONE LINE THAT IS STILL THE SAME WALL.
+ *
+ * ── THIS REVERSES A DECISION THIS FILE USED TO STATE OUTRIGHT, SO HERE IS THE
+ *    ARGUMENT ──
+ *
+ * The overlap test below carried the note: *"Without this, two walls far apart
+ * on one line — either side of a doorway, say — would merge into a single run
+ * straight through the opening."* That caution was right about large gaps and
+ * wrong about doors, and it was underbidding.
+ *
+ * Measured on School-01 A-101, 2026-10-10, five exam rooms counted off the
+ * drawing by hand: 233 feet of real wall, 197 feet found — 84%. **Every missing
+ * stretch was a door opening or a column.** The acoustic walls between the
+ * rooms, which have neither, came back at 92-100%.
+ *
+ * And a door SHOULD NOT be deducted. `takeoff.ts` sets
+ * `DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT` at 32 sq ft — "roughly a single
+ * door" — and says why: *"a door or a window still costs labour to cut and
+ * finish around, and deducting it underbids the work."* A 3'-0" × 7'-0" door is
+ * 21 sq ft, under the threshold, NOT deducted. The studs and track run through
+ * it too, as a header and cripples. So the correct take-off across a door is
+ * the GROSS length, and reporting two fragments either side of it is the exact
+ * underbid that threshold exists to prevent.
+ *
+ * ── WHY IT IS BOUNDED, WHICH IS THE HALF THE OLD NOTE GOT RIGHT ──
+ *
+ * Past a certain width a gap is not an opening, it is somewhere the wall stops:
+ * a corridor crossing, another room, the far side of the building. Joining
+ * across that invents wall nobody can build, and it invents it in the direction
+ * that overbids.
+ *
+ * 8 feet covers a single door (3'), a double door (6') and a wide cased opening.
+ * Beyond it this does nothing, and two findings stay two runs — the
+ * conservative direction, and the same one the old note chose for everything.
+ */
+export const MAX_OPENING_FEET = 8;
+
 type Projected = { from: number; to: number; thickness: number; weight: number };
 
 function dot(ax: number, ay: number, bx: number, by: number): number {
@@ -67,7 +105,11 @@ function dot(ax: number, ay: number, bx: number, by: number): number {
  * `feetPerUnit` converts the candidates' own units to feet, as everywhere else
  * in this directory. Input order does not affect the result.
  */
-export function mergeWalls(walls: readonly WallCandidate[], feetPerUnit: number): WallCandidate[] {
+export function mergeWalls(
+  walls: readonly WallCandidate[],
+  feetPerUnit: number,
+  maxOpeningFeet = MAX_OPENING_FEET,
+): WallCandidate[] {
   if (!(feetPerUnit > 0) || walls.length === 0) return [];
   const nearEnough = SAME_LINE_FEET / feetPerUnit;
 
@@ -125,7 +167,35 @@ export function mergeWalls(walls: readonly WallCandidate[], feetPerUnit: number)
       const bi = dot(walls[j].x1, walls[j].y1, a.ux, a.uy);
       const be = dot(walls[j].x2, walls[j].y2, a.ux, a.uy);
       const overlap = Math.min(Math.max(ai, ae), Math.max(bi, be)) - Math.max(Math.min(ai, ae), Math.min(bi, be));
-      if (overlap <= 0) continue;
+      // A NEGATIVE OVERLAP IS A GAP, and a gap narrower than an opening is
+      // still the same wall — see `MAX_OPENING_FEET`. Wider than that and these
+      // are two walls, exactly as this test used to insist for every gap.
+      if (overlap <= 0) {
+        // REDUNDANT AGAINST THE SPANS LOOP, and kept. Mutation says so: read
+        // this bound in page units instead of feet and nothing changes, because
+        // the loop at the end applies the same bound again in feet and is the
+        // binding one. This is a pre-filter — it keeps far-apart runs out of a
+        // group rather than grouping them and splitting them again — and the
+        // grouping is not free of consequence, since a group is rebuilt on its
+        // leader's line. Noted so the next reader does not spend a mutation on
+        // it, as I did.
+        if (-overlap > maxOpeningFeet / feetPerUnit) continue;
+        // ── A GAP-JOIN NEEDS TIGHTER COLLINEARITY THAN AN OVERLAP-MERGE ──
+        //
+        // Kept because the test that used to forbid all gap-joins was right
+        // about a second thing, and only the first was wrong. Two OVERLAPPING
+        // findings of one wall legitimately sit a third of a foot apart — that
+        // is two engines estimating a centreline differently, and merging them
+        // onto one line is correct. Two runs with a GAP between them making the
+        // same claim is weaker: if they really are one wall either side of a
+        // door, their faces are the same lines and the offset is a hair.
+        //
+        // At `nearEnough` a jog in a wall would be joined and then rebuilt on
+        // one line, sliding part of it across the drawing — "two runs of the
+        // right length in the wrong places, which no total catches", in the
+        // words of the test that caught this.
+        if (across > nearEnough / 4) continue;
+      }
       join(i, j);
     }
   }
@@ -171,6 +241,19 @@ export function mergeWalls(walls: readonly WallCandidate[], feetPerUnit: number)
       // other, and averaging that in would push a 4-7/8" partition into the
       // next wall type and price it wrong.
       const thickness = run.reduce((best, p) => (p.weight > best.weight ? p : best), run[0]).thickness;
+      // ── THE GAPS INSIDE THE JOINED RUN ARE THE OPENINGS ──
+      //
+      // Reported rather than deducted. `takeoff.ts` only deducts an opening
+      // over 32 sq ft and this cannot know a height — a floor plan does not
+      // carry one — so inventing one to deduct with would be a guess that
+      // reaches a bid. The WIDTH is measured, and that is what is handed over.
+      const ordered = [...run].sort((a, b) => a.from - b.from);
+      const openings: { widthFt: number }[] = [];
+      let reach = ordered[0].to;
+      for (const span of ordered.slice(1)) {
+        if (span.from > reach) openings.push({ widthFt: (span.from - reach) * feetPerUnit });
+        reach = Math.max(reach, span.to);
+      }
       merged.push({
         x1: from * ux - offset * uy,
         y1: from * uy + offset * ux,
@@ -178,12 +261,17 @@ export function mergeWalls(walls: readonly WallCandidate[], feetPerUnit: number)
         y2: to * uy + offset * ux,
         thicknessFeet: thickness,
         lengthFeet: (to - from) * feetPerUnit,
+        ...(openings.length > 0 ? { openings } : {}),
       });
       run = [];
     };
+    const gapAllowance = maxOpeningFeet / feetPerUnit;
     for (const span of spans) {
       const last = run[run.length - 1];
-      if (last && span.from <= Math.max(...run.map((p) => p.to))) {
+      // `+ gapAllowance` is the whole change: a doorway-sized gap keeps the
+      // span in the same run, and `flush` records it as an opening. Anything
+      // wider starts a new run, which is what this did for every gap before.
+      if (last && span.from <= Math.max(...run.map((p) => p.to)) + gapAllowance) {
         run.push(span);
       } else {
         flush();

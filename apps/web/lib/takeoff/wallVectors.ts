@@ -63,6 +63,17 @@ export type WallCandidate = {
   /** Along the centreline, in feet. Derived here only for the eval's grading;
    *  the app computes its own from the geometry and the live calibration. */
   lengthFeet: number;
+  /**
+   * Gaps INSIDE this run that are narrow enough to be openings, with their
+   * measured widths. Present only when `mergeWalls` joined across one.
+   *
+   * WIDTH AND NOT HEIGHT, because a floor plan does not carry a height and
+   * inventing one would be a guess that reaches a bid. `lengthFeet` is GROSS
+   * and includes these — which is the correct take-off for a door, since
+   * `takeoff.ts` deducts nothing under 32 sq ft and the framing runs through
+   * the opening as a header anyway.
+   */
+  openings?: { widthFt: number }[];
 };
 
 export type WallFinderOptions = {

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { mergeWalls } from "./mergeWalls";
 import type { WallCandidate } from "./wallVectors";
@@ -171,5 +173,128 @@ describe("merging what is the same wall", () => {
     const [merged] = mergeWalls([wall(0, 10, 40, 10, 0.4)], 1);
     expect(merged.lengthFeet).toBeCloseTo(40, 4);
     expect(merged.thicknessFeet).toBeCloseTo(0.4, 5);
+  });
+});
+
+describe("a doorway is not the end of the wall", () => {
+  // ── MEASURED, NOT ARGUED ──
+  //
+  // School-01 A-101, 2026-10-10: five exam rooms counted off the drawing by
+  // hand. 233 feet of real wall, 197 found — 84%. EVERY missing stretch was a
+  // door opening or a column; the acoustic walls between the rooms, which have
+  // neither, came back at 92-100%.
+  //
+  // And a door should not be deducted anyway. `takeoff.ts` deducts nothing
+  // under 32 sq ft because "a door or a window still costs labour to cut and
+  // finish around, and deducting it underbids the work" — a 3'-0" × 7'-0" door
+  // is 21 sq ft. The framing runs through it as a header. So GROSS is the
+  // correct take-off and two fragments either side is the underbid.
+
+  it("JOINS ACROSS A DOOR-SIZED GAP and reports the gross length", () => {
+    // 18ft of wall, a 3ft door, 19ft of wall. One 40ft run.
+    const merged = mergeWalls([wall(0, 10, 18, 10), wall(21, 10, 40, 10)], 1);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].lengthFeet, "gross, including the opening").toBeCloseTo(40, 4);
+  });
+
+  it("RECORDS THE OPENING ITS WIDTH, so it is reported and not merely swallowed", () => {
+    const merged = mergeWalls([wall(0, 10, 18, 10), wall(21, 10, 40, 10)], 1);
+    expect(merged[0].openings).toHaveLength(1);
+    expect(merged[0].openings?.[0].widthFt).toBeCloseTo(3, 4);
+  });
+
+  it("records EVERY opening along a wall, which is the corridor case", () => {
+    // The corridor wall in that region came back 85% covered, and the gaps
+    // were its five doors.
+    const merged = mergeWalls(
+      [wall(0, 10, 10, 10), wall(13, 10, 23, 10), wall(26, 10, 36, 10), wall(39, 10, 50, 10)],
+      1,
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0].lengthFeet).toBeCloseTo(50, 4);
+    expect(merged[0].openings).toHaveLength(3);
+    for (const opening of merged[0].openings ?? []) expect(opening.widthFt).toBeCloseTo(3, 4);
+  });
+
+  it("carries NO openings key when the run has no gaps in it", () => {
+    // An acoustic wall between two rooms. The field exists to report something,
+    // not to decorate every run with an empty array.
+    const merged = mergeWalls([wall(0, 10, 17, 10)], 1);
+    expect(merged[0].openings).toBeUndefined();
+  });
+
+  // ── THE BOUND, which is the half the old rule got right ──
+
+  it("REFUSES a gap too wide to be an opening", () => {
+    // Past a certain width a gap is not a door, it is where the wall stops: a
+    // corridor crossing, another room, the far side of the building. Joining
+    // invents wall nobody can build, and it overbids.
+    const merged = mergeWalls([wall(0, 10, 18, 10), wall(30, 10, 48, 10)], 1);
+    expect(merged, "a 12ft gap is not an opening").toHaveLength(2);
+  });
+
+  it("the bound is a width in FEET, not in page units", () => {
+    // Same geometry, half a foot per unit: the gap is now 1.5ft of building
+    // rather than 3, and still an opening. A bound that moved with the scale
+    // would join doors on one sheet and refuse them on the next.
+    const merged = mergeWalls([wall(0, 10, 18, 10), wall(21, 10, 40, 10)], 0.5);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].openings?.[0].widthFt).toBeCloseTo(1.5, 4);
+  });
+
+  it("AND AT A COARSE SCALE THE BOUND STILL BITES, which the case above cannot see", () => {
+    // Found by mutation: the case above passes whether the bound is divided by
+    // the scale or not, because at half a foot per unit both forms answer
+    // "join". The two only disagree when a gap is SMALL in page units and LARGE
+    // in feet — four feet per unit, three units apart, is twelve feet of
+    // building through which no wall runs.
+    const merged = mergeWalls([wall(0, 10, 18, 10), wall(21, 10, 40, 10)], 4);
+    expect(merged, "a 12ft gap joined because the bound was read in page units").toHaveLength(2);
+  });
+
+  it("STILL REFUSES a gap-join between runs that are not quite on one line", () => {
+    // The guard the old test was right about. Two OVERLAPPING findings of one
+    // wall legitimately sit a third of a foot apart — two engines estimating a
+    // centreline. Two runs with a GAP making the same claim is weaker: if they
+    // are one wall either side of a door, the offset is a hair.
+    //
+    // Without this a jog in a wall joins and is then rebuilt on one line,
+    // sliding part of it across the drawing.
+    const merged = mergeWalls([wall(0, 10, 18, 10), wall(21, 10.3, 40, 10.3)], 1);
+    expect(merged).toHaveLength(2);
+    const ys = merged.map((m) => m.y1).sort((a, b) => a - b);
+    expect(ys[0]).toBeCloseTo(10, 3);
+    expect(ys[1]).toBeCloseTo(10.3, 3);
+  });
+
+  it("can be turned off, and then behaves exactly as it used to", () => {
+    // `maxOpeningFeet: 0` is the old rule. Kept reachable so the change is a
+    // parameter rather than a rewrite, and so a caller that must not join can
+    // say so.
+    const merged = mergeWalls([wall(0, 10, 18, 10), wall(21, 10, 40, 10)], 1, 0);
+    expect(merged).toHaveLength(2);
+    expect(feet(merged)).toBeCloseTo(37, 4);
+  });
+});
+
+describe("the panel says the footage is gross, because no test can see a screen", () => {
+  // A CENSUS. Joining across openings makes every affected group REPORT MORE
+  // FEET than before, and a bigger number with no explanation beside it is the
+  // next unexplained figure — the thing the drawing-index check learned the
+  // hard way. The sentence is the whole mitigation, so it is pinned.
+  //
+  // It can see the words are there. It cannot see them rendered, which is why
+  // the click-list ends with somebody reading the panel.
+  const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+
+  it("counts the openings in the group and names them", () => {
+    expect(viewer).toContain("run.openings?.length ?? 0");
+    expect(viewer).toContain("not deducted");
+  });
+
+  it("says nothing when a group has no openings in it", () => {
+    // A permanent "includes 0 openings" on every group is the noise this app's
+    // own rule calls the thing that teaches people to stop reading notices.
+    expect(viewer).toContain("openings === 0 ? null :");
   });
 });
