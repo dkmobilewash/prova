@@ -35,7 +35,7 @@ const FOLLOW_UP_LABEL = {
  */
 const BAND_STYLE: Record<FitBand, string> = {
   STRONG: "bg-tag-green text-tag-green-ink",
-  WORTH_A_CALL: "bg-tag-blue text-tag-blue-ink",
+  WORTH_A_CALL: "bg-tag-brand text-tag-brand-ink",
   THIN: "bg-tag-slate text-tag-slate-ink",
   NOT_A_FIT: "bg-tag-rose text-tag-rose-ink",
 };
