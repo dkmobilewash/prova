@@ -200,6 +200,13 @@ export function TakeoffPlanViewer({
    * with each other, which is a class of bug rather than a tidy-up.
    */
   const [chosen, setChosen] = useState<Record<number, string>>({});
+  /** Whether the groups below the fold are showing. See `SHOWN_AT_FIRST`. */
+  const [showingAll, setShowingAll] = useState(false);
+  /** The rows on screen. Indexes into this ARE the indexes into `found`,
+   *  because it only ever truncates — every handler, the colour and the
+   *  overlay all key off the same number, and a slice that reordered would
+   *  silently hover one group and add another. */
+  const shownGroups = showingAll ? (found ?? []) : (found ?? []).slice(0, SHOWN_AT_FIRST);
   /** How many strokes the sheet held when it was last read, so an empty result
    *  can say which kind of empty it is. See the message below. */
   const [strokesSeen, setStrokesSeen] = useState(0);
@@ -439,6 +446,7 @@ export function TakeoffPlanViewer({
     setFindError(null);
     setFound(null);
     setChosen({});
+    setShowingAll(false);
     try {
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
       const page = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(pageNumber);
@@ -952,7 +960,7 @@ export function TakeoffPlanViewer({
           ) : (
             <>
               <p className="mb-2 text-sm text-ink-body">
-                Found {found.reduce((n, c) => n + c.runs.length, 0)} runs of wall. Each group is drawn on the
+                Found {found.reduce((n, c) => n + c.runs.length, 0)} runs of wall. Hover a row to pick its
                 sheet in its own colour — check it sits on real walls before adding it.
               </p>
               {/* WHAT THE TEMPLATE ACCOUNTED FOR, SAID OUT LOUD.
@@ -969,7 +977,7 @@ export function TakeoffPlanViewer({
                 </p>
               )}
               <ul className="flex flex-col gap-1">
-                {found.slice(0, 8).map((group, index) => {
+                {shownGroups.map((group, index) => {
                   const verdict = verdictFor(group);
                   const priced = pricedTypeFor(group, chosen[index]);
                   return (
@@ -1068,17 +1076,23 @@ export function TakeoffPlanViewer({
                   );
                 })}
               </ul>
-              {/* EIGHT RATHER THAN SIX SINCE THE TAG SPLIT, because one
-                  bucket now becomes several rows — School-01's 4-7/8in bucket
-                  alone becomes four. Six would have pushed real priced groups
-                  under a "and N smaller groups" line that carries no button. */}
-              {found.length > 8 && (
-                <p className="mt-2 text-xs text-ink-muted">
-                  And {found.length - 8} smaller {found.length - 8 === 1 ? "group" : "groups"}, holding{" "}
-                  {Math.round(found.slice(8).reduce((f, c) => f + c.feet, 0)).toLocaleString()} ft between them.
-                  A real floor plan carries more wall thicknesses than anybody expects; these are the ones a bid
-                  usually turns on.
-                </p>
+              {/* ── NOTHING IS OUT OF REACH, AND THAT IS THE WHOLE CHANGE ──
+                  This was a sentence. A real sheet put 488 ft — 26% of the
+                  drawing — behind it, with no row, no colour and no button,
+                  and some of what it hid was LARGER than what was shown,
+                  because the cut landed by cluster order rather than by size.
+                  Both halves are fixed: `wallGroups` orders by footage, and
+                  the rest of the list is one press away. */}
+              {found.length > SHOWN_AT_FIRST && !showingAll && (
+                <button
+                  type="button"
+                  onClick={() => setShowingAll(true)}
+                  className="mt-2 text-xs text-link underline hover:text-link-hover"
+                >
+                  Show the other {found.length - SHOWN_AT_FIRST}{" "}
+                  {found.length - SHOWN_AT_FIRST === 1 ? "group" : "groups"}, holding{" "}
+                  {Math.round(found.slice(SHOWN_AT_FIRST).reduce((f, c) => f + c.feet, 0)).toLocaleString()} ft
+                </button>
               )}
             </>
           )}
@@ -1248,6 +1262,22 @@ export function TakeoffPlanViewer({
  * "warning".
  */
 const CLUSTER_COLOURS = ["#38bdf8", "#f472b6", "#a78bfa", "#34d399", "#fbbf24", "#fb923c"];
+
+/**
+ * How many groups the panel opens with.
+ *
+ * TWICE THE PALETTE, and the two numbers are related on purpose. A colour
+ * repeats every six rows, so past twelve a chip stops being much of a
+ * signpost and HOVER is what tells a group apart — which is why the headline
+ * now says so rather than promising each group its own colour, a claim that
+ * stopped being true the moment the tag split multiplied the rows.
+ *
+ * Twelve is a starting point and not a ceiling: everything past it is one
+ * press away, which is the part that matters. The previous version of this
+ * was a hard cut at eight with a SENTENCE after it, and a real sheet put
+ * 488 ft behind that sentence.
+ */
+const SHOWN_AT_FIRST = 12;
 
 /**
  * THE FOUND WALLS, DRAWN ON THE DRAWING.

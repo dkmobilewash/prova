@@ -98,9 +98,20 @@ export function typesAtThickness(
  * the types it could be.
  *
  * A cluster becomes one group per tag found in it, plus one for whatever
- * carries no tag. Order is deliberate: tagged groups first, largest first, with
- * the remainder last — the named ones are the answers and the remainder is the
- * question, and a question reads better after the answers it depends on.
+ * carries no tag.
+ *
+ * ── LARGEST FIRST, ACROSS THE WHOLE SHEET ──
+ *
+ * This used to order per cluster — tagged groups first, remainder last — and
+ * the first real sheet to run through it showed why that is wrong. Splitting
+ * multiplies the rows: School-01's eight groups became seventeen, the panel
+ * shows a fixed number of them, and the cut landed by cluster order rather than
+ * by size. **488 ft, 26% of the sheet, fell below the fold** — and some of what
+ * was hidden was LARGER than what was shown.
+ *
+ * So the list is a work queue rather than a summary, and a work queue is
+ * ordered by what matters most. A tagged group wins a tie with the remainder it
+ * came from, because a name is a better answer than a thickness.
  *
  * A cluster nobody tagged comes back as a single REMAINDER group, which is the
  * common case and is why this cannot simply refuse an untagged run.
@@ -125,8 +136,7 @@ export function wallGroups(
       else byTag.set(tag, [run]);
     }
 
-    const tagged = [...byTag.entries()]
-      .map(([tag, runs]) => ({
+    const tagged = [...byTag.entries()].map(([tag, runs]) => ({
         inches: cluster.inches,
         runs,
         feet: feetOf(runs),
@@ -136,9 +146,8 @@ export function wallGroups(
         // and the company's A1 is recorded at a different thickness, that is
         // worth a person's attention and is not something to silently drop:
         // the thickness on file may be the thing that is wrong.
-        candidates: wallTypes.filter((type) => sameDesignation(type.code, tag)),
-      }))
-      .sort((a, b) => b.feet - a.feet || a.source.tag.localeCompare(b.source.tag));
+      candidates: wallTypes.filter((type) => sameDesignation(type.code, tag)),
+    }));
 
     out.push(...tagged);
     if (untagged.length > 0) {
@@ -151,7 +160,16 @@ export function wallGroups(
       });
     }
   }
-  return out;
+  // Largest first, across every cluster. A tie goes to the named group, then to
+  // the tag's own spelling so the order cannot wander between runs.
+  return out.sort(
+    (a, b) =>
+      b.feet - a.feet ||
+      Number(b.source.kind === "TAG") - Number(a.source.kind === "TAG") ||
+      (a.source.kind === "TAG" ? a.source.tag : "").localeCompare(
+        b.source.kind === "TAG" ? b.source.tag : "",
+      ),
+  );
 }
 
 function feetOf(runs: readonly WallCandidate[]): number {
