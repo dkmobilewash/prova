@@ -5,9 +5,9 @@ import { TAG_MAJORITY, matchClusterToWallType, matchSentence, sameDesignation } 
 import type { PostableWallType } from "./wallTypeMatch";
 
 const TYPES: PostableWallType[] = [
-  { id: "wt_w1", code: "W1", name: "⅝″ Type X both sides, 3-5/8 stud" },
-  { id: "wt_w2", code: "W-2", name: "One hour, double layer" },
-  { id: "wt_ext", code: "EXT-1", name: "Exterior sheathing" },
+  { id: "wt_w1", code: "W1", name: "⅝″ Type X both sides, 3-5/8 stud", thicknessIn: null },
+  { id: "wt_w2", code: "W-2", name: "One hour, double layer", thicknessIn: null },
+  { id: "wt_ext", code: "EXT-1", name: "Exterior sheathing", thicknessIn: null },
 ];
 
 const tagged = (...parts: [string, number][]) => parts.map(([name, feet]) => ({ name, feet }));
@@ -154,26 +154,54 @@ describe("the call site, because no test here can open a PDF", () => {
 
   const viewer = () => readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
 
-  it("SENDS THE MATCHED TYPE, which is what makes the group arrive priced", () => {
+  it("SENDS THE TYPE IT PROMISED, which is what makes the group arrive priced", () => {
     const text = viewer();
-    expect(text, "the matched type is never sent, so nothing is ever priced").toContain(
-      'body.set("wallTypeId", match.type.id)',
+    expect(text, "the resolved type is never sent, so nothing is ever priced").toContain(
+      'body.set("wallTypeId", priced.id)',
     );
-    // ONLY ON A MATCH. Every other state is a refusal this component must not
-    // overrule, and an unguarded `set` would post a group the drawing never
-    // named against whatever type happened to be first.
-    expect(text).toContain('if (match?.state === "MATCH") body.set("wallTypeId", match.type.id)');
+    // ONLY WHERE ONE WAS RESOLVED. Every other state is a refusal this
+    // component must not overrule, and an unguarded `set` would post a group
+    // the drawing never named against whatever type happened to be first.
+    expect(text).toContain("if (priced) body.set(\"wallTypeId\", priced.id)");
   });
 
-  it("COMPUTES the match from the same pass as the names on screen", () => {
-    // Two walks of the same runs would be the second list CLAUDE.md warns
-    // about, and the one that drifted would be the one on screen.
+  it("READS THE BUTTON AND THE SUBMIT FROM ONE FUNCTION", () => {
+    // ── THE FAILURE THIS REPLACES A WEAKER ASSERTION WITH ──
+    //
+    // The button's words and the form's `wallTypeId` are two readings of the
+    // same question. The way that goes wrong is a button promising "priced"
+    // over a submit that sends nothing — a bid short by a whole group, with
+    // the screen saying otherwise. One function, read by both, makes the two
+    // unable to disagree rather than merely expected to agree.
     const text = viewer();
-    expect(text).toContain("taggedFeetForClusters(clusters, walls, tags, feetPerUnit)");
-    expect(text).toContain("matchClusterToWallType(one, wallTypes)");
-    expect(text, "the names shown are derived from the same pass").toContain(
-      "taggedFeet.map((one) => one.map((part) => part.name))",
-    );
+    expect(text).toContain("function pricedTypeFor(");
+    // BOTH CALL SITES, COUNTED. `toContain` cannot tell them apart — they are
+    // the same string — so replacing the PANEL's copy with a literal left this
+    // green while the button promised a price the submit never sent. Found by
+    // mutation. Two is the whole population: the panel and the submit.
+    expect(
+      text.split("pricedTypeFor(group, chosen[index])").length - 1,
+      "the button and the submit no longer read the same value",
+    ).toBe(2);
+    // And the button's words come from that value rather than from anything
+    // computed beside it.
+    expect(text).toContain("`Add as ${priced.code} — priced`");
+  });
+
+  it("SPLITS THE GROUPS BY TAG BEFORE SHOWING ANY OF THEM", () => {
+    // A thickness bucket is not one wall type — School-01's 4-7/8in bucket
+    // held A1, A2, EXT-1 and C1, and 1,117 ft that could be priced as nothing.
+    const text = viewer();
+    expect(text).toContain("wallGroups(clusters, tagByRun(walls, tags, feetPerUnit), wallTypes)");
+  });
+
+  it("NEVER DEFAULTS THE ANSWER TO A QUESTION IT ASKED", () => {
+    // An `ASK` group has two types that a floor plan cannot choose between.
+    // Picking the first would be a coin flip printed as an answer, and the
+    // footage would look right.
+    const text = viewer();
+    expect(text).toContain("verdict.types.find((type) => type.id === pick) ?? null");
+    expect(text, "the chooser offers no pre-selected type").toContain('value={chosen[index] ?? ""}');
   });
 
   it("SAYS on the button what it is about to do", () => {
@@ -185,15 +213,15 @@ describe("the call site, because no test here can open a PDF", () => {
     expect(text).toContain("Add these");
   });
 
-  it("CARRIES THE DRAWING'S OWN WORD into the measurement label", () => {
-    // `4⅞" wall` is what the app measured; `W1 wall` is what the drawing calls
-    // it, and it is what an estimator looks for in the list and on the recap.
+  it("CARRIES THE RESOLVED TYPE'S OWN CODE into the measurement label", () => {
+    // `4⅞" wall` is what the app measured; `A1 wall` is what it will be priced
+    // as, and it is what an estimator looks for in the list and on the recap.
     const text = viewer();
-    expect(text).toContain("${match.tag} wall");
+    expect(text).toContain("${priced.code} wall");
   });
 
-  it("RENDERS THE REASON when there is one", () => {
+  it("RENDERS THE REASON, and every reason says where it came from", () => {
     const text = viewer();
-    expect(text).toContain("matchSentence(typeMatches[index]");
+    expect(text).toContain("groupSentence(group, verdict)");
   });
 });
