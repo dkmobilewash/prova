@@ -13,11 +13,16 @@ import { actionFail, actionOk, type ActionResult } from "./shared";
  * Gated like /ai (MANAGE_ESTIMATING).
  */
 
-async function resolve(id: string, status: "dismissed" | "done", verb: string): Promise<ActionResult> {
-  const context = await requireCompanyContext();
-  if (!can(context, "MANAGE_ESTIMATING")) {
-    return actionFail(`${verb} a recommendation isn't part of your job function. The account owner sets who sees what, on the Team page.`);
-  }
+const NO_ACCESS = "Closing a recommendation isn't part of your job function. The account owner sets who sees what, on the Team page.";
+
+// The capability check sits INSIDE each export rather than in the shared
+// helper: action-capability-guards reads an exported action's own body for
+// the guard, and a check it cannot see is a check it cannot keep.
+async function resolve(
+  context: { companyId: string; id: string },
+  id: string,
+  status: "dismissed" | "done",
+): Promise<ActionResult> {
   if (typeof id !== "string" || !id) return actionFail("Which recommendation?");
   const updated = await prisma.aiRecommendation.updateMany({
     where: { id, companyId: context.companyId },
@@ -30,9 +35,13 @@ async function resolve(id: string, status: "dismissed" | "done", verb: string): 
 }
 
 export async function dismissRecommendation(id: string): Promise<ActionResult> {
-  return resolve(id, "dismissed", "Dismissing");
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(NO_ACCESS);
+  return resolve(context, id, "dismissed");
 }
 
 export async function markRecommendationDone(id: string): Promise<ActionResult> {
-  return resolve(id, "done", "Closing");
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(NO_ACCESS);
+  return resolve(context, id, "done");
 }
