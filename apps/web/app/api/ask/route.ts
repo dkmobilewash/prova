@@ -4,6 +4,7 @@ import { streamAnswer, type AskRequest } from "@/lib/ask/answer";
 import { boundTurns } from "@/lib/ask/turns";
 import { attachmentRefOf } from "@/lib/ask/attachment";
 import type { CommandContext } from "@/lib/ask/commands";
+import { appendMessage, createThread, loadThread, persistStream, priorTurnsFrom } from "@/lib/ask/threads";
 
 /** Ask, streamed.
  *
@@ -36,7 +37,12 @@ import type { CommandContext } from "@/lib/ask/commands";
  * through this session's own companyId (`lib/ask/page-context-query.ts`),
  * so a forged path naming another company's job resolves to null, which is
  * byte-identical to sending no path. The worst a hostile payload achieves
- * is a wrong default among jobs the caller can already see. `/api/ask` is also on the
+ * is a wrong default among jobs the caller can already see.
+ *
+ * `threadId` and `subject` were added the same way (conversation memory,
+ * lib/ask/threads.ts). A threadId is looked up through this session's
+ * company AND person, so a forged one reads as no thread and starts a new
+ * one; a subject is a label stored on a new thread and never read through. `/api/ask` is also on the
  * middleware's protected list — requireCompanyContext already redirects
  * an anonymous caller, but that list is the allowlist a reader checks,
  * and a route missing from it looks public whether or not it is.
@@ -47,7 +53,31 @@ export const runtime = "nodejs";
 // and on rows that change.
 export const dynamic = "force-dynamic";
 
-type Body = { question?: unknown; pagePath?: unknown; priorTurns?: unknown; attachment?: unknown; continuation?: unknown };
+type Body = {
+  question?: unknown;
+  pagePath?: unknown;
+  priorTurns?: unknown;
+  attachment?: unknown;
+  continuation?: unknown;
+  threadId?: unknown;
+  subject?: unknown;
+};
+
+/** An id is a short token. Anything else is not one of ours. */
+function idOf(value: unknown): string | undefined {
+  return typeof value === "string" && /^[\w-]{1,64}$/.test(value) ? value : undefined;
+}
+
+/** Where a NEW thread was started — a bid, a job. Plain strings, bounded;
+ * stored on the thread for listing and never used to read a row, so a
+ * forged one widens nothing. */
+function subjectOf(value: unknown): { type: string; id: string } | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { type, id } = value as { type?: unknown; id?: unknown };
+  const cleanId = idOf(id);
+  if (typeof type !== "string" || !/^[a-zA-Z_]{1,32}$/.test(type) || !cleanId) return undefined;
+  return { type, id: cleanId };
+}
 
 /** Only string values, only string keys, and never more than a handful:
  * a chip answer is one field. */
@@ -130,8 +160,40 @@ export async function POST(request: Request) {
     },
   };
 
+  // THE THREAD. A threadId names one of THIS person's threads or nothing:
+  // loadThread scopes by the session's company AND person, so another
+  // person's id reads as null and simply starts a new thread — the same
+  // shape as a forged pagePath. When the thread exists its stored messages
+  // are the context and the browser's priorTurns are ignored (server wins);
+  // without one, priorTurns is still honoured for older clients.
+  //
+  // Memory failing must never cost an answer, so a database error here
+  // degrades to the old stateless behaviour rather than a 500.
+  const parsed = parseRequest(body);
+  let thread: { id: string; title: string } | null = null;
+  try {
+    const requested = idOf(body.threadId);
+    const existing = requested ? await loadThread(requested, ctx.companyId, ctx.userId) : null;
+    if (existing) {
+      thread = { id: existing.id, title: existing.title };
+      parsed.priorTurns = priorTurnsFrom(existing.messages);
+    } else if (parsed.question.trim() && parsed.question.length <= 1000) {
+      // Same bound streamAnswer refuses above, so a refused question does
+      // not leave an empty thread in Recent.
+      thread = await createThread(ctx.companyId, ctx.userId, parsed.question, subjectOf(body.subject));
+    }
+    // The person's turn, before the model runs. A chip answer re-sends the
+    // same question with a pick — that question is already in the thread.
+    if (thread && !parsed.continuation && parsed.question.trim()) {
+      await appendMessage(thread.id, { role: "user", content: parsed.question.trim() });
+    }
+  } catch {
+    thread = null;
+  }
+
   const encoder = new TextEncoder();
-  const events = streamAnswer(ctx, parseRequest(body));
+  const answer = streamAnswer(ctx, parsed);
+  const events = thread ? persistStream(answer, thread) : answer;
 
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {
