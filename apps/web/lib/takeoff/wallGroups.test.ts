@@ -63,12 +63,14 @@ describe("a tag splits a thickness group, and a tag is an identity", () => {
 
   it("matches a tagged group BY NAME, never by thickness", () => {
     // The drawing printed the name. That outranks any measurement, which is why
-    // a tagged group's candidates are not narrowed by thickness at all.
+    // a tagged group's candidates are not narrowed by thickness at all — a
+    // thickness that disagrees does NOT send the group looking for some other
+    // type, it stays A1 and the disagreement is reported.
     const a = run(40);
     const [group] = wallGroups([cluster(4.875, [a])], new Map([[a, "A1"]]), [type("A1", 9)]);
     const verdict = verdictFor(group);
-    expect(verdict.state).toBe("NAMED");
-    if (verdict.state === "NAMED") expect(verdict.type.code).toBe("A1");
+    expect(verdict.state).toBe("TAG_DISAGREES");
+    if (verdict.state === "TAG_DISAGREES") expect(verdict.type.code).toBe("A1");
   });
 
   it("refuses a tag naming a type the company does not have", () => {
@@ -96,6 +98,64 @@ describe("a tag splits a thickness group, and a tag is an identity", () => {
       "A2",
       "remainder",
     ]);
+  });
+});
+
+describe("when the drawing's name and the measurement disagree", () => {
+  // ── FOUND ON A REAL SHEET, AND ONLY VISIBLE SINCE #731 ──
+  //
+  // School-01 reported `B1` at three thicknesses at once and `EXT-1` at two.
+  // One assembly is not three thicknesses. Either the tag is on the wrong run —
+  // `tagByRun` assigns by proximity, and the nearest run to a label is not
+  // always the wall it names — or the library's thickness is wrong.
+  //
+  // Both are a person's call, and the app has no evidence for either, so it
+  // states the contradiction instead of resolving it. Before `WallType` carried
+  // a thickness this could not even be noticed.
+
+  const tagged = (inches: number, type: PostableWallType) => {
+    const a = run(40);
+    const [group] = wallGroups([cluster(inches, [a])], new Map([[a, type.code]]), [type]);
+    return group;
+  };
+
+  it("REFUSES TO PRICE a tagged group that is the wrong thickness for its type", () => {
+    // 3-3/8" of wall tagged B1, where B1 is recorded at 7-3/8". Pricing it as
+    // B1 prices an assembly twice as thick as what was drawn.
+    const verdict = verdictFor(tagged(3.375, type("B1", 7.375)));
+    expect(verdict.state, "a wall was priced as a type it cannot be").toBe("TAG_DISAGREES");
+  });
+
+  it("names BOTH numbers and both possibilities, and resolves neither", () => {
+    const group = tagged(3.375, type("B1", 7.375));
+    const text = groupSentence(group, verdictFor(group)) ?? "";
+    expect(text).toContain('3-3/8"');
+    expect(text).toContain('7-3/8"');
+    expect(text).toContain("tag belongs to a different wall");
+    expect(text).toContain("thickness on your B1 is wrong");
+  });
+
+  it("still prices a tagged group that AGREES", () => {
+    // The control. Without it a check that refused everything would pass.
+    expect(verdictFor(tagged(7.375, type("B1", 7.375))).state).toBe("NAMED");
+  });
+
+  it("allows the measurement noise a real sheet carries", () => {
+    // Same bound as the thickness match, for the same reason: a wall measured
+    // at 4.75 or 5.00 against a schedule value of 4.875 is the same wall, and
+    // flagging it would make this a notice nobody reads.
+    expect(verdictFor(tagged(4.75, type("A1", 4.875))).state).toBe("NAMED");
+    expect(verdictFor(tagged(5.0, type("A1", 4.875))).state).toBe("NAMED");
+  });
+
+  it("EXEMPTS a type with no thickness recorded", () => {
+    // Null means "cannot be matched by thickness", never "disagrees with
+    // everything". A library typed in before #731 is all nulls, and reading
+    // those as contradictions would refuse to price anything it tagged.
+    expect(
+      verdictFor(tagged(3.375, type("B1", null))).state,
+      "a library with no thicknesses stopped pricing tagged walls",
+    ).toBe("NAMED");
   });
 });
 
