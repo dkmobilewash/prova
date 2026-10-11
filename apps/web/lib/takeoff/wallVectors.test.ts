@@ -7,6 +7,8 @@ import { wallFromPair, wallsFromStrokes, type StrokeSegment, type WallFinderOpti
   NOT_A_BOX,
   wallsNotLettering,
   LETTER_FEET,
+  wallsNotTheSheetBorder,
+  MOST_OF_THE_SHEET,
   type WallCandidate,
 } from "./wallVectors";
 
@@ -51,10 +53,33 @@ describe("two faces a wall-thickness apart are a wall", () => {
     expect(wall?.lengthFeet).toBeCloseTo(20, 1);
   });
 
-  it("finds an 18in shaft wall, the thickest thing still a wall", () => {
-    const wall = wallFromPair(h(100, 500, 180), h(100, 500 + 1.5 * 9, 180), EIGHTH);
+  it("finds an 18in shaft wall when ASKED for one — it is no longer the default", () => {
+    // A CMU or double-stud shaft really is this thick, so this case is real and
+    // stays. What changed is that it must be asked for.
+    //
+    // The default cap came down to 12in because against a 60-page answer key an
+    // 18in cap left 188 ft of one page's exterior walls reading 12.44in — the
+    // envelope found, and priced as an assembly on no drawing. The 12.4in band
+    // is empty by 12in and the tighter caps the key would argue for (9.2in,
+    // its widest real assembly) cost three times the recall for a quarter more
+    // of the gain. Swept, not reasoned; the table is in `wallVectors.ts`.
+    const asked = wallFromPair(h(100, 500, 180), h(100, 500 + 1.5 * 9, 180), {
+      ...EIGHTH,
+      maxThicknessFeet: 1.5,
+    });
+    expect(asked).not.toBeNull();
+    expect(asked?.thicknessFeet).toBeCloseTo(1.5, 1);
+  });
+
+  it("REFUSES 18in by default, which is the change", () => {
+    // The mutation that matters: put the cap back to 1.5 and this reds.
+    expect(wallFromPair(h(100, 500, 180), h(100, 500 + 1.5 * 9, 180), EIGHTH)).toBeNull();
+  });
+
+  it("still finds a 12in wall, the widest the default admits", () => {
+    const wall = wallFromPair(h(100, 500, 180), h(100, 500 + 1.0 * 9, 180), EIGHTH);
     expect(wall).not.toBeNull();
-    expect(wall?.thicknessFeet).toBeCloseTo(1.5, 1);
+    expect(wall?.thicknessFeet).toBeCloseTo(1.0, 1);
   });
 });
 
@@ -436,5 +461,179 @@ describe("telling lettering from walls", () => {
   it("uses a length bound that a letter cannot reach and a wall easily can", () => {
     expect(LETTER_FEET).toBeGreaterThan(1);
     expect(LETTER_FEET).toBeLessThan(10);
+  });
+});
+
+/**
+ * THE SHEET'S OWN BORDER IS NOT A WALL.
+ *
+ * A click-through on a real permit set reported a group reading "10-1/2" · 1
+ * run · 114 ft" — a single line down the LEFT SHEET BORDER. One group, 114
+ * feet, entirely false, and the most inviting thing in the panel because it was
+ * the longest run on the sheet.
+ *
+ * The border is distinctive in one way nothing inside a building is: it runs
+ * the full extent of the PAGE. Measured on the sheet it was reported on, that
+ * border was ~95% of the page height, while the longest real wall was 68% of
+ * the width — so 90% sits in a gap rather than on a judgement call.
+ *
+ * Verified against the three real sheets from that click-through: it drops
+ * exactly the reported border on Augusta and NOTHING on Naples or West Herr.
+ */
+describe("telling the sheet border from a wall", () => {
+  // One unit = one foot here; the page is 168 x 120, a landscape sheet.
+  const PAGE_W = 168;
+  const PAGE_H = 120;
+
+  it("drops a run spanning almost the whole page height", () => {
+    const border = at(2, 2, 2, 116); // 114ft down a 120ft page — the real case
+    expect(wallsNotTheSheetBorder([border], PAGE_W, PAGE_H)).toEqual([]);
+  });
+
+  it("drops a run spanning almost the whole page WIDTH", () => {
+    const border = at(2, 2, 162, 2);
+    expect(wallsNotTheSheetBorder([border], PAGE_W, PAGE_H)).toEqual([]);
+  });
+
+  it("KEEPS A LONG EXTERIOR WALL, which is the whole risk", () => {
+    // The longest real wall measured on that sheet was 68% of the page width.
+    // Dropping it would trade a visible wrong line for an invisible short bid.
+    const exterior = at(10, 40, 124, 40); // 114ft across a 168ft page
+    expect(wallsNotTheSheetBorder([exterior], PAGE_W, PAGE_H)).toHaveLength(1);
+  });
+
+  it("measures against the run's OWN axis, not whichever came first", () => {
+    // 114ft is 95% of the height and 68% of the width. A vertical run of that
+    // length is the border; a horizontal one is a wall. Comparing against the
+    // wrong dimension is exactly how this would miss.
+    const vertical = at(2, 2, 2, 116);
+    const horizontal = at(10, 40, 124, 40);
+    const kept = wallsNotTheSheetBorder([vertical, horizontal], PAGE_W, PAGE_H);
+    expect(kept).toHaveLength(1);
+    expect(kept[0].y1).toBe(40);
+  });
+
+  it("keeps everything when the page size is unknown", () => {
+    // Filtering on a dimension that is not there would silently empty the
+    // drawing — the same fallback every other filter here carries.
+    const walls = [at(2, 2, 2, 116), at(10, 40, 124, 40)];
+    expect(wallsNotTheSheetBorder(walls, 0, 0)).toHaveLength(2);
+    expect(wallsNotTheSheetBorder(walls, PAGE_W, 0)).toHaveLength(2);
+  });
+
+  it("uses a fraction that clears a real wall and catches a border", () => {
+    expect(MOST_OF_THE_SHEET).toBeGreaterThan(0.7);
+    expect(MOST_OF_THE_SHEET).toBeLessThan(1);
+  });
+
+  it("returns nothing for nothing", () => {
+    expect(wallsNotTheSheetBorder([], PAGE_W, PAGE_H)).toEqual([]);
+  });
+});
+
+describe("a SEGMENTED sheet border, which the span rule alone cannot see", () => {
+  // Found by a browser run on Augusta A1.11, 2026-10-10 — the first time "Find
+  // the walls" had been pressed on a real drawing. The panel offered a
+  // "6-inch, 237 ft" group that was the drawing frame and the title-block
+  // lines, on a sheet 168 feet wide. An architectural border is four runs
+  // INSET from the paper that stop short of the corners, so each piece is well
+  // under `MOST_OF_THE_SHEET` and every one of them passed.
+  //
+  // The reporter named the hazard better than any test had: "The total footage
+  // looks plausible, which is the danger."
+
+  // An ARCH D sheet as the viewer hands it over: x a fraction of sheet width,
+  // y scaled by the same factor.
+  const W = 1;
+  const H = 0.667;
+  const at = (x1: number, y1: number, x2: number, y2: number): WallCandidate => ({
+    x1,
+    y1,
+    x2,
+    y2,
+    thicknessFeet: 0.5,
+    lengthFeet: 50,
+  });
+
+  it("DROPS a border segment that covers a third of the width along the top", () => {
+    // 0.33 of the sheet — nowhere near the 0.9 the span rule needs.
+    const kept = wallsNotTheSheetBorder([at(0.02, 0.012, 0.35, 0.012)], W, H);
+    expect(kept).toHaveLength(0);
+  });
+
+  it("DROPS border segments along all four sides", () => {
+    const frame = [
+      at(0.02, 0.012, 0.5, 0.012),
+      at(0.5, 0.655, 0.98, 0.655),
+      at(0.012, 0.02, 0.012, 0.4),
+      at(0.988, 0.3, 0.988, 0.64),
+    ];
+    expect(wallsNotTheSheetBorder(frame, W, H)).toHaveLength(0);
+  });
+
+  // ── THE THREE SAFETY CASES. Neither half of the rule is safe alone, and
+  //    mutation is what says so rather than argument.
+
+  it("KEEPS a long wall that is NOT in the edge strip", () => {
+    // Half the sheet — 84 feet of building on Augusta's scale, far longer than
+    // the border segments dropped above, and kept because of WHERE it is. The
+    // edge rule alone would have to drop this to catch a segmented border.
+    expect(wallsNotTheSheetBorder([at(0.25, 0.2, 0.75, 0.2)], W, H)).toHaveLength(1);
+  });
+
+  it("KEEPS a short wall that IS in the edge strip", () => {
+    // Position alone would drop the outermost partitions of a plan drawn close
+    // to the frame.
+    expect(wallsNotTheSheetBorder([at(0.3, 0.012, 0.4, 0.012)], W, H)).toHaveLength(1);
+  });
+
+  it("PINS THE EDGE STRIP so it cannot be widened to reach a title block", () => {
+    // `ALONG_THE_EDGE` is tight because nothing of the BUILDING is in that
+    // strip — the border occupies it and the plan is inside the border. A strip
+    // wide enough to cover a title block is a corner guess this module has no
+    // measurement for, and it would eat real wall on any sheet drawn out to the
+    // title-block strip. A wall 15% in is ordinary.
+    expect(wallsNotTheSheetBorder([at(0.2, 0.15, 0.8, 0.15)], W, H)).toHaveLength(1);
+    expect(wallsNotTheSheetBorder([at(0.15, 0.1, 0.15, 0.55)], W, H)).toHaveLength(1);
+  });
+
+  it("AND THE PRE-EXISTING SPAN RULE DROPS A REAL WALL, which this change does not fix", () => {
+    // Written after two of the safety cases above failed on fixtures spanning
+    // 94% and 96% of the sheet. They were not failing on the new rule — they
+    // were failing on `MOST_OF_THE_SHEET`, which has dropped any run over 90%
+    // of the sheet, at ANY position, since before this change.
+    //
+    // So a building scaled to fill its sheet loses its longest wall, silently,
+    // and that is a HAZARD rather than a feature: on Augusta's 168-foot sheet
+    // it is every wall over 151 feet. It is pinned here rather than changed,
+    // because changing it needs a measurement on real sheets that nobody has
+    // taken — the span rule is also the only thing catching a border drawn as
+    // one unbroken line, and loosening it without the edge rule proven on real
+    // drawings would trade a known false positive for an unknown one.
+    //
+    // Do not read this test as approval. It records what the code does.
+    const acrossTheWholeSheet = at(0.03, 0.33, 0.97, 0.33);
+    expect(wallsNotTheSheetBorder([acrossTheWholeSheet], W, H), "dropped by MOST_OF_THE_SHEET").toHaveLength(0);
+    // Same wall, shorter, away from the edge: kept. The rule is about span.
+    expect(wallsNotTheSheetBorder([at(0.1, 0.33, 0.8, 0.33)], W, H)).toHaveLength(1);
+  });
+
+  it("FALLS BACK TO THE SPAN RULE when the geometry is not inside the page given", () => {
+    // "Along the bottom edge" is meaningless if the walls extend past the
+    // stated page, and the failure mode is the worst kind: every run reads as
+    // edge-hugging, the filter returns NOTHING, and an empty panel looks like a
+    // sheet with no walls rather than a bug.
+    //
+    // The first attempt at this guard used a NEGATIVE band to mean "off", which
+    // inverted the rule instead of disabling it — `pageHeight - (-1)` is larger
+    // than the page, so everything hugged the bottom. A negative distance is
+    // not a disabled distance.
+    const outside = [at(0.02, 0.012, 0.35, 0.012)];
+    expect(wallsNotTheSheetBorder(outside, W, 0.001)).toHaveLength(1);
+  });
+
+  it("still drops a border drawn as ONE full-width line", () => {
+    // The original rule, unchanged. This is additive.
+    expect(wallsNotTheSheetBorder([at(0.01, 0.33, 0.99, 0.33)], W, H)).toHaveLength(0);
   });
 });

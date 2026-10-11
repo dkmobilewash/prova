@@ -398,6 +398,28 @@ export async function deleteWallRun(jobId: string, runId: string): Promise<RunRe
   if (!gate.ok) return gate;
   try {
     const summary = await prisma.$transaction(async (tx) => {
+      // ── THE MEASUREMENTS GO BACK TO UNPOSTED, FIRST ──
+      //
+      // Deleting this run deletes its estimate line. A measurement posted into
+      // it would otherwise keep saying "already on the estimate" for a line
+      // that no longer exists, and `postMeasuredWallRun` refuses anything
+      // already posted — so the estimator is left with a traced wall they
+      // cannot price and nothing on the estimate to show for it.
+      //
+      // Before the delete, because the FK is SetNull: afterwards there is no
+      // `wallRunId` left to find them by.
+      //
+      // `wallRunId: null` is REDUNDANT and kept deliberately: the FK is
+      // ON DELETE SET NULL, so Postgres clears it a line later whatever this
+      // says. Mutation confirms it — dropping it leaves all twelve tests
+      // green, which makes it the one change here no test can see. It stays
+      // because the clearing is then stated where it is read rather than
+      // inferred from a constraint two files away, and `postedAt` — the half
+      // that matters — is asserted either way.
+      await tx.takeoffMeasurement.updateMany({
+        where: { wallRunId: runId },
+        data: { postedAt: null, wallRunId: null },
+      });
       const removed = await tx.wallRun.deleteMany({ where: { id: runId, jobId, companyId } });
       if (removed.count === 0) throw new InputError("That wall run is already gone.");
       return syncWallScheduleLines(tx, companyId, jobId);

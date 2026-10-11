@@ -6,6 +6,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
 import { formatCalendarDate } from "@/lib/render-date";
 import { summariseWonValue, valueIsPartial } from "@/lib/bid-pipeline";
+import { summariseDeclines } from "@/lib/bid-decline";
 import { BidLevelling, type BidQuoteRow } from "@/components/BidLevelling";
 import { viewerToday, viewerTimeZone } from "@/lib/viewerToday";
 import { todayInZone } from "@/lib/viewer-timezone";
@@ -40,7 +41,7 @@ const STATUS_OPTIONS = [
 
 const STATUS_STYLE: Record<string, string> = {
   INVITED: "bg-neutral-800 text-ink-label",
-  SUBMITTED: "bg-tag-blue text-tag-blue-ink",
+  SUBMITTED: "bg-tag-brand text-tag-brand-ink",
   WON: "bg-tag-green text-tag-green-ink",
   LOST: "bg-tag-rose text-red-400",
   DECLINED: "bg-neutral-800 text-ink-muted",
@@ -157,6 +158,29 @@ export default async function BidsPage({
     bids.map((b) => ({ status: b.status, bidAmount: b.bidAmount === null ? null : Number(b.bidAmount) })),
   );
 
+  // ── WHY WE ARE NOT BIDDING WORK ──
+  //
+  // `DECLINED` has been a bare status since this model was written, so the page
+  // could report a count and never a cause. Eight declines for capacity means
+  // hire; eight for contract terms means one GC's paper is costing the
+  // relationship. Same number, different decision.
+  //
+  // Computed over the bids ALREADY LOADED rather than a second query — the
+  // rows are here, and a count that could only agree is a wasted trip. That
+  // does mean it respects the filters above, which is right: filtering to one
+  // trade and asking why those were declined is the useful version.
+  //
+  // `estimatedValue` is deliberately not read: `BidInvitation` has no such
+  // column, and `bidAmount` is what WE bid — on a declined bid there is no
+  // number, because declining is the decision not to produce one. So the
+  // summary counts and never sums, and `bid-decline.ts` carries the value
+  // field for a caller that has one.
+  const declineSummary = summariseDeclines(
+    bids
+      .filter((b) => b.status === "DECLINED")
+      .map((b) => ({ id: b.id, declineReason: b.declineReason, estimatedValue: null })),
+  );
+
   // "No bids match this filter" was shown on a brand-new account, where no
   // filter is set and nothing could match anything. The two states need
   // different sentences and only one of them is a dead end.
@@ -173,6 +197,50 @@ export default async function BidsPage({
         Every bid invitation logged across every GC — filter by trade or outcome to see what similar
         work has priced at before.
       </p>
+
+      {/* ── THE DECLINE PICTURE, WHEN THERE IS ONE ──
+
+          Absent entirely with no declines, rather than a panel reading zero:
+          a sub who has declined nothing does not need a heading about it, and
+          an empty panel on every account trains people to skip the area.
+
+          No verdict, no target, no flag on a GC who gets declined often. The
+          house rule — `bid-responsiveness.ts` says it of itself. A sub
+          declining most invitations may be correctly busy, and an app that
+          nagged about it would be wrong most of the time while sounding
+          authoritative. */}
+      {declineSummary.headline !== null && (
+        <section
+          className="mb-6 rounded-lg border border-line-card p-4"
+          data-bids="decline-summary"
+        >
+          <h2 className="text-sm font-semibold text-ink-label">Work turned down</h2>
+          <p className="mt-1 text-sm text-ink-body">{declineSummary.headline}</p>
+          {declineSummary.groups.length > 0 && (
+            <ul className="mt-3 flex flex-col gap-1">
+              {declineSummary.groups.map((group) => (
+                <li key={group.reason} className="flex items-baseline justify-between gap-3 text-sm">
+                  <span className="text-ink-body">{group.label}</span>
+                  <span className="shrink-0 tabular-nums text-ink-muted">
+                    {group.count} {group.count === 1 ? "bid" : "bids"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {declineSummary.unrecorded > 0 && (
+            /* SAID OUT LOUD, never folded into "Something else". "Nobody wrote
+               it down" and "the estimator chose Something else" are different
+               facts, and merging them makes the data look more complete than
+               it is. */
+            <p className="mt-3 text-xs text-ink-muted">
+              {declineSummary.unrecorded} of these {declineSummary.unrecorded === 1 ? "has" : "have"} no
+              reason recorded. The reason is asked for on the bid, never required — so this number is
+              how much of the picture is missing rather than a figure to drive to zero.
+            </p>
+          )}
+        </section>
+      )}
 
       <form method="get" className="mb-6 flex flex-wrap items-end gap-3" data-tour="bids-filter">
         <label className="flex flex-col gap-1 text-sm text-ink-label">
@@ -336,6 +404,27 @@ export default async function BidsPage({
                   <p className="text-sm font-medium text-ink">{money(Number(bid.bidAmount))}</p>
                 )}
               </Link>
+              {/* ── THE REGRET LETTER, ON A DECLINED BID ONLY ──
+
+                  A page nothing links to is a page nobody uses — #665's lesson,
+                  and the reason this link exists at all rather than the route
+                  being reachable only by typing it.
+
+                  Shown only on DECLINED. The letter renders for any bid, on
+                  purpose, because somebody may write it before changing the
+                  status — but a "decline to bid" link on a bid being actively
+                  priced is an invitation to misread the row. */}
+              {bid.status === "DECLINED" && (
+                <div className="px-4 pb-3">
+                  <Link
+                    href={`/bids/${bid.id}/regret`}
+                    data-bids="regret-link"
+                    className="text-xs text-link hover:underline"
+                  >
+                    Write the regret letter →
+                  </Link>
+                </div>
+              )}
               <BidLines
                 bidInvitationId={bid.id}
                 base={bid.bidAmount === null ? null : Number(bid.bidAmount)}
@@ -448,6 +537,7 @@ export default async function BidsPage({
                 bidInvitationId={bid.id}
                 vendors={vendors}
                 today={today}
+                bidDueDate={day(bid.dueDate)}
                 quotes={bid.quotes.map(
                   (quote): BidQuoteRow => ({
                     id: quote.id,

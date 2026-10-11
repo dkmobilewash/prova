@@ -26,6 +26,24 @@ import { ContactPersonRow } from "@/components/ContactPersonRow";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
 import { ActionForm } from "@/components/ActionForm";
+import { DECLINE_REASONS } from "@/lib/bid-decline";
+
+/**
+ * The decline reasons, in the order they are offered.
+ *
+ * Derived from `DECLINE_REASONS` rather than retyped, so a label changed in one
+ * place changes here too — and `bid-decline.test.ts` asserts every member has a
+ * label and a hint, which is what makes deriving safe.
+ *
+ * OTHER sorts last by construction: `Object.entries` preserves insertion order
+ * and it is declared last. A real reason should be easier to reach than the
+ * escape hatch.
+ */
+const DECLINE_REASON_OPTIONS = Object.entries(DECLINE_REASONS).map(([value, { label, hint }]) => ({
+  value,
+  label,
+  hint,
+}));
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -45,7 +63,7 @@ const BID_STATUS_OPTIONS = [
 
 const BID_STATUS_STYLE: Record<string, string> = {
   INVITED: "bg-neutral-800 text-ink-label",
-  SUBMITTED: "bg-tag-blue text-tag-blue-ink",
+  SUBMITTED: "bg-tag-brand text-tag-brand-ink",
   WON: "bg-tag-green text-tag-green-ink",
   LOST: "bg-tag-rose text-red-400",
   DECLINED: "bg-neutral-800 text-ink-muted",
@@ -329,6 +347,37 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                       title="Amount bid, once known"
                       className="w-24 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                     />
+                    {/* ── WHY, WHEN THE ANSWER IS DECLINED ──
+
+                        Always rendered rather than revealed by the select, and
+                        that is deliberate: this form is a server component with
+                        no state, so hiding it behind the status would need a
+                        client component for a field that costs one select of
+                        width. Shown always, it also tells somebody the question
+                        is asked BEFORE they decline — which is when they still
+                        remember the answer.
+
+                        No reason is pre-selected, and the first option is
+                        "Why? (optional)" rather than a real reason. A required
+                        dropdown gets its first option picked to get past the
+                        screen, and data that looks complete and is fiction is
+                        worse than blank — `lib/bid-decline.ts` counts the
+                        unrecorded ones as their own number instead. */}
+                    <select
+                      key={`${bid.id}-reason`}
+                      name="declineReason"
+                      defaultValue={bid.declineReason ?? ""}
+                      title="Why this was declined — only used when the status is Declined"
+                      data-bid="decline-reason"
+                      className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
+                    >
+                      <option value="">Why? (optional)</option>
+                      {DECLINE_REASON_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value} title={o.hint}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
                     <SubmitButton
                       type="submit"
                       className="rounded-md bg-neutral-800 px-2 py-1 text-xs font-medium text-ink hover:bg-neutral-700"

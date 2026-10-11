@@ -64,7 +64,7 @@ const GROUP_HEADING: Record<JobStatus, string> = {
 
 const STAGE_TONE: Record<string, string> = {
   NEEDS_PRICING: "border-line-card bg-tag-slate text-tag-slate-ink",
-  READY_TO_SEND: "border-transparent bg-tag-blue text-tag-blue-ink",
+  READY_TO_SEND: "border-transparent bg-tag-brand text-tag-brand-ink",
   OUT_FOR_SIGNATURE: "border-transparent bg-tag-amber text-tag-amber-ink",
   SIGNED: "border-transparent bg-tag-green text-tag-green-ink",
 };
@@ -593,7 +593,7 @@ export default async function TodayPage({
                       href={filterHref(filter.value, q)}
                       className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
                         isActive
-                          ? "border-brand bg-tag-blue text-tag-blue-ink"
+                          ? "border-brand bg-tag-brand text-tag-brand-ink"
                           : "border-line-card bg-surface text-ink-body hover:text-ink"
                       }`}
                     >

@@ -37,12 +37,19 @@ import {
 import {
   clusterByThickness,
   inchLabel,
-  wallsFromStrokes,
   wallsInTheBuilding,
   wallsNotLettering,
+  wallsNotTheSheetBorder,
   type WallCluster,
+  type StrokeSegment,
 } from "@/lib/takeoff/wallVectors";
+import { wallsFromBothEngines } from "@/lib/takeoff/wallRuns";
+import { pagesToSample, templateFromSheets, withoutTemplate } from "@/lib/takeoff/sheetTemplate";
+import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
+import { wallTypeTags, namesForClusters, taggedFeetForClusters, tagSentence } from "@/lib/takeoff/wallTags";
+import { matchClusterToWallType, matchSentence } from "@/lib/takeoff/wallTypeMatch";
+import type { PostableWallType, WallTypeMatch } from "@/lib/takeoff/wallTypeMatch";
 
 /**
  * THE MEASURING SURFACE — a PDF page rendered to a canvas, with an SVG
@@ -114,12 +121,19 @@ export function TakeoffPlanViewer({
   planId,
   sheets,
   printedScaleByPage,
+  levelByPage,
+  wallTypes,
   scalePrefillByPage,
   scaleDeclineByPage,
+  duplicateWallsByPage = {},
 }: {
   jobId: string;
   planId: string;
   sheets: PlanSheet[];
+  /** The company's wall types that have layers, so they produce line items.
+   *  Used only to MATCH the drawing's own tags against — the viewer never
+   *  chooses a type, it reports which one the drawing named. */
+  wallTypes: PostableWallType[];
   /**
    * The title-block scale per PAGE NUMBER, deliberately not per sheet.
    *
@@ -129,13 +143,35 @@ export function TakeoffPlanViewer({
    * `takeoff-plan-view.ts`.
    */
   printedScaleByPage: PrintedScaleByPage;
+  /** Which floor each sheet draws, read off its own title — see
+   *  `sheetLevel.ts`. Absent for a sheet whose title names no floor, which is
+   *  most of them on a single-storey job. */
+  levelByPage?: Record<number, string>;
   /** What each sheet said about its own scale, read off the dimensions
    *  printed on it. A PREFILL and never a calibration — see `ScalePrefill`. */
   scalePrefillByPage: ScalePrefillByPage;
   scaleDeclineByPage?: ScaleDeclineByPage;
+  /**
+   * Per page, why a wall takeoff here would probably be a DOUBLE COUNT.
+   *
+   * Empty for an ordinary floor plan, and that silence is the point: this is
+   * shown beside found walls on a mechanical plan, a reflected ceiling plan or
+   * an elevation, where the architectural walls are repeated in grey. Scored
+   * against a 60-page answer key, those sheets invented 13,767 ft — a third of
+   * everything the finder reported across the set.
+   *
+   * A CAUTION AND NOT A REFUSAL. A wall can genuinely be measured on a section,
+   * and a sheet number read by a model can be wrong; disabling the tool would
+   * remove a capability on a guess, and leave a reader unable to tell "no walls
+   * here" from "the app decided for me".
+   */
+  duplicateWallsByPage?: Record<number, string>;
 }) {
   const [pageNumber, setPageNumber] = useState(1);
   const [pageCount, setPageCount] = useState<number | null>(null);
+  /** How many strokes the set's own template accounted for, so the panel can
+   *  SAY it rather than quietly returning a smaller number. */
+  const [templateStrokes, setTemplateStrokes] = useState(0);
   // FIT by default. A sheet opens showing all of itself, which is what
   // somebody opening a drawing wants to see first; they zoom IN to measure.
   const [zoom, setZoom] = useState<Zoom>(FIT);
@@ -148,6 +184,20 @@ export function TakeoffPlanViewer({
   // somebody chose. That also means switching sheets or reloading simply
   // forgets them, which is the correct behaviour for a proposal nobody acted on.
   const [found, setFound] = useState<WallCluster[] | null>(null);
+  /**
+   * The assembly names the drawing gives each group, parallel to `found`.
+   *
+   * An empty list for a group means the drawing did not say, which is the USUAL
+   * case — only 25-43% of footage carries a tag, because an architect tags
+   * representative walls rather than every wall. See `wallTags.ts`.
+   */
+  const [tagNames, setTagNames] = useState<string[][]>([]);
+  /** Per group, which of the company's wall types the DRAWING named in it — or
+   *  why none could be identified. Parallel to `found`, same as `tagNames`. */
+  const [typeMatches, setTypeMatches] = useState<WallTypeMatch[]>([]);
+  /** How many strokes the sheet held when it was last read, so an empty result
+   *  can say which kind of empty it is. See the message below. */
+  const [strokesSeen, setStrokesSeen] = useState(0);
   const [finding, setFinding] = useState(false);
   const [findError, setFindError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
@@ -383,10 +433,13 @@ export function TakeoffPlanViewer({
     setFinding(true);
     setFindError(null);
     setFound(null);
+    setTagNames([]);
+    setTypeMatches([]);
     try {
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
       const page = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(pageNumber);
       const { segments } = await segmentsFromOpenPage(page, pdfjs, pageNumber);
+      setStrokesSeen(segments.length);
 
       // ── WHERE THE WORDS ARE ──
       //
@@ -400,31 +453,95 @@ export function TakeoffPlanViewer({
       const content = (await (page as { getTextContent: () => Promise<{ items: unknown[] }> }).getTextContent()) ?? {
         items: [],
       };
-      const textBoxes = content.items.flatMap((raw) => {
+      // ONE PASS, TWO CONSUMERS. `wallsNotLettering` wants boxes in page-width
+      // units and `wallTypeTags` wants the STRING with its box in points, so
+      // the text is read once and both are derived from it. A second
+      // `getTextContent()` pass would be a second decode of every glyph on a
+      // sheet that can carry tens of thousands.
+      const textItems = content.items.flatMap((raw) => {
         const item = raw as { str?: string; transform?: number[]; width?: number; height?: number };
         if (typeof item.str !== "string" || item.str.trim() === "" || !Array.isArray(item.transform)) return [];
         const m = pdfjs.Util.transform(viewport.transform, item.transform);
         const h = item.height ?? 0;
-        return [
-          {
-            x: m[4] / pageSize.widthPt,
-            y: (m[5] - h) / pageSize.widthPt,
-            width: (item.width ?? 0) / pageSize.widthPt,
-            height: h / pageSize.widthPt,
-          },
-        ];
+        return [{ str: item.str, x: m[4], y: m[5] - h, width: item.width ?? 0, height: h }];
       });
-      const inUnits = segments.map((segment) => ({
-        x1: segment.x1 / pageSize.widthPt,
-        y1: segment.y1 / pageSize.widthPt,
-        x2: segment.x2 / pageSize.widthPt,
-        y2: segment.y2 / pageSize.widthPt,
-        // NOT divided by the page width. The pen is compared against other
-        // pens on the same sheet, never against a distance — scaling it into
-        // page-width units would be arithmetic with no meaning.
-        width: segment.width,
+      const textBoxes = textItems.map((item) => ({
+        x: item.x / pageSize.widthPt,
+        y: item.y / pageSize.widthPt,
+        width: item.width / pageSize.widthPt,
+        height: item.height / pageSize.widthPt,
       }));
-      const everywhere = wallsFromStrokes(inUnits, { feetPerPoint: feetPerUnit });
+      // Page-width units: every stored figure is a fraction of THIS page's
+      // width, and `width` is deliberately left in points — the pen is compared
+      // against other pens on the same sheet, never against a distance, so
+      // scaling it would be arithmetic with no meaning.
+      const unitsOf = (over: number) => (one: StrokeSegment): StrokeSegment => ({
+        x1: one.x1 / over,
+        y1: one.y1 / over,
+        x2: one.x2 / over,
+        y2: one.y2 / over,
+        width: one.width,
+      });
+      const allInUnits = segments.map(unitsOf(pageSize.widthPt));
+
+      // ── THE SET'S OWN TEMPLATE, READ FROM OTHER SHEETS ──
+      //
+      // #722 fixed the drawing FRAME by geometry and said plainly that the
+      // title-block cells were still counted as walls: they are short runs
+      // inside the border, and every cheap way to guess that corner also drops
+      // real wall, because a plan is routinely drawn right up to it.
+      //
+      // This is the fix that needs no guess. The frame, the title block and the
+      // logo are the only geometry at the SAME page position on every sheet of
+      // a set. A wall is not.
+      //
+      // It costs a few extra page parses. `pagesToSample` spreads them across
+      // the whole document rather than taking neighbours, which is the
+      // identical-floors guard — levels 3 to 10 of a tower repeat their REAL
+      // walls, and evenly spaced samples cross disciplines, where nothing but
+      // the template survives. `sheetTemplate.ts` carries the reasoning and the
+      // fail-safe: too few sheets read and it filters nothing, because "cannot
+      // tell" must not mean "drop it".
+      let inUnits = allInUnits;
+      let templateDropped = 0;
+      try {
+        const sampled: StrokeSegment[][] = [];
+        for (const n of pagesToSample(doc.numPages, pageNumber)) {
+          if (n === pageNumber) {
+            sampled.push(allInUnits);
+            continue;
+          }
+          const other = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(n);
+          const read = await segmentsFromOpenPage(other, pdfjs, n);
+          // ITS OWN width, not this sheet's. A set with a mixed page size would
+          // otherwise compare one sheet's coordinates against another's scale.
+          sampled.push(read.segments.map(unitsOf(read.widthPt || pageSize.widthPt)));
+        }
+        const template = templateFromSheets(sampled);
+        if (template.size > 0) {
+          const kept = withoutTemplate(allInUnits, template);
+          templateDropped = allInUnits.length - kept.length;
+          inUnits = kept;
+        }
+      } catch {
+        // A page that will not parse is not a reason to refuse the sheet in
+        // front of somebody. Falling through leaves the geometric filters,
+        // which is exactly what this sheet had before.
+        inUnits = allInUnits;
+        templateDropped = 0;
+      }
+      setTemplateStrokes(templateDropped);
+      // BOTH ENGINES, MERGED. Pairing asks "are these two lines a wall" and
+      // needs no room to close; the room engine asks which enclosed regions are
+      // thin AND separate two different spaces, and does not care how the wall
+      // was drawn. Opposite blind spots, so neither wins alone -- measured
+      // through the filters below on three real sheets, the union beats both on
+      // every one of them (augusta 608/472 -> 707ft, naples 657/789 -> 1,302ft,
+      // west-herr 1,495/1,093 -> 1,679ft). `mergeWalls` is what stops the
+      // overlap being billed twice; see `wallRuns.ts`.
+      const everywhere = wallsFromBothEngines(inUnits, 1, pageSize.heightPt / pageSize.widthPt, {
+        feetPerPoint: feetPerUnit,
+      });
       // ONLY THE ONES IN THE BUILDING. Without this the title block, the notes
       // column, the sheet border and any detail drawn above the plan all come
       // back as walls — see `wallsInTheBuilding`, which exists because somebody
@@ -433,12 +550,42 @@ export function TakeoffPlanViewer({
       // AND NOT THE LETTERING. A stroked glyph is two parallel lines and the
       // pairer takes it — two whole groups on one real sheet were dimension
       // strings and room tags. See `wallsNotLettering`.
-      const walls = wallsNotLettering(inBuilding, textBoxes, feetPerUnit);
-      setFound(clusterByThickness(walls));
-    } catch {
+      const notLettering = wallsNotLettering(inBuilding, textBoxes, feetPerUnit);
+      // AND NOT THE SHEET'S OWN BORDER, which a real set offered as a 114ft
+      // wall — the longest single run in the panel and entirely false. The
+      // height is in page-width units, hence the aspect rather than 1.
+      const walls = wallsNotTheSheetBorder(notLettering, 1, pageSize.heightPt / pageSize.widthPt);
+      const clusters = clusterByThickness(walls);
+      setFound(clusters);
+      // ── WHAT THE DRAWING CALLS THESE, where it says so ──
+      //
+      // The panel otherwise names a group by a NUMBER, and an estimator still
+      // has to work out which of their own assemblies a 4-7/8in wall is. The
+      // drawing already answers that: it tags walls `EXT-1`, `A1`, `B1` beside
+      // the runs they label, and a name is what a catalogue is keyed on.
+      // ONE PASS FOR BOTH. `namesForClusters` is derived from
+      // `taggedFeetForClusters`, so reading the feet here costs nothing extra
+      // and the names on screen cannot disagree with the match beside them.
+      const tags = wallTypeTags(textItems, pageSize.widthPt);
+      const taggedFeet = taggedFeetForClusters(clusters, walls, tags, feetPerUnit);
+      setTagNames(taggedFeet.map((one) => one.map((part) => part.name)));
+      setTypeMatches(taggedFeet.map((one) => matchClusterToWallType(one, wallTypes)));
+    } catch (problem) {
       // The sheet is still on screen and the manual tools still work, so this
       // says what failed and stops — it does not take the page down.
-      setFindError("The lines on this sheet couldn't be read. Trace the walls by hand as usual.");
+      //
+      // A SHEET THAT IS SIMPLY TOO DENSE GETS ITS OWN SENTENCE, because the
+      // generic one sends somebody looking for a broken file. Page 7 of a real
+      // airport concourse set carries 30,822 lines long enough to be walls —
+      // 475 million pairs to test, against about a million on a sheet that
+      // works — and before `SheetTooDenseError` the finder simply never
+      // returned. "Couldn't be read" would be false: it was read fine and there
+      // is too much of it.
+      setFindError(
+        problem instanceof SheetTooDenseError
+          ? problem.message
+          : "The lines on this sheet couldn't be read. Trace the walls by hand as usual.",
+      );
     } finally {
       setFinding(false);
     }
@@ -451,9 +598,23 @@ export function TakeoffPlanViewer({
   async function onAcceptCluster(index: number) {
     const cluster = found?.[index];
     if (!cluster || !sheet) return;
+    const match = typeMatches[index];
     const body = new FormData();
     body.set("pageId", sheet.id);
-    body.set("label", `${inchLabel(cluster.inches)} wall`);
+    // ── THE LABEL CARRIES THE DRAWING'S OWN WORD WHERE THERE IS ONE ──
+    //
+    // `4⅞" wall` is what the app measured; `W1 wall` is what the drawing calls
+    // it, and it is what the estimator will be looking for in the list and on
+    // the recap. The thickness stays alongside it, because that is the evidence
+    // the match was right.
+    body.set(
+      "label",
+      match?.state === "MATCH" ? `${match.tag} wall — ${inchLabel(cluster.inches)}` : `${inchLabel(cluster.inches)} wall`,
+    );
+    // AND THE TYPE, so the action posts a priced run instead of bare
+    // quantities. Only on a MATCH: every other state is a refusal this
+    // component must not overrule.
+    if (match?.state === "MATCH") body.set("wallTypeId", match.type.id);
     for (const run of cluster.runs) {
       body.append("shape", JSON.stringify({ xs: [run.x1, run.x2], ys: [run.y1, run.y2] }));
     }
@@ -620,6 +781,45 @@ export function TakeoffPlanViewer({
           {finding ? "Reading the lines…" : "Find the walls"}
         </button>
 
+        {/* ── THERE IS NO "FIND THE ROOMS" BUTTON, AND THAT IS DELIBERATE ──
+            #702 shipped one and it was clicked on real sheets the same day.
+            It runs, it is fast, and ITS ANSWER IS WRONG in a way that reads as
+            right: on a West Herr floor plan it reported 46 rooms and 4,555 sf
+            for a building about 290 ft across, having missed Showroom 101,
+            Sales 103, Hospitality 105, New Car Delivery 140 and the whole
+            right-hand wing — while outlining a parked car, the gaps between
+            dimension strings, and two keynote tags.
+
+            That is the worst shape a takeoff can have: a confident number that
+            is far too low. An estimator who trusts it bids half a building.
+
+            The cause is known and is not a threshold. `roomAreas.ts` rasterises
+            EVERY stroke, so a leader line crossing a room cuts the region in
+            half and a dimension string encloses one of its own. The wall finder
+            has `wallsNotLettering`, `wallsInTheBuilding` and
+            `wallsNotTheSheetBorder` for exactly this; the room finder has none
+            of them. See `roomAreas.ts`'s header.
+
+            `roomAreas.ts` and its tests stay: the geometry is right and the fix
+            is to what reaches it. The BUTTON is gone until the numbers say it
+            is fit to use, and `takeoffRoomFinder.test.tsx` now asserts it is
+            absent so it cannot come back without somebody reading this. */}
+
+        {/* WHICH FLOOR THIS SHEET DRAWS, beside the scale because that is the
+            other thing about a sheet an estimator has to know before tracing
+            it. Silent when the title names no floor — a single-storey job has
+            no levels and a label saying "no level" would be noise on every
+            sheet of it. See `sheetLevel.ts` for why a sheet naming TWO floors
+            is also silent. */}
+        {levelByPage?.[pageNumber] !== undefined && (
+          <span
+            data-takeoff="sheet-level"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body"
+          >
+            {levelByPage[pageNumber]}
+          </span>
+        )}
+
         <span className="ml-auto text-xs text-ink-muted">
           {calibration ? (
             <>
@@ -658,12 +858,55 @@ export function TakeoffPlanViewer({
           honest than "it does your takeoff": the biggest wall types come for
           free. Accepting one group on one real sheet replaced ninety-nine hand
           traces. Whatever it missed is still traced the way it always was. */}
+      {/* ── THE SHEET IS THE INSTRUMENT, SO IT GETS THE ROOM ──
+          Found walls used to stack ABOVE the drawing, and the frame reserved a
+          fixed 22rem for them whether they were there or not. With six groups
+          showing, the panel took the top half of the screen and the sheet was
+          left a short strip — and because Fit fits BOTH dimensions, a short
+          frame makes a small sheet, so the width beside it went empty. A real
+          click-through landed at 11% zoom with a third of the screen black.
+
+          That is backwards for a feature whose entire verification step is
+          LOOKING at the drawing: the found walls are a claim, and the sheet is
+          the only thing that can check it. So on a wide screen they sit side by
+          side and the drawing takes what is left, which is most of it. Narrow
+          screens keep the stack, where a column each would make both unusable. */}
+      <div className="flex flex-col gap-3 xl:flex-row-reverse xl:items-start">
       {found !== null && (
-        <div className="mt-2 rounded-md border border-line-card bg-surface p-3" data-takeoff="found-walls">
+        <div
+          className="rounded-md border border-line-card bg-surface p-3 xl:w-[23rem] xl:shrink-0 xl:overflow-auto xl:max-h-[calc(var(--shell-port)-11rem)]"
+          data-takeoff="found-walls"
+        >
+          {/* ABOVE the groups, because a caution under the thing it is about is
+              read after the decision has been made — `PlanSheetReview`'s
+              convention and the one the quote reader's cautions follow. */}
+          {duplicateWallsByPage[pageNumber] && found.length > 0 && (
+            <p
+              className="mb-3 rounded-md bg-tag-amber p-2 text-xs text-tag-amber-ink"
+              data-takeoff="duplicate-walls-caution"
+            >
+              <span className="font-semibold">Check this is the right sheet. </span>
+              {duplicateWallsByPage[pageNumber]}
+            </p>
+          )}
           {found.length === 0 ? (
-            <p className="text-sm text-ink-body">
-              No walls found on this sheet. That is a fact about the drawing, not a failure — a scanned or
-              image-only sheet has no lines to read. Trace them by hand as usual.
+            /* ── TWO KINDS OF EMPTY, AND THIS SAID THE WRONG ONE ──
+
+               It read: "a scanned or image-only sheet has no lines to read."
+               That is one reason a sheet yields nothing, and the app had no
+               idea whether it was THIS sheet's reason. A click-through found it
+               on a drawing made entirely of line work and said so: the sheet
+               was plainly not a scan, and the message asserted a cause nobody
+               had established.
+
+               The app knows which it is — it has just counted the strokes. A
+               sheet with none is genuinely an image; a sheet with fifty
+               thousand has lines that did not pair, which is a different fact
+               and a different thing for an estimator to do about it. */
+            <p className="text-sm text-ink-body" data-takeoff="no-walls">
+              {strokesSeen === 0
+                ? "No walls found: this sheet has no line work at all, so it is an image or a scan. There is nothing here to read. Trace them by hand as usual."
+                : `No walls found. This sheet does have line work — ${strokesSeen.toLocaleString()} lines — but none of it paired up as a wall. That happens when walls are drawn as a single line or as solid fill rather than two faces. Trace them by hand as usual.`}
             </p>
           ) : (
             <>
@@ -671,6 +914,19 @@ export function TakeoffPlanViewer({
                 Found {found.reduce((n, c) => n + c.runs.length, 0)} runs of wall. Each group is drawn on the
                 sheet in its own colour — check it sits on real walls before adding it.
               </p>
+              {/* WHAT THE TEMPLATE ACCOUNTED FOR, SAID OUT LOUD.
+                  A filter that quietly returns a smaller number is how the next
+                  unexplained figure gets created — the same rule the drawing-index
+                  check learned the hard way. If this number is large and the panel
+                  is empty, the filter is the first thing to suspect rather than the
+                  sheet. */}
+              {templateStrokes > 0 && (
+                <p className="mb-2 text-xs text-ink-muted">
+                  {templateStrokes.toLocaleString()} line{templateStrokes === 1 ? "" : "s"} on this sheet also
+                  appear in the same place on the rest of the set — the border, the title block and the logo —
+                  so they were left out.
+                </p>
+              )}
               <ul className="flex flex-col gap-1">
                 {found.slice(0, 6).map((cluster, index) => (
                   <li
@@ -685,17 +941,61 @@ export function TakeoffPlanViewer({
                       style={{ backgroundColor: CLUSTER_COLOURS[index % CLUSTER_COLOURS.length] }}
                     />
                     <span className="text-sm font-medium text-ink">{inchLabel(cluster.inches)}</span>
+                    <ClusterTag names={tagNames[index] ?? []} />
                     <span className="text-sm text-ink-body">
                       {cluster.runs.length} {cluster.runs.length === 1 ? "run" : "runs"} ·{" "}
                       {Math.round(cluster.feet).toLocaleString()} ft
+                      {/* ── THE FOOTAGE IS GROSS, AND IT SAYS SO ──
+                          A run joined across a doorway reports the whole wall,
+                          which is the correct take-off: `takeoff.ts` deducts
+                          nothing under 32 sq ft because a door still costs
+                          labour to cut and finish around, and the framing runs
+                          through it as a header. But a bigger number with no
+                          explanation is the next unexplained figure, so the
+                          openings it includes are counted here. */}
+                      {(() => {
+                        const openings = cluster.runs.reduce((n, run) => n + (run.openings?.length ?? 0), 0);
+                        return openings === 0 ? null : (
+                          <span className="text-ink-muted">
+                            {" "}
+                            · includes {openings} opening{openings === 1 ? "" : "s"}, not deducted
+                          </span>
+                        );
+                      })()}
                     </span>
+                    {/* ── WHAT THE BUTTON PROMISES IS WHAT IT DOES ──
+                        A matched group goes straight onto the estimate PRICED,
+                        so the button says so. An unmatched one still writes
+                        plain measurements, exactly as before, and says that
+                        instead — the difference matters because one of them is
+                        finished work and the other is a step. */}
                     <button
                       type="button"
                       onClick={() => void onAcceptCluster(index)}
-                      className="ml-auto min-h-[36px] rounded-md border border-line-card px-3 text-xs font-medium text-ink-body hover:bg-rail-hover"
+                      className={`ml-auto min-h-[36px] rounded-md border px-3 text-xs font-medium ${
+                        typeMatches[index]?.state === "MATCH"
+                          ? "border-brand bg-tag-brand text-tag-brand-ink hover:opacity-90"
+                          : "border-line-card text-ink-body hover:bg-rail-hover"
+                      }`}
                     >
-                      Add these
+                      {typeMatches[index]?.state === "MATCH"
+                        ? `Add as ${(typeMatches[index] as { tag: string }).tag} — priced`
+                        : "Add these"}
                     </button>
+                    {/* ── AND WHY, UNDERNEATH ──
+                        `matchSentence` returns null for an untagged group on
+                        purpose: a line reading "no tag found" on every one of
+                        them is the permanent notice this file's own rule calls
+                        noise that teaches people to stop reading notices. The
+                        two refusals DO get a sentence, because an estimator
+                        acts on them differently — a missing wall type is
+                        something to go and create, a mixed group is something
+                        to trace separately. */}
+                    {matchSentence(typeMatches[index] ?? { state: "NO_TAG" }) !== null && (
+                      <p className="w-full text-xs text-ink-muted">
+                        {matchSentence(typeMatches[index] ?? { state: "NO_TAG" })}
+                      </p>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -720,9 +1020,19 @@ export function TakeoffPlanViewer({
       )}
 
       {/* ── The sheet ─────────────────────────────────────────────── */}
+      {/* The height reserve shrinks to 11rem once the panel is beside rather
+          than above; that reserve is the toolbar and the page's own padding,
+          and nothing else.
+
+          NO `min-w-0` HERE, though a flex child's default min-width would
+          normally demand it: this frame is `overflow-auto`, which establishes a
+          scroll container and resets the min-content floor by itself. It was
+          written in first, on the usual reasoning, and measured out — identical
+          boxes at 1512, 1280, 1024 and 768 with and without it. Unreachable
+          code shaped like a safeguard is worse than none. */}
       <div
         ref={frameRef}
-        className="relative max-h-[calc(var(--shell-port)-22rem)] min-h-[24rem] overflow-auto rounded-lg border border-line-card bg-neutral-900"
+        className="relative max-h-[calc(var(--shell-port)-22rem)] min-h-[24rem] overflow-auto rounded-lg border border-line-card bg-neutral-900 xl:flex-1 xl:max-h-[calc(var(--shell-port)-11rem)]"
         data-testid="takeoff-plan-port"
       >
         {loadError ? (
@@ -773,6 +1083,8 @@ export function TakeoffPlanViewer({
         {isRendering && !loadError && (
           <p className="absolute right-3 top-3 rounded bg-neutral-800 px-2 py-1 text-xs text-ink-muted">Drawing…</p>
         )}
+      </div>
+
       </div>
 
       {/* ── What the draft reads, and what to do with it ──────────── */}
@@ -889,6 +1201,43 @@ const CLUSTER_COLOURS = ["#38bdf8", "#f472b6", "#a78bfa", "#34d399", "#fbbf24", 
  * Dashed, and painted under the saved measurements, so a proposal never looks
  * like something already counted.
  */
+/**
+ * ── THE NAME THE DRAWING GIVES A THICKNESS GROUP ──
+ *
+ * A thickness is what was MEASURED; a name is what gets mapped to a wall type
+ * and priced. Shown beside the thickness rather than instead of it, because the
+ * thickness is what an estimator checks against the drawing and the name is
+ * what they act on.
+ *
+ * Renders NOTHING for a group the drawing did not tag, and that is the usual
+ * case: only 25-43% of footage carries a tag, because an architect tags
+ * representative walls and not every wall. A reassuring phrase on every
+ * untagged group would bury the real names.
+ *
+ * ── EXPORTED BECAUSE THE PANEL CANNOT BE MOUNTED IN A TEST ──
+ *
+ * The group list only exists after Find-the-walls has run, which needs pdf.js
+ * on a canvas — and that never renders in happy-dom, where
+ * `getBoundingClientRect` returns zeros. Measured rather than assumed: a probe
+ * pressed Set scale, then the port, then the SVG, and the sheet read
+ * "Drawing…" throughout. So this is a component so that `wallTags.test.ts`
+ * can render it, which is the #665 lesson — a census proves the code is there,
+ * only rendering proves somebody can see it.
+ */
+export function ClusterTag({ names }: { names: readonly string[] }) {
+  const sentence = tagSentence(names);
+  if (sentence === null) return null;
+  return (
+    <span
+      className="rounded bg-tag-slate px-1.5 py-0.5 text-xs font-medium text-tag-slate-ink"
+      data-takeoff="cluster-tag"
+      title={sentence}
+    >
+      {names.join(" / ")}
+    </span>
+  );
+}
+
 export function FoundWalls({
   clusters,
   hovered,
@@ -994,7 +1343,21 @@ function Shape({
  * without somebody having looked at the line, which matters because a scale
  * error multiplies through every wall on the sheet.
  */
-function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => void }) {
+/**
+ * EXPORTED FOR A RENDER TEST, and the reason is a limit rather than a
+ * preference. The panel this returns lives inside `CalibrationForm`'s DRAFT
+ * branch, which needs a line drawn on the sheet — and the sheet is pdf.js on a
+ * canvas, which never renders in happy-dom (`getBoundingClientRect` returns
+ * zeros, so no click can become a point). Mounting the whole viewer therefore
+ * cannot reach this panel at all, measured rather than assumed: a probe clicked
+ * Set scale, then the port, then the SVG, and the sheet read "Drawing…"
+ * throughout.
+ *
+ * So `reducedPrintCaution.test.tsx` renders this directly. That proves the
+ * branch and its wording, and it deliberately does NOT claim the panel is
+ * navigable — see that file's own note on what it is and is not evidence for.
+ */
+export function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => void }) {
   // Both of these are PURE and live in `takeoff-plan-view.ts`, where they are
   // tested — the wording of a measured error and the order of the evidence are
   // decisions, and a decision written inline in JSX is one no test can reach.
@@ -1013,8 +1376,30 @@ function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => vo
   if (prefill.unconfirmed) {
     return (
       <div className="rounded-md border border-line-card bg-surface p-2">
+        {/* ── A REDUCED PRINT GOES FIRST, AND IN THE WARNING COLOUR ──
+            It is not a footnote to the scale, it is a correction OF the scale:
+            the number above it has already been changed, and an estimator who
+            reads only the first line has to be the one who learns that. The
+            key's page 50 measured every length at half without this. */}
+        {prefill.reducedPrintCaution !== undefined && (
+          <p
+            className="mb-2 rounded bg-tag-amber px-2 py-1 text-[11px] font-medium text-tag-amber-ink"
+            data-takeoff="reduced-print-caution"
+          >
+            {prefill.reducedPrintCaution}
+          </p>
+        )}
         <p className="text-xs text-ink-body">
-          The title block on this sheet says <span className="font-semibold text-ink">{prefill.scaleName}</span>.
+          {prefill.reducedPrintCaution === undefined ? (
+            <>
+              The title block on this sheet says <span className="font-semibold text-ink">{prefill.scaleName}</span>.
+            </>
+          ) : (
+            <>
+              Corrected for the reduction, this sheet measures{" "}
+              <span className="font-semibold text-ink">{prefill.scaleName}</span>.
+            </>
+          )}
         </p>
         <p className="mt-1 text-[11px] text-ink-muted">
           {/* Said plainly rather than softened. The estimator is accepting a
@@ -1366,6 +1751,29 @@ function MeasurementForm({
             name="label"
             placeholder={kind === "COUNT" ? "can light" : "North corridor"}
             className="w-56 rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
+          />
+        </label>
+        {/* ── WHICH PRICING PACKAGE THIS QUANTITY IS IN ──
+
+            Blank is the BASE BID, and the placeholder says so rather than
+            leaving it to be inferred from an empty box. That default is the
+            safety argument: an estimator who does not think about this puts the
+            quantity in the number sent to the GC, which is the recoverable
+            error. The opposite default bids LOW, and a low bid is work won at a
+            loss and then built.
+
+            `bg-surface` rather than `bg-surface-input` like its neighbour, and
+            not a style choice: `surface-input` resolves to nothing on this
+            near-black canvas (issue #573) and `colorTokenCensus.test.ts` pins
+            the family at exactly 39 uses so it fails when it GROWS. A fortieth
+            would red CI. */}
+        <label className="flex flex-col gap-1 text-xs text-ink-label">
+          Pricing package
+          <input
+            name="packageLabel"
+            placeholder="Base bid"
+            data-takeoff="package-label"
+            className="w-48 rounded-md border border-line-card bg-surface px-2 py-1 text-sm text-ink-body"
           />
         </label>
         <SubmitButton

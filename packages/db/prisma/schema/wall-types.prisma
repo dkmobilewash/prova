@@ -145,6 +145,10 @@ model WallRun {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// The traced measurements this run was posted from, if any. Deleting the
+  /// run releases them rather than deleting them — see `TakeoffMeasurement`.
+  measurements TakeoffMeasurement[]
+
   @@index([companyId])
   @@index([jobId])
   @@index([wallTypeId])

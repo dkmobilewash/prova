@@ -83,7 +83,7 @@ export type LinkableInvitation = { id: string; label: string };
 
 const STAGE_STYLE: Record<BidPursuitStage, string> = {
   WATCHING: "bg-neutral-800 text-ink-label",
-  CONTACTED: "bg-tag-blue text-tag-blue-ink",
+  CONTACTED: "bg-tag-brand text-tag-brand-ink",
   EXPECTING_INVITE: "bg-tag-amber text-tag-amber-ink",
   INVITED: "bg-tag-green text-tag-green-ink",
   DROPPED: "bg-neutral-800 text-ink-muted",

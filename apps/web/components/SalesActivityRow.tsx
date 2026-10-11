@@ -33,8 +33,8 @@ export type SalesActivityRowData = {
 const TYPE_STYLE: Record<string, string> = {
   CALL: "bg-neutral-800 text-ink-label",
   EMAIL: "bg-neutral-800 text-ink-label",
-  DEMO: "bg-tag-blue text-tag-blue-ink",
-  MEETING: "bg-tag-blue text-tag-blue-ink",
+  DEMO: "bg-tag-brand text-tag-brand-ink",
+  MEETING: "bg-tag-brand text-tag-brand-ink",
   NOTE: "bg-neutral-800 text-ink-muted",
 };
 

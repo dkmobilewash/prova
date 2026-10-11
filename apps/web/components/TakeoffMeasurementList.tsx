@@ -164,7 +164,23 @@ export function TakeoffMeasurementList({
               />
               <span className="truncate">
                 <span className="text-ink-muted">{KIND_LABEL[row.kind]}</span>{" "}
-                {row.label ?? <span className="text-ink-muted">unnamed</span>} —{" "}
+                {row.label ?? <span className="text-ink-muted">unnamed</span>}
+                {/* ── THE PACKAGE, WHERE IT IS NOT THE BASE ──
+
+                    Shown only for an alternate. The base is most of every
+                    sheet, and a chip reading "Base bid" on four hundred rows
+                    is noise that makes the forty that matter harder to see —
+                    the same call `ClusterTag` makes for an untagged thickness
+                    group. */}
+                {row.packageLabel !== null && row.packageLabel.trim() !== "" && (
+                  <span
+                    data-takeoff="measurement-package"
+                    className="ml-1 shrink-0 rounded bg-tag-brand px-1.5 py-0.5 text-[11px] font-medium text-tag-brand-ink"
+                  >
+                    {row.packageLabel}
+                  </span>
+                )}{" "}
+                —{" "}
                 <span className="font-medium">{reads(row)}</span>
                 {/* On a multi-scale sheet the row says WHICH scale it was
                     traced against; on an ordinary one it says the scale is

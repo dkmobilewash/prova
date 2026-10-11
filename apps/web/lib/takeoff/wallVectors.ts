@@ -63,6 +63,17 @@ export type WallCandidate = {
   /** Along the centreline, in feet. Derived here only for the eval's grading;
    *  the app computes its own from the geometry and the live calibration. */
   lengthFeet: number;
+  /**
+   * Gaps INSIDE this run that are narrow enough to be openings, with their
+   * measured widths. Present only when `mergeWalls` joined across one.
+   *
+   * WIDTH AND NOT HEIGHT, because a floor plan does not carry a height and
+   * inventing one would be a guess that reaches a bid. `lengthFeet` is GROSS
+   * and includes these — which is the correct take-off for a door, since
+   * `takeoff.ts` deducts nothing under 32 sq ft and the framing runs through
+   * the opening as a header anyway.
+   */
+  openings?: { widthFt: number }[];
 };
 
 export type WallFinderOptions = {
@@ -83,9 +94,109 @@ export type WallFinderOptions = {
   minLengthFeet?: number;
 };
 
+/**
+ * ── THE WORK BUDGET, AND THE PAGE THAT HUNG WITHOUT ONE ──
+ *
+ * This pairer is O(n²) with `inAHatchSeries` scanning inside the inner loop.
+ * Measured on page 7 of a real airport concourse set:
+ *
+ *   | page | raw segments | usable (>=2 ft) | pair tests |
+ *   | --- | --- | --- | --- |
+ *   | **Houston p7** | 152,189 | **30,825** | **475,000,000** |
+ *   | Houston p11 | 387,891 | 16,288 | 133,000,000 |
+ *   | a school set's floor plan | ~2,000 | hundreds | ~1,000,000 |
+ *
+ * p7 never returned. Timed stage by stage, every other stage on that page is
+ * fast — `pageStrokes` is 600ms at worst across all 16 pages — and the pipeline
+ * enters `wallsFromBothEngines` with 152,189 segments and stops. The page is
+ * 240x the work of one that finishes.
+ *
+ * ── A BUDGET ON THE WORK, NOT A CEILING ON THE INPUT ──
+ *
+ * A segment-count limit would be a proxy for the thing that actually matters
+ * and would be wrong in both directions: a page with many SHORT segments costs
+ * nothing after the length filter, and one with fewer long ones can cost more.
+ * Counting the pair tests bounds the real cost, so any sheet that fits finishes
+ * exactly as it does today and only a sheet that cannot is refused.
+ *
+ * 40 million, which sits in a gap rather than on a line: the working pages
+ * measure around one million and the two that hang are 133 and 475. At roughly
+ * 20M tests a second that is about two seconds of work before giving up, which
+ * is inside what somebody waits for after pressing a button.
+ *
+ * ── AND IT THROWS RATHER THAN RETURNING WHAT IT HAD ──
+ *
+ * Returning the walls found so far is the tempting option and it is the one
+ * this repo has a name for: a result that LOOKS like an answer. An estimator
+ * would get a plausible, silently incomplete set of runs off a sheet the app
+ * could not actually read, and nothing on screen would say which. The caller
+ * already has a `try`/`catch` that tells them to trace by hand, which is the
+ * true answer for this sheet.
+ */
+const MAX_PAIR_TESTS = 40_000_000;
+
+/** Thrown when a sheet is too dense to pair within the budget. Its own class so
+ *  a caller can tell "this sheet is too dense" from "pdfjs threw", which want
+ *  different sentences on screen. */
+export class SheetTooDenseError extends Error {
+  constructor(readonly usableSegments: number) {
+    super(
+      `This sheet has ${usableSegments.toLocaleString()} lines long enough to be walls, which is more than ` +
+        `the wall finder can pair. Trace the walls by hand on this one.`,
+    );
+    this.name = "SheetTooDenseError";
+  }
+}
+
 const DEFAULTS = {
   minThicknessFeet: 0.2,
-  maxThicknessFeet: 1.5,
+  /**
+   * ── 12 INCHES, AND THE NUMBER WAS SWEPT RATHER THAN REASONED ──
+   *
+   * This was 18in, which admitted a pair reading 12.44in. Against a 60-page
+   * answer key that pair was 188 ft of one page's EAST AND WEST EXTERIOR WALLS,
+   * measured half again too thick — so the envelope was being found and priced
+   * as an assembly that is not on the drawing. The key names every assembly it
+   * has and **the widest is EXT-1 at 8-7/8in**, so nothing above about 9in is a
+   * wall here whatever its geometry.
+   *
+   * That argues for a cap at 9.2in, and the sweep argues otherwise:
+   *
+   * | cap | recall | phantom | EXT band | 12.4in band |
+   * | --- | --- | --- | --- | --- |
+   * | 18 | 95.3% | 17,401 | 22.8% | 1,849 |
+   * | **12** | **94.5%** | **15,374** | **23.2%** | **0** |
+   * | 11 | 93.9% | 15,197 | 23.5% | 0 |
+   * | 10 | 91.7% | 15,160 | 25.4% | 0 |
+   * | 9.2 | 91.6% | 14,766 | 25.4% | 0 |
+   *
+   * **The 12.4in band is gone by 12in**, so the defect does not need a tighter
+   * cap than this. Below 12 the cost rises faster than the gain: 9.2 buys
+   * another 608 ft of phantom reduction and gives up 3.7 points of recall,
+   * about 1,560 ft of real wall. A tight cap does not FIX an over-measured wall,
+   * it REJECTS it, and the footage leaves with it.
+   *
+   * ── WHAT THIS GIVES UP, AND IT IS NOT NOTHING ──
+   *
+   * `wallVectors.test.ts` asserts an 18in shaft wall is "the thickest thing
+   * still a wall", and that was a deliberate claim rather than an accident: a
+   * CMU or double-stud shaft IS that thick. The first version of this comment
+   * said no assembly in this trade is a foot thick. **That is false, and the
+   * test sitting beside this file said so** — which is this repo's own rule
+   * about reading the test before believing an inference about the code.
+   *
+   * So an 18in wall is now OPT-IN: pass `maxThicknessFeet: 1.5` for a sheet
+   * that has one. The default serves the common case, and the sweep is the
+   * reason the common case wins — a cap of 18 leaves 1,849 ft priced as an
+   * assembly that is on no drawing, every time, against a shaft wall that is
+   * occasional and now one argument away.
+   *
+   * The honest state of the number: 12 is measured on ONE answer key. What
+   * would settle it properly is a second key with a shaft wall in it, which is
+   * also what would say whether the 0.8 points of recall this costs were real
+   * wall or more over-measured envelope. Nobody knows yet.
+   */
+  maxThicknessFeet: 1,
   minLengthFeet: 2,
 };
 
@@ -111,6 +222,31 @@ const PARALLEL_TOLERANCE_RAD = (2 * Math.PI) / 180;
 const MAX_FACE_LENGTH_RATIO = 3;
 
 /**
+ * How unequal two faces may be and still be PREFERRED as a wall, when several
+ * partners are valid.
+ *
+ * `MAX_FACE_LENGTH_RATIO` above is the hard gate — past 3 a pair is not a wall
+ * at all. This is a softer question that only arises once more than one partner
+ * passes it: which of them is the wall?
+ *
+ * MEASURED ON THE EXTERIOR ENVELOPE, where the choice is real. On one sheet the
+ * faces within two feet of the west wall sit at +0.00, +1.56, +2.28, +8.28,
+ * +8.88 and +12.48 inches, and the last of those is a COLUMN GRID LINE — 115 ft
+ * long, running past the building at both ends. It is inside the thickness band
+ * and it is the widest, so "take the widest" takes it: 188 ft of one sheet came
+ * back at 12.4in, which is no assembly on the drawing.
+ *
+ * A wall's two faces are the two sides of one wall and are close to the same
+ * length — 41 ft against 28.3 ft here, a ratio of 1.45. The grid line is 2.87
+ * times its partner on the page where the hard gate misses it, and 4.06 on the
+ * page where the gate catches it. Two sits between with margin on both sides.
+ *
+ * It is a PREFERENCE and not a gate: if no balanced partner exists, the widest
+ * valid one is still taken, so nothing that used to be found stops being found.
+ */
+const BALANCED_FACE_RATIO = 2;
+
+/**
  * HATCHING IS A SERIES; A WALL IS A PAIR. This is the whole discriminator, and
  * it was arrived at by measurement rather than by taste.
  *
@@ -133,6 +269,21 @@ const MAX_FACE_LENGTH_RATIO = 3;
  * a band without admitting a wall's neighbour across a 5ft corridor.
  */
 const SERIES_REACH = 2.5;
+
+/**
+ * How far off a whole number of steps a third stroke may sit and still count as
+ * continuing the series, as a fraction of one step.
+ *
+ * Hatching is machine-generated at a constant pitch — this repo's own generator
+ * emits it with `offset += 6` — so a real series member lands on a whole
+ * multiple to within a rounding error, and 0.2 is loose by a wide margin. It is
+ * the two strokes it must NOT admit that set the ceiling: on a measured
+ * exterior wall the inboard gypsum line sits at 1.07 steps and the column grid
+ * line at 1.51. The nearer of those is 0.07 from a whole number, which is why
+ * this cannot simply be made generous — and why `nearest === 1` is excluded
+ * rather than tolerated, since 1 is `b` itself.
+ */
+const SERIES_PITCH_TOLERANCE = 0.2;
 
 /** Direction of a segment, normalised to [0, π) so a line and its reverse are
  *  the same direction — which they are, for a wall face. */
@@ -299,17 +450,66 @@ export function wallsFromStrokes(
   const used = new Set<number>();
   const walls: WallCandidate[] = [];
 
+  // REFUSED BEFORE ANY WORK, not part-way through. The pair count is known from
+  // the input alone, so a sheet that cannot be paired says so immediately
+  // rather than after two seconds of spinning — and the estimator gets the same
+  // sentence either way. See `MAX_PAIR_TESTS`.
+  const pairTests = (order.length * (order.length - 1)) / 2;
+  if (pairTests > MAX_PAIR_TESTS) throw new SheetTooDenseError(order.length);
+
   for (let i = 0; i < order.length; i += 1) {
     if (used.has(i)) continue;
+    // ── THE OUTERMOST PARTNER, NOT THE FIRST ONE ──
+    //
+    // This used to take the first valid partner it met in length order and
+    // stop. For a wall drawn as two faces that is the only partner there is, so
+    // it was right for years. An exterior wall is drawn as FOUR — outer finish,
+    // sheathing, stud face, inner face — and then three of the six pairings are
+    // inside the thickness band:
+    //
+    //   outer finish -> inner face   8.28in   the wall
+    //   sheathing    -> inner face   6.72in   two layers of it
+    //   stud face    -> inner face   6.00in   the stud cavity
+    //
+    // Whichever came first won. Measured against a 60-page answer key, the
+    // envelope was being found and then reported at 6.6in — 297 ft of it on one
+    // sheet — against a true EXT-2 of 8-1/8in. A wall at the wrong thickness is
+    // priced as the wrong assembly, which is a worse failure than not finding
+    // it: the footage looks right and the bid is wrong.
+    //
+    // What an estimator measures is finish to finish, so the widest valid pair
+    // is the wall and the narrower ones are its layers.
+    // The widest valid partner whose face is a PLAUSIBLE PARTNER, falling back
+    // to the widest of any kind. Taking the widest alone reaches past the wall
+    // and pairs with the column grid line — see `BALANCED_FACE_RATIO`.
+    let bestJ = -1;
+    let bestWall: WallCandidate | null = null;
+    let anyJ = -1;
+    let anyWall: WallCandidate | null = null;
+    const iLength = lengthOf(order[i]);
     for (let j = i + 1; j < order.length; j += 1) {
       if (used.has(j)) continue;
       const wall = wallFromPair(order[i], order[j], options);
       if (wall === null) continue;
       if (inAHatchSeries(order, i, j, options)) continue;
+      if (anyWall === null || wall.thicknessFeet > anyWall.thicknessFeet) {
+        anyWall = wall;
+        anyJ = j;
+      }
+      const jLength = lengthOf(order[j]);
+      const ratio = Math.max(iLength, jLength) / Math.max(Math.min(iLength, jLength), 1e-9);
+      if (ratio > BALANCED_FACE_RATIO) continue;
+      if (bestWall === null || wall.thicknessFeet > bestWall.thicknessFeet) {
+        bestWall = wall;
+        bestJ = j;
+      }
+    }
+    const chosen = bestWall ?? anyWall;
+    const chosenJ = bestWall !== null ? bestJ : anyJ;
+    if (chosen !== null) {
       used.add(i);
-      used.add(j);
-      walls.push(wall);
-      break;
+      used.add(chosenJ);
+      walls.push(chosen);
     }
   }
 
@@ -357,11 +557,35 @@ function inAHatchSeries(
     if (overlapAlong(a, other) < Math.min(aLen, lengthOf(other)) * 0.5) continue;
 
     const where = offsetOf(other);
-    // A third stroke continuing the series: past `b` in the same direction, or
-    // before `a` in the other — both within reach of one more step.
-    const continuesPastB = step > 0 ? where > step && where <= step + reach : where < step && where >= step - reach;
-    const continuesBeforeA = step > 0 ? where < 0 && where >= -reach : where > 0 && where <= reach;
-    if (continuesPastB || continuesBeforeA) return true;
+    // ── IT MUST CONTINUE THE SPACING, NOT MERELY BE NEARBY ──
+    //
+    // This header has always said a third stroke "continues the spacing", and
+    // for a long time the code only checked that one was somewhere in a RANGE
+    // beside the pair. That is a different test, and it cost the whole exterior
+    // envelope: measured against a 60-page answer key, EXT-1 and EXT-2 came
+    // back 13 ft found of 12,830 — zero per cent, on every export style.
+    //
+    // An exterior wall is not two lines. It is four — outer finish, sheathing,
+    // stud face, inner face — with a 5/8" board line and a column grid line
+    // beside them. On one real sheet the faces sit at 24.52, 24.65, 24.71 and
+    // 25.21 ft, with the board at 25.26 and the grid at 25.56. Fed those four
+    // lines alone the pairer returns the wall correctly; on the page it
+    // returned nothing, because two of those neighbours fall in the range and
+    // the range was the whole test.
+    //
+    // Hatching is a REPEATED pattern — it is generated at a constant pitch, and
+    // a wall assembly's layers are not. So the ratio is what decides: a series
+    // member sits at a whole number of steps from the pair, and a wall's
+    // neighbour does not. The board line lands at 1.07 steps and the grid at
+    // 1.51; neither is a whole number, and both used to reject the envelope.
+    const ratio = where / step;
+    const nearest = Math.round(ratio);
+    const offPitch = Math.abs(ratio - nearest);
+    // 0 is `a` and 1 is `b`; -1 continues before `a`, 2 and 3 continue past
+    // `b`, which is the same span `SERIES_REACH` already allowed.
+    const continuesTheSeries =
+      offPitch <= SERIES_PITCH_TOLERANCE && (nearest === -1 || nearest === -2 || nearest === 2 || nearest === 3);
+    if (continuesTheSeries && Math.abs(where) <= Math.abs(step) + reach + Math.abs(step)) return true;
   }
 
   return false;
@@ -705,5 +929,115 @@ export function wallsNotLettering(
         midY <= box.y + box.height + pad,
     );
     return !inside;
+  });
+}
+
+/**
+ * ── HOW MUCH OF THE SHEET A WALL MAY SPAN ──
+ *
+ * A click-through on a real permit set reported a group reading "10-1/2" · 1
+ * run · 114 ft", and it was a single line down the LEFT SHEET BORDER. One
+ * group, 114 feet, entirely false — and the most inviting thing in the panel,
+ * because a 114ft run is the longest single thing on the sheet.
+ *
+ * The border is geometrically distinctive in one way that nothing inside the
+ * building is: it runs the full extent of the PAGE. On that sheet the border
+ * line measured about 95% of the page height. A building drawn at a sensible
+ * scale leaves margins, a title block and a dimension zone, so its longest wall
+ * cannot approach the paper's own dimension — the one measured there was 68% of
+ * the sheet's width, and that is a long exterior wall on a tightly laid-out
+ * sheet.
+ *
+ * 90% therefore sits in a gap rather than on a judgement call. It is compared
+ * against the page extent ALONG THE RUN'S OWN AXIS, because a vertical border
+ * on a landscape sheet is short against the width and nearly the whole height —
+ * comparing against the wrong dimension is how this would miss.
+ */
+export const MOST_OF_THE_SHEET = 0.9;
+
+/**
+ * How close to the paper's edge counts as the border's own strip, as a fraction
+ * of the SHORTER sheet dimension. Tight on purpose — see the reasoning inside
+ * `wallsNotTheSheetBorder`, and do not widen it to reach a title block.
+ */
+export const ALONG_THE_EDGE = 0.04;
+
+/**
+ * How much of the sheet a run in that strip must cover before it is the frame
+ * rather than a wall. A quarter: Augusta's border is four segments, so each is
+ * roughly a sheet-side long, and a quarter leaves room for one broken into
+ * halves without reaching down to ordinary partitions.
+ */
+export const BORDER_SEGMENT = 0.25;
+
+/**
+ * Walls that are not the sheet's own border.
+ *
+ * `pageHeight` is in the same units as the coordinates — the viewer's box has x
+ * running 0..1 and y over that same width, so a landscape sheet's height is
+ * LESS than 1. Passing the wrong one would compare a vertical run against the
+ * width and let the border through, which is the mistake this is written to
+ * avoid.
+ */
+export function wallsNotTheSheetBorder(
+  walls: readonly WallCandidate[],
+  pageWidth: number,
+  pageHeight: number,
+  mostOfTheSheet = MOST_OF_THE_SHEET,
+): WallCandidate[] {
+  if (!(pageWidth > 0) || !(pageHeight > 0)) return [...walls];
+
+  // ── THE EDGE RULE NEEDS THE GEOMETRY TO BE INSIDE THE PAGE IT IS GIVEN ──
+  //
+  // "Along the bottom edge" is meaningless if the walls extend past the stated
+  // page, and the failure mode is the worst kind: every run would read as
+  // edge-hugging and the filter would return NOTHING, which on screen is
+  // indistinguishable from a sheet with no walls on it rather than from a bug.
+  // A caller handing over a stale or unresolved `pageSize` gets the span rule
+  // alone instead of an empty panel.
+  const fits = walls.every(
+    (wall) =>
+      Math.max(wall.x1, wall.x2) <= pageWidth * 1.01 && Math.max(wall.y1, wall.y2) <= pageHeight * 1.01,
+  );
+  // A FLAG, NOT A SENTINEL BAND. The first attempt used `band = -1` to mean
+  // "off", which INVERTED the rule instead of disabling it: `pageHeight - (-1)`
+  // is larger than the page, so every run read as hugging the bottom. A
+  // negative distance is not a disabled distance.
+  const band = Math.min(pageWidth, pageHeight) * ALONG_THE_EDGE;
+  return walls.filter((wall) => {
+    const dx = Math.abs(wall.x2 - wall.x1);
+    const dy = Math.abs(wall.y2 - wall.y1);
+
+    // ── A SEGMENTED BORDER, WHICH THE SPAN RULE BELOW CANNOT SEE ──
+    //
+    // This filter was written for a border drawn as one full-width line, and a
+    // browser run on Augusta A1.11 (2026-10-10) found one that is not: an
+    // architectural border is four runs INSET from the paper that stop short of
+    // the corners, plus the title-block frame just inside it. Each piece is well
+    // under `mostOfTheSheet`, so every one of them passed — the panel offered a
+    // "6-inch, 237 ft" group that was the drawing frame, and the group's own
+    // total looked plausible, which is what makes it dangerous.
+    //
+    // THE SECOND RULE IS THE *AND* OF LENGTH AND POSITION, deliberately, and
+    // mutation says why neither half is safe alone. Length alone is the rule
+    // below, and it drops a real exterior wall on a sheet scaled to its
+    // building. Position alone drops the outermost partitions of any plan drawn
+    // close to the frame.
+    //
+    // The band is TIGHT (4%) because nothing of the building is in it: the
+    // border itself occupies that strip, and the plan is inside the border. That
+    // is also why the band must not be widened — a band wide enough to cover a
+    // title block is the corner guess this module has no measurement for, and
+    // `borderSegments` pins it.
+    const alongTop = Math.min(wall.y1, wall.y2) <= band;
+    const alongBottom = Math.max(wall.y1, wall.y2) >= pageHeight - band;
+    const alongLeft = Math.min(wall.x1, wall.x2) <= band;
+    const alongRight = Math.max(wall.x1, wall.x2) >= pageWidth - band;
+    if (fits && dx > dy && (alongTop || alongBottom) && dx >= pageWidth * BORDER_SEGMENT) return false;
+    if (fits && dy > dx && (alongLeft || alongRight) && dy >= pageHeight * BORDER_SEGMENT) return false;
+    // The page's extent along whichever axis this run mostly follows.
+    const extent = dx >= dy ? pageWidth : pageHeight;
+    const span = Math.max(dx, dy);
+    return span < extent * mostOfTheSheet;
   });
 }
