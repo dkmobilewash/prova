@@ -25,7 +25,7 @@ const line = (id: string, jobId: string, unitPrice: number | null, extra: Partia
   id,
   jobId,
   description: "5/8 Type X board",
-  sourceCatalogEntryId: null,
+  catalogEntryId: null,
   quantity: 100,
   unit: "SF",
   unitPrice,
@@ -54,8 +54,8 @@ describe("unitPriceOutliers", () => {
   });
 
   it("matches on the catalog entry before the description, and on description ignoring case and spacing", () => {
-    expect(lineKey({ description: "  5/8  TYPE x Board", sourceCatalogEntryId: null })).toBe(lineKey(line("a", "b", 1)));
-    expect(lineKey({ description: "anything", sourceCatalogEntryId: "cat1" })).toBe("catalog:cat1");
+    expect(lineKey({ description: "  5/8  TYPE x Board", catalogEntryId: null })).toBe(lineKey(line("a", "b", 1)));
+    expect(lineKey({ description: "anything", catalogEntryId: "cat1" })).toBe("catalog:cat1");
     expect(median([5, 1, 3, 2])).toBe(2.5);
   });
 });
@@ -143,14 +143,14 @@ describe("the ESTIMATE_CHECK runner", () => {
     db.jobLineItem.findMany
       // the estimate
       .mockResolvedValueOnce([
-        { id: "l1", jobId: "job1", description: "5/8 Type X board", sourceCatalogEntryId: null, quantity: 100, unit: "SF", unitPrice: 4.5 },
-        { id: "l2", jobId: "job1", description: "Corner bead", sourceCatalogEntryId: null, quantity: 0, unit: "LF", unitPrice: 1 },
+        { id: "l1", jobId: "job1", description: "5/8 Type X board", quantity: 100, unit: "SF", unitPrice: 4.5 },
+        { id: "l2", jobId: "job1", description: "Corner bead", quantity: 0, unit: "LF", unitPrice: 1 },
       ])
       // price history
       .mockResolvedValueOnce([
-        { id: "h1", jobId: "j1", description: "5/8 type x board", sourceCatalogEntryId: null, quantity: 1, unit: "SF", unitPrice: 2.9 },
-        { id: "h2", jobId: "j2", description: "5/8 Type X board", sourceCatalogEntryId: null, quantity: 1, unit: "SF", unitPrice: 3.0 },
-        { id: "h3", jobId: "j3", description: "5/8 Type X board", sourceCatalogEntryId: null, quantity: 1, unit: "SF", unitPrice: 3.1 },
+        { id: "h1", jobId: "j1", description: "5/8 type x board", quantity: 1, unit: "SF", unitPrice: 2.9 },
+        { id: "h2", jobId: "j2", description: "5/8 Type X board", quantity: 1, unit: "SF", unitPrice: 3.0 },
+        { id: "h3", jobId: "j3", description: "5/8 Type X board", quantity: 1, unit: "SF", unitPrice: 3.1 },
       ]);
     await checkEstimate(ctx);
     expect(created.map((f) => f.kind).sort()).toEqual(["addendum_open", "addendum_open", "unit_price_outlier", "zero_line", "zero_line"]);

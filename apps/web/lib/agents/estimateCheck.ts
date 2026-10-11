@@ -42,16 +42,17 @@ export type CheckLine = {
   id: string;
   jobId: string;
   description: string;
-  sourceCatalogEntryId: string | null;
+  /** JobLineItem.sourceCatalogEntryId, read only. */
+  catalogEntryId: string | null;
   quantity: number;
   unit: string | null;
   unitPrice: number | null;
 };
 
 /** The matching key: catalog entry first, else the description. */
-export function lineKey(line: Pick<CheckLine, "description" | "sourceCatalogEntryId">): string {
-  return line.sourceCatalogEntryId
-    ? `catalog:${line.sourceCatalogEntryId}`
+export function lineKey(line: Pick<CheckLine, "description" | "catalogEntryId">): string {
+  return line.catalogEntryId
+    ? `catalog:${line.catalogEntryId}`
     : `desc:${line.description.toLowerCase().replace(/\s+/g, " ").trim()}`;
 }
 
@@ -131,24 +132,17 @@ export function openAddendumItems(items: unknown, decisions: { normalisedReferen
 
 const money = (value: number) => `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const pct = (value: number) => `${Math.round(value * 100)}%`;
-const toLine = (row: {
-  id: string;
-  jobId: string;
-  description: string;
-  sourceCatalogEntryId: string | null;
-  quantity: unknown;
-  unit: string | null;
-  unitPrice: unknown;
-}): CheckLine => ({
-  id: row.id,
-  jobId: row.jobId,
-  description: row.description,
-  sourceCatalogEntryId: row.sourceCatalogEntryId,
+// Reads the catalog link, never writes it (catalogLineWriterCensus counts writers).
+const LINE_SELECT = { id: true, jobId: true, description: true, sourceCatalogEntryId: true, quantity: true, unit: true, unitPrice: true } as const;
+const toLine = (row: Partial<Record<keyof typeof LINE_SELECT, unknown>>): CheckLine => ({
+  id: String(row.id),
+  jobId: String(row.jobId),
+  description: String(row.description),
+  catalogEntryId: typeof row.sourceCatalogEntryId === "string" ? row.sourceCatalogEntryId : null,
   quantity: Number(row.quantity),
-  unit: row.unit,
+  unit: typeof row.unit === "string" ? row.unit : null,
   unitPrice: row.unitPrice != null ? Number(row.unitPrice) : null,
 });
-const LINE_SELECT = { id: true, jobId: true, description: true, sourceCatalogEntryId: true, quantity: true, unit: true, unitPrice: true } as const;
 const jobSource = (id: string): FindingSource => ({ label: "Past estimate", href: `/jobs/${id}/estimate`, recordType: "Job", recordId: id });
 
 /** The lines this bid is priced on, or null when no job is linked. */
@@ -164,8 +158,8 @@ export async function estimateLinesFor(companyId: string, wonJobId: string | nul
 /** Past priced lines matching any of these lines, on other jobs of this company. */
 export async function priceHistoryFor(companyId: string, lines: CheckLine[], excludeJobId: string): Promise<CheckLine[]> {
   if (lines.length === 0) return [];
-  const catalogIds = [...new Set(lines.map((l) => l.sourceCatalogEntryId).filter((id): id is string => Boolean(id)))];
-  const descriptions = [...new Set(lines.filter((l) => !l.sourceCatalogEntryId).map((l) => l.description.trim()))];
+  const catalogIds = [...new Set(lines.map((l) => l.catalogEntryId).filter((id): id is string => Boolean(id)))];
+  const descriptions = [...new Set(lines.filter((l) => !l.catalogEntryId).map((l) => l.description.trim()))];
   const rows = await prisma.jobLineItem.findMany({
     where: {
       job: { companyId },
@@ -173,7 +167,7 @@ export async function priceHistoryFor(companyId: string, lines: CheckLine[], exc
       isDeleted: false,
       unitPrice: { gt: 0 },
       OR: [
-        ...(catalogIds.length ? [{ sourceCatalogEntryId: { in: catalogIds } }] : []),
+        ...(catalogIds.length ? [{ sourceCatalogEntry: { id: { in: catalogIds } } }] : []),
         ...(descriptions.length ? [{ description: { in: descriptions, mode: "insensitive" as const } }] : []),
       ],
     },
