@@ -128,8 +128,9 @@ const KNOWN: Record<string, { count: number; because: string }> = {
   "apps/web/app/(app)/layout.tsx": {
     count: 2,
     because:
-      "Defines the port rather than consuming it. `h-screen` on the shell " +
-      "root IS the app's height, and the `100dvh` here is the one place " +
+      "Defines the port rather than consuming it. `h-dvh` on the shell " +
+      "root IS the app's height (h-screen until Concept G, 2026-10-10 — the " +
+      "visible viewport on a phone, now that tabs sit at its foot), and the `100dvh` here is the one place " +
       "`--shell-port` is computed FROM the viewport — everything else is " +
       "supposed to read `--shell-port`, not this.",
   },
@@ -173,16 +174,8 @@ const KNOWN: Record<string, { count: number; because: string }> = {
       "(the card it replaced painted over whatever page the person was on). " +
       "No shell renders behind it, so there is no port to size against.",
   },
-  "apps/web/components/SearchLauncher.tsx": {
-    count: 2,
-    because:
-      "The global search panel: `max-h-[calc(100dvh-4.5rem)]` on the panel " +
-      "itself and `max-h-[60vh]` on the results list inside it. Same shape " +
-      "as HelpButton.tsx and AskLauncher.tsx — the panel's own class string " +
-      "is `fixed left-1/2 top-14 z-50 …`, and the results list is a child " +
-      "of it, so both are inside a `position: fixed` subtree and excluded " +
-      "from every ancestor's scrollable overflow.",
-  },
+  // `components/SearchLauncher.tsx` (count 2, a fixed panel) was here until
+  // Concept G deleted the file on 2026-10-10 for the ⌘K palette.
   "apps/web/app/sign-in/[[...sign-in]]/page.tsx": {
     count: 1,
     because: "Outside the `(app)` shell — the Clerk sign-in page.",

@@ -201,28 +201,20 @@ test.describe("the pilot contractor's journey", () => {
     await page.goto("/dashboard");
     await expectHealthy(page, "dashboard", { monitor });
 
-    const nav = page.getByRole("navigation", { name: "Main" });
-
-    // The sidebar's groups are collapsible (components/Sidebar.tsx: a
-    // heading <button aria-expanded> per group), and a COLLAPSED group's
-    // links are not in the DOM at all — the first run of this step found
-    // ten links, all from the one group the current page lives in. So every
-    // closed group is opened first, the way a person exploring the product
-    // would, and only then are the destinations read.
-    const closedGroups = nav.locator('button[aria-expanded="false"]');
-    const groupCount = await closedGroups.count();
-    for (let i = 0; i < groupCount; i++) {
-      // Re-query each time: opening one group re-renders the list.
-      await nav.locator('button[aria-expanded="false"]').first().click();
-    }
-    await expect(nav.locator('button[aria-expanded="false"]'), "every nav group should be open").toHaveCount(0);
+    // Concept G (2026-10-10): no sidebar. Every destination the rail used to
+    // list is in the avatar menu's "All pages" panel, every group open, so
+    // that panel is where the destinations are read from.
+    await page.getByRole("button", { name: /^Your menu/ }).click();
+    await page.getByRole("button", { name: "All pages" }).click();
+    const nav = page.getByRole("navigation", { name: "All pages" });
+    await expect(nav).toBeVisible();
 
     const hrefs = await nav.locator('a[href^="/"]').evaluateAll((anchors) =>
       anchors.map((anchor) => (anchor as HTMLAnchorElement).getAttribute("href") ?? ""),
     );
     const destinations = [...new Set(hrefs)].filter((href) => href.length > 1);
-    // A nav with a handful of links is a nav that lost its groups; the
-    // sidebar carries thirty-odd destinations for an owner.
+    // A panel with a handful of links is one that lost its groups; it
+    // carries thirty-odd destinations for an owner.
     expect(destinations.length, "the main nav should offer a real set of destinations").toBeGreaterThanOrEqual(20);
 
     const broken: string[] = [];

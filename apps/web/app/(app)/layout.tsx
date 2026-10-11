@@ -6,12 +6,13 @@ import { can, type Principal } from "@/lib/permissions";
 import { viewerToday } from "@/lib/viewerToday";
 import { helpChannelFromEnv } from "@/lib/help-config";
 import {
+  BottomTabsRegion,
+  CommandPaletteRegion,
   FullTourRegion,
   MetricBarRegion,
   NavigationProgressRegion,
-  SidebarRegion,
   TimeZoneCookieRegion,
-  TopbarRegion,
+  TopBarRegion,
 } from "@/components/AppChrome";
 import { ShellRegionFallback } from "@/components/ShellRegion";
 import { shellQueryFailed } from "@/lib/shell-region-failure";
@@ -37,8 +38,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // The three onboarding questions' answers, straight off the Company row —
   // see lib/businessScope.ts. Passed to both nav surfaces below so a route
-  // hidden by them can never disagree between the desktop rail and the
-  // mobile drawer, same reasoning as showsInternal just above.
+  // hidden by them can never disagree between the desktop top bar and the
+  // phone's bottom tabs, same reasoning as showsInternal just above.
   const businessScope: BusinessScopeAnswers = {
     contractingRelationship: company.contractingRelationship,
     doesPublicWork: company.doesPublicWork,
@@ -88,12 +89,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // cannot disagree about how many there are.
     countVisibleAlerts(company.id, currentUser.id, today, principal),
     // The Money Rail's five figures — loaded here, server-side, because
-    // this is the component that already holds the company context. The
-    // Sidebar renders them verbatim; every number is computed in
-    // lib/moneyRail.ts and nowhere else.
+    // this is the component that already holds the company context. Since
+    // Concept G removed the rail they sit on the group headings of the top
+    // bar's "All pages" panel, rendered verbatim; every number is computed
+    // in lib/moneyRail.ts and nowhere else.
     //
     // Gated like MetricBar below, and for the same written-down reason:
-    // the Sidebar is a client component, so whatever is passed here is
+    // the top bar is a client component, so whatever is passed here is
     // serialized to the browser for EVERY principal — found by the
     // 2026-09-19 security audit painting company-wide bid, contract and
     // retainage dollars on a FIELD user's rail, the one job function
@@ -101,7 +103,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // means no figures: the rail renders its headings without them, and
     // the queries never run.
     can(principal, "VIEW_COMPANY_FINANCIALS")
-      ? getMoneyRailStages(company.id).catch(shellQueryFailed("sidebar", []))
+      ? getMoneyRailStages(company.id).catch(shellQueryFailed("topbar", []))
       : Promise.resolve([]),
     // In the same Promise.all as the three above so it costs no extra
     // wall-clock latency, and skipped entirely when nothing would be
@@ -114,37 +116,33 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     scopeCandidates.length > 0 ? loadRoutesWithData(company.id) : Promise.resolve<string[]>([]),
   ]);
   return (
-    // h-screen with the content column scrolling inside it, so the metric
-    // bar sits at the bottom of the column and stays there — pinned to the
-    // content, never over the rail.
+    // Concept G (2026-10-10): no left rail. A column of top bar, the page and
+    // (desktop) the metric bar, with the phone's bottom tabs fixed over the
+    // foot of the screen. h-dvh rather than h-screen so the column is the
+    // VISIBLE viewport on a phone, whose browser bars make 100vh too tall.
     //
-    // The two chrome heights are declared once here and read back as
+    // The chrome heights are declared once here and read back as
     // --shell-port, so anything that must fit inside the scroll port (the
     // side panel) is bounded by the same numbers the bars are laid out
-    // with, rather than repeating them and drifting.
+    // with, rather than repeating them and drifting. Below md the metric bar
+    // is not drawn (the Money tab is the phone's way to the figures) and the
+    // tabs take its place; at md and up the tabs are gone.
     //
     // Every shell region below is ONE client component from
     // components/AppChrome.tsx, and that indirection is load-bearing rather
-    // than tidy. Each of those components pairs the region's <ShellRegion>
-    // boundary with its widget inside the BROWSER'S OWN module. Writing the
-    // pairing out here instead — <ShellRegion region="sidebar"><Sidebar …/>
-    // </ShellRegion> — means the <Sidebar> element is created by a SERVER
-    // component and has to cross the RSC boundary as a client component's
-    // children, where React's production Flight serializer defers it past
-    // 3,200 bytes and the browser turns it into a LAZY. A lazy suspends the
-    // region's Suspense, and that is the 2026-09-21 outage's own trap
-    // (components/Hint.tsx) one door along. See AppChrome.tsx's header,
-    // CLAUDE.md's #418 entry, and PR #501 — including the part of that entry
-    // that says a `B:`/`S:` marker pair in the shell is NOT evidence of this:
-    // React also streams a boundary late for being merely big.
+    // than tidy: a widget element created HERE, in a server component, would
+    // cross the RSC boundary as a client component's children, and React's
+    // production Flight serializer defers it past 3,200 bytes into a LAZY
+    // that suspends the region's Suspense — the 2026-09-21 outage's trap
+    // (components/Hint.tsx). See AppChrome.tsx's header, CLAUDE.md's #418
+    // entry and PR #501.
     //
-    // A region that throws is still replaced by a quiet fallback of the same
-    // height and the page keeps working. The page itself ({children}) is
-    // deliberately NOT inside a region — app/(app)/error.tsx owns that and
-    // must stay loud, and the region components take no children at all, so
-    // it cannot end up in one. See components/ShellRegion.tsx;
+    // A region that throws is still replaced by a quiet fallback and the page
+    // keeps working. The page itself ({children}) is deliberately NOT inside a
+    // region — app/(app)/error.tsx owns that and must stay loud, and the
+    // region components take no children at all. See components/ShellRegion.tsx;
     // shellRegion.test.ts fails the build if a shell widget is paired here.
-    <div className="flex h-screen bg-canvas [--shell-metricbar:52px] [--shell-topbar:56px]">
+    <div className="flex h-dvh flex-col bg-canvas [--shell-metricbar:0px] [--shell-tabs:calc(56px+env(safe-area-inset-bottom))] [--shell-topbar:56px] md:[--shell-metricbar:52px] md:[--shell-tabs:0px] md:[--shell-topbar:64px]">
       {/* Renders nothing. Parks the browser's IANA zone in a cookie so
           the server can work out what day it is where the reader is. */}
       <TimeZoneCookieRegion />
@@ -152,47 +150,51 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* "Take the full tour": renders nothing until someone starts it.
           Here rather than on a page because it moves between pages. */}
       <FullTourRegion principal={principal} />
-      <SidebarRegion
+      {/* The ⌘K palette: renders nothing until opened, from the top bar's
+          search box or anything that dispatches cstream:open-search. */}
+      <CommandPaletteRegion />
+      <TopBarRegion
         companyName={company.name}
+        userName={currentUser.name}
+        userEmail={currentUser.email}
+        alertCount={alertCount}
         principal={principal}
         showsInternal={showsInternal}
         businessScope={businessScope}
         routesWithData={routesWithData}
+        // Resolved HERE, on the server: lib/help-config.ts reads
+        // process.env and imports the @prova/integrations barrel, neither
+        // of which belongs in a browser bundle.
+        helpChannel={helpChannelFromEnv()}
         stages={moneyRailStages}
       />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TopbarRegion
-          companyName={company.name}
-          alertCount={alertCount}
-          principal={principal}
-          showsInternal={showsInternal}
-          businessScope={businessScope}
-          routesWithData={routesWithData}
-          // Resolved HERE, on the server: lib/help-config.ts reads
-          // process.env and imports the @prova/integrations barrel, neither
-          // of which belongs in a browser bundle. The topbar is a client
-          // component now, so it is handed the answer, not the question.
-          helpChannel={helpChannelFromEnv()}
-        />
-        {/* No background of its own: each page brings its own ground, so a
-            page still written against the dark theme keeps it and a
-            converted one opts into the light canvas. */}
-        <main className="min-h-0 flex-1 overflow-y-auto [--shell-port:calc(100dvh-var(--shell-topbar)-var(--shell-metricbar))]">
-          {children}
-        </main>
-        {/* The metric bar is company-wide money on every screen — backlog,
-            blended margin, cash collected. Withheld from anyone without
-            VIEW_COMPANY_FINANCIALS, because a permission enforced on
-            /cash-flow and then rendered along the bottom of every other
-            page is not enforced at all. A null here means its query failed
-            above and was logged; the region shows its fallback instead. */}
-        {can(principal, "VIEW_COMPANY_FINANCIALS") &&
-          (financials ? (
-            <MetricBarRegion financials={financials} />
-          ) : (
-            <ShellRegionFallback region="metricbar" />
-          ))}
-      </div>
+      {/* No background of its own: each page brings its own ground. Full
+          width now there is no rail; the centred column is each page's own
+          <PageShell> (packages/ui — `working` is max-w-7xl plus px-6, within
+          a few px of the G mockup's 1344px-with-48px-gutters), and
+          pageWidthCensus.test.ts forbids a second cap here. The bottom
+          padding clears the phone's fixed tabs. */}
+      <main className="min-h-0 flex-1 overflow-y-auto pb-[var(--shell-tabs)] [--shell-port:calc(100dvh-var(--shell-topbar)-var(--shell-metricbar)-var(--shell-tabs))]">
+        {children}
+      </main>
+      {/* The metric bar is company-wide money on every screen — backlog,
+          blended margin, cash collected. Withheld from anyone without
+          VIEW_COMPANY_FINANCIALS, because a permission enforced on
+          /cash-flow and then rendered along the bottom of every other
+          page is not enforced at all. A null here means its query failed
+          above and was logged; the region shows its fallback instead. */}
+      {can(principal, "VIEW_COMPANY_FINANCIALS") &&
+        (financials ? (
+          <MetricBarRegion financials={financials} />
+        ) : (
+          <ShellRegionFallback region="metricbar" />
+        ))}
+      <BottomTabsRegion
+        principal={principal}
+        showsInternal={showsInternal}
+        businessScope={businessScope}
+        routesWithData={routesWithData}
+      />
     </div>
   );
 }

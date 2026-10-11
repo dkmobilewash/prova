@@ -58,7 +58,7 @@ export const CRASH_MARKERS = [
 
 /**
  * Tailwind's `md` breakpoint in px — the width at and above which the
- * desktop rail renders, and below which the phone drawer does. Both of
+ * desktop top bar's words render, and below which the phone's tabs do. Both of
  * those `md:` classes are read from the same number, so it is not a
  * constant invented here: health.test.ts pins it to the value
  * `resolveConfig(tailwind.config.ts).theme.screens.md` actually resolves
@@ -66,12 +66,14 @@ export const CRASH_MARKERS = [
  */
 export const RAIL_BREAKPOINT_PX = 768;
 
-/** The desktop rail's accessible name (`Sidebar.tsx`) and the phone
- * shell's hamburger (`MobileNav.tsx`). Both are pinned to those two files
- * in health.test.ts, for the reason the crash markers are: a name this
- * file looks for and the app no longer renders is a check about nothing. */
+/** The shell's main navigation landmark. Concept G (2026-10-10) draws it
+ * twice and only ever shows one: the top bar's three words at `md` and up
+ * (`components/shell/TopBar.tsx`, `hidden md:flex`) and the phone's bottom
+ * tabs below it (`components/shell/BottomTabs.tsx`, `md:hidden`). Both carry
+ * this name, and health.test.ts pins it to both files, for the reason the
+ * crash markers are: a name this file looks for and the app no longer
+ * renders is a check about nothing. */
 export const RAIL_NAV_NAME = "Main";
-export const DRAWER_BUTTON_NAME = "Open navigation";
 
 /** Visible characters a page must render to count as having loaded.
  * Deliberately low: the point is "not blank", not "looks finished". */
@@ -212,43 +214,24 @@ export async function expectHealthy(page: Page, step: string, options: HealthOpt
 
 /**
  * THE SIGNED-IN SHELL HAS TWO NAVIGATIONS AND ONLY EVER RENDERS ONE OF
- * THEM, and which one depends on the width. This check used to know about
- * the desktop one only.
+ * THEM, and which one depends on the width.
  *
- * `Sidebar.tsx` is the 240px rail — `<nav aria-label="Main">` inside a
- * `hidden … md:block` spacer, so below Tailwind's `md` it is
- * `display: none` and not in the accessibility tree at all. `MobileNav.tsx`
- * is the same links in a drawer behind a hamburger, and its wrapper is
- * `md:hidden`, so above `md` IT is the one that does not exist. Exactly one
- * of the two is reachable at any width.
- *
- * So this is not an either/or, and deliberately not written as one: an `or`
- * would go green on a phone that still had a desktop rail, or on a desktop
- * that had lost it, which is the "absence of a failure is not a pass" shape
- * CLAUDE.md records. The width decides which navigation is OWED, and that
- * one is then required.
+ * Since Concept G (2026-10-10) both are `<nav aria-label="Main">`: the top
+ * bar's Jobs · Money · Schedule at `md` and up, the bottom tabs below it.
+ * Until then the phone had only a hamburger and this check asked for the
+ * BUTTON at phone width — that drawer is gone. One name at both widths is
+ * what makes "the shell's main navigation" a single idea, and it is still
+ * the width that decides which file owes it; the message names that file.
  *
  * `window.innerWidth`, not `page.viewportSize()`: the media query behind
- * `md:` reads the LAYOUT viewport, which is what `innerWidth` reports and
- * what lib/viewport.ts documents can differ from the declared device width.
- * Asking the browser what the media query sees means this cannot disagree
- * with the CSS that is actually applied.
+ * `md:` reads the LAYOUT viewport, which is what `innerWidth` reports.
  */
 async function expectShellNavigation(page: Page, where: string): Promise<void> {
   const layoutWidth = await page.evaluate(() => window.innerWidth);
-
-  if (layoutWidth >= RAIL_BREAKPOINT_PX) {
-    await expect(
-      page.getByRole("navigation", { name: RAIL_NAV_NAME }),
-      `${where}: the app shell's main navigation is missing`,
-    ).toBeVisible();
-    return;
-  }
-
+  const owner =
+    layoutWidth >= RAIL_BREAKPOINT_PX ? "the top bar's words (TopBar.tsx)" : "the bottom tabs (BottomTabs.tsx)";
   await expect(
-    page.getByRole("button", { name: DRAWER_BUTTON_NAME }),
-    `${where}: at a layout width of ${layoutWidth}px the shell's navigation is the drawer button ` +
-      `("${DRAWER_BUTTON_NAME}") and it is not there. Below ${RAIL_BREAKPOINT_PX}px the desktop rail is ` +
-      "display:none, so this button is the only way off this page on a phone.",
+    page.getByRole("navigation", { name: RAIL_NAV_NAME }),
+    `${where}: at a layout width of ${layoutWidth}px the shell's main navigation is ${owner}, and it is missing`,
   ).toBeVisible();
 }

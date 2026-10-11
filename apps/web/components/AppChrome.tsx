@@ -4,9 +4,10 @@ import { FullTour } from "@/components/FullTour";
 import { MetricBar } from "@/components/MetricBar";
 import { NavigationProgress } from "@/components/NavigationProgress";
 import { ShellRegion } from "@/components/ShellRegion";
-import { Sidebar } from "@/components/Sidebar";
+import { BottomTabs } from "@/components/shell/BottomTabs";
+import { CommandPalette } from "@/components/shell/CommandPalette";
+import { TopBar } from "@/components/shell/TopBar";
 import { TimeZoneCookie } from "@/components/TimeZoneCookie";
-import { Topbar } from "@/components/Topbar";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import type { CompanyFinancials } from "@/lib/company-financials";
 import type { HelpChannel } from "@/lib/help-request";
@@ -14,7 +15,7 @@ import type { MoneyRailStage } from "@/lib/moneyRail";
 import type { Principal } from "@/lib/permissions";
 
 /**
- * The five shell regions, each paired with its widget IN THE BROWSER'S OWN
+ * The shell regions, each paired with its widget IN THE BROWSER'S OWN
  * MODULE. Every export here is `<ShellRegion region="…"><Widget …/></ShellRegion>`
  * and nothing else; `app/(app)/layout.tsx` renders these instead of pairing
  * the two itself.
@@ -63,6 +64,12 @@ import type { Principal } from "@/lib/permissions";
  * `shellRegion.test.ts` still proves it with its own controls. The regions
  * take NO `children` prop, deliberately: the page must never end up inside
  * one, and a region that cannot be given children cannot be given the page.
+ *
+ * CONCEPT G (2026-10-10) REMOVED THE SIDEBAR. The rail and the old Topbar are
+ * gone; TopBar (with its "All pages" panel) and BottomTabs replaced them, and
+ * CommandPalette joined as an invisible helper. The history above still names
+ * the sidebar because that is where it happened; the reason applies unchanged
+ * to every region below.
  */
 
 export function TimeZoneCookieRegion() {
@@ -89,70 +96,83 @@ export function FullTourRegion({ principal }: { principal: Principal }) {
   );
 }
 
-export function SidebarRegion({
+export function TopBarRegion({
   companyName,
-  principal,
-  showsInternal,
-  businessScope,
-  routesWithData,
-  stages,
-}: {
-  companyName: string;
-  principal: Principal;
-  showsInternal: boolean;
-  businessScope: BusinessScopeAnswers;
-  /** See Sidebar's own prop doc: the hrefs this company has rows behind, so
-   * the answers cannot hide a door to records that already exist. */
-  routesWithData: readonly string[];
-  stages: MoneyRailStage[];
-}) {
-  return (
-    <ShellRegion region="sidebar">
-      <Sidebar
-        companyName={companyName}
-        principal={principal}
-        showsInternal={showsInternal}
-        businessScope={businessScope}
-        routesWithData={routesWithData}
-        stages={stages}
-      />
-    </ShellRegion>
-  );
-}
-
-export function TopbarRegion({
-  companyName,
+  userName,
+  userEmail,
   alertCount,
   principal,
   showsInternal,
   businessScope,
   routesWithData,
   helpChannel,
+  stages,
 }: {
   companyName: string;
+  userName: string | null;
+  userEmail: string | null;
   alertCount: number;
   principal: Principal;
   showsInternal: boolean;
   businessScope: BusinessScopeAnswers;
-  /** Same list the rail gets, from the same layout — see SidebarRegion. */
+  /** The hrefs this company has rows behind, so the onboarding answers
+   * cannot hide a door to records that already exist — see navGroupsFor. */
   routesWithData: readonly string[];
   /** Resolved on the SERVER by `helpChannelFromEnv()` and passed down as
    * plain data. It cannot be read here: `lib/help-config.ts` reads
    * `process.env` and pulls in the `@prova/integrations` barrel, neither of
    * which belongs in a browser bundle. */
   helpChannel: HelpChannel;
+  /** The Money Rail figures for the "All pages" headings; empty without
+   * VIEW_COMPANY_FINANCIALS. */
+  stages: MoneyRailStage[];
 }) {
   return (
     <ShellRegion region="topbar">
-      <Topbar
+      <TopBar
         companyName={companyName}
+        userName={userName}
+        userEmail={userEmail}
         alertCount={alertCount}
         principal={principal}
         showsInternal={showsInternal}
         businessScope={businessScope}
         routesWithData={routesWithData}
         helpChannel={helpChannel}
+        stages={stages}
       />
+    </ShellRegion>
+  );
+}
+
+export function BottomTabsRegion({
+  principal,
+  showsInternal,
+  businessScope,
+  routesWithData,
+}: {
+  principal: Principal;
+  showsInternal: boolean;
+  businessScope: BusinessScopeAnswers;
+  /** Same list the top bar gets, from the same layout. */
+  routesWithData: readonly string[];
+}) {
+  return (
+    <ShellRegion region="bottomtabs">
+      <BottomTabs
+        principal={principal}
+        showsInternal={showsInternal}
+        businessScope={businessScope}
+        routesWithData={routesWithData}
+      />
+    </ShellRegion>
+  );
+}
+
+export function CommandPaletteRegion() {
+  return (
+    <ShellRegion region="helper">
+      <CommandPalette />
     </ShellRegion>
   );
 }

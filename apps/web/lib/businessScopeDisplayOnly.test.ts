@@ -57,7 +57,7 @@
  * WHO IS ALLOWED, AND HOW TO ADD SOMEBODY. `RAIL_FILES` below is the rail's
  * own files, named rather than pattern-matched. If the rail legitimately grows
  * a fourth consumer — the coverage work in flight may move the call between
- * `Sidebar`, `MobileNav` and `navItems` — add its path there WITH the one-line
+ * `TopBar`, `BottomTabs` and `navItems` — add its path there WITH the one-line
  * reason it is display-only, and the failure message says so rather than
  * leaving a reviewer to guess. Test files are exempt as a class, for the one
  * reason that cannot rot: a vitest module renders no rail and gates no
@@ -102,10 +102,11 @@ const SYMBOL = "isHiddenByBusinessScope";
 const RAIL_FILES = [
   // Builds the nav groups and is the one place the filter is applied today.
   "components/navItems.tsx",
-  // Renders whatever `navGroupsFor()` hands it; may legitimately filter.
-  "components/Sidebar.tsx",
-  // The phone's rail, same decision on a narrower screen.
-  "components/MobileNav.tsx",
+  // Concept G (2026-10-10) replaced Sidebar.tsx and MobileNav.tsx with these
+  // two; both render whatever `navGroupsFor()` hands them (the top bar's
+  // words and "All pages" panel, the phone's tabs) and may legitimately filter.
+  "components/shell/TopBar.tsx",
+  "components/shell/BottomTabs.tsx",
 ] as const;
 
 /* ------------------------------------------------------------------ *
@@ -499,7 +500,7 @@ describe(`${SYMBOL} is display-only, and only the rail may ask it`, () => {
         `page stays reachable by search, by Ask and by its own link". A caller outside the rail turns ` +
         `that promise false with no error and nothing on screen — the customer simply never learns the ` +
         `page exists.\n\nIf this caller IS the rail — the call may legitimately move between ` +
-        `navItems/Sidebar/MobileNav — add its path to RAIL_FILES in this file with the one-line reason ` +
+        `navItems/TopBar/BottomTabs — add its path to RAIL_FILES in this file with the one-line reason ` +
         `it is display-only. If it is not, the page it wants to hide needs a capability in ` +
         `lib/permissions.ts (ROUTE_CAPABILITY), which is the map that decides what a PERSON may do.`,
     ).toEqual([]);
