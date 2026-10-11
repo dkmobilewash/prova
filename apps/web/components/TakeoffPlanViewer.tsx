@@ -48,6 +48,7 @@ import { pagesToSample, templateFromSheets, withoutTemplate } from "@/lib/takeof
 import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 import { wallTypeTags, tagByRun, tagSentence } from "@/lib/takeoff/wallTags";
+import { scaleBarLabels, wallsNotTheScaleBar } from "@/lib/takeoff/scaleBar";
 import { wallGroups, verdictFor, groupSentence, type WallGroup, type GroupVerdict } from "@/lib/takeoff/wallGroups";
 import type { PostableWallType } from "@/lib/takeoff/wallTypeMatch";
 
@@ -557,7 +558,21 @@ export function TakeoffPlanViewer({
       // AND NOT THE SHEET'S OWN BORDER, which a real set offered as a 114ft
       // wall — the longest single run in the panel and entirely false. The
       // height is in page-width units, hence the aspect rather than 1.
-      const walls = wallsNotTheSheetBorder(notLettering, 1, pageSize.heightPt / pageSize.widthPt);
+      const notBorder = wallsNotTheSheetBorder(notLettering, 1, pageSize.heightPt / pageSize.widthPt);
+      // AND NOT THE GRAPHIC SCALE BAR, which is two parallel lines a
+      // wall-thickness apart and 32 ft long — a textbook wall by every
+      // measurement, and the one thing on the sheet that is literally a ruler.
+      // It sat in School-01's panel as a 5-3/8in group holding 32 ft and was
+      // found by somebody looking at the drawing, not by a filter. See
+      // `scaleBar.ts` for why no bound on the LINES can catch it.
+      //
+      // ONE PASS OVER THE TEXT for this and the wall-type tags: the items are
+      // read once above and both readers work from them.
+      const walls = wallsNotTheScaleBar(
+        notBorder,
+        scaleBarLabels(textItems, pageSize.widthPt),
+        feetPerUnit,
+      );
       const clusters = clusterByThickness(walls);
       // ── WHAT THE DRAWING CALLS THESE, where it says so ──
       //
