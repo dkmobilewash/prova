@@ -1966,7 +1966,6 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   aiSettings: () => import("./actions/aiSettings"),
   agents: () => import("./actions/agents"),
   // Dismiss on /ai's findings (2026-10-11), a MANAGE_ESTIMATING page.
-  agentFindings: () => import("./actions/agentFindings"),
   bidOutcomes: () => import("./actions/bidOutcomes"),
   recommendations: () => import("./actions/recommendations"),
   // The plan-ingestion runner, reachable from /jobs/[id]/takeoff alone, which is
