@@ -19,6 +19,9 @@ import { createInvoice, deletePayment } from "@/lib/actions";
 import { LienWaivers } from "@/components/LienWaivers";
 import { loadLienWaiverSection } from "@/lib/lien-waiver-query";
 import { ActionForm } from "@/components/ActionForm";
+import { PayAppSummary } from "@/components/job/PayAppSummary";
+import { payAppFigures } from "@/components/job/payAppFigures";
+import { loadPayApplication } from "@/lib/pay-application-query";
 
 const rowDeleteClass = "text-xs text-danger hover:underline";
 const rowCancelClass =
@@ -58,7 +61,7 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
   const job = await prisma.job.findUnique({
     where: { id: jobRef.id },
     include: {
-      contact: { select: { id: true } },
+      contact: { select: { id: true, name: true } },
       lineItems: { where: { isDeleted: false }, select: { id: true, description: true, quantity: true, unitPrice: true } },
       invoices: {
         orderBy: { number: "asc" },
@@ -145,8 +148,37 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
 
   const lienWaiverSection = await loadLienWaiverSection(job.id);
 
+  // The summary at the top is the LATEST pay application, read through
+  // loadPayApplication — the same certificate its Review page prints — so
+  // the two cannot show different figures.
+  const latestPayApp = payApplications.at(-1);
+  const latestCertificate = latestPayApp ? await loadPayApplication(job.id, latestPayApp.id, company.id) : null;
+  // The counter, not max(number)+1 (CLAUDE.md, sequence numbers): it is
+  // what the next submit will actually issue. A read only — the bump stays
+  // in issueInvoiceNumber's transaction.
+  const invoiceCounter = await prisma.invoiceCounter.findUnique({ where: { jobId: job.id }, select: { lastNumber: true } });
+  const latestInvoice = latestPayApp ? job.invoices.find((invoice) => invoice.id === latestPayApp.id) : undefined;
+
   return (
     <div>
+      <PayAppSummary
+        jobId={job.id}
+        gcName={job.contact.name}
+        nextNumber={(invoiceCounter?.lastNumber ?? 0) + 1}
+        payApp={
+          latestPayApp && latestInvoice && latestCertificate
+            ? {
+                id: latestPayApp.id,
+                number: latestPayApp.number,
+                month: latestInvoice.issuedAt.toLocaleDateString("en-US", { month: "long", timeZone }),
+                dueAt: latestInvoice.dueAt,
+                status: latestPayApp.status,
+                figures: payAppFigures(latestCertificate),
+              }
+            : null
+        }
+      />
+
       <section className="mb-10" data-tour="job-invoices">
         <h2 className="mb-3 text-lg font-semibold text-ink">Invoices</h2>
         <div className="flex flex-col gap-4">
@@ -311,6 +343,8 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
         </ActionForm>
       </section>
 
+      {/* Anchor for the summary's "Start pay app #1". */}
+      <div id="pay-applications" className="scroll-mt-6" />
       <PayApplications jobId={job.id} lineItems={payApplicationLineItemOptions} payApplications={payApplications} timeZone={timeZone} />
 
       <LienWaivers jobId={job.id} section={lienWaiverSection} canManage={showsBilling} />

@@ -157,6 +157,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/pay-application-query.ts":
     "Assembles one pay application. PR #156 moved this out of the page so the G702 arithmetic could be tested without a database; the page now renders what this returns.",
   "lib/pay-application-query.test.ts": "Pins that assembly, including the removed-line close-out.",
+  "components/job/payAppFigures.test.ts":
+    "Feeds per-invoice snapshots into assemblePayApplication as FIXTURE data, to pin that the job page's Billing summary reads its retainage off that certificate (summary.retainageToDate) rather than summing the column itself. No query, no total of its own.",
   "lib/pay-application-credit.test.ts":
     "Drives submitPayApplication for real over a faked database and reads the snapshot it wrote. Names the column only to assert the figure on the invoice — a −$5,000 credit carries a −$500.00 snapshot — and to prove a refused application wrote none. No query and no second formula: the write under test is retainageWithheldFor, unchanged.",
   "lib/alerts-query.ts": "RETAINAGE_RELEASE alerts — one alert per job, with its name.",
