@@ -138,7 +138,14 @@ describe("the bid watcher", () => {
     expect(calls).toContainEqual(
       expect.objectContaining({ status: "INVITED", dueDate: { not: null, lte: day("2026-10-15") } }),
     );
-    expect(calls).toContainEqual(expect.objectContaining({ createdAt: { gte: new Date("2026-10-11T12:23:00Z") } }));
+    expect(calls).toContainEqual(
+      expect.objectContaining({
+        createdAt: { gte: new Date("2026-10-11T12:23:00Z") },
+        // Decided or past-due bids are never "new invitations".
+        status: "INVITED",
+        OR: [{ dueDate: null }, { dueDate: { gte: day("2026-10-12") } }],
+      }),
+    );
   });
 
   it("says nothing new on a second run over the same data, and pushes nobody twice", async () => {

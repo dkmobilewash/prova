@@ -81,7 +81,14 @@ export async function watcherFindings(
 
   const [newBids, openDated, addenda, pursuits] = await Promise.all([
     prisma.bidInvitation.findMany({
-      where: { companyId, createdAt: { gte: since } },
+      // Only bids still open to answer. A decided bid is not news, and a
+      // past-due one already gets its own "past due" flag below.
+      where: {
+        companyId,
+        createdAt: { gte: since },
+        status: "INVITED",
+        OR: [{ dueDate: null }, { dueDate: { gte: today } }],
+      },
       select: { ...bidSelect, status: true },
       orderBy: { createdAt: "asc" },
     }),
