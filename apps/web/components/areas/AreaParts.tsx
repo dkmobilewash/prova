@@ -1,0 +1,173 @@
+import Link from "next/link";
+import { NAV_ITEMS } from "@/components/navItems";
+import type { AreaView, Tone, ToolStatus } from "@/lib/areas";
+import type { WaitingList } from "@/lib/areas-data";
+
+/**
+ * The pieces the home boxes and the area pages share (Concept H). Server-safe
+ * and presentational: every figure arrives in an AreaView built by
+ * lib/areas.ts from lib/areas-data.ts.
+ */
+
+export const DOT: Record<Tone, string> = { red: "bg-bar-rose", amber: "bg-bar-amber", green: "bg-bar-green" };
+const TEXT: Record<Tone, string> = { red: "text-danger", amber: "text-tag-amber-ink", green: "text-ink-muted" };
+
+export function AreaIcon({ paths, className = "h-5 w-5" }: { paths: string[]; className?: string }) {
+  return (
+    <svg aria-hidden viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      {paths.map((d) => (
+        <path key={d} d={d} />
+      ))}
+    </svg>
+  );
+}
+
+const iconByHref = new Map(NAV_ITEMS.map((item) => [item.href, item.icon]));
+
+/** A tool's icon is its nav entry's icon — one drawing per page app-wide. */
+export function ToolIcon({ route }: { route: string }) {
+  return (
+    <span aria-hidden className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-rail-hover text-ink">
+      {iconByHref.get(route)}
+    </span>
+  );
+}
+
+/** A status as a dot and words — several parts joined by " · ", each in
+ * its own tone, the dot taking the first part's that has one — or the plain
+ * description when there is none. */
+export function StatusLine({ status, fallback, className = "" }: { status: ToolStatus | ToolStatus[] | null; fallback: string; className?: string }) {
+  const parts = status === null ? [] : Array.isArray(status) ? status : [status];
+  if (parts.length === 0) return <span className={`block text-[13.5px] leading-snug text-ink-muted ${className}`}>{fallback}</span>;
+  const dot = parts.find((p) => p.tone)?.tone;
+  return (
+    <span className={`flex min-w-0 items-start gap-[7px] text-[13.5px] leading-snug ${className}`}>
+      {dot && <span className={`mt-[0.42em] h-[7px] w-[7px] shrink-0 rounded-full ${DOT[dot]}`} />}
+      <span className="min-w-0">
+        {parts.map((p, i) => (
+          <span key={p.text} className={p.tone ? TEXT[p.tone] : "text-ink-muted"}>
+            {i > 0 && <span className="text-ink-muted"> · </span>}
+            {p.text}
+          </span>
+        ))}
+      </span>
+    </span>
+  );
+}
+
+/** A count chip for the dropdown rows. */
+export function StatusChip({ status }: { status: ToolStatus }) {
+  const tone =
+    status.tone === "red"
+      ? "bg-tag-rose text-tag-rose-ink"
+      : status.tone === "amber"
+        ? "bg-tag-amber text-tag-amber-ink"
+        : "bg-rail-hover text-ink-body";
+  return <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[13px] font-semibold ${tone}`}>{status.text}</span>;
+}
+
+/* --------------------------------------------------------- area page -- */
+
+/** The first word of a status is its number, when it has one — the big
+ * figure on a tool card. "$64,920 overdue" gives "$64,920". */
+export function bigFigure(status: ToolStatus | null): string | null {
+  const first = status?.text.split(" ")[0] ?? "";
+  return /^\$?[\d,]+$/.test(first) ? first : null;
+}
+
+/** The one primary action on a tool card. Only the jobs list has a create
+ * page of its own (/jobs/new); every other tool's create form lives on its
+ * list page, so its action opens that page. */
+function quickAction(tool: { route: string; href: string; name: string }): { label: string; href: string } {
+  if (tool.route === "/dashboard") return { label: "+ New job", href: "/jobs/new" };
+  // A long name does not fit a card's button; the name is on the card above it.
+  return { label: tool.name.length <= 12 ? `Open ${tool.name}` : "Open", href: tool.href };
+}
+
+export function ToolCard({ tool, primary }: { tool: AreaView["tools"][number]; primary: boolean }) {
+  const figure = bigFigure(tool.status);
+  const action = quickAction(tool);
+  return (
+    <article className="flex flex-col rounded-[14px] border border-line-card bg-surface p-4" data-area-tool={tool.route}>
+      <div className="flex items-center justify-between gap-3">
+        <ToolIcon route={tool.route} />
+        {figure && <span className="font-headline text-[30px] leading-none text-ink tabular-nums">{figure}</span>}
+      </div>
+      <h2 className="mt-3 font-headline text-[21px] leading-tight text-ink">
+        <Link href={tool.href} className="hover:underline">
+          {tool.name}
+        </Link>
+      </h2>
+      <StatusLine status={tool.status} fallback={tool.description} className="mt-0.5 min-h-5" />
+      {tool.status && <p className="mt-1 line-clamp-2 text-[13px] text-ink-muted">{tool.description}</p>}
+      <div className="mt-auto pt-4">
+        <Link
+          href={action.href}
+          className={`flex h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] border px-3 text-sm font-semibold ${
+            primary
+              ? "border-brand bg-brand text-neutral-900 hover:bg-yellow-500"
+              : "border-line-card bg-canvas text-ink hover:bg-rail-hover"
+          }`}
+        >
+          {action.label}
+        </Link>
+      </div>
+    </article>
+  );
+}
+
+const CHIP_TONE: Record<Tone | "neutral", string> = {
+  red: "bg-tag-rose text-tag-rose-ink",
+  amber: "bg-tag-amber text-tag-amber-ink",
+  green: "bg-tag-green text-tag-green-ink",
+  neutral: "bg-rail-hover text-ink-body",
+};
+
+export function WaitingTable({ list }: { list: WaitingList }) {
+  return (
+    <section className="mt-6 overflow-hidden rounded-2xl border border-line-card bg-surface" aria-labelledby="area-waiting">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-[22px] pb-2.5 pt-4">
+        <h2 id="area-waiting" className="font-headline text-2xl text-ink">
+          {list.title}
+        </h2>
+        {list.total > 0 && (
+          <span className="text-sm text-ink-muted">
+            {list.total} {list.total === 1 ? "item" : "items"}
+            {list.total > list.rows.length ? ` · first ${list.rows.length} shown` : ""}
+          </span>
+        )}
+      </div>
+      {list.rows.length === 0 ? (
+        <p className="flex items-center gap-3 border-t border-line-row px-[22px] py-4 text-ink-body">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-bar-green" />
+          {list.empty}
+        </p>
+      ) : (
+        <ul>
+          {list.rows.map((row) => (
+            <li key={row.key} className="border-t border-line-row">
+              <Link
+                href={row.href}
+                className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 px-[22px] py-3 hover:bg-rail-hover md:grid-cols-[minmax(10rem,14rem)_minmax(0,1fr)_minmax(0,14rem)_6.5rem_9rem_4.5rem]"
+              >
+                <span className="flex min-w-0 items-center gap-2.5 font-semibold text-ink">
+                  <span className="rounded-[5px] border border-line-card px-1.5 text-[11.5px] font-semibold text-ink-muted">{row.tag}</span>
+                  <span className="truncate">{row.ref}</span>
+                </span>
+                <span className="col-span-2 truncate text-ink md:col-span-1">{row.subject}</span>
+                <span className="truncate text-ink-body">{row.job ?? ""}</span>
+                <span className="whitespace-nowrap text-ink-body tabular-nums">{row.when}</span>
+                <span>
+                  <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[12.5px] font-semibold ${CHIP_TONE[row.status.tone]}`}>
+                    {row.status.text}
+                  </span>
+                </span>
+                <span className="hidden whitespace-nowrap text-right font-semibold text-link md:block">{row.action} &rarr;</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}

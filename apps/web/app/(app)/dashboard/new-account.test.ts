@@ -163,6 +163,8 @@ const POPULATED_ORDER = [
   'data-home="greeting"',
   'data-tour="dashboard-ask"',
   'data-tour="dashboard-new-job"',
+  // Concept H: the six area boxes under the greeting.
+  'data-home="areas"',
   'data-home="phone-tiles"',
   'data-tour="dashboard-needs-attention"',
   'data-tour="dashboard-money"',
@@ -225,6 +227,7 @@ describe("/dashboard on a company with no jobs", () => {
       'data-tour="dashboard-money"',
       'data-tour="dashboard-job-health"',
       'data-home="phone-tiles"',
+      'data-home="areas"',
       "Browse all jobs",
       "$0.00",
       "Nobody is on the schedule",
@@ -368,6 +371,37 @@ describe("/dashboard on a company with jobs", () => {
     const html = await render();
     expect(html).toContain("Open a job below");
     expect(html).not.toContain('href="/jobs"');
+  });
+
+  it("gives each area box one line from real rows, or its plain description", async () => {
+    const html = await render();
+    const boxes = html.match(/data-home="areas"[\s\S]*?data-home="area-tiles"/)?.[0] ?? "";
+    for (const line of [
+      "1 in progress", // Jobs & bids: a count of jobs...
+      "No bids due", // ...and no invitations
+      "$18,250 overdue", // Money: the dashboard's own overdue total
+      "1 crew out today", // Crew & field: today's schedule
+      "No RFIs waiting", // Paperwork: no SENT RFIs in this fake database
+      "1 expired", // Compliance: the expired licence
+      "0 orders open", // Materials: a real zero, said as one
+    ]) {
+      expect(boxes, `lost ${line}`).toContain(line);
+    }
+    // Every box is a button that says whether its dropdown is open.
+    expect(boxes.match(/aria-expanded="false"/g)).toHaveLength(6);
+    // Phone tiles go straight to each area page.
+    for (const slug of ["jobs-bids", "money", "crew-field", "paperwork", "compliance-safety", "materials-equipment"]) {
+      expect(html).toContain(`href="/areas/${slug}"`);
+    }
+  });
+
+  it("drops the Money box for a role that can open no money page", async () => {
+    state.context.role = "MEMBER";
+    state.context.jobFunction = "FIELD";
+    const html = await render();
+    expect(html).toContain('data-home="areas"');
+    expect(html).not.toContain('href="/areas/money"');
+    expect(html).not.toContain("overdue<");
   });
 
   it("is a working-width page", async () => {

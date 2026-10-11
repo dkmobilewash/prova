@@ -47,7 +47,8 @@ const { TopBar } = await import("@/components/shell/TopBar");
 const { BottomTabs } = await import("@/components/shell/BottomTabs");
 const { STAGE_KEY_FOR_HEADING } = await import("@/components/shell/AllPagesMenu");
 const { navGroupsFor, navFooterFor } = await import("@/components/navItems");
-const { activeTab, initialsFor, primaryTabs } = await import("@/components/shell/primaryNav");
+const { activeTab, initialsFor, primaryTabs, MONEY_AREA_HREF } = await import("@/components/shell/primaryNav");
+const { AREAS, areaHref } = await import("@/lib/areas");
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined;
@@ -122,9 +123,9 @@ describe("the desktop top bar", () => {
     expect(main.querySelector('a[aria-current="page"]')?.textContent).toBe("Jobs");
   });
 
-  it("points Money at cash flow for an owner and drops it for a field user", () => {
+  it("points Money at the Money area for an owner and drops it for a field user", () => {
     renderTopBar();
-    expect(container.querySelector('nav[aria-label="Main"] a[href="/cash-flow"]')).not.toBeNull();
+    expect(container.querySelector('nav[aria-label="Main"] a[href="/areas/money"]')).not.toBeNull();
     renderTopBar(field, []);
     const words = Array.from(container.querySelectorAll('nav[aria-label="Main"] a')).map((a) => a.textContent);
     expect(words).not.toContain("Money");
@@ -187,6 +188,17 @@ describe("All pages", () => {
     const panel = openAllPages();
     expect(panel.querySelector('a[href="/cash-flow"]')).toBeNull();
     expect(panel.querySelector('a[href="/wip"]')).toBeNull();
+    // ...nor an area with nothing in it they can open.
+    expect(panel.querySelector('a[href="/areas/money"]')).toBeNull();
+    expect(panel.querySelector('a[href="/areas/crew-field"]')).not.toBeNull();
+  });
+
+  it("leads with the six areas, the same ones the home page boxes open", () => {
+    renderTopBar();
+    const areas = openAllPages().querySelector('nav[aria-label="Areas"]')!;
+    expect(Array.from(areas.querySelectorAll("a")).map((a) => a.getAttribute("href"))).toEqual(
+      AREAS.map((area) => areaHref(area.slug)),
+    );
   });
 
   it("Escape closes it", () => {
@@ -216,9 +228,14 @@ describe("the phone's bottom tabs", () => {
 });
 
 describe("primaryNav", () => {
-  it("falls back from cash flow to the next money page the person can open", () => {
-    const groups = [{ heading: "x", description: "", icon: null, items: [{ href: "/backcharges", label: "B", icon: null }] }];
-    expect(primaryTabs(groups).map((t) => t.href)).toEqual(["/backcharges"]);
+  it("opens the Money area for anyone who can open any money page, and only them", () => {
+    expect(MONEY_AREA_HREF).toBe(areaHref("money"));
+    // A billing person without company figures still gets the word: the area
+    // page shows them backcharges and lien deadlines.
+    const billing = [{ heading: "x", description: "", icon: null, items: [{ href: "/backcharges", label: "B", icon: null }] }];
+    expect(primaryTabs(billing).map((t) => t.href)).toEqual(["/areas/money"]);
+    const none = [{ heading: "x", description: "", icon: null, items: [{ href: "/rfis", label: "R", icon: null }] }];
+    expect(primaryTabs(none)).toEqual([]);
   });
 
   it("knows which tab a page belongs to", () => {
@@ -226,6 +243,9 @@ describe("primaryNav", () => {
     expect(activeTab("/dashboard", false)).toBe("jobs");
     expect(activeTab("/jobs/abc/billing", true)).toBe("jobs");
     expect(activeTab("/wip", true)).toBe("money");
+    expect(activeTab("/areas/money", false)).toBe("money");
+    expect(activeTab("/areas/jobs-bids", false)).toBe("jobs");
+    expect(activeTab("/areas/paperwork", false)).toBeNull();
     expect(activeTab("/schedule", false)).toBe("schedule");
     expect(activeTab("/rfis", false)).toBeNull();
   });

@@ -42,19 +42,24 @@ function ShortcutLink({ shortcut, className, children }: { shortcut: Shortcut; c
 const CHIP = "flex items-center gap-1.5 rounded-full border border-line-card px-[15px] py-[7px] text-sm text-ink-body hover:bg-rail-hover hover:text-ink";
 const CHIP_PRIMARY = "flex items-center gap-1.5 rounded-full border border-brand bg-brand px-[15px] py-[7px] text-sm font-semibold text-neutral-900 hover:bg-yellow-500";
 
-/** The big search box and the shortcut chips under it, on a column
- * narrower than the page (the mockup's 760px hero). */
-export function HomeSearch({ children }: { children: ReactNode }) {
-  return (
-    <div className="mx-auto mt-[18px] max-w-[760px]" data-tour="dashboard-ask">
-      {children}
-    </div>
-  );
-}
-
+/**
+ * The shortcuts beside the greeting (Concept H): the search box made
+ * compact — one chip that opens the same ⌘K palette the top bar does — then
+ * New job and the job shortcuts. Desktop only; a phone has the search icon
+ * in its top bar and the area tiles below.
+ */
 export function ShortcutChips({ newJob, others }: { newJob: boolean; others: { icon: string; shortcut: Shortcut }[] }) {
   return (
-    <div className="mt-3.5 hidden flex-wrap justify-center gap-2.5 md:flex">
+    <div className="hidden flex-wrap items-center justify-end gap-2.5 md:flex">
+      <span data-tour="dashboard-ask">
+        <SearchChip query="" className={CHIP}>
+          <svg aria-hidden viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4 text-ink-muted">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          Search or ask
+        </SearchChip>
+      </span>
       {newJob && (
         <Link href="/jobs/new" data-tour="dashboard-new-job" className={CHIP_PRIMARY}>
           <span aria-hidden>+</span> New job
@@ -74,75 +79,28 @@ export function ShortcutChips({ newJob, others }: { newJob: boolean; others: { i
 
 /* ------------------------------------------------------ phone tiles -- */
 
-const ICONS: Record<string, ReactNode> = {
-  clock: (
-    <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 2" />
-    </>
-  ),
-  camera: (
-    <>
-      <path d="M3 8h4l2-3h6l2 3h4v12H3z" />
-      <circle cx="12" cy="13" r="3.5" />
-    </>
-  ),
-  rfi: (
-    <>
-      <path d="M4 4h16v12H9l-5 4z" />
-      <path d="M10 8.5a2 2 0 113 1.7c-.7.4-1 .8-1 1.6M12 14h.01" />
-    </>
-  ),
-  report: (
-    <>
-      <rect x="5" y="4" width="14" height="17" rx="2" />
-      <path d="M9 4V2.5h6V4M8.5 10h7M8.5 14h7M8.5 18h4" />
-    </>
-  ),
-};
-
-function Icon({ name, size = 28 }: { name: string; size?: number }) {
+/** Below md only: the one thing a foreman does from a phone every day, big.
+ * The other field shortcuts the phone home used to tile (photo, RFI, daily
+ * report) are one tap away in the Crew & field and Paperwork area tiles. */
+export function PhoneTiles({ primary }: { primary: Shortcut }) {
   return (
-    <svg aria-hidden width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-      {ICONS[name]}
-    </svg>
-  );
-}
-
-/** Below md only: the four things a foreman does from a phone, big. */
-export function PhoneTiles({ primary, tiles }: { primary: Shortcut | null; tiles: { icon: string; shortcut: Shortcut }[] }) {
-  if (!primary && tiles.length === 0) return null;
-  return (
-    <div className="mt-[18px] md:hidden" data-home="phone-tiles">
-      {primary && (
-        <ShortcutLink
-          shortcut={primary}
-          className="flex h-24 w-full items-center gap-4 rounded-[18px] bg-brand px-5 text-left text-neutral-900"
-        >
-          <Icon name="clock" size={34} />
-          <span className="min-w-0 flex-1">
-            <span className="block font-headline text-[28px] font-semibold leading-none">{primary.label}</span>
-            {primary.sub && <span className="mt-1.5 block truncate text-[15px] font-semibold opacity-75">{primary.sub}</span>}
-          </span>
-          <svg aria-hidden width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M9 6l6 6-6 6" />
-          </svg>
-        </ShortcutLink>
-      )}
-      {tiles.length > 0 && (
-        <div className="mt-3 grid grid-cols-3 gap-3">
-          {tiles.map(({ icon, shortcut }) => (
-            <ShortcutLink
-              key={shortcut.label}
-              shortcut={shortcut}
-              className="flex h-[104px] flex-col justify-between rounded-2xl border border-line-card bg-surface px-3.5 py-4 text-left text-ink"
-            >
-              <Icon name={icon} />
-              <span className="text-[17px] font-semibold leading-tight">{shortcut.label}</span>
-            </ShortcutLink>
-          ))}
-        </div>
-      )}
+    <div className="mt-3 md:hidden" data-home="phone-tiles">
+      <ShortcutLink
+        shortcut={primary}
+        className="flex h-24 w-full items-center gap-4 rounded-[18px] bg-brand px-5 text-left text-neutral-900"
+      >
+        <svg aria-hidden width={34} height={34} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+        <span className="min-w-0 flex-1">
+          <span className="block font-headline text-[28px] font-semibold leading-none">{primary.label}</span>
+          {primary.sub && <span className="mt-1.5 block truncate text-[15px] font-semibold opacity-75">{primary.sub}</span>}
+        </span>
+        <svg aria-hidden width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+      </ShortcutLink>
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { HelpButton } from "@/components/HelpButton";
 import { ThemeSwitch } from "@/components/ThemeSwitch";
 import { navFooterFor, navGroupsFor } from "@/components/navItems";
 import { AllPagesMenu } from "@/components/shell/AllPagesMenu";
+import { areasFor } from "@/lib/areas";
 import { SearchTrigger } from "@/components/shell/SearchTrigger";
 import { activeTab, initialsFor, primaryTabs } from "@/components/shell/primaryNav";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
@@ -213,7 +214,7 @@ export function TopBar({
           </div>
         </div>
       </header>
-      <AllPagesMenu open={allOpen} onClose={closeAll} groups={groups} footer={footer} stages={stages} />
+      <AllPagesMenu open={allOpen} onClose={closeAll} groups={groups} footer={footer} stages={stages} areas={areasFor(principal)} />
     </>
   );
 }

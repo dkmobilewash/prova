@@ -383,6 +383,8 @@ const OPEN_ROUTES: Record<string, string> = {
     "Same reasoning as /jobs/[id]/estimate, same issue #383: withholds on MANAGE_BILLING in-page rather than a hard gate, because this tab's write actions are not independently guarded either.",
   "/jobs/[id]/retainage":
     "Same reasoning as /jobs/[id]/billing beside it, same issue #383: withholds on MANAGE_BILLING in-page — its write actions are not independently guarded.",
+  "/areas/[slug]":
+    "The six area pages behind the home boxes (Concept H). Open like /dashboard, and its content is not: the page draws only the tools areasFor() says this person can open (canReach, the same rule as the nav), 404s an area with none of them, and reads each count and waiting row only behind canReach/can for the page it describes (lib/areas-data.ts). Every card links to a page that still runs its own requireCapability.",
   "/jobs": "A bare redirect to /dashboard. Guarding a redirect claims a protection it redirects straight past.",
   "/estimating": "A bare redirect to /dashboard?status=ESTIMATE. Same reason as /jobs.",
   "/settings/export":
