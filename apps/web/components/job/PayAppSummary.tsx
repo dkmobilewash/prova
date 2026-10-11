@@ -27,7 +27,7 @@ export type PayAppSummaryProps = {
 };
 
 const label = "text-xs uppercase tracking-[0.06em] text-ink-muted";
-const big = "mt-1.5 block font-headline text-4xl leading-[1.1] tabular-nums text-ink sm:text-[44px]";
+const big = "mt-1 block font-headline text-[32px] leading-[1.1] tabular-nums text-ink sm:text-[38px]";
 const sub = "text-sm text-ink-muted";
 const button =
   "inline-flex min-h-[46px] w-full items-center justify-center rounded-[10px] px-[22px] py-2 text-center text-[15px] font-semibold sm:w-auto";
@@ -60,8 +60,8 @@ function StatusPill({ status, dueAt, asOf }: { status: string; dueAt: Date | nul
 export function PayAppSummary({ jobId, gcName, nextNumber, payApp, asOf }: PayAppSummaryProps) {
   if (!payApp) {
     return (
-      <section className="mb-8 rounded-[14px] border border-line-card bg-surface p-5 sm:px-8 sm:py-7">
-        <h2 className="font-headline text-[28px] leading-none text-ink">No pay application yet</h2>
+      <section className="mb-6 rounded-[14px] border border-line-card bg-surface p-5 sm:px-7 sm:py-5">
+        <h2 className="font-headline text-2xl leading-none text-ink">No pay application yet</h2>
         <p className="mt-3 max-w-xl text-sm text-ink-body">
           A pay application bills {gcName} against this job&rsquo;s schedule of values, line by line. Nothing is sent
           until you submit it.
@@ -78,30 +78,30 @@ export function PayAppSummary({ jobId, gcName, nextNumber, payApp, asOf }: PayAp
   const ofContract = f.contractSum > 0 ? Math.round((f.thisPeriod / f.contractSum) * 100) : null;
 
   return (
-    <section className="mb-8 rounded-[14px] border border-line-card bg-surface p-5 sm:px-8 sm:py-7">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-headline text-[28px] leading-none text-ink">
+    <section className="mb-6 rounded-[14px] border border-line-card bg-surface p-5 sm:px-7 sm:py-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-headline text-2xl leading-none text-ink">
           Pay application #{payApp.number} · {payApp.month}
         </h2>
         <StatusPill status={payApp.status} dueAt={payApp.dueAt} asOf={asOf} />
       </div>
 
       <dl className="grid grid-cols-1 border-y border-line-row sm:grid-cols-3">
-        <div className="py-5">
+        <div className="py-4">
           <dt className={label}>This period</dt>
           <dd>
             <strong className={big}>{money(f.thisPeriod)}</strong>
             {ofContract !== null && <span className={sub}>{ofContract}% of contract</span>}
           </dd>
         </div>
-        <div className="border-t border-line-row py-5 sm:border-l sm:border-t-0 sm:pl-7">
+        <div className="border-t border-line-row py-4 sm:border-l sm:border-t-0 sm:pl-7">
           <dt className={label}>Retainage held</dt>
           <dd>
             <strong className={big}>{money(f.retainageHeld)}</strong>
             <span className={sub}>to date, released at closeout</span>
           </dd>
         </div>
-        <div className="border-t border-line-row py-5 sm:border-l sm:border-t-0 sm:pl-7">
+        <div className="border-t border-line-row py-4 sm:border-l sm:border-t-0 sm:pl-7">
           <dt className={label}>You&rsquo;ll be paid</dt>
           <dd>
             <strong className={big}>{money(f.youllBePaid)}</strong>
@@ -110,7 +110,7 @@ export function PayAppSummary({ jobId, gcName, nextNumber, payApp, asOf }: PayAp
         </div>
       </dl>
 
-      <div className="mb-2 mt-6 flex h-2.5 overflow-hidden rounded-[5px] bg-line-row" aria-hidden="true">
+      <div className="mb-2 mt-4 flex h-2.5 overflow-hidden rounded-[5px] bg-line-row" aria-hidden="true">
         <span className="h-full bg-ink-muted" style={{ width: `${bar.before}%` }} />
         <span className="h-full border-y-[5px] border-brand" style={{ width: `${bar.thisPeriod}%` }} />
       </div>

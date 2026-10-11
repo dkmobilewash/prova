@@ -229,6 +229,13 @@ const config: Config = {
         '[data-theme="light"]': vars(palette.light),
       });
     },
+    // `mouse:` — a primary pointer that is precise. A control written
+    // `min-h-11 mouse:min-h-8` stays 44px on a touch screen and gets dense
+    // under a mouse, at any width (the compact pass, 2026-10-11). The same
+    // test globals.css uses for its touch floors, inverted.
+    ({ addVariant }: PluginAPI) => {
+      addVariant("mouse", "@media (pointer: fine)");
+    },
   ],
 };
 

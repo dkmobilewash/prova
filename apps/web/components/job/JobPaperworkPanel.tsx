@@ -17,7 +17,7 @@ export function JobPaperworkPanel({ links }: { links: JobPaperworkLink[] }) {
   return (
     <nav
       aria-label="This job's paperwork"
-      className="rounded-[14px] border border-line-card bg-surface px-5 py-5 sm:px-[26px] print:hidden"
+      className="rounded-[14px] border border-line-card bg-surface px-5 py-4 sm:px-6 print:hidden"
     >
       <h2 className="mb-1 font-headline text-xl text-ink">Paperwork</h2>
       <ul>
@@ -25,7 +25,7 @@ export function JobPaperworkPanel({ links }: { links: JobPaperworkLink[] }) {
           <li key={link.href} className="border-b border-line-row last:border-b-0">
             <Link
               href={link.href}
-              className="flex min-h-[44px] items-center justify-between gap-3 py-3 text-base text-ink hover:text-link"
+              className="flex min-h-[44px] items-center justify-between gap-3 py-2.5 text-base text-ink hover:text-link mouse:min-h-9 mouse:py-2"
             >
               <span>{link.label}</span>
               <span

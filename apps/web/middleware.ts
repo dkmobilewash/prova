@@ -51,6 +51,10 @@ const isProtectedRoute = createRouteMatcher([
   // The command palette's search. The handler answers 401 itself; listed
   // here because this is the allowlist a reader checks.
   "/api/search(.*)",
+  // The top bar's Tasks list (agent runs). Answers 401/403 itself; listed
+  // for the same reason. NOT /api/agents(.*): /api/agents/run is the cron,
+  // which has no session — see the note below.
+  "/api/agents/tasks(.*)",
   "/messages(.*)",
   // The data export returns a file rather than a page, for the same reason
   // and with the same consequence: it is the single widest read in the app,

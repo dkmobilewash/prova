@@ -102,7 +102,7 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
   return (
     <>
       {/* Desktop and tablet: boxes with a dropdown. */}
-      <div ref={holder} className="relative z-30 mt-7 hidden grid-cols-3 gap-4 md:grid xl:grid-cols-6" data-home="areas">
+      <div ref={holder} className="relative z-30 mt-5 hidden grid-cols-3 gap-3 md:grid xl:grid-cols-6" data-home="areas">
         {areas.map((area) => {
           const isOpen = open === area.slug;
           const panelId = `area-panel-${area.slug}`;
@@ -120,11 +120,11 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
                 aria-expanded={isOpen}
                 aria-controls={panelId}
                 onClick={() => setOpen(isOpen ? null : area.slug)}
-                className={`relative flex h-full w-full flex-col items-stretch justify-start rounded-[14px] border bg-surface px-4 pb-[13px] pt-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
+                className={`relative flex h-full w-full flex-col items-stretch justify-start rounded-[14px] border bg-surface px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
                   isOpen ? "border-brand shadow-[0_0_0_1px_rgb(var(--c-brand))]" : "border-line-card hover:border-ink-muted/60"
                 }`}
               >
-                <span className="grid h-9 w-9 place-items-center rounded-[10px] bg-rail-hover text-ink">
+                <span className="grid h-8 w-8 place-items-center rounded-[10px] bg-rail-hover text-ink">
                   <AreaIcon paths={area.icon} />
                 </span>
                 <svg
@@ -134,11 +134,11 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
                   stroke="currentColor"
                   strokeWidth="1.9"
                   strokeLinecap="round"
-                  className={`absolute right-3.5 top-4 h-[18px] w-[18px] motion-safe:transition-transform ${isOpen ? "rotate-180 text-link" : "text-ink-muted"}`}
+                  className={`absolute right-3.5 top-3.5 h-[18px] w-[18px] motion-safe:transition-transform ${isOpen ? "rotate-180 text-link" : "text-ink-muted"}`}
                 >
                   <path d="M6 9l6 6 6-6" />
                 </svg>
-                <span className="mt-3 block font-headline text-xl leading-tight text-ink">{area.name}</span>
+                <span className="mt-2 block font-headline text-lg leading-tight text-ink">{area.name}</span>
                 <StatusLine status={area.line} fallback={area.description} className="mt-1" />
               </button>
 
@@ -187,16 +187,16 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
       {open && <div aria-hidden className="fixed inset-0 z-20 hidden bg-canvas/60 md:block" />}
 
       {/* Phone: tiles straight to the area page. */}
-      <nav aria-label="Areas" className="mt-5 grid grid-cols-2 gap-3 md:hidden" data-home="area-tiles">
+      <nav aria-label="Areas" className="mt-4 grid grid-cols-2 gap-2.5 md:hidden" data-home="area-tiles">
         {areas.map((area) => (
-          <Link key={area.slug} href={area.href} className="relative flex min-h-[118px] flex-col rounded-[18px] border border-line-card bg-surface px-4 pb-3.5 pt-4 hover:border-ink-muted/60 active:bg-rail-hover">
+          <Link key={area.slug} href={area.href} className="relative flex min-h-[104px] flex-col rounded-[18px] border border-line-card bg-surface px-4 pb-3 pt-3.5 hover:border-ink-muted/60 active:bg-rail-hover">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-rail-hover text-ink">
               <AreaIcon paths={area.icon} className="h-[22px] w-[22px]" />
             </span>
             <svg aria-hidden viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" className="absolute right-3.5 top-4 h-5 w-5 text-ink-muted">
               <path d="M9 6l6 6-6 6" />
             </svg>
-            <span className="mt-auto block pt-3 text-[19px] font-semibold leading-tight text-ink">{area.name}</span>
+            <span className="mt-auto block pt-2 text-[18px] font-semibold leading-tight text-ink">{area.name}</span>
             <StatusLine status={area.line} fallback={area.description} className="mt-1 !text-[14px]" />
           </Link>
         ))}

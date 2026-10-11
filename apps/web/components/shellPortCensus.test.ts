@@ -204,6 +204,16 @@ const KNOWN: Record<string, { count: number; because: string }> = {
       "`sm:max-h-[82vh]` on the dialog, whose outermost element is " +
       "`fixed inset-0 z-[60]` — a viewport overlay, outside every scroll port.",
   },
+  "apps/web/components/shell/TasksMenu.tsx": {
+    count: 1,
+    because:
+      "The top bar's Tasks list (2026-10-11), `max-h-[calc(100dvh-5rem)]`. " +
+      "`fixed` below md, like HelpButton.tsx; from md up `absolute` inside " +
+      "the top bar, which is not in the scroll port, and its top (64px bar " +
+      "+ 8px) plus that clamp ends 8px above the viewport's foot, so it " +
+      "cannot add to any scroll height (measured at 1440x900: panel bottom " +
+      "672 with seven rows).",
+  },
   "apps/web/components/AskLauncher.tsx": {
     count: 1,
     because: "Same as HelpButton.tsx — the Ask dropdown, `fixed`, same clamp.",

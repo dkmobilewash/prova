@@ -107,7 +107,7 @@ export default async function JobTabsLayout({
           off the page. NOT wrapped in print:hidden — the Overview tab's
           printable ContractSummary lives in `children` and must still
           print; the panel hides itself. */}
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0">{children}</div>
         <aside className="xl:sticky xl:top-6 xl:self-start print:hidden">
           <JobPaperworkPanel links={paperwork} />

@@ -40,7 +40,7 @@ export function AiRowAction({
             if (!result.ok) setError(result.error);
           });
         }}
-        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-ink-muted hover:bg-rail-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-50"
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm mouse:min-h-8 font-semibold text-ink-muted hover:bg-rail-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-50"
       >
         {isPending && <Spinner />}
         {label}

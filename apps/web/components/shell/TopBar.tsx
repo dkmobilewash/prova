@@ -10,12 +10,14 @@ import { HelpButton } from "@/components/HelpButton";
 import { ThemeSwitch } from "@/components/ThemeSwitch";
 import { navFooterFor, navGroupsFor } from "@/components/navItems";
 import { AllPagesMenu } from "@/components/shell/AllPagesMenu";
+import { TasksMenu, useMenuDismiss } from "@/components/shell/TasksMenu";
 import { areasFor } from "@/lib/areas";
 import { SearchTrigger } from "@/components/shell/SearchTrigger";
 import { AiCountBadge, AiSpark } from "@/components/ai/AiMark";
 import { activeTab, initialsFor, primaryTabs } from "@/components/shell/primaryNav";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import type { HelpChannel } from "@/lib/help-request";
+import type { TaskList } from "@/lib/agents/tasks";
 import type { MoneyRailStage } from "@/lib/moneyRail";
 import type { Principal } from "@/lib/permissions";
 
@@ -59,6 +61,7 @@ export function TopBar({
   helpChannel,
   stages,
   aiFindingCount = 0,
+  tasks = null,
 }: {
   companyName: string;
   userName: string | null;
@@ -78,6 +81,9 @@ export function TopBar({
    * layout only behind MANAGE_ESTIMATING — the same capability that draws
    * the word — else 0, which draws no badge. */
   aiFindingCount?: number;
+  /** Agent runs for the Tasks item — loaded by the layout only behind
+   * MANAGE_ESTIMATING, else null, which draws no item. */
+  tasks?: TaskList | null;
 }) {
   const pathname = usePathname();
   const groups = navGroupsFor(principal, { showsInternal, businessScope, routesWithData });
@@ -86,7 +92,19 @@ export function TopBar({
   const words = primaryTabs(groups).filter((tab) => tab.key !== "home");
   const active = activeTab(pathname, false);
 
-  const [menuOpen, setMenuOpen] = useState(false);
+  // One top-bar menu open at a time: opening the Tasks list closes the
+  // avatar menu and the other way round.
+  const [openMenu, setOpenMenu] = useState<"avatar" | "tasks" | null>(null);
+  const menuOpen = openMenu === "avatar";
+  const setMenuOpen = useCallback((open: boolean | ((was: boolean) => boolean)) => {
+    setOpenMenu((was) => {
+      const next = typeof open === "function" ? open(was === "avatar") : open;
+      return next ? "avatar" : was === "avatar" ? null : was;
+    });
+  }, []);
+  const setTasksOpen = useCallback((open: boolean) => {
+    setOpenMenu((was) => (open ? "tasks" : was === "tasks" ? null : was));
+  }, []);
   const [allOpen, setAllOpen] = useState(false);
   const avatar = useRef<HTMLButtonElement>(null);
   const menuPanel = useRef<HTMLDivElement>(null);
@@ -103,7 +121,7 @@ export function TopBar({
   // A navigation closes both: a menu left over the page you just asked for
   // reads as the click not having worked.
   useEffect(() => {
-    setMenuOpen(false);
+    setOpenMenu(null);
     setAllOpen(false);
   }, [pathname]);
 
@@ -111,28 +129,10 @@ export function TopBar({
   // first row, Tab walks its rows, and Tab past either end (or a click
   // outside) closes it. Esc closes it and puts focus back on the avatar.
   useEffect(() => {
-    if (!menuOpen) return;
-    menuPanel.current?.querySelector<HTMLElement>("a[href], button")?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      setMenuOpen(false);
-      avatar.current?.focus();
-    };
-    const onDown = (e: MouseEvent) => {
-      if (menuHolder.current && !menuHolder.current.contains(e.target as Node)) setMenuOpen(false);
-    };
-    const onFocusIn = (e: FocusEvent) => {
-      if (menuHolder.current && !menuHolder.current.contains(e.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("focusin", onFocusIn);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("focusin", onFocusIn);
-    };
+    if (menuOpen) menuPanel.current?.querySelector<HTMLElement>("a[href], button")?.focus();
   }, [menuOpen]);
+  const closeMenu = useCallback(() => setMenuOpen(false), [setMenuOpen]);
+  useMenuDismiss(menuOpen, closeMenu, menuHolder, avatar);
 
   const alertLabel = alertCount === 0 ? "nothing needs you" : `${alertCount > 99 ? "99+" : alertCount} need you`;
   const menuRow =
@@ -186,6 +186,7 @@ export function TopBar({
               <path d="m20 20-3.5-3.5" />
             </svg>
           </button>
+          {tasks && <TasksMenu tasks={tasks} open={openMenu === "tasks"} onOpenChange={setTasksOpen} />}
           {!words.some((tab) => tab.key === "ai") && <AskLauncher />}
           <HelpButton companyName={companyName} channel={helpChannel} />
 

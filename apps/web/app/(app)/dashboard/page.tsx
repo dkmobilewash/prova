@@ -26,6 +26,7 @@ import {
   MoneyBlock,
   NeedsBlock,
   PhoneTiles,
+  RunningCard,
   ShortcutChips,
   type JobCardData,
   type NeedItem,
@@ -42,6 +43,7 @@ import {
 } from "@/components/ReceivablesPanel";
 import { loadHomeExtras } from "./home-data";
 import { overdueText } from "@/lib/due-date";
+import { EMPTY_TASKS, loadTaskList } from "@/lib/agents/tasks";
 
 /**
  * Home (Concept G, 2026-10-10; Concept H the same day).
@@ -89,10 +91,11 @@ const STAGE_TONE: Record<string, string> = {
   SIGNED: "border-transparent bg-tag-green text-tag-green-ink",
 };
 
-/** Whole literals so Tailwind sees every class. */
+/** Whole literals so Tailwind sees every class. 20/16px since the compact
+ * pass (2026-10-11), from 26/20. */
 const BLOCK_GRID = {
-  three: "mt-[26px] grid grid-cols-1 gap-5 lg:grid-cols-[1.6fr_1fr_1fr]",
-  two: "mt-[26px] grid grid-cols-1 gap-5 lg:grid-cols-[1.6fr_1fr]",
+  three: "mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr_1fr]",
+  two: "mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr]",
 };
 
 /** How many job cards the home shows before "All N jobs". */
@@ -203,7 +206,7 @@ export default async function TodayPage({
     company.id,
   );
 
-  const [jobs, allJobs, renewalSources, today, gettingStartedCounts, extras] = await Promise.all([
+  const [jobs, allJobs, renewalSources, today, gettingStartedCounts, extras, tasks] = await Promise.all([
     loadJobs(company.id, where),
     loadJobs(company.id, { companyId: company.id }),
     renewalSourcesForCompany(company.id),
@@ -214,6 +217,14 @@ export default async function TodayPage({
       signoffs: can(principal, "MANAGE_COMPLIANCE"),
       money: showsBilling,
     }),
+    // The Running now card: the agents' runs, behind the /ai gate. A failed
+    // read costs the card, never the home page.
+    rights.estimating
+      ? loadTaskList(company.id).catch((error: unknown) => {
+          console.error("[home] agent runs failed to load; the card is hidden.", error);
+          return EMPTY_TASKS;
+        })
+      : EMPTY_TASKS,
   ]);
 
   const gettingStarted = gettingStartedCounts
@@ -451,12 +462,12 @@ export default async function TodayPage({
         <div className="min-w-0 flex-1">
           <PageShell width="working">
             {/* ------------------------------------------------- hero -- */}
-            <div className="md:flex md:items-end md:justify-between md:gap-6 md:pt-2">
+            <div className="md:flex md:items-end md:justify-between md:gap-6">
               <div data-home="greeting">
-                <h1 className="font-headline text-[38px] font-semibold leading-none text-ink md:text-[46px] md:leading-tight">
+                <h1 className="font-headline text-[32px] font-semibold leading-none text-ink md:text-[38px] md:leading-tight">
                   {hello}
                 </h1>
-                <p className="mt-1.5 text-[15px] text-ink-muted">{dateLine}</p>
+                <p className="mt-1 text-[15px] text-ink-muted">{dateLine}</p>
               </div>
               {!onlyChecklist && <ShortcutChips newJob={!isNewAccount} others={isNewAccount ? [] : chips} />}
             </div>
@@ -552,20 +563,27 @@ export default async function TodayPage({
                     }}
                   />
                 )}
-                <CrewsBlock crews={extras.crewsToday} />
+                {/* Running now shares the last column with Crews today, the
+                    shortest block, so it costs the page no row of its own
+                    (measured: under Needs you today it pushed Your jobs down
+                    342px at 1440x900). The last card stretches to the row. */}
+                <div className="flex min-w-0 flex-col gap-4 [&>section:last-child]:flex-1">
+                  <CrewsBlock crews={extras.crewsToday} />
+                  <RunningCard tasks={tasks} now={new Date()} />
+                </div>
               </div>
             )}
 
             {/* ------------------------------------------- your jobs -- */}
             {!isNewAccount && (
-              <section id="jobs" className="mt-[26px] scroll-mt-20" data-tour="dashboard-job-health">
-                <div className="mb-3 flex items-baseline justify-between gap-3">
-                  <h2 className="font-headline text-[22px] font-semibold text-ink">Your jobs</h2>
+              <section id="jobs" className="mt-5 scroll-mt-20" data-tour="dashboard-job-health">
+                <div className="mb-1 flex items-baseline justify-between gap-3">
+                  <h2 className="font-headline text-xl font-semibold text-ink">Your jobs</h2>
                   <a href="#all-jobs" className="inline-flex min-h-11 items-center text-sm text-ink-muted hover:text-ink hover:underline">
                     All {allJobs.length} {allJobs.length === 1 ? "job" : "jobs"} &rarr;
                   </a>
                 </div>
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                   {cards.map((card) => (
                     <JobCard key={card.id} job={card} />
                   ))}
@@ -577,7 +595,7 @@ export default async function TodayPage({
             {/* The detail behind the Money block: every open invoice, and
                 how each GC has paid. */}
             {showsBilling && !isNewAccount && (
-              <section className="mt-10 grid grid-cols-1 gap-5 lg:grid-cols-2">
+              <section className="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <Card>
                   <h3 className="text-sm font-semibold text-ink">Accounts receivable</h3>
                   <p className="mb-2 text-xs text-ink-body">
@@ -636,7 +654,7 @@ export default async function TodayPage({
             {/* --------------------------------------- browse all jobs - */}
             {/* A new account's jobs empty state is at the top of the page. */}
             {!isNewAccount && (
-              <section id="all-jobs" className="mt-10 scroll-mt-20 border-t border-line-card pt-6">
+              <section id="all-jobs" className="mt-8 scroll-mt-20 border-t border-line-card pt-5">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <h2 className="font-headline text-[22px] font-semibold text-ink">Browse all jobs</h2>
                   <p className="text-xs text-ink-body">

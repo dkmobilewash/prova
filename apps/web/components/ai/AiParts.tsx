@@ -6,7 +6,7 @@ import type { ActionResult } from "@/lib/actions/shared";
 import { relativeTime } from "@/lib/integrations/relativeTime";
 import { formatCalendarDate } from "@/lib/render-date";
 import { RunAgentButton } from "@/components/RunAgentButton";
-import { Spinner } from "@/components/Spinner";
+import { RUN_PILL, RunStatusPill } from "./RunStatusPill";
 import { AiRowAction } from "./AiRowAction";
 import { AiSideToggle } from "./AiSideToggle";
 
@@ -74,27 +74,9 @@ export const AI_ACTIVITY_HREF = "/ai/activity";
 
 /* ------------------------------------------------------------ pieces -- */
 
-const PILL = "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[12.5px] font-semibold";
+const PILL = RUN_PILL;
 
-const STATUS: Record<AgentRunStatus, { label: string; tone: string }> = {
-  RUNNING: { label: "Running", tone: "bg-tag-brand-soft text-tag-brand-soft-ink" },
-  DONE: { label: "Done", tone: "bg-tag-green text-tag-green-ink" },
-  FAILED: { label: "Failed", tone: "bg-tag-rose text-tag-rose-ink" },
-  // The cap is the owner's own number on /settings/assistant; the pill says
-  // why nothing ran rather than leaving a gap in the list.
-  PAUSED_CAP: { label: "Paused: cap reached", tone: "bg-tag-amber text-tag-amber-ink" },
-  SKIPPED: { label: "Skipped", tone: "border border-line-card bg-tag-slate text-tag-slate-ink" },
-};
-
-export function RunStatusPill({ status }: { status: AgentRunStatus }) {
-  const { label, tone } = STATUS[status];
-  return (
-    <span className={`${PILL} ${tone}`} data-run-status={status}>
-      {status === "RUNNING" && <Spinner className="h-3.5 w-3.5" />}
-      {label}
-    </span>
-  );
-}
+export { RunStatusPill };
 
 const SEVERITY: Record<AiFinding["severity"], { label: string; tone: string }> = {
   flag: { label: "Flag", tone: "bg-tag-rose text-tag-rose-ink" },
@@ -106,8 +88,8 @@ const CONFIDENCE: Record<string, string> = { high: "High confidence", medium: "M
 
 function SectionHead({ title, id, aside }: { title: string; id: string; aside?: ReactNode }) {
   return (
-    <div className="mb-2 flex items-baseline justify-between gap-3">
-      <h2 id={id} className="font-headline text-[21px] font-semibold text-ink">
+    <div className="mb-1.5 flex items-baseline justify-between gap-3">
+      <h2 id={id} className="font-headline text-lg font-semibold text-ink">
         {title}
       </h2>
       {aside}
@@ -179,9 +161,9 @@ export function RunningNow({ runs, now }: { runs: AiRun[]; now: Date }) {
       ) : (
         <ul className="divide-y divide-line-row">
           {runs.map((run) => (
-            <li key={run.id} className="py-2 first:pt-0.5">
+            <li key={run.id} className="py-1.5 first:pt-0.5">
               <div className="flex items-start justify-between gap-3">
-                <p className="min-w-0 break-words text-[14.5px] text-ink">
+                <p className="min-w-0 break-words text-[14.5px] leading-snug text-ink">
                   {agentLabel(run.agent)}
                   {run.bidProjectName && <span className="text-ink-body"> · {run.bidProjectName}</span>}
                 </p>
@@ -189,7 +171,7 @@ export function RunningNow({ runs, now }: { runs: AiRun[]; now: Date }) {
               </div>
               {/* One line: what it did, then when — two lines a run cost
                   the column the room Watching needs above the fold. */}
-              <p className="mt-0.5 break-words text-[13px] text-ink-body">
+              <p className="mt-0.5 break-words text-[13px] leading-snug text-ink-body">
                 {(run.summary ?? run.note) && <>{run.summary ?? run.note} · </>}
                 <span className="text-ink-muted">{runWhen(run, now)}</span>
               </p>
@@ -227,7 +209,7 @@ export function Recommendations({
       ) : (
         <ol className="flex flex-col gap-2">
           {items.map((rec) => (
-            <li key={rec.id} className="rounded-2xl border border-line-card bg-surface px-4 py-3">
+            <li key={rec.id} className="rounded-2xl border border-line-card bg-surface px-3.5 py-2.5">
               <p className="break-words text-[14.5px] font-semibold leading-snug text-ink">{rec.title}</p>
               <p className="mt-1 break-words text-[13px] leading-snug text-ink-body">
                 {rec.reason} <span className="whitespace-nowrap text-[12px] text-ink-muted">· {CONFIDENCE[rec.confidence] ?? rec.confidence}</span>
@@ -235,7 +217,7 @@ export function Recommendations({
               <Sources sources={rec.sources} />
               <div className="mt-1 flex flex-wrap items-center gap-1">
                 {rec.href && (
-                  <Link href={rec.href} className="mr-auto inline-flex min-h-11 items-center text-sm font-semibold text-link hover:text-link-hover">
+                  <Link href={rec.href} className="mr-auto inline-flex min-h-11 items-center text-sm font-semibold text-link hover:text-link-hover mouse:min-h-8">
                     Open →
                   </Link>
                 )}
@@ -305,7 +287,7 @@ export function Watching({
                 const soon = utcDay(bid.dueDate) - utcDay(now) <= 2;
                 return (
                   <li key={bid.id}>
-                    <Link href={aiBidHref(bid.id)} className="flex min-h-11 items-center gap-3 py-1.5 hover:text-ink">
+                    <Link href={aiBidHref(bid.id)} className="flex min-h-11 items-center gap-3 py-1.5 hover:text-ink mouse:min-h-9 mouse:py-1">
                       <span className="min-w-0 flex-1 break-words text-[14.5px] text-ink">
                         {bid.projectName}
                         {bid.gcName && <span className="text-[13px] text-ink-muted"> · {bid.gcName}</span>}
@@ -332,7 +314,7 @@ export function Watching({
         </>
       )}
 
-      <div className="mt-4">
+      <div className="mt-3">
         <h3 className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-ink-muted">
           Findings
           {findingCount > 0 && (
@@ -348,7 +330,7 @@ export function Watching({
         ) : (
           <ul className="mt-1 divide-y divide-line-row">
             {findings.map((finding) => (
-              <li key={finding.id} className="py-2.5">
+              <li key={finding.id} className="py-2">
                 <div className="flex items-start gap-2">
                   <span className={`${PILL} ${SEVERITY[finding.severity].tone}`}>{SEVERITY[finding.severity].label}</span>
                   <p className="min-w-0 break-words text-[14px] font-semibold text-ink">{finding.title}</p>
@@ -357,7 +339,7 @@ export function Watching({
                 <Sources sources={finding.sources} />
                 <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
                   {finding.fixHref ? (
-                    <Link href={finding.fixHref} className="inline-flex min-h-11 items-center text-sm font-semibold text-link hover:text-link-hover">
+                    <Link href={finding.fixHref} className="inline-flex min-h-11 items-center text-sm font-semibold text-link hover:text-link-hover mouse:min-h-8">
                       Fix it →
                     </Link>
                   ) : (
@@ -434,7 +416,7 @@ export function AiHome({
           )}
           <Link
             href="/ai"
-            className="inline-flex min-h-11 items-center rounded-lg border border-line-card px-4 text-sm font-semibold text-ink hover:bg-rail-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            className="inline-flex min-h-11 items-center rounded-lg border border-line-card px-4 text-sm font-semibold text-ink hover:bg-rail-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus mouse:min-h-9"
           >
             + New chat
           </Link>
@@ -452,7 +434,7 @@ export function AiHome({
         {chat}
         {!threadOpen && (
           // RecentThreads brings its own "Recent" heading and empty sentence.
-          <div className="mt-6" data-ai-recent="">
+          <div className="mt-4" data-ai-recent="">
             {recent}
           </div>
         )}
@@ -460,7 +442,7 @@ export function AiHome({
 
       <div className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:border-l lg:border-line-row lg:pl-7">
         <AiSideToggle running={running} recommendations={recommendations.length}>
-          <div className="flex flex-col gap-7">
+          <div className="flex flex-col gap-5">
             <RunningNow runs={runs} now={now} />
             {/* Watching before Recommendations: what is due this week has to
                 be on screen at 1440x900 without a scroll (Cyrus's review of

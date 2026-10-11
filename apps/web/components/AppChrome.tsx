@@ -9,6 +9,7 @@ import { TopBar } from "@/components/shell/TopBar";
 import { TimeZoneCookie } from "@/components/TimeZoneCookie";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import type { HelpChannel } from "@/lib/help-request";
+import type { TaskList } from "@/lib/agents/tasks";
 import type { MoneyRailStage } from "@/lib/moneyRail";
 import type { Principal } from "@/lib/permissions";
 
@@ -106,6 +107,7 @@ export function TopBarRegion({
   helpChannel,
   stages,
   aiFindingCount = 0,
+  tasks = null,
 }: {
   companyName: string;
   userName: string | null;
@@ -128,6 +130,8 @@ export function TopBarRegion({
   /** Open agent findings for the AI word's badge; 0 without
    * MANAGE_ESTIMATING (the layout does not load it). */
   aiFindingCount?: number;
+  /** Agent runs for the Tasks item; null without MANAGE_ESTIMATING. */
+  tasks?: TaskList | null;
 }) {
   return (
     <ShellRegion region="topbar">
@@ -143,6 +147,7 @@ export function TopBarRegion({
         helpChannel={helpChannel}
         stages={stages}
         aiFindingCount={aiFindingCount}
+        tasks={tasks}
       />
     </ShellRegion>
   );

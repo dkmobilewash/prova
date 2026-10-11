@@ -66,7 +66,7 @@ export function JobStageNav({ stages }: { stages: JobStage[] }) {
   const inView = stages.find((s) => s.key === focusKey);
 
   return (
-    <nav aria-label="Job stages" className="mb-7 print:hidden">
+    <nav aria-label="Job stages" className="mb-5 print:hidden">
       <ol
         ref={scroller}
         className={`${EDGE_FADE} -mx-6 flex gap-2 overflow-x-auto px-6 pb-1 sm:mx-0 sm:grid sm:grid-cols-5 sm:gap-2.5 sm:overflow-visible sm:px-0 sm:pb-0`}
@@ -77,7 +77,7 @@ export function JobStageNav({ stages }: { stages: JobStage[] }) {
             <>
               <span
                 aria-hidden="true"
-                className={`grid size-[26px] shrink-0 place-items-center rounded-full border text-[13px] font-semibold sm:size-[30px] sm:text-sm ${
+                className={`grid size-[26px] shrink-0 place-items-center rounded-full border text-[13px] font-semibold sm:size-7 sm:text-sm ${
                   stage.state === "current"
                     ? "border-brand bg-brand text-neutral-900"
                     : stage.state === "done"
@@ -91,7 +91,7 @@ export function JobStageNav({ stages }: { stages: JobStage[] }) {
               </span>
               <span className="min-w-0">
                 <span
-                  className={`block font-headline text-lg leading-none sm:text-[22px] ${
+                  className={`block font-headline text-lg leading-none sm:text-xl ${
                     stage.state === "upcoming" ? "text-ink-muted" : stage.state === "done" ? "text-ink-body" : "text-ink"
                   }`}
                 >
@@ -116,7 +116,7 @@ export function JobStageNav({ stages }: { stages: JobStage[] }) {
               </span>
             </>
           );
-          const box = `flex min-h-[44px] items-center sm:h-full gap-2.5 border bg-surface sm:gap-3.5 sm:rounded-xl sm:px-[18px] sm:py-3.5 rounded-[22px] py-1.5 pl-1.5 pr-4 ${
+          const box = `flex min-h-[44px] items-center sm:h-full gap-2.5 border bg-surface sm:gap-3 sm:rounded-xl sm:px-4 sm:py-2.5 rounded-[22px] py-1.5 pl-1.5 pr-4 ${
             isOpen ? "border-focus ring-1 ring-inset ring-focus" : "border-line-card"
           }`;
           return (
@@ -149,7 +149,7 @@ export function JobStageNav({ stages }: { stages: JobStage[] }) {
       {open && open.links.length > 0 && (
         <ul
           aria-label={`${open.label} pages`}
-          className={`${EDGE_FADE} -mx-6 mt-4 flex gap-1 overflow-x-auto border-b border-line-card px-6 sm:mx-0 sm:px-0`}
+          className={`${EDGE_FADE} -mx-6 mt-3 flex gap-1 overflow-x-auto border-b border-line-card px-6 sm:mx-0 sm:px-0`}
         >
           {open.links.map((link) => {
             const isActive = isCurrentLink(link.href, pathname, search);
@@ -158,7 +158,7 @@ export function JobStageNav({ stages }: { stages: JobStage[] }) {
                 <Link
                   href={link.href}
                   aria-current={isActive ? "page" : undefined}
-                  className={`inline-flex min-h-11 items-center gap-1 whitespace-nowrap border-b-2 px-3 text-sm font-medium ${
+                  className={`inline-flex min-h-11 items-center gap-1 whitespace-nowrap border-b-2 px-3 text-sm font-medium mouse:min-h-9 ${
                     isActive
                       ? "border-brand text-ink"
                       : "border-transparent text-ink-muted hover:border-line-card hover:text-ink-label"

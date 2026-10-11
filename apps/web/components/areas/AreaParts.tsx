@@ -104,14 +104,14 @@ export function ToolCard({ tool }: { tool: AreaView["tools"][number] }) {
   return (
     <article className="flex min-w-0 flex-col rounded-[14px] border border-line-card bg-surface p-4" data-area-tool={tool.route}>
       <ToolIcon route={tool.route} />
-      <h2 className="mt-3 font-headline text-[21px] leading-tight text-ink">
+      <h2 className="mt-2 font-headline text-lg leading-tight text-ink">
         <Link href={tool.href} className="hover:underline">
           {tool.name}
         </Link>
       </h2>
       <StatusLine status={tool.status} fallback={tool.description} className="mt-0.5 min-h-5" />
       {tool.status && <p className="mt-1 line-clamp-2 text-[13px] text-ink-muted">{tool.description}</p>}
-      <div className="mt-auto flex flex-col gap-2 pt-4">
+      <div className="mt-auto flex flex-col gap-2 pt-3">
         {toolActions(tool).map((action) => (
           <Link
             key={action.href}
@@ -139,9 +139,9 @@ const CHIP_TONE: Record<Tone | "neutral", string> = {
 
 export function WaitingTable({ list }: { list: WaitingList }) {
   return (
-    <section className="mt-6 overflow-hidden rounded-2xl border border-line-card bg-surface" aria-labelledby="area-waiting">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 px-[22px] pb-2.5 pt-4">
-        <h2 id="area-waiting" className="font-headline text-2xl text-ink">
+    <section className="mt-5 overflow-hidden rounded-2xl border border-line-card bg-surface" aria-labelledby="area-waiting">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-5 pb-2 pt-3">
+        <h2 id="area-waiting" className="font-headline text-xl text-ink">
           {list.title}
         </h2>
         {list.total > 0 && (
@@ -152,7 +152,7 @@ export function WaitingTable({ list }: { list: WaitingList }) {
         )}
       </div>
       {list.rows.length === 0 ? (
-        <p className="flex items-center gap-3 border-t border-line-row px-[22px] py-4 text-ink-body">
+        <p className="flex items-center gap-3 border-t border-line-row px-5 py-3 text-ink-body">
           <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-bar-green" />
           {list.empty}
         </p>
@@ -162,7 +162,7 @@ export function WaitingTable({ list }: { list: WaitingList }) {
             <li key={row.key} className="border-t border-line-row">
               <Link
                 href={row.href}
-                className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 px-[22px] py-3 hover:bg-rail-hover md:grid-cols-[minmax(10rem,14rem)_minmax(0,1fr)_minmax(0,14rem)_6.5rem_9rem_4.5rem]"
+                className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 px-5 py-2.5 hover:bg-rail-hover mouse:py-2 md:grid-cols-[minmax(10rem,14rem)_minmax(0,1fr)_minmax(0,14rem)_6.5rem_9rem_4.5rem]"
               >
                 <span className="flex min-w-0 items-center gap-2.5 font-semibold text-ink">
                   <span className="rounded-[5px] border border-line-card px-1.5 text-xs font-semibold text-ink-muted">{row.tag}</span>

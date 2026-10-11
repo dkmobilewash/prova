@@ -14,7 +14,9 @@ const item = (n: number): NeedItem => ({
 });
 
 describe("NeedsBlock", () => {
-  const html = renderToStaticMarkup(<NeedsBlock items={Array.from({ length: 8 }, (_, i) => item(i))} />);
+  // Ten items: the block shows eight since the compact pass (2026-10-11),
+  // so two go to "and N more".
+  const html = renderToStaticMarkup(<NeedsBlock items={Array.from({ length: 10 }, (_, i) => item(i))} />);
 
   it("keeps the when on a phone — on its own line below sm, beside the text from sm up", () => {
     expect(html).toMatch(/class="block text-\[13px\] sm:hidden[^"]*">overdue 12 days</);

@@ -60,7 +60,7 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
   return (
     <PageShell width="working">
       <nav aria-label="Breadcrumb" className="text-sm text-ink-muted">
-        <Link href="/dashboard" className="inline-flex min-h-11 items-center hover:text-ink hover:underline">
+        <Link href="/dashboard" className="inline-flex min-h-11 items-center hover:text-ink hover:underline mouse:min-h-7">
           Home
         </Link>
         <span aria-hidden className="mx-2">
@@ -70,7 +70,7 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
           {view.name}
         </span>
       </nav>
-      <h1 className="mt-1.5 font-headline text-[40px] font-semibold leading-tight text-ink">{view.name}</h1>
+      <h1 className="mt-1 font-headline text-[32px] font-semibold leading-tight text-ink">{view.name}</h1>
       <p className="text-ink-muted">{view.description}</p>
 
       {showsFigures &&
@@ -80,7 +80,7 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
           <p className="mt-6 text-sm text-ink-muted">Company figures couldn&apos;t load. Reload to try again.</p>
         ))}
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(auto-fit,minmax(190px,1fr))]">
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(auto-fit,minmax(190px,1fr))]">
         {view.tools.map((tool) => (
           <ToolCard key={tool.href} tool={tool} />
         ))}
