@@ -28,6 +28,12 @@ import "./lienWaiverLanding.css";
  * - SAY WHAT IT COSTS TO GET WRONG. A sub reads "you could give up your
  *   retainage" harder than "save time" (loss aversion), and it is true.
  * - THREE STEPS, NUMBERED. A short, visible path makes starting feel small.
+ * - SHORT. Six blocks, one content width, one card style, full-width bands
+ *   between them (Cyrus approved this layout 2026-10-10, from three research
+ *   passes: NN/g + Baymard + Unbounce data, Vercel/Linear/Resend measured,
+ *   and a teardown of Levelset, Built, Siteline and HubSpot's free tools).
+ *   The first version ran 5.5 desktop screens and said "two questions" five
+ *   times; resist adding sections back — add a FAQ answer instead.
  * - MOTION WITH A JOB. Every section below the hero arrives in a stagger
  *   (lienWaiverLanding.css), keyed on Reveal's own "visible" state, so it
  *   only plays for a section that was confirmed off-screen first and then
@@ -39,133 +45,80 @@ import "./lienWaiverLanding.css";
  * the main page's rule, and the test beside the route enforces the first.
  */
 
-/** Where every yellow button goes. The generator is not live yet, so this
- * is sign-up for now — point it at the generator the day it ships. */
+/** Where every yellow button goes. This page is a lead magnet (Cyrus,
+ * 2026-10-10): the yellow buttons collect a sign-up; the free tool is the
+ * second action, in ToolLink. */
 const CTA_HREF = "/sign-up";
 const CTA_LABEL = "Sign up";
 const SIGN_IN_HREF = "/sign-in";
 
+/** One content width for every block, so every section shares a left edge. */
+const wrap = "mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8";
+/** Every block below the hero: a hairline above, one rhythm. */
+const band = "border-t border-line-row py-16 sm:py-24";
 const cta =
-  "inline-flex items-center justify-center rounded-md bg-brand px-8 py-4 text-lg font-semibold text-neutral-900 transition-colors duration-[var(--speed-fast)] ease-[var(--ease-landing-snap)] hover:bg-yellow-500";
+  "inline-flex w-full items-center justify-center rounded-md bg-brand px-8 py-4 text-lg font-semibold text-neutral-900 transition-colors duration-[var(--speed-fast)] ease-[var(--ease-landing-snap)] hover:bg-yellow-500 sm:w-auto";
 const ctaNav =
   "inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 transition-colors duration-[var(--speed-fast)] ease-[var(--ease-landing-snap)] hover:bg-yellow-500";
 const quietLink = "text-sm font-medium text-ink-body transition-colors hover:text-ink";
-const sectionSpace = "mt-16 sm:mt-24";
-const h2 = "font-headline text-3xl font-semibold leading-tight text-ink sm:text-4xl";
-const lead = "mt-4 max-w-2xl text-base leading-relaxed text-ink-body sm:text-lg";
-const card = "rounded-xl border border-line-card bg-surface p-5";
+const h2 = "font-headline text-3xl font-semibold leading-[1.05] text-ink sm:text-5xl";
+const lead = "mt-4 max-w-xl text-base leading-relaxed text-ink-body sm:text-lg";
+/** The one card style on the page. */
+const card = "rounded-xl border border-line-card bg-surface p-6";
 
 /** Stagger indexes read by lienWaiverLanding.css. */
 const at = (i: number, j = 0) => ({ "--i": i, "--j": j }) as CSSProperties;
 
-/** The two reasons a sub signs up. No numbers: nothing here has been
- * measured, and the page's no-invented-statistics test holds it to that. */
-const SAVES = [
-  {
-    title: "Save time",
-    icon: <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z M12 7v5l3 2" />,
-    points: [
-      "No hunting for the right form or guessing which one the GC wants",
-      "No retyping your company, the GC and the job every month",
-      "Have it ready to send with the pay app",
-    ],
-  },
-  {
-    title: "Save money",
-    icon: <path d="M12 3v18 M16.5 7.5c0-1.7-2-3-4.5-3s-4.5 1.3-4.5 3 2 2.7 4.5 3 4.5 1.3 4.5 3-2 3-4.5 3-4.5-1.3-4.5-3" />,
-    points: [
-      "Conditional or unconditional, progress or final — picked from two questions",
-      "Preview the whole form before you download it, so you see exactly what you are signing",
-      "The state's own wording, copied from the law, not rewritten",
-    ],
-  },
-];
-
-const WHAT_IT_IS = [
-  {
-    title: "You get paid",
-    body: "The GC sends a check for the work you billed this month.",
-    icon: <path d="M3 7h18v10H3z M12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z M6.5 12h.01 M17.5 12h.01" />,
-  },
-  {
-    title: "You sign a waiver",
-    body: "It says you give up your right to file a lien for the amount you were paid.",
-    icon: <path d="M4 20h4L19 9l-4-4L4 16v4Z M13.5 6.5l4 4" />,
-  },
-  {
-    title: "Everyone has proof",
-    body: "The GC passes it up to the owner and the lender, and the next payment moves.",
-    icon: <path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6l-8-3Z M8.5 12l2.5 2.5 4.5-5" />,
-  },
-];
-
-/** Risk is 1-4. Unconditional final is the one that signs away the job. */
+/**
+ * The four waivers as the 2x2 they really are: progress or final, and has
+ * the money reached you yet. Risk is 1-4; unconditional final signs away
+ * the job. Order is row-major (progress row first), matching the grid.
+ */
 const TYPES = [
   {
     name: "Conditional progress",
-    when: "Monthly billing, before the check clears",
+    when: "Progress payment · money not in yet",
     body: "Only takes effect once the payment it names actually reaches you. The one most subs send with a monthly pay app.",
     risk: 1,
   },
   {
     name: "Unconditional progress",
-    when: "Monthly billing, money already in the bank",
-    body: "Takes effect the moment you sign, paid or not. Sign it only for money you already have.",
+    when: "Progress payment · money already in",
+    body: "Takes effect the moment you sign, paid or not. Meant for money already in your account.",
     risk: 2,
   },
   {
     name: "Conditional final",
-    when: "Last payment on the job, before it clears",
+    when: "Final payment · money not in yet",
     body: "Releases the whole job once final payment reaches you. Read what the form lets you hold back before you sign.",
     risk: 3,
   },
   {
     name: "Unconditional final",
-    when: "Job closed, every dollar in",
+    when: "Final payment · money already in",
     body: "Releases your lien rights on the whole job the moment you sign.",
     risk: 4,
   },
 ];
 const RISK_BAR = ["bg-bar-green", "bg-bar-amber", "bg-bar-amber", "bg-bar-rose"];
 
-/** The trades this page is for, mirrored from LandingPage.tsx's TRADES. */
-const TRADES = ["Framing & drywall", "Plaster", "EIFS", "Ceilings", "Fireproofing"];
-
-/**
- * The contrast. The right column is held to what the generator actually
- * does — two questions to one of four forms, the blanks, a preview before
- * any email, details remembered in that browser, the law's own wording.
- * It has no retainage, change-order or free-text exceptions field, so
- * nothing here says it writes those in.
- */
-const USUAL_WAY = [
-  "Digging through old emails for the GC's form, or reusing one from the last job",
-  "Retyping your company, the GC, the owner and the job every pay period",
-  "Guessing which of the four waivers this payment calls for",
-  "A downloaded template, with no way to tell where its wording came from",
-];
-const WITH_US = [
-  "Two questions — progress or final, and has the money cleared — point to one of four forms",
-  "Fill in the blanks: company, GC, owner, job, amount, through date",
-  "Your details are remembered in that browser for the next pay period",
-  "The legal wording is copied from the law itself",
-  "Preview the whole form first; an email is needed only to download, and the PDF is emailed to you too",
-];
-
 const STEPS = [
   {
     title: "Pick the waiver",
     body: "Progress or final, paid yet or not. Those two answers decide which form you need.",
+    instead: "Instead of guessing which form the GC wants.",
     icon: <path d="M9 11l3 3 8-8 M20 12v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h11" />,
   },
   {
     title: "Fill in the blanks",
     body: "Your company, the GC, the owner, the job, the amount and the through date.",
+    instead: "Instead of retyping the same job details every month.",
     icon: <path d="M4 20h4L19 9l-4-4L4 16v4Z M13.5 6.5l4 4" />,
   },
   {
     title: "Download the PDF",
     body: "See the whole form first. Enter your email once to download, and we send you the PDF too.",
+    instead: "Instead of a template with no way to tell where its wording came from.",
     icon: <path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14" />,
   },
 ];
@@ -174,9 +127,16 @@ const STEPS = [
  * The questions a sub actually has to answer before signing, in the order
  * they come up. General on purpose: no state is named and no rule is stated
  * that holds in one state and not another — where the answer depends on the
- * state, the answer says so. Each answer is a few short paragraphs.
+ * state, the answer says so.
  */
 const FAQ: { q: string; a: string[] }[] = [
+  {
+    q: "What is a lien waiver?",
+    a: [
+      "A lien is your right to make a claim against the property if you do not get paid. A lien waiver is the receipt that gives that right up — for one payment, or for the whole job.",
+      "The usual order: the GC pays you for the work you billed, you sign a waiver for that amount, and the GC passes it up to the owner and the lender so the next payment can move.",
+    ],
+  },
   {
     q: "Why does my GC want a lien waiver before they pay me?",
     a: [
@@ -258,9 +218,7 @@ function Icon({ children, className = "h-7 w-7" }: { children: ReactNode; classN
  * The free generator is Diego's separate app (apps/lien-waiver), on its own
  * domain. Its address comes from LIEN_WAIVER_TOOL_URL, read in the route and
  * passed down. Unset means "not launched yet": render a plain line, never a
- * link that could 404. It is the SECOND action on purpose — the yellow
- * buttons stay Sign up, because this page is a lead magnet (Cyrus,
- * 2026-10-10).
+ * link that could 404.
  */
 function ToolLink({ toolUrl, center = false }: { toolUrl?: string; center?: boolean }) {
   return (
@@ -279,26 +237,31 @@ function ToolLink({ toolUrl, center = false }: { toolUrl?: string; center?: bool
   );
 }
 
-function SignUpRow({ center = false }: { center?: boolean }) {
+/** Sign up, with sign-in and the tool line under it. One component so the
+ * tool line can never be left off a row, or doubled. */
+function SignUpRow({ toolUrl, center = false }: { toolUrl?: string; center?: boolean }) {
   return (
-    <div className={`mt-8 flex flex-wrap items-center gap-x-6 gap-y-4 ${center ? "justify-center" : ""}`}>
-      <Link href={CTA_HREF} className={cta}>
-        {CTA_LABEL}
-      </Link>
-      <span className="text-sm text-ink-body">
-        Already have an account?{" "}
-        <Link href={SIGN_IN_HREF} className="font-medium text-link hover:text-link-hover">
-          Sign in
+    <div className="mt-8">
+      <div className={`flex flex-wrap items-center gap-x-6 gap-y-4 ${center ? "justify-center" : ""}`}>
+        <Link href={CTA_HREF} className={cta}>
+          {CTA_LABEL}
         </Link>
-      </span>
+        <span className="text-sm text-ink-body">
+          Already have an account?{" "}
+          <Link href={SIGN_IN_HREF} className="font-medium text-link hover:text-link-hover">
+            Sign in
+          </Link>
+        </span>
+      </div>
+      <ToolLink toolUrl={toolUrl} center={center} />
     </div>
   );
 }
 
 export function LienWaiverLanding({ toolUrl }: { toolUrl?: string }) {
   return (
-    <main className="mx-auto max-w-6xl px-4 pb-24 pt-6 sm:px-6 sm:pt-8 lg:px-8">
-      <header className="flex items-center justify-between gap-4">
+    <main className="pb-0">
+      <header className={`${wrap} flex items-center justify-between gap-4 pt-6 sm:pt-8`}>
         <Link href="/">
           <Image src="/brand/cstream-wordmark.png" alt="C Stream" width={240} height={48} className="h-8 w-auto sm:h-10" priority />
         </Link>
@@ -312,206 +275,141 @@ export function LienWaiverLanding({ toolUrl }: { toolUrl?: string }) {
         </nav>
       </header>
 
-      {/* Hero. Never in <Reveal>: the first screen is there at once. */}
-      <section className="grid items-center gap-10 py-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,34rem)] lg:gap-14 lg:pb-4 lg:pt-16">
-        <div className="min-w-0">
+      {/* 1 · Hero. Never in <Reveal>: the first screen is there at once. The
+          words stay first in the markup (screen readers meet the headline
+          first); on a phone the picture is shown first by `order`, so the
+          first screen is not all text. */}
+      <section className={`${wrap} grid items-center gap-10 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,34rem)] lg:gap-14 lg:py-20`}>
+        <div className="order-2 min-w-0 lg:order-1">
           <p className="text-sm font-semibold uppercase tracking-[0.12em] text-brand">Free lien waiver generator</p>
-          <h1 className="mt-4 font-headline text-[clamp(2.25rem,8vw,5rem)] font-semibold leading-[1.03] tracking-[-0.02em] text-ink">
-            Make your lien waiver. Get paid.
+          <h1 className="mt-4 text-balance font-headline text-[clamp(2.5rem,9vw,5rem)] font-semibold leading-[1.02] tracking-[-0.02em] text-ink">
+            Make your lien waiver. Free.
           </h1>
-          <p className="mt-6 max-w-lg text-lg leading-relaxed text-ink-body">
-            Stop hunting for the right form and retyping the same job details every month. Answer a few
-            questions, preview the whole form, and download a clean PDF for the GC.
+          <p className={`${lead} mt-6`}>
+            Pick the right one of the four, fill in the blanks, and get a clean PDF for the GC — without retyping
+            the job every month.
           </p>
-          <SignUpRow />
-          <ToolLink toolUrl={toolUrl} />
-          <p className="mt-10 text-xs font-semibold uppercase tracking-[0.12em] text-ink-muted">Built for</p>
-          <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Trades this is built for">
-            {TRADES.map((trade) => (
-              <li key={trade} className="rounded-full border border-line-card bg-surface px-2.5 py-1 text-sm font-medium text-ink-label">
-                {trade}
-              </li>
-            ))}
-          </ul>
+          <SignUpRow toolUrl={toolUrl} />
         </div>
-        <div className="flex min-w-0 justify-center lg:justify-end">
+        <div className="order-1 flex min-w-0 justify-center lg:order-2 lg:justify-end">
           <WaiverFill />
         </div>
       </section>
 
-      {/* Time and money. */}
-      <Reveal className={sectionSpace}>
-        <ul className="grid gap-3 sm:grid-cols-2 sm:gap-4">
-          {SAVES.map((item, i) => (
-            <li key={item.title} className={`lw-rise ${card} p-6 sm:p-8`} style={at(i)}>
-              <span className="lw-pop flex h-12 w-12 items-center justify-center rounded-lg bg-tag-brand-soft text-brand" style={at(i)}>
-                <Icon>{item.icon}</Icon>
-              </span>
-              <p className="mt-5 font-headline text-2xl font-semibold text-ink sm:text-3xl">{item.title}</p>
-              <ul className="mt-4 flex flex-col gap-2">
-                {item.points.map((point) => (
-                  <li key={point} className="flex gap-3 text-sm leading-relaxed text-ink-body sm:text-base">
-                    <span aria-hidden className="shrink-0 text-brand">&#8212;</span>
-                    <span>{point}</span>
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
-      </Reveal>
-
-      {/* What a lien waiver is. */}
-      <Reveal className={sectionSpace}>
-        <h2 className={h2}>What is a lien waiver?</h2>
-        <p className={lead}>
-          A lien is your right to make a claim against the property if you do not get paid. A waiver is the
-          receipt that gives that right up — for one payment, or for the whole job.
-        </p>
-        <ol className="mt-8 grid gap-3 sm:grid-cols-3 sm:gap-4">
-          {WHAT_IT_IS.map((item, i) => (
-            <li key={item.title} className={`lw-rise ${card}`} style={at(i)}>
-              <span className="lw-pop flex h-12 w-12 items-center justify-center rounded-lg bg-tag-brand-soft text-brand" style={at(i)}>
-                <Icon>{item.icon}</Icon>
-              </span>
-              <p className="mt-4 font-semibold text-ink">{item.title}</p>
-              <p className="mt-1 text-sm leading-relaxed text-ink-body">{item.body}</p>
-            </li>
-          ))}
-        </ol>
-      </Reveal>
-
-      {/* The four types, with how much each one gives up. */}
-      <Reveal className={sectionSpace}>
-        <h2 className={h2}>Four waivers. Signing the wrong one costs money.</h2>
-        <p className={lead}>
-          Two questions decide which one you need: is this a progress payment or the final one, and has the
-          money actually reached you yet?
-        </p>
-        <ul className="mt-8 grid gap-3 sm:grid-cols-2 sm:gap-4">
-          {TYPES.map((t, i) => (
-            <li key={t.name} className={`lw-rise ${card}`} style={at(i)}>
-              <div className="flex items-center justify-between gap-4">
-                <p className="font-semibold text-ink">{t.name}</p>
-                <span className="flex shrink-0 gap-1" role="img" aria-label={`Risk ${t.risk} of 4`}>
-                  {[1, 2, 3, 4].map((n) => (
-                    <span
-                      key={n}
-                      className={`lw-seg h-2 w-5 rounded-full ${n <= t.risk ? RISK_BAR[t.risk - 1] : "bg-line-row"}`}
-                      style={at(i, n)}
-                    />
-                  ))}
-                </span>
+      {/* 2 · Which waiver? The 2x2 it really is, labelled. */}
+      <Reveal className={band}>
+        <div className={wrap}>
+          <h2 className={h2}>Which waiver?</h2>
+          <p className={lead}>Two questions decide it: is this a progress payment or the final one, and has the money reached you yet?</p>
+          <div className="mt-10 grid gap-3 sm:grid-cols-[auto_1fr_1fr] sm:gap-4">
+            <span aria-hidden className="hidden sm:block" />
+            <p className="hidden text-xs font-semibold uppercase tracking-[0.1em] text-ink-muted sm:block">Money not in yet</p>
+            <p className="hidden text-xs font-semibold uppercase tracking-[0.1em] text-ink-muted sm:block">Money already in</p>
+            {[0, 1].map((row) => (
+              <div key={row} className="contents">
+                <p className="hidden self-center pr-2 text-xs font-semibold uppercase tracking-[0.1em] text-ink-muted sm:block [writing-mode:vertical-rl] rotate-180">
+                  {row === 0 ? "Progress" : "Final"}
+                </p>
+                {TYPES.slice(row * 2, row * 2 + 2).map((t, k) => {
+                  const i = row * 2 + k;
+                  return (
+                    <div key={t.name} className={`lw-rise ${card}`} style={at(i)}>
+                      <div className="flex items-center justify-between gap-4">
+                        <p className="text-lg font-semibold text-ink">{t.name}</p>
+                        <span className="flex shrink-0 gap-1" role="img" aria-label={`Risk ${t.risk} of 4`}>
+                          {[1, 2, 3, 4].map((n) => (
+                            <span
+                              key={n}
+                              className={`lw-seg h-2 w-5 rounded-full ${n <= t.risk ? RISK_BAR[t.risk - 1] : "bg-line-row"}`}
+                              style={at(i, n)}
+                            />
+                          ))}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs font-medium text-ink-muted sm:hidden">{t.when}</p>
+                      <p className="mt-3 text-sm leading-relaxed text-ink-body">{t.body}</p>
+                    </div>
+                  );
+                })}
               </div>
-              <p className="mt-1 text-xs font-medium uppercase tracking-[0.08em] text-ink-muted">{t.when}</p>
-              <p className="mt-3 text-sm leading-relaxed text-ink-body">{t.body}</p>
-            </li>
-          ))}
-        </ul>
-        <SignUpRow />
-        <ToolLink toolUrl={toolUrl} />
-      </Reveal>
-
-      {/* The usual way against this one. */}
-      <Reveal className={sectionSpace}>
-        <h2 className={h2}>The usual way, and with C&nbsp;Stream</h2>
-        <div className="mt-8 grid gap-3 sm:grid-cols-2 sm:gap-4">
-          <div className={`lw-rise ${card} p-6 sm:p-8`} style={at(0)}>
-            <p className="text-sm font-semibold uppercase tracking-[0.08em] text-ink-muted">The usual way</p>
-            <ul className="mt-5 flex flex-col gap-4">
-              {USUAL_WAY.map((line) => (
-                <li key={line} className="flex gap-3 text-sm leading-relaxed text-ink-muted sm:text-base">
-                  <span aria-hidden className="shrink-0 text-bar-rose">&#10005;</span>
-                  <span>{line}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="lw-rise rounded-xl border border-brand/40 bg-surface p-6 sm:p-8" style={at(1)}>
-            <p className="text-sm font-semibold uppercase tracking-[0.08em] text-brand">With C Stream</p>
-            <ul className="mt-5 flex flex-col gap-4">
-              {WITH_US.map((line) => (
-                <li key={line} className="flex gap-3 text-sm leading-relaxed text-ink-body sm:text-base">
-                  <span aria-hidden className="shrink-0 text-brand">&#10003;</span>
-                  <span>{line}</span>
-                </li>
-              ))}
-            </ul>
+            ))}
           </div>
         </div>
       </Reveal>
 
-      {/* Three steps. */}
-      <Reveal className={sectionSpace}>
-        <h2 className={h2}>Three steps.</h2>
-        <p className={lead}>No legal language to write. You answer two questions and fill in the blanks. The legal wording is the state&rsquo;s own.</p>
-        <ol className="mt-8 grid gap-3 sm:grid-cols-3 sm:gap-4">
-          {STEPS.map((step, i) => (
-            <li key={step.title} className={`lw-rise ${card}`} style={at(i)}>
-              <div className="flex items-center gap-4">
-                <span className="lw-pop flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-tag-brand-soft text-brand" style={at(i)}>
-                  <Icon>{step.icon}</Icon>
-                </span>
-                <span>
-                  <span className="block font-mono text-xs text-ink-muted">0{i + 1}</span>
-                  <span className="block font-semibold text-ink">{step.title}</span>
-                </span>
-              </div>
-              <p className="mt-4 text-sm leading-relaxed text-ink-body">{step.body}</p>
-            </li>
-          ))}
-        </ol>
-      </Reveal>
-
-      {/* The expensive mistake. */}
-      <Reveal className={sectionSpace}>
-        <div className="lw-rise flex flex-col gap-5 rounded-xl border border-bar-amber/40 bg-tag-amber p-6 sm:flex-row sm:items-center sm:p-8">
+      {/* 3 · The expensive mistake, as a full-width band with the ask in it. */}
+      <Reveal className="border-y border-bar-amber/40 bg-tag-amber py-16 sm:py-20">
+        <div className={`${wrap} lw-rise flex flex-col gap-6 sm:flex-row sm:items-start`}>
           <span className="lw-wiggle shrink-0 text-tag-amber-ink">
             <Icon className="h-12 w-12">
               <path d="M12 3 2 20h20L12 3Z M12 10v4 M12 17h.01" />
             </Icon>
           </span>
-          <div>
-            <p className="font-headline text-2xl font-semibold text-ink sm:text-3xl">Final waiver, retainage still held?</p>
-            <p className="mt-2 max-w-3xl leading-relaxed text-ink-body">
-              This is the one that costs subs real money. A final waiver closes out the job, and retainage still
-              held can go with it. If retainage is still held, read the form closely — and if real money is at
-              stake, ask a construction attorney before you sign.
+          <div className="min-w-0">
+            <h2 className={h2}>Final waiver, retainage still held?</h2>
+            <p className={`${lead} max-w-2xl`}>
+              This is the one that costs subs real money. A final waiver closes out the job, and retainage still held
+              can go with it. If retainage is still held, read the form closely — and if real money is at stake, ask a
+              construction attorney before you sign.
             </p>
+            <SignUpRow toolUrl={toolUrl} />
           </div>
         </div>
       </Reveal>
 
-      {/* Questions. Native <details>, so it works with no JavaScript. */}
-      <Reveal className={sectionSpace}>
-        <h2 className={h2}>Before you sign</h2>
-        <p className={lead}>The questions that decide whether a waiver costs you money.</p>
-        <div className="mt-8 flex flex-col gap-3">
-          {FAQ.map((item, i) => (
-            <details key={item.q} className="lw-rise group rounded-xl border border-line-card bg-surface" style={at(i)}>
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-5 font-semibold text-ink [&::-webkit-details-marker]:hidden">
-                {item.q}
-                <span aria-hidden className="shrink-0 text-xl text-brand transition-transform duration-[var(--speed-fast)] group-open:rotate-45">
-                  +
+      {/* 4 · How it works. */}
+      <Reveal className={band}>
+        <div className={wrap}>
+          <h2 className={h2}>How it works</h2>
+          <ol className="mt-10 grid gap-3 sm:grid-cols-3 sm:gap-4">
+            {STEPS.map((step, i) => (
+              <li key={step.title} className={`lw-rise ${card}`} style={at(i)}>
+                <span className="lw-pop flex h-12 w-12 items-center justify-center rounded-lg bg-tag-brand-soft text-brand" style={at(i)}>
+                  <Icon>{step.icon}</Icon>
                 </span>
-              </summary>
-              <div className="flex max-w-3xl flex-col gap-3 px-5 pb-5 text-sm leading-relaxed text-ink-body sm:text-base">
-                {item.a.map((para) => (
-                  <p key={para}>{para}</p>
-                ))}
-              </div>
-            </details>
-          ))}
+                <p className="mt-5 font-mono text-xs text-ink-muted">0{i + 1}</p>
+                <p className="mt-1 text-lg font-semibold text-ink">{step.title}</p>
+                <p className="mt-2 text-sm leading-relaxed text-ink-body">{step.body}</p>
+                <p className="mt-4 border-t border-line-row pt-3 text-sm text-ink-muted">{step.instead}</p>
+              </li>
+            ))}
+          </ol>
         </div>
       </Reveal>
 
-      {/* Close. */}
-      <Reveal className={`${sectionSpace} text-center`}>
-        <div className="lw-rise rounded-2xl border border-line-card bg-surface px-6 py-12 sm:py-16">
+      {/* 5 · Before you sign. Native <details>, so it works with no JS. */}
+      <Reveal className={band}>
+        <div className={`${wrap} grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-14`}>
+          <div>
+            <h2 className={h2}>Before you sign</h2>
+            <p className={lead}>The questions that decide whether a waiver costs you money.</p>
+          </div>
+          <div className="flex flex-col gap-3">
+            {FAQ.map((item, i) => (
+              <details key={item.q} className="lw-rise group rounded-xl border border-line-card bg-surface" style={at(i)}>
+                <summary className="flex min-h-[44px] cursor-pointer list-none items-center justify-between gap-4 p-5 font-semibold text-ink [&::-webkit-details-marker]:hidden">
+                  {item.q}
+                  <span aria-hidden className="shrink-0 text-xl text-brand transition-transform duration-[var(--speed-fast)] group-open:rotate-45">
+                    +
+                  </span>
+                </summary>
+                <div className="flex max-w-2xl flex-col gap-3 px-5 pb-5 text-sm leading-relaxed text-ink-body sm:text-base">
+                  {item.a.map((para) => (
+                    <p key={para}>{para}</p>
+                  ))}
+                </div>
+              </details>
+            ))}
+          </div>
+        </div>
+      </Reveal>
+
+      {/* 6 · Close, as a full-width band. */}
+      <Reveal className="border-t border-line-row bg-surface py-16 text-center sm:py-24">
+        <div className={`${wrap} lw-rise`}>
           <h2 className={h2}>Your next waiver, filled in.</h2>
           <p className={`${lead} mx-auto`}>Sign up and have the next one ready before the GC asks for it.</p>
-          <SignUpRow center />
-          <ToolLink toolUrl={toolUrl} center />
+          <SignUpRow toolUrl={toolUrl} center />
         </div>
       </Reveal>
     </main>

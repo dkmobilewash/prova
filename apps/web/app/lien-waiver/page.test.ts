@@ -24,7 +24,7 @@ const css = readFileSync(fileURLToPath(new URL("../../components/lienWaiverLandi
 
 describe("/lien-waiver", () => {
   it("renders signed out, with the headline and all four waiver types", () => {
-    expect(html).toContain("Get paid.");
+    expect(html).toContain("Make your lien waiver. Free.");
     for (const type of ["Conditional progress", "Unconditional progress", "Conditional final", "Unconditional final"]) {
       expect(html).toContain(type);
     }

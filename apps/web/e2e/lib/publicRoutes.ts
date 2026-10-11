@@ -70,7 +70,7 @@ export const PUBLIC_ROUTES: readonly PublicRoute[] = [
     pattern: "/lien-waiver",
     // The hero headline, not "lien waiver" — that is in the <title> and
     // the eyebrow, and would pass on a page whose body never rendered.
-    mustShow: "Get paid.",
+    mustShow: "Make your lien waiver",
   },
   // A section heading from the body of each, not the title in the header —
   // the shared PublicDocument chrome links to both pages by name from every
