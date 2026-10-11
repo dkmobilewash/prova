@@ -162,6 +162,12 @@ function feetOf(runs: readonly WallCandidate[]): number {
 export type GroupVerdict =
   /** One type, and the drawing named it. Price it. */
   | { state: "NAMED"; type: PostableWallType; tag: string }
+  /**
+   * The drawing names a type this company HAS, and the wall is not the
+   * thickness that type is recorded as. Two sources disagree; neither is
+   * overruled here.
+   */
+  | { state: "TAG_DISAGREES"; type: PostableWallType; tag: string }
   /** One type, from the thickness alone, because nothing named these. */
   | { state: "ONLY_ONE_THAT_THICK"; type: PostableWallType }
   /** Several types are this thick. Only a person can say which. */
@@ -176,9 +182,33 @@ export function verdictFor(group: WallGroup): GroupVerdict {
     const [type] = group.candidates;
     // More than one type sharing a CODE cannot happen — `WallType` is unique
     // on (companyId, code) — so the first is the only one.
-    return type
-      ? { state: "NAMED", type, tag: group.source.tag }
-      : { state: "NO_SUCH_TYPE", tag: group.source.tag };
+    if (!type) return { state: "NO_SUCH_TYPE", tag: group.source.tag };
+    // ── WHEN THE NAME AND THE MEASUREMENT DISAGREE ──
+    //
+    // A click-through on School-01 found `B1` reported at three thicknesses at
+    // once and `EXT-1` at two. One assembly is not three thicknesses, so one of
+    // two things is true of each of those groups, and they need opposite
+    // responses:
+    //
+    //   - the tag is on the WRONG RUN. `tagByRun` assigns by proximity, and on
+    //     a dense sheet the nearest detected run to a label is not always the
+    //     wall it names. Pricing that run as B1 prices the wrong assembly.
+    //   - the LIBRARY's thickness is wrong, or the wall is drawn with extra
+    //     line work where this one was measured.
+    //
+    // Until #731 there was no thickness on a `WallType` and this contradiction
+    // could not be seen at all. Now both numbers exist, so it can be stated —
+    // and it is stated rather than resolved, because the app has no evidence
+    // for which source is wrong and guessing would price a wall by coin flip.
+    //
+    // A type with NO recorded thickness is exempt: null means "cannot be
+    // matched by thickness", and reading it as a disagreement would refuse
+    // every library typed in before that column existed.
+    const disagrees =
+      type.thicknessIn !== null && Math.abs(type.thicknessIn - group.inches) > THICKNESS_SLACK_IN;
+    return disagrees
+      ? { state: "TAG_DISAGREES", type, tag: group.source.tag }
+      : { state: "NAMED", type, tag: group.source.tag };
   }
   if (group.candidates.length === 1) return { state: "ONLY_ONE_THAT_THICK", type: group.candidates[0] };
   if (group.candidates.length > 1) return { state: "ASK", types: group.candidates };
@@ -206,6 +236,13 @@ export function groupSentence(group: WallGroup, verdict: GroupVerdict): string |
         `Nothing on the drawing names these, and you have ${verdict.types.length} wall types at ` +
         `${inches(group.inches)} (${verdict.types.map((type) => type.code).join(", ")}). ` +
         `They differ in ways a floor plan cannot show, so pick one.`
+      );
+    case "TAG_DISAGREES":
+      return (
+        `The drawing tags these ${verdict.tag}, but they measure ${inches(group.inches)} and your ` +
+        `${verdict.type.code} is ${inches(verdict.type.thicknessIn ?? 0)}. Either the tag belongs to a different ` +
+        `wall or the thickness on your ${verdict.type.code} is wrong — look at this group on the drawing before ` +
+        `pricing it.`
       );
     case "NO_SUCH_TYPE":
       return (
