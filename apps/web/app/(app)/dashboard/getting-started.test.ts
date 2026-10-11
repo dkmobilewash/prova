@@ -115,7 +115,7 @@ describe("/dashboard getting-started card", () => {
   it("shows on a brand-new account, with its progress", async () => {
     const html = await render();
     // Anti-vacuity: the real page rendered.
-    expect(html).toContain("What needs a decision");
+    expect(html).toContain('data-home="greeting"');
     const section = card(html);
     expect(section).not.toBeNull();
     expect(section).toContain("0 of 5 done.");
@@ -147,7 +147,7 @@ describe("/dashboard getting-started card", () => {
     state.context.company.name = "Smith Drywall LLC";
     state.counts = ALL_REQUIRED_DONE;
     const html = await render();
-    expect(html).toContain("What needs a decision");
+    expect(html).toContain('data-home="greeting"');
     expect(card(html)).toBeNull();
   });
 
@@ -160,7 +160,7 @@ describe("/dashboard getting-started card", () => {
   it("is gone when this company's hide cookie is on the request, and asks nothing", async () => {
     state.cookie = "co-1";
     const html = await render();
-    expect(html).toContain("What needs a decision");
+    expect(html).toContain('data-home="greeting"');
     expect(card(html)).toBeNull();
     expect(state.countCalls).not.toContain("crewScheduleDay");
     expect(state.countCalls).not.toContain("quickBooksConnection");
