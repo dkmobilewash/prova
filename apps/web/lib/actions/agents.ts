@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import type { AgentKind } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
+import "@/lib/agents/all";
 import { runAgent, type RunOutcome } from "@/lib/agents/run";
 
 export type RunAgentResult = { ok: true; outcome: RunOutcome } | { ok: false; error: string };
