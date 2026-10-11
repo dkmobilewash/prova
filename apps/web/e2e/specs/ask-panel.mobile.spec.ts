@@ -19,7 +19,8 @@ test("Ask panel is fully on screen at 375px", async ({ page }) => {
 
   await page.locator('nav[aria-label="Main"] a[href="/ai"]:visible').click();
   await expect(page).toHaveURL(/\/ai$/);
-  const panel = page.locator('[data-tour="ai-chat"]');
+  // Unquoted on purpose: walkthroughCensus counts every quoted data-tour literal as an anchor a page renders.
+  const panel = page.locator("[data-tour=ai-chat]");
   await expect(panel).toBeVisible();
 
   const box = await panel.boundingBox();

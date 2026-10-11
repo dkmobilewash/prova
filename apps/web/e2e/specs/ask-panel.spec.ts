@@ -26,7 +26,8 @@ test.describe("Ask panel, reached from the top bar", () => {
     await page.locator('nav[aria-label="Main"] a[href="/ai"]:visible').click();
     await expect(page).toHaveURL(/\/ai$/);
 
-    const panel = page.locator('[data-tour="ai-chat"]');
+    // Unquoted on purpose: walkthroughCensus counts every quoted data-tour literal as an anchor a page renders.
+    const panel = page.locator("[data-tour=ai-chat]");
     const input = panel.getByLabel("Ask about your jobs");
     await input.fill("What is on my schedule this week?");
     await panel.getByRole("button", { name: "Ask", exact: true }).click();
