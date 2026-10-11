@@ -90,8 +90,104 @@ const SAME_LINE_FEET = 0.5;
  * 8 feet covers a single door (3'), a double door (6') and a wide cased opening.
  * Beyond it this does nothing, and two findings stay two runs — the
  * conservative direction, and the same one the old note chose for everything.
+ *
+ * ── AND A WIDTH ALONE IS NOT ENOUGH, WHICH THE FIRST VERSION LEARNED THE
+ *    EXPENSIVE WAY ──
+ *
+ * Shipped with this bound and nothing else, it drew wall straight through a
+ * CORRIDOR. School-01 A-101, counted on the drawing: seven runs crossed the
+ * 5'-7" corridor in front of exam rooms 110-114, joining each north partition
+ * to its matching south partition across open floor — about 39 feet of wall
+ * nobody can build, in one region, and the same again on the south side. The
+ * grid B wall became one 91-foot run from exterior to exterior.
+ *
+ * **A corridor is NARROWER than a double door**, so no width can separate
+ * them: egress corridors run to 3'-8" and a double door is 6'-0". Narrowing the
+ * bound would refuse real doors and still admit tight corridors. The
+ * discriminator is not the width of the gap, it is WHAT IS AT ITS ENDS — see
+ * `gapIsCrossing`.
  */
 export const MAX_OPENING_FEET = 8;
+
+/** How far from a gap's end a perpendicular wall counts as bounding it, in
+ *  feet. About a wall's own thickness plus drafting slack: the partition's
+ *  centreline ends at the corridor wall's centreline, not at its face. */
+const BOUNDS_THE_GAP_FEET = 1.5;
+
+/** Directions this far from perpendicular still count as crossing, as a dot
+ *  product of unit vectors. 0.25 is about 15° of slack, which covers a
+ *  not-quite-square building without admitting a wall running alongside. */
+const ROUGHLY_PERPENDICULAR = 0.25;
+
+/**
+ * IS THIS GAP A CORRIDOR RATHER THAN A DOORWAY?
+ *
+ * A door is a hole in one wall: nothing crosses it, and the wall resumes on the
+ * far side. A corridor crossing is different in a way that is on the drawing —
+ * **the corridor's own two walls run perpendicular across the ends of the
+ * gap**, because that is what makes it a corridor rather than a hole.
+ *
+ * So the test is one perpendicular wall near EACH end, and they must be two
+ * different walls. That ordering matters:
+ *
+ *   a DOOR          no perpendicular wall at either jamb        -> join
+ *   a COLUMN        no perpendicular wall                       -> join
+ *   a T-JUNCTION    one perpendicular wall, the run continues   -> join
+ *   a CORRIDOR      a perpendicular wall at BOTH ends           -> refuse
+ *
+ * The T-junction case is why "any perpendicular wall nearby" would be wrong:
+ * a wall meeting this one side-on does not stop it, and refusing there would
+ * reintroduce the fragmentation this whole change exists to remove.
+ *
+ * Degrades the safe way. If the corridor's walls were not detected, nothing
+ * bounds the gap and the join goes ahead — the same answer as before this
+ * existed, rather than a refusal of everything.
+ */
+function gapIsCrossing(
+  walls: readonly WallCandidate[],
+  unit: readonly { ux: number; uy: number }[],
+  i: number,
+  j: number,
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  feetPerUnit: number,
+): boolean {
+  const near = BOUNDS_THE_GAP_FEET / feetPerUnit;
+  const u = unit[i];
+  let atFrom = -1;
+  let atTo = -1;
+  for (let k = 0; k < walls.length; k += 1) {
+    // `k === j` is REDUNDANT against the perpendicularity test below — j is
+    // collinear with i by the time this runs, so it can never be perpendicular
+    // to it — and mutation confirms removing it changes no answer. Kept because
+    // "the two walls being joined do not get to bound their own gap" is the
+    // intent, and reading it here is cheaper than deducing it from a filter
+    // three lines down.
+    if (k === i || k === j) continue;
+    const v = unit[k];
+    // Perpendicular to the run being joined, within slack.
+    if (Math.abs(v.ux * u.ux + v.uy * u.uy) > ROUGHLY_PERPENDICULAR) continue;
+    if (atFrom < 0 && distanceToSegment(fromX, fromY, walls[k]) <= near) atFrom = k;
+    if (atTo < 0 && distanceToSegment(toX, toY, walls[k]) <= near) atTo = k;
+    // TWO DIFFERENT WALLS. One long wall running past both ends is a wall
+    // alongside the gap, not the two sides of a corridor.
+    if (atFrom >= 0 && atTo >= 0 && atFrom !== atTo) return true;
+  }
+  return false;
+}
+
+/** Distance from a point to a wall's centreline segment. */
+function distanceToSegment(px: number, py: number, wall: WallCandidate): number {
+  const dx = wall.x2 - wall.x1;
+  const dy = wall.y2 - wall.y1;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return Math.hypot(px - wall.x1, py - wall.y1);
+  let t = ((px - wall.x1) * dx + (py - wall.y1) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (wall.x1 + t * dx), py - (wall.y1 + t * dy));
+}
 
 type Projected = { from: number; to: number; thickness: number; weight: number };
 
@@ -195,6 +291,37 @@ export function mergeWalls(
         // right length in the wrong places, which no total catches", in the
         // words of the test that caught this.
         if (across > nearEnough / 4) continue;
+        // ── AND IS THERE A CORRIDOR IN THE GAP? ──
+        //
+        // The width bound cannot answer this: a corridor is NARROWER than a
+        // double door. What separates them is on the drawing — a corridor has
+        // its own two walls running across the ends of the gap, and a doorway
+        // has nothing. See `gapIsCrossing`.
+        // The gap's ends are the two REAL endpoints facing each other — taken
+        // from the walls rather than rebuilt from projections, which needs no
+        // offset and cannot drift from the geometry on screen.
+        const endsI = [
+          [walls[i].x1, walls[i].y1],
+          [walls[i].x2, walls[i].y2],
+        ];
+        const endsJ = [
+          [walls[j].x1, walls[j].y1],
+          [walls[j].x2, walls[j].y2],
+        ];
+        let best = Infinity;
+        let from = endsI[0];
+        let to = endsJ[0];
+        for (const p of endsI) {
+          for (const q of endsJ) {
+            const d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+            if (d < best) {
+              best = d;
+              from = p;
+              to = q;
+            }
+          }
+        }
+        if (gapIsCrossing(walls, unit, i, j, from[0], from[1], to[0], to[1], feetPerUnit)) continue;
       }
       join(i, j);
     }
