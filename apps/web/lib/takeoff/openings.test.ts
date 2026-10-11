@@ -224,3 +224,77 @@ describe("finding the openings in a wall", () => {
     expect(openingsInWalls([seg(5, 5, 5, 5), ...faceWithGap(3)], 1)).toHaveLength(2);
   });
 });
+
+describe("a corridor is not a doorway, and satisfies every other test for one", () => {
+  // ── WHERE THE WALL-THROUGH-A-CORRIDOR BUG WAS ACTUALLY MADE ──
+  //
+  // A 5'-7" crossing passes every check above: wall on each side, a gap between
+  // `NARROWEST_DOOR_FEET` and `WIDEST_DOOR_FEET`, on one line. So this sealed
+  // it — and sealing a corridor makes it an enclosed thin region, which the
+  // region engine then reports as WALL.
+  //
+  // #726 tried to fix that downstream in `mergeWalls` and could not: union-find
+  // is transitive, so refusing the pair either side of a corridor does nothing
+  // once something bridges them. The bridge was made here.
+  //
+  // Measured on the exam-rooms fixture: the seal put SIX candidates inside the
+  // corridor, and the merge strung them into six forty-foot runs through open
+  // floor. With this test, zero.
+
+  /** A wall across the gap's end, as a corridor's own wall runs. Two faces,
+   *  because that is how a wall is drawn and what the sealer sees. */
+  const crossingWall = (atX: number, fromY: number, toY: number): StrokeSegment[] => [
+    seg(atX, fromY, atX, toY),
+    seg(atX + 0.4, fromY, atX + 0.4, toY),
+  ];
+
+  it("DOES NOT SEAL a gap with a wall across BOTH of its ends", () => {
+    // The corridor: the wall stops, open floor, the wall resumes — and the
+    // corridor's own two walls run across, one at each end.
+    const wall = faceWithGap(5.583);
+    const corridor = [...crossingWall(20, -10, 25), ...crossingWall(25.583, -10, 25)];
+    expect(openingsInWalls([...wall, ...corridor], 1), "a corridor was sealed as a doorway").toEqual([]);
+  });
+
+  it("STILL SEALS a plain doorway with nothing across it", () => {
+    // Without this the fix is a revert: sealing doorways is what stops every
+    // room on a sheet merging into one region. TWO closures, one per face, as
+    // the first case in this file explains — a gap is a hole in both.
+    expect(openingsInWalls(faceWithGap(3), 1), "one closure per face").toHaveLength(2);
+  });
+
+  it("STILL SEALS A DOORWAY WITH ONE WALL AT IT — a door beside a T-junction", () => {
+    // Found by mutation: requiring only ONE perpendicular face left every test
+    // green. A wall meeting this one at a jamb is a T-junction, extremely
+    // common, and the door beside it is still a door.
+    const wall = faceWithGap(3);
+    const tee = crossingWall(20, -10, 7);
+    expect(openingsInWalls([...wall, ...tee], 1), "a door at a T-junction stopped being sealed").toHaveLength(2);
+  });
+
+  it("DOES NOT COUNT ONE WALL'S OWN TWO FACES as the two sides of a corridor", () => {
+    // Also found by mutation. A wall is drawn as two faces about 0.4ft apart,
+    // so on a NARROW gap both of them land within the bounding distance of the
+    // two ends. That is one wall crossing, not a corridor, and the gap beside
+    // it is still a doorway.
+    const wall = faceWithGap(2.2);
+    const single = crossingWall(20.9, -10, 7);
+    expect(openingsInWalls([...wall, ...single], 1), "one wall read as two sides of a corridor").toHaveLength(2);
+  });
+
+  it("MEASURES TO THE FACE, not to the line it lies on", () => {
+    // Third mutation. Gridlines and aligned walls make it routine for a
+    // perpendicular face elsewhere on the sheet to lie on a line passing
+    // through this gap. Without clamping to the segment, a wall eighty feet
+    // away refuses to seal a doorway here.
+    const wall = faceWithGap(3);
+    const faraway = [...crossingWall(20, 60, 90), ...crossingWall(23, 60, 90)];
+    expect(openingsInWalls([...wall, ...faraway], 1), "a distant wall blocked this seal").toHaveLength(2);
+  });
+
+  it("SEALS AGAIN when the corridor's walls were never drawn", () => {
+    // Degrades the safe way. Nothing bounds the gap, so it is sealed exactly as
+    // before this existed — rather than refusing everything on a missing input.
+    expect(openingsInWalls(faceWithGap(5.583), 1)).toHaveLength(2);
+  });
+});
