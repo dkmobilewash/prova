@@ -6,6 +6,7 @@ import { equipmentCommands, equipmentExclusions } from "./commands/equipment";
 import { estimatingCommands, estimatingExclusions } from "./commands/estimating";
 import { notYetRegistered } from "./commands/exclusions";
 import { bidCommands } from "./commands/bids";
+import { bidOutcomeCommands } from "./commands/bidOutcomes";
 import { billingCommands, billingExclusions } from "./commands/billing";
 import { fieldCommands, fieldExclusions } from "./commands/field";
 import { laborCommands, laborExclusions } from "./commands/labor";
@@ -67,6 +68,7 @@ export type CommandName =
   | "send_email"
   | "reschedule_job"
   | "log_bid_invitation"
+  | "record_bid_outcome"
   | "add_bid_pursuit"
   | "set_pursuit_stage"
   | "schedule_crew"
@@ -287,6 +289,7 @@ export const COMMANDS: CommandDefinition[] = [
   ...messageCommands,
   ...scheduleCommands,
   ...bidCommands,
+  ...bidOutcomeCommands,
   ...pursuitCommands,
   ...crewScheduleCommands,
   ...contactCommands,

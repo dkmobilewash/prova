@@ -59,7 +59,8 @@ describe("the hundred questions", () => {
     // never a gap, REMOVED from the list injected into the system prompt. The
     // other failure direction from the line above: there, a hole nobody had
     // written down; here, a refusal nobody had withdrawn.
-    expect(TOTAL_QUESTIONS).toBe(123);
+    // 124 with record_bid_outcome, 2026-10-11.
+    expect(TOTAL_QUESTIONS).toBe(124);
     expect(TOP_QUESTIONS).toHaveLength(TOTAL_QUESTIONS);
   });
 

@@ -100,6 +100,11 @@ export const notYetRegistered: Exclusion[] = [
       "Starting a background agent run. Excluded for `aiSettings.*`'s reason one step removed: a model must not be able to start model runs on a prompt's say-so — a run spends the company's AI allowance, and an injected instruction in a bid name could otherwise burn a month's cap. The Run-now button on /ai is a deliberate press by a person who can see the spend beside it. Never a command.",
   },
   {
+    action: "recommendations.*",
+    reason:
+      "Dismissing or closing one of the agents' recommendations. A recommendation is advice the person is weighing, and closing it is the person saying they have weighed it — a model closing its own advice on a prompt's say-so would let an injected sentence in a bid name hide the one warning that mattered. A press on /ai, beside the reason and its sources. Never a command.",
+  },
+  {
     action: "agentFindings.*",
     reason:
       "Dismissing and restoring what a background agent found. A finding exists to be read by a person, and a model clearing it on a prompt's say-so is the agent marking its own homework — an injected line in a bid name could otherwise hide a past-due or unread-addendum warning before anyone saw it. The press is beside the finding on /ai. Never a command.",
