@@ -22,6 +22,27 @@ enum OpportunityStage {
   LOST
 }
 
+/// Where a lead is in the OUTBOUND machine — the cold-email sequencer and the
+/// phone — as distinct from `OpportunityStage`, which is where a DEAL is.
+/// A lead can be SEQUENCED with no opportunity, or WON with one; the two
+/// answer different questions and are deliberately not one enum.
+///
+/// Written by the webhook route and the call log, read by the nightly push
+/// (which only ever sends NEW) and the list pages. DEAD is terminal from the
+/// machine's point of view — bounced beyond repair, wrong firm, or suppressed
+/// — and a person can still create an opportunity by hand if they know
+/// better.
+enum OutboundStatus {
+  NEW
+  QUEUED
+  SEQUENCED
+  REPLIED
+  CONSENTED
+  CALLED
+  MEETING
+  DEAD
+}
+
 /// A prospective PROVA customer -- a construction subcontractor who might
 /// sign up. Not a second Contact: a Contact is a tenant's own GC/developer/
 /// vendor, and every tenant has their own; a SalesLead belongs only to
@@ -128,12 +149,37 @@ model SalesLead {
   listedByGc      String?
   listedOnProject String?
 
+  /// ── THE OUTBOUND MACHINE'S VIEW OF THIS LEAD ──
+  ///
+  /// `doNotContact` is THE suppression flag, and the one rule about it is that
+  /// every tool reads it: the nightly push skips a suppressed lead, the call
+  /// list shows it, the call buttons refuse to log a dial against it, and the
+  /// webhook sets it on an unsubscribe. Set with its reason and the date it
+  /// was asked for, never cleared by code — a person who was asked to stop is
+  /// stopped until a person decides otherwise. Default false so every lead
+  /// that exists today is unchanged by this column arriving.
+  ///
+  /// Before this column, "do not call" lived as a tag on the latest CALL
+  /// activity (`lib/call-dispositions.ts`), which is what the call buttons
+  /// still write; that read stays as the fallback for rows older than this
+  /// migration, and this flag wins when set.
+  doNotContact       Boolean   @default(false)
+  doNotContactReason String?
+  doNotContactAt     DateTime?
+
+  outboundStatus OutboundStatus @default(NEW)
+  /// The vendor's or the caller's time for the latest outbound touch —
+  /// entered from the event, never stamped on receipt.
+  lastOutboundAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   opportunities SalesOpportunity[]
   activities    SalesActivity[]
   signals       SalesLeadSignal[]
+  outboundEvents OutboundEvent[]
+  consents       ConsentRecord[]
 
   @@index([companyId])
   /// For the lookup this column exists to make possible: find the lead holding
@@ -393,4 +439,92 @@ model SalesLeadSignal {
   @@index([companyId])
   @@index([leadId])
   @@index([leadId, state])
+}
+
+/// ONE ROW PER THING THE OUTBOUND VENDORS TOLD US, VERBATIM, APPEND-ONLY.
+///
+/// The sequencer's webhooks arrive in shapes its own documentation does not
+/// agree on (`lib/smartlead-webhook.ts` has the list), so every event is
+/// stored with its RAW PAYLOAD before anything is derived from it. What the
+/// app decided the event meant is a `SalesActivity` or a status change on the
+/// lead, written in the same transaction; this row is what lets that decision
+/// be re-derived when the parser turns out to have guessed.
+///
+/// `vendorEventId` is UNIQUE, and that is the whole defence against retries:
+/// every vendor re-sends anything that did not get a 200, and a replayed
+/// reply recorded twice is a reply rate that is wrong. Same shape as
+/// `OutboundMessageEvent.providerEventId`.
+///
+/// `leadId` is optional and SET NULL: an event for an address no lead holds
+/// is still worth keeping (it is how a mismatch is found), and deleting a
+/// lead must not be blocked by its history.
+model OutboundEvent {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  leadId String?
+  lead   SalesLead? @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  /// Which vendor: `smartlead`, later `retell`, `kixie`.
+  source String
+  /// The vendor's own event name, unmapped — `EMAIL_REPLY`, `LEAD_UNSUBSCRIBED`.
+  type String
+  /// The address the event was about, lower-cased, so an unmatched event can
+  /// be matched later when the lead gains an email.
+  email String?
+
+  vendorEventId String @unique
+  payload       Json
+
+  /// When the VENDOR says it happened. Null when the vendor sent no time,
+  /// which some of these payloads do not; never defaulted to receipt.
+  occurredAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
+  @@index([leadId])
+  @@index([email])
+}
+
+/// WHAT A PROSPECT AGREED TO, EXACTLY, AND THE PROOF.
+///
+/// A reply "yes" to an email is consent for a HUMAN call. For an automated or
+/// AI-voice call the law wants a signed writing that names the number,
+/// discloses the technology and says consent is not a condition of purchase
+/// (47 CFR 64.1200(f)(9), E-SIGN). This row is that writing's record: the
+/// exact text shown (and its hash and version, so a later edit to the page
+/// cannot change what somebody agreed to), the phone they typed, where and
+/// when, and whether the box was ticked — an unticked submission is kept too,
+/// because "they saw it and declined" is also a fact.
+///
+/// Nothing in the app may place an automated call to a lead without a row
+/// here with `checked` true. There is deliberately no `revokedAt`: revocation
+/// is `SalesLead.doNotContact`, the one flag every tool reads.
+model ConsentRecord {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  leadId String
+  lead   SalesLead @relation(fields: [leadId], references: [id], onDelete: Restrict)
+
+  phone       String
+  text        String
+  textHash    String
+  textVersion String
+  checked     Boolean
+
+  /// The moment they submitted the page. Stamped, and that is correct: this
+  /// describes our own act of capturing the agreement, which the machine
+  /// genuinely knows, and the proof is worthless without it.
+  capturedAt DateTime @default(now())
+  ipAddress  String?
+  userAgent  String?
+  /// Which page or campaign showed the text.
+  source     String?
+
+  @@index([companyId])
+  @@index([leadId])
 }

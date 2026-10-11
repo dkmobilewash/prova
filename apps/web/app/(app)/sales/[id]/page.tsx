@@ -250,13 +250,13 @@ export default async function SalesLeadPage({
           entry&apos;s follow-up was superseded when the next activity was
           logged.
         </p>
-        {/* DERIVED from the latest CALL's tag, stored nowhere — the column is
-            announced but not landed, and a flag that could disagree with the
-            row it came from is the thing this repo refuses to store. */}
-        {doNotCallFrom(lead.activities) ? (
+        {/* The flag wins; the latest CALL's tag is the fallback for leads
+            that were asked before the column existed. */}
+        {lead.doNotContact || doNotCallFrom(lead.activities) ? (
           <p className="mb-3 rounded-md border border-tag-rose-ink px-3 py-2 text-sm font-semibold text-tag-rose-ink">
-            {lead.companyName} asked not to be called. Do not dial this lead
-            again; log a conversation only if they reach out.
+            {lead.companyName} asked not to be contacted
+            {lead.doNotContactReason ? ` (${lead.doNotContactReason})` : ""}. Do not dial or
+            email this lead again; log a conversation only if they reach out.
           </p>
         ) : null}
         <div className="mb-4">

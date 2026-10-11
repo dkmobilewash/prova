@@ -79,9 +79,9 @@ export default async function CallListPage({
      rows on screen. */
   const existing = await prisma.salesLead.findMany({
     where: { companyId: company.id, licenceNumber: { in: shown.map((row) => row.licence) } },
-    select: { id: true, licenceNumber: true },
+    select: { id: true, licenceNumber: true, doNotContact: true },
   });
-  const leadByLicence = new Map(existing.map((lead) => [lead.licenceNumber, lead.id]));
+  const leadByLicence = new Map(existing.map((lead) => [lead.licenceNumber, lead]));
 
   const t = list.totals;
   const spanishShare = t.withOwner > 0 ? Math.round((100 * t.spanishSurnames) / t.withOwner) : null;
@@ -168,7 +168,8 @@ export default async function CallListPage({
       ) : (
         <ul className="divide-y divide-line-row border-y border-line-row">
           {shown.map((row) => {
-            const leadId = leadByLicence.get(row.licence);
+            const existingLead = leadByLicence.get(row.licence);
+            const leadId = existingLead?.id;
             return (
               <li key={row.licence} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
@@ -195,7 +196,7 @@ export default async function CallListPage({
                 <div className="shrink-0">
                   {leadId ? (
                     <Link href={`/sales/${leadId}`} className="text-sm text-ink-label hover:underline">
-                      Open lead →
+                      {existingLead?.doNotContact ? "Do not contact — open lead →" : "Open lead →"}
                     </Link>
                   ) : (
                     <AddCslbLeadButton licence={row.licence} />

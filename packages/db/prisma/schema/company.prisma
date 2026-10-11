@@ -157,6 +157,8 @@ model Company {
   salesActivities           SalesActivity[]
   salesStageChanges         SalesStageChange[]
   salesLeadSignals          SalesLeadSignal[]
+  outboundEvents            OutboundEvent[]
+  consentRecords            ConsentRecord[]
   equipmentAssignments      EquipmentAssignment[]
   crewMembers               CrewMember[]
   payrollRegisterEntries    PayrollRegisterEntry[]

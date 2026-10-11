@@ -1773,16 +1773,32 @@ export async function logCall(
       followUpOn.setUTCDate(followUpOn.getUTCDate() + days);
     }
 
-    await prisma.salesActivity.create({
-      data: {
-        companyId: company.id,
-        leadId,
-        type: "CALL",
-        occurredOn,
-        summary: callSummary(disposition, note),
-        followUpOn,
-        loggedByUserId: user.id,
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.salesActivity.create({
+        data: {
+          companyId: company.id,
+          leadId,
+          type: "CALL",
+          occurredOn,
+          summary: callSummary(disposition, note),
+          followUpOn,
+          loggedByUserId: user.id,
+        },
+      });
+      // The tag on the activity is the record; the flag is what every other
+      // tool reads (the nightly push, the webhook, the list). Both, in one
+      // transaction, so they cannot disagree.
+      await tx.salesLead.update({
+        where: { id: leadId },
+        data: {
+          lastOutboundAt: occurredOn,
+          ...(disposition === "DO_NOT_CALL"
+            ? { doNotContact: true, doNotContactReason: "asked on a call", doNotContactAt: occurredOn, outboundStatus: "DEAD" }
+            : lead.doNotContact
+              ? {}
+              : { outboundStatus: disposition === "MEETING_BOOKED" ? "MEETING" : "CALLED" }),
+        },
+      });
     });
 
     revalidatePath(`/sales/${leadId}`);

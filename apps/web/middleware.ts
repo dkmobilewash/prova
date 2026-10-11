@@ -128,6 +128,12 @@ const isProtectedRoute = createRouteMatcher([
 // signature over the raw body, and fails closed when no secret is set — an
 // unverified "delivered" is worse than no event, because the whole value of
 // the log is that a delivered in it means something.
+// /api/webhooks/outbound is deliberately NOT protected here either — the
+// cold-email sequencer's events (reply, bounce, unsubscribe, category) come
+// from the vendor with no Clerk session. The route verifies the request
+// itself with SMARTLEAD_WEBHOOK_SECRET (an HMAC header or the body's
+// secret_key, whichever the account sends — lib/smartlead-webhook.ts says
+// why both) and fails closed with 503 when it is unset.
 // /api/intake/inbound/resend is deliberately NOT protected here either —
 // same reasoning as /api/messages/webhook, and the same provider: inbound
 // email events have no Clerk session. The route verifies the svix signature

@@ -888,6 +888,11 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       // models are populated only on the Company with isProvaOperator -- so a
       // tenant's export would carry nothing from it even as a dataset.
       "SalesLeadSignal",
+      // The cold-email sequencer's raw events and the consent proofs behind
+      // automated calls: operator-only like the line above, and the consent
+      // row is evidence about a PROSPECT, which a tenant export never holds.
+      "OutboundEvent",
+      "ConsentRecord",
       "BidInvitation",
       "VendorPriceQuote",
       "ContactPerson",
