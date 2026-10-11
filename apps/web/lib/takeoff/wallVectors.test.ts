@@ -8,6 +8,7 @@ import { wallFromPair, wallsFromStrokes, type StrokeSegment, type WallFinderOpti
   wallsNotLettering,
   LETTER_FEET,
   wallsNotTheSheetBorder,
+  oneWallPerPlace,
   MOST_OF_THE_SHEET,
   type WallCandidate,
 } from "./wallVectors";
@@ -635,5 +636,164 @@ describe("a SEGMENTED sheet border, which the span rule alone cannot see", () =>
   it("still drops a border drawn as ONE full-width line", () => {
     // The original rule, unchanged. This is additive.
     expect(wallsNotTheSheetBorder([at(0.01, 0.33, 0.99, 0.33)], W, H)).toHaveLength(0);
+  });
+});
+
+describe("one physical wall is found once, however many faces it is drawn with", () => {
+  // ── THE DEFECT A HAND COUNT FOUND ──
+  //
+  // School-01's own tag `EXT-1` came back on THREE thickness groups at once.
+  // One assembly cannot be three thicknesses, so one wall was being found three
+  // times: the pairer takes the widest valid pair and CONSUMES those two faces,
+  // and the leftover faces in the middle then pair with each other.
+  //
+  // Over-reporting is the direction that reaches a bid. Every copy sits exactly
+  // on a real wall, so the overlay looks perfect while the footage is double.
+
+  /** One inch of BUILDING, in points at 1/8" = 1'-0". */
+  const INCH = 0.75;
+
+  /** Face offsets measured on a real exterior wall: outer finish, two layers of
+   *  sheathing, stud face, inner face. */
+  const EXTERIOR_IN = [0, 1.56, 2.28, 8.28, 8.88];
+
+  const exterior = (y: number, lenPt: number) =>
+    EXTERIOR_IN.map((inches) => h(100, y + inches * INCH, lenPt));
+
+  it("REPORTS A 40FT EXTERIOR WALL ONCE, NOT TWICE", () => {
+    // Before the dedup this returned two 40ft walls, 8.88in and 6.72in, lying
+    // on top of each other — 80 ft of bid for 40 ft of building.
+    const walls = wallsFromStrokes(exterior(500, 360), EIGHTH);
+    expect(walls, "one wall was found more than once").toHaveLength(1);
+    expect(walls[0].lengthFeet).toBeCloseTo(40, 1);
+  });
+
+  it("keeps the FINISH-TO-FINISH thickness, not one layer of it", () => {
+    // Which copy survives decides what assembly it is priced as. An estimator
+    // measures finish to finish, and that is the pairer's own first answer.
+    const walls = wallsFromStrokes(exterior(500, 360), EIGHTH);
+    expect(walls[0].thicknessFeet * 12).toBeCloseTo(8.88, 1);
+  });
+
+  it("KEEPS THE WALL AND NOT THE COLUMN GRID LINE'S PAIRING", () => {
+    // The first draft of the dedup got this WRONG and the mutation run caught
+    // it. Faces are walked longest-first, so a 115ft grid line is reached
+    // before the 40ft wall it runs past, and its pairing is emitted first —
+    // one wall of 10.92in where the drawing has an 8.88in one. Correct
+    // deduplication, wrong copy, and worse than the duplicate it replaced
+    // because the footage now looks right.
+    //
+    // A grid line is not a balanced partner for a wall, and the pairer already
+    // knew that. Balanced findings are now considered first.
+    const gridline = h(-100, 500 + 12.48 * INCH, 1035);
+    const walls = wallsFromStrokes([...exterior(500, 360), gridline], EIGHTH);
+    expect(walls).toHaveLength(1);
+    expect(walls[0].thicknessFeet * 12, "the grid line's pairing was kept as the wall").toBeCloseTo(8.88, 1);
+  });
+
+  it("STILL FINDS A PLAIN TWO-FACE PARTITION — nothing is given up", () => {
+    // The control. A partition has one possible pairing, so the dedup has
+    // nothing to do and must do nothing.
+    const walls = wallsFromStrokes([h(100, 500, 180), h(100, 500 + PARTITION_PT, 180)], EIGHTH);
+    expect(walls).toHaveLength(1);
+    expect(walls[0].lengthFeet).toBeCloseTo(20, 1);
+  });
+});
+
+describe("what the dedup must NOT collapse", () => {
+  // Tested on `oneWallPerPlace` directly rather than through the pairer: these
+  // are about the dedup's own judgement, and routing them through the pairing
+  // would be measuring that instead.
+
+  /** A horizontal run at `y`, `lenPt` long, of the given thickness. */
+  const run = (y: number, lenPt: number, thicknessIn: number): WallCandidate => ({
+    x1: 100,
+    y1: y,
+    x2: 100 + lenPt,
+    y2: y,
+    thicknessFeet: thicknessIn / 12,
+    lengthFeet: lenPt / 9,
+  });
+
+  const INCH = 0.75;
+
+  it("DROPS a second finding inside the first wall's thickness", () => {
+    // The defect itself, stated as the dedup sees it.
+    const kept = oneWallPerPlace([run(500, 360, 8.88), run(500 + 0.48 * INCH, 360, 6.72)], 1 / 9);
+    expect(kept).toHaveLength(1);
+    expect(kept[0].thicknessFeet * 12).toBeCloseTo(8.88, 1);
+  });
+
+  it("KEEPS a furring wall standing against a thick one", () => {
+    // Centreline 5.25in off an 8in wall, whose half-thickness is 4in. Real, and
+    // the closest real thing to a duplicate on any drawing — which is why the
+    // test is the centreline being INSIDE the thickness rather than merely near.
+    const kept = oneWallPerPlace([run(500, 360, 8), run(500 + 5.25 * INCH, 360, 2.5)], 1 / 9);
+    expect(kept, "a furring wall was swallowed by the wall it furs").toHaveLength(2);
+  });
+
+  it("KEEPS the two walls either side of a corridor", () => {
+    const corridor = 5.583 * 9;
+    expect(
+      oneWallPerPlace([run(500, 360, 4.875), run(500 + corridor, 360, 4.875)], 1 / 9),
+    ).toHaveLength(2);
+  });
+
+  it("KEEPS two walls end to end on the same line", () => {
+    // Same line, zero overlap. Without the overlap test these collapse into one
+    // and a whole wall leaves the bid.
+    const second: WallCandidate = { ...run(500, 180, 4.875), x1: 300, x2: 480 };
+    expect(oneWallPerPlace([run(500, 180, 4.875), second], 1 / 9)).toHaveLength(2);
+  });
+
+  it("KEEPS walls that cross at a right angle", () => {
+    const across: WallCandidate = {
+      x1: 200,
+      y1: 400,
+      x2: 200,
+      y2: 700,
+      thicknessFeet: 4.875 / 12,
+      lengthFeet: 300 / 9,
+    };
+    expect(oneWallPerPlace([run(500, 360, 4.875), across], 1 / 9)).toHaveLength(2);
+  });
+
+  it("KEEPS A WALL CROSSING THIS ONE AT A SHALLOW ANGLE", () => {
+    // Found by mutation: dropping the parallel test left every other case
+    // green, because a wall crossing at a RIGHT angle projects to nothing and
+    // the overlap test refuses it anyway. A shallow crossing is the case that
+    // needs the parallel test, and School-01 has one — the 17.5-degree wall in
+    // Conference 118, T-ing into the wall on grid E.
+    //
+    // Its midpoint lies ON the other wall's line, and 95% of it lies alongside.
+    // Only the ANGLE says these are two walls.
+    const diagonal: WallCandidate = {
+      x1: 194.2,
+      y1: 472.9,
+      x2: 365.8,
+      y2: 527.1,
+      thicknessFeet: 4.875 / 12,
+      lengthFeet: 20,
+    };
+    expect(
+      oneWallPerPlace([run(500, 360, 4.875), diagonal], 1 / 9),
+      "a wall crossing at 17.5 degrees was read as the same wall",
+    ).toHaveLength(2);
+  });
+
+  it("KEEPS a short duplicate's VICTIM — overlap is judged against the shorter run", () => {
+    // Also found by mutation. The leftover pairing is often a FRAGMENT, because
+    // the inner layers are interrupted where the outer finish is not. Judged
+    // against the longer run a 15ft fragment on a 40ft wall fails the overlap
+    // test and survives as a second wall; against the shorter one it is caught.
+    const fragment: WallCandidate = { ...run(500 + 0.48 * INCH, 135, 6), lengthFeet: 15 };
+    expect(oneWallPerPlace([run(500, 360, 8.88), fragment], 1 / 9)).toHaveLength(1);
+  });
+
+  it("KEEPS a wall whose centreline is JUST OUTSIDE the other's thickness", () => {
+    // The boundary, stated so a widened band fails here rather than quietly
+    // eating real walls.
+    const kept = oneWallPerPlace([run(500, 360, 8), run(500 + 4.2 * INCH, 360, 4.875)], 1 / 9);
+    expect(kept).toHaveLength(2);
   });
 });

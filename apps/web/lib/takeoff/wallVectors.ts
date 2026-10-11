@@ -74,6 +74,18 @@ export type WallCandidate = {
    * the opening as a header anyway.
    */
   openings?: { widthFt: number }[];
+  /**
+   * Whether the two faces this came from were a BALANCED pair — see
+   * `BALANCED_FACE_RATIO`, which is the test that tells a wall's second face
+   * from a column grid line running past the building.
+   *
+   * Recorded only so `oneWallPerPlace` can prefer a balanced finding to a
+   * fallback one when both describe the same wall. The pairer already knows
+   * which it took and used to throw the answer away; absent means "not built by
+   * the pairer" and is treated as balanced, since a hand-built candidate has no
+   * faces to be unbalanced about.
+   */
+  fromBalancedFaces?: boolean;
 };
 
 export type WallFinderOptions = {
@@ -509,11 +521,132 @@ export function wallsFromStrokes(
     if (chosen !== null) {
       used.add(i);
       used.add(chosenJ);
-      walls.push(chosen);
+      walls.push({ ...chosen, fromBalancedFaces: bestWall !== null });
     }
   }
 
-  return walls;
+  return oneWallPerPlace(walls, options.feetPerPoint);
+}
+
+/**
+ * How much of the shorter run must lie alongside the other before the two can
+ * be one wall found twice.
+ *
+ * Half, because the leftover pairing is made from the SAME faces and therefore
+ * spans the same stretch — a duplicate overlaps almost completely. Requiring
+ * more would miss the case where a doorway broke one copy and not the other;
+ * requiring much less would start merging two walls that merely pass each other
+ * at a corner.
+ */
+export const SAME_WALL_OVERLAP = 0.5;
+
+/**
+ * ── ONE PHYSICAL WALL, FOUND ONCE ──
+ *
+ * The pairing above answers "which two faces are this wall" and consumes them.
+ * It does NOT answer "have I already found this wall", and on anything drawn
+ * with more than two faces those are different questions.
+ *
+ * An interior partition is two lines, so there is one pairing and no way to go
+ * wrong. **An exterior wall is four or five** — outer finish, sheathing, stud
+ * face, inner face. The widest valid pair is taken as the wall, correctly, and
+ * then THE LEFTOVER FACES IN THE MIDDLE PAIR WITH EACH OTHER and are reported
+ * as a second, thinner wall lying on top of the first.
+ *
+ * Measured on the face offsets a real envelope uses (+0.00, +1.56, +2.28,
+ * +8.28, +8.88in), one 40 ft wall:
+ *
+ *   | faces drawn | walls returned | feet reported |
+ *   | --- | --- | --- |
+ *   | 2, an interior partition | 1 | 40 — correct |
+ *   | 4, brick and stud | **2** | **80** |
+ *   | 5, as measured | **2** | **80** |
+ *   | 6, with a column grid line | **3** | **120** |
+ *
+ * It was found by a hand count on School-01: the drawing's own tag `EXT-1`
+ * came back on THREE different thickness groups at once, which is impossible
+ * for one assembly and is the signature of one wall counted three times.
+ *
+ * ── OVER-REPORTING IS THE DANGEROUS DIRECTION ──
+ *
+ * An under-report is caught by eye — a wall with no line on it is visible on
+ * the drawing. This is not: every copy sits exactly on a real wall, so the
+ * overlay looks perfect while the footage is double. It reaches a bid.
+ *
+ * ── WHY THE FIRST ONE IS THE ONE TO KEEP, AND NOT THE WIDEST ──
+ *
+ * The loop above walks faces in descending LENGTH, so the first wall emitted at
+ * a place is the one built from the longest faces available — the pairer's own
+ * best answer, already filtered through `BALANCED_FACE_RATIO`. The leftovers
+ * come afterwards by construction.
+ *
+ * Keeping the widest instead would be worse than doing nothing where a column
+ * grid line is in reach: the grid-line pairing is the WIDEST of the three and
+ * is not a wall at all. Widest-first would keep it and discard the real wall
+ * underneath.
+ *
+ * ── BUT EMISSION ORDER ALONE IS NOT ENOUGH, AND THE FIRST DRAFT PROVED IT ──
+ *
+ * The loop walks faces in descending length, so a 115 ft COLUMN GRID LINE is
+ * reached before the 40 ft wall it runs past — and the pairing it makes is
+ * emitted first. Measured on this exact input, the first version of this
+ * function returned one wall of 10.92in where the drawing has an 8.88in one:
+ * it deduplicated correctly and kept the wrong copy, which is worse than the
+ * duplicate it replaced, because the footage now looks right.
+ *
+ * So the order is BALANCED FIRST, emission order within that. The pairer
+ * already decides whether a pair was balanced — `bestWall` against the
+ * `anyWall` fallback — and used to discard the answer; `fromBalancedFaces`
+ * carries it here. A fallback pairing is still kept when nothing balanced
+ * describes that place, exactly as before.
+ */
+export function oneWallPerPlace(
+  walls: readonly WallCandidate[],
+  feetPerPoint: number,
+): WallCandidate[] {
+  const balancedFirst = [
+    ...walls.filter((wall) => wall.fromBalancedFaces !== false),
+    ...walls.filter((wall) => wall.fromBalancedFaces === false),
+  ];
+  const kept: WallCandidate[] = [];
+  for (const wall of balancedFirst) {
+    if (!kept.some((already) => foundTwice(already, wall, feetPerPoint))) kept.push(wall);
+  }
+  return kept;
+}
+
+/**
+ * Is `wall` the same wall as `already`, found a second time?
+ *
+ * Three things have to hold, and the third is the one doing the work: the
+ * centreline of the second lies INSIDE the thickness of the first. That is a
+ * tight test by design — a furring wall against a 10in wall has its centreline
+ * 6.25in off, outside a 5in half-band, and survives. Two findings of one wall
+ * are within an inch of each other.
+ *
+ * ── ONE CHOICE HERE IS NOT PINNED BY ANY TEST, AND IT IS WRITTEN DOWN RATHER
+ * THAN DRESSED UP ──
+ *
+ * The band is the ALREADY-KEPT wall's thickness. Reading it from the new one
+ * instead survives the whole suite, and the mutation run says so. That is not a
+ * hole somebody forgot to close: the two readings differ only when the new wall
+ * is much thicker AND its centreline sits between the two half-bands, which on
+ * a drawing means two walls occupying the same three inches. No real assembly
+ * does that, so no honest case can be written, and a contrived one would assert
+ * the choice rather than justify it.
+ *
+ * `already` is the one kept because it is the conservative direction — a
+ * narrower band drops fewer things — and because the kept wall is the one the
+ * pairer trusted. If a case ever turns up, it belongs here with its drawing.
+ */
+function foundTwice(already: WallCandidate, wall: WallCandidate, feetPerPoint: number): boolean {
+  if (angleGap(angleOf(already), angleOf(wall)) > PARALLEL_TOLERANCE_RAD) return false;
+  const shorter = Math.min(lengthOf(already), lengthOf(wall));
+  if (shorter <= 0) return false;
+  if (overlapAlong(already, wall) < shorter * SAME_WALL_OVERLAP) return false;
+  const apart =
+    perpendicularDistance(already, (wall.x1 + wall.x2) / 2, (wall.y1 + wall.y2) / 2) * feetPerPoint;
+  return apart <= already.thicknessFeet / 2;
 }
 
 /**
