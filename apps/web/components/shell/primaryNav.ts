@@ -59,10 +59,12 @@ export function primaryTabs(groups: NavGroup[]): PrimaryTab[] {
 /**
  * Which tab the current page belongs to. `hasHome` is false on the desktop
  * bar, which has no Home word (the wordmark is the way home) — there the
- * dashboard lights Jobs, since the jobs list is what it holds.
+ * dashboard lights NOTHING. It used to light Jobs, because Jobs links to
+ * `/dashboard#jobs`, and then home and Jobs read as one tab (click test,
+ * 2026-10-11). Jobs is lit on a job and on the Jobs & bids area.
  */
 export function activeTab(pathname: string, hasHome: boolean): PrimaryTabKey | null {
-  if (pathname === "/dashboard") return hasHome ? "home" : "jobs";
+  if (pathname === "/dashboard") return hasHome ? "home" : null;
   if (under(pathname, "/jobs") || under(pathname, "/areas/jobs-bids")) return "jobs";
   if (MONEY_PAGES.some((p) => under(pathname, p))) return "money";
   if (under(pathname, "/schedule")) return "schedule";

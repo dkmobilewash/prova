@@ -148,6 +148,19 @@ describe("JobStageNav on a phone", () => {
     expect(html).toMatch(/text-tag-amber-ink">Not signed</);
     expect(html).not.toMatch(/hidden truncate[^"]*sm:block/);
   });
+
+  // "Pay app #2 overdue 8 d…" at 1555px (2026-10-11): a status is cut only
+  // on a phone pill, and the stage in view says it in full under the row.
+  // The equal heights and the wrap itself are layout — measured in Chromium.
+  it("cuts a status short only on a phone, and says the open stage's in full", () => {
+    const statuses = [...html.matchAll(/class="(mt-\[3px\][^"]*)"/g)].map((m) => m[1]!);
+    expect(statuses).toHaveLength(5);
+    for (const c of statuses) {
+      expect(c).not.toMatch(/(^|\s)truncate/);
+      expect(c).toContain("max-sm:truncate");
+    }
+    expect(html).toMatch(/data-stage-open-status[^>]*>.*?Billing:.*?>1 invoice</);
+  });
 });
 
 describe("payAppMonth", () => {

@@ -20,14 +20,31 @@ import { isCurrentLink, selectedStageKey, type JobStage } from "@/components/job
  * Phone: the steps become a row of compact pills that scrolls sideways,
  * and the one in view is scrolled to on arrival. Each pill still carries
  * its status line — it used to be `hidden sm:block` with the words only in
- * a `title`, which a finger never sees. The two sideways rows fade at the
+ * a `title`, which a finger never sees. A pill may cut a long status short
+ * (every word stays in its text and title), so the stage in view also says
+ * its status in full under the row. The two sideways rows fade at the
  * right edge, so a step or page past the edge reads as "more this way".
+ *
+ * Desktop: a status WRAPS, never truncates — "Pay app #2 overdue 8 d…" hid
+ * the one word that mattered (2026-10-11). The grid stretches every step to
+ * the tallest one (`sm:h-full`), so the five stay one height.
  */
 
 /** The right-edge fade on a sideways-scrolling row, phones only. The rows
  * pad 24px on the right, so at the end of the scroll the fade covers only
  * that padding and the last item is fully visible. */
 const EDGE_FADE = "max-sm:[mask-image:linear-gradient(to_right,#000_calc(100%-24px),transparent)]";
+
+function statusTone(stage: JobStage): string {
+  return stage.tone === "danger"
+    ? "text-danger"
+    : stage.tone === "warn"
+      ? "text-tag-amber-ink"
+      : stage.state === "current"
+        ? "text-ink-body"
+        : "text-ink-muted";
+}
+
 export function JobStageNav({ stages }: { stages: JobStage[] }) {
   const pathname = usePathname();
   const search = useSearchParams()?.toString() ?? "";
@@ -43,6 +60,10 @@ export function JobStageNav({ stages }: { stages: JobStage[] }) {
   }, [focusKey]);
 
   const open = stages.find((s) => s.key === selected);
+  // Phone: a pill may cut its status short, so the stage in view says it in
+  // full under the row. aria-hidden: the pill's own text (and title) already
+  // gives a screen reader every word, and this would say it twice.
+  const inView = stages.find((s) => s.key === focusKey);
 
   return (
     <nav aria-label="Job stages" className="mb-7 print:hidden">
@@ -78,15 +99,7 @@ export function JobStageNav({ stages }: { stages: JobStage[] }) {
                 </span>
                 {stage.status && (
                   <span
-                    className={`mt-[3px] block max-w-[12rem] truncate text-xs sm:max-w-none sm:text-[13px] ${
-                      stage.tone === "danger"
-                        ? "text-danger"
-                        : stage.tone === "warn"
-                          ? "text-tag-amber-ink"
-                          : stage.state === "current"
-                            ? "text-ink-body"
-                            : "text-ink-muted"
-                    }`}
+                    className={`mt-[3px] block text-xs max-sm:max-w-[12rem] max-sm:truncate sm:text-balance sm:text-[13px] sm:leading-snug ${statusTone(stage)}`}
                   >
                     {stage.status}
                   </span>
@@ -103,7 +116,7 @@ export function JobStageNav({ stages }: { stages: JobStage[] }) {
               </span>
             </>
           );
-          const box = `flex min-h-[44px] items-center gap-2.5 border bg-surface sm:gap-3.5 sm:rounded-xl sm:px-[18px] sm:py-3.5 rounded-[22px] py-1.5 pl-1.5 pr-4 ${
+          const box = `flex min-h-[44px] items-center sm:h-full gap-2.5 border bg-surface sm:gap-3.5 sm:rounded-xl sm:px-[18px] sm:py-3.5 rounded-[22px] py-1.5 pl-1.5 pr-4 ${
             isOpen ? "border-focus ring-1 ring-inset ring-focus" : "border-line-card"
           }`;
           return (
@@ -126,6 +139,12 @@ export function JobStageNav({ stages }: { stages: JobStage[] }) {
           );
         })}
       </ol>
+      {inView?.status && (
+        <p aria-hidden="true" data-stage-open-status className="mt-2 text-sm sm:hidden">
+          <span className="font-semibold text-ink">{inView.label}:</span>{" "}
+          <span className={statusTone(inView)}>{inView.status}</span>
+        </p>
+      )}
 
       {open && open.links.length > 0 && (
         <ul

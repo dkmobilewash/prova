@@ -40,6 +40,10 @@ export type AreaTool = {
    * anchor. The census and the capability filter both read this one. */
   route?: string;
   name: string;
+  /** The area card's button, when "Open <name>" will not fit on one line
+   * of a desktop card. Short and specific ("Open closeout"), never a bare
+   * "Open" — areas.test.ts holds every label under the measured ceiling. */
+  action?: string;
   /** One line, phrased as what you would come here to do. */
   description: string;
 };
@@ -71,7 +75,7 @@ export const AREAS: Area[] = [
       { href: "/pipeline", name: "Pipeline", description: "Projects you are chasing before the invite comes" },
       { href: "/contacts", name: "Contacts", description: "GCs, architects and the people you work with" },
       { href: "/catalog", name: "Price book", description: "Your line items, rates and what they really cost" },
-      { href: "/proposals", name: "Proposal clauses", description: "Inclusions, exclusions and terms for proposals" },
+      { href: "/proposals", name: "Proposal clauses", action: "Open clauses", description: "Inclusions, exclusions and terms for proposals" },
       { href: "/wall-types", name: "Wall types", description: "Assemblies you price by the foot" },
     ],
   },
@@ -114,8 +118,8 @@ export const AREAS: Area[] = [
       { href: "/rfis", name: "RFIs", description: "Questions to the GC and their answers" },
       { href: "/submittals", name: "Submittals", description: "Product data, samples and shop drawings" },
       { href: "/drawings", name: "Drawings", description: "Current sets, revisions and markups" },
-      { href: "/closeout", name: "Closeout & warranty", description: "O&M manuals, warranties, as-builts" },
-      { href: "/intake", name: "Document intake", description: "Drop a PDF and file it to the right job" },
+      { href: "/closeout", name: "Closeout & warranty", action: "Open closeout", description: "O&M manuals, warranties, as-builts" },
+      { href: "/intake", name: "Document intake", action: "Open intake", description: "Drop a PDF and file it to the right job" },
       { href: "/messages", name: "Messages", description: "What you sent GCs, architects and vendors" },
       { href: "/alerts", name: "Alerts", description: "Everything flagged across the app, in one list" },
     ],
@@ -131,7 +135,7 @@ export const AREAS: Area[] = [
       { href: "/safety", name: "Safety", description: "Incidents, the OSHA log and toolbox talks" },
       { href: "/certifications", name: "Certifications", description: "Who holds which card, and when it runs out" },
       { href: "/prevailing-wage", name: "Prevailing wage", description: "Wage determinations and certified payroll" },
-      { href: "/union-compliance", name: "Fringe & apprentices", description: "Union fringe reports and apprentice ratios" },
+      { href: "/union-compliance", name: "Fringe & apprentices", action: "Open fringe", description: "Union fringe reports and apprentice ratios" },
     ],
   },
   {

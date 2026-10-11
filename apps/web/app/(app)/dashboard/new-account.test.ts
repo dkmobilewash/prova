@@ -289,6 +289,14 @@ describe("/dashboard on a company with jobs", () => {
     expect(html).not.toContain('data-tour="dashboard-jobs-empty"');
   });
 
+  it("reads a lapsed document's timing in the danger tone, like an overdue invoice", async () => {
+    const html = await render();
+    const row = html.match(/<li[^>]*>(?:(?!<\/li>)[\s\S])*Contractor licence[\s\S]*?<\/li>/)?.[0] ?? "";
+    expect(row).toContain("Contractor licence");
+    expect(row).toMatch(/text-danger">Expires in 9 days</);
+    expect(row).not.toMatch(/text-ink-muted">Expires in 9 days</);
+  });
+
   it("greets the reader by first name, with the day's real counts", async () => {
     const html = await render();
     expect(html).toMatch(/Good (morning|afternoon|evening), Dana</);

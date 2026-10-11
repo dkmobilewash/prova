@@ -246,7 +246,8 @@ describe("an area page", () => {
     // The duplicate: a big "1" in the corner above the same "1 RFI waiting".
     expect(card).not.toMatch(/>1</);
     expect(html).toContain(">Open RFIs<");
-    expect(html).toContain(">Open Closeout &amp; warranty<");
+    // A name too long for one line of a desktop card has its own short label.
+    expect(html).toContain(">Open closeout<");
     expect(html).not.toMatch(/>Open<\//);
     // Opening a list is not a create: no brand-yellow fill on this area.
     expect(html).not.toContain(BRAND_FILL);
@@ -258,6 +259,10 @@ describe("an area page", () => {
     expect(brand).toHaveLength(1);
     expect(brand[0]).toContain('href="/jobs/new"');
     expect(brand[0]).toContain("text-neutral-900");
+    // ...and the create is not the only door: the card also opens the list.
+    const card = html.slice(html.indexOf('data-area-tool="/dashboard"'), html.indexOf('data-area-tool="/bids"'));
+    expect(card).toMatch(/href="\/dashboard#all-jobs"[^>]*>Open jobs</);
+    expect(card.indexOf("+ New job")).toBeLessThan(card.indexOf("Open jobs"));
   });
 
   it("heads the Money area with the four company figures, for someone who may see them", async () => {

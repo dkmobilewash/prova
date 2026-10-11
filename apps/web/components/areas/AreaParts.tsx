@@ -68,12 +68,14 @@ export function StatusChip({ status }: { status: ToolStatus }) {
 
 /* --------------------------------------------------------- area page -- */
 
-/** The one action on a tool card, and whether it is the area's primary.
+/** The actions on a tool card (one, except Jobs), and which is a create.
  *
- * Always "Open <tool name>" — until 2026-10-10 a name over 12 characters
- * fell back to a bare "Open", so one row of cards read "Open RFIs" beside
- * "Open". A long name truncates in the button instead (the full name is the
- * card's heading, and the link's accessible name).
+ * "Open <tool name>", or the tool's own short `action` from lib/areas.ts
+ * when that will not fit — never a bare "Open" (until 2026-10-10 a long name
+ * fell back to one, so "Open RFIs" sat beside "Open"). It used to truncate
+ * instead, and at 1555px "Open Closeout & …" hid the tool's name; the label
+ * is now never cut (areas.test.ts holds every one under the ceiling measured
+ * in Chromium, and a label past it wraps rather than hides).
  *
  * `create` is true only for a genuine create action. Only the jobs list has
  * a create page of its own (/jobs/new); every other tool's create form lives
@@ -81,23 +83,24 @@ export function StatusChip({ status }: { status: ToolStatus }) {
  * gets the brand-yellow fill — it used to go to whichever card was first,
  * which made "Open Cash flow" look like the thing the Money area wanted
  * you to do. */
-export function toolAction(tool: { route: string; href: string; name: string }): {
-  label: string;
-  href: string;
-  create: boolean;
-} {
-  if (tool.route === "/dashboard") return { label: "+ New job", href: "/jobs/new", create: true };
-  return { label: `Open ${tool.name}`, href: tool.href, create: false };
+export type ToolAction = { label: string; href: string; create: boolean };
+
+export function toolActions(tool: { route: string; href: string; name: string; action?: string }): ToolAction[] {
+  const open = { label: tool.action ?? `Open ${tool.name}`, href: tool.href, create: false };
+  // Jobs is the one tool with a create page, and the create must not be the
+  // ONLY way in: with just "+ New job" the card had no door to the list
+  // itself (click test, 2026-10-11). Create first, in yellow; open under it.
+  if (tool.route === "/dashboard") return [{ label: "+ New job", href: "/jobs/new", create: true }, { ...open, label: "Open jobs" }];
+  return [open];
 }
 
 /**
- * A tool on an area page: icon, name, ONE status line and one action.
+ * A tool on an area page: icon, name, ONE status line and its action(s).
  *
  * No big number in the corner. It used to repeat the status line's first
  * word — "1" above "1 RFI waiting" — so every figure was said twice.
  */
 export function ToolCard({ tool }: { tool: AreaView["tools"][number] }) {
-  const action = toolAction(tool);
   return (
     <article className="flex min-w-0 flex-col rounded-[14px] border border-line-card bg-surface p-4" data-area-tool={tool.route}>
       <ToolIcon route={tool.route} />
@@ -108,18 +111,20 @@ export function ToolCard({ tool }: { tool: AreaView["tools"][number] }) {
       </h2>
       <StatusLine status={tool.status} fallback={tool.description} className="mt-0.5 min-h-5" />
       {tool.status && <p className="mt-1 line-clamp-2 text-[13px] text-ink-muted">{tool.description}</p>}
-      <div className="mt-auto pt-4">
-        <Link
-          href={action.href}
-          title={action.label}
-          className={`flex h-11 min-w-0 items-center justify-center rounded-[10px] border px-3 text-sm font-semibold ${
-            action.create
-              ? "border-brand bg-brand text-neutral-900 hover:bg-brand-hover"
-              : "border-line-card bg-canvas text-ink hover:bg-rail-hover"
-          }`}
-        >
-          <span className="truncate">{action.label}</span>
-        </Link>
+      <div className="mt-auto flex flex-col gap-2 pt-4">
+        {toolActions(tool).map((action) => (
+          <Link
+            key={action.href}
+            href={action.href}
+            className={`flex min-h-11 min-w-0 items-center justify-center rounded-[10px] border px-3 py-1 text-center text-sm font-semibold leading-tight ${
+              action.create
+                ? "border-brand bg-brand text-neutral-900 hover:bg-brand-hover"
+                : "border-line-card bg-canvas text-ink hover:bg-rail-hover"
+            }`}
+          >
+            {action.label}
+          </Link>
+        ))}
       </div>
     </article>
   );
