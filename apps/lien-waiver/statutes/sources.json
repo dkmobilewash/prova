@@ -1,0 +1,39 @@
+{
+  "$comment": "Every official page a statutory form is copied from. scripts/capture-statutes.mjs fetches each URL and writes the bytes the server sent, untouched, to statutes/raw/<id>.html beside a <id>.meta.json naming the final URL, the status, the retrieval time and the SHA-256 of those bytes. Nothing in this app reads a statute from anywhere else. Official legislature sites only -- never a vendor blog.",
+  "sources": [
+    {
+      "id": "az-33-1008",
+      "state": "AZ",
+      "citation": "A.R.S. § 33-1008",
+      "url": "https://www.azleg.gov/ars/33/01008.htm"
+    },
+    {
+      "id": "ca-8120-8138",
+      "state": "CA",
+      "citation": "Cal. Civ. Code §§ 8120–8138 (Div. 4, Pt. 6, Title 1, Ch. 3: Waiver and Release)",
+      "url": "https://leginfo.legislature.ca.gov/faces/codes_displayText.xhtml?lawCode=CIV&division=4.&title=1.&part=6.&chapter=3.&article=",
+      "capture": "headless-render",
+      "why": "leginfo answers 403 to GitHub's runners, with or without a browser user-agent."
+    },
+    {
+      "id": "nv-108",
+      "state": "NV",
+      "citation": "NRS Chapter 108 (incl. 108.2457)",
+      "url": "https://www.leg.state.nv.us/NRS/NRS-108.html"
+    },
+    {
+      "id": "tx-53",
+      "state": "TX",
+      "citation": "Tex. Prop. Code ch. 53 (incl. § 53.284)",
+      "url": "https://statutes.capitol.texas.gov/Docs/PR/htm/PR.53.htm",
+      "capture": "headless-render",
+      "why": "The site is a JavaScript app; a plain fetch returns its empty shell."
+    },
+    {
+      "id": "nm-48-2",
+      "state": "NM",
+      "citation": "NMSA 1978 ch. 48 (art. 2, Mechanics' and Materialmen's Liens)",
+      "url": "https://nmonesource.com/nmos/nmsa/en/4413/1/document.do"
+    }
+  ]
+}

@@ -1,0 +1,2263 @@
+[
+  {
+    "state": "AZ",
+    "form": "CONDITIONAL_PROGRESS",
+    "citation": "A.R.S. § 33-1008(D)(1)",
+    "sourceId": "az-33-1008",
+    "sourceUrl": "https://www.azleg.gov/ars/33/01008.htm",
+    "sourceCitation": "A.R.S. § 33-1008",
+    "retrievedAt": "2026-10-08T21:11:05.799Z",
+    "capturedVia": "fetch",
+    "rawSha256": "09b307d66a852c83d1fbf9221b2c0de1eaf08105e15dd1d5f5d399f68048c984",
+    "blankStyle": "underscore",
+    "noticeRule": null,
+    "slots": [
+      {
+        "slot": "project"
+      },
+      {
+        "slot": "jobNumber"
+      },
+      {
+        "slot": "checkMaker"
+      },
+      {
+        "slot": "amount"
+      },
+      {
+        "slot": "payee"
+      },
+      {
+        "slot": "owner"
+      },
+      {
+        "slot": "jobDescription",
+        "label": "Job location / description"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "throughDate"
+      },
+      {
+        "slot": "signedDate"
+      },
+      {
+        "slot": "companyName"
+      },
+      {
+        "slot": "signature"
+      },
+      {
+        "slot": "signerTitle"
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 6,
+        "text": "Conditional waiver and release on progress payment",
+        "role": "title"
+      },
+      {
+        "index": 7,
+        "text": "Project: ______________________",
+        "role": "body"
+      },
+      {
+        "index": 8,
+        "text": "Job No.: ______________________",
+        "role": "body"
+      },
+      {
+        "index": 9,
+        "text": "On receipt by the undersigned of a check from _________________",
+        "role": "body"
+      },
+      {
+        "index": 10,
+        "text": "(maker of check)",
+        "role": "caption"
+      },
+      {
+        "index": 11,
+        "text": "in the sum of $______________ payable to _______________________",
+        "role": "body"
+      },
+      {
+        "index": 12,
+        "text": "(amount of check) (payee or payees of check)",
+        "role": "caption"
+      },
+      {
+        "index": 13,
+        "text": "and when the check has been properly endorsed and has been paid by the bank on which it is drawn, this document becomes effective to release any mechanic's lien, any state or federal statutory bond right, any private bond right, any claim for payment and any rights under any similar ordinance, rule or statute related to claim or payment rights for persons in the undersigned's position that the undersigned has on the job of ______________________________________________________________",
+        "role": "body"
+      },
+      {
+        "index": 14,
+        "text": "(owner)",
+        "role": "caption"
+      },
+      {
+        "index": 15,
+        "text": "located at __________________________________ to the following",
+        "role": "body"
+      },
+      {
+        "index": 16,
+        "text": "(job description)",
+        "role": "caption"
+      },
+      {
+        "index": 17,
+        "text": "extent. This release covers a progress payment for all labor, services, equipment or materials furnished to the jobsite or to ______________________________________________________________,",
+        "role": "body"
+      },
+      {
+        "index": 18,
+        "text": "(person with whom undersigned contracted)",
+        "role": "caption"
+      },
+      {
+        "index": 19,
+        "text": "through _______________ only and does not cover any retention,",
+        "role": "body"
+      },
+      {
+        "index": 20,
+        "text": "(date)",
+        "role": "caption"
+      },
+      {
+        "index": 21,
+        "text": "pending modifications and changes or items furnished after that date. Before any recipient of this document relies on it, that person should verify evidence of payment to the undersigned.",
+        "role": "body"
+      },
+      {
+        "index": 22,
+        "text": "The undersigned warrants that he either has already paid or will use the monies he receives from this progress payment to promptly pay in full all of his laborers, subcontractors, materialmen and suppliers for all work, materials, equipment or services provided for or to the above referenced project up to the date of this waiver.",
+        "role": "body"
+      },
+      {
+        "index": 23,
+        "text": "Date: ____________________ _________________________________",
+        "role": "body"
+      },
+      {
+        "index": 24,
+        "text": "(Company name)",
+        "role": "caption"
+      },
+      {
+        "index": 25,
+        "text": "By: ____________________________",
+        "role": "body"
+      },
+      {
+        "index": 26,
+        "text": "(Signature)",
+        "role": "caption"
+      },
+      {
+        "index": 27,
+        "text": "_________________________________",
+        "role": "body"
+      },
+      {
+        "index": 28,
+        "text": "(Title)",
+        "role": "caption"
+      }
+    ],
+    "textSha256": "4c9773df2b4b6a2ff1ac181e2c237432242988ccee31e50478445283da7f2cbe"
+  },
+  {
+    "state": "AZ",
+    "form": "UNCONDITIONAL_PROGRESS",
+    "citation": "A.R.S. § 33-1008(D)(2)",
+    "sourceId": "az-33-1008",
+    "sourceUrl": "https://www.azleg.gov/ars/33/01008.htm",
+    "sourceCitation": "A.R.S. § 33-1008",
+    "retrievedAt": "2026-10-08T21:11:05.799Z",
+    "capturedVia": "fetch",
+    "rawSha256": "09b307d66a852c83d1fbf9221b2c0de1eaf08105e15dd1d5f5d399f68048c984",
+    "blankStyle": "underscore",
+    "noticeRule": {
+      "placement": "statutory-order",
+      "bold": false,
+      "atLeastLargestType": true,
+      "minimumPoints": null,
+      "authority": "A.R.S. § 33-1008(D)(2) and (4): \"Each unconditional waiver shall contain the following language, in type at least as large as the largest type otherwise on the document\"."
+    },
+    "slots": [
+      {
+        "slot": "project"
+      },
+      {
+        "slot": "jobNumber"
+      },
+      {
+        "slot": "amount"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "owner"
+      },
+      {
+        "slot": "jobDescription",
+        "label": "Job location / description"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "throughDate"
+      },
+      {
+        "slot": "signedDate"
+      },
+      {
+        "slot": "companyName"
+      },
+      {
+        "slot": "signature"
+      },
+      {
+        "slot": "signerTitle"
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 30,
+        "text": "Unconditional waiver and release on progress payment",
+        "role": "title"
+      },
+      {
+        "index": 31,
+        "text": "Project: _________________",
+        "role": "body"
+      },
+      {
+        "index": 32,
+        "text": "Job No.: _________________",
+        "role": "body"
+      },
+      {
+        "index": 33,
+        "text": "The undersigned has been paid and has received a progress payment in the sum of $_____________ for all labor, services, equipment or material furnished to the jobsite or to ______________________________________________________________",
+        "role": "body"
+      },
+      {
+        "index": 34,
+        "text": "(person with whom undersigned contracted)",
+        "role": "caption"
+      },
+      {
+        "index": 35,
+        "text": "on the job of ________________________________________________",
+        "role": "body"
+      },
+      {
+        "index": 36,
+        "text": "(owner)",
+        "role": "caption"
+      },
+      {
+        "index": 37,
+        "text": "located at ___________________________________________________",
+        "role": "body"
+      },
+      {
+        "index": 38,
+        "text": "(job description)",
+        "role": "caption"
+      },
+      {
+        "index": 39,
+        "text": "and does hereby release any mechanic's lien, any state or federal statutory bond right, any private bond right, any claim for payment and any rights under any similar ordinance, rule or statute related to claim or payment rights for persons in the undersigned's position that the undersigned has on the above referenced project to the following extent. This release covers a progress payment for all labor, services, equipment or materials furnished to the jobsite or to _______________________________________________________________",
+        "role": "body"
+      },
+      {
+        "index": 40,
+        "text": "(person with whom undersigned contracted)",
+        "role": "caption"
+      },
+      {
+        "index": 41,
+        "text": "through ________________ only and does not cover any retention,",
+        "role": "body"
+      },
+      {
+        "index": 42,
+        "text": "(date)",
+        "role": "caption"
+      },
+      {
+        "index": 43,
+        "text": "pending modifications and changes or items furnished after that date.",
+        "role": "body"
+      },
+      {
+        "index": 44,
+        "text": "The undersigned warrants that he either has already paid or will use the monies he receives from this progress payment to promptly pay in full all of his laborers, subcontractors, materialmen and suppliers for all work, materials, equipment or services provided for or to the above referenced project up to the date of this waiver.",
+        "role": "body"
+      },
+      {
+        "index": 45,
+        "text": "Dated: ____________________ ________________________________",
+        "role": "body"
+      },
+      {
+        "index": 46,
+        "text": "(Company name)",
+        "role": "caption"
+      },
+      {
+        "index": 47,
+        "text": "By: ____________________________",
+        "role": "body"
+      },
+      {
+        "index": 48,
+        "text": "(Signature)",
+        "role": "caption"
+      },
+      {
+        "index": 49,
+        "text": "________________________________",
+        "role": "body"
+      },
+      {
+        "index": 50,
+        "text": "(Title)",
+        "role": "caption"
+      },
+      {
+        "index": 52,
+        "text": "Notice: This document waives rights unconditionally and states that you have been paid for giving up those rights. This document is enforceable against you if you sign it, even if you have not been paid. If you have not been paid, use a conditional release form.",
+        "role": "notice"
+      }
+    ],
+    "textSha256": "05970100e969833a177342f13baecd82295421f4c35b06d45d2c1361f6780b79"
+  },
+  {
+    "state": "AZ",
+    "form": "CONDITIONAL_FINAL",
+    "citation": "A.R.S. § 33-1008(D)(3)",
+    "sourceId": "az-33-1008",
+    "sourceUrl": "https://www.azleg.gov/ars/33/01008.htm",
+    "sourceCitation": "A.R.S. § 33-1008",
+    "retrievedAt": "2026-10-08T21:11:05.799Z",
+    "capturedVia": "fetch",
+    "rawSha256": "09b307d66a852c83d1fbf9221b2c0de1eaf08105e15dd1d5f5d399f68048c984",
+    "blankStyle": "underscore",
+    "noticeRule": null,
+    "slots": [
+      {
+        "slot": "project"
+      },
+      {
+        "slot": "jobNumber"
+      },
+      {
+        "slot": "checkMaker"
+      },
+      {
+        "slot": "amount"
+      },
+      {
+        "slot": "payee"
+      },
+      {
+        "slot": "owner"
+      },
+      {
+        "slot": "jobDescription",
+        "label": "Job location / description"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "disputedAmount"
+      },
+      {
+        "slot": "signedDate"
+      },
+      {
+        "slot": "companyName"
+      },
+      {
+        "slot": "signature"
+      },
+      {
+        "slot": "signerTitle"
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 54,
+        "text": "Conditional waiver and release on final payment",
+        "role": "title"
+      },
+      {
+        "index": 55,
+        "text": "Project: _______________",
+        "role": "body"
+      },
+      {
+        "index": 56,
+        "text": "Job No.: _______________",
+        "role": "body"
+      },
+      {
+        "index": 57,
+        "text": "On receipt by the undersigned of a check from ________________",
+        "role": "body"
+      },
+      {
+        "index": 58,
+        "text": "(maker of check)",
+        "role": "caption"
+      },
+      {
+        "index": 59,
+        "text": "in the sum of $_________________ payable to ____________________",
+        "role": "body"
+      },
+      {
+        "index": 60,
+        "text": "(amount of check) (payee or payees of check)",
+        "role": "caption"
+      },
+      {
+        "index": 61,
+        "text": "and when the check has been properly endorsed and has been paid by the bank on which it is drawn, this document becomes effective to release any mechanic's lien, any state or federal statutory bond right, any private bond right, any claim for payment and any rights under any similar ordinance, rule or statute related to claim or payment rights for persons in the undersigned's position, the undersigned has on the job of ___________________ located at ______________________________.",
+        "role": "body"
+      },
+      {
+        "index": 62,
+        "text": "(owner) (job description)",
+        "role": "caption"
+      },
+      {
+        "index": 63,
+        "text": "This release covers the final payment to the undersigned for all labor, services, equipment or materials furnished to the jobsite or to _________________________________________________________,",
+        "role": "body"
+      },
+      {
+        "index": 64,
+        "text": "(person with whom undersigned contracted)",
+        "role": "caption"
+      },
+      {
+        "index": 65,
+        "text": "except for disputed claims in the amount of $__________. Before any recipient of this document relies on it, the person should verify evidence of payment to the undersigned.",
+        "role": "body"
+      },
+      {
+        "index": 66,
+        "text": "The undersigned warrants that he either has already paid or will use the monies he receives from this final payment to promptly pay in full all his laborers, subcontractors, materialmen and suppliers for all work, materials, equipment or services provided for or to the above referenced project up to the date of this waiver.",
+        "role": "body"
+      },
+      {
+        "index": 67,
+        "text": "Dated: ____________________ _________________________________",
+        "role": "body"
+      },
+      {
+        "index": 68,
+        "text": "(Company name)",
+        "role": "caption"
+      },
+      {
+        "index": 69,
+        "text": "By: _____________________________",
+        "role": "body"
+      },
+      {
+        "index": 70,
+        "text": "(Signature)",
+        "role": "caption"
+      },
+      {
+        "index": 71,
+        "text": "_________________________________",
+        "role": "body"
+      },
+      {
+        "index": 72,
+        "text": "(Title)",
+        "role": "caption"
+      }
+    ],
+    "textSha256": "8a19315d83fa62ed88ced1f8cb49a641b7ea4fc5dcdfa72a742f01ee51c3388b"
+  },
+  {
+    "state": "AZ",
+    "form": "UNCONDITIONAL_FINAL",
+    "citation": "A.R.S. § 33-1008(D)(4)",
+    "sourceId": "az-33-1008",
+    "sourceUrl": "https://www.azleg.gov/ars/33/01008.htm",
+    "sourceCitation": "A.R.S. § 33-1008",
+    "retrievedAt": "2026-10-08T21:11:05.799Z",
+    "capturedVia": "fetch",
+    "rawSha256": "09b307d66a852c83d1fbf9221b2c0de1eaf08105e15dd1d5f5d399f68048c984",
+    "blankStyle": "underscore",
+    "noticeRule": {
+      "placement": "statutory-order",
+      "bold": false,
+      "atLeastLargestType": true,
+      "minimumPoints": null,
+      "authority": "A.R.S. § 33-1008(D)(2) and (4): \"Each unconditional waiver shall contain the following language, in type at least as large as the largest type otherwise on the document\"."
+    },
+    "slots": [
+      {
+        "slot": "project"
+      },
+      {
+        "slot": "jobNumber"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "owner"
+      },
+      {
+        "slot": "jobDescription",
+        "label": "Job location / description"
+      },
+      {
+        "slot": "disputedAmount",
+        "label": "Disputed claims for extra work"
+      },
+      {
+        "slot": "signedDate"
+      },
+      {
+        "slot": "companyName"
+      },
+      {
+        "slot": "signature"
+      },
+      {
+        "slot": "signerTitle"
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 74,
+        "text": "Unconditional waiver and release on final payment",
+        "role": "title"
+      },
+      {
+        "index": 75,
+        "text": "Project: _______________",
+        "role": "body"
+      },
+      {
+        "index": 76,
+        "text": "Job No.: _______________",
+        "role": "body"
+      },
+      {
+        "index": 77,
+        "text": "The undersigned has been paid in full for all labor, services, equipment or material furnished to the jobsite or to _______________________________________________________________,",
+        "role": "body"
+      },
+      {
+        "index": 78,
+        "text": "(person with whom undersigned contracted)",
+        "role": "caption"
+      },
+      {
+        "index": 79,
+        "text": "on the job of _____________ located at _______________________",
+        "role": "body"
+      },
+      {
+        "index": 80,
+        "text": "(owner) (job description)",
+        "role": "caption"
+      },
+      {
+        "index": 81,
+        "text": "and does hereby waive and release any right to mechanic's lien, any state or federal statutory bond right, any private bond right, any claim for payment and any rights under any similar ordinance, rule or statute related to claim or payment rights for persons in the undersigned's position, except for disputed claims for extra work in the amount of $ ___________.",
+        "role": "body"
+      },
+      {
+        "index": 82,
+        "text": "The undersigned warrants that he either has already paid or will use the monies he receives from this final payment to promptly pay in full all of his laborers, subcontractors, materialmen and suppliers for all work, materials, equipment or services provided for or to the above referenced project.",
+        "role": "body"
+      },
+      {
+        "index": 83,
+        "text": "Dated: ____________________ _________________________________",
+        "role": "body"
+      },
+      {
+        "index": 84,
+        "text": "(Company name)",
+        "role": "caption"
+      },
+      {
+        "index": 85,
+        "text": "By: ____________________________",
+        "role": "body"
+      },
+      {
+        "index": 86,
+        "text": "(Signature)",
+        "role": "caption"
+      },
+      {
+        "index": 87,
+        "text": "_________________________________",
+        "role": "body"
+      },
+      {
+        "index": 88,
+        "text": "(Title)",
+        "role": "caption"
+      },
+      {
+        "index": 90,
+        "text": "Notice:",
+        "role": "notice"
+      },
+      {
+        "index": 91,
+        "text": "This document waives rights unconditionally and states that you have been paid for giving up those rights. This document is enforceable against you if you sign it, even if you have not been paid. If you have not been paid, use a conditional release form.",
+        "role": "notice"
+      }
+    ],
+    "textSha256": "7b03a24b6afcc9ce7bf2bc834ff609a84ca00a67fd65d1234232fb286cc3f1a2"
+  },
+  {
+    "state": "CA",
+    "form": "CONDITIONAL_PROGRESS",
+    "citation": "Cal. Civ. Code § 8132",
+    "sourceId": "ca-8120-8138",
+    "sourceUrl": "https://leginfo.legislature.ca.gov/faces/codes_displayText.xhtml?lawCode=CIV&division=4.&title=1.&part=6.&chapter=3.&article=",
+    "sourceCitation": "Cal. Civ. Code §§ 8120–8138 (Div. 4, Pt. 6, Title 1, Ch. 3: Waiver and Release)",
+    "retrievedAt": "2026-10-08T21:16:06.440Z",
+    "capturedVia": "headless-render",
+    "rawSha256": "a6995fa58a27b8cbdc4ab1aba28d1ab2a949bbd3dd4d991c79512b869d2903cf",
+    "blankStyle": "label",
+    "noticeRule": {
+      "placement": "statutory-order",
+      "bold": false,
+      "atLeastLargestType": false,
+      "minimumPoints": null,
+      "authority": "The notice is part of the statutory form text in §§ 8132-8138; no separate type requirement is stated in those sections."
+    },
+    "slots": [
+      {
+        "slot": "companyName",
+        "label": "Your company name (the claimant)"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "jobLocation"
+      },
+      {
+        "slot": "owner"
+      },
+      {
+        "slot": "throughDate"
+      },
+      {
+        "slot": "checkMaker"
+      },
+      {
+        "slot": "amount"
+      },
+      {
+        "slot": "payee"
+      },
+      {
+        "slot": "priorWaiverDates"
+      },
+      {
+        "slot": "priorUnpaidAmounts"
+      },
+      {
+        "slot": "signature"
+      },
+      {
+        "slot": "signerTitle"
+      },
+      {
+        "slot": "signedDate"
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 68,
+        "text": "CONDITIONAL WAIVER AND RELEASE ON PROGRESS PAYMENT",
+        "role": "title"
+      },
+      {
+        "index": 69,
+        "text": "NOTICE: THIS DOCUMENT WAIVES THE CLAIMANT’S LIEN, STOP PAYMENT NOTICE, AND PAYMENT BOND RIGHTS EFFECTIVE ON RECEIPT OF PAYMENT. A PERSON SHOULD NOT RELY ON THIS DOCUMENT UNLESS SATISFIED THAT THE CLAIMANT HAS RECEIVED PAYMENT.",
+        "role": "notice"
+      },
+      {
+        "index": 70,
+        "text": "Identifying Information",
+        "role": "heading"
+      },
+      {
+        "index": 71,
+        "text": "Name of Claimant:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 72,
+        "text": "Name of Customer:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 73,
+        "text": "Job Location:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 74,
+        "text": "Owner:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 75,
+        "text": "Through Date:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 76,
+        "text": "Conditional Waiver and Release",
+        "role": "heading"
+      },
+      {
+        "index": 77,
+        "text": "This document waives and releases lien, stop payment notice, and payment bond rights the claimant has for labor and service provided, and equipment and material delivered, to the customer on this job through the Through Date of this document. Rights based upon labor or service provided, or equipment or material delivered, pursuant to a written change order that has been fully executed by the parties prior to the date that this document is signed by the claimant, are waived and released by this document, unless listed as an Exception below. This document is effective only on the claimant’s receipt of payment from the financial institution on which the following check is drawn:",
+        "role": "body"
+      },
+      {
+        "index": 78,
+        "text": "Maker of Check:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 79,
+        "text": "Amount of Check: $",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 80,
+        "text": "Check Payable to:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 81,
+        "text": "Exceptions",
+        "role": "heading"
+      },
+      {
+        "index": 82,
+        "text": "This document does not affect any of the following:",
+        "role": "body"
+      },
+      {
+        "index": 83,
+        "text": "(1) Retentions.",
+        "role": "body"
+      },
+      {
+        "index": 84,
+        "text": "(2) Extras for which the claimant has not received payment.",
+        "role": "body"
+      },
+      {
+        "index": 85,
+        "text": "(3) The following progress payments for which the claimant has previously given a conditional waiver and release but has not received payment:",
+        "role": "body"
+      },
+      {
+        "index": 86,
+        "text": "Date(s) of waiver and release:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 87,
+        "text": "Amount(s) of unpaid progress payment(s): $",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 88,
+        "text": "(4) Contract rights, including (A) a right based on rescission, abandonment, or breach of contract, and (B) the right to recover compensation for work not compensated by the payment.",
+        "role": "body"
+      },
+      {
+        "index": 89,
+        "text": "Signature",
+        "role": "heading"
+      },
+      {
+        "index": 90,
+        "text": "Claimant’s Signature:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 91,
+        "text": "Claimant’s Title:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 92,
+        "text": "Date of Signature:",
+        "role": "body",
+        "label": true
+      }
+    ],
+    "textSha256": "a21713beea6c46ee834f94cda79d064a4cd8da4c10af437d165a8fa2c2269681"
+  },
+  {
+    "state": "CA",
+    "form": "UNCONDITIONAL_PROGRESS",
+    "citation": "Cal. Civ. Code § 8134",
+    "sourceId": "ca-8120-8138",
+    "sourceUrl": "https://leginfo.legislature.ca.gov/faces/codes_displayText.xhtml?lawCode=CIV&division=4.&title=1.&part=6.&chapter=3.&article=",
+    "sourceCitation": "Cal. Civ. Code §§ 8120–8138 (Div. 4, Pt. 6, Title 1, Ch. 3: Waiver and Release)",
+    "retrievedAt": "2026-10-08T21:16:06.440Z",
+    "capturedVia": "headless-render",
+    "rawSha256": "a6995fa58a27b8cbdc4ab1aba28d1ab2a949bbd3dd4d991c79512b869d2903cf",
+    "blankStyle": "label",
+    "noticeRule": {
+      "placement": "statutory-order",
+      "bold": false,
+      "atLeastLargestType": false,
+      "minimumPoints": null,
+      "authority": "The notice is part of the statutory form text in §§ 8132-8138; no separate type requirement is stated in those sections."
+    },
+    "slots": [
+      {
+        "slot": "companyName",
+        "label": "Your company name (the claimant)"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "jobLocation"
+      },
+      {
+        "slot": "owner"
+      },
+      {
+        "slot": "throughDate"
+      },
+      {
+        "slot": "amount"
+      },
+      {
+        "slot": "signature"
+      },
+      {
+        "slot": "signerTitle"
+      },
+      {
+        "slot": "signedDate"
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 96,
+        "text": "UNCONDITIONAL WAIVER AND RELEASE ON PROGRESS PAYMENT",
+        "role": "title"
+      },
+      {
+        "index": 97,
+        "text": "NOTICE TO CLAIMANT: THIS DOCUMENT WAIVES AND RELEASES LIEN, STOP PAYMENT NOTICE, AND PAYMENT BOND RIGHTS UNCONDITIONALLY AND STATES THAT YOU HAVE BEEN PAID FOR GIVING UP THOSE RIGHTS. THIS DOCUMENT IS ENFORCEABLE AGAINST YOU IF YOU SIGN IT, EVEN IF YOU HAVE NOT BEEN PAID. IF YOU HAVE NOT BEEN PAID, USE A CONDITIONAL WAIVER AND RELEASE FORM.",
+        "role": "notice"
+      },
+      {
+        "index": 98,
+        "text": "Identifying Information",
+        "role": "heading"
+      },
+      {
+        "index": 99,
+        "text": "Name of Claimant:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 100,
+        "text": "Name of Customer:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 101,
+        "text": "Job Location:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 102,
+        "text": "Owner:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 103,
+        "text": "Through Date:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 104,
+        "text": "Unconditional Waiver and Release",
+        "role": "heading"
+      },
+      {
+        "index": 105,
+        "text": "This document waives and releases lien, stop payment notice, and payment bond rights the claimant has for labor and service provided, and equipment and material delivered, to the customer on this job through the Through Date of this document. Rights based upon labor or service provided, or equipment or material delivered, pursuant to a written change order that has been fully executed by the parties prior to the date that this document is signed by the claimant, are waived and released by this document, unless listed as an Exception below. The claimant has received the following progress payment: $",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 106,
+        "text": "Exceptions",
+        "role": "heading"
+      },
+      {
+        "index": 107,
+        "text": "This document does not affect any of the following:",
+        "role": "body"
+      },
+      {
+        "index": 108,
+        "text": "(1) Retentions.",
+        "role": "body"
+      },
+      {
+        "index": 109,
+        "text": "(2) Extras for which the claimant has not received payment.",
+        "role": "body"
+      },
+      {
+        "index": 110,
+        "text": "(3) Contract rights, including (A) a right based on rescission, abandonment, or breach of contract, and (B) the right to recover compensation for work not compensated by the payment.",
+        "role": "body"
+      },
+      {
+        "index": 111,
+        "text": "Signature",
+        "role": "heading"
+      },
+      {
+        "index": 112,
+        "text": "Claimant’s Signature:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 113,
+        "text": "Claimant’s Title:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 114,
+        "text": "Date of Signature:",
+        "role": "body",
+        "label": true
+      }
+    ],
+    "textSha256": "1c23c94263167dba395e333e8ecb649e514f2217cd5a26e715745fe92e1be2b3"
+  },
+  {
+    "state": "CA",
+    "form": "CONDITIONAL_FINAL",
+    "citation": "Cal. Civ. Code § 8136",
+    "sourceId": "ca-8120-8138",
+    "sourceUrl": "https://leginfo.legislature.ca.gov/faces/codes_displayText.xhtml?lawCode=CIV&division=4.&title=1.&part=6.&chapter=3.&article=",
+    "sourceCitation": "Cal. Civ. Code §§ 8120–8138 (Div. 4, Pt. 6, Title 1, Ch. 3: Waiver and Release)",
+    "retrievedAt": "2026-10-08T21:16:06.440Z",
+    "capturedVia": "headless-render",
+    "rawSha256": "a6995fa58a27b8cbdc4ab1aba28d1ab2a949bbd3dd4d991c79512b869d2903cf",
+    "blankStyle": "label",
+    "noticeRule": {
+      "placement": "statutory-order",
+      "bold": false,
+      "atLeastLargestType": false,
+      "minimumPoints": null,
+      "authority": "The notice is part of the statutory form text in §§ 8132-8138; no separate type requirement is stated in those sections."
+    },
+    "slots": [
+      {
+        "slot": "companyName",
+        "label": "Your company name (the claimant)"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "jobLocation"
+      },
+      {
+        "slot": "owner"
+      },
+      {
+        "slot": "checkMaker"
+      },
+      {
+        "slot": "amount"
+      },
+      {
+        "slot": "payee"
+      },
+      {
+        "slot": "disputedAmount",
+        "label": "Disputed claims for extras"
+      },
+      {
+        "slot": "signature"
+      },
+      {
+        "slot": "signerTitle"
+      },
+      {
+        "slot": "signedDate"
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 118,
+        "text": "CONDITIONAL WAIVER AND RELEASE ON FINAL PAYMENT",
+        "role": "title"
+      },
+      {
+        "index": 119,
+        "text": "NOTICE: THIS DOCUMENT WAIVES THE CLAIMANT’S LIEN, STOP PAYMENT NOTICE, AND PAYMENT BOND RIGHTS EFFECTIVE ON RECEIPT OF PAYMENT. A PERSON SHOULD NOT RELY ON THIS DOCUMENT UNLESS SATISFIED THAT THE CLAIMANT HAS RECEIVED PAYMENT.",
+        "role": "notice"
+      },
+      {
+        "index": 120,
+        "text": "Identifying Information",
+        "role": "heading"
+      },
+      {
+        "index": 121,
+        "text": "Name of Claimant:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 122,
+        "text": "Name of Customer:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 123,
+        "text": "Job Location:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 124,
+        "text": "Owner:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 125,
+        "text": "Conditional Waiver and Release",
+        "role": "heading"
+      },
+      {
+        "index": 126,
+        "text": "This document waives and releases lien, stop payment notice, and payment bond rights the claimant has for labor and service provided, and equipment and material delivered, to the customer on this job. Rights based upon labor or service provided, or equipment or material delivered, pursuant to a written change order that has been fully executed by the parties prior to the date that this document is signed by the claimant, are waived and released by this document, unless listed as an Exception below. This document is effective only on the claimant’s receipt of payment from the financial institution on which the following check is drawn:",
+        "role": "body"
+      },
+      {
+        "index": 127,
+        "text": "Maker of Check:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 128,
+        "text": "Amount of Check: $",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 129,
+        "text": "Check Payable to:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 130,
+        "text": "Exceptions",
+        "role": "heading"
+      },
+      {
+        "index": 131,
+        "text": "This document does not affect any of the following:",
+        "role": "body"
+      },
+      {
+        "index": 132,
+        "text": "Disputed claims for extras in the amount of: $",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 133,
+        "text": "Signature",
+        "role": "heading"
+      },
+      {
+        "index": 134,
+        "text": "Claimant’s Signature:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 135,
+        "text": "Claimant’s Title:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 136,
+        "text": "Date of Signature:",
+        "role": "body",
+        "label": true
+      }
+    ],
+    "textSha256": "7be12a4101767da8b5232e9deec87a036171c4c33c8de2622442e25b55c54272"
+  },
+  {
+    "state": "CA",
+    "form": "UNCONDITIONAL_FINAL",
+    "citation": "Cal. Civ. Code § 8138",
+    "sourceId": "ca-8120-8138",
+    "sourceUrl": "https://leginfo.legislature.ca.gov/faces/codes_displayText.xhtml?lawCode=CIV&division=4.&title=1.&part=6.&chapter=3.&article=",
+    "sourceCitation": "Cal. Civ. Code §§ 8120–8138 (Div. 4, Pt. 6, Title 1, Ch. 3: Waiver and Release)",
+    "retrievedAt": "2026-10-08T21:16:06.440Z",
+    "capturedVia": "headless-render",
+    "rawSha256": "a6995fa58a27b8cbdc4ab1aba28d1ab2a949bbd3dd4d991c79512b869d2903cf",
+    "blankStyle": "label",
+    "noticeRule": {
+      "placement": "statutory-order",
+      "bold": false,
+      "atLeastLargestType": false,
+      "minimumPoints": null,
+      "authority": "The notice is part of the statutory form text in §§ 8132-8138; no separate type requirement is stated in those sections."
+    },
+    "slots": [
+      {
+        "slot": "companyName",
+        "label": "Your company name (the claimant)"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "jobLocation"
+      },
+      {
+        "slot": "owner"
+      },
+      {
+        "slot": "disputedAmount",
+        "label": "Disputed claims for extras"
+      },
+      {
+        "slot": "signature"
+      },
+      {
+        "slot": "signerTitle"
+      },
+      {
+        "slot": "signedDate"
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 140,
+        "text": "UNCONDITIONAL WAIVER AND RELEASE ON FINAL PAYMENT",
+        "role": "title"
+      },
+      {
+        "index": 141,
+        "text": "NOTICE TO CLAIMANT: THIS DOCUMENT WAIVES AND RELEASES LIEN, STOP PAYMENT NOTICE, AND PAYMENT BOND RIGHTS UNCONDITIONALLY AND STATES THAT YOU HAVE BEEN PAID FOR GIVING UP THOSE RIGHTS. THIS DOCUMENT IS ENFORCEABLE AGAINST YOU IF YOU SIGN IT, EVEN IF YOU HAVE NOT BEEN PAID. IF YOU HAVE NOT BEEN PAID, USE A CONDITIONAL WAIVER AND RELEASE FORM.",
+        "role": "notice"
+      },
+      {
+        "index": 142,
+        "text": "Identifying Information",
+        "role": "heading"
+      },
+      {
+        "index": 143,
+        "text": "Name of Claimant:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 144,
+        "text": "Name of Customer:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 145,
+        "text": "Job Location:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 146,
+        "text": "Owner:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 147,
+        "text": "Unconditional Waiver and Release",
+        "role": "heading"
+      },
+      {
+        "index": 148,
+        "text": "This document waives and releases lien, stop payment notice, and payment bond rights the claimant has for all labor and service provided, and equipment and material delivered, to the customer on this job. Rights based upon labor or service provided, or equipment or material delivered, pursuant to a written change order that has been fully executed by the parties prior to the date that this document is signed by the claimant, are waived and released by this document, unless listed as an Exception below. The claimant has been paid in full.",
+        "role": "body"
+      },
+      {
+        "index": 149,
+        "text": "Exceptions",
+        "role": "heading"
+      },
+      {
+        "index": 150,
+        "text": "This document does not affect the following:",
+        "role": "body"
+      },
+      {
+        "index": 151,
+        "text": "Disputed claims for extras in the amount of: $",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 152,
+        "text": "Signature",
+        "role": "heading"
+      },
+      {
+        "index": 153,
+        "text": "Claimant’s Signature:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 154,
+        "text": "Claimant’s Title:",
+        "role": "body",
+        "label": true
+      },
+      {
+        "index": 155,
+        "text": "Date of Signature:",
+        "role": "body",
+        "label": true
+      }
+    ],
+    "textSha256": "e1324d6e8ee7cdb697dab3ecc6c11d102ca4a6410f963359b33167bd085ce918"
+  },
+  {
+    "state": "NV",
+    "form": "CONDITIONAL_PROGRESS",
+    "citation": "NRS 108.2457(5)(a)",
+    "sourceId": "nv-108",
+    "sourceUrl": "https://www.leg.state.nv.us/NRS/NRS-108.html",
+    "sourceCitation": "NRS Chapter 108 (incl. 108.2457)",
+    "retrievedAt": "2026-10-08T21:11:06.717Z",
+    "capturedVia": "fetch",
+    "rawSha256": "76a6247984851415524d11768a1009f26f7d834065e67fc57536322715fc49d7",
+    "blankStyle": "dots",
+    "noticeRule": null,
+    "slots": [
+      {
+        "slot": "project",
+        "label": "Property name"
+      },
+      {
+        "slot": "jobLocation",
+        "label": "Property location"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "invoiceNumber"
+      },
+      {
+        "slot": "amount"
+      },
+      {
+        "slot": "signedDate"
+      },
+      {
+        "slot": "companyName"
+      },
+      {
+        "slot": "signature"
+      },
+      {
+        "slot": "signerTitle"
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 741,
+        "text": "CONDITIONAL WAIVER AND RELEASE",
+        "role": "title"
+      },
+      {
+        "index": 742,
+        "text": "UPON PROGRESS PAYMENT",
+        "role": "title"
+      },
+      {
+        "index": 743,
+        "text": "Property Name:..............................................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 744,
+        "text": "Property Location:.........................................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 745,
+        "text": "Undersigned’s Customer:.............................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 746,
+        "text": "Invoice/Payment Application Number:.....................................................................",
+        "role": "body"
+      },
+      {
+        "index": 747,
+        "text": "Payment Amount:..........................................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 748,
+        "text": "Upon receipt by the undersigned of a check in the above-referenced Payment Amount payable to the undersigned, and when the check has been properly endorsed and has been paid by the bank on which it is drawn, this document becomes effective to release and the undersigned shall be deemed to waive any notice of lien, any private bond right, any claim for payment and any rights under any similar ordinance, rule or statute related to payment rights that the undersigned has on the above-described Property to the following extent:",
+        "role": "body"
+      },
+      {
+        "index": 749,
+        "text": "This release covers a progress payment for the work, materials or equipment furnished by the undersigned to the Property or to the Undersigned’s Customer which are the subject of the Invoice or Payment Application, but only to the extent of the Payment Amount or such portion of the Payment Amount as the undersigned is actually paid, and does not cover any retention withheld, any items, modifications or changes pending approval, disputed items and claims, or items furnished that are not paid. Before any recipient of this document relies on it, the recipient should verify evidence of payment to the undersigned. The undersigned warrants that he or she either has already paid or will use the money received from this progress payment promptly to pay in full all laborers, subcontractors, materialmen and suppliers for all work, materials or equipment that are the subject of this waiver and release.",
+        "role": "body"
+      },
+      {
+        "index": 750,
+        "text": "Dated:......................................",
+        "role": "body"
+      },
+      {
+        "index": 751,
+        "text": ".......................................................",
+        "role": "body"
+      },
+      {
+        "index": 752,
+        "text": "(Company Name)",
+        "role": "caption"
+      },
+      {
+        "index": 753,
+        "text": "By:.................................................",
+        "role": "body"
+      },
+      {
+        "index": 754,
+        "text": "Its:.................................................",
+        "role": "body"
+      }
+    ],
+    "textSha256": "6b49a09d233cf92cc163e33ca107642179a8d03baca80dc696e571b884eb33fb"
+  },
+  {
+    "state": "NV",
+    "form": "UNCONDITIONAL_PROGRESS",
+    "citation": "NRS 108.2457(5)(b)",
+    "sourceId": "nv-108",
+    "sourceUrl": "https://www.leg.state.nv.us/NRS/NRS-108.html",
+    "sourceCitation": "NRS Chapter 108 (incl. 108.2457)",
+    "retrievedAt": "2026-10-08T21:11:06.717Z",
+    "capturedVia": "fetch",
+    "rawSha256": "76a6247984851415524d11768a1009f26f7d834065e67fc57536322715fc49d7",
+    "blankStyle": "dots",
+    "noticeRule": {
+      "placement": "statutory-order",
+      "bold": false,
+      "atLeastLargestType": true,
+      "minimumPoints": null,
+      "authority": "NRS 108.2457(5)(b) and (d): \"(Each unconditional waiver and release must contain the following language, in type at least as large as the largest type otherwise on the document:)\"."
+    },
+    "slots": [
+      {
+        "slot": "project",
+        "label": "Property name"
+      },
+      {
+        "slot": "jobLocation",
+        "label": "Property location"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "invoiceNumber"
+      },
+      {
+        "slot": "amount"
+      },
+      {
+        "slot": "signedDate"
+      },
+      {
+        "slot": "companyName"
+      },
+      {
+        "slot": "signature"
+      },
+      {
+        "slot": "signerTitle"
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 756,
+        "text": "UNCONDITIONAL WAIVER AND RELEASE",
+        "role": "title"
+      },
+      {
+        "index": 757,
+        "text": "UPON PROGRESS PAYMENT",
+        "role": "title"
+      },
+      {
+        "index": 758,
+        "text": "Property Name:..............................................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 759,
+        "text": "Property Location:.........................................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 760,
+        "text": "Undersigned’s Customer:.............................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 761,
+        "text": "Invoice/Payment Application Number:.....................................................................",
+        "role": "body"
+      },
+      {
+        "index": 762,
+        "text": "Payment Amount:..........................................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 763,
+        "text": "The undersigned has been paid and has received a progress payment in the above-referenced Payment Amount for all work, materials and equipment the undersigned furnished to the Customer for the above-described Property and does hereby waive and release any notice of lien, any private bond right, any claim for payment and any rights under any similar ordinance, rule or statute related to payment rights that the undersigned has on the above-described Property to the following extent:",
+        "role": "body"
+      },
+      {
+        "index": 764,
+        "text": "This release covers a progress payment for the work, materials and equipment furnished by the undersigned to the Property or to the Undersigned’s Customer which are the subject of the Invoice or Payment Application, but only to the extent of the Payment Amount or such portion of the Payment Amount as the undersigned is actually paid, and does not cover any retention withheld, any items, modifications or changes pending approval, disputed items and claims, or items furnished that are not paid. The undersigned warrants that he or she either has already paid or will use the money received from this progress payment promptly to pay in full all laborers, subcontractors, materialmen and suppliers for all work, materials or equipment that are the subject of this waiver and release.",
+        "role": "body"
+      },
+      {
+        "index": 765,
+        "text": "Dated:......................................",
+        "role": "body"
+      },
+      {
+        "index": 766,
+        "text": ".......................................................",
+        "role": "body"
+      },
+      {
+        "index": 767,
+        "text": "(Company Name)",
+        "role": "caption"
+      },
+      {
+        "index": 768,
+        "text": "By:.................................................",
+        "role": "body"
+      },
+      {
+        "index": 769,
+        "text": "Its:.................................................",
+        "role": "body"
+      },
+      {
+        "index": 771,
+        "text": "Notice: This document waives rights unconditionally and states that you have been paid for giving up those rights. This document is enforceable against you if you sign it to the extent of the Payment Amount or the amount received. If you have not been paid, use a conditional release form.",
+        "role": "notice"
+      }
+    ],
+    "textSha256": "61e0e26a58b965960ddbe0d289f033aef707b46e510d2c7caefa0275bfad4d05"
+  },
+  {
+    "state": "NV",
+    "form": "CONDITIONAL_FINAL",
+    "citation": "NRS 108.2457(5)(c)",
+    "sourceId": "nv-108",
+    "sourceUrl": "https://www.leg.state.nv.us/NRS/NRS-108.html",
+    "sourceCitation": "NRS Chapter 108 (incl. 108.2457)",
+    "retrievedAt": "2026-10-08T21:11:06.717Z",
+    "capturedVia": "fetch",
+    "rawSha256": "76a6247984851415524d11768a1009f26f7d834065e67fc57536322715fc49d7",
+    "blankStyle": "dots",
+    "noticeRule": null,
+    "slots": [
+      {
+        "slot": "project",
+        "label": "Property name"
+      },
+      {
+        "slot": "jobLocation",
+        "label": "Property location"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "invoiceNumber"
+      },
+      {
+        "slot": "amount"
+      },
+      {
+        "slot": "paymentPeriod"
+      },
+      {
+        "slot": "disputedAmount"
+      },
+      {
+        "slot": "signedDate"
+      },
+      {
+        "slot": "companyName"
+      },
+      {
+        "slot": "signature"
+      },
+      {
+        "slot": "signerTitle"
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 773,
+        "text": "CONDITIONAL WAIVER AND RELEASE",
+        "role": "title"
+      },
+      {
+        "index": 774,
+        "text": "UPON FINAL PAYMENT",
+        "role": "title"
+      },
+      {
+        "index": 775,
+        "text": "Property Name:..............................................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 776,
+        "text": "Property Location:.........................................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 777,
+        "text": "Undersigned’s Customer:.............................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 778,
+        "text": "Invoice/Payment Application Number:.....................................................................",
+        "role": "body"
+      },
+      {
+        "index": 779,
+        "text": "Payment Amount:..........................................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 780,
+        "text": "Payment Period:.............................................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 781,
+        "text": "Amount of Disputed Claims:.......................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 782,
+        "text": "Upon receipt by the undersigned of a check in the above-referenced Payment Amount payable to the undersigned, and when the check has been properly endorsed and has been paid by the bank on which it is drawn, this document becomes effective to release and the undersigned shall be deemed to waive any notice of lien, any private bond right, any claim for payment and any rights under any similar ordinance, rule or statute related to payment rights that the undersigned has on the above-described Property to the following extent:",
+        "role": "body"
+      },
+      {
+        "index": 783,
+        "text": "This release covers the final payment to the undersigned for all work, materials or equipment furnished by the undersigned to the Property or to the Undersigned’s Customer and does not cover payment for Disputed Claims, if any. Before any recipient of this document relies on it, the recipient should verify evidence of payment to the undersigned. The undersigned warrants that he or she either has already paid or will use the money received from the final payment promptly to pay in full all laborers, subcontractors, materialmen and suppliers for all work, materials or equipment that are the subject of this waiver and release.",
+        "role": "body"
+      },
+      {
+        "index": 784,
+        "text": "Dated:......................................",
+        "role": "body"
+      },
+      {
+        "index": 785,
+        "text": ".......................................................",
+        "role": "body"
+      },
+      {
+        "index": 786,
+        "text": "(Company Name)",
+        "role": "caption"
+      },
+      {
+        "index": 787,
+        "text": "By:.................................................",
+        "role": "body"
+      },
+      {
+        "index": 788,
+        "text": "Its:.................................................",
+        "role": "body"
+      }
+    ],
+    "textSha256": "57f9c6af5776ed027d3e98d1a066903418c6ea666ff8b83a545604946cc857ab"
+  },
+  {
+    "state": "NV",
+    "form": "UNCONDITIONAL_FINAL",
+    "citation": "NRS 108.2457(5)(d)",
+    "sourceId": "nv-108",
+    "sourceUrl": "https://www.leg.state.nv.us/NRS/NRS-108.html",
+    "sourceCitation": "NRS Chapter 108 (incl. 108.2457)",
+    "retrievedAt": "2026-10-08T21:11:06.717Z",
+    "capturedVia": "fetch",
+    "rawSha256": "76a6247984851415524d11768a1009f26f7d834065e67fc57536322715fc49d7",
+    "blankStyle": "dots",
+    "noticeRule": {
+      "placement": "statutory-order",
+      "bold": false,
+      "atLeastLargestType": true,
+      "minimumPoints": null,
+      "authority": "NRS 108.2457(5)(b) and (d): \"(Each unconditional waiver and release must contain the following language, in type at least as large as the largest type otherwise on the document:)\"."
+    },
+    "slots": [
+      {
+        "slot": "project",
+        "label": "Property name"
+      },
+      {
+        "slot": "jobLocation",
+        "label": "Property location"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "invoiceNumber"
+      },
+      {
+        "slot": "amount"
+      },
+      {
+        "slot": "disputedAmount"
+      },
+      {
+        "slot": "signedDate"
+      },
+      {
+        "slot": "companyName"
+      },
+      {
+        "slot": "signature"
+      },
+      {
+        "slot": "signerTitle"
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 790,
+        "text": "UNCONDITIONAL WAIVER AND RELEASE",
+        "role": "title"
+      },
+      {
+        "index": 791,
+        "text": "UPON FINAL PAYMENT",
+        "role": "title"
+      },
+      {
+        "index": 792,
+        "text": "Property Name:..............................................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 793,
+        "text": "Property Location:.........................................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 794,
+        "text": "Undersigned’s Customer:.............................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 795,
+        "text": "Invoice/Payment Application Number:.....................................................................",
+        "role": "body"
+      },
+      {
+        "index": 796,
+        "text": "Payment Amount:..........................................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 797,
+        "text": "Amount of Disputed Claims:.......................................................................................",
+        "role": "body"
+      },
+      {
+        "index": 798,
+        "text": "The undersigned has been paid in full for all work, materials and equipment furnished to the Customer for the above-described Property and does hereby waive and release any notice of lien, any private bond right, any claim for payment and any rights under any similar ordinance, rule or statute related to payment rights that the undersigned has on the above-described Property, except for the payment of Disputed Claims, if any, noted above. The undersigned warrants that he or she either has already paid or will use the money received from this final payment promptly to pay in full all laborers, subcontractors, materialmen and suppliers for all work, materials and equipment that are the subject of this waiver and release.",
+        "role": "body"
+      },
+      {
+        "index": 799,
+        "text": "Dated:......................................",
+        "role": "body"
+      },
+      {
+        "index": 800,
+        "text": ".......................................................",
+        "role": "body"
+      },
+      {
+        "index": 801,
+        "text": "(Company Name)",
+        "role": "caption"
+      },
+      {
+        "index": 802,
+        "text": "By:.................................................",
+        "role": "body"
+      },
+      {
+        "index": 803,
+        "text": "Its:.................................................",
+        "role": "body"
+      },
+      {
+        "index": 805,
+        "text": "Notice: This document waives rights unconditionally and states that you have been paid for giving up those rights. This document is enforceable against you if you sign it, even if you have not been paid. If you have not been paid, use a conditional release form.",
+        "role": "notice"
+      }
+    ],
+    "textSha256": "10543945ec059adac6335db152644e4a474ec48726a0331d0066e1260b7be53d"
+  },
+  {
+    "state": "TX",
+    "form": "CONDITIONAL_PROGRESS",
+    "citation": "Tex. Prop. Code § 53.284(b)",
+    "sourceId": "tx-53",
+    "sourceUrl": "https://statutes.capitol.texas.gov/Docs/PR/htm/PR.53.htm",
+    "sourceCitation": "Tex. Prop. Code ch. 53 (incl. § 53.284)",
+    "retrievedAt": "2026-10-08T21:15:40.286Z",
+    "capturedVia": "headless-render",
+    "rawSha256": "fec8b3b3834b6f0c2cc8c13cba808f617fc03b48e8380a9db74d441589dd1f1f",
+    "blankStyle": "underscore",
+    "noticeRule": null,
+    "slots": [
+      {
+        "slot": "project"
+      },
+      {
+        "slot": "jobNumber"
+      },
+      {
+        "slot": "checkMaker"
+      },
+      {
+        "slot": "amount"
+      },
+      {
+        "slot": "payee"
+      },
+      {
+        "slot": "owner"
+      },
+      {
+        "slot": "jobLocation"
+      },
+      {
+        "slot": "jobDescription"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "signedDate"
+      },
+      {
+        "slot": "companyName"
+      },
+      {
+        "slot": "signature"
+      },
+      {
+        "slot": "signerTitle"
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 751,
+        "text": "CONDITIONAL WAIVER AND RELEASE ON PROGRESS PAYMENT",
+        "role": "title"
+      },
+      {
+        "index": 752,
+        "text": "Project ___________________",
+        "role": "body"
+      },
+      {
+        "index": 753,
+        "text": "Job No. ___________________",
+        "role": "body"
+      },
+      {
+        "index": 754,
+        "text": "On receipt by the signer of this document of a check from ________________ (maker of check) in the sum of $__________ payable to _____________________ (payee or payees of check) and when the check has been properly endorsed and has been paid by the bank on which it is drawn, this document becomes effective to release any mechanic's lien right, any right arising from a payment bond that complies with a state or federal statute, any common law payment bond right, any claim for payment, and any rights under any similar ordinance, rule, or statute related to claim or payment rights for persons in the signer's position that the signer has on the property of ________________ (owner) located at ______________________ (location) to the following extent: ______________________ (job description).",
+        "role": "body"
+      },
+      {
+        "index": 755,
+        "text": "This release covers a progress payment for all labor, services, equipment, or materials furnished to the property or to __________________ (person with whom signer contracted) as indicated in the attached statement(s) or progress payment request(s), except for unpaid retention, pending modifications and changes, or other items furnished.",
+        "role": "body"
+      },
+      {
+        "index": 756,
+        "text": "Before any recipient of this document relies on this document, the recipient should verify evidence of payment to the signer.",
+        "role": "body"
+      },
+      {
+        "index": 757,
+        "text": "The signer warrants that the signer has already paid or will use the funds received from this progress payment to promptly pay in full all of the signer's laborers, subcontractors, materialmen, and suppliers for all work, materials, equipment, or services provided for or to the above referenced project in regard to the attached statement(s) or progress payment request(s).",
+        "role": "body"
+      },
+      {
+        "index": 758,
+        "text": "Date ____________________________",
+        "role": "body"
+      },
+      {
+        "index": 759,
+        "text": "_________________________________ (Company name)",
+        "role": "body"
+      },
+      {
+        "index": 760,
+        "text": "By ______________________________ (Signature)",
+        "role": "body"
+      },
+      {
+        "index": 761,
+        "text": "_________________________________ (Title)",
+        "role": "body"
+      }
+    ],
+    "textSha256": "f5aa486182b25b5d59d4f86f9c1f182c2a154995c0d8e48ea09c85bf612c9cb6"
+  },
+  {
+    "state": "TX",
+    "form": "UNCONDITIONAL_PROGRESS",
+    "citation": "Tex. Prop. Code § 53.284(c)",
+    "sourceId": "tx-53",
+    "sourceUrl": "https://statutes.capitol.texas.gov/Docs/PR/htm/PR.53.htm",
+    "sourceCitation": "Tex. Prop. Code ch. 53 (incl. § 53.284)",
+    "retrievedAt": "2026-10-08T21:15:40.286Z",
+    "capturedVia": "headless-render",
+    "rawSha256": "fec8b3b3834b6f0c2cc8c13cba808f617fc03b48e8380a9db74d441589dd1f1f",
+    "blankStyle": "underscore",
+    "noticeRule": {
+      "placement": "top",
+      "bold": true,
+      "atLeastLargestType": true,
+      "minimumPoints": 10,
+      "authority": "Tex. Prop. Code § 53.284(c)(1) and (e)(1): \"contain a notice at the top of the document, printed in bold type at least as large as the largest type used in the document, but not smaller than 10-point type\"."
+    },
+    "slots": [
+      {
+        "slot": "project"
+      },
+      {
+        "slot": "jobNumber"
+      },
+      {
+        "slot": "amount"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "owner"
+      },
+      {
+        "slot": "jobLocation"
+      },
+      {
+        "slot": "jobDescription"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "signedDate"
+      },
+      {
+        "slot": "companyName"
+      },
+      {
+        "slot": "signature"
+      },
+      {
+        "slot": "signerTitle"
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 764,
+        "text": "NOTICE:",
+        "role": "notice"
+      },
+      {
+        "index": 765,
+        "text": "This document waives rights unconditionally and states that you have been paid for giving up those rights. It is prohibited for a person to require you to sign this document if you have not been paid the payment amount set forth below. If you have not been paid, use a conditional release form.",
+        "role": "notice"
+      },
+      {
+        "index": 767,
+        "text": "UNCONDITIONAL WAIVER AND RELEASE ON PROGRESS PAYMENT",
+        "role": "title"
+      },
+      {
+        "index": 768,
+        "text": "Project ___________________",
+        "role": "body"
+      },
+      {
+        "index": 769,
+        "text": "Job No. ___________________",
+        "role": "body"
+      },
+      {
+        "index": 770,
+        "text": "The signer of this document has been paid and has received a progress payment in the sum of $___________ for all labor, services, equipment, or materials furnished to the property or to _____________________ (person with whom signer contracted) on the property of _______________________ (owner) located at ______________________ (location) to the following extent: ______________________ (job description). The signer therefore waives and releases any mechanic's lien right, any right arising from a payment bond that complies with a state or federal statute, any common law payment bond right, any claim for payment, and any rights under any similar ordinance, rule, or statute related to claim or payment rights for persons in the signer's position that the signer has on the above referenced project to the following extent:",
+        "role": "body"
+      },
+      {
+        "index": 771,
+        "text": "This release covers a progress payment for all labor, services, equipment, or materials furnished to the property or to __________________ (person with whom signer contracted) as indicated in the attached statement(s) or progress payment request(s), except for unpaid retention, pending modifications and changes, or other items furnished.",
+        "role": "body"
+      },
+      {
+        "index": 772,
+        "text": "The signer warrants that the signer has already paid or will use the funds received from this progress payment to promptly pay in full all of the signer's laborers, subcontractors, materialmen, and suppliers for all work, materials, equipment, or services provided for or to the above referenced project in regard to the attached statement(s) or progress payment request(s).",
+        "role": "body"
+      },
+      {
+        "index": 773,
+        "text": "Date ____________________________",
+        "role": "body"
+      },
+      {
+        "index": 774,
+        "text": "_________________________________ (Company name)",
+        "role": "body"
+      },
+      {
+        "index": 775,
+        "text": "By ______________________________ (Signature)",
+        "role": "body"
+      },
+      {
+        "index": 776,
+        "text": "_________________________________ (Title)",
+        "role": "body"
+      }
+    ],
+    "textSha256": "1ae9a202b0f1d743611631c76a9880f54f28b0c17de84130ad357aa7698a8357"
+  },
+  {
+    "state": "TX",
+    "form": "CONDITIONAL_FINAL",
+    "citation": "Tex. Prop. Code § 53.284(d)",
+    "sourceId": "tx-53",
+    "sourceUrl": "https://statutes.capitol.texas.gov/Docs/PR/htm/PR.53.htm",
+    "sourceCitation": "Tex. Prop. Code ch. 53 (incl. § 53.284)",
+    "retrievedAt": "2026-10-08T21:15:40.286Z",
+    "capturedVia": "headless-render",
+    "rawSha256": "fec8b3b3834b6f0c2cc8c13cba808f617fc03b48e8380a9db74d441589dd1f1f",
+    "blankStyle": "underscore",
+    "noticeRule": null,
+    "slots": [
+      {
+        "slot": "project"
+      },
+      {
+        "slot": "jobNumber"
+      },
+      {
+        "slot": "checkMaker"
+      },
+      {
+        "slot": "amount"
+      },
+      {
+        "slot": "payee"
+      },
+      {
+        "slot": "owner"
+      },
+      {
+        "slot": "jobLocation"
+      },
+      {
+        "slot": "jobDescription"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "signedDate"
+      },
+      {
+        "slot": "companyName"
+      },
+      {
+        "slot": "signature"
+      },
+      {
+        "slot": "signerTitle"
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 778,
+        "text": "CONDITIONAL WAIVER AND RELEASE ON FINAL PAYMENT",
+        "role": "title"
+      },
+      {
+        "index": 779,
+        "text": "Project ___________________",
+        "role": "body"
+      },
+      {
+        "index": 780,
+        "text": "Job No. ___________________",
+        "role": "body"
+      },
+      {
+        "index": 781,
+        "text": "On receipt by the signer of this document of a check from ________________ (maker of check) in the sum of $____________ payable to _____________________ (payee or payees of check) and when the check has been properly endorsed and has been paid by the bank on which it is drawn, this document becomes effective to release any mechanic's lien right, any right arising from a payment bond that complies with a state or federal statute, any common law payment bond right, any claim for payment, and any rights under any similar ordinance, rule, or statute related to claim or payment rights for persons in the signer's position that the signer has on the property of _____________________ (owner) located at ______________________ (location) to the following extent: ______________________ (job description).",
+        "role": "body"
+      },
+      {
+        "index": 782,
+        "text": "This release covers the final payment to the signer for all labor, services, equipment, or materials furnished to the property or to __________________ (person with whom signer contracted).",
+        "role": "body"
+      },
+      {
+        "index": 783,
+        "text": "Before any recipient of this document relies on this document, the recipient should verify evidence of payment to the signer.",
+        "role": "body"
+      },
+      {
+        "index": 784,
+        "text": "The signer warrants that the signer has already paid or will use the funds received from this final payment to promptly pay in full all of the signer's laborers, subcontractors, materialmen, and suppliers for all work, materials, equipment, or services provided for or to the above referenced project up to the date of this waiver and release.",
+        "role": "body"
+      },
+      {
+        "index": 785,
+        "text": "Date ____________________________",
+        "role": "body"
+      },
+      {
+        "index": 786,
+        "text": "_________________________________ (Company name)",
+        "role": "body"
+      },
+      {
+        "index": 787,
+        "text": "By ______________________________ (Signature)",
+        "role": "body"
+      },
+      {
+        "index": 788,
+        "text": "_________________________________ (Title)",
+        "role": "body"
+      }
+    ],
+    "textSha256": "3c1b389adab7260e4880f0ff2c82468a501352bf6008884a9b240971104fd237"
+  },
+  {
+    "state": "TX",
+    "form": "UNCONDITIONAL_FINAL",
+    "citation": "Tex. Prop. Code § 53.284(e)",
+    "sourceId": "tx-53",
+    "sourceUrl": "https://statutes.capitol.texas.gov/Docs/PR/htm/PR.53.htm",
+    "sourceCitation": "Tex. Prop. Code ch. 53 (incl. § 53.284)",
+    "retrievedAt": "2026-10-08T21:15:40.286Z",
+    "capturedVia": "headless-render",
+    "rawSha256": "fec8b3b3834b6f0c2cc8c13cba808f617fc03b48e8380a9db74d441589dd1f1f",
+    "blankStyle": "underscore",
+    "noticeRule": {
+      "placement": "top",
+      "bold": true,
+      "atLeastLargestType": true,
+      "minimumPoints": 10,
+      "authority": "Tex. Prop. Code § 53.284(c)(1) and (e)(1): \"contain a notice at the top of the document, printed in bold type at least as large as the largest type used in the document, but not smaller than 10-point type\"."
+    },
+    "slots": [
+      {
+        "slot": "project"
+      },
+      {
+        "slot": "jobNumber"
+      },
+      {
+        "slot": "customer"
+      },
+      {
+        "slot": "owner"
+      },
+      {
+        "slot": "jobLocation"
+      },
+      {
+        "slot": "jobDescription"
+      },
+      {
+        "slot": "signedDate"
+      },
+      {
+        "slot": "companyName"
+      },
+      {
+        "slot": "signature"
+      },
+      {
+        "slot": "signerTitle"
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 791,
+        "text": "NOTICE:",
+        "role": "notice"
+      },
+      {
+        "index": 792,
+        "text": "This document waives rights unconditionally and states that you have been paid for giving up those rights. It is prohibited for a person to require you to sign this document if you have not been paid the payment amount set forth below. If you have not been paid, use a conditional release form.",
+        "role": "notice"
+      },
+      {
+        "index": 794,
+        "text": "UNCONDITIONAL WAIVER AND RELEASE ON FINAL PAYMENT",
+        "role": "title"
+      },
+      {
+        "index": 795,
+        "text": "Project ___________________",
+        "role": "body"
+      },
+      {
+        "index": 796,
+        "text": "Job No. ___________________",
+        "role": "body"
+      },
+      {
+        "index": 797,
+        "text": "The signer of this document has been paid in full for all labor, services, equipment, or materials furnished to the property or to ___________________ (person with whom signer contracted) on the property of ______________________ (owner) located at ______________________ (location) to the following extent: ______________________ (job description). The signer therefore waives and releases any mechanic's lien right, any right arising from a payment bond that complies with a state or federal statute, any common law payment bond right, any claim for payment, and any rights under any similar ordinance, rule, or statute related to claim or payment rights for persons in the signer's position.",
+        "role": "body"
+      },
+      {
+        "index": 798,
+        "text": "The signer warrants that the signer has already paid or will use the funds received from this final payment to promptly pay in full all of the signer's laborers, subcontractors, materialmen, and suppliers for all work, materials, equipment, or services provided for or to the above referenced project up to the date of this waiver and release.",
+        "role": "body"
+      },
+      {
+        "index": 799,
+        "text": "Date ____________________________",
+        "role": "body"
+      },
+      {
+        "index": 800,
+        "text": "_________________________________ (Company name)",
+        "role": "body"
+      },
+      {
+        "index": 801,
+        "text": "By ______________________________ (Signature)",
+        "role": "body"
+      },
+      {
+        "index": 802,
+        "text": "_________________________________ (Title)",
+        "role": "body"
+      }
+    ],
+    "textSha256": "e417435aad9467d32924bc5613950fdb0ce15300462ba0eb181f15987415ec64"
+  }
+]

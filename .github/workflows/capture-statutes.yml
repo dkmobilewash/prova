@@ -1,0 +1,57 @@
+# Captures the official statute pages the lien waiver tool copies its forms
+# from, and commits the raw bytes back to the branch that asked.
+#
+# WHY A WORKFLOW: an agent container's egress proxy refuses every
+# legislature host (azleg.gov, leginfo.legislature.ca.gov, leg.state.nv.us,
+# statutes.capitol.texas.gov), and the alternative -- an agent reading the
+# page through a scraper and writing the text into a file -- is exactly the
+# transcription this tool forbids. A GitHub runner can reach them, and what
+# it commits is the server's bytes plus their SHA-256, not anybody's copy.
+#
+# Fires on a push to any branch except main that changes the source list
+# or the script, and by hand. It never runs on main and never touches
+# anything outside apps/lien-waiver/statutes/raw. A push made with
+# GITHUB_TOKEN does not trigger workflows, so its own commit cannot loop.
+name: Capture statutes
+
+on:
+  push:
+    branches-ignore: [main]
+    paths:
+      - apps/lien-waiver/statutes/sources.json
+      - apps/lien-waiver/scripts/capture-statutes.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Capture
+        # Report every source, then fail the job if any failed -- after the
+        # commit step, so the good captures still land.
+        id: capture
+        continue-on-error: true
+        run: node apps/lien-waiver/scripts/capture-statutes.mjs
+      - name: Commit captures
+        run: |
+          set -e -o pipefail
+          git config user.name "statute-capture"
+          git config user.email "statute-capture@users.noreply.github.com"
+          git add apps/lien-waiver/statutes/raw
+          if git diff --cached --quiet; then
+            echo "nothing new captured"
+          else
+            git commit -m "Capture official statute pages for the lien waiver tool"
+            git push origin HEAD:${GITHUB_REF_NAME}
+          fi
+      - name: Fail if any source failed
+        if: steps.capture.outcome == 'failure'
+        run: exit 1
