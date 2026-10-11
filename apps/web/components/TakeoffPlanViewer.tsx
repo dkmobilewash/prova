@@ -960,8 +960,8 @@ export function TakeoffPlanViewer({
           ) : (
             <>
               <p className="mb-2 text-sm text-ink-body">
-                Found {found.reduce((n, c) => n + c.runs.length, 0)} runs of wall. Hover a row to pick its
-                sheet in its own colour — check it sits on real walls before adding it.
+                Found {found.reduce((n, c) => n + c.runs.length, 0)} runs of wall. Hover a row to see which
+                lines are its — check they sit on real walls before adding them.
               </p>
               {/* WHAT THE TEMPLATE ACCOUNTED FOR, SAID OUT LOUD.
                   A filter that quietly returns a smaller number is how the next
