@@ -72,30 +72,25 @@ describe("the counted region: five exam rooms off a corridor", () => {
     expect(total, `found ${Math.round(total)}ft against ${expected}ft counted`).toBeLessThan(expected * 1.4);
   });
 
-  // ── A KNOWN, MEASURED DEFECT. `it.fails` ASSERTS IT IS STILL BROKEN ──
+  // ── THE DEFECT THIS FIXTURE WAS WRITTEN FOR, NOW FIXED ──
   //
-  // This is the first thing the fixture found, and it found it against code
-  // that was written to prevent exactly this. #726 added `gapIsCrossing` — a
-  // corridor has perpendicular walls at both ends of the gap, a doorway has
-  // none — and on this scene it FIRES AND DOES NOT HELP: 95 gap checks, 23
-  // refusals in the union-find, and ten runs still cross.
+  // It shipped as `it.fails` for about an hour: the fixture asserted the bug
+  // was still present, which kept CI honest and turned the suite RED the moment
+  // the fix landed. That is what sent me looking for the cause rather than
+  // leaving a note nobody reads.
   //
-  // Measured, not guessed. With the opening-join turned off the scene produces
-  // `H32 H57 H57 H57` and no crossings at all; with it on, four `H57` (the
-  // doored walls correctly whole) **and six `V40`** — and 40 ft is exactly
-  // 17 + 5.583 + 17, a room, the corridor, and the room opposite.
+  // #726 tried to fix this in `mergeWalls` and could not. Union-find is
+  // TRANSITIVE — refusing the pair either side of a corridor does nothing once
+  // something bridges them — and the bridge was made upstream: `openingsInWalls`
+  // SEALED the corridor, because a 5'-7" crossing satisfies every test for a
+  // doorway (wall each side, gap under `WIDEST_DOOR_FEET`). Sealing it made the
+  // corridor an enclosed thin region, which the region engine then reported as
+  // wall.
   //
-  // Union-find is TRANSITIVE, which is the shape of it: refusing the pair
-  // either side of a corridor does nothing when some third fragment bridges
-  // them into the same group. Moving the check to the spans loop was tried and
-  // refused ZERO joins here, so it was removed rather than left in as an
-  // unexercised safeguard.
-  //
-  // **`it.fails` rather than a skip, and that distinction is the point.** A
-  // skipped test is a note nobody reads. This one asserts the defect is STILL
-  // THERE, so CI stays honest while it is — and goes RED the moment somebody
-  // fixes it, which is when this comment and the expectation need rewriting.
-  it.fails("DOES NOT DRAW WALL THROUGH THE CORRIDOR", async () => {
+  // Measured at each stage: the pairer put nothing in the corridor, the region
+  // engine put nothing there either, and the seal put SIX candidates in it. With
+  // the seal taught the same corridor test `mergeWalls` uses, that is zero.
+  it("DOES NOT DRAW WALL THROUGH THE CORRIDOR", async () => {
     // The defect that shipped on 2026-10-10 and was caught by a hand count the
     // next morning: seven runs crossed the 5'-7" corridor, joining each north
     // partition to its matching south partition across open floor. 39 feet of
