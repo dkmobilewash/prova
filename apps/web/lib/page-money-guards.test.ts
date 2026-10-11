@@ -113,8 +113,10 @@ describe("the job page's tabs (rebuilt 2026-09-20 out of one monolith)", () => {
 });
 
 describe("the app layout's Money Rail figures", () => {
-  // The Sidebar is a client component: anything handed to it is serialized
-  // to the browser for every principal, whether or not it is painted. The
+  // The top bar (which draws them in its "All pages" panel since Concept G
+  // removed the Sidebar, 2026-10-10) is a client component: anything handed
+  // to it is serialized to the browser for every principal, whether or not
+  // it is painted. The
   // 2026-09-19 audit found the five company-wide dollar figures reaching a
   // FIELD user's rail; the layout now loads them only for a principal who
   // holds VIEW_COMPANY_FINANCIALS, same as MetricBar ten lines below.
@@ -125,7 +127,7 @@ describe("the app layout's Money Rail figures", () => {
     // throws costs the rail its figures, not the page — components/
     // ShellRegion.tsx) and nothing else: the gate is still the ternary.
     expect(source).toMatch(
-      /can\(principal, "VIEW_COMPANY_FINANCIALS"\)\s*\? getMoneyRailStages\(company\.id\)(?:\s*\.catch\(shellQueryFailed\("sidebar", \[\]\)\))?\s*: Promise\.resolve\(\[\]\)/,
+      /can\(principal, "VIEW_COMPANY_FINANCIALS"\)\s*\? getMoneyRailStages\(company\.id\)(?:\s*\.catch\(shellQueryFailed\("topbar", \[\]\)\))?\s*: Promise\.resolve\(\[\]\)/,
     );
   });
 

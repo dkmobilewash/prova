@@ -81,7 +81,7 @@ export function MetricBar({ financials }: { financials: CompanyFinancials }) {
       : undefined;
 
   return (
-    <div className="print:hidden flex h-[52px] shrink-0 items-center gap-6 overflow-x-auto border-t border-line-card bg-surface px-4 sm:px-6">
+    <div className="print:hidden hidden h-[52px] shrink-0 items-center gap-6 overflow-x-auto md:flex border-t border-line-card bg-surface px-4 sm:px-6">
       <Metric
         label="Estimated revenue"
         value={money(financials.estimatedRevenue)}

@@ -178,7 +178,7 @@ describe("2. the same throw during server rendering does not escape", () => {
 describe("3. a healthy region is invisible", () => {
   it("adds no DOM of its own and logs nothing", () => {
     root = createRoot(container);
-    act(() => root.render(createElement(ShellRegion, { region: "sidebar" }, createElement(Healthy))));
+    act(() => root.render(createElement(ShellRegion, { region: "topbar" }, createElement(Healthy))));
 
     expect(container.children).toHaveLength(1);
     expect(container.firstElementChild?.tagName).toBe("NAV");
@@ -188,7 +188,7 @@ describe("3. a healthy region is invisible", () => {
   });
 
   it("every fallback that shows anything offers Reload, and the helper fallback shows nothing", () => {
-    for (const region of ["sidebar", "topbar", "metricbar"] as const) {
+    for (const region of ["topbar", "bottomtabs", "metricbar"] as const) {
       const html = renderToString(createElement(ShellRegionFallback, { region }));
       expect(html).toContain("couldn&#x27;t load");
       expect(html).toContain("Reload");
@@ -199,11 +199,11 @@ describe("3. a healthy region is invisible", () => {
 
 describe("the server-side half: a failed query settles to the region's empty value", () => {
   it("returns the fallback and logs in the same [shell] shape", async () => {
-    const stages = await Promise.reject(new Error("Decimal overflow")).catch(shellQueryFailed("sidebar", []));
+    const stages = await Promise.reject(new Error("Decimal overflow")).catch(shellQueryFailed("topbar", []));
     expect(stages).toEqual([]);
     const lines = shellLogLines();
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain("sidebar query failed");
+    expect(lines[0]).toContain("topbar query failed");
   });
 });
 
@@ -238,9 +238,24 @@ function code(source: string): string {
 const layoutCode = code(layoutSource);
 const chromeCode = code(chromeSource);
 
-/** The five this file exists for. The derived set must contain them all —
- * a renamed import or a moved component cannot quietly shrink the census. */
-const KNOWN_SHELL_COMPONENTS = ["TimeZoneCookie", "FullTour", "Sidebar", "Topbar", "MetricBar"];
+/** The shell widgets this file exists for. The derived set must contain them
+ * all — a renamed import or a moved component cannot quietly shrink the
+ * census.
+ *
+ * CHANGED 2026-10-10 (Concept G): "Sidebar" and "Topbar" left with the left
+ * rail. Their replacements — TopBar, BottomTabs and CommandPalette — are
+ * named here instead, so the census still pins every widget the shell has
+ * rather than shrinking to whatever is left. NavigationProgress was always
+ * mounted and is named now too. */
+const KNOWN_SHELL_COMPONENTS = [
+  "TimeZoneCookie",
+  "NavigationProgress",
+  "FullTour",
+  "CommandPalette",
+  "TopBar",
+  "BottomTabs",
+  "MetricBar",
+];
 
 /** The region machinery itself, which is not a widget to be wrapped. */
 const MACHINERY = ["ShellRegion", "ShellRegionFallback"];
@@ -381,7 +396,7 @@ describe("4b. app/(app)/layout.tsx mounts those regions and pairs none itself", 
 
   it("the two money queries are settled with shellQueryFailed; the alert count is not", () => {
     expect(layoutSource).toMatch(/loadCompanyFinancials\(company\.id\)\s*\.catch\(shellQueryFailed\("metricbar", null\)\)/);
-    expect(layoutSource).toMatch(/getMoneyRailStages\(company\.id\)\s*\.catch\(shellQueryFailed\("sidebar", \[\]\)\)/);
+    expect(layoutSource).toMatch(/getMoneyRailStages\(company\.id\)\s*\.catch\(shellQueryFailed\("topbar", \[\]\)\)/);
     // A wrong alert badge is a claim about the person's records, not
     // decoration — it is meant to fail the page rather than lie quietly.
     expect(layoutSource).not.toMatch(/countVisibleAlerts\([^)]*\)\s*\.catch/);

@@ -2,13 +2,28 @@ import { test, expect } from "@playwright/test";
 import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 
+/** The avatar menu's "All pages" panel, opened and returned. Visible and
+ * holding its group headings, so an empty panel cannot pass the FIELD test. */
+async function openAllPages(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: /^Your menu/ }).click();
+  await page.getByRole("button", { name: "All pages" }).click();
+  const panel = page.getByRole("dialog", { name: "All pages" });
+  await expect(panel).toBeVisible();
+  await expect(panel.locator("[data-nav-group]").first()).toBeVisible();
+  return panel;
+}
+
 /**
  * Invariant (#350): a field-function member sees no money figures on the
  * rail. The gate is apps/web/app/(app)/layout.tsx:
  *   can(principal, "VIEW_COMPANY_FINANCIALS") ? getMoneyRailStages(...) : Promise.resolve([])
  * — for a viewer without the capability, `stages` is `[]` and no
- * StageFigure (the yellow dollar amount under a nav heading,
- * components/Sidebar.tsx) renders at all.
+ * StageFigure (the dollar amount under a group heading) renders at all.
+ *
+ * Concept G (2026-10-10) removed the Sidebar; the figures now sit on the
+ * group headings of the top bar's "All pages" panel
+ * (components/shell/AllPagesMenu.tsx), so both tests open that panel from
+ * the avatar menu and look inside it.
  *
  * Both personas sign into the SAME company (MAIN) — see
  * lib/seedDatabase.ts, which creates FIELD as a second User inside
@@ -44,8 +59,7 @@ test.describe("Money Rail: VIEW_COMPANY_FINANCIALS gates every dollar figure", (
       /\/dashboard(\?|$)/,
     );
 
-    const nav = page.getByRole("navigation", { name: "Main" });
-    await expect(nav).toBeVisible();
+    const nav = await openAllPages(page);
     // Not every stage figure is money (some are a bare count), so this
     // requires at least one dollar figure rather than a specific count.
     await expect(nav.locator("text=/\\$[0-9,]+/").first()).toBeVisible();
@@ -55,8 +69,7 @@ test.describe("Money Rail: VIEW_COMPANY_FINANCIALS gates every dollar figure", (
     await signInAs(page, PERSONAS.field.email);
     await page.goto("/dashboard");
 
-    const nav = page.getByRole("navigation", { name: "Main" });
-    await expect(nav).toBeVisible();
+    const nav = await openAllPages(page);
     await expect(nav.locator("text=/\\$[0-9,]+/")).toHaveCount(0);
   });
 });
