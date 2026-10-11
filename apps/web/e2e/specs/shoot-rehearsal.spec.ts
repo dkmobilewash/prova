@@ -271,14 +271,16 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     await landOnDashboard(page, monitor);
 
     // The run sheet's own pre-flight, in the order it gives it: the app
-    // shell, then the rail, then the Ask launcher beat 2 clicks into. Beat 1
+    // shell, then the rail, then the AI word (the way to the assistant) beat 2 clicks into. Beat 1
     // is filmed with the cursor still, so "it rendered" IS the whole beat —
     // which is why `expectHealthy` (no crash sentence, no uncaught
     // exception, real content, the shell's navigation) is the assertion and
     // not a warm-up for one.
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
-    await expect(page.locator("[data-ask-launcher]")).toBeVisible();
+    // Re-aimed 2026-10-11: for an owner the door to the assistant is the AI
+    // word now; the launcher is only drawn for someone without it.
+    await expect(page.locator('nav[aria-label="Main"] a[href="/ai"]:visible')).toBeVisible();
   });
 
   // ─────────────────────────────────────────────────────── beats 2 & 3
