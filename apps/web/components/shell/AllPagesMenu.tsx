@@ -61,11 +61,12 @@ function PageLink({ item, active }: { item: NavItem & { disabled?: boolean }; ac
     return (
       <span
         aria-disabled="true"
-        title={`${item.label} — coming soon`}
         className="flex min-h-11 cursor-not-allowed items-center gap-3 rounded-lg px-2 text-[15px] text-ink-muted"
       >
         <span className="shrink-0 opacity-50">{item.icon}</span>
-        {item.label}
+        {/* Said on the row, not in a title a finger never sees. */}
+        <span className="min-w-0 truncate">{item.label}</span>
+        <span className="ml-auto shrink-0 text-xs">coming soon</span>
       </span>
     );
   }
@@ -103,13 +104,27 @@ export function AllPagesMenu({
 }) {
   const pathname = usePathname();
   const closeButton = useRef<HTMLButtonElement>(null);
+  const dialog = useRef<HTMLDivElement>(null);
 
-  // Closing on navigation is the caller's job (TopBar), which owns `open`.
+  // Closing on navigation is the caller's job (TopBar), which owns `open` —
+  // and so is handing focus back to the avatar when this closes.
+  // A modal: focus moves in, Esc closes, and Tab cycles inside, so the top
+  // bar still on screen above it is not reachable from the keyboard.
   useEffect(() => {
     if (!open) return;
     closeButton.current?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab" || !dialog.current) return;
+      const nodes = Array.from(dialog.current.querySelectorAll<HTMLElement>("a[href], button:not([disabled])"));
+      if (nodes.length === 0) return;
+      const i = nodes.indexOf(document.activeElement as HTMLElement);
+      const next = event.shiftKey ? (i <= 0 ? nodes.length - 1 : i - 1) : i === -1 || i === nodes.length - 1 ? 0 : i + 1;
+      event.preventDefault();
+      nodes[next].focus();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -123,10 +138,11 @@ export function AllPagesMenu({
 
   return (
     <div
+      ref={dialog}
       role="dialog"
       aria-modal="true"
       aria-label="All pages"
-      className="print:hidden fixed inset-x-0 bottom-0 top-14 z-50 overflow-y-auto border-t border-line-row bg-canvas md:top-16"
+      className="print:hidden fixed inset-x-0 bottom-0 top-14 z-50 overflow-y-auto overscroll-contain border-t border-line-row bg-canvas md:top-16"
     >
       <div className="mx-auto max-w-[1344px] px-4 pb-24 pt-6 md:px-12 md:pb-12">
         <div className="flex items-center justify-between gap-4">
@@ -161,7 +177,7 @@ export function AllPagesMenu({
             ))}
           </nav>
         ) : null}
-        <nav aria-label="All pages" className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <nav aria-label="Page groups" className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {groups.map((group) => {
             const stageKey = STAGE_KEY_FOR_HEADING[group.heading];
             const stage = stageKey ? stageByKey.get(stageKey) : undefined;

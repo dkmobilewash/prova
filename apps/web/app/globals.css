@@ -382,6 +382,17 @@ body {
   outline-offset: 2px !important;
 }
 
+/* TAPS. `manipulation` drops the double-tap-to-zoom wait on controls only —
+   pinch zoom still works everywhere, and the page itself keeps it. The tap
+   flash is the brand yellow, faint, instead of the browser's grey-blue box
+   that ignores our rounded corners and both themes. */
+html {
+  -webkit-tap-highlight-color: rgb(var(--c-brand) / 0.2);
+}
+:is(a[href], button, input, select, textarea, label, summary, [role="button"], [role="option"]) {
+  touch-action: manipulation;
+}
+
 @media (pointer: coarse) {
   input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="hidden"], [type="submit"], [type="button"], [type="reset"], [type="image"]),
   select,

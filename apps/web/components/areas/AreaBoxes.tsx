@@ -106,8 +106,11 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
         {areas.map((area) => {
           const isOpen = open === area.slug;
           const panelId = `area-panel-${area.slug}`;
+          // The other boxes dim while one is open, but stay readable: at 50%
+          // their status lines measured 2.4–3.5:1 (both themes); at 85% the
+          // lowest is 4.86:1 — "$… owed" in danger red on dark.
           return (
-            <div key={area.slug} className={`relative h-full ${open && !isOpen ? "opacity-50" : ""}`}>
+            <div key={area.slug} className={`relative h-full ${open && !isOpen ? "opacity-[0.85]" : ""}`}>
               <button
                 ref={(el) => {
                   if (el) buttons.current.set(area.slug, el);
@@ -131,7 +134,7 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
                   stroke="currentColor"
                   strokeWidth="1.9"
                   strokeLinecap="round"
-                  className={`absolute right-3.5 top-4 h-[18px] w-[18px] transition-transform ${isOpen ? "rotate-180 text-link" : "text-ink-muted"}`}
+                  className={`absolute right-3.5 top-4 h-[18px] w-[18px] motion-safe:transition-transform ${isOpen ? "rotate-180 text-link" : "text-ink-muted"}`}
                 >
                   <path d="M6 9l6 6 6-6" />
                 </svg>
@@ -170,7 +173,7 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
                     ))}
                   </ul>
                   <div className="mt-1 border-t border-line-row px-4 pb-1.5 pt-3">
-                    <Link href={area.href} className="font-semibold text-link hover:text-link-hover">
+                    <Link href={area.href} className="inline-flex min-h-11 items-center font-semibold text-link hover:text-link-hover hover:underline">
                       Open {area.name} &rarr;
                     </Link>
                   </div>
@@ -186,7 +189,7 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
       {/* Phone: tiles straight to the area page. */}
       <nav aria-label="Areas" className="mt-5 grid grid-cols-2 gap-3 md:hidden" data-home="area-tiles">
         {areas.map((area) => (
-          <Link key={area.slug} href={area.href} className="relative flex min-h-[118px] flex-col rounded-[18px] border border-line-card bg-surface px-4 pb-3.5 pt-4">
+          <Link key={area.slug} href={area.href} className="relative flex min-h-[118px] flex-col rounded-[18px] border border-line-card bg-surface px-4 pb-3.5 pt-4 hover:border-ink-muted/60 active:bg-rail-hover">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-rail-hover text-ink">
               <AreaIcon paths={area.icon} className="h-[22px] w-[22px]" />
             </span>

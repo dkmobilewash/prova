@@ -175,7 +175,7 @@ const POPULATED_ORDER = [
   "Accounts receivable",
   'id="all-jobs"',
   "Browse all jobs",
-  'placeholder="Search job or client"',
+  'placeholder="Search job or client…"',
   'data-tour="dashboard-job-filters"',
   'data-tour="dashboard-job-list"',
 ];

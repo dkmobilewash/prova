@@ -101,7 +101,7 @@ export function ShellRegionFallback({ region }: { region: ShellRegionName }) {
         <div className="print:hidden fixed inset-x-0 bottom-0 z-40 flex h-[calc(65px+env(safe-area-inset-bottom))] items-center gap-4 border-t border-line-card bg-rail px-4 pb-[env(safe-area-inset-bottom)] text-sm text-ink-body md:hidden">
           <p>The tabs couldn&apos;t load.</p>
           <ReloadLink />
-          <a href="/dashboard" className="text-link hover:text-link-hover">
+          <a href="/dashboard" className="inline-flex min-h-11 items-center text-link hover:text-link-hover hover:underline">
             Home
           </a>
         </div>
@@ -123,7 +123,7 @@ function ReloadLink() {
     <button
       type="button"
       onClick={() => window.location.reload()}
-      className="text-left text-link hover:text-link-hover"
+      className="inline-flex min-h-11 shrink-0 items-center text-left text-link hover:text-link-hover hover:underline"
     >
       Reload
     </button>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { OPEN_SEARCH_EVENT } from "@/components/shell/SearchTrigger";
 import { Spinner } from "@/components/Spinner";
@@ -25,7 +26,18 @@ import {
 
 const DEBOUNCE_MS = 150;
 
-const FOCUSABLE = 'input, button:not([tabindex="-1"]), [href], [tabindex]:not([tabindex="-1"])';
+// Result links carry tabindex=-1: they are reached with the arrow keys
+// (aria-activedescendant), so Tab moves between the box and Close only.
+const FOCUSABLE = 'input, button:not([tabindex="-1"]), [href]:not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])';
+
+/** "1 result", "2 results". */
+export function resultCount(n: number): string {
+  return `${n} ${n === 1 ? "result" : "results"}`;
+}
+
+/** A heading as an id: "Recent jobs" -> "recent-jobs". An id with a space
+ * in it is two IDREFs to aria-labelledby, and neither exists. */
+const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 async function fetchPalette(query: string, signal: AbortSignal): Promise<PaletteResponse> {
   const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`, { signal, headers: { accept: "application/json" } });
@@ -228,7 +240,7 @@ export function CommandPalette() {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={pending ? "Which job?" : "Search jobs, people, documents, pages — or ask"}
+            placeholder={pending ? "Type a job name…" : "Search jobs, people, documents, pages — or ask…"}
             aria-label={pending ? `${pending.label} — which job?` : "Search or ask"}
             role="combobox"
             aria-expanded={flat.length > 0}
@@ -247,9 +259,12 @@ export function CommandPalette() {
             type="button"
             onClick={close}
             aria-label="Close search"
-            className="shrink-0 rounded-md border border-line-card px-2 py-1 text-xs text-ink-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            // 44px everywhere (a touch laptop has a keyboard AND a finger);
+            // "esc" means nothing on a phone, so it says Close there.
+            className="-mr-2 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md text-sm text-ink-muted hover:bg-rail-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
-            esc
+            <span className="sm:hidden">Close</span>
+            <span className="hidden rounded-md border border-line-card px-2 py-1 text-xs sm:inline">esc</span>
           </button>
         </div>
 
@@ -268,9 +283,9 @@ export function CommandPalette() {
               </p>
             ) : (
               sections.map((section) => (
-                <div key={section.heading} role="group" aria-labelledby={`palette-h-${section.heading}`}>
+                <div key={section.heading} role="group" aria-labelledby={`palette-h-${slug(section.heading)}`}>
                   <p
-                    id={`palette-h-${section.heading}`}
+                    id={`palette-h-${slug(section.heading)}`}
                     className="px-3 pb-1.5 pt-3 text-xs font-medium uppercase tracking-[0.12em] text-ink-muted"
                   >
                     {section.heading}
@@ -279,18 +294,11 @@ export function CommandPalette() {
                     index += 1;
                     const i = index;
                     const isActive = i === active;
-                    return (
-                      <div
-                        key={entry.id}
-                        id={`palette-opt-${i}`}
-                        role="option"
-                        aria-selected={isActive}
-                        onMouseMove={() => setActive(i)}
-                        onClick={() => choose(entry)}
-                        className={`flex min-h-11 cursor-pointer items-center gap-3.5 rounded-xl border px-3 py-2 ${
-                          isActive ? "border-line-card bg-rail-hover" : "border-transparent"
-                        }`}
-                      >
+                    const optionClass = `flex min-h-11 cursor-pointer items-center gap-3.5 rounded-xl border px-3 py-2 ${
+                      isActive ? "border-line-card bg-rail-hover" : "border-transparent"
+                    }`;
+                    const body = (
+                      <>
                         <EntryIcon entry={entry} />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-[15px] text-ink">
@@ -310,6 +318,42 @@ export function CommandPalette() {
                           {entry.verb}
                           {isActive ? <span aria-hidden="true"> ↵</span> : null}
                         </span>
+                      </>
+                    );
+                    // A result that goes somewhere IS a link, so Cmd/Ctrl-click,
+                    // middle-click and long-press open it in a new tab. A plain
+                    // click lets <Link> navigate and only closes the palette.
+                    // "Log hours" / "Send pay app" go nowhere until a job is
+                    // picked, so they stay a plain option.
+                    return entry.href && !entry.pick ? (
+                      <Link
+                        key={entry.id}
+                        id={`palette-opt-${i}`}
+                        href={entry.href}
+                        role="option"
+                        aria-selected={isActive}
+                        tabIndex={-1}
+                        onMouseMove={() => setActive(i)}
+                        onClick={(e) => {
+                          if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+                          returnFocus.current = null;
+                          close();
+                        }}
+                        className={optionClass}
+                      >
+                        {body}
+                      </Link>
+                    ) : (
+                      <div
+                        key={entry.id}
+                        id={`palette-opt-${i}`}
+                        role="option"
+                        aria-selected={isActive}
+                        onMouseMove={() => setActive(i)}
+                        onClick={() => choose(entry)}
+                        className={optionClass}
+                      >
+                        {body}
                       </div>
                     );
                   })}
@@ -321,10 +365,21 @@ export function CommandPalette() {
             <span>↑↓ move</span>
             <span>↵ open</span>
             <span>esc {pending ? "back" : "close"}</span>
-            <span className="ml-auto" aria-live="polite">
-              {loading ? "Searching…" : trimmed.length >= 2 && found ? `${flat.length} results` : ""}
-            </span>
+            <span className="ml-auto">{loading ? "Searching…" : trimmed.length >= 2 && found ? resultCount(flat.length) : ""}</span>
           </div>
+          {/* The announcement, on every width: the footer above is display:none
+              on a phone, and a hidden live region never speaks. */}
+          <p role="status" aria-live="polite" className="sr-only" data-palette-status>
+            {error
+              ? error
+              : loading
+                ? "Searching…"
+                : nothingFound
+                  ? `Nothing found for “${trimmed}”.`
+                  : trimmed.length >= 2 && found
+                    ? resultCount(flat.length)
+                    : ""}
+          </p>
         </div>
       </div>
     </div>

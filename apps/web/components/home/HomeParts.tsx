@@ -15,6 +15,8 @@ export type Shortcut = { label: string; href: string; sub?: string } | { label: 
 
 const CARD = "rounded-2xl border border-line-card bg-surface px-[22px] py-[18px]";
 const DOT: Record<NeedTone, string> = { red: "bg-bar-rose", amber: "bg-bar-amber", green: "bg-bar-green" };
+/** What the dot's colour says, for a screen reader (the dot is colour only). */
+const DOT_WORD: Record<NeedTone, string> = { red: "Urgent", amber: "Needs a look", green: "All clear" };
 
 function BlockHead({ title, aside }: { title: string; aside?: string }) {
   return (
@@ -39,8 +41,8 @@ function ShortcutLink({ shortcut, className, children }: { shortcut: Shortcut; c
 
 /* ------------------------------------------------------------ chips -- */
 
-const CHIP = "flex items-center gap-1.5 rounded-full border border-line-card px-[15px] py-[7px] text-sm text-ink-body hover:bg-rail-hover hover:text-ink";
-const CHIP_PRIMARY = "flex items-center gap-1.5 rounded-full border border-brand bg-brand px-[15px] py-[7px] text-sm font-semibold text-neutral-900 hover:bg-yellow-500";
+const CHIP = "flex min-h-11 items-center gap-1.5 rounded-full border border-line-card px-[15px] text-sm text-ink-body hover:bg-rail-hover hover:text-ink";
+const CHIP_PRIMARY = "flex min-h-11 items-center gap-1.5 rounded-full border border-brand bg-brand px-[15px] text-sm font-semibold text-neutral-900 hover:bg-brand-hover";
 
 /**
  * The shortcuts beside the greeting (Concept H): the search box made
@@ -127,18 +129,32 @@ export function NeedsBlock({ items }: { items: NeedItem[] }) {
       <BlockHead title="Needs you today" aside={`${items.length} ${items.length === 1 ? "item" : "items"}`} />
       {items.length === 0 ? (
         <p className="flex items-center gap-3 py-2 text-ink-body">
-          <span className={`h-2 w-2 shrink-0 rounded-full ${DOT.green}`} />
+          <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${DOT.green}`} />
           Nothing is waiting on you. Late invoices, late RFI answers, hours to approve and expiring papers show up here.
         </p>
       ) : (
         <ul>
           {shown.map((item) => (
             <li key={item.key} className="flex items-center gap-3 border-t border-line-row py-2 first:border-t-0">
-              <span className={`h-2 w-2 shrink-0 rounded-full ${DOT[item.tone]}`} />
-              <span className="line-clamp-2 min-w-0 flex-1 text-ink sm:line-clamp-1" title={item.text}>
-                {item.text}
+              <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${DOT[item.tone]}`} />
+              {/* The when sits beside the text from sm up, and on its own
+                  line under it on a phone — "overdue 12 days" is the part a
+                  foreman needs most, so it is never the part that is dropped. */}
+              <span className="min-w-0 flex-1">
+                <span className="line-clamp-2 break-words text-ink sm:line-clamp-1" title={item.text}>
+                  <span className="sr-only">{DOT_WORD[item.tone]}: </span>
+                  {item.text}
+                </span>
+                {item.when && (
+                  <span
+                    className={`block text-[13px] sm:hidden ${item.whenTone === "danger" ? "font-semibold text-danger" : "text-ink-muted"}`}
+                  >
+                    {item.when}
+                  </span>
+                )}
               </span>
               <span
+                aria-hidden
                 className={`hidden whitespace-nowrap text-[13px] sm:inline ${
                   item.whenTone === "danger" ? "font-semibold text-danger" : "text-ink-muted"
                 }`}
@@ -146,7 +162,10 @@ export function NeedsBlock({ items }: { items: NeedItem[] }) {
                 {item.when}
               </span>
               {item.action && (
-                <Link href={item.action.href} className="min-w-[76px] whitespace-nowrap text-right text-sm font-semibold text-link hover:text-link-hover">
+                <Link
+                  href={item.action.href}
+                  className="inline-flex min-h-11 min-w-[76px] items-center justify-end whitespace-nowrap text-sm font-semibold text-link hover:text-link-hover hover:underline"
+                >
                   {item.action.label} &rarr;
                 </Link>
               )}
@@ -155,7 +174,9 @@ export function NeedsBlock({ items }: { items: NeedItem[] }) {
         </ul>
       )}
       {items.length > NEEDS_SHOWN && (
-        <p className="mt-1 text-[13px] text-ink-muted">and {items.length - NEEDS_SHOWN} more</p>
+        <Link href="/alerts" className="mt-1 inline-flex min-h-11 items-center text-[13px] text-link hover:text-link-hover hover:underline">
+          and {items.length - NEEDS_SHOWN} more on Alerts &rarr;
+        </Link>
       )}
     </section>
   );
@@ -184,12 +205,15 @@ function Figure({ value, label, tone, href, children }: { value: string; label: 
   const body = (
     <>
       <span className={`block font-headline text-[28px] font-semibold leading-none tabular-nums ${tone ?? "text-ink"}`}>{value}</span>
-      <span className="mt-1.5 block whitespace-nowrap text-[13px] text-ink-muted">{label}</span>
+      <span className={`mt-1.5 block whitespace-nowrap text-[13px] ${href ? "text-link group-hover:text-link-hover group-hover:underline" : "text-ink-muted"}`}>
+        {label}
+        {href && <span aria-hidden> &rarr;</span>}
+      </span>
       {children}
     </>
   );
   return href ? (
-    <Link href={href} className="block min-w-0">
+    <Link href={href} className="group block min-w-0">
       {body}
     </Link>
   ) : (
@@ -293,7 +317,7 @@ export type JobCardData = {
 
 const TAG_TONE = { rose: "bg-tag-rose text-tag-rose-ink", amber: "bg-tag-amber text-tag-amber-ink" };
 const ACT = "mt-auto flex h-11 items-center justify-between gap-3 rounded-[10px] border border-line-card bg-canvas px-4 text-[15px] font-medium text-ink hover:bg-rail-hover";
-const ACT_PRIMARY = "mt-auto flex h-11 items-center justify-between gap-3 rounded-[10px] border border-brand bg-brand px-4 text-[15px] font-semibold text-neutral-900 hover:bg-yellow-500";
+const ACT_PRIMARY = "mt-auto flex h-11 items-center justify-between gap-3 rounded-[10px] border border-brand bg-brand px-4 text-[15px] font-semibold text-neutral-900 hover:bg-brand-hover";
 
 export function StageStrip({ stage }: { stage: Stage }) {
   const at = STAGES.indexOf(stage);
@@ -327,10 +351,10 @@ export function JobCard({ job }: { job: JobCardData }) {
     <article className="flex flex-col rounded-[14px] border border-line-card bg-surface px-[22px] py-[18px]">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <Link href={`/jobs/${job.id}`} className="block font-headline text-2xl font-semibold leading-tight text-ink hover:underline">
+          <Link href={`/jobs/${job.id}`} className="block break-words font-headline text-2xl font-semibold leading-tight text-ink hover:underline">
             {job.name}
           </Link>
-          {job.line && <p className="mt-0.5 text-sm text-ink-muted">{job.line}</p>}
+          {job.line && <p className="mt-0.5 break-words text-sm text-ink-muted">{job.line}</p>}
         </div>
         {job.tag && (
           <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${TAG_TONE[job.tag.tone]}`}>{job.tag.text}</span>

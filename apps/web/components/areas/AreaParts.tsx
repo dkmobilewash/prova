@@ -42,7 +42,7 @@ export function StatusLine({ status, fallback, className = "" }: { status: ToolS
   const dot = parts.find((p) => p.tone)?.tone;
   return (
     <span className={`flex min-w-0 items-start gap-[7px] text-[13.5px] leading-snug ${className}`}>
-      {dot && <span className={`mt-[0.42em] h-[7px] w-[7px] shrink-0 rounded-full ${DOT[dot]}`} />}
+      {dot && <span aria-hidden className={`mt-[0.42em] h-[7px] w-[7px] shrink-0 rounded-full ${DOT[dot]}`} />}
       <span className="min-w-0">
         {parts.map((p, i) => (
           <span key={p.text} className={p.tone ? TEXT[p.tone] : "text-ink-muted"}>
@@ -112,9 +112,9 @@ export function ToolCard({ tool }: { tool: AreaView["tools"][number] }) {
         <Link
           href={action.href}
           title={action.label}
-          className={`flex h-10 min-w-0 items-center justify-center rounded-[10px] border px-3 text-sm font-semibold ${
+          className={`flex h-11 min-w-0 items-center justify-center rounded-[10px] border px-3 text-sm font-semibold ${
             action.create
-              ? "border-brand bg-brand text-neutral-900 hover:bg-yellow-500"
+              ? "border-brand bg-brand text-neutral-900 hover:bg-brand-hover"
               : "border-line-card bg-canvas text-ink hover:bg-rail-hover"
           }`}
         >
@@ -148,7 +148,7 @@ export function WaitingTable({ list }: { list: WaitingList }) {
       </div>
       {list.rows.length === 0 ? (
         <p className="flex items-center gap-3 border-t border-line-row px-[22px] py-4 text-ink-body">
-          <span className="h-2 w-2 shrink-0 rounded-full bg-bar-green" />
+          <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-bar-green" />
           {list.empty}
         </p>
       ) : (
@@ -160,13 +160,16 @@ export function WaitingTable({ list }: { list: WaitingList }) {
                 className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 px-[22px] py-3 hover:bg-rail-hover md:grid-cols-[minmax(10rem,14rem)_minmax(0,1fr)_minmax(0,14rem)_6.5rem_9rem_4.5rem]"
               >
                 <span className="flex min-w-0 items-center gap-2.5 font-semibold text-ink">
-                  <span className="rounded-[5px] border border-line-card px-1.5 text-[11.5px] font-semibold text-ink-muted">{row.tag}</span>
+                  <span className="rounded-[5px] border border-line-card px-1.5 text-xs font-semibold text-ink-muted">{row.tag}</span>
                   <span className="truncate">{row.ref}</span>
                 </span>
                 <span className="col-span-2 truncate text-ink md:col-span-1">{row.subject}</span>
                 <span className="truncate text-ink-body">{row.job ?? ""}</span>
-                <span className="whitespace-nowrap text-ink-body tabular-nums">{row.when}</span>
-                <span>
+                <span className="whitespace-nowrap text-right text-ink-body tabular-nums md:text-left">{row.when}</span>
+                {/* Phone: the status chip sits beside the ref on the first
+                    line, not alone on a fourth (measured at 375: rows went
+                    from 134px to 106px with nothing hidden). */}
+                <span className="max-md:col-start-2 max-md:row-start-1 max-md:justify-self-end">
                   <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[12.5px] font-semibold ${CHIP_TONE[row.status.tone]}`}>
                     {row.status.text}
                   </span>

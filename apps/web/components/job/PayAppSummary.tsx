@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { money } from "@/lib/money";
 import { dueStatus } from "@/lib/due-date";
-import { payAppBar, type PayAppFigures } from "@/components/job/payAppFigures";
+import { NEW_PAY_APP_HASH, payAppBar, payAppPrimaryLabel, type PayAppFigures } from "@/components/job/payAppFigures";
 
 export type PayAppSummaryProps = {
   jobId: string;
@@ -14,7 +14,8 @@ export type PayAppSummaryProps = {
   payApp: {
     id: string;
     number: number;
-    /** Month the application was issued, already in the viewer's zone. */
+    /** Month the application was issued, already in the viewer's zone, with
+     * the year when it is not this year (`payAppMonth`). */
     month: string;
     dueAt: Date | null;
     status: string;
@@ -65,7 +66,7 @@ export function PayAppSummary({ jobId, gcName, nextNumber, payApp, asOf }: PayAp
           A pay application bills {gcName} against this job&rsquo;s schedule of values, line by line. Nothing is sent
           until you submit it.
         </p>
-        <a href="#pay-applications" className={`${button} mt-5 bg-brand text-neutral-900 hover:bg-yellow-500`}>
+        <a href={NEW_PAY_APP_HASH} className={`${button} mt-5 bg-brand text-neutral-900 hover:bg-brand-hover`}>
           Start pay app #{nextNumber}
         </a>
       </section>
@@ -131,9 +132,9 @@ export function PayAppSummary({ jobId, gcName, nextNumber, payApp, asOf }: PayAp
       <div className="mt-7 flex flex-wrap gap-3">
         <Link
           href={`/jobs/${jobId}/pay-applications/${payApp.id}`}
-          className={`${button} bg-brand text-neutral-900 hover:bg-yellow-500`}
+          className={`${button} bg-brand text-neutral-900 hover:bg-brand-hover`}
         >
-          Review &amp; send to {gcName}
+          {payAppPrimaryLabel(payApp.status, payApp.number, gcName)}
         </Link>
         {/* NOT "Edit line items": a submitted pay application is not
             editable here, and the schedule of values sits behind a different
@@ -141,7 +142,7 @@ export function PayAppSummary({ jobId, gcName, nextNumber, payApp, asOf }: PayAp
             link to it would be a door some billing users cannot open. The
             next application is what this person can actually do. */}
         <a
-          href="#pay-applications"
+          href={NEW_PAY_APP_HASH}
           className={`${button} border border-line-card text-ink hover:bg-rail-hover`}
         >
           Start pay app #{nextNumber}

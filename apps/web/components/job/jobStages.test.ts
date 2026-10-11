@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changeOrderPaperworkLink, jobStages, selectedStageKey, type JobStageInput } from "@/components/job/jobStages";
+import { changeOrderPaperworkLink, isCurrentLink, jobStages, selectedStageKey, type JobStageInput } from "@/components/job/jobStages";
 import { todayInZone } from "@/lib/viewer-timezone";
 
 const base: JobStageInput = {
@@ -165,6 +165,24 @@ describe("jobStages", () => {
     expect(selectedStageKey(stages, "/jobs/job-1/estimate")).toBe("contract");
     expect(selectedStageKey(stages, "/jobs/job-1/photos")).toBe("crew");
     expect(selectedStageKey(stages, "/jobs/job-1/pay-applications/x")).toBeNull();
+  });
+
+  // Guidelines review 2026-10-10: `pathname === href` could never match a
+  // link carrying a query, so the punch list could never read as current.
+  it("matches a link with a query on its path AND its params", () => {
+    expect(isCurrentLink("/punch-lists?job=job-1", "/punch-lists", "job=job-1")).toBe(true);
+    expect(isCurrentLink("/punch-lists?job=job-1", "/punch-lists", "job=job-2")).toBe(false);
+    expect(isCurrentLink("/punch-lists?job=job-1", "/punch-lists", "")).toBe(false);
+    expect(isCurrentLink("/jobs/job-1", "/jobs/job-1", "tab=x")).toBe(true);
+    expect(selectedStageKey(jobStages(base), "/punch-lists", "job=job-1")).toBe("closeout");
+  });
+
+  it("marks the two links that leave the job, and only those", () => {
+    const leaving = jobStages(base)
+      .flatMap((s) => s.links)
+      .filter((l) => l.leavesJob)
+      .map((l) => l.href);
+    expect(leaving).toEqual(["/punch-lists?job=job-1", "/closeout"]);
   });
 });
 

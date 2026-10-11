@@ -47,3 +47,39 @@ export function payAppBar(f: PayAppFigures): { before: number; thisPeriod: numbe
   const before = pct(f.billedBefore);
   return { before, thisPeriod: Math.min(100 - before, pct(f.thisPeriod)) };
 }
+
+/** The Billing summary's "Start pay app #N" links here. PayApplications.tsx
+ * listens for it, opens its form and puts the cursor in it. It used to be a
+ * plain `#pay-applications` jump that only scrolled to a CLOSED form, under
+ * a button promising to start one. In this pure module so the server
+ * summary and the client form read one string. */
+export const NEW_PAY_APP_HASH = "#new-pay-application";
+
+/** The summary's yellow button, said for where the pay app actually is
+ * (InvoiceStatus). It read "Review & send to {GC}" on a PAID application,
+ * which invites sending the GC a bill they have already paid. */
+export function payAppPrimaryLabel(status: string, number: number, gcName: string): string {
+  switch (status) {
+    case "SUBMITTED":
+      return `Review & send to ${gcName}`;
+    case "PAID":
+      return `View paid pay app #${number}`;
+    case "DISPUTED":
+      return "Review dispute";
+    default: // APPROVED, PARTIALLY_PAID: with the GC, waiting on money.
+      return `View pay app #${number}`;
+  }
+}
+
+/** "October", or "October 2025" when the application is from another year
+ * than the reader's today — a January screen should not show last
+ * December's pay app as if it were this one. `asOf` is `viewerAsOf()`: the
+ * reader's calendar day at UTC midnight. */
+export function payAppMonth(issuedAt: Date, timeZone: string, asOf: Date): string {
+  const year = Number(issuedAt.toLocaleDateString("en-US", { year: "numeric", timeZone }));
+  return issuedAt.toLocaleDateString("en-US", {
+    month: "long",
+    ...(year === asOf.getUTCFullYear() ? {} : { year: "numeric" }),
+    timeZone,
+  });
+}

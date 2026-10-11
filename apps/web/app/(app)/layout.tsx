@@ -155,6 +155,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* The ⌘K palette: renders nothing until opened, from the top bar's
           search box or anything that dispatches cstream:open-search. */}
       <CommandPaletteRegion />
+      {/* The first Tab stop on every signed-in page: past the wordmark, three
+          words, search, Ask, Help and the avatar in one key. Invisible until
+          focused. */}
+      <a
+        href="#main"
+        className="sr-only z-[70] rounded-md bg-brand font-semibold text-neutral-900 focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:inline-flex focus:min-h-11 focus:items-center focus:px-4"
+      >
+        Skip to content
+      </a>
       <TopBarRegion
         companyName={company.name}
         userName={currentUser.name}
@@ -179,7 +188,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           makes scrollIntoView and keyboard focus stop above them too —
           without it a focused "Review & send" scrolled in behind the tabs
           (measured at 390x844, 2026-10-10). */}
-      <main className="min-h-0 flex-1 overflow-y-auto pb-[var(--shell-tabs)] scroll-pb-[var(--shell-tabs)] [--shell-port:calc(100dvh-var(--shell-topbar)-var(--shell-tabs))]">
+      <main className="min-h-0 flex-1 overflow-y-auto pb-[var(--shell-tabs)] scroll-pb-[var(--shell-tabs)] [--shell-port:calc(100dvh-var(--shell-topbar)-var(--shell-tabs))] focus:outline-none" id="main" tabIndex={-1}>
         {children}
       </main>
       <BottomTabsRegion

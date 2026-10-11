@@ -13,7 +13,10 @@ import { STAGE_LABELS, type JobLifecycleStage } from "@/lib/job-lifecycle";
  */
 
 export type StageKey = "estimate" | "contract" | "crew" | "billing" | "closeout";
-export type StageLink = { href: string; label: string };
+/** `leavesJob`: the page is not one of this job's own tabs (the punch list,
+ * company-wide closeout), so following it leaves the job header and these
+ * stages behind. The nav marks it, so the jump is not a surprise. */
+export type StageLink = { href: string; label: string; leavesJob?: true };
 export type JobStage = {
   key: StageKey;
   label: string;
@@ -121,8 +124,8 @@ export function jobStages(input: JobStageInput): JobStage[] {
         ]
       : [],
     closeout: [
-      ...(input.canReachPunchList ? [{ href: `/punch-lists?job=${job}`, label: "Punch list" }] : []),
-      ...(input.canReachCloseout ? [{ href: "/closeout", label: "Closeout (all jobs)" }] : []),
+      ...(input.canReachPunchList ? [{ href: `/punch-lists?job=${job}`, label: "Punch list", leavesJob: true as const }] : []),
+      ...(input.canReachCloseout ? [{ href: "/closeout", label: "Closeout (all jobs)", leavesJob: true as const }] : []),
     ],
   };
 
@@ -181,10 +184,20 @@ export function jobStages(input: JobStageInput): JobStage[] {
   });
 }
 
-/** The stage whose pages include this path — the one shown open. Query
- * strings never match a pathname, so only in-job routes select a stage. */
-export function selectedStageKey(stages: JobStage[], pathname: string): StageKey | null {
-  return stages.find((stage) => stage.links.some((link) => link.href === pathname))?.key ?? null;
+/** Is `href` the page being shown? A link with a query (`/punch-lists?job=x`)
+ * is current only on that path WITH those params — comparing it to the bare
+ * pathname, as this used to, could never match. */
+export function isCurrentLink(href: string, pathname: string, search = ""): boolean {
+  const [path, query] = href.split("?");
+  if (path !== pathname) return false;
+  if (!query) return true;
+  const have = new URLSearchParams(search);
+  return [...new URLSearchParams(query)].every(([k, v]) => have.get(k) === v);
+}
+
+/** The stage whose pages include the page being shown — the one shown open. */
+export function selectedStageKey(stages: JobStage[], pathname: string, search = ""): StageKey | null {
+  return stages.find((stage) => stage.links.some((link) => isCurrentLink(link.href, pathname, search)))?.key ?? null;
 }
 
 /** The Paperwork panel's change-order row. Waiting ones first, so a

@@ -25,7 +25,7 @@ export function openSearch(query = "") {
 function useShortcutLabel(): string | null {
   const [label, setLabel] = useState<string | null>(null);
   useEffect(() => {
-    setLabel(/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "") ? "⌘K" : "Ctrl K");
+    setLabel(/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "") ? "⌘K" : "Ctrl\u00a0K");
   }, []);
   return label;
 }

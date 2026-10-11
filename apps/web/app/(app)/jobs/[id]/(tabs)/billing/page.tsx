@@ -21,7 +21,7 @@ import { LienWaivers } from "@/components/LienWaivers";
 import { loadLienWaiverSection } from "@/lib/lien-waiver-query";
 import { ActionForm } from "@/components/ActionForm";
 import { PayAppSummary } from "@/components/job/PayAppSummary";
-import { payAppFigures } from "@/components/job/payAppFigures";
+import { payAppFigures, payAppMonth } from "@/components/job/payAppFigures";
 import { loadPayApplication } from "@/lib/pay-application-query";
 
 const rowDeleteClass = "text-xs text-danger hover:underline";
@@ -174,7 +174,7 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
             ? {
                 id: latestPayApp.id,
                 number: latestPayApp.number,
-                month: latestInvoice.issuedAt.toLocaleDateString("en-US", { month: "long", timeZone }),
+                month: payAppMonth(latestInvoice.issuedAt, timeZone, asOf),
                 dueAt: latestInvoice.dueAt,
                 status: latestPayApp.status,
                 figures: payAppFigures(latestCertificate),
@@ -353,7 +353,8 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
         </ActionForm>
       </section>
 
-      {/* Anchor for the summary's "Start pay app #1". */}
+      {/* Anchor for older links here. The summary's "Start pay app" uses
+          NEW_PAY_APP_HASH, which PayApplications opens and focuses itself. */}
       <div id="pay-applications" className="scroll-mt-6" />
       <PayApplications jobId={job.id} lineItems={payApplicationLineItemOptions} payApplications={payApplications} timeZone={timeZone} />
 

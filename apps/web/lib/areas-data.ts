@@ -426,7 +426,7 @@ export async function loadAreaWaiting(
               promised && promised < todayIso
               ? { text: overdueText(daysBetween(promised, todayIso), true), tone: "red" }
               : promised
-                ? { text: `Promised ${promised.slice(5).replace("-", "/")}`, tone: "neutral" }
+                ? { text: `Promised ${formatCalendarDay(promised, "dayMonth")}`, tone: "neutral" }
                 : { text: "No date promised", tone: "neutral" },
             href: `/material-orders?job=${encodeURIComponent(o.jobId)}`,
             action: "Open",

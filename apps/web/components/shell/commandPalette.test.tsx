@@ -121,6 +121,58 @@ describe("CommandPalette", () => {
     expect(push).toHaveBeenCalledWith("/jobs/j1/crew");
   });
 
+  // Guidelines review 2026-10-10: results were <div onClick> + router.push,
+  // so Cmd/Ctrl-click, middle-click and long-press could not open a new tab.
+  it("a result with a destination is a real link, still an option, and still keyboard-driven", async () => {
+    act(() => window.dispatchEvent(new CustomEvent("cstream:open-search", { detail: { query: "" } })));
+    await flush();
+    const first = document.getElementById("palette-opt-0")!;
+    expect(first.tagName).toBe("A");
+    expect(first.getAttribute("href")).toBe("/jobs/j1");
+    expect(first.getAttribute("role")).toBe("option");
+    expect(first.getAttribute("tabindex")).toBe("-1");
+    expect(input().getAttribute("aria-activedescendant")).toBe("palette-opt-0");
+    // "Log hours" goes nowhere until a job is picked: not a link.
+    expect(document.getElementById("palette-opt-2")!.tagName).toBe("DIV");
+    // A Cmd-click leaves the palette open for the next one.
+    act(() => {
+      first.dispatchEvent(new MouseEvent("click", { bubbles: true, metaKey: true, cancelable: true }));
+    });
+    expect(dialog()).not.toBeNull();
+  });
+
+  it("names each group by a real id, and announces counts and misses on every width", async () => {
+    act(() => window.dispatchEvent(new CustomEvent("cstream:open-search", { detail: { query: "" } })));
+    await flush();
+    for (const group of Array.from(dialog()!.querySelectorAll('[role="group"]'))) {
+      const id = group.getAttribute("aria-labelledby")!;
+      expect(id).not.toMatch(/\s/);
+      expect(document.getElementById(id)).not.toBeNull();
+    }
+    const status = () => dialog()!.querySelector('[role="status"][aria-live="polite"]')!;
+    // Not inside the footer that phones hide.
+    expect(status().closest(".hidden")).toBeNull();
+    type("north");
+    await flush();
+    expect(status().textContent).toMatch(/^\d+ results?$/);
+    fetchMock.mockImplementation(async (url: string) => {
+      const q = new URL(url, "http://x").searchParams.get("q");
+      return { ok: true, status: 200, json: async () => (q ? { ...BASE, records: [], recentJobs: [], actions: [], navPages: [] } : BASE) };
+    });
+    type("zzzz");
+    await flush();
+    expect(status().textContent).toContain("Nothing found");
+  });
+
+  it("the close control is a 44px target that says Close on a phone", async () => {
+    act(() => window.dispatchEvent(new CustomEvent("cstream:open-search", { detail: { query: "" } })));
+    await flush();
+    const close = dialog()!.querySelector('button[aria-label="Close search"]')!;
+    expect(close.className).toMatch(/\bmin-h-11\b/);
+    expect(close.className).toMatch(/\bmin-w-11\b/);
+    expect(close.querySelector(".sm\\:hidden")?.textContent).toBe("Close");
+  });
+
   it("Tab never leaves the dialog", async () => {
     act(() => window.dispatchEvent(new CustomEvent("cstream:open-search", { detail: { query: "" } })));
     await flush();
@@ -137,7 +189,7 @@ describe("SearchTrigger", () => {
   // so there is nothing to swap; the hint only ever APPEARS.
   it("server markup names no shortcut, so nothing can swap on hydration", () => {
     const html = renderToString(createElement(SearchTrigger, { size: "lg" }));
-    expect(html).not.toContain("Ctrl K");
+    expect(html).not.toMatch(/Ctrl\sK/); // \s covers the non-breaking space
     expect(html).not.toContain("⌘K");
     expect(html).toContain("Search a job, or ask");
   });
@@ -149,9 +201,30 @@ describe("SearchTrigger", () => {
     const r = createRoot(host);
     await act(async () => r.render(createElement(SearchTrigger, { size: "sm" })));
     expect(host.textContent).toContain("⌘K");
-    expect(host.textContent).not.toContain("Ctrl K");
+    expect(host.textContent).not.toMatch(/Ctrl\sK/);
     act(() => r.unmount());
     host.remove();
     platform.mockRestore();
+  });
+
+  it("off a Mac, the hint is Ctrl and K held together by a non-breaking space", async () => {
+    const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = createRoot(host);
+    await act(async () => r.render(createElement(SearchTrigger, { size: "sm" })));
+    expect(host.textContent).toContain("Ctrl K");
+    act(() => r.unmount());
+    host.remove();
+    platform.mockRestore();
+  });
+});
+
+describe("resultCount", () => {
+  it("says 1 result, not 1 results", async () => {
+    const { resultCount } = await import("./CommandPalette");
+    expect(resultCount(1)).toBe("1 result");
+    expect(resultCount(0)).toBe("0 results");
+    expect(resultCount(7)).toBe("7 results");
   });
 });

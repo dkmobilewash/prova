@@ -1,11 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("next/navigation", () => ({ usePathname: () => "/jobs/job-1/retainage" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/jobs/job-1/retainage", useSearchParams: () => new URLSearchParams() }));
 
 const { JobStageNav } = await import("@/components/job/JobStageNav");
 const { PayAppSummary } = await import("@/components/job/PayAppSummary");
 const { jobStages } = await import("@/components/job/jobStages");
+const { payAppMonth } = await import("@/components/job/payAppFigures");
 
 const stages = jobStages({
   jobId: "job-1",
@@ -55,7 +56,7 @@ describe("PayAppSummary", () => {
   it("is honest when there is no pay application", () => {
     const html = renderToStaticMarkup(<PayAppSummary jobId="job-1" gcName="Turner" nextNumber={2} payApp={null} asOf={new Date("2026-10-10T00:00:00.000Z")} />);
     expect(html).toContain("No pay application yet");
-    expect(html).toContain('href="#pay-applications"');
+    expect(html).toContain('href="#new-pay-application"');
     expect(html).toContain("Start pay app #2");
     expect(html).not.toContain("$");
   });
@@ -118,5 +119,43 @@ describe("PayAppSummary", () => {
     const html = pill("2026-10-02", "2026-10-10", "PAID");
     expect(html).toContain(">Paid<");
     expect(html).not.toContain("Overdue");
+  });
+
+  // Guidelines review 2026-10-10: the yellow button said "Review & send to
+  // Turner" on a pay app Turner had already paid or disputed.
+  it("names the primary action for where the pay app is", () => {
+    expect(pill("2026-10-17", "2026-10-10", "SUBMITTED")).toContain("Review &amp; send to Turner");
+    for (const [status, text] of [
+      ["APPROVED", "View pay app #2"],
+      ["PARTIALLY_PAID", "View pay app #2"],
+      ["PAID", "View paid pay app #2"],
+      ["DISPUTED", "Review dispute"],
+    ]) {
+      const html = pill("2026-10-17", "2026-10-10", status);
+      expect(html, status).toContain(text);
+      expect(html, status).not.toContain("send to");
+    }
+  });
+
+  it("'Start pay app' opens the form instead of only scrolling to it", () => {
+    expect(pill("2026-10-17", "2026-10-10")).toContain('href="#new-pay-application"');
+  });
+});
+
+describe("JobStageNav on a phone", () => {
+  const html = renderToStaticMarkup(<JobStageNav stages={stages} />);
+  it("shows each stage's status at every width — never only in a title", () => {
+    expect(html).toMatch(/text-tag-amber-ink">Not signed</);
+    expect(html).not.toMatch(/hidden truncate[^"]*sm:block/);
+  });
+});
+
+describe("payAppMonth", () => {
+  const asOf = new Date("2026-10-10T00:00:00.000Z");
+  it("says the year only when it is not this year, in the reader's zone", () => {
+    expect(payAppMonth(new Date("2026-10-05T15:00:00.000Z"), "America/Los_Angeles", asOf)).toBe("October");
+    expect(payAppMonth(new Date("2025-10-05T15:00:00.000Z"), "America/Los_Angeles", asOf)).toBe("October 2025");
+    // 03:00 UTC on Jan 1 is still Dec 31 in Los Angeles.
+    expect(payAppMonth(new Date("2026-01-01T03:00:00.000Z"), "America/Los_Angeles", asOf)).toBe("December 2025");
   });
 });

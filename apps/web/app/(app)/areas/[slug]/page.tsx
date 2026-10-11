@@ -60,7 +60,7 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
   return (
     <PageShell width="working">
       <nav aria-label="Breadcrumb" className="text-sm text-ink-muted">
-        <Link href="/dashboard" className="hover:text-ink">
+        <Link href="/dashboard" className="inline-flex min-h-11 items-center hover:text-ink hover:underline">
           Home
         </Link>
         <span aria-hidden className="mx-2">
