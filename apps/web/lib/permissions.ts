@@ -198,6 +198,9 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   "/catalog": "MANAGE_ESTIMATING",
   "/bids": "MANAGE_ESTIMATING",
   "/pipeline": "MANAGE_ESTIMATING",
+  // The AI page: agents that read bids and estimates and advise on them.
+  // Same door as /bids, because what it shows is the bid list read back.
+  "/ai": "MANAGE_ESTIMATING",
   "/proposals": "MANAGE_ESTIMATING",
   "/wall-types": "MANAGE_ESTIMATING",
   "/vendors/pricing": "MANAGE_ESTIMATING",

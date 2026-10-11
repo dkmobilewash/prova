@@ -19,7 +19,10 @@ const KINDS: readonly AgentKind[] = ["BID_WATCHER", "BID_RESEARCH", "ESTIMATE_CH
  */
 export async function runAgentNow(agent: AgentKind, bidInvitationId?: string | null): Promise<RunAgentResult> {
   const context = await requireCompanyContext();
-  if (!can(context, "MANAGE_ESTIMATING")) return { ok: false, error: "Running an agent needs estimating access." };
+  if (!can(context, "MANAGE_ESTIMATING")) return {
+      ok: false,
+      error: "Running an agent isn't part of your job function. The account owner sets who sees what, on the Team page.",
+    };
   if (!KINDS.includes(agent)) return { ok: false, error: "That is not an agent this app runs." };
   const outcome = await runAgent({
     companyId: context.companyId,

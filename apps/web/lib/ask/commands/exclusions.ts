@@ -90,6 +90,11 @@ export const notYetRegistered: Exclusion[] = [
       "Drafting, accepting and dismissing the clauses a scope letter is missing. Excluded for `specRead.*`'s second reason, sharpened: what these actions produce is a SENTENCE SENT TO A GENERAL CONTRACTOR that decides who pays when scope is disputed. An inclusion nobody read gives work away for free and an exclusion nobody read is one the sub cannot defend when asked where it came from, so accepting one is deliberately a press beside its citation and could not be a prompt — the whole review step exists because `draft-lines.ts` writes rows directly and a line item is a number somebody can see, while a clause is a legal statement. The draft action also spends a model call, so a command would spend money on a prompt's say-so. And `saveClauseToLibrary` writes to a company-wide list every future bid copies from, which is owner-only for the reason `aiSettings.*` is below it. The estimator does all of this on the job's proposal page. Never a command.",
   },
   {
+    action: "agents.*",
+    reason:
+      "Starting a background agent run. Excluded for `aiSettings.*`'s reason one step removed: a model must not be able to start model runs on a prompt's say-so — a run spends the company's AI allowance, and an injected instruction in a bid name could otherwise burn a month's cap. The Run-now button on /ai is a deliberate press by a person who can see the spend beside it. Never a command.",
+  },
+  {
     action: "aiSettings.*",
     reason:
       "The switch that decides whether AI runs for this company at all. Reachable from a prompt it would let the assistant be asked to re-enable itself, or to turn off the audit trail of its own proposals — a model must never hold the control over whether a model is used. Owner-only on /settings/assistant, and permanently never a command.",

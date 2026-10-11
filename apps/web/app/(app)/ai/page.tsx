@@ -1,3 +1,4 @@
+import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { RunAgentButton } from "@/components/RunAgentButton";
@@ -14,12 +15,12 @@ export default async function AiPage() {
   const { allowed } = await requireCapability("MANAGE_ESTIMATING");
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
+    <PageShell width="working">
       <h1 className="text-2xl font-semibold text-ink">AI</h1>
       <p className="mt-2 text-sm text-ink-body">Background agents that read your bids and advise.</p>
       <div className="mt-6">
         <RunAgentButton agent="BID_WATCHER" label="Run the bid watcher now" />
       </div>
-    </div>
+    </PageShell>
   );
 }
