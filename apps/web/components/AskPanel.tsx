@@ -1471,7 +1471,11 @@ export function AskPanel({
         // `items-end` so the button and the attach control stay on the last
         // line as the box grows, rather than floating at the middle of a
         // four-line question.
-        className="flex items-end gap-2"
+        // `flex-wrap` + the textarea's `basis-full` below `sm`: on a phone
+        // the box takes the whole row and the three controls drop under it,
+        // instead of squeezing the box to a third of a 390px screen (seen on
+        // the /ai phone screenshot, 2026-10-11).
+        className="flex flex-wrap items-end gap-2"
         data-tour="ask-box"
       >
         <textarea
@@ -1507,7 +1511,7 @@ export function AskPanel({
             node.style.height = "auto";
             node.style.height = `${Math.min(node.scrollHeight, 144)}px`;
           }}
-          className="min-w-0 flex-1 resize-none overflow-y-auto rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
+          className="min-w-0 flex-1 basis-full resize-none overflow-y-auto rounded-md border border-line-card sm:basis-0 bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
         />
         {/* Attach a file. The input is hidden and the button opens it; the
             upload starts on pick, so sending is not held up by it. */}
