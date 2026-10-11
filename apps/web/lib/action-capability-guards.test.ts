@@ -1964,6 +1964,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   aiSettings: () => import("./actions/aiSettings"),
   agents: () => import("./actions/agents"),
   bidOutcomes: () => import("./actions/bidOutcomes"),
+  recommendations: () => import("./actions/recommendations"),
   // The plan-ingestion runner, reachable from /jobs/[id]/takeoff alone, which is
   // hard-gated on VIEW_JOB_COSTS. All four actions assert that — the first
   // version asserted MANAGE_ESTIMATING, which sounds right for a plan set and is

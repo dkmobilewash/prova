@@ -154,6 +154,12 @@ const isProtectedRoute = createRouteMatcher([
 // 503 when no secret is set. Recorded as its own line rather than folded into
 // the digest's, because a reader looking for why THIS route is unlisted should
 // find it under its own name.
+// /api/agents/run is deliberately NOT protected here either, by the same
+// mechanism as the two above: it is the daily AI-agent run (the bid watcher),
+// a scheduler with no Clerk session. It checks `Authorization: Bearer
+// $CRON_SECRET` itself, timing-safe, failing closed with 503 when no secret is
+// set, and it starts only the watcher or recommendations — never an agent a
+// URL should be able to trigger across every company.
 // /api/quickbooks/callback is deliberately NOT protected here — see
 // QuickBooksOAuthCookiePayload in lib/quickbooks-constants.ts. Intuit's
 // redirect back to that route is a third-party-initiated navigation;

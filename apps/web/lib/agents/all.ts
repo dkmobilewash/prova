@@ -7,5 +7,6 @@
 import "./bidResearch";
 import "./estimateCheck";
 import "./recommendations";
+import "./bidWatcher";
 
 export {};
