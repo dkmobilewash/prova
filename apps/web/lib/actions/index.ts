@@ -12,6 +12,8 @@
 
 export * from "./jobs";
 export * from "./agents";
+export * from "./bidOutcomes";
+export * from "./recommendations";
 export * from "./jobDetails";
 export * from "./estimating";
 export * from "./billing";

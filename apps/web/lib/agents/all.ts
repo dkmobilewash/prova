@@ -4,4 +4,8 @@
  * Anything that calls runAgent() imports THIS file, so a kind cannot be
  * registered on one path and missing on another. One line per agent.
  */
+import "./bidResearch";
+import "./estimateCheck";
+import "./recommendations";
+
 export {};
