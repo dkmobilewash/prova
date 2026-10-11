@@ -268,6 +268,9 @@ export default async function TodayPage({
       tone: renewal.urgency === "EXPIRED" ? "red" : "amber",
       text: renewal.detail ? `${renewal.title} — ${renewal.detail}` : renewal.title,
       when: renewalTiming(renewal),
+      // Lapsed is past due, and reads like an overdue invoice: red, not grey
+      // beside a red dot (click test, 2026-10-11).
+      ...(renewal.urgency === "EXPIRED" ? { whenTone: "danger" as const } : {}),
       action: complianceHref ? { label: "Renew", href: complianceHref } : undefined,
     });
   }

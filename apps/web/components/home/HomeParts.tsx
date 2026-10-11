@@ -97,7 +97,7 @@ export function PhoneTiles({ primary }: { primary: Shortcut }) {
         </svg>
         <span className="min-w-0 flex-1">
           <span className="block font-headline text-[28px] font-semibold leading-none">{primary.label}</span>
-          {primary.sub && <span className="mt-1.5 block truncate text-[15px] font-semibold opacity-75">{primary.sub}</span>}
+          {primary.sub && <span className="mt-1.5 block truncate text-[15px] font-semibold opacity-75" title={primary.sub}>{primary.sub}</span>}
         </span>
         <svg aria-hidden width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <path d="M9 6l6 6-6 6" />
@@ -282,7 +282,7 @@ export function CrewsBlock({ crews }: { crews: CrewToday[] }) {
         <ul>
           {crews.map((crew) => (
             <li key={crew.jobId} className="border-t border-line-row first:border-t-0">
-              <Link href={`/jobs/${crew.jobId}/crew`} className="flex items-center gap-3 py-1.5">
+              <Link href={`/jobs/${crew.jobId}/crew`} title={`${crew.jobName}: ${crew.people.join(", ")}`} className="flex items-center gap-3 py-1.5">
                 <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-rail-hover text-xs font-semibold text-ink">
                   {initials(crew.jobName)}
                 </span>

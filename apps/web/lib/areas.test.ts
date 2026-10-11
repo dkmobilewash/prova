@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { NAV_FOOTER, NAV_ITEMS } from "@/components/navItems";
 import { AREAS, NOT_IN_AN_AREA, areaBySlug, areasFor, toolRoute } from "./areas";
 import { JOB_FUNCTIONS, canReach, type Principal } from "./permissions";
+import { toolActions } from "@/components/areas/AreaParts";
 
 /**
  * The six areas are the home page's map of the app. These pin that the map
@@ -71,5 +72,23 @@ describe("areas", () => {
     expect(areaBySlug("money")!.tools.every((t) => !canReach(field, toolRoute(t)))).toBe(true);
     expect(areasFor(field).map((a) => a.slug)).not.toContain("money");
     expect(areasFor({ role: "OWNER", jobFunction: null }).map((a) => a.slug)).toEqual(AREAS.map((a) => a.slug));
+  });
+
+  // A tool card's button is never cut short: "Open Closeout & …" at 1555px
+  // (2026-10-11). A character count stands in for a pixel width because
+  // happy-dom does no layout, so both ceilings are MEASURED in Chromium at
+  // 1280-1600, not round numbers. The card is narrowest (158px button) in
+  // an area of six or more tools, where "Open Field reports" (18) fits with
+  // 7px to spare and "Open Document intake" (20) was cut; with five or
+  // fewer the button is 200px+ and "Open Work in progress" (21) fits.
+  it("keeps every tool card's button label short enough for its card", () => {
+    const labels = AREAS.flatMap((area) => area.tools.flatMap((tool) => toolActions({ ...tool, route: toolRoute(tool) }).map((a) => ({ area, label: a.label }))));
+    // One per tool, plus Jobs' second ("+ New job" and "Open jobs").
+    expect(labels.length).toBe(placed.length + 1);
+    for (const { area, label } of labels) {
+      const ceiling = area.tools.length >= 6 ? 18 : 21;
+      expect(label.length, `${area.slug}: "${label}"`).toBeLessThanOrEqual(ceiling);
+      expect(label, area.slug).not.toBe("Open");
+    }
   });
 });

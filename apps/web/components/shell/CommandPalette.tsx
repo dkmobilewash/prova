@@ -301,7 +301,7 @@ export function CommandPalette() {
                       <>
                         <EntryIcon entry={entry} />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-[15px] text-ink">
+                          <p className="truncate text-[15px] text-ink" title={entry.title}>
                             {highlight(entry.title, entry.icon === "ask" || pending ? "" : trimmed).map((run, k) =>
                               run.hit ? (
                                 <mark key={k} className="bg-transparent text-link">
@@ -312,7 +312,10 @@ export function CommandPalette() {
                               ),
                             )}
                           </p>
-                          {entry.subtitle ? <p className="truncate text-sm text-ink-muted">{entry.subtitle}</p> : null}
+                          {/* Wraps, not truncates: a subtitle ends in the status
+                              ("Northgate Medical … — Submitted"), so a long
+                              job name would cut off the part that answers. */}
+                          {entry.subtitle ? <p className="line-clamp-2 break-words text-sm text-ink-muted" title={entry.subtitle}>{entry.subtitle}</p> : null}
                         </div>
                         <span className={`shrink-0 text-sm ${isActive ? "text-link" : "text-ink-muted"}`}>
                           {entry.verb}

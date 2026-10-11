@@ -120,7 +120,9 @@ describe("the desktop top bar", () => {
     renderTopBar();
     const main = container.querySelector('nav[aria-label="Main"]')!;
     expect(Array.from(main.querySelectorAll("a")).map((a) => a.textContent)).toEqual(["Jobs", "Money", "Schedule"]);
-    expect(main.querySelector('a[aria-current="page"]')?.textContent).toBe("Jobs");
+    // On the home page no word is lit: Jobs links to /dashboard#jobs, and
+    // lighting it made home and Jobs read as one tab (2026-10-11).
+    expect(main.querySelector('a[aria-current="page"]')).toBeNull();
   });
 
   it("points Money at the Money area for an owner and drops it for a field user", () => {
@@ -270,7 +272,9 @@ describe("primaryNav", () => {
 
   it("knows which tab a page belongs to", () => {
     expect(activeTab("/dashboard", true)).toBe("home");
-    expect(activeTab("/dashboard", false)).toBe("jobs");
+    // Desktop home lights no word: Jobs is not the home page.
+    expect(activeTab("/dashboard", false)).toBeNull();
+    expect(activeTab("/jobs/abc", false)).toBe("jobs");
     expect(activeTab("/jobs/abc/billing", true)).toBe("jobs");
     expect(activeTab("/wip", true)).toBe("money");
     expect(activeTab("/areas/money", false)).toBe("money");

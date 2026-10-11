@@ -165,7 +165,7 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
                           <ToolIcon route={tool.route} />
                           <span className="min-w-0 flex-1">
                             <span className="block font-semibold text-ink">{tool.name}</span>
-                            <span className="block truncate text-sm text-ink-muted">{tool.description}</span>
+                            <span className="block truncate text-sm text-ink-muted" title={tool.description}>{tool.description}</span>
                           </span>
                           {tool.status && <StatusChip status={tool.status} />}
                         </Link>
