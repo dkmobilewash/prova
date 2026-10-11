@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   wallGroups,
@@ -79,9 +81,18 @@ describe("a tag splits a thickness group, and a tag is an identity", () => {
     expect(verdictFor(group).state).toBe("NO_SUCH_TYPE");
   });
 
-  it("puts the largest tagged group first and the remainder last", () => {
-    // The named groups are answers and the remainder is a question. A question
-    // reads better after the answers it depends on.
+  it("ORDERS BY FOOTAGE, across the whole sheet", () => {
+    // ── THIS CASE USED TO ASSERT THE OPPOSITE, AND A REAL SHEET SETTLED IT ──
+    //
+    // It read "puts the largest tagged group first and the remainder last", on
+    // the reasoning that the named groups are answers and the remainder is a
+    // question. Good reasoning, wrong list: splitting multiplies the rows —
+    // School-01 went from eight groups to seventeen — the panel shows a fixed
+    // number, and ordering per cluster put 488 ft of the drawing below the fold
+    // with LARGER groups hidden under smaller ones.
+    //
+    // The list is a work queue, not a summary, so it is ordered by what matters
+    // most. A 50 ft remainder outranks a 10 ft named group.
     const small = run(10);
     const big = run(90);
     const bare = run(50);
@@ -95,9 +106,22 @@ describe("a tag splits a thickness group, and a tag is an identity", () => {
     );
     expect(groups.map((group) => (group.source.kind === "TAG" ? group.source.tag : "remainder"))).toEqual([
       "A1",
-      "A2",
       "remainder",
+      "A2",
     ]);
+  });
+
+  it("gives a TIE to the named group", () => {
+    // Same footage, and a name is a better answer than a thickness — so when
+    // size cannot separate them, the one the drawing named goes first.
+    const named = run(40);
+    const bare = run(40);
+    const groups = wallGroups(
+      [cluster(4.875, [named, bare])],
+      new Map([[named, "A1"]]),
+      [type("A1", 4.875)],
+    );
+    expect(groups[0].source.kind).toBe("TAG");
   });
 });
 
@@ -320,11 +344,14 @@ describe("School-01's 4-7/8in group, which is why this module exists", () => {
     );
 
     const verdicts = groups.map((group) => verdictFor(group));
+    // Largest first, which on this sheet puts the QUESTION at the top — 607 ft
+    // of untagged wall is the biggest single thing on it, and burying that
+    // under three smaller answers is what hid 488 ft on the real drawing.
     expect(verdicts.map((one) => one.state)).toEqual([
+      "ASK", // 607 ft untagged, and A1 and A2 are both this thick
       "NAMED", // A1, 300 ft — the drawing said so
       "NAMED", // A2, 120 ft — likewise
       "NO_SUCH_TYPE", // EXT-1, 90 ft — named, and the library has no EXT-1
-      "ASK", // 607 ft untagged, and A1 and A2 are both this thick
     ]);
 
     // 420 ft is priced where 0 ft was, the 90 ft names what is missing, and the
@@ -333,11 +360,64 @@ describe("School-01's 4-7/8in group, which is why this module exists", () => {
       .filter((_, index) => verdicts[index].state === "NAMED")
       .reduce((sum, group) => sum + group.feet, 0);
     expect(priced).toBeCloseTo(420, 3);
-    expect(groups[3].feet).toBeCloseTo(607, 3);
+    expect(groups[0].feet).toBeCloseTo(607, 3);
 
     // AND THE FOOTAGE IS CONSERVED. A split that loses a run loses it from the
     // bid, which is the one failure here that nobody would see on screen.
     expect(groups.reduce((sum, group) => sum + group.feet, 0)).toBeCloseTo(1117, 3);
     expect(groups.reduce((sum, group) => sum + group.runs.length, 0)).toBe(4);
+  });
+});
+
+describe("nothing a sheet found is out of reach", () => {
+  /**
+   * ── A CENSUS, AND THE DEFECT IT EXISTS FOR WAS FOUND ON A REAL SHEET ──
+   *
+   * The panel opened with eight rows and put the rest behind a SENTENCE — no
+   * row, no colour, no button. On School-01 that sentence held **488 ft, 26% of
+   * the drawing**, and because the order was per cluster rather than by size,
+   * some of what it hid was larger than what it showed.
+   *
+   * Two things fix it and this file asserts the first directly (above: the
+   * ordering) and the second here. A render test cannot be written for a panel
+   * that needs pdf.js, a real document and a canvas, so this reads the source —
+   * a census proves the code is THERE and never that a framework honours it,
+   * and that limit is mild for a `useState` toggle in a component this repo's
+   * own tests already render.
+   */
+  const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+
+  it("OFFERS THE GROUPS BELOW THE FOLD, as a control rather than a sentence", () => {
+    expect(viewer, "the hidden groups are not reachable").toContain("Show the other");
+    expect(viewer).toContain("onClick={() => setShowingAll(true)}");
+  });
+
+  it("shows ALL of them once asked, not another page of them", () => {
+    expect(viewer).toContain("showingAll ? (found ?? []) : (found ?? []).slice(0, SHOWN_AT_FIRST)");
+  });
+
+  it("names the footage behind the control, so pressing it is not a leap", () => {
+    expect(viewer).toContain("found.slice(SHOWN_AT_FIRST).reduce((f, c) => f + c.feet, 0)");
+  });
+
+  it("STOPS PROMISING EACH GROUP ITS OWN COLOUR", () => {
+    // Six colours and up to twelve rows: a chip repeats, which a click-through
+    // reported as lines looking like they belonged to another group. Hover is
+    // what actually tells them apart, so that is what the headline says.
+    expect(viewer, "the panel still claims a colour per group").not.toContain(
+      "Each group is drawn on the",
+    );
+    expect(viewer).toContain("Hover a row to pick its");
+  });
+
+  it("forgets that it was expanded when the sheet is read again", () => {
+    // A stale `true` across a re-run would show a fold that is not there, and
+    // across a sheet change would show another sheet's.
+    expect(viewer).toContain("setShowingAll(false)");
+  });
+
+  it("reads the file it thinks it is reading", () => {
+    expect(viewer).toContain("Find the walls");
+    expect(viewer.length).toBeGreaterThan(20000);
   });
 });
