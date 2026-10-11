@@ -104,6 +104,13 @@ const BARE_NAME_EXCEPTIONS: Record<string, { count: number; why: string }> = {
       "every job on this page is CONTRACTED or IN_PROGRESS, so a status " +
       "suffix would repeat itself down the whole page.",
   },
+  "components/home/HomeParts.tsx": {
+    count: 1,
+    why:
+      "The home page's job cards (Concept G). Read-only: each card links to " +
+      "its own job, nothing is filed from it, and the GC, trade and stage " +
+      "strip on the same card tell two similarly named jobs apart.",
+  },
 };
 
 /** Copied from rowActionsCensus.test.ts, and for the same reason it exists

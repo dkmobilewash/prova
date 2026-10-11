@@ -16,37 +16,37 @@ export const dashboardWalkthrough: Walkthrough = {
       anchor: "dashboard-new-job",
       title: "Start a new job",
       body:
-        "Every estimate starts as a job. Press New job, give it a name and say who it is for — then you can price it.",
+        "Every estimate starts as a job. Press New job, give it a name and say who it is for — then you can price it. The buttons beside it go straight to logging hours, sending a pay app or finding an RFI.",
     },
     {
       anchor: "dashboard-ask",
-      title: "Ask in plain words",
+      title: "Search, or ask in plain words",
       body:
-        "Type a question, like “what's overdue?”, or tell it to do something, like “start a job for the Smith kitchen”. If it is going to add or change anything, it shows you first and waits for you to press the button.",
+        "Press here to find any job, RFI, pay app or person — or type a question, like “what's overdue?”, or tell it to do something, like “start a job for the Smith kitchen”. If it is going to add or change anything, it shows you first and waits for you to press the button.",
     },
     {
       anchor: "dashboard-needs-attention",
-      title: "What needs you",
+      title: "Needs you today",
       body:
-        "A quick count of things to look at: unpaid invoices past their due date, papers about to expire, and jobs heading over budget. Zero means you are fine.",
+        "Everything waiting on you, one line each: invoices past due, RFI answers that are late, hours to approve, papers about to expire and jobs heading over budget. The link at the end of a line takes you to where you settle it.",
     },
     {
       anchor: "dashboard-field",
-      title: "Today in the field",
+      title: "Crews today",
       body:
-        "Which jobs are under way and who is on each one, plus any licences or certificates that are running out. Tap a job to open it.",
+        "Who is on the schedule today, job by job. Tap a job to log their hours. If nobody is scheduled, it says so and takes you to the schedule.",
     },
     {
       anchor: "dashboard-money",
-      title: "Who owes you",
+      title: "Money",
       body:
-        "Invoices still waiting to be paid, the longest overdue first, and how quickly each client has paid you in the past.",
+        "What you billed and collected this month, the retainage still held back, and what is overdue. Further down: every unpaid invoice, and how quickly each client has paid you in the past.",
     },
     {
       anchor: "dashboard-job-health",
-      title: "Is each job on budget?",
+      title: "Your jobs",
       body:
-        "One line per active job, saying whether it looks like finishing over or under what the client is paying. Tap a line to see the job.",
+        "A card per job: where it has got to, from estimate to closeout, and the one thing to do next on it. A job heading over budget says so on its card.",
     },
     {
       anchor: "dashboard-job-filters",
