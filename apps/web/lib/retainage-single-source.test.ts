@@ -162,6 +162,12 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "lib/pay-application-credit.test.ts":
     "Drives submitPayApplication for real over a faked database and reads the snapshot it wrote. Names the column only to assert the figure on the invoice — a −$5,000 credit carries a −$500.00 snapshot — and to prove a refused application wrote none. No query and no second formula: the write under test is retainageWithheldFor, unchanged.",
   "lib/alerts-query.ts": "RETAINAGE_RELEASE alerts — one alert per job, with its name.",
+  "lib/agents/bidHistory.ts":
+    "One GC's pay speed for bid research: hands the column to calculatePaymentReliability per invoice, exactly as the contact page does, so retainage held is not counted as late. No total of its own.",
+  "lib/agents/bidHistory.test.ts": "Fixture invoice with retainage held, to pin that it still settles in the pay-speed figure. No query.",
+  "lib/agents/recommendations.ts":
+    "Per-job releasable-retainage and per-invoice overdue recommendations: calculateRetainageSummary into retainageAlerts (the alert list's own rule) and calculateArAgingInvoice, the same calls alerts-query.ts and /cash-flow make. No company total.",
+  "lib/agents/recommendations.test.ts": "Fixture invoice carrying retainage, to pin that the overdue amount excludes it. No query.",
   "lib/ask/handlers.ts":
     "TWO read tools, both per-job by necessity. retainage_held builds the per-job rows the way /cash-flow builds its table and takes the COMPANY-WIDE total from loadRetainageHeld rather than summing them — the rows carry job names, which a scalar cannot; cash_flow_forecast feeds calculateRetainageSummary per job into the forecast the same way that page does. Neither derives a company total from this column. Arrived with roadmap item 4 of the Ask build.",
   "lib/closeout-query.ts": "Retainage at stake on one job's closeout row.",

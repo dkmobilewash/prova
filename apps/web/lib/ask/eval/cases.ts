@@ -285,9 +285,13 @@ export const EVAL_CASES: EvalCase[] = [
   // job page, but is not offered the card.
   noCommand("none-accounting-reschedule", "push Riverside's start to October 6", ACCOUNTING),
   // FIELD holds no MANAGE_ESTIMATING, so log_bid_invitation is not offered
-  // to them; and a won/lost decision is excluded for everyone.
+  // to them. A won/lost decision WAS excluded for everyone until 2026-10-11,
+  // when record_bid_outcome landed (commands/bidOutcomes.ts): it is a card
+  // now, and the field still is not offered it.
   noCommand("none-field-bid", "invite Turner to bid on the Riverside drywall", FIELD),
-  noCommand("none-bid-won", "mark the Riverside bid as won"),
+  command("cmd-bid-won", "mark the Riverside bid as won", "record_bid_outcome", { projectName: "Riverside" }),
+  command("cmd-bid-lost-reason", "we lost Main St to Acme, they came in lower", "record_bid_outcome", { projectName: "Main St", winnerName: "Acme" }, ESTIMATOR),
+  noCommand("none-field-bid-won", "mark the Riverside bid as won", FIELD),
   noCommand("none-change-order", "approve the change order on Riverside"),
   noCommand("none-poem", "write me a poem about drywall"),
   noCommand("none-advice", "how do I file a mechanics lien in California?"),

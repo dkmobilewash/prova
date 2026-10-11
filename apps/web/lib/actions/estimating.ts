@@ -34,6 +34,7 @@ import { addCatalogLine } from "@/lib/estimating/catalog-line";
 import { addIndirectLine } from "@/lib/estimating/add-indirect";
 import { isIndirectCostKind } from "@/lib/estimating/indirect-costs";
 import { createBidInvitationRecord } from "@/lib/estimating/bid-invitation";
+import { runAgentAfterResponse } from "@/lib/agents/onEvent";
 import { issueEstimateVersionNumber } from "@/lib/estimating/estimate-version";
 
 /** Logs a GC inviting this company to bid — tracked independent of Job,
@@ -112,6 +113,8 @@ export async function updateBidInvitationStatus(
         where: { id: bidInvitationId },
         data: { status, bidAmount, ...declineFields },
       });
+      // AI agents: check the estimate when the bid is marked submitted (lib/agents/onEvent.ts).
+      if (status === "SUBMITTED" && bid.status !== "SUBMITTED") runAgentAfterResponse({ companyId: company.id, agent: "ESTIMATE_CHECK", bidInvitationId });
 
       revalidatePath(`/contacts/${bid.contactId}`);
       revalidatePath("/bids");

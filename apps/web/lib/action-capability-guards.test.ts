@@ -795,6 +795,15 @@ const MIXED_DOORS: Record<string, { capability: Capability | null; reason: strin
   // `log_payment` Ask command declares MANAGE_BILLING already
   // (lib/ask/commands/billing.ts), so the two surfaces now agree instead
   // of one of them being open.
+  // Same shape as billing.logPayment below: /settings/assistant reaches this
+  // only by importing the command registry (record_bid_outcome), never by
+  // rendering an outcome form. The bid workspace on /ai is the real door and
+  // /ai is MANAGE_ESTIMATING, which is also what the command declares.
+  "bidOutcomes.recordBidOutcome": {
+    capability: "MANAGE_ESTIMATING",
+    reason:
+      "Reached from /settings/assistant only through the Ask command registry (record_bid_outcome, MANAGE_ESTIMATING); its real form is on the /ai bid workspace, MANAGE_ESTIMATING like /bids. Gated on MANAGE_ESTIMATING so the command, the page and the action agree.",
+  },
   "billing.logPayment": {
     capability: "MANAGE_BILLING",
     reason:
@@ -1954,6 +1963,8 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // back on is a decision about where their documents may go.
   aiSettings: () => import("./actions/aiSettings"),
   agents: () => import("./actions/agents"),
+  bidOutcomes: () => import("./actions/bidOutcomes"),
+  recommendations: () => import("./actions/recommendations"),
   // The plan-ingestion runner, reachable from /jobs/[id]/takeoff alone, which is
   // hard-gated on VIEW_JOB_COSTS. All four actions assert that — the first
   // version asserted MANAGE_ESTIMATING, which sounds right for a plan set and is

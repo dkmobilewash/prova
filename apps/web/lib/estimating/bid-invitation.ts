@@ -1,5 +1,6 @@
 import { prisma, type TradeScope } from "@prova/db";
 import type { ActionResultWith } from "@/lib/actions/shared";
+import { runAgentAfterResponse } from "@/lib/agents/onEvent";
 
 /**
  * The body of "log a bid invitation", lifted out of the Server Action so
@@ -103,6 +104,8 @@ export async function createBidInvitationRecord(
     },
     select: { id: true },
   });
+  // AI agents: research the new bid after the response (lib/agents/onEvent.ts; switch and cap apply).
+  runAgentAfterResponse({ companyId, agent: "BID_RESEARCH", bidInvitationId: created.id });
 
   return { ok: true, value: { bidInvitationId: created.id, contactName: contact.name, alreadyExisted: false } };
 }
