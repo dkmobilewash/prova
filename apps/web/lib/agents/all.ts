@@ -5,3 +5,4 @@
  * registered on one path and missing on another. One line per agent.
  */
 export {};
+import "./bidWatcher";
