@@ -4,6 +4,7 @@ import { prisma } from "@prova/db";
 import { SalesLeadForm } from "@/components/SalesLeadForm";
 import { SubListingImport } from "@/components/SubListingImport";
 import { CslbPhoneFill } from "@/components/CslbPhoneFill";
+import { FindEmailsPanel } from "@/components/FindEmailsPanel";
 import { SalesLeadList } from "@/components/SalesLeadRow";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { viewerToday } from "@/lib/viewerToday";
@@ -369,6 +370,10 @@ export default async function SalesPage() {
         <CslbPhoneFill
           candidates={leads.filter((lead) => lead.licenceNumber && !lead.phone).length}
         />
+        {/* The next step after a phone: an address the outbound engine can
+            send to. Counted the way the action selects — no email, not
+            suppressed — so the number on the button is the number it reaches. */}
+        <FindEmailsPanel candidates={leads.filter((lead) => !lead.email && !lead.doNotContact).length} />
       </div>
     </div>
   );

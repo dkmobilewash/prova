@@ -11,6 +11,7 @@ import { doNotCallFrom } from "@/lib/call-dispositions";
 import { SalesActivityRow } from "@/components/SalesActivityRow";
 import { SalesLeadSignals } from "@/components/SalesLeadSignals";
 import { SalesLeadRegistry } from "@/components/SalesLeadRegistry";
+import { FindEmailButton } from "@/components/FindEmailButton";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { openFollowUp, type LoggedActivity } from "@/lib/sales-activity";
 import { viewerToday } from "@/lib/viewerToday";
@@ -23,6 +24,11 @@ import {
   stageSpells,
   type RecordedStageChange,
 } from "@/lib/sales-stage-history";
+
+/** The Find email button runs inside this page's function: a search, up to four
+ * page fetches and six verifier calls. The action stops starting new steps at
+ * 45 seconds; sixty is the ceiling it is budgeted against, as on /sales. */
+export const maxDuration = 60;
 
 export default async function SalesLeadPage({
   params,
@@ -173,6 +179,7 @@ export default async function SalesLeadPage({
             source: lead.source,
             licenceNumber: lead.licenceNumber,
             city: lead.city,
+            website: lead.website,
           }}
         />
       </section>
@@ -207,6 +214,15 @@ export default async function SalesLeadPage({
           Sample WH-347 for {lead.companyName} →
         </Link>
       </p>
+
+      {/* Beside the sample, because the sample is what the first email sends. */}
+      <FindEmailButton
+        leadId={lead.id}
+        website={lead.website}
+        email={lead.email}
+        emailSource={lead.emailSource}
+        verified={lead.emailVerifiedAt !== null}
+      />
 
       <section className="mt-10">
         <h2 className="mb-3 text-lg font-semibold text-ink">Opportunities</h2>

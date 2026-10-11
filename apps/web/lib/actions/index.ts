@@ -53,6 +53,7 @@ export * from "./unionCompliance";
 export * from "./messages";
 export * from "./crm";
 export * from "./sales";
+export * from "./emailFinder";
 export * from "./notifications";
 export * from "./equipmentAssignments";
 export * from "./certifications";

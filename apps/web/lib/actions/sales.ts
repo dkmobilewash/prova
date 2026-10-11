@@ -22,6 +22,7 @@ import { looksCutOff, parseSubListing } from "@/lib/sub-listing/parse";
 import { licenceNumberFrom, readTypedLicence } from "@/lib/sales-licence";
 import { CslbHeaderError, MASTER_FILE_URL, cslbRowsForLicences, textChunks } from "@/lib/cslb/masterFile";
 import { loadCallList } from "@/lib/cslb/callList";
+import { bareDomain } from "@/lib/email-finder/domain";
 import {
   CALL_DISPOSITIONS,
   CALL_FOLLOW_UP_DAYS,
@@ -197,10 +198,14 @@ async function assertMoveNotBackwards(
 function readListingFields(formData: FormData): {
   licenceNumber: string | null;
   city: string | null;
+  website: string | null;
 } {
   const licence = readTypedLicence(text(formData, "licenceNumber"));
   if (!licence.ok) throw new InputError(licence.why);
-  return { licenceNumber: licence.licenceNumber, city: text(formData, "city") || null };
+  const typedSite = text(formData, "website");
+  const website = typedSite ? bareDomain(typedSite) : null;
+  if (typedSite && !website) throw new InputError(`"${typedSite}" is not a website — type a domain like bakerdrywall.com`);
+  return { licenceNumber: licence.licenceNumber, city: text(formData, "city") || null, website };
 }
 
 export async function createSalesLead(
@@ -224,6 +229,7 @@ export async function createSalesLead(
         companyName,
         contactName: contactName || null,
         email: email || null,
+        emailSource: email ? "caller" : null,
         phone: phone || null,
         source,
         ...listing,
@@ -263,6 +269,8 @@ export async function updateSalesLead(
         companyName,
         contactName: contactName || null,
         email: email || null,
+        // A changed address is the caller's, and nothing has verified it.
+        ...((email || null) !== lead.email ? { emailSource: email ? "caller" : null, emailVerifiedAt: null } : {}),
         phone: phone || null,
         source,
         ...listing,

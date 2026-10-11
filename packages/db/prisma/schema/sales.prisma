@@ -172,6 +172,24 @@ model SalesLead {
   /// entered from the event, never stamped on receipt.
   lastOutboundAt DateTime?
 
+  /// ── WHERE THE EMAIL CAME FROM, AND WHETHER ANYTHING CHECKED IT ──
+  ///
+  /// CSLB prints no email, so every address on a cold lead is FOUND, and a
+  /// found address is only as good as how it was found. `lib/email-finder`
+  /// writes these three together; a person typing an address writes "caller".
+  ///
+  /// The firm's domain, bare ("bakerdrywall.com") — found by search or typed by
+  /// the caller. Null means nobody has found one, not that the firm has none.
+  website String?
+  /// "site" (printed on their own website), "pattern" (guessed from the
+  /// owner's name), or "caller" (typed by a person). Null on rows older than
+  /// this column. A guess is never allowed to read like a fact.
+  emailSource String?
+  /// The VERIFIER'S time for its deliverable/catch-all verdict. Null means
+  /// unverified — a pattern guess with no verifier key stays null, which is
+  /// the honest state, not a missing one.
+  emailVerifiedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

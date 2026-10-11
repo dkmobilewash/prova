@@ -23,6 +23,9 @@ export type SalesLeadDefaults = {
    *  somebody else for good. */
   licenceNumber: string | null;
   city: string | null;
+  /** The firm's domain, bare — "bakerdrywall.com". Optional because the
+   *  create form starts blank; the email finder writes it too. */
+  website?: string | null;
 };
 
 /** Shared by create and edit so the two can't drift on field names. */
@@ -77,6 +80,15 @@ export function SalesLeadFields({ defaults }: { defaults: SalesLeadDefaults }) {
           <input name="city" defaultValue={defaults.city ?? ""} className={inputClass} />
         </label>
       </div>
+
+      <label className={labelClass}>
+        Website
+        <input name="website" defaultValue={defaults.website ?? ""} placeholder="bakerdrywall.com" className={inputClass} />
+        <span className="mt-1 block text-xs font-normal text-ink-muted">
+          The domain they gave you on the phone. Find email reads this site first instead of
+          searching for one.
+        </span>
+      </label>
 
       <label className={labelClass}>
         Source
