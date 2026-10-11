@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { changeOrderPaperworkLink, jobStages, selectedStageKey, type JobStageInput } from "@/components/job/jobStages";
+import { changeOrderPaperworkLink, isCurrentLink, jobStages, selectedStageKey, type JobStageInput } from "@/components/job/jobStages";
+import { todayInZone } from "@/lib/viewer-timezone";
 
 const base: JobStageInput = {
   jobId: "job-1",
@@ -15,6 +16,7 @@ const base: JobStageInput = {
   approvedChangeOrders: 2,
   invoiceCount: 4,
   latestPayApp: { number: 4, dueAt: new Date("2026-10-17T00:00:00.000Z"), status: "SUBMITTED" },
+  asOf: new Date("2026-10-10T00:00:00.000Z"),
 };
 
 /** The rail as `(tabs)/layout.tsx` built it before the stages existed —
@@ -81,6 +83,71 @@ describe("jobStages", () => {
     expect(stages[4].status).toBe("Closed");
   });
 
+  /* ------------------------------------------------ 2026-10-10 fixes -- */
+
+  it("the owner's job: working, contract never signed — Contract is amber, not ticked", () => {
+    // Seen in the running app: IN_PROGRESS, no executed contract, one CO.
+    // The Contract step showed a green tick beside "Not signed · 1 CO".
+    const stages = jobStages({ ...base, contractSigned: false, approvedChangeOrders: 1, invoiceCount: 0, latestPayApp: null });
+    expect(stages[1]).toMatchObject({ key: "contract", state: "attention", tone: "warn", status: "Not signed · 1 CO" });
+    expect(stages[0].state).toBe("done");
+    expect(stages[2].state).toBe("current");
+  });
+
+  it("never ticks a stage whose own status line says something is missing — any job, any viewer", () => {
+    const MISSING = /Not signed|No one yet|Nothing billed yet/;
+    let checked = 0;
+    for (const lifecycleStage of ["in_progress", "substantially_complete", "closed"] as const)
+      for (const contractSigned of [true, false])
+        for (const crewSize of [0, 3])
+          for (const invoiceCount of [0, 2])
+            for (const showsBilling of [true, false]) {
+              const stages = jobStages({ ...base, lifecycleStage, contractSigned, crewSize, invoiceCount, showsBilling, latestPayApp: null });
+              for (const stage of stages) {
+                if (stage.status && MISSING.test(stage.status)) {
+                  expect(stage.state, `${stage.label}: "${stage.status}"`).not.toBe("done");
+                  checked++;
+                }
+              }
+            }
+    // Not vacuous: the combinations above do reach the missing states.
+    expect(checked).toBeGreaterThan(20);
+  });
+
+  it("a pay app past its due date reads 'overdue N days' in the danger tone", () => {
+    const stages = jobStages({
+      ...base,
+      latestPayApp: { number: 2, dueAt: new Date("2026-10-02T00:00:00.000Z"), status: "SUBMITTED" },
+      asOf: new Date("2026-10-10T00:00:00.000Z"),
+    });
+    expect(stages[3]).toMatchObject({ status: "Pay app #2 overdue 8 days", tone: "danger" });
+  });
+
+  it("due today is not overdue, and a paid pay app is never overdue", () => {
+    const due = { number: 2, dueAt: new Date("2026-10-02T00:00:00.000Z"), status: "SUBMITTED" };
+    const today = jobStages({ ...base, latestPayApp: due, asOf: new Date("2026-10-02T00:00:00.000Z") })[3];
+    expect(today.status).toBe("Pay app #2 due Oct 2");
+    expect(today.tone).toBeUndefined();
+    const paid = jobStages({ ...base, latestPayApp: { ...due, status: "PAID" } })[3];
+    expect(paid).toMatchObject({ status: "Pay app #2 paid" });
+    expect(paid.tone).toBeUndefined();
+  });
+
+  it("an evening in Los Angeles: due today on the viewer's calendar, though the server's UTC day is tomorrow", () => {
+    // 19:00 PDT on Oct 2 is 02:00 UTC on Oct 3. Deriving overdue from the
+    // server's day would call this "overdue 1 day" all evening.
+    const instant = new Date("2026-10-03T02:00:00.000Z");
+    const viewerDay = todayInZone("America/Los_Angeles", instant);
+    expect(viewerDay).toBe("2026-10-02");
+    const due = { number: 2, dueAt: new Date("2026-10-02T00:00:00.000Z"), status: "SUBMITTED" };
+    const evening = jobStages({ ...base, latestPayApp: due, asOf: new Date(`${viewerDay}T00:00:00.000Z`) })[3];
+    expect(evening.status).toBe("Pay app #2 due Oct 2");
+    // CONTROL: the server's UTC day is the wrong answer this file exists to avoid.
+    const serverDay = instant.toISOString().slice(0, 10);
+    const wrong = jobStages({ ...base, latestPayApp: due, asOf: new Date(`${serverDay}T00:00:00.000Z`) })[3];
+    expect(wrong.status).toBe("Pay app #2 overdue 1 day");
+  });
+
   it("says nothing about billing to a viewer without billing", () => {
     const stages = jobStages({ ...base, showsBilling: false });
     expect(stages[3]).toMatchObject({ status: null, links: [] });
@@ -98,6 +165,24 @@ describe("jobStages", () => {
     expect(selectedStageKey(stages, "/jobs/job-1/estimate")).toBe("contract");
     expect(selectedStageKey(stages, "/jobs/job-1/photos")).toBe("crew");
     expect(selectedStageKey(stages, "/jobs/job-1/pay-applications/x")).toBeNull();
+  });
+
+  // Guidelines review 2026-10-10: `pathname === href` could never match a
+  // link carrying a query, so the punch list could never read as current.
+  it("matches a link with a query on its path AND its params", () => {
+    expect(isCurrentLink("/punch-lists?job=job-1", "/punch-lists", "job=job-1")).toBe(true);
+    expect(isCurrentLink("/punch-lists?job=job-1", "/punch-lists", "job=job-2")).toBe(false);
+    expect(isCurrentLink("/punch-lists?job=job-1", "/punch-lists", "")).toBe(false);
+    expect(isCurrentLink("/jobs/job-1", "/jobs/job-1", "tab=x")).toBe(true);
+    expect(selectedStageKey(jobStages(base), "/punch-lists", "job=job-1")).toBe("closeout");
+  });
+
+  it("marks the two links that leave the job, and only those", () => {
+    const leaving = jobStages(base)
+      .flatMap((s) => s.links)
+      .filter((l) => l.leavesJob)
+      .map((l) => l.href);
+    expect(leaving).toEqual(["/punch-lists?job=job-1", "/closeout"]);
   });
 });
 

@@ -556,6 +556,8 @@ describe("both themes", () => {
     it(`${theme}: keeps the brand a yellow fill that carries the dark label`, () => {
       expect(p.brand).toBe("#facc15");
       expect(contrastRatio("#171717", p.brand)).toBeGreaterThanOrEqual(4.5);
+      // The hover fill carries the same dark label, so it is held to the same floor.
+      expect(contrastRatio("#171717", p["brand-hover"])).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(p["tag-brand-ink"], p["tag-brand"])).toBeGreaterThanOrEqual(4.5);
     });
 

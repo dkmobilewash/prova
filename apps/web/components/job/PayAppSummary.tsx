@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { money } from "@/lib/money";
-import { formatCalendarDate } from "@/lib/render-date";
-import { payAppBar, type PayAppFigures } from "@/components/job/payAppFigures";
+import { dueStatus } from "@/lib/due-date";
+import { NEW_PAY_APP_HASH, payAppBar, payAppPrimaryLabel, type PayAppFigures } from "@/components/job/payAppFigures";
 
 export type PayAppSummaryProps = {
   jobId: string;
@@ -14,12 +14,16 @@ export type PayAppSummaryProps = {
   payApp: {
     id: string;
     number: number;
-    /** Month the application was issued, already in the viewer's zone. */
+    /** Month the application was issued, already in the viewer's zone, with
+     * the year when it is not this year (`payAppMonth`). */
     month: string;
     dueAt: Date | null;
     status: string;
     figures: PayAppFigures;
   } | null;
+  /** The viewer's calendar day at UTC midnight (`viewerAsOf()`), for the
+   * due pill. Never the server's clock: lib/due-date.ts. */
+  asOf: Date;
 };
 
 const label = "text-xs uppercase tracking-[0.06em] text-ink-muted";
@@ -28,7 +32,7 @@ const sub = "text-sm text-ink-muted";
 const button =
   "inline-flex min-h-[46px] w-full items-center justify-center rounded-[10px] px-[22px] py-2 text-center text-[15px] font-semibold sm:w-auto";
 
-function StatusPill({ status, dueAt }: { status: string; dueAt: Date | null }) {
+function StatusPill({ status, dueAt, asOf }: { status: string; dueAt: Date | null; asOf: Date }) {
   if (status === "PAID") {
     return <span className="rounded-full bg-tag-green px-2.5 py-1 text-[13px] font-semibold text-tag-green-ink">Paid</span>;
   }
@@ -36,9 +40,14 @@ function StatusPill({ status, dueAt }: { status: string; dueAt: Date | null }) {
     return <span className="rounded-full bg-tag-rose px-2.5 py-1 text-[13px] font-semibold text-tag-rose-ink">Disputed</span>;
   }
   if (!dueAt) return null;
+  const due = dueStatus(dueAt, asOf);
   return (
-    <span className="rounded-full bg-tag-amber px-2.5 py-1 text-[13px] font-semibold text-tag-amber-ink">
-      Due {formatCalendarDate(dueAt)}
+    <span
+      className={`rounded-full px-2.5 py-1 text-[13px] font-semibold ${
+        due.overdue ? "bg-tag-rose text-tag-rose-ink" : "bg-tag-amber text-tag-amber-ink"
+      }`}
+    >
+      {due.text.charAt(0).toUpperCase() + due.text.slice(1)}
     </span>
   );
 }
@@ -48,7 +57,7 @@ function StatusPill({ status, dueAt }: { status: string; dueAt: Date | null }) {
  * in the three numbers a sub actually asks about. Every figure comes from
  * `payAppFigures`, i.e. from the certificate the Review page prints.
  */
-export function PayAppSummary({ jobId, gcName, nextNumber, payApp }: PayAppSummaryProps) {
+export function PayAppSummary({ jobId, gcName, nextNumber, payApp, asOf }: PayAppSummaryProps) {
   if (!payApp) {
     return (
       <section className="mb-8 rounded-[14px] border border-line-card bg-surface p-5 sm:px-8 sm:py-7">
@@ -57,7 +66,7 @@ export function PayAppSummary({ jobId, gcName, nextNumber, payApp }: PayAppSumma
           A pay application bills {gcName} against this job&rsquo;s schedule of values, line by line. Nothing is sent
           until you submit it.
         </p>
-        <a href="#pay-applications" className={`${button} mt-5 bg-brand text-neutral-900 hover:bg-yellow-500`}>
+        <a href={NEW_PAY_APP_HASH} className={`${button} mt-5 bg-brand text-neutral-900 hover:bg-brand-hover`}>
           Start pay app #{nextNumber}
         </a>
       </section>
@@ -74,7 +83,7 @@ export function PayAppSummary({ jobId, gcName, nextNumber, payApp }: PayAppSumma
         <h2 className="font-headline text-[28px] leading-none text-ink">
           Pay application #{payApp.number} · {payApp.month}
         </h2>
-        <StatusPill status={payApp.status} dueAt={payApp.dueAt} />
+        <StatusPill status={payApp.status} dueAt={payApp.dueAt} asOf={asOf} />
       </div>
 
       <dl className="grid grid-cols-1 border-y border-line-row sm:grid-cols-3">
@@ -123,9 +132,9 @@ export function PayAppSummary({ jobId, gcName, nextNumber, payApp }: PayAppSumma
       <div className="mt-7 flex flex-wrap gap-3">
         <Link
           href={`/jobs/${jobId}/pay-applications/${payApp.id}`}
-          className={`${button} bg-brand text-neutral-900 hover:bg-yellow-500`}
+          className={`${button} bg-brand text-neutral-900 hover:bg-brand-hover`}
         >
-          Review &amp; send to {gcName}
+          {payAppPrimaryLabel(payApp.status, payApp.number, gcName)}
         </Link>
         {/* NOT "Edit line items": a submitted pay application is not
             editable here, and the schedule of values sits behind a different
@@ -133,7 +142,7 @@ export function PayAppSummary({ jobId, gcName, nextNumber, payApp }: PayAppSumma
             link to it would be a door some billing users cannot open. The
             next application is what this person can actually do. */}
         <a
-          href="#pay-applications"
+          href={NEW_PAY_APP_HASH}
           className={`${button} border border-line-card text-ink hover:bg-rail-hover`}
         >
           Start pay app #{nextNumber}

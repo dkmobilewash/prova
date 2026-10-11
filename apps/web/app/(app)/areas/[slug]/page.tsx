@@ -6,6 +6,9 @@ import { viewerToday } from "@/lib/viewerToday";
 import { AREAS, areaViews, areasFor, toolRoute } from "@/lib/areas";
 import { loadAreaWaiting, loadToolStatuses } from "@/lib/areas-data";
 import { ToolCard, WaitingTable } from "@/components/areas/AreaParts";
+import { MetricBar } from "@/components/MetricBar";
+import { can } from "@/lib/permissions";
+import { loadCompanyFinancials } from "@/lib/company-financials-query";
 
 /**
  * One area (Concept H): every tool that area holds as a card — its real
@@ -41,10 +44,23 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
   );
   const view = areaViews([area], statuses)[0]!;
 
+  // The four company figures that used to sit in the bottom metric bar on
+  // every page (Concept G removed it — it covered buttons). Same gate the bar
+  // had: company-wide money is VIEW_COMPANY_FINANCIALS, and without it the
+  // query never runs. A failed query costs these four tiles a quiet line,
+  // never the page — the list below still works.
+  const showsFigures = area.slug === "money" && can(principal, "VIEW_COMPANY_FINANCIALS");
+  const financials = showsFigures
+    ? await loadCompanyFinancials(company.id).catch((error: unknown) => {
+        console.error("[money] company figures failed to load; the page is unaffected.", error);
+        return null;
+      })
+    : null;
+
   return (
     <PageShell width="working">
       <nav aria-label="Breadcrumb" className="text-sm text-ink-muted">
-        <Link href="/dashboard" className="hover:text-ink">
+        <Link href="/dashboard" className="inline-flex min-h-11 items-center hover:text-ink hover:underline">
           Home
         </Link>
         <span aria-hidden className="mx-2">
@@ -57,9 +73,16 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
       <h1 className="mt-1.5 font-headline text-[40px] font-semibold leading-tight text-ink">{view.name}</h1>
       <p className="text-ink-muted">{view.description}</p>
 
+      {showsFigures &&
+        (financials ? (
+          <MetricBar financials={financials} />
+        ) : (
+          <p className="mt-6 text-sm text-ink-muted">Company figures couldn&apos;t load. Reload to try again.</p>
+        ))}
+
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(auto-fit,minmax(190px,1fr))]">
-        {view.tools.map((tool, i) => (
-          <ToolCard key={tool.href} tool={tool} primary={i === 0} />
+        {view.tools.map((tool) => (
+          <ToolCard key={tool.href} tool={tool} />
         ))}
       </div>
 

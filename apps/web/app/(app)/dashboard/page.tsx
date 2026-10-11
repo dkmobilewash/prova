@@ -41,6 +41,7 @@ import {
   ReceivablesProvider,
 } from "@/components/ReceivablesPanel";
 import { loadHomeExtras } from "./home-data";
+import { overdueText } from "@/lib/due-date";
 
 /**
  * Home (Concept G, 2026-10-10; Concept H the same day).
@@ -255,7 +256,8 @@ export default async function TodayPage({
         key: `inv-${inv.id}`,
         tone: "red",
         text: `Invoice #${inv.number} to ${inv.gcName} — ${inv.jobName}`,
-        when: `${plural(inv.daysOverdue, "day")} late`,
+        when: overdueText(inv.daysOverdue),
+        whenTone: "danger",
         action: { label: "Chase", href: `/jobs/${inv.jobId}/billing` },
       });
     }
@@ -274,7 +276,8 @@ export default async function TodayPage({
       key: `rfi-${rfi.id}`,
       tone: "amber",
       text: `RFI ${rfi.number} answer is late — ${rfi.jobName}`,
-      when: plural(rfi.daysLate, "day"),
+      when: overdueText(rfi.daysLate),
+      whenTone: "danger",
       action: { label: "Chase", href: `/rfis?job=${rfi.jobId}` },
     });
   }
@@ -350,9 +353,9 @@ export default async function TodayPage({
           line,
           stage: jobStage({ status: job.status, estimateStage: est, invoiceCount: job.invoices.length }),
           tag: overdueInvoice
-            ? { text: "Invoice late", tone: "rose" as const }
+            ? { text: overdueText(overdueInvoice.daysOverdue, true), tone: "rose" as const }
             : rfi
-              ? { text: `${rfi.count} RFI late`, tone: "amber" as const }
+              ? { text: `${rfi.count} ${rfi.count === 1 ? "RFI" : "RFIs"} late`, tone: "amber" as const }
               : undefined,
           health:
             health && (health.tone === "over" || health.tone === "watch")
@@ -555,7 +558,7 @@ export default async function TodayPage({
               <section id="jobs" className="mt-[26px] scroll-mt-20" data-tour="dashboard-job-health">
                 <div className="mb-3 flex items-baseline justify-between gap-3">
                   <h2 className="font-headline text-[22px] font-semibold text-ink">Your jobs</h2>
-                  <a href="#all-jobs" className="text-sm text-ink-muted hover:text-ink">
+                  <a href="#all-jobs" className="inline-flex min-h-11 items-center text-sm text-ink-muted hover:text-ink hover:underline">
                     All {allJobs.length} {allJobs.length === 1 ? "job" : "jobs"} &rarr;
                   </a>
                 </div>
@@ -643,7 +646,7 @@ export default async function TodayPage({
                 <div className="mt-4 flex flex-wrap items-center gap-3">
                   <Link
                     href="/jobs/new"
-                    className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
+                    className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-brand-hover"
                   >
                     New job
                   </Link>
@@ -653,21 +656,21 @@ export default async function TodayPage({
                       type="search"
                       name="q"
                       defaultValue={q}
-                      placeholder="Search job or client"
+                      placeholder="Search job or client…"
                       aria-label="Search jobs by job or client name"
-                      className="w-52 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
+                      className="min-h-11 w-52 rounded-md border border-line-card bg-surface px-3 text-base text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none sm:text-sm"
                     />
                     <button
                       type="submit"
-                      className="rounded-md border border-line-card bg-surface px-3 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover"
+                      className="min-h-11 rounded-md border border-line-card bg-surface px-3 text-sm font-medium text-ink-label hover:bg-rail-hover"
                     >
                       Search
                     </button>
                   </form>
-                  <Link href="/catalog" className="text-sm text-link hover:underline">
+                  <Link href="/catalog" className="inline-flex min-h-11 items-center text-sm text-link hover:underline">
                     Line item catalog
                   </Link>
-                  <Link href="/bids" className="text-sm text-link hover:underline">
+                  <Link href="/bids" className="inline-flex min-h-11 items-center text-sm text-link hover:underline">
                     Bid history
                   </Link>
                 </div>
@@ -680,7 +683,8 @@ export default async function TodayPage({
                       <Link
                         key={filter.value}
                         href={filterHref(filter.value, q)}
-                        className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
+                        aria-current={isActive ? "page" : undefined}
+                        className={`inline-flex min-h-11 items-center rounded-md border px-3 text-sm transition-colors ${
                           isActive
                             ? "border-brand bg-tag-brand text-tag-brand-ink"
                             : "border-line-card bg-surface text-ink-body hover:text-ink"
@@ -716,7 +720,7 @@ export default async function TodayPage({
                 ) : (
                   <div className="mt-6 flex flex-col gap-6" data-tour="dashboard-job-list">
                     {grouped.map((group) => (
-                      <div key={group.status}>
+                      <div key={group.status} className="[content-visibility:auto] [contain-intrinsic-size:auto_600px]">
                         {!activeStatus && (
                           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-label">
                             {GROUP_HEADING[group.status]} · {group.rows.length}
@@ -732,11 +736,11 @@ export default async function TodayPage({
                                   )
                                 : null;
                             return (
-                              <li key={job.id} className="p-4">
-                                <Link href={`/jobs/${job.id}`} className="block">
+                              <li key={job.id}>
+                                <Link href={`/jobs/${job.id}`} className="block p-4 hover:bg-rail-hover">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <p className="font-medium text-ink">{job.name}</p>
+                                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                      <p className="min-w-0 break-words font-medium text-ink">{job.name}</p>
                                       <StatusBadge status={job.status} />
                                       {stage && (
                                         <span className={`rounded-full border px-2 py-0.5 text-xs ${STAGE_TONE[stage.key]}`}>

@@ -1,0 +1,36 @@
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+import { NeedsBlock, type NeedItem } from "@/components/home/HomeParts";
+
+// Guidelines review 2026-10-10. happy-dom does no layout, so these hold the
+// markup only; the phone layout itself was measured in Chromium.
+const item = (n: number): NeedItem => ({
+  key: `k${n}`,
+  tone: n === 0 ? "red" : "amber",
+  text: `Invoice #${n} to Turner`,
+  when: "overdue 12 days",
+  whenTone: "danger",
+  action: { label: "Chase", href: `/jobs/j${n}/billing` },
+});
+
+describe("NeedsBlock", () => {
+  const html = renderToStaticMarkup(<NeedsBlock items={Array.from({ length: 8 }, (_, i) => item(i))} />);
+
+  it("keeps the when on a phone — on its own line below sm, beside the text from sm up", () => {
+    expect(html).toMatch(/class="block text-\[13px\] sm:hidden[^"]*">overdue 12 days</);
+    expect(html).toMatch(/class="hidden whitespace-nowrap text-\[13px\] sm:inline[^"]*">overdue 12 days</);
+  });
+
+  it("says in words what the colour dot says", () => {
+    expect(html).toContain('<span class="sr-only">Urgent: </span>');
+    expect(html).toContain('<span class="sr-only">Needs a look: </span>');
+  });
+
+  it("'and N more' goes somewhere", () => {
+    expect(html).toMatch(/<a [^>]*href="\/alerts"[^>]*>and 2 more on Alerts/);
+  });
+
+  it("row actions are 44px targets", () => {
+    expect(html).toMatch(/<a class="inline-flex min-h-11[^"]*" href="\/jobs\/j0\/billing">Chase/);
+  });
+});

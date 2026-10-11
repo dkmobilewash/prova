@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { AreaView } from "@/lib/areas";
 import { AreaIcon, StatusChip, StatusLine, ToolIcon } from "./AreaParts";
@@ -19,10 +19,65 @@ import { AreaIcon, StatusChip, StatusLine, ToolIcon } from "./AreaParts";
  * Every figure arrives in `areas`, already filtered by capability
  * (lib/areas.ts `areasFor`) and filled from real rows (lib/areas-data.ts).
  */
+/** Space kept between a panel and the edge of the window. */
+const EDGE = 16;
+/** The panel's `mt-3`. */
+const GAP = 12;
+/** Below this the panel would be a slot, not a list; it then scrolls the page instead. */
+const MIN_HEIGHT = 240;
+
+/**
+ * Where an open panel goes, from its box and the window — pure, so it is
+ * tested without layout (areas.render.test.tsx); the numbers come from real
+ * Chromium at runtime.
+ *
+ * Left-aligned under its OWN box. If that would run off the right edge it
+ * flips to right-aligned with the box, and if even that runs off the left
+ * edge it is pinned EDGE px in — never off-screen. Until 2026-10-10 the
+ * alignment was by column index ("the right-hand three open leftwards"),
+ * which put Paperwork's 640px panel far to the left of Paperwork.
+ *
+ * `left` is relative to the box. `maxHeight` is what fits between the box
+ * and the bottom of the window; a taller list scrolls inside the panel.
+ */
+export function placePanel(
+  box: { left: number; right: number; bottom: number },
+  panelWidth: number,
+  viewport: { width: number; height: number },
+): { left: number; maxHeight: number } {
+  let left = 0;
+  if (box.left + panelWidth > viewport.width - EDGE) left = box.right - box.left - panelWidth;
+  left = Math.max(left, EDGE - box.left);
+  const maxHeight = Math.max(MIN_HEIGHT, Math.floor(viewport.height - box.bottom - GAP - EDGE));
+  return { left, maxHeight };
+}
+
 export function AreaBoxes({ areas }: { areas: AreaView[] }) {
   const [open, setOpen] = useState<string | null>(null);
+  const [place, setPlace] = useState<{ left: number; maxHeight: number } | null>(null);
   const holder = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   const buttons = useRef(new Map<string, HTMLButtonElement>());
+
+  // Measured before paint, so the panel is never seen in the wrong place,
+  // and again when the window changes size under an open panel.
+  useLayoutEffect(() => {
+    if (!open) {
+      setPlace(null);
+      return;
+    }
+    const measure = () => {
+      const box = buttons.current.get(open)?.getBoundingClientRect();
+      const width = panel.current?.offsetWidth ?? 0;
+      if (!box) return;
+      setPlace(
+        placePanel(box, width, { width: document.documentElement.clientWidth, height: window.innerHeight }),
+      );
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -48,14 +103,14 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
     <>
       {/* Desktop and tablet: boxes with a dropdown. */}
       <div ref={holder} className="relative z-30 mt-7 hidden grid-cols-3 gap-4 md:grid xl:grid-cols-6" data-home="areas">
-        {areas.map((area, i) => {
+        {areas.map((area) => {
           const isOpen = open === area.slug;
           const panelId = `area-panel-${area.slug}`;
-          // On one row of six, the right-hand three open leftwards so the
-          // panel stays on screen. Below xl the panel spans the whole grid.
-          const alignRight = i % 6 >= 3;
+          // The other boxes dim while one is open, but stay readable: at 50%
+          // their status lines measured 2.4–3.5:1 (both themes); at 85% the
+          // lowest is 4.86:1 — "$… owed" in danger red on dark.
           return (
-            <div key={area.slug} className={`h-full xl:relative ${open && !isOpen ? "opacity-50" : ""}`}>
+            <div key={area.slug} className={`relative h-full ${open && !isOpen ? "opacity-[0.85]" : ""}`}>
               <button
                 ref={(el) => {
                   if (el) buttons.current.set(area.slug, el);
@@ -79,7 +134,7 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
                   stroke="currentColor"
                   strokeWidth="1.9"
                   strokeLinecap="round"
-                  className={`absolute right-3.5 top-4 h-[18px] w-[18px] transition-transform ${isOpen ? "rotate-180 text-link" : "text-ink-muted"}`}
+                  className={`absolute right-3.5 top-4 h-[18px] w-[18px] motion-safe:transition-transform ${isOpen ? "rotate-180 text-link" : "text-ink-muted"}`}
                 >
                   <path d="M6 9l6 6 6-6" />
                 </svg>
@@ -89,12 +144,13 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
 
               {isOpen && (
                 <div
+                  ref={panel}
                   id={panelId}
                   role="region"
                   aria-label={`${area.name} tools`}
-                  className={`absolute inset-x-0 top-full z-40 mt-3 rounded-2xl border border-line-card bg-surface p-3 shadow-2xl xl:w-[640px] ${
-                    alignRight ? "xl:left-auto xl:right-0" : "xl:left-0 xl:right-auto"
-                  }`}
+                  data-area-panel={area.slug}
+                  style={{ left: place?.left ?? 0, maxHeight: place?.maxHeight }}
+                  className="absolute top-full z-40 mt-3 w-[min(640px,calc(100vw-32px))] overflow-y-auto overscroll-contain rounded-2xl border border-line-card bg-surface p-3 shadow-2xl"
                 >
                   <div className="flex items-baseline justify-between px-4 pb-2 pt-1.5">
                     <span className="text-sm font-semibold uppercase tracking-wider text-ink-body">{area.name}</span>
@@ -117,7 +173,7 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
                     ))}
                   </ul>
                   <div className="mt-1 border-t border-line-row px-4 pb-1.5 pt-3">
-                    <Link href={area.href} className="font-semibold text-link hover:text-link-hover">
+                    <Link href={area.href} className="inline-flex min-h-11 items-center font-semibold text-link hover:text-link-hover hover:underline">
                       Open {area.name} &rarr;
                     </Link>
                   </div>
@@ -133,7 +189,7 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
       {/* Phone: tiles straight to the area page. */}
       <nav aria-label="Areas" className="mt-5 grid grid-cols-2 gap-3 md:hidden" data-home="area-tiles">
         {areas.map((area) => (
-          <Link key={area.slug} href={area.href} className="relative flex min-h-[118px] flex-col rounded-[18px] border border-line-card bg-surface px-4 pb-3.5 pt-4">
+          <Link key={area.slug} href={area.href} className="relative flex min-h-[118px] flex-col rounded-[18px] border border-line-card bg-surface px-4 pb-3.5 pt-4 hover:border-ink-muted/60 active:bg-rail-hover">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-rail-hover text-ink">
               <AreaIcon paths={area.icon} className="h-[22px] w-[22px]" />
             </span>

@@ -47,12 +47,12 @@ export function JobSummaryHeader({
     <header className="mb-6 sm:mb-7 print:hidden">
       {/* The jobs list is the dashboard (`/jobs` only redirects there), so
           link it directly rather than through a redirect. */}
-      <Link href="/dashboard" className="inline-flex min-h-[32px] items-center text-sm text-ink-muted hover:text-ink">
+      <Link href="/dashboard" className="inline-flex min-h-11 items-center text-sm text-ink-muted hover:text-ink hover:underline">
         ← All jobs
       </Link>
       <div className="mt-1.5 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
-          <h1 className="font-headline text-[34px] leading-none text-ink sm:text-[46px]">{summary.name}</h1>
+          <h1 className="text-balance break-words font-headline text-[34px] leading-[1.05] text-ink sm:text-[46px]">{summary.name}</h1>
           <p className="mt-1.5 text-[15px] text-ink-muted">
             <span className="font-medium text-ink-body">{summary.contactName}</span>
             {dates && <> · {dates}</>}
@@ -69,7 +69,9 @@ export function JobSummaryHeader({
           )}
         </div>
         {figures.length > 0 && (
-          <dl className="grid grid-cols-3 gap-3 sm:flex sm:gap-10 lg:text-right">
+          // Wraps, not a 3-column grid: at 375px "$12,345,678.90" measured
+          // 113px in a 101px column and ran into "Billed to date".
+          <dl className="flex flex-wrap gap-x-6 gap-y-2 sm:flex-nowrap sm:gap-10 lg:text-right">
             {figures.map((f) => (
               <div key={f.label} className="min-w-0">
                 <dt className="text-[11px] uppercase tracking-[0.06em] text-ink-muted sm:text-xs">{f.label}</dt>

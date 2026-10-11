@@ -74,7 +74,15 @@ export function TopBar({
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [allOpen, setAllOpen] = useState(false);
-  const closeAll = useCallback(() => setAllOpen(false), []);
+  const avatar = useRef<HTMLButtonElement>(null);
+  const menuPanel = useRef<HTMLDivElement>(null);
+  // Esc or Close on "All pages" hands focus back to the avatar it was opened
+  // from (the menu row that opened it is gone by then). A navigation closes
+  // it too, but through the effect below, which leaves focus to the new page.
+  const closeAll = useCallback(() => {
+    setAllOpen(false);
+    requestAnimationFrame(() => avatar.current?.focus());
+  }, []);
   const menuHolder = useRef<HTMLDivElement>(null);
   const clerk = useClerk();
 
@@ -85,19 +93,30 @@ export function TopBar({
     setAllOpen(false);
   }, [pathname]);
 
+  // The avatar menu is a disclosure, not an ARIA menu: focus moves to its
+  // first row, Tab walks its rows, and Tab past either end (or a click
+  // outside) closes it. Esc closes it and puts focus back on the avatar.
   useEffect(() => {
     if (!menuOpen) return;
+    menuPanel.current?.querySelector<HTMLElement>("a[href], button")?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenuOpen(false);
+      if (e.key !== "Escape") return;
+      setMenuOpen(false);
+      avatar.current?.focus();
     };
     const onDown = (e: MouseEvent) => {
       if (menuHolder.current && !menuHolder.current.contains(e.target as Node)) setMenuOpen(false);
     };
+    const onFocusIn = (e: FocusEvent) => {
+      if (menuHolder.current && !menuHolder.current.contains(e.target as Node)) setMenuOpen(false);
+    };
     document.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onDown);
+    document.addEventListener("focusin", onFocusIn);
     return () => {
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("focusin", onFocusIn);
     };
   }, [menuOpen]);
 
@@ -155,9 +174,10 @@ export function TopBar({
 
           <div ref={menuHolder} className="relative md:ml-4">
             <button
+              ref={avatar}
               type="button"
-              aria-haspopup="true"
               aria-expanded={menuOpen}
+              aria-controls="avatar-menu"
               aria-label={`Your menu — ${userName ?? userEmail ?? "account"}${alertCount > 0 ? `, ${alertCount} alerts` : ""}`}
               onClick={() => setMenuOpen((v) => !v)}
               className="relative flex h-11 w-11 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
@@ -166,14 +186,17 @@ export function TopBar({
                 {initialsFor(userName, userEmail)}
               </span>
               {alertCount > 0 && (
-                <span className="absolute -right-0.5 top-0 min-w-[1.15rem] rounded-full bg-red-600 px-1 text-center text-[0.65rem] font-semibold leading-[1.15rem] text-white">
+                <span className="absolute -right-0.5 top-0 min-w-[1.15rem] rounded-full bg-tag-rose px-1 text-center text-[0.65rem] font-semibold leading-[1.15rem] text-tag-rose-ink ring-1 ring-tag-rose-ink/40">
                   {alertCount > 99 ? "99+" : alertCount}
                 </span>
               )}
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-xl border border-line-card bg-surface p-2 shadow-2xl">
+              <div
+                ref={menuPanel}
+                id="avatar-menu"
+                className="absolute right-0 top-full z-50 mt-2 w-72 rounded-xl border border-line-card bg-surface p-2 shadow-2xl">
                 <div className="px-3 pb-2 pt-1">
                   <p className="truncate text-[15px] font-semibold text-ink">{userName ?? userEmail ?? "Signed in"}</p>
                   <p className="truncate text-[13px] text-ink-muted">{companyName}</p>

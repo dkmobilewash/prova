@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Hint } from "@/components/Hint";
+import { NEW_PAY_APP_HASH } from "@/components/job/payAppFigures";
 import { submitPayApplication, updateInvoiceStatus } from "@/lib/actions";
 import { money } from "@/lib/money";
 import { parseNumericInput } from "@/lib/numeric-input";
@@ -102,7 +103,32 @@ export function PayApplications({
   timeZone: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  /** Set when the form was opened from the Billing summary's "Start pay app"
+   * button, so the cursor lands in it once it has rendered. */
+  const focusOnOpen = useRef(false);
   const [isPending, startTransition] = useTransition();
+
+  // The summary's "Start pay app #N" is a link to NEW_PAY_APP_HASH. It opens
+  // this form and puts the cursor in it, rather than scrolling to a closed
+  // one. The hash is cleared at once, so the same button works a second time
+  // (an unchanged hash fires no hashchange).
+  useEffect(() => {
+    const openFromHash = () => {
+      if (window.location.hash !== NEW_PAY_APP_HASH) return;
+      window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+      focusOnOpen.current = true;
+      setIsOpen(true);
+    };
+    openFromHash();
+    window.addEventListener("hashchange", openFromHash);
+    return () => window.removeEventListener("hashchange", openFromHash);
+  }, []);
+  useEffect(() => {
+    if (!isOpen || !focusOnOpen.current || !formRef.current) return;
+    focusOnOpen.current = false;
+    formRef.current.scrollIntoView?.({ block: "start" });
+    formRef.current.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea")?.focus({ preventScroll: true });
+  }, [isOpen]);
   const [error, setError] = useState<string | null>(null);
   /** What this application currently comes to, from the boxes as typed.
    * A preview only — `submitPayApplication` re-reads the raw form and

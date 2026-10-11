@@ -175,7 +175,7 @@ const POPULATED_ORDER = [
   "Accounts receivable",
   'id="all-jobs"',
   "Browse all jobs",
-  'placeholder="Search job or client"',
+  'placeholder="Search job or client…"',
   'data-tour="dashboard-job-filters"',
   'data-tour="dashboard-job-list"',
 ];
@@ -317,6 +317,8 @@ describe("/dashboard on a company with jobs", () => {
   it("gives every Needs-you row one action, to the page that settles it, red first", async () => {
     const needs = block(await render(), "dashboard-needs-attention");
     expect(needs).toContain("6 items");
+    // Past due reads "overdue N days" in the danger tone (lib/due-date.ts).
+    expect(needs).toMatch(/class="[^"]*text-danger[^"]*">overdue 40 days</);
     const order = ["Invoice #3", "Invoice #2", "Contractor licence", "RFI 12", "Approve hours for Tue, Oct 13", "forecast over budget"];
     const at = order.map((needle) => needs.indexOf(needle));
     at.forEach((i, n) => expect(i, `${order[n]} missing`).toBeGreaterThan(-1));
@@ -330,7 +332,7 @@ describe("/dashboard on a company with jobs", () => {
     const html = await render();
     expect(html).toContain('data-stage="Billing"');
     expect(html).toContain("Chase invoice #3</span>");
-    expect(html).toContain("Invoice late");
+    expect(html).toContain(">Overdue 40 days<");
   });
 
   it("links shortcuts straight to the one job that fits", async () => {

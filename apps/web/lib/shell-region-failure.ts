@@ -14,8 +14,9 @@ import type { ShellRegionName } from "@/components/ShellRegion";
  * So each region's query is settled with this: log the failure in the same
  * `[shell]` shape the client boundary uses, and hand back the region's
  * "nothing to show" value — `[]` for the rail, which already means "no
- * figures" for a principal without VIEW_COMPANY_FINANCIALS, or `null` for
- * the metric bar, which the layout turns into the region's fallback.
+ * figures" for a principal without VIEW_COMPANY_FINANCIALS. (The metric bar
+ * used this with `null` until Concept G moved its figures to /areas/money,
+ * 2026-10-10.)
  *
  * NOT for the alert count or `requireCompanyContext`. Those are not
  * decoration: a wrong alert badge is a claim about the person's records, and

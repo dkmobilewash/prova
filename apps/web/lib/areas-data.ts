@@ -9,6 +9,8 @@ import { estimateStage } from "@/lib/estimate-stage";
 import { submittalState, type RevisionData } from "@/components/submittalLabels";
 import { scheduledWorkerName } from "@/lib/crew-schedule-query";
 import type { AreaSlug, Tone, ToolStatus, ToolStatuses } from "@/lib/areas";
+import { overdueText } from "@/lib/due-date";
+import { formatCalendarDay } from "@/lib/render-date";
 
 /**
  * The live half of the areas (lib/areas.ts): one status line per tool, and
@@ -235,14 +237,19 @@ export async function loadAreaWaiting(
           subject: rfi.subject,
           job: rfi.job.name,
           when: sent ? plural(Math.max(0, daysBetween(sent, todayIso)), "day") : "—",
-          status: due && due < todayIso ? { text: "Answer late", tone: "red" } : { text: "Sent", tone: "neutral" },
+          // Past due reads "Overdue N days" on the red chip, counted on the
+          // viewer's calendar (todayIso is viewerToday()) — lib/due-date.ts.
+          status:
+            due && due < todayIso
+              ? { text: overdueText(daysBetween(due, todayIso), true), tone: "red" }
+              : { text: "Sent", tone: "neutral" },
           href: `/rfis?job=${encodeURIComponent(rfi.jobId)}`,
           action: "Open",
         });
       }
       for (const sub of submittals) {
         if (sub.state !== "WITH_GC" || !sub.latest) continue;
-        const late = !!sub.latest.dueBack && sub.latest.dueBack < todayIso;
+        const dueBack = sub.latest.dueBack;
         daysOut.set(`sub-${sub.id}`, daysBetween(sub.latest.sentOn, todayIso));
         rows.push({
           key: `sub-${sub.id}`,
@@ -251,7 +258,10 @@ export async function loadAreaWaiting(
           subject: sub.title,
           job: sub.job.name,
           when: plural(Math.max(0, daysBetween(sub.latest.sentOn, todayIso)), "day"),
-          status: late ? { text: "Overdue", tone: "red" } : { text: "With the GC", tone: "neutral" },
+          status:
+            dueBack && dueBack < todayIso
+            ? { text: overdueText(daysBetween(dueBack, todayIso), true), tone: "red" }
+            : { text: "With the GC", tone: "neutral" },
           href: `/submittals?job=${encodeURIComponent(sub.jobId)}`,
           action: "Open",
         });
@@ -276,8 +286,8 @@ export async function loadAreaWaiting(
             ref: `Invoice #${inv.number}`,
             subject: `${dollars(inv.outstanding)} from ${inv.gcName}`,
             job: inv.jobName,
-            when: `${plural(inv.daysOverdue, "day")} late`,
-            status: { text: "Overdue", tone: "red" },
+            when: inv.dueOn ? `due ${formatCalendarDay(inv.dueOn, "dayMonth")}` : "—",
+            status: { text: overdueText(inv.daysOverdue, true), tone: "red" },
             href: `/jobs/${inv.jobId}/billing`,
             action: "Chase",
           });
@@ -292,8 +302,8 @@ export async function loadAreaWaiting(
           ref: lienKindLabel(lien.kind, lien.otherLabel),
           subject: lien.recipient ? `To ${lien.recipient}` : "Not served yet",
           job: lien.jobName,
-          when: days < 0 ? `${plural(-days, "day")} past` : days === 0 ? "due today" : `due in ${plural(days, "day")}`,
-          status: lien.state === "overdue" ? { text: "Past due", tone: "red" } : { text: "Due soon", tone: "amber" },
+          when: days < 0 ? `due ${formatCalendarDay(lien.dueOn, "dayMonth")}` : days === 0 ? "due today" : `due in ${plural(days, "day")}`,
+          status: lien.state === "overdue" ? { text: overdueText(Math.max(1, -days), true), tone: "red" } : { text: "Due soon", tone: "amber" },
           href: "/lien-deadlines",
           action: "Open",
         });
@@ -405,7 +415,6 @@ export async function loadAreaWaiting(
         });
         for (const o of orders) {
           const promised = iso(o.promisedFor);
-          const late = !!promised && promised < todayIso;
           rows.push({
             key: `mo-${o.id}`,
             tag: "PO",
@@ -413,10 +422,11 @@ export async function loadAreaWaiting(
             subject: `${o.description} — ${o.vendor.name}`,
             job: o.job.name,
             when: plural(Math.max(0, daysBetween(iso(o.orderedOn)!, todayIso)), "day"),
-            status: late
-              ? { text: "Late", tone: "red" }
+            status:
+              promised && promised < todayIso
+              ? { text: overdueText(daysBetween(promised, todayIso), true), tone: "red" }
               : promised
-                ? { text: `Promised ${promised.slice(5).replace("-", "/")}`, tone: "neutral" }
+                ? { text: `Promised ${formatCalendarDay(promised, "dayMonth")}`, tone: "neutral" }
                 : { text: "No date promised", tone: "neutral" },
             href: `/material-orders?job=${encodeURIComponent(o.jobId)}`,
             action: "Open",

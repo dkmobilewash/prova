@@ -9,7 +9,8 @@ import { pushBlockers } from "@/lib/quickbooks-sync";
 import { paymentPushBlockers } from "@/lib/quickbooks-payment-sync";
 import { accountPurpose } from "@/lib/quickbooks-constants";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
-import { viewerTimeZone } from "@/lib/viewerToday";
+import { viewerAsOf, viewerTimeZone } from "@/lib/viewerToday";
+import { dueStatus } from "@/lib/due-date";
 import { formatCalendarDate } from "@/lib/render-date";
 import { cashReceived } from "@/lib/billing/payment-entry";
 import { money } from "@/lib/money";
@@ -20,7 +21,7 @@ import { LienWaivers } from "@/components/LienWaivers";
 import { loadLienWaiverSection } from "@/lib/lien-waiver-query";
 import { ActionForm } from "@/components/ActionForm";
 import { PayAppSummary } from "@/components/job/PayAppSummary";
-import { payAppFigures } from "@/components/job/payAppFigures";
+import { payAppFigures, payAppMonth } from "@/components/job/payAppFigures";
 import { loadPayApplication } from "@/lib/pay-application-query";
 
 const rowDeleteClass = "text-xs text-danger hover:underline";
@@ -144,6 +145,8 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
   }));
 
   const timeZone = await viewerTimeZone();
+  // The reader's calendar day, for "overdue N days" (lib/due-date.ts).
+  const asOf = await viewerAsOf();
   const createInvoiceWithId = createInvoice.bind(null, job.id);
 
   const lienWaiverSection = await loadLienWaiverSection(job.id);
@@ -165,12 +168,13 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
         jobId={job.id}
         gcName={job.contact.name}
         nextNumber={(invoiceCounter?.lastNumber ?? 0) + 1}
+        asOf={asOf}
         payApp={
           latestPayApp && latestInvoice && latestCertificate
             ? {
                 id: latestPayApp.id,
                 number: latestPayApp.number,
-                month: latestInvoice.issuedAt.toLocaleDateString("en-US", { month: "long", timeZone }),
+                month: payAppMonth(latestInvoice.issuedAt, timeZone, asOf),
                 dueAt: latestInvoice.dueAt,
                 status: latestPayApp.status,
                 figures: payAppFigures(latestCertificate),
@@ -227,7 +231,13 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                     View pay application →
                   </Link>
                 )}
-                {invoice.dueAt && <p className="mt-1 text-xs text-ink-muted">Due {formatCalendarDate(invoice.dueAt)}</p>}
+                {invoice.dueAt && (invoice.status !== "PAID" && dueStatus(invoice.dueAt, asOf).overdue ? (
+                  <p className="mt-1 text-xs font-semibold text-danger">
+                    Due {formatCalendarDate(invoice.dueAt)} · {dueStatus(invoice.dueAt, asOf).text}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-ink-muted">Due {formatCalendarDate(invoice.dueAt)}</p>
+                ))}
                 {/* The retainage figure and the balance it explains now
                     come from the same call, so the page cannot print one
                     without the other. */}
@@ -343,7 +353,8 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
         </ActionForm>
       </section>
 
-      {/* Anchor for the summary's "Start pay app #1". */}
+      {/* Anchor for older links here. The summary's "Start pay app" uses
+          NEW_PAY_APP_HASH, which PayApplications opens and focuses itself. */}
       <div id="pay-applications" className="scroll-mt-6" />
       <PayApplications jobId={job.id} lineItems={payApplicationLineItemOptions} payApplications={payApplications} timeZone={timeZone} />
 

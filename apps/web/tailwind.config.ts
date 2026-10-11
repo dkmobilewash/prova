@@ -45,6 +45,9 @@ const dark = {
   // dark #171717 label at 600-700 weight (9.5:1) — buttons, the
   // logo chip, "In progress" chips. Never put white text on this.
   brand: "#facc15",
+  // Hover on a brand FILL: yellow-500, the value 136 buttons already use as
+  // a raw `hover:bg-yellow-500`. Same dark label (10.3:1). Same in both themes.
+  "brand-hover": "#eab308",
 
   // Links are the gold — yellow-on-dark is readable (10.0:1 on
   // canvas), unlike yellow-on-white, so links no longer need the
@@ -130,6 +133,9 @@ const light: Record<keyof typeof dark, string> = {
   "ink-body": "#262626", // 13.5
   "ink-muted": "#525252", // 6.8
   brand: "#facc15",
+  // Hover on a brand FILL: yellow-500, the value 136 buttons already use as
+  // a raw `hover:bg-yellow-500`. Same dark label (10.3:1). Same in both themes.
+  "brand-hover": "#eab308",
   link: "#854d0e", // 6.1 on canvas
   "link-hover": "#713f12", // 7.8
   "tag-rose": "#fee4e2",

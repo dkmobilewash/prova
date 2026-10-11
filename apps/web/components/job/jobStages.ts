@@ -1,4 +1,4 @@
-import { formatCalendarDate } from "@/lib/render-date";
+import { dueStatus } from "@/lib/due-date";
 import { STAGE_LABELS, type JobLifecycleStage } from "@/lib/job-lifecycle";
 
 /**
@@ -13,7 +13,10 @@ import { STAGE_LABELS, type JobLifecycleStage } from "@/lib/job-lifecycle";
  */
 
 export type StageKey = "estimate" | "contract" | "crew" | "billing" | "closeout";
-export type StageLink = { href: string; label: string };
+/** `leavesJob`: the page is not one of this job's own tabs (the punch list,
+ * company-wide closeout), so following it leaves the job header and these
+ * stages behind. The nav marks it, so the jump is not a surprise. */
+export type StageLink = { href: string; label: string; leavesJob?: true };
 export type JobStage = {
   key: StageKey;
   label: string;
@@ -24,7 +27,14 @@ export type JobStage = {
   /** One plain line of real status, or null when it would need data this
    * viewer is not shown. */
   status: string | null;
-  state: "done" | "current" | "upcoming";
+  /** "attention" is a stage the job has moved PAST without finishing it —
+   * an IN_PROGRESS job whose contract was never signed. It used to read
+   * "done" with a green tick beside its own "Not signed", a step that
+   * contradicted itself. A tick now means the stage's own facts agree. */
+  state: "done" | "attention" | "current" | "upcoming";
+  /** How the status line reads: "warn" for something missing, "danger" for
+   * something past due. Absent is neutral. */
+  tone?: "warn" | "danger";
 };
 
 export type JobStageInput = {
@@ -44,6 +54,9 @@ export type JobStageInput = {
   approvedChangeOrders: number;
   invoiceCount: number;
   latestPayApp: { number: number; dueAt: Date | null; status: string } | null;
+  /** The VIEWER'S calendar day at UTC midnight (`viewerAsOf()`), what a due
+   * date is compared against. Never the server's clock — see lib/due-date.ts. */
+  asOf: Date;
 };
 
 const ORDER: StageKey[] = ["estimate", "contract", "crew", "billing", "closeout"];
@@ -111,12 +124,13 @@ export function jobStages(input: JobStageInput): JobStage[] {
         ]
       : [],
     closeout: [
-      ...(input.canReachPunchList ? [{ href: `/punch-lists?job=${job}`, label: "Punch list" }] : []),
-      ...(input.canReachCloseout ? [{ href: "/closeout", label: "Closeout (all jobs)" }] : []),
+      ...(input.canReachPunchList ? [{ href: `/punch-lists?job=${job}`, label: "Punch list", leavesJob: true as const }] : []),
+      ...(input.canReachCloseout ? [{ href: "/closeout", label: "Closeout (all jobs)", leavesJob: true as const }] : []),
     ],
   };
 
   const pay = input.latestPayApp;
+  const payDue = pay && pay.status !== "PAID" && pay.dueAt ? dueStatus(pay.dueAt, input.asOf) : null;
   const billingStatus = !input.showsBilling
     ? null
     : isEstimate
@@ -124,8 +138,8 @@ export function jobStages(input: JobStageInput): JobStage[] {
       : pay
         ? pay.status === "PAID"
           ? `Pay app #${pay.number} paid`
-          : pay.dueAt
-            ? `Pay app #${pay.number} due ${formatCalendarDate(pay.dueAt, "dayMonth")}`
+          : payDue
+            ? `Pay app #${pay.number} ${payDue.text}`
             : `Pay app #${pay.number} sent`
         : input.invoiceCount > 0
           ? plural(input.invoiceCount, "invoice", "invoices")
@@ -148,21 +162,42 @@ export function jobStages(input: JobStageInput): JobStage[] {
         : STAGE_LABELS[lifecycle],
   };
 
+  // What each stage's OWN status line says is still missing. A stage the
+  // job has moved past with one of these true is "attention", never "done":
+  // the tick and the words beside it must agree.
+  const missing: Record<StageKey, boolean> = {
+    estimate: false,
+    contract: !input.contractSigned,
+    crew: input.crewSize === 0,
+    billing: input.showsBilling && !isEstimate && !pay && input.invoiceCount === 0,
+    closeout: false,
+  };
+
   const now = currentStage(input);
   const nowIndex = ORDER.indexOf(now.key);
-  return ORDER.map((key, i) => ({
-    key,
-    label: LABEL[key],
-    links: links[key],
-    status: status[key],
-    state: now.allDone || i < nowIndex ? "done" : i === nowIndex ? "current" : "upcoming",
-  }));
+  return ORDER.map((key, i) => {
+    const passed = now.allDone || i < nowIndex;
+    const state: JobStage["state"] = passed ? (missing[key] ? "attention" : "done") : i === nowIndex ? "current" : "upcoming";
+    const tone: JobStage["tone"] =
+      key === "billing" && payDue?.overdue ? "danger" : state === "attention" ? "warn" : undefined;
+    return { key, label: LABEL[key], links: links[key], status: status[key], state, ...(tone ? { tone } : {}) };
+  });
 }
 
-/** The stage whose pages include this path — the one shown open. Query
- * strings never match a pathname, so only in-job routes select a stage. */
-export function selectedStageKey(stages: JobStage[], pathname: string): StageKey | null {
-  return stages.find((stage) => stage.links.some((link) => link.href === pathname))?.key ?? null;
+/** Is `href` the page being shown? A link with a query (`/punch-lists?job=x`)
+ * is current only on that path WITH those params — comparing it to the bare
+ * pathname, as this used to, could never match. */
+export function isCurrentLink(href: string, pathname: string, search = ""): boolean {
+  const [path, query] = href.split("?");
+  if (path !== pathname) return false;
+  if (!query) return true;
+  const have = new URLSearchParams(search);
+  return [...new URLSearchParams(query)].every(([k, v]) => have.get(k) === v);
+}
+
+/** The stage whose pages include the page being shown — the one shown open. */
+export function selectedStageKey(stages: JobStage[], pathname: string, search = ""): StageKey | null {
+  return stages.find((stage) => stage.links.some((link) => isCurrentLink(link.href, pathname, search)))?.key ?? null;
 }
 
 /** The Paperwork panel's change-order row. Waiting ones first, so a

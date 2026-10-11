@@ -1,5 +1,4 @@
 import { requireCompanyContext } from "@/lib/auth";
-import { loadCompanyFinancials } from "@/lib/company-financials-query";
 import { getMoneyRailStages } from "@/lib/moneyRail";
 import { countVisibleAlerts } from "@/lib/alerts-query";
 import { can, type Principal } from "@/lib/permissions";
@@ -9,12 +8,10 @@ import {
   BottomTabsRegion,
   CommandPaletteRegion,
   FullTourRegion,
-  MetricBarRegion,
   NavigationProgressRegion,
   TimeZoneCookieRegion,
   TopBarRegion,
 } from "@/components/AppChrome";
-import { ShellRegionFallback } from "@/components/ShellRegion";
 import { shellQueryFailed } from "@/lib/shell-region-failure";
 import { routesHiddenByAnswers, type BusinessScopeAnswers } from "@/lib/businessScope";
 import { loadRoutesWithData } from "@/lib/businessScopeData";
@@ -77,11 +74,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // the tightest moment.
   const scopeCandidates = routesHiddenByAnswers(businessScope);
 
-  // The two money queries are settled, not awaited bare: a query that
-  // chokes on one strange invoice must cost its own region, never the page.
-  // See lib/shell-region-failure.ts for why the alert count is NOT settled.
-  const [financials, alertCount, moneyRailStages, routesWithData] = await Promise.all([
-    loadCompanyFinancials(company.id).catch(shellQueryFailed("metricbar", null)),
+  // The money query is settled, not awaited bare: a query that chokes on
+  // one strange invoice must cost its own region, never the page. See
+  // lib/shell-region-failure.ts for why the alert count is NOT settled.
+  //
+  // The company figures (estimated revenue, margin, cash, retainage) USED to
+  // load here for the bottom metric bar. Concept G has no bottom strip — it
+  // sat over the foot of every page and covered "Review & send" on a job's
+  // Billing stage — so they load on /areas/money instead, behind the same
+  // VIEW_COMPANY_FINANCIALS gate (app/(app)/areas/[slug]/page.tsx).
+  const [alertCount, moneyRailStages, routesWithData] = await Promise.all([
     // In the layout, so the count is on every screen. Derived on each
     // render like everything else here — there is no stored unread count
     // to go stale against the records it is counting. Scoped to this
@@ -94,7 +96,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // bar's "All pages" panel, rendered verbatim; every number is computed
     // in lib/moneyRail.ts and nowhere else.
     //
-    // Gated like MetricBar below, and for the same written-down reason:
+    // Gated, and for a written-down reason:
     // the top bar is a client component, so whatever is passed here is
     // serialized to the browser for EVERY principal — found by the
     // 2026-09-19 security audit painting company-wide bid, contract and
@@ -116,17 +118,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     scopeCandidates.length > 0 ? loadRoutesWithData(company.id) : Promise.resolve<string[]>([]),
   ]);
   return (
-    // Concept G (2026-10-10): no left rail. A column of top bar, the page and
-    // (desktop) the metric bar, with the phone's bottom tabs fixed over the
-    // foot of the screen. h-dvh rather than h-screen so the column is the
+    // Concept G (2026-10-10): no left rail and no bottom strip. A column of
+    // top bar and the page, with the phone's bottom tabs fixed over the foot
+    // of the screen. h-dvh rather than h-screen so the column is the
     // VISIBLE viewport on a phone, whose browser bars make 100vh too tall.
     //
     // The chrome heights are declared once here and read back as
     // --shell-port, so anything that must fit inside the scroll port (the
     // side panel) is bounded by the same numbers the bars are laid out
-    // with, rather than repeating them and drifting. Below md the metric bar
-    // is not drawn (the Money tab is the phone's way to the figures) and the
-    // tabs take its place; at md and up the tabs are gone.
+    // with, rather than repeating them and drifting. Below md the tabs are
+    // fixed over the bottom and the page pads by their height; at md and up
+    // they are gone and nothing is fixed at the bottom at all.
     //
     // Every shell region below is ONE client component from
     // components/AppChrome.tsx, and that indirection is load-bearing rather
@@ -142,7 +144,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // region — app/(app)/error.tsx owns that and must stay loud, and the
     // region components take no children at all. See components/ShellRegion.tsx;
     // shellRegion.test.ts fails the build if a shell widget is paired here.
-    <div className="flex h-dvh flex-col bg-canvas [--shell-metricbar:0px] [--shell-tabs:calc(56px+env(safe-area-inset-bottom))] [--shell-topbar:56px] md:[--shell-metricbar:52px] md:[--shell-tabs:0px] md:[--shell-topbar:64px]">
+    <div className="flex h-dvh flex-col bg-canvas [--shell-tabs:calc(65px+env(safe-area-inset-bottom))] [--shell-topbar:56px] md:[--shell-tabs:0px] md:[--shell-topbar:64px]">
       {/* Renders nothing. Parks the browser's IANA zone in a cookie so
           the server can work out what day it is where the reader is. */}
       <TimeZoneCookieRegion />
@@ -153,6 +155,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* The ⌘K palette: renders nothing until opened, from the top bar's
           search box or anything that dispatches cstream:open-search. */}
       <CommandPaletteRegion />
+      {/* The first Tab stop on every signed-in page: past the wordmark, three
+          words, search, Ask, Help and the avatar in one key. Invisible until
+          focused. */}
+      <a
+        href="#main"
+        className="sr-only z-[70] rounded-md bg-brand font-semibold text-neutral-900 focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:inline-flex focus:min-h-11 focus:items-center focus:px-4"
+      >
+        Skip to content
+      </a>
       <TopBarRegion
         companyName={company.name}
         userName={currentUser.name}
@@ -173,22 +184,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <PageShell> (packages/ui — `working` is max-w-7xl plus px-6, within
           a few px of the G mockup's 1344px-with-48px-gutters), and
           pageWidthCensus.test.ts forbids a second cap here. The bottom
-          padding clears the phone's fixed tabs. */}
-      <main className="min-h-0 flex-1 overflow-y-auto pb-[var(--shell-tabs)] [--shell-port:calc(100dvh-var(--shell-topbar)-var(--shell-metricbar)-var(--shell-tabs))]">
+          padding clears the phone's fixed tabs; the matching SCROLL padding
+          makes scrollIntoView and keyboard focus stop above them too —
+          without it a focused "Review & send" scrolled in behind the tabs
+          (measured at 390x844, 2026-10-10). */}
+      <main className="min-h-0 flex-1 overflow-y-auto pb-[var(--shell-tabs)] scroll-pb-[var(--shell-tabs)] [--shell-port:calc(100dvh-var(--shell-topbar)-var(--shell-tabs))] focus:outline-none" id="main" tabIndex={-1}>
         {children}
       </main>
-      {/* The metric bar is company-wide money on every screen — backlog,
-          blended margin, cash collected. Withheld from anyone without
-          VIEW_COMPANY_FINANCIALS, because a permission enforced on
-          /cash-flow and then rendered along the bottom of every other
-          page is not enforced at all. A null here means its query failed
-          above and was logged; the region shows its fallback instead. */}
-      {can(principal, "VIEW_COMPANY_FINANCIALS") &&
-        (financials ? (
-          <MetricBarRegion financials={financials} />
-        ) : (
-          <ShellRegionFallback region="metricbar" />
-        ))}
       <BottomTabsRegion
         principal={principal}
         showsInternal={showsInternal}

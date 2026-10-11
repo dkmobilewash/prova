@@ -108,7 +108,7 @@ function button(text: string): HTMLButtonElement | undefined {
 }
 
 function openAllPages() {
-  click(container.querySelector('button[aria-haspopup="true"]'));
+  click(container.querySelector('button[aria-controls="avatar-menu"]'));
   click(button("All pages"));
   const panel = container.querySelector('[role="dialog"][aria-label="All pages"]');
   expect(panel).not.toBeNull();
@@ -133,8 +133,8 @@ describe("the desktop top bar", () => {
 
   it("puts the alert count on the avatar and always lists Alerts in the menu", () => {
     renderTopBar(owner, stages, 3);
-    expect(container.querySelector('button[aria-haspopup="true"]')?.textContent).toContain("3");
-    click(container.querySelector('button[aria-haspopup="true"]'));
+    expect(container.querySelector('button[aria-controls="avatar-menu"]')?.textContent).toContain("3");
+    click(container.querySelector('button[aria-controls="avatar-menu"]'));
     expect(container.querySelector('a[href="/alerts"]')?.textContent).toContain("3 need you");
     renderTopBar(owner, stages, 0);
     expect(container.querySelector('a[href="/alerts"]')?.textContent).toContain("nothing needs you");
@@ -142,7 +142,7 @@ describe("the desktop top bar", () => {
 
   it("menu offers settings, the theme switch, account and sign out", () => {
     renderTopBar();
-    click(container.querySelector('button[aria-haspopup="true"]'));
+    click(container.querySelector('button[aria-controls="avatar-menu"]'));
     expect(container.textContent).toContain("Maria Ruiz");
     expect(container.textContent).toContain("Acme Drywall");
     expect(container.querySelector('a[href="/settings"]')).not.toBeNull();
@@ -206,6 +206,36 @@ describe("All pages", () => {
     openAllPages();
     act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
     expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  // Guidelines review 2026-10-10: it was aria-modal with no trap, so Tab
+  // walked out into the live top bar, and closing dropped focus on <body>.
+  it("traps Tab inside, and hands focus back to the avatar on close", async () => {
+    renderTopBar();
+    const panel = openAllPages();
+    const nodes = Array.from(panel.querySelectorAll<HTMLElement>("a[href], button"));
+    nodes.at(-1)!.focus();
+    act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true })));
+    expect(document.activeElement).toBe(nodes[0]);
+    act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true })));
+    expect(document.activeElement).toBe(nodes.at(-1));
+    act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    await act(() => new Promise((r) => requestAnimationFrame(() => r(null))));
+    expect(document.activeElement).toBe(container.querySelector('button[aria-controls="avatar-menu"]'));
+  });
+
+  it("the avatar menu takes focus, closes when focus leaves it, and Esc returns to the avatar", () => {
+    renderTopBar();
+    const avatar = container.querySelector<HTMLButtonElement>('button[aria-controls="avatar-menu"]')!;
+    click(avatar);
+    const menu = container.querySelector("#avatar-menu")!;
+    expect(menu.contains(document.activeElement)).toBe(true);
+    act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(container.querySelector("#avatar-menu")).toBeNull();
+    expect(document.activeElement).toBe(avatar);
+    click(avatar);
+    act(() => container.querySelector<HTMLElement>('nav[aria-label="Main"] a')!.focus());
+    expect(container.querySelector("#avatar-menu")).toBeNull();
   });
 
   it("keys the stage map on real headings and places all five stages", () => {

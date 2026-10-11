@@ -41,10 +41,17 @@ const ICON_PATHS: Record<PrimaryTabKey, ReactNode> = {
  * `hidden md:flex`), so "the shell's main navigation" is one idea at every
  * width. e2e/lib/health.ts looks for exactly that landmark.
  *
- * 56px of tabs plus the home-indicator inset (`env(safe-area-inset-bottom)`,
+ * 64px of tabs (a FIXED h-16, plus the 1px top border: 65px) plus the
+ * home-indicator inset (`env(safe-area-inset-bottom)`,
  * which is 0 unless the page opts into `viewport-fit=cover` — then the tabs
  * clear the indicator instead of sitting under it). The layout pads the
  * scroll port by the same amount so nothing hides under it.
+ *
+ * Corrected 2026-10-10: this said 56px and the links were `min-h-14`, but
+ * the icon chip, gap and label grow each tab to 63.5px, so the bar measured
+ * 64.5px in Chromium while the layout padded 56 — 8.5px of every page sat
+ * under the tabs on a phone. The height is fixed now (`h-16`) so the content
+ * cannot grow it past the number the layout pads by.
  */
 export function BottomTabs({
   principal,
@@ -74,7 +81,7 @@ export function BottomTabs({
             key={tab.key}
             href={tab.href}
             aria-current={on ? "page" : undefined}
-            className={`flex min-h-14 flex-col items-center justify-center gap-1 py-1.5 text-[13px] font-semibold ${
+            className={`flex h-16 flex-col items-center justify-center gap-1 py-1.5 text-[13px] font-semibold ${
               on ? "text-ink" : "text-ink-muted hover:text-ink"
             }`}
           >

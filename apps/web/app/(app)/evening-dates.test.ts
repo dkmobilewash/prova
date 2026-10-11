@@ -277,7 +277,8 @@ afterAll(() => {
 
 /** The whole-dollar figure stacked directly above a Money-block caption. */
 function moneyFigure(html: string, label: string): string | null {
-  const at = html.indexOf(`>${label}</span>`);
+  // `<` rather than `</span>`: a linked figure's label is followed by its " →" cue.
+  const at = html.indexOf(`>${label}<`);
   if (at === -1) return null;
   return html.slice(0, at).match(/>(\$[\d,]+)<\/span><span[^>]*$/)?.[1] ?? null;
 }
