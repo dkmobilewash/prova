@@ -10,12 +10,16 @@ export const metadata = { title: { absolute: "Ask C Stream" } };
  * somewhere to point: a group heading with no destination is not findable,
  * and the assistant is the thing worth finding.
  *
- * Same `<AskPanel />` as the launcher and the dashboard. No capability gate
+ * Same `<AskPanel initialQuestion={initialQuestion} />` as the launcher and the dashboard. No capability gate
  * on the route, matching /dashboard — the commands gate themselves by
  * capability inside the panel, so a person only ever sees what they could
  * already do.
  */
-export default function AskPage() {
+export default async function AskPage({ searchParams }: { searchParams: Promise<{ q?: string | string[] }> }) {
+  // Prefilled from the command palette's "Ask C Stream: …" row. Text only —
+  // nothing is asked until the person presses Ask.
+  const { q } = await searchParams;
+  const initialQuestion = typeof q === "string" ? q.slice(0, 500) : "";
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
       <h1 className="text-2xl font-semibold text-ink">Ask C Stream</h1>
@@ -25,7 +29,8 @@ export default function AskPage() {
         written.
       </p>
       <div className="mt-6" data-tour="ask-panel">
-        <AskPanel />
+        {/* Keyed so a second palette ask while already on /ask re-seeds the box. */}
+        <AskPanel key={initialQuestion} initialQuestion={initialQuestion} />
       </div>
     </div>
   );

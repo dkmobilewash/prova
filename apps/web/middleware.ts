@@ -45,6 +45,9 @@ const isProtectedRoute = createRouteMatcher([
   // list is the allowlist a reader checks, and a data route missing from
   // it looks public whether or not it is.
   "/api/ask(.*)",
+  // The command palette's search. The handler answers 401 itself; listed
+  // here because this is the allowlist a reader checks.
+  "/api/search(.*)",
   "/messages(.*)",
   // The data export returns a file rather than a page, for the same reason
   // and with the same consequence: it is the single widest read in the app,

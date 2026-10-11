@@ -94,7 +94,7 @@ export type SearchProvider = RouteSearchProvider | ToolSearchProvider;
 /**
  * The group heading for each record type, in the order the UI lists
  * groups. Lives here — not in providers.ts, which imports `@prova/db` and
- * so can never be imported by a client component — so `SearchLauncher.tsx`
+ * so can never be imported by a client component — so a client component
  * can render group headings without pulling Prisma into the browser
  * bundle. `providers.ts` reads its own `label` field off this same map,
  * so there is exactly one place that spells "Punch list", not two that

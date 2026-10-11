@@ -173,16 +173,6 @@ const KNOWN: Record<string, { count: number; because: string }> = {
       "(the card it replaced painted over whatever page the person was on). " +
       "No shell renders behind it, so there is no port to size against.",
   },
-  "apps/web/components/SearchLauncher.tsx": {
-    count: 2,
-    because:
-      "The global search panel: `max-h-[calc(100dvh-4.5rem)]` on the panel " +
-      "itself and `max-h-[60vh]` on the results list inside it. Same shape " +
-      "as HelpButton.tsx and AskLauncher.tsx — the panel's own class string " +
-      "is `fixed left-1/2 top-14 z-50 …`, and the results list is a child " +
-      "of it, so both are inside a `position: fixed` subtree and excluded " +
-      "from every ancestor's scrollable overflow.",
-  },
   "apps/web/app/sign-in/[[...sign-in]]/page.tsx": {
     count: 1,
     because: "Outside the `(app)` shell — the Clerk sign-in page.",
@@ -203,6 +193,13 @@ const KNOWN: Record<string, { count: number; because: string }> = {
       "absolutely-positioned child taller than the viewport added 0px to " +
       "`document.scrollingElement.scrollHeight`), not assumed from how " +
       "`position: fixed` is supposed to work.",
+  },
+  "apps/web/components/shell/CommandPalette.tsx": {
+    count: 3,
+    because:
+      "The ⌘K palette: `max-h-[calc(100dvh-1rem)]`, `sm:mt-[9vh]` and " +
+      "`sm:max-h-[82vh]` on the dialog, whose outermost element is " +
+      "`fixed inset-0 z-[60]` — a viewport overlay, outside every scroll port.",
   },
   "apps/web/components/AskLauncher.tsx": {
     count: 1,

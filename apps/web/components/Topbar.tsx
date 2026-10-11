@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { MobileNav } from "@/components/MobileNav";
-import { SearchLauncher } from "@/components/SearchLauncher";
+import { SearchTrigger } from "@/components/shell/SearchTrigger";
+import { CommandPalette } from "@/components/shell/CommandPalette";
 import { AskLauncher } from "@/components/AskLauncher";
 import { HelpButton } from "@/components/HelpButton";
 import { AfterMount } from "@/components/AfterMount";
@@ -18,7 +19,7 @@ import type { BusinessScopeAnswers } from "@/lib/businessScope";
  *
  * A CLIENT COMPONENT since 2026-09-25, and for the same reason MetricBar
  * beside it is one. Everything this bar renders is a client component
- * already (MobileNav, SearchLauncher, AskLauncher, HelpButton, Clerk's
+ * already (MobileNav, SearchTrigger, AskLauncher, HelpButton, Clerk's
  * UserButton); while this file was a SERVER component each of those was an
  * element created on the server and serialized through React's Flight
  * payload, which defers any element it reaches past 3,200 bytes and hands
@@ -80,7 +81,8 @@ export function Topbar({
             certified payroll, typing its name here still finds it. That
             makes it the thing reached for before a question gets asked,
             which is why it moved ahead of Ask rather than beside it. */}
-        <SearchLauncher />
+        <SearchTrigger size="sm" />
+        <CommandPalette />
         {/* Ask, on every page. It sits after Search — left of the bell and
             the avatar — because it is the next thing people are meant to
             reach for, and chrome reads left to right in order of intent. */}

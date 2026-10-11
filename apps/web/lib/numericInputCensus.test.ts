@@ -572,8 +572,8 @@ const INPUT_EXCEPTIONS: Record<string, { reason: string }> = {
   // nothing in that file matches any more, and the census refused to let the
   // dead entry sit here. That refusal is the point: an exception list nobody
   // prunes becomes permanent.
-  "apps/web/components/SearchLauncher.tsx (unnamed)": {
-    reason: "the global search box — free text. Another branch's file this session.",
+  "apps/web/components/shell/CommandPalette.tsx (unnamed)": {
+    reason: "the ⌘K search-or-ask box — free text: a job name, a person, an RFI subject or a question.",
   },
   "apps/web/components/DocuSignPanel.tsx (unnamed)": {
     reason: "the void reason the signer reads — free text, maxLength 200",

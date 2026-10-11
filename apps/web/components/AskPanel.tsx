@@ -226,13 +226,16 @@ function ItemLinks({ links }: { links: ItemLink[] }) {
   );
 }
 
-export function AskPanel() {
+/** `initialQuestion` seeds the box — the command palette opens `/ask?q=…` with
+ * what was typed there. It is only the starting text: nothing is asked until
+ * the person presses Ask. */
+export function AskPanel({ initialQuestion = "" }: { initialQuestion?: string } = {}) {
   // The route the person is looking at, sent with every question so the
   // assistant does not have to ask which job they mean when they are
   // standing on it. See lib/ask/page-context.ts — it is a hint the server
   // resolves through the session's own company, never an authority.
   const pathname = usePathname();
-  const [question, setQuestion] = useState("");
+  const [question, setQuestion] = useState(initialQuestion);
   const [asked, setAsked] = useState("");
   const [answer, setAnswer] = useState("");
   const [citations, setCitations] = useState<Citation[]>([]);
