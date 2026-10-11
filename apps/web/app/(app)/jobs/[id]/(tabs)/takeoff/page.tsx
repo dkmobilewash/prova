@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
 
+import { can } from "@/lib/permissions";
 import { NoAccess } from "@/components/NoAccess";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { TakeoffMeasurementList } from "@/components/TakeoffMeasurementList";
@@ -372,7 +373,18 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
       {/* BELOW the sheet review, because the page types it shows are what decide
           which sheets have schedules at all. Silent until something has been
           read — the convention every advisory surface here follows. */}
-      {isEstimateStage && <ScheduleProposals proposals={await loadScheduleProposals(plan.id)} />}
+      {/* `canAddWallTypes` is NOT this tab's own capability, deliberately. The
+          tab withholds on VIEW_JOB_COSTS; turning a partition schedule into
+          wall types writes the COMPANY library, which is MANAGE_ESTIMATING. An
+          accountant can open this page and must not meet a button that refuses
+          them. */}
+      {isEstimateStage && (
+        <ScheduleProposals
+          proposals={await loadScheduleProposals(plan.id)}
+          jobId={job.id}
+          canAddWallTypes={can(context, "MANAGE_ESTIMATING")}
+        />
+      )}
 
       <TakeoffPlanViewer
         duplicateWallsByPage={duplicateWallsByPage}

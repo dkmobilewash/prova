@@ -281,7 +281,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     model: "wallType",
     label: "Wall types",
     note: "Your partition schedule — each wall type by its tag from the drawings.",
-    columns: ["id", "code", "name", "defaultHeightFt", "sides", "studSpacingIn", "notes", "sortOrder", "createdAt", "updatedAt"],
+    columns: ["id", "code", "name", "thicknessIn", "defaultHeightFt", "sides", "studSpacingIn", "notes", "sortOrder", "createdAt", "updatedAt"],
     scope: byCompany,
   },
   {

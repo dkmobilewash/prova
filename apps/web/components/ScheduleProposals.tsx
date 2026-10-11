@@ -1,5 +1,6 @@
 "use client";
 
+import { AddWallTypesFromSchedule } from "@/components/AddWallTypesFromSchedule";
 import { SCHEDULE_KINDS } from "@prova/integrations/src/scheduleRows";
 
 /**
@@ -68,7 +69,28 @@ function kindLabel(kind: string): string {
   return KIND_LABEL[kind] ?? KIND_LABEL.OTHER;
 }
 
-export function ScheduleProposals({ proposals }: { proposals: ScheduleProposalView[] }) {
+export function ScheduleProposals({
+  proposals,
+  jobId,
+  canAddWallTypes,
+}: {
+  proposals: ScheduleProposalView[];
+  /** Whose schedule this is. The import writes to the COMPANY library but is
+   *  scoped through the job, so a proposal id alone could not reach it. */
+  jobId: string;
+  /**
+   * Whether this person may write the wall-type library — MANAGE_ESTIMATING,
+   * which is NOT what this tab withholds on.
+   *
+   * The tab is open to anyone who can see job costs, and an accountant is one
+   * of them. The import writes company reference data that outlives the job, so
+   * the action demands the stricter capability — and a button that is always
+   * visible and sometimes refuses is a dead control, which this repo has shipped
+   * before. So the capability decides whether it renders, not merely whether it
+   * works.
+   */
+  canAddWallTypes: boolean;
+}) {
   // Silence on an empty set, which is the convention every advisory surface here
   // follows: a panel that speaks when there is nothing to say teaches people to
   // stop reading it.
@@ -130,6 +152,19 @@ export function ScheduleProposals({ proposals }: { proposals: ScheduleProposalVi
                   ))}
                 </ul>
                 <p className="mt-2 text-xs text-ink-muted">{proposal.reason}</p>
+                {/* ── ONLY A PARTITION SCHEDULE GETS THIS ──
+                    A door schedule's rows are doors and a finish schedule's are
+                    rooms; neither describes a wall assembly, and offering the
+                    button on one would be offering to fill the library with
+                    nonsense. The reader already decides the kind, so this reads
+                    its answer rather than guessing from the title. */}
+                {proposal.kind === "PARTITION" && canAddWallTypes && (
+                  <AddWallTypesFromSchedule
+                    jobId={jobId}
+                    proposalId={proposal.id}
+                    count={proposal.rows.length}
+                  />
+                )}
               </>
             )}
           </article>
