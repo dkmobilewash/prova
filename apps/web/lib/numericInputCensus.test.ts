@@ -575,6 +575,9 @@ const INPUT_EXCEPTIONS: Record<string, { reason: string }> = {
   // `SearchLauncher.tsx (unnamed)` was here: the old global search box.
   // Concept G (2026-10-10) deleted that file for the ⌘K palette in
   // components/shell/, so the entry went with it rather than outliving it.
+  "apps/web/components/shell/CommandPalette.tsx (unnamed)": {
+    reason: "the ⌘K search-or-ask box — free text: a job name, a person, an RFI subject or a question.",
+  },
   "apps/web/components/DocuSignPanel.tsx (unnamed)": {
     reason: "the void reason the signer reads — free text, maxLength 200",
   },

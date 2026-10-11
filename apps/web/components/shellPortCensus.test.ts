@@ -197,6 +197,13 @@ const KNOWN: Record<string, { count: number; because: string }> = {
       "`document.scrollingElement.scrollHeight`), not assumed from how " +
       "`position: fixed` is supposed to work.",
   },
+  "apps/web/components/shell/CommandPalette.tsx": {
+    count: 3,
+    because:
+      "The ⌘K palette: `max-h-[calc(100dvh-1rem)]`, `sm:mt-[9vh]` and " +
+      "`sm:max-h-[82vh]` on the dialog, whose outermost element is " +
+      "`fixed inset-0 z-[60]` — a viewport overlay, outside every scroll port.",
+  },
   "apps/web/components/AskLauncher.tsx": {
     count: 1,
     because: "Same as HelpButton.tsx — the Ask dropdown, `fixed`, same clamp.",

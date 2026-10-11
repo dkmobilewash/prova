@@ -23,8 +23,9 @@ import { recordNumberTerm } from "./providers";
  * reachable from this branch (`prisma migrate`-less container, no local
  * server), and Prisma's own range check could not be isolated because the
  * connection failure fires first. So this file tests the range rule, not
- * an exception; the panel-hang fix in `panel.ts` and `lib/actions/search.ts`
- * covers the consequence either way, and does not depend on this cause.
+ * an exception; the palette's catch on every fetch (`components/shell/CommandPalette.tsx`)
+ * and the route's own try (`app/api/search/route.ts`) cover the consequence either way,
+ * and neither depends on this cause.
  */
 
 /** Postgres `integer`. Written here as a literal, independently of the
