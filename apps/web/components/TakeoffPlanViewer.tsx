@@ -47,9 +47,9 @@ import { wallsFromBothEngines } from "@/lib/takeoff/wallRuns";
 import { pagesToSample, templateFromSheets, withoutTemplate } from "@/lib/takeoff/sheetTemplate";
 import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
-import { wallTypeTags, namesForClusters, taggedFeetForClusters, tagSentence } from "@/lib/takeoff/wallTags";
-import { matchClusterToWallType, matchSentence } from "@/lib/takeoff/wallTypeMatch";
-import type { PostableWallType, WallTypeMatch } from "@/lib/takeoff/wallTypeMatch";
+import { wallTypeTags, tagByRun, tagSentence } from "@/lib/takeoff/wallTags";
+import { wallGroups, verdictFor, groupSentence, type WallGroup, type GroupVerdict } from "@/lib/takeoff/wallGroups";
+import type { PostableWallType } from "@/lib/takeoff/wallTypeMatch";
 
 /**
  * THE MEASURING SURFACE — a PDF page rendered to a canvas, with an SVG
@@ -183,18 +183,22 @@ export function TakeoffPlanViewer({
   // group. A found wall is a proposal; the measurements table is for things
   // somebody chose. That also means switching sheets or reloading simply
   // forgets them, which is the correct behaviour for a proposal nobody acted on.
-  const [found, setFound] = useState<WallCluster[] | null>(null);
+  const [found, setFound] = useState<WallGroup[] | null>(null);
   /**
-   * The assembly names the drawing gives each group, parallel to `found`.
+   * WHICH TYPE A PERSON PICKED for a group that could be more than one, by
+   * group index.
    *
-   * An empty list for a group means the drawing did not say, which is the USUAL
-   * case — only 25-43% of footage carries a tag, because an architect tags
-   * representative walls rather than every wall. See `wallTags.ts`.
+   * Only an `ASK` group has one, and only because a floor plan cannot settle
+   * it: A1 and A2 are both 4-7/8in on School-01 and differ by fire rating. The
+   * app will not choose between them, so the estimator does, once per group
+   * rather than once per run.
+   *
+   * TWO PARALLEL ARRAYS LEFT WHEN THIS ARRIVED — `tagNames` and `typeMatches`,
+   * both indexed against `found`. They are gone: a `WallGroup` carries its own
+   * tag and its own candidates, so the three can no longer fall out of step
+   * with each other, which is a class of bug rather than a tidy-up.
    */
-  const [tagNames, setTagNames] = useState<string[][]>([]);
-  /** Per group, which of the company's wall types the DRAWING named in it — or
-   *  why none could be identified. Parallel to `found`, same as `tagNames`. */
-  const [typeMatches, setTypeMatches] = useState<WallTypeMatch[]>([]);
+  const [chosen, setChosen] = useState<Record<number, string>>({});
   /** How many strokes the sheet held when it was last read, so an empty result
    *  can say which kind of empty it is. See the message below. */
   const [strokesSeen, setStrokesSeen] = useState(0);
@@ -433,8 +437,7 @@ export function TakeoffPlanViewer({
     setFinding(true);
     setFindError(null);
     setFound(null);
-    setTagNames([]);
-    setTypeMatches([]);
+    setChosen({});
     try {
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
       const page = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(pageNumber);
@@ -556,7 +559,6 @@ export function TakeoffPlanViewer({
       // height is in page-width units, hence the aspect rather than 1.
       const walls = wallsNotTheSheetBorder(notLettering, 1, pageSize.heightPt / pageSize.widthPt);
       const clusters = clusterByThickness(walls);
-      setFound(clusters);
       // ── WHAT THE DRAWING CALLS THESE, where it says so ──
       //
       // The panel otherwise names a group by a NUMBER, and an estimator still
@@ -567,9 +569,15 @@ export function TakeoffPlanViewer({
       // `taggedFeetForClusters`, so reading the feet here costs nothing extra
       // and the names on screen cannot disagree with the match beside them.
       const tags = wallTypeTags(textItems, pageSize.widthPt);
-      const taggedFeet = taggedFeetForClusters(clusters, walls, tags, feetPerUnit);
-      setTagNames(taggedFeet.map((one) => one.map((part) => part.name)));
-      setTypeMatches(taggedFeet.map((one) => matchClusterToWallType(one, wallTypes)));
+      // ── AND THE GROUPS ARE SPLIT BY THOSE TAGS BEFORE ANYTHING IS SHOWN ──
+      //
+      // A thickness bucket is not one wall type. School-01's 4-7/8in bucket
+      // held A1, A2, EXT-1 and C1 — 1,117 ft that could not be priced as
+      // anything, which was 58% of the sheet. `wallGroups` splits it into one
+      // group per tag plus the untagged remainder, and gives each piece the
+      // types it could be: by NAME for a tagged one, by THICKNESS for the
+      // remainder. See `wallGroups.ts` for why that ordering is the safety.
+      setFound(wallGroups(clusters, tagByRun(walls, tags, feetPerUnit), wallTypes));
     } catch (problem) {
       // The sheet is still on screen and the manual tools still work, so this
       // says what failed and stops — it does not take the page down.
@@ -596,9 +604,9 @@ export function TakeoffPlanViewer({
    *  type, the height, the priced wall run — already works on those and needs
    *  no part of this. */
   async function onAcceptCluster(index: number) {
-    const cluster = found?.[index];
-    if (!cluster || !sheet) return;
-    const match = typeMatches[index];
+    const group = found?.[index];
+    if (!group || !sheet) return;
+    const priced = pricedTypeFor(group, chosen[index]);
     const body = new FormData();
     body.set("pageId", sheet.id);
     // ── THE LABEL CARRIES THE DRAWING'S OWN WORD WHERE THERE IS ONE ──
@@ -609,13 +617,13 @@ export function TakeoffPlanViewer({
     // the match was right.
     body.set(
       "label",
-      match?.state === "MATCH" ? `${match.tag} wall — ${inchLabel(cluster.inches)}` : `${inchLabel(cluster.inches)} wall`,
+      priced ? `${priced.code} wall — ${inchLabel(group.inches)}` : `${inchLabel(group.inches)} wall`,
     );
     // AND THE TYPE, so the action posts a priced run instead of bare
-    // quantities. Only on a MATCH: every other state is a refusal this
-    // component must not overrule.
-    if (match?.state === "MATCH") body.set("wallTypeId", match.type.id);
-    for (const run of cluster.runs) {
+    // quantities. Null for every unresolved state: this component must not
+    // overrule a refusal, and must not price an ASK group nobody answered.
+    if (priced) body.set("wallTypeId", priced.id);
+    for (const run of group.runs) {
       body.append("shape", JSON.stringify({ xs: [run.x1, run.x2], ys: [run.y1, run.y2] }));
     }
     const result = await saveTakeoffMeasurements(jobId, body);
@@ -624,6 +632,24 @@ export function TakeoffPlanViewer({
     // an estimator works through them one at a time and re-running the finder
     // to get back to where they were would be a punishment for accepting one.
     setFound((current) => (current ?? []).filter((_, i) => i !== index));
+  }
+
+  /**
+   * The type a group would be POSTED as, or null for one that is not settled.
+   *
+   * ONE FUNCTION FOR THE BUTTON AND THE SUBMIT, deliberately. The button's
+   * words and the form's `wallTypeId` are two readings of the same question,
+   * and the way that goes wrong is a button promising "priced" over a submit
+   * that sends nothing — a bid short by a whole group, with the screen saying
+   * otherwise.
+   */
+  function pricedTypeFor(group: WallGroup, pick: string | undefined): PostableWallType | null {
+    const verdict = verdictFor(group);
+    if (verdict.state === "NAMED" || verdict.state === "ONLY_ONE_THAT_THICK") return verdict.type;
+    // An ASK is priced only once a PERSON has answered it. No default, no
+    // first-in-the-list: that is the guess this whole module refuses to make.
+    if (verdict.state === "ASK") return verdict.types.find((type) => type.id === pick) ?? null;
+    return null;
   }
 
   // ── What the draft currently measures, for the live readout ───────────
@@ -928,9 +954,12 @@ export function TakeoffPlanViewer({
                 </p>
               )}
               <ul className="flex flex-col gap-1">
-                {found.slice(0, 6).map((cluster, index) => (
+                {found.slice(0, 8).map((group, index) => {
+                  const verdict = verdictFor(group);
+                  const priced = pricedTypeFor(group, chosen[index]);
+                  return (
                   <li
-                    key={`${cluster.inches}-${index}`}
+                    key={`${group.inches}-${index}`}
                     className="flex flex-wrap items-center gap-3 rounded-md px-2 py-1 hover:bg-rail-hover"
                     onMouseEnter={() => setHovered(index)}
                     onMouseLeave={() => setHovered(null)}
@@ -940,11 +969,14 @@ export function TakeoffPlanViewer({
                       className="h-3 w-3 shrink-0 rounded-sm"
                       style={{ backgroundColor: CLUSTER_COLOURS[index % CLUSTER_COLOURS.length] }}
                     />
-                    <span className="text-sm font-medium text-ink">{inchLabel(cluster.inches)}</span>
-                    <ClusterTag names={tagNames[index] ?? []} />
+                    <span className="text-sm font-medium text-ink">{inchLabel(group.inches)}</span>
+                    {/* THE TAG IS THE GROUP'S NAME NOW, not a list of every name
+                        in a bucket. A group either carries one tag or carries
+                        none, because the tags are what split it. */}
+                    <ClusterTag names={group.source.kind === "TAG" ? [group.source.tag] : []} />
                     <span className="text-sm text-ink-body">
-                      {cluster.runs.length} {cluster.runs.length === 1 ? "run" : "runs"} ·{" "}
-                      {Math.round(cluster.feet).toLocaleString()} ft
+                      {group.runs.length} {group.runs.length === 1 ? "run" : "runs"} ·{" "}
+                      {Math.round(group.feet).toLocaleString()} ft
                       {/* ── THE FOOTAGE IS GROSS, AND IT SAYS SO ──
                           A run joined across a doorway reports the whole wall,
                           which is the correct take-off: `takeoff.ts` deducts
@@ -954,7 +986,7 @@ export function TakeoffPlanViewer({
                           explanation is the next unexplained figure, so the
                           openings it includes are counted here. */}
                       {(() => {
-                        const openings = cluster.runs.reduce((n, run) => n + (run.openings?.length ?? 0), 0);
+                        const openings = group.runs.reduce((n, run) => n + (run.openings?.length ?? 0), 0);
                         return openings === 0 ? null : (
                           <span className="text-ink-muted">
                             {" "}
@@ -963,46 +995,72 @@ export function TakeoffPlanViewer({
                         );
                       })()}
                     </span>
+
+                    {/* ── THE ONE QUESTION THIS FEATURE IS ALLOWED TO ASK ──
+                        Two of the company's types are this thick and nothing on
+                        the drawing says which — A1 and A2 on School-01, which
+                        differ by fire rating. The app will not choose. It asks
+                        ONCE for the group rather than once for each of its
+                        runs, and the button stays unpriced until it is
+                        answered. */}
+                    {verdict.state === "ASK" && (
+                      <select
+                        aria-label={`Which wall type are the untagged ${inchLabel(group.inches)} walls?`}
+                        value={chosen[index] ?? ""}
+                        onChange={(event) =>
+                          setChosen((current) => ({ ...current, [index]: event.target.value }))
+                        }
+                        className="min-h-[36px] rounded-md border border-line-card bg-surface px-2 text-xs text-ink-body"
+                      >
+                        <option value="">Which type?</option>
+                        {verdict.types.map((type) => (
+                          <option key={type.id} value={type.id}>
+                            {type.code} — {type.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
                     {/* ── WHAT THE BUTTON PROMISES IS WHAT IT DOES ──
-                        A matched group goes straight onto the estimate PRICED,
-                        so the button says so. An unmatched one still writes
-                        plain measurements, exactly as before, and says that
-                        instead — the difference matters because one of them is
-                        finished work and the other is a step. */}
+                        A group with a type goes straight onto the estimate
+                        PRICED, so the button says so and names it. Everything
+                        else still writes plain measurements, exactly as before,
+                        and says that instead — one of them is finished work and
+                        the other is a step. Both read from `pricedTypeFor`, the
+                        same function the submit uses, so the words and the form
+                        cannot disagree. */}
                     <button
                       type="button"
                       onClick={() => void onAcceptCluster(index)}
                       className={`ml-auto min-h-[36px] rounded-md border px-3 text-xs font-medium ${
-                        typeMatches[index]?.state === "MATCH"
+                        priced
                           ? "border-brand bg-tag-brand text-tag-brand-ink hover:opacity-90"
                           : "border-line-card text-ink-body hover:bg-rail-hover"
                       }`}
                     >
-                      {typeMatches[index]?.state === "MATCH"
-                        ? `Add as ${(typeMatches[index] as { tag: string }).tag} — priced`
-                        : "Add these"}
+                      {priced ? `Add as ${priced.code} — priced` : "Add these"}
                     </button>
+
                     {/* ── AND WHY, UNDERNEATH ──
-                        `matchSentence` returns null for an untagged group on
-                        purpose: a line reading "no tag found" on every one of
-                        them is the permanent notice this file's own rule calls
-                        noise that teaches people to stop reading notices. The
-                        two refusals DO get a sentence, because an estimator
-                        acts on them differently — a missing wall type is
-                        something to go and create, a mixed group is something
-                        to trace separately. */}
-                    {matchSentence(typeMatches[index] ?? { state: "NO_TAG" }) !== null && (
-                      <p className="w-full text-xs text-ink-muted">
-                        {matchSentence(typeMatches[index] ?? { state: "NO_TAG" })}
-                      </p>
+                        Every sentence says WHERE the answer came from, because
+                        a name read off the drawing and a name inferred from a
+                        thickness are different kinds of claim and somebody
+                        pricing a bid is entitled to know which they have. */}
+                    {groupSentence(group, verdict) !== null && (
+                      <p className="w-full text-xs text-ink-muted">{groupSentence(group, verdict)}</p>
                     )}
                   </li>
-                ))}
+                  );
+                })}
               </ul>
-              {found.length > 6 && (
+              {/* EIGHT RATHER THAN SIX SINCE THE TAG SPLIT, because one
+                  bucket now becomes several rows — School-01's 4-7/8in bucket
+                  alone becomes four. Six would have pushed real priced groups
+                  under a "and N smaller groups" line that carries no button. */}
+              {found.length > 8 && (
                 <p className="mt-2 text-xs text-ink-muted">
-                  And {found.length - 6} smaller {found.length - 6 === 1 ? "group" : "groups"}, holding{" "}
-                  {Math.round(found.slice(6).reduce((f, c) => f + c.feet, 0)).toLocaleString()} ft between them.
+                  And {found.length - 8} smaller {found.length - 8 === 1 ? "group" : "groups"}, holding{" "}
+                  {Math.round(found.slice(8).reduce((f, c) => f + c.feet, 0)).toLocaleString()} ft between them.
                   A real floor plan carries more wall thicknesses than anybody expects; these are the ones a bid
                   usually turns on.
                 </p>
@@ -1242,7 +1300,9 @@ export function FoundWalls({
   clusters,
   hovered,
 }: {
-  clusters: WallCluster[] | null;
+  /** Anything with runs on it. A `WallGroup` since the tag split, a
+   *  `WallCluster` before it, and the drawing code never cared which. */
+  clusters: { runs: { x1: number; y1: number; x2: number; y2: number }[] }[] | null;
   hovered: number | null;
 }) {
   if (clusters === null) return null;

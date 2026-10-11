@@ -118,24 +118,21 @@ describe("the panel's own use of it", () => {
     expect(source).not.toMatch(/\{\s*null\s*&&\s*<ClusterTag/);
   });
 
-  it("hands it the names for THIS group, not a constant", () => {
+  it("hands it the name of THIS group, not a constant", () => {
     // `names={[]}` would render nothing for ever and pass the test above.
-    expect(source).toMatch(/<ClusterTag\s+names=\{tagNames\[index\]/);
+    //
+    // UPDATED TWICE NOW, and the direction of travel is the point. It first
+    // asserted `names={tagNames[index]}`, a second array indexed alongside the
+    // groups. Since the tag split there is no second array: the tags are what
+    // SPLIT the groups, so a group either carries one tag or carries none and
+    // reads it off itself. The class of bug that removes — three parallel
+    // arrays falling out of step — is worth more than the assertion.
+    expect(source).toMatch(/<ClusterTag\s+names=\{group\.source\.kind === "TAG"/);
   });
 
-  it("and the detection fills those names", () => {
-    // The other end of the wire: without this the array is empty for ever.
-    //
-    // UPDATED when the wall-type match landed. This asserted
-    // `setTagNames(namesForClusters(` and the panel now derives both the names
-    // and the match from ONE pass over the runs — `taggedFeetForClusters`,
-    // which returns the footage per tag that `matchClusterToWallType` needs to
-    // tell "mostly W1" from "half W1, half W2". `namesForClusters` is still the
-    // reader for everything that only wants names.
-    //
-    // The INTENT is unchanged and is what this case is for: the names on
-    // screen come from the detection rather than from a constant.
-    expect(source).toMatch(/setTagNames\(taggedFeet\.map\(/);
-    expect(source).toMatch(/taggedFeetForClusters\(/);
+  it("and the detection fills that name", () => {
+    // The other end of the wire: without this the tag is absent for ever.
+    // `wallGroups` is where a run's tag becomes its group's identity.
+    expect(source).toMatch(/wallGroups\(clusters, tagByRun\(/);
   });
 });

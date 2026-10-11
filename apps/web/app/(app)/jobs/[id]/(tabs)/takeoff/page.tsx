@@ -70,7 +70,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   const postableWallTypes = await prisma.wallType.findMany({
     where: { companyId: company.id, components: { some: {} } },
     orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
-    select: { id: true, code: true, name: true, defaultHeightFt: true, sides: true },
+    select: { id: true, code: true, name: true, defaultHeightFt: true, sides: true, thicknessIn: true },
   });
 
   const plan = await prisma.takeoffPlan.findFirst({
@@ -398,7 +398,17 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         // MATCHING ONLY. The viewer never picks a wall type — it reports which
         // of these the DRAWING named beside a detected group. Already filtered
         // to types with layers, so a match always produces line items.
-        wallTypes={postableWallTypes.map((type) => ({ id: type.id, code: type.code, name: type.name }))}
+        // AND THE THICKNESS, which is what reaches the UNTAGGED walls: an
+        // architect tags representative walls, not every wall — 25-43% of the
+        // footage on a real sheet — so without it the majority of every
+        // drawing stays unpriced. Null where the company never recorded one,
+        // which the matcher reads as "cannot be matched by thickness".
+        wallTypes={postableWallTypes.map((type) => ({
+          id: type.id,
+          code: type.code,
+          name: type.name,
+          thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
+        }))}
       />
 
       {/* ── WHOSE SHEET IS THIS, AND WHY THERE IS A HEADING ABOVE THE LIST ──

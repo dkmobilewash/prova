@@ -11,18 +11,34 @@ import type { TaggedFeet } from "./wallTags";
  *
  * ── WHY THE TAG AND NOT THE THICKNESS ──
  *
- * The obvious design is to match a detected thickness against the wall type's
- * thickness. It is not available and should not be invented: `WallType` has
- * `code`, `name`, `defaultHeightFt`, `sides` and `studSpacingIn` — NO thickness
- * — and deriving one from its components means parsing "⅝″ Type X" out of a
- * description, which is a guess wearing a measurement's clothes. Two types also
- * routinely share a thickness and differ in rating and layers, so thickness
- * cannot identify a type even in principle.
- *
  * The drawing already says which wall is which. `WallType.code` is the same
  * designation the drafter printed beside the wall. So this is an IDENTITY
  * match, not a similarity score, and that is the whole reason it can be trusted
  * enough to price from.
+ *
+ * **HALF OF WHAT THIS PARAGRAPH USED TO SAY IS NOW FALSE, AND IT WAS TRUE WHEN
+ * IT WAS WRITTEN.** It read: *"The obvious design is to match a detected
+ * thickness against the wall type's thickness. It is not available and should
+ * not be invented: `WallType` has `code`, `name`, `defaultHeightFt`, `sides`
+ * and `studSpacingIn` — NO thickness — and deriving one from its components
+ * means parsing '⅝″ Type X' out of a description, which is a guess wearing a
+ * measurement's clothes."*
+ *
+ * Every word of that was accurate until #731, which added
+ * `WallType.thicknessIn` and fills it by reading the sheet's own partition
+ * schedule — so the thickness is neither absent nor inferred from a
+ * description. It is what the architect wrote in a table.
+ *
+ * **The other half of the paragraph survives intact and is the load-bearing
+ * half:** *"Two types also routinely share a thickness and differ in rating and
+ * layers, so thickness cannot identify a type even in principle."* Still true,
+ * and School-01 proves it — A1 and A2 are both 4-7/8" there, differing by fire
+ * rating, which a floor plan cannot show.
+ *
+ * So thickness is a SHORTLIST and never an identity. `wallGroups.ts` uses it
+ * that way: tag first, thickness only where the drawing was silent, and a
+ * question rather than a guess where two types share one. This module is
+ * unchanged in what it does — it still matches by tag alone.
  *
  * ── IT REFUSES MORE THAN IT MATCHES, AND THAT IS THE DESIGN ──
  *
@@ -51,6 +67,16 @@ export type PostableWallType = {
   id: string;
   code: string;
   name: string;
+  /**
+   * Finish to finish, in inches, where the company has recorded one — #731.
+   *
+   * NULLABLE AND IT STAYS NULLABLE. A type typed in by hand before that column
+   * existed has none, and backfilling one by inference would be the guess the
+   * header above describes. Null means "cannot be matched by thickness", which
+   * is what `typesAtThickness` reads it as, so an old library quietly keeps the
+   * behaviour it had rather than acquiring a wrong answer.
+   */
+  thicknessIn: number | null;
 };
 
 export type WallTypeMatch =
