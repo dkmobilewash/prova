@@ -95,6 +95,16 @@ export const notYetRegistered: Exclusion[] = [
       "Starting a background agent run. Excluded for `aiSettings.*`'s reason one step removed: a model must not be able to start model runs on a prompt's say-so — a run spends the company's AI allowance, and an injected instruction in a bid name could otherwise burn a month's cap. The Run-now button on /ai is a deliberate press by a person who can see the spend beside it. Never a command.",
   },
   {
+    action: "agentFindings.*",
+    reason:
+      "Dismissing and restoring what a background agent found. A finding exists to be read by a person, and a model clearing it on a prompt's say-so is the agent marking its own homework — an injected line in a bid name could otherwise hide a past-due or unread-addendum warning before anyone saw it. The press is beside the finding on /ai. Never a command.",
+  },
+  {
+    action: "agentSettings.*",
+    reason:
+      "Turning agents on and off and setting their monthly spend cap. Owner-only for `aiSettings.*`'s reason: it decides what runs over every estimator's bids and what the company spends on it, and a model must not be able to raise its own cap. Never a command.",
+  },
+  {
     action: "aiSettings.*",
     reason:
       "The switch that decides whether AI runs for this company at all. Reachable from a prompt it would let the assistant be asked to re-enable itself, or to turn off the audit trail of its own proposals — a model must never hold the control over whether a model is used. Owner-only on /settings/assistant, and permanently never a command.",
