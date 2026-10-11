@@ -146,9 +146,9 @@ model Company {
   vendorPriceQuotes         VendorPriceQuote[]
   outboundMessages          OutboundMessage[]
   contactInteractions       ContactInteraction[]
-  proposalClauses          ProposalClause[]
-  jobProposalClauses       JobProposalClause[]
-  proposalClauseDrafts     ProposalClauseDraft[]
+  proposalClauses           ProposalClause[]
+  jobProposalClauses        JobProposalClause[]
+  proposalClauseDrafts      ProposalClauseDraft[]
   apprenticeshipEnrollments ApprenticeshipEnrollment[]
   apprenticeshipCommittees  ApprenticeshipCommittee[]
   contactPeople             ContactPerson[]
@@ -168,7 +168,14 @@ model Company {
   workerCertifications      WorkerCertification[]
   requiredCertifications    CertificationRequirement[]
   bidPursuits               BidPursuit[]
-  sheetPins SheetPin[]
+  sheetPins                 SheetPin[]
+  /// AI agents — see ai-agents.prisma.
+  askThreads                AskThread[]
+  agentRuns                 AgentRun[]
+  agentFindings             AgentFinding[]
+  bidOutcomes               BidOutcome[]
+  aiRecommendations         AiRecommendation[]
+  agentSettings             CompanyAgentSettings?
 }
 
 enum UserRole {
@@ -233,17 +240,17 @@ model User {
   updatedAt DateTime @updatedAt
 
   assignments                          JobAssignment[]
-  crewScheduleDays                     CrewScheduleDay[]      @relation("CrewScheduleDayUser")
-  crewScheduleDaysCreated              CrewScheduleDay[]      @relation("CrewScheduleDayCreatedBy")
-  companycamLinksCreated               CompanyCamProjectLink[] @relation("CompanyCamLinkedBy")
-  bluebeamSessionsLinked                BluebeamStudioSession[] @relation("BluebeamLinkedBy")
+  crewScheduleDays                     CrewScheduleDay[]             @relation("CrewScheduleDayUser")
+  crewScheduleDaysCreated              CrewScheduleDay[]             @relation("CrewScheduleDayCreatedBy")
+  companycamLinksCreated               CompanyCamProjectLink[]       @relation("CompanyCamLinkedBy")
+  bluebeamSessionsLinked               BluebeamStudioSession[]       @relation("BluebeamLinkedBy")
   calendarFeedTokens                   CalendarFeedToken[]
   workerCrafts                         WorkerCraft[]
-  experienceModRatesCreated            ExperienceModRate[]    @relation("ExperienceModRateCreatedBy")
-  employerBurdenRatesCreated           EmployerBurdenRate[]   @relation("EmployerBurdenRateCreatedBy")
-  lienDeadlinesCreated                 LienDeadline[]         @relation("LienDeadlineCreatedBy")
-  lienWaiversCreated                   LienWaiver[]           @relation("LienWaiverCreatedBy")
-  bidPursuitsCreated                   BidPursuit[]           @relation("BidPursuitCreatedBy")
+  experienceModRatesCreated            ExperienceModRate[]           @relation("ExperienceModRateCreatedBy")
+  employerBurdenRatesCreated           EmployerBurdenRate[]          @relation("EmployerBurdenRateCreatedBy")
+  lienDeadlinesCreated                 LienDeadline[]                @relation("LienDeadlineCreatedBy")
+  lienWaiversCreated                   LienWaiver[]                  @relation("LienWaiverCreatedBy")
+  bidPursuitsCreated                   BidPursuit[]                  @relation("BidPursuitCreatedBy")
   connectedQuickBooks                  QuickBooksConnection[]
   quickBooksSyncAttempts               QuickBooksSyncAttempt[]
   connectedIntegrations                IntegrationConnection[]
@@ -319,7 +326,14 @@ model User {
   /// AI settings rows this person last changed — an audit line on an
   /// owner-only switch, not a thing they own.
   aiSettingsChanged         CompanyAiSettings[]
-  sheetPins SheetPin[] @relation("SheetPinCreatedBy")
+  sheetPins                 SheetPin[]                 @relation("SheetPinCreatedBy")
+  /// AI agents — see ai-agents.prisma.
+  askThreads                AskThread[]
+  agentRunsRequested        AgentRun[]                 @relation("AgentRunRequestedBy")
+  agentFindingsDismissed    AgentFinding[]             @relation("AgentFindingDismissedBy")
+  bidOutcomesRecorded       BidOutcome[]               @relation("BidOutcomeRecordedBy")
+  aiRecommendationsResolved AiRecommendation[]         @relation("AiRecommendationResolvedBy")
+  agentSettingsChanged      CompanyAgentSettings[]     @relation("CompanyAgentSettingsUpdatedBy")
 
   @@index([companyId])
 }

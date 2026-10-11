@@ -1,0 +1,279 @@
+// The AI agents: conversation memory, background runs, their findings,
+// bid outcomes and recommendations. Cyrus's lane (AI, from 2026-09-21).
+//
+// Part of the multi-file Prisma schema in this folder.
+//
+// WHY THIS EXISTS. Until now the assistant forgot a conversation when the
+// tab closed (AskPanel kept the transcript in sessionStorage), and nothing
+// in the app ran on a bid without a person typing a question. These tables
+// are what lets a thread continue over days, lets a scheduled run look at
+// the bids and record what it saw, and lets the estimator see WHY an agent
+// said what it said — every finding carries its sources.
+//
+// AGENTS ADVISE. Nothing here is a bid number, an estimate line or an
+// outbound message. A background run reads, computes, writes rows in THIS
+// file and notifies; every write to a business record still goes through
+// the AskProposal confirm card.
+//
+// Every model is company-scoped by a required `companyId`, and none carries
+// a `jobId`, so none appears in the scratch cleanup scripts (which walk
+// job-owned rows). The one row that hangs off a deletable record,
+// `BidOutcome`, CASCADES from its invitation; run and finding rows SET NULL
+// so deleting a mis-logged invitation keeps the record of what was spent
+// looking at it.
+
+/// One conversation with the assistant. Scoped to the person who started it
+/// as well as the company: a thread is somebody's train of thought, and
+/// another person in the company continuing it mid-sentence would be
+/// confusing rather than helpful.
+model AskThread {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  /// The person whose thread this is. SET NULL on delete, the actor
+  /// convention here (`AskProposal.createdByUserId`).
+  userId    String?
+  user      User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  /// Shown in the Recent list. The first question, trimmed, until the
+  /// assistant has produced a better one.
+  title String
+
+  /// Where the thread was started — a bid, a job — so the bid workspace can
+  /// list its own threads. Plain ids, not relations: a thread outlives the
+  /// record it began on.
+  subjectType String?
+  subjectId   String?
+
+  createdAt     DateTime @default(now())
+  lastMessageAt DateTime @default(now())
+
+  messages AskMessage[]
+
+  @@index([companyId, userId, lastMessageAt])
+  @@index([companyId, subjectType, subjectId])
+}
+
+/// One turn in a thread. Append-only.
+model AskMessage {
+  id       String    @id @default(cuid())
+  threadId String
+  thread   AskThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  /// "user" or "assistant". A string so a "system" or "tool" note can be
+  /// added without a migration.
+  role       String
+  content    String
+  /// What the assistant cited for this turn, when it did — the same shape
+  /// AskPanel's transcript keeps today. Null for a person's turn.
+  cites      Json?
+  /// The AskProposal this turn put on screen, when it halted on a card.
+  proposalId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([threadId, createdAt])
+}
+
+enum AgentKind {
+  BID_WATCHER
+  BID_RESEARCH
+  ESTIMATE_CHECK
+  RECOMMENDATIONS
+}
+
+enum AgentRunStatus {
+  RUNNING
+  DONE
+  FAILED
+  /// Not run: the company's monthly AI spend cap was reached. Recorded
+  /// rather than silently skipped, so "why did nothing run" has an answer.
+  PAUSED_CAP
+  /// Not run: the agent is switched off or had nothing to look at.
+  SKIPPED
+}
+
+/// One execution of one agent for one company. Written when it starts,
+/// stamped when it ends — the "Running now" list reads the RUNNING rows.
+model AgentRun {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  agent   AgentKind
+  status  AgentRunStatus @default(RUNNING)
+  /// "cron", "manual" or "event" (a new bid was logged).
+  trigger String
+
+  /// The bid this run looked at, when it looked at one. SET NULL so a
+  /// deleted invitation does not delete the record of the spend.
+  bidInvitationId String?
+  bidInvitation   BidInvitation? @relation(fields: [bidInvitationId], references: [id], onDelete: SetNull)
+
+  requestedByUserId String?
+  requestedByUser   User?   @relation("AgentRunRequestedBy", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  /// One line for the timeline: "3 bids due this week, 1 new addendum".
+  summary    String?
+  /// Why it FAILED or was PAUSED/SKIPPED, in words a person can read.
+  note       String?
+
+  findings AgentFinding[]
+
+  @@index([companyId, startedAt])
+  @@index([companyId, status])
+  @@index([bidInvitationId])
+}
+
+/// One thing an agent found, with where it came from. `sources` is an array
+/// of `{ label, href?, recordType?, recordId?, url? }` — a finding with an
+/// empty array is a bug, and the code that writes findings refuses it.
+model AgentFinding {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  runId     String
+  run       AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  agent           AgentKind
+  bidInvitationId String?
+  bidInvitation   BidInvitation? @relation(fields: [bidInvitationId], references: [id], onDelete: SetNull)
+
+  /// What kind of finding, per agent, e.g. "due_soon", "new_addendum",
+  /// "gc_history", "missing_scope", "unit_price_outlier".
+  kind     String
+  /// "info", "warn" or "flag".
+  severity String
+  title    String
+  body     String
+  sources  Json
+  /// Where to go to act on it, when there is somewhere.
+  fixHref  String?
+
+  /// Watcher findings repeat (the same bid is still due on Friday). A key
+  /// per (company, kind, subject, fact) lets a run skip what it already
+  /// said — the alert-milestone idea, without a second table.
+  dedupeKey String?
+
+  dismissedAt       DateTime?
+  dismissedByUserId String?
+  dismissedByUser   User?     @relation("AgentFindingDismissedBy", fields: [dismissedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@unique([companyId, dedupeKey])
+  @@index([companyId, createdAt])
+  @@index([companyId, agent, dismissedAt])
+  @@index([bidInvitationId])
+  @@index([runId])
+}
+
+enum BidOutcomeReason {
+  PRICE
+  RELATIONSHIP
+  SCOPE
+  SCHEDULE
+  QUALIFICATIONS
+  OTHER
+}
+
+/// What happened to a bid and why, recorded by a person when they learn it.
+/// Evidence record: one per invitation, the fields are entered, not derived.
+/// CASCADE from the invitation — an outcome of a bid that no longer exists
+/// is not a record of anything.
+model BidOutcome {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  bidInvitationId String        @unique
+  bidInvitation   BidInvitation @relation(fields: [bidInvitationId], references: [id], onDelete: Cascade)
+
+  /// "WON" or "LOST" — mirrors BidInvitationStatus at the moment it was
+  /// recorded, kept here so the reason reads with the result it explains.
+  result       String
+  reason       BidOutcomeReason
+  /// The number that won, when the GC said. Null is "nobody said".
+  winningPrice Decimal?         @db.Decimal(12, 2)
+  winnerName   String?
+  note         String?
+  /// When the GC told us. ENTERED, UTC midnight.
+  decidedOn    DateTime?
+
+  recordedByUserId String?
+  recordedByUser   User?   @relation("BidOutcomeRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+}
+
+/// A ranked suggestion with its reasons. Keyed on what it is about so a
+/// re-run UPDATES the row rather than piling up duplicates; a dismissed one
+/// stays dismissed until its subject changes enough to be a new suggestion.
+model AiRecommendation {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// "bid_or_pass", "price_outlier", "releasable_retainage", "overdue_chase".
+  kind        String
+  subjectType String
+  subjectId   String
+
+  title      String
+  /// Why, in words. Never a bare number.
+  reason     String
+  /// "low", "medium" or "high".
+  confidence String
+  /// Sort key, higher first. Derived by the engine, stored only for ranking.
+  score      Int
+  href       String?
+  sources    Json
+
+  /// "open", "done" or "dismissed".
+  status           String    @default("open")
+  resolvedAt       DateTime?
+  resolvedByUserId String?
+  resolvedByUser   User?     @relation("AiRecommendationResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, kind, subjectType, subjectId])
+  @@index([companyId, status, score])
+}
+
+/// Which agents run for this company, and what they may spend. Absent means
+/// every default — the same posture as CompanyAiSettings.
+model CompanyAgentSettings {
+  id        String  @id @default(cuid())
+  companyId String  @unique
+  company   Company @relation(fields: [companyId], references: [id])
+
+  watcherEnabled         Boolean @default(true)
+  researchOnNewBid       Boolean @default(true)
+  checkerBeforeSend      Boolean @default(true)
+  recommendationsEnabled Boolean @default(true)
+
+  /// How many days before a due date the watcher starts saying so.
+  dueSoonDays Int @default(5)
+
+  /// Monthly ceiling on what the agents may spend, in USD, priced from
+  /// AskUsage rows with an agent feature. Null means no cap beyond the
+  /// company's AskAllowancePeriod.
+  monthlySpendCapUsd Decimal? @db.Decimal(8, 2)
+
+  /// Who is told in-app when an agent finds something. Empty means the
+  /// owners.
+  notifyUserIds String[]
+
+  updatedByUserId String?
+  updatedByUser   User?   @relation("CompanyAgentSettingsUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

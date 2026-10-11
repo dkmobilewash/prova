@@ -152,6 +152,11 @@ model BidInvitation {
   specSections BidSpecSection[]
   specReadings BidSpecReading[]
 
+  /// AI agents — see ai-agents.prisma.
+  outcome       BidOutcome?
+  agentRuns     AgentRun[]
+  agentFindings AgentFinding[]
+
   /// THE JOB THIS BID IS THE SAME PIECE OF WORK AS — the estimate it is being
   /// built on before the award, and the job it became after one.
   ///
@@ -312,8 +317,8 @@ model LineItemCatalogEntry {
   unit        String?
   tradeScope  TradeScope?
 
-  defaultUnitPrice        Decimal?             @db.Decimal(12, 2)
-  defaultBudgetedUnitCost Decimal?             @db.Decimal(12, 2)
+  defaultUnitPrice        Decimal? @db.Decimal(12, 2)
+  defaultBudgetedUnitCost Decimal? @db.Decimal(12, 2)
 
   /// FLAT hours for one line, copied onto an estimate line unchanged at every
   /// quantity. NOT a per-unit figure — `catalog-line.test.ts` pins that at
@@ -323,7 +328,7 @@ model LineItemCatalogEntry {
   /// Kept exactly as it is. `Decimal(8, 2)` cannot hold a per-unit rate
   /// anyway — 0.012 stores as 0.01 — so reinterpreting this column would be
   /// both a silent change of meaning and lossy in the direction nobody checks.
-  defaultLaborHours       Decimal?             @db.Decimal(8, 2)
+  defaultLaborHours Decimal? @db.Decimal(8, 2)
 
   /// UNITS PER HOUR — the same thing, the same name and the same direction as
   /// `JobLineItem.productionRate` and `WallTypeComponent.productionRate`.
@@ -365,7 +370,7 @@ model LineItemCatalogEntry {
   /// take 1.2 hours / 8,333 hours / 0.01 hours") and writes ONE of the two
   /// columns from the answer, never both. Which convention a file uses is a
   /// fact about the file, not something any code can derive. Issue #514.
-  productionRate          Decimal?             @db.Decimal(10, 4)
+  productionRate Decimal? @db.Decimal(10, 4)
 
   /// The kind of cost this item IS, carried onto every line created from it.
   ///
@@ -385,7 +390,7 @@ model LineItemCatalogEntry {
   /// beside it has none: inferring "material" from a description string is
   /// exactly the guess this column replaces. An entry nobody has coded reads as
   /// uncoded, and the recap says so.
-  costCategory            CostCategory?
+  costCategory CostCategory?
 
   /// WHICH GENERAL-CONDITIONS COST THIS ENTRY IS, when it is one — and so WHERE
   /// THE COMPANY'S OWN FIGURE FOR IT LIVES.
@@ -405,10 +410,10 @@ model LineItemCatalogEntry {
   /// Nullable with NO BACKFILL, like `costCategory` above and for the same
   /// reason: an entry nobody has tagged is untagged, and nothing infers it from
   /// a description.
-  indirectKind            IndirectCostKind?
+  indirectKind IndirectCostKind?
 
-  craftClassificationId   String?
-  craftClassification     CraftClassification? @relation(fields: [craftClassificationId], references: [id])
+  craftClassificationId String?
+  craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id])
 
   /// Lines created from this entry. Read-only history for the actuals
   /// feedback loop on /catalog — how work priced from this template
