@@ -1,8 +1,14 @@
 import type { NavGroup } from "@/components/navItems";
 
 /**
- * The three words in the Concept G top bar (Jobs · Money · Schedule) and the
- * four tabs on a phone (Home · Jobs · Money · Schedule).
+ * The words in the Concept G top bar (Jobs · Money · Schedule · AI) and the
+ * tabs on a phone (Home · Jobs · Money · Schedule · AI).
+ *
+ * AI joined 2026-10-11 (the AI agents build, mockups ai-home-desktop.png and
+ * ai-home-phone.png). Only for someone who can open /ai — MANAGE_ESTIMATING,
+ * read off the same filtered nav list as every other word. Five tabs fit a
+ * 390px phone: 74px each against a 64px icon pill and a 58.8px "Schedule",
+ * measured in Chromium (see BottomTabs.tsx).
  *
  * Derived from the SAME filtered list the "All pages" panel draws —
  * `navGroupsFor()` in navItems.tsx — so a word can only point at a page this
@@ -11,7 +17,7 @@ import type { NavGroup } from "@/components/navItems";
  *
  * Pure, so primaryNav.test.ts can pin it without a DOM.
  */
-export type PrimaryTabKey = "home" | "jobs" | "money" | "schedule";
+export type PrimaryTabKey = "home" | "jobs" | "money" | "schedule" | "ai";
 export type PrimaryTab = { key: PrimaryTabKey; label: string; href: string };
 
 /** Where "Money" goes, best first. Cash flow is the company's money in one
@@ -35,6 +41,9 @@ export const MONEY_AREA_HREF = "/areas/money";
  * the dashboard, which is where the list is. */
 export const JOBS_HREF = "/dashboard#jobs";
 
+/** The AI home. Its sub-pages (/ai/activity, /ai/bids/[id]) light it too. */
+export const AI_HREF = "/ai";
+
 function under(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
@@ -53,6 +62,7 @@ export function primaryTabs(groups: NavGroup[]): PrimaryTab[] {
     tabs.push({ key: "money", label: "Money", href: MONEY_AREA_HREF });
   }
   if (visible.has("/schedule")) tabs.push({ key: "schedule", label: "Schedule", href: "/schedule" });
+  if (visible.has(AI_HREF)) tabs.push({ key: "ai", label: "AI", href: AI_HREF });
   return tabs;
 }
 
@@ -68,6 +78,7 @@ export function activeTab(pathname: string, hasHome: boolean): PrimaryTabKey | n
   if (under(pathname, "/jobs") || under(pathname, "/areas/jobs-bids")) return "jobs";
   if (MONEY_PAGES.some((p) => under(pathname, p))) return "money";
   if (under(pathname, "/schedule")) return "schedule";
+  if (under(pathname, AI_HREF)) return "ai";
   return null;
 }
 

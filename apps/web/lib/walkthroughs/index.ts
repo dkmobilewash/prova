@@ -33,6 +33,7 @@ import { scheduleWalkthrough } from "./schedule";
 import { settingsImportWalkthrough } from "./settings-import";
 import { settingsIntegrationsWalkthrough } from "./settings-integrations";
 import { deploymentWalkthrough } from "./deployment";
+import { aiWalkthrough } from "./ai";
 import { phaseCodesWalkthrough } from "./phase-codes";
 import { photosWalkthrough } from "./photos";
 import { prevailingWageWalkthrough } from "./prevailing-wage";
@@ -103,6 +104,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
   vendorsWalkthrough,
   vendorPricingWalkthrough,
   deploymentWalkthrough,
+  aiWalkthrough,
 ];
 
 /**

@@ -12,6 +12,7 @@ import { navFooterFor, navGroupsFor } from "@/components/navItems";
 import { AllPagesMenu } from "@/components/shell/AllPagesMenu";
 import { areasFor } from "@/lib/areas";
 import { SearchTrigger } from "@/components/shell/SearchTrigger";
+import { AiCountBadge, AiSpark } from "@/components/ai/AiMark";
 import { activeTab, initialsFor, primaryTabs } from "@/components/shell/primaryNav";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import type { HelpChannel } from "@/lib/help-request";
@@ -20,16 +21,24 @@ import type { Principal } from "@/lib/permissions";
 
 /**
  * The Concept G top bar — the whole of the desktop navigation now that the
- * left rail is gone: the C Stream wordmark (home), three words (Jobs · Money
- * · Schedule), search, and an avatar menu that holds everything else,
+ * left rail is gone: the C Stream wordmark (home), the words (Jobs · Money
+ * · Schedule · AI), search, and an avatar menu that holds everything else,
  * including "All pages", which is every destination the rail used to list.
  *
  * Below `md` it shrinks to wordmark, a search icon and the avatar; the
- * three words move to BottomTabs.tsx at the bottom of the screen.
+ * words move to BottomTabs.tsx at the bottom of the screen.
  *
  * Kept from the old Topbar, each for the reason written on it there:
- *  - Ask (AskLauncher): an empty state's "Ask" button clicks
- *    `[data-ask-launcher]`, so the launcher has to be mounted on every page;
+ *  - Ask (AskLauncher), but ONLY for someone the AI word is not drawn for.
+ *    Since 2026-10-11 the AI word is the way to the assistant, and a second
+ *    "Ask C Stream" beside it read as two different things (Cyrus's review
+ *    of the AI page screenshots). Someone without MANAGE_ESTIMATING has no
+ *    AI word, so they keep the launcher — otherwise the assistant would
+ *    vanish from every page for them. An empty state's "Ask C Stream to do
+ *    it" clicks `[data-ask-launcher]` when it is there and otherwise goes to
+ *    /ask, whose AskPanel takes the waiting sentence on mount
+ *    (components/EmptyStateButtons.tsx, lib/empty-state-events.ts), so the
+ *    button works either way;
  *  - Help (HelpButton): the only way to reach a person from inside the app;
  *  - the alert count: it moved from a bell onto the avatar. Zero draws no
  *    badge, but the menu always lists Alerts with its count, so the door is
@@ -49,6 +58,7 @@ export function TopBar({
   routesWithData,
   helpChannel,
   stages,
+  aiFindingCount = 0,
 }: {
   companyName: string;
   userName: string | null;
@@ -64,6 +74,10 @@ export function TopBar({
   /** The five Money Rail figures for the "All pages" headings — loaded by
    * the layout only behind VIEW_COMPANY_FINANCIALS, else empty. */
   stages: MoneyRailStage[];
+  /** Open agent findings, for the badge on the AI word. Loaded by the
+   * layout only behind MANAGE_ESTIMATING — the same capability that draws
+   * the word — else 0, which draws no badge. */
+  aiFindingCount?: number;
 }) {
   const pathname = usePathname();
   const groups = navGroupsFor(principal, { showsInternal, businessScope, routesWithData });
@@ -144,11 +158,14 @@ export function TopBar({
                 key={tab.key}
                 href={tab.href}
                 aria-current={on ? "page" : undefined}
-                className={`flex items-center border-b-2 pt-0.5 text-base font-medium ${
+                aria-label={tab.key === "ai" && aiFindingCount > 0 ? `AI, ${aiFindingCount} open findings` : undefined}
+                className={`flex items-center gap-[7px] border-b-2 pt-0.5 text-base font-medium ${
                   on ? "border-brand text-ink" : "border-transparent text-ink-muted hover:text-ink"
                 }`}
               >
+                {tab.key === "ai" && <AiSpark className={`h-4 w-4 ${on ? "text-brand" : ""}`} />}
                 {tab.label}
+                {tab.key === "ai" && aiFindingCount > 0 && <AiCountBadge count={aiFindingCount} />}
               </Link>
             );
           })}
@@ -169,7 +186,7 @@ export function TopBar({
               <path d="m20 20-3.5-3.5" />
             </svg>
           </button>
-          <AskLauncher />
+          {!words.some((tab) => tab.key === "ai") && <AskLauncher />}
           <HelpButton companyName={companyName} channel={helpChannel} />
 
           <div ref={menuHolder} className="relative md:ml-4">

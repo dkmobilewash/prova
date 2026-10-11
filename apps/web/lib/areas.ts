@@ -72,6 +72,12 @@ export const AREAS: Area[] = [
       // The jobs list lives on the home page (/jobs redirects there).
       { href: "/dashboard#all-jobs", route: "/dashboard", name: "Jobs", description: "Every job, by stage, with its estimate and contract" },
       { href: "/bids", name: "Bids", description: "Bid invitations from GCs and how each one went" },
+      // The AI home (2026-10-11). Here rather than in an area of its own:
+      // a seventh box for one page is a box that opens onto one card, and
+      // what the agents read and advise on is these bids. /ai/activity and
+      // /ai/bids/[id] are not nav entries (areas.test.ts takes only those);
+      // they are reached from /ai itself.
+      { href: "/ai", name: "AI", description: "Agents watching your bids, and the chat" },
       { href: "/pipeline", name: "Pipeline", description: "Projects you are chasing before the invite comes" },
       { href: "/contacts", name: "Contacts", description: "GCs, architects and the people you work with" },
       { href: "/catalog", name: "Price book", description: "Your line items, rates and what they really cost" },
