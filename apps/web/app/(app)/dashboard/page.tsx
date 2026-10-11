@@ -41,6 +41,7 @@ import {
   ReceivablesProvider,
 } from "@/components/ReceivablesPanel";
 import { loadHomeExtras } from "./home-data";
+import { overdueText } from "@/lib/due-date";
 
 /**
  * Home (Concept G, 2026-10-10; Concept H the same day).
@@ -255,7 +256,8 @@ export default async function TodayPage({
         key: `inv-${inv.id}`,
         tone: "red",
         text: `Invoice #${inv.number} to ${inv.gcName} — ${inv.jobName}`,
-        when: `${plural(inv.daysOverdue, "day")} late`,
+        when: overdueText(inv.daysOverdue),
+        whenTone: "danger",
         action: { label: "Chase", href: `/jobs/${inv.jobId}/billing` },
       });
     }
@@ -274,7 +276,8 @@ export default async function TodayPage({
       key: `rfi-${rfi.id}`,
       tone: "amber",
       text: `RFI ${rfi.number} answer is late — ${rfi.jobName}`,
-      when: plural(rfi.daysLate, "day"),
+      when: overdueText(rfi.daysLate),
+      whenTone: "danger",
       action: { label: "Chase", href: `/rfis?job=${rfi.jobId}` },
     });
   }
@@ -350,7 +353,7 @@ export default async function TodayPage({
           line,
           stage: jobStage({ status: job.status, estimateStage: est, invoiceCount: job.invoices.length }),
           tag: overdueInvoice
-            ? { text: "Invoice late", tone: "rose" as const }
+            ? { text: overdueText(overdueInvoice.daysOverdue, true), tone: "rose" as const }
             : rfi
               ? { text: `${rfi.count} RFI late`, tone: "amber" as const }
               : undefined,

@@ -52,10 +52,12 @@ export function JobStageNav({ stages }: { stages: JobStage[] }) {
                     ? "border-brand bg-brand text-neutral-900"
                     : stage.state === "done"
                       ? "border-rail-hover bg-rail-hover text-ok"
-                      : "border-line-card text-ink-muted"
+                      : stage.state === "attention"
+                        ? "border-tag-amber bg-tag-amber text-tag-amber-ink"
+                        : "border-line-card text-ink-muted"
                 }`}
               >
-                {stage.state === "done" ? "✓" : i + 1}
+                {stage.state === "done" ? "✓" : stage.state === "attention" ? "!" : i + 1}
               </span>
               <span className="min-w-0">
                 <span
@@ -68,7 +70,13 @@ export function JobStageNav({ stages }: { stages: JobStage[] }) {
                 {stage.status && (
                   <span
                     className={`mt-[3px] hidden truncate text-[13px] sm:block ${
-                      stage.state === "current" ? "text-ink-body" : "text-ink-muted"
+                      stage.tone === "danger"
+                        ? "text-danger"
+                        : stage.tone === "warn"
+                          ? "text-tag-amber-ink"
+                          : stage.state === "current"
+                            ? "text-ink-body"
+                            : "text-ink-muted"
                     }`}
                   >
                     {stage.status}
@@ -76,7 +84,13 @@ export function JobStageNav({ stages }: { stages: JobStage[] }) {
                 )}
               </span>
               <span className="sr-only">
-                {stage.state === "done" ? " (done)" : stage.state === "current" ? " (current stage)" : ""}
+                {stage.state === "done"
+                  ? " (done)"
+                  : stage.state === "attention"
+                    ? " (needs attention)"
+                    : stage.state === "current"
+                      ? " (current stage)"
+                      : ""}
               </span>
             </>
           );

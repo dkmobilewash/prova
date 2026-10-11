@@ -119,7 +119,8 @@ describe("the app layout's Money Rail figures", () => {
   // it is painted. The
   // 2026-09-19 audit found the five company-wide dollar figures reaching a
   // FIELD user's rail; the layout now loads them only for a principal who
-  // holds VIEW_COMPANY_FINANCIALS, same as MetricBar ten lines below.
+  // holds VIEW_COMPANY_FINANCIALS — the same gate the company figures on
+  // /areas/money carry (next describe block).
   const source = read("app/(app)/layout.tsx");
 
   it("loads the stages only behind VIEW_COMPANY_FINANCIALS", () => {
@@ -134,5 +135,21 @@ describe("the app layout's Money Rail figures", () => {
   it("never calls getMoneyRailStages ungated", () => {
     const calls = source.match(/getMoneyRailStages\(/g) ?? [];
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe("the company figures on /areas/money", () => {
+  // Moved from the bottom metric bar (in the layout, every page) on
+  // 2026-10-10. A gate that lived in the layout must move WITH the figures:
+  // company-wide backlog, margin, cash and retainage are
+  // VIEW_COMPANY_FINANCIALS, and a FIELD user can open the Money area.
+  const source = read("app/(app)/areas/[slug]/page.tsx");
+
+  it("loads them only on the Money area, behind VIEW_COMPANY_FINANCIALS", () => {
+    expect(source).toMatch(
+      /const showsFigures = area\.slug === "money" && can\(principal, "VIEW_COMPANY_FINANCIALS"\);/,
+    );
+    expect(source).toMatch(/showsFigures\s*\?\s*await loadCompanyFinancials\(company\.id\)/);
+    expect(source.match(/loadCompanyFinancials\(/g) ?? []).toHaveLength(1);
   });
 });

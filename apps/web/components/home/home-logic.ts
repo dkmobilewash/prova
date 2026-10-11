@@ -68,10 +68,11 @@ export function nextAction(input: {
   const { rights } = input;
 
   if (input.overdueInvoice && rights.billing) {
-    const days = input.overdueInvoice.daysOverdue;
+    // No note: how late it is reads on the card's own tag, "overdue N days"
+    // in the danger tone (lib/due-date.ts). Red on this yellow button would
+    // fail contrast, and saying it twice is the duplication Concept G drops.
     return {
       label: `Chase invoice #${input.overdueInvoice.number}`,
-      note: `${days} ${days === 1 ? "day" : "days"} late`,
       href: `${job}/billing`,
       primary: true,
     };

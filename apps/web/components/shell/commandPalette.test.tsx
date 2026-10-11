@@ -132,9 +132,26 @@ describe("CommandPalette", () => {
 });
 
 describe("SearchTrigger", () => {
-  it("renders the same markup on the server and on a Mac (no hydration mismatch)", () => {
+  // Changed 2026-10-10: the server used to say "Ctrl K" and a Mac swapped it
+  // for "⌘K" a frame later — a visible flicker. The server now names no key,
+  // so there is nothing to swap; the hint only ever APPEARS.
+  it("server markup names no shortcut, so nothing can swap on hydration", () => {
     const html = renderToString(createElement(SearchTrigger, { size: "lg" }));
-    expect(html).toContain("Ctrl K");
+    expect(html).not.toContain("Ctrl K");
+    expect(html).not.toContain("⌘K");
     expect(html).toContain("Search a job, or ask");
+  });
+
+  it("after mount, names the platform's key — and only one", async () => {
+    const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = createRoot(host);
+    await act(async () => r.render(createElement(SearchTrigger, { size: "sm" })));
+    expect(host.textContent).toContain("⌘K");
+    expect(host.textContent).not.toContain("Ctrl K");
+    act(() => r.unmount());
+    host.remove();
+    platform.mockRestore();
   });
 });

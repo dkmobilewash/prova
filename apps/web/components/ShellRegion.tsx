@@ -22,7 +22,7 @@ import { Component, Suspense, type ErrorInfo, type ReactNode } from "react";
  * FIRST resort for a decorative stats bar.
  *
  * So each independent shell region — the top bar, the phone's bottom tabs,
- * the metric bar, the invisible helpers — gets its own boundary here. A region that
+ * the invisible helpers — gets its own boundary here. A region that
  * throws is replaced by a quiet one-line fallback of the same height, the
  * error goes to the console with the region's name, and `children` of the
  * layout — the page — never notices. A degraded region beats a dead app.
@@ -78,17 +78,17 @@ import { Component, Suspense, type ErrorInfo, type ReactNode } from "react";
  * size. Do not read a `B:`/`S:` pair in the shell as proof that something
  * suspended.
  *
- * NO DOM OF ITS OWN. The shell is a flex column of the top bar, the page
- * and the metric bar; a wrapper element would become a flex item and break
+ * NO DOM OF ITS OWN. The shell is a flex column of the top bar and the page
+ * (the phone's tabs are fixed beside it); a wrapper element would become a flex item and break
  * the layout. Boundary and Suspense are both DOM-less, and
  * the test asserts a healthy region's markup lands as a direct child of its
  * container.
  */
 
-export type ShellRegionName = "topbar" | "bottomtabs" | "metricbar" | "helper";
+export type ShellRegionName = "topbar" | "bottomtabs" | "helper";
 
 /** What stands in for a region that failed. Same box as the real thing so
- * the layout's declared chrome heights (`--shell-topbar`, `--shell-metricbar`)
+ * the layout's declared chrome heights (`--shell-topbar`, `--shell-tabs`)
  * stay true; quiet copy; a way to retry that costs nothing. Exported so the
  * layout can render it directly when a region's DATA failed server-side
  * (see lib/shell-region-failure.ts) — one fallback per region, not two. */
@@ -98,7 +98,7 @@ export function ShellRegionFallback({ region }: { region: ShellRegionName }) {
       // Phone only, like the tabs it stands in for, and in the same fixed
       // spot so the layout's bottom padding still clears it.
       return (
-        <div className="print:hidden fixed inset-x-0 bottom-0 z-40 flex min-h-14 items-center gap-4 border-t border-line-card bg-rail px-4 pb-[env(safe-area-inset-bottom)] text-sm text-ink-body md:hidden">
+        <div className="print:hidden fixed inset-x-0 bottom-0 z-40 flex h-[calc(65px+env(safe-area-inset-bottom))] items-center gap-4 border-t border-line-card bg-rail px-4 pb-[env(safe-area-inset-bottom)] text-sm text-ink-body md:hidden">
           <p>The tabs couldn&apos;t load.</p>
           <ReloadLink />
           <a href="/dashboard" className="text-link hover:text-link-hover">
@@ -110,13 +110,6 @@ export function ShellRegionFallback({ region }: { region: ShellRegionName }) {
       return (
         <div className="print:hidden flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line-row bg-canvas px-4 text-sm text-ink-body md:h-16 md:px-6 lg:px-12">
           <p>The top bar couldn&apos;t load. The page still works.</p>
-          <ReloadLink />
-        </div>
-      );
-    case "metricbar":
-      return (
-        <div className="print:hidden hidden h-[52px] shrink-0 items-center gap-6 md:flex border-t border-line-card bg-surface px-4 text-sm text-ink-muted sm:px-6">
-          <p>Company figures couldn&apos;t load.</p>
           <ReloadLink />
         </div>
       );

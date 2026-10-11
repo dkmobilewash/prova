@@ -1,7 +1,6 @@
 "use client";
 
 import { FullTour } from "@/components/FullTour";
-import { MetricBar } from "@/components/MetricBar";
 import { NavigationProgress } from "@/components/NavigationProgress";
 import { ShellRegion } from "@/components/ShellRegion";
 import { BottomTabs } from "@/components/shell/BottomTabs";
@@ -9,7 +8,6 @@ import { CommandPalette } from "@/components/shell/CommandPalette";
 import { TopBar } from "@/components/shell/TopBar";
 import { TimeZoneCookie } from "@/components/TimeZoneCookie";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
-import type { CompanyFinancials } from "@/lib/company-financials";
 import type { HelpChannel } from "@/lib/help-request";
 import type { MoneyRailStage } from "@/lib/moneyRail";
 import type { Principal } from "@/lib/permissions";
@@ -173,14 +171,6 @@ export function CommandPaletteRegion() {
   return (
     <ShellRegion region="helper">
       <CommandPalette />
-    </ShellRegion>
-  );
-}
-
-export function MetricBarRegion({ financials }: { financials: CompanyFinancials }) {
-  return (
-    <ShellRegion region="metricbar">
-      <MetricBar financials={financials} />
     </ShellRegion>
   );
 }

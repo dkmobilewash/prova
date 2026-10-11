@@ -21,6 +21,7 @@ const stages = jobStages({
   approvedChangeOrders: 0,
   invoiceCount: 1,
   latestPayApp: null,
+  asOf: new Date("2026-10-10T00:00:00.000Z"),
 });
 
 describe("JobStageNav", () => {
@@ -40,15 +41,19 @@ describe("JobStageNav", () => {
     }
   });
 
-  it("numbers the current stage and ticks the ones before it", () => {
+  it("numbers the current stage, ticks the finished ones and flags the unsigned contract", () => {
     expect(html).toContain("(current stage)");
-    expect((html.match(/✓/g) ?? []).length).toBe(3);
+    // Estimate and Crew are done; Contract was passed WITHOUT a signature,
+    // so it is amber "!" rather than a tick beside its own "Not signed".
+    expect((html.match(/✓/g) ?? []).length).toBe(2);
+    expect(html).toContain("(needs attention)");
+    expect(html).toMatch(/text-tag-amber-ink">Not signed</);
   });
 });
 
 describe("PayAppSummary", () => {
   it("is honest when there is no pay application", () => {
-    const html = renderToStaticMarkup(<PayAppSummary jobId="job-1" gcName="Turner" nextNumber={2} payApp={null} />);
+    const html = renderToStaticMarkup(<PayAppSummary jobId="job-1" gcName="Turner" nextNumber={2} payApp={null} asOf={new Date("2026-10-10T00:00:00.000Z")} />);
     expect(html).toContain("No pay application yet");
     expect(html).toContain('href="#pay-applications"');
     expect(html).toContain("Start pay app #2");
@@ -69,6 +74,7 @@ describe("PayAppSummary", () => {
           status: "SUBMITTED",
           figures: { contractSum: 1000, billedBefore: 400, thisPeriod: 150, left: 450, retainageHeld: 55, youllBePaid: 135 },
         }}
+        asOf={new Date("2026-10-10T00:00:00.000Z")}
       />,
     );
     expect(html).toContain("Pay application #4 · October");
@@ -76,7 +82,41 @@ describe("PayAppSummary", () => {
     expect(html).toContain("15% of contract");
     expect(html).toContain("$55.00");
     expect(html).toContain("$135.00");
-    expect(html).toContain("Due Oct 17, 2026");
+    expect(html).toMatch(/bg-tag-amber[^"]*">Due Oct 17</);
     expect(html).toContain('href="/jobs/job-1/pay-applications/inv-4"');
+  });
+
+  const pill = (dueIso: string, asOfIso: string, status = "SUBMITTED") =>
+    renderToStaticMarkup(
+      <PayAppSummary
+        jobId="job-1"
+        gcName="Turner"
+        nextNumber={3}
+        payApp={{
+          id: "inv-2",
+          number: 2,
+          month: "September",
+          dueAt: new Date(`${dueIso}T00:00:00.000Z`),
+          status,
+          figures: { contractSum: 1000, billedBefore: 0, thisPeriod: 100, left: 900, retainageHeld: 10, youllBePaid: 90 },
+        }}
+        asOf={new Date(`${asOfIso}T00:00:00.000Z`)}
+      />,
+    );
+
+  it("a due date in the past reads 'Overdue N days' in the danger tone, not a neutral 'Due Oct 2'", () => {
+    const html = pill("2026-10-02", "2026-10-10");
+    expect(html).toMatch(/bg-tag-rose text-tag-rose-ink">Overdue 8 days</);
+    expect(html).not.toContain("Due Oct 2");
+  });
+
+  it("due today is due, all day — not overdue", () => {
+    expect(pill("2026-10-10", "2026-10-10")).toMatch(/bg-tag-amber[^"]*">Due Oct 10</);
+  });
+
+  it("a paid pay app is never overdue", () => {
+    const html = pill("2026-10-02", "2026-10-10", "PAID");
+    expect(html).toContain(">Paid<");
+    expect(html).not.toContain("Overdue");
   });
 });

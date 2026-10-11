@@ -68,31 +68,39 @@ export function StatusChip({ status }: { status: ToolStatus }) {
 
 /* --------------------------------------------------------- area page -- */
 
-/** The first word of a status is its number, when it has one — the big
- * figure on a tool card. "$64,920 overdue" gives "$64,920". */
-export function bigFigure(status: ToolStatus | null): string | null {
-  const first = status?.text.split(" ")[0] ?? "";
-  return /^\$?[\d,]+$/.test(first) ? first : null;
+/** The one action on a tool card, and whether it is the area's primary.
+ *
+ * Always "Open <tool name>" — until 2026-10-10 a name over 12 characters
+ * fell back to a bare "Open", so one row of cards read "Open RFIs" beside
+ * "Open". A long name truncates in the button instead (the full name is the
+ * card's heading, and the link's accessible name).
+ *
+ * `create` is true only for a genuine create action. Only the jobs list has
+ * a create page of its own (/jobs/new); every other tool's create form lives
+ * on its list page, so opening that page is not a create. Only a create
+ * gets the brand-yellow fill — it used to go to whichever card was first,
+ * which made "Open Cash flow" look like the thing the Money area wanted
+ * you to do. */
+export function toolAction(tool: { route: string; href: string; name: string }): {
+  label: string;
+  href: string;
+  create: boolean;
+} {
+  if (tool.route === "/dashboard") return { label: "+ New job", href: "/jobs/new", create: true };
+  return { label: `Open ${tool.name}`, href: tool.href, create: false };
 }
 
-/** The one primary action on a tool card. Only the jobs list has a create
- * page of its own (/jobs/new); every other tool's create form lives on its
- * list page, so its action opens that page. */
-function quickAction(tool: { route: string; href: string; name: string }): { label: string; href: string } {
-  if (tool.route === "/dashboard") return { label: "+ New job", href: "/jobs/new" };
-  // A long name does not fit a card's button; the name is on the card above it.
-  return { label: tool.name.length <= 12 ? `Open ${tool.name}` : "Open", href: tool.href };
-}
-
-export function ToolCard({ tool, primary }: { tool: AreaView["tools"][number]; primary: boolean }) {
-  const figure = bigFigure(tool.status);
-  const action = quickAction(tool);
+/**
+ * A tool on an area page: icon, name, ONE status line and one action.
+ *
+ * No big number in the corner. It used to repeat the status line's first
+ * word — "1" above "1 RFI waiting" — so every figure was said twice.
+ */
+export function ToolCard({ tool }: { tool: AreaView["tools"][number] }) {
+  const action = toolAction(tool);
   return (
-    <article className="flex flex-col rounded-[14px] border border-line-card bg-surface p-4" data-area-tool={tool.route}>
-      <div className="flex items-center justify-between gap-3">
-        <ToolIcon route={tool.route} />
-        {figure && <span className="font-headline text-[30px] leading-none text-ink tabular-nums">{figure}</span>}
-      </div>
+    <article className="flex min-w-0 flex-col rounded-[14px] border border-line-card bg-surface p-4" data-area-tool={tool.route}>
+      <ToolIcon route={tool.route} />
       <h2 className="mt-3 font-headline text-[21px] leading-tight text-ink">
         <Link href={tool.href} className="hover:underline">
           {tool.name}
@@ -103,13 +111,14 @@ export function ToolCard({ tool, primary }: { tool: AreaView["tools"][number]; p
       <div className="mt-auto pt-4">
         <Link
           href={action.href}
-          className={`flex h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] border px-3 text-sm font-semibold ${
-            primary
+          title={action.label}
+          className={`flex h-10 min-w-0 items-center justify-center rounded-[10px] border px-3 text-sm font-semibold ${
+            action.create
               ? "border-brand bg-brand text-neutral-900 hover:bg-yellow-500"
               : "border-line-card bg-canvas text-ink hover:bg-rail-hover"
           }`}
         >
-          {action.label}
+          <span className="truncate">{action.label}</span>
         </Link>
       </div>
     </article>

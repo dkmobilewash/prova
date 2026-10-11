@@ -108,7 +108,15 @@ export function PhoneTiles({ primary }: { primary: Shortcut }) {
 /* ---------------------------------------------------- needs you today -- */
 
 export type NeedTone = "red" | "amber" | "green";
-export type NeedItem = { key: string; tone: NeedTone; text: string; when: string; action?: { label: string; href: string } };
+export type NeedItem = {
+  key: string;
+  tone: NeedTone;
+  text: string;
+  when: string;
+  /** "danger" when `when` says something is past due ("overdue 8 days"). */
+  whenTone?: "danger";
+  action?: { label: string; href: string };
+};
 
 const NEEDS_SHOWN = 6;
 
@@ -130,7 +138,13 @@ export function NeedsBlock({ items }: { items: NeedItem[] }) {
               <span className="line-clamp-2 min-w-0 flex-1 text-ink sm:line-clamp-1" title={item.text}>
                 {item.text}
               </span>
-              <span className="hidden whitespace-nowrap text-[13px] text-ink-muted sm:inline">{item.when}</span>
+              <span
+                className={`hidden whitespace-nowrap text-[13px] sm:inline ${
+                  item.whenTone === "danger" ? "font-semibold text-danger" : "text-ink-muted"
+                }`}
+              >
+                {item.when}
+              </span>
               {item.action && (
                 <Link href={item.action.href} className="min-w-[76px] whitespace-nowrap text-right text-sm font-semibold text-link hover:text-link-hover">
                   {item.action.label} &rarr;

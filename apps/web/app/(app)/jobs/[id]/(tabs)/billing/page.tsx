@@ -9,7 +9,8 @@ import { pushBlockers } from "@/lib/quickbooks-sync";
 import { paymentPushBlockers } from "@/lib/quickbooks-payment-sync";
 import { accountPurpose } from "@/lib/quickbooks-constants";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
-import { viewerTimeZone } from "@/lib/viewerToday";
+import { viewerAsOf, viewerTimeZone } from "@/lib/viewerToday";
+import { dueStatus } from "@/lib/due-date";
 import { formatCalendarDate } from "@/lib/render-date";
 import { cashReceived } from "@/lib/billing/payment-entry";
 import { money } from "@/lib/money";
@@ -144,6 +145,8 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
   }));
 
   const timeZone = await viewerTimeZone();
+  // The reader's calendar day, for "overdue N days" (lib/due-date.ts).
+  const asOf = await viewerAsOf();
   const createInvoiceWithId = createInvoice.bind(null, job.id);
 
   const lienWaiverSection = await loadLienWaiverSection(job.id);
@@ -165,6 +168,7 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
         jobId={job.id}
         gcName={job.contact.name}
         nextNumber={(invoiceCounter?.lastNumber ?? 0) + 1}
+        asOf={asOf}
         payApp={
           latestPayApp && latestInvoice && latestCertificate
             ? {
@@ -227,7 +231,13 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                     View pay application →
                   </Link>
                 )}
-                {invoice.dueAt && <p className="mt-1 text-xs text-ink-muted">Due {formatCalendarDate(invoice.dueAt)}</p>}
+                {invoice.dueAt && (invoice.status !== "PAID" && dueStatus(invoice.dueAt, asOf).overdue ? (
+                  <p className="mt-1 text-xs font-semibold text-danger">
+                    Due {formatCalendarDate(invoice.dueAt)} · {dueStatus(invoice.dueAt, asOf).text}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-ink-muted">Due {formatCalendarDate(invoice.dueAt)}</p>
+                ))}
                 {/* The retainage figure and the balance it explains now
                     come from the same call, so the page cannot print one
                     without the other. */}

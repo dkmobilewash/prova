@@ -10,6 +10,7 @@ import { JobStageNav } from "@/components/job/JobStageNav";
 import { JobPaperworkPanel } from "@/components/job/JobPaperworkPanel";
 import { changeOrderPaperworkLink, jobStages } from "@/components/job/jobStages";
 import { loadJobStageFacts } from "@/components/job/loadJobStageFacts";
+import { viewerAsOf } from "@/lib/viewerToday";
 
 /**
  * The shared shell for every `/jobs/[id]/*` tab: the summary header (always
@@ -47,9 +48,12 @@ export default async function JobTabsLayout({
   const { showsJobMoney, showsBilling, showsField } = jobCapabilities(principal);
   const isEstimateStage = summary.status === "ESTIMATE";
 
-  const [facts, paperworkCounts] = await Promise.all([
+  const [facts, paperworkCounts, asOf] = await Promise.all([
     loadJobStageFacts(company.id, id),
     loadJobPaperworkCounts(company.id, id),
+    // The reader's calendar day, so "overdue" on the Billing step flips at
+    // THEIR midnight, not the server's UTC one (lib/due-date.ts).
+    viewerAsOf(),
   ]);
 
   // The old tab rail, refiled under five stages (components/job/jobStages.ts).
@@ -73,6 +77,7 @@ export default async function JobTabsLayout({
     approvedChangeOrders: facts.approvedChangeOrders,
     invoiceCount: facts.invoiceCount,
     latestPayApp: showsBilling ? facts.latestPayApp : null,
+    asOf,
   });
 
   const paperwork = [

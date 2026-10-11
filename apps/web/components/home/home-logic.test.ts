@@ -37,7 +37,7 @@ describe("nextAction", () => {
       overdueRfi: { number: 12 },
       scheduledToday: 5,
     });
-    expect(action).toEqual({ label: "Chase invoice #4", note: "3 days late", href: "/jobs/j1/billing", primary: true });
+    expect(action).toEqual({ label: "Chase invoice #4", href: "/jobs/j1/billing", primary: true });
   });
 
   it("never offers a billing action to someone without billing", () => {
