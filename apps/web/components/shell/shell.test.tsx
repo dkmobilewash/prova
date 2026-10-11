@@ -82,7 +82,12 @@ afterEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = false;
 });
 
-function renderTopBar(principal: { role: string; jobFunction: string | null } = owner, withStages = stages, alertCount = 0) {
+function renderTopBar(
+  principal: { role: string; jobFunction: string | null } = owner,
+  withStages = stages,
+  alertCount = 0,
+  aiFindingCount?: number,
+) {
   act(() =>
     root.render(
       <TopBar
@@ -93,6 +98,7 @@ function renderTopBar(principal: { role: string; jobFunction: string | null } = 
         principal={principal}
         helpChannel={{ kind: "none" } as never}
         stages={withStages}
+        aiFindingCount={aiFindingCount}
       />,
     ),
   );
@@ -116,10 +122,12 @@ function openAllPages() {
 }
 
 describe("the desktop top bar", () => {
-  it("draws Jobs · Money · Schedule as a landmark named Main, with no Home word", () => {
+  // AI became the fourth word 2026-10-11 (the AI agents build). An owner
+  // holds MANAGE_ESTIMATING, so an owner sees it.
+  it("draws Jobs · Money · Schedule · AI as a landmark named Main, with no Home word", () => {
     renderTopBar();
     const main = container.querySelector('nav[aria-label="Main"]')!;
-    expect(Array.from(main.querySelectorAll("a")).map((a) => a.textContent)).toEqual(["Jobs", "Money", "Schedule"]);
+    expect(Array.from(main.querySelectorAll("a")).map((a) => a.textContent)).toEqual(["Jobs", "Money", "Schedule", "AI"]);
     // On the home page no word is lit: Jobs links to /dashboard#jobs, and
     // lighting it made home and Jobs read as one tab (2026-10-11).
     expect(main.querySelector('a[aria-current="page"]')).toBeNull();
@@ -131,6 +139,24 @@ describe("the desktop top bar", () => {
     renderTopBar(field, []);
     const words = Array.from(container.querySelectorAll('nav[aria-label="Main"] a')).map((a) => a.textContent);
     expect(words).not.toContain("Money");
+  });
+
+  it("draws AI only for someone who can open /ai, and lights it on the AI pages", () => {
+    // FIELD lacks MANAGE_ESTIMATING: no word, rather than a door that refuses.
+    renderTopBar(field, []);
+    expect(container.querySelector('nav[aria-label="Main"] a[href="/ai"]')).toBeNull();
+    nav.pathname = "/ai/bids/b1";
+    renderTopBar();
+    expect(container.querySelector('nav[aria-label="Main"] a[aria-current="page"]')?.getAttribute("href")).toBe("/ai");
+  });
+
+  it("badges the AI word with the open findings count, and draws nothing at zero", () => {
+    renderTopBar(owner, stages, 0, 4);
+    const ai = container.querySelector('nav[aria-label="Main"] a[href="/ai"]')!;
+    expect(ai.textContent).toBe("AI4");
+    expect(ai.getAttribute("aria-label")).toBe("AI, 4 open findings");
+    renderTopBar(owner, stages, 0, 0);
+    expect(container.querySelector('nav[aria-label="Main"] a[href="/ai"]')!.textContent).toBe("AI");
   });
 
   it("puts the alert count on the avatar and always lists Alerts in the menu", () => {
@@ -248,14 +274,25 @@ describe("All pages", () => {
 });
 
 describe("the phone's bottom tabs", () => {
-  it("are a landmark named Main with Home · Jobs · Money · Schedule, marking the current page", () => {
+  // Five tabs since 2026-10-11: AI fits at 390px (74px a tab, measured in
+  // Chromium — see BottomTabs.tsx), so it is a tab rather than a home tile.
+  it("are a landmark named Main with Home · Jobs · Money · Schedule · AI, marking the current page", () => {
     nav.pathname = "/schedule";
     act(() => root.render(<BottomTabs principal={owner} />));
     const tabs = container.querySelector('nav[aria-label="Main"]')!;
-    expect(Array.from(tabs.querySelectorAll("a")).map((a) => a.textContent)).toEqual(["Home", "Jobs", "Money", "Schedule"]);
+    expect(Array.from(tabs.querySelectorAll("a")).map((a) => a.textContent)).toEqual(["Home", "Jobs", "Money", "Schedule", "AI"]);
     expect(tabs.querySelector('[aria-current="page"]')?.getAttribute("href")).toBe("/schedule");
     expect(tabs.className).toContain("md:hidden");
     expect(tabs.className).toContain("safe-area-inset-bottom");
+  });
+
+  it("drop AI for someone who cannot open it, and badge it for someone who can", () => {
+    act(() => root.render(<BottomTabs principal={field} />));
+    expect(container.querySelector('nav[aria-label="Main"] a[href="/ai"]')).toBeNull();
+    act(() => root.render(<BottomTabs principal={owner} aiFindingCount={2} />));
+    const ai = container.querySelector('nav[aria-label="Main"] a[href="/ai"]')!;
+    expect(ai.getAttribute("aria-label")).toBe("AI, 2 open findings");
+    expect(ai.textContent).toContain("2");
   });
 });
 
@@ -282,6 +319,10 @@ describe("primaryNav", () => {
     expect(activeTab("/areas/paperwork", false)).toBeNull();
     expect(activeTab("/schedule", false)).toBe("schedule");
     expect(activeTab("/rfis", false)).toBeNull();
+    expect(activeTab("/ai", true)).toBe("ai");
+    expect(activeTab("/ai/activity", false)).toBe("ai");
+    // A prefix that is not the AI page does not light it.
+    expect(activeTab("/aid", false)).toBeNull();
   });
 
   it("makes avatar initials", () => {

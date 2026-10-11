@@ -105,6 +105,7 @@ export function TopBarRegion({
   routesWithData,
   helpChannel,
   stages,
+  aiFindingCount = 0,
 }: {
   companyName: string;
   userName: string | null;
@@ -124,6 +125,9 @@ export function TopBarRegion({
   /** The Money Rail figures for the "All pages" headings; empty without
    * VIEW_COMPANY_FINANCIALS. */
   stages: MoneyRailStage[];
+  /** Open agent findings for the AI word's badge; 0 without
+   * MANAGE_ESTIMATING (the layout does not load it). */
+  aiFindingCount?: number;
 }) {
   return (
     <ShellRegion region="topbar">
@@ -138,6 +142,7 @@ export function TopBarRegion({
         routesWithData={routesWithData}
         helpChannel={helpChannel}
         stages={stages}
+        aiFindingCount={aiFindingCount}
       />
     </ShellRegion>
   );
@@ -148,12 +153,15 @@ export function BottomTabsRegion({
   showsInternal,
   businessScope,
   routesWithData,
+  aiFindingCount = 0,
 }: {
   principal: Principal;
   showsInternal: boolean;
   businessScope: BusinessScopeAnswers;
   /** Same list the top bar gets, from the same layout. */
   routesWithData: readonly string[];
+  /** Same count the top bar gets. */
+  aiFindingCount?: number;
 }) {
   return (
     <ShellRegion region="bottomtabs">
@@ -162,6 +170,7 @@ export function BottomTabsRegion({
         showsInternal={showsInternal}
         businessScope={businessScope}
         routesWithData={routesWithData}
+        aiFindingCount={aiFindingCount}
       />
     </ShellRegion>
   );

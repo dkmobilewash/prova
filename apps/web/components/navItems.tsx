@@ -82,6 +82,23 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    // The AI home (2026-10-11): the chat, and what the background agents
+    // are running, recommending and watching. MANAGE_ESTIMATING, like /bids
+    // beside it, because what the agents read is bids and estimates.
+    href: "/ai",
+    label: "AI",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path
+          d="M9 3.5 10.4 7.6 14.5 9l-4.1 1.4L9 14.5 7.6 10.4 3.5 9l4.1-1.4L9 3.5ZM15 12.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6.6-1.4Z"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+        />
+      </svg>
+    ),
+  },
+  {
     href: "/pipeline",
     label: "Pipeline",
     icon: (
@@ -684,12 +701,14 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Pre-construction",
-    description: "Bidding and pricing set-up: bid invitations and their history, messages, alerts, and your price book, proposal clauses and wall types.",
+    description: "Bidding and pricing set-up: bid invitations and their history, the AI agents watching them, messages, alerts, and your price book, proposal clauses and wall types.",
     // A flag: the work you are chasing.
     icon: groupIcon("M5 16.5v-13M5 4h9.5l-2.5 3.25 2.5 3.25H5"),
     items: [
       item("/alerts"),
       item("/bids"),
+      // Next to Bids: the agents' page is about the bids above it.
+      item("/ai"),
       item("/messages"),
       item("/catalog"),
       item("/proposals"),

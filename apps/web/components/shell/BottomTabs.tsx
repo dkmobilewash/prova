@@ -7,6 +7,7 @@ import { navGroupsFor } from "@/components/navItems";
 import { activeTab, primaryTabs, type PrimaryTabKey } from "@/components/shell/primaryNav";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import type { Principal } from "@/lib/permissions";
+import { AiCountBadge } from "@/components/ai/AiMark";
 
 const ICON_PATHS: Record<PrimaryTabKey, ReactNode> = {
   home: <path d="M3 10.5 12 3l9 7.5M5.5 9v11h13V9" />,
@@ -29,10 +30,17 @@ const ICON_PATHS: Record<PrimaryTabKey, ReactNode> = {
       <path d="M3.5 10h17M8 3v4M16 3v4" />
     </>
   ),
+  // The same spark as the desktop word (components/ai/AiMark.tsx).
+  ai: (
+    <>
+      <path d="M12 3l1.9 5.6 5.6 1.9-5.6 1.9L12 18l-1.9-5.6-5.6-1.9 5.6-1.9z" />
+      <path d="M19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" />
+    </>
+  ),
 };
 
 /**
- * The phone's navigation: Home · Jobs · Money · Schedule, fixed to the bottom
+ * The phone's navigation: Home · Jobs · Money · Schedule · AI, fixed to the bottom
  * of the screen below Tailwind's `md`. Everything else is under the avatar's
  * "All pages" and in search.
  *
@@ -52,17 +60,27 @@ const ICON_PATHS: Record<PrimaryTabKey, ReactNode> = {
  * 64.5px in Chromium while the layout padded 56 — 8.5px of every page sat
  * under the tabs on a phone. The height is fixed now (`h-16`) so the content
  * cannot grow it past the number the layout pads by.
+ *
+ * FIVE TABS SINCE 2026-10-11 (AI). At 390px the bar's 370px inner width
+ * gives each tab 74px. Measured in Chromium at 390x844: every tab 74x64,
+ * the icon pill 64px wide (px-5 around 24px), the widest label "Schedule"
+ * 58.8px, no tab overflowing — so nothing truncates and every target is
+ * well over 44px. Below ~340px the pill would overrun; no supported phone
+ * is that narrow.
  */
 export function BottomTabs({
   principal,
   showsInternal = false,
   businessScope,
   routesWithData,
+  aiFindingCount = 0,
 }: {
   principal: Principal;
   showsInternal?: boolean;
   businessScope?: BusinessScopeAnswers;
   routesWithData?: readonly string[];
+  /** Open agent findings, for the badge on the AI tab; 0 draws none. */
+  aiFindingCount?: number;
 }) {
   const pathname = usePathname();
   const tabs = primaryTabs(navGroupsFor(principal, { showsInternal, businessScope, routesWithData }));
@@ -81,11 +99,12 @@ export function BottomTabs({
             key={tab.key}
             href={tab.href}
             aria-current={on ? "page" : undefined}
+            aria-label={tab.key === "ai" && aiFindingCount > 0 ? `AI, ${aiFindingCount} open findings` : undefined}
             className={`flex h-16 flex-col items-center justify-center gap-1 py-1.5 text-[13px] font-semibold ${
               on ? "text-ink" : "text-ink-muted hover:text-ink"
             }`}
           >
-            <span className={`flex rounded-full px-5 py-0.5 ${on ? "bg-brand text-neutral-900" : ""}`}>
+            <span className={`relative flex rounded-full px-5 py-0.5 ${on ? "bg-brand text-neutral-900" : ""}`}>
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
@@ -98,6 +117,7 @@ export function BottomTabs({
               >
                 {ICON_PATHS[tab.key]}
               </svg>
+              {tab.key === "ai" && <AiCountBadge count={aiFindingCount} className="absolute -top-1 right-2" />}
             </span>
             {tab.label}
           </Link>
