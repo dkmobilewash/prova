@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { activeItemHref, type NavGroup, type NavItem } from "@/components/navItems";
 import { money } from "@/lib/money";
+import { areaHref, type Area } from "@/lib/areas";
+import { AreaIcon } from "@/components/areas/AreaParts";
 import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
 
 /**
@@ -87,6 +89,7 @@ export function AllPagesMenu({
   groups,
   footer,
   stages,
+  areas = [],
 }: {
   open: boolean;
   onClose: () => void;
@@ -95,6 +98,8 @@ export function AllPagesMenu({
   /** Settings and the like, already filtered by `navFooterFor`. */
   footer: NavItem[];
   stages: MoneyRailStage[];
+  /** The six areas (lib/areas.ts), already narrowed by `areasFor`. */
+  areas?: Area[];
 }) {
   const pathname = usePathname();
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -141,6 +146,21 @@ export function AllPagesMenu({
         >
           Ask C Stream a question
         </Link>
+        {areas.length > 0 ? (
+          <nav aria-label="Areas" className="mt-6 flex flex-wrap gap-2" data-nav-group="Areas">
+            {areas.map((area) => (
+              <Link
+                key={area.slug}
+                href={areaHref(area.slug)}
+                aria-current={pathname === areaHref(area.slug) ? "page" : undefined}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-line-card bg-surface px-3.5 text-[15px] font-medium text-ink hover:bg-rail-hover"
+              >
+                <AreaIcon paths={area.icon} className="h-[18px] w-[18px] text-ink-muted" />
+                {area.name}
+              </Link>
+            ))}
+          </nav>
+        ) : null}
         <nav aria-label="All pages" className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {groups.map((group) => {
             const stageKey = STAGE_KEY_FOR_HEADING[group.heading];

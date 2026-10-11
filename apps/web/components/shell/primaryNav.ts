@@ -20,8 +20,14 @@ export type PrimaryTab = { key: PrimaryTabKey; label: string; href: string };
  * without company figures can still open. */
 export const MONEY_CANDIDATES = ["/cash-flow", "/wip", "/backcharges", "/lien-deadlines"] as const;
 
-/** Pages that light "Money" — the Financials group plus cash flow. */
-const MONEY_PAGES = ["/cash-flow", "/wip", "/phase-codes", "/backcharges", "/lien-deadlines"];
+/** Pages that light "Money" — the Financials group, cash flow, and the
+ * Money area page the word opens. */
+const MONEY_PAGES = ["/areas/money", "/cash-flow", "/wip", "/phase-codes", "/backcharges", "/lien-deadlines"];
+
+/** The Money area (lib/areas.ts). Spelled out rather than imported so this
+ * file stays free of the nav icons; primaryNav.test.ts pins it to
+ * areaHref("money"). */
+export const MONEY_AREA_HREF = "/areas/money";
 
 /** The jobs list lives on the dashboard (`/jobs` redirects there), so Jobs
  * points at the dashboard's jobs section. `#jobs` is the anchor the home
@@ -40,8 +46,12 @@ export function primaryTabs(groups: NavGroup[]): PrimaryTab[] {
     tabs.push({ key: "home", label: "Home", href: "/dashboard" });
     tabs.push({ key: "jobs", label: "Jobs", href: JOBS_HREF });
   }
-  const money = MONEY_CANDIDATES.find((href) => visible.has(href));
-  if (money) tabs.push({ key: "money", label: "Money", href: money });
+  // Money opens the Money AREA (Concept H) — every money page as a card,
+  // plus what is overdue — whenever this person can open any of the pages
+  // in it. The area page filters by the same capabilities (lib/areas.ts).
+  if (MONEY_CANDIDATES.some((href) => visible.has(href))) {
+    tabs.push({ key: "money", label: "Money", href: MONEY_AREA_HREF });
+  }
   if (visible.has("/schedule")) tabs.push({ key: "schedule", label: "Schedule", href: "/schedule" });
   return tabs;
 }
@@ -53,7 +63,7 @@ export function primaryTabs(groups: NavGroup[]): PrimaryTab[] {
  */
 export function activeTab(pathname: string, hasHome: boolean): PrimaryTabKey | null {
   if (pathname === "/dashboard") return hasHome ? "home" : "jobs";
-  if (under(pathname, "/jobs")) return "jobs";
+  if (under(pathname, "/jobs") || under(pathname, "/areas/jobs-bids")) return "jobs";
   if (MONEY_PAGES.some((p) => under(pathname, p))) return "money";
   if (under(pathname, "/schedule")) return "schedule";
   return null;

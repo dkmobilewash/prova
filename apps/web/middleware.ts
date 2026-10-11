@@ -34,6 +34,8 @@ const isProtectedRoute = createRouteMatcher([
   "/intake(.*)",
   "/sales(.*)",
   "/certifications(.*)",
+  // The six area pages behind the home page's boxes (lib/areas.ts).
+  "/areas(.*)",
   // The full-page onboarding gate. Authenticated like every other route in
   // this list — a signed-out visitor is sent to /sign-in first, same as
   // anywhere else — even though the only thing that ever LINKS here is a

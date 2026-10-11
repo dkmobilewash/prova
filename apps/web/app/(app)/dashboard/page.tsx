@@ -17,10 +17,11 @@ import { EmptyState } from "@/components/EmptyState";
 import { GettingStartedCard } from "@/components/GettingStartedCard";
 import { FullTourOffer } from "@/components/FullTourOffer";
 import { tradeScopeLabel } from "@/components/tradeScopeLabels";
-import { SearchTrigger } from "@/components/shell/SearchTrigger";
+import { AreaBoxes } from "@/components/areas/AreaBoxes";
+import { areaViews, areasFor } from "@/lib/areas";
+import { loadToolStatuses } from "@/lib/areas-data";
 import {
   CrewsBlock,
-  HomeSearch,
   JobCard,
   MoneyBlock,
   NeedsBlock,
@@ -42,12 +43,15 @@ import {
 import { loadHomeExtras } from "./home-data";
 
 /**
- * Home (Concept G, 2026-10-10).
+ * Home (Concept G, 2026-10-10; Concept H the same day).
  *
- * A greeting with the day's real counts, the big search box with four
- * shortcuts, then three blocks — Needs you today, Money, Crews today — and
- * the jobs as cards, each with its stage and the ONE thing to do next. On a
- * phone the four field actions come first, as big tiles.
+ * A greeting with the day's real counts and the shortcuts beside it (the
+ * search box made compact: the top bar's search is on every page), the six
+ * AREA boxes — every page in the app, filed where a sub would look for it,
+ * each with one live line (lib/areas.ts, lib/areas-data.ts) — then three
+ * blocks (Needs you today, Money, Crews today) and the jobs as cards, each
+ * with its stage and the ONE thing to do next. On a phone the areas are
+ * two-column tiles straight to each area page, then "Log today's hours".
  *
  * Every number is derived on read — from Invoice, Payment, CostEntry,
  * JobLineItem, Rfi, TimesheetSignoff and CrewScheduleDay, through
@@ -374,13 +378,20 @@ export default async function TodayPage({
     ...(sendPayApp ? [{ icon: "↗", shortcut: sendPayApp }] : []),
     ...(rfisReachable ? [{ icon: "?", shortcut: { label: "Find an RFI", href: "/rfis" } }] : []),
   ];
-  const tiles = [
-    ...(canReach(principal, "/photos") ? [{ icon: "camera", shortcut: { label: "Take a photo", href: "/photos" } }] : []),
-    ...(rfisReachable ? [{ icon: "rfi", shortcut: { label: "New RFI", href: "/rfis" } }] : []),
-    ...(canReach(principal, "/field-reports")
-      ? [{ icon: "report", shortcut: { label: "Daily report", href: "/field-reports" } }]
-      : []),
-  ];
+
+  /* ---------------------------------------------------------- areas -- */
+  // Each box's one line, from the same rows the pages read. Overdue money
+  // and today's crews are already in hand above, so they are passed in.
+  const areas = isNewAccount
+    ? null
+    : areaViews(
+        areasFor(principal),
+        await loadToolStatuses(company.id, principal, todayIso, {
+          overdue: showsBilling ? { total: today.overdueTotal, count: today.overdue.length } : undefined,
+          crewsOut: extras.crewsToday.length,
+          inProgress: inProgress.length,
+        }),
+      );
 
   /* ------------------------------------------------------- greeting -- */
   const firstName = currentUser.name?.trim().split(/\s+/)[0];
@@ -434,25 +445,25 @@ export default async function TodayPage({
         <div className="min-w-0 flex-1">
           <PageShell width="working">
             {/* ------------------------------------------------- hero -- */}
-            <div className="md:pt-2 md:text-center" data-home="greeting">
-              <h1 className="font-headline text-[38px] font-semibold leading-none text-ink md:text-4xl md:leading-tight">
-                {hello}
-              </h1>
-              <p className="mt-1.5 text-[15px] text-ink-muted">{dateLine}</p>
+            <div className="md:flex md:items-end md:justify-between md:gap-6 md:pt-2">
+              <div data-home="greeting">
+                <h1 className="font-headline text-[38px] font-semibold leading-none text-ink md:text-[46px] md:leading-tight">
+                  {hello}
+                </h1>
+                <p className="mt-1.5 text-[15px] text-ink-muted">{dateLine}</p>
+              </div>
+              {!onlyChecklist && <ShortcutChips newJob={!isNewAccount} others={isNewAccount ? [] : chips} />}
             </div>
 
-            {!onlyChecklist && (
-              <HomeSearch>
-                <SearchTrigger size="lg" />
-                <ShortcutChips newJob={!isNewAccount} others={isNewAccount ? [] : chips} />
-              </HomeSearch>
-            )}
+            {/* ------------------------------------------------ areas -- */}
+            {/* Where everything is. Once there is a job: before that every
+                box would read zero, and the checklist is the one start. */}
+            {areas && <AreaBoxes areas={areas} />}
 
-            {!isNewAccount && (
-              <PhoneTiles
-                primary={logHours ? { ...logHours, label: "Log today's hours" } : null}
-                tiles={tiles}
-              />
+            {/* On a phone the foreman's one big action stays first; the other
+                field shortcuts are in the Crew & field and Paperwork tiles. */}
+            {!isNewAccount && logHours && (
+              <PhoneTiles primary={{ ...logHours, label: "Log today's hours" }} />
             )}
 
             {/* The full tour, offered once to a brand-new account — but not

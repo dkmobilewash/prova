@@ -2,6 +2,7 @@ import { TOOLS } from "@/lib/ask/tools";
 import { reachableWalkthroughs, searchAppHelp } from "@/lib/ask/appHelp";
 import { can, capabilityForRoute, type Capability, type Principal } from "@/lib/permissions";
 import { navFooterFor, navGroupsFor } from "@/components/navItems";
+import { areaHref, areasFor } from "@/lib/areas";
 import { SEARCH_PROVIDERS } from "./providers";
 import type { SearchPageResult, SearchProvider, SearchRecordResult } from "./types";
 
@@ -24,6 +25,9 @@ export function navPagesFor(principal: Principal, options: { showsInternal?: boo
     seen.add(href);
     out.push({ href, label, group });
   };
+  // The six areas first (lib/areas.ts) — the same boxes the home page opens,
+  // narrowed by the same capability rule.
+  for (const area of areasFor(principal)) add(areaHref(area.slug), area.name, "Areas");
   for (const group of navGroupsFor(principal, { showsInternal: options.showsInternal })) {
     for (const item of group.items) if (!item.disabled) add(item.href, item.label, group.heading);
   }
