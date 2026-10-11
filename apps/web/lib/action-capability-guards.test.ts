@@ -1753,6 +1753,8 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // and this suite found it by the walk on the day it was added, which is
   // the behaviour the file is for.
   company: () => import("./actions/company"),
+  agentSettings: () => import("./actions/agentSettings"),
+  agentFindings: () => import("./actions/agentFindings"),
   proposalDrafts: () => import("./actions/proposalDrafts"),
   sheetPins: () => import("./actions/sheetPins"),
   // Only `uploadComplianceDocument` — the other eight actions in this

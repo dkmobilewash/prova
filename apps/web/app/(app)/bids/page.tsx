@@ -22,6 +22,8 @@ import { findingsFromJson } from "@/lib/specs/spec-findings";
 import { BidJobLink } from "@/components/BidJobLink";
 import { bidRecord, settledSentence } from "@/lib/bid-outcome";
 import { loadBidOutcomes, loadLinkableJobs } from "@/lib/bid-outcome-query";
+import { BidOutcomeForm } from "@/components/BidOutcomeForm";
+import { outcomeReasonLabel } from "@/components/ai-bid/outcome";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -115,6 +117,9 @@ export default async function BidsPage({
       // again, which is how the control came to be gated on WON in the first
       // place. The link is its own fact and is read as one.
       wonJob: { select: { id: true, name: true } },
+      // Why it was won or lost (BidOutcome, ai-agents.prisma) — whether to
+      // offer "Record why" below, or say the reason already recorded.
+      outcome: { select: { reason: true } },
       quotes: { orderBy: [{ packageLabel: "asc" }, { amount: "asc" }] },
       lines: { orderBy: { sortOrder: "asc" } },
       // Addenda oldest first: they are read as a sequence, and the one you
@@ -380,7 +385,7 @@ export default async function BidsPage({
       ) : (
         <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="bids-list">
           {bids.map((bid) => (
-            <li key={bid.id} className="p-4">
+            <li key={bid.id} id={bid.id} className="scroll-mt-20 p-4">
               <Link
                 href={`/contacts/${bid.contactId}`}
                 className="flex flex-wrap items-center justify-between gap-2"
@@ -423,6 +428,18 @@ export default async function BidsPage({
                   >
                     Write the regret letter →
                   </Link>
+                </div>
+              )}
+              {/* WHY IT WAS WON OR LOST, on a decided bid only — the fact the
+                  bid recommendations learn from (BidOutcomeForm). Collapsed
+                  behind "Record why", per the list-page convention. */}
+              {(bid.status === "WON" || bid.status === "LOST") && (
+                <div className="pt-2" data-bids="outcome-why">
+                  {bid.outcome ? (
+                    <p className="text-sm text-ink-muted">Why: {outcomeReasonLabel(bid.outcome.reason)}</p>
+                  ) : (
+                    <BidOutcomeForm bidInvitationId={bid.id} defaultResult={bid.status} collapsed />
+                  )}
                 </div>
               )}
               <BidLines

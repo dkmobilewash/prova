@@ -255,6 +255,10 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   // Page-only because no nav entry links it. The link is on a DECLINED bid's
   // own row, which is the only place it makes sense.
   "/bids/[id]/regret": "MANAGE_ESTIMATING",
+  // One bid as the AI agents see it (research, estimate check, addenda,
+  // advice). MANAGE_ESTIMATING like /bids and /ai; page-only because it is
+  // reached from a bid, a finding or /ai, never by a static nav href.
+  "/ai/bids/[id]": "MANAGE_ESTIMATING",
   // A pay application IS the money document — schedule of values, stored
   // materials, retainage held. permissions.ts already says billing is not
   // an estimator's business and the field tier's audit row says the same;

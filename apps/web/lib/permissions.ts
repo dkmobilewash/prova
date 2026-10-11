@@ -201,6 +201,9 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   // The AI page: agents that read bids and estimates and advise on them.
   // Same door as /bids, because what it shows is the bid list read back.
   "/ai": "MANAGE_ESTIMATING",
+  // The agents' timeline and their switches. Same capability as /ai, whose
+  // child it is; the switches inside are further owner-only.
+  "/ai/activity": "MANAGE_ESTIMATING",
   "/proposals": "MANAGE_ESTIMATING",
   "/wall-types": "MANAGE_ESTIMATING",
   "/vendors/pricing": "MANAGE_ESTIMATING",
