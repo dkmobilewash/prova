@@ -5,6 +5,8 @@ import { SalesLeadForm } from "@/components/SalesLeadForm";
 import { SubListingImport } from "@/components/SubListingImport";
 import { CslbPhoneFill } from "@/components/CslbPhoneFill";
 import { FindEmailsPanel } from "@/components/FindEmailsPanel";
+import { OutboundPushPanel } from "@/components/OutboundPushPanel";
+import { outboundConfig, selectPushable } from "@/lib/smartlead/push";
 import { SalesLeadList } from "@/components/SalesLeadRow";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { viewerToday } from "@/lib/viewerToday";
@@ -374,6 +376,18 @@ export default async function SalesPage() {
             send to. Counted the way the action selects — no email, not
             suppressed — so the number on the button is the number it reaches. */}
         <FindEmailsPanel candidates={leads.filter((lead) => !lead.email && !lead.doNotContact).length} />
+        {/* The step after that: the leads that can be emailed go to the
+            sequencer. Counted from the same rows, by the same rule the push
+            uses, so the number on the button is the number it would send
+            before the cap. The variable NAMES (never values) of whatever is
+            unset travel to the panel so it can say so before anyone clicks. */}
+        <OutboundPushPanel
+          candidates={selectPushable(leads, { limit: Infinity }).pushable.length}
+          missing={(() => {
+            const config = outboundConfig(process.env);
+            return config.ok ? [] : config.missing;
+          })()}
+        />
       </div>
     </div>
   );

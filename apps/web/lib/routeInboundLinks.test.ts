@@ -74,6 +74,7 @@ const REACHED_FROM_OUTSIDE: Record<string, string> = {
   "/quickbooks/disconnected": "Intuit's disconnect landing URL, registered in Intuit's developer dashboard",
   "/sign-in/[[...sign-in]]": "Clerk's sign-in route, reached by Clerk's own redirects and the middleware",
   "/sign-up/[[...sign-up]]": "Clerk's sign-up route, reached by Clerk's own redirects",
+  "/unsubscribe/[token]": "the opt-out link in every cold email, carried into Smartlead as the {{unsubscribe_url}} custom field",
 };
 
 /** Files whose literals name routes without linking to them. */

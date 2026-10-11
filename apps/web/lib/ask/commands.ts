@@ -308,6 +308,16 @@ export const EXCLUSIONS: Exclusion[] = [
     reason:
       "Marks on a drawing sheet are placed by TAPPING THE DRAWING — the whole value is the x/y, and there is no sentence a person could say that puts a pin in the right spot. Ask can describe what is pinned; it cannot pin.",
   },
+  {
+    action: "outboundPush.*",
+    reason:
+      "Sends real cold email to real people through Smartlead, at a daily cap that protects the sending domain. That is a button the owner presses on /sales after reading what it will send — not something a sentence to Ask should be able to start.",
+  },
+  {
+    action: "outboundOptOut.*",
+    reason:
+      "The public unsubscribe link's button. Its only authority is the signed token in the email; it has no signed-in user, so there is no Ask session it could ever run under.",
+  },
   ...notYetRegistered,
 ];
 

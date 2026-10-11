@@ -154,6 +154,15 @@ const isProtectedRoute = createRouteMatcher([
 // 503 when no secret is set. Recorded as its own line rather than folded into
 // the digest's, because a reader looking for why THIS route is unlisted should
 // find it under its own name.
+// /api/cron/outbound-push is deliberately NOT protected here either, by the
+// same mechanism as the two above: the nightly push of new leads to the
+// cold-email sequencer is a scheduler with no Clerk session, and it checks
+// `Authorization: Bearer $CRON_SECRET` itself, timing-safe, failing closed
+// with 503 when that — or any of the four outbound settings — is unset.
+// /unsubscribe is deliberately NOT protected here, the same way /esign and
+// /portal are not: it is the opt-out link in every cold email, and CAN-SPAM
+// requires that it work with nothing but a click. The token in the path is an
+// HMAC of the lead id (lib/outbound-token.ts); a bad one opens nothing.
 // /api/quickbooks/callback is deliberately NOT protected here — see
 // QuickBooksOAuthCookiePayload in lib/quickbooks-constants.ts. Intuit's
 // redirect back to that route is a third-party-initiated navigation;
