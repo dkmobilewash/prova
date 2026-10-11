@@ -1,11 +1,21 @@
 import { prisma } from "@prova/db";
 import type { PersonaKey } from "./personas";
+import { E2E_TAG } from "./tag";
+import {
+  PIPELINE_LEAD_NAME,
+  PIPELINE_OPPORTUNITIES,
+  RESEARCHED_LEAD_NAME,
+  RESEARCHED_LEAD_SIGNALS,
+  SALES_COMPANY_NAME,
+  SALES_OWNER_NAME,
+} from "./salesFixture";
 
-/** Every row this suite writes carries this in its name, the same
- * `clean-scratch-data.mjs`/`seed-demo.mjs` convention ("[demo]") for the
- * same reason: a marker future cleanup can find, without touching a row a
- * person entered by hand while poking at their own scratch database. */
-export const E2E_TAG = "ZZ-E2E";
+/** The marker every row this suite writes carries in its name. It LIVES in
+ * `./tag.ts` now and is re-exported here so the four specs that import it from
+ * this module keep working — see that file for why it had to move (this one
+ * imports `@prova/db`, and `salesFixture.ts` must be readable without a
+ * database). */
+export { E2E_TAG };
 
 type ClerkIds = Record<PersonaKey, { id: string; email: string }>;
 
@@ -34,13 +44,20 @@ type ClerkIds = Record<PersonaKey, { id: string; email: string }>;
 export const ESTABLISHED_ACCOUNT_ASKED_AT = new Date("2026-01-01T00:00:00.000Z");
 
 /**
- * Pre-seeds the two personas that need to exist BEFORE any spec's first
+ * Pre-seeds the three personas that need to exist BEFORE any spec's first
  * navigation: MAIN (an established company, already past the onboarding
  * questions, with one contact and one job, so job-detail,
  * schedule, ask-panel, the tour and settings/import all have something to
  * show without racing another spec that creates it) and FIELD (a second
  * User inside MAIN's company, so the money-rail invariant has a
  * field-function viewer to sign in as).
+ *
+ * And SALES, which is a different kind of fixture from either: its company
+ * carries `Company.isProvaOperator`, the flag `/sales` and `/sales/[id]` are
+ * gated on. That flag cannot be obtained through any screen in this product —
+ * there is no UI that sets it — so a browser can only reach Prova's own
+ * outbound channel if the seed puts it there. See `seedSalesOperator` below and
+ * `lib/salesFixture.ts`.
  *
  * EMPTY and JOB_CREATE are deliberately NOT seeded here. Their whole point
  * is the company `adoptCompanyContext` (apps/web/lib/auth.ts) creates on
@@ -121,6 +138,161 @@ export async function seedDatabase(clerkIds: ClerkIds): Promise<void> {
   });
 
   await seedCertifiedPayrollWeek(main.companyId);
+  await seedSalesOperator(clerkIds);
+}
+
+/**
+ * THE ONE COMPANY IN THIS SUITE WITH `Company.isProvaOperator`, AND THE ROWS
+ * THE TWO SALES SCREENS READ.
+ *
+ * Seeded here rather than driven through the UI for the same reason MAIN's job
+ * is: `specs/sales-crm.spec.ts` is about whether those screens RENDER and
+ * whether a proposed signal can be confirmed, and there is no screen in this
+ * product that can create a PROPOSED signal by hand — `createSalesLeadSignal`
+ * lands a hand-typed one CONFIRMED on purpose ("typed in BY A PERSON, so it
+ * lands CONFIRMED and reviewed by them — they are the review"). Only the
+ * research seam proposes, and the one UI path to that is the listing import. So
+ * the research state the review screen exists for is seeded directly, and the
+ * REVIEW is what the browser does.
+ *
+ * THAT USED TO READ "the listing import, whose parser is under active change in
+ * another lane", which was true when it was written and is the reason this
+ * function exists. It is false now: the parser is finished, and
+ * `specs/sales-crm.spec.ts` step 8 pastes a real listing and imports it, so the
+ * browser does reach the proposing path. Seeding is still right for the REVIEW
+ * steps — a confirmable signal has to exist before step 5 opens the lead page,
+ * and step 8 runs after it — but nobody should read this paragraph as saying the
+ * import path is unclicked.
+ *
+ * `lib/salesFixture.ts` owns the data and the sentences it makes the pages say;
+ * `salesFixture.test.ts` (unit suite, every push) proves those sentences are
+ * what the app's own derivations produce from it.
+ *
+ * WHY THE SIGNALS ARE REPLACED EVERY RUN AND THE REST IS FIND-OR-CREATE. The
+ * spec CONFIRMS the proposed signal, and nothing in this product can move a
+ * signal back to PROPOSED — a wrong one is dismissed, never un-reviewed. So on
+ * a second run against a scratch database that survived the first (the
+ * `E2E_DATABASE_URL` path), a find-or-create would hand the spec a signal that
+ * is already CONFIRMED, and it would fail looking for a "Confirm" button that
+ * is not there. The opportunities and the leads themselves are never mutated by
+ * any spec, so those stay find-or-create.
+ */
+export async function seedSalesOperator(clerkIds: ClerkIds): Promise<void> {
+  const sales = await prisma.user.upsert({
+    where: { clerkId: clerkIds.sales.id },
+    update: {},
+    create: {
+      clerkId: clerkIds.sales.id,
+      email: clerkIds.sales.email,
+      // Pinned in salesFixture.ts, because confirming a signal renders
+      // "· checked by <this name>" and that sentence is the spec's proof the
+      // review landed.
+      name: SALES_OWNER_NAME,
+      // OWNER, and both halves of the gate need it: `isProvaOperator` alone
+      // gets "Owner only" rather than the page.
+      role: "OWNER",
+      company: {
+        create: {
+          name: SALES_COMPANY_NAME,
+          isProvaOperator: true,
+          // An established account, like MAIN's — `/sales` is not reached
+          // through `/dashboard`, so the onboarding gate never fires on this
+          // path, but a spec that ever does open the dashboard as SALES should
+          // not land on `/welcome` and fail about the wrong screen.
+          businessScopeAskedAt: ESTABLISHED_ACCOUNT_ASKED_AT,
+        },
+      },
+    },
+    select: { id: true, companyId: true },
+  });
+
+  /**
+   * `upsert`'s `update: {}` above never touches the company, so a scratch
+   * database seeded by a checkout that predates this function keeps a SALES
+   * company without the flag — and the failure that produces is the nastiest
+   * one available here: `/sales` renders its "Not part of your access" refusal,
+   * which is a perfectly healthy page, so the spec fails on a missing heading
+   * and says nothing about why. Exactly the shape MAIN's `businessScopeAskedAt`
+   * repair just above exists for.
+   */
+  await prisma.company.updateMany({
+    where: { id: sales.companyId, isProvaOperator: false },
+    data: { isProvaOperator: true },
+  });
+
+  const researched = await findOrCreateSalesLead(sales.companyId, RESEARCHED_LEAD_NAME);
+
+  // Replaced, not reused — see this function's header. `deleteMany` on signals
+  // is allowed: the RESTRICT in the schema is on deleting a LEAD that has been
+  // researched, which is a different guard and is left intact.
+  await prisma.salesLeadSignal.deleteMany({ where: { leadId: researched.id } });
+  await prisma.salesLeadSignal.createMany({
+    data: RESEARCHED_LEAD_SIGNALS.map((signal) => ({
+      companyId: sales.companyId,
+      leadId: researched.id,
+      kind: signal.kind,
+      state: signal.state,
+      claim: signal.claim,
+      sourceUrl: signal.sourceUrl,
+      sourceTitle: signal.sourceTitle,
+      disqualifies: signal.disqualifies,
+      // NO reviewer on the confirmed ones, deliberately: "checked by E2E SALES"
+      // is the one thing on that page that cannot be true before the review, so
+      // seeding it would make the spec's proof unfalsifiable.
+      reviewedAt: null,
+      reviewedByUserId: null,
+    })),
+  });
+
+  const pipelineLead = await findOrCreateSalesLead(sales.companyId, PIPELINE_LEAD_NAME);
+  const alreadyPriced = await prisma.salesOpportunity.count({ where: { leadId: pipelineLead.id } });
+  if (alreadyPriced === 0) {
+    for (const opportunity of PIPELINE_OPPORTUNITIES) {
+      const row = await prisma.salesOpportunity.create({
+        data: {
+          companyId: sales.companyId,
+          leadId: pipelineLead.id,
+          stage: opportunity.stage,
+          estimatedMrr: opportunity.estimatedMrr,
+          // Null on every one of them, so no figure on the band moves with the
+          // calendar — see salesFixture.ts.
+          expectedCloseDate: null,
+        },
+        select: { id: true },
+      });
+
+      for (const [fromStage, toStage, effectiveOn] of opportunity.stageChanges) {
+        await prisma.salesStageChange.create({
+          data: {
+            companyId: sales.companyId,
+            opportunityId: row.id,
+            fromStage,
+            toStage,
+            // UTC midnight, like every other date in this schema.
+            effectiveOn: new Date(`${effectiveOn}T00:00:00.000Z`),
+          },
+        });
+      }
+    }
+  }
+}
+
+/** Find-or-create by the tagged company name. The name is what the spec
+ *  locates the row by, so it is the only thing that has to be unique. */
+async function findOrCreateSalesLead(
+  companyId: string,
+  companyName: string,
+): Promise<{ id: string }> {
+  const existing = await prisma.salesLead.findFirst({
+    where: { companyId, companyName },
+    select: { id: true },
+  });
+  if (existing) return existing;
+
+  return prisma.salesLead.create({
+    data: { companyId, companyName, source: "OUTBOUND" },
+    select: { id: true },
+  });
 }
 
 /**

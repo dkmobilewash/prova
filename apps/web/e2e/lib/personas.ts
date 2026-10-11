@@ -92,6 +92,22 @@
  *                 an unrelated spec fail with a refusal sentence, which
  *                 reads as a broken feature rather than as a neighbour's
  *                 write.
+ *   SALES      — its own company, and THE ONLY ONE IN THIS TABLE THAT IS NOT A
+ *                 TENANT. Its company carries `Company.isProvaOperator`, which
+ *                 is what `/sales` and `/sales/[id]` are gated on — Prova's own
+ *                 cold-outbound channel, where every imported lead is read,
+ *                 banded and confirmed. Until 2026-10-05 no persona here had
+ *                 that flag and no spec named either route, so no browser had
+ *                 ever loaded either page and CI was green over both.
+ *                 It MUST be its own, for a reason no other row on this list
+ *                 has: the flag does not change what a company's DATA looks
+ *                 like, it changes which pages exist for it. Setting it on
+ *                 MAIN would add an "Internal" group to the rail that six
+ *                 other specs walk, and `specs/journey.spec.ts` step 10 opens
+ *                 every nav destination the rail offers — so MAIN's flag would
+ *                 silently enlist the journey into testing the sales screens,
+ *                 and a crash there would fail a step named "open every main
+ *                 nav destination". See lib/salesFixture.ts for the rows.
  *   BAD_INPUTS — its own empty company, for specs/known-bad-inputs.spec.ts:
  *                 the inputs that took the product down on 2026-09-21
  *                 (`2,800`, `12,500`, `0.10`), each driven as its own
@@ -238,6 +254,15 @@ export const PERSONAS = {
     // collision `personas.test.ts` exists for, because Clerk refuses a duplicate
     // phone with a bare 422 in global setup that names nothing.
     phone: "+15555550121",
+  },
+  sales: {
+    email: "e2e-sales+clerk_test@example.com",
+    label: "SALES",
+    username: "e2e_sales",
+    // 0122. The last number in this table was 0121; `personas.test.ts` is what
+    // catches a second row picking the same one, which has already happened
+    // once — see the note on PLAN_INGEST's number just above.
+    phone: "+15555550122",
   },
 } as const;
 

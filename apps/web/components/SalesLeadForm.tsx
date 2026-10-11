@@ -51,7 +51,17 @@ export function SalesLeadForm() {
     >
       <h3 className="text-sm font-semibold text-ink-label">Add a lead</h3>
 
-      <SalesLeadFields defaults={{ companyName: "", contactName: null, email: null, phone: null, source: null }} />
+      <SalesLeadFields
+        defaults={{
+          companyName: "",
+          contactName: null,
+          email: null,
+          phone: null,
+          source: null,
+          licenceNumber: null,
+          city: null,
+        }}
+      />
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 

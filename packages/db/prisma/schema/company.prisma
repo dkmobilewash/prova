@@ -156,6 +156,9 @@ model Company {
   salesOpportunities        SalesOpportunity[]
   salesActivities           SalesActivity[]
   salesStageChanges         SalesStageChange[]
+  salesLeadSignals          SalesLeadSignal[]
+  outboundEvents            OutboundEvent[]
+  consentRecords            ConsentRecord[]
   equipmentAssignments      EquipmentAssignment[]
   crewMembers               CrewMember[]
   payrollRegisterEntries    PayrollRegisterEntry[]
@@ -233,17 +236,17 @@ model User {
   updatedAt DateTime @updatedAt
 
   assignments                          JobAssignment[]
-  crewScheduleDays                     CrewScheduleDay[]      @relation("CrewScheduleDayUser")
-  crewScheduleDaysCreated              CrewScheduleDay[]      @relation("CrewScheduleDayCreatedBy")
-  companycamLinksCreated               CompanyCamProjectLink[] @relation("CompanyCamLinkedBy")
-  bluebeamSessionsLinked                BluebeamStudioSession[] @relation("BluebeamLinkedBy")
+  crewScheduleDays                     CrewScheduleDay[]             @relation("CrewScheduleDayUser")
+  crewScheduleDaysCreated              CrewScheduleDay[]             @relation("CrewScheduleDayCreatedBy")
+  companycamLinksCreated               CompanyCamProjectLink[]       @relation("CompanyCamLinkedBy")
+  bluebeamSessionsLinked               BluebeamStudioSession[]       @relation("BluebeamLinkedBy")
   calendarFeedTokens                   CalendarFeedToken[]
   workerCrafts                         WorkerCraft[]
-  experienceModRatesCreated            ExperienceModRate[]    @relation("ExperienceModRateCreatedBy")
-  employerBurdenRatesCreated           EmployerBurdenRate[]   @relation("EmployerBurdenRateCreatedBy")
-  lienDeadlinesCreated                 LienDeadline[]         @relation("LienDeadlineCreatedBy")
-  lienWaiversCreated                   LienWaiver[]           @relation("LienWaiverCreatedBy")
-  bidPursuitsCreated                   BidPursuit[]           @relation("BidPursuitCreatedBy")
+  experienceModRatesCreated            ExperienceModRate[]           @relation("ExperienceModRateCreatedBy")
+  employerBurdenRatesCreated           EmployerBurdenRate[]          @relation("EmployerBurdenRateCreatedBy")
+  lienDeadlinesCreated                 LienDeadline[]                @relation("LienDeadlineCreatedBy")
+  lienWaiversCreated                   LienWaiver[]                  @relation("LienWaiverCreatedBy")
+  bidPursuitsCreated                   BidPursuit[]                  @relation("BidPursuitCreatedBy")
   connectedQuickBooks                  QuickBooksConnection[]
   quickBooksSyncAttempts               QuickBooksSyncAttempt[]
   connectedIntegrations                IntegrationConnection[]
@@ -304,6 +307,7 @@ model User {
   assignedContactFollowUps             ContactInteraction[]          @relation("ContactInteractionFollowUp")
   loggedSalesActivities                SalesActivity[]               @relation("SalesActivityLogger")
   recordedSalesStageChanges            SalesStageChange[]            @relation("SalesStageChangeRecorder")
+  reviewedSalesLeadSignals             SalesLeadSignal[]             @relation("SalesLeadSignalReviewer")
   recordedEquipmentAssignments         EquipmentAssignment[]
   certifications                       WorkerCertification[]         @relation("WorkerCertificationHolder")
   recordedCertifications               WorkerCertification[]         @relation("WorkerCertificationRecorder")

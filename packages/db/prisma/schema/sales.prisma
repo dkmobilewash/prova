@@ -22,6 +22,27 @@ enum OpportunityStage {
   LOST
 }
 
+/// Where a lead is in the OUTBOUND machine — the cold-email sequencer and the
+/// phone — as distinct from `OpportunityStage`, which is where a DEAL is.
+/// A lead can be SEQUENCED with no opportunity, or WON with one; the two
+/// answer different questions and are deliberately not one enum.
+///
+/// Written by the webhook route and the call log, read by the nightly push
+/// (which only ever sends NEW) and the list pages. DEAD is terminal from the
+/// machine's point of view — bounced beyond repair, wrong firm, or suppressed
+/// — and a person can still create an opportunity by hand if they know
+/// better.
+enum OutboundStatus {
+  NEW
+  QUEUED
+  SEQUENCED
+  REPLIED
+  CONSENTED
+  CALLED
+  MEETING
+  DEAD
+}
+
 /// A prospective PROVA customer -- a construction subcontractor who might
 /// sign up. Not a second Contact: a Contact is a tenant's own GC/developer/
 /// vendor, and every tenant has their own; a SalesLead belongs only to
@@ -37,13 +58,152 @@ model SalesLead {
   phone       String?
   source      SalesLeadSource?
 
+  /// ── THE FIELDS A §4104 LISTING PRINTS AND THIS MODEL USED TO DROP ──
+  ///
+  /// `lib/sub-listing/parse.ts` reads a licence number, a city, the prime that
+  /// filed the listing and the project it was filed on. Until these columns
+  /// existed, every one of them survived import only as PROSE inside a
+  /// `SalesLeadSignal.claim` — a true sentence, correctly sourced, and useless
+  /// to anything but a human eye.
+  ///
+  /// That mattered most for the licence, and as of 2026-10-05 the thing it joins
+  /// to has been MEASURED rather than assumed. California's CSLB publishes a free
+  /// bulk CSV — no registration, no fee — keyed on the licence number a §4104
+  /// listing already prints, whose phone column is populated on 5,003 of the 5,007
+  /// wall-and-ceiling firms counted across 25 counties (99.92%). A §4104 listing
+  /// carries no telephone number at all, so that column is the join key between a
+  /// lead nobody can ring and a lead somebody can. A number inside a sentence is
+  /// not a join key; a column is. Making the join POSSIBLE is all these columns do
+  /// — no lookup, no import of that file, and deliberately nothing that pretends a
+  /// phone number is known when none has been found.
+  ///
+  /// Two things that file does NOT contain, recorded here so nothing built on
+  /// these columns implies otherwise: no email address (CSLB states "Email
+  /// addresses are not provided"), and no line type — nothing says whether a
+  /// number is a desk line or a mobile, which is the fact an automated dialler
+  /// would turn on.
+  ///
+  /// `lib/sub-listing/leadMatch.ts` asked for this one in its own header
+  /// ("`SalesLead` has `companyName` and no licence number, no city… the honest
+  /// fix is a licence number on `SalesLead`"), and `importSubListing`'s
+  /// in-pass dedupe already treats a licence as identity. Both now have
+  /// somewhere to read it from.
+  ///
+  /// EVERY ONE IS NULLABLE AND NULL MEANS "THE DOCUMENT DID NOT SAY". A lead
+  /// typed in by hand has none of them; a listing with no licence column has no
+  /// licence. Nothing here is defaulted, derived or inferred.
+
+  /// The CSLB licence number, BARE DIGITS — see `lib/sales-licence.ts`, which is
+  /// the only thing that writes this and carries the measurement behind it.
+  ///
+  /// Measured over 5,007 target-set rows and a 32,423-row master sample: CSLB's
+  /// `LicenseNo` is a decimal integer of 2 to 7 digits, with no prefix, no
+  /// punctuation and NOT ONE value beginning with a zero. So this column is
+  /// normalised on the way in, which is the one deliberate departure from this
+  /// file's usual "store what the document printed" rule, and it is two
+  /// departures rather than one:
+  ///
+  ///   - the CLASS PREFIX goes. A contractor holds one number under several
+  ///     classifications, so the framing row prints "C-9 884201" and the plaster
+  ///     row prints "C-35 884201" for one registrant. The class is a fact about
+  ///     the scope of work, not about who holds the licence;
+  ///   - LEADING ZEROS go. The repo's own harvest of 26 real Caltrans files
+  ///     records a licence printed as "061234", with the zero significant in the
+  ///     document; CSLB stores none, so "061234" and "61234" are one licence and
+  ///     stripping is mandatory for the join rather than tidy.
+  ///
+  /// The verbatim string is not lost — it stays in the LICENCE signal's claim,
+  /// with its source and line number, which is where a claim belongs.
+  ///
+  /// NOT unique, on purpose. Two leads carrying one licence are a duplicate
+  /// worth noticing, but a unique index turns noticing it into a Postgres error
+  /// that production REDACTS, on an import of up to sixty rows — the
+  /// `InvoiceCounter` collision in miniature. The index below is for reading.
+  licenceNumber String?
+
+  /// The DIR public-works registration as the document printed it. Ten digits
+  /// starting 1 or 2, and no normalisation is applied because there is no class
+  /// prefix to strip. The second public identifier in this trade, and the one
+  /// that is present when a sub is listed on prevailing-wage work.
+  registrationNumber String?
+
+  /// The city, as the document spelled it. Not normalised, not geocoded, and no
+  /// state column: `parse.ts` reads a city and this stores what it read.
+  city String?
+
+  /// THE PRIME THAT LISTED THEM, AND THE PROJECT IT WAS LISTED ON — where this
+  /// lead came from, written once.
+  ///
+  /// These are PROVENANCE, not a current relationship, and the difference is
+  /// load-bearing. A sub appears on many listings over time; each of those is a
+  /// `SalesLeadSignal` with its own source URL, line number and bid outcome, and
+  /// the signals are where that history lives. These two columns answer only
+  /// "which document introduced us", so `importSubListing` fills them when they
+  /// are blank and NEVER overwrites them — a second import must not be able to
+  /// rewrite where a lead came from, least of all when a person has attached a
+  /// row to a lead by hand.
+  ///
+  /// `listedByGc` is the row's own `listedBy` where the reader could attribute
+  /// it, falling back to the document's single prime. A multi-prime packet
+  /// attributes per row or not at all; it never guesses.
+  listedByGc      String?
+  listedOnProject String?
+
+  /// ── THE OUTBOUND MACHINE'S VIEW OF THIS LEAD ──
+  ///
+  /// `doNotContact` is THE suppression flag, and the one rule about it is that
+  /// every tool reads it: the nightly push skips a suppressed lead, the call
+  /// list shows it, the call buttons refuse to log a dial against it, and the
+  /// webhook sets it on an unsubscribe. Set with its reason and the date it
+  /// was asked for, never cleared by code — a person who was asked to stop is
+  /// stopped until a person decides otherwise. Default false so every lead
+  /// that exists today is unchanged by this column arriving.
+  ///
+  /// Before this column, "do not call" lived as a tag on the latest CALL
+  /// activity (`lib/call-dispositions.ts`), which is what the call buttons
+  /// still write; that read stays as the fallback for rows older than this
+  /// migration, and this flag wins when set.
+  doNotContact       Boolean   @default(false)
+  doNotContactReason String?
+  doNotContactAt     DateTime?
+
+  outboundStatus OutboundStatus @default(NEW)
+  /// The vendor's or the caller's time for the latest outbound touch —
+  /// entered from the event, never stamped on receipt.
+  lastOutboundAt DateTime?
+
+  /// ── WHERE THE EMAIL CAME FROM, AND WHETHER ANYTHING CHECKED IT ──
+  ///
+  /// CSLB prints no email, so every address on a cold lead is FOUND, and a
+  /// found address is only as good as how it was found. `lib/email-finder`
+  /// writes these three together; a person typing an address writes "caller".
+  ///
+  /// The firm's domain, bare ("bakerdrywall.com") — found by search or typed by
+  /// the caller. Null means nobody has found one, not that the firm has none.
+  website String?
+  /// "site" (printed on their own website), "pattern" (guessed from the
+  /// owner's name), or "caller" (typed by a person). Null on rows older than
+  /// this column. A guess is never allowed to read like a fact.
+  emailSource String?
+  /// The VERIFIER'S time for its deliverable/catch-all verdict. Null means
+  /// unverified — a pattern guess with no verifier key stays null, which is
+  /// the honest state, not a missing one.
+  emailVerifiedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   opportunities SalesOpportunity[]
   activities    SalesActivity[]
+  signals       SalesLeadSignal[]
+  outboundEvents OutboundEvent[]
+  consents       ConsentRecord[]
 
   @@index([companyId])
+  /// For the lookup this column exists to make possible: find the lead holding
+  /// a licence number, within the one operator company. Composite rather than
+  /// bare, because every read in this file is already scoped to `companyId`.
+  @@index([companyId, licenceNumber])
 }
 
 /// One deal in progress with a SalesLead. A lead can have more than one
@@ -200,4 +360,189 @@ model SalesStageChange {
 
   @@index([opportunityId])
   @@index([companyId])
+}
+
+/// What a signal is ABOUT. Ordered loosely by how much it changes a call --
+/// the last two are the ones that give you an opening sentence, which is why
+/// lib/sales-qualification.ts treats them differently from the rest.
+enum SalesSignalKind {
+  TRADE
+  SIZE
+  GEOGRAPHY
+  LICENCE
+  UNION
+  TECH
+  GC_RELATIONSHIP
+  PROJECT
+}
+
+/// PROPOSED is research; CONFIRMED is knowledge; DISMISSED is the memory that
+/// we already looked at this and it was wrong.
+///
+/// The distinction is load-bearing rather than tidy. Only CONFIRMED signals
+/// count toward a lead's fit band, so research nobody has read can never make
+/// a prospect look better than a prospect nobody researched -- otherwise the
+/// band measures how much searching happened rather than what is known.
+enum SalesSignalState {
+  PROPOSED
+  CONFIRMED
+  DISMISSED
+}
+
+/// One thing we know, or think we know, about a prospective Prova customer --
+/// each carrying the page it came from.
+///
+/// WHY THIS IS NOT SalesOpportunity.notes OR SalesActivity. `notes` is one
+/// mutable free-text field the next edit overwrites, which is the defect
+/// SalesActivity was added to fix. An ACTIVITY is a touchpoint: something we
+/// DID, on a date. A SIGNAL is a FACT ABOUT THEM, with a source, which nobody
+/// did anything to acquire except look. Logging "read their website" as a call
+/// would corrupt the last-contact line that /sales derives from activities.
+///
+/// `sourceUrl` IS REQUIRED, AND THAT IS THE WHOLE DESIGN. A claim with no
+/// source is not a signal; it is a rumour that will be read as a fact on a
+/// call. The column is NOT NULL so no code path can invent one, which is
+/// stronger than any check in the app -- and it means the qualification band
+/// never has to ask whether a signal is sourced.
+///
+/// IDENTITY FIELDS LOCK AFTER CREATION and a wrong signal is DISMISSED rather
+/// than deleted, like every other evidence record here. A dismissed signal is
+/// worth keeping: it stops the next search re-proposing the same wrong thing.
+model SalesLeadSignal {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// RESTRICT, like SalesActivity: deleting a lead we have researched should
+  /// refuse and say so, not silently discard the evidence. deleteSalesLead
+  /// counts these -- see its guard, and the note in WORK-SPLIT about the same
+  /// bug shipping once already for activities.
+  leadId String
+  lead   SalesLead @relation(fields: [leadId], references: [id], onDelete: Restrict)
+
+  kind  SalesSignalKind
+  state SalesSignalState @default(PROPOSED)
+
+  /// One sentence, as somebody would say it out loud. Used verbatim in the
+  /// band's reason and never parsed -- a band that depended on the wording of
+  /// a claim would be a parser pretending to be a rule.
+  claim String
+
+  /// The page this came from. Never derived, never defaulted.
+  sourceUrl   String
+  sourceTitle String?
+
+  /// Confirmed, this ends the chase whatever else is known: they are the GC,
+  /// they have shut down, they already pay us, they are locked into a
+  /// competitor. ONE FLAG RATHER THAN A SECOND TAXONOMY -- deriving "not a
+  /// fit" from a trade outside our five would need a second copy of the trade
+  /// list, and a duplicated canonical list is a defect this repo has paid for.
+  disqualifies Boolean @default(false)
+
+  /// When WE looked. Stamped, and that is correct here: unlike the dates on
+  /// an evidence record, this describes our own act of looking rather than
+  /// something that happened in the world, and the machine genuinely knows
+  /// it. A date about the PROSPECT belongs in `claim`, with its source.
+  foundAt DateTime @default(now())
+
+  /// Who moved it off PROPOSED, and when they did. Null while it is still
+  /// research nobody has read.
+  reviewedAt       DateTime?
+  reviewedByUserId String?
+  reviewedByUser   User?     @relation("SalesLeadSignalReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([leadId])
+  @@index([leadId, state])
+}
+
+/// ONE ROW PER THING THE OUTBOUND VENDORS TOLD US, VERBATIM, APPEND-ONLY.
+///
+/// The sequencer's webhooks arrive in shapes its own documentation does not
+/// agree on (`lib/smartlead-webhook.ts` has the list), so every event is
+/// stored with its RAW PAYLOAD before anything is derived from it. What the
+/// app decided the event meant is a `SalesActivity` or a status change on the
+/// lead, written in the same transaction; this row is what lets that decision
+/// be re-derived when the parser turns out to have guessed.
+///
+/// `vendorEventId` is UNIQUE, and that is the whole defence against retries:
+/// every vendor re-sends anything that did not get a 200, and a replayed
+/// reply recorded twice is a reply rate that is wrong. Same shape as
+/// `OutboundMessageEvent.providerEventId`.
+///
+/// `leadId` is optional and SET NULL: an event for an address no lead holds
+/// is still worth keeping (it is how a mismatch is found), and deleting a
+/// lead must not be blocked by its history.
+model OutboundEvent {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  leadId String?
+  lead   SalesLead? @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  /// Which vendor: `smartlead`, later `retell`, `kixie`.
+  source String
+  /// The vendor's own event name, unmapped — `EMAIL_REPLY`, `LEAD_UNSUBSCRIBED`.
+  type String
+  /// The address the event was about, lower-cased, so an unmatched event can
+  /// be matched later when the lead gains an email.
+  email String?
+
+  vendorEventId String @unique
+  payload       Json
+
+  /// When the VENDOR says it happened. Null when the vendor sent no time,
+  /// which some of these payloads do not; never defaulted to receipt.
+  occurredAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
+  @@index([leadId])
+  @@index([email])
+}
+
+/// WHAT A PROSPECT AGREED TO, EXACTLY, AND THE PROOF.
+///
+/// A reply "yes" to an email is consent for a HUMAN call. For an automated or
+/// AI-voice call the law wants a signed writing that names the number,
+/// discloses the technology and says consent is not a condition of purchase
+/// (47 CFR 64.1200(f)(9), E-SIGN). This row is that writing's record: the
+/// exact text shown (and its hash and version, so a later edit to the page
+/// cannot change what somebody agreed to), the phone they typed, where and
+/// when, and whether the box was ticked — an unticked submission is kept too,
+/// because "they saw it and declined" is also a fact.
+///
+/// Nothing in the app may place an automated call to a lead without a row
+/// here with `checked` true. There is deliberately no `revokedAt`: revocation
+/// is `SalesLead.doNotContact`, the one flag every tool reads.
+model ConsentRecord {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  leadId String
+  lead   SalesLead @relation(fields: [leadId], references: [id], onDelete: Restrict)
+
+  phone       String
+  text        String
+  textHash    String
+  textVersion String
+  checked     Boolean
+
+  /// The moment they submitted the page. Stamped, and that is correct: this
+  /// describes our own act of capturing the agreement, which the machine
+  /// genuinely knows, and the proof is worthless without it.
+  capturedAt DateTime @default(now())
+  ipAddress  String?
+  userAgent  String?
+  /// Which page or campaign showed the text.
+  source     String?
+
+  @@index([companyId])
+  @@index([leadId])
 }

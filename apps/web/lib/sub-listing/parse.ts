@@ -1,0 +1,3924 @@
+import { TRADE_SCOPE_OPTIONS } from "@/lib/trade-scopes";
+
+/**
+ * READING THE SUBCONTRACTOR LISTING OFF A PUBLIC BID OR AWARD DOCUMENT.
+ *
+ * The motion: find a project out to bid or recently awarded, find the subs named
+ * on it, and reach each one about THEIR OWN job. Which makes the failure mode
+ * expensive: *a generic email that is vague is forgettable; a specific email
+ * that is wrong is disqualifying.* Being wrong about a man's own job costs the
+ * relationship, and in a trade this small it costs the ones you have not
+ * contacted yet.
+ *
+ * ── A CLAIM IS THE DOCUMENT'S OWN WORDS, WITH THE LINE IT CAME FROM ──
+ *
+ * Nothing here paraphrases or infers. `sourceText` is the verbatim line, `line`
+ * is where to find it, and `signals.ts` assembles sentences from those spans
+ * rather than composing about them. There is no model anywhere in this
+ * directory, so the invention failure `lib/research/bidResearch.eval.ts` is
+ * built around — a confident fact about a similarly-named project, carrying a
+ * citation that passes every code-level guard — has no mechanism here.
+ *
+ * ── EVERY NON-BLANK LINE IS ACCOUNTED FOR, AND THAT SENTENCE IS THE WHOLE
+ *    DESIGN. READ WHY IT IS PHRASED THAT WAY. ──
+ *
+ * The first version of this file counted "candidate" lines with a predicate
+ * (`looksLikeData`: does the line carry money, a percentage, a licence or a
+ * registration number?) and computed `unread` as candidates minus rows. Its
+ * header claimed the counting expression and the parsing expression "share
+ * nothing", so nothing could go missing.
+ *
+ * **That was false, and an adversarial review demonstrated it three ways.** The
+ * two expressions shared the only thing a set difference depends on: THE
+ * UNIVERSE. A line the predicate rejected was in neither set — not a row, not
+ * unread, not counted — and `agreed` then read `true` while the screen printed
+ * a green "every line was read" sentence over the loss:
+ *
+ *   - a row with no money, percent, licence or registration token at all
+ *     vanished. California's §4104 carries NO dollar field, so whether a row
+ *     has any numeric token depends entirely on whether the licence column
+ *     happened to be inside the person's paste selection. Four subs in, one
+ *     out, `agreed: true`;
+ *   - `TOTAL_LINE` was matched against the whole line, so a sub listed under
+ *     "Alternate No. 2 — gypsum board" vanished, and so did **Total Western,
+ *     Inc.**, which is a real California contractor;
+ *   - a licence outside 5–8 digits (Washington's UBI shapes) left
+ *     `candidateLines: 0` and lost every sub on the page.
+ *
+ * It is the family CLAUDE.md names twice — *nothing is ever missing from a
+ * directory you do not walk; nothing is ever missing from a list nobody
+ * imports.* A guard was built and then a gate was put in front of it.
+ *
+ * So the universe is now **every non-blank line**, and each one is classified
+ * into exactly one bucket: a `row`, a header line, an `ignored` line whose
+ * reason is NAMED, or `unread`. `reconciliation.accountedFor` is their sum and
+ * must equal `nonBlankLines` — a partition, asserted in the tests rather than
+ * assumed.
+ *
+ * ── AND READ THE NEXT PARAGRAPH, BECAUSE THIS ONE USED TO OVERCLAIM AND THE
+ *    OVERCLAIM IS WHAT LET THE DEFECT BACK IN ──
+ *
+ * It said: *"There is no predicate left that can decline to admit a line,
+ * because there is no predicate."* That was false when written.
+ * `furnitureReason` is a predicate, it declines lines, and a second review
+ * proved it declined the majority of rows on the document type this feature
+ * exists for — see its own header for the reproduction.
+ *
+ * **What the partition actually guarantees is narrower than it reads.**
+ * `accountedFor === nonBlankLines` proves no line fell off the page. It proves
+ * NOTHING about whether a line is in the bucket it belongs in, and a bucket
+ * with a confident wrong reason loses a subcontractor exactly as thoroughly as
+ * no bucket at all. The two guarantees are:
+ *
+ *   - nothing VANISHES — the partition, asserted;
+ *   - nothing is MISFILED — `hasDataEvidence` plus the converse tests in
+ *     `parse.test.ts` ("furniture is only furniture"), which is the half that
+ *     was missing and the half no arithmetic can supply.
+ *
+ * `looksLikeData` is gone and `furnitureReason` is narrower, but the lesson is
+ * not about either function: **a guard and its converse are two tests, and
+ * writing one of them reads exactly like finishing.**
+ *
+ * ── RECOGNISE, NEVER REJECT ──
+ *
+ * A licence or registration token fills a field when it is there and is never a
+ * validity test. The formats are written from their shape and are NOT verified
+ * against the issuing agencies — so a row whose licence looks wrong still
+ * parses, it simply gets `licence: null`. Dropping a sub because an unverified
+ * regex disliked their number is the silent loss above, wearing a different hat.
+ *
+ * ── WHAT IS NOT VERIFIED, SAID PLAINLY ──
+ *
+ * The egress proxy in this container blocks every general web host (403 on
+ * CONNECT), so **no real bid or award document was read while writing this.**
+ * The fixtures are synthetic and say so in their own header. Column orders,
+ * wrapping and the exact field set of a real agency's form are UNCONFIRMED, and
+ * that is the next thing to fix: paste one real document in, read what `unread`
+ * and `problems` say, and widen from the evidence.
+ *
+ * The parser is built to survive being wrong about it. It requires no column
+ * order, requires no header, and anything it cannot read it hands back.
+ */
+
+type TradeScopeValue = (typeof TRADE_SCOPE_OPTIONS)[number]["value"];
+
+/**
+ * Keywords that identify a portion of work as one of our five trades.
+ *
+ * A total `Record` over the canonical list ON PURPOSE: add a sixth trade to
+ * `lib/trade-scopes.ts` and this stops compiling until it is given keywords. A
+ * trade that is storable but that no document can match is the "storable,
+ * parseable and impossible to type in" hole from #526. Keys are identifiers, so
+ * this is not a seventh copy of the trade list — the list is imported and this
+ * only decorates it. (Issue #608: there are six hand-rolled copies of that list
+ * in this app already, and no census can see them.)
+ */
+const TRADE_KEYWORDS: Record<TradeScopeValue, readonly string[]> = {
+  METAL_FRAMING_DRYWALL: [
+    "drywall",
+    "gypsum",
+    "metal stud",
+    "metal framing",
+    "light gauge",
+    "light-gauge",
+    "cold formed",
+    "cold-formed",
+    "wallboard",
+    "sheetrock",
+    "taping",
+    "interior framing",
+    "framing & drywall",
+    "framing and drywall",
+  ],
+  LATH_PLASTER: ["lath", "plaster", "stucco", "cement plaster", "veneer plaster"],
+  EIFS: ["eifs", "exterior insulation", "synthetic stucco", "insulation finish"],
+  ACOUSTICAL_CEILINGS: [
+    "acoustical",
+    "acoustic",
+    "ceiling",
+    "suspended ceiling",
+    "grid ceiling",
+    "act ceiling",
+  ],
+  FIREPROOFING: [
+    "fireproofing",
+    "fire proofing",
+    "fire-proofing",
+    "sfrm",
+    "spray applied fire",
+    "spray-applied fire",
+    "intumescent",
+    "firestopping",
+    "fire stopping",
+    "fire-stopping",
+  ],
+};
+
+/**
+ * Which trade wins when two of ours match equally well. Lowest rank wins.
+ *
+ * "Drywall and ceilings" is how a drywall sub's scope is most often written, and
+ * `drywall` and `ceiling` are both seven characters. The first version returned
+ * `null` on that tie — so the commonest row in the whole corpus matched nothing,
+ * defaulted to unticked, and (with the dead checkbox this shipped beside) could
+ * not be imported at all.
+ *
+ * A tie between two of OUR OWN trades is not an unknown: the row is ours either
+ * way, and refusing to say which is worse than picking one and saying so. So
+ * ties resolve in this order and the row carries a concern naming the other
+ * match. Metal framing and drywall leads because it is the core trade and the
+ * one a combined scope is usually sold as.
+ *
+ * ── A RECORD, NOT AN ARRAY, AND THE REASON IS THE FAILURE DIRECTION ────────
+ *
+ * This was `readonly TradeScopeValue[]` and the tie-break was
+ * `TRADE_PRIORITY.indexOf(a) - TRADE_PRIORITY.indexOf(b)`. It happened to hold
+ * all five trades and nothing enforced that. **`Array.prototype.indexOf`
+ * returns -1 for a value it does not hold**, and -1 is lower than every real
+ * index — so a sixth trade added to `lib/trade-scopes.ts` and forgotten here
+ * would not throw, would not fail a test, and would silently sort FIRST, ahead
+ * of this company's own primary trade. Measured on the live function, with one
+ * entry commented out of the array: "Drywall and ceilings" flipped from
+ * `METAL_FRAMING_DRYWALL` to `ACOUSTICAL_CEILINGS`, with 258 tests green. A
+ * wrong winner is both a wrong import default (`shouldInclude` ticks a row when
+ * `tradeScope !== null`) and a wrong sentence, since the TRADE claim quotes the
+ * scope name down a telephone.
+ *
+ * A total `Record` cannot omit a key, so the omission is now a COMPILE error —
+ * the earliest moment available, and the same device `TRADE_KEYWORDS` and
+ * `HEADER_CONFLICT` above and `CLAIM_FOR` in `signals.ts` already use. Keys are
+ * identifiers, so this is still an ORDERING of the imported list rather than a
+ * seventh copy of it (issue #608).
+ *
+ * The rank numbers are deliberately explicit rather than derived from key order:
+ * `Object.keys` order is a property of how the object was written, which makes
+ * an accidental reordering invisible, whereas a number is read and reviewed.
+ * `tradePriority.test.ts` asserts they are a permutation of 0…n-1 — a Record
+ * cannot omit a key but it CAN give two trades the same rank, which would
+ * reintroduce exactly the arbitrary tie this table exists to settle.
+ */
+const TRADE_PRIORITY: Record<TradeScopeValue, number> = {
+  METAL_FRAMING_DRYWALL: 0,
+  ACOUSTICAL_CEILINGS: 1,
+  LATH_PLASTER: 2,
+  EIFS: 3,
+  FIREPROOFING: 4,
+};
+
+/**
+ * Exported for `tradePriority.test.ts`, which is the only reader.
+ *
+ * The test has to see both the MEMBERSHIP and the RANKS: the type makes an
+ * omission impossible, and nothing but a test can say that the order is the one
+ * documented above, or that no two trades share a rank.
+ */
+export const TRADE_PRIORITY_RANKS: Readonly<Record<TradeScopeValue, number>> = TRADE_PRIORITY;
+
+/**
+ * The rank of a trade, and an unknown value sorts LAST rather than first.
+ *
+ * Unreachable by the types — every caller passes a `TradeScopeValue` and the
+ * Record is total over them — so this is the belt to that braces. It exists
+ * because the failure it replaces was silent and pointed the WRONG WAY: -1 put
+ * an unranked trade ahead of metal framing and drywall. If a value ever reaches
+ * here off a type boundary (a database row, a JSON paste), losing a tie is a
+ * defensible answer and winning one is not.
+ */
+function priorityOf(scope: TradeScopeValue): number {
+  return TRADE_PRIORITY[scope] ?? Number.MAX_SAFE_INTEGER;
+}
+
+/** One subcontractor as the document lists them. */
+export type ListedSub = {
+  /** The company name exactly as the document spells it. Never normalised. */
+  name: string;
+  /** The verbatim text this row was read from. This is the claim's evidence. */
+  sourceText: string;
+  /** 1-based line number within the pasted text, so a person can go and look. */
+  line: number;
+  /** The document's own words for the portion of work, verbatim. */
+  portionOfWork: string | null;
+  /** One of our five trades, when the portion of work matches. */
+  tradeScope: TradeScopeValue | null;
+  /** A contractor licence number as printed. Recognised, never validated. */
+  licence: string | null;
+  /** A public-works contractor registration number as printed. */
+  registration: string | null;
+  city: string | null;
+  /**
+   * The BIDDING CONTRACTOR whose listing this row sat under — the general
+   * contractor, which is the whole point of a §4104 listing and the one fact that
+   * makes a lead worth calling rather than a name off a licence database.
+   *
+   * Null when the paste cannot say. A single bidder's table pasted on its own does
+   * not contain its own bidder's name, and the labelled-column form deliberately
+   * refuses attribution entirely — see the reader below. `header.prime` is the
+   * other half: it carries a prime the DOCUMENT labelled, and refuses when a page
+   * names more than one. This field is per row, so a whole page with six bidders
+   * is read correctly instead of being refused.
+   */
+  listedBy: string | null;
+  /**
+   * The amount as the document printed it, to the CENT — not whole dollars,
+   * which is what this line said until `parseAmount` stopped rounding. Only
+   * ever rendered into a sentence, never stored as money.
+   *
+   * Null is the normal case rather than a failure: California's §4104 listing
+   * has no dollar column at all. Null ALSO means the row carried figures and
+   * this refused to choose between them, which arrives as a concern.
+   */
+  amount: number | null;
+  percentOfBid: number | null;
+  /**
+   * THE SUBCONTRACTOR'S OWN EMAIL AND TELEPHONE NUMBER, WHICH ONLY ONE SHAPE
+   * CARRIES — AND NOTHING DOWNSTREAM READS THEM YET.
+   *
+   * Optional rather than nullable, and the difference is deliberate: every other
+   * shape omits them entirely, which is not the same statement as "the document
+   * printed an empty box". `undefined` means this reader never had a box to look
+   * in; `null` means the box was there and empty.
+   *
+   * Written down as a capability this reader has, NOT as one the product has.
+   * `signals.ts` does not render them and `importSubListing` has no column for
+   * them, so nothing reaches a screen from here — that is the importer's half and
+   * it is Diego's lane. Recorded because the source survey's case for SF Public
+   * Works rests on this field: the CSLB licence file carries no email at all, and
+   * automated dialling is not an option, so an email on the document itself is
+   * the only automatable contact channel found anywhere. Reading it here is what
+   * makes wiring it up a column change rather than a parser change.
+   */
+  email?: string | null;
+  phone?: string | null;
+  /**
+   * Things about this row a person must look at before believing it.
+   *
+   * Not errors — the row parsed. These are where what was read is probably
+   * INCOMPLETE or AMBIGUOUS, which is more dangerous than unreadable: a scope
+   * that wrapped parses as a whole phrase ending in "and", and that phrase then
+   * goes into a claim somebody reads down a telephone.
+   */
+  concerns: string[];
+};
+
+/** A line this parser could not turn into a row. */
+export type UnreadLine = { line: number; text: string; why: string };
+
+/** A line deliberately not treated as a row, with the reason NAMED. */
+export type IgnoredLine = { line: number; text: string; why: string };
+
+export type SubListingParse = {
+  header: {
+    project: string | null;
+    agency: string | null;
+    /** Null when the document names more than one — see `problems`. */
+    prime: string | null;
+    bidDate: string | null;
+  };
+  rows: ListedSub[];
+  unread: UnreadLine[];
+  /** Furniture — totals, column headings, prose — each with its reason. */
+  ignored: IgnoredLine[];
+  /**
+   * Document-level problems that make the whole parse untrustworthy, as
+   * distinct from a single unreadable line. A multi-prime packet is the one
+   * that matters: it cannot be resolved per row, so claims must not name a
+   * prime at all.
+   */
+  problems: string[];
+  /**
+   * The partition. `accountedFor` is the sum of the four buckets and must equal
+   * `nonBlankLines` — if it does not, this parser has a hole and the screen must
+   * say so rather than imply completeness.
+   */
+  reconciliation: {
+    nonBlankLines: number;
+    rowsParsed: number;
+    headerLines: number;
+    ignoredLines: number;
+    unreadLines: number;
+    accountedFor: number;
+    /** Every line accounted for AND nothing unread AND no document problem. */
+    agreed: boolean;
+  };
+};
+
+/**
+ * Money, and it REQUIRES a currency symbol.
+ *
+ * The first version also accepted any comma-grouped number, which turned a
+ * quantity column — "12,500 SF" — into "$12,500" in a claim. `signals.ts` says
+ * money is "the one specificity that disqualifies, since money is the thing
+ * they would be hiring us for", and a square-foot count rendered as dollars is
+ * exactly that. Missing a real amount costs a clause; inventing one costs the
+ * prospect. So: a `$`, or nothing.
+ */
+const MONEY = /\$\s?(\d[\d,]*(?:\.\d+)?)\s*(k|m|mm|million|thousand)?\b/i;
+const PERCENT = /\b(\d{1,3}(?:\.\d+)?)\s?%/;
+/**
+ * A contractor licence as printed: 6–8 digits, optionally behind a class.
+ *
+ * SIX, not five, because a five-digit run is a ZIP code — and a ZIP sitting in
+ * the place-of-business column beat the real licence, so the claim read "Listed
+ * with licence 92335". CSLB numbers are six or seven digits, so the floor costs
+ * nothing real.
+ */
+const LICENCE = /\b(?:lic(?:ense|ence)?\.?\s*(?:no\.?|#)?\s*)?((?:[A-C]-?\d{1,2}\s+)?\d{6,8})\b/i;
+/**
+ * A public-works registration number as printed: 10 digits starting 1 OR 2.
+ *
+ * **It was `1\d{9}` until a real document disagreed.** UCLA's posted bid summary
+ * carries `2000015618` in the DIR column, and the Caltrans corpus (26 documents,
+ * 12 contracts) shows registrations starting `10` and `20` alike. Under the old
+ * pattern that row silently lost its registration while every other field read
+ * correctly and `agreed` stayed true — the quiet half-row this file keeps finding.
+ *
+ * The bound, stated rather than pretended away: a bare 10-digit PHONE column
+ * would now match, and `2135551234` would be read as a registration. That
+ * exposure is not new — `1\d{9}` already matched a leading-1 number — it is
+ * doubled. No document seen so far has a phone column at all: §4104 does not ask
+ * for one, and neither UCLA's table nor Caltrans' form prints one. If a listing
+ * ever does, this is the first thing to suspect.
+ */
+const REGISTRATION = /\b([12]\d{9})\b/;
+
+/** A field that visibly does not finish — the printed evidence of a wrap. */
+const DANGLING = /(?:[,&/+]|\b(?:and|or|with|plus|including|incl\.?|as)\s*)$/i;
+
+/**
+ * Does this field visibly not finish?
+ *
+ * Exported so `signals.ts` can tell, without parsing the human-readable
+ * `concerns` strings. The concern is prose for a person; this is the same fact
+ * for code, and a claim needs it: quoting "Metal stud framing, drywall and" as
+ * though it were a whole scope is the thing the concern was written about, and
+ * for a while the concern was raised while the claim went out unchanged.
+ */
+export function looksCutOff(field: string | null): boolean {
+  return field !== null && DANGLING.test(field);
+}
+
+/**
+ * Words that mark a field as a company rather than a scope of work.
+ *
+ * Used only to tell the name column from the portion-of-work column when a form
+ * puts them the other way round. Deliberately not a test of validity: plenty of
+ * real companies carry none of these ("Northstate Drywall", "Kings Acoustical"),
+ * and the absence of a marker is never on its own evidence of anything.
+ */
+/**
+ * A place with a two-letter state code: "Fontana, CA".
+ *
+ * Named rather than inline because `hasDataEvidence` and `readRow` must agree
+ * about it. Deliberately strict about the TWO trailing capitals: that is what
+ * separates "Culver City, CA" from the column heading "City, State".
+ */
+const CITY_WITH_STATE = /^[A-Z][A-Za-z.\- ]+,\s*[A-Z]{2}$/;
+
+/**
+ * A CALIFORNIAN CITY THAT NAMES ITSELF WITHOUT A STATE CODE.
+ *
+ * `CITY_WITH_STATE` is strict about its two trailing capitals on purpose — that
+ * is what separates "Culver City, CA" from the column heading "City, State". A
+ * form that prints the place of business WITHOUT the state then had no city at
+ * all, and three things followed, all measured:
+ *
+ *   - the city won the portion-of-work slot, because `rest.find(...)` takes the
+ *     first eligible field and a city is eligible. "Bianchi Plastering, Inc. |
+ *     Union City | Interior plaster work" produced `portionOfWork: "Union City"`,
+ *     and the real scope was discarded;
+ *   - so `tradeScope` was null, and `shouldInclude` defaults a row to ticked only
+ *     when the trade matched — the prospect arrived unticked and was silently
+ *     left out of the import;
+ *   - and no GEOGRAPHY claim was produced from a city plainly on the page.
+ *
+ * This is deliberately narrow: a name ending in the word "City". That covers the
+ * set that actually bites — Daly, Union, National, Culver, Redwood, Foster,
+ * Cathedral — and a portion of work never ends in "City", so it cannot steal the
+ * scope slot in return. A bare "Fontana" is still not recognised, and that
+ * residual is handled by preferring a trade-matching scope instead.
+ */
+const CITY_SUFFIXED = /^[A-Z][A-Za-z.\-]+(?: [A-Z][a-z]+)* City$/;
+
+const ENTITY_MARKER =
+  /\b(?:inc|llc|corp|corporation|co|company|ltd|llp|lp|systems|builders|construction|contractors|interiors|enterprises|group|industries)\b\.?/i;
+
+/** Words that mark a line as being about the bid rather than about a sub. */
+const TOTALS_WORDS =
+  /\b(?:total|subtotal|sub-total|base bid|bid total|grand total|alternate|add\s?alt|contingency|allowance|engineer'?s? estimate|amount bid)\b/i;
+
+/** Words that mark a line as a column heading. */
+const HEADING_WORDS =
+  /\b(?:subcontractor|sub-contractor|name|firm|company|city|state|location|address|licence|license|lic\.?|dir|registration|reg\.?|portion|work|scope|description|category|amount|value|percent|%\s*of\s*bid|item)\b/gi;
+
+/**
+ * WHERE ONE CELL ENDS AND THE NEXT BEGINS — a tab, two spaces, or a pipe.
+ *
+ * Named and used once, because the wrapped-heading join below needs each field's
+ * CHARACTER SPAN and not merely its text, and a second copy of this expression is
+ * the "is there a second list" defect CLAUDE.md records three times over. So
+ * `splitFields` is derived from `fieldSpans` rather than written beside it: there
+ * is exactly one definition of a column boundary in this file, and the two
+ * callers cannot drift apart because only one of them does the splitting.
+ */
+const FIELD_SEPARATOR = /\t+|\s{2,}|\s*\|\s*/;
+
+type FieldSpan = { text: string; start: number; end: number };
+
+function fieldSpans(line: string): FieldSpan[] {
+  const spans: FieldSpan[] = [];
+  const scan = new RegExp(FIELD_SEPARATOR.source, "g");
+  const push = (chunk: string, at: number) => {
+    const text = chunk.trim();
+    if (text.length === 0) return;
+    const start = at + (chunk.length - chunk.trimStart().length);
+    spans.push({ text, start, end: start + text.length });
+  };
+  let from = 0;
+  let found: RegExpExecArray | null;
+  // No alternative above can match the empty string — `\t+` wants a tab, `\s{2,}`
+  // two spaces, `\s*\|\s*` a pipe — so this cannot spin on a zero-width match.
+  while ((found = scan.exec(line)) !== null) {
+    push(line.slice(from, found.index), from);
+    from = found.index + found[0].length;
+  }
+  push(line.slice(from), from);
+  return spans;
+}
+
+function splitFields(line: string): string[] {
+  return fieldSpans(line).map((span) => span.text);
+}
+
+/**
+ * Money tokens removed, so a dollar figure cannot be read as a licence
+ * (`$1200000` is seven digits, and it won the licence slot).
+ *
+ * **DERIVED FROM `MONEY` RATHER THAN RETYPED, because the hand-written copy had
+ * already drifted and it took `moneyOnly` to notice.** The copy's suffix
+ * alternation read `k|m|mm|million` with no trailing `\b`, and a regex
+ * alternation is leftmost-first rather than longest-match — so on "$1.2 million"
+ * it matched the `m`, stopped, and left the string "illion" behind. `MONEY`
+ * escapes that only because it ends in `\b`, which forces the engine to
+ * backtrack and take the whole word.
+ *
+ * For the two years' worth of work this file does that was harmless: a leftover
+ * "illion" is not a licence number. The moment `moneyOnly` asked "is anything
+ * left after the money is removed", the drift became an amount silently
+ * refused — `$1.2 million` read as no amount at all, which the existing suite
+ * caught because it had a case for exactly that spelling.
+ *
+ * Two expressions that must agree about the same thing are one expression. This
+ * is the same rule CLAUDE.md states for a derived check asserting its own size:
+ * the failure mode of a copy is not that it is wrong on the day it is written.
+ */
+const MONEY_TOKEN = new RegExp(MONEY.source, "gi");
+
+function withoutMoney(text: string): string {
+  return text.replace(MONEY_TOKEN, " ");
+}
+
+/**
+ * IS THIS FIELD THE AMOUNT COLUMN, OR MERELY A FIELD WITH A DOLLAR SIGN IN IT?
+ *
+ * `amount` and `percentOfBid` used to be read off the whole row — the first
+ * `$` anywhere and the first `%` anywhere. Two separate false claims came out
+ * of that, and both are the exact failure `signals.ts` is built to prevent,
+ * since money is "the one specificity that disqualifies":
+ *
+ *   - a row carrying a unit price and a total — "$1.85/SF … $450,000" — claimed
+ *     the SUBCONTRACT was "listed at $1.85", because the unit price is printed
+ *     first. Not a rounding error; a number wrong by five orders of magnitude,
+ *     read down a telephone to the man who submitted it;
+ *   - a portion of work reading "Drywall, 95% recycled gypsum" claimed the sub
+ *     was "listed at 95% of the bid" — a fact about a product specification
+ *     rendered as a fact about money.
+ *
+ * **And the same two tests were deleting the scope in the same breath**, which
+ * is the half neither review caught. `readRow` picked the portion of work with
+ * `!MONEY.test(field) && !PERCENT.test(field)`, so the field holding that
+ * recycled-gypsum scope was disqualified from the scope slot too: one stray
+ * percentage both invented a bid percentage and discarded the sentence this
+ * whole feature exists to quote. One string, two false outputs, no warning.
+ *
+ * So the test is no longer "does this field CONTAIN money" but "is this field
+ * ESSENTIALLY money" — strip the figure and see whether anything is left. That
+ * is what separates an amount column from a sentence with a price in it, and it
+ * is the same shape as `CITY_WITH_STATE` being strict about its two trailing
+ * capitals: a column holds a value, prose holds a value and some words.
+ *
+ * Deliberately strict, and it will refuse real amounts — "$450,000.00 (15%)" is
+ * read as neither. Missing an amount costs a clause in one sentence; inventing
+ * one costs the prospect. The file's standing instruction applies: paste a real
+ * listing, read what it says it could not read, and widen from that evidence.
+ */
+function moneyOnly(field: string): boolean {
+  if (!MONEY.test(field)) return false;
+  return withoutMoney(field).replace(/[\s.,]/g, "") === "";
+}
+
+/**
+ * A PERCENTAGE COLUMN, AND WHETHER THE DOCUMENT SAID WHAT IT IS A PERCENTAGE OF.
+ *
+ * `percentOnly` used to answer one question and `percentOfBid` was set from any
+ * field that passed it, so **every** lone percentage became "listed at N% of the
+ * bid". A fourth review observed `110%` and `999%` accepted silently — neither
+ * can be a share of anything — and named the two columns that make the plausible
+ * values worse than the absurd ones: a payment or performance bond column prints
+ * **100%**, and a retention column prints **5%**. A DBE participation column
+ * prints a small number too. All three belong on a public bid document, and all
+ * three would have been claimed as this subcontractor's share of the bid.
+ *
+ * **The first version of this fix refused a bare percentage outright, and two
+ * existing tests were right to fail it.** One fixture exists precisely because a
+ * form may carry a percentage column instead of a dollar column, so refusing
+ * every unlabelled percentage deletes that capability — on the strength of a
+ * guess about bond columns, to guard against another guess, in a file where
+ * EVERY fixture is synthetic and no real form has been read. Removing a
+ * capability needs better evidence than that.
+ *
+ * What the architecture already provides is the right answer. Every signal lands
+ * PROPOSED and a person confirms it, so the useful move is not to withhold the
+ * figure but to tell that person what else it could be. A bare percentage is
+ * claimed AND carries a concern naming the alternatives.
+ *
+ * Over 100 is different in kind and is refused outright: no confirmation by
+ * anybody can make "999% of the bid" true, so there is nothing for a reviewer to
+ * decide.
+ */
+const BID_SHARE_LABEL = /\bof\s*(?:the\s*)?(?:total\s*)?(?:base\s*)?bid\b/i;
+
+function percentColumn(field: string): { value: number; labelled: boolean } | null {
+  if (!PERCENT.test(field)) return null;
+  const labelled = BID_SHARE_LABEL.test(field);
+  const rest = field
+    .replace(/\b\d{1,3}(?:\.\d+)?\s?%/, " ")
+    .replace(BID_SHARE_LABEL, " ")
+    .replace(/[\s.,:]/g, "");
+  if (rest !== "") return null;
+  const value = parsePercent(field);
+  // Over 100 is not a share of anything, whatever the label claims.
+  if (value === null || value > 100) return null;
+  return { value, labelled };
+}
+
+/** Kept for the scope slot, which only needs to know it IS a percentage column. */
+function percentOnly(field: string): boolean {
+  if (!PERCENT.test(field)) return false;
+  return (
+    field
+      .replace(/\b\d{1,3}(?:\.\d+)?\s?%/, " ")
+      .replace(BID_SHARE_LABEL, " ")
+      .replace(/[\s.,:]/g, "") === ""
+  );
+}
+
+/**
+ * IS THIS FIELD A LICENCE COLUMN, OR MERELY A FIELD WITH SIX DIGITS IN IT?
+ *
+ * The same question `moneyOnly` asks, applied to the identifier it should have
+ * been applied to at the same time. **It was not, and the asymmetry is the
+ * defect**: `amount` was moved to column discipline after taking the first `$`
+ * on the row produced a claim wrong by five orders of magnitude, with a long
+ * comment reasoning from "does this field CONTAIN money" to "is this field
+ * ESSENTIALLY money" — and the licence was left matching the leftmost 6-to-8
+ * digit run anywhere on the row.
+ *
+ * What that costs, measured on a real listing shape rather than argued:
+ *
+ *   "Acme Interiors, Inc. | Fontana, CA | 092900 Gypsum Board | 684213 | Drywall"
+ *                                         ↑ won the licence slot
+ *
+ * `09 29 00` and `09 24 00` are the CSI section numbers for Gypsum Board and
+ * Portland Cement Plastering — the two numbers most likely to be printed on OUR
+ * OWN trades' rows, in a Spec Section column. The claim went out reading
+ * "Listed with licence 092900" to a man whose licence is 684213 and is sitting
+ * in the next column. **A CSLB number is the single most checkable fact about a
+ * contractor in this state**, so that is not a wrong detail, it is the sentence
+ * that tells him we do not know who he is. `concerns: 0`, `agreed: true`.
+ *
+ * `parse.ts` already carried the scar in a comment two lines above the bug —
+ * *"`$1200000` is seven digits and it won the licence slot"* — and the fix for
+ * that was `withoutMoney`, which only works while the figure carries a `$`. The
+ * moment a column prints a bare number the documented scar reopens. CLAUDE.md's
+ * "a guard written as a special case for the instance that bit you does not
+ * cover the next one", inside the function whose comment says so.
+ *
+ * So: strip an optional label and an optional class prefix, and what is left
+ * must be the number and NOTHING else. A spec section with a title after it, a
+ * quantity with a unit after it, and a dollar figure all fail that.
+ */
+const LICENCE_LABEL = /^(?:cslb\s*)?(?:lic(?:ense|ence)?\.?)?\s*(?:no\.?|number|#)?\s*:?\s*/i;
+
+function licenceOnly(field: string): string | null {
+  const bare = field.replace(LICENCE_LABEL, "").trim();
+  const found = bare.match(/^((?:[A-C]-?\d{1,2}\s+)?\d{6,8})$/);
+  return found ? found[1].replace(/\s+/g, " ") : null;
+}
+
+/** The same discipline for a public-works registration: ten digits, alone. */
+const REGISTRATION_LABEL = /^(?:dir\s*)?(?:reg(?:istration)?\.?)?\s*(?:no\.?|number|#)?\s*:?\s*/i;
+
+function registrationOnly(field: string): string | null {
+  const bare = field.replace(REGISTRATION_LABEL, "").trim();
+  const found = bare.match(/^([12]\d{9})$/);
+  return found ? found[1] : null;
+}
+
+function parseAmount(raw: string): number | null {
+  const found = raw.match(MONEY);
+  if (!found) return null;
+  const digits = found[1].replace(/,/g, "");
+  const value = Number.parseFloat(digits);
+  if (!Number.isFinite(value)) return null;
+  // "$1.2M" read as "$1.00" was the first version. An abbreviation is common on
+  // award summaries, and silently truncating one is worse than not reading it.
+  const suffix = (found[2] ?? "").toLowerCase();
+  const multiplier =
+    suffix === "k" || suffix === "thousand"
+      ? 1_000
+      : suffix === "m" || suffix === "mm" || suffix === "million"
+        ? 1_000_000
+        : 1;
+  // Rounded to the CENT, not to the dollar. `Math.round(value * multiplier)`
+  // was the first version, and `signals.ts` says in its own header that
+  // "nothing is inferred, nothing is rounded" — so "$450,000.75" reaching a
+  // claim as "$450,001.00" was the code contradicting the documentation on the
+  // one field where the number is the point. The rounding cannot simply go:
+  // `1.2 * 1_000_000` is not guaranteed exact in binary floating point, which
+  // is what the round was there for. Cents keep that protection and change no
+  // figure a document actually printed.
+  return Math.round(value * multiplier * 100) / 100;
+}
+
+function parsePercent(raw: string): number | null {
+  const found = raw.match(PERCENT);
+  if (!found) return null;
+  const value = Number.parseFloat(found[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** Every one of our trades a portion of work mentions, best first. */
+/**
+ * UPPERCASE TRADE ACRONYMS, MATCHED AS WHOLE WORDS AND CASE-SENSITIVELY.
+ *
+ * ── WHY THESE CANNOT LIVE IN `TRADE_KEYWORDS` ──
+ *
+ * `tradeMatchFor` lowercases the scope and asks `haystack.includes(keyword)`.
+ * That is right for words — "acoustic" should match "acoustical" — and fatal for
+ * a three-letter acronym: the keyword `"act"` would match **Contract**,
+ * **Contractor**, **Compaction**, **Extraction** and **Practice**, so a scope
+ * reading "Contract Work" would be filed as acoustical ceilings and ticked for
+ * import. Checked before writing this, not after.
+ *
+ * ── WHY IT IS WORTH THE SEPARATE MECHANISM ──
+ *
+ * `TRADE_KEYWORDS` already carries `"act ceiling"`, so somebody anticipated the
+ * acronym and assumed it would be written beside the word. The real documents
+ * write it bare: three of 154 rows in the UCLA corpus have a scope of exactly
+ * `ACT`, and all three are genuinely acoustical firms — their names say so.
+ *
+ * Those three were arriving with `tradeScope: null`, and `shouldInclude` ticks a
+ * row only when the trade matched, so each was **UNTICKED and silently left out
+ * of the import** — a lost prospect wearing the appearance of a deliberate
+ * exclusion, which is a shape this file has paid for before.
+ *
+ * ── THE BOUND, STATED RATHER THAN PRETENDED AWAY ──
+ *
+ * Matched against the ORIGINAL string, case-sensitively, with word boundaries. A
+ * scope writing `act` in lower case is therefore missed, deliberately: the
+ * uppercase requirement is the whole reason "Contract" is safe. In US
+ * construction `ACT` is Acoustical Ceiling Tile essentially without exception;
+ * if a document ever uses it for something else this is where to look.
+ *
+ * Total `Record` on purpose, following `TRADE_KEYWORDS`: adding a trade forces a
+ * decision here rather than silently inheriting no acronym.
+ */
+const TRADE_ACRONYMS: Record<TradeScopeValue, readonly RegExp[]> = {
+  METAL_FRAMING_DRYWALL: [],
+  LATH_PLASTER: [],
+  EIFS: [],
+  // ACT — Acoustical Ceiling Tile. Three of 154 real rows spell it exactly this.
+  ACOUSTICAL_CEILINGS: [/\bACT\b/],
+  // SFRM is already in TRADE_KEYWORDS as a lowercase word, where substring
+  // matching is harmless for a four-letter string that is not a fragment of
+  // anything. It does not need to be here.
+  FIREPROOFING: [],
+};
+
+export function tradeMatchFor(portionOfWork: string | null): {
+  scope: TradeScopeValue | null;
+  alsoMatched: TradeScopeValue[];
+} {
+  if (!portionOfWork) return { scope: null, alsoMatched: [] };
+  const haystack = portionOfWork.toLowerCase();
+
+  const best = new Map<TradeScopeValue, number>();
+  for (const [scope, keywords] of Object.entries(TRADE_KEYWORDS) as [
+    TradeScopeValue,
+    readonly string[],
+  ][]) {
+    for (const keyword of keywords) {
+      if (!haystack.includes(keyword)) continue;
+      best.set(scope, Math.max(best.get(scope) ?? 0, keyword.length));
+    }
+  }
+
+  // The acronyms run against the ORIGINAL string, because their safety is their
+  // case. They score by match length like any other keyword, so a scope naming
+  // both an acronym and a longer word still ranks the longer word first and the
+  // acronym lands in `alsoMatched` — which is the existing tie machinery, not a
+  // new rule.
+  for (const [scope, patterns] of Object.entries(TRADE_ACRONYMS) as [
+    TradeScopeValue,
+    readonly RegExp[],
+  ][]) {
+    for (const pattern of patterns) {
+      const found = portionOfWork.match(pattern);
+      if (!found) continue;
+      best.set(scope, Math.max(best.get(scope) ?? 0, found[0].length));
+    }
+  }
+  if (best.size === 0) return { scope: null, alsoMatched: [] };
+
+  const ranked = [...best.entries()].sort((a, b) =>
+    b[1] === a[1] ? priorityOf(a[0]) - priorityOf(b[0]) : b[1] - a[1],
+  );
+  return { scope: ranked[0][0], alsoMatched: ranked.slice(1).map(([scope]) => scope) };
+}
+
+/** Which of our five trades a portion of work describes, or null. */
+export function tradeScopeFor(portionOfWork: string | null): TradeScopeValue | null {
+  return tradeMatchFor(portionOfWork).scope;
+}
+
+const HEADER_PATTERNS: { key: keyof SubListingParse["header"]; pattern: RegExp }[] = [
+  { key: "project", pattern: /^\s*(?:project|job|contract)(?:\s*name)?\s*[:\-]\s*(.+)$/i },
+  {
+    key: "agency",
+    pattern: /^\s*(?:agency|owner|district|awarding\s*(?:agency|body))\s*[:\-]\s*(.+)$/i,
+  },
+  {
+    key: "prime",
+    pattern:
+      /^\s*(?:prime|prime\s*contractor|general\s*contractor|gc|bidder|apparent\s*low\s*bidder|awarded\s*to)\s*[:\-]\s*(.+)$/i,
+  },
+  {
+    key: "bidDate",
+    pattern: /^\s*(?:bid\s*(?:date|opening)|opened|award(?:ed)?\s*date)\s*[:\-]\s*(.+)$/i,
+  },
+];
+
+function isHeaderLine(line: string): boolean {
+  return HEADER_PATTERNS.some(({ pattern }) => pattern.test(line));
+}
+
+/**
+ * What a CONFLICT in each header field costs, which is why every field is
+ * guarded and not just the prime.
+ *
+ * A total `Record`, so a fifth header field cannot be added without saying here
+ * what two of it would mean — the same device `signals.ts` uses for its kinds,
+ * and for the same reason: an omission looks exactly like a decision.
+ */
+const HEADER_CONFLICT: Record<
+  keyof SubListingParse["header"],
+  { plural: string; consequence: string }
+> = {
+  project: {
+    plural: "projects",
+    consequence:
+      "No claim will name a project. Naming the wrong one is a sentence about a job this subcontractor never bid, which is the failure this reader is most careful about.",
+  },
+  agency: {
+    plural: "awarding agencies",
+    consequence: "No claim will name an agency.",
+  },
+  prime: {
+    plural: "prime contractors",
+    consequence:
+      "No claim will name a prime. Nothing in a flat paste says which subcontractor sits under which.",
+  },
+  bidDate: {
+    plural: "bid dates",
+    consequence: "No claim will state a bid date.",
+  },
+};
+
+/**
+ * Read the header, and REFUSE to pick a value when the document names several.
+ *
+ * `header.prime` used to take the first `Prime:` line in the whole paste. An
+ * agency posting every bid for one project in one PDF is the normal case, and
+ * that version attributed all three primes' subs to the first prime — so two of
+ * three `GC_RELATIONSHIP` claims were flatly false, and ticking "awarded" turned
+ * them into congratulations on a job the sub did not get. The exact failure
+ * `signals.ts` exists to prevent, arriving through the header instead of through
+ * the outcome.
+ *
+ * It cannot be resolved per row: nothing in a flat paste says which prime a
+ * given row sits under. So a multi-prime document loses its prime entirely and
+ * gains a problem, which stops `signals.ts` naming one at all.
+ *
+ * ── AND THE FIX WAS APPLIED TO ONE FIELD OUT OF FOUR ──────────────────────
+ *
+ * That paragraph was written, tested and shipped while `project`, `agency` and
+ * `bidDate` kept the exact code it describes as the bug: `if (!header[key])
+ * header[key] = value`, first one silently wins. A review found it; it is the
+ * same defect, in the same function, three more times, under a comment
+ * explaining why it was unacceptable.
+ *
+ * The cost is not smaller for being on a different field. `projectPhrase` feeds
+ * both the PROJECT and the GC_RELATIONSHIP claim, so a packet covering two
+ * schools tells every subcontractor on the second one that they were named on a
+ * bid for the first — a specific, checkable, false sentence about the reader's
+ * own work, which is the one thing the GTM study calls disqualifying.
+ *
+ * So the rule is general now and the prime is not a special case: collect every
+ * DISTINCT value a field is given, use it when there is exactly one, and when
+ * there is more than one null the field and say so. A field repeated with the
+ * same value is not a conflict — one listing commonly reprints its own header on
+ * page two.
+ *
+ * The lesson is the shape rather than the fields: a guard written as a
+ * special case for the instance that bit you is a guard that does not cover the
+ * next one. `HEADER_CONFLICT` makes the general version the only version.
+ */
+function readHeader(lines: string[]): { header: SubListingParse["header"]; problems: string[] } {
+  const keys = Object.keys(HEADER_CONFLICT) as (keyof SubListingParse["header"])[];
+  const seen = new Map<keyof SubListingParse["header"], string[]>(keys.map((key) => [key, []]));
+
+  for (const line of lines) {
+    for (const { key, pattern } of HEADER_PATTERNS) {
+      const found = line.match(pattern);
+      if (!found) continue;
+      const value = found[1].trim();
+      if (!value) continue;
+      const values = seen.get(key);
+      if (values && !values.includes(value)) values.push(value);
+    }
+  }
+
+  const header: SubListingParse["header"] = {
+    project: null,
+    agency: null,
+    prime: null,
+    bidDate: null,
+  };
+  const problems: string[] = [];
+
+  for (const key of keys) {
+    const values = seen.get(key) ?? [];
+    if (values.length === 1) {
+      header[key] = values[0];
+      /**
+       * A HEADER VALUE CAN WRAP TOO, AND `looksCutOff` WAS EXPORTED FOR EXACTLY
+       * THIS AND APPLIED ONLY TO THE PORTION OF WORK.
+       *
+       * "Project: Lincoln Elementary School Modernization and" / "Site
+       * Improvements, Phase 2" puts the second half on its own line, which is
+       * one column and is filed as prose. So the project name was truncated at
+       * a conjunction and went straight into the two claims that name the man's
+       * JOB — `PROJECT` and `GC_RELATIONSHIP` — reading "Works under Swinerton
+       * Builders — their subcontractor on Lincoln Elementary School
+       * Modernization and". No concern, no problem, `agreed: true`.
+       *
+       * The trade claim has been hedged against this since the first review, and
+       * the claim naming the project was not: the same defect, on the half of
+       * the sentence that is harder to shrug off. `signals.ts` hedges it now,
+       * and this raises a problem so the screen says so rather than leaving the
+       * hedge as the only sign.
+       */
+      if (looksCutOff(values[0])) {
+        problems.push(
+          `the ${key === "bidDate" ? "bid date" : key} reads "${values[0]}" and visibly does not finish — it has probably wrapped onto the next line, which this reader cannot join up. Check it before any claim quoting it goes out.`,
+        );
+      }
+    } else if (values.length > 1) {
+      const { plural, consequence } = HEADER_CONFLICT[key];
+      problems.push(
+        `this document names ${values.length} ${plural} (${values.join("; ")}), and nothing in a flat paste says which subcontractor belongs to which. ${consequence} Paste one bidder's listing at a time.`,
+      );
+    }
+  }
+
+  return { header, problems };
+}
+
+/**
+ * Furniture — a line that is deliberately not a row — or null.
+ *
+ * Every branch returns a REASON, because an ignored line with no reason is
+ * indistinguishable from a lost one. The totals test is the one that was wrong:
+ * it matched the words anywhere on the line, so a sub whose scope read
+ * "Alternate No. 2 — gypsum board" was discarded, and so was a company called
+ * Total Western. A totals line is short — a label and a figure — so the field
+ * count does the work the keyword cannot.
+ */
+/**
+ * Positive evidence that a line is DATA rather than furniture.
+ *
+ * ── THIS FUNCTION EXISTS BECAUSE THE REWRITE MOVED THE DEFECT IT CLOSED ──
+ *
+ * The first version of this file gated rows behind `looksLikeData`, which
+ * admitted a line only if it carried money, a percentage, a licence or a
+ * registration number. A review proved that lost subcontractors silently. The
+ * rewrite deleted that gate, partitioned every non-blank line into four buckets,
+ * asserted the partition, and claimed in its header that "there is no predicate
+ * left that can decline to admit a line, because there is no predicate".
+ *
+ * **`furnitureReason` is a predicate, and a second review proved it declines
+ * real rows — the majority of them on the document type this feature exists
+ * for.** Its column-heading branch required the line to carry NO money,
+ * percent or registration; California's §4104 listing has no dollar column at
+ * all, so that escape hatch is absent on every row. Reproduced: an ordinary
+ * five-sub San Diego listing read THREE, with a plaster sub and a drywall sub
+ * filed as "the table's column headings", `agreed: true`, and the screen
+ * printing "All 10 lines accounted for" over the loss. A row-by-row sweep ate
+ * six of seven. Any Californian city containing the word "City" — Daly, Culver,
+ * National, Redwood, Foster, Union, Cathedral — plus any licence label was
+ * enough, and so was any scope containing the word "work", which is what a
+ * "Portion of Work" column tends to echo.
+ *
+ * So the partition was honest about where a line went and wrong about what it
+ * was, and `agreed` read true either way. **A bucket with a confident wrong
+ * reason loses a subcontractor exactly as thoroughly as no bucket at all.**
+ *
+ * The fix is to stop asking only "does this look like furniture" and ask first
+ * "is there positive evidence this is data" — evidence a heading row cannot
+ * have, because a heading row names columns rather than carrying values:
+ *
+ *   - a run of four or more digits (a licence, a registration, a bid item);
+ *   - a field that is a place with a state code, which "City, State" is not
+ *     (the pattern wants two trailing capitals);
+ *   - a field carrying a company entity marker;
+ *   - a licence the pattern recognises.
+ *
+ * Any one of those and the line is never furniture. Nothing here RE-GATES the
+ * row: a line with none of this evidence still goes through `readRow` and ends
+ * up a row, unread, or furniture on the narrower tests below — the evidence only
+ * ever rescues a line from being called furniture, never the other way round.
+ */
+function hasDataEvidence(trimmed: string, fields: string[]): boolean {
+  // A run of four or more digits covers every licence and registration this
+  // file recognises, so a separate LICENCE test here was redundant — a mutation
+  // removing it changed no outcome, which is the definition of dead logic.
+  if (/\d{4,}/.test(trimmed)) return true;
+  if (fields.some((field) => CITY_WITH_STATE.test(field) || CITY_SUFFIXED.test(field))) return true;
+  if (fields.some((field) => ENTITY_MARKER.test(field))) return true;
+  return false;
+}
+
+/**
+ * DOES THIS TEXT LOOK LIKE A WHOLE TABLE ROW?
+ *
+ * Two of three — a 6-to-10 digit licence or registration, a "City, ST", a
+ * company entity marker. Extracted so ONE definition serves both callers: the
+ * one-column branch, which uses it to tell a squashed row from a wrap fragment,
+ * and `agreed`, which uses it to ask whether anything in the set-aside pile looks
+ * like a subcontractor. Two copies of this question would be the "is there a
+ * second list" defect CLAUDE.md records, in a file that already has three
+ * entries about it.
+ */
+/**
+ * A FIELD THAT OPENS THE WAY THE REST OF A SENTENCE OPENS.
+ *
+ * "and drywall" is not a portion of work; it is the tail of one. A cell never
+ * begins with a conjunction and a company name never begins lowercase, so either
+ * is strong evidence that this line is the overflow of the line above it.
+ */
+const CONTINUES = /^(?:and|or|with|plus|including|incl\.?|&)\b/i;
+
+function opensAsContinuation(field: string): boolean {
+  return CONTINUES.test(field) || /^[a-z]/.test(field);
+}
+
+function looksLikeARow(text: string): boolean {
+  return (
+    [
+      /\b\d{6,10}\b/, // a contractor licence or a public-works registration
+      /[A-Z][A-Za-z.\-]+,\s*[A-Z]{2}\b/, // "Fontana, CA" anywhere in the line
+      ENTITY_MARKER,
+    ].filter((pattern) => pattern.test(text)).length >= 2
+  );
+}
+
+function furnitureReason(line: string, fields: string[]): string | null {
+  const trimmed = line.trim();
+
+  if (/^\s*page\s+\d+(\s+of\s+\d+)?\s*$/i.test(trimmed)) return "a page number";
+
+  // Positive data evidence beats every furniture test below it.
+  if (hasDataEvidence(trimmed, fields)) return null;
+
+  if (fields.length <= 2 && TOTALS_WORDS.test(trimmed) && MONEY.test(trimmed)) {
+    return "a total or an alternate for the bid as a whole, not a subcontractor";
+  }
+
+  /**
+   * A column heading: heading words are a MAJORITY of the fields, not merely
+   * two of them anywhere on the line. A real heading row is almost entirely
+   * column names; two hits was low enough that "Acme Drywall Company / Fontana,
+   * CA / Finish carpentry and drywall work" cleared it on `company` + `work`.
+   */
+  if (!MONEY.test(trimmed) && !PERCENT.test(trimmed) && !REGISTRATION.test(trimmed)) {
+    const words = trimmed.match(HEADING_WORDS) ?? [];
+    /**
+     * A COLUMN HEADING NEVER NAMES ONE OF OUR FIVE TRADES.
+     *
+     * The heading-majority rule needs two heading words out of three or four
+     * fields, and two is cheap: `work` is what a "Portion of Work" column echoes
+     * into its own cells, and `scope` is what a form that LABELS its cells
+     * prints. So "Northstate Drywall | Chico | Scope: drywall work" was filed as
+     * "the table's column headings" — three heading words by the pattern's
+     * reckoning, no licence, no entity suffix, and a city with neither a state
+     * code nor the word "City" to rescue it. A drywall subcontractor, lost, with
+     * `agreed: true` over the loss.
+     *
+     * A real heading row reads "Subcontractor | City | License | Portion of
+     * Work", and not one of those fields names a trade: the heading says what the
+     * column IS, the cell says what the work is. So a field that matches one of
+     * our five is positive evidence of a DATA row, exactly as a licence number
+     * is, and it belongs in the same place — ahead of the furniture tests rather
+     * than inside them.
+     */
+    const namesOneOfOurTrades = fields.some((field) => tradeMatchFor(field).scope !== null);
+    if (!namesOneOfOurTrades && fields.length >= 2 && words.length >= Math.ceil(fields.length / 2)) {
+      return "the table's column headings";
+    }
+  }
+
+  return null;
+}
+
+/**
+ * WHO WAS BIDDING, READ OFF A WHOLE PAGE RATHER THAN TYPED IN.
+ *
+ * A §4104 listing is only worth more than a licence database because it says WHICH
+ * GENERAL CONTRACTOR listed this subcontractor on which job. Measured on the real
+ * documents, that fact was reaching no row: a bidder's own table does not contain
+ * the bidder's name, and a whole page contains SIX of them, so `header.prime`
+ * correctly refuses to name one and every row came back with no GC at all. The
+ * only way to a strong lead was for a person to hand-type four header lines into
+ * the paste before the parse.
+ *
+ * A UCLA page reads, per bidder:
+ *
+ *     Spiridon Group Incorporated
+ *                                       No.1 - $ 1,149,540.00 **
+ *     Total Bid                         $1,149,540.00
+ *     Sub Contractor Listing      Portion of Work:   Name of Business:   ...
+ *     <rows, indented to the table>
+ *
+ * **TWO RULES WERE MEASURED AND REJECTED BEFORE THIS ONE, and both looked right.**
+ * "The non-blank line above `Total Bid`" returns the alternate's dollar figure —
+ * `= $ 6,000.00` on six of seven anchors. "A line at an indent of six or less"
+ * works on the file as extracted and cannot survive a paste, which may arrive with
+ * its indentation stripped or shifted wholesale.
+ *
+ * What does survive is the RELATION: the bidder's name sits to the LEFT of where
+ * the table's own columns begin, because it is not in the table. So the threshold
+ * is taken from the heading this parser already finds in 20 of 20 real lists — the
+ * offset of its first label — and a candidate must start clear of it.
+ *
+ * And the bidder is the LAST candidate before a heading, not the first, which is
+ * what excludes the page's own title: `UCLA Capital Programs` is a perfectly
+ * company-shaped line and it appears before every bidder, so ordering disqualifies
+ * it without a list of strings to maintain. A `Label: value` line is excluded by
+ * shape for the same reason.
+ */
+const BIDDER_FURNITURE =
+  /^(?:sub\s*contractor\s*listing|bid\s+summary|total\b|awarded\s+vendor|vendor\s+name|page\s+\d)/i;
+
+function bidderCandidate(raw: string, tableStartsAt: number): string | null {
+  const indent = raw.length - raw.trimStart().length;
+  if (indent >= tableStartsAt - 4) return null;
+  const body = raw.trim();
+  // A label and its value is the document describing itself, not a bidder.
+  if (/^[^:]{1,40}:\s*\S/.test(body)) return null;
+  if (BIDDER_FURNITURE.test(body)) return null;
+  // Its own shape test rather than `readRow`'s `isNameCandidate`, which is a local
+  // const inside that function. Deliberately stricter: a bidder's name is prose,
+  // never an identifier or a figure, and two words of it is the weakest real case
+  // ("Apus General Contracting" has three, "MIK Construction, Inc." three).
+  if (!/[A-Za-z]{3}/.test(body)) return null;
+  if (MONEY.test(body) || PERCENT.test(body) || REGISTRATION.test(body)) return null;
+  if (/^\d/.test(body) || /^[=$(]/.test(body)) return null;
+  if (licenceOnly(body) !== null) return null;
+  if (!/[A-Za-z]{3}\s+\S/.test(body)) return null;
+  return body;
+}
+
+/**
+ * Where the table's own columns begin: the smallest offset at which any heading
+ * line prints its first recognised label. Null when the page prints no heading, in
+ * which case no bidder can be attributed and every row's `listedBy` stays null —
+ * the honest outcome, since without a heading there is no table edge to be left of.
+ */
+function tableStartsAt(lines: readonly string[]): number | null {
+  const offsets: number[] = [];
+  for (const raw of lines) {
+    const fields = splitFields(raw);
+    if (furnitureReason(raw, fields) !== "the table's column headings") continue;
+    /**
+     * The first field with a RECOGNISED kind, not simply the first field. Seven of
+     * twenty real lists print the heading on the same line as the words
+     * "Sub Contractor Listing", at the left margin — so `fields[0]` puts the
+     * table's edge at 3 and every bidder line fails the test. Measured: that read
+     * 27% of rows against 100% once the edge came from the first real label.
+     */
+    const label = fields.find((field) => columnKindOf(field) !== null);
+    if (label === undefined) continue;
+    const at = raw.indexOf(label);
+    if (at > 0) offsets.push(at);
+  }
+  return offsets.length > 0 ? Math.min(...offsets) : null;
+}
+
+
+/**
+ * WHICH COLUMN IS WHICH, LEARNED FROM THE HEADING ROW THE DOCUMENT PRINTS.
+ *
+ * ── WHY THIS EXISTS: THE COLUMN ORDER WAS A GUESS AND THE GUESS WAS WRONG ──
+ *
+ * Every fixture in `subListingCases.ts` puts the company name in column one. A
+ * real document says otherwise. UCLA Capital Programs publishes each bidder's
+ * filled §4104 list as a readable table headed
+ *
+ *     Portion of Work:   Name of Business:   Location:   License #:   DIR #:
+ *
+ * — the SCOPE first and the company SECOND. Run against it, `readRow` took the
+ * first plausible field as the name, so any row whose company lacked an `Inc`
+ * suffix came out named after its own trade: 2 of 14 real rows became leads
+ * called "Concrete" and "Millwork", with the real companies demoted into
+ * `portionOfWork`, and `reconciliation.agreed` read TRUE over it.
+ *
+ * The comment above `accountedFor` names this fix by name — "`splitFields`
+ * learning column positions is the actual fix" — and the document hands it to us
+ * for free, because it prints its own heading row.
+ *
+ * ── CHARACTER OFFSETS WERE MEASURED AND REJECTED ──
+ *
+ * The obvious implementation is to slice each row at the heading's own column
+ * positions. It does not work, and this is measured rather than assumed: in the
+ * real document the heading tokens begin at characters 37, 60, 142, 166 and 180
+ * while the cells beneath them begin at 42-47, 86-105, 150-160 and 174-180.
+ * `pdftotext -layout` approximates a proportional font, so a cell drifts tens of
+ * characters from its own heading. What IS stable is the ORDER, so the plan maps
+ * heading position to FIELD INDEX.
+ *
+ * ── AND IT VALIDATES, BECAUSE AN INDEX MAP IS ONE EMPTY CELL FROM NONSENSE ──
+ *
+ * `splitFields` drops empty fields, so a row with a blank licence yields one
+ * field fewer and every later column shifts by one. A plan applied blindly there
+ * would read the DIR number as a licence and the city as a scope — confidently,
+ * and with `agreed` still true. So the plan is used ONLY when the row has exactly
+ * as many fields as the heading had columns, and each field it assigns must still
+ * pass the test that field already had to pass. Anything else falls back to the
+ * predicate path below, unchanged, which is also why every pre-existing case in
+ * this file behaves exactly as it did: their headings describe the order those
+ * fixtures already assume, so the plan agrees with the predicate and changes
+ * nothing.
+ */
+type ColumnKind = "name" | "scope" | "city" | "licence" | "registration";
+
+/**
+ * Ordered most specific first: "Name of Business" must read as the name before
+ * the word "business" can mean anything else, and "Portion of Work" must read as
+ * the scope rather than matching the bare word "work" somewhere later.
+ */
+/**
+ * Whether a field in a column the document HEADED as the place reads as a place.
+ *
+ * A heading makes a bare city readable where no pattern can — `CITY_WITH_STATE`
+ * wants two trailing capitals and `CITY_SUFFIXED` wants the word "City", so
+ * UCLA's "Valencia" satisfies neither. But the heading and the row can still
+ * disagree, and a disagreement is not a licence to invent a city: an identifier,
+ * a figure or a street number in that column means something has shifted.
+ *
+ * Extracted so the shift detector below and the city read use ONE expression.
+ * `MONEY`/`moneyOnly` in this file is the scar: two expressions that had to agree
+ * about the same thing drifted, and nothing noticed until something asked the
+ * second question.
+ */
+function readsAsCity(candidate: string | undefined): boolean {
+  if (candidate === undefined) return false;
+  return (
+    /[A-Za-z]{2}/.test(candidate) &&
+    licenceOnly(candidate) === null &&
+    registrationOnly(candidate) === null &&
+    !moneyOnly(candidate) &&
+    !percentOnly(candidate) &&
+    !/^\d/.test(candidate)
+  );
+}
+
+const COLUMN_KINDS: [ColumnKind, RegExp][] = [
+  ["name", /\b(?:name\s+of\s+(?:business|subcontractor|firm|contractor)|business\s+name|subcontractor(?:'s)?\s+name|firm\s+name|company\s+name|name|firm|company|business|subcontractor)\b/i],
+  ["scope", /\b(?:portion\s+of\s+(?:the\s+)?work|description\s+of\s+work|type\s+of\s+work|scope(?:\s+of\s+work)?|portion|trade|work|description)\b/i],
+  ["city", /\b(?:location|city|place\s+of\s+business|address|city,?\s*state)\b/i],
+  ["licence", /\b(?:licen[cs]e|lic\.?)\b/i],
+  ["registration", /\b(?:dir|registration|reg\.?)\b/i],
+];
+
+function columnKindOf(heading: string): ColumnKind | null {
+  for (const [kind, pattern] of COLUMN_KINDS) if (pattern.test(heading)) return kind;
+  return null;
+}
+
+/**
+ * THE SAME HEADING, READ AS TEXT RATHER THAN AS FIELDS — BECAUSE WHITESPACE LIES.
+ *
+ * Splitting the heading on runs of two spaces is right when the document spaces
+ * its labels out, and across 20 real bidder lists it is right 16 times. The other
+ * four print the labels in ways that break the field count while the ROWS beneath
+ * them are perfectly ordinary five-column rows:
+ *
+ *   compact   `Portion of Work:  Name of Business:  Location: License #: DIR #:`
+ *             — the last three share one field, so the heading yields 3
+ *   wrapped   `License` ends the line above and `#:` opens the line below, so the
+ *             heading line yields 4
+ *
+ * Measured cost of refusing those: four lists, **25 rows that read `city: null`
+ * on every row**, and the original name/scope swap reproducing on rows that are
+ * otherwise clean. That is the largest single bucket of damage in the corpus, and
+ * none of it is the rows' fault.
+ *
+ * So the labels are also looked for as TEXT, in order of appearance. The compact
+ * heading then yields all five in the right order. The wrapped one still yields
+ * four, because the fifth label genuinely is not on that line — that case is
+ * recorded as unfixed rather than guessed at, since inserting a column where a
+ * label is missing is inventing the order rather than reading it.
+ *
+ * Both derivations are kept and `readRow` takes whichever matches the row it is
+ * looking at, preferring the field-based one: that plan keeps a position for a
+ * column this parser does NOT recognise, which a label scan necessarily drops, and
+ * a real unrecognised column still has a cell in every row.
+ */
+function planByLabels(heading: string): (ColumnKind | null)[] | null {
+  const seen: { at: number; kind: ColumnKind }[] = [];
+  for (const [kind, pattern] of COLUMN_KINDS) {
+    const scan = new RegExp(pattern.source, "gi");
+    let found: RegExpExecArray | null;
+    // The FIRST occurrence of each kind only: "Name of Business" contains the
+    // word "Business" and a looser later alternative could match it twice.
+    while ((found = scan.exec(heading)) !== null) {
+      if (!seen.some((entry) => entry.kind === kind)) seen.push({ at: found.index, kind });
+      break;
+    }
+  }
+  if (seen.length < 2) return null;
+  seen.sort((a, b) => a.at - b.at);
+  // Two labels resolving to the same position means the patterns overlapped on
+  // one word, which is not an order this can be trusted to have read.
+  if (new Set(seen.map((entry) => entry.at)).size !== seen.length) return null;
+  return seen.map((entry) => entry.kind);
+}
+
+/**
+ * A plan, or null when the heading does not describe enough to be worth trusting.
+ *
+ * TWO recognised columns is the floor, and a kind appearing TWICE voids the plan
+ * outright: two columns both reading as a licence means the heading was not
+ * understood, and guessing which is which is precisely the invention this file
+ * refuses elsewhere.
+ *
+ * **A THIRD CONDITION WAS WRITTEN HERE, REQUIRING A NAME COLUMN, AND IT WAS DEAD.**
+ * Its argument was that a plan unable to say where the company is cannot fix the
+ * defect this exists for. True, and irrelevant: `plannedIndex` is already `-1`
+ * when no column reads as the name, so the name already falls back to the
+ * predicate on its own. The mutation removing the condition left all 340 tests
+ * green — this file's own definition of dead logic — and keeping it had a cost,
+ * because it threw away a heading's perfectly good `Location` column on the
+ * grounds that the same heading failed to label its company column. Deleted
+ * rather than given a test to defend it.
+ */
+function columnPlanFrom(headingFields: string[]): (ColumnKind | null)[] | null {
+  const kinds = headingFields.map(columnKindOf);
+
+  /**
+   * A TABLE'S TITLE IS NOT ONE OF ITS COLUMNS, AND 35% OF REAL LISTS PRINT BOTH
+   * ON ONE LINE.
+   *
+   * Measured across 20 real bidder lists in the UCLA corpus: 9 print the five
+   * labels on their own line, but 7 print them on the SAME line as the words
+   * "Sub Contractor Listing". Those seven yield six fields where the rows have
+   * five, so a plan keyed on field count would be discarded for a third of all
+   * lists — correct, but needlessly blind.
+   *
+   * Unrecognised columns at either END are therefore trimmed, which is the only
+   * place a title or a stray marker can sit without displacing the labels between
+   * them. An unrecognised column in the MIDDLE is left exactly where it is: it is
+   * a real column this parser does not understand, the rows have a cell for it,
+   * and removing it would shift every index after it.
+   */
+  let first = 0;
+  let last = kinds.length - 1;
+  while (first <= last && kinds[first] === null) first += 1;
+  while (last >= first && kinds[last] === null) last -= 1;
+  const trimmed = kinds.slice(first, last + 1);
+
+  const named = trimmed.filter((kind): kind is ColumnKind => kind !== null);
+  if (named.length < 2) return null;
+  if (new Set(named).size !== named.length) return null;
+  return trimmed;
+}
+
+/**
+ * A COLUMN LABEL SPLIT ACROSS TWO PHYSICAL LINES, PUT BACK TOGETHER BY COLUMN.
+ *
+ * ── THE DEFECT, MEASURED ──
+ *
+ * `planByLabels` above records the wrapped heading as known and unfixed: "the
+ * fifth label genuinely is not on that line". It is not on that line. It is on
+ * the line above it, and the rest of it is on the line below:
+ *
+ *        Sub Contractor Listing                              License
+ *             Portion of Work: Name of Business:   Location:            DIR #:
+ *                                                           #:
+ *
+ * Three real lists print it that way (`fasone`, `shawmut`, `best` in the UCLA
+ * corpus) and in all three the ROWS are ordinary five-column rows. The heading
+ * line alone names four columns, so neither plan matches a five-field row,
+ * `readRow` falls back to its predicate path — which has no city slot at all —
+ * and every row on those lists comes back `city: null` with nothing said. 26 of
+ * 157 real rows read no city before this existed; the wrapped shape is the
+ * largest single share of that.
+ *
+ * ── WHY THIS IS READING THE DOCUMENT RATHER THAN GUESSING AT IT ──
+ *
+ * The comment above refuses to invent a fifth column, and it is right to: a plan
+ * with a column nobody labelled is an order this parser made up. That is not what
+ * happens here. The label is PRINTED; it is printed at the same character offset
+ * as the column it belongs to, one line up. So a fragment's tokens are joined to
+ * the heading column whose horizontal span they OVERLAP, and a token overlapping
+ * no existing column becomes a column of its own at its own offset — which is
+ * exactly what `License`, sitting in the gap between `Location:` and `DIR #:`,
+ * is. Nothing is positioned by this function's opinion; every position comes off
+ * the page.
+ *
+ * Deliberately not keyed on the word "License". The same wrap happens to
+ * `DIR Reg. No` and to `Name of Business`, and a fix that only knows one label
+ * would have to be written again for each.
+ *
+ * ── THE GATE, BECAUSE AN ADJACENT LINE IS USUALLY A ROW ──
+ *
+ * The line after a heading is normally the table's first row, and merging one
+ * into the heading would destroy a plan that was working. Four conditions keep a
+ * row out, three of them borrowed from tests this file already trusts:
+ * `hasDataEvidence` (a licence or registration number, a "City, ST", an entity
+ * marker), the trade test `furnitureReason` uses to tell a heading from a row,
+ * FEWER fields than the heading — the same "an overflow must be narrower" rule
+ * the continuation branch rests on — and, last, that the join must name STRICTLY
+ * MORE columns than the heading line did on its own. That final one is the real
+ * guard and it is also the defect stated as a measurement: a wrapped heading is
+ * one that names fewer columns than its table has, so a join that teaches nothing
+ * is discarded and every list whose heading was already complete is untouched.
+ */
+type HeadingColumn = { text: string; start: number; end: number };
+
+/**
+ * The spans of a line that could be half of a wrapped label, or null if it reads
+ * as anything else — a data row above all.
+ */
+function wrapFragmentSpans(
+  lines: readonly string[],
+  at: number,
+  headingFieldCount: number,
+): FieldSpan[] | null {
+  const raw = lines[at];
+  if (raw === undefined) return null;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  const spans = fieldSpans(raw);
+  if (spans.length === 0 || spans.length >= headingFieldCount) return null;
+  const fields = spans.map((span) => span.text);
+  if (hasDataEvidence(trimmed, fields)) return null;
+  if (fields.some((field) => tradeMatchFor(field).scope !== null)) return null;
+  return spans;
+}
+
+/** A fragment's tokens joined onto the columns they sit over, in place. */
+function overlayFragment(
+  columns: HeadingColumn[],
+  spans: readonly FieldSpan[],
+  where: "above" | "below",
+): void {
+  for (const span of spans) {
+    let best = -1;
+    let bestOverlap = 0;
+    columns.forEach((column, index) => {
+      const overlap = Math.min(column.end, span.end) - Math.max(column.start, span.start);
+      if (overlap > bestOverlap) {
+        bestOverlap = overlap;
+        best = index;
+      }
+    });
+    if (best === -1) {
+      // Over no existing column: a column of its own, at its own offset. This is
+      // the `License` case, and it is the one that makes the plan five wide.
+      const fresh: HeadingColumn = { text: span.text, start: span.start, end: span.end };
+      const insertAt = columns.findIndex((column) => column.start > span.start);
+      if (insertAt === -1) columns.push(fresh);
+      else columns.splice(insertAt, 0, fresh);
+      continue;
+    }
+    const column = columns[best];
+    column.text = where === "above" ? `${span.text} ${column.text}` : `${column.text} ${span.text}`;
+    column.start = Math.min(column.start, span.start);
+    column.end = Math.max(column.end, span.end);
+  }
+}
+
+/** How many of our five columns a heading names, read as text; see `planByLabels`. */
+function labelCount(heading: string): number {
+  return planByLabels(heading)?.length ?? 0;
+}
+
+/** How many of a plan's slots this parser can put a name to; see `planForRow`. */
+function namedColumns(plan: readonly (ColumnKind | null)[]): number {
+  return plan.filter((kind) => kind !== null).length;
+}
+
+/**
+ * THE JOINED HEADING AS ONE PLAN — AND WHY ITS FIELD SPLIT CANNOT ALWAYS HAVE IT.
+ *
+ * `planByLabels` above explains why the field-based plan is normally PREFERRED: it
+ * keeps a slot for a column this parser does not recognise, which a label scan must
+ * drop, and a real unrecognised column has a cell in every row. That still holds,
+ * and on `shawmut` and `best` the joined field split is five wide and correct.
+ *
+ * `fasone` is the exception and it is measured rather than imagined. That list
+ * prints `Portion of Work: Name of Business:` with ONE space between the two
+ * labels, so `splitFields` returns them as a single field and `columnPlanFrom`
+ * reads that one field as the name — a FOUR-wide plan for a five-column table. The
+ * order it describes is not wrong; its WIDTH is, and width is the only thing
+ * `readRow` checks before trusting a plan. Joining the wrapped `License` on made
+ * that four-wide plan start matching the list's genuine four-field rows — the rows
+ * whose city wrapped onto a line of its own — and it read the scope as the company,
+ * the company as the city and a licence number into the city slot, on three rows
+ * that had been read correctly before. A plan that fits by count and is one slot
+ * out, which is exactly the hazard `readRow`'s own comment names.
+ *
+ * The heading itself says so, which is what makes this a reading rather than a
+ * preference: scanning the SAME text for labels finds five where the field split
+ * found four. Two derivations of one thing disagreeing is the signal, and the one
+ * that counted correctly is the one to keep.
+ */
+function joinedPlanFrom(joined: { text: string; fields: string[] }): (ColumnKind | null)[] | null {
+  const byLabel = planByLabels(joined.text);
+  const byField = columnPlanFrom(joined.fields);
+  if (byField === null) return byLabel;
+  if (byLabel === null) return byField;
+  return namedColumns(byField) < byLabel.length ? byLabel : byField;
+}
+
+function headingJoinedWithWraps(
+  lines: readonly string[],
+  index: number,
+): { text: string; fields: string[] } | null {
+  const raw = lines[index] ?? "";
+  const headSpans = fieldSpans(raw);
+  if (headSpans.length === 0) return null;
+
+  const above = wrapFragmentSpans(lines, index - 1, headSpans.length);
+  const below = wrapFragmentSpans(lines, index + 1, headSpans.length);
+  if (above === null && below === null) return null;
+
+  const columns: HeadingColumn[] = headSpans.map((span) => ({ ...span }));
+  if (above !== null) overlayFragment(columns, above, "above");
+  if (below !== null) overlayFragment(columns, below, "below");
+  columns.sort((a, b) => a.start - b.start);
+
+  /**
+   * Rebuilt as a LINE, not merely as a list of fields, because `planByLabels`
+   * reads a heading as text and is the half that rescues a list whose labels
+   * also share a field. Each column is laid at its own offset, and never closer
+   * than two spaces to the one before it, so `splitFields` of this line returns
+   * exactly these columns — the invariant `parseShapes.test.ts` asserts.
+   */
+  let text = "";
+  for (const column of columns) {
+    const at = text.length === 0 ? column.start : Math.max(column.start, text.length + 2);
+    text = text.padEnd(at, " ") + column.text;
+  }
+
+  if (labelCount(text) <= labelCount(raw)) return null;
+  return { text, fields: columns.map((column) => column.text) };
+}
+
+function readRow(
+  text: string,
+  line: number,
+  fields: string[],
+  plan: (ColumnKind | null)[] | null = null,
+): ListedSub | UnreadLine {
+  /**
+   * Which field is the company name.
+   *
+   * Taking the FIRST plausible field was the first two versions, and both were
+   * wrong in a way that names a lead after something that is not a company:
+   * a `Item 4` bid-item column became the name, and so did `Fontana, CA` when a
+   * form put the place of business first. Neither raised a concern, and
+   * `importSubListing` writes whatever this returns into `SalesLead.companyName`.
+   *
+   * So two changes. Fields that are self-evidently NOT a company are excluded —
+   * a bid item number, a place with a state code, a bare licence label. And a
+   * field carrying an entity marker is PREFERRED over an earlier one without
+   * it, because "Inc." is the strongest evidence of a company name there is and
+   * it survives a column order this parser has never seen.
+   */
+  const isNameCandidate = (field: string) =>
+    /[A-Za-z]{3}/.test(field) &&
+    !MONEY.test(field) &&
+    !PERCENT.test(field) &&
+    !REGISTRATION.test(field) &&
+    !/^\d+$/.test(field) &&
+    !/^(?:lic|license|licence|dir|reg)\b/i.test(field) &&
+    !/^(?:item|no|line|bid\s*item)\.?\s*\d+$/i.test(field) &&
+    !CITY_WITH_STATE.test(field);
+
+  /**
+   * The plan is honoured only when the row's shape matches the heading's, and
+   * only when the field it points at still passes the test every name has had to
+   * pass. Both conditions are the guard against a shifted index; see
+   * `columnPlanFrom`. `usablePlan` gates the city below for the same reason.
+   */
+  const usablePlan = plan !== null && plan.length === fields.length ? plan : null;
+  const plannedIndex = usablePlan ? usablePlan.indexOf("name") : -1;
+
+  /**
+   * A PLAN CAN FIT BY COUNT AND STILL BE ONE SLOT OUT, AND THAT IS WORSE THAN NOT
+   * FITTING AT ALL.
+   *
+   * `plan.length === fields.length` is the guard against a shifted index, and it
+   * is necessary rather than sufficient. A row whose cell LEFT of the place
+   * column wrapped onto another line has one field fewer — so against a four-slot
+   * plan a five-column row matches the count exactly, every slot shifts one to
+   * the left, and the place lands in the company slot. Measured on real bidder
+   * lists: three leads named "San Diego", "Corona" and "Gardena". A wrong company
+   * name is the worst thing this reader can produce, and it is produced by the
+   * machinery built to prevent exactly this swap.
+   *
+   * The tell is a PAIR of slots disagreeing with their own kinds, which is why
+   * this cannot be mistaken for a firm legitimately named after a town: the
+   * company slot reads as a place AND the place slot does not. A firm called
+   * "Corona Fabricators" in Corona has a place slot that reads perfectly, and
+   * nothing here fires. One slot alone would be a guess; two is a shift.
+   *
+   * Such a row is REFUSED rather than patched, because the company name is not on
+   * the line at all — it wrapped away with everything else. Refusing the planned
+   * name only would hand the slot to the predicate path, which would take the
+   * portion of work instead and produce a lead named "Metals". A named gap beats
+   * either wrong answer, and every lead this importer writes is undeletable.
+   */
+  const shiftedPlan =
+    plannedIndex !== -1 &&
+    usablePlan !== null &&
+    ((cityIndex) =>
+      cityIndex !== -1 &&
+      cityIndex !== plannedIndex &&
+      !readsAsCity(fields[cityIndex]) &&
+      readsAsCity(fields[plannedIndex]))(usablePlan.indexOf("city"));
+
+  /**
+   * A SHIFTED ROW IS NOT NECESSARILY A ROW WITH NO COMPANY ON IT, and the first
+   * version of this refused five rows to fix three.
+   *
+   * Measured on the real corpus: of the five rows the detector above fires on,
+   * THREE carry a company name with an entity marker — `Inc.` — plainly on the
+   * line, in the slot the shift moved it into. Refusing those threw away an
+   * identifiable prospect to avoid a wrong one, which is the trade this file
+   * argues against everywhere else: a refusal can be the more destructive option.
+   *
+   * So the shift disqualifies THE PLAN, not the row. `ENTITY_MARKER` is the
+   * evidence that survives a shift, because it is a property of the value rather
+   * than of its position — `Finest City Acoustics Inc.` is a company wherever it
+   * lands. Where it is present the row reads correctly with the plan ignored.
+   *
+   * Only when no field carries one is the row refused, and then the refusal is
+   * right for a second reason: the remaining fallback is "the first field that
+   * could be a name", which on these rows is the portion of work. Refusing beats a
+   * lead named "Metals", and both beat a lead named "Corona".
+   */
+  const markedIndex = fields.findIndex(
+    (field) => isNameCandidate(field) && ENTITY_MARKER.test(field),
+  );
+
+  if (shiftedPlan && markedIndex === -1) {
+    return {
+      line,
+      text,
+      why: "the heading's columns do not line up with this row — a cell has wrapped onto another line, and no field on it reads as a company name",
+    };
+  }
+
+  const plannedName =
+    !shiftedPlan && plannedIndex !== -1 && isNameCandidate(fields[plannedIndex])
+      ? plannedIndex
+      : -1;
+
+  const nameIndex =
+    plannedName !== -1
+      ? plannedName
+      : markedIndex !== -1
+        ? markedIndex
+        : fields.findIndex(isNameCandidate);
+  if (nameIndex === -1) return { line, text, why: "no field reads as a company name" };
+
+  const name = fields[nameIndex];
+  const rest = fields.filter((_, index) => index !== nameIndex);
+  const joined = rest.join("  ");
+
+  /**
+   * The licence and the registration, read from COLUMNS — see `licenceOnly`.
+   * Two candidates and this refuses to pick one, which is the doctrine the
+   * amount already follows and the header already follows for a second `Prime:`.
+   * The refusal is a concern, never silence.
+   */
+  const licenceFields = [...new Set(fields.map(licenceOnly).filter((v): v is string => v !== null))];
+  const registrationFields = [
+    ...new Set(fields.map(registrationOnly).filter((v): v is string => v !== null)),
+  ];
+  const registration = registrationFields.length === 1 ? registrationFields[0] : null;
+  const licence = licenceFields.length === 1 ? licenceFields[0] : null;
+
+  // City first, then the scope from what is left. The other order was the first
+  // draft and it was wrong on every well-formed row: "Fontana, CA" satisfies
+  // "has four letters and is not a number", so the city column won the
+  // portion-of-work slot and the real scope — the one the whole feature quotes
+  // — was discarded.
+  /**
+   * A COLUMN HEADED "Location" MAKES A BARE CITY READABLE, WHICH NO PATTERN CAN.
+   *
+   * `CITY_WITH_STATE` wants two trailing capitals and `CITY_SUFFIXED` wants the
+   * word "City", so UCLA's "Valencia" satisfied neither and 13 of 14 real rows
+   * read `city: null` — the one that worked was "Temple City", and only because
+   * of its name. When the document itself says which column is the place, that
+   * guesswork is unnecessary: take the field.
+   *
+   * It still has to not be something else. An identifier, a figure or a street
+   * address in that column means the heading and the row disagree, and a
+   * disagreement is not a licence to invent a city.
+   */
+  const plannedCityIndex = usablePlan ? usablePlan.indexOf("city") : -1;
+  const plannedCity =
+    plannedCityIndex !== -1 && plannedCityIndex !== nameIndex
+      ? (readsAsCity(fields[plannedCityIndex]) ? fields[plannedCityIndex] ?? null : null)
+      : null;
+
+  const city =
+    plannedCity ??
+    rest.find((field) => CITY_WITH_STATE.test(field)) ??
+    rest.find((field) => CITY_SUFFIXED.test(field)) ??
+    null;
+
+  /**
+   * PREFER A FIELD THAT NAMES ONE OF OUR TRADES over the first merely-eligible
+   * one. `rest.find(...)` took the first, so any column printed before the
+   * portion of work and not otherwise excluded won the slot — which is how a city
+   * came to be quoted as a scope of work. The portion of work is, by definition,
+   * the field most likely to name a trade, and that is a far better
+   * discriminator than position on a form whose column order this parser has
+   * never seen.
+   *
+   * The fallback is unchanged, so a row whose scope is NOT one of our five still
+   * behaves exactly as before. That row is not a prospect, which is why this is
+   * the right place to stop rather than guess further.
+   */
+  const eligible = (field: string) =>
+    /[A-Za-z]{4}/.test(field) &&
+        // `moneyOnly`/`percentOnly`, not `MONEY`/`PERCENT`: the strict versions
+        // kept the amount column out of the scope slot, which is what they were
+        // for, and ALSO threw away any portion of work that happened to mention
+        // a figure. See the note on those two functions.
+        !moneyOnly(field) &&
+        !percentOnly(field) &&
+        field !== city &&
+        // An identifier column is never the scope. Tested by SHAPE rather than
+        // by inequality against the chosen value, which is what this read before
+        // — so when two licence-shaped fields made the parser refuse to choose,
+        // `licence` was null and BOTH of them became eligible to be quoted as
+        // the portion of work. A refusal must not widen what else can go wrong.
+        licenceOnly(field) === null &&
+        registrationOnly(field) === null &&
+        // An address line: a street number and a state code, which is the
+        // place-of-business column and not a scope of work.
+        !/^\d+\s+\S/.test(field) &&
+        !/\b[A-Z]{2}\s+\d{5}(-\d{4})?\b/.test(field) &&
+        !/^(?:lic|license|licence|dir|reg)\b/i.test(field);
+
+  /**
+   * THE SCOPE COLUMN, WHEN THE HEADING NAMES ONE — AND "ACT" IS WHY THIS MATTERS.
+   *
+   * `eligible` requires four letters, which is right for a predicate guessing at
+   * an unknown column order: a three-character field is far more often an
+   * abbreviation, a code or a bid-item number than a portion of work. But the
+   * real corpus prints **`ACT`** — acoustical ceiling tile, one of this product's
+   * five trades — as a scope cell, and it appears on nine of 154 rows.
+   *
+   * Measured on the real document: before the column plan that row's scope read
+   * `"Simi Valley"`, its own city, which is a false claim. With the plan reading
+   * name and city but not scope it read `null`, which is better but still a loss.
+   * With the column honoured it reads `ACT`, which is what the document says.
+   *
+   * The length floor is therefore a property of GUESSING, not of scopes, and it
+   * is dropped exactly where the guessing stops. The identifier and figure tests
+   * are kept, because a heading and a row can still disagree and a disagreement
+   * is not permission to quote a licence number as a portion of work.
+   */
+  const plannedScopeIndex = usablePlan ? usablePlan.indexOf("scope") : -1;
+  const plannedScope =
+    plannedScopeIndex !== -1 && plannedScopeIndex !== nameIndex
+      ? ((candidate) =>
+          /[A-Za-z]{2}/.test(candidate) &&
+          candidate !== city &&
+          licenceOnly(candidate) === null &&
+          registrationOnly(candidate) === null &&
+          !moneyOnly(candidate) &&
+          !percentOnly(candidate)
+            ? candidate
+            : null)(fields[plannedScopeIndex])
+      : null;
+
+  /**
+   * ON A SHIFTED ROW THE LAST FALLBACK IS WITHDRAWN, because it is positional and
+   * position is the thing that has gone wrong.
+   *
+   * `rest.find(eligible)` means "the first field that could be a scope", which on
+   * a complete row is a reasonable guess and on a row missing a cell is how a CITY
+   * came to be quoted as a portion of work. Measured: fixing the name on these
+   * rows moved the wrong value rather than removing it — one row came back with
+   * `name: "Finest City Acoustics Inc."` (right) and `portionOfWork: "San Diego"`
+   * (wrong), and the portion of work is quoted verbatim in the claim somebody
+   * reads down a telephone.
+   *
+   * The trade-naming find above it stays, because naming one of our five trades is
+   * intrinsic to the value rather than to where it sits — the same reason
+   * `ENTITY_MARKER` survives a shift. So a shifted row keeps a scope it can prove
+   * and gets null for one it can only guess at.
+   */
+  const scope =
+    plannedScope ??
+    rest.find((field) => eligible(field) && tradeMatchFor(field).scope !== null) ??
+    (shiftedPlan ? null : rest.find(eligible)) ??
+    null;
+
+  /**
+   * The amount and the bid percentage, read from COLUMNS rather than from
+   * anywhere on the row — see `moneyOnly`. Two figures and this refuses to pick
+   * one, which is the rule the header already follows for a multi-prime packet:
+   * when a document says two things, a parser that chooses is a parser that
+   * invents.
+   *
+   * The refusal is a CONCERN, never silence. A dollar figure on the page that
+   * does not reach a claim is exactly the "lost quietly" shape this file is
+   * built against — the reviewer has the document open and can settle in a
+   * second what no amount of parsing will.
+   */
+  const amounts = [...new Set(rest.filter(moneyOnly).map(parseAmount))].filter(
+    (value): value is number => value !== null,
+  );
+  const percentCols = rest
+    .map(percentColumn)
+    .filter((found): found is { value: number; labelled: boolean } => found !== null);
+  // A percentage over 100 is dropped by `percentColumn`, and dropping it in
+  // silence would break this file's own rule that a refusal is never silence.
+  const impossiblePercents = rest
+    .filter((field) => percentOnly(field))
+    .map(parsePercent)
+    .filter((value): value is number => value !== null && value > 100);
+  const percents = [...new Set(percentCols.map((found) => found.value))];
+  const amount = amounts.length === 1 ? amounts[0] : null;
+  const percentOfBid = percents.length === 1 ? percents[0] : null;
+
+  const match = tradeMatchFor(scope);
+  const concerns: string[] = [];
+
+  /**
+   * NO PORTION OF WORK READ AT ALL — AND NOTHING SAID SO.
+   *
+   * Public Contract Code §4104 requires the listing to state the portion of work
+   * each subcontractor is listed for; it is the column that makes the document
+   * worth reading. A row where none read is therefore a row this parser has
+   * misread, not a row the document left blank — and it arrived with
+   * `concerns: []`, which breaks this file's own rule that a refusal is never
+   * silence.
+   *
+   * Measured 2026-10-05, three shapes, all three silent:
+   *
+   *   | row | name | portionOfWork |
+   *   | --- | --- | --- |
+   *   | `C-9 991009 | Fontana, CA | Metal stud framing and drywall` | **the SCOPE** | null |
+   *   | `Realname Drywall | Fontana, CA | C-9 991010` | correct | null |
+   *   | `Realname Drywall | Fontana, CA | C-9 991010 | Lath and cement plaster` | correct | correct |
+   *
+   * The first is the one worth the sentence: with no name cell to find, the scope
+   * cell became the COMPANY NAME, so the lead would be called "Metal stud framing
+   * and drywall". It cannot reach the database unnoticed — `tradeScope` is null
+   * with the portion gone, and `shouldInclude` leaves such a row UNTICKED, under a
+   * label reading "not one of our five trades" — but an unticked row with a
+   * plausible-looking company name is a row somebody ticks.
+   *
+   * A CONCERN rather than a refusal, deliberately, and the reason is the one
+   * CLAUDE.md records about the percentage column: every cheap test for "this
+   * reads like a trade, not a firm" also matches real companies — `Acoustical
+   * Ceilings Inc` is a name — and refusing would drop a real prospect to avoid
+   * printing a silly one. A reviewer gates every row on this screen anyway, so
+   * naming the doubt beats withholding the row.
+   */
+  if (scope === null) {
+    concerns.push(
+      "no portion of work read on this row — §4104 requires the listing to state one, so this is a column this reader has misaligned rather than a blank in the document. Check what the line actually says: where there was no company-name cell to find, the portion of work may have been read AS the company name",
+    );
+  }
+
+  /**
+   * A row read off a heading that does not line up says so, because the guards
+   * above remove the WRONG values and cannot restore the missing ones. The
+   * company name is proved by its entity marker; everything else on the line is
+   * one slot out of where the heading says it should be, so the city and the
+   * portion of work may be absent rather than merely unread.
+   */
+  if (shiftedPlan) {
+    concerns.push(
+      "this page's column headings do not line up with this row — a cell wrapped onto another line, so the company name was read from its own wording rather than its column, and the city and portion of work may be missing rather than simply unread. Check this row against the document before importing.",
+    );
+  }
+
+  if (amounts.length > 1) {
+    concerns.push(
+      `this row carries ${amounts.length} separate dollar columns (${rest.filter(moneyOnly).join("; ")}) and nothing says which is the subcontract amount — no amount will be claimed`,
+    );
+  } else if (amounts.length === 0 && MONEY.test(joined)) {
+    const token = joined.match(MONEY)?.[0]?.trim();
+    concerns.push(
+      `this row mentions ${token ?? "a dollar figure"} inside a wider field rather than in a column of its own — read as a unit price or prose, not the subcontract amount, so no amount will be claimed`,
+    );
+  }
+  if (licenceFields.length > 1) {
+    concerns.push(
+      `this row carries ${licenceFields.length} licence-shaped numbers (${licenceFields.join("; ")}) and nothing says which is the contractor's licence — none will be claimed. A spec-section number printed in its own column looks exactly like a licence`,
+    );
+  } else if (licenceFields.length === 0 && LICENCE.test(withoutMoney(text))) {
+    concerns.push(
+      `this row has a licence-shaped number inside a wider field rather than in a column of its own — read as a spec section, a quantity or prose, so no licence will be claimed`,
+    );
+  }
+  /**
+   * THE DOCUMENT NAMED THE COLUMN AND THE CELL DID NOT READ — SAY SO.
+   *
+   * The licence and registration patterns are deliberately narrow: 6-to-8 digits
+   * for a licence, ten starting 1 or 2 for a registration. Real documents print
+   * `394`, `88` and `PW-LR-1001079292`, and each of those reads as NOTHING. Every
+   * other field on the row is fine, nothing warns, and `agreed` stays true — three
+   * of 154 real rows lose an identifier exactly this quietly.
+   *
+   * A predicate could never flag it, because a cell that fails the pattern is
+   * indistinguishable from a cell that is not a licence. What makes this sayable
+   * is the PLAN: when the heading itself says which column is the licence and the
+   * cell under it does not parse, the disagreement is between the document and
+   * this parser, and that is worth a sentence rather than a silent null.
+   */
+  if (usablePlan) {
+    for (const [kind, label, got] of [
+      ["licence", "contractor's licence", licence],
+      ["registration", "public-works registration", registration],
+    ] as const) {
+      const at = usablePlan.indexOf(kind);
+      if (at === -1 || got !== null) continue;
+      const cell = fields[at]?.trim();
+      if (!cell || cell === name) continue;
+      concerns.push(
+        `the document heads column ${at + 1} as the ${label} and this row prints "${cell}" there, which this reader does not recognise as one — so none will be claimed. Short, lettered and prefixed numbers are all printed in real listings`,
+      );
+    }
+  }
+
+  if (registrationFields.length > 1) {
+    concerns.push(
+      `this row carries ${registrationFields.length} registration-shaped numbers and nothing says which is the public-works registration — none will be claimed`,
+    );
+  }
+  if (percents.length > 1) {
+    concerns.push(
+      `this row carries ${percents.length} columns labelled as a share of the bid and nothing says which is this subcontractor's — no percentage will be claimed`,
+    );
+  }
+  if (impossiblePercents.length > 0) {
+    concerns.push(
+      `this row prints ${impossiblePercents.map((value) => `${value}%`).join(" and ")}, which cannot be a share of a bid — read as something else entirely and not claimed`,
+    );
+  }
+  if (percents.length <= 1 && percentCols.some((found) => !found.labelled)) {
+    const bare = percentCols.filter((found) => !found.labelled).map((found) => `${found.value}%`);
+    concerns.push(
+      `this row carries ${bare.join(" and ")} in a column that does not say what it is a percentage OF — a bond column prints 100%, a retention column prints 5%, and a share of the bid looks the same, so no percentage will be claimed`,
+    );
+  }
+
+  if (scope && DANGLING.test(scope)) {
+    concerns.push(
+      `the portion of work reads "${scope}" and looks cut off — check whether it continues on the next line`,
+    );
+  }
+  // The name matters more than the scope and was never checked. An unindented
+  // wrapped cell left `name: "Southern California Drywall &"`, with no warning,
+  // and that string goes straight into SalesLead.companyName.
+  if (DANGLING.test(name)) {
+    concerns.push(
+      `the company name reads "${name}" and looks cut off — check whether it continues on the next line`,
+    );
+  }
+  if (match.alsoMatched.length > 0) {
+    concerns.push(
+      `the portion of work mentions more than one of our trades — read as ${match.scope}, but it also matches ${match.alsoMatched.join(" and ")}`,
+    );
+  }
+  // The name/scope columns reversed: the first non-numeric field was a scope of
+  // work, so the "company name" is a trade description and the lead would be
+  // named after a portion of work.
+  //
+  // The discriminator is PAIRWISE, and the first version was not: it asked
+  // whether the scope field failed to match a trade, which is false whenever the
+  // company name contains a trade word — "Acme Drywall, Inc." in the scope slot
+  // matches `drywall`, so the check never fired on the very case it was written
+  // for. What actually separates the two columns is that a company name carries
+  // an entity marker and a scope of work does not. So: the name reads as a trade
+  // AND carries no entity marker, while the scope reads as a company.
+  if (
+    tradeMatchFor(name).scope &&
+    !ENTITY_MARKER.test(name) &&
+    scope !== null &&
+    ENTITY_MARKER.test(scope)
+  ) {
+    concerns.push(
+      `"${name}" reads like a portion of work rather than a company — check whether this form puts the scope in the first column`,
+    );
+  }
+
+  return {
+    name,
+    sourceText: text.trim(),
+    line,
+    portionOfWork: scope,
+    tradeScope: match.scope,
+    licence,
+    registration,
+    city,
+    amount,
+    percentOfBid,
+    // `readRow` sees one line and cannot know whose listing it sat under. The
+    // caller walks the page in order and overwrites this.
+    listedBy: null,
+    concerns,
+  };
+}
+
+function isUnread(value: ListedSub | UnreadLine): value is UnreadLine {
+  return "why" in value;
+}
+
+/**
+ * Read a pasted subcontractor listing.
+ *
+ * Pure: no database, no network, no model. The input is whatever a person
+ * selected out of a public document and pasted, which is the whole reason this
+ * is trustworthy — the evidence is on their screen while they review it.
+ */
+/**
+ * A FORM-SHAPED LISTING, WHICH THIS PARSER CANNOT READ — AND SAYS SO.
+ *
+ * Every fixture in `subListingCases.ts` is a COLUMN TABLE, and its own header
+ * says it is a guess: no real document had been read when they were written.
+ * One has now been read — a Caltrans Bid Book pulled from the public Post-Bid
+ * Files portal — and it is not a column table at all. It is a FORM: sixty
+ * numbered blocks, four of them filled, with the labels inline beside the
+ * values rather than above them in a heading row:
+ *
+ *     1) List this subcontractor?        YES      NO
+ *          Business Name ACME WALL SYSTEMS    Location City RIVERBEND  State CA
+ *            California Contractor License Number    712345
+ *          Item      %        Description
+ *        1     50.00%    LEAD COMPLIANCE PLAN
+ *
+ * Measured against the real document, `readRow` returns **228 rows for three
+ * subcontractors**, none of them clean: the per-item description lines become
+ * companies, the form's own `Sample Data Entry` block becomes two phantom subs
+ * ("striping", "reinforcement"), the page furniture becomes rows, and the one
+ * line carrying a company name is eaten by the heading-majority branch because
+ * it genuinely contains the words Name, City and State.
+ *
+ * **Why the refusal rather than a patch.** The comment above `accountedFor`
+ * predicted this exact loss — "the row carrying NONE of them… eaten by the
+ * heading-majority branch" — and says the fix belongs in `splitFields` and
+ * `furnitureReason`, not in a guard over the set-aside pile, which was built,
+ * measured dead across 308 tests, and deleted. That is still right. Reading
+ * this shape needs a block reader keyed on the numbered toggle, which is a new
+ * top-level path rather than a patch, and it is not in this change. What IS in
+ * this change is refusing to pretend: 228 junk rows would import 228 junk
+ * leads, and a lead named "Business Name ACME WALL SYSTEMS" is worse than no
+ * lead, because somebody would have to find and delete it — and every lead this
+ * importer writes is currently undeletable.
+ *
+ * **Deliberately keyed on two unmistakable markers, not on the labels.** A
+ * heading row in a legitimate column table can perfectly well read
+ * "Business Name   Location City   State", so matching the labels would refuse
+ * documents this parser reads correctly today. The numbered toggle and the
+ * form's own revision id cannot appear in a pasted table. Conservative on
+ * purpose: a false positive here costs a working capability, a false negative
+ * only leaves the behaviour this change found.
+ */
+const FORM_BLOCK_TOGGLE = /^\s*\d+\)\s*List this subcontractor\?/im;
+const FORM_REVISION_ID = /\bDES-OE-0102\b/i;
+
+/**
+ * AND A SECOND FORM SHAPE, WHICH THE TWO MARKERS ABOVE DO NOT CATCH AT ALL.
+ *
+ * The paragraph above argues for keying the refusal on the Caltrans toggle and
+ * revision id rather than on the labels, and that argument is still right. What
+ * it did not say — because only one real document had been read — is that those
+ * two markers are specific to ONE publisher. A different publisher's form
+ * carries neither, so it fell straight through into `readRow`.
+ *
+ * Measured against twelve fixtures built from real documents, before this:
+ *
+ *   | document | rows invented |
+ *   | --- | --- |
+ *   | UC Berkeley, 2 bidders | 63 |
+ *   | UC Berkeley, 6 bidders | 52 |
+ *   | UC Berkeley, 4 bidders | 41 |
+ *   | UC Davis Health, 2 bidders | 36 |
+ *   | UC Berkeley, 1 bidder | 15 |
+ *   | **a Final Bid Results sheet listing NO subcontractors at all** | **11** |
+ *
+ * That last row is the one that settles it. Eleven prospects out of a document
+ * which names none is not a degraded read, it is fabrication — and every lead
+ * this importer writes is currently undeletable, so somebody would be stuck with
+ * them. `agreed` already read false on all six, which is the honesty signals
+ * doing their job and is NOT the same as a refusal: a person looking at 63 rows
+ * and a warning can still press the button.
+ *
+ * These are BuildingConnected exports — one PDF per project, each subcontractor
+ * slot a block of five LABELLED rows, and the bidders side by side as columns so
+ * one label line carries up to six answers. UC Berkeley and UC Davis Health both
+ * publish them. They are not the Caltrans shape and will need a different
+ * reader; what this does is stop pretending.
+ *
+ * **KEYED ON THE LEADING FIELD OF A LINE, WHICH IS THE WHOLE TRICK.** The
+ * paragraph above is right that "Business Name   Location City   State" is a
+ * legitimate heading row, and a substring match on these labels would refuse the
+ * UCLA tables this parser reads correctly at 14 of 14. The difference is
+ * POSITIONAL: in a form the label is the first thing on its line and the values
+ * are to the right of it; in a column table the labels are all on ONE line, so
+ * only the first of them leads. UCLA's heading leads with `Portion of Work:` and
+ * carries `Name of Business:` to its right, so it scores the name family zero
+ * however many times the words appear.
+ *
+ * Thresholds are three distinct families, with the name and licence families
+ * twice each — a form has one of each per slot and these documents carry two to
+ * fourteen slots. Measured over 64 documents (12 fixtures, 9 Berkeley, 1 Davis
+ * Health, 9 Caltrans, 12 UCLA, 21 UC Santa Barbara prose): no document this
+ * parser reads is refused, and no form is missed.
+ *
+ * **WHICH OF THE THREE IS ACTUALLY CARRYING THE WEIGHT, measured by keeping one
+ * clause and dropping the other two rather than by removing one at a time** —
+ * which is the mutation design that answers a conjunction, since removing any
+ * single clause here reds nothing: every legitimate document in hand fails at
+ * least two of them, so each is individually redundant and the one-at-a-time run
+ * proves only that.
+ *
+ *   | kept alone | result |
+ *   | --- | --- |
+ *   | `lic >= 2` | separates every one of these documents |
+ *   | `size >= 3` | separates every one of these documents |
+ *   | **`name >= 2`** | **REFUSES A TABLE THIS PARSER READS** |
+ *   | any family at all | refuses two |
+ *
+ * So the licence family is the real discriminator, and the reason is structural
+ * rather than lucky: in a column table `License #:` is never the first field on
+ * its line — something is always to the left of it — and in this form it always
+ * is. The NAME family is the weak one, because two primes' tables pasted
+ * together print their heading twice and that is enough to reach two. It is kept
+ * because it only ever narrows, and because 64 documents is not the world; but
+ * anything added here later should be judged against the licence clause, not
+ * against the name clause it would be easy to mistake for the load-bearing one.
+ */
+type BcFamily = "portion" | "name" | "city" | "lic" | "dir";
+
+/** `Subcontractor 3 - `, and `Subcontractor 7 for Alternate - `. */
+const BC_SLOT_PREFIX = /^subcontractor \d+(?: for alternate)? - /;
+
+/**
+ * Written as whole-string patterns against a NORMALISED leading field, never as
+ * substrings. `licen[cs]e` because a form will be fed a British spelling
+ * eventually; the single-word alternatives (`business`, `location`, `no.`) are
+ * what a two- or three-line label wrap leaves on its own line.
+ */
+const BC_FAMILIES: readonly (readonly [BcFamily, RegExp])[] = [
+  ["name", /^(?:name of business|business|name of)$/],
+  [
+    "city",
+    /^(?:location of business(?: \(city\))?|\(city\)|business \(city\)|location(?: of)?)$/,
+  ],
+  ["lic", /^licen[cs]e(?: no\.?)?$/],
+  ["dir", /^(?:dir registration(?: no\.?)?|registration no\.?|no\.)$/],
+  [
+    "portion",
+    /^(?:portion of the work(?: activity)?|\(e\.g\..*|(?:work )?activity \(e\.g\..*|mechanical, concrete\)|concrete\))$/,
+  ],
+];
+
+/**
+ * The text before the first run of two or more spaces, lowercased, with runs of
+ * whitespace collapsed, a trailing colon dropped and a dash given a space on
+ * each side — which is what absorbs the real `Subcontractor 2- Location` that
+ * five of six Berkeley documents print.
+ */
+/**
+ * ONE expression for where the label stops, shared by the detector above and the
+ * reader below. `MONEY`/`moneyOnly` further up this file is the scar: two
+ * expressions that must agree about the same thing had drifted, and the drift was
+ * invisible until something asked the second question.
+ */
+function leadingFieldSpan(raw: string): { label: string; end: number } {
+  const match = /^(\s*)(.*?)(?:\s{2,}|$)/.exec(raw);
+  const indent = match?.[1] ?? "";
+  const label = match?.[2] ?? "";
+  return { label, end: indent.length + label.length };
+}
+
+function normaliseBcLabel(label: string): string {
+  return label
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/:$/, "")
+    .replace(/\s*-\s*/g, " - ")
+    .trim()
+    .toLowerCase();
+}
+
+function bcLeadingField(raw: string): string {
+  return normaliseBcLabel(leadingFieldSpan(raw).label);
+}
+
+function bcFamilyOf(leading: string): BcFamily | null {
+  const bare = leading.replace(BC_SLOT_PREFIX, "");
+  for (const [family, pattern] of BC_FAMILIES) {
+    if (pattern.test(bare)) return family;
+  }
+  return null;
+}
+
+function buildingConnectedListing(text: string): boolean {
+  const seen = new Map<BcFamily, number>();
+  for (const raw of text.split(/\r?\n/)) {
+    const family = bcFamilyOf(bcLeadingField(raw));
+    if (family !== null) seen.set(family, (seen.get(family) ?? 0) + 1);
+  }
+  return (
+    seen.size >= 3 && (seen.get("name") ?? 0) >= 2 && (seen.get("lic") ?? 0) >= 2
+  );
+}
+
+/* ------------------------------------------------------------------------- *
+ * AND A THIRD FORM SHAPE: NUMBERED BOXES, ONE SUBCONTRACTOR PER BLOCK.
+ *
+ * SF Public Works publishes a "Proposed Subcontractor List" as SECTION 00 43 36,
+ * which cites California Public Contract Code sections 4100-4114 in its own body. An
+ * overnight source survey recommended it as the first source a scheduled fetcher
+ * should walk — sequential integer ids at both levels, honest 404s, real text
+ * layers — and called its shape "already supported" on the strength of this
+ * file already having a `numbered-blocks` entry.
+ *
+ * **IT WAS NOT SUPPORTED, AND NOT IN THE DIRECTION ANYBODY FEARED.** The worry
+ * was that it would trip the Caltrans refusal above and yield zero rows. It does
+ * not trip it: the Caltrans markers are `1)` and `DES-OE-0102`, this form writes
+ * `1.` and carries no revision id, and every one of its labels is prefixed with
+ * its own box number so none of them leads a `BC_FAMILIES` line either. Both
+ * detectors therefore returned null and the document fell straight through into
+ * `readRow`. Measured against the real 60-page file:
+ *
+ *   | | |
+ *   | --- | --- |
+ *   | rows returned | **412** |
+ *   | subcontractors on the document | **7** |
+ *   | rows that were a subcontractor | **0** |
+ *
+ * Fifty-nine times too many, and not one of them right: `"Lower Tier;"`,
+ * `"12. IF LBE, CHECK"` and `"Proposed Subcontractors Form"` are the three
+ * commonest names. `agreed` read false, which is the honesty signals doing their
+ * job and is not a refusal — a person looking at 412 rows and a warning can still
+ * press the button, and every lead this importer writes is undeletable.
+ *
+ * **THE SHAPE, AND WHY IT IS THE EASIEST OF THE THREE TO READ.** One block per
+ * subcontractor, twelve numbered boxes, several boxes to a line, and the values
+ * either inline after the label or on the line beneath it inside that box's own
+ * column span:
+ *
+ *     1. TYPE OF SUBCONTRACTOR:
+ *                                 X First Tier;    Lower Tier;   Supplier;
+ *     2. SUBCONTRACTOR NAME                              EMAIL
+ *                   VANTAGE WALL SYSTEMS                     bids@example.test
+ *     3. ADDRESS                                         PHONE NO.
+ *            140 Quarry Mill Road, Riverbend, CA 90001   415-555-0100
+ *     4. BID ITEMS/PORTION OF WORK
+ *                   Metal Stud Framing
+ *     5. DIR REGISTRATION NO.     6. SUPPLIER ID         7. FEDERAL ID NO.
+ *           1000000011                  0000000071            00-0000001
+ *     8. LICENSE NO.              9. SF BUSINESS TAX REG. NO.  10. AMOUNT OF SUB-
+ *               900001                      0300001            CONTRACT WORK:
+ *                                                                 $  482,350.00
+ *
+ * Crucially the whole of one subcontractor is inside ONE block. That is what
+ * makes the EXTRA fields readable here when they are not readable in the
+ * labelled-column form — see `readNumberedBoxesForm` for the measurement.
+ *
+ * **KEYED ON THE BOX NUMBER ON A LINE-LEADING LABEL, WHICH IS POSITIONAL.** The
+ * two entries above argue, correctly, that matching the label WORDS would refuse
+ * column tables this parser reads: a heading row may perfectly well read
+ * `Business Name   Location City   State`. The discriminator here is not the
+ * words but the `N.` in front of them, at the start of a FIELD. In a column table
+ * every label is on ONE line, so only the first of them leads and none of them
+ * carries a box number; in this form each box number starts a field, at column
+ * zero or at a column boundary further right.
+ *
+ * **WHICH CLAUSE CARRIES THE WEIGHT: NONE OF THEM, AND THAT IS THE HONEST
+ * ANSWER.** The labelled-column entry above answers this question by keeping one
+ * clause and dropping the others, because removing one at a time reds nothing
+ * there. Run over 64 documents — the 20 real UCLA bidder lists, every fixture in
+ * `subListingCases.ts`, and every multi-line template literal in both test files
+ * — exactly ONE scores a single numbered-box family, and it scores all twelve,
+ * 167 times each. So every clause is individually sufficient and the keep-one
+ * design cannot separate them either. The threshold below is therefore
+ * CONSERVATISM rather than a measured discriminator, and it is written that way
+ * on purpose: four distinct families and a name box, so a document that numbers
+ * an ordinary list cannot reach it on one coincidence. Anything added here later
+ * should be judged against the box-number prefix, which is doing all the work.
+ *
+ * **MUTATION-TESTED, AND TWO OF THE THREE CLAUSES SURVIVE. WHICH IS THE RESULT.**
+ * Fifteen mutations were run over this reader and the detector; ten are killed by a
+ * named test. These are the ones that are not, each with what else already handles
+ * the input rather than a plan to strengthen the code:
+ *
+ *   - **the box-number prefix is killed**, by a column table headed with these very
+ *     words. That is the clause carrying the whole detector, as predicted;
+ *   - **`seen.size >= 4` is killed only by a case built for it** — a footnote under
+ *     an ordinary table reading `2. SUBCONTRACTOR NAME must match the licence
+ *     record exactly.`, which scores the name family once and would be diverted by
+ *     a one-family threshold. Nothing in the 64 documents distinguished them;
+ *   - **`seen.has("name")` SURVIVES.** A document with four box families and no
+ *     name box can only produce "not one filled block was found" from this reader,
+ *     which is a worse message than `readRow`'s own, and that is the whole reason
+ *     the clause is here. No document in hand has that shape, and inventing one
+ *     means inventing its right answer too, so it is left as a survivor rather than
+ *     defended by a fixture nobody can check;
+ *   - **the ORDER of this check against the Caltrans markers SURVIVES**, because
+ *     the two shapes are disjoint: Caltrans writes `1)` and this form writes `1.`,
+ *     and neither publisher's labels match the other's patterns. The order is kept
+ *     anyway, and `parseShapes.test.ts` pins the Caltrans refusal as a regression
+ *     control while saying in its own comment that it is not evidence about order.
+ * ------------------------------------------------------------------------- */
+type NbFamily =
+  | "type"
+  | "name"
+  | "address"
+  | "portion"
+  | "dir"
+  | "supplier"
+  | "fedid"
+  | "licence"
+  | "taxreg"
+  | "amount"
+  | "certified"
+  | "lbe";
+
+/**
+ * Whole-string patterns against a NORMALISED label, the box number already
+ * stripped. `licen[cs]e` for the same reason `BC_FAMILIES` carries it. `amount of
+ * sub-` is not a typo: box 10's label wraps mid-word in the real document, and
+ * the half that survives on the label line is what has to be matched.
+ */
+const NB_BOX_LABELS: readonly (readonly [NbFamily, RegExp])[] = [
+  ["type", /^type of subcontractor:?$/],
+  ["name", /^subcontractor name$/],
+  ["address", /^address$/],
+  ["portion", /^(?:bid items\s*\/\s*portion of work|portion of work)$/],
+  ["dir", /^dir registration no\.?$/],
+  ["supplier", /^supplier id$/],
+  ["fedid", /^federal id no\.?$/],
+  ["licence", /^licen[cs]e no\.?$/],
+  ["taxreg", /^sf business tax reg\.? no\.?$/],
+  ["amount", /^amount of sub-?(?:contract work:?)?$/],
+  ["certified", /^certified$/],
+  ["lbe", /^if lbe, check$/],
+];
+
+/**
+ * The two labels in this form that carry NO box number — they share a line with
+ * the numbered box to their left, and each holds the field this product cannot
+ * get anywhere else.
+ *
+ * They are recognised ONLY on a line that already carries a numbered box, which
+ * is what keeps them from turning a stray `EMAIL` heading in some other document
+ * into a column boundary. Without them box 2's span runs to the end of the line
+ * and the email is read as part of the company name.
+ */
+type NbCompanion = "email" | "phone";
+
+const NB_COMPANION_LABELS: readonly (readonly [NbCompanion, RegExp])[] = [
+  ["email", /^e-?mail$/],
+  ["phone", /^phone(?: no\.?)?$/],
+];
+
+type NbSlot = NbFamily | NbCompanion;
+
+function normaliseNbLabel(label: string): string {
+  return label.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/**
+ * Match a whole-string label pattern against a PREFIX of `rest`, longest word
+ * prefix first, and hand back what is left over.
+ *
+ * The leftover is the whole point: the real document prints box 8 as
+ * `8. LICENSE NO. 900001`, with the value run together with its own label on one
+ * field. Reading the label without consuming it would lose that licence; reading
+ * the field as a value would lose every other box. Longest-first so
+ * `amount of sub-contract work:` is preferred over the `amount of sub-` wrap.
+ */
+function nbLabelPrefix(rest: string): { slot: NbSlot; value: string } | null {
+  const words = [...rest.matchAll(/\S+/g)];
+  for (let take = words.length; take >= 1; take -= 1) {
+    const last = words[take - 1];
+    if (last?.index === undefined) continue;
+    const consumed = last.index + last[0].length;
+    const head = normaliseNbLabel(rest.slice(0, consumed));
+    for (const [slot, pattern] of NB_BOX_LABELS) {
+      if (pattern.test(head)) return { slot, value: rest.slice(consumed).trim() };
+    }
+  }
+  return null;
+}
+
+/** A label found on a line, with the column it starts at and its inline value. */
+type NbLabel = { slot: NbSlot; start: number; value: string };
+
+/**
+ * The numbered boxes on one line. A box must begin a FIELD — `splitFields`'
+ * separator, a run of two or more spaces or the line start — which is what makes
+ * this positional rather than a substring search.
+ */
+function nbBoxesOn(raw: string): NbLabel[] {
+  const out: NbLabel[] = [];
+  for (const field of fieldSpans(raw)) {
+    const numbered = /^(\d{1,2})\.[ \t]*/.exec(field.text);
+    if (numbered === null) continue;
+    const hit = nbLabelPrefix(field.text.slice(numbered[0].length));
+    if (hit === null) continue;
+    out.push({ slot: hit.slot, start: field.start, value: hit.value });
+  }
+  return out;
+}
+
+/**
+ * The unnumbered companions, added only once a numbered box is already on the
+ * line. A companion carries no inline value in any document read: `EMAIL` sits
+ * alone on the label line and its value is underneath it.
+ */
+function nbCompanionsOn(raw: string): NbLabel[] {
+  const out: NbLabel[] = [];
+  for (const field of fieldSpans(raw)) {
+    const normalised = normaliseNbLabel(field.text);
+    for (const [slot, pattern] of NB_COMPANION_LABELS) {
+      if (pattern.test(normalised)) out.push({ slot, start: field.start, value: "" });
+    }
+  }
+  return out;
+}
+
+/** Every label on a line, left to right, or an empty list for a value line. */
+function nbLabelsOn(raw: string): NbLabel[] {
+  const boxes = nbBoxesOn(raw);
+  if (boxes.length === 0) return [];
+  return [...boxes, ...nbCompanionsOn(raw)].sort((a, b) => a.start - b.start);
+}
+
+function numberedBoxesListing(text: string): boolean {
+  const seen = new Set<NbSlot>();
+  for (const raw of text.split(/\r?\n/)) {
+    for (const label of nbBoxesOn(raw.replace(/\f/g, " "))) seen.add(label.slot);
+  }
+  return seen.size >= 4 && seen.has("name");
+}
+
+/** Which form shape this is, or null when it is a table this parser can read. */
+type FormShape = "numbered-blocks" | "labelled-columns" | "numbered-boxes";
+
+/**
+ * THE CALTRANS MARKERS ARE TESTED FIRST, AND THEIR REFUSAL IS UNTOUCHED.
+ *
+ * Order matters less than it looks — the two shapes are disjoint, since Caltrans
+ * writes `1)` where this form writes `1.` and neither publisher's labels match the
+ * other's patterns, so neither detector can reach the other's document whichever
+ * runs first. It is written in this order anyway, because a refusal that stopped
+ * 228 invented rows should not depend on a reader added afterwards being narrow,
+ * and `parseShapes.test.ts` keeps a control asserting the Caltrans form is still
+ * refused alongside every fixture asserting this one is read.
+ */
+function formShapedListing(text: string): FormShape | null {
+  if (FORM_BLOCK_TOGGLE.test(text) || FORM_REVISION_ID.test(text)) {
+    return "numbered-blocks";
+  }
+  if (numberedBoxesListing(text)) return "numbered-boxes";
+  if (buildingConnectedListing(text)) return "labelled-columns";
+  return null;
+}
+
+/**
+ * THE REFUSAL, AND IT IS NOW FOR ONE SHAPE BECAUSE ONLY ONE SHAPE IS REFUSED.
+ *
+ * This held two messages and said they "differ in what they NAME, since 'one
+ * numbered block per subcontractor' would not help anyone holding a
+ * BuildingConnected export". That was true when both shapes were refused. The
+ * labelled-column form is READ now — `readLabelledColumnsForm`, dispatched above —
+ * and its branch RETURNS, so by the time execution reaches the one site that
+ * indexes this table, `formShape` can only be `"numbered-blocks"`.
+ *
+ * **DELETED RATHER THAN KEPT FOR A SHAPE THAT MIGHT COME BACK**, and the deletion
+ * is what the key type now PROVES: narrowing the key to the one reachable shape
+ * makes the compiler check the claim on every build, where a wider type would
+ * silently admit a second unreachable entry again. It was CLAUDE.md's "written,
+ * documented, and never called" shape wearing a message — and a refusal nobody can
+ * be shown is worse than no refusal, because it reads in review as a path that
+ * exists.
+ *
+ * Two things that are NOT the reason it went, because each would have been the
+ * wrong reason: the dispatch was not reordered to make it reachable (that is
+ * changing behaviour to justify a string), and the message itself was not wrong.
+ * If the labelled-column reader is ever withdrawn, the branch comes back and so
+ * does its message — written against the document it is refusing, not restored
+ * from here.
+ */
+const FORM_REFUSAL: Record<"numbered-blocks", string> = {
+  "numbered-blocks":
+    "this looks like a filled subcontractor FORM — the kind with one numbered block per subcontractor and the labels printed beside the values — and this reader only understands a column TABLE. Nothing on this page has been read as a subcontractor, deliberately, because reading it wrongly would import leads that are not real. Paste the subcontractor table from a bid tabulation or an award packet instead, or send this document to Diego so the form reader can be built against it.",
+};
+
+/* ------------------------------------------------------------------------- *
+ * READING THE LABELLED-COLUMN FORM, WHICH UNTIL NOW WAS ONLY REFUSED.
+ *
+ * The refusal above stopped fourteen fabricated leads. It did not get anybody a
+ * prospect, and UC Berkeley and UC Davis Health are where this product's trades
+ * actually appear: Caltrans builds roads, and across fourteen of its listings
+ * these five trades turned up in exactly one.
+ *
+ * **WHAT THIS CLAIMS AND WHAT IT DELIBERATELY DOES NOT.** A page carries up to
+ * six bidders side by side, so one label line holds up to six answers. Two
+ * questions come out of that and they are not equally answerable:
+ *
+ *   1. WHICH FIRMS ARE LISTED, with trade, city, licence and DIR.
+ *   2. WHICH BIDDER listed which of them — the GC relationship.
+ *
+ * Every failure mode in the corpus lives in the second. `ucb_bot` prints FIVE
+ * bidders in its header and FOUR columns on every row, because bidder one listed
+ * nothing — so an ordinal reading attributes every row in that file to the wrong
+ * GC. `ucb_stanley` and `ucb_dwinelle` each have slots in that state. And
+ * matching the header's grid to the values' grid is not available as a fallback:
+ * in `ucdavis_9579290` the two do not coincide.
+ *
+ * So this answers question 1 and says so. A row carries the firm; the document
+ * names the project; the bidders are a known short list of GCs on that project.
+ * "One of these GCs" is a true and useful thing to hand somebody. A guess at
+ * which one is a wrong thing said confidently down a telephone, which is what
+ * this file exists to prevent.
+ * ------------------------------------------------------------------------- */
+
+/** A value read off a labelled line, with the column it started at. */
+type LabelledValue = { offset: number; text: string };
+
+/**
+ * The values to the right of the label, each with its start offset.
+ *
+ * A value ends at a run of two or more spaces, which is the only separator these
+ * documents have: a SINGLE space is inside a value (`Metal Stud Framing`), and
+ * that distinction is what makes the shape readable at all. Tabs break a value
+ * too, though `pdftotext -layout` has never emitted one here.
+ */
+function valuesFrom(raw: string, from: number): LabelledValue[] {
+  const out: LabelledValue[] = [];
+  let i = from;
+  while (i < raw.length) {
+    while (i < raw.length && (raw[i] === " " || raw[i] === "\t")) i += 1;
+    if (i >= raw.length) break;
+    const start = i;
+    let last = i;
+    while (i < raw.length) {
+      const here = raw[i] ?? "";
+      const next = raw[i + 1] ?? "";
+      if (here === "\t") break;
+      if (here === " " && (next === " " || next === "\t")) break;
+      if (here !== " ") last = i;
+      i += 1;
+    }
+    const text = raw.slice(start, last + 1).trim();
+    if (text.length > 0) out.push({ offset: start, text });
+  }
+  return out;
+}
+
+/**
+ * Column representatives, merging offsets within two characters of each other: a
+ * form feed shifts a line's offsets by one, and a proportional font rendered onto
+ * a character grid drifts by one more.
+ *
+ * The representative is the FIRST offset in a cluster rather than its mean, so
+ * the grid cannot creep as more rows are read.
+ */
+function gridOf(offsets: readonly number[]): number[] {
+  const columns: number[] = [];
+  for (const offset of [...offsets].sort((a, b) => a - b)) {
+    const last = columns[columns.length - 1];
+    if (last !== undefined && offset - last <= 2) continue;
+    columns.push(offset);
+  }
+  return columns;
+}
+
+function nearestColumn(grid: readonly number[], offset: number): number {
+  let best = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  grid.forEach((column, index) => {
+    const distance = Math.abs(column - offset);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = index;
+    }
+  });
+  return best;
+}
+
+/** `Subcontractor 7 for Alternate - Name of Business` -> slot 7, alternates. */
+const BC_SLOT_IN_LABEL = /^subcontractor (\d+)( for alternate)? - /;
+/** UC Davis Health prints the slot on its OWN line: `SUBCONTRACTOR 1:`. */
+const BC_SLOT_HEADER = /^subcontractor (\d+)$/;
+/** An unused slot. Every source in the corpus writes exactly this. */
+const BC_UNUSED = /^n\/?a\.?$/i;
+
+/**
+ * A licence as these documents print it: six or seven bare digits. Anything else
+ * is still CLAIMED and carries a concern, because `C-10 1030181`, `9028` and `na`
+ * are all real printed values and a person can see at a glance which is which.
+ * Refusing them would delete a prospect to avoid being wrong about a field the
+ * person is about to read anyway.
+ */
+const BC_PLAIN_LICENCE = /^\d{6,7}$/;
+/** A DIR registration: ten digits. Nine and eleven both occur, as typos. */
+const BC_PLAIN_DIR = /^\d{10}$/;
+/** A street address where a city should be. One real document does this. */
+const BC_ADDRESS_IN_CITY =
+  /\d+\s+\S+\s+(?:st|street|ave|avenue|rd|road|blvd|way|dr|drive|ln|lane|ct|court|pl|place)\b/i;
+
+/**
+ * A LABEL AND ITS FIRST VALUE SEPARATED BY ONE SPACE, WHICH NO AMOUNT OF
+ * 2+-SPACE SPLITTING CAN SEE.
+ *
+ * Found by building a fixture whose column happened to land one character after
+ * the longest label — `Subcontractor 1 - Location of Business (city)` indented by
+ * six is 51 characters, and a value at 52 is one space away. The leading field
+ * then reads `Subcontractor 1 - Location of Business (city) 1 Example Way,
+ * Kestrel, CA 90001`, matches no family, and the city is dropped **with nothing
+ * said** — the silent loss this file exists to prevent. The spec's failure 11
+ * records the same adjacency in a real Caltrans document.
+ *
+ * The recovery is deterministic rather than fuzzy: trim one trailing word at a
+ * time and ask whether what remains is a whole family label. The family patterns
+ * are anchored whole-string expressions, so this is not a substring match — a
+ * prefix either IS a label or it is not. Bounded at eight trims, which is longer
+ * than the longest label here, so a line of prose cannot be walked into a match.
+ *
+ * It returns null in the ordinary case, so the common path is untouched.
+ */
+/**
+ * The COMPLETE form of each family label, as distinct from the fragments a wrapped
+ * label leaves behind (`Business`, `Name of`, `(city)`, `No.`).
+ *
+ * ONLY A COMPLETE LABEL MAY ABSORB AN ADJACENT VALUE, and the fragment list is
+ * exactly why. `Name of Licensee   Alpha Example Builders Inc` is the prime's own
+ * licence block, already cleanly delimited; trim one word and the head is
+ * `Name of`, which IS a name fragment — so the recovery read `Licensee` as a
+ * company and the prime's block arrived as two phantom subcontractors. Measured:
+ * it took a one-bidder document from 3 rows to 5.
+ *
+ * A fragment cannot have a value adjacent to it on its own line BY DEFINITION:
+ * what follows the tail of a wrapped label is the rest of that label, which is on
+ * the line above. So the distinction is not a heuristic, it is the shape.
+ */
+const BC_WHOLE_LABELS: readonly RegExp[] = [
+  /^name of business$/,
+  /^location of business(?: \(city\))?$/,
+  /^licen[cs]e no\.?$/,
+  /^dir registration(?: no\.?)?$/,
+  /^portion of the work(?: activity)?$/,
+];
+
+function isWholeBcLabel(normalised: string): boolean {
+  const bare = normalised.replace(BC_SLOT_PREFIX, "");
+  return BC_WHOLE_LABELS.some((pattern) => pattern.test(bare));
+}
+
+function labelRunTogetherWithValue(
+  label: string,
+  end: number,
+): { label: string; value: LabelledValue; end: number } | null {
+  if (bcFamilyOf(normaliseBcLabel(label)) !== null) return null;
+  const words = label.split(" ");
+  for (let trimmed = 1; trimmed <= 8 && trimmed < words.length; trimmed += 1) {
+    const head = words.slice(0, words.length - trimmed).join(" ");
+    if (!isWholeBcLabel(normaliseBcLabel(head))) continue;
+    const tail = words.slice(words.length - trimmed).join(" ").trim();
+    if (tail.length === 0) return null;
+    return {
+      label: head,
+      value: { offset: end - tail.length, text: tail },
+      end,
+    };
+  }
+  return null;
+}
+
+type LabelledFormRead = {
+  rows: ListedSub[];
+  ignored: IgnoredLine[];
+  problems: string[];
+  /** Every non-blank line, so the caller can keep its own partition honest. */
+  nonBlankLines: number;
+};
+
+/**
+ * One page's worth of state. A page is the unit because the grid is: one real
+ * document's grid runs {56,133} then {51,83} then {50,82} then {51,76} across
+ * four pages, with the indentation moving 6 -> 0 -> 5.
+ */
+type SlotRead = {
+  firstLine: number;
+  sourceLines: Set<number>;
+  byFamily: Map<BcFamily, Map<number, LabelledValue>>;
+};
+
+function readLabelledColumnsForm(text: string): LabelledFormRead {
+  const rows: ListedSub[] = [];
+  const ignored: IgnoredLine[] = [];
+  const problems: string[] = [];
+  let nonBlankLines = 0;
+
+  /** Pages, keeping TRUE line numbers so the evidence link still works. */
+  const pages: { line: number; raw: string }[][] = [[]];
+  text.split(/\r?\n/).forEach((raw, index) => {
+    const page = pages[pages.length - 1];
+    if (!raw.includes("\f")) {
+      page?.push({ line: index + 1, raw });
+      return;
+    }
+    const before = raw.slice(0, raw.indexOf("\f"));
+    if (before.trim()) page?.push({ line: index + 1, raw: before });
+    const after = raw.slice(raw.lastIndexOf("\f") + 1);
+    const next: { line: number; raw: string }[] = [];
+    if (after.trim()) next.push({ line: index + 1, raw: after });
+    pages.push(next);
+  });
+
+  /**
+   * **THE SLOTS OUTLIVE THE PAGE AND THE GRID DOES NOT**, which is the one place
+   * these two notions come apart. `ucb_minor485` breaks a page in the MIDDLE of a
+   * slot: the firm's name is on page one at offset 133 and its licence on page two
+   * at offset 83. Those are the same bidder, so they belong in one row — but they
+   * are not the same OFFSET, so the grid cannot be shared.
+   *
+   * The resolution is that a page-local column INDEX is comparable across pages,
+   * because the bidders keep their left-to-right order on every page. Index one on
+   * page one is index one on page two. (If a page omitted a bidder's column
+   * entirely the indices would shift, which is the ragged problem one level up and
+   * not solvable without the bidder header, whose offsets do not match the values'
+   * — see above. No document in the corpus does it.)
+   *
+   * Keying the slots per page instead loses the licence and the DIR of every firm
+   * in a split slot, silently, because the page-two group has no name and emits no
+   * row at all. That is how this was found.
+   */
+  const slots = new Map<string, SlotRead>();
+
+  for (const page of pages) {
+    /** What was read, before any column is assigned — the grid needs all of it. */
+    const records: {
+      key: string;
+      family: BcFamily;
+      values: LabelledValue[];
+      line: number;
+    }[] = [];
+    const offsets: number[] = [];
+    let slot: string | null = null;
+    let series = "base";
+    /**
+     * A wrapped label waiting for its values, with the line it was opened at.
+     *
+     * THE DISTANCE BOUND IS NOT DECORATION. Without it a pending label is
+     * satisfied by "the next line that has fields", whatever that line is — and
+     * in `ucdavis_9579290` an empty slot's `DIR Registration No.` label is five
+     * lines above an `SBE   N/A   N/A` row, so the N/A becomes the registration.
+     * There it is harmless, because the slot has no name and emits no row. It is
+     * harmless by luck rather than by design, which is the kind of thing this
+     * repo keeps paying for. A wrap puts its values on the next line or the one
+     * after; three-line label wraps are real, and each of those lines re-opens
+     * the pending label, so the bound is measured from the LAST label line.
+     */
+    let pending: { family: BcFamily; key: string; line: number } | null = null;
+
+    for (const { line, raw } of page) {
+      if (!raw.trim()) continue;
+      nonBlankLines += 1;
+
+      const { label, end } = leadingFieldSpan(raw);
+      const plain = valuesFrom(raw, end);
+      const adjacent = labelRunTogetherWithValue(label, end);
+      const normalised = normaliseBcLabel(adjacent?.label ?? label);
+      const values =
+        adjacent === null ? plain : [adjacent.value, ...valuesFrom(raw, end)];
+
+      const header = BC_SLOT_HEADER.exec(normalised);
+      if (header?.[1] !== undefined) {
+        slot = header[1];
+        series = "base";
+        pending = null;
+        ignored.push({ line, text: raw, why: "a subcontractor slot heading" });
+        continue;
+      }
+
+      const inLabel = BC_SLOT_IN_LABEL.exec(normalised);
+      if (inLabel?.[1] !== undefined) {
+        slot = inLabel[1];
+        series = inLabel[2] === undefined ? "base" : "alternate";
+      }
+
+      const family = bcFamilyOf(normalised);
+
+      // A label with nothing to its right is a WRAP: its values are on a later
+      // line, and any number of label-only lines may sit between (three-line
+      // wraps are real). The pending family survives all of them.
+      if (values.length === 0) {
+        if (family !== null) pending = { family, key: `${series}:${slot ?? "?"}`, line };
+        ignored.push({
+          line,
+          text: raw,
+          why:
+            family === null
+              ? "not part of the subcontractor list"
+              : "a label whose values are on a later line",
+        });
+        continue;
+      }
+
+      const stale = pending !== null && line - pending.line > 2;
+      const target =
+        family !== null
+          ? { family, key: `${series}:${slot ?? "?"}` }
+          : stale
+            ? null
+            : pending;
+      if (target === null) {
+        ignored.push({ line, text: raw, why: "not part of the subcontractor list" });
+        continue;
+      }
+
+      records.push({ ...target, values, line });
+      for (const value of values) offsets.push(value.offset);
+      pending = null;
+    }
+
+    const grid = gridOf(offsets);
+    for (const record of records) {
+      const read: SlotRead = slots.get(record.key) ?? {
+        firstLine: record.line,
+        sourceLines: new Set(),
+        byFamily: new Map(),
+      };
+      slots.set(record.key, read);
+      read.sourceLines.add(record.line);
+      const byColumn = read.byFamily.get(record.family) ?? new Map();
+      read.byFamily.set(record.family, byColumn);
+      for (const value of record.values) {
+        const column = nearestColumn(grid, value.offset);
+        // First writer wins: a repeated label inside one slot is the document
+        // restating it, not a second answer.
+        if (!byColumn.has(column)) byColumn.set(column, value);
+      }
+    }
+  }
+
+  for (const [key, read] of slots) {
+    const columns = new Set<number>();
+    for (const byColumn of read.byFamily.values()) {
+      for (const column of byColumn.keys()) columns.add(column);
+    }
+    for (const column of [...columns].sort((a, b) => a - b)) {
+      const at = (family: BcFamily): string | null =>
+        read.byFamily.get(family)?.get(column)?.text ?? null;
+
+      const name = at("name");
+      if (name === null || BC_UNUSED.test(name)) continue;
+
+      const portionOfWork = at("portion");
+      const city = at("city");
+      const licence = at("lic");
+      const registration = at("dir");
+      const concerns: string[] = [];
+
+      if (licence !== null && !BC_PLAIN_LICENCE.test(licence)) {
+        concerns.push(
+          `the licence reads "${licence}", which is not the six or seven digits this form usually carries — check it against the document`,
+        );
+      }
+      if (registration !== null && !BC_PLAIN_DIR.test(registration)) {
+        concerns.push(
+          `the DIR registration reads "${registration}", which is not the ten digits a registration carries — check it against the document`,
+        );
+      }
+      if (city !== null && BC_ADDRESS_IN_CITY.test(city)) {
+        concerns.push(
+          `the city field holds what looks like a street address ("${city}") — the city may be only part of it`,
+        );
+      }
+      if (key.startsWith("alternate:")) {
+        concerns.push(
+          "this was listed against an ALTERNATE rather than the base bid, so the work may not be in the contract at all",
+        );
+      }
+
+      rows.push({
+        name,
+        sourceText: [...read.sourceLines]
+          .sort((a, b) => a - b)
+          .map((line) => text.split(/\r?\n/)[line - 1] ?? "")
+          .join("\n"),
+        line: read.firstLine,
+        portionOfWork,
+        tradeScope: tradeMatchFor(portionOfWork).scope,
+        licence,
+        registration,
+        city,
+        amount: null,
+        percentOfBid: null,
+        // This shape deliberately does not attribute a subcontractor to a bidder —
+        // see the problem this reader raises. Null is that refusal, not a gap in
+        // the document.
+        listedBy: null,
+        concerns,
+      });
+    }
+  }
+
+  if (rows.length === 0) {
+    problems.push(
+      "this is the labelled form shape — labels on the left, each bidder's answers in a column to the right — and not one subcontractor was read from it. Either every slot is empty, which is a real and ordinary thing for a package bid or a courtesy listing, or this page's text came out of the PDF in a shape this reader does not understand. Nothing has been invented either way. Look at the page itself before concluding there are no subcontractors on it.",
+    );
+    return { rows, ignored, problems, nonBlankLines };
+  }
+
+  problems.push(
+    "READ, BUT WITHOUT SAYING WHICH BIDDER LISTED WHOM. This form prints several general contractors side by side, and this reader does not attribute a subcontractor to one of them — one real document names five bidders and prints only four columns, so matching them up by position puts every row against the wrong GC. Each row below is a firm that WAS listed on this project by one of the bidders on the page. Treat the GC as unknown rather than as the first one named.",
+  );
+
+  return { rows, ignored, problems, nonBlankLines };
+}
+
+/* ------------------------------------------------------------------------- *
+ * READING THE NUMBERED-BOX FORM.
+ *
+ * **THE TRAP IS THE BLANK FORM, AND IT IS MEASURED RATHER THAN FEARED.** The real
+ * document is 60 pages and 43 of them are the empty template, which prints
+ * `Copy this page as needed to provide a complete listing.` above every copy. A
+ * naive block split returns 167 blocks; the document names SEVEN
+ * subcontractors. Three counts sharing no code with this reader agree on seven:
+ * distinct email addresses 7, distinct telephone numbers 7, and the index page
+ * of the packet. A 24-fold inflation, which is the same defect shape as the
+ * Caltrans 228-for-3 and the Berkeley 11-rows-from-a-document-naming-none.
+ *
+ * So **a block is recognised by a FILLED box 2, never by the presence of its
+ * label.** Every label in a blank template is present and correctly spelled;
+ * that is what a template IS. The count of templates skipped is reported, so a
+ * person reading seven rows off a sixty-page file can see where the other
+ * fifty-three pages went instead of wondering.
+ *
+ * **WHAT IS READ THAT NO OTHER SHAPE GIVES, AND THE OBJECTION THAT DOES NOT
+ * APPLY HERE.** `readLabelledColumnsForm` above deliberately does not read
+ * `Amount of Subcontract`: in that shape the amounts sit on their own offset
+ * grid beside up to six bidders' columns, so nearest-column attribution would
+ * hang bidder one's figure on bidder two's subcontractor, and a wrong dollar
+ * figure on a GC-facing claim is worse than none.
+ *
+ * That objection is about a grid shared between subcontractors, and this form has
+ * no such grid: box 10 is inside the same block as box 2, bounded by the next
+ * block's own name box. Established by measurement rather than by that argument —
+ * `parseShapes.test.ts` carries a fixture of four adjacent blocks whose amounts
+ * are 2,481,350.00 / absent / 37,500.00 / absent, and asserts each figure lands
+ * on its own block AND that both absences read null rather than inheriting a
+ * neighbour's. So the amount IS read here, the email and the telephone number
+ * with it, and the reason the other shape refuses them still stands where it was
+ * written.
+ *
+ * **WHAT IS DELIBERATELY NOT READ.** `listedBy` is null on every row and
+ * `header.prime` names nobody, because the document does not say. The form's own
+ * firm-name line (`Date / Name of Firm, Corporation, Partnership, or Joint
+ * Venture`) is a signature block, and in all three bidders' submittals inside the
+ * real packet it is EMPTY in the text layer. The source survey called the GC
+ * relationship "the whole pitch", and this is the one field this otherwise
+ * richest source does not carry — worth knowing before anybody builds a fetcher
+ * on it. Box 1's First Tier / Supplier / Service Contractor tick is also unread:
+ * its `X` is placed by whoever filled the form and lands in a different column in
+ * each of the two blocks that have one at all.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * A city inside a one-line postal address: `..., Lakeview, CA 90003` and
+ * `..., Riverbend, CA, 90001` — both spellings are in the same real document.
+ *
+ * The city is the group BEFORE the state code, and the state code plus a postcode
+ * is what anchors it. The character class excludes digits, which is the clause
+ * doing the work: `22 Harbour Street, Suite 800, Fort Hollow, CA 90002` offers the
+ * suite as an earlier candidate and it is rejected for holding a number, not for
+ * being in the wrong place.
+ *
+ * The LAST match is taken rather than the first, and that half is NOT load-bearing
+ * in any document read — no address in the corpus contains two city-state-postcode
+ * runs, so first and last are the same string every time. Mutation-tested and
+ * recorded as surviving rather than quietly kept: it is there because an address
+ * with a care-of line would distinguish them, not because anything has.
+ */
+const NB_CITY_IN_ADDRESS =
+  /,\s*([A-Za-z][A-Za-z.'\- ]*?)\s*,\s*([A-Z]{2})\b,?\s*\d{5}/g;
+
+/** Six to ten digits, which is the width a contractor licence is printed at. */
+const NB_PLAIN_LICENCE = /^\d{6,8}$/;
+/** A DIR registration: ten digits. The real form also prefixes one `PW-LR-`. */
+const NB_PLAIN_DIR = /^\d{10}$/;
+/** Something that is unmistakably an email address, and nothing else. */
+const NB_EMAIL = /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/;
+/** A North American telephone number as these forms print it. */
+const NB_PHONE = /^\(?\d{3}\)?[ .\-]?\d{3}[ .\-]?\d{4}$/;
+
+type NbBlock = {
+  firstLine: number;
+  sourceLines: Set<number>;
+  /** Every value seen in a slot's span, in the order the document printed it. */
+  bySlot: Map<NbSlot, string[]>;
+};
+
+function nbTake(block: NbBlock, slot: NbSlot): string | null {
+  const values = block.bySlot.get(slot) ?? [];
+  if (values.length === 0) return null;
+  /**
+   * JOINED, NOT FIRST-WINS, and one real block is the whole reason. A company
+   * name came out of the PDF as two runs on one line (`Meridian` at column 29
+   * and `Ceiling Systems` at column 53) because the form's own box is wider than the text.
+   * Taking the first value ships half a company name; joining the values that
+   * landed in THIS span — and only this span — reconstructs it. The span is what
+   * keeps the email on the same line out of it.
+   */
+  const joined = values.join(" ").replace(/\s+/g, " ").trim();
+  return joined.length === 0 ? null : joined;
+}
+
+function nbCityOf(address: string): string | null {
+  let city: string | null = null;
+  for (const match of address.matchAll(NB_CITY_IN_ADDRESS)) {
+    if (match[1] !== undefined) city = match[1].trim();
+  }
+  return city !== null && city.length > 0 ? city : null;
+}
+
+/**
+ * Box 10's figure, and it is read as MONEY ONLY rather than as whatever landed in
+ * the span.
+ *
+ * Not fastidiousness: the label itself wraps mid-word, so the string
+ * `CONTRACT WORK:` sits in box 10's span on the value line of every single block,
+ * filled or blank, and a `$` with nothing after it sits there on every block whose
+ * amount was left out. Reading the span's first value would make the label the
+ * amount; reading its last would make a bare `$` one.
+ *
+ * **BUT THE CURRENCY SYMBOL IS NOT ENFORCED HERE, AND SAYING SO IS THE POINT.**
+ * Dropping `MONEY` for a bare comma-grouped number was mutation-tested and the
+ * amount test went red — not because a non-money number got claimed, but because
+ * `parseAmount` requires the symbol itself and returned null for all five rows. So
+ * this expression is belt-and-braces over a check one function down, and the clause
+ * actually holding the line is `MONEY`'s own scar about a quantity column —
+ * `12,500 SF` becoming `$12,500` in a claim. Recorded rather than left to look
+ * load-bearing: the next person to simplify this should simplify THIS one and leave
+ * `parseAmount` alone.
+ */
+function nbAmountOf(values: readonly string[]): {
+  amount: number | null;
+  concern: string | null;
+} {
+  /**
+   * JOINED BEFORE MATCHING, because the currency symbol and its figure are two
+   * separate runs in two of the four filled blocks that carry an amount at all:
+   * `$` at column 116 and `2,481,350.00` at column 120, three spaces apart, so
+   * `valuesFrom` splits them. Matching each run on its own finds `$` with no
+   * digits and digits with no `$` — and `MONEY` requires the symbol, deliberately,
+   * so both miss. That read null on a figure the document prints in full, which is
+   * the quiet half of a wrong amount: it is not wrong, it is absent, and nobody
+   * notices an absence.
+   */
+  const joined = values.join(" ").replace(/\s+/g, " ").trim();
+  const found = [...joined.matchAll(new RegExp(MONEY.source, "gi"))];
+  const first = found[0];
+  if (first === undefined) return { amount: null, concern: null };
+  const amount = parseAmount(first[0]);
+  const others = new Set(found.map((match) => parseAmount(match[0])));
+  if (others.size > 1) {
+    /**
+     * CLAIMED WITH THE DOUBT ATTACHED RATHER THAN WITHHELD. No document in hand
+     * prints two figures in this box, so this is unmeasured — and the architecture
+     * already decides what to do with an uncertain value: every signal this writes
+     * lands PROPOSED and a person confirms it. Refusing would delete a figure that
+     * is probably right to guard against one that might not be.
+     */
+    return {
+      amount,
+      concern: `box 10 holds more than one figure (${[...others].map((value) => (value === null ? "unreadable" : value.toLocaleString("en-US"))).join(", ")}) and the first was taken — check which is the subcontract amount`,
+    };
+  }
+  return { amount, concern: null };
+}
+
+function readNumberedBoxesForm(text: string): LabelledFormRead {
+  const rows: ListedSub[] = [];
+  const ignored: IgnoredLine[] = [];
+  const problems: string[] = [];
+  let nonBlankLines = 0;
+  let blankTemplates = 0;
+
+  const lines = text.split(/\r?\n/);
+  /** The spans currently open, from the most recent label line. */
+  let spans: NbLabel[] = [];
+  let block: NbBlock | null = null;
+
+  const flush = (): void => {
+    if (block === null) return;
+    const current = block;
+    block = null;
+
+    /**
+     * THE FILLED-BOX-2 TEST, which is the whole defence against the 43 blank
+     * pages. A name is a value that landed in box 2's own span; a template has
+     * the label and nothing beneath it.
+     */
+    const name = nbTake(current, "name");
+    if (name === null) {
+      blankTemplates += 1;
+      return;
+    }
+
+    const concerns: string[] = [];
+    const address = nbTake(current, "address");
+    const city = address === null ? null : nbCityOf(address);
+    if (address !== null && city === null) {
+      concerns.push(
+        `the address reads "${address}" and no city could be read out of it — the city is unknown rather than missing from the document`,
+      );
+    }
+
+    const licence = nbTake(current, "licence");
+    if (licence !== null && !NB_PLAIN_LICENCE.test(licence)) {
+      concerns.push(
+        `the licence reads "${licence}", which is not the six to eight digits this form usually carries — check it against the document`,
+      );
+    }
+
+    const registration = nbTake(current, "dir");
+    if (registration !== null && !NB_PLAIN_DIR.test(registration)) {
+      concerns.push(
+        `the DIR registration reads "${registration}", which is not the ten bare digits a registration carries — check it against the document`,
+      );
+    }
+
+    const email = nbTake(current, "email");
+    const phone = nbTake(current, "phone");
+    if (email !== null && !NB_EMAIL.test(email)) {
+      concerns.push(
+        `the email box reads "${email}", which is not an email address — check it against the document before writing to it`,
+      );
+    }
+    if (phone !== null && !NB_PHONE.test(phone)) {
+      concerns.push(
+        `the telephone box reads "${phone}", which is not a telephone number — check it against the document before ringing it`,
+      );
+    }
+
+    const portionOfWork = nbTake(current, "portion");
+    const money = nbAmountOf(current.bySlot.get("amount") ?? []);
+    if (money.concern !== null) concerns.push(money.concern);
+
+    rows.push({
+      name,
+      sourceText: [...current.sourceLines]
+        .sort((a, b) => a - b)
+        .map((line) => lines[line - 1] ?? "")
+        .join("\n"),
+      line: current.firstLine,
+      portionOfWork,
+      tradeScope: tradeMatchFor(portionOfWork).scope,
+      licence,
+      registration,
+      city,
+      amount: money.amount,
+      percentOfBid: null,
+      /**
+       * Null because the document does not say, not because this refuses to
+       * attribute. See the header above: the form's firm-name line is a signature
+       * block and is empty in the text layer of every submittal read.
+       */
+      listedBy: null,
+      email,
+      phone,
+      concerns,
+    });
+  };
+
+  lines.forEach((source, index) => {
+    const line = index + 1;
+    /** A form feed is one character wide, so a space keeps every column. */
+    const raw = source.replace(/\f/g, " ");
+    if (!raw.trim()) return;
+    nonBlankLines += 1;
+
+    const labels = nbLabelsOn(raw);
+    if (labels.length > 0) {
+      /**
+       * BOX 2 OPENS THE BLOCK AND BOX 1 CLOSES THE ONE BEFORE IT.
+       *
+       * Opening on the NAME box rather than on box 1 makes the block boundary the
+       * same thing as the test for whether the block is filled, so a template
+       * cannot open a block that a later line then fills out of the page furniture
+       * between them. Closing on box 1 is what keeps `sourceText` honest: without
+       * it a row's evidence ran on to the end of the NEXT block's first two lines,
+       * which is a quotation nobody can check against the document.
+       *
+       * A form with no box 1 at all still reads: blocks then simply close where
+       * the next one opens, which is the behaviour this had before.
+       */
+      if (labels.some((label) => label.slot === "type")) flush();
+      if (labels.some((label) => label.slot === "name")) {
+        flush();
+        block = { firstLine: line, sourceLines: new Set(), bySlot: new Map() };
+      }
+      spans = labels;
+      if (block !== null) {
+        const current: NbBlock = block;
+        current.sourceLines.add(line);
+        for (const label of labels) {
+          if (label.value.length === 0) continue;
+          const values = current.bySlot.get(label.slot) ?? [];
+          values.push(label.value);
+          current.bySlot.set(label.slot, values);
+        }
+      }
+      ignored.push({ line, text: source, why: "a numbered box label" });
+      return;
+    }
+
+    if (block === null || spans.length === 0) {
+      ignored.push({ line, text: source, why: "not part of a subcontractor block" });
+      return;
+    }
+
+    /**
+     * A value belongs to the LAST label whose column it is at or to the right of.
+     * Two characters of slack for the same reason `gridOf` merges within two: a
+     * form feed shifts a line and a proportional font rendered onto a character
+     * grid drifts.
+     *
+     * This is the clause that keeps a tax registration out of the licence. One real
+     * block has box 8 empty and box 9 filled, so the only value on the line beneath
+     * `8. LICENSE NO.` is the SF business tax registration — which a nearest-value
+     * or first-number-after-the-label reader claims as a contractor licence, and a
+     * wrong public identifier is worse than none because it joins to somebody
+     * else's CSLB record.
+     *
+     * The two characters of slack SURVIVE mutation: every value in every document
+     * read sits to the RIGHT of its own label, so nothing in hand distinguishes a
+     * tolerance of two from a tolerance of zero. Kept because `gridOf` documents the
+     * same drift one shape over, and recorded as unexercised rather than left to
+     * look measured.
+     */
+    const current: NbBlock = block;
+    current.sourceLines.add(line);
+    for (const value of valuesFrom(raw, 0)) {
+      let owner: NbLabel | null = null;
+      for (const label of spans) {
+        if (value.offset + 2 >= label.start) owner = label;
+      }
+      if (owner === null) continue;
+      const values = current.bySlot.get(owner.slot) ?? [];
+      values.push(value.text);
+      current.bySlot.set(owner.slot, values);
+    }
+    ignored.push({ line, text: source, why: "a value inside a numbered box" });
+  });
+
+  flush();
+
+  if (blankTemplates > 0) {
+    problems.push(
+      `${blankTemplates} blank cop${blankTemplates === 1 ? "y" : "ies"} of the form were skipped — this form says "Copy this page as needed", so a packet carries one empty template per unused slot and most of its pages are empty. They are not missing subcontractors.`,
+    );
+  }
+
+  if (rows.length === 0) {
+    problems.push(
+      "this is the numbered-box form shape — one numbered block per subcontractor, labels beside the values — and not one filled block was found. Either every block on the page is the blank template, which is ordinary in this packet, or this page's text came out of the PDF in a shape this reader does not understand. Nothing has been invented either way. Look at the page itself before concluding there are no subcontractors on it.",
+    );
+    return { rows, ignored, problems, nonBlankLines };
+  }
+
+  problems.push(
+    "READ, BUT WITHOUT SAYING WHICH BIDDER LISTED WHOM. This form carries the subcontractor's email, telephone number and subcontract amount, which no other shape here does — and it does NOT carry the general contractor's name: the firm-name line is a signature block and is empty in the text layer. Each row below is a firm that WAS listed on this project. Treat the GC as unknown rather than as whoever the file is named after.",
+  );
+
+  return { rows, ignored, problems, nonBlankLines };
+}
+
+export function parseSubListing(text: string): SubListingParse {
+  const lines = text.split(/\r?\n/);
+  const { header, problems } = readHeader(lines);
+
+  const rows: ListedSub[] = [];
+  const unread: UnreadLine[] = [];
+  const ignored: IgnoredLine[] = [];
+  let headerLines = 0;
+  let nonBlankLines = 0;
+
+  /** One-column lines, held back: a wrap, or prose. Decided after the rows. */
+  const singles: { line: number; text: string }[] = [];
+
+  /**
+   * The column order, learned from the heading row if the document prints one.
+   *
+   * Set when a line is filed as "the table's column headings" and kept for the
+   * rows that follow, because that is the order they are in. A document with two
+   * primes and two heading rows re-learns at the second, which is correct: the
+   * second table's order is what its own rows follow. Null until then, and
+   * `readRow` falls back to its predicate path whenever it is null or does not
+   * match the row's shape.
+   */
+  let columnPlan: (ColumnKind | null)[] | null = null;
+  /** The same heading read as text; see `planByLabels`. */
+  let labelPlan: (ColumnKind | null)[] | null = null;
+  /** The same heading with a label wrapped onto an adjacent line joined back on. */
+  let joinedPlan: (ColumnKind | null)[] | null = null;
+  /** Whether the document printed a heading at all, and whether one ever fitted. */
+  let headingSeen = false;
+  let planEverApplied = false;
+
+  /**
+   * The table's left edge, and the bidder whose listing we are currently inside.
+   * The edge is computed UP FRONT because the first bidder precedes the first
+   * heading, so a single forward pass has no threshold to judge it by yet.
+   */
+  const tableEdge = tableStartsAt(lines);
+  let listedBy: string | null = null;
+  let pendingBidder: string | null = null;
+  /**
+   * A BIDDER HAS A BID, and that is what tells a bidder from the page's own title.
+   *
+   * `UCLA Capital Programs` is a perfectly company-shaped line in the left column,
+   * and ordering alone does not exclude it: the document's preamble prints
+   * `Vendor Name:  (2)Lump Sum:  (3)Unit Prices:`, which this parser reads as a
+   * column heading, so the title committed and the two preamble rows beneath it
+   * arrived attributed to it — a GC that is not a GC, on every page.
+   *
+   * Every real bidder is followed by its own figure (`No.1 - $ 1,149,540.00`,
+   * `Total Bid  $1,149,540.00`) before its listing begins. The title is not. So a
+   * held candidate commits only once a money token has been seen after it.
+   */
+  let moneySincePending = false;
+
+  /**
+   * THE FORM SHAPE IS RECOGNISED AND REFUSED, WITH EVERY LINE STILL ACCOUNTED FOR.
+   *
+   * Each non-blank line goes to `ignored` under one named reason, so the
+   * partition this file's whole design rests on still holds — `accountedFor`
+   * equals `nonBlankLines` — and `agreed` reads false on its third conjunct
+   * because a problem was raised. No row is invented and no count is implied.
+   */
+  const formShape = formShapedListing(text);
+
+  /**
+   * THE LABELLED-COLUMN FORM IS NOW READ RATHER THAN REFUSED, and the Caltrans
+   * numbered-block form still is not — two shapes, two outcomes, one dispatch.
+   *
+   * The reconciliation is reported differently here and the reason is structural
+   * rather than a shortcut: the partition this file rests on assumes ONE ROW PER
+   * LINE, and in this form one label line carries up to six subcontractors' data
+   * while one subcontractor is assembled from five lines. `rowsParsed` and
+   * `nonBlankLines` therefore cannot be compared, so `agreed` is false and a
+   * problem says why. It is not claiming a loss; it is refusing to claim a
+   * completeness it cannot compute. Reading these counts as a partition is the
+   * mistake the whole `agreed` apparatus exists to prevent.
+   */
+  if (formShape === "numbered-boxes") {
+    const form = readNumberedBoxesForm(text);
+    return {
+      header,
+      rows: form.rows,
+      unread: [],
+      ignored: form.ignored,
+      problems: [...problems, ...form.problems],
+      reconciliation: {
+        nonBlankLines: form.nonBlankLines,
+        rowsParsed: form.rows.length,
+        headerLines: 0,
+        ignoredLines: form.ignored.length,
+        unreadLines: 0,
+        accountedFor: form.ignored.length,
+        agreed: false,
+      },
+    };
+  }
+
+  if (formShape === "labelled-columns") {
+    const form = readLabelledColumnsForm(text);
+    return {
+      header,
+      rows: form.rows,
+      unread: [],
+      ignored: form.ignored,
+      problems: [...problems, ...form.problems],
+      reconciliation: {
+        nonBlankLines: form.nonBlankLines,
+        rowsParsed: form.rows.length,
+        headerLines: 0,
+        ignoredLines: form.ignored.length,
+        unreadLines: 0,
+        accountedFor: form.ignored.length,
+        agreed: false,
+      },
+    };
+  }
+
+  if (formShape !== null) {
+    lines.forEach((raw, index) => {
+      if (!raw.trim()) return;
+      nonBlankLines += 1;
+      ignored.push({
+        line: index + 1,
+        text: raw,
+        why: "this is a form, not a table — see the problem above",
+      });
+    });
+    problems.push(FORM_REFUSAL[formShape]);
+    return {
+      header,
+      rows,
+      unread,
+      ignored,
+      problems,
+      reconciliation: {
+        nonBlankLines,
+        rowsParsed: 0,
+        headerLines,
+        ignoredLines: ignored.length,
+        unreadLines: 0,
+        accountedFor: ignored.length + headerLines,
+        agreed: false,
+      },
+    };
+  }
+
+  lines.forEach((raw, index) => {
+    const line = index + 1;
+    if (!raw.trim()) return;
+    nonBlankLines += 1;
+
+    if (isHeaderLine(raw)) {
+      headerLines += 1;
+      return;
+    }
+
+    /**
+     * A bidder line is HELD, and the next heading commits it. That is what makes
+     * the page's own title lose to the bidder beneath it: the LAST candidate
+     * before a heading wins, and a title is never the last one.
+     */
+    if (tableEdge !== null) {
+      /**
+       * THE CONTINUATION OF A WRAPPED NAME IS NOT ITSELF A CANDIDATE, which is why
+       * it is read here rather than inside `bidderCandidate`. "Williamson
+       * Construction Co.," wraps to "Inc." — one word, so the shape test rejects
+       * it, and the name shipped truncated at its own comma. A held name ending in
+       * a comma is an explicit invitation to the next left-column line, and only
+       * then is a single word admitted.
+       */
+      if (pendingBidder !== null && /,$/.test(pendingBidder)) {
+        // The FIRST field, not the whole line: the real continuation prints the
+        // bid figure beside it — `Inc.        No.1 - $ 1,500,000.00 **` — so a
+        // single-field test rejects the very line it was written for.
+        const tail = splitFields(raw)[0] ?? "";
+        const indent = raw.length - raw.trimStart().length;
+        if (indent < tableEdge - 4 && /^[A-Za-z][A-Za-z.&'-]*$/.test(tail)) {
+          pendingBidder = `${pendingBidder} ${tail}`;
+          ignored.push({ line, text: raw, why: "the bidding contractor's name" });
+          return;
+        }
+      }
+
+      const candidate = bidderCandidate(raw, tableEdge);
+      if (candidate !== null) {
+        /**
+         * A name wrapped across two lines ends in a comma — "Williamson
+         * Construction Co.," / "Inc." — and read alone it is a truncated company.
+         * The continuation joins it rather than replacing it.
+         */
+        pendingBidder =
+          pendingBidder !== null && /,$/.test(pendingBidder)
+            ? `${pendingBidder} ${candidate}`
+            : candidate;
+        moneySincePending = false;
+        ignored.push({ line, text: raw, why: "the bidding contractor's name" });
+        return;
+      }
+    }
+
+    if (MONEY.test(raw)) moneySincePending = true;
+
+    const fields = splitFields(raw);
+    const furniture = furnitureReason(raw, fields);
+    if (furniture) {
+      if (furniture === "the table's column headings") {
+        // Only replace a plan with a better-understood one; a heading that
+        // yields nothing usable must not erase what an earlier one taught us.
+        headingSeen = true;
+        if (pendingBidder !== null && moneySincePending) {
+          listedBy = pendingBidder;
+          pendingBidder = null;
+        }
+        /**
+         * A label wrapped onto the line above or below is joined on first, so
+         * both derivations see the whole heading. Null when nothing adjacent
+         * reads as a fragment or when joining one teaches no new column, in
+         * which case this is exactly the line the document printed.
+         */
+        const learned = columnPlanFrom(fields);
+        if (learned) columnPlan = learned;
+        const byLabel = planByLabels(raw);
+        if (byLabel) labelPlan = byLabel;
+        const joined = headingJoinedWithWraps(lines, index);
+        /**
+         * AND THE SAME HEADING WITH A WRAPPED LABEL JOINED BACK ON — KEPT BESIDE
+         * THE OTHER TWO RATHER THAN REPLACING THEM.
+         *
+         * Replacing them was the first version and it cost more than it bought.
+         * A list with a wrapped label has rows of two widths: the complete ones,
+         * and the ones whose city wrapped onto a line of its own and so are a
+         * field narrower. The joined plan fits the first kind; the heading's own
+         * shorter plan fits the second. Overwriting one with the other traded
+         * `fasone`'s four-field rows for its five-field rows — it gained four
+         * cities and LOST a correct one, turned an honestly-unread line into a
+         * lead named "Metals", and wrote a city into a portion of work.
+         *
+         * So all three are kept and `readRow` takes whichever fits the row in
+         * front of it. Every row that matched a plan before matches the same plan
+         * still, and the rows that matched nothing now have one.
+         */
+        if (joined !== null) {
+          const byJoined = joinedPlanFrom(joined);
+          if (byJoined) joinedPlan = byJoined;
+        }
+      }
+      ignored.push({ line, text: raw, why: furniture });
+      return;
+    }
+
+    if (fields.length < 2) {
+      singles.push({ line, text: raw });
+      return;
+    }
+
+    /**
+     * A WRAP THAT SPANS TWO COLUMNS INVENTED A SUBCONTRACTOR, AND THE EXISTING
+     * CONTINUATION BRANCH COULD NOT SEE IT.
+     *
+     * That branch only considers lines with fewer than two fields, which is a
+     * wrap of ONE cell. A real PDF row wraps in several cells at once:
+     *
+     *     Southern California      Fontana, CA  1065432  Metal stud framing
+     *     Drywall & Interiors, Inc.                      and drywall
+     *
+     * The second line has two fields, so it never reached the branch and became
+     * its own row. Reproduced: THREE rows for two subcontractors, zero concerns,
+     * `agreed: true`, and run through the real importer it wrote a lead named
+     * "Drywall & Interiors, Inc." carrying a sourced claim that Swinerton
+     * Builders listed it as their subcontractor on a named project — a company
+     * that does not exist, ticked by default because its trade matched, and
+     * UNDELETABLE, since a lead with signals cannot be removed.
+     *
+     * Meanwhile the real company's lead is named "Southern California" and its
+     * trade claim quotes "Metal stud framing" as the whole portion of work. The
+     * hedge cannot fire: the truncation lands on a word boundary, so there is no
+     * dangling token for `looksCutOff` to catch. The claim-hedging mechanism
+     * bypassed rather than absent, which is worse.
+     *
+     * Three things together, because any one alone would swallow a real row:
+     * the line does not look like a row in its own right; it has FEWER fields
+     * than the row above, as an overflow must; and one of its fields opens as a
+     * continuation. A sole proprietor's row with no identifiers — the case the
+     * heading-majority defect loses — passes the first two and fails the third,
+     * which is what keeps this from eating it.
+     *
+     * Attributed, never appended. Joining the halves would put text this parser
+     * guessed at into a claim, and a claim is the document's words about a row,
+     * not this function's opinion about which row they belong to.
+     */
+    const previous = rows[rows.length - 1];
+    if (
+      previous &&
+      !looksLikeARow(raw) &&
+      fields.length < splitFields(previous.sourceText).length &&
+      fields.some(opensAsContinuation)
+    ) {
+      previous.concerns.push(
+        `line ${line} ("${raw.trim()}") has fewer columns than this row and reads as its continuation — this row's name and portion of work are probably both cut short`,
+      );
+      ignored.push({
+        line,
+        text: raw,
+        why: `read as the continuation of line ${previous.line}`,
+      });
+      return;
+    }
+
+    /**
+     * WHICHEVER PLAN DESCRIBES THIS ROW'S SHAPE, AND OF THOSE, THE ONE THAT NAMES
+     * THE MOST OF ITS OWN COLUMNS.
+     *
+     * The order of the candidates is unchanged and still decides a tie: the
+     * field-based plan first, because it keeps a slot for a column this parser does
+     * NOT recognise and a real unrecognised column has a cell in every row; then
+     * the label scan; then the wrap-joined heading, last, so a row that already had
+     * a plan that fitted keeps the one it had.
+     *
+     * The count comes first, and that is what makes the join reach a row whose
+     * width the unjoined heading already matched. A heading printing `Place of` on
+     * its own line and `Business:` on the next yields FIVE fields either way — so
+     * the unjoined plan fits by width and simply does not know what its third
+     * column is, while the joined one reads `Place of Business` and does. Same
+     * width, strictly more of the document read; measured, the rows went from
+     * `city: null` to their cities with nothing else moving.
+     *
+     * Ties, not merely counts, because a plan with an unnamed slot is not worse
+     * than one without: it is the same reading with one column left honestly
+     * unexplained, and preferring the SHORTER-named plan at equal count is what the
+     * candidate order above already encodes.
+     */
+    const planForRow =
+      [columnPlan, labelPlan, joinedPlan]
+        .filter((plan): plan is (ColumnKind | null)[] => plan !== null && plan.length === fields.length)
+        .reduce<(ColumnKind | null)[] | null>(
+          (best, plan) => (best === null || namedColumns(plan) > namedColumns(best) ? plan : best),
+          null,
+        ) ?? columnPlan;
+    if (planForRow !== null && planForRow.length === fields.length) planEverApplied = true;
+    const result = readRow(raw, line, fields, planForRow);
+    if (isUnread(result)) unread.push(result);
+    else {
+      const row = { ...result, listedBy };
+      /**
+       * THE BIDDER'S OWN NAME CAN WRAP TOO, AND THIS WAS THE ONE CUT-OFF FIELD
+       * NOTHING SAID ANYTHING ABOUT.
+       *
+       * `looksCutOff` already guards the header's prime (a page-level problem),
+       * the company name and the portion of work (row-level concerns). The row's
+       * `listedBy` had neither. A bidder line that wraps is joined only after a
+       * COMMA — "Williamson Construction Co.," / "Inc." — so a name ending in a
+       * conjunction ("Charlie Example Brothers and" / "Sons, Inc.") commits the
+       * first half alone, and that half is what `importSubListing` writes into
+       * `SalesLead.listedByGc` and what the screen prints in the GC column.
+       *
+       * `signals.ts` hedges the CLAIM — `gcPhrase` appends an ellipsis, so the
+       * sentence a person reads says "Charlie Example Brothers and…" — and that
+       * made the asymmetry worse rather than better: the sentence was honest
+       * while the field beside it was not, and only the sentence is evidence
+       * that anything is wrong. Nothing in `problems` and nothing in `concerns` meant
+       * `agreed: true` over a GC named by half its name.
+       *
+       * The same predicate, not a second rule: `looksCutOff` is exported for
+       * exactly this and is the only definition of "visibly does not finish" in
+       * this file. A ROW concern rather than a page `problem`, because `listedBy`
+       * is per row on purpose — see the field's own comment. One wrapped bidder
+       * on a six-bidder page must not refuse the five that read correctly, and
+       * the five rows under the wrapped one are the rows that need the sentence.
+       */
+      if (looksCutOff(row.listedBy)) {
+        row.concerns.push(
+          `the bidding contractor reads "${row.listedBy}" and looks cut off — check whether it continues on the next line before any claim naming them goes out`,
+        );
+      }
+      rows.push(row);
+    }
+  });
+
+  /**
+   * A one-column line is either the rest of the row above it or it is prose, and
+   * the two are told apart by whether that row looks cut off — not by
+   * indentation, which the first version used and which an unindented wrap
+   * walked straight past.
+   *
+   * Attributed, not appended: appending would put text this parser guessed at
+   * into a claim, and a claim is supposed to be the document's own words about a
+   * row rather than this function's opinion about which row they belong to.
+   */
+  for (const single of singles) {
+    const above = [...rows].reverse().find((row) => row.line < single.line);
+    const cutOff =
+      above && (DANGLING.test(above.name) || (above.portionOfWork ? DANGLING.test(above.portionOfWork) : false));
+    /**
+     * DOES THIS ONE COLUMN LOOK LIKE A WHOLE ROW? AND IT OUTRANKS THE CONTINUATION TEST.
+     *
+     * The first version of this fix put the continuation branch first, on the
+     * reasoning that a wrapped cell's second half may carry an entity marker
+     * ("Interiors, Inc.") and so cannot be told from a row by that alone. True,
+     * and it misses the worse case: a single-spaced row that happens to FOLLOW
+     * a genuinely cut-off row is swallowed as that row's continuation, which
+     * does not merely lose it — it pushes a concern onto a SURVIVING row saying
+     * that other subcontractor's text "may be the rest of this row", and that
+     * row's claim is what somebody reads down a telephone.
+     *
+     * What separates them is how MANY things the line carries at once. A wrap
+     * fragment is the tail of ONE cell, so it has one signal at most
+     * ("Interiors, Inc." is an entity marker and nothing else). A squashed row
+     * is a whole table entry, so it has a licence AND a place AND usually a
+     * company marker. Two of the three is the line.
+     *
+     * The first version of this test was `/\d{4,}/` — any run of four digits —
+     * reusing `hasDataEvidence`, and the existing furniture case caught it
+     * within the minute: "Questions: (916) 555-0134" carries the four-digit run
+     * `0134`, and "Printed 2026-03-04" carries `2026`. Both became "a
+     * subcontractor we could not read", on a page that has none. That is the
+     * safe direction to be wrong in and it is still wrong — a reader told a
+     * clean document has an unread subcontractor stops trusting the one that
+     * really does, and `agreed` would go false on every form with a phone
+     * number in the footer.
+     *
+     * So the digit test is LICENCE-shaped (six to ten) rather than any long
+     * run, which excludes a year, a time and a phone number's last group
+     * outright, and it still has to be joined by a second signal.
+     */
+    const looksLikeItsOwnRow = looksLikeARow(single.text);
+
+    if (above && cutOff && !looksLikeItsOwnRow) {
+      above.concerns.push(
+        `line ${single.line} ("${single.text.trim()}") has one column and may be the rest of this row`,
+      );
+      ignored.push({
+        line: single.line,
+        text: single.text,
+        why: `read as the continuation of line ${above.line}`,
+      });
+      continue;
+    }
+
+    /**
+     * A ONE-COLUMN LINE THAT CARRIES DATA IS A ROW WE FAILED TO SPLIT, NOT PROSE.
+     *
+     * This branch used to file every remaining single straight into `ignored`
+     * as "a heading or prose", and that is how the completeness guarantee came
+     * out false for the THIRD time in this file's life. `splitFields` splits on
+     * tabs, two-or-more spaces and pipes — so a table copied out of a PDF with
+     * SINGLE spaces between its columns arrives as one field per line, every row
+     * lands here, and every row was quietly set aside. Reproduced with the real
+     * parser on an ordinary three-sub listing: `rowsParsed: 0`, `unread: 0`,
+     * `problems: 0`, `agreed: TRUE` — so the screen printed the green "All 5
+     * lines accounted for — 0 subcontractors, 2 header, 3 set aside" over three
+     * subcontractors it had lost.
+     *
+     * The partition was sound the whole time, which is exactly why nothing
+     * caught it: `accountedFor` equalled `nonBlankLines`, every line had a
+     * bucket and every bucket had a reason. **A bucket with a confident wrong
+     * reason loses a subcontractor as thoroughly as no bucket at all** — the
+     * same sentence `hasDataEvidence` was written for, arriving one branch
+     * further down, which is a fair warning about how far a lesson travels.
+     *
+     * The two-of-three rule above decides it, and the same rule in both places
+     * is deliberate: the question "is this a row" cannot have two answers
+     * depending on what the line above happens to look like.
+     */
+    if (looksLikeItsOwnRow) {
+      unread.push({
+        line: single.line,
+        text: single.text,
+        why: "this line carries subcontractor data but arrived as a single column — the columns are probably separated by single spaces, which cannot be told apart from the spaces inside a company name",
+      });
+      continue;
+    }
+
+    ignored.push({
+      line: single.line,
+      text: single.text,
+      why: "one column only — a heading or prose, not a table row",
+    });
+  }
+
+  /**
+   * THE BACKSTOP, for a single-column row with no data evidence at all.
+   *
+   * "Smith Plastering  Fontana CA" has no entity marker, no licence and no
+   * "City, ST", so the test above cannot rescue it and it is still filed as
+   * prose. What CANNOT be innocent is a document that produced no
+   * subcontractors at all while producing lines of exactly that shape: that is
+   * a parse failure, and `agreed` must not read true over it.
+   *
+   * **It also requires the page to have announced itself as a listing**, which is
+   * the part the first version got wrong and `noise-only` caught in a minute. A
+   * cover sheet reading "Page 3 of 7 / Addendum No. 2 acknowledged / Questions:
+   * (916) 555-0134" parses to zero rows and two one-column lines, so the first
+   * version told the reviewer the READER was broken on a page that simply has no
+   * table on it. Zero subcontractors is the correct reading of that page, not a
+   * failure to read it — and a guard that cries wolf on every pasted cover sheet
+   * is one nobody reads by the second week.
+   *
+   * A header line (`Project:`, `Prime:`, `Agency:`, a bid date) is the page
+   * saying it is a bid document. Zero subcontractors on a page that names a
+   * project is worth a sentence; zero on a page that names nothing is not.
+   *
+   * Deliberately narrow — it fires only when NOTHING parsed. A document that
+   * read nine subs and lost a tenth to single spacing is still a quiet loss,
+   * and saying so is better than implying otherwise: widening this needs a real
+   * document to calibrate against, and `splitFields` learning column positions
+   * is the actual fix rather than this. Widening `splitFields` to split single
+   * spaces is NOT that fix and has been measured — it returns names like
+   * "Systems" and "Inc.", because a space inside "Valley Interior Systems" is
+   * indistinguishable from the gap before the city column.
+   */
+  /**
+   * A ONE-COLUMN LINE *INSIDE* THE TABLE IS A WRAPPED CELL, AND IT MEANS A ROW
+   * NEARBY IS INCOMPLETE.
+   *
+   * ── THIS IS NOT THE DEAD GUARD, AND THE DIFFERENCE IS THE WHOLE POINT ──
+   *
+   * The comment above `accountedFor` records a conjunct that asked whether
+   * anything in the set-aside pile LOOKED LIKE A ROW, and records that it was
+   * measured dead across 308 tests and deleted, with a note not to rebuild it.
+   * That note is right and this is a different question. That guard was a CONTENT
+   * predicate — "is this fragment row-shaped?" — and a wrap fragment is by
+   * definition not row-shaped: it is `Services`, or `INC.`, or `PW-LR-`. No
+   * predicate over its text can see it.
+   *
+   * This asks about POSITION instead, which the old guard never did: a line with
+   * one column sitting BETWEEN two parsed table rows is inside the table, and the
+   * only thing inside a table is table data. A heading sits above the rows and
+   * prose sits below them; a cell that wrapped onto its own line sits between.
+   *
+   * ── MEASURED, BECAUSE THE CLAIM "`agreed` LIES" NEEDED EVIDENCE ──
+   *
+   * Across 20 real bidder lists carrying 154 known rows, `agreed` read TRUE on
+   * all 20 — including the eight that lost or mangled a row. 58 lines were set
+   * aside as one-column and roughly 35 of them were real data fragments. The
+   * partition always sums, so `accountedFor === nonBlankLines` can never notice,
+   * and `unread` was empty everywhere. This is the signal that was missing.
+   *
+   * It does not repair the row. It says the page was not fully read, which is the
+   * promise this file is built on: a quiet loss is worse than a stated one.
+   */
+  /**
+   * A HEADING THIS READER COULD NOT TURN INTO A PLAN IS A PAGE READ BY GUESSWORK.
+   *
+   * Three of 20 real bidder lists wrap `License` onto the line above its `#:`, so
+   * the heading line carries four labels against five-column rows and neither
+   * derivation in `columnPlanFrom`/`planByLabels` can honestly produce an order.
+   * The rows are then read by the predicate — first plausible field as the name —
+   * and the measured cost is every city on the list plus the occasional name/scope
+   * swap: 25 of 154 rows read `city: null` for this reason alone.
+   *
+   * Refusing the plan there is right; staying silent about it is not. The document
+   * printed a heading, this reader saw it, and could not use it.
+   */
+  if (headingSeen && !planEverApplied && rows.length > 0) {
+    problems.push(
+      "this page prints a column heading, but its columns could not be matched to the rows beneath it — usually because a label is split across two lines. The rows were read by guessing which field is which, so the company name, the city and the portion of work may be wrong on any of them. Check them against the document before importing.",
+    );
+  }
+
+  const rowLines = rows.map((row) => row.line);
+  if (rowLines.length >= 2) {
+    const firstRow = Math.min(...rowLines);
+    const lastRow = Math.max(...rowLines);
+    const strandedInside = ignored.filter(
+      (line) =>
+        line.why.startsWith("one column only") && line.line > firstRow && line.line < lastRow,
+    );
+    if (strandedInside.length > 0) {
+      problems.push(
+        `${strandedInside.length} line${strandedInside.length === 1 ? "" : "s"} inside the table ${
+          strandedInside.length === 1 ? "was" : "were"
+        } set aside as having only one column — ${strandedInside
+          .map((line) => `line ${line.line}`)
+          .join(", ")}. A line between two rows is usually a cell that wrapped, which means a row above or below it is missing part of its data. Check those rows against the document before importing, and do not read the counts below as a complete reading of this page.`,
+      );
+    }
+  }
+
+  const unsplitLooking = ignored.filter((line) => line.why.startsWith("one column only")).length;
+  if (rows.length === 0 && unsplitLooking > 0 && headerLines > 0) {
+    problems.push(
+      `nothing on this page was read as a subcontractor, and ${unsplitLooking} line${unsplitLooking === 1 ? " was" : "s were"} set aside as having only one column. That usually means the columns are separated by single spaces rather than tabs — try pasting from the original document, or paste one column at a time. Do not take the counts below as a reading of this page.`,
+    );
+  }
+
+  /**
+   * `agreed`'s FIRST CONJUNCT IS A TAUTOLOGY, AND THE FIX FOR IT WAS DEAD CODE.
+   *
+   * A fourth review established the defect correctly: `accountedFor ===
+   * nonBlankLines` can never disagree, because every non-blank line is pushed into
+   * exactly one of four buckets. The third conjunct fires only on a conflicting
+   * header value. So `unread.length === 0` carries the whole verdict, and every
+   * defect this parser has had reported `agreed: true` — each put a subcontractor
+   * in `ignored` with a confident reason, where `agreed` cannot see it.
+   *
+   * **A conjunct asking whether any set-aside line looks like a row was written
+   * here, and then deleted, because it was measured and it was dead.** Six
+   * constructed attempts could not land a row-shaped line in `ignored` at all: a
+   * totals line that is also a company, a heading-majority row carrying
+   * identifiers, a page-number line with a company in it, an alternate with a
+   * licence, a wrap continuation that is a whole row, and prose naming a company
+   * and a licence. `hasDataEvidence` rescues anything with identifiers before the
+   * furniture tests run, and `looksLikeARow` outranks the continuation branch. And
+   * the decisive measurement: DELETING the branch changed no test outcome across
+   * 308, which is this file's own stated definition of dead logic.
+   *
+   * So the hole is real and it is NOT where the review placed it. A row carrying
+   * identifiers can no longer reach `ignored`; what is still lost is the row
+   * carrying NONE of them — a bare surname, a city with no state code, no licence
+   * column pasted — eaten by the heading-majority branch. No predicate over the
+   * set-aside pile can see that, because by construction there is nothing in it to
+   * see. `splitFields` and `furnitureReason` are where that gets fixed, not here,
+   * and this comment exists so the next person does not rebuild the dead guard.
+   */
+  const accountedFor = rows.length + unread.length + ignored.length + headerLines;
+
+  return {
+    header,
+    rows,
+    unread,
+    ignored,
+    problems,
+    reconciliation: {
+      nonBlankLines,
+      rowsParsed: rows.length,
+      headerLines,
+      ignoredLines: ignored.length,
+      unreadLines: unread.length,
+      accountedFor,
+      agreed: accountedFor === nonBlankLines && unread.length === 0 && problems.length === 0,
+    },
+  };
+}

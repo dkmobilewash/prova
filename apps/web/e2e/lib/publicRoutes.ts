@@ -93,6 +93,16 @@ export const PUBLIC_ROUTES: readonly PublicRoute[] = [
     // the header of half the app and would have made this check vacuous.
     mustShow: "Sign to accept",
   },
+  {
+    // The opt-out link in every cold email, opened on a phone more often than
+    // not. Walked with a token that does not verify, which is a real render of
+    // the page (and needs no seeded lead or secret) — the confirm state is the
+    // same card with a button in it.
+    path: "/unsubscribe/not-a-real-token",
+    label: "email unsubscribe",
+    pattern: "/unsubscribe/[token]",
+    mustShow: "This link isn't valid",
+  },
 ] as const;
 
 /** Page files under `app/` that are deliberately NOT walked, with the reason
