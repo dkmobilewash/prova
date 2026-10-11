@@ -229,3 +229,6 @@ ALTER TABLE "CompanyAgentSettings" ADD CONSTRAINT "CompanyAgentSettings_companyI
 -- AddForeignKey
 ALTER TABLE "CompanyAgentSettings" ADD CONSTRAINT "CompanyAgentSettings_updatedByUserId_fkey" FOREIGN KEY ("updatedByUserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
+
+-- The background agents as one switchable AI feature.
+ALTER TYPE "AiFeature" ADD VALUE 'AI_AGENTS';

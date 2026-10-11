@@ -87,6 +87,7 @@ export const AI_FEATURE_LABEL: Record<AiFeatureKey, string> = {
   SPEC_READ: "Reading spec sections",
   SCHEDULE_READ: "Reading schedules off a drawing",
   PROPOSAL_DRAFT: "Drafting proposal clauses",
+  AI_AGENTS: "Background agents",
 };
 
 /**
@@ -161,6 +162,8 @@ export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
     "Reading a door, window, finish or partition schedule off a drawing into rows you accept or reject. The rows are proposed, never added to a takeoff on their own — and with this off you can still type a schedule in by hand.",
   PROPOSAL_DRAFT:
     "Writing the inclusions, exclusions and clarifications for a job's proposal \u2014 one per thing this app already knows about the bid: a spec requirement, an indirect nobody priced, a package carried from a sub. Every clause is proposed with the quote it came from, and nothing reaches the proposal until you accept it. With this off you can still write clauses by hand.",
+  AI_AGENTS:
+    "The bid watcher, bid research, the estimate check and recommendations: agents that read your bids and history, write down what they found with sources, and advise. They never submit, send or change a bid or estimate — every change still goes through a confirm card.",
 };
 
 /**

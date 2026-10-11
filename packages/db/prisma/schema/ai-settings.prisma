@@ -103,6 +103,8 @@ enum AiFeature {
   /// demands and whether that costs money; whether the bid CARRIES the cost is a
   /// judgement about an estimate the model has never seen.
   SPEC_READ
+  /// The background agents — see ai-agents.prisma.
+  AI_AGENTS
 }
 
 /// One row per company. Absent means every default below.
