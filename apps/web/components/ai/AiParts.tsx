@@ -179,7 +179,7 @@ export function RunningNow({ runs, now }: { runs: AiRun[]; now: Date }) {
       ) : (
         <ul className="divide-y divide-line-row">
           {runs.map((run) => (
-            <li key={run.id} className="py-2.5 first:pt-0.5">
+            <li key={run.id} className="py-2 first:pt-0.5">
               <div className="flex items-start justify-between gap-3">
                 <p className="min-w-0 break-words text-[14.5px] text-ink">
                   {agentLabel(run.agent)}
@@ -187,10 +187,12 @@ export function RunningNow({ runs, now }: { runs: AiRun[]; now: Date }) {
                 </p>
                 <RunStatusPill status={run.status} />
               </div>
-              {(run.summary ?? run.note) && (
-                <p className="mt-0.5 break-words text-[13px] text-ink-body">{run.summary ?? run.note}</p>
-              )}
-              <p className="mt-0.5 text-[12.5px] text-ink-muted">{runWhen(run, now)}</p>
+              {/* One line: what it did, then when — two lines a run cost
+                  the column the room Watching needs above the fold. */}
+              <p className="mt-0.5 break-words text-[13px] text-ink-body">
+                {(run.summary ?? run.note) && <>{run.summary ?? run.note} · </>}
+                <span className="text-ink-muted">{runWhen(run, now)}</span>
+              </p>
             </li>
           ))}
         </ul>
@@ -271,7 +273,8 @@ export function Watching({
 }) {
   const runLine = [
     summary.lastRunAt ? `Last checked ${relativeTime(summary.lastRunAt, now)}` : "Not checked yet",
-    summary.nextRunLabel ? `next ${summary.nextRunLabel}` : null,
+    // The label is "Daily at 12:23 UTC" (lib/agents/queries.ts).
+    summary.nextRunLabel ? `runs ${summary.nextRunLabel.charAt(0).toLowerCase()}${summary.nextRunLabel.slice(1)}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -379,6 +382,7 @@ export function Watching({
 export function AiHome({
   chat,
   recent,
+  threadOpen,
   runs,
   recommendations,
   watching,
@@ -389,8 +393,12 @@ export function AiHome({
 }: {
   /** The Ask panel — mounted by the page, so this file never imports it. */
   chat: ReactNode;
-  /** The recent-threads list, behind the "Recent" disclosure. */
+  /** The recent-threads list. Under the chat on a fresh page, where it
+   * fills what would be empty space; behind a "Recent" button once a
+   * conversation is open. */
   recent: ReactNode;
+  /** True when the page opened a saved conversation (`?thread=`). */
+  threadOpen: boolean;
   runs: AiRun[];
   recommendations: AiRecommendation[];
   watching: AiWatching;
@@ -410,6 +418,7 @@ export function AiHome({
           <h1 id="ai-title" className="mr-auto font-headline text-[26px] font-semibold leading-tight text-ink">
             AI
           </h1>
+          {threadOpen && (
           <details className="group relative">
             <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-lg px-3 text-sm font-semibold text-ink-muted hover:bg-rail-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus [&::-webkit-details-marker]:hidden">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
@@ -422,6 +431,7 @@ export function AiHome({
               {recent}
             </div>
           </details>
+          )}
           <Link
             href="/ai"
             className="inline-flex min-h-11 items-center rounded-lg border border-line-card px-4 text-sm font-semibold text-ink hover:bg-rail-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
@@ -440,13 +450,21 @@ export function AiHome({
         className="order-last min-w-0 lg:order-none lg:col-start-1 lg:row-start-2 lg:pr-8"
       >
         {chat}
+        {!threadOpen && (
+          // RecentThreads brings its own "Recent" heading and empty sentence.
+          <div className="mt-6" data-ai-recent="">
+            {recent}
+          </div>
+        )}
       </section>
 
       <div className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:border-l lg:border-line-row lg:pl-7">
         <AiSideToggle running={running} recommendations={recommendations.length}>
           <div className="flex flex-col gap-7">
             <RunningNow runs={runs} now={now} />
-            <Recommendations items={recommendations} dismiss={actions.dismissRecommendation} done={actions.markRecommendationDone} />
+            {/* Watching before Recommendations: what is due this week has to
+                be on screen at 1440x900 without a scroll (Cyrus's review of
+                the first screenshots, 2026-10-11). */}
             <Watching
               summary={watching}
               findings={findings}
@@ -454,6 +472,7 @@ export function AiHome({
               dismissFinding={actions.dismissFinding}
               now={now}
             />
+            <Recommendations items={recommendations} dismiss={actions.dismissRecommendation} done={actions.markRecommendationDone} />
           </div>
         </AiSideToggle>
       </div>

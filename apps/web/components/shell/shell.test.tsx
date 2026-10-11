@@ -150,6 +150,16 @@ describe("the desktop top bar", () => {
     expect(container.querySelector('nav[aria-label="Main"] a[aria-current="page"]')?.getAttribute("href")).toBe("/ai");
   });
 
+  // 2026-10-11: AI replaced the separate "Ask C Stream" launcher for anyone
+  // who has the AI word; anyone without it keeps the launcher, or the
+  // assistant would be on no page for them.
+  it("drops the Ask launcher where the AI word is drawn, and keeps it where it is not", () => {
+    renderTopBar();
+    expect(container.querySelector("[data-ask-launcher]")).toBeNull();
+    renderTopBar(field, []);
+    expect(container.querySelector("[data-ask-launcher]")).not.toBeNull();
+  });
+
   it("badges the AI word with the open findings count, and draws nothing at zero", () => {
     renderTopBar(owner, stages, 0, 4);
     const ai = container.querySelector('nav[aria-label="Main"] a[href="/ai"]')!;

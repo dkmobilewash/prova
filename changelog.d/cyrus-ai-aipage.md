@@ -21,6 +21,16 @@ measured in Chromium, each tab is 74x64 against a 64px icon and a 58.8px
 "Schedule" label, nothing truncates. Only people who can open /ai
 (MANAGE_ESTIMATING, the same as /bids) see the word, the tab or the count.
 
+The separate "Ask C Stream" button in the top bar is gone for anyone who has
+the AI word — two doors to the same assistant read as two things. People
+without AI (a field user) keep it, or the assistant would be on no page for
+them. An empty state's "Ask C Stream to do it" still works for everyone: it
+opens the launcher when there is one and otherwise goes to /ask with the
+sentence waiting. On a fresh /ai the space under the chat lists your recent
+conversations; Watching sits second in the column so what is due this week
+is on screen at 1440x900 without scrolling (measured: the first due bid ends
+at 545px).
+
 /ai is filed under Jobs & bids on the home page and in "All pages", next to
 Bids, and has a four-step walkthrough. It is not a seventh area: one page
 does not need its own box. /ai/activity and /ai/bids/[id] are reached from

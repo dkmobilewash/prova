@@ -12,7 +12,7 @@ import { dismissFinding } from "@/lib/actions/agentFindings";
 export const metadata = { title: "AI" };
 
 /** How many finished runs to show under the ones still running. */
-const RECENT_RUNS = 3;
+const RECENT_RUNS = 2;
 
 /**
  * /ai — the AI home (mockup ai-home-desktop.png): the chat, and beside it
@@ -49,7 +49,17 @@ export default async function AiPage({ searchParams }: { searchParams: Promise<{
       <AiHome
         // Keyed so opening another thread from Recent starts a fresh panel.
         chat={<AskPanel key={threadId ?? "new"} threadId={threadId} />}
-        recent={<RecentThreads companyId={companyId} userId={context.id} hrefFor={(id) => `/ai?thread=${id}`} />}
+        // The signed-in person's own threads only (lib/ask/threads.ts is
+        // user-scoped).
+        recent={
+          <RecentThreads
+            companyId={companyId}
+            userId={context.id}
+            hrefFor={(id) => `/ai?thread=${encodeURIComponent(id)}`}
+            activeId={threadId}
+          />
+        }
+        threadOpen={threadId !== undefined}
         runs={runs}
         recommendations={recommendations}
         watching={watching}

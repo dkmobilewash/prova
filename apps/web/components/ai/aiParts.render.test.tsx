@@ -52,6 +52,7 @@ function fullProps(overrides: Partial<Props> = {}): Props {
   return {
     chat: <div data-chat="">chat</div>,
     recent: <ul data-recent="" />,
+    threadOpen: false,
     runs: [
       { id: "r1", agent: "BID_RESEARCH", status: "RUNNING", startedAt: minutesAgo(3), finishedAt: null, summary: null, note: null, bidProjectName: "Civic Center Garage" },
       { id: "r2", agent: "BID_WATCHER", status: "DONE", startedAt: minutesAgo(130), finishedAt: minutesAgo(128), summary: "Checked 14 invitations, 1 new addendum", note: null, bidProjectName: null },
@@ -75,7 +76,7 @@ function fullProps(overrides: Partial<Props> = {}): Props {
       ],
       unreadAddenda: 1,
       lastRunAt: minutesAgo(480),
-      nextRunLabel: "tomorrow 7:00",
+      nextRunLabel: "Daily at 12:23 UTC",
     },
     findings: [
       {
@@ -159,6 +160,21 @@ describe("the whole page", () => {
     expect(container.querySelector('a[href="/ai"]')?.textContent).toContain("New chat");
   });
 
+  it("a fresh page lists recent conversations under the chat; an open one moves them behind Recent", () => {
+    render(<AiHome {...fullProps()} />);
+    expect(container.querySelector("[data-ai-recent] [data-recent]")).not.toBeNull();
+    expect(container.querySelector("details")).toBeNull();
+    render(<AiHome {...fullProps({ threadOpen: true })} />);
+    expect(container.querySelector("[data-ai-recent]")).toBeNull();
+    expect(container.querySelector("details [data-recent]")).not.toBeNull();
+  });
+
+  it("puts Watching above Recommendations, so what is due shows without a scroll", () => {
+    render(<AiHome {...fullProps()} />);
+    const order = Array.from(container.querySelectorAll("[data-tour]")).map((el) => el.getAttribute("data-tour"));
+    expect(order.indexOf("ai-watching")).toBeLessThan(order.indexOf("ai-recommendations"));
+  });
+
   it("draws recommendations with confidence, sources, Open, Done and Dismiss", () => {
     render(<AiHome {...fullProps()} />);
     const section = container.querySelector('[aria-labelledby="ai-recommendations"]')!;
@@ -205,7 +221,7 @@ describe("the whole page", () => {
     expect(due.querySelector(".bg-tag-amber")).not.toBeNull();
     expect(watching.querySelector('a[href="/ai/bids/b2"] .bg-tag-amber')).toBeNull();
     expect(watching.textContent).toContain("1 unread addendum");
-    expect(watching.textContent).toContain("Last checked 8 hours ago · next tomorrow 7:00");
+    expect(watching.textContent).toContain("Last checked 8 hours ago · runs daily at 12:23 UTC");
     expect(watching.textContent).toContain("Flag");
     expect(watching.querySelector('a[href="/jobs/j1/estimate"]')?.textContent).toContain("Fix it");
     expect(watching.textContent).toContain("Findings3");

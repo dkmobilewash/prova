@@ -15,6 +15,7 @@ import {
 import { shellQueryFailed } from "@/lib/shell-region-failure";
 import { routesHiddenByAnswers, type BusinessScopeAnswers } from "@/lib/businessScope";
 import { loadRoutesWithData } from "@/lib/businessScopeData";
+import { openFindingCount } from "@/lib/agents/queries";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { company, ...currentUser } = await requireCompanyContext();
@@ -83,7 +84,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // sat over the foot of every page and covered "Review & send" on a job's
   // Billing stage — so they load on /areas/money instead, behind the same
   // VIEW_COMPANY_FINANCIALS gate (app/(app)/areas/[slug]/page.tsx).
-  const [alertCount, moneyRailStages, routesWithData] = await Promise.all([
+  const [alertCount, moneyRailStages, routesWithData, aiFindingCount] = await Promise.all([
     // In the layout, so the count is on every screen. Derived on each
     // render like everything else here — there is no stored unread count
     // to go stale against the records it is counting. Scoped to this
@@ -116,6 +117,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // everything rather than hiding a door it could not check. See its own
     // comment for why that is the safe direction.
     scopeCandidates.length > 0 ? loadRoutesWithData(company.id) : Promise.resolve<string[]>([]),
+    // The badge on the AI word: open agent findings, one indexed count.
+    // Behind MANAGE_ESTIMATING, the capability that draws the word — the
+    // top bar is serialized to the browser for every principal, so a count
+    // nobody may open is not sent at all. Settled like the money figures: a
+    // count that fails costs the badge, never the page.
+    can(principal, "MANAGE_ESTIMATING")
+      ? openFindingCount(company.id).catch(shellQueryFailed("topbar", 0))
+      : Promise.resolve(0),
   ]);
   return (
     // Concept G (2026-10-10): no left rail and no bottom strip. A column of
@@ -178,6 +187,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         // of which belongs in a browser bundle.
         helpChannel={helpChannelFromEnv()}
         stages={moneyRailStages}
+        aiFindingCount={aiFindingCount}
       />
       {/* No background of its own: each page brings its own ground. Full
           width now there is no rail; the centred column is each page's own
@@ -196,6 +206,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         showsInternal={showsInternal}
         businessScope={businessScope}
         routesWithData={routesWithData}
+        aiFindingCount={aiFindingCount}
       />
     </div>
   );

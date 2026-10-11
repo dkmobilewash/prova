@@ -29,8 +29,16 @@ import type { Principal } from "@/lib/permissions";
  * words move to BottomTabs.tsx at the bottom of the screen.
  *
  * Kept from the old Topbar, each for the reason written on it there:
- *  - Ask (AskLauncher): an empty state's "Ask" button clicks
- *    `[data-ask-launcher]`, so the launcher has to be mounted on every page;
+ *  - Ask (AskLauncher), but ONLY for someone the AI word is not drawn for.
+ *    Since 2026-10-11 the AI word is the way to the assistant, and a second
+ *    "Ask C Stream" beside it read as two different things (Cyrus's review
+ *    of the AI page screenshots). Someone without MANAGE_ESTIMATING has no
+ *    AI word, so they keep the launcher — otherwise the assistant would
+ *    vanish from every page for them. An empty state's "Ask C Stream to do
+ *    it" clicks `[data-ask-launcher]` when it is there and otherwise goes to
+ *    /ask, whose AskPanel takes the waiting sentence on mount
+ *    (components/EmptyStateButtons.tsx, lib/empty-state-events.ts), so the
+ *    button works either way;
  *  - Help (HelpButton): the only way to reach a person from inside the app;
  *  - the alert count: it moved from a bell onto the avatar. Zero draws no
  *    badge, but the menu always lists Alerts with its count, so the door is
@@ -178,7 +186,7 @@ export function TopBar({
               <path d="m20 20-3.5-3.5" />
             </svg>
           </button>
-          <AskLauncher />
+          {!words.some((tab) => tab.key === "ai") && <AskLauncher />}
           <HelpButton companyName={companyName} channel={helpChannel} />
 
           <div ref={menuHolder} className="relative md:ml-4">
