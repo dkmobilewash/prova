@@ -5,9 +5,10 @@ import { HealthMonitor, expectHealthy } from "../lib/health";
 import {
   estimateRow,
   finishWizard,
-  jobTab,
+  homeHeading,
   landOnDashboard,
   markContracted,
+  openJobTab,
   recordExecutedSubcontract,
   retainageForm,
   startJob,
@@ -276,7 +277,7 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     // which is why `expectHealthy` (no crash sentence, no uncaught
     // exception, real content, the shell's navigation) is the assertion and
     // not a warm-up for one.
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+    await expect(homeHeading(page)).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
     // Re-aimed 2026-10-11: for an owner the door to the assistant is the AI
     // word now; the launcher is only drawn for someone without it.
@@ -344,7 +345,7 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     // because the demo seed already carries 5% on Riverside. On a fresh job
     // it is a prerequisite, and getting it wrong shows up as a Retainage tab
     // reading $0.00 with no explanation.
-    await jobTab(page, "Retainage").click();
+    await openJobTab(page, "Retainage");
     await page.waitForURL(new RegExp(`/jobs/${jobId}/retainage$`));
     await expectHealthy(page, "retainage tab", { monitor });
 
@@ -849,7 +850,7 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     await page.getByRole("link", { name: /go to the dashboard$/ }).click();
     await page.waitForURL(/\/dashboard(\?|$)/);
     await expectHealthy(page, "dashboard, after beat 6's click", { monitor });
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+    await expect(homeHeading(page)).toBeVisible();
 
     // 2026-09-21, as a sentence: an invoice existed and every authenticated
     // page rendered an error boundary. This shoot's beat 5 creates one, so

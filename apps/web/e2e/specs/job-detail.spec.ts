@@ -3,7 +3,7 @@ import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { E2E_TAG } from "../lib/seedDatabase";
 import { HealthMonitor, expectHealthy } from "../lib/health";
-import { jobTab } from "../lib/journey";
+import { jobStageNav, jobTab, openJobTab } from "../lib/journey";
 
 /**
  * A job's pages: every tab renders its own sections, and none crashes.
@@ -52,43 +52,45 @@ test("job detail: every tab renders its sections, in the rail's order, no crash"
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
   }
 
-  // The rail, in order. This is where the old Retainage -> Field reports
-  // -> Pay apps ordering now lives: Pay applications moved onto Billing.
-  const rail = page.getByRole("navigation", { name: "Job sections" }).getByRole("link");
-  await expect(rail).toHaveText([
-    "Overview",
-    "Estimate",
-    "Takeoff",
-    "Crew & time",
-    "Compliance",
-    "Billing",
-    "Retainage",
-    "Field reports",
-    "Photos",
+  // Where the rail's order now lives (Concept G, 2026-10-10): five stage
+  // boxes, in lifecycle order, each opening a row of the pages it files
+  // (components/job/jobStages.ts). The old Retainage -> Field reports ->
+  // Pay apps ordering survives as Billing's row holding Billing and
+  // Retainage, after Crew's row holds Field reports.
+  const boxes = jobStageNav(page).locator("li[data-stage]");
+  await expect(boxes).toHaveCount(5);
+  expect(await boxes.evaluateAll((items) => items.map((item) => item.getAttribute("data-stage")))).toEqual([
+    "estimate",
+    "contract",
+    "crew",
+    "billing",
+    "closeout",
   ]);
 
+  // MAIN's seeded job is IN_PROGRESS and MAIN is the OWNER, so every page a
+  // job has is on offer. Grouped by stage so each stage is opened once; the
+  // Estimate page of a job that has left ESTIMATE is filed under Contract
+  // as "Change orders". The Billing register's heading is one bill noun per
+  // company (billingNoun in components/job/jobStages.ts): the seeded
+  // company has not answered the pay-apps question, so it reads "Pay apps".
   const tabs: Array<{ label: string; path: string; headings: string[]; absent?: string[] }> = [
+    { label: "Takeoff", path: `${jobPath}/takeoff`, headings: ["Takeoff"] },
     {
-      label: "Estimate",
+      label: "Change orders",
       path: `${jobPath}/estimate`,
       headings: ["Job costing & WIP", "Change orders"],
       absent: ["Line items (estimate)"],
     },
-    // #476 added this tab and nothing updated the two lists below it, so the
-    // rail assertion failed on an extra entry that was supposed to be there.
-    // Walking it as well as naming it is the point: a tab in the rail that
-    // nobody opens is exactly the shape this spec exists to catch.
-    { label: "Takeoff", path: `${jobPath}/takeoff`, headings: ["Takeoff"] },
-    { label: "Crew & time", path: `${jobPath}/crew`, headings: ["Field time entries"] },
     { label: "Compliance", path: `${jobPath}/compliance`, headings: ["Prevailing wage determination"] },
-    { label: "Billing", path: `${jobPath}/billing`, headings: ["Invoices", "Pay applications"] },
-    { label: "Retainage", path: `${jobPath}/retainage`, headings: ["Retainage"] },
+    { label: "Crew & time", path: `${jobPath}/crew`, headings: ["Field time entries"] },
     { label: "Field reports", path: `${jobPath}/field-reports`, headings: ["Daily field reports"] },
     { label: "Photos", path: `${jobPath}/photos`, headings: ["Site photos"] },
+    { label: "Billing", path: `${jobPath}/billing`, headings: ["Pay apps", "Pay applications"] },
+    { label: "Retainage", path: `${jobPath}/retainage`, headings: ["Retainage"] },
   ];
 
   for (const tab of tabs) {
-    await jobTab(page, tab.label).click();
+    await openJobTab(page, tab.label);
     await page.waitForURL(new RegExp(`${tab.path}(\\?|$)`));
     await expectHealthy(page, `job tab: ${tab.label}`, { monitor });
     await expect(jobTab(page, tab.label)).toHaveAttribute("aria-current", "page");

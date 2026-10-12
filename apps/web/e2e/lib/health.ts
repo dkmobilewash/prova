@@ -75,6 +75,13 @@ export const RAIL_BREAKPOINT_PX = 768;
  * renders is a check about nothing. */
 export const RAIL_NAV_NAME = "Main";
 
+/** The route skeleton every signed-in page shows while its segment streams
+ * (`app/(app)/loading.tsx`, Concept G 2026-10-10) — its screen-reader text.
+ * health.test.ts pins it to that file, for the same reason as the names
+ * above: a skeleton this file waits out and the app no longer renders is a
+ * wait about nothing. */
+export const ROUTE_LOADING_TEXT = "Loading page";
+
 /** Visible characters a page must render to count as having loaded.
  * Deliberately low: the point is "not blank", not "looks finished". */
 const MIN_VISIBLE_CHARS = 120;
@@ -186,6 +193,20 @@ export async function expectHealthy(page: Page, step: string, options: HealthOpt
   // read below is the settled page, not the shell around a pending
   // Suspense boundary.
   await page.waitForLoadState("load");
+
+  // `load` is not enough since app/(app)/loading.tsx exists (Concept G,
+  // 2026-10-10). A client-side navigation now COMMITS before its page
+  // arrives: the URL changes, the shell stays, and <main> holds the route
+  // skeleton until the segment streams in — on a document whose `load`
+  // fired long ago. Without this, every spec that clicked a link and then
+  // read the page saw the skeleton's twelve characters (#748's first run:
+  // "rendered 12 visible characters" on /dashboard and /jobs/<id>). The
+  // skeleton is the one thing that cannot still be there once the page has
+  // rendered, which is what makes it the right thing to wait on.
+  await expect(
+    page.locator('main [role="status"]', { hasText: ROUTE_LOADING_TEXT }),
+    `${where}: still showing the route skeleton ("${ROUTE_LOADING_TEXT}") — the page never arrived`,
+  ).toHaveCount(0);
 
   const body = page.locator("body");
   await expect(body, `${where}: no body rendered`).toBeVisible();

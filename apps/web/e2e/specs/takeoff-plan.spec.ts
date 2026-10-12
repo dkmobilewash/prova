@@ -6,7 +6,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { dataTour } from "../lib/dataTour";
-import { finishWizard, jobTab, landOnDashboard, settleAction, startJob } from "../lib/journey";
+import { finishWizard, landOnDashboard, openJobTab, settleAction, startJob } from "../lib/journey";
 
 /**
  * MEASURE A DRAWING ON SCREEN, AND WATCH THE QUANTITY REACH AN ESTIMATE LINE.
@@ -183,7 +183,7 @@ test.describe("on-screen plan takeoff", () => {
     jobId = await startJob(page, monitor, { name: JOB_NAME, gcName: GC_NAME });
     await finishWizard(page, monitor, jobId);
 
-    await jobTab(page, "Takeoff").click();
+    await openJobTab(page, "Takeoff");
     await page.waitForURL(new RegExp(`/jobs/${jobId}/takeoff$`));
     await expectHealthy(page, "takeoff tab, nothing uploaded", { monitor });
     // `exact`, because the job's own h1 is its NAME and this job's name

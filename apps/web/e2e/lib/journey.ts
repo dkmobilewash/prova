@@ -21,9 +21,103 @@ import { stubDocumentUpload } from "./blobStub";
 // __dirname, not import.meta.url — see playwright.config.ts's comment.
 export const EXECUTED_SUBCONTRACT_FIXTURE = path.resolve(__dirname, "../fixtures/executed-subcontract.pdf");
 
-/** The tab rail under a job's summary header (components/JobSectionNav.tsx). */
+/**
+ * Which of the five stage boxes on a job (components/job/jobStages.ts,
+ * Concept G 2026-10-10) files each tab under. The old tab rail is gone;
+ * every tab keeps its route but is listed only while its stage is open.
+ *
+ * Copied, not imported: this file loads @playwright/test, so the unit suite
+ * cannot import it. e2e/lib/jobTabs.test.ts derives the same map from
+ * `jobStages()` and fails when the two disagree, so a tab moved to another
+ * stage cannot leave the specs clicking the stage that no longer holds it.
+ */
+export type JobStageKey = "estimate" | "contract" | "crew" | "billing" | "closeout";
+export const JOB_TAB_STAGE: Record<string, JobStageKey> = {
+  Estimate: "estimate",
+  Takeoff: "estimate",
+  "Contract signature": "contract",
+  Overview: "contract",
+  "Change orders": "contract",
+  Compliance: "contract",
+  "Crew & time": "crew",
+  "Field reports": "crew",
+  Photos: "crew",
+  Billing: "billing",
+  Retainage: "billing",
+  "Punch list": "closeout",
+  "Closeout (all jobs)": "closeout",
+};
+
+/** The stage boxes across the top of a job (components/job/JobStageNav.tsx). */
+export function jobStageNav(page: Page): Locator {
+  return page.getByRole("navigation", { name: "Job stages" });
+}
+
+/** The box for one stage. It is a link to the stage's first page whenever
+ * the stage has pages at all (a bid has no Billing pages yet). */
+export function jobStageBox(page: Page, stage: JobStageKey): Locator {
+  return jobStageNav(page).locator(`li[data-stage="${stage}"]`);
+}
+
+/**
+ * A tab of the OPEN stage — the row of page links under the stage boxes
+ * (`<ul aria-label="<Stage> pages">`). Only the open stage's row is in the
+ * DOM, so this is a locator for a tab already on screen; `openJobTab` is
+ * the way to reach one under another stage.
+ */
 export function jobTab(page: Page, label: string): Locator {
-  return page.getByRole("navigation", { name: "Job sections" }).getByRole("link", { name: label, exact: true });
+  return jobStageNav(page).getByRole("list", { name: / pages$/ }).getByRole("link", { name: label, exact: true });
+}
+
+/**
+ * Open a tab by its label, the way a person does: if its stage is not the
+ * open one, click the stage box (which goes to that stage's first page and
+ * opens its row), then click the tab. Ends on the tab's own URL.
+ */
+export async function openJobTab(page: Page, label: string): Promise<void> {
+  const stage = JOB_TAB_STAGE[label];
+  if (!stage) throw new Error(`openJobTab: "${label}" is not a tab jobStages.ts files under any stage — add it to JOB_TAB_STAGE`);
+  await expect(jobStageNav(page), "the job's stage boxes should be on screen").toBeVisible();
+  const tab = jobTab(page, label);
+  if ((await tab.count()) === 0) {
+    await jobStageBox(page, stage).getByRole("link").click();
+  }
+  await expect(tab, `the ${stage} stage should list a "${label}" tab`).toBeVisible();
+  await tab.click();
+}
+
+/**
+ * Every tab the job offers, read by opening each stage in turn. Tabs that
+ * leave the job (Punch list, Closeout — `leavesJob` in jobStages.ts) are
+ * left out: they are doors to other pages, not pages of this job.
+ */
+export async function allJobTabs(page: Page): Promise<Array<{ label: string; href: string }>> {
+  const tabs: Array<{ label: string; href: string }> = [];
+  const boxes = jobStageNav(page).locator("li[data-stage]");
+  const count = await boxes.count();
+  expect(count, "a job should show its five stage boxes").toBe(5);
+  for (let i = 0; i < count; i++) {
+    const box = boxes.nth(i).getByRole("link");
+    if ((await box.count()) === 0) continue; // a stage with no pages yet is not a link
+    await box.click();
+    const row = jobStageNav(page).getByRole("list", { name: / pages$/ });
+    await expect(row).toBeVisible();
+    const links = row.getByRole("link");
+    const n = await links.count();
+    for (let j = 0; j < n; j++) {
+      const href = (await links.nth(j).getAttribute("href")) ?? "";
+      if (!href.startsWith("/jobs/")) continue;
+      tabs.push({ label: (await links.nth(j).innerText()).trim(), href });
+    }
+  }
+  return tabs;
+}
+
+/** The home page's one h1 — the greeting (app/(app)/dashboard/page.tsx,
+ * Concept G): "Good morning", "…afternoon" or "…evening", with the first
+ * name after it when there is one. The old "Today" heading is gone. */
+export function homeHeading(page: Page): Locator {
+  return page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ });
 }
 
 /**
@@ -36,17 +130,25 @@ export function jobTab(page: Page, label: string): Locator {
  */
 export async function landOnDashboard(page: Page, monitor: HealthMonitor): Promise<void> {
   await page.goto("/dashboard");
-  await page.waitForURL(/\/(dashboard|welcome)(\?|$)/);
+
+  // Since app/(app)/loading.tsx (Concept G, 2026-10-10) the onboarding
+  // redirect in dashboard/page.tsx is no longer an HTTP 307: the skeleton
+  // streams first and the jump to /welcome is a client-side navigation
+  // after hydration. So the URL reads /dashboard at `load` on BOTH paths,
+  // and what settles the question is whichever first screen arrives — the
+  // welcome questions or the home page's greeting. (#748's first run read
+  // the skeleton here, twelve characters, on every brand-new persona.)
+  const welcome = page.getByRole("heading", { name: "A few questions about how you work" });
+  await expect(welcome.or(homeHeading(page))).toBeVisible();
 
   if (/\/welcome/.test(page.url())) {
     await expectHealthy(page, "welcome screen", { monitor, signedIn: false });
-    await expect(page.getByRole("heading", { name: "A few questions about how you work" })).toBeVisible();
     await page.getByRole("button", { name: "Skip for now" }).click();
     await page.waitForURL(/\/dashboard(\?|$)/);
   }
 
   await expectHealthy(page, "dashboard", { monitor });
-  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+  await expect(homeHeading(page)).toBeVisible();
 }
 
 export interface NewJobInput {
@@ -200,8 +302,13 @@ export async function markContracted(page: Page, monitor: HealthMonitor, jobId: 
 
   await page.getByRole("button", { name: "Mark as contracted" }).click();
 
-  await expect(jobTab(page, "Billing")).toBeVisible();
-  await expect(jobTab(page, "Retainage")).toBeVisible();
+  // Concept G: on a bid the Billing stage box has no pages and is not a
+  // link (jobStages.ts leaves `billing` empty while status is ESTIMATE); it
+  // becomes one, with Billing and Retainage under it, the moment the job
+  // leaves ESTIMATE. So the box turning into a link is the observable proof
+  // the status write happened — the tabs themselves are listed once that
+  // stage is opened, which step 6 does.
+  await expect(jobStageBox(page, "billing").getByRole("link")).toBeVisible();
   await expectHealthy(page, "estimate tab after marking contracted", { monitor });
 }
 
