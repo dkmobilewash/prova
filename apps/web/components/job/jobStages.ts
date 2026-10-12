@@ -119,7 +119,8 @@ export function jobStages(input: JobStageInput): JobStage[] {
   const links: Record<StageKey, StageLink[]> = {
     estimate: [
       // `/estimate` is the estimate until the contract, then it holds the
-      // change orders (estimate/page.tsx) — so it moves to Contract with it.
+      // change orders (estimate/page.tsx) — so it moves to Contract with it,
+      // anchored at the change-order section, which sits below job costing.
       ...(input.showsJobMoney && isEstimate ? [{ href: `/jobs/${id}/estimate`, label: "Estimate" }] : []),
       ...(input.showsJobMoney ? [{ href: `/jobs/${id}/takeoff`, label: "Takeoff" }] : []),
     ],
@@ -132,7 +133,7 @@ export function jobStages(input: JobStageInput): JobStage[] {
       isEstimate && input.showsJobMoney
         ? { href: `/jobs/${id}#contract-signature`, label: "Contract signature" }
         : { href: `/jobs/${id}`, label: "Overview" },
-      ...(input.showsJobMoney && !isEstimate ? [{ href: `/jobs/${id}/estimate`, label: "Change orders" }] : []),
+      ...(input.showsJobMoney && !isEstimate ? [{ href: `/jobs/${id}/estimate#change-orders`, label: "Change orders" }] : []),
       { href: `/jobs/${id}/compliance`, label: "Compliance" },
     ],
     crew: [
@@ -237,7 +238,9 @@ export function lienWaiverPaperworkLink(jobId: string, count: number) {
  * decision the GC still owes reads as open work. */
 export function changeOrderPaperworkLink(jobId: string, approved: number, waiting: number) {
   return {
-    href: `/jobs/${jobId}/estimate`,
+    // At the section, not the page top: on a contracted job /estimate opens
+    // on the whole job-costing breakdown and the change orders sit under it.
+    href: `/jobs/${jobId}/estimate#change-orders`,
     label: "Change orders",
     detail: waiting > 0 ? `${waiting} waiting · ${approved} approved` : `${approved} approved`,
   };

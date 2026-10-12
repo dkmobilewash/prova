@@ -222,6 +222,17 @@ describe("changeOrderPaperworkLink", () => {
     expect(changeOrderPaperworkLink("job-1", 2, 1).detail).toBe("1 waiting · 2 approved");
     expect(changeOrderPaperworkLink("job-1", 2, 0).detail).toBe("2 approved");
   });
+
+  // ux round 4: on a contracted job /estimate opens on the job-costing
+  // breakdown, and both "Change orders" links landed on top of it — the
+  // Paperwork one, clicked from that same page, did not move it at all.
+  it("lands on the change-order section, from Paperwork and from the Contract step", () => {
+    expect(changeOrderPaperworkLink("job-1", 2, 1).href).toBe("/jobs/job-1/estimate#change-orders");
+    const contract = jobStages(base).find((s) => s.key === "contract")!;
+    expect(contract.links.find((l) => l.label === "Change orders")?.href).toBe("/jobs/job-1/estimate#change-orders");
+    // Still the open tab when you are on it — the fragment never reaches pathname.
+    expect(selectedStageKey(jobStages(base), "/jobs/job-1/estimate")).toBe("contract");
+  });
 });
 
 describe("lienWaiverPaperworkLink", () => {

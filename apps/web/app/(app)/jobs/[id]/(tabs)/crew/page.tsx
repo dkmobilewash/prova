@@ -208,6 +208,18 @@ export default async function JobCrewPage({
           fringe rate schedule when one applies.
         </p>
 
+        {/* The add form comes BEFORE the history: "Log hours" (Home, ⌘K)
+            lands on #log-time, and under ~45 past entries it was six
+            screens down (ux round 4). */}
+        <div className="mb-4">
+          <LogTimeEntryForm
+            jobId={job.id}
+            workers={timeEntryWorkers}
+            lineItems={job.lineItems}
+            craftOptions={timeEntryCraftOptions}
+          />
+        </div>
+
         <div className="mb-4">
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
             <h3 className="text-base font-semibold text-ink">
@@ -265,12 +277,6 @@ export default async function JobCrewPage({
           </ul>
         )}
 
-        <LogTimeEntryForm
-          jobId={job.id}
-          workers={timeEntryWorkers}
-          lineItems={job.lineItems}
-          craftOptions={timeEntryCraftOptions}
-        />
 
         <h3 className="mb-1 mt-6 text-base font-semibold text-ink">Timesheet sign-off</h3>
         <p className="mb-3 text-sm text-ink-muted">

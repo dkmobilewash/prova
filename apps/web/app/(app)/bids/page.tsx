@@ -27,6 +27,7 @@ import { loadBidOutcomes, loadLinkableJobs } from "@/lib/bid-outcome-query";
 import { BidOutcomeForm } from "@/components/BidOutcomeForm";
 import { outcomeReasonLabel } from "@/components/ai-bid/outcome";
 import { LogBidForm } from "@/components/LogBidForm";
+import { bidsDueSoon, bidsView, daysLeftLabel } from "@/lib/bids-due-soon";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -64,12 +65,12 @@ const day = (value: Date | null) => (value === null ? null : value.toISOString()
 export default async function BidsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ trade?: string; status?: string; new?: string }>;
+  searchParams: Promise<{ trade?: string; status?: string; new?: string; view?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
   const { company } = context;
-  const { trade, status, new: isNew } = await searchParams;
+  const { trade, status, new: isNew, view: viewParam } = await searchParams;
 
   const tradeFilter = trade && trade in TradeScope ? (trade as TradeScope) : undefined;
   const statusFilter = status && status in BidInvitationStatus ? (status as BidInvitationStatus) : undefined;
@@ -208,6 +209,19 @@ export default async function BidsPage({
   // bids. A count would be a second read that could only agree.
   const isFiltered = tradeFilter != null || statusFilter != null;
 
+  // Read-only over the same rows: what is still to price, soonest first.
+  // Its own query because the history filters above must not hide it.
+  const dueSoon = bidsDueSoon(
+    await prisma.bidInvitation.findMany({
+      where: { companyId: company.id, status: "INVITED", dueDate: { gte: new Date(`${today}T00:00:00.000Z`) } },
+      select: { id: true, projectName: true, status: true, dueDate: true, contact: { select: { name: true } } },
+    }),
+    today,
+  );
+  const view = bidsView(viewParam, dueSoon.length, isFiltered);
+  const viewTab = (active: boolean) =>
+    `inline-flex min-h-11 items-center rounded-md px-3 text-sm font-medium ${active ? "bg-rail-hover text-ink" : "text-ink-body hover:text-ink"}`;
+
   return (
     <PageShell width="working">
       <PageHeader
@@ -262,7 +276,49 @@ export default async function BidsPage({
         </section>
       )}
 
+      <nav aria-label="Bid views" className="mb-4 flex gap-1" data-bids="views">
+        <Link href="/bids?view=due" aria-current={view === "due" ? "page" : undefined} className={viewTab(view === "due")}>
+          Due soon ({dueSoon.length})
+        </Link>
+        <Link href="/bids?view=all" aria-current={view === "all" ? "page" : undefined} className={viewTab(view === "all")}>
+          All bids
+        </Link>
+      </nav>
+
+      {view === "due" ? (
+        dueSoon.length === 0 ? (
+          <p className="text-sm text-ink-body">
+            No invited bids due in the next 30 days.{" "}
+            <Link href="/bids?view=all" className="text-link hover:text-link-hover">
+              See all bids
+            </Link>
+            .
+          </p>
+        ) : (
+          <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-bids="due-soon">
+            {dueSoon.map((bid) => (
+              <li key={bid.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
+                <div className="min-w-0">
+                  <Link href={`/ai/bids/${bid.id}`} className="font-medium text-ink hover:underline">
+                    {bid.projectName}
+                  </Link>
+                  <p className="text-sm text-ink-body">
+                    {bid.gcName} · Due {formatCalendarDate(new Date(`${bid.dueIso}T00:00:00.000Z`), "numeric")}
+                  </p>
+                </div>
+                <span
+                  className={`shrink-0 text-sm font-medium tabular-nums ${bid.daysLeft <= 7 ? "text-tag-amber-ink" : "text-ink-label"}`}
+                >
+                  {daysLeftLabel(bid.daysLeft)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : (
+      <>
       <form method="get" className="mb-6 flex flex-wrap items-end gap-3" data-tour="bids-filter">
+        <input type="hidden" name="view" value="all" />
         <label className="flex flex-col gap-1 text-sm text-ink-label">
           Trade
           <select
@@ -300,7 +356,7 @@ export default async function BidsPage({
           Filter
         </button>
         {(trade || status) && (
-          <Link href="/bids" className="text-sm text-ink-body hover:underline">
+          <Link href="/bids?view=all" className="text-sm text-ink-body hover:underline">
             Clear
           </Link>
         )}
@@ -363,7 +419,7 @@ export default async function BidsPage({
         isFiltered ? (
           <p className="text-ink-body">
             No bids match this filter.{" "}
-            <Link href="/bids" className="text-link hover:text-link-hover">
+            <Link href="/bids?view=all" className="text-link hover:text-link-hover">
               Show them all
             </Link>
             .
@@ -629,6 +685,8 @@ export default async function BidsPage({
             </li>
           ))}
         </ul>
+      )}
+      </>
       )}
     </PageShell>
   );

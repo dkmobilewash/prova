@@ -65,7 +65,15 @@ export function materialOrdersStatus(input: {
 
 export type OverdueRfi = { number: number; jobName: string; daysOverdue: number };
 
-export function rfisStatus(input: { overdue: OverdueRfi[]; open: number; impact: number }): StatusReport {
+/** Sent with no due date and unanswered a week or more (isWaitingAWeekPlus). */
+export type WaitingRfi = { number: number; jobName: string; daysWaiting: number };
+
+export function rfisStatus(input: {
+  overdue: OverdueRfi[];
+  open: number;
+  impact: number;
+  waiting?: WaitingRfi[];
+}): StatusReport {
   const problems: StatusProblem[] = [];
   if (input.overdue.length > 0) {
     const names = [...input.overdue]
@@ -74,6 +82,18 @@ export function rfisStatus(input: { overdue: OverdueRfi[]; open: number; impact:
     problems.push({
       tone: "red",
       text: `${count(input.overdue.length, "RFI")} past the date we asked for — ${listed(names)}.`,
+    });
+  }
+  // Amber, not red: no date was promised, so nothing is past one — but a
+  // question ten days unanswered is not "none overdue" either.
+  const waiting = input.waiting ?? [];
+  if (waiting.length > 0) {
+    const names = [...waiting]
+      .sort((a, b) => b.daysWaiting - a.daysWaiting)
+      .map((r) => `#${r.number} ${r.jobName} (${days(r.daysWaiting)})`);
+    problems.push({
+      tone: "amber",
+      text: `${count(waiting.length, "RFI")} waiting a week+ with no due date — ${listed(names)}.`,
     });
   }
   const impact = input.impact > 0 ? ` ${count(input.impact, "answer")} with cost or schedule impact.` : "";

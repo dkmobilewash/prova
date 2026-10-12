@@ -338,7 +338,7 @@ describe("/dashboard on a company with jobs", () => {
 
   it("links shortcuts straight to the one job that fits", async () => {
     const html = await render();
-    expect(html).toMatch(/href="\/jobs\/job-1\/crew"[^>]*><span[^>]*>◷<\/span>Log hours/);
+    expect(html).toMatch(/href="\/jobs\/job-1\/crew#log-time"[^>]*><span[^>]*>◷<\/span>Log hours/);
     expect(html).toMatch(/href="\/jobs\/job-1\/billing"[^>]*><span[^>]*>↗<\/span>Send pay app/);
     expect(html).toContain('href="/rfis"');
   });

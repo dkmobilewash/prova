@@ -9,7 +9,7 @@ import { loadRfiDraft } from "@/lib/ask/drafts";
 import { RfiForm } from "@/components/RfiForm";
 import { EmptyState } from "@/components/EmptyState";
 import { RfiRow } from "@/components/RfiRow";
-import { daysBetween, isOpen, isOverdue } from "@/components/rfiLabels";
+import { daysBetween, isOpen, isOverdue, isWaitingAWeekPlus } from "@/components/rfiLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { rfisStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
@@ -118,7 +118,10 @@ export default async function RfisPage({
       OR: [{ costImpact: true }, { scheduleImpact: true }],
     },
   });
-  const status = rfisStatus({ overdue, open: openCount, impact: impactCount });
+  const waiting = rows
+    .filter((r) => isWaitingAWeekPlus(r, today))
+    .map((r) => ({ number: r.number, jobName: r.jobName, daysWaiting: daysBetween(r.sentOn as string, today) }));
+  const status = rfisStatus({ overdue, open: openCount, impact: impactCount, waiting });
 
   const filterHref = (params: { job?: string | null; show?: string | null }) => {
     const next = new URLSearchParams();

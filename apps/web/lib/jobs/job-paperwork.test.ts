@@ -18,6 +18,11 @@ describe("jobPaperworkLinks", () => {
     ]);
   });
 
+  it("says how many RFIs have waited a week+ with no due date", () => {
+    const links = jobPaperworkLinks({ role: "OWNER", jobFunction: null }, "job-1", { ...COUNTS, waitingRfis: 1 });
+    expect(links[0]).toEqual({ href: "/rfis?job=job-1", label: "RFIs", detail: "2 open · 1 waiting a week+" });
+  });
+
   it("offers only the lists this viewer can open", () => {
     // ESTIMATOR holds MANAGE_JOBS (RFIs, submittals, drawings) but not
     // MANAGE_FIELD (punch list, material orders).

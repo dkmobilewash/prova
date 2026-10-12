@@ -7,6 +7,7 @@ import { lienKindLabel } from "@/lib/lien-deadlines";
 import { loadTodayDashboard } from "@/lib/today-dashboard";
 import { estimateStage } from "@/lib/estimate-stage";
 import { submittalState, type RevisionData } from "@/components/submittalLabels";
+import { RFI_WAITING_DAYS, isWaitingAWeekPlus } from "@/components/rfiLabels";
 import { scheduledWorkerName } from "@/lib/crew-schedule-query";
 import type { AreaSlug, Tone, ToolStatus, ToolStatuses } from "@/lib/areas";
 import { overdueText } from "@/lib/due-date";
@@ -146,8 +147,15 @@ export async function loadToolStatuses(
       return { text: `${n} open`, tone: n > 0 ? "amber" : undefined };
     },
     "/rfis": async () => {
-      const n = await prisma.rfi.count({ where: { companyId, status: "SENT" } });
-      return n === 0 ? { text: "No RFIs waiting" } : { text: `${plural(n, "RFI")} waiting`, tone: "amber" };
+      const [n, weekPlus] = await Promise.all([
+        prisma.rfi.count({ where: { companyId, status: "SENT" } }),
+        // isWaitingAWeekPlus as a query: sent, no due date, a week or more ago.
+        prisma.rfi.count({
+          where: { companyId, status: "SENT", dueBy: null, sentOn: { lte: new Date(`${addDays(todayIso, -RFI_WAITING_DAYS)}T00:00:00.000Z`) } },
+        }),
+      ]);
+      if (n === 0) return { text: "No RFIs waiting" };
+      return { text: weekPlus > 0 ? `${plural(n, "RFI")} waiting, ${weekPlus} a week+` : `${plural(n, "RFI")} waiting`, tone: "amber" };
     },
     "/submittals": async () => {
       const rows = await submittalsByState(companyId);
@@ -253,7 +261,9 @@ export async function loadAreaWaiting(
           status:
             due && due < todayIso
               ? { text: overdueText(daysBetween(due, todayIso), true), tone: "red" }
-              : { text: "Sent", tone: "neutral" },
+              : isWaitingAWeekPlus({ status: "SENT", sentOn: sent, dueBy: due }, todayIso)
+                ? { text: "Waiting a week+", tone: "amber" }
+                : { text: "Sent", tone: "neutral" },
           href: `/rfis?job=${encodeURIComponent(rfi.jobId)}#rfi-${rfi.id}`,
           action: "Open",
         });

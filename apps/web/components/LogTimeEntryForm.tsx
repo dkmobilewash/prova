@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { localToday } from "@/components/localToday";
 import type { JobLineItem } from "@prova/db";
 import { logTimeEntry } from "@/lib/actions";
 import { reportFieldErrors } from "@/components/formFieldErrors";
@@ -80,9 +81,20 @@ export function LogTimeEntryForm({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  // The date starts as the viewer's own today (ux round 4: "Log hours" landed
+  // on a blank date). Set in an effect, AFTER hydration, because this form is
+  // in the server-rendered page and localToday() in its markup would disagree
+  // with the server's HTML (CLAUDE.md, Dates). Today rather than yesterday:
+  // a guess either way, and today is the one a foreman can see is wrong.
+  useEffect(() => {
+    const date = formRef.current?.querySelector<HTMLInputElement>('[name="date"]');
+    if (date && !date.value) date.value = localToday();
+  }, []);
+
   return (
     <form
       ref={formRef}
+      id="log-time"
       onSubmit={(event) => {
         event.preventDefault();
         const formData = new FormData(event.currentTarget);
@@ -116,7 +128,7 @@ export function LogTimeEntryForm({
           }
         });
       }}
-      className="flex flex-col gap-2 rounded-lg border border-line-card bg-surface p-3"
+      className="flex scroll-mt-20 flex-col gap-2 rounded-lg border border-line-card bg-surface p-3"
     >
       <div className="flex flex-wrap items-end gap-2">
         <TimeEntryFields workers={workers} lineItems={lineItems} craftOptions={craftOptions} />

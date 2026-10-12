@@ -8,7 +8,7 @@ import {
 } from "@/lib/actions";
 import { money } from "@/lib/money";
 import { formatCalendarDate } from "@/lib/render-date";
-import { daysUntil, toIsoDate } from "@/lib/compliance-expiry";
+import { complianceDocumentAnchor, daysUntil, toIsoDate } from "@/lib/compliance-expiry";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
 
@@ -118,7 +118,7 @@ export function ComplianceDocumentRow({
 
   if (isEditing) {
     return (
-      <li className="p-4">
+      <li id={complianceDocumentAnchor(doc.id)} className="scroll-mt-24 p-4">
         <form onSubmit={handleEditSubmit} className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-3">
             <label className={labelClass}>
@@ -216,7 +216,7 @@ export function ComplianceDocumentRow({
     : expirationStatus(doc.expiresAt, todayIso);
 
   return (
-    <li className="flex flex-col gap-2 p-4">
+    <li id={complianceDocumentAnchor(doc.id)} className="flex scroll-mt-24 flex-col gap-2 p-4 target:ring-2 target:ring-inset target:ring-brand">
       {/* flex-wrap, and the text column may shrink: this row's action
           cluster was shrink-0 and unwrappable, so on a 360px screen it ran
           past the viewport and dragged the whole page sideways. Found by

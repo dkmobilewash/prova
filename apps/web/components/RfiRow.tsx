@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { answerRfi, deleteRfi, markRfiSent, setRfiClosed, updateRfi } from "@/lib/actions";
 import type { ActionResult } from "@/lib/actions/shared";
 import { RfiFields, fieldInputClass, labelClass, type RfiDefaults } from "@/components/RfiFields";
-import { daysBetween, isOverdue, statusLabel } from "@/components/rfiLabels";
+import { daysBetween, isOpen, isOverdue, isWaitingAWeekPlus, statusLabel } from "@/components/rfiLabels";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { formatCalendarDay } from "@/lib/render-date";
 import { localToday } from "@/components/localToday";
@@ -266,6 +266,7 @@ export function RfiRow({
   }
 
   const overdue = isOverdue(rfi, today);
+  const waitingAWeekPlus = isWaitingAWeekPlus(rfi, today);
   // The actions now refuse an answer dated before the send, so this can't
   // go negative — but a day count is the number people will quote in a
   // dispute, so it doesn't get to render nonsense even if data predating
@@ -282,6 +283,10 @@ export function RfiRow({
           {overdue ? (
             <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">
               Overdue
+            </span>
+          ) : waitingAWeekPlus ? (
+            <span className="rounded bg-tag-amber px-1.5 py-0.5 text-xs text-tag-amber-ink">
+              Waiting a week+
             </span>
           ) : (
             <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-body">
@@ -320,7 +325,10 @@ export function RfiRow({
           {rfi.sentOn ? `sent ${formatCalendarDay(rfi.sentOn)}` : "not sent"}
           {rfi.dueBy && ` · due ${formatCalendarDay(rfi.dueBy)}`}
           {rfi.answeredOn && ` · answered ${formatCalendarDay(rfi.answeredOn)}`}
-          {openDays !== null && ` · ${openDays} day${openDays === 1 ? "" : "s"}`}
+          {openDays !== null &&
+            (isOpen(rfi.status)
+              ? ` · asked ${openDays === 0 ? "today" : `${openDays} day${openDays === 1 ? "" : "s"} ago`}`
+              : ` · ${openDays} day${openDays === 1 ? "" : "s"}`)}
         </p>
         <p className="text-xs text-ink-body">
           {[rfi.drawingReference, rfi.specSection].filter(Boolean).join(" · ")}

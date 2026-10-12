@@ -258,3 +258,10 @@ export function renewalTiming(renewal: Renewal): string {
   if (renewal.daysUntil === 0) return "due today";
   return `due in ${renewal.daysUntil} ${renewal.daysUntil === 1 ? "day" : "days"}`;
 }
+
+/** Where a compliance document's own row is on /compliance. The renewal
+ * alert's "Open" used to be plain `/compliance` — a link to the page you were
+ * already on, so it did nothing (ux round 4). */
+export function complianceDocumentAnchor(id: string) {
+  return `doc-${id}`;
+}

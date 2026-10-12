@@ -315,7 +315,7 @@ export default async function TodayPage() {
   /* ------------------------------------------------------ shortcuts -- */
   const crewedToday = extras.crewsToday.map((c) => ({ id: c.jobId, name: c.jobName }));
   const logHours = rights.field
-    ? pickJob("Log hours", crewedToday.length > 0 ? crewedToday : inProgress, "crew", "log hours")
+    ? pickJob("Log hours", crewedToday.length > 0 ? crewedToday : inProgress, "crew#log-time", "log hours")
     : null;
   const sendPayApp = showsBilling ? pickJob(`Send ${bill.lower}`, inProgress, "billing", "pay app") : null;
   const rfisReachable = canReach(principal, "/rfis");

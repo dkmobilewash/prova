@@ -2,6 +2,7 @@
 
 import { FullTour } from "@/components/FullTour";
 import { NavigationProgress } from "@/components/NavigationProgress";
+import { HashLanding } from "@/components/shell/HashLanding";
 import { ShellRegion } from "@/components/ShellRegion";
 import { BottomTabs } from "@/components/shell/BottomTabs";
 import { CommandPalette } from "@/components/shell/CommandPalette";
@@ -83,6 +84,8 @@ export function NavigationProgressRegion() {
   return (
     <ShellRegion region="helper">
       <NavigationProgress />
+      {/* Lands a cross-page #anchor once the page streams in (HashLanding.tsx). */}
+      <HashLanding />
     </ShellRegion>
   );
 }

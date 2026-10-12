@@ -88,6 +88,30 @@ describe("RFIs", () => {
       { tone: "red", text: "2 RFIs past the date we asked for — #12 Riverside (6 days), #9 Main St (2 days)." },
     ]);
   });
+
+  // ux round 4: RFI 3 sat ten days unanswered, with no due date, under
+  // "1 RFI awaiting an answer, none overdue".
+  it("does not call a week-old unanswered RFI with no due date quiet", () => {
+    const report = rfisStatus({ overdue: [], open: 1, impact: 0, waiting: [{ number: 3, jobName: "Riverside", daysWaiting: 10 }] });
+    expect(report.problems).toEqual([
+      { tone: "amber", text: "1 RFI waiting a week+ with no due date — #3 Riverside (10 days)." },
+    ]);
+  });
+});
+
+describe("isWaitingAWeekPlus", () => {
+  const rfi = (sentOn: string | null, dueBy: string | null = null, status = "SENT") => ({ status, sentOn, dueBy });
+  it("flags a sent, unanswered RFI with no due date from its seventh day", async () => {
+    const { isWaitingAWeekPlus } = await import("@/components/rfiLabels");
+    expect(isWaitingAWeekPlus(rfi("2026-10-02"), "2026-10-12")).toBe(true);
+    expect(isWaitingAWeekPlus(rfi("2026-10-05"), "2026-10-12")).toBe(true);
+    expect(isWaitingAWeekPlus(rfi("2026-10-06"), "2026-10-12")).toBe(false);
+    // A due date decides on its own — overdue, or not yet.
+    expect(isWaitingAWeekPlus(rfi("2026-10-02", "2026-10-20"), "2026-10-12")).toBe(false);
+    // Answered, or never sent: not waiting on anybody.
+    expect(isWaitingAWeekPlus(rfi("2026-10-02", null, "ANSWERED"), "2026-10-12")).toBe(false);
+    expect(isWaitingAWeekPlus(rfi(null, null, "DRAFT"), "2026-10-12")).toBe(false);
+  });
 });
 
 describe("submittals", () => {

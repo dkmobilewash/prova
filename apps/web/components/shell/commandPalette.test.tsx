@@ -21,7 +21,7 @@ const BASE: PaletteResponse = {
   recentJobs: [job("j1", "Harbor Elementary")],
   actions: [
     { id: "new-job", label: "New job", hint: "Start a job", href: "/jobs/new" },
-    { id: "log-hours", label: "Log hours", hint: "Pick a job", jobTab: "crew" },
+    { id: "log-hours", label: "Log hours", hint: "Pick a job", jobTab: "crew#log-time" },
   ],
   navPages: [{ href: "/rfis", label: "RFIs", group: "Paper trail" }],
 };
@@ -118,7 +118,7 @@ describe("CommandPalette", () => {
     key("Enter");
     expect(input().getAttribute("aria-label")).toBe("Log hours — which job?");
     key("Enter");
-    expect(push).toHaveBeenCalledWith("/jobs/j1/crew");
+    expect(push).toHaveBeenCalledWith("/jobs/j1/crew#log-time");
   });
 
   // Guidelines review 2026-10-10: results were <div onClick> + router.push,

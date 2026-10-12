@@ -63,12 +63,11 @@ const lockedClass =
  * argued in lib/time-entry-correction.ts and enforced by a database trigger;
  * this component is only the half a user sees.
  *
- * NO DEFAULT DATE, deliberately. `localToday()` is the user's calendar date
- * and it may only be called in a component mounted by a user action —
- * server-rendered markup containing it breaks hydration (CLAUDE.md). The
- * create form is in the page's initial HTML, so the date field starts empty,
- * which is also the honest default: hours are usually entered for a day that
- * has finished, not for today.
+ * NO DEFAULT DATE IN THIS MARKUP. `localToday()` may only be called in a
+ * component mounted by a user action — server-rendered markup containing it
+ * breaks hydration (CLAUDE.md). The create form is in the page's initial
+ * HTML, so the field renders empty and `LogTimeEntryForm` fills in the
+ * viewer's today from an effect, after hydration.
  */
 export function TimeEntryFields({
   workers,

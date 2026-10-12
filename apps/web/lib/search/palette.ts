@@ -49,7 +49,7 @@ export type PaletteAction = {
   /** A static route to open, OR — */
   href?: string;
   /** — the job tab to open once a job is picked. */
-  jobTab?: "crew" | "billing" | "photos" | "estimate#change-orders";
+  jobTab?: "crew#log-time" | "billing" | "photos" | "estimate#change-orders";
   /** Other words a sub says for it ("CO", "timesheet", "pics"). Searched,
    * never shown. */
   keywords?: string;
@@ -66,7 +66,7 @@ type ActionDef = PaletteAction & {
 const ACTIONS: ActionDef[] = [
   { id: "new-job", label: "New job", hint: "Start a job or an estimate", href: "/jobs/new" },
   { id: "log-bid", label: "Log a bid", hint: "A bid invitation from a GC", href: "/bids?new=1", keywords: "bid invitation itb gc invite" },
-  { id: "log-hours", label: "Log hours", hint: "Pick a job, then log the crew's time", jobTab: "crew", capability: "MANAGE_FIELD", keywords: "time timesheet crew crews manpower" },
+  { id: "log-hours", label: "Log hours", hint: "Pick a job, then log the crew's time", jobTab: "crew#log-time", capability: "MANAGE_FIELD", keywords: "time timesheet crew crews manpower" },
   { id: "send-pay-app", label: "Send pay app", hint: "Pick a job, then bill it", jobTab: "billing", capability: "MANAGE_BILLING", keywords: "invoice billing bill pay application" },
   { id: "find-rfi", label: "Find an RFI", hint: "Every RFI, open and answered", href: "/rfis" },
   // The create verbs (2026-10-11): each lands on the form already OPEN

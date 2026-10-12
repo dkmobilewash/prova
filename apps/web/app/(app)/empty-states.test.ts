@@ -188,7 +188,7 @@ describe("/bids with no bids and no filter applied", () => {
     expect(html).toContain("Bid history");
     expect(html).toContain("No bids match this filter");
     // And a way back out of it.
-    expect(html).toContain('href="/bids"');
+    expect(html).toContain('href="/bids?view=all"');
   });
 });
 

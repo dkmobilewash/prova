@@ -156,7 +156,8 @@ describe("buildSections", () => {
     expect(entry.pick).toEqual(logHours);
     const picker = buildSections(data(), "", logHours);
     expect(picker.map((x) => x.heading)).toEqual(["Recent jobs"]);
-    expect(picker[0].entries[0].href).toBe("/jobs/j1/crew");
+    // At the add-time form, not the top of the tab (ux round 4).
+    expect(picker[0].entries[0].href).toBe("/jobs/j1/crew#log-time");
   });
 });
 

@@ -1,5 +1,7 @@
 import { prisma } from "@prova/db";
 import { canReach, type Principal } from "@/lib/permissions";
+import { RFI_WAITING_DAYS } from "@/components/rfiLabels";
+import { addDays } from "@/components/fieldReportWeeks";
 
 /**
  * The job's own records that live on company-wide list pages — RFIs,
@@ -15,6 +17,8 @@ import { canReach, type Principal } from "@/lib/permissions";
  */
 export type JobPaperworkCounts = {
   openRfis: number;
+  /** Sent, no due date, unanswered a week or more (isWaitingAWeekPlus). */
+  waitingRfis?: number;
   submittals: number;
   openPunchItems: number;
   drawingSets: number;
@@ -32,7 +36,11 @@ export function jobPaperworkLinks(
 ): JobPaperworkLink[] {
   const job = encodeURIComponent(jobId);
   const all: (JobPaperworkLink & { route: string })[] = [
-    { route: "/rfis", label: "RFIs", detail: `${counts.openRfis} open` },
+    {
+      route: "/rfis",
+      label: "RFIs",
+      detail: counts.waitingRfis ? `${counts.openRfis} open · ${counts.waitingRfis} waiting a week+` : `${counts.openRfis} open`,
+    },
     { route: "/submittals", label: "Submittals", detail: String(counts.submittals) },
     { route: "/punch-lists", label: "Punch list", detail: `${counts.openPunchItems} open` },
     {
@@ -48,15 +56,18 @@ export function jobPaperworkLinks(
     .map(({ href, label, detail }) => ({ href, label, detail }));
 }
 
-export async function loadJobPaperworkCounts(companyId: string, jobId: string): Promise<JobPaperworkCounts> {
+/** `todayIso`: the VIEWER'S calendar day (viewerToday()), what "a week" is counted back from. */
+export async function loadJobPaperworkCounts(companyId: string, jobId: string, todayIso: string): Promise<JobPaperworkCounts> {
   const where = { companyId, jobId };
-  const [openRfis, submittals, openPunchItems, drawingSets, materialOrders, lienWaivers] = await Promise.all([
+  const weekAgo = new Date(`${addDays(todayIso, -RFI_WAITING_DAYS)}T00:00:00.000Z`);
+  const [openRfis, waitingRfis, submittals, openPunchItems, drawingSets, materialOrders, lienWaivers] = await Promise.all([
     prisma.rfi.count({ where: { ...where, status: { not: "CLOSED" } } }),
+    prisma.rfi.count({ where: { ...where, status: "SENT", dueBy: null, sentOn: { lte: weekAgo } } }),
     prisma.submittal.count({ where }),
     prisma.punchListItem.count({ where: { ...where, status: { not: "VERIFIED" } } }),
     prisma.drawingSet.count({ where }),
     prisma.materialOrder.count({ where }),
     prisma.lienWaiver.count({ where }),
   ]);
-  return { openRfis, submittals, openPunchItems, drawingSets, materialOrders, lienWaivers };
+  return { openRfis, waitingRfis, submittals, openPunchItems, drawingSets, materialOrders, lienWaivers };
 }

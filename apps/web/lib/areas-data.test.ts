@@ -43,6 +43,19 @@ describe("waiting rows link to the record", () => {
     expect(hrefs).toContain("/submittals?job=j1#submittal-s1");
   });
 
+  // ux round 4: a ten-day-old RFI with no due date read plain "Sent".
+  it("an RFI with no due date, a week+ unanswered, reads as waiting", async () => {
+    db.rfi.findMany.mockResolvedValue([
+      { id: "r1", number: 3, subject: "Rated assembly", jobId: "j1", sentOn: new Date("2026-10-02"), dueBy: null, job: { name: "Riverside" } },
+      { id: "r2", number: 4, subject: "Header", jobId: "j1", sentOn: new Date("2026-10-09"), dueBy: null, job: { name: "Riverside" } },
+    ]);
+    db.submittal.findMany.mockResolvedValue([]);
+    const { list } = await loadAreaWaiting("paperwork", "c1", owner, "2026-10-12");
+    const byRef = Object.fromEntries(list.rows.map((row) => [row.ref, row.status]));
+    expect(byRef["RFI 3"]).toEqual({ text: "Waiting a week+", tone: "amber" });
+    expect(byRef["RFI 4"]).toEqual({ text: "Sent", tone: "neutral" });
+  });
+
   it("an open order lands on its own row", async () => {
     db.materialOrder.findMany.mockResolvedValue([
       { id: "o1", number: 7, description: "Board", jobId: "j1", orderedOn: new Date("2026-10-01"), promisedFor: null, job: { name: "Oak" }, vendor: { name: "Supply" } },
