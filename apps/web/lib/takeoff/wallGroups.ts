@@ -1,4 +1,5 @@
 import { CLUSTER_INCHES, inchLabel, type WallCandidate, type WallCluster } from "./wallVectors";
+import type { WallTypeFromNote } from "./wallNotes";
 import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
 
 /**
@@ -53,7 +54,19 @@ export type GroupSource =
   /** The drawing printed this name beside these runs. */
   | { kind: "TAG"; tag: string }
   /** Nothing named them; they are what is left of a thickness group. */
-  | { kind: "REMAINDER" };
+  | { kind: "REMAINDER" }
+  /**
+   * Nothing named them BESIDE the runs, but the sheet's general notes name a
+   * default for everything untagged — "ALL PARTITIONS TYPE A1 U.N.O." — and
+   * these measure like that type.
+   *
+   * A separate kind from TAG on purpose. A tag is printed beside the wall it
+   * names; a note covers whatever is left, which is weaker evidence and has to
+   * read as weaker on screen. It is still far better than the question the
+   * panel used to ask: on School-01's A-101 this is 577 ft, 30% of the sheet,
+   * that was being offered as A1, A2 or C1 with nothing to choose between them.
+   */
+  | { kind: "GENERAL_NOTE"; note: string };
 
 export type WallGroup = {
   /** The thickness bucket these came from, unchanged — still what is drawn on
@@ -120,6 +133,7 @@ export function wallGroups(
   clusters: readonly WallCluster[],
   tagByRun: ReadonlyMap<WallCandidate, string>,
   wallTypes: readonly MatchableWallType[],
+  fromNote: WallTypeFromNote | null = null,
 ): WallGroup[] {
   const out: WallGroup[] = [];
   for (const cluster of clusters) {
@@ -151,12 +165,25 @@ export function wallGroups(
 
     out.push(...tagged);
     if (untagged.length > 0) {
+      // ── THE GENERAL NOTE, BUT ONLY WHERE THE THICKNESS AGREES ──
+      //
+      // "ALL PARTITIONS TYPE A1 U.N.O." covers whatever the architect did not
+      // tag. It does NOT cover a wall of a different thickness: the 6-5/8"
+      // exterior runs and the 10-1/4" chase on School-01's A-101 are untagged
+      // too, and a different thickness IS a notation. Without this test the
+      // note would swallow them and price the building's shell as a partition.
+      const noteCovers =
+        fromNote !== null &&
+        fromNote.type.thicknessIn !== null &&
+        Math.abs(fromNote.type.thicknessIn - cluster.inches) <= THICKNESS_SLACK_IN;
       out.push({
         inches: cluster.inches,
         runs: untagged,
         feet: feetOf(untagged),
-        source: { kind: "REMAINDER" },
-        candidates: typesAtThickness(cluster.inches, wallTypes),
+        source:
+          noteCovers && fromNote ? { kind: "GENERAL_NOTE", note: fromNote.note } : { kind: "REMAINDER" },
+        candidates:
+          noteCovers && fromNote ? [fromNote.type] : typesAtThickness(cluster.inches, wallTypes),
       });
     }
   }
@@ -180,6 +207,9 @@ function feetOf(runs: readonly WallCandidate[]): number {
 export type GroupVerdict =
   /** One type, and the drawing named it. Price it. */
   | { state: "NAMED"; type: MatchableWallType; tag: string }
+  /** No tag beside these, but the sheet's general notes name a default for
+   *  everything untagged and these measure like it. See `GroupSource`. */
+  | { state: "BY_GENERAL_NOTE"; type: MatchableWallType; note: string }
   /**
    * The drawing names a type this company HAS, and the wall is not the
    * thickness that type is recorded as. Two sources disagree; neither is
@@ -228,6 +258,12 @@ export function verdictFor(group: WallGroup): GroupVerdict {
       ? { state: "TAG_DISAGREES", type, tag: group.source.tag }
       : { state: "NAMED", type, tag: group.source.tag };
   }
+  // THE SHEET'S OWN DEFAULT, which is a named answer rather than an inference
+  // from thickness — and a weaker one than a tag, which is why it is its own
+  // state and gets its own sentence.
+  if (group.source.kind === "GENERAL_NOTE" && group.candidates.length === 1) {
+    return { state: "BY_GENERAL_NOTE", type: group.candidates[0], note: group.source.note };
+  }
   if (group.candidates.length === 1) return { state: "ONLY_ONE_THAT_THICK", type: group.candidates[0] };
   if (group.candidates.length > 1) return { state: "ASK", types: group.candidates };
   return { state: "UNKNOWN" };
@@ -256,6 +292,16 @@ export function groupSentence(group: WallGroup, verdict: GroupVerdict): string |
         : `The drawing tags these ${verdict.tag}, which is your ${verdict.type.code} — ${verdict.type.name}. ` +
           `It has no parts on it yet, so these can be added as measurements but not priced — put the studs, ` +
           `track and board on ${verdict.type.code} under Wall types and they will price themselves.`;
+    case "BY_GENERAL_NOTE":
+      // THE NOTE IS QUOTED, not summarised. It is the whole of the evidence and
+      // it covers more footage than any tag on the sheet — 577 ft of A-101 —
+      // so an estimator gets to read the sentence the architect wrote and judge
+      // it, rather than being told the app concluded something.
+      return (
+        `Nothing is tagged beside these, but this sheet's general notes say ` +
+        `“${verdict.note}”, and they measure ${inchLabel(group.inches)} like your ${verdict.type.code}. ` +
+        `Priced as ${verdict.type.code} unless you say otherwise — check a few against the drawing.`
+      );
     case "ONLY_ONE_THAT_THICK":
       return (
         `Nothing on the drawing names these. ${verdict.type.code} is the only wall type you have at ` +

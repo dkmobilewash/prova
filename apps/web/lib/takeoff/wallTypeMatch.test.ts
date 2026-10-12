@@ -193,8 +193,24 @@ describe("the call site, because no test here can open a PDF", () => {
     // held A1, A2, EXT-1 and C1, and 1,117 ft that could be priced as nothing.
     const text = viewer();
     expect(text).toContain(
-      "wallGroups(clusters, tagByRun(walls, tags, feetPerUnit, wallTypes), wallTypes)",
+      "wallGroups(clusters, tagByRun(walls, tags, feetPerUnit, wallTypes), wallTypes, fromNote)",
     );
+  });
+
+  it("READS THE SHEET'S GENERAL NOTES AND HANDS THEM TO THE GROUPER", () => {
+    // `fromNote` is an OPTIONAL fourth argument to `wallGroups`. Leaving it off
+    // compiles, passes every unit test of the note reader, and silently returns
+    // the panel to asking which of A1, A2 or C1 the biggest group on the sheet
+    // is — 556 ft of School-01's A-101. Mutation-tested; blind without this.
+    const text = viewer();
+    expect(text).toMatch(/defaultWallTypeFromNotes\(textItems, wallTypes\)/);
+    expect(text).toMatch(/wallGroups\(clusters, tagByRun\(walls, tags, feetPerUnit, wallTypes\), wallTypes, fromNote\)/);
+  });
+
+  it("PRICES A GROUP THE NOTE NAMED, so the answer reaches the button", () => {
+    // Reading the note and then refusing to act on it would be the same group
+    // with a longer sentence.
+    expect(viewer()).toMatch(/verdict\.state === "BY_GENERAL_NOTE"/);
   });
 
   it("HANDS THE TAGGER THE WALL TYPES, which is the half of the evidence it used to drop", () => {

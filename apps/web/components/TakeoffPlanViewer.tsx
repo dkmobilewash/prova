@@ -48,6 +48,7 @@ import { pagesToSample, templateFromSheets, withoutTemplate } from "@/lib/takeof
 import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 import { wallTypeTags, tagByRun, tagSentence } from "@/lib/takeoff/wallTags";
+import { defaultWallTypeFromNotes } from "@/lib/takeoff/wallNotes";
 import { scaleBarLabels, wallsNotTheScaleBar } from "@/lib/takeoff/scaleBar";
 import {
   wallGroups,
@@ -637,7 +638,17 @@ export function TakeoffPlanViewer({
       // remainder. See `wallGroups.ts` for why that ordering is the safety.
       // THE TYPES GO TO THE TAGGER TOO, because a tag's own name says which of two
       // runs beside each other it means — see `tagByRun`, where the measurement is.
-      setFound(wallGroups(clusters, tagByRun(walls, tags, feetPerUnit, wallTypes), wallTypes));
+      // ── AND WHAT THE SHEET'S GENERAL NOTES SAY ABOUT EVERYTHING UNTAGGED ──
+      //
+      // An architect tags the exceptions and lets a note cover the rest:
+      // "ALL PARTITIONS TYPE A1 U.N.O." On School-01's A-101 that is 577 ft,
+      // about 30% of the sheet, which the panel was offering as A1, A2 or C1
+      // with nothing to choose between them. Read from the SAME text items as
+      // the tags and the scale bar — one pass over the page's words.
+      const fromNote = defaultWallTypeFromNotes(textItems, wallTypes);
+      setFound(
+        wallGroups(clusters, tagByRun(walls, tags, feetPerUnit, wallTypes), wallTypes, fromNote),
+      );
       // The sheet this answer is about, recorded WITH the answer. `pageNumber`
       // is read here rather than at render, so a result can never be relabelled
       // by paging — see `wallsOnThisSheet`.
@@ -714,7 +725,16 @@ export function TakeoffPlanViewer({
    */
   function namedTypeFor(group: WallGroup, pick: string | undefined): MatchableWallType | null {
     const verdict = verdictFor(group);
-    if (verdict.state === "NAMED" || verdict.state === "ONLY_ONE_THAT_THICK") return verdict.type;
+    // A SHEET NOTE IS AN ANSWER, not a question. It names one type for
+    // everything untagged, and the group only reaches this state when its
+    // measured thickness agrees — see `wallGroups`.
+    if (
+      verdict.state === "NAMED" ||
+      verdict.state === "BY_GENERAL_NOTE" ||
+      verdict.state === "ONLY_ONE_THAT_THICK"
+    ) {
+      return verdict.type;
+    }
     // An ASK is priced only once a PERSON has answered it. No default, no
     // first-in-the-list: that is the guess this whole module refuses to make.
     if (verdict.state === "ASK") return verdict.types.find((type) => type.id === pick) ?? null;
