@@ -112,7 +112,7 @@ export default async function SchedulePage() {
           actions={[{ label: "Create a job", href: "/jobs/new" }, { label: "Add your crew", href: "/team" }]}
           sources={
             <p>
-              Jobs come from Jobs &amp; Estimates (or an import); the people you can put on a day
+              Jobs come from Jobs (or an import); the people you can put on a day
               come from Team.
             </p>
           }

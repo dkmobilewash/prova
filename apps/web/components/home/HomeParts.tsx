@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { TaskList } from "@/lib/agents/tasks";
-import { RunStatusPill, taskWhen } from "@/components/ai/RunStatusPill";
+import { RunStatusPill, RunWayOut, taskWhen } from "@/components/ai/RunStatusPill";
 import { STAGES, type NextAction, type Stage } from "./home-logic";
 import { SearchChip } from "./SearchChip";
 
@@ -403,9 +403,8 @@ export function RunningCard({ tasks, now }: { tasks: TaskList; now: Date }) {
       <ul>
         {rows.map((row) => (
           <li key={row.id} className="border-t border-line-row first:border-t-0">
-            {/* The detail is cut to one line here (all of it in the title,
-                and in full on the Tasks list and /ai); the when and the
-                status never are. */}
+            {/* The detail wraps in full: cut to one line, a failure read
+                "Model call timed out afte…" (UX review F6). */}
             <Link href={row.href} className="block min-h-11 py-1.5 text-sm leading-snug mouse:min-h-9">
               <span className="flex items-start justify-between gap-2">
                 <span className="min-w-0 break-words">
@@ -414,18 +413,14 @@ export function RunningCard({ tasks, now }: { tasks: TaskList; now: Date }) {
                 </span>
                 <RunStatusPill status={row.status} />
               </span>
-              <span className="flex gap-1.5 text-[13px] text-ink-muted">
-                {row.detail && (
-                  <span className="min-w-0 truncate" title={row.detail}>
-                    {row.detail}
-                  </span>
-                )}
-                <span className="shrink-0 whitespace-nowrap">
-                  {row.detail && "· "}
-                  {taskWhen(row, now)}
-                </span>
+              <span className="block break-words text-[13px] text-ink-muted">
+                {row.detail && <>{row.detail} · </>}
+                <span className="whitespace-nowrap">{taskWhen(row, now)}</span>
               </span>
             </Link>
+            <div className="pb-1.5 empty:hidden">
+              <RunWayOut status={row.status} note={row.detail} agent={row.kind} bidInvitationId={row.bidInvitationId} />
+            </div>
           </li>
         ))}
       </ul>

@@ -5,14 +5,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { activeItemHref, type NavGroup, type NavItem } from "@/components/navItems";
 import { money } from "@/lib/money";
-import { areaHref, type Area } from "@/lib/areas";
+import { AREAS, areaHref, toolRoute, type Area } from "@/lib/areas";
 import { AreaIcon } from "@/components/areas/AreaParts";
 import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
 
 /**
- * "All pages" — every destination the old left rail offered, in the rail's
- * own groups (navItems.tsx's NAV_GROUPS, filtered by `navGroupsFor`), laid
- * out as one calm full-width panel instead of a column of collapsed headings.
+ * "All pages" — every destination the old left rail offered (navItems.tsx's
+ * NAV_GROUPS, filtered by `navGroupsFor`), filed under the six areas' names
+ * (`pagesByArea`), laid out as one calm full-width panel.
  *
  * Concept G removed the sidebar; this is how nothing became unreachable. The
  * caller hands in the groups already filtered by capability, business scope
@@ -26,18 +26,44 @@ import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
  * empty `stages` draws headings without figures.
  */
 
-/** Which pipeline stage a group's heading carries. Keyed by heading TEXT from
- * navItems.tsx, so allPagesMenu.test.ts asserts every key is a real heading
- * and all five stages are placed — a rename there fails a test instead of
- * silently dropping a figure. "Proving" (RFIs out, submittals with the GC)
- * sits on Paper trail, the group that holds /rfis and /submittals. */
+/** Which pipeline stage an area's heading carries. Keyed by area NAME from
+ * lib/areas.ts, so shell.test.tsx asserts every key is a real area and all
+ * five stages are placed — a rename there fails a test instead of silently
+ * dropping a figure. "Proving" (RFIs out, submittals with the GC) sits on
+ * Paperwork, the area that holds /rfis and /submittals. */
 export const STAGE_KEY_FOR_HEADING: Record<string, MoneyRailStage["key"]> = {
-  "Pre-construction": "bidding",
-  Operations: "building",
-  "Paper trail": "proving",
+  "Jobs & bids": "bidding",
+  "Crew & field": "building",
+  Paperwork: "proving",
   "Compliance & safety": "staying-legal",
-  Financials: "getting-paid",
+  Money: "getting-paid",
 };
+
+/**
+ * The pages, regrouped under the six areas' names and in their order, each
+ * page called what its area calls it — so this panel speaks the home page's
+ * vocabulary instead of the old rail's group headings beside it. `groups`
+ * still decides WHICH pages appear (capability, business scope, operator);
+ * this only re-files them. A page in no area (the operator's Internal pages)
+ * keeps its own group.
+ */
+export function pagesByArea(groups: NavGroup[]): NavGroup[] {
+  const shown = new Map(groups.flatMap((g) => g.items).map((item) => [item.href, item]));
+  const filed = new Set<string>();
+  const byArea: NavGroup[] = AREAS.map((area) => ({
+    heading: area.name,
+    icon: null,
+    description: area.description,
+    items: area.tools.flatMap((tool) => {
+      const item = shown.get(toolRoute(tool));
+      if (!item || filed.has(item.href)) return [];
+      filed.add(item.href);
+      return [{ ...item, label: tool.name }];
+    }),
+  }));
+  const rest = groups.map((g) => ({ ...g, items: g.items.filter((item) => !filed.has(item.href)) }));
+  return [...byArea, ...rest].filter((g) => g.items.length > 0);
+}
 
 function figureMain(figure: MoneyRailFigure): string {
   return figure.kind === "money" ? money(figure.amount) : String(figure.n);
@@ -178,7 +204,7 @@ export function AllPagesMenu({
           </nav>
         ) : null}
         <nav aria-label="Page groups" className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {groups.map((group) => {
+          {pagesByArea(groups).map((group) => {
             const stageKey = STAGE_KEY_FOR_HEADING[group.heading];
             const stage = stageKey ? stageByKey.get(stageKey) : undefined;
             return (

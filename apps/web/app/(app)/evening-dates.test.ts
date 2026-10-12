@@ -357,7 +357,7 @@ describe("/dashboard, the same invoice, the same minute", () => {
     const html = await load();
     expect(moneyFigure(html, "Nothing overdue")).toBe("$0");
     expect(html).not.toContain("Overdue · 1 invoice");
-    expect(html).not.toMatch(/Invoice #\d+ to /);
+    expect(html).not.toMatch(/(Invoice|Pay app) #\d+ to /);
   });
 });
 

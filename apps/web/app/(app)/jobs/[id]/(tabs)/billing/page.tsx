@@ -21,6 +21,7 @@ import { LienWaivers } from "@/components/LienWaivers";
 import { loadLienWaiverSection } from "@/lib/lien-waiver-query";
 import { ActionForm } from "@/components/ActionForm";
 import { PayAppSummary } from "@/components/job/PayAppSummary";
+import { billingNoun } from "@/components/job/jobStages";
 import { payAppFigures, payAppMonth } from "@/components/job/payAppFigures";
 import { loadPayApplication } from "@/lib/pay-application-query";
 
@@ -184,7 +185,7 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
       />
 
       <section className="mb-10" data-tour="job-invoices">
-        <h2 className="mb-3 text-lg font-semibold text-ink">Invoices</h2>
+        <h2 className="mb-3 text-lg font-semibold text-ink">{billingNoun(company.filesMonthlyPayApps).many}</h2>
         <div className="flex flex-col gap-4">
           {job.invoices.map((invoice) => {
             const paid = invoice.payments.reduce((s, p) => s + Number(p.amount), 0);
@@ -205,7 +206,7 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
               <div key={invoice.id} className="rounded-lg border border-line-card bg-surface p-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="font-medium text-ink">
-                    Invoice #{invoice.number}
+                    {billingNoun(company.filesMonthlyPayApps).one} #{invoice.number}
                     {invoice.description ? ` — ${invoice.description}` : ""}
                   </p>
                   <div className="flex items-center gap-4 text-sm">

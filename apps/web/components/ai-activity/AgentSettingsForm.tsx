@@ -91,7 +91,7 @@ export function AgentSettingsForm({
 
       <fieldset disabled={!isOwner} className="mt-2 min-w-0">
         <legend className="sr-only">Agents</legend>
-        <ul>
+        <ul id="agent-switches" className="scroll-mt-20">
           {SWITCHES.map((s) => (
             <li key={s.name} className="border-t border-line-row first:border-t-0">
               <label className="flex min-h-11 cursor-pointer items-center gap-4 py-3 has-[:disabled]:cursor-default">
@@ -137,7 +137,7 @@ export function AgentSettingsForm({
             )}
           </label>
 
-          <label className="flex flex-col gap-1 text-sm text-ink-label">
+          <label id="cap" className="flex scroll-mt-20 flex-col gap-1 text-sm text-ink-label">
             Monthly AI spend cap for agents
             <span className="flex items-center gap-2">
               <span className="text-ink-muted">$</span>

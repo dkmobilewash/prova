@@ -45,7 +45,7 @@ vi.mock("@/components/HelpButton", () => ({ HelpButton: () => <button>Help</butt
 
 const { TopBar } = await import("@/components/shell/TopBar");
 const { BottomTabs } = await import("@/components/shell/BottomTabs");
-const { STAGE_KEY_FOR_HEADING } = await import("@/components/shell/AllPagesMenu");
+const { STAGE_KEY_FOR_HEADING, pagesByArea } = await import("@/components/shell/AllPagesMenu");
 const { navGroupsFor, navFooterFor } = await import("@/components/navItems");
 const { activeTab, initialsFor, primaryTabs, MONEY_AREA_HREF } = await import("@/components/shell/primaryNav");
 const { AREAS, areaHref } = await import("@/lib/areas");
@@ -199,11 +199,10 @@ describe("the desktop top bar", () => {
 });
 
 describe("All pages", () => {
-  it("lists every group and every page the rail offered an owner, none collapsed", () => {
+  it("lists every page the rail offered an owner, none collapsed", () => {
     renderTopBar();
     const panel = openAllPages();
     for (const group of navGroupsFor(owner)) {
-      expect(panel.querySelector(`[data-nav-group="${group.heading}"]`), group.heading).not.toBeNull();
       for (const item of group.items) {
         if (!item.disabled) expect(panel.querySelector(`a[href="${item.href}"]`), item.href).not.toBeNull();
       }
@@ -277,9 +276,20 @@ describe("All pages", () => {
   });
 
   it("keys the stage map on real headings and places all five stages", () => {
-    const headings = navGroupsFor(owner).map((g) => g.heading);
+    const headings = pagesByArea(navGroupsFor(owner)).map((g) => g.heading);
     for (const heading of Object.keys(STAGE_KEY_FOR_HEADING)) expect(headings, heading).toContain(heading);
     expect(new Set(Object.values(STAGE_KEY_FOR_HEADING))).toEqual(new Set(stages.map((s) => s.key)));
+  });
+
+  // One vocabulary (UX review F5): the panel's section headings are the
+  // areas' names and nothing else, and a page reads what its area calls it.
+  it("files every page under an area name, never an old rail heading", () => {
+    renderTopBar();
+    const panel = openAllPages();
+    const headings = Array.from(panel.querySelectorAll("[data-nav-group]")).map((s) => s.getAttribute("data-nav-group"));
+    const allowed = new Set(["Areas", "Account", ...AREAS.map((a) => a.name)]);
+    expect(headings.filter((h) => !allowed.has(h!))).toEqual([]);
+    expect(panel.querySelector('a[href="/catalog"]')?.textContent).toBe("Price book");
   });
 });
 

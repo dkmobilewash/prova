@@ -327,7 +327,7 @@ describe("/dashboard on a company with jobs", () => {
     expect(needs).toContain("6 items");
     // Past due reads "overdue N days" in the danger tone (lib/due-date.ts).
     expect(needs).toMatch(/class="[^"]*text-danger[^"]*">overdue 40 days</);
-    const order = ["Invoice #3", "Invoice #2", "Contractor licence", "RFI 12", "Approve hours for Tue, Oct 13", "forecast over budget"];
+    const order = ["Pay app #3", "Pay app #2", "Contractor licence", "RFI 12", "Approve hours for Tue, Oct 13", "forecast over budget"];
     const at = order.map((needle) => needs.indexOf(needle));
     at.forEach((i, n) => expect(i, `${order[n]} missing`).toBeGreaterThan(-1));
     expect([...at].sort((a, b) => a - b)).toEqual(at);
@@ -339,7 +339,7 @@ describe("/dashboard on a company with jobs", () => {
   it("puts the job in its stage with ONE next action from real state", async () => {
     const html = await render();
     expect(html).toContain('data-stage="Billing"');
-    expect(html).toContain("Chase invoice #3</span>");
+    expect(html).toContain("Chase pay app #3</span>");
     expect(html).toContain(">Overdue 40 days<");
   });
 
@@ -362,7 +362,7 @@ describe("/dashboard on a company with jobs", () => {
     expect(html).not.toContain("$18,250");
     expect(html).not.toContain("% billed");
     const needs = block(html, "dashboard-needs-attention");
-    expect(needs).not.toContain("Invoice #");
+    expect(needs).not.toContain("Pay app #");
     // The licence is still news to them, but /compliance is not theirs to open.
     expect(needs).toContain("Contractor licence");
     expect(needs).not.toContain('href="/compliance"');

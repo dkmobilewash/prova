@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import Link from "next/link";
 import type { TaskList, TaskRow } from "@/lib/agents/tasks";
-import { RunStatusPill, taskWhen } from "@/components/ai/RunStatusPill";
+import { RunStatusPill, RunWayOut, taskWhen } from "@/components/ai/RunStatusPill";
 import { Spinner } from "@/components/Spinner";
 
 /**
@@ -73,6 +73,9 @@ function Row({ row, now }: { row: TaskRow; now: Date }) {
           <span className="whitespace-nowrap text-ink-muted">{taskWhen(row, now)}</span>
         </span>
       </Link>
+      <div className="px-3 empty:hidden">
+        <RunWayOut status={row.status} note={row.detail} agent={row.kind} bidInvitationId={row.bidInvitationId} />
+      </div>
     </li>
   );
 }

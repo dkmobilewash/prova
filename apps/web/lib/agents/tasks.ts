@@ -1,4 +1,4 @@
-import type { AgentRunStatus } from "@prova/db";
+import type { AgentKind, AgentRunStatus } from "@prova/db";
 import { agentLabel } from "./core";
 import { listRunningNow, listRuns, type AgentRunRow } from "./queries";
 
@@ -37,6 +37,9 @@ export type TaskRow = {
   finishedAt: string | null;
   /** The bid's AI workspace when the run is about a bid, else the timeline. */
   href: string;
+  /** Which agent and bid, so a failed row can offer Run again (RunWayOut). */
+  kind: AgentKind;
+  bidInvitationId: string | null;
 };
 
 export type TaskList = { running: TaskRow[]; recent: TaskRow[] };
@@ -53,6 +56,8 @@ function toRow(run: AgentRunRow, status: TaskStatus): TaskRow {
     startedAt: run.startedAt.toISOString(),
     finishedAt: run.finishedAt?.toISOString() ?? null,
     href: run.bidInvitationId ? `/ai/bids/${run.bidInvitationId}` : "/ai/activity",
+    kind: run.agent,
+    bidInvitationId: run.bidInvitationId,
   };
 }
 

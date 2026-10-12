@@ -6,7 +6,7 @@ import type { ActionResult } from "@/lib/actions/shared";
 import { relativeTime } from "@/lib/integrations/relativeTime";
 import { formatCalendarDate } from "@/lib/render-date";
 import { RunAgentButton } from "@/components/RunAgentButton";
-import { RUN_PILL, RunStatusPill } from "./RunStatusPill";
+import { RUN_PILL, RunStatusPill, RunWayOut } from "./RunStatusPill";
 import { AiRowAction } from "./AiRowAction";
 import { AiSideToggle } from "./AiSideToggle";
 
@@ -36,6 +36,8 @@ export type AiRun = {
   summary: string | null;
   note: string | null;
   bidProjectName: string | null;
+  /** For Run again on a failed bid run (RunWayOut). */
+  bidInvitationId?: string | null;
 };
 
 export type AiFinding = {
@@ -175,6 +177,9 @@ export function RunningNow({ runs, now }: { runs: AiRun[]; now: Date }) {
                 {(run.summary ?? run.note) && <>{run.summary ?? run.note} · </>}
                 <span className="text-ink-muted">{runWhen(run, now)}</span>
               </p>
+              <div className="mt-1 empty:hidden">
+                <RunWayOut status={run.status} note={run.note} agent={run.agent} bidInvitationId={run.bidInvitationId ?? null} />
+              </div>
             </li>
           ))}
         </ul>

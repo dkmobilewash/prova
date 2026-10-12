@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changeOrderPaperworkLink, isCurrentLink, jobStages, selectedStageKey, type JobStageInput } from "@/components/job/jobStages";
+import { billingNoun, changeOrderPaperworkLink, isCurrentLink, jobStages, selectedStageKey, type JobStageInput } from "@/components/job/jobStages";
 import { todayInZone } from "@/lib/viewer-timezone";
 
 const base: JobStageInput = {
@@ -131,6 +131,17 @@ describe("jobStages", () => {
     const paid = jobStages({ ...base, latestPayApp: { ...due, status: "PAID" } })[3];
     expect(paid).toMatchObject({ status: "Pay app #2 paid" });
     expect(paid.tone).toBeUndefined();
+  });
+
+  // UX review F4: one bill, one name per company — the same word Home and
+  // the Billing tab use (billingNoun).
+  it("names the bill by the company's answer: invoice when it files no pay apps", () => {
+    const paid = { number: 2, dueAt: null, status: "PAID" };
+    expect(jobStages({ ...base, latestPayApp: paid, filesMonthlyPayApps: false })[3].status).toBe("Invoice #2 paid");
+    expect(jobStages({ ...base, latestPayApp: paid, filesMonthlyPayApps: true })[3].status).toBe("Pay app #2 paid");
+    expect(jobStages({ ...base, latestPayApp: null, filesMonthlyPayApps: false })[3].status).toBe("4 invoices");
+    expect(billingNoun(null)).toEqual(billingNoun(true));
+    expect(billingNoun(false).many).toBe("Invoices");
   });
 
   it("an evening in Los Angeles: due today on the viewer's calendar, though the server's UTC day is tomorrow", () => {
