@@ -190,3 +190,53 @@ describe("finding walls by finding rooms", () => {
     expect(walls.every((w) => w.thicknessFeet <= 0.3)).toBe(true);
   });
 });
+
+/**
+ * ── A FLATTENED CURVE BELONGS TO THE PAIRER, NOT TO THIS ENGINE ──
+ *
+ * Both engines are handed the same segments and make different-sized runs out
+ * of an arc, which is a DOUBLE COUNT rather than a disagreement. Measured on
+ * School-01's lobby wall, with curves flattened and nothing else changed:
+ *
+ *   pairer — 9 pieces of 2.5 ft, 7 degrees apart, 22.8 ft at 4-7/8"
+ *   rooms  — 4 pieces of 5.6 ft, 15 degrees apart, 22.4 ft at 3-3/4"
+ *
+ * One wall of about 23 ft, billed at 45. Neither `mergeWalls` nor
+ * `oneWallPerPlace` can collapse them, and neither is broken: both ask whether
+ * two findings are parallel within about 3 degrees, and consecutive pieces of
+ * an arc are not. Every dedup in this module assumes a wall is straight.
+ *
+ * The pairer keeps curves because it measures face-to-face, which gave the arc
+ * its correct 4-7/8"; this engine reasons about enclosed REGIONS, whose
+ * geometry a chord approximation distorts, and it returned a thickness the
+ * schedule does not have.
+ *
+ * On the whole sheet: 1,879 ft before curves, 1,957 ft with them double
+ * counted, 1,902 ft with this filter — against the answer key's 1,894 ft.
+ */
+describe("the room engine and flattened curves", () => {
+  /** `twoRooms()` with every segment marked as coming from a curve. */
+  const asCurves = (segs: StrokeSegment[]): StrokeSegment[] =>
+    segs.map((one) => ({ ...one, curved: true }));
+
+  it("STILL FINDS THE PARTITION when the pieces are ordinary lines", () => {
+    // The control FIRST, and it is not decoration: without it a filter that
+    // dropped everything would pass the case below. This is the same fixture
+    // the rest of the file uses, so "finds nothing" cannot be the fixture.
+    const walls = wallRunsFromStrokes(twoRooms(), 44, 28, { feetPerPoint: 1 });
+    expect(walls.length).toBeGreaterThan(0);
+  });
+
+  it("IGNORES CURVED PIECES, so an arc is not found twice", () => {
+    const walls = wallRunsFromStrokes(asCurves(twoRooms()), 44, 28, { feetPerPoint: 1 });
+    expect(walls, "the room engine claimed curves the pairer already owns").toHaveLength(0);
+  });
+
+  it("drops ONLY the curved pieces, leaving a mixed drawing's straight walls", () => {
+    // A real sheet is mostly straight lines with a few arcs in it. Marking one
+    // wall's faces must not take the others with it.
+    const mixed = twoRooms().map((one, i) => (i < 4 ? { ...one, curved: true } : one));
+    const walls = wallRunsFromStrokes(mixed, 44, 28, { feetPerPoint: 1 });
+    expect(walls.length, "marking one wall's faces removed the whole drawing").toBeGreaterThan(0);
+  });
+});

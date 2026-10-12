@@ -523,6 +523,11 @@ export function TakeoffPlanViewer({
         x2: one.x2 / over,
         y2: one.y2 / over,
         width: one.width,
+        // CARRIED, because this rebuilds the object field by field and the flag
+        // decides which engine may use the piece — see `StrokeSegment.curved`.
+        // Dropped here, a flattened arc would reach the room engine again and
+        // the lobby wall would be billed twice: 1,957 ft against a key of 1,894.
+        curved: one.curved,
       });
       const allInUnits = segments.map(unitsOf(pageSize.widthPt));
 

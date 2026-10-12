@@ -98,6 +98,84 @@ export type SheetStrokes = {
  * `pdfjs` is passed in rather than imported again, because the `OPS` constants
  * must be the ones belonging to the module that produced this operator list.
  */
+/**
+ * How far a flattened piece may stray from the true curve, in PAGE POINTS.
+ *
+ * ── WHY A TOLERANCE AND NOT A PIECE COUNT, AND WHY THIS NUMBER ──
+ *
+ * The pairer drops any input segment shorter than `minLengthFeet` (2 ft), which
+ * is the lever that decides what a flattened curve becomes. A fixed piece count
+ * ignores the curve's shape and gets both ends wrong: it cuts a gentle 22 ft
+ * wall arc into pieces too short to survive that floor, and leaves a tight 4 ft
+ * door swing in pieces long enough to pass it.
+ *
+ * A flatness tolerance is the opposite and does the right thing on its own.
+ * Pieces needed go as the square root of the curve's sagitta over the
+ * tolerance, so a SHALLOW arc needs few long pieces and a TIGHT one needs many
+ * short pieces. On School-01's A-101, measured:
+ *
+ *   the lobby wall  — 22.2 ft chord, shallow  → pieces around 2.8 ft, KEPT
+ *   a door swing    —  4.2 ft chord, 90 deg   → pieces around 1.0 ft, DROPPED
+ *
+ * That is not a coincidence to be relied on blindly — a very large-radius door
+ * swing would survive flattening — but it costs nothing, and a lone swing has
+ * no concentric partner for the pairer to match it against anyway.
+ *
+ * HALF A POINT is about 2/3 of an inch of building at 1/8" = 1'-0" on an ARCH D
+ * sheet, an order of magnitude under the thinnest wall this app recognises, so
+ * the polyline is faithful where it matters: the thickness between two
+ * concentric faces is unchanged by it.
+ */
+export const CURVE_FLATNESS_POINTS = 0.5;
+
+/** The most pieces one Bézier may become, so a pathological control polygon
+ *  cannot turn one curve into thousands of segments on an O(n²) pairer. */
+export const CURVE_MAX_PIECES = 24;
+
+type Point = { x: number; y: number };
+
+/**
+ * A cubic Bézier as a polyline, returning the points AFTER the start.
+ *
+ * The piece count comes from the control polygon's deviation from the chord,
+ * which bounds the curve's own deviation — the standard conservative estimate,
+ * and conservative in the direction that matters here: it never under-samples a
+ * curve and so never straightens a wall that bends.
+ */
+export function flattenCubic(p0: Point, c1: Point, c2: Point, p3: Point): Point[] {
+  const chord = Math.hypot(p3.x - p0.x, p3.y - p0.y);
+  // How far the control points pull away from the straight line. For a
+  // degenerate curve (all four points coincident) this is zero and one piece is
+  // the whole of it.
+  const bulge = Math.max(
+    distanceToSegment(c1, p0, p3),
+    distanceToSegment(c2, p0, p3),
+  );
+  if (!(bulge > CURVE_FLATNESS_POINTS) || !(chord > 0)) return [p3];
+  const pieces = Math.min(
+    CURVE_MAX_PIECES,
+    Math.max(2, Math.ceil(Math.sqrt(bulge / CURVE_FLATNESS_POINTS))),
+  );
+  const out: Point[] = [];
+  for (let i = 1; i <= pieces; i++) {
+    const t = i / pieces;
+    const u = 1 - t;
+    out.push({
+      x: u * u * u * p0.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * p3.x,
+      y: u * u * u * p0.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * p3.y,
+    });
+  }
+  return out;
+}
+
+function distanceToSegment(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
 export async function segmentsFromOpenPage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pdfjs ships no types for the legacy build entry; `planPdf.ts` takes the same position.
   page: any,
@@ -192,11 +270,42 @@ export async function segmentsFromOpenPage(
             if (cursor !== null) segments.push({ x1: cursor.x, y1: cursor.y, x2: next.x, y2: next.y, width: w });
             cursor = next;
           } else if (op === OPS.curveTo) {
-            // An arc, not a wall face. Skipped, and the cursor is moved to its
-            // end point so the NEXT lineTo starts in the right place rather
-            // than from wherever the curve began.
+            // ── AN ARC IS FLATTENED, NOT DROPPED ──
+            //
+            // This used to skip the curve and move the cursor to its end. The
+            // header said why: approximating a Bézier as a CHORD would invent a
+            // length nobody drew. That is true of a chord and it is the wrong
+            // conclusion — a radius wall is a wall, and the comment named one
+            // as something it was throwing away.
+            //
+            // Reported from School-01's lobby, 2026-10-11: a curved wall with
+            // no overlay on it at all. Measured on that sheet, the curve ops
+            // separate cleanly — the wall is TWO single Béziers, chords 22.2 ft
+            // and 21.8 ft, which is a pair of concentric faces; the 35 door
+            // swings are single Béziers of 4.2 ft; the 57 four-Bézier runs are
+            // closed circles (hardware symbols).
+            //
+            // So the curve is cut into pieces short enough to be straight and
+            // handed to the pairer, which already asks the only question that
+            // matters: are these two lines parallel, a wall thickness apart,
+            // and overlapping. A lone door swing has no concentric partner and
+            // produces nothing, exactly as it does today.
+            //
+            // `flattenCubic`'s tolerance is what keeps that true — see its own
+            // comment for why the pieces of a tight arc come out BELOW the
+            // 2 ft floor the pairer applies to its input, and the pieces of a
+            // gentle one above it.
+            const c1 = toDisplay(coords[at], coords[at + 1]);
+            const c2 = toDisplay(coords[at + 2], coords[at + 3]);
             const end = toDisplay(coords[at + 4], coords[at + 5]);
             at += 6;
+            if (cursor !== null) {
+              let from = cursor;
+              for (const to of flattenCubic(cursor, c1, c2, end)) {
+                segments.push({ x1: from.x, y1: from.y, x2: to.x, y2: to.y, width: w, curved: true });
+                from = to;
+              }
+            }
             cursor = end;
           } else if (op === OPS.rectangle) {
             const [x, y, w, hh] = [coords[at], coords[at + 1], coords[at + 2], coords[at + 3]];
