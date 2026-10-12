@@ -44,6 +44,23 @@ import type { Page, Request } from "@playwright/test";
  *   minted by the init script, so two documents at one URL can be told
  *   apart. Each request also says whether it was a navigation request and
  *   what kind of resource it was.
+ *
+ * CI run 38313153165 (`74ad3195`) read THAT back too, and it emptied the
+ * document explanation: in the stage-box cases no page event fired at all —
+ * no navigation, no pagehide, no dialog, no crash, same document id, Clerk
+ * loaded, readyState complete — and the RSC fetch was still cancelled 200 to
+ * 440ms after the click, once its response had begun. So the cancel comes
+ * from INSIDE the page, by a code path that holds either the request's
+ * AbortSignal or its response body. The fifth record, then, is WHO:
+ *
+ * - `AbortController.prototype.abort` and `ReadableStream.prototype.cancel`
+ *   (plus a reader's `cancel`) are wrapped before any page script, and each
+ *   call logs the first frames of its stack. `window.fetch` is wrapped the
+ *   same way, so every fetch logs who made it, whether it was a prefetch, and
+ *   when its response arrived — a prefetch and a navigation both carry
+ *   `rsc: 1`, and only `next-router-prefetch` tells them apart.
+ * - `popstate` and `hashchange` join the document events: a fragment
+ *   navigation goes through neither pushState nor pagehide.
  */
 type NetEntry = {
   at: number;
@@ -139,6 +156,53 @@ export async function installHistoryLog(page: Page): Promise<void> {
     (window as unknown as { __docId: string }).__docId = docId;
     const navType = (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)?.type ?? "?";
     log.push(`${Date.now()} document ${docId} started (${navType}) at ${location.href}`);
+    const frames = () =>
+      (new Error().stack ?? "")
+        .split("\n")
+        .slice(2, 7)
+        .map((line) => line.trim().replace(/^at /, "").replace(location.origin, ""))
+        .join(" < ");
+    const abort = AbortController.prototype.abort;
+    AbortController.prototype.abort = function patchedAbort(reason?: unknown) {
+      log.push(`${Date.now()} AbortController.abort(${reason === undefined ? "" : String(reason).slice(0, 60)}) from ${frames()}`);
+      return abort.call(this, reason);
+    };
+    const cancel = ReadableStream.prototype.cancel;
+    ReadableStream.prototype.cancel = function patchedCancel(reason?: unknown) {
+      log.push(`${Date.now()} ReadableStream.cancel(${reason === undefined ? "" : String(reason).slice(0, 60)}) from ${frames()}`);
+      return cancel.call(this, reason);
+    };
+    const getReader = ReadableStream.prototype.getReader;
+    ReadableStream.prototype.getReader = function patchedGetReader(this: ReadableStream, ...args: unknown[]) {
+      const reader = (getReader as (this: ReadableStream, ...a: unknown[]) => ReadableStreamDefaultReader).apply(this, args);
+      const readerCancel = reader.cancel;
+      reader.cancel = function patchedReaderCancel(reason?: unknown) {
+        log.push(`${Date.now()} reader.cancel(${reason === undefined ? "" : String(reason).slice(0, 60)}) from ${frames()}`);
+        return readerCancel.call(this, reason);
+      };
+      return reader;
+    } as typeof ReadableStream.prototype.getReader;
+    const fetch_ = window.fetch;
+    window.fetch = async function patchedFetch(input: RequestInfo | URL, init?: RequestInit) {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const h = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+      const kind = h.has("next-action") ? "action" : h.get("next-router-prefetch") ? "PREFETCH" : h.get("rsc") ? "rsc" : "plain";
+      if (kind === "plain" && !url.startsWith("/") && !url.startsWith(location.origin)) return fetch_.call(window, input, init);
+      const started = Date.now();
+      const short = url.replace(location.origin, "").slice(0, 80);
+      log.push(`${started} fetch ${kind} ${init?.method ?? "GET"} ${short} signal=${init?.signal ? (init.signal.aborted ? "aborted" : "live") : "none"} from ${frames()}`);
+      try {
+        const res = await fetch_.call(window, input, init);
+        log.push(`${Date.now()} fetch ${kind} ${short} -> ${res.status} after ${Date.now() - started}ms`);
+        return res;
+      } catch (error) {
+        log.push(`${Date.now()} fetch ${kind} ${short} THREW ${String(error).slice(0, 80)} after ${Date.now() - started}ms`);
+        throw error;
+      }
+    };
+    for (const name of ["popstate", "hashchange"] as const) {
+      window.addEventListener(name, () => log.push(`${Date.now()} ${name} ${location.pathname}${location.search}${location.hash} doc=${docId}`));
+    }
     for (const name of ["pagehide", "pageshow", "beforeunload", "visibilitychange", "unload"] as const) {
       window.addEventListener(name, (event) => {
         const persisted = "persisted" in event ? ` persisted=${String((event as PageTransitionEvent).persisted)}` : "";
