@@ -104,6 +104,13 @@ const BARE_NAME_EXCEPTIONS: Record<string, { count: number; why: string }> = {
       "every job on this page is CONTRACTED or IN_PROGRESS, so a status " +
       "suffix would repeat itself down the whole page.",
   },
+  "app/(app)/hours/page.tsx": {
+    count: 1,
+    why:
+      "The week's by-job totals. Read-only, no form and no filter: each row " +
+      "is a link to that job's Crew & time tab and its hours figure, and " +
+      "nothing is filed from it.",
+  },
   "components/home/HomeParts.tsx": {
     count: 1,
     why:

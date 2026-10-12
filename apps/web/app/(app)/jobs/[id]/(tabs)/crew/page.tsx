@@ -12,6 +12,10 @@ import { viewerTimeZone, viewerToday } from "@/lib/viewerToday";
 import { CrewWeekGrid } from "@/components/CrewWeekGrid";
 import { resolveWeekStart } from "@/lib/crew-schedule";
 import { loadScheduleBetween, scheduledWorkerName } from "@/lib/crew-schedule-query";
+import { formatHours } from "@/lib/render-hours";
+import { toHoursEntry, weeklyHours } from "@/lib/weekly-hours";
+import { weekStart } from "@/components/fieldReportWeeks";
+import { WeeklyHoursTable } from "@/components/WeeklyHoursTable";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
 import { money } from "@/lib/money";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
@@ -115,6 +119,11 @@ export default async function JobCrewPage({
   const today = await viewerToday();
   const week = resolveWeekStart(weekParam, today);
   const weekDays = await loadScheduleBetween(jobRef.companyId, week, 6, job.id);
+  // Hours totals are always THIS week; ?week= only moves the schedule grid.
+  const thisWeek = weeklyHours(
+    job.timeEntries.map((entry) => toHoursEntry(entry, job)),
+    weekStart(today),
+  );
 
   // Days with a live timesheet sign-off: their hours are locked. Uncapped,
   // unlike the sign-off history list above, so an old signed day never
@@ -198,6 +207,22 @@ export default async function JobCrewPage({
           a cost code and craft classification. Tracks hours by pay type; wage cost is estimated from the applicable
           fringe rate schedule when one applies.
         </p>
+
+        <div className="mb-4">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-base font-semibold text-ink">
+              This week: {formatHours(thisWeek.totalHours)} hrs
+            </h3>
+            <Link href="/hours" className="text-sm text-link hover:underline">
+              Every job&rsquo;s hours →
+            </Link>
+          </div>
+          {thisWeek.people.length > 0 ? (
+            <WeeklyHoursTable week={thisWeek} caption="Hours on this job this week, by person and day" />
+          ) : (
+            <p className="text-sm text-ink-muted">No hours logged on this job yet this week.</p>
+          )}
+        </div>
 
         {job.timeEntries.length > 0 && (
           <ul className="mb-4 flex flex-col gap-2">
