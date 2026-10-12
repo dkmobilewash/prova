@@ -218,7 +218,7 @@ export function MaterialOrderRow({
         : "bg-rail-hover text-ink-body";
 
   return (
-    <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
+    <li id={`order-${order.id}`} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start scroll-mt-24 target:ring-2 target:ring-inset target:ring-brand">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-xs text-ink-muted">MO {order.number}</span>

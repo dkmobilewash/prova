@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCompanyContext } from "@/lib/auth";
 import { ContactForm } from "@/components/ContactForm";
 import { ContactRow } from "@/components/ContactRow";
@@ -65,12 +67,11 @@ export default async function ContactsPage({
     }`;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Contacts</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        Everyone you do work for or buy from — general contractors, developers, architects,
-        suppliers and subs — with their jobs, their people and your history with them.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/contacts"
+        subtitle="The GCs, architects and suppliers you work with, and your history with each."
+      />
 
       <div className="mb-6" data-tour="contacts-add">
         <ContactForm />
@@ -109,15 +110,15 @@ export default async function ContactsPage({
       ) : (
         <>
           <dl className="mb-4 grid grid-cols-3 gap-2 text-center sm:gap-3" data-contacts-summary="">
-            <div className="rounded-lg border border-line-card bg-surface p-3">
+            <div className="rounded-xl border border-line-card bg-surface p-3">
               <dt className="text-xs text-ink-body">Contacts</dt>
               <dd className="text-lg font-semibold text-ink">{contacts.length}</dd>
             </div>
-            <div className="rounded-lg border border-line-card bg-surface p-3">
+            <div className="rounded-xl border border-line-card bg-surface p-3">
               <dt className="text-xs text-ink-body">With jobs</dt>
               <dd className="text-lg font-semibold text-ink">{withJobs}</dd>
             </div>
-            <div className="rounded-lg border border-line-card bg-surface p-3">
+            <div className="rounded-xl border border-line-card bg-surface p-3">
               <dt className="text-xs text-ink-body">Open bids</dt>
               <dd className="text-lg font-semibold text-ink">{openBids}</dd>
             </div>
@@ -147,7 +148,7 @@ export default async function ContactsPage({
               .
             </p>
           ) : (
-            <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="contacts-list">
+            <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-tour="contacts-list">
               {visible.map((contact) => (
                 <ContactRow
                   key={contact.id}
@@ -169,6 +170,6 @@ export default async function ContactsPage({
           )}
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

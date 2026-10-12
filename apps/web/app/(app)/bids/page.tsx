@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { BidInvitationStatus, prisma, TradeScope } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -196,12 +198,12 @@ export default async function BidsPage({
   const isFiltered = tradeFilter != null || statusFilter != null;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Bid history</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        Every bid invitation logged across every GC — filter by trade or outcome to see what similar
-        work has priced at before.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/bids"
+        title="Bid history"
+        subtitle="Every bid invitation from every GC — filter by trade or outcome to see what similar work priced at."
+      />
 
       {/* ── THE DECLINE PICTURE, WHEN THERE IS ONE ──
 
@@ -216,7 +218,7 @@ export default async function BidsPage({
           authoritative. */}
       {declineSummary.headline !== null && (
         <section
-          className="mb-6 rounded-lg border border-line-card p-4"
+          className="mb-6 rounded-xl border border-line-card bg-surface p-4"
           data-bids="decline-summary"
         >
           <h2 className="text-sm font-semibold text-ink-label">Work turned down</h2>
@@ -383,9 +385,9 @@ export default async function BidsPage({
           />
         )
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="bids-list">
+        <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-tour="bids-list">
           {bids.map((bid) => (
-            <li key={bid.id} id={bid.id} className="scroll-mt-20 p-4">
+            <li key={bid.id} id={bid.id} className="scroll-mt-24 p-4 target:ring-2 target:ring-inset target:ring-brand">
               <Link
                 href={`/contacts/${bid.contactId}`}
                 className="flex flex-wrap items-center justify-between gap-2"
@@ -611,6 +613,6 @@ export default async function BidsPage({
           ))}
         </ul>
       )}
-    </div>
+    </PageShell>
   );
 }
