@@ -3,6 +3,7 @@ import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { finishWizard, landOnDashboard, settleAction, startJob } from "../lib/journey";
+import { dataTour } from "../lib/dataTour";
 
 /**
  * /bids GREW FOUR WHOLE PANELS IN THREE DAYS AND NOBODY OPENED IT.
@@ -55,7 +56,7 @@ test.describe("the bid desk", () => {
   // Scoped to the bids list itself: since the "Due soon" view (2026-10-12) a
   // bid due within the window is ALSO listed above it, as a short row with
   // no trade scope or amount, and a bare `li` filter found that one first.
-  const bidRow = (): Locator => page.locator('[data-tour="bids-list"] li').filter({ hasText: PROJECT }).first();
+  const bidRow = (): Locator => page.locator(`${dataTour("bids-list")} li`).filter({ hasText: PROJECT }).first();
 
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext();
