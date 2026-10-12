@@ -2,6 +2,7 @@ import path from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { CRASH_MARKERS, expectHealthy, type HealthMonitor } from "./health";
 import { stubDocumentUpload } from "./blobStub";
+import { historyLog } from "./historyLog";
 
 /**
  * The pilot contractor's path through the product, as reusable steps.
@@ -189,13 +190,16 @@ export async function startJob(page: Page, monitor: HealthMonitor, input: NewJob
   // the point of the change: a button that creates a real row should not say
   // the vaguest word available.
   const answer = nextActionAnswer(page);
+  const clickedAt = Date.now();
   await page.getByRole("button", { name: "Start the job — add the work next →" }).click();
   // On failure, say what the action's POST did rather than only that the URL
   // never changed: #748's runs reported a bare 30s timeout here on brand-new
   // personas while the same step took under a second on an established one,
   // and nothing in the report said whether the server had answered at all.
   await page.waitForURL(/\/jobs\/new\/[^/]+\/items$/).catch(async (error: Error) => {
-    throw new Error(`"Start the job" did not reach step 2: ${await answer}; the page is at ${page.url()}. ${firstLine(error)}`);
+    throw new Error(
+      `"Start the job" did not reach step 2: ${await answer}; the page is at ${page.url()}; ${await historyLog(page, clickedAt)}. ${firstLine(error)}`,
+    );
   });
   await expectHealthy(page, "new job, step 2 (add work)", { monitor });
 
@@ -239,9 +243,18 @@ export async function submitLineItem(page: Page, line: LineItemInput): Promise<v
     await form.locator('input[name="budgetedUnitCost"]').fill(line.budgetedUnitCost);
   }
   const answer = nextActionAnswer(page);
+  const clickedAt = Date.now();
   await form.getByRole("button", { name: "Add line" }).click();
   const said = await answer;
   if (said.startsWith(NEVER_ANSWERED)) throw new Error(`"Add line": ${said}`);
+  // The server answered. Either the row is on screen or a readable refusal
+  // is; a third outcome means the browser dropped the answer, and the
+  // history log is what says who moved the URL while it was in flight.
+  await expect(estimateRow(page, line.description).or(readableRefusal(page)).first())
+    .toBeVisible()
+    .catch(async (error: Error) => {
+      throw new Error(`"Add line": ${said}, and neither the row nor a refusal appeared; ${await historyLog(page, clickedAt)}. ${firstLine(error)}`);
+    });
 }
 
 /** A row in step 2's "On this estimate" list carrying this description. */
@@ -294,11 +307,16 @@ export async function recordExecutedSubcontract(page: Page, monitor: HealthMonit
   await form.locator('input[name="executedSignedDate"]').fill("2026-09-15");
   await form.locator('input[name="note"]').fill("ZZ-E2E fully executed copy from the GC");
   const answer = nextActionAnswer(page);
+  const clickedAt = Date.now();
   await form.getByRole("button", { name: "Record executed subcontract" }).click();
   const said = await answer;
   if (said.startsWith(NEVER_ANSWERED)) throw new Error(`"Record executed subcontract": ${said}`);
 
-  await expect(page.getByText(/Executed — GC signed/).first()).toBeVisible();
+  await expect(page.getByText(/Executed — GC signed/).first())
+    .toBeVisible()
+    .catch(async (error: Error) => {
+      throw new Error(`"Record executed subcontract": ${said}, and the executed state never showed; ${await historyLog(page, clickedAt)}. ${firstLine(error)}`);
+    });
   await expectHealthy(page, "job overview after recording the executed subcontract", { monitor });
 }
 
@@ -313,7 +331,9 @@ export async function markContracted(page: Page, monitor: HealthMonitor, jobId: 
   await page.goto(`/jobs/${jobId}/estimate`);
   await expectHealthy(page, "estimate tab", { monitor });
 
-  await page.getByRole("button", { name: "Mark as contracted" }).click();
+  // Two of these since Concept G: the job header's "Won it?" box and the
+  // estimate page's own panel, both the same action. The first is the header's.
+  await page.getByRole("button", { name: "Mark as contracted" }).first().click();
 
   // Concept G: on a bid the Billing stage box has no pages and is not a
   // link (jobStages.ts leaves `billing` empty while status is ESTIMATE); it
