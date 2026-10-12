@@ -25,12 +25,15 @@ const fake = {
   scheduleCrewDay:
     vi.fn<(formData: FormData) => Promise<{ ok: true; value: { message: string } } | { ok: false; error: string }>>(),
   unscheduleCrewDay: vi.fn(),
+  moveCrewDay:
+    vi.fn<(id: string, formData: FormData) => Promise<{ ok: true; value: { message: string } } | { ok: false; error: string }>>(),
   saveCrew: vi.fn<(formData: FormData) => Promise<{ ok: true } | { ok: false; error: string }>>(),
 };
 
 vi.mock("@/lib/actions", () => ({
   scheduleCrewDay: fake.scheduleCrewDay,
   unscheduleCrewDay: fake.unscheduleCrewDay,
+  moveCrewDay: fake.moveCrewDay,
   saveCrew: fake.saveCrew,
   renameCrew: vi.fn(),
   archiveCrew: vi.fn(),
@@ -340,6 +343,28 @@ describe("saved crews on the put-someone-on form", () => {
     expect(workerBox("user:ana").checked).toBe(false);
   });
 
+  // The legend and the picker's label were stacked with no gap ("Who (pick
+  // one or more)" over "Crew (ticks its people)") and read as one heading.
+  // The picker is now an inline shortcut with its own spacing, between the
+  // legend and the people list.
+  it("puts the saved-crew picker on its own line between the legend and the people, not as a second heading", () => {
+    openWithCrews();
+    const fieldset = container.querySelector("fieldset")!;
+    const picker = fieldset.querySelector<HTMLElement>('[data-testid="crew-picker"]');
+    expect(picker, "no saved-crew picker in the Who fieldset").toBeTruthy();
+    expect(picker!.textContent).toContain("Fill from a saved crew");
+    expect(fieldset.textContent).not.toContain("Crew (ticks its people)");
+    // Inline (label beside select) with its own top gap, not a block label.
+    expect(picker!.className).toMatch(/\bflex\b/);
+    expect(picker!.className).toMatch(/\bmt-2\b/);
+    expect(picker!.className).not.toMatch(/\bblock\b/);
+    // Order: legend, then picker, then the first person.
+    const legend = fieldset.querySelector("legend")!;
+    const firstBox = workerBox("user:ana");
+    expect(legend.compareDocumentPosition(picker!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(picker!.compareDocumentPosition(firstBox) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("saves the ticked people under the typed name", async () => {
     fake.saveCrew.mockResolvedValue({ ok: true });
     openWithCrews();
@@ -354,5 +379,100 @@ describe("saved crews on the put-someone-on form", () => {
     expect(sent.getAll("worker")).toEqual(["user:ana", "crew:lu"]);
     expect(fake.scheduleCrewDay).not.toHaveBeenCalled();
     expect(container.textContent).toContain('Saved crew "Tapers".');
+  });
+});
+
+/**
+ * Moving a planned day. The only way used to be Remove and then add it
+ * again — two writes, a gap between them, and the note and craft retyped.
+ */
+describe("moving a day on the two-week list", () => {
+  const PLANNED = {
+    id: "day-3",
+    workDate: "2026-10-14",
+    jobId: "job-a",
+    jobName: "Alder Street",
+    worker: "Ana Reyes",
+    craft: null,
+    note: null,
+  };
+
+  function renderUpcoming(canWrite = true) {
+    render(
+      createElement(CrewScheduleBoard, {
+        upcoming: [PLANNED],
+        missingHours: [],
+        jobs: [
+          { id: "job-a", name: "Alder Street", clientName: null, status: null },
+          { id: "job-b", name: "Birch Court", clientName: null, status: null },
+        ],
+        workers: [{ value: "user:ana", label: "Ana Reyes" }],
+        crafts: [],
+        canWrite,
+      }),
+    );
+  }
+
+  function moveForm() {
+    return container.querySelector<HTMLFormElement>('[data-testid="move-day-form"]');
+  }
+
+  async function submitMove(values: Record<string, string>) {
+    const form = moveForm()!;
+    for (const [name, value] of Object.entries(values)) {
+      form.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${name}"]`)!.value = value;
+    }
+    act(() => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await act(async () => {});
+  }
+
+  beforeEach(() => {
+    fake.moveCrewDay.mockReset();
+    fake.unscheduleCrewDay.mockReset();
+  });
+
+  it("opens inline on the row, starting from the day's own date and job", () => {
+    renderUpcoming();
+    expect(moveForm()).toBeNull();
+    act(() => buttonSaying("Move")!.click());
+    const form = moveForm()!;
+    expect(form.querySelector<HTMLInputElement>('[name="workDate"]')!.value).toBe("2026-10-14");
+    expect(form.querySelector<HTMLSelectElement>('[name="jobId"]')!.value).toBe("job-a");
+  });
+
+  it("sends one move for that row and says what happened, double-booking included", async () => {
+    fake.moveCrewDay.mockResolvedValue({
+      ok: true,
+      value: { message: "Ana Reyes on Birch Court, Thu, Oct 15 — moved. Double-booked: Ana Reyes is also on Cedar Way Thu, Oct 15." },
+    });
+    renderUpcoming();
+    act(() => buttonSaying("Move")!.click());
+    await submitMove({ workDate: "2026-10-15", jobId: "job-b" });
+
+    expect(fake.moveCrewDay).toHaveBeenCalledTimes(1);
+    const [id, sent] = fake.moveCrewDay.mock.calls[0];
+    expect(id).toBe("day-3");
+    expect(sent.get("workDate")).toBe("2026-10-15");
+    expect(sent.get("jobId")).toBe("job-b");
+    expect(moveForm()).toBeNull();
+    expect(container.querySelector('[role="status"]')?.textContent).toContain("Double-booked");
+  });
+
+  it("keeps the form and the choices on screen when the move is refused", async () => {
+    fake.moveCrewDay.mockResolvedValue({ ok: false, error: "Ana Reyes is already on Birch Court that day." });
+    renderUpcoming();
+    act(() => buttonSaying("Move")!.click());
+    await submitMove({ workDate: "2026-10-15", jobId: "job-b" });
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Ana Reyes is already on Birch Court that day.");
+    expect(moveForm()!.querySelector<HTMLSelectElement>('[name="jobId"]')!.value).toBe("job-b");
+    expect(fake.unscheduleCrewDay).not.toHaveBeenCalled();
+  });
+
+  it("is not offered to somebody who cannot change the schedule", () => {
+    renderUpcoming(false);
+    expect(buttonSaying("Move")).toBeFalsy();
   });
 });

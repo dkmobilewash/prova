@@ -56,9 +56,9 @@ const LABELLED_PICKERS: Record<string, number> = {
   "components/BackchargeFields.tsx": 1,
   "components/CloseoutJobCard.tsx": 1,
   "components/ComplianceUploadForm.tsx": 1,
-  // Which job somebody is being put ON for a day. Added with the per-day
-  // crew schedule.
-  "components/CrewScheduleBoard.tsx": 1,
+  // Two: which job somebody is being put ON for a day (added with the per-day
+  // crew schedule), and which job a planned day is MOVED to (2026-10-12).
+  "components/CrewScheduleBoard.tsx": 2,
   "components/DrawingSetFields.tsx": 1,
   // Two: deploy a piece of equipment, and move an existing stay to another job.
   "components/EquipmentDeploymentControls.tsx": 2,
@@ -241,7 +241,10 @@ describe("the job-picker census", () => {
     // picker. It is the one picker in the app whose wrong answer is not a
     // misfiled record but a WRONG LESSON — the bid is judged against another
     // job's costs, and the estimator is taught from it.
-    expect(expected).toEqual(31);
+    //
+    // 31 -> 32 on 2026-10-12: the schedule's inline "Move" on a planned day
+    // picks the job the day moves to.
+    expect(expected).toEqual(32);
     expect(actual).toEqual(expected);
   });
 

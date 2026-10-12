@@ -23,7 +23,14 @@ export async function loadHomeExtras(
   const nextMonth = new Date(monthStart);
   nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
 
-  const [rfis, signoffs, billed, collected, schedule] = await Promise.all([
+  // Backcharges near their objection deadline: the same rows
+  // lib/alerts-query.ts reads for BACKCHARGE_RESPONSE (RECEIVED, with a
+  // deadline), bounded to 14 days out here; which ones show is decided by
+  // components/home/home-logic.ts's backchargeNeeds via daysToRespond.
+  const backchargeHorizon = new Date(today);
+  backchargeHorizon.setUTCDate(backchargeHorizon.getUTCDate() + 14);
+
+  const [rfis, signoffs, billed, collected, schedule, backcharges] = await Promise.all([
     wants.rfis
       ? prisma.rfi.findMany({
           where: { companyId, status: "SENT", dueBy: { lt: today } },
@@ -62,6 +69,16 @@ export async function loadHomeExtras(
       },
       orderBy: { jobId: "asc" },
     }),
+    // Billing-gated like the alert it mirrors (BACKCHARGE_RESPONSE ->
+    // MANAGE_BILLING in lib/alerts.ts).
+    wants.money
+      ? prisma.backcharge.findMany({
+          where: { companyId, status: "RECEIVED", respondByDate: { not: null, lte: backchargeHorizon } },
+          select: { id: true, number: true, status: true, respondByDate: true, job: { select: { name: true } } },
+          orderBy: { respondByDate: "asc" },
+          take: 20,
+        })
+      : [],
   ]);
 
   // One row per job, the way a foreman says it: who is where.
@@ -90,6 +107,13 @@ export async function loadHomeExtras(
     billedThisMonth: Number(billed?._sum?.amount ?? 0),
     collectedThisMonth: Number(collected?._sum?.amount ?? 0),
     crewsToday: [...crewByJob.values()],
+    backcharges: backcharges.map((bc) => ({
+      id: bc.id,
+      number: bc.number,
+      jobName: bc.job.name,
+      status: bc.status as string,
+      respondByDate: bc.respondByDate ? bc.respondByDate.toISOString().slice(0, 10) : null,
+    })),
   };
 }
 

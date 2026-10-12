@@ -306,7 +306,8 @@ export function BackchargeRow({
   });
 
   return (
-    <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
+    // `id`: Home's "Needs you today" links to /backcharges#<id>.
+    <li id={backcharge.id} className="flex scroll-mt-24 flex-col gap-3 p-4 target:ring-2 target:ring-inset target:ring-brand sm:flex-row sm:items-start">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-xs text-ink-muted">BC {backcharge.number}</span>

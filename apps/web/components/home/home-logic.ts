@@ -1,4 +1,7 @@
 import type { EstimateStageKey } from "@/lib/estimate-stage";
+import type { NeedItem } from "@/components/home/HomeParts";
+import { daysToRespond } from "@/lib/backcharges";
+import { overdueText } from "@/lib/due-date";
 
 /**
  * The pure half of the home page: which of the five stages a job is in, and
@@ -129,4 +132,34 @@ export function hourIn(timeZone: string, now: Date = new Date()): number {
     new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone }).format(now),
   );
   return Number.isFinite(hour) ? hour : 12;
+}
+
+/** How close a backcharge's objection deadline has to be to reach Home. */
+export const BACKCHARGE_NEEDS_WINDOW_DAYS = 14;
+
+/**
+ * Backcharges to object to: RECEIVED (unanswered) with the deadline passed
+ * or at most 14 days off. The deadline arithmetic is lib/backcharges.ts's
+ * `daysToRespond` — the same answer the /backcharges row prints — called,
+ * not re-derived. Past due is red; in the window is amber. Each links to its
+ * own row on /backcharges (BackchargeRow carries `id={backcharge.id}`).
+ */
+export function backchargeNeeds(
+  rows: { id: string; number: number; jobName: string; status: string; respondByDate: string | null }[],
+  todayIso: string,
+): NeedItem[] {
+  const due: { bc: (typeof rows)[number]; days: number }[] = [];
+  for (const bc of rows) {
+    const days = daysToRespond(bc, todayIso);
+    if (days !== null && days <= BACKCHARGE_NEEDS_WINDOW_DAYS) due.push({ bc, days });
+  }
+  due.sort((a, b) => a.days - b.days);
+  return due.map(({ bc, days }) => ({
+    key: `bc-${bc.id}`,
+    tone: days < 0 ? "red" : "amber",
+    text: `Object to backcharge ${bc.number} — ${bc.jobName}`,
+    when: days < 0 ? overdueText(-days) : days === 0 ? "due today" : `${days} ${days === 1 ? "day" : "days"} left`,
+    ...(days < 0 ? { whenTone: "danger" as const } : {}),
+    action: { label: "Answer", href: `/backcharges#${bc.id}` },
+  }));
 }

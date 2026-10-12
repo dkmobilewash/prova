@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { greeting, hourIn, jobStage, nextAction, type ActionRights } from "./home-logic";
+import { backchargeNeeds, greeting, hourIn, jobStage, nextAction, type ActionRights } from "./home-logic";
 
 const ALL: ActionRights = { billing: true, field: true, jobs: true, estimating: true };
 const NONE: ActionRights = { billing: false, field: false, jobs: false, estimating: false };
@@ -76,5 +76,52 @@ describe("greeting", () => {
     expect(greeting(20)).toBe("Good evening");
     // 15:00 UTC is 08:00 in Los Angeles in October.
     expect(hourIn("America/Los_Angeles", new Date("2026-10-10T15:00:00Z"))).toBe(8);
+  });
+});
+
+/**
+ * Backcharges near their objection deadline on Home's "Needs you today".
+ * They were on /alerts and /backcharges and missing from the one list read
+ * every morning — and the deadline to object in writing is the cheapest
+ * money on a job to lose.
+ */
+describe("backchargeNeeds", () => {
+  const TODAY = "2026-10-12";
+  const bc = (over: Partial<Parameters<typeof backchargeNeeds>[0][number]>) => ({
+    id: "bc_1",
+    number: 4,
+    jobName: "Oak Ave",
+    status: "RECEIVED",
+    respondByDate: "2026-10-20" as string | null,
+    ...over,
+  });
+
+  it("lists past-due (red) and within-14-days (amber) ones, soonest first, linking to the row", () => {
+    const items = backchargeNeeds(
+      [
+        bc({ id: "soon", number: 2, respondByDate: "2026-10-20" }),
+        bc({ id: "late", number: 1, respondByDate: "2026-10-09" }),
+        bc({ id: "edge", number: 3, respondByDate: "2026-10-26" }),
+      ],
+      TODAY,
+    );
+    expect(items.map((i) => i.key)).toEqual(["bc-late", "bc-soon", "bc-edge"]);
+    expect(items[0]).toMatchObject({ tone: "red", when: "overdue 3 days", whenTone: "danger" });
+    expect(items[1]).toMatchObject({ tone: "amber", when: "8 days left" });
+    expect(items[1].action).toEqual({ label: "Answer", href: "/backcharges#soon" });
+    expect(items[1].text).toBe("Object to backcharge 2 — Oak Ave");
+  });
+
+  it("leaves out one 15+ days off, an answered one, and one with no deadline", () => {
+    expect(
+      backchargeNeeds(
+        [
+          bc({ respondByDate: "2026-10-27" }),
+          bc({ status: "DISPUTED", respondByDate: "2026-10-01" }),
+          bc({ respondByDate: null }),
+        ],
+        TODAY,
+      ),
+    ).toEqual([]);
   });
 });

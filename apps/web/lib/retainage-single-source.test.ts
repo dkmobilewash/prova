@@ -146,6 +146,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
     "Captions the Today tile's `outstanding`, which is NET via arBalanceFor while Invoiced and Paid are gross. The panel carries the figure so the three numbers reconcile on screen; it does no arithmetic with it and never sums it.",
   "components/receivablesFigures.test.ts":
     "Renders that panel and does the subtraction — the executable half of the line above.",
+  "components/receivablesNoun.test.ts":
+    "A fixture row for the same panel, checking only what the bill is CALLED. The column is there because OverdueInvoice requires it; nothing reads or sums it.",
   "lib/invoice-balance-label.ts":
     "Decides what one invoice's balance line SAYS, for the two pages above. Takes the snapshot as an input and hands it to arBalanceFor; adds no formula of its own, and never sees more than one invoice.",
   "lib/invoice-balance-label.test.ts": "Pins that decision, including the settled-net invoice.",

@@ -32,7 +32,7 @@ import {
   type NeedItem,
   type Shortcut,
 } from "@/components/home/HomeParts";
-import { greeting, hourIn, jobStage, nextAction, type ActionRights } from "@/components/home/home-logic";
+import { backchargeNeeds, greeting, hourIn, jobStage, nextAction, type ActionRights } from "@/components/home/home-logic";
 import { billingNoun } from "@/components/job/jobStages";
 import { gettingStartedChecklist } from "@/lib/getting-started";
 import { loadGettingStartedCounts } from "@/lib/getting-started-counts";
@@ -199,6 +199,8 @@ export default async function TodayPage() {
       });
     }
   }
+  // Empty unless showsBilling (loadHomeExtras skips the read otherwise).
+  needs.push(...backchargeNeeds(extras.backcharges, todayIso));
   for (const renewal of expiringSoon) {
     needs.push({
       key: `doc-${renewal.kind}-${renewal.id}`,
@@ -389,6 +391,7 @@ export default async function TodayPage() {
     <ReceivablesProvider
       rows={showsBilling ? today.receivables : []}
       invoicesRaised={showsBilling ? today.invoicesRaised : 0}
+      filesMonthlyPayApps={company.filesMonthlyPayApps}
     >
       {/* The panel is a sibling of this column, not a child of it — that is
           what lets it push rather than cover. */}

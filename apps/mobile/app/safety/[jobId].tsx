@@ -29,7 +29,9 @@ import { useSync } from "@/lib/use-sync";
 import type { SafetyIncident, ToolboxTalk } from "@/lib/types";
 
 const CLASSIFICATIONS = ["INJURY", "SKIN_DISORDER", "RESPIRATORY_CONDITION", "POISONING", "HEARING_LOSS", "OTHER_ILLNESS"];
-const OUTCOMES = ["DEATH", "DAYS_AWAY", "RESTRICTED_OR_TRANSFER", "OTHER_RECORDABLE", "FIRST_AID_ONLY"];
+// NEAR_MISS: kept on the log with no OSHA case number — the route accepts it
+// and burns no number for it. Chips are hitTarget (48pt) tall like the rest.
+const OUTCOMES = ["DEATH", "DAYS_AWAY", "RESTRICTED_OR_TRANSFER", "OTHER_RECORDABLE", "FIRST_AID_ONLY", "NEAR_MISS"];
 
 /** `emptyFor` speaks the List's prop names; EmptyState takes its own. */
 function titles({ emptyTitle, emptyDescription }: { emptyTitle: string; emptyDescription?: string }) {

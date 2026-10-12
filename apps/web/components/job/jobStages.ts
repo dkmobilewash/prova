@@ -124,7 +124,14 @@ export function jobStages(input: JobStageInput): JobStage[] {
       ...(input.showsJobMoney ? [{ href: `/jobs/${id}/takeoff`, label: "Takeoff" }] : []),
     ],
     contract: [
-      { href: `/jobs/${id}`, label: "Overview" },
+      // On a bid the Contract step's job is getting the subcontract signed,
+      // so it opens the Overview AT its Contract signature section — the
+      // same route the rail always had, with an anchor. That section only
+      // renders for a viewer shown job money ((tabs)/page.tsx), so anyone
+      // else keeps the plain Overview link.
+      isEstimate && input.showsJobMoney
+        ? { href: `/jobs/${id}#contract-signature`, label: "Contract signature" }
+        : { href: `/jobs/${id}`, label: "Overview" },
       ...(input.showsJobMoney && !isEstimate ? [{ href: `/jobs/${id}/estimate`, label: "Change orders" }] : []),
       { href: `/jobs/${id}/compliance`, label: "Compliance" },
     ],
@@ -205,7 +212,9 @@ export function jobStages(input: JobStageInput): JobStage[] {
  * is current only on that path WITH those params — comparing it to the bare
  * pathname, as this used to, could never match. */
 export function isCurrentLink(href: string, pathname: string, search = ""): boolean {
-  const [path, query] = href.split("?");
+  // A #fragment never reaches the server or `pathname`: `/jobs/x#contract-signature`
+  // is the page `/jobs/x`.
+  const [path, query] = href.split("#")[0].split("?");
   if (path !== pathname) return false;
   if (!query) return true;
   const have = new URLSearchParams(search);

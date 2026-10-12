@@ -44,8 +44,13 @@ describe("jobStages", () => {
         for (const showsBilling of [true, false])
           for (const showsField of [true, false]) {
             const input = { ...base, status, showsJobMoney, showsBilling, showsField };
+            // The #fragment is stripped: on a bid the Contract step links the
+            // Overview AT its Contract signature section
+            // (`/jobs/<id>#contract-signature`) — the same tab, a different
+            // scroll position — so it still counts as the old rail's
+            // `/jobs/<id>`. Every tab stays filed under exactly one stage.
             const inJob = jobStages(input)
-              .flatMap((s) => s.links.map((l) => l.href))
+              .flatMap((s) => s.links.map((l) => l.href.split("#")[0]))
               .filter((href) => href.startsWith("/jobs/"));
             expect(new Set(inJob).size, "a tab filed under two stages").toBe(inJob.length);
             expect([...inJob].sort()).toEqual(oldRail(input).sort());
@@ -70,6 +75,21 @@ describe("jobStages", () => {
     expect(stages[0]).toMatchObject({ state: "current", status: "Bidding" });
     expect(stages[0].links.map((l) => l.label)).toEqual(["Estimate", "Takeoff"]);
     expect(stages[3]).toMatchObject({ state: "upcoming", status: "Not started", links: [] });
+  });
+
+  // A bid's Contract step linked Overview/Compliance, while the one thing
+  // to do there is get the subcontract signed.
+  it("on a bid, the Contract step opens the Contract signature section first", () => {
+    const bid = { ...base, status: "ESTIMATE", lifecycleStage: "awarded" as const, invoiceCount: 0, latestPayApp: null };
+    const contract = jobStages(bid)[1];
+    expect(contract.links[0]).toEqual({ href: "/jobs/job-1#contract-signature", label: "Contract signature" });
+    // The step's own link is its first one, and the nav still knows the
+    // Overview page belongs to this step.
+    expect(selectedStageKey(jobStages(bid), "/jobs/job-1")).toBe("contract");
+    // No section for a viewer not shown job money: plain Overview.
+    expect(jobStages({ ...bid, showsJobMoney: false })[1].links[0]).toEqual({ href: "/jobs/job-1", label: "Overview" });
+    // A contracted job keeps Overview first.
+    expect(jobStages(base)[1].links[0].label).toBe("Overview");
   });
 
   it("is on Crew while working with nothing billed, and on Billing after the first bill", () => {

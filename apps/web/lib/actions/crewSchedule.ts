@@ -170,6 +170,99 @@ export async function scheduleCrewDay(formData: FormData): Promise<ActionResultW
   };
 }
 
+/**
+ * Move one planned day to another date and/or job — the edit that used to
+ * be Remove + re-add. Same rules as the add path: MANAGE_FIELD, the row AND
+ * the target job re-read through this company (a forged id reads as "not on
+ * your account", no existence oracle), the same worker already on that job
+ * that day is refused (the unique key), and the same worker on ANOTHER job
+ * that day is saved and reported as double-booked, not refused.
+ */
+export async function moveCrewDay(
+  id: string,
+  formData: FormData,
+): Promise<ActionResultWith<{ message: string }>> {
+  const { company, ...user } = await requireCompanyContext();
+  if (!can(user, "MANAGE_FIELD")) return fail(NO_PERMISSION);
+
+  const day = await prisma.crewScheduleDay.findFirst({
+    where: { id, companyId: company.id },
+    select: {
+      id: true,
+      jobId: true,
+      scheduledUserId: true,
+      crewMemberId: true,
+      scheduledUser: { select: { name: true, email: true } },
+      crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
+    },
+  });
+  if (!day) return fail("That day is no longer on the schedule.");
+
+  const jobId = text(formData, "jobId");
+  if (!jobId) return fail("Pick a job.");
+  let workDate: Date;
+  try {
+    workDate = workDateFromString(text(formData, "workDate"));
+  } catch (err) {
+    if (err instanceof CrewScheduleInputError) return fail(err.message);
+    throw err;
+  }
+
+  const job = await prisma.job.findFirst({
+    where: { id: jobId, companyId: company.id },
+    select: { id: true, name: true },
+  });
+  if (!job) return fail("That job is not on your account.");
+
+  const who = day.scheduledUserId
+    ? { scheduledUserId: day.scheduledUserId }
+    : { crewMemberId: day.crewMemberId };
+  const worker = scheduledWorkerName(day);
+
+  const [sameJob, clashRows] = await prisma.$transaction([
+    prisma.crewScheduleDay.findFirst({
+      where: { companyId: company.id, id: { not: day.id }, jobId, workDate, ...who },
+      select: { id: true },
+    }),
+    prisma.crewScheduleDay.findMany({
+      where: { companyId: company.id, id: { not: day.id }, jobId: { not: jobId }, workDate, ...who },
+      select: { job: { select: { name: true } } },
+    }),
+  ]);
+  if (sameJob) return fail(`${worker} is already on ${job.name} that day.`);
+
+  let moved: { count: number };
+  try {
+    moved = await prisma.crewScheduleDay.updateMany({
+      where: { id: day.id, companyId: company.id },
+      data: { jobId, workDate },
+    });
+  } catch (err) {
+    // Someone added the same (job, worker, day) between the read and this
+    // write. Matched on `.code`, never `instanceof` (see punch-list replay test).
+    if ((err as { code?: string }).code === "P2002") return fail(`${worker} is already on ${job.name} that day.`);
+    throw err;
+  }
+  if (moved.count === 0) return fail("That day is no longer on the schedule.");
+
+  revalidatePath("/schedule");
+  revalidatePath(`/jobs/${jobId}`, "layout");
+  if (day.jobId !== jobId) revalidatePath(`/jobs/${day.jobId}`, "layout");
+  const dayIso = dayKey(workDate);
+  return {
+    ok: true,
+    value: {
+      message: scheduleSavedMessage({
+        workers: [worker],
+        jobName: job.name,
+        days: [dayIso],
+        created: 1,
+        clashes: clashRows.map((row) => ({ worker, jobName: row.job.name, day: dayIso })),
+      }).replace(/ — saved\./, " — moved."),
+    },
+  };
+}
+
 export async function unscheduleCrewDay(id: string): Promise<ActionResult> {
   const { company, ...user } = await requireCompanyContext();
   if (!can(user, "MANAGE_FIELD")) return fail(NO_PERMISSION);

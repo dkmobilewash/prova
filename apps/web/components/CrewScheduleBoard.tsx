@@ -8,7 +8,7 @@ import { localToday } from "@/components/localToday";
 import { primaryActionClass } from "@/components/emptyStateStyles";
 import { dayLabel } from "@/components/fieldReportWeeks";
 import { blocksImplicitSubmit } from "@/lib/crew-schedule";
-import { scheduleCrewDay, unscheduleCrewDay } from "@/lib/actions";
+import { moveCrewDay, scheduleCrewDay, unscheduleCrewDay } from "@/lib/actions";
 import { CrewPicker, ManageCrews, SaveCrew, type SavedCrew } from "@/components/SavedCrews";
 
 /**
@@ -36,57 +36,182 @@ export type ScheduleDay = {
 export type WorkerOption = { value: string; label: string };
 export type CraftOption = { id: string; name: string };
 
+const moveField = "mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink";
+const moveBtn =
+  "shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-link hover:text-link disabled:opacity-50";
+
+/** The inline "Move" form on one planned day: change its date and/or job in
+ * place, one action (moveCrewDay), instead of Remove + re-add. Renders the
+ * action's result — a refusal stays on screen next to the choices that
+ * caused it, a double-booking warning is said after the move. */
+function MoveDayForm({
+  day,
+  jobs,
+  onDone,
+}: {
+  day: ScheduleDay;
+  jobs: JobOption[];
+  onDone: (message: string) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  // The day's own job may be COMPLETE and so missing from the picker; keep
+  // it selectable so moving only the DATE does not silently change the job.
+  const options = jobs.some((job) => job.id === day.jobId)
+    ? jobs
+    : [{ id: day.jobId, name: day.jobName, clientName: null, status: null }, ...jobs];
+  return (
+    <form
+      data-testid="move-day-form"
+      // onSubmit, not `action=` — see the add form's note (formActionCensus).
+      onKeyDown={(event) => {
+        if (blocksImplicitSubmit(event.key, (event.target as HTMLElement).tagName)) event.preventDefault();
+      }}
+      onSubmit={(event) => {
+        event.preventDefault();
+        const formData = new FormData(event.currentTarget);
+        startTransition(async () => {
+          const result = await moveCrewDay(day.id, formData);
+          if (result.ok) onDone(result.value.message);
+          else setError(result.error);
+        });
+      }}
+      className="mt-2 grid gap-2 rounded-md border border-line-card p-3 sm:grid-cols-2"
+    >
+      <label className="block text-sm">
+        <span className="text-ink-label">Date</span>
+        <input type="date" name="workDate" required defaultValue={day.workDate} className={moveField} />
+      </label>
+      <label className="block text-sm">
+        <span className="text-ink-label">Job</span>
+        <select name="jobId" required defaultValue={day.jobId} className={moveField}>
+          {options.map((job) => (
+            <option key={job.id} value={job.id}>
+              {jobPickerLabel(job)}
+            </option>
+          ))}
+        </select>
+      </label>
+      {error && (
+        <p className="text-sm text-tag-rose-ink sm:col-span-2" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="flex gap-2 sm:col-span-2">
+        <button
+          type="submit"
+          disabled={pending}
+          className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
+        >
+          {pending ? "Moving…" : "Move it"}
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => onDone("")}
+          className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-rail-hover"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+type DayRowProps = {
+  day: ScheduleDay;
+  date: string;
+  jobs: JobOption[];
+  canWrite: boolean;
+  onMoved: (message: string) => void;
+};
+
+function DayRow({ day, date, jobs, canWrite, onMoved }: DayRowProps) {
+  const [moving, setMoving] = useState(false);
+  return (
+    <li>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm text-ink">
+            {day.worker}
+            {day.craft && <span className="text-ink-muted"> · {day.craft}</span>}
+          </p>
+          <p className="text-xs text-ink-body">
+            <Link href={`/jobs/${day.jobId}`} className="underline hover:text-link">
+              {day.jobName}
+            </Link>
+            {day.note && <span className="text-ink-muted"> — {day.note}</span>}
+          </p>
+        </div>
+        {canWrite && !moving && (
+          // A row, right-pinned: [Move][Remove]. Armed, Move is hidden and
+          // Cancel lands last (pinned="end"), on the pixel Remove vacated.
+          <RowActions
+            className="flex shrink-0 items-center gap-2"
+            destructive={
+              <ConfirmDelete
+                // Short on purpose: rowActionsCensus caps a delete label
+                // at 12 characters, standing in for the pixel width that
+                // decides whether Cancel covers the delete's position.
+                label="Remove"
+                confirmLabel="Remove it"
+                describe={`Takes ${day.worker} off ${day.jobName} on ${dayLabel(date)}. It does not touch any hours already logged.`}
+                pinned="end"
+                // The revalidate inside the action is what removes the
+                // row from the screen. Nothing here filters a local copy.
+                action={async () => {
+                  await unscheduleCrewDay(day.id);
+                }}
+                armedClassName="flex flex-wrap items-center justify-end gap-2"
+                deleteClassName="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-danger"
+              />
+            }
+          >
+            <button
+              type="button"
+              onClick={() => setMoving(true)}
+              className={moveBtn}
+            >
+              Move
+            </button>
+          </RowActions>
+        )}
+      </div>
+      {moving && (
+        <MoveDayForm
+          day={day}
+          jobs={jobs}
+          onDone={(message) => {
+            setMoving(false);
+            // Said at the board, not on this row: a moved day usually lands
+            // under another date, so this row unmounts with the revalidate.
+            if (message) onMoved(message);
+          }}
+        />
+      )}
+    </li>
+  );
+}
+
 function DayGroup({
   date,
   days,
+  jobs,
   canWrite,
+  onMoved,
 }: {
   date: string;
   days: ScheduleDay[];
+  jobs: JobOption[];
   canWrite: boolean;
+  onMoved: (message: string) => void;
 }) {
   return (
     <li className="px-4 py-3">
       <p className="text-sm font-semibold text-ink-label">{dayLabel(date)}</p>
       <ul className="mt-2 space-y-2">
         {days.map((day) => (
-          <li key={day.id} className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm text-ink">
-                {day.worker}
-                {day.craft && <span className="text-ink-muted"> · {day.craft}</span>}
-              </p>
-              <p className="text-xs text-ink-body">
-                <Link href={`/jobs/${day.jobId}`} className="underline hover:text-link">
-                  {day.jobName}
-                </Link>
-                {day.note && <span className="text-ink-muted"> — {day.note}</span>}
-              </p>
-            </div>
-            {canWrite && (
-              <RowActions
-                className="flex shrink-0 flex-col items-end gap-1"
-                destructive={
-                  <ConfirmDelete
-                    // Short on purpose: rowActionsCensus caps a delete label
-                    // at 12 characters, standing in for the pixel width that
-                    // decides whether Cancel covers the delete's position.
-                    label="Remove"
-                    confirmLabel="Remove it"
-                    describe={`Takes ${day.worker} off ${day.jobName} on ${dayLabel(date)}. It does not touch any hours already logged.`}
-                    pinned="end"
-                    // The revalidate inside the action is what removes the
-                    // row from the screen. Nothing here filters a local copy.
-                    action={async () => {
-                      await unscheduleCrewDay(day.id);
-                    }}
-                    armedClassName="flex flex-wrap items-center justify-end gap-2"
-                    deleteClassName="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-danger"
-                  />
-                }
-              />
-            )}
-          </li>
+          <DayRow key={day.id} day={day} date={date} jobs={jobs} canWrite={canWrite} onMoved={onMoved} />
         ))}
       </ul>
     </li>
@@ -251,7 +376,7 @@ export function CrewScheduleBoard({
               <fieldset className="text-sm sm:row-span-3">
                 <legend className="text-ink-label">Who (pick one or more)</legend>
                 <CrewPicker crews={crews} formRef={formRef} />
-                <div className="mt-1 max-h-64 overflow-y-auto rounded-md border border-line-card">
+                <div className="mt-2 max-h-64 overflow-y-auto rounded-md border border-line-card">
                   {workers.map((worker) => (
                     <label key={worker.value} className="flex min-h-11 items-center gap-2 px-3 text-ink">
                       <input type="checkbox" name="worker" value={worker.value} className="size-4" />
@@ -375,7 +500,9 @@ export function CrewScheduleBoard({
                 key={date}
                 date={date}
                 days={byDate[date]}
+                jobs={jobs}
                 canWrite={canWrite}
+                onMoved={setSaved}
               />
             ))}
           </ul>

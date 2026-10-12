@@ -40,12 +40,18 @@ const smallBtn =
 const confirmBtn =
   "inline-flex min-h-11 items-center rounded-md border border-red-500 px-3 text-sm text-danger hover:bg-tag-rose disabled:opacity-50 mouse:min-h-9";
 
-/** The "Crew" picker, inside the schedule form. */
+/** The "Fill from a saved crew" picker, inside the schedule form's "Who".
+ *
+ * ONE LINE, label and select side by side, with its own gap under the
+ * legend. It was a block label ("Crew (ticks its people)") stacked straight
+ * under the "Who (pick one or more)" legend with no spacing, so the two read
+ * as one jumbled heading. Inline, it reads as what it is: a shortcut that
+ * fills the list below, not a second question. */
 export function CrewPicker({ crews, formRef }: { crews: SavedCrew[]; formRef: RefObject<HTMLFormElement | null> }) {
   if (crews.length === 0) return null;
   return (
-    <label className="block text-sm">
-      <span className="text-ink-label">Crew (ticks its people)</span>
+    <label data-testid="crew-picker" className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+      <span className="text-ink-body">Fill from a saved crew</span>
       <select
         // Not submitted: the schedule action reads only the ticked boxes.
         aria-label="Crew"
@@ -54,7 +60,7 @@ export function CrewPicker({ crews, formRef }: { crews: SavedCrew[]; formRef: Re
           const crew = crews.find((c) => c.id === event.target.value);
           if (crew && formRef.current) tickCrew(formRef.current, crew.members);
         }}
-        className={fieldClass}
+        className="min-h-11 min-w-0 flex-1 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink"
       >
         <option value="">Pick a saved crew…</option>
         {crews.map((crew) => (
