@@ -222,3 +222,114 @@ describe("what the panel says", () => {
     expect(tagSentence([])).toBeNull();
   });
 });
+
+/**
+ * ── THE TAG'S OWN NAME IS EVIDENCE ABOUT WHICH RUN IT MEANS ──
+ *
+ * Proximity alone picks the wrong wall where two run side by side. Measured on
+ * School-01's A-101 by replaying the real chain against the real file, with the
+ * distances the code itself computes:
+ *
+ *   EXT-1 at (0.805,0.282) — 4-7/8" at 0.47 ft WON; 8-7/8" at 2.32 ft lost
+ *   B1    at (0.641,0.203) — 6-3/4"  at 1.21 ft WON; 7-1/4" at 5.84 ft lost
+ *   B1    at (0.656,0.196) — 7-1/4"  at 1.71 ft was NEAREST and was DROPPED,
+ *                            because 6-3/4" at 3.34 ft failed the clear margin
+ *
+ * In each, the company has a wall type of that exact name with a thickness, and
+ * exactly one candidate matches it. The drawing was not ambiguous; the reader
+ * was throwing away the half of the evidence that settles it.
+ *
+ * THE SECOND CASE BELOW IS THE ONE THAT MATTERS MOST, and it is a regression
+ * the first draft of this fix shipped: asking "does a fitting run exist"
+ * ANYWHERE on the sheet instead of WITHIN REACH dropped four tags that were
+ * already right. The perimeter EXT tags sit beside 6-5/8" of drawn framing
+ * while the schedule totals 8-7/8" with sheathing and cladding, so the only
+ * fitting run is most of a building away — and falling back to nothing deleted
+ * the drawing-vs-schedule disagreement from the screen. Caught by the probe,
+ * not by reading it.
+ */
+describe("a tag's name narrowing which run it claims", () => {
+  const typed = (code: string, thicknessIn: number) => ({
+    id: code,
+    code,
+    name: code,
+    hasParts: true,
+    thicknessIn,
+  });
+
+  it("PREFERS THE RUN ITS NAME FITS over a nearer one that does not", () => {
+    // The EXT-1 case: a 4-7/8" run almost under the tag, the real 8-7/8" wall
+    // a little further off.
+    const near = wall({ thicknessFeet: 4.875 / 12, y1: 0.5, y2: 0.5 });
+    const fits = wall({ thicknessFeet: 8.875 / 12, y1: 0.5 + 2 * FOOT, y2: 0.5 + 2 * FOOT });
+    const got = tagByRun([near, fits], [tag("EXT-1", 0.25, 0.5)], feetPerUnit, [
+      typed("EXT-1", 8.875),
+    ]);
+    expect(got.get(fits), "the tag went to the nearer run its name rules out").toBe("EXT-1");
+    expect(got.has(near)).toBe(false);
+  });
+
+  it("FALLS BACK TO THE NEAREST RUN when nothing within reach fits the name", () => {
+    // The perimeter case. The plan draws EXT-1 as 6-5/8" of framing; the only
+    // 8-7/8" run on the sheet is far away. The tag must still claim the wall
+    // beside it, so the disagreement reaches the screen.
+    const beside = wall({ thicknessFeet: 6.625 / 12, y1: 0.5, y2: 0.5 });
+    const farAway = wall({
+      thicknessFeet: 8.875 / 12,
+      x1: 0.9, x2: 0.95, y1: 0.9, y2: 0.9,
+    });
+    const got = tagByRun([beside, farAway], [tag("EXT-1", 0.25, 0.5)], feetPerUnit, [
+      typed("EXT-1", 8.875),
+    ]);
+    expect(got.get(beside), "the wall beside the tag lost its name").toBe("EXT-1");
+  });
+
+  it("still requires a fitting run to be WITHIN REACH", () => {
+    const fits = wall({
+      thicknessFeet: 8.875 / 12,
+      y1: 0.5 + (TAG_REACH_FEET + 2) * FOOT,
+      y2: 0.5 + (TAG_REACH_FEET + 2) * FOOT,
+    });
+    const got = tagByRun([fits], [tag("EXT-1", 0.25, 0.5)], feetPerUnit, [typed("EXT-1", 8.875)]);
+    expect(got.size, "a fitting run out of reach was claimed anyway").toBe(0);
+  });
+
+  it("still requires a fitting run to beat its FITTING rivals by the margin", () => {
+    // Two runs of the right thickness, equally close: the drawing has not said
+    // which, and a name cannot break that tie.
+    const a = wall({ thicknessFeet: 8.875 / 12, y1: 0.5 + FOOT, y2: 0.5 + FOOT });
+    const b = wall({ thicknessFeet: 8.875 / 12, y1: 0.5 - FOOT, y2: 0.5 - FOOT });
+    const got = tagByRun([a, b], [tag("EXT-1", 0.25, 0.5)], feetPerUnit, [typed("EXT-1", 8.875)]);
+    expect(got.size).toBe(0);
+    expect(TAG_CLEAR_MARGIN).toBeGreaterThan(1);
+  });
+
+  it("IGNORES A TYPE WITH NO THICKNESS, which is most of an old library", () => {
+    // `thicknessIn` is nullable and stays nullable — a type typed in before that
+    // column existed cannot narrow anything, and must not narrow to nothing.
+    const near = wall({ thicknessFeet: 4.875 / 12, y1: 0.5, y2: 0.5 });
+    const got = tagByRun([near], [tag("EXT-1", 0.25, 0.5)], feetPerUnit, [
+      { id: "x", code: "EXT-1", name: "EXT-1", hasParts: true, thicknessIn: null },
+    ]);
+    expect(got.get(near)).toBe("EXT-1");
+  });
+
+  it("BEHAVES EXACTLY AS BEFORE when no wall types are passed at all", () => {
+    // The parameter is optional and every existing caller predates it.
+    const near = wall({ thicknessFeet: 4.875 / 12, y1: 0.5, y2: 0.5 });
+    const fits = wall({ thicknessFeet: 8.875 / 12, y1: 0.5 + 2 * FOOT, y2: 0.5 + 2 * FOOT });
+    const got = tagByRun([near, fits], [tag("EXT-1", 0.25, 0.5)], feetPerUnit);
+    expect(got.get(near), "the old nearest-wins rule changed without types").toBe("EXT-1");
+  });
+
+  it("matches the name the way the catalogue does, not by string equality", () => {
+    // `EXT 2` on the drawing and `EXT-2` in the library are the same assembly —
+    // `sameDesignation` already knows that and this must go through it.
+    const fits = wall({ thicknessFeet: 8.125 / 12, y1: 0.5 + 2 * FOOT, y2: 0.5 + 2 * FOOT });
+    const near = wall({ thicknessFeet: 4.875 / 12, y1: 0.5, y2: 0.5 });
+    const got = tagByRun([near, fits], [tag("EXT 2", 0.25, 0.5)], feetPerUnit, [
+      typed("EXT-2", 8.125),
+    ]);
+    expect(got.get(fits)).toBe("EXT 2");
+  });
+});
