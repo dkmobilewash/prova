@@ -53,16 +53,16 @@ const CTA_LABEL = "Sign up";
 const SIGN_IN_HREF = "/sign-in";
 
 /** One content width for every block, so every section shares a left edge. */
-const wrap = "mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8";
+const wrap = "mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8";
 /** Every block below the hero: a hairline above, one rhythm. */
-const band = "border-t border-line-row py-16 sm:py-24";
+const band = "border-t border-line-row py-16 sm:py-20";
 const cta =
-  "inline-flex w-full items-center justify-center rounded-md bg-brand px-8 py-4 text-lg font-semibold text-neutral-900 transition-colors duration-[var(--speed-fast)] ease-[var(--ease-landing-snap)] hover:bg-yellow-500 sm:w-auto";
+  "inline-flex w-full items-center justify-center rounded-md bg-brand px-8 py-4 text-lg font-semibold text-neutral-900 sm:px-10 sm:py-5 sm:text-xl transition-colors duration-[var(--speed-fast)] ease-[var(--ease-landing-snap)] hover:bg-yellow-500 sm:w-auto";
 const ctaNav =
   "inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 transition-colors duration-[var(--speed-fast)] ease-[var(--ease-landing-snap)] hover:bg-yellow-500";
 const quietLink = "text-sm font-medium text-ink-body transition-colors hover:text-ink";
-const h2 = "font-headline text-3xl font-semibold leading-[1.05] text-ink sm:text-5xl";
-const lead = "mt-4 max-w-xl text-base leading-relaxed text-ink-body sm:text-lg";
+const h2 = "font-headline text-3xl font-semibold leading-[1.05] text-ink sm:text-5xl lg:text-6xl";
+const lead = "mt-4 max-w-2xl text-base leading-relaxed text-ink-body sm:text-xl";
 /** The one card style on the page. */
 const card = "rounded-xl border border-line-card bg-surface p-6";
 
@@ -282,19 +282,20 @@ export function LienWaiverLanding({ toolUrl }: { toolUrl?: string }) {
           words stay first in the markup (screen readers meet the headline
           first); on a phone the picture is shown first by `order`, so the
           first screen is not all text. */}
-      <section className={`${wrap} grid items-center gap-10 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,34rem)] lg:gap-14 lg:py-20`}>
+      <section className={`${wrap} grid items-center gap-10 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,44rem)] lg:gap-12 lg:py-14`}>
         <div className="order-2 min-w-0 lg:order-1">
-          <p className="text-sm font-semibold uppercase tracking-[0.12em] text-brand">Free lien waiver generator</p>
-          <h1 className="mt-4 text-balance font-headline text-[clamp(2.5rem,9vw,5rem)] font-semibold leading-[1.02] tracking-[-0.02em] text-ink">
+          <p className="text-sm font-semibold uppercase tracking-[0.12em] text-brand sm:text-base">Free lien waiver generator</p>
+          <h1 className="mt-4 text-balance font-headline text-[clamp(2.75rem,9vw,6.75rem)] font-semibold leading-[1.02] tracking-[-0.02em] text-ink">
             Make your lien waiver. Free.
           </h1>
-          <p className={`${lead} mt-6`}>
+          <p className={`${lead} mt-6 lg:text-2xl`}>
             Pick the right one of the four, fill in the blanks, and get a clean PDF for the GC — without retyping
             the job every month.
           </p>
           <SignUpRow toolUrl={toolUrl} />
         </div>
-        <div className="order-1 flex min-w-0 justify-center lg:order-2 lg:justify-end">
+        {/* zoom, not transform: it scales the fixed-height stage AND its layout box together, so the clipped animation keeps its proportions and the column grows to fit. */}
+        <div className="order-1 flex min-w-0 justify-center lg:order-2 lg:justify-end lg:[zoom:1.25]">
           <WaiverFill />
         </div>
       </section>
