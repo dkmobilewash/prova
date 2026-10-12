@@ -10,6 +10,12 @@
  */
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Served at cstream.ai/lien-waiver (Diego, 2026-10-12): the C-Stream app
+  // (apps/web) rewrites /lien-waiver/* to this app's production origin, and
+  // owns /lien-waiver itself (Cyrus's landing page). Every route, asset and
+  // API here therefore lives under this prefix. lib/site.ts BASE_PATH must
+  // match; lib/site.test.ts checks that it does.
+  basePath: "/lien-waiver",
   devIndicators: false,
   poweredByHeader: false,
 };

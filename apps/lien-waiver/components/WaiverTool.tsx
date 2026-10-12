@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { forgetEverything, loadContact, loadFields, saveContact, saveFields, type Contact } from "@/lib/browser-memory";
 import { FINAL_WARNING, FORM_MEANINGS, FORM_NAMES, UNCONDITIONAL_WARNING } from "@/lib/content";
 import { checkFills } from "@/lib/fills";
+import { BASE_PATH } from "@/lib/site";
 import { getForm, slotsAsked } from "@/lib/statutes/forms";
 import { SLOTS } from "@/lib/statutes/slots";
 import type { FormKey, StateCode } from "@/lib/statutes/types";
@@ -227,7 +228,7 @@ function Download({
     setBusy(true);
     setMessage(null);
     try {
-      const response = await fetch("/api/waiver", {
+      const response = await fetch(`${BASE_PATH}/api/waiver`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

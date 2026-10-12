@@ -53,6 +53,13 @@ no-statutory-form page.
 
 ## Deploying (Diego)
 
+**Where it is served.** `cstream.ai/lien-waiver`. The C-Stream app (`apps/web`, project
+prova-web) owns `/lien-waiver` itself, which is Cyrus's landing page, and rewrites
+`/lien-waiver/*` to this app. Set `LIEN_WAIVER_TOOL_ORIGIN` on prova-web to this project's
+production origin. This app is built with `basePath: "/lien-waiver"`, so its picker is
+`/lien-waiver/start` and its forms are `/lien-waiver/<state>`. The landing page's button
+reads `LIEN_WAIVER_TOOL_URL` on prova-web (`/lien-waiver/start`).
+
 Vercel project **`lien-waiver-tool`** (team "Diego's projects",
 `prj_Dd1q4nwsBrAsFJuYG0oNYhNY8oMM`), Root Directory `apps/lien-waiver`, set to
 skip deployments for commits that do not touch this app. Its `vercel.json`

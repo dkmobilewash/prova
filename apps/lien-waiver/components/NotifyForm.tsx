@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { BASE_PATH } from "@/lib/site";
 
 /** "Tell me when you add my state." Records a lead; emails the person
  * nothing. */
@@ -29,7 +30,7 @@ export function NotifyForm({ state }: { state: string }) {
         setBusy(true);
         setError(null);
         try {
-          const response = await fetch("/api/notify", {
+          const response = await fetch(`${BASE_PATH}/api/notify`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ name, email, company, state, marketingOptIn: marketing, website }),

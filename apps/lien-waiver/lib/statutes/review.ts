@@ -33,9 +33,35 @@ export interface LegalReview {
   notes?: string;
 }
 
-/** EMPTY ON PURPOSE. No state has been reviewed yet, so none is shown in
- * production. Diego records each review here as the attorney signs off. */
-export const REVIEWS: Partial<Record<StateCode, LegalReview>> = {};
+/** Recorded 2026-10-12 from Diego's report of each attorney's sign-off. Each
+ * digest matched the one printed for that state in docs/attorney-packet.md
+ * when it was recorded. Texas has no review yet, so production still hides
+ * it. New Mexico was reviewed too (David N. Hernandez, 2026-10-12), but it
+ * has no statutory form, so there is no digest to record here; its page is
+ * public regardless. */
+export const REVIEWS: Partial<Record<StateCode, LegalReview>> = {
+  AZ: {
+    reviewer: "Patrick J. Monahan",
+    credentials: "Not provided",
+    reviewedOn: "2026-10-12",
+    digest: "77a3323fbd65936d8bd87a8fc1579d3959045c95e41b3e07f2de0d4be83c192c",
+    notes: "Sign-off reported by Diego Carrillo on 2026-10-12.",
+  },
+  CA: {
+    reviewer: "Jeffrey D. Horowitz",
+    credentials: "Not provided",
+    reviewedOn: "2026-10-12",
+    digest: "77605a5d4d193080a9b99d6ec63203494065f5706622e9a895f45d596a29c546",
+    notes: "Sign-off reported by Diego Carrillo on 2026-10-12.",
+  },
+  NV: {
+    reviewer: "M. Dason Coronado",
+    credentials: "Not provided",
+    reviewedOn: "2026-10-12",
+    digest: "e380b072c6d948f03ff28b5c4d5aee978784b71c910f2cf160171fa21439ec26",
+    notes: "Sign-off reported by Diego Carrillo on 2026-10-12.",
+  },
+};
 
 export function reviewDigest(state: StateCode): string {
   const hash = createHash("sha256");

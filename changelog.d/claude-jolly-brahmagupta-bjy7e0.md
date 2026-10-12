@@ -70,3 +70,15 @@ only `diego@cstream.ai`, from the 2026-10-08 build rules. That made a real test
 with any other address look like a broken tool, so previews now send exactly as
 production does. The honeypot and the rate limits are what keep a public
 preview URL from being used to send mail. `EMAIL_ALLOWLIST` is no longer read.
+
+**Live at cstream.ai/lien-waiver, with Arizona, California and Nevada reviewed (Diego,
+2026-10-12).** Patrick J. Monahan (AZ), Jeffrey D. Horowitz (CA) and M. Dason Coronado
+(NV) signed off on 2026-10-12, as Diego reported. Each review is recorded in
+`lib/statutes/review.ts` against a digest that matched the attorney packet, so
+production shows those three states. Texas has no review, so production still hides
+it. David N. Hernandez reviewed New Mexico, which has no statutory form and therefore
+no digest. The tool keeps its own Vercel project and gains `basePath: "/lien-waiver"`.
+`apps/web` owns `/lien-waiver` itself (Cyrus's landing page, #750) and rewrites
+`/lien-waiver/*` to the tool when `LIEN_WAIVER_TOOL_ORIGIN` is set. A bare `fetch()` is
+the one thing Next does not prefix, so `BASE_PATH` in `lib/site.ts` is checked against
+the config by `lib/site.test.ts`.
