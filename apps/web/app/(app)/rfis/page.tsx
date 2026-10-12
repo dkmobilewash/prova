@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { AskDraftNotice } from "@/components/AskDraftNotice";
@@ -142,14 +144,11 @@ export default async function RfisPage({
   const accFeed = await loadAccFeed(company.id, "RFI", activeJob);
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">RFIs</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        Questions to the GC or architect, and what came back. This is evidence before it&apos;s a
-        to-do list: an RFI sent on a date and answered three weeks later is the documentation behind a
-        delay claim, and &ldquo;we asked and nobody got back to us&rdquo; is worth nothing without the
-        dates.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/rfis"
+        subtitle="Questions to the GC or architect, with the dates you asked and they answered."
+      />
 
       <section className="mb-8" data-tour="rfis-raise">
         {askDraft.kind === "gone" && <AskDraftNotice what="RFI" />}
@@ -248,6 +247,6 @@ export default async function RfisPage({
       <ProcoreFeedSection feed={procoreFeed} />
       {/* Same, from Autodesk Construction Cloud. */}
       <ACCFeedSection feed={accFeed} />
-    </div>
+    </PageShell>
   );
 }
