@@ -67,11 +67,34 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   // produces no schedule lines, so posting against it would record a run and
   // add nothing to the estimate — worse than the quantities it replaced. The
   // action refuses a layerless type as well, because a form can send anything.
-  const postableWallTypes = await prisma.wallType.findMany({
-    where: { companyId: company.id, components: { some: {} } },
+  // ── EVERY TYPE, AND WHICH OF THEM HAVE PARTS ──
+  //
+  // One query rather than two: the wall FINDER needs every type so it can name
+  // a group after the drawing's own tag, and the measurement list needs only
+  // the ones that produce line items. Deriving the second from the first keeps
+  // them from drifting and costs one round trip instead of two.
+  //
+  // The filter used to be in the query, and the wall finder inherited it. That
+  // is why reading School-01's partition schedule produced ten wall types the
+  // finder could not see — see `MatchableWallType` for the measurement.
+  const allWallTypes = await prisma.wallType.findMany({
+    where: { companyId: company.id },
     orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
-    select: { id: true, code: true, name: true, defaultHeightFt: true, sides: true, thicknessIn: true },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      defaultHeightFt: true,
+      sides: true,
+      thicknessIn: true,
+      _count: { select: { components: true } },
+    },
   });
+  // POSTING IS STILL GATED ON LAYERS, and this is the gate — unchanged in
+  // substance, moved so that naming is not gated with it. A type with no
+  // components produces no line items, so a measurement posted against one adds
+  // nothing to the estimate and loses the quantities it replaced.
+  const postableWallTypes = allWallTypes.filter((type) => type._count.components > 0);
 
   const plan = await prisma.takeoffPlan.findFirst({
     where: { jobId: job.id, companyId: company.id },
@@ -403,10 +426,11 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         // footage on a real sheet — so without it the majority of every
         // drawing stays unpriced. Null where the company never recorded one,
         // which the matcher reads as "cannot be matched by thickness".
-        wallTypes={postableWallTypes.map((type) => ({
+        wallTypes={allWallTypes.map((type) => ({
           id: type.id,
           code: type.code,
           name: type.name,
+          hasParts: type._count.components > 0,
           thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
         }))}
       />
@@ -442,7 +466,12 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
             sheet={sheet}
             // Decimal does not cross into a client component.
             wallTypes={postableWallTypes.map((type) => ({
-              ...type,
+              id: type.id,
+              code: type.code,
+              name: type.name,
+              sides: type.sides,
+              // `_count` is a query detail and does not cross into a client
+              // component; nor does Decimal.
               defaultHeightFt: type.defaultHeightFt != null ? type.defaultHeightFt.toNumber() : null,
             }))}
           />

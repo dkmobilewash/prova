@@ -60,13 +60,44 @@ import type { TaggedFeet } from "./wallTags";
  * posture as the scale prefill and the sheet index.
  */
 
-/** A wall type this company can actually post against: it has layers, so it
- *  produces line items. `postableWallTypes` on the takeoff page is already
- *  filtered to these. */
-export type PostableWallType = {
+/**
+ * A wall type this matcher may NAME a group with.
+ *
+ * ── IT USED TO MEAN "POSTABLE", AND THAT COST THE SCHEDULE IMPORT ──
+ *
+ * This was `PostableWallType`, and the takeoff page handed the matcher a list
+ * filtered to `components: { some: {} }` — types with layers. The reasoning was
+ * sound about POSTING: a layerless type produces no line items, so posting a
+ * group as one adds nothing to the estimate and loses the quantities it
+ * replaced. It was wrong about NAMING, which is a different question.
+ *
+ * Measured on School-01, 2026-10-11. The partition schedule was read off A-501
+ * and ten wall types were created from it — A1, A2, B1, C1, D1, F1, EXT-1,
+ * EXT-2, CMU, SF — each with the thickness the drawing prints. Then **Find the
+ * walls** on A-101 found 63 runs, tagged them A1 and A2 off the drawing, and
+ * reported "no wall type you have is 4-7/8 inch thick" beside a row the app had
+ * just tagged A1. Both sentences were true of the list it was given, and the
+ * import's own button promises the opposite: "Each one arrives with its
+ * thickness, so a wall measured on the drawing can find it."
+ *
+ * So the gate moved to where the constraint actually is. The matcher sees every
+ * type and may name any of them; `hasParts` is what the viewer reads to decide
+ * whether a group can be POSTED PRICED, and `postMeasuredWallRun` refuses a
+ * layerless type server-side regardless — a form can send anything.
+ */
+export type MatchableWallType = {
   id: string;
   code: string;
   name: string;
+  /**
+   * Whether this type has layers, and therefore produces line items.
+   *
+   * NOT A FILTER ANY MORE, A FACT ON THE ROW. A type without parts can still
+   * tell an estimator what the drawing's "A1" means — which is most of the
+   * value of reading the schedule — and the screen says what is missing rather
+   * than the group going unnamed for a reason nothing states.
+   */
+  hasParts: boolean;
   /**
    * Finish to finish, in inches, where the company has recorded one — #731.
    *
@@ -80,7 +111,7 @@ export type PostableWallType = {
 };
 
 export type WallTypeMatch =
-  | { state: "MATCH"; type: PostableWallType; tag: string; feet: number; share: number }
+  | { state: "MATCH"; type: MatchableWallType; tag: string; feet: number; share: number }
   | { state: "NO_TAG" }
   | { state: "NO_SUCH_TYPE"; tag: string }
   | { state: "MIXED"; tags: string[] };
@@ -116,7 +147,7 @@ export function sameDesignation(a: string, b: string): boolean {
 
 export function matchClusterToWallType(
   tagged: readonly TaggedFeet[],
-  wallTypes: readonly PostableWallType[],
+  wallTypes: readonly MatchableWallType[],
 ): WallTypeMatch {
   // `one.feet > 0` is REDUNDANT against the total guard below, and kept:
   // mutation confirms removing it changes no answer, because a set of
