@@ -34,8 +34,8 @@ export function JobStatusControl({
 }: {
   jobId: string;
   status: JobStatusValue;
-  /** Whether this viewer has the Estimate tab, where "Mark contracted"
-   * lives. Without it the sentence names the step but links nothing — a
+  /** Whether this viewer has the estimate page (and the header's "Won
+   * it?" box), where "Mark contracted" lives. Without it the sentence names the step but links nothing — a
    * link to a page that refuses is a door that will not open. */
   showsEstimateTab?: boolean;
 }) {
@@ -83,13 +83,17 @@ export function JobStatusControl({
 
       {status === "ESTIMATE" ? (
         <p className="mt-2 text-sm text-ink-muted">
-          An estimate becomes a contracted job with{" "}
+          An estimate becomes a contracted job with Mark contracted{" "}
           {showsEstimateTab ? (
-            <Link href={`/jobs/${jobId}/estimate#job-lock-in`} className="text-link hover:underline">
-              Mark contracted, at the bottom of the Estimate tab
-            </Link>
+            <>
+              — the &ldquo;Won it?&rdquo; box at the top of this job, or the{" "}
+              <Link href={`/jobs/${jobId}/estimate#job-lock-in`} className="text-link hover:underline">
+                bottom of the estimate page
+              </Link>{" "}
+              —
+            </>
           ) : (
-            "Mark contracted, at the bottom of the Estimate tab"
+            "on the job's estimate page (the Estimate step)"
           )}
           , once the contract is executed — either the GC signs it in C Stream or you record the
           executed subcontract they sent, under Contract signature below.
