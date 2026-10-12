@@ -52,7 +52,10 @@ test.describe("the bid desk", () => {
 
   /** The one bid row on /bids. Everything in this file is inside it, which is
    * also the point: four features share it. */
-  const bidRow = (): Locator => page.locator("li").filter({ hasText: PROJECT }).first();
+  // Scoped to the bids list itself: since the "Due soon" view (2026-10-12) a
+  // bid due within the window is ALSO listed above it, as a short row with
+  // no trade scope or amount, and a bare `li` filter found that one first.
+  const bidRow = (): Locator => page.locator('[data-tour="bids-list"] li').filter({ hasText: PROJECT }).first();
 
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext();

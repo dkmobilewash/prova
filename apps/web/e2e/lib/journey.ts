@@ -188,8 +188,15 @@ export async function startJob(page: Page, monitor: HealthMonitor, input: NewJob
   // "Continue →" until #413. The label names its destination now, which is
   // the point of the change: a button that creates a real row should not say
   // the vaguest word available.
+  const answer = nextActionAnswer(page);
   await page.getByRole("button", { name: "Start the job — add the work next →" }).click();
-  await page.waitForURL(/\/jobs\/new\/[^/]+\/items$/);
+  // On failure, say what the action's POST did rather than only that the URL
+  // never changed: #748's runs reported a bare 30s timeout here on brand-new
+  // personas while the same step took under a second on an established one,
+  // and nothing in the report said whether the server had answered at all.
+  await page.waitForURL(/\/jobs\/new\/[^/]+\/items$/).catch(async (error: Error) => {
+    throw new Error(`"Start the job" did not reach step 2: ${await answer}; the page is at ${page.url()}. ${firstLine(error)}`);
+  });
   await expectHealthy(page, "new job, step 2 (add work)", { monitor });
 
   const match = page.url().match(/\/jobs\/new\/([^/]+)\/items$/);
@@ -231,7 +238,10 @@ export async function submitLineItem(page: Page, line: LineItemInput): Promise<v
   if (line.budgetedUnitCost !== undefined) {
     await form.locator('input[name="budgetedUnitCost"]').fill(line.budgetedUnitCost);
   }
+  const answer = nextActionAnswer(page);
   await form.getByRole("button", { name: "Add line" }).click();
+  const said = await answer;
+  if (said.startsWith(NEVER_ANSWERED)) throw new Error(`"Add line": ${said}`);
 }
 
 /** A row in step 2's "On this estimate" list carrying this description. */
@@ -283,7 +293,10 @@ export async function recordExecutedSubcontract(page: Page, monitor: HealthMonit
   await form.locator('input[name="file"]').setInputFiles(EXECUTED_SUBCONTRACT_FIXTURE);
   await form.locator('input[name="executedSignedDate"]').fill("2026-09-15");
   await form.locator('input[name="note"]').fill("ZZ-E2E fully executed copy from the GC");
+  const answer = nextActionAnswer(page);
   await form.getByRole("button", { name: "Record executed subcontract" }).click();
+  const said = await answer;
+  if (said.startsWith(NEVER_ANSWERED)) throw new Error(`"Record executed subcontract": ${said}`);
 
   await expect(page.getByText(/Executed — GC signed/).first()).toBeVisible();
   await expectHealthy(page, "job overview after recording the executed subcontract", { monitor });
@@ -443,6 +456,30 @@ export async function settleOutcome(
  * feature. The helper's own name says "action"; anything else was always the
  * wrong tool.
  */
+const NEVER_ANSWERED = "the action POST never answered";
+
+function firstLine(error: Error): string {
+  return error.message.split("\n")[0];
+}
+
+/**
+ * Starts listening for the next Server Action POST and resolves to one
+ * sentence about it — its status, whether it redirected, how big the answer
+ * was — or, after `timeout`, to a sentence saying it never came. Never
+ * rejects: it exists to be quoted inside a failure message, so the failure
+ * that quotes it stays the one being reported.
+ */
+export function nextActionAnswer(page: Page, timeout = 20_000): Promise<string> {
+  return page.waitForResponse((response) => isServerActionPost(response.request()), { timeout }).then(
+    async (response) => {
+      const redirect = response.headers()["x-action-redirect"];
+      const bytes = await response.body().then((body) => body.length, () => -1);
+      return `the action POST answered ${response.status()}${redirect ? ` redirecting to ${redirect}` : ""} with ${bytes} bytes`;
+    },
+    (error: Error) => `${NEVER_ANSWERED} within ${timeout}ms (${firstLine(error)})`,
+  );
+}
+
 export async function settleAction(page: Page, act: () => Promise<unknown>): Promise<void> {
   const posted = page.waitForResponse((response) => isServerActionPost(response.request()));
   await act();

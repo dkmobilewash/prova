@@ -38,6 +38,10 @@ import { jobStageNav, jobTab, openJobTab } from "../lib/journey";
  * is caught, and this is not a heading that just went missing.
  */
 test("job detail: every tab renders its sections, in the rail's order, no crash", async ({ page }) => {
+  // Eight tabs behind four stage boxes is up to twelve navigations, each
+  // one a server render; main's 4s was for eight clicks on a rail that was
+  // always on screen. Room for a slow runner, not a licence for a slow app.
+  test.setTimeout(90_000);
   const monitor = new HealthMonitor(page);
   await signInAs(page, PERSONAS.main.email);
   await page.goto("/schedule");
@@ -91,7 +95,8 @@ test("job detail: every tab renders its sections, in the rail's order, no crash"
 
   for (const tab of tabs) {
     await openJobTab(page, tab.label);
-    await page.waitForURL(new RegExp(`${tab.path}(\\?|$)`));
+    // `#`: the Change orders tab lands at its section (`/estimate#change-orders`).
+    await page.waitForURL(new RegExp(`${tab.path}(\\?|#|$)`));
     await expectHealthy(page, `job tab: ${tab.label}`, { monitor });
     await expect(jobTab(page, tab.label)).toHaveAttribute("aria-current", "page");
 
