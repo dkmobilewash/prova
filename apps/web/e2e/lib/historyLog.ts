@@ -61,6 +61,22 @@ import type { Page, Request } from "@playwright/test";
  *   `rsc: 1`, and only `next-router-prefetch` tells them apart.
  * - `popstate` and `hashchange` join the document events: a fragment
  *   navigation goes through neither pushState nor pagehide.
+ *
+ * CI run 38316670638 (`a45e3773`) read THOSE back: nothing in the page
+ * aborted or cancelled anything, the router's fetch resolved 200 within
+ * 16ms (headers; the body streams after), and the browser still reported
+ * the request aborted ~170ms later. Chromium reports exactly that when a
+ * response body is dropped unread — so Next received the response and
+ * ABANDONED it. fetch-server-response.js does that on two silent branches:
+ * a content-type or status it does not like, and a flight payload whose
+ * build id (`b` in the root row) is not the one the page hydrated with;
+ * both fall back to an MPA navigation that this log never saw either. So
+ * the sixth record is the RESPONSE: every router fetch's response is
+ * cloned and the clone read to the end — total bytes, whether the server
+ * finished, the first line of the payload — and the original body's
+ * reader is watched: opened or not, how many chunks, whether it reached
+ * the end. The document's own build id (from the `_buildManifest` script
+ * src) sits beside it, so a mismatch reads off the line.
  */
 type NetEntry = {
   at: number;
@@ -182,6 +198,32 @@ export async function installHistoryLog(page: Page): Promise<void> {
       };
       return reader;
     } as typeof ReadableStream.prototype.getReader;
+    const watched = new WeakMap<ReadableStream, string>();
+    const getReader2 = ReadableStream.prototype.getReader;
+    ReadableStream.prototype.getReader = function watchedGetReader(this: ReadableStream, ...args: unknown[]) {
+      const reader = (getReader2 as (this: ReadableStream, ...a: unknown[]) => ReadableStreamDefaultReader).apply(this, args);
+      const label = watched.get(this);
+      if (label !== undefined) {
+        log.push(`${Date.now()} reader opened on ${label} from ${frames()}`);
+        let chunks = 0;
+        let bytes = 0;
+        const read = reader.read;
+        reader.read = async function watchedRead(this: ReadableStreamDefaultReader) {
+          const result = await read.call(this);
+          if (result.done) log.push(`${Date.now()} reader on ${label} reached the end after ${chunks} chunks, ${bytes} bytes`);
+          else {
+            chunks++;
+            bytes += (result.value as Uint8Array | undefined)?.byteLength ?? 0;
+          }
+          return result;
+        } as typeof reader.read;
+      }
+      return reader;
+    } as typeof ReadableStream.prototype.getReader;
+    const buildId = () => {
+      const src = (document.querySelector('script[src*="_buildManifest"]') as HTMLScriptElement | null)?.src ?? "";
+      return /\/_next\/static\/([^/]+)\/_buildManifest/.exec(src)?.[1] ?? "?";
+    };
     const fetch_ = window.fetch;
     window.fetch = async function patchedFetch(input: RequestInfo | URL, init?: RequestInit) {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -193,7 +235,23 @@ export async function installHistoryLog(page: Page): Promise<void> {
       log.push(`${started} fetch ${kind} ${init?.method ?? "GET"} ${short} signal=${init?.signal ? (init.signal.aborted ? "aborted" : "live") : "none"} from ${frames()}`);
       try {
         const res = await fetch_.call(window, input, init);
-        log.push(`${Date.now()} fetch ${kind} ${short} -> ${res.status} after ${Date.now() - started}ms`);
+        const h2 = res.headers;
+        log.push(
+          `${Date.now()} fetch ${kind} ${short} -> ${res.status} after ${Date.now() - started}ms; type=${h2.get("content-type") ?? "-"} postponed=${h2.get("x-nextjs-postponed") ?? "-"} redirect=${h2.get("x-action-redirect") ?? "-"} vary=${(h2.get("vary") ?? "-").slice(0, 60)}; page build=${buildId()}`,
+        );
+        if (res.body && kind !== "plain" && kind !== "PREFETCH") {
+          watched.set(res.body, `${kind} ${short}`);
+          // The clone is read to the end on its own, so this says what the
+          // server SENT whatever the router does with the original.
+          const clone = res.clone();
+          void clone
+            .text()
+            .then((text) => {
+              const line = text.split("\n")[0] ?? "";
+              log.push(`${Date.now()} ${kind} ${short} body finished: ${text.length} chars, first line: ${line.slice(0, 220)}`);
+            })
+            .catch((error: unknown) => log.push(`${Date.now()} ${kind} ${short} body FAILED: ${String(error).slice(0, 120)}`));
+        }
         return res;
       } catch (error) {
         log.push(`${Date.now()} fetch ${kind} ${short} THREW ${String(error).slice(0, 80)} after ${Date.now() - started}ms`);
