@@ -268,6 +268,151 @@ function sideOf(of: StrokeSegment, other: StrokeSegment): number {
 }
 
 /**
+ * The widest gap, in feet, that a FACE may be interrupted by and still be read
+ * as one face — 8 ft, the same bound `mergeWalls` uses for an opening.
+ *
+ * A window, a door or a storefront breaks the line a wall's face is drawn with.
+ * Beyond this a gap is another wall on the same line rather than a hole in this
+ * one.
+ */
+export const SAME_FACE_GAP_FEET = 2;
+
+/** Angles within this many radians are the same direction (about 3 degrees). */
+const SAME_FACE_ANGLE = 0.05;
+
+/**
+ * Perpendicular offsets within this many feet are the same line — 0.048in.
+ *
+ * Tight on purpose, and the bound is a real pair of wall types rather than a
+ * round number. A1 and C1 differ by 1/8in of thickness, so with their
+ * centrelines aligned their faces sit 1/16in apart; anything looser merges
+ * those into one line and reports a wall that is neither. Plotting jitter on
+ * these sheets is about 0.005in — a 4-7/8in wall measures 4.87 — so this
+ * absorbs the jitter with an order of magnitude to spare and nothing else.
+ *
+ * Swept on the bench: 0.48in and 0.048in are within 20 ft of each other on
+ * every number, so the tighter bound is free.
+ */
+const SAME_FACE_OFFSET_FEET = 0.004;
+
+/**
+ * Join the pieces of one face back into one face.
+ *
+ * ── WHY THIS EXISTS, AND IT IS NOT ABOUT RECALL ──
+ *
+ * An exterior wall's far face is broken by every window in it; its near face
+ * and its interior layer lines run continuously. The pairing loop walks faces
+ * LONGEST FIRST, so the continuous interior lines are reached first, pair with
+ * each other, and consume themselves — and the broken face's pieces arrive to
+ * find the partner they needed already spoken for. The wall is then reported at
+ * whatever the leftovers make.
+ *
+ * Measured on the bench, graded against the key's own thicknesses: 26% of the
+ * holdout's reported footage came back at a thickness on NO schedule, and the
+ * single biggest offender was about 6-1/2in with 11,080 ft on Mesa Ridge and
+ * 3,541 ft on the holdout. Both exterior types have an internal gap of
+ * 6.625in — EXT-1's stud face to inner face, EXT-2's outer face to its inner
+ * layer — so that is the stud cavity being sold as the wall. `wallVectors.ts`
+ * has described this exact failure since it was written ("the envelope was
+ * being found and then reported at 6.6in") and attributed it to taking the
+ * first partner rather than the widest; the widest-partner rule fixed the case
+ * where all four faces are whole and could not fix this one, because here the
+ * true partner is not a candidate at all.
+ *
+ * A second shape from the same cause, read off one holdout sheet at a wall the
+ * key calls 8-1/8in: its face paired with a 230 FT gridline 10.56in away,
+ * because its own far face was in window-sized pieces. And a misread wall
+ * cannot shield its own layer lines — `enclosedByAScheduledWall` only
+ * recognises an enclosing wall at a SCHEDULED thickness — so the 1.50in pair
+ * inside it came back as furring.
+ *
+ * Joining the pieces first is not a heuristic about walls, it is a statement
+ * about faces: a line interrupted by a hole is one line. It is bounded by
+ * `SAME_FACE_GAP_FEET` so that two walls on one grid line stay two faces.
+ */
+export function oneFacePerLine(
+  segments: readonly StrokeSegment[],
+  feetPerPoint: number,
+): StrokeSegment[] {
+  const offsetTolerance = SAME_FACE_OFFSET_FEET / feetPerPoint;
+  const gapLimit = SAME_FACE_GAP_FEET / feetPerPoint;
+  type Line = { ux: number; uy: number; offset: number; pieces: StrokeSegment[] };
+  const lines: Line[] = [];
+
+  for (const segment of segments) {
+    const dx = segment.x2 - segment.x1;
+    const dy = segment.y2 - segment.y1;
+    const length = Math.hypot(dx, dy);
+    if (length <= 0) continue;
+    // One direction per line, not two: a face drawn right-to-left is the same
+    // face as one drawn left-to-right, and the bench has sheets that do both on
+    // the same wall.
+    let ux = dx / length;
+    let uy = dy / length;
+    if (ux < 0 || (ux === 0 && uy < 0)) {
+      ux = -ux;
+      uy = -uy;
+    }
+    // Perpendicular distance from the origin to this segment's line.
+    const offset = segment.x1 * uy - segment.y1 * ux;
+    const found = lines.find(
+      (line) =>
+        Math.abs(line.ux * uy - line.uy * ux) < SAME_FACE_ANGLE &&
+        Math.abs(line.offset - offset) < offsetTolerance,
+    );
+    if (found) found.pieces.push(segment);
+    else lines.push({ ux, uy, offset, pieces: [segment] });
+  }
+
+  const joined: StrokeSegment[] = [];
+  for (const line of lines) {
+    // Along-the-line coordinate of every endpoint, so pieces can be ordered and
+    // their gaps measured without any trigonometry per comparison.
+    const along = (x: number, y: number) => x * line.ux + y * line.uy;
+    const spans = line.pieces
+      .map((piece) => {
+        const one = along(piece.x1, piece.y1);
+        const two = along(piece.x2, piece.y2);
+        return { from: Math.min(one, two), to: Math.max(one, two), width: piece.width };
+      })
+      .sort((a, b) => a.from - b.from);
+
+    let open = spans[0];
+    const flush = () => {
+      // Back to points: a point on the line plus the direction, times the
+      // along-coordinate. The line's own offset fixes the perpendicular.
+      const px = open.from * line.ux + line.offset * line.uy;
+      const py = open.from * line.uy - line.offset * line.ux;
+      const qx = open.to * line.ux + line.offset * line.uy;
+      const qy = open.to * line.uy - line.offset * line.ux;
+      joined.push({ x1: px, y1: py, x2: qx, y2: qy, width: open.width });
+    };
+    for (const span of spans.slice(1)) {
+      if (span.from - open.to <= gapLimit) {
+        open = {
+          from: open.from,
+          to: Math.max(open.to, span.to),
+          // The heavier pen wins: a face plotted thick in one stretch is a
+          // face. `width` is optional, and a missing pen is not a zero pen —
+          // coalescing it to 0 would let an absent width beat a hairline.
+          width:
+            open.width === undefined
+              ? span.width
+              : span.width === undefined
+                ? open.width
+                : Math.max(open.width, span.width),
+        };
+        continue;
+      }
+      flush();
+      open = span;
+    }
+    flush();
+  }
+  return joined;
+}
+
+/**
  * How far off a schedule thickness a pair may measure and still be read as that
  * type — 1/4in, which is half of `CLUSTER_INCHES` and the same slack the
  * clusterer allows. A literal because `CLUSTER_INCHES` is declared below.
@@ -632,7 +777,13 @@ export function wallsFromStrokes(
   // leader lines, none of which is two feet of building long. That took the
   // worst sheet to 1.7s and the smallest to 81ms.
   const minLengthPoints = (options.minLengthFeet ?? DEFAULTS.minLengthFeet) / options.feetPerPoint;
-  const usable = segments.filter((segment) => lengthOf(segment) >= minLengthPoints);
+  // THE PIECES OF A FACE FIRST, then the length filter — in that order, and the
+  // order matters. A face broken into window-sized pieces can have every piece
+  // under the 2 ft floor while the face itself is 120 ft of building, so
+  // filtering first throws the wall away before anything can pair it.
+  const usable = oneFacePerLine(segments, options.feetPerPoint).filter(
+    (segment) => lengthOf(segment) >= minLengthPoints,
+  );
   const order = [...usable].sort((a, b) => lengthOf(b) - lengthOf(a));
   const used = new Set<number>();
   const walls: WallCandidate[] = [];

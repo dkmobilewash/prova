@@ -11,6 +11,8 @@ import { wallFromPair, wallsFromStrokes, type StrokeSegment, type WallFinderOpti
   oneWallPerPlace,
   MOST_OF_THE_SHEET,
   type WallCandidate,
+  oneFacePerLine,
+  SAME_FACE_GAP_FEET,
 } from "./wallVectors";
 
 /**
@@ -1025,5 +1027,199 @@ describe("the partition schedule", () => {
   it("refuses a thickness that is merely CLOSE to one on the schedule", () => {
     // The slack is 1/4in, so 1-1/2in admits 1.25 to 1.75 and nothing else.
     expect(found([0, 8, 10.1], SCHEDULE)).toEqual([8]);
+  });
+});
+
+/**
+ * ── A FACE INTERRUPTED BY A HOLE IS ONE FACE ──
+ *
+ * A CAD export splits the line a wall's face is drawn with: at every vertex, at
+ * every window, at every door. Its near face and its interior layer lines come
+ * through whole. The pairing loop walks faces LONGEST FIRST, so the whole lines
+ * are reached first, pair with each other, and consume themselves — and the
+ * broken face's pieces arrive to find the partner they needed already spoken
+ * for. The wall is then reported at whatever the leftovers make.
+ *
+ * Measured on the bench against the key's own thicknesses, before this existed:
+ * 30.2% of Mesa Ridge's reported footage and 28.1% of the holdout's came back
+ * at a thickness on NO schedule, the biggest single offender being about
+ * 6-1/2in — 9,579 ft of it on Mesa — which is both exterior types' internal
+ * stud-cavity gap of 6.625in being sold as the wall.
+ *
+ * `wallVectors.ts` has described this failure since it was written ("the
+ * envelope was being found and then reported at 6.6in") and attributed it to
+ * taking the first partner instead of the widest. That fix was right and it
+ * could not reach this case, because here the true partner is not a candidate
+ * at all.
+ *
+ * With the pieces joined first: Mesa Ridge 30.2% -> 20.2% at an unscheduled
+ * thickness and the holdout 28.1% -> 25.6%, with found footage up 3,326 ft on
+ * Mesa, 517 ft on the holdout and 124 ft on A-101 (87.2% -> 92.9%).
+ */
+describe("joining the pieces of a face", () => {
+  const PT = 9;
+  const piece = (fromFt: number, toFt: number, offIn: number): StrokeSegment => ({
+    x1: fromFt * PT,
+    y1: (offIn / 12) * PT,
+    x2: toFt * PT,
+    y2: (offIn / 12) * PT,
+    width: 0.7,
+  });
+  const spans = (segments: StrokeSegment[]) =>
+    oneFacePerLine(segments, 1 / PT)
+      .map((one) => [
+        Number((Math.min(one.x1, one.x2) / PT).toFixed(1)),
+        Number((Math.max(one.x1, one.x2) / PT).toFixed(1)),
+      ])
+      .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+
+  it("JOINS THE PIECES AN EXPORTER SPLITS ONE LINE INTO", () => {
+    // A CAD export breaks a polyline at every vertex, so one face arrives as a
+    // run of touching or near-touching pieces. That is what this is for.
+    expect(spans([piece(0, 20, 0), piece(20.5, 50, 0)])).toEqual([[0, 50]]);
+  });
+
+  it("DOES NOT BRIDGE A 3FT DOORWAY, and that bound is measured not chosen", () => {
+    // Worth stating plainly because the obvious reading of this function is
+    // "join a face across its openings", and at this bound it does not. A 3 ft
+    // door stays a gap. Swept on the bench:
+    //
+    //   gap    Mesa found       Mesa not-wall   holdout found    not-wall
+    //   8 ft   57,909 (74.2%)   11,735          31,362 (95.0%)   1,442
+    //   4 ft   63,624 (81.5%)    5,120          32,004 (96.9%)     644
+    //   2 ft   63,779 (81.7%)    5,023          31,894 (96.6%)     610
+    //   0.75   63,478 (81.3%)    4,961          31,831 (96.4%)     607
+    //
+    // 4 ft does bridge a door and is WORSE on Mesa Ridge, which is the set this
+    // is tuned on, and worse on thickness too (21.2% against 20.2% of footage
+    // at an unscheduled thickness). A building aligns its walls, so the wider
+    // the bound the more often it joins two different walls on one grid line
+    // instead of two pieces of one face — and 8 ft is a catastrophe.
+    expect(spans([piece(0, 20, 0), piece(23, 50, 0)])).toEqual([
+      [0, 20],
+      [23, 50],
+    ]);
+  });
+
+  it("LEAVES TWO WALLS ON ONE GRID LINE AS TWO FACES", () => {
+    // The bound that makes this safe rather than destructive. Joining across
+    // any gap was measured: Mesa Ridge drops to 57,909 ft found with 11,735 ft
+    // not on a wall, against 60,453 and 4,432 before — because a building
+    // aligns its walls, so collinear-and-far is the normal case, and a joined
+    // face pairs with everything along its new length.
+    const far = SAME_FACE_GAP_FEET + 2;
+    expect(spans([piece(0, 20, 0), piece(20 + far, 50, 0)])).toEqual([
+      [0, 20],
+      [20 + far, 50],
+    ]);
+  });
+
+  it("keeps parallel lines at different offsets apart", () => {
+    // 0.625in is the gap between an exterior wall's finish and its sheathing —
+    // the tightest real pair on the bench's schedule. Merging those would erase
+    // the layer the thickness is measured to.
+    expect(oneFacePerLine([piece(0, 30, 0), piece(0, 30, 0.625)], 1 / PT)).toHaveLength(2);
+  });
+
+  it("KEEPS TWO WALLS 1/8IN APART IN THICKNESS AS TWO WALLS", () => {
+    // The bench names this trap in as many words — "A1 and C1 thicknesses 1/8in
+    // apart" — and it is what sets `SAME_FACE_OFFSET_FEET`. A 4-7/8in wall and
+    // a 4-3/4in wall drawn end to end on one centreline put their faces 1/16in
+    // apart. Merge those lines and both walls are gone, replaced by one run at
+    // about 4.81in: a thickness neither of them is, over the length of both,
+    // which is the wrong assembly billed across the lot.
+    //
+    // Mutation-tested: at a tolerance of 0.12in this passes with the walls
+    // merged, so the bound is doing work no other test here can see.
+    const pair = [
+      piece(0, 20, 2.4375),
+      piece(0, 20, -2.4375),
+      piece(20, 40, 2.375),
+      piece(20, 40, -2.375),
+    ];
+    const thicknesses = wallsFromStrokes(pair, { feetPerPoint: 1 / PT })
+      .map((wall) => Number((wall.thicknessFeet * 12).toFixed(2)))
+      .sort((a, b) => b - a);
+    expect(thicknesses, "two wall types were merged into one that is neither").toEqual([4.88, 4.75]);
+  });
+
+  it("keeps lines of different directions apart", () => {
+    const vertical: StrokeSegment = { x1: 0, y1: 0, x2: 0, y2: 30 * PT, width: 0.7 };
+    expect(oneFacePerLine([piece(0, 30, 0), vertical], 1 / PT)).toHaveLength(2);
+  });
+
+  it("JOINS PIECES DRAWN IN OPPOSITE DIRECTIONS, which real sheets do", () => {
+    // Measured on a holdout sheet: the two faces of one wall came back as
+    // x 24.6->152.6 and x 152.6->24.6. A face drawn right-to-left is the same
+    // face, so the direction is normalised before anything is compared.
+    //
+    // THE OFFSET HERE IS NOT ZERO ON PURPOSE. A line's offset is computed as
+    // `x1 * uy - y1 * ux`, which for a horizontal line through the origin is 0
+    // whichever way it points — so a fixture at y=0 passes with the
+    // normalisation deleted, and mutation caught exactly that. Off the origin
+    // the two directions give offsets of opposite sign and the pieces land in
+    // different groups.
+    const backwards = piece(50, 20.5, 6);
+    expect(spans([piece(0, 20, 6), backwards])).toEqual([[0, 50]]);
+  });
+
+  it("SURVIVES PIECES SHORTER THAN THE 2FT LENGTH FLOOR", () => {
+    // Why the join runs BEFORE the length filter. A face chopped into 1 ft
+    // pieces has every piece under the floor while the face itself is 30 ft of
+    // building, so filtering first throws the wall away before anything can
+    // pair it.
+    const chopped: StrokeSegment[] = [];
+    for (let at = 0; at < 30; at += 1.5) chopped.push(piece(at, at + 1, 0));
+    const joined = oneFacePerLine(chopped, 1 / PT);
+    expect(joined, "a face chopped into 1 ft pieces did not come back as one").toHaveLength(1);
+    // 20 pieces at 1.5 ft centres, each 1 ft long: 0 to 28.5 + 1.
+    expect(Math.abs(joined[0].x2 - joined[0].x1) / PT).toBeCloseTo(29.5, 1);
+  });
+
+  it("FINDS A WALL WHOSE EVERY PIECE IS UNDER THE LENGTH FLOOR", () => {
+    // The ORDER of the join and the 2 ft input filter, end to end through
+    // `wallsFromStrokes` rather than through `oneFacePerLine` alone — which is
+    // the only way to see it, and mutation proved it: swapping the two left the
+    // direct test above green.
+    //
+    // Both faces of this 30 ft wall arrive as 1 ft pieces, as an export that
+    // breaks a polyline at every vertex delivers them. Filter first and every
+    // piece is under the floor, so the wall is gone before anything can pair
+    // it. Join first and it is a wall.
+    const chopped: StrokeSegment[] = [];
+    for (let at = 0; at < 30; at += 1.2) {
+      chopped.push(piece(at, at + 1, 0));
+      chopped.push(piece(at, at + 1, 4.875));
+    }
+    const walls = wallsFromStrokes(chopped, { feetPerPoint: 1 / PT });
+    expect(walls, "a wall drawn in 1 ft pieces was filtered away").toHaveLength(1);
+    expect(walls[0].thicknessFeet * 12).toBeCloseTo(4.875, 2);
+    expect(walls[0].lengthFeet).toBeGreaterThan(28);
+  });
+
+  it("READS A WINDOW-BROKEN EXTERIOR WALL AT ITS OWN THICKNESS", () => {
+    // The whole point, end to end. EXT-2 as the bench draws it — planLines
+    // 4.0625, 3.4375, -2.5625, -4.0625 — with its outer face arriving in three
+    // pieces while everything else runs through whole. The true pair is
+    // 8.125in; the stud cavity is 6.625in and the interior lines are whole, so
+    // without the join the cavity wins and the wall is priced as the wrong
+    // assembly.
+    const windowed = [
+      piece(0, 12, -4.0625),
+      piece(13, 28, -4.0625),
+      piece(29, 40, -4.0625),
+      piece(0, 40, -2.5625),
+      piece(0, 40, 3.4375),
+      piece(0, 40, 4.0625),
+    ];
+    const SCHEDULE = [1.5, 4.75, 4.875, 6.625, 7.625, 8.125, 8.875, 14.5];
+    const thicknesses = wallsFromStrokes(windowed, {
+      feetPerPoint: 1 / PT,
+      knownThicknessesIn: SCHEDULE,
+    }).map((wall) => Number((wall.thicknessFeet * 12).toFixed(2)));
+    expect(thicknesses, "the stud cavity was sold as the wall").toContain(8.13);
+    // 6.625in is ON this schedule deliberately: the schedule cannot rescue this
+    // case, so the test cannot be passing because of #751's preference.
+    expect(thicknesses).not.toContain(6.63);
   });
 });

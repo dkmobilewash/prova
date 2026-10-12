@@ -85,6 +85,26 @@ const midpoint = (s: { x1: number; y1: number; x2: number; y2: number }) => ({
   y: (s.y1 + s.y2) / 2,
 });
 
+/**
+ * Does `point` lie on `wall` — within `MATCH_TOLERANCE_PT` of its line, and
+ * between its ends along it?
+ *
+ * The midpoint test this replaces asked whether a run and a wall share a
+ * centre, which is only the same question when the run covers exactly one wall.
+ */
+function liesOn(wall: WallCandidate, point: { x: number; y: number }): boolean {
+  const dx = wall.x2 - wall.x1;
+  const dy = wall.y2 - wall.y1;
+  const length = Math.hypot(dx, dy);
+  if (length <= 0) return false;
+  const ux = dx / length;
+  const uy = dy / length;
+  const along = (point.x - wall.x1) * ux + (point.y - wall.y1) * uy;
+  if (along < -MATCH_TOLERANCE_PT || along > length + MATCH_TOLERANCE_PT) return false;
+  const across = Math.abs((point.x - wall.x1) * uy - (point.y - wall.y1) * ux);
+  return across <= MATCH_TOLERANCE_PT;
+}
+
 const spanOf = (s: { x1: number; y1: number; x2: number; y2: number }) => Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
 
 /** Grades one sheet: every true wall is matched at most once, and anything left
@@ -94,27 +114,46 @@ function grade(found: WallCandidate[], spec: SheetSpec): Record<Grade, number> {
   const claimed = new Set<number>();
   const grades: Record<Grade, number> = { FOUND: 0, PHANTOM: 0, MISSED: 0, LENGTH_OFF: 0 };
 
+  // ── A RUN MAY COVER MORE THAN ONE DRAWN WALL ──
+  //
+  // This matched each run to ONE truth wall by midpoint, which quietly assumed
+  // the finder returns one run per wall as drawn. It does not, and that is not
+  // a defect: two walls of the same type drawn end to end on one line are one
+  // wall on the paper, and `oneFacePerLine` now joins the pieces of a face
+  // before pairing, so they come back as one run.
+  //
+  // `two-rooms-shared-wall` is exactly that shape — a 30 ft and a 25 ft wall
+  // abutting at x=40 — and under the old grading its single 55 ft run matched
+  // NEITHER drawn wall: its midpoint is at 37.5 and theirs are at 25 and 52.5.
+  // The case failed at FOUND 3 of 7 while reporting 170.0 ft against a true
+  // 170.0 ft, which is the whole quantity an estimator bills.
+  //
+  // So a run claims every truth wall it COVERS, and its span is judged against
+  // the total of those walls rather than one of them. A phantom is still a run
+  // that covers nothing, a miss is still a wall no run covers, and a run that
+  // overshoots the walls it covers is still LENGTH_OFF — the grades keep their
+  // meanings and stop depending on how the finder chooses to cut a line up.
   for (const wall of found) {
-    const mid = midpoint(wall);
-    let match = -1;
+    const covered: number[] = [];
     for (let i = 0; i < truth.length; i += 1) {
       if (claimed.has(i)) continue;
-      const trueMid = midpoint(truth[i]);
-      if (Math.hypot(mid.x - trueMid.x, mid.y - trueMid.y) <= MATCH_TOLERANCE_PT) {
-        match = i;
-        break;
-      }
+      if (liesOn(wall, midpoint(truth[i]))) covered.push(i);
     }
-    if (match === -1) {
+    if (covered.length === 0) {
       grades.PHANTOM += 1;
       continue;
     }
-    claimed.add(match);
-    const expected = spanOf(truth[match]);
+    let expected = 0;
+    for (const i of covered) {
+      claimed.add(i);
+      expected += spanOf(truth[i]);
+    }
     const actual = spanOf(wall);
     const off = Math.abs(actual - expected) / Math.max(expected, 1);
-    if (off > LENGTH_TOLERANCE) grades.LENGTH_OFF += 1;
-    else grades.FOUND += 1;
+    for (const _ of covered) {
+      if (off > LENGTH_TOLERANCE) grades.LENGTH_OFF += 1;
+      else grades.FOUND += 1;
+    }
   }
 
   grades.MISSED = truth.length - claimed.size;
