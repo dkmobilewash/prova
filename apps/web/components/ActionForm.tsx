@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import type { ActionResult } from "@/lib/actions/shared";
 import { clearFieldErrors, showFieldErrors } from "@/components/formFieldErrors";
 import { setUnsaved } from "@/components/leaveGuard";
@@ -176,7 +177,22 @@ export function ActionForm({
               if (resetOnSuccess) formRef.current?.reset();
               onSuccess?.();
             };
-          } catch {
+          } catch (error) {
+            // A REDIRECT IS THE ACTION SUCCEEDING. Called from a handler (not
+            // the `action` prop), an action that ends in `redirect()` REJECTS
+            // with Next's redirect error — next 15.5's server-action-reducer
+            // rejects the call while the router is already moving to the new
+            // page. Caught here it read "That didn't save" for the seconds
+            // that page took to render, on a job that HAD saved (createJob,
+            // UX test 2026-10-11) — an invitation to make a duplicate. So it is
+            // treated as the success it is. Never `await` a promise that does
+            // not settle here to hold the button: React 19 entangles pending
+            // async transitions, and the router's navigation would wait on it.
+            if (isRedirectError(error)) {
+              setUnsaved(guardToken, false);
+              if (draftKey) draft.clear();
+              return;
+            }
             setError("That didn't save. Reload the page and check before trying again.");
           }
         });

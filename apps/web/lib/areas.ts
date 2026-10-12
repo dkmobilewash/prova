@@ -69,8 +69,9 @@ export const AREAS: Area[] = [
     icon: ["M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z", "M8 7V4h8v3M3 12h18"],
     headline: ["/dashboard", "/bids"],
     tools: [
-      // The jobs list lives on the home page (/jobs redirects there).
-      { href: "/dashboard#all-jobs", route: "/dashboard", name: "Jobs", description: "Every job, by stage, with its estimate and contract" },
+      // The jobs list is /jobs; its nav entry is still /dashboard ("Jobs &
+      // Estimates"), which is what `route` gates and counts by.
+      { href: "/jobs", route: "/dashboard", name: "Jobs", description: "Every job, by stage, with its estimate and contract" },
       { href: "/bids", name: "Bids", description: "Bid invitations from GCs and how each one went" },
       // The AI home (2026-10-11). Here rather than in an area of its own:
       // a seventh box for one page is a box that opens onto one card, and

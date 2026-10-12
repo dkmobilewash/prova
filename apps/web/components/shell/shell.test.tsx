@@ -128,8 +128,9 @@ describe("the desktop top bar", () => {
     renderTopBar();
     const main = container.querySelector('nav[aria-label="Main"]')!;
     expect(Array.from(main.querySelectorAll("a")).map((a) => a.textContent)).toEqual(["Jobs", "Money", "Schedule", "AI"]);
-    // On the home page no word is lit: Jobs links to /dashboard#jobs, and
-    // lighting it made home and Jobs read as one tab (2026-10-11).
+    // On the home page no word is lit: lighting Jobs there made home and
+    // Jobs read as one tab (2026-10-11). Jobs is the /jobs list now.
+    expect(main.querySelector('a[href="/jobs"]')?.textContent).toBe("Jobs");
     expect(main.querySelector('a[aria-current="page"]')).toBeNull();
   });
 
