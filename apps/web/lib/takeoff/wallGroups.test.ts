@@ -302,7 +302,11 @@ describe("every sentence says WHERE the answer came from", () => {
     const [group] = wallGroups([cluster(4.875, [a])], new Map(), [type("A1", 4.875)]);
     const text = sentence(group);
     expect(text).toContain("Nothing on the drawing names these");
-    expect(text).toContain("only wall type you have at 4-7/8\"");
+    expect(text).toContain("only wall type you have near that");
+    // The group and the type agree here, so the type's own number is NOT
+    // repeated — see the cases below for why that is the condition.
+    expect(text).toContain("They measure 4-7/8\"");
+    expect(text).not.toContain("A1 at");
     expect(text, "a thickness guess was presented without a prompt to check it").toContain("check one");
   });
 
@@ -610,5 +614,74 @@ describe("a sheet's general note naming the default", () => {
       note: "ALL PARTITIONS TYPE A1 U.N.O.",
     });
     expect(group.source.kind).toBe("REMAINDER");
+  });
+});
+
+/**
+ * ── THE SENTENCE USED TO SAY THE TYPE WAS THE GROUP'S THICKNESS ──
+ *
+ * Caught by somebody reading the panel against the partition schedule on
+ * School-01's A-101, 2026-10-11 — two contradictions on one screen:
+ *
+ *   "B1 is the only wall type you have at 7-3/8""   — B1 is recorded at 7-1/4"
+ *   "3 wall types at 4-7/8" (A1, A2, C1)"           — C1 is recorded at 4-3/4"
+ *
+ * A type is matched to a group within `THICKNESS_SLACK_IN`, so the two numbers
+ * legitimately differ by up to a quarter inch. Neither was wrong on its own;
+ * the sentence joining them was. An estimator who checks the panel against the
+ * schedule finds a contradiction the app invented, which is the fastest way to
+ * lose their trust in every other number on the screen.
+ */
+describe("a sentence naming a type whose thickness differs", () => {
+  const sentence = (group: WallGroup) => groupSentence(group, verdictFor(group)) ?? "";
+
+  it("SPELLS OUT THE TYPE'S OWN THICKNESS — the B1 case", () => {
+    // 7-3/8" of wall, and the only type near it is B1 at 7-1/4".
+    const a = run(40);
+    const [group] = wallGroups([cluster(7.375, [a])], new Map(), [type("B1", 7.25)]);
+    const text = sentence(group) ?? "";
+    expect(text).toContain("They measure 7-3/8\"");
+    expect(text, "the type's own thickness is still missing").toContain("B1 at 7-1/4\"");
+    expect(text, "B1 is still claimed to be 7-3/8\" thick").not.toMatch(
+      /B1 is the only wall type you have at 7-3\/8/,
+    );
+  });
+
+  it("SPELLS IT OUT IN A LIST TOO — the A1, A2, C1 case", () => {
+    const a = run(40);
+    const [group] = wallGroups([cluster(4.875, [a])], new Map(), [
+      type("A1", 4.875),
+      type("A2", 4.875),
+      type("C1", 4.75),
+    ]);
+    const text = sentence(group) ?? "";
+    expect(text).toContain("They measure 4-7/8\"");
+    // The two that agree are bare; the one that differs carries its number.
+    expect(text).toContain("A1, A2, C1 at 4-3/4\"");
+    expect(text, "all three are still claimed to be 4-7/8\"").not.toMatch(
+      /wall types at 4-7\/8" \(A1, A2, C1\)/,
+    );
+  });
+
+  it("STAYS QUIET WHEN THE NUMBERS AGREE, so the sentence does not repeat itself", () => {
+    const a = run(40);
+    const [group] = wallGroups([cluster(4.875, [a])], new Map(), [
+      type("A1", 4.875),
+      type("A2", 4.875),
+    ]);
+    const text = sentence(group) ?? "";
+    expect(text).toContain("A1, A2");
+    expect(text, "the type's thickness is repeated when it adds nothing").not.toContain("at 4-7/8\"");
+  });
+
+  it("says nothing extra for a type with NO recorded thickness", () => {
+    // Null means "cannot be matched by thickness". It reaches these sentences
+    // only through a tag, but the helper must not print "A1 at null".
+    const a = run(40);
+    const [group] = wallGroups([cluster(4.875, [a])], new Map([[a, "A1"]]), [type("A1", null)]);
+    const text = sentence(group) ?? "";
+    expect(text).toContain("A1");
+    expect(text).not.toContain("at null");
+    expect(text).not.toContain("NaN");
   });
 });
