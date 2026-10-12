@@ -227,8 +227,29 @@ export async function installHistoryLog(page: Page): Promise<void> {
     // The app router carries its build id inside the Flight rows ("b"), both
     // in the document's inline chunks and in every RSC payload; the two must
     // agree or fetch-server-response.js throws the payload away.
-    const buildIdIn = (text: string) => /"b":"([^"]+)"/.exec(text)?.[1] ?? "?";
+    const buildIdIn = (text: string) => /\\?"b\\?":\\?"([^"\\]+)/.exec(text)?.[1] ?? "?";
     const buildId = () => buildIdIn(document.documentElement.innerHTML);
+    // The payload's rows and references. A row is `<hex id>:<data>`;
+    // a reference is "$<id>" (model), "$L<id>" (lazy element),
+    // "$@<id>" (promise); other "$X" prefixes are type markers.
+    const flightAudit = (text: string): string => {
+      const declared = new Set<string>();
+      const errors: string[] = [];
+      for (const line of text.split("\n")) {
+        const m = /^([0-9a-f]+):(.{0,1})/.exec(line);
+        if (!m) continue;
+        declared.add(m[1]!);
+        if (m[2] === "E") errors.push(`${m[1]}:${line.slice(0, 120)}`);
+      }
+      const refs = new Map<string, string>();
+      const promises = new Set<string>();
+      for (const m of text.matchAll(/"\$(L|@)?([0-9a-f]+)"/g)) {
+        refs.set(m[2]!, m[1] ?? "");
+        if (m[1] === "@") promises.add(m[2]!);
+      }
+      const dangling = [...refs].filter(([id]) => !declared.has(id)).map(([id, kind]) => `$${kind}${id}`);
+      return `rows=${declared.size} refs=${refs.size} promises=[${[...promises].join(",")}] dangling=[${dangling.join(",")}]${errors.length ? ` ERROR ROWS: ${errors.join(" ; ")}` : ""}`;
+    };
     const fetch_ = window.fetch;
     window.fetch = async function patchedFetch(input: RequestInfo | URL, init?: RequestInit) {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -260,7 +281,7 @@ export async function installHistoryLog(page: Page): Promise<void> {
             .text()
             .then((text) => {
               const line = text.split("\n")[0] ?? "";
-              log.push(`${Date.now()} ${label} body finished: ${text.length} chars, payload build=${buildIdIn(text)}, first line: ${line.slice(0, 160)}`);
+              log.push(`${Date.now()} ${label} body finished: ${text.length} chars, payload build=${buildIdIn(text)}, ${flightAudit(text)}, first line: ${line.slice(0, 120)}`);
             })
             .catch((error: unknown) => log.push(`${Date.now()} ${label} body FAILED: ${String(error).slice(0, 120)}`));
           // React's own account of the pending work, read off the FiberRoot
