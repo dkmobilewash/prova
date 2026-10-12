@@ -10,7 +10,7 @@ import { Spinner } from "@/components/Spinner";
  */
 
 export const RUN_PILL =
-  "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[12.5px] font-semibold";
+  "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-sm font-semibold";
 
 const STATUS: Record<TaskStatus, { label: string; tone: string }> = {
   RUNNING: { label: "Running", tone: "bg-tag-brand-soft text-tag-brand-soft-ink" },

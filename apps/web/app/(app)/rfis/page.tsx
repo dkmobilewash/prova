@@ -27,12 +27,12 @@ function isoDate(date: Date | null) {
 export default async function RfisPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; show?: string; draft?: string }>;
+  searchParams: Promise<{ job?: string; show?: string; draft?: string; new?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_JOBS");
   if (!allowed) return <NoAccess capability="MANAGE_JOBS" />;
   const { company, ...currentUser } = context;
-  const { job: jobFilter, show, draft } = await searchParams;
+  const { job: jobFilter, show, draft, new: startNew } = await searchParams;
   const showClosed = show === "all";
 
   // A card from the Ask box (lib/ask/drafts.ts): the form opens prefilled
@@ -160,6 +160,7 @@ export default async function RfisPage({
           jobs={jobs}
           defaultJobId={rfiDraft?.jobId ?? activeJob ?? undefined}
           draft={rfiDraft}
+          startOpen={startNew === "1"}
         />
       </section>
 

@@ -22,12 +22,12 @@ function isoDate(date: Date | null) {
 export default async function MaterialOrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; show?: string }>;
+  searchParams: Promise<{ job?: string; show?: string; new?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_FIELD");
   if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
   const { company, ...currentUser } = context;
-  const { job: jobFilter, show } = await searchParams;
+  const { job: jobFilter, show, new: startNew } = await searchParams;
   const showDelivered = show === "all";
 
   const today = await viewerToday();
@@ -151,6 +151,7 @@ export default async function MaterialOrdersPage({
           vendors={vendors}
           lineItems={lineItems}
           defaultJobId={activeJob ?? undefined}
+          startOpen={startNew === "1"}
         />
       </section>
 

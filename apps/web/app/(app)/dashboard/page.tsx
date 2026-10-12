@@ -390,10 +390,23 @@ export default async function TodayPage({
     : null;
   const sendPayApp = showsBilling ? pickJob("Send pay app", inProgress, "billing", "pay app") : null;
   const rfisReachable = canReach(principal, "/rfis");
+  // The field creates (Concept G's phone tiles, restored 2026-10-11): each
+  // lands on its form already open. With one job to choose it rides along;
+  // with more, the form's own job select (RFI, daily report) or the
+  // palette's job picker (a photo needs a job before anything) asks.
+  const fieldJobs = crewedToday.length > 0 ? crewedToday : inProgress;
+  const onlyJob = fieldJobs.length === 1 ? `&job=${fieldJobs[0]!.id}` : "";
+  const takePhoto = canReach(principal, "/photos") ? pickJob("Take a photo", fieldJobs, "photos", "add a photo") : null;
+  const quick = [
+    ...(takePhoto ? [{ icon: "◉", shortcut: takePhoto }] : []),
+    ...(rfisReachable ? [{ icon: "?", shortcut: { label: "New RFI", href: `/rfis?new=1${onlyJob}` } }] : []),
+    ...(canReach(principal, "/field-reports") ? [{ icon: "✎", shortcut: { label: "Daily report", href: `/field-reports?new=1${onlyJob}` } }] : []),
+  ];
   const chips = [
     ...(logHours ? [{ icon: "◷", shortcut: logHours }] : []),
     ...(sendPayApp ? [{ icon: "↗", shortcut: sendPayApp }] : []),
     ...(rfisReachable ? [{ icon: "?", shortcut: { label: "Find an RFI", href: "/rfis" } }] : []),
+    ...quick,
   ];
 
   /* ---------------------------------------------------------- areas -- */
@@ -475,12 +488,12 @@ export default async function TodayPage({
             {/* ------------------------------------------------ areas -- */}
             {/* Where everything is. Once there is a job: before that every
                 box would read zero, and the checklist is the one start. */}
-            {areas && <AreaBoxes areas={areas} />}
+            {areas && <AreaBoxes areas={areas} hours={logHours} />}
 
-            {/* On a phone the foreman's one big action stays first; the other
-                field shortcuts are in the Crew & field and Paperwork tiles. */}
-            {!isNewAccount && logHours && (
-              <PhoneTiles primary={{ ...logHours, label: "Log today's hours" }} />
+            {/* On a phone the foreman's one big action stays first, and the
+                three things he creates from the field sit under it. */}
+            {!isNewAccount && (logHours || quick.length > 0) && (
+              <PhoneTiles primary={logHours ? { ...logHours, label: "Log today's hours" } : null} quick={quick} />
             )}
 
             {/* The full tour, offered once to a brand-new account — but not

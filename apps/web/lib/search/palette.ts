@@ -48,7 +48,10 @@ export type PaletteAction = {
   /** A static route to open, OR — */
   href?: string;
   /** — the job tab to open once a job is picked. */
-  jobTab?: "crew" | "billing";
+  jobTab?: "crew" | "billing" | "photos" | "estimate#change-orders";
+  /** Other words a sub says for it ("CO", "timesheet", "pics"). Searched,
+   * never shown. */
+  keywords?: string;
 };
 
 type ActionDef = PaletteAction & {
@@ -61,17 +64,40 @@ type ActionDef = PaletteAction & {
 
 const ACTIONS: ActionDef[] = [
   { id: "new-job", label: "New job", hint: "Start a job or an estimate", href: "/jobs/new" },
-  { id: "log-hours", label: "Log hours", hint: "Pick a job, then log the crew's time", jobTab: "crew", capability: "MANAGE_FIELD" },
-  { id: "send-pay-app", label: "Send pay app", hint: "Pick a job, then bill it", jobTab: "billing", capability: "MANAGE_BILLING" },
+  { id: "log-hours", label: "Log hours", hint: "Pick a job, then log the crew's time", jobTab: "crew", capability: "MANAGE_FIELD", keywords: "time timesheet crew crews manpower" },
+  { id: "send-pay-app", label: "Send pay app", hint: "Pick a job, then bill it", jobTab: "billing", capability: "MANAGE_BILLING", keywords: "invoice billing bill pay application" },
   { id: "find-rfi", label: "Find an RFI", hint: "Every RFI, open and answered", href: "/rfis" },
+  // The create verbs (2026-10-11): each lands on the form already OPEN
+  // (`?new=1`) or, for the two that live inside one job, picks the job
+  // first. Gated exactly like the page they open.
+  { id: "raise-rfi", label: "Raise an RFI", hint: "The RFI form, open", href: "/rfis?new=1", keywords: "new question gc" },
+  { id: "daily-report", label: "Daily report", hint: "Today's field report, open", href: "/field-reports?new=1", keywords: "dfr field report log day" },
+  { id: "add-photo", label: "Add a photo", hint: "Pick a job, then take or upload photos", jobTab: "photos", capability: "MANAGE_FIELD", keywords: "photos pics pictures picture camera" },
+  { id: "new-submittal", label: "New submittal", hint: "The submittal form, open", href: "/submittals?new=1", keywords: "sub product data shop drawings" },
+  { id: "order-material", label: "Order material", hint: "A new material order, open", href: "/material-orders?new=1", keywords: "materials po purchase" },
+  { id: "add-punch", label: "Add punch item", hint: "Punch lists — the add form is always open", href: "/punch-lists", keywords: "punchlist list fix" },
+  { id: "log-co", label: "Log a change order", hint: "Pick a job, then add the change order", jobTab: "estimate#change-orders", capability: "VIEW_JOB_COSTS", keywords: "co pco extra" },
+  { id: "add-backcharge", label: "Add a backcharge", hint: "A new backcharge, open", href: "/backcharges?new=1", keywords: "back charge" },
 ];
 
-/** The shortcut actions this person can actually carry out. */
+/** The shortcut actions this person can actually carry out. The gate reads
+ * the route WITHOUT its query: "/rfis?new=1" is not a ROUTE_CAPABILITY key,
+ * so asked as-is it would be ungated. */
 export function actionsFor(principal: Principal): PaletteAction[] {
-  return ACTIONS.filter((a) => (a.href ? canReach(principal, a.href) : a.capability ? can(principal, a.capability) : true)).map(
-    ({ id, label, hint, href, jobTab }) => ({ id, label, hint, href, jobTab }),
+  return ACTIONS.filter((a) => (a.href ? canReach(principal, a.href.split("?")[0]!) : a.capability ? can(principal, a.capability) : true)).map(
+    ({ id, label, hint, href, jobTab, keywords }) => ({ id, label, hint, href, jobTab, keywords }),
   );
 }
+
+/** Words a sub types for a page whose label does not say them. */
+const PAGE_KEYWORDS: Record<string, string> = {
+  "/schedule": "crew crews manpower who where",
+  "/team": "crew crews people guys workers manpower",
+  "/field-reports": "daily dfr",
+  "/photos": "pics pictures camera",
+  "/cash-flow": "invoice invoices billing pay app",
+  "/material-orders": "materials po",
+};
 
 /** Case-insensitive "does every word of the query appear in this text". */
 export function matches(text: string, query: string): boolean {
@@ -208,14 +234,14 @@ export function buildSections(data: PaletteResponse | null, rawQuery: string, pe
   }
   push(
     "Actions",
-    data.actions.filter((a) => matches(a.label, query)).slice(0, ACTIONS_WHEN_TYPING).map(actionEntry),
+    data.actions.filter((a) => matches(`${a.label} ${a.keywords ?? ""}`, query)).slice(0, ACTIONS_WHEN_TYPING).map(actionEntry),
   );
 
   // Nav labels first (the doors the sidebar had), then the walkthrough
   // matches `globalSearch` found by description — never the same href twice.
   const seen = new Set<string>();
   const pages = [
-    ...data.navPages.filter((p) => matches(`${p.label} ${p.group}`, query)).map(pageEntry),
+    ...data.navPages.filter((p) => matches(`${p.label} ${p.group} ${PAGE_KEYWORDS[p.href] ?? ""}`, query)).map(pageEntry),
     ...data.pages.map((p) => pageEntry({ href: p.href, label: p.title, group: "Page" })),
   ].filter((e) => {
     if (seen.has(e.href!)) return false;
@@ -230,7 +256,8 @@ export function buildSections(data: PaletteResponse | null, rawQuery: string, pe
       {
         id: "ask",
         title: `Ask C Stream: ${query}`,
-        subtitle: "Opens the assistant with this filled in — nothing runs until you press Ask",
+        // "Uses AI" first: this is the one row that can end in a model call.
+        subtitle: "Uses AI · opens the assistant with this filled in — nothing runs until you press Ask",
         href: `/ask?q=${encodeURIComponent(query)}`,
         verb: "Ask",
         icon: "ask",

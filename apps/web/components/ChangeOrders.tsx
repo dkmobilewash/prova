@@ -723,7 +723,7 @@ export function ChangeOrders({
   const create = useActionRunner();
 
   return (
-    <section className="mb-10" data-tour="job-change-orders">
+    <section id="change-orders" className="mb-10 scroll-mt-24" data-tour="job-change-orders">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold text-ink">Change orders</h2>
         {pendingCount > 0 && (

@@ -227,16 +227,16 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                   </div>
                 </div>
                 {invoice.lineItems.length > 0 && (
-                  <Link href={`/jobs/${job.id}/pay-applications/${invoice.id}`} className="mt-1 inline-block text-xs text-link hover:underline">
+                  <Link href={`/jobs/${job.id}/pay-applications/${invoice.id}`} className="mt-1 inline-block text-sm text-link hover:underline">
                     View pay application →
                   </Link>
                 )}
                 {invoice.dueAt && (invoice.status !== "PAID" && dueStatus(invoice.dueAt, asOf).overdue ? (
-                  <p className="mt-1 text-xs font-semibold text-danger">
+                  <p className="mt-1 text-sm font-semibold text-danger">
                     Due {formatCalendarDate(invoice.dueAt)} · {dueStatus(invoice.dueAt, asOf).text}
                   </p>
                 ) : (
-                  <p className="mt-1 text-xs text-ink-muted">Due {formatCalendarDate(invoice.dueAt)}</p>
+                  <p className="mt-1 text-sm text-ink-muted">Due {formatCalendarDate(invoice.dueAt)}</p>
                 ))}
                 {/* The retainage figure and the balance it explains now
                     come from the same call, so the page cannot print one

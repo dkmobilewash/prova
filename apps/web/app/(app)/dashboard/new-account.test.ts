@@ -350,6 +350,24 @@ describe("/dashboard on a company with jobs", () => {
     expect(html).toContain('href="/rfis"');
   });
 
+  it("puts Concept G's three field creates on the phone home, each landing on its open form", async () => {
+    const tiles = (await render()).match(/data-home="quick-tiles"[\s\S]*?<\/div>/)?.[0] ?? "";
+    // One job crewed today, so it rides along instead of a picker.
+    expect(tiles).toContain('href="/jobs/job-1/photos"');
+    expect(tiles).toContain('href="/rfis?new=1&amp;job=job-1"');
+    expect(tiles).toContain('href="/field-reports?new=1&amp;job=job-1"');
+  });
+
+  it("gates each field create like the page it opens", async () => {
+    // ACCOUNTING holds neither MANAGE_FIELD nor MANAGE_JOBS.
+    state.context.role = "MEMBER";
+    state.context.jobFunction = "ACCOUNTING";
+    const html = await render();
+    expect(html).not.toContain('data-home="quick-tiles"');
+    expect(html).not.toContain("/rfis?new=1");
+    expect(html).not.toContain("/field-reports?new=1");
+  });
+
   it("shows a field role the work and none of the money", async () => {
     state.context.role = "MEMBER";
     state.context.jobFunction = "FIELD";
