@@ -53,3 +53,14 @@ to disk, and their `.meta.json` says so.
 
 The check: `pnpm --filter @prova/lien-waiver test`. Edit any character in
 `lib/statutes/generated/forms.json` or `statutes/text/*.txt` and it fails.
+
+**A lead could vanish with no trace, and Cyrus found it (issue #747).** The lead
+note to Diego and the Resend audience sign-up were fire-and-forget:
+`.catch(() => null)`, results ignored. The New Mexico "notify me" form is
+nothing BUT those two sends, so with Resend down or unconfigured it told the
+person they were on the list while their address went nowhere and nothing was
+logged. Now every send that does not land is logged by what failed and why,
+never the address. Production refuses with "try again" when no send recorded
+the address at all: for a download, the person's own waiver email counts,
+since Resend's log holds it. A preview with no Resend key still clicks through.
+The check: `lib/waiver-request.test.ts`. Disable either guard and its test fails.

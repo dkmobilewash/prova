@@ -1,5 +1,5 @@
 import { FORM_NAMES, STATE_CONTENT } from "./content";
-import { addContact, isEmail, sendEmail, type SendResult } from "./email";
+import { addContact, isEmail, landed, reportUnlanded, sendEmail, settle, type SendResult } from "./email";
 import { checkFills, type FillErrors } from "./fills";
 import { renderWaiverPdf } from "./pdf";
 import { DAY, HOUR, LIMITS, rateKey, underLimit, type RateStore } from "./rate-limit";
@@ -19,7 +19,10 @@ import { FORM_KEYS, STATES, type FormKey, type StateCode } from "./statutes/type
  *
  * "Valid" means the address passed the format check and Resend did not
  * reject it. When OUR side fails (a provider outage) the person still gets
- * their PDF; the gate is for a lead, not a punishment for our outage.
+ * their PDF; the gate is for a lead, not a punishment for our outage --
+ * PROVIDED at least one send recorded the address. If none did, production
+ * refuses rather than handing over the PDF and losing the lead silently
+ * (issue #747), and every send that failed is logged without the address.
  */
 
 export interface WaiverRequestBody {
@@ -47,6 +50,9 @@ export interface WaiverDeps {
   send?: typeof sendEmail;
   subscribe?: typeof addContact;
   now?: () => Date;
+  /** Where a send that did not land is reported. Defaults to console.error,
+   * which is Vercel's runtime log. */
+  log?: (line: string) => void;
 }
 
 export type WaiverResponse =
@@ -56,8 +62,10 @@ export type WaiverResponse =
 const fail = (status: number, error: string, fieldErrors?: FillErrors): WaiverResponse => ({ kind: "error", status, error, fieldErrors });
 
 export async function handleWaiverRequest(body: WaiverRequestBody, deps: WaiverDeps): Promise<WaiverResponse> {
-  const send = deps.send ?? sendEmail;
-  const subscribe = deps.subscribe ?? addContact;
+  // Settled, so a send that throws comes back as "failed" instead of being
+  // swallowed by a `.catch(() => null)` with no trace (issue #747).
+  const send: typeof sendEmail = (message, env) => settle((deps.send ?? sendEmail)(message, env));
+  const subscribe: typeof addContact = (contact, env) => settle((deps.subscribe ?? addContact)(contact, env));
 
   // A bot that fills every field fills this one. Same answer as any other
   // malformed request, so it learns nothing.
@@ -129,12 +137,13 @@ export async function handleWaiverRequest(body: WaiverRequestBody, deps: WaiverD
   if (sent.status === "not-configured" && deps.env.VERCEL_ENV === "production") {
     return fail(503, "Downloads are paused for a moment. Please try again shortly.");
   }
+  reportUnlanded("the waiver email to the person", sent, deps.env, deps.log);
 
   if (!returning) {
     // The lead. Only who asked and what kind of form -- never the amounts,
     // the owner or the GC typed into it.
     const notifyTo = deps.env.LEAD_NOTIFY_EMAIL?.trim() || "diego@cstream.ai";
-    await send(
+    const note = await send(
       {
         to: notifyTo,
         subject: `Lien waiver lead: ${name}${body.company ? `, ${body.company}` : ""} (${state})`,
@@ -151,8 +160,22 @@ export async function handleWaiverRequest(body: WaiverRequestBody, deps: WaiverD
         replyTo: email,
       },
       deps.env,
-    ).catch(() => null);
-    await subscribe({ email, name, marketingOptIn: body.marketingOptIn === true }, deps.env).catch(() => null);
+    );
+    const contact = await subscribe({ email, name, marketingOptIn: body.marketingOptIn === true }, deps.env);
+    reportUnlanded("the lead note", note, deps.env, deps.log);
+    reportUnlanded("the audience sign-up", contact, deps.env, deps.log);
+
+    // THE LEAD MUST LAND SOMEWHERE. The waiver email to the person counts:
+    // it sits in Resend's log with the address on it. But if the waiver
+    // email, the lead note and the audience sign-up ALL failed, nothing
+    // anywhere holds this address, and handing over the PDF anyway would
+    // lose the one thing the gate exists for, silently -- the bug Cyrus
+    // found (issue #747). So production refuses and the person is told to
+    // try again; the lines above say which sends failed.
+    if (![sent, note, contact].some((result) => landed(result, deps.env))) {
+      (deps.log ?? console.error)("[lien-waiver] a download was refused: no send recorded the lead");
+      return fail(503, "Downloads are paused for a moment. Please try again shortly.");
+    }
   }
 
   return { kind: "pdf", pdf, filename, emailStatus: sent.status };

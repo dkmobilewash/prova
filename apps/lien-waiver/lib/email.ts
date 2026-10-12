@@ -36,6 +36,42 @@ export interface EmailEnv {
   VERCEL_ENV?: string;
 }
 
+/**
+ * Did this send or sign-up put the address somewhere Diego can find it?
+ *
+ * A skipped preview send counts, because the allowlist skipping it is the
+ * point. "Not configured" counts only outside production, so a preview
+ * without a Resend key can still be clicked end to end. In production a
+ * missing key is a lead lost.
+ */
+export function landed(result: SendResult, env: EmailEnv): boolean {
+  if (result.status === "sent" || result.status === "skipped-preview") return true;
+  return result.status === "not-configured" && env.VERCEL_ENV !== "production";
+}
+
+/** A send that THROWS (a network error, a DNS failure) becomes a "failed"
+ * result rather than an exception, so a caller cannot drop it with a bare
+ * `.catch(() => null)` -- which is how a lead used to vanish with no log. */
+export async function settle(attempt: Promise<SendResult>): Promise<SendResult> {
+  try {
+    return await attempt;
+  } catch (error) {
+    return { status: "failed", error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** One log line for a send that did not land, naming WHAT failed and why
+ * but never the address: a runtime log is not where a lead's email goes. */
+export function reportUnlanded(
+  what: string,
+  result: SendResult,
+  env: EmailEnv,
+  log: (line: string) => void = console.error,
+): void {
+  if (landed(result, env)) return;
+  log(`[lien-waiver] ${what} did not go out: ${result.status}${"error" in result ? ` (${result.error})` : ""}`);
+}
+
 export function allowed(to: string, env: EmailEnv): boolean {
   if (env.VERCEL_ENV === "production") return true;
   const list = (env.EMAIL_ALLOWLIST ?? DEFAULT_ALLOWLIST)

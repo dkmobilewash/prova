@@ -1,4 +1,4 @@
-import { addContact, isEmail, sendEmail } from "./email";
+import { addContact, isEmail, landed, reportUnlanded, sendEmail, settle } from "./email";
 import { HOUR, LIMITS, rateKey, underLimit, type RateStore } from "./rate-limit";
 
 /**
@@ -28,6 +28,8 @@ export async function handleNotifyRequest(
     ip: string;
     send?: typeof sendEmail;
     subscribe?: typeof addContact;
+    /** Where a send that did not land is reported (default console.error). */
+    log?: (line: string) => void;
   },
 ): Promise<{ status: number; error?: string }> {
   if (body.website) return { status: 400, error: "That request could not be read." };
@@ -41,9 +43,9 @@ export async function handleNotifyRequest(
   if (!(await underLimit(deps.rate.store, rateKey("ip", deps.ip, deps.rate.salt), LIMITS.notifyPerIpPerHour, HOUR))) {
     return { status: 429, error: "Please try again a little later." };
   }
-  const send = deps.send ?? sendEmail;
-  const subscribe = deps.subscribe ?? addContact;
-  await send(
+  const send: typeof sendEmail = (message, env) => settle((deps.send ?? sendEmail)(message, env));
+  const subscribe: typeof addContact = (contact, env) => settle((deps.subscribe ?? addContact)(contact, env));
+  const note = await send(
     {
       to: deps.env.LEAD_NOTIFY_EMAIL?.trim() || "diego@cstream.ai",
       subject: `Lien waiver tool: notify request for ${state} from ${name}`,
@@ -57,7 +59,16 @@ export async function handleNotifyRequest(
       replyTo: email,
     },
     deps.env,
-  ).catch(() => null);
-  await subscribe({ email, name, marketingOptIn: body.marketingOptIn === true }, deps.env).catch(() => null);
+  );
+  const contact = await subscribe({ email, name, marketingOptIn: body.marketingOptIn === true }, deps.env);
+  reportUnlanded("the notify-me lead note", note, deps.env, deps.log);
+  reportUnlanded("the notify-me audience sign-up", contact, deps.env, deps.log);
+  // This form IS the lead: nothing goes to the person, so if neither the note
+  // nor the sign-up landed, answering "you're on the list" would be untrue and
+  // the address would be gone (issue #747). Tell them to try again instead.
+  if (!landed(note, deps.env) && !landed(contact, deps.env)) {
+    (deps.log ?? console.error)("[lien-waiver] a notify-me sign-up was refused: no send recorded the lead");
+    return { status: 503, error: "Sign-ups are paused for a moment. Please try again shortly." };
+  }
   return { status: 200 };
 }

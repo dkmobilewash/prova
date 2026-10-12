@@ -127,6 +127,47 @@ describe("the download gate", () => {
     expect(await handleWaiverRequest(FIRST, d)).toMatchObject({ kind: "pdf", emailStatus: "failed" });
   });
 
+  it("hands over the PDF and logs it when only the lead note fails", async () => {
+    const lines: string[] = [];
+    const { deps: d } = deps({
+      env: { VERCEL_ENV: "production" },
+      // The person's copy goes out; the note to Diego does not.
+      send: (async (m: { to: string }) =>
+        m.to === "lead@example.com" ? { status: "sent", id: "x" } : { status: "failed", error: "500 boom" }) as unknown as typeof sendEmail,
+      log: (line) => lines.push(line),
+    });
+    const result = await handleWaiverRequest({ ...FIRST, email: "lead@example.com" }, d);
+    expect(result).toMatchObject({ kind: "pdf", emailStatus: "sent" });
+    expect(lines).toEqual(["[lien-waiver] the lead note did not go out: failed (500 boom)"]);
+    expect(lines.join("\n")).not.toContain("lead@example.com");
+  });
+
+  it("refuses in production when no send recorded the lead, rather than losing it silently", async () => {
+    const lines: string[] = [];
+    const { deps: d } = deps({
+      env: { VERCEL_ENV: "production" },
+      send: (async () => ({ status: "failed", error: "503" })) as unknown as typeof sendEmail,
+      subscribe: (async () => ({ status: "not-configured" })) as unknown as typeof addContact,
+      log: (line) => lines.push(line),
+    });
+    expect(await handleWaiverRequest(FIRST, d)).toMatchObject({ kind: "error", status: 503 });
+    expect(lines).toContain("[lien-waiver] a download was refused: no send recorded the lead");
+    expect(lines.filter((line) => line.includes("did not go out"))).toHaveLength(3);
+  });
+
+  it("turns a send that throws into a logged failure, not an unhandled error", async () => {
+    const lines: string[] = [];
+    const { deps: d } = deps({
+      send: (async () => {
+        throw new Error("getaddrinfo ENOTFOUND api.resend.com");
+      }) as unknown as typeof sendEmail,
+      log: (line) => lines.push(line),
+    });
+    // Outside production, and the audience sign-up landed, so the PDF still comes.
+    expect(await handleWaiverRequest(FIRST, d)).toMatchObject({ kind: "pdf", emailStatus: "failed" });
+    expect(lines[0]).toMatch(/waiver email to the person did not go out: failed \(getaddrinfo ENOTFOUND/);
+  });
+
   it("tells the person when their address is rejected", async () => {
     const { deps: d } = deps({ send: (async () => ({ status: "rejected", error: "x" })) as unknown as typeof sendEmail });
     expect(await handleWaiverRequest(FIRST, d)).toMatchObject({ status: 400, error: expect.stringMatching(/rejected/) });
@@ -206,5 +247,56 @@ describe("notify me (New Mexico)", () => {
     );
     expect(result.status).toBe(200);
     expect(sent).toEqual(["diego@cstream.ai"]);
+  });
+
+  const notify = (overrides: { env?: Record<string, string>; send?: unknown; subscribe?: unknown; log?: (line: string) => void }) =>
+    handleNotifyRequest(
+      { email: "sub@example.com", name: "Pat", state: "NM" },
+      {
+        env: overrides.env ?? {},
+        rate: { store: new MemoryRateStore(), salt: "s" },
+        ip: "1.1.1.1",
+        send: (overrides.send ?? (async () => ({ status: "sent", id: "x" }))) as typeof sendEmail,
+        subscribe: (overrides.subscribe ?? (async () => ({ status: "sent", id: "c" }))) as typeof addContact,
+        log: overrides.log,
+      },
+    );
+
+  it("does not say 'you're on the list' when nothing recorded the address", async () => {
+    const lines: string[] = [];
+    const result = await notify({
+      env: { VERCEL_ENV: "production" },
+      send: async () => ({ status: "not-configured" }),
+      subscribe: async () => ({ status: "not-configured" }),
+      log: (line) => lines.push(line),
+    });
+    expect(result).toMatchObject({ status: 503, error: expect.stringMatching(/try again/) });
+    expect(lines).toContain("[lien-waiver] a notify-me sign-up was refused: no send recorded the lead");
+    expect(lines.join("\n")).not.toContain("sub@example.com");
+  });
+
+  it("succeeds when one of the two landed, and logs the other", async () => {
+    const lines: string[] = [];
+    const result = await notify({
+      env: { VERCEL_ENV: "production" },
+      subscribe: async () => {
+        throw new Error("socket hang up");
+      },
+      log: (line) => lines.push(line),
+    });
+    expect(result.status).toBe(200);
+    expect(lines).toEqual(["[lien-waiver] the notify-me audience sign-up did not go out: failed (socket hang up)"]);
+  });
+
+  it("lets a preview with no Resend key be clicked through", async () => {
+    const lines: string[] = [];
+    const result = await notify({
+      env: {},
+      send: async () => ({ status: "not-configured" }),
+      subscribe: async () => ({ status: "not-configured" }),
+      log: (line) => lines.push(line),
+    });
+    expect(result.status).toBe(200);
+    expect(lines).toEqual([]);
   });
 });
