@@ -160,6 +160,7 @@ model Company {
   crewMembers               CrewMember[]
   payrollRegisterEntries    PayrollRegisterEntry[]
   crewScheduleDays          CrewScheduleDay[]
+  crews                     Crew[]
   workerCrafts              WorkerCraft[]
   experienceModRates        ExperienceModRate[]
   employerBurdenRates       EmployerBurdenRate[]
@@ -242,6 +243,7 @@ model User {
   assignments                          JobAssignment[]
   crewScheduleDays                     CrewScheduleDay[]             @relation("CrewScheduleDayUser")
   crewScheduleDaysCreated              CrewScheduleDay[]             @relation("CrewScheduleDayCreatedBy")
+  crewMemberships                      CrewMembership[]
   companycamLinksCreated               CompanyCamProjectLink[]       @relation("CompanyCamLinkedBy")
   bluebeamSessionsLinked               BluebeamStudioSession[]       @relation("BluebeamLinkedBy")
   calendarFeedTokens                   CalendarFeedToken[]

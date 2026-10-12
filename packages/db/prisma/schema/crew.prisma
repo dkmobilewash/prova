@@ -168,6 +168,7 @@ model CrewMember {
   timeEntries TimeEntry[]
 
   crewScheduleDays CrewScheduleDay[]
+  crewMemberships  CrewMembership[]
   workerCrafts     WorkerCraft[]
 
   /// Punch items this person is fixing. Nullable on the item and never

@@ -311,6 +311,11 @@ export const EXCLUSIONS: Exclusion[] = [
     reason:
       "Marks on a drawing sheet are placed by TAPPING THE DRAWING — the whole value is the x/y, and there is no sentence a person could say that puts a pin in the right spot. Ask can describe what is pinned; it cannot pin.",
   },
+  {
+    action: "crews.*",
+    reason:
+      "A saved crew is a picking aid for the schedule form's checkboxes, not a record. Ask already schedules people by name (crew schedule commands), so a crew there would be a second way to say the same thing.",
+  },
   ...notYetRegistered,
 ];
 

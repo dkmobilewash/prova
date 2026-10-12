@@ -113,6 +113,29 @@ describe("the step tabs", () => {
   });
 });
 
+describe("Dismiss and Not right on a finding", () => {
+  it("both sit on each finding and call their own action with its id", async () => {
+    const dismiss = vi.fn(async () => ({ ok: true as const }));
+    const wrong = vi.fn(async () => ({ ok: true as const }));
+    mount(
+      <BidWorkspace
+        data={data({ estimateCheck: [finding({ id: "f9" })] })}
+        tab="estimate"
+        zone="America/Los_Angeles"
+        ask={null}
+        findingActions={{ dismiss, wrong }}
+      />,
+    );
+    const row = host.querySelector('[data-finding="f9"]')!;
+    const button = (label: string) => [...row.querySelectorAll("button")].find((b) => b.textContent === label)!;
+    await act(async () => button("Not right").click());
+    expect(wrong).toHaveBeenCalledWith("f9");
+    expect(dismiss).not.toHaveBeenCalled();
+    await act(async () => button("Dismiss").click());
+    expect(dismiss).toHaveBeenCalledWith("f9");
+  });
+});
+
 describe("research", () => {
   it("says it has not run, with a way to run it", () => {
     mount(view(data(), "research"));

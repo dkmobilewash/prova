@@ -17,7 +17,7 @@ vi.mock("@/lib/ask/usage", () => ({ recordAskUsage: vi.fn() }));
 
 import { revalidatePath } from "next/cache";
 import { saveAgentSettings } from "./agentSettings";
-import { dismissFinding, restoreFinding } from "./agentFindings";
+import { dismissFinding, markFindingWrong, restoreFinding } from "./agentFindings";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -105,6 +105,18 @@ describe("dismiss / restore a finding", () => {
   it("refuses without estimating access before touching the database", async () => {
     can.mockReturnValue(false);
     expect(await dismissFinding("f1")).toMatchObject({ ok: false, error: expect.stringMatching(/part of your job function/) });
+    expect(await markFindingWrong("f1")).toMatchObject({ ok: false, error: expect.stringMatching(/part of your job function/) });
     expect(db.agentFinding.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("records WHY: Dismiss is HANDLED, Not right is WRONG, Restore clears it", async () => {
+    db.agentFinding.updateMany.mockResolvedValue({ count: 1 });
+    await dismissFinding("f1");
+    await markFindingWrong("f2");
+    await restoreFinding("f2");
+    const data = db.agentFinding.updateMany.mock.calls.map((c) => c[0].data);
+    expect(data[0]).toMatchObject({ dismissedReason: "HANDLED" });
+    expect(data[1]).toMatchObject({ dismissedReason: "WRONG", dismissedByUserId: "u1", dismissedAt: expect.any(Date) });
+    expect(data[2]).toEqual({ dismissedAt: null, dismissedByUserId: null, dismissedReason: null });
   });
 });

@@ -17,7 +17,7 @@ function jsonError(error: string, status: number) {
 
 function toJson(i: {
   id: string;
-  caseNumber: number;
+  caseNumber: number | null;
   caseYear: number;
   occurredAt: Date;
   employeeName: string;

@@ -172,6 +172,12 @@ describe("safety", () => {
     expect(report.quiet).toBe("3 cases logged for 2026: 1 recordable on the 300 log, 1 with days away.");
     expect(safetyStatus({ year: 2026, cases: 0, recordable: 0, daysAway: 0 }).quiet).toBe("No cases logged for 2026.");
   });
+
+  it("names near misses separately, never as cases", () => {
+    expect(safetyStatus({ year: 2026, cases: 0, recordable: 0, daysAway: 0, nearMisses: 2 }).quiet).toBe(
+      "No cases logged for 2026. 2 near misses logged too — not OSHA cases.",
+    );
+  });
 });
 
 describe("alerts", () => {

@@ -13,7 +13,7 @@ import {
   loadUpcomingSchedule,
   scheduledWorkerName,
 } from "@/lib/crew-schedule-query";
-import { resolveWeekStart, schedulableJobs } from "@/lib/crew-schedule";
+import { resolveWeekStart, schedulableJobs, workerKey } from "@/lib/crew-schedule";
 import { CrewScheduleBoard, type ScheduleDay } from "@/components/CrewScheduleBoard";
 import { CrewWeekGrid } from "@/components/CrewWeekGrid";
 import { CalendarSubscribe } from "@/components/CalendarSubscribe";
@@ -56,7 +56,7 @@ export default async function SchedulePage({
   const week = resolveWeekStart(weekParam, today);
   const canWrite = can(user, "MANAGE_FIELD");
 
-  const [scheduled, unscheduled, upcoming, weekDays, missing, people, crew, crafts, feedToken] = await Promise.all([
+  const [scheduled, unscheduled, upcoming, weekDays, missing, people, crew, crafts, feedToken, savedCrews] = await Promise.all([
     prisma.job.findMany({
       where: { companyId: company.id, startDate: { not: null } },
       orderBy: { startDate: "asc" },
@@ -93,6 +93,13 @@ export default async function SchedulePage({
     prisma.calendarFeedToken.findUnique({
       where: { companyId_userId: { companyId: company.id, userId: user.id } },
       select: { token: true },
+    }),
+    // Saved crews for the picker. Archived ones are left out — that is
+    // what archiving means.
+    prisma.crew.findMany({
+      where: { companyId: company.id, archivedAt: null },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, members: { select: { scheduledUserId: true, crewMemberId: true } } },
     }),
   ]);
 
@@ -168,6 +175,9 @@ export default async function SchedulePage({
         canWrite={canWrite && workers.length > 0 && allJobs.length > 0}
         initialJobId={jobParam}
         startOpen={add === "1"}
+        // `workerKey` makes the same `user:`/`crew:` values the checkboxes carry.
+        crews={savedCrews.map((c) => ({ id: c.id, name: c.name, members: c.members.map(workerKey) }))}
+        canArchiveCrews={user.role === "OWNER"}
         week={<CrewWeekGrid days={weekDays.map(toDay)} week={week} today={today} basePath="/schedule" />}
       />
 

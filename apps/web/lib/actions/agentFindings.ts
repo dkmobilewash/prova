@@ -25,16 +25,37 @@ function revalidateFindingPages() {
   revalidatePath("/ai/bids/[id]", "page");
 }
 
-export async function dismissFinding(id: string): Promise<ActionResult> {
-  const context = await requireCompanyContext();
-  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(NO_ACCESS);
+/** Dismiss and "Not right" are the same write with a different reason:
+ * HANDLED is "seen it, dealt with it"; WRONG is "the agent was mistaken",
+ * and the research pass is told about it on its next run on the same bid
+ * (`wrongFindingsNote`, lib/agents/bidResearch.ts). */
+async function closeFinding(
+  context: Awaited<ReturnType<typeof requireCompanyContext>>,
+  id: string,
+  reason: "HANDLED" | "WRONG",
+): Promise<ActionResult> {
   const { count } = await prisma.agentFinding.updateMany({
     where: { id, companyId: context.companyId, dismissedAt: null },
-    data: { dismissedAt: new Date(), dismissedByUserId: context.id },
+    data: { dismissedAt: new Date(), dismissedByUserId: context.id, dismissedReason: reason },
   });
   if (count === 0) return actionFail("That finding is already dismissed or no longer exists.");
   revalidateFindingPages();
   return actionOk;
+}
+
+// The capability check stays IN each exported action, not in the helper:
+// action-capability-guards.test.ts reads each export for its own guard.
+export async function dismissFinding(id: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(NO_ACCESS);
+  return closeFinding(context, id, "HANDLED");
+}
+
+/** "Not right": the finding is wrong, not merely dealt with. */
+export async function markFindingWrong(id: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(NO_ACCESS);
+  return closeFinding(context, id, "WRONG");
 }
 
 export async function restoreFinding(id: string): Promise<ActionResult> {
@@ -42,7 +63,9 @@ export async function restoreFinding(id: string): Promise<ActionResult> {
   if (!can(context, "MANAGE_ESTIMATING")) return actionFail(NO_ACCESS);
   const { count } = await prisma.agentFinding.updateMany({
     where: { id, companyId: context.companyId, dismissedAt: { not: null } },
-    data: { dismissedAt: null, dismissedByUserId: null },
+    // The reason goes too: a restored finding is open, and a stale WRONG
+    // would keep telling the research pass it was mistaken.
+    data: { dismissedAt: null, dismissedByUserId: null, dismissedReason: null },
   });
   if (count === 0) return actionFail("That finding is already open or no longer exists.");
   revalidateFindingPages();

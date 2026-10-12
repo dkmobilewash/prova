@@ -4,7 +4,7 @@ const db = vi.hoisted(() => ({
   bidInvitation: { findFirst: vi.fn(), findMany: vi.fn() },
   contact: { findFirst: vi.fn() },
   job: { findMany: vi.fn() },
-  agentFinding: { create: vi.fn(), findUnique: vi.fn() },
+  agentFinding: { create: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
 }));
 const ai = vi.hoisted(() => ({ agentPass: vi.fn(), anthropicIsConfigured: vi.fn(), gate: vi.fn(), usage: vi.fn() }));
 vi.mock("@prova/db", () => ({ prisma: db, Prisma: {} }));
@@ -44,6 +44,7 @@ beforeEach(() => {
   db.bidInvitation.findMany.mockResolvedValue([{ id: "bid1", projectName: "Riverside Clinic", status: "INVITED", outcome: null }]);
   db.job.findMany.mockResolvedValue([]);
   db.agentFinding.findUnique.mockResolvedValue(null);
+  db.agentFinding.findMany.mockResolvedValue([]);
   db.agentFinding.create.mockImplementation(async ({ data }: { data: Written }) => {
     created.push(data);
     return { id: `f${created.length}` };
@@ -96,6 +97,19 @@ describe("BID_RESEARCH", () => {
     expect(ai.usage).toHaveBeenCalledWith(expect.objectContaining({ companyId: "c1", feature: "ai-agents", model: "claude-opus-5" }));
     const web = created.find((f) => f.kind === "web")!;
     expect(web.sources).toEqual([{ label: "Clinic news", url: "https://news.example.com/clinic" }]);
+  });
+
+  it("tells the web pass which earlier findings on THIS bid were marked Not right", async () => {
+    ai.anthropicIsConfigured.mockReturnValue(true);
+    ai.agentPass.mockResolvedValue({ text: "NOTHING FOUND", usage: { passes: 1, inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, citations: [] });
+    db.agentFinding.findMany.mockResolvedValue([{ title: "What the web says", body: "A five-storey hospital tower." }]);
+
+    await researchBid(ctx);
+
+    expect(db.agentFinding.findMany.mock.calls[0][0].where).toEqual({ companyId: "c1", bidInvitationId: "bid1", dismissedReason: "WRONG" });
+    const prompt: string = ai.agentPass.mock.calls[0][0].prompt;
+    expect(prompt).toMatch(/^Project: Riverside Clinic\nGeneral contractor: Turner\n\nThe estimator marked these earlier findings on this project as NOT RIGHT/);
+    expect(prompt).toContain("- What the web says: A five-storey hospital tower.");
   });
 
   it("writes NO web finding when the search returned nothing to cite", async () => {

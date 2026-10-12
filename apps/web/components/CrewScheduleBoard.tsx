@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useRef, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
@@ -9,6 +9,7 @@ import { primaryActionClass } from "@/components/emptyStateStyles";
 import { dayLabel } from "@/components/fieldReportWeeks";
 import { blocksImplicitSubmit } from "@/lib/crew-schedule";
 import { scheduleCrewDay, unscheduleCrewDay } from "@/lib/actions";
+import { CrewPicker, ManageCrews, SaveCrew, type SavedCrew } from "@/components/SavedCrews";
 
 /**
  * Who is planned on which job, which day — and which past days nobody
@@ -102,6 +103,8 @@ export function CrewScheduleBoard({
   week,
   initialJobId,
   startOpen = false,
+  crews = [],
+  canArchiveCrews = false,
 }: {
   upcoming: ScheduleDay[];
   missingHours: ScheduleDay[];
@@ -116,6 +119,10 @@ export function CrewScheduleBoard({
   initialJobId?: string;
   /** `?add=1` — open the form on arrival. */
   startOpen?: boolean;
+  /** Saved crews, for the picker that ticks their people. */
+  crews?: SavedCrew[];
+  /** Archiving a crew is owner-only (the action refuses anyone else too). */
+  canArchiveCrews?: boolean;
 }) {
   const [adding, setAdding] = useState(startOpen);
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +138,8 @@ export function CrewScheduleBoard({
         : "",
   );
   const [pending, startTransition] = useTransition();
+  // The crew picker and "save as a crew" read and tick this form's boxes.
+  const formRef = useRef<HTMLFormElement>(null);
 
   // RENDERED FROM PROPS, NEVER FROM STATE, and this cost a click test.
   //
@@ -180,6 +189,7 @@ export function CrewScheduleBoard({
         {adding && (
           <form
             data-testid="crew-schedule-form"
+            ref={formRef}
             // onSubmit, NOT `action={...}`. In React 19 a form `action`
             // resets the form before the action runs, whatever it returns
             // (`startHostTransition` -> `requestFormReset`), so a refused
@@ -240,6 +250,7 @@ export function CrewScheduleBoard({
                   thing anyone does on a phone, and a crew is several people. */}
               <fieldset className="text-sm sm:row-span-3">
                 <legend className="text-ink-label">Who (pick one or more)</legend>
+                <CrewPicker crews={crews} formRef={formRef} />
                 <div className="mt-1 max-h-64 overflow-y-auto rounded-md border border-line-card">
                   {workers.map((worker) => (
                     <label key={worker.value} className="flex min-h-11 items-center gap-2 px-3 text-ink">
@@ -306,6 +317,7 @@ export function CrewScheduleBoard({
                 className="mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted"
               />
             </label>
+            <SaveCrew formRef={formRef} />
             {error && (
               <p className="text-sm text-tag-rose-ink" role="alert">
                 {error}
@@ -320,6 +332,7 @@ export function CrewScheduleBoard({
             </button>
           </form>
         )}
+        {adding && <ManageCrews crews={crews} canArchive={canArchiveCrews} />}
 
         {saved && (
           <p className="mb-4 text-sm text-ink" role="status">

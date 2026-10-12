@@ -46,6 +46,7 @@ const actions = () => ({
   dismissRecommendation: vi.fn(ok),
   markRecommendationDone: vi.fn(ok),
   dismissFinding: vi.fn(ok),
+  markFindingWrong: vi.fn(ok),
 });
 
 function fullProps(overrides: Partial<Props> = {}): Props {
@@ -237,6 +238,16 @@ describe("the whole page", () => {
     await act(async () => dismiss.click());
     expect(props.actions.dismissFinding).toHaveBeenCalledWith("f1");
     expect(watching.querySelector('[role="status"]')?.textContent).toBe("That finding is already gone.");
+  });
+
+  it("Not right sits beside Dismiss on a finding and calls its OWN action", async () => {
+    const props = fullProps();
+    render(<AiHome {...props} />);
+    const watching = container.querySelector('[aria-labelledby="ai-watching"]')!;
+    const wrong = Array.from(watching.querySelectorAll("button")).find((b) => b.textContent === "Not right")!;
+    await act(async () => wrong.click());
+    expect(props.actions.markFindingWrong).toHaveBeenCalledWith("f1");
+    expect(props.actions.dismissFinding).not.toHaveBeenCalled();
   });
 
   it("Watching links each due bid to its AI workspace and counts open findings", () => {

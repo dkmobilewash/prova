@@ -8,7 +8,7 @@ import {
   type IncidentDefaults,
   type JobOption,
 } from "@/components/SafetyIncidentFields";
-import { classificationLabel, isRecordable, outcomeLabel } from "@/components/safetyLabels";
+import { classificationLabel, isNearMiss, isRecordable, outcomeLabel } from "@/components/safetyLabels";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { Spinner } from "@/components/Spinner";
@@ -25,7 +25,8 @@ const rowBtnConfirm =
 
 export type IncidentRowData = IncidentDefaults & {
   id: string;
-  caseLabel: string;
+  /** Null for a near miss, which has no case number. */
+  caseLabel: string | null;
   jobName: string | null;
   reportedByName: string | null;
 };
@@ -83,10 +84,14 @@ export function SafetyIncidentRow({
           }}
           className="flex flex-col gap-3"
         >
-          <p className="text-sm font-semibold text-ink-label">Case {incident.caseLabel}</p>
+          <p className="text-sm font-semibold text-ink-label">
+            {incident.caseLabel ? `Case ${incident.caseLabel}` : "Near miss"}
+          </p>
           <FormDraftNotice draft={draft} />
 
-          <SafetyIncidentFields jobs={jobs} defaults={incident} lockDate />
+          {/* A numbered case cannot be turned into a near miss — its number is
+              on the log — so the edit form does not offer it. */}
+          <SafetyIncidentFields jobs={jobs} defaults={incident} lockDate allowNearMiss={!incident.caseLabel} />
 
           {error && <p className="text-sm text-danger">{error}</p>}
 
@@ -128,7 +133,7 @@ export function SafetyIncidentRow({
     <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-xs text-ink-body">{incident.caseLabel}</span>
+          {incident.caseLabel && <span className="font-mono text-xs text-ink-body">{incident.caseLabel}</span>}
           <span className="text-ink">{incident.employeeName}</span>
           {incident.jobTitle && <span className="text-xs text-ink-body">{incident.jobTitle}</span>}
           <span
@@ -136,7 +141,7 @@ export function SafetyIncidentRow({
               recordable ? "bg-tag-amber text-tag-amber-ink" : "bg-rail-hover text-ink-body"
             }`}
           >
-            {recordable ? "Recordable" : "First aid"}
+            {recordable ? "Recordable" : isNearMiss(incident.outcome) ? "Near miss" : "First aid"}
           </span>
         </div>
 

@@ -8,7 +8,7 @@ import { SafetyIncidentForm } from "@/components/SafetyIncidentForm";
 import { SafetyIncidentRow } from "@/components/SafetyIncidentRow";
 import { ToolboxTalkForm } from "@/components/ToolboxTalkForm";
 import { ToolboxTalkRow } from "@/components/ToolboxTalkRow";
-import { isRecordable } from "@/components/safetyLabels";
+import { caseLabel, isNearMiss, isRecordable } from "@/components/safetyLabels";
 import { EmptyState } from "@/components/EmptyState";
 import { StatusLine } from "@/components/StatusLine";
 import { safetyStatus } from "@/lib/status-sentences";
@@ -67,7 +67,8 @@ export default async function SafetyPage({
 
   const incidents = await prisma.safetyIncident.findMany({
     where: { companyId: company.id, caseYear: activeYear },
-    orderBy: { caseNumber: "desc" },
+    // Near misses carry no number; they sort after the numbered cases.
+    orderBy: [{ caseNumber: { sort: "desc", nulls: "last" } }, { occurredAt: "desc" }],
     include: { job: { select: { name: true } }, reportedBy: { select: { name: true } } },
   });
 
@@ -79,10 +80,13 @@ export default async function SafetyPage({
   });
 
   const recordableCount = incidents.filter((i) => isRecordable(i.outcome)).length;
+  const nearMissCount = incidents.filter((i) => isNearMiss(i.outcome)).length;
   const daysAwayCases = incidents.filter((i) => i.outcome === "DAYS_AWAY").length;
   const status = safetyStatus({
     year: activeYear,
-    cases: incidents.length,
+    // A near miss is not an OSHA case, so it is not counted as one.
+    cases: incidents.length - nearMissCount,
+    nearMisses: nearMissCount,
     recordable: recordableCount,
     daysAway: daysAwayCases,
   });
@@ -173,7 +177,7 @@ export default async function SafetyPage({
                 canDelete={currentUser.role === "OWNER"}
                 incident={{
                   id: incident.id,
-                  caseLabel: `${incident.caseYear}-${String(incident.caseNumber).padStart(3, "0")}`,
+                  caseLabel: caseLabel(incident.caseYear, incident.caseNumber),
                   occurredAt: isoDate(incident.occurredAt),
                   jobId: incident.jobId,
                   jobName: incident.job?.name ?? null,
