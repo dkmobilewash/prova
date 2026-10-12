@@ -389,8 +389,8 @@ const OPEN_ROUTES: Record<string, string> = {
     "Same reasoning as /jobs/[id]/billing beside it, same issue #383: withholds on MANAGE_BILLING in-page — its write actions are not independently guarded.",
   "/areas/[slug]":
     "The six area pages behind the home boxes (Concept H). Open like /dashboard, and its content is not: the page draws only the tools areasFor() says this person can open (canReach, the same rule as the nav), 404s an area with none of them, and reads each count and waiting row only behind canReach/can for the page it describes (lib/areas-data.ts). Every card links to a page that still runs its own requireCapability.",
-  "/jobs": "A bare redirect to /dashboard. Guarding a redirect claims a protection it redirects straight past.",
-  "/estimating": "A bare redirect to /dashboard?status=ESTIMATE. Same reason as /jobs.",
+  "/jobs": "The jobs list (it was a redirect to /dashboard until 2026-10-11). Open like /dashboard, which listed the same jobs to the same people; job values show only with VIEW_JOB_COSTS, read in-page.",
+  "/estimating": "A bare redirect to /jobs?status=ESTIMATE. Guarding a redirect claims a protection it redirects straight past.",
   "/settings/export":
     "Guarded HARDER than any capability: the page itself refuses anyone whose role is not OWNER, because it hands over the whole company's data. A capability would loosen it.",
   "/settings/import":

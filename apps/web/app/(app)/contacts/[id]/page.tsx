@@ -629,7 +629,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           <p className="text-ink-body">
             No jobs for {contact.name} yet.{" "}
             <Link href="/jobs/new" className="text-link hover:underline">
-              Start a bid for them →
+              New job for them →
             </Link>
           </p>
         ) : (

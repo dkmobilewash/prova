@@ -261,7 +261,7 @@ describe("an area page", () => {
     expect(brand[0]).toContain("text-neutral-900");
     // ...and the create is not the only door: the card also opens the list.
     const card = html.slice(html.indexOf('data-area-tool="/dashboard"'), html.indexOf('data-area-tool="/bids"'));
-    expect(card).toMatch(/href="\/dashboard#all-jobs"[^>]*>Open jobs</);
+    expect(card).toMatch(/href="\/jobs"[^>]*>Open jobs</);
     expect(card.indexOf("+ New job")).toBeLessThan(card.indexOf("Open jobs"));
   });
 

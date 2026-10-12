@@ -35,11 +35,9 @@ const MONEY_PAGES = ["/areas/money", "/cash-flow", "/wip", "/phase-codes", "/bac
  * areaHref("money"). */
 export const MONEY_AREA_HREF = "/areas/money";
 
-/** The jobs list lives on the dashboard (`/jobs` redirects there), so Jobs
- * points at the dashboard's jobs section. `#jobs` is the anchor the home
- * page puts on its "Your jobs" block; without it the link still lands on
- * the dashboard, which is where the list is. */
-export const JOBS_HREF = "/dashboard#jobs";
+/** The jobs list: search and stage filters at the top. It pointed at
+ * `/dashboard#jobs` until 2026-10-11, which only scrolled home (UX test). */
+export const JOBS_HREF = "/jobs";
 
 /** The AI home. Its sub-pages (/ai/activity, /ai/bids/[id]) light it too. */
 export const AI_HREF = "/ai";
@@ -69,9 +67,9 @@ export function primaryTabs(groups: NavGroup[]): PrimaryTab[] {
 /**
  * Which tab the current page belongs to. `hasHome` is false on the desktop
  * bar, which has no Home word (the wordmark is the way home) — there the
- * dashboard lights NOTHING. It used to light Jobs, because Jobs links to
- * `/dashboard#jobs`, and then home and Jobs read as one tab (click test,
- * 2026-10-11). Jobs is lit on a job and on the Jobs & bids area.
+ * dashboard lights NOTHING (when Jobs went to `/dashboard#jobs`, lighting it
+ * there made home and Jobs read as one tab — click test, 2026-10-11). Jobs is
+ * lit on /jobs, on a job, and on the Jobs & bids area.
  */
 export function activeTab(pathname: string, hasHome: boolean): PrimaryTabKey | null {
   if (pathname === "/dashboard") return hasHome ? "home" : null;

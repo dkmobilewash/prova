@@ -45,9 +45,7 @@ export function JobSummaryHeader({
 
   return (
     <header className="mb-4 sm:mb-5 print:hidden">
-      {/* The jobs list is the dashboard (`/jobs` only redirects there), so
-          link it directly rather than through a redirect. */}
-      <Link href="/dashboard" className="inline-flex min-h-11 items-center text-sm text-ink-muted hover:text-ink hover:underline mouse:min-h-7">
+      <Link href="/jobs" className="inline-flex min-h-11 items-center text-sm text-ink-muted hover:text-ink hover:underline mouse:min-h-7">
         ← All jobs
       </Link>
       <div className="mt-1 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">

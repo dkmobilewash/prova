@@ -12,8 +12,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  *
  * The second half pins the home as rebuilt for Concept G (2026-10-10): the
  * greeting, the search box and shortcuts, the three blocks (Needs you today,
- * Money, Crews today), the job cards, and the full jobs list still at the
- * bottom. It replaced "the order it always had" deliberately — the old
+ * Money, Crews today) and the job cards. The full jobs list moved to /jobs
+ * on 2026-10-11 (jobs/jobs-page.test.ts). It replaced "the order it always had" deliberately — the old
  * four-tile row and job-health list are gone, and their figures moved into
  * the blocks and cards, which is what the figures test below holds onto.
  *
@@ -97,7 +97,7 @@ vi.mock("@/lib/viewer-timezone", () => ({ todayInZone: vi.fn(() => "2026-10-14")
 const { default: TodayPage } = await import("@/app/(app)/dashboard/page");
 
 async function render() {
-  return renderToStaticMarkup(await TodayPage({ searchParams: Promise.resolve({}) }));
+  return renderToStaticMarkup(await TodayPage());
 }
 
 const EMPTY_TODAY = {
@@ -169,15 +169,9 @@ const POPULATED_ORDER = [
   'data-tour="dashboard-needs-attention"',
   'data-tour="dashboard-money"',
   'data-tour="dashboard-field"',
-  // The top bar's Jobs link and the phone's Jobs tab land on #jobs.
   'id="jobs"',
   'data-tour="dashboard-job-health"',
   "Accounts receivable",
-  'id="all-jobs"',
-  "Browse all jobs",
-  'placeholder="Search job or client…"',
-  'data-tour="dashboard-job-filters"',
-  'data-tour="dashboard-job-list"',
 ];
 
 /** One block's markup, by its tour anchor. */
@@ -316,7 +310,6 @@ describe("/dashboard on a company with jobs", () => {
       "Pays in 41 days on average",
       "Forecast 8% past contract value.",
       "Example GC · Metal framing / drywall · 57% billed",
-      "$10,000.00", // the job's value in the full list
     ]) {
       expect(html, `lost ${figure}`).toContain(figure);
     }
@@ -376,11 +369,12 @@ describe("/dashboard on a company with jobs", () => {
     expect(crews).toContain('href="/schedule"');
   });
 
-  it("never sends anyone to /jobs, which only redirects back here", async () => {
+  it("sends the rest of the jobs to /jobs, the list, not to an anchor on this page", async () => {
     state.today = { ...BUSY_TODAY, gcReliability: [] };
     const html = await render();
-    expect(html).toContain("Open a job below");
-    expect(html).not.toContain('href="/jobs"');
+    expect(html).toMatch(/href="\/jobs"[^>]*>All 1 job/);
+    expect(html).toMatch(/href="\/jobs"[^>]*>Open a job</);
+    expect(html).not.toContain("#all-jobs");
   });
 
   it("gives each area box one line from real rows, or its plain description", async () => {

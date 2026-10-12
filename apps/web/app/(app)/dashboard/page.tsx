@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { Card, PageShell, StatusBadge } from "@prova/ui";
-import { JobStatus, Prisma, prisma } from "@prova/db";
+import { Card, PageShell } from "@prova/ui";
+import type { JobStatus } from "@prova/db";
+import { jobValue, loadJobs } from "@/lib/jobs-list";
 import { requireCompanyContext } from "@/lib/auth";
 import { redirectToOnboardingIfUnasked } from "@/lib/onboarding-gate";
 import { estimateStage } from "@/lib/estimate-stage";
 import { can, canReach } from "@/lib/permissions";
-import { money } from "@/lib/money";
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { renewalAlerts, renewalTiming } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
@@ -62,34 +62,10 @@ import { EMPTY_TASKS, loadTaskList } from "@/lib/agents/tasks";
  * cached, per ARCHITECTURE.md, and a block with nothing to say says so
  * rather than showing a made-up figure.
  *
- * The searchable, filterable list of every job is still here, at the
- * bottom (#all-jobs). #jobs is the Your jobs cards, where the top bar's
- * Jobs link and the phone's Jobs tab land; /jobs and /estimating redirect here.
+ * The searchable, filterable list of every job is /jobs (it sat at the
+ * bottom of this page until 2026-10-11); "All N jobs" under the cards and the
+ * top bar's Jobs both go there.
  */
-
-const STATUS_FILTERS: { value: JobStatus | "ALL"; label: string }[] = [
-  { value: "ALL", label: "All" },
-  { value: "ESTIMATE", label: "Estimating" },
-  { value: "CONTRACTED", label: "Contracted" },
-  { value: "IN_PROGRESS", label: "In progress" },
-  { value: "COMPLETE", label: "Complete" },
-];
-
-const ALL_STATUSES: JobStatus[] = ["ESTIMATE", "CONTRACTED", "IN_PROGRESS", "COMPLETE"];
-
-const GROUP_HEADING: Record<JobStatus, string> = {
-  ESTIMATE: "Estimating",
-  CONTRACTED: "Contracted",
-  IN_PROGRESS: "In progress",
-  COMPLETE: "Complete",
-};
-
-const STAGE_TONE: Record<string, string> = {
-  NEEDS_PRICING: "border-line-card bg-tag-slate text-tag-slate-ink",
-  READY_TO_SEND: "border-transparent bg-tag-brand text-tag-brand-ink",
-  OUT_FOR_SIGNATURE: "border-transparent bg-tag-amber text-tag-amber-ink",
-  SIGNED: "border-transparent bg-tag-green text-tag-green-ink",
-};
 
 /** Whole literals so Tailwind sees every class. 20/16px since the compact
  * pass (2026-10-11), from 26/20. */
@@ -100,38 +76,6 @@ const BLOCK_GRID = {
 
 /** How many job cards the home shows before "All N jobs". */
 const CARDS_SHOWN = 6;
-
-type JobRow = Awaited<ReturnType<typeof loadJobs>>[number];
-
-async function loadJobs(companyId: string, where: Prisma.JobWhereInput) {
-  return prisma.job.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    include: {
-      contact: true,
-      lineItems: { where: { isDeleted: false } },
-      signatureRequests: { select: { status: true } },
-      invoices: { select: { amount: true } },
-    },
-  });
-}
-
-function jobValue(job: JobRow) {
-  return job.lineItems.reduce(
-    (sum, item) => sum + Number(item.quantity) * Number(item.unitPrice ?? 0),
-    0,
-  );
-}
-
-function filterHref(status: JobStatus | "ALL", q?: string) {
-  const params = new URLSearchParams();
-  if (status !== "ALL") params.set("status", status);
-  if (q) params.set("q", q);
-  const query = params.toString();
-  // #all-jobs: a filter is clicked at the full jobs list, so it lands back there
-  // rather than at the top of the page.
-  return query ? `/dashboard?${query}#all-jobs` : "/dashboard#all-jobs";
-}
 
 function dayLabel(iso: string, style: "long" | "short") {
   return new Date(`${iso}T00:00:00.000Z`).toLocaleDateString("en-US", {
@@ -153,11 +97,7 @@ function pickJob(label: string, jobs: { id: string; name: string }[], path: stri
   return { label, query, sub: "Pick the job" };
 }
 
-export default async function TodayPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ q?: string; status?: string }>;
-}) {
+export default async function TodayPage() {
   const { company, ...currentUser } = await requireCompanyContext();
 
   // The onboarding gate. THIS MUST STAY THE FIRST THING AFTER
@@ -178,19 +118,6 @@ export default async function TodayPage({
     jobs: can(principal, "MANAGE_JOBS"),
     estimating: can(principal, "MANAGE_ESTIMATING"),
   };
-  const { q, status } = await searchParams;
-
-  const activeStatus = ALL_STATUSES.includes(status as JobStatus) ? (status as JobStatus) : null;
-
-  const where: Prisma.JobWhereInput = { companyId: company.id };
-  if (activeStatus) where.status = activeStatus;
-  if (q) {
-    where.OR = [
-      { name: { contains: q, mode: "insensitive" } },
-      { contact: { name: { contains: q, mode: "insensitive" } } },
-    ];
-  }
-
   // The READER'S calendar day and clock — what "overdue", "today's crew"
   // and "good morning" are all claims about. See lib/viewerToday.ts.
   const timeZone = await viewerTimeZone();
@@ -206,9 +133,8 @@ export default async function TodayPage({
     company.id,
   );
 
-  const [jobs, allJobs, renewalSources, today, gettingStartedCounts, extras, tasks] = await Promise.all([
-    loadJobs(company.id, where),
-    loadJobs(company.id, { companyId: company.id }),
+  const [allJobs, renewalSources, today, gettingStartedCounts, extras, tasks] = await Promise.all([
+    loadJobs({ companyId: company.id }),
     renewalSourcesForCompany(company.id),
     loadTodayDashboard(company.id, asOf),
     gettingStartedHidden ? null : loadGettingStartedCounts(company.id),
@@ -236,8 +162,6 @@ export default async function TodayPage({
     (renewal) => renewal.urgency === "EXPIRED" || renewal.urgency === "DUE_SOON",
   );
 
-  const estimating = allJobs.filter((job) => job.status === "ESTIMATE");
-  const pipelineValue = estimating.reduce((sum, job) => sum + jobValue(job), 0);
   const inProgress = allJobs.filter((job) => job.status === "IN_PROGRESS");
 
   // A company with no jobs has nothing for most of this page to say — no
@@ -441,12 +365,6 @@ export default async function TodayPage({
     </Card>
   );
 
-  const grouped = activeStatus
-    ? [{ status: activeStatus, rows: jobs }]
-    : ALL_STATUSES.map((s) => ({ status: s, rows: jobs.filter((job) => job.status === s) })).filter(
-        (group) => group.rows.length > 0,
-      );
-
   return (
     // The rows, not the markup. This is a client provider, so anything
     // handed to it reaches the browser whether or not a list renders it —
@@ -579,9 +497,9 @@ export default async function TodayPage({
               <section id="jobs" className="mt-5 scroll-mt-20" data-tour="dashboard-job-health">
                 <div className="mb-1 flex items-baseline justify-between gap-3">
                   <h2 className="font-headline text-xl font-semibold text-ink">Your jobs</h2>
-                  <a href="#all-jobs" className="inline-flex min-h-11 items-center text-sm text-ink-muted hover:text-ink hover:underline">
+                  <Link href="/jobs" className="inline-flex min-h-11 items-center text-sm text-ink-muted hover:text-ink hover:underline">
                     All {allJobs.length} {allJobs.length === 1 ? "job" : "jobs"} &rarr;
-                  </a>
+                  </Link>
                 </div>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                   {cards.map((card) => (
@@ -609,9 +527,9 @@ export default async function TodayPage({
                   {today.gcReliability.length === 0 ? (
                     <p className="mt-2 text-sm text-ink-body">
                       No invoices raised yet, so there is nothing to judge.{" "}
-                      <a href="#all-jobs" className="text-link hover:underline">
-                        Open a job below
-                      </a>{" "}
+                      <Link href="/jobs" className="text-link hover:underline">
+                        Open a job
+                      </Link>{" "}
                       and use its Billing tab — this fills in once a GC has paid one.
                     </p>
                   ) : (
@@ -651,141 +569,6 @@ export default async function TodayPage({
               </section>
             )}
 
-            {/* --------------------------------------- browse all jobs - */}
-            {/* A new account's jobs empty state is at the top of the page. */}
-            {!isNewAccount && (
-              <section id="all-jobs" className="mt-8 scroll-mt-20 border-t border-line-card pt-5">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h2 className="font-headline text-[22px] font-semibold text-ink">Browse all jobs</h2>
-                  <p className="text-xs text-ink-body">
-                    {showsJobMoney
-                      ? `${money(pipelineValue)} still being priced across ${estimating.length} ${estimating.length === 1 ? "estimate" : "estimates"}`
-                      : `${estimating.length} ${estimating.length === 1 ? "estimate" : "estimates"} still being priced`}
-                  </p>
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <Link
-                    href="/jobs/new"
-                    className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-brand-hover"
-                  >
-                    New job
-                  </Link>
-                  <form action="#all-jobs" className="flex flex-wrap items-center gap-2">
-                    {activeStatus && <input type="hidden" name="status" value={activeStatus} />}
-                    <input
-                      type="search"
-                      name="q"
-                      defaultValue={q}
-                      placeholder="Search job or client…"
-                      aria-label="Search jobs by job or client name"
-                      className="min-h-11 w-52 rounded-md border border-line-card bg-surface px-3 text-base text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none sm:text-sm"
-                    />
-                    <button
-                      type="submit"
-                      className="min-h-11 rounded-md border border-line-card bg-surface px-3 text-sm font-medium text-ink-label hover:bg-rail-hover"
-                    >
-                      Search
-                    </button>
-                  </form>
-                  <Link href="/catalog" className="inline-flex min-h-11 items-center text-sm text-link hover:underline">
-                    Line item catalog
-                  </Link>
-                  <Link href="/bids" className="inline-flex min-h-11 items-center text-sm text-link hover:underline">
-                    Bid history
-                  </Link>
-                </div>
-
-                <div className="mt-4 flex flex-wrap gap-2 border-b border-line-card pb-4" data-tour="dashboard-job-filters">
-                  {STATUS_FILTERS.map((filter) => {
-                    const isActive =
-                      filter.value === "ALL" ? activeStatus === null : activeStatus === filter.value;
-                    return (
-                      <Link
-                        key={filter.value}
-                        href={filterHref(filter.value, q)}
-                        aria-current={isActive ? "page" : undefined}
-                        className={`inline-flex min-h-11 items-center rounded-md border px-3 text-sm transition-colors ${
-                          isActive
-                            ? "border-brand bg-tag-brand text-tag-brand-ink"
-                            : "border-line-card bg-surface text-ink-body hover:text-ink"
-                        }`}
-                      >
-                        {filter.label}
-                      </Link>
-                    );
-                  })}
-                </div>
-
-                {jobs.length === 0 ? (
-                  <Card className="mt-6 text-sm text-ink-body">
-                    {q ? (
-                      <>
-                        Nothing matches “{q}”
-                        {activeStatus ? ` in ${GROUP_HEADING[activeStatus].toLowerCase()}` : ""}.{" "}
-                        <Link href={filterHref(activeStatus ?? "ALL")} className="text-link hover:underline">
-                          Clear the search
-                        </Link>
-                        .
-                      </>
-                    ) : (
-                      <>
-                        Nothing {GROUP_HEADING[activeStatus as JobStatus].toLowerCase() === "estimating" ? "being estimated" : `marked ${GROUP_HEADING[activeStatus as JobStatus].toLowerCase()}`} right now.{" "}
-                        <Link href={filterHref("ALL", q)} className="text-link hover:underline">
-                          Show all jobs
-                        </Link>
-                        .
-                      </>
-                    )}
-                  </Card>
-                ) : (
-                  <div className="mt-6 flex flex-col gap-6" data-tour="dashboard-job-list">
-                    {grouped.map((group) => (
-                      <div key={group.status} className="[content-visibility:auto] [contain-intrinsic-size:auto_600px]">
-                        {!activeStatus && (
-                          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-label">
-                            {GROUP_HEADING[group.status]} · {group.rows.length}
-                          </h3>
-                        )}
-                        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
-                          {group.rows.map((job) => {
-                            const stage =
-                              job.status === "ESTIMATE"
-                                ? estimateStage(
-                                    job.lineItems.length,
-                                    job.signatureRequests.map((request) => request.status),
-                                  )
-                                : null;
-                            return (
-                              <li key={job.id}>
-                                <Link href={`/jobs/${job.id}`} className="block p-4 hover:bg-rail-hover">
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                      <p className="min-w-0 break-words font-medium text-ink">{job.name}</p>
-                                      <StatusBadge status={job.status} />
-                                      {stage && (
-                                        <span className={`rounded-full border px-2 py-0.5 text-xs ${STAGE_TONE[stage.key]}`}>
-                                          {stage.label}
-                                        </span>
-                                      )}
-                                    </div>
-                                    {showsJobMoney && (
-                                      <p className="text-sm font-medium tabular-nums text-ink">{money(jobValue(job))}</p>
-                                    )}
-                                  </div>
-                                  <p className="mt-0.5 text-sm text-ink-body">{job.contact.name}</p>
-                                  {stage && <p className="mt-1 text-xs text-ink-body">{stage.detail}</p>}
-                                </Link>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-            )}
           </PageShell>
         </div>
 

@@ -64,7 +64,7 @@ export function BidWizardSteps({
   ];
 
   return (
-    <nav aria-label="Start a bid" className="mb-6">
+    <nav aria-label="New job steps" className="mb-6">
       <ol className="flex flex-wrap items-center gap-2 text-sm">
         {steps.map((step, index) => {
           const isCurrent = step.n === current;
