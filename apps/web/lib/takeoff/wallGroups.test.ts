@@ -530,3 +530,85 @@ describe("a wall type with no parts on it yet", () => {
     expect(verdictFor(group).state).toBe("ONLY_ONE_THAT_THICK");
   });
 });
+
+/**
+ * ── A GENERAL NOTE NAMES WHAT NOTHING TAGGED ──
+ *
+ * "ALL PARTITIONS TYPE A1 U.N.O." is the convention that makes an untagged wall
+ * meaningful: the architect tags the exceptions and lets the note cover the
+ * rest. On School-01's A-101 that is 556 ft, about 30% of the sheet, which the
+ * panel was offering as A1, A2 or C1 with nothing to choose between them.
+ *
+ * THE SECOND CASE IS THE SAFETY AND IT IS WHY THIS IS SHIPPABLE. "ALL
+ * PARTITIONS ARE A1" must not swallow the exterior shell. On that same sheet
+ * the 6-5/8" perimeter and the 10-1/4" chase are untagged too, and a different
+ * thickness IS a notation — the note's own "unless noted otherwise" is what
+ * excuses them. Verified on the real sheet: with the note read, those groups
+ * came back UNKNOWN and TAG_DISAGREES exactly as before.
+ */
+describe("a sheet's general note naming the default", () => {
+  const A1 = type("A1", 4.875);
+  const note = { type: A1, note: "1. ALL PARTITIONS TYPE A1 U.N.O." };
+
+  it("NAMES AN UNTAGGED GROUP THAT MEASURES LIKE IT", () => {
+    const a = run(40);
+    const [group] = wallGroups([cluster(4.875, [a])], new Map(), [A1, type("A2", 4.875)], note);
+    expect(group.source.kind).toBe("GENERAL_NOTE");
+    const verdict = verdictFor(group);
+    expect(verdict.state).toBe("BY_GENERAL_NOTE");
+    expect(verdict.state === "BY_GENERAL_NOTE" && verdict.type.code).toBe("A1");
+  });
+
+  it("DOES NOT TOUCH A GROUP OF A DIFFERENT THICKNESS — the exterior shell", () => {
+    // 6-5/8" of untagged perimeter on a sheet whose note says all partitions
+    // are A1 at 4-7/8". Calling that A1 would price the building's shell as an
+    // interior partition.
+    const a = run(140);
+    const [group] = wallGroups([cluster(6.625, [a])], new Map(), [A1], note);
+    expect(group.source.kind, "the note swallowed a wall of another thickness").toBe("REMAINDER");
+    expect(verdictFor(group).state).not.toBe("BY_GENERAL_NOTE");
+  });
+
+  it("NEVER OVERRULES A TAG, because a tag is printed beside its own wall", () => {
+    const a = run(40);
+    const [group] = wallGroups(
+      [cluster(4.875, [a])],
+      new Map([[a, "A2"]]),
+      [A1, type("A2", 4.875)],
+      note,
+    );
+    expect(group.source.kind).toBe("TAG");
+    const verdict = verdictFor(group);
+    expect(verdict.state === "NAMED" && verdict.type.code).toBe("A2");
+  });
+
+  it("QUOTES THE NOTE, rather than saying the app concluded something", () => {
+    const a = run(40);
+    const [group] = wallGroups([cluster(4.875, [a])], new Map(), [A1], note);
+    const sentence = groupSentence(group, verdictFor(group)) ?? "";
+    expect(sentence, "the note is not quoted").toContain("ALL PARTITIONS TYPE A1 U.N.O.");
+    expect(sentence).toContain("A1");
+    expect(sentence, "nothing says the estimator can overrule it").toMatch(/unless you say otherwise/);
+  });
+
+  it("behaves exactly as before when no note was found", () => {
+    // The parameter is optional and every sheet without such a note keeps the
+    // question it used to ask.
+    const a = run(40);
+    const [group] = wallGroups([cluster(4.875, [a])], new Map(), [A1, type("A2", 4.875)]);
+    expect(group.source.kind).toBe("REMAINDER");
+    expect(verdictFor(group).state).toBe("ASK");
+  });
+
+  it("is ignored when the named type has NO recorded thickness", () => {
+    // Null means "cannot be matched by thickness", so the guard above cannot be
+    // applied and the note must not be trusted on its own.
+    const bare = type("A1", null);
+    const a = run(40);
+    const [group] = wallGroups([cluster(4.875, [a])], new Map(), [bare], {
+      type: bare,
+      note: "ALL PARTITIONS TYPE A1 U.N.O.",
+    });
+    expect(group.source.kind).toBe("REMAINDER");
+  });
+});
