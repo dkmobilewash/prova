@@ -263,6 +263,40 @@ export async function installHistoryLog(page: Page): Promise<void> {
               log.push(`${Date.now()} ${label} body finished: ${text.length} chars, payload build=${buildIdIn(text)}, first line: ${line.slice(0, 160)}`);
             })
             .catch((error: unknown) => log.push(`${Date.now()} ${label} body FAILED: ${String(error).slice(0, 120)}`));
+          // React's own account of the pending work, read off the FiberRoot
+          // reachable from any rendered element.
+          const fiberRoot = (): Record<string, unknown> | null => {
+            const el = (document.querySelector("#main") ?? document.body) as unknown as Record<string, unknown>;
+            const key = Object.keys(el).find((k) => k.startsWith("__reactFiber$"));
+            let f = key ? (el[key] as { tag: number; return: unknown; stateNode: unknown } | null) : null;
+            while (f && f.tag !== 3) f = f.return as typeof f;
+            return (f?.stateNode as Record<string, unknown> | undefined) ?? null;
+          };
+          type Fiber = { tag: number; type: unknown; child: Fiber | null; sibling: Fiber | null; memoizedState: unknown; alternate: Fiber | null };
+          const nameOf = (f: Fiber | null): string => {
+            const t = f?.type as { displayName?: string; name?: string } | string | null | undefined;
+            if (!t) return f ? `tag${f.tag}` : "-";
+            return typeof t === "string" ? t : (t.displayName ?? t.name ?? "anon");
+          };
+          const suspenseIn = (start: Fiber | null): string => {
+            const out: string[] = [];
+            const stack: Fiber[] = start ? [start] : [];
+            let seen = 0;
+            while (stack.length > 0 && seen++ < 5000) {
+              const f = stack.pop()!;
+              if (f.tag === 13) out.push(`${f.memoizedState ? "FALLBACK" : "content"}:${nameOf(f.child)}`);
+              if (f.sibling) stack.push(f.sibling);
+              if (f.child) stack.push(f.child);
+            }
+            return `${out.length}[${out.join(",")}]`;
+          };
+          const reactState = (): string => {
+            const r = fiberRoot();
+            if (!r) return "no fiber root";
+            const current = r.current as Fiber | null;
+            return `lanes pending=${String(r.pendingLanes)} suspended=${String(r.suspendedLanes)} pinged=${String(r.pingedLanes)} entangled=${String(r.entangledLanes)} expired=${String(r.expiredLanes)} finished=${String(r.finishedLanes)} cbPrio=${String(r.callbackPriority)}; suspense current=${suspenseIn(current)} wip=${current?.alternate ? suspenseIn(current.alternate) : "none"}`;
+          };
+          window.setTimeout(() => log.push(`${Date.now()} 9s after ${label}: at ${location.pathname}; ${reactState()}`), 9000);
           // Three seconds on: did the router read it, and what is on screen.
           window.setTimeout(() => {
             const bar = document.querySelector("[data-nav-progress]")?.getAttribute("data-nav-progress") ?? "none";
@@ -278,7 +312,7 @@ export async function installHistoryLog(page: Page): Promise<void> {
               .join(" / ");
             const pendingUrl = (window as unknown as { next?: { __pendingUrl?: unknown } }).next?.__pendingUrl;
             log.push(
-              `${Date.now()} 3s after ${label}: reader ${state.opened ? `opened, ${state.chunks} chunks, ${state.bytes} bytes, ${state.ended ? "ended" : "NOT ended"}` : "NEVER OPENED"}; progress bar=${bar}; ${skeleton}; at ${location.pathname}; pendingUrl=${pendingUrl === undefined ? "undefined" : String(pendingUrl)}; submit buttons: ${buttons || "none"}; alerts: ${alerts || "none"}`,
+              `${Date.now()} 3s after ${label}: reader ${state.opened ? `opened, ${state.chunks} chunks, ${state.bytes} bytes, ${state.ended ? "ended" : "NOT ended"}` : "NEVER OPENED"}; progress bar=${bar}; ${skeleton}; at ${location.pathname}; pendingUrl=${pendingUrl === undefined ? "undefined" : String(pendingUrl)}; submit buttons: ${buttons || "none"}; alerts: ${alerts || "none"}; ${reactState()}`,
             );
           }, 3000);
         }
