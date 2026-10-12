@@ -17,6 +17,13 @@ import type { Page } from "@playwright/test";
  * rewrites the URL as it loads.
  */
 export async function installHistoryLog(page: Page): Promise<void> {
+  // The one way the router drops an action's answer WITHOUT a navigation is
+  // a flight payload that is not a root render: server-action-reducer.js
+  // then `console.log('SERVER ACTION APPLY FAILED')` — a log, not an error,
+  // so HealthMonitor never sees it. Kept here with the same clock.
+  page.on("console", (message) => {
+    if (message.text().includes("SERVER ACTION APPLY FAILED")) routerLogs.set(page, [...(routerLogs.get(page) ?? []), `${Date.now()} ${message.text()}`]);
+  });
   await page.addInitScript(() => {
     const log: string[] = [];
     (window as unknown as { __historyLog: string[] }).__historyLog = log;
@@ -33,7 +40,10 @@ export async function installHistoryLog(page: Page): Promise<void> {
 
 /** One sentence: Clerk's load state and every history call since `sinceMs`
  * (a `Date.now()` taken in the test, on the same machine's clock). */
+const routerLogs = new WeakMap<Page, string[]>();
+
 export async function historyLog(page: Page, sinceMs: number): Promise<string> {
+  const dropped = (routerLogs.get(page) ?? []).filter((entry) => Number(entry.split(" ")[0]) >= sinceMs).length;
   const entries = await page
     .evaluate(() => (window as unknown as { __historyLog?: string[] }).__historyLog ?? [])
     .catch(() => [] as string[]);
@@ -46,5 +56,8 @@ export async function historyLog(page: Page, sinceMs: number): Promise<string> {
       return c ? `Clerk.loaded=${String(c.loaded)}` : "no Clerk global";
     })
     .catch(() => "page gone");
-  return `${clerk}; history calls since the click: ${recent.length > 0 ? recent.join(" | ") : "none"}`;
+  return (
+    `${clerk}; history calls since the click: ${recent.length > 0 ? recent.join(" | ") : "none"}; ` +
+    `router "SERVER ACTION APPLY FAILED" logs since the click: ${dropped}`
+  );
 }
