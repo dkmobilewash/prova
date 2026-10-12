@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { viewerTimeZone } from "@/lib/viewerToday";
@@ -163,12 +165,11 @@ export default async function PhotosPage({
   const filterableTags = tags.filter((tag) => tag.photoCount > 0 || tag.id === activeTag);
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
-      <h1 className="mb-1 text-2xl font-semibold text-ink">Site photos</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        What the job actually looked like, on the day. Photos are filed against a job, tagged in
-        this company&apos;s own words, and stay in C Stream rather than on somebody&apos;s phone.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/photos"
+        subtitle="What the job actually looked like on the day, filed against the job and tagged in your words."
+      />
 
       {jobs.length === 0 ? (
         <EmptyState
@@ -520,6 +521,6 @@ export default async function PhotosPage({
           )}
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

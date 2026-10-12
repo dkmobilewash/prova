@@ -231,7 +231,8 @@ function DeadlineRow({
 
   return (
     <li
-      className={`px-4 py-3 ${row.state === "overdue" ? "border-l-4 border-bar-rose bg-tag-rose" : ""}`}
+      id={`lien-${row.id}`}
+      className={`scroll-mt-24 px-4 py-3 target:ring-2 target:ring-inset target:ring-brand ${row.state === "overdue" ? "border-l-4 border-bar-rose bg-tag-rose" : ""}`}
       data-state={row.state}
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">

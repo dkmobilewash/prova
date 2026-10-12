@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageShell } from "@prova/ui";
 import { requireCompanyContext } from "@/lib/auth";
@@ -7,6 +6,7 @@ import { AREAS, areaViews, areasFor, toolRoute } from "@/lib/areas";
 import { loadAreaWaiting, loadToolStatuses } from "@/lib/areas-data";
 import { ToolCard, WaitingTable } from "@/components/areas/AreaParts";
 import { MetricBar } from "@/components/MetricBar";
+import { Breadcrumb } from "@/components/PageHeader";
 import { can } from "@/lib/permissions";
 import { loadCompanyFinancials } from "@/lib/company-financials-query";
 
@@ -59,17 +59,7 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
 
   return (
     <PageShell width="working">
-      <nav aria-label="Breadcrumb" className="text-sm text-ink-muted">
-        <Link href="/dashboard" className="inline-flex min-h-11 items-center hover:text-ink hover:underline mouse:min-h-7">
-          Home
-        </Link>
-        <span aria-hidden className="mx-2">
-          /
-        </span>
-        <span aria-current="page" className="font-medium text-ink">
-          {view.name}
-        </span>
-      </nav>
+      <Breadcrumb trail={[{ href: "/dashboard", label: "Home" }]} current={view.name} />
       <h1 className="mt-1 font-headline text-[32px] font-semibold leading-tight text-ink">{view.name}</h1>
       <p className="text-ink-muted">{view.description}</p>
 

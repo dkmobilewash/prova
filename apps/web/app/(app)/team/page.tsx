@@ -1,5 +1,7 @@
 import { headers } from "next/headers";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCompanyContext } from "@/lib/auth";
 import { CancelInviteButton } from "@/components/CancelInviteButton";
 import { CopyLinkButton } from "@/components/CopyLinkButton";
@@ -87,8 +89,8 @@ export default async function TeamPage() {
   const signUpUrl = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}/sign-up`;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Team</h1>
+    <PageShell width="working">
+      <PageHeader route="/team" subtitle="The people who sign in, and the crew whose hours you log." />
       {/* THE OLD VERSION OF THIS PARAGRAPH IS WORTH KNOWING ABOUT BEFORE
           ANYONE REWRITES IT AGAIN. It read: "Two separate things. Owner
           decides who can administer the account — invite, remove, connect an
@@ -107,7 +109,7 @@ export default async function TeamPage() {
           the permissions model — it was the fact that this page holds TWO
           KINDS OF PEOPLE, which is what nothing said and what left a
           contractor with no way to add the fifteen men who do the work. */}
-      <p className="mb-6 text-sm text-ink-body">
+      <p className="mb-6 max-w-3xl text-sm text-ink-body">
         Two kinds of people. <span className="text-ink-label">Team members</span> sign in — the
         office, your PMs, a foreman with a tablet. <span className="text-ink-label">Crew</span> are
         the hands in the field: no login, no email needed, just their name so you can log their
@@ -116,7 +118,7 @@ export default async function TeamPage() {
 
       <section className="mb-10" data-tour="team-members">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Team members</h2>
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface">
           {members.map((member) => (
             <li key={member.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
@@ -189,7 +191,7 @@ export default async function TeamPage() {
           {invites.length > 0 && (
             <section data-tour="team-pending">
               <h2 className="mb-3 text-sm font-semibold text-ink-label">Pending invites</h2>
-              <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+              <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface">
                 {invites.map((invite) => (
                   <li key={invite.id} className="flex items-center justify-between p-4">
                     <p className="text-sm text-ink">{invite.email}</p>
@@ -201,6 +203,6 @@ export default async function TeamPage() {
           )}
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

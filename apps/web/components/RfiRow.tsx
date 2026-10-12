@@ -274,7 +274,7 @@ export function RfiRow({
   const openDays = rawDays !== null && rawDays >= 0 ? rawDays : null;
 
   return (
-    <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
+    <li id={`rfi-${rfi.id}`} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start scroll-mt-24 target:ring-2 target:ring-inset target:ring-brand">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-xs text-ink-body">RFI {rfi.number}</span>

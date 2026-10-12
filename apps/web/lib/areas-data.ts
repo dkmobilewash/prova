@@ -243,7 +243,7 @@ export async function loadAreaWaiting(
             due && due < todayIso
               ? { text: overdueText(daysBetween(due, todayIso), true), tone: "red" }
               : { text: "Sent", tone: "neutral" },
-          href: `/rfis?job=${encodeURIComponent(rfi.jobId)}`,
+          href: `/rfis?job=${encodeURIComponent(rfi.jobId)}#rfi-${rfi.id}`,
           action: "Open",
         });
       }
@@ -262,7 +262,7 @@ export async function loadAreaWaiting(
             dueBack && dueBack < todayIso
             ? { text: overdueText(daysBetween(dueBack, todayIso), true), tone: "red" }
             : { text: "With the GC", tone: "neutral" },
-          href: `/submittals?job=${encodeURIComponent(sub.jobId)}`,
+          href: `/submittals?job=${encodeURIComponent(sub.jobId)}#submittal-${sub.id}`,
           action: "Open",
         });
       }
@@ -304,7 +304,7 @@ export async function loadAreaWaiting(
           job: lien.jobName,
           when: days < 0 ? `due ${formatCalendarDay(lien.dueOn, "dayMonth")}` : days === 0 ? "due today" : `due in ${plural(days, "day")}`,
           status: lien.state === "overdue" ? { text: overdueText(Math.max(1, -days), true), tone: "red" } : { text: "Due soon", tone: "amber" },
-          href: "/lien-deadlines",
+          href: `/lien-deadlines#lien-${lien.id}`,
           action: "Open",
         });
       }
@@ -428,7 +428,7 @@ export async function loadAreaWaiting(
               : promised
                 ? { text: `Promised ${formatCalendarDay(promised, "dayMonth")}`, tone: "neutral" }
                 : { text: "No date promised", tone: "neutral" },
-            href: `/material-orders?job=${encodeURIComponent(o.jobId)}`,
+            href: `/material-orders?job=${encodeURIComponent(o.jobId)}#order-${o.id}`,
             action: "Open",
           });
         }
@@ -470,7 +470,7 @@ export async function loadAreaWaiting(
           job: null,
           when: days === 0 ? "due today" : `due in ${plural(days, "day")}`,
           status: days <= 3 ? { text: "Due soon", tone: "amber" } : { text: "Invited", tone: "neutral" },
-          href: "/bids",
+          href: `/bids#${bid.id}`,
           action: "Open",
         });
       }

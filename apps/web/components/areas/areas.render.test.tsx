@@ -235,7 +235,7 @@ describe("an area page", () => {
     // says how late, not just that it is. It said "Answer late" until
     // 2026-10-10.
     expect(html).toContain("Overdue 2 days");
-    expect(html).toContain('href="/rfis?job=j1"');
+    expect(html).toContain('href="/rfis?job=j1#rfi-r1"');
   });
 
   it("tool cards say each figure once, and every action is 'Open <tool>'", async () => {

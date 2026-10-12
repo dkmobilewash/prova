@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { FieldReportComposer } from "@/components/FieldReportComposer";
@@ -136,18 +138,11 @@ export default async function FieldReportsPage({
     }`;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Field reports</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        What happened on site, one entry per job per day. Grouped by week, because a week is
-        what a schedule dispute gets argued over — and a week with a day missing from it is
-        worth less than one that says which day is missing. Each job&apos;s own reports also
-        stay on{" "}
-        <Link href="/dashboard" className="text-link hover:text-link-hover">
-          its job page
-        </Link>
-        .
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/field-reports"
+        subtitle="What happened on site, one entry per job per day, grouped by week."
+      />
 
       <div className="mb-8">
         {/* The filtered job is an explicit choice, so it is also the job the
@@ -219,7 +214,7 @@ export default async function FieldReportsPage({
             return (
               <section key={week.start}>
                 <header className="mb-3 border-b border-line-row pb-2">
-                  <h2 className="font-semibold text-ink">{weekLabel(week.start)}</h2>
+                  <h2 className="font-headline text-lg text-ink">{weekLabel(week.start)}</h2>
                   {/* ink-body — ink-muted is under the 4.5 floor on this ground,
                       under the 4.5 floor for text, and the coverage figure is
                       the point of grouping by week. */}
@@ -300,6 +295,6 @@ export default async function FieldReportsPage({
           })}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

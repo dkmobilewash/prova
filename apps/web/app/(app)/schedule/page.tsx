@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
-import { StatusBadge } from "@prova/ui";
+import { PageShell, StatusBadge } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { formatCalendarDate } from "@/lib/render-date";
@@ -16,6 +17,8 @@ import { CalendarSubscribe } from "@/components/CalendarSubscribe";
 import { toJobOption } from "@/components/jobLabels";
 
 export const metadata = { title: "Schedule" };
+
+const SUBTITLE = "Which crew is on which job, day by day, and when each job starts.";
 
 function formatDate(date: Date) {
   return formatCalendarDate(date);
@@ -96,8 +99,8 @@ export default async function SchedulePage() {
   // as though the scheduling is the missing step when the job is.
   if (scheduled.length === 0 && unscheduled.length === 0) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-8">
-        <h1 className="mb-6 text-xl font-semibold text-ink">Schedule</h1>
+      <PageShell width="working">
+        <PageHeader route="/schedule" subtitle={SUBTITLE} />
         <EmptyState
           data-tour="schedule-no-jobs"
           title="No jobs yet, so there is nothing to lay out"
@@ -124,13 +127,13 @@ export default async function SchedulePage() {
             ],
           }}
         />
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-6 text-xl font-semibold text-ink">Schedule</h1>
+    <PageShell width="working">
+      <PageHeader route="/schedule" subtitle={SUBTITLE} />
 
       {/* The crew board goes FIRST. This page's own empty state has always
           promised "you can see the week a second job wants the same three
@@ -220,6 +223,6 @@ export default async function SchedulePage() {
           </ul>
         )}
       </section>
-    </div>
+    </PageShell>
   );
 }
