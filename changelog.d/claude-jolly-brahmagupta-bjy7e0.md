@@ -82,3 +82,5 @@ no digest. The tool keeps its own Vercel project and gains `basePath: "/lien-wai
 `/lien-waiver/*` to the tool when `LIEN_WAIVER_TOOL_ORIGIN` is set. A bare `fetch()` is
 the one thing Next does not prefix, so `BASE_PATH` in `lib/site.ts` is checked against
 the config by `lib/site.test.ts`.
+
+**Going live needed one more line, in `turbo.json`.** After #750 merged, cstream.ai/lien-waiver still said "opening soon" and /lien-waiver/start 404'd, with both variables set on prova-web. The cause: Turbo 2 builds in strict env mode and passes a build ONLY the variables listed in `turbo.json`, so `LIEN_WAIVER_TOOL_URL` and `LIEN_WAIVER_TOOL_ORIGIN` were empty when the landing page and `rewrites()` were built. Both are listed now. The check: the landing page's button names /lien-waiver/start and www.cstream.ai/lien-waiver/start serves the state picker.
