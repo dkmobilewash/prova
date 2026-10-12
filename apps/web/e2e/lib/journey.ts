@@ -210,7 +210,9 @@ export async function startJob(page: Page, monitor: HealthMonitor, input: NewJob
   // never changed: #748's runs reported a bare 30s timeout here on brand-new
   // personas while the same step took under a second on an established one,
   // and nothing in the report said whether the server had answered at all.
-  await page.waitForURL(/\/jobs\/new\/[^/]+\/items$/).catch(async (error: Error) => {
+  // 12s, under the 30s test timeout: a wait that outlives the test is
+  // killed by Playwright before the catch below can say what it saw.
+  await page.waitForURL(/\/jobs\/new\/[^/]+\/items$/, { timeout: 12_000 }).catch(async (error: Error) => {
     throw new Error(
       `"Start the job" did not reach step 2: ${await answer}; the page is at ${page.url()}; ${await historyLog(page, clickedAt)}. ${firstLine(error)}`,
     );
@@ -297,7 +299,7 @@ export async function finishWizard(page: Page, monitor: HealthMonitor, jobId: st
   await expect(page.getByRole("link", { name: /review/i })).toHaveCount(0);
 
   await openJob.click();
-  await page.waitForURL(new RegExp(`/jobs/${jobId}(\\?|$)`));
+  await page.waitForURL(new RegExp(`/jobs/${jobId}(\\?|$)`), { timeout: 12_000 });
   await expectHealthy(page, "job overview after the wizard", { monitor });
 }
 

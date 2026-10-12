@@ -199,31 +199,36 @@ export async function installHistoryLog(page: Page): Promise<void> {
       return reader;
     } as typeof ReadableStream.prototype.getReader;
     const watched = new WeakMap<ReadableStream, string>();
+    const readers = new Map<string, { opened: boolean; chunks: number; bytes: number; ended: boolean }>();
     const getReader2 = ReadableStream.prototype.getReader;
     ReadableStream.prototype.getReader = function watchedGetReader(this: ReadableStream, ...args: unknown[]) {
       const reader = (getReader2 as (this: ReadableStream, ...a: unknown[]) => ReadableStreamDefaultReader).apply(this, args);
       const label = watched.get(this);
       if (label !== undefined) {
         log.push(`${Date.now()} reader opened on ${label} from ${frames()}`);
-        let chunks = 0;
-        let bytes = 0;
+        const state = readers.get(label) ?? { opened: false, chunks: 0, bytes: 0, ended: false };
+        state.opened = true;
+        readers.set(label, state);
         const read = reader.read;
         reader.read = async function watchedRead(this: ReadableStreamDefaultReader) {
           const result = await read.call(this);
-          if (result.done) log.push(`${Date.now()} reader on ${label} reached the end after ${chunks} chunks, ${bytes} bytes`);
-          else {
-            chunks++;
-            bytes += (result.value as Uint8Array | undefined)?.byteLength ?? 0;
+          if (result.done) {
+            state.ended = true;
+            log.push(`${Date.now()} reader on ${label} reached the end after ${state.chunks} chunks, ${state.bytes} bytes`);
+          } else {
+            state.chunks++;
+            state.bytes += (result.value as Uint8Array | undefined)?.byteLength ?? 0;
           }
           return result;
         } as typeof reader.read;
       }
       return reader;
     } as typeof ReadableStream.prototype.getReader;
-    const buildId = () => {
-      const src = (document.querySelector('script[src*="_buildManifest"]') as HTMLScriptElement | null)?.src ?? "";
-      return /\/_next\/static\/([^/]+)\/_buildManifest/.exec(src)?.[1] ?? "?";
-    };
+    // The app router carries its build id inside the Flight rows ("b"), both
+    // in the document's inline chunks and in every RSC payload; the two must
+    // agree or fetch-server-response.js throws the payload away.
+    const buildIdIn = (text: string) => /"b":"([^"]+)"/.exec(text)?.[1] ?? "?";
+    const buildId = () => buildIdIn(document.documentElement.innerHTML);
     const fetch_ = window.fetch;
     window.fetch = async function patchedFetch(input: RequestInfo | URL, init?: RequestInit) {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -240,17 +245,32 @@ export async function installHistoryLog(page: Page): Promise<void> {
           `${Date.now()} fetch ${kind} ${short} -> ${res.status} after ${Date.now() - started}ms; type=${h2.get("content-type") ?? "-"} postponed=${h2.get("x-nextjs-postponed") ?? "-"} redirect=${h2.get("x-action-redirect") ?? "-"} vary=${(h2.get("vary") ?? "-").slice(0, 60)}; page build=${buildId()}`,
         );
         if (res.body && kind !== "plain" && kind !== "PREFETCH") {
-          watched.set(res.body, `${kind} ${short}`);
           // The clone is read to the end on its own, so this says what the
           // server SENT whatever the router does with the original.
           const clone = res.clone();
+          // AFTER the clone: cloning tees the body, so `res.body` is a new
+          // stream from here on, and that is the one the router will read.
+          // (Run 38317827599 registered the pre-clone stream and so could
+          // never see the router open it.)
+          const label = `${kind} ${short}`;
+          const state = { opened: false, chunks: 0, bytes: 0, ended: false };
+          watched.set(res.body!, label);
+          readers.set(label, state);
           void clone
             .text()
             .then((text) => {
               const line = text.split("\n")[0] ?? "";
-              log.push(`${Date.now()} ${kind} ${short} body finished: ${text.length} chars, first line: ${line.slice(0, 220)}`);
+              log.push(`${Date.now()} ${label} body finished: ${text.length} chars, payload build=${buildIdIn(text)}, first line: ${line.slice(0, 160)}`);
             })
-            .catch((error: unknown) => log.push(`${Date.now()} ${kind} ${short} body FAILED: ${String(error).slice(0, 120)}`));
+            .catch((error: unknown) => log.push(`${Date.now()} ${label} body FAILED: ${String(error).slice(0, 120)}`));
+          // Three seconds on: did the router read it, and what is on screen.
+          window.setTimeout(() => {
+            const bar = document.querySelector("[data-nav-progress]")?.getAttribute("data-nav-progress") ?? "none";
+            const skeleton = document.querySelector('main [role="status"]') ? "skeleton showing" : "no skeleton";
+            log.push(
+              `${Date.now()} 3s after ${label}: reader ${state.opened ? `opened, ${state.chunks} chunks, ${state.bytes} bytes, ${state.ended ? "ended" : "NOT ended"}` : "NEVER OPENED"}; progress bar=${bar}; ${skeleton}; at ${location.pathname}`,
+            );
+          }, 3000);
         }
         return res;
       } catch (error) {
