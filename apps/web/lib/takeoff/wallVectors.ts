@@ -129,6 +129,12 @@ export type WallFinderOptions = {
    * its witness line — not one wall.
    */
   minThicknessFeet?: number;
+  /**
+   * The thicknesses, in inches, of the wall types this company actually
+   * builds — the partition schedule. Optional: without it the finder behaves
+   * exactly as it did before. See `KNOWN_SLACK_IN`.
+   */
+  knownThicknessesIn?: readonly number[];
   maxThicknessFeet?: number;
   /** The shortest wall worth reporting, in feet. Below this a pair is as likely
    *  to be a jamb detail, a hatch stroke or a leader as a wall. */
@@ -187,6 +193,95 @@ export class SheetTooDenseError extends Error {
     );
     this.name = "SheetTooDenseError";
   }
+}
+
+/**
+ * Is the thin pair `i`-`j` ENCLOSED by a thicker wall of a scheduled type?
+ *
+ * This is the whole difference between furring and a wall's own layer line, and
+ * on this schedule it is the only difference there is:
+ *
+ *   F1 furring   1-1/2in thick
+ *   EXT-2        8-1/8in, drawn as four lines with its inner two 1.500in apart
+ *   EXT-1        8-7/8in, drawn as five lines with an internal gap of 1.625in
+ *
+ * So a 1-1/2in pair is thickness-identical to the inside of both exterior
+ * types, and no thickness rule can tell them apart. Measured, on one holdout
+ * sheet: 438 ft of runs in a 1.68in cluster where the only real furring on the
+ * drawing is 40 ft — and that 40 ft was recorded MISSED.
+ *
+ * Position separates them. Furring is applied TO a wall, so it sits outside it;
+ * a layer line sits between its wall's own faces. Concretely, for the pair
+ * `i`-`j` this asks whether some third line `k` makes a scheduled wall with `i`
+ * while `j` lies between the two of them:
+ *
+ *   EXT-2   i=-4.0625  j=-2.5625  k=+4.0625   8.125in is EXT-2, j is inside  -> enclosed
+ *   furring i=8.000    j=9.500    k=0.000     9.500in is on no schedule      -> not
+ *
+ * It cannot reproduce on a clean synthetic wall, which is why it was not caught
+ * by one: a single unbroken outer face is consumed by the wall's own pair and
+ * nothing is left to form the thin one. A real sheet breaks that face at every
+ * window and corner, and the leftover pieces pair with the layer line.
+ */
+function enclosedByAScheduledWall(
+  order: readonly StrokeSegment[],
+  i: number,
+  j: number,
+  options: WallFinderOptions,
+  knownIn: readonly number[],
+): boolean {
+  const towardsJ = sideOf(order[i], order[j]);
+  const offJ = perpendicularDistance(
+    order[i],
+    (order[j].x1 + order[j].x2) / 2,
+    (order[j].y1 + order[j].y2) / 2,
+  );
+  for (let k = 0; k < order.length; k += 1) {
+    if (k === i || k === j) continue;
+    // `k` has to be on the same side of `i` as `j`, and further out.
+    if (sideOf(order[i], order[k]) !== towardsJ) continue;
+    const offK = perpendicularDistance(
+      order[i],
+      (order[k].x1 + order[k].x2) / 2,
+      (order[k].y1 + order[k].y2) / 2,
+    );
+    if (offK <= offJ) continue;
+    // And `i`-`k` has to be a wall of a type this company builds. Reusing
+    // `wallFromPair` keeps the parallel, overlap and length rules in one place.
+    const wide = wallFromPair(order[i], order[k], options);
+    if (wide === null) continue;
+    if (isAKnownType(wide.thicknessFeet, knownIn)) return true;
+  }
+  return false;
+}
+
+/**
+ * Which side of `of` the midpoint of `other` falls on: +1, -1 or 0 on the line.
+ */
+function sideOf(of: StrokeSegment, other: StrokeSegment): number {
+  const dx = of.x2 - of.x1;
+  const dy = of.y2 - of.y1;
+  const midX = (other.x1 + other.x2) / 2;
+  const midY = (other.y1 + other.y2) / 2;
+  // The z of the cross product: one sign each side of the line.
+  return Math.sign(dx * (midY - of.y1) - dy * (midX - of.x1));
+}
+
+/**
+ * How far off a schedule thickness a pair may measure and still be read as that
+ * type — 1/4in, which is half of `CLUSTER_INCHES` and the same slack the
+ * clusterer allows. A literal because `CLUSTER_INCHES` is declared below.
+ *
+ * A drawn face lands on the nearest plottable coordinate, so a 4-7/8in wall
+ * measures 4.87 or 4.91 rather than 4.875, and three sheets of the same plan
+ * disagree in the second decimal.
+ */
+export const KNOWN_SLACK_IN = 0.25;
+
+/** Is this thickness one of the types the company builds? */
+function isAKnownType(thicknessFeet: number, knownIn: readonly number[]): boolean {
+  const inches = thicknessFeet * 12;
+  return knownIn.some((known) => Math.abs(known - inches) <= KNOWN_SLACK_IN);
 }
 
 const DEFAULTS = {
@@ -434,7 +529,28 @@ export function wallFromPair(
   const midY = (b.y1 + b.y2) / 2;
   const thicknessPoints = perpendicularDistance(a, midX, midY);
   const thicknessFeet = thicknessPoints * options.feetPerPoint;
-  if (thicknessFeet < minThickness || thicknessFeet > maxThickness) return null;
+  // ── AND THE FLOOR DEFERS TO THE SCHEDULE ──
+  //
+  // `minThicknessFeet` is 0.2 ft (2.4in) and it exists because, knowing nothing
+  // about the building, a gap thinner than that is more likely a doubled stroke
+  // or a dimension tick than a wall. 1-1/2in furring is thinner than that, so
+  // the floor refused it — 890 ft of it on Mesa Ridge, 221 on the holdout.
+  //
+  // LOWERING THE FLOOR IS NOT THE ANSWER AND WAS MEASURED NOT TO BE. Swept on
+  // both sets, Mesa improves and the holdout gets worse on BOTH counts: at
+  // 0.11 ft the holdout finds 114 ft less and reports 89 ft more that is not on
+  // a wall, because every thin coincidence on the sheet becomes eligible and
+  // steals a face from the wall beside it.
+  //
+  // When the schedule names 1-1/2in as a type this company builds, the floor
+  // has nothing left to add for that thickness: the doubt it encodes has been
+  // answered by the drawing. So a pair matching a scheduled thickness is
+  // admitted and every other thin pair is still refused. The slack is 1/4in, so
+  // this opens the named thicknesses and nothing else.
+  const scheduled =
+    (options.knownThicknessesIn?.length ?? 0) > 0 &&
+    isAKnownType(thicknessFeet, options.knownThicknessesIn ?? []);
+  if ((thicknessFeet < minThickness && !scheduled) || thicknessFeet > maxThickness) return null;
 
   // 3. THEY OVERLAP. Two faces of one wall run alongside each other; two walls
   // across a corridor, or a wall and the next wall along, do not. This is the
@@ -557,15 +673,79 @@ export function wallsFromStrokes(
     let bestWall: WallCandidate | null = null;
     let anyJ = -1;
     let anyWall: WallCandidate | null = null;
+    // ── AND THE WIDEST PAIR THAT IS A THICKNESS THIS COMPANY BUILDS ──
+    //
+    // "The widest valid pair is the wall and the narrower ones are its layers"
+    // is right for one wall drawn in layers and WRONG where two assemblies
+    // touch. 1-1/2in furring on an 8in block wall is three lines, and the pairs
+    // are 8in (the block), 1-1/2in (the furring) and 9-1/2in (across both).
+    // Widest wins, so the finder returned ONE WALL AT 9-1/2IN — a thickness
+    // nobody builds, priced as an assembly nobody ordered, with the furring
+    // gone. Reproduced from three segments, not argued.
+    //
+    // Thickness alone cannot separate that from a layered exterior, where the
+    // widest span IS the wall: an EXT-1 drawn as five lines correctly returns
+    // one 8-1/4in wall. What separates them is the SCHEDULE. 8 and 1-1/2 are
+    // both on it; 9-1/2 is on nothing. So when the caller knows what this
+    // company builds, prefer the widest pair that is one of those.
+    //
+    // The schedule is not privileged information: it is printed on the drawing,
+    // it is what an estimator reads first, and `wallTypesFromSchedule` already
+    // extracts it. Without it the loop behaves exactly as before.
+    let knownJ = -1;
+    let knownWall: WallCandidate | null = null;
+    let knownAnyJ = -1;
+    let knownAnyWall: WallCandidate | null = null;
+    const knownIn = options.knownThicknessesIn ?? [];
     const iLength = lengthOf(order[i]);
     for (let j = i + 1; j < order.length; j += 1) {
       if (used.has(j)) continue;
       const wall = wallFromPair(order[i], order[j], options);
       if (wall === null) continue;
       if (inAHatchSeries(order, i, j, options)) continue;
+      // A PAIR INSIDE A WALL YOU BUILD IS THAT WALL'S LAYER, whatever it
+      // measures. Applied to every candidate rather than only the thin ones:
+      // D1 is a 14-1/2in chase wall drawn as four lines whose inner pair is
+      // about 5in, which is C1's 4-3/4in within slack, so the same defect
+      // arrives one size up. Measured: 158 ft of the holdout over-run was D1
+      // reported twice.
+      const layerLine =
+        knownIn.length > 0 &&
+        (enclosedByAScheduledWall(order, i, j, options, knownIn) ||
+          enclosedByAScheduledWall(order, j, i, options, knownIn));
+      // A SUB-FLOOR PAIR IS REFUSED OUTRIGHT when it is a layer line, because
+      // the only reason it is a candidate at all is that the schedule names its
+      // thickness — and a layer line is not that wall, it is the inside of a
+      // wider one. Without the schedule the floor would have refused it with no
+      // argument, so there is nothing to fall back to.
+      //
+      // A pair AT OR ABOVE the floor only loses its schedule PREFERENCE. It
+      // stays eligible under the rules that were here before, deliberately:
+      // `enclosedByAScheduledWall` scans every parallel line within the
+      // thickness window, so on a busy sheet a perfectly real wall can sit a
+      // scheduled thickness away from another one and look enclosed. Refusing
+      // those outright was measured and it is a disaster — Mesa Ridge drops to
+      // 58,438 ft found, BELOW the 59,538 it started at, and A-101 to 1,798
+      // from 1,853. The guard is sharp enough for the case it was written for
+      // and not sharp enough to be trusted beyond it.
+      if (layerLine && wall.thicknessFeet < (options.minThicknessFeet ?? DEFAULTS.minThicknessFeet)) {
+        continue;
+      }
       if (anyWall === null || wall.thicknessFeet > anyWall.thicknessFeet) {
         anyWall = wall;
         anyJ = j;
+      }
+      // AND AN ENCLOSED PAIR OF NORMAL THICKNESS IS A LAST RESORT, not a
+      // preference. It has already been recorded as the fallback above, so a
+      // real wall that merely looks enclosed is still found; what it cannot do
+      // is beat a pair the schedule names. Refusing these outright was measured
+      // and it is worse than doing nothing — Mesa Ridge 58,438 ft found against
+      // 59,538 before any of this.
+      if (layerLine) continue;
+      const known = isAKnownType(wall.thicknessFeet, knownIn);
+      if (known && (knownAnyWall === null || wall.thicknessFeet > knownAnyWall.thicknessFeet)) {
+        knownAnyWall = wall;
+        knownAnyJ = j;
       }
       const jLength = lengthOf(order[j]);
       const ratio = Math.max(iLength, jLength) / Math.max(Math.min(iLength, jLength), 1e-9);
@@ -574,13 +754,26 @@ export function wallsFromStrokes(
         bestWall = wall;
         bestJ = j;
       }
+      if (known && (knownWall === null || wall.thicknessFeet > knownWall.thicknessFeet)) {
+        knownWall = wall;
+        knownJ = j;
+      }
     }
-    const chosen = bestWall ?? anyWall;
-    const chosenJ = bestWall !== null ? bestJ : anyJ;
+    // A schedule thickness first, balanced before unbalanced within each tier.
+    const chosen = knownWall ?? knownAnyWall ?? bestWall ?? anyWall;
+    const chosenJ =
+      knownWall !== null
+        ? knownJ
+        : knownAnyWall !== null
+          ? knownAnyJ
+          : bestWall !== null
+            ? bestJ
+            : anyJ;
+    const balanced = knownWall !== null || (knownAnyWall === null && bestWall !== null);
     if (chosen !== null) {
       used.add(i);
       used.add(chosenJ);
-      walls.push({ ...chosen, fromBalancedFaces: bestWall !== null });
+      walls.push({ ...chosen, fromBalancedFaces: balanced });
     }
   }
 
