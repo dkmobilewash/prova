@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -37,6 +38,7 @@ export default async function LienDeadlinesPage() {
     }),
   ]);
   const summary = summarizeLienDeadlines(rows, today);
+  const billedJobs = jobs.filter((job) => job.status !== "ESTIMATE");
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
@@ -84,6 +86,31 @@ export default async function LienDeadlinesPage() {
         // owner's call; the actions refuse anyone else in a sentence.
         canRemove={context.role === "OWNER"}
       />
+
+      {/* There is no company-wide waiver list: each job's waivers live at the
+          foot of its Billing tab. This is the door to them from the Money
+          area, one link per job that HAS a Billing tab (not an estimate). */}
+      <section id="lien-waivers" className="mt-10 scroll-mt-6">
+        <h2 className="text-sm font-semibold text-ink-label">Lien waivers</h2>
+        <p className="mt-1 text-sm text-ink-body">Each job&apos;s waivers are kept on its Billing tab. Pick the job.</p>
+        {billedJobs.length === 0 ? (
+          <p className="mt-3 text-sm text-ink-muted">No contracted jobs yet. Waivers start once a job is contracted.</p>
+        ) : (
+          <ul className="mt-3 divide-y divide-line-row border-y border-line-row">
+            {billedJobs.map((job) => (
+              <li key={job.id}>
+                <Link
+                  href={`/jobs/${job.id}/billing#lien-waivers`}
+                  className="flex min-h-11 items-center justify-between gap-3 py-2 text-base text-ink hover:text-link mouse:min-h-9 sm:text-sm"
+                >
+                  <span className="min-w-0 truncate">{job.name}</span>
+                  {job.contact?.name && <span className="shrink-0 text-sm text-ink-muted">{job.contact.name}</span>}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

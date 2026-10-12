@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { AreaView } from "@/lib/areas";
-import { AreaIcon, StatusChip, StatusLine, ToolIcon } from "./AreaParts";
+import { AreaIcon, StatusChip, StatusLine, ToolIcon, toolActions } from "./AreaParts";
 
 /**
  * The six area boxes under the home greeting (Concept H): "small boxes on
@@ -172,7 +172,13 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
                       </li>
                     ))}
                   </ul>
-                  <div className="mt-1 border-t border-line-row px-4 pb-1.5 pt-3">
+                  <div className="mt-1 flex flex-wrap gap-x-6 border-t border-line-row px-4 pb-1.5 pt-3">
+                    {/* The area's creates ("+ New job", "+ Log a bid"), the same ones its page offers. */}
+                    {area.tools.flatMap(toolActions).filter((action) => action.create).map((action) => (
+                      <Link key={action.href} href={action.href} className="inline-flex min-h-11 items-center font-semibold text-link hover:text-link-hover hover:underline">
+                        {action.label}
+                      </Link>
+                    ))}
                     <Link href={area.href} className="inline-flex min-h-11 items-center font-semibold text-link hover:text-link-hover hover:underline">
                       Open {area.name} &rarr;
                     </Link>

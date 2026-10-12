@@ -273,8 +273,11 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   "/closeout": "MANAGE_JOBS",
 };
 
+/** A query or anchor does not change which page opens — `/bids?new=1` is
+ * `/bids` — so it is dropped before the lookup. Without that, a link with a
+ * query read as ungated and was offered to people the page refuses. */
 export function capabilityForRoute(href: string): Capability | null {
-  return ROUTE_CAPABILITY[href] ?? null;
+  return ROUTE_CAPABILITY[href.split(/[?#]/)[0]] ?? null;
 }
 
 /** The routes this person can reach, for filtering the nav.

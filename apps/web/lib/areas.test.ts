@@ -83,8 +83,8 @@ describe("areas", () => {
   // fewer the button is 200px+ and "Open Work in progress" (21) fits.
   it("keeps every tool card's button label short enough for its card", () => {
     const labels = AREAS.flatMap((area) => area.tools.flatMap((tool) => toolActions({ ...tool, route: toolRoute(tool) }).map((a) => ({ area, label: a.label }))));
-    // One per tool, plus Jobs' second ("+ New job" and "Open jobs").
-    expect(labels.length).toBe(placed.length + 1);
+    // One per tool, plus Jobs' and Bids' second ("+ New job", "+ Log a bid").
+    expect(labels.length).toBe(placed.length + 2);
     for (const { area, label } of labels) {
       const ceiling = area.tools.length >= 6 ? 18 : 21;
       expect(label.length, `${area.slug}: "${label}"`).toBeLessThanOrEqual(ceiling);

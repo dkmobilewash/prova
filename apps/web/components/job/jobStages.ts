@@ -200,6 +200,13 @@ export function selectedStageKey(stages: JobStage[], pathname: string, search = 
   return stages.find((stage) => stage.links.some((link) => isCurrentLink(link.href, pathname, search)))?.key ?? null;
 }
 
+/** The Paperwork panel's lien-waiver row. The waivers live at the foot of
+ * the Billing tab, which is the only place they could be found until
+ * 2026-10-11 — and they are what a GC asks for with every pay app. */
+export function lienWaiverPaperworkLink(jobId: string, count: number) {
+  return { href: `/jobs/${jobId}/billing#lien-waivers`, label: "Lien waivers", detail: String(count) };
+}
+
 /** The Paperwork panel's change-order row. Waiting ones first, so a
  * decision the GC still owes reads as open work. */
 export function changeOrderPaperworkLink(jobId: string, approved: number, waiting: number) {

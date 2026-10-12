@@ -61,6 +61,7 @@ type ActionDef = PaletteAction & {
 
 const ACTIONS: ActionDef[] = [
   { id: "new-job", label: "New job", hint: "Start a job or an estimate", href: "/jobs/new" },
+  { id: "log-bid", label: "Log a bid", hint: "A bid invitation from a GC", href: "/bids?new=1" },
   { id: "log-hours", label: "Log hours", hint: "Pick a job, then log the crew's time", jobTab: "crew", capability: "MANAGE_FIELD" },
   { id: "send-pay-app", label: "Send pay app", hint: "Pick a job, then bill it", jobTab: "billing", capability: "MANAGE_BILLING" },
   { id: "find-rfi", label: "Find an RFI", hint: "Every RFI, open and answered", href: "/rfis" },

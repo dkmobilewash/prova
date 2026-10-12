@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changeOrderPaperworkLink, isCurrentLink, jobStages, selectedStageKey, type JobStageInput } from "@/components/job/jobStages";
+import { changeOrderPaperworkLink, isCurrentLink, lienWaiverPaperworkLink, jobStages, selectedStageKey, type JobStageInput } from "@/components/job/jobStages";
 import { todayInZone } from "@/lib/viewer-timezone";
 
 const base: JobStageInput = {
@@ -190,5 +190,15 @@ describe("changeOrderPaperworkLink", () => {
   it("leads with change orders still waiting on the GC", () => {
     expect(changeOrderPaperworkLink("job-1", 2, 1).detail).toBe("1 waiting · 2 approved");
     expect(changeOrderPaperworkLink("job-1", 2, 0).detail).toBe("2 approved");
+  });
+});
+
+describe("lienWaiverPaperworkLink", () => {
+  it("lands on the lien-waiver section of the job's Billing tab", () => {
+    expect(lienWaiverPaperworkLink("job-1", 3)).toEqual({
+      href: "/jobs/job-1/billing#lien-waivers",
+      label: "Lien waivers",
+      detail: "3",
+    });
   });
 });

@@ -253,12 +253,14 @@ describe("an area page", () => {
     expect(html).not.toContain(BRAND_FILL);
   });
 
-  it("fills the jobs area's create action, and only that one, in brand yellow", async () => {
+  it("fills the jobs area's two create actions, and only those, in brand yellow", async () => {
     const html = await render("jobs-bids");
     const brand = html.match(new RegExp(`<a [^>]*${BRAND_FILL}[^>]*>.*?</a>`, "g")) ?? [];
-    expect(brand).toHaveLength(1);
+    expect(brand).toHaveLength(2);
     expect(brand[0]).toContain('href="/jobs/new"');
-    expect(brand[0]).toContain("text-neutral-900");
+    expect(brand[1]).toContain('href="/bids?new=1"');
+    expect(brand[1]).toContain("+ Log a bid");
+    for (const link of brand) expect(link).toContain("text-neutral-900");
     // ...and the create is not the only door: the card also opens the list.
     const card = html.slice(html.indexOf('data-area-tool="/dashboard"'), html.indexOf('data-area-tool="/bids"'));
     expect(card).toMatch(/href="\/dashboard#all-jobs"[^>]*>Open jobs</);

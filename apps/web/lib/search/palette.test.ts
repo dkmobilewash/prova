@@ -28,8 +28,13 @@ const data = (over: Partial<PaletteResponse> = {}): PaletteResponse => ({
 });
 
 describe("actionsFor — only actions this person can carry out", () => {
-  it("gives an owner all four shortcuts", () => {
-    expect(actionsFor(OWNER).map((a) => a.id)).toEqual(["new-job", "log-hours", "send-pay-app", "find-rfi"]);
+  it("gives an owner all five shortcuts", () => {
+    expect(actionsFor(OWNER).map((a) => a.id)).toEqual(["new-job", "log-bid", "log-hours", "send-pay-app", "find-rfi"]);
+  });
+
+  it("withholds Log a bid from someone /bids refuses, query string and all", () => {
+    // /bids?new=1 is /bids (MANAGE_ESTIMATING); FIELD does not hold it.
+    expect(actionsFor(FIELD).map((a) => a.id)).not.toContain("log-bid");
   });
 
   it("withholds Send pay app from someone without MANAGE_BILLING", () => {

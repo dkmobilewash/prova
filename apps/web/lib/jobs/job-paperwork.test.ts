@@ -4,7 +4,7 @@ vi.mock("@prova/db", () => ({ prisma: {} }));
 
 const { jobPaperworkLinks } = await import("./job-paperwork");
 
-const COUNTS = { openRfis: 2, submittals: 3, openPunchItems: 4, drawingSets: 1, materialOrders: 5 };
+const COUNTS = { openRfis: 2, submittals: 3, openPunchItems: 4, drawingSets: 1, materialOrders: 5, lienWaivers: 0 };
 
 describe("jobPaperworkLinks", () => {
   it("links every job-scoped list, pre-filtered to this job, with the count it will show", () => {

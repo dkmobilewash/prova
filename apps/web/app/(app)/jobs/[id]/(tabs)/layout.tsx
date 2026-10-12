@@ -8,7 +8,7 @@ import { jobPaperworkLinks, loadJobPaperworkCounts } from "@/lib/jobs/job-paperw
 import { JobSummaryHeader } from "@/components/JobSummaryHeader";
 import { JobStageNav } from "@/components/job/JobStageNav";
 import { JobPaperworkPanel } from "@/components/job/JobPaperworkPanel";
-import { changeOrderPaperworkLink, jobStages } from "@/components/job/jobStages";
+import { changeOrderPaperworkLink, jobStages, lienWaiverPaperworkLink } from "@/components/job/jobStages";
 import { loadJobStageFacts } from "@/components/job/loadJobStageFacts";
 import { viewerAsOf } from "@/lib/viewerToday";
 
@@ -86,6 +86,8 @@ export default async function JobTabsLayout({
     ...(showsJobMoney && !isEstimateStage
       ? [changeOrderPaperworkLink(id, facts.approvedChangeOrders, facts.waitingChangeOrders)]
       : []),
+    // Same gate as the Billing tab the waivers live on.
+    ...(showsBilling && !isEstimateStage ? [lienWaiverPaperworkLink(id, paperworkCounts.lienWaivers)] : []),
   ];
 
   return (
