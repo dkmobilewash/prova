@@ -7,7 +7,7 @@ import { AiHome } from "@/components/ai/AiParts";
 import { listFindings, listRunningNow, listRuns, openFindingCount, watchingSummary } from "@/lib/agents/queries";
 import { listRecommendations } from "@/lib/agents/recommendations-query";
 import { dismissRecommendation, markRecommendationDone } from "@/lib/actions/recommendations";
-import { dismissFinding } from "@/lib/actions/agentFindings";
+import { dismissFinding, markFindingWrong } from "@/lib/actions/agentFindings";
 
 export const metadata = { title: "AI" };
 
@@ -65,7 +65,7 @@ export default async function AiPage({ searchParams }: { searchParams: Promise<{
         watching={watching}
         findings={findings}
         findingCount={findingCount}
-        actions={{ dismissRecommendation, markRecommendationDone, dismissFinding }}
+        actions={{ dismissRecommendation, markRecommendationDone, dismissFinding, markFindingWrong }}
         now={new Date()}
       />
     </PageShell>

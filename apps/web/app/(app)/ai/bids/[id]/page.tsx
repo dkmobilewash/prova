@@ -7,6 +7,7 @@ import { AskPanel } from "@/components/AskPanel";
 import { BidWorkspace, bidTabFrom } from "@/components/ai-bid/BidWorkspace";
 import { moment } from "@/components/ai-bid/parts";
 import { loadBidWorkspace } from "@/lib/agents/bidWorkspace";
+import { dismissFinding, markFindingWrong } from "@/lib/actions/agentFindings";
 import { listThreadsForSubject } from "@/lib/ask/threads";
 import { viewerTimeZone } from "@/lib/viewerToday";
 
@@ -66,7 +67,13 @@ export default async function AiBidPage({
 
   return (
     <PageShell width="working">
-      <BidWorkspace data={data} tab={tab} zone={zone} ask={ask} />
+      <BidWorkspace
+        data={data}
+        tab={tab}
+        zone={zone}
+        ask={ask}
+        findingActions={{ dismiss: dismissFinding, wrong: markFindingWrong }}
+      />
     </PageShell>
   );
 }

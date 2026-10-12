@@ -163,6 +163,53 @@ describe("createSafetyIncident files one case per injury", () => {
   });
 });
 
+/**
+ * A near miss is logged WITHOUT an OSHA case number.
+ *
+ * Every incident used to take a number from SafetyCaseCounter, so a near
+ * miss — nobody hurt — burned one and left the filed 300 log numbered
+ * 1, 3, 4 with nothing on it to explain 2. Asserted on the counter, because
+ * that is where the gap is made.
+ */
+describe("near misses take no case number", () => {
+  it("files a near miss with no number and leaves the counter alone", async () => {
+    const result = await createSafetyIncident(report({ outcome: "NEAR_MISS", daysAway: "" }));
+
+    expect(result).toEqual({ ok: true });
+    expect(incidents()).toHaveLength(1);
+    expect(incidents()[0].caseNumber).toBeNull();
+    expect(counter()).toBe(0);
+  });
+
+  it("so the next real injury is case 1, not case 2", async () => {
+    await createSafetyIncident(report({ outcome: "NEAR_MISS", description: "Board slid off the cart, missed him." }));
+    await createSafetyIncident(report());
+
+    expect(caseNumbers().filter((n) => n != null)).toEqual([1]);
+    expect(counter()).toBe(1);
+  });
+
+  it("issues the number when a near miss turns out to be an injury", async () => {
+    seedIncident({ caseNumber: null, outcome: "NEAR_MISS" });
+    await createSafetyIncident(report({ description: "Something else entirely." })); // takes 1
+
+    const result = await updateSafetyIncident("inc_1", report({ outcome: "DAYS_AWAY" }));
+
+    expect(result).toEqual({ ok: true });
+    expect(incidents().find((i) => i.id === "inc_1")!.caseNumber).toBe(2);
+    expect(counter()).toBe(2);
+  });
+
+  it("refuses to turn a numbered case into a near miss, and says why", async () => {
+    seedIncident({ caseNumber: 1, outcome: "FIRST_AID_ONLY" });
+
+    const result = await updateSafetyIncident("inc_1", report({ outcome: "NEAR_MISS" }));
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("2026-001") });
+    expect(incidents()[0]).toMatchObject({ caseNumber: 1, outcome: "FIRST_AID_ONLY" });
+  });
+});
+
 /* ------------------------------------------------------------------ *
  * Refusals the person filing can actually read
  * ------------------------------------------------------------------ */

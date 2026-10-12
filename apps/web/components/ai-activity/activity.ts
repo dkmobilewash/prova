@@ -12,6 +12,8 @@ export type ActivityItem = {
   severity?: Severity | null;
   /** Set on a finding somebody dismissed — the row offers Restore. */
   dismissedFindingId?: string | null;
+  /** That dismissal was "Not right" (WRONG), not plain Dismiss. */
+  markedWrong?: boolean;
 };
 
 type AgentFeedRow = { id: string; at: Date; kind: string; agent: string; title: string; detail: string | null; href: string | null; severity?: Severity | null };
@@ -23,6 +25,7 @@ export function mergeActivity(
   agentRows: AgentFeedRow[],
   recommendationRows: RecommendationFeedRow[],
   dismissedFindingIds: ReadonlySet<string> = new Set(),
+  wrongFindingIds: ReadonlySet<string> = new Set(),
 ): ActivityItem[] {
   return [
     ...agentRows.map((r) => ({
@@ -34,6 +37,7 @@ export function mergeActivity(
       href: r.href,
       severity: r.severity ?? null,
       dismissedFindingId: r.kind === "finding" && dismissedFindingIds.has(r.id) ? r.id : null,
+      markedWrong: r.kind === "finding" && wrongFindingIds.has(r.id),
     })),
     ...recommendationRows.map((r) => ({ id: `r-${r.kind}-${r.id}`, at: r.at, agent: "RECOMMENDATIONS", title: r.title, detail: r.detail, href: r.href, severity: null })),
   ].sort((a, b) => b.at.getTime() - a.at.getTime());

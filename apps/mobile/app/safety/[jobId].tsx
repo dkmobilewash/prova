@@ -187,7 +187,7 @@ export default function SafetyScreen() {
             <Text style={styles.cardTitle}>{i.employeeName}</Text>
             <Text style={styles.cardBody}>{i.description}</Text>
             <Text style={styles.cardMeta}>
-              #{i.caseNumber} · {i.outcome.replace(/_/g, " ")}
+              {i.caseNumber == null ? "" : `#${i.caseNumber} · `}{i.outcome.replace(/_/g, " ")}
             </Text>
           </Card>
         ))

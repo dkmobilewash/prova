@@ -1044,6 +1044,8 @@ export const EXPORT_COLUMN_OMISSIONS: Record<string, string> = {
 };
 
 export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
+  Crew: "picking aid — a saved name for people the schedule form ticks together; the planned days themselves are exported",
+  CrewMembership: "picking aid — who a saved crew ticks; the planned days themselves are exported",
   BackchargeCounter: "sequence counter — the numbers it issued are on the rows themselves",
   ChangeOrderCounter: "sequence counter — the numbers it issued are on the exported change orders",
   CloseoutSubmissionCounter: "sequence counter — the numbers it issued are on the rows themselves",

@@ -182,12 +182,17 @@ export function safetyStatus(input: {
   cases: number;
   recordable: number;
   daysAway: number;
+  /** Logged without a case number; never counted in `cases`. */
+  nearMisses?: number;
 }): StatusReport {
-  const quiet =
+  const cases =
     input.cases === 0
       ? `No cases logged for ${input.year}.`
       : `${count(input.cases, "case")} logged for ${input.year}: ${input.recordable} recordable on the 300 log, ${input.daysAway} with days away.`;
-  return { quiet, problems: [] };
+  const nearMisses = input.nearMisses
+    ? ` ${input.nearMisses} near ${input.nearMisses === 1 ? "miss" : "misses"} logged too — not OSHA cases.`
+    : "";
+  return { quiet: cases + nearMisses, problems: [] };
 }
 
 // ---------------------------------------------------------------- alerts

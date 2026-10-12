@@ -41,7 +41,8 @@ export default async function AiActivityPage({ searchParams }: { searchParams: P
   // ponytail: the filter applies to the newest 200 merged rows, not to the
   // whole history; a per-agent query is the upgrade if one agent gets buried.
   const dismissed = new Set(findings.filter((f) => f.dismissedAt !== null).map((f) => f.id));
-  const items = mergeActivity(runs, recommendations, dismissed);
+  const wrong = new Set(findings.filter((f) => f.dismissedReason === "WRONG").map((f) => f.id));
+  const items = mergeActivity(runs, recommendations, dismissed, wrong);
   const days = groupByDay(agent ? items.filter((i) => i.agent === agent) : items, zone, today);
 
   return (

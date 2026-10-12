@@ -54,6 +54,8 @@ export type FindingRow = {
   bidProjectName: string | null;
   createdAt: Date;
   dismissedAt: Date | null;
+  /** HANDLED (Dismiss) or WRONG ("Not right"); null when open or dismissed before the reason existed. */
+  dismissedReason: "HANDLED" | "WRONG" | null;
   runId: string;
 };
 
@@ -166,6 +168,7 @@ export async function listFindings(
     bidProjectName: f.bidInvitation?.projectName ?? null,
     createdAt: f.createdAt,
     dismissedAt: f.dismissedAt,
+    dismissedReason: f.dismissedReason,
     runId: f.runId,
   }));
 }

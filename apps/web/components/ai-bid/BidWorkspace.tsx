@@ -1,12 +1,17 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { RunAgentButton } from "@/components/RunAgentButton";
+import { AiRowAction } from "@/components/ai/AiRowAction";
+import type { ActionResult } from "@/lib/actions/shared";
 import { BidOutcomeForm } from "@/components/BidOutcomeForm";
 import { outcomeReasonLabel } from "@/components/ai-bid/outcome";
 import { Card, SeverityDot, SourceChips, calendarDay, moment, sentenceCase } from "@/components/ai-bid/parts";
 import type { BidWorkspaceData, FindingRow } from "@/components/ai-bid/types";
 import { money } from "@/lib/money";
 import { tradeScopeLabel } from "@/lib/trade-scopes";
+
+type RowAction = (id: string) => Promise<ActionResult>;
+export type FindingActions = { dismiss: RowAction; wrong: RowAction };
 
 export const BID_TABS = [
   { key: "research", label: "Research" },
@@ -48,12 +53,16 @@ export function BidWorkspace({
   tab,
   zone,
   ask,
+  findingActions,
 }: {
   data: BidWorkspaceData;
   tab: BidTab;
   zone: string;
   /** The Ask panel and this bid's earlier conversations, built by the page. */
   ask: ReactNode;
+  /** Dismiss and "Not right" on each finding — Server Actions handed down
+   * by the page, so this file imports no feature module. */
+  findingActions?: FindingActions;
 }) {
   const { bid } = data;
   const status = STATUS[bid.status] ?? { label: sentenceCase(bid.status), tone: "bg-rail-hover text-ink-label" };
@@ -129,8 +138,8 @@ export function BidWorkspace({
       </nav>
 
       <div className="mt-5">
-        {tab === "research" && <ResearchTab data={data} zone={zone} />}
-        {tab === "estimate" && <EstimateTab data={data} zone={zone} />}
+        {tab === "research" && <ResearchTab data={data} zone={zone} actions={findingActions} />}
+        {tab === "estimate" && <EstimateTab data={data} zone={zone} actions={findingActions} />}
         {tab === "addenda" && <AddendaTab data={data} />}
         {tab === "decision" && <DecisionTab data={data} zone={zone} ask={ask} />}
       </div>
@@ -138,7 +147,7 @@ export function BidWorkspace({
   );
 }
 
-function Finding({ finding, fix }: { finding: FindingRow; fix: boolean }) {
+function Finding({ finding, fix, actions }: { finding: FindingRow; fix: boolean; actions?: FindingActions }) {
   return (
     <li className="border-t border-line-row py-3 first:border-t-0 first:pt-0" data-finding={finding.id}>
       <div className="flex gap-2.5">
@@ -153,6 +162,12 @@ function Finding({ finding, fix }: { finding: FindingRow; fix: boolean }) {
                 Fix this →
               </Link>
             )}
+            {actions && (
+              <span className="ml-auto flex items-center gap-1">
+                <AiRowAction id={finding.id} action={actions.dismiss} label="Dismiss" />
+                <AiRowAction id={finding.id} action={actions.wrong} label="Not right" />
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -160,7 +175,7 @@ function Finding({ finding, fix }: { finding: FindingRow; fix: boolean }) {
   );
 }
 
-function ResearchTab({ data, zone }: { data: BidWorkspaceData; zone: string }) {
+function ResearchTab({ data, zone, actions }: { data: BidWorkspaceData; zone: string; actions?: FindingActions }) {
   const last = lastRun(data, "BID_RESEARCH");
   const run = <RunAgentButton agent="BID_RESEARCH" bidInvitationId={data.bid.id} label={data.research.length > 0 ? "Research again" : "Research this bid"} />;
   return (
@@ -177,7 +192,7 @@ function ResearchTab({ data, zone }: { data: BidWorkspaceData; zone: string }) {
         <>
           <ul>
             {data.research.map((f) => (
-              <Finding key={f.id} finding={f} fix={false} />
+              <Finding key={f.id} finding={f} fix={false} actions={actions} />
             ))}
           </ul>
           <div className="mt-3 border-t border-line-row pt-3">{run}</div>
@@ -187,7 +202,7 @@ function ResearchTab({ data, zone }: { data: BidWorkspaceData; zone: string }) {
   );
 }
 
-function EstimateTab({ data, zone }: { data: BidWorkspaceData; zone: string }) {
+function EstimateTab({ data, zone, actions }: { data: BidWorkspaceData; zone: string; actions?: FindingActions }) {
   const last = lastRun(data, "ESTIMATE_CHECK");
   const groups = new Map<string, FindingRow[]>();
   for (const f of data.estimateCheck) groups.set(f.kind, [...(groups.get(f.kind) ?? []), f]);
@@ -212,7 +227,7 @@ function EstimateTab({ data, zone }: { data: BidWorkspaceData; zone: string }) {
               </h3>
               <ul>
                 {rows.map((f) => (
-                  <Finding key={f.id} finding={f} fix />
+                  <Finding key={f.id} finding={f} fix actions={actions} />
                 ))}
               </ul>
             </section>

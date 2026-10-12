@@ -92,6 +92,23 @@ describe("the timeline", () => {
     expect(restore).toHaveBeenCalledWith("f1");
   });
 
+  it("tells a Not right finding from a plain dismissal", () => {
+    const rows = mergeActivity(
+      [
+        { id: "f1", at: new Date("2026-10-14T15:31:00Z"), kind: "finding", agent: "BID_RESEARCH", title: "What the web says", detail: null, href: null },
+        { id: "f2", at: new Date("2026-10-14T15:30:00Z"), kind: "finding", agent: "BID_WATCHER", title: "Due in 2 days", detail: null, href: null },
+      ],
+      [],
+      new Set(["f1", "f2"]),
+      new Set(["f1"]),
+    );
+    mount(<ActivityTimeline days={groupByDay(rows, ZONE, "2026-10-14")} agent={null} zone={ZONE} />);
+    const tags = [...host.querySelectorAll("ol > li")].map((li) => li.textContent ?? "");
+    expect(tags[0]).toContain("Marked not right");
+    expect(tags[1]).toContain("Dismissed");
+    expect(tags[1]).not.toContain("not right");
+  });
+
   it("filters by known agents only, and marks the open filter", () => {
     expect(agentFilterFrom("BID_WATCHER")).toBe("BID_WATCHER");
     expect(agentFilterFrom("DROP TABLE")).toBeNull();

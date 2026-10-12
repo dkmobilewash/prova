@@ -261,6 +261,7 @@ export function Watching({
   findings,
   findingCount,
   dismissFinding,
+  markFindingWrong,
   now,
 }: {
   summary: AiWatching;
@@ -268,6 +269,8 @@ export function Watching({
   /** All open findings, not just the five shown. */
   findingCount: number;
   dismissFinding: RowAction;
+  /** "Not right": the finding is wrong, not merely dealt with. */
+  markFindingWrong: RowAction;
   now: Date;
 }) {
   const runLine = [
@@ -362,7 +365,10 @@ export function Watching({
                   ) : (
                     <span />
                   )}
-                  <AiRowAction id={finding.id} action={dismissFinding} label="Dismiss" />
+                  <span className="flex items-center gap-1">
+                    <AiRowAction id={finding.id} action={dismissFinding} label="Dismiss" />
+                    <AiRowAction id={finding.id} action={markFindingWrong} label="Not right" />
+                  </span>
                 </div>
               </li>
             ))}
@@ -403,7 +409,12 @@ export function AiHome({
   watching: AiWatching;
   findings: AiFinding[];
   findingCount: number;
-  actions: { dismissRecommendation: RowAction; markRecommendationDone: RowAction; dismissFinding: RowAction };
+  actions: {
+    dismissRecommendation: RowAction;
+    markRecommendationDone: RowAction;
+    dismissFinding: RowAction;
+    markFindingWrong: RowAction;
+  };
   now: Date;
 }) {
   const running = runs.filter((run) => run.status === "RUNNING").length;
@@ -469,6 +480,7 @@ export function AiHome({
               findings={findings}
               findingCount={findingCount}
               dismissFinding={actions.dismissFinding}
+              markFindingWrong={actions.markFindingWrong}
               now={now}
             />
             <Recommendations items={recommendations} dismiss={actions.dismissRecommendation} done={actions.markRecommendationDone} />

@@ -160,6 +160,11 @@ model AgentFinding {
   dismissedAt       DateTime?
   dismissedByUserId String?
   dismissedByUser   User?     @relation("AgentFindingDismissedBy", fields: [dismissedByUserId], references: [id], onDelete: SetNull)
+  /// WHY it was dismissed. HANDLED is plain Dismiss (seen it, dealt with
+  /// it); WRONG is "Not right" — the agent was mistaken, and the research
+  /// pass is told so on its next run on the same bid. Null on every row
+  /// dismissed before this column existed, and on open findings.
+  dismissedReason   FindingDismissal?
 
   createdAt DateTime @default(now())
 
@@ -168,6 +173,11 @@ model AgentFinding {
   @@index([companyId, agent, dismissedAt])
   @@index([bidInvitationId])
   @@index([runId])
+}
+
+enum FindingDismissal {
+  HANDLED
+  WRONG
 }
 
 enum BidOutcomeReason {

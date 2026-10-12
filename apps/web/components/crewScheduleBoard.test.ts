@@ -25,11 +25,15 @@ const fake = {
   scheduleCrewDay:
     vi.fn<(formData: FormData) => Promise<{ ok: true; value: { message: string } } | { ok: false; error: string }>>(),
   unscheduleCrewDay: vi.fn(),
+  saveCrew: vi.fn<(formData: FormData) => Promise<{ ok: true } | { ok: false; error: string }>>(),
 };
 
 vi.mock("@/lib/actions", () => ({
   scheduleCrewDay: fake.scheduleCrewDay,
   unscheduleCrewDay: fake.unscheduleCrewDay,
+  saveCrew: fake.saveCrew,
+  renameCrew: vi.fn(),
+  archiveCrew: vi.fn(),
 }));
 
 const { CrewScheduleBoard } = await import("@/components/CrewScheduleBoard");
@@ -298,5 +302,57 @@ describe("the schedule with a job and nobody to put on it", () => {
     expect(container.textContent).toContain("Nobody is on the schedule for the next two weeks.");
     expect(container.querySelector('a[href="/team"]')).toBeNull();
     expect(buttonSaying("Put someone on")).toBeTruthy();
+  });
+});
+
+describe("saved crews on the put-someone-on form", () => {
+  function openWithCrews() {
+    render(
+      createElement(CrewScheduleBoard, {
+        upcoming: [],
+        missingHours: [],
+        jobs: [{ id: "job-a", name: "Alder Street", clientName: null, status: null }],
+        workers: [
+          { value: "user:ana", label: "Ana Reyes" },
+          { value: "crew:marco", label: "Marco Silva" },
+          { value: "crew:lu", label: "Lu Chen" },
+        ],
+        crafts: [],
+        canWrite: true,
+        // "crew:gone" was archived since the crew was saved: it has no box.
+        crews: [{ id: "c1", name: "Hangers", members: ["crew:marco", "crew:lu", "crew:gone"] }],
+      }),
+    );
+    const open = [...container.querySelectorAll("button")].find((b) => b.textContent === "Put someone on")!;
+    act(() => open.click());
+  }
+
+  it("picking a crew ticks exactly its people, and nobody else", () => {
+    openWithCrews();
+    workerBox("user:ana").checked = true; // ticked by hand before the pick
+    const picker = container.querySelector<HTMLSelectElement>('select[aria-label="Crew"]')!;
+    act(() => {
+      picker.value = "c1";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(workerBox("crew:marco").checked).toBe(true);
+    expect(workerBox("crew:lu").checked).toBe(true);
+    expect(workerBox("user:ana").checked).toBe(false);
+  });
+
+  it("saves the ticked people under the typed name", async () => {
+    fake.saveCrew.mockResolvedValue({ ok: true });
+    openWithCrews();
+    workerBox("user:ana").checked = true;
+    workerBox("crew:lu").checked = true;
+    field("crewName").value = "Tapers";
+    const save = [...container.querySelectorAll("button")].find((b) => b.textContent === "Save these people as a crew")!;
+    await act(async () => save.click());
+
+    const sent = fake.saveCrew.mock.calls[0][0];
+    expect(sent.get("crewName")).toBe("Tapers");
+    expect(sent.getAll("worker")).toEqual(["user:ana", "crew:lu"]);
+    expect(fake.scheduleCrewDay).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Saved crew "Tapers".');
   });
 });

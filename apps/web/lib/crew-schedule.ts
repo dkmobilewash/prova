@@ -52,7 +52,24 @@ export function workDateFromString(raw: unknown): Date {
  * written as `userId === userId` somewhere and silently never matching a
  * crew member's row.
  */
-export function workerKey(row: { scheduledUserId?: string | null; crewMemberId?: string | null }): string {
+/**
+ * Turn the form's one "worker" value into the XOR the tables require.
+ *
+ * The control carries `user:<id>` or `crew:<id>` in a single value, which
+ * is what keeps the form one control instead of two mutually exclusive
+ * ones. Splitting it server-side rather than in the component means the
+ * server never trusts which kind the browser said it was — it reads the
+ * prefix itself and looks the row up in this company. Shared by the
+ * schedule and saved crews (lib/actions/crews.ts), which take the same
+ * checkbox values.
+ */
+export function workerFromValue(raw: string): { scheduledUserId: string } | { crewMemberId: string } | null {
+  if (raw.startsWith("user:") && raw.length > 5) return { scheduledUserId: raw.slice(5) };
+  if (raw.startsWith("crew:") && raw.length > 5) return { crewMemberId: raw.slice(5) };
+  return null;
+}
+
+export function workerKey(row:{ scheduledUserId?: string | null; crewMemberId?: string | null }): string {
   if (row.scheduledUserId) return `user:${row.scheduledUserId}`;
   if (row.crewMemberId) return `crew:${row.crewMemberId}`;
   // Unreachable while the CHECK holds. Not thrown: a schedule page that

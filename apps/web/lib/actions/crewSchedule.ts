@@ -11,6 +11,7 @@ import {
   scheduleDays,
   scheduleSavedMessage,
   workDateFromString,
+  workerFromValue,
   workerKey,
 } from "@/lib/crew-schedule";
 import { scheduledWorkerName } from "@/lib/crew-schedule-query";
@@ -40,21 +41,6 @@ const NO_PERMISSION = "Only someone with field access can change the crew schedu
 
 function text(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();
-}
-
-/**
- * Turn the form's one "worker" value into the XOR the table requires.
- *
- * The select carries `user:<id>` or `crew:<id>` in a single option value,
- * which is what keeps the form one control instead of two mutually
- * exclusive ones. Splitting it here rather than in the component means the
- * server never trusts which kind the browser said it was — it reads the
- * prefix itself and looks the row up in this company.
- */
-function workerFromValue(raw: string): { scheduledUserId: string } | { crewMemberId: string } | null {
-  if (raw.startsWith("user:") && raw.length > 5) return { scheduledUserId: raw.slice(5) };
-  if (raw.startsWith("crew:") && raw.length > 5) return { crewMemberId: raw.slice(5) };
-  return null;
 }
 
 /**

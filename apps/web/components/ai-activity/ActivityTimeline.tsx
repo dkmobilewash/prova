@@ -84,7 +84,7 @@ export function ActivityTimeline({ days, agent, zone }: { days: ActivityDay[]; a
                     <span className="min-w-0 flex-1">
                       <span className={`font-semibold ${item.dismissedFindingId ? "text-ink-muted line-through" : "text-ink"}`}>{item.title}</span>{" "}
                       <span className="whitespace-nowrap text-sm text-ink-muted">{shortLabel(item.agent)}</span>
-                      {item.dismissedFindingId && <span className="ml-2 rounded-full bg-rail-hover px-2 py-0.5 text-xs font-semibold text-ink-body">Dismissed</span>}
+                      {item.dismissedFindingId && <span className="ml-2 rounded-full bg-rail-hover px-2 py-0.5 text-xs font-semibold text-ink-body">{item.markedWrong ? "Marked not right" : "Dismissed"}</span>}
                       {item.detail && <span className="mt-0.5 block break-words text-sm text-ink-body">{item.detail}</span>}
                     </span>
                   </>
