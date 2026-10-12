@@ -282,10 +282,10 @@ export function LienWaiverLanding({ toolUrl }: { toolUrl?: string }) {
           words stay first in the markup (screen readers meet the headline
           first); on a phone the picture is shown first by `order`, so the
           first screen is not all text. */}
-      <section className={`${wrap} grid items-center gap-10 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,44rem)] lg:gap-12 lg:py-14`}>
+      <section className={`${wrap} grid items-center gap-10 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,38rem)] lg:gap-12 lg:py-14`}>
         <div className="order-2 min-w-0 lg:order-1">
           <p className="text-sm font-semibold uppercase tracking-[0.12em] text-brand sm:text-base">Free lien waiver generator</p>
-          <h1 className="mt-4 text-balance font-headline text-[clamp(2.75rem,9vw,6.75rem)] font-semibold leading-[1.02] tracking-[-0.02em] text-ink">
+          <h1 className="mt-4 text-balance font-headline text-[clamp(2.75rem,6.5vw,6rem)] font-semibold leading-[1.02] tracking-[-0.02em] text-ink">
             Make your lien waiver. Free.
           </h1>
           <p className={`${lead} mt-6 lg:text-2xl`}>
@@ -295,7 +295,7 @@ export function LienWaiverLanding({ toolUrl }: { toolUrl?: string }) {
           <SignUpRow toolUrl={toolUrl} />
         </div>
         {/* zoom, not transform: it scales the fixed-height stage AND its layout box together, so the clipped animation keeps its proportions and the column grows to fit. */}
-        <div className="order-1 flex min-w-0 justify-center lg:order-2 lg:justify-end lg:[zoom:1.25]">
+        <div className="order-1 flex min-w-0 justify-center lg:order-2 lg:justify-end lg:[zoom:1.12]">
           <WaiverFill />
         </div>
       </section>
