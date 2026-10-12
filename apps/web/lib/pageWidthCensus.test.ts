@@ -161,15 +161,11 @@ function scan(): Scanned[] {
 const UNCONVERTED_PAGES = [
   "apps/web/app/(app)/alerts/page.tsx",
   "apps/web/app/(app)/ask/page.tsx",
-  "apps/web/app/(app)/backcharges/page.tsx",
-  "apps/web/app/(app)/bids/page.tsx",
-  "apps/web/app/(app)/cash-flow/page.tsx",
   "apps/web/app/(app)/catalog/page.tsx",
   "apps/web/app/(app)/certifications/page.tsx",
   "apps/web/app/(app)/closeout/page.tsx",
   "apps/web/app/(app)/compliance/page.tsx",
   "apps/web/app/(app)/contacts/[id]/page.tsx",
-  "apps/web/app/(app)/contacts/page.tsx",
   "apps/web/app/(app)/deployment/page.tsx",
   "apps/web/app/(app)/drawings/page.tsx",
   "apps/web/app/(app)/equipment/page.tsx",
@@ -199,7 +195,6 @@ const UNCONVERTED_PAGES = [
   "apps/web/app/(app)/settings/import/page.tsx",
   "apps/web/app/(app)/settings/integrations/page.tsx",
   "apps/web/app/(app)/submittals/page.tsx",
-  "apps/web/app/(app)/team/page.tsx",
   "apps/web/app/(app)/union-compliance/page.tsx",
   "apps/web/app/(app)/union-compliance/remittance/page.tsx",
   "apps/web/app/(app)/vendors/pricing/page.tsx",
@@ -322,8 +317,9 @@ describe("page width census", () => {
       // as converted for that purpose. Then #452 moved the dashboard (now
       // `working`) and the job-tabs layout (`working` for the header and
       // rail, each tab choosing its own body width through PageColumn) to
-      // the shell. All four removals together: 48.
-    ).toBe(48);
+      // the shell. All four removals together: 48. The Concept G sweep then
+      // moved cash-flow, backcharges, team, bids and contacts: 43.
+    ).toBe(43);
     expect(new Set(UNCONVERTED_PAGES).size).toBe(UNCONVERTED_PAGES.length);
   });
 
