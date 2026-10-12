@@ -11,6 +11,8 @@ import { scheduledWorkerName } from "@/lib/crew-schedule-query";
 import type { AreaSlug, Tone, ToolStatus, ToolStatuses } from "@/lib/areas";
 import { overdueText } from "@/lib/due-date";
 import { formatCalendarDay } from "@/lib/render-date";
+import { formatHours } from "@/lib/render-hours";
+import { addDays, weekStart } from "@/components/fieldReportWeeks";
 
 /**
  * The live half of the areas (lib/areas.ts): one status line per tool, and
@@ -129,6 +131,15 @@ export async function loadToolStatuses(
         (await prisma.crewScheduleDay.findMany({ where: { companyId, workDate: today }, distinct: ["jobId"], select: { jobId: true } }))
           .length;
       return n === 0 ? { text: "No crews out today" } : { text: `${plural(n, "crew")} out today`, tone: "green" };
+    },
+    "/hours": async () => {
+      const monday = weekStart(todayIso);
+      const { _sum } = await prisma.timeEntry.aggregate({
+        _sum: { hours: true },
+        where: { job: { companyId }, date: { gte: new Date(`${monday}T00:00:00.000Z`), lte: new Date(`${addDays(monday, 6)}T00:00:00.000Z`) } },
+      });
+      const weekHours = Number(_sum.hours ?? 0);
+      return weekHours === 0 ? { text: "No hours this week" } : { text: `${formatHours(weekHours)} hrs this week` };
     },
     "/punch-lists": async () => {
       const n = await prisma.punchListItem.count({ where: { companyId, status: { not: "VERIFIED" } } });
