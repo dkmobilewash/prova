@@ -587,8 +587,19 @@ export function TakeoffPlanViewer({
       // every one of them (augusta 608/472 -> 707ft, naples 657/789 -> 1,302ft,
       // west-herr 1,495/1,093 -> 1,679ft). `mergeWalls` is what stops the
       // overlap being billed twice; see `wallRuns.ts`.
+      // AND THE PARTITION SCHEDULE GOES IN WITH IT. The thicknesses of the
+      // types this company builds are what let the finder tell an assembly from
+      // a span across two of them: 1-1/2in furring on an 8in block wall is 8
+      // and 1-1/2, never one wall of 9-1/2in, because 9-1/2in is on no
+      // schedule. Without this list the finder behaves exactly as it did
+      // before, which is the whole point of passing it here rather than
+      // guessing inside.
+      const scheduleIn = wallTypes
+        .map((type) => type.thicknessIn)
+        .filter((inches): inches is number => inches !== null);
       const everywhere = wallsFromBothEngines(inUnits, 1, pageSize.heightPt / pageSize.widthPt, {
         feetPerPoint: feetPerUnit,
+        knownThicknessesIn: scheduleIn,
       });
       // ONLY THE ONES IN THE BUILDING. Without this the title block, the notes
       // column, the sheet border and any detail drawn above the plan all come

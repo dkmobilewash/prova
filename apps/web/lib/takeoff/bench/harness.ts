@@ -112,7 +112,17 @@ export async function findWalls(bytes: Buffer, feetPerUnit: number): Promise<Fou
     });
     const inUnits = segments.map((s) => ({ x1: s.x1 / pageSize.widthPt, y1: s.y1 / pageSize.widthPt, x2: s.x2 / pageSize.widthPt, y2: s.y2 / pageSize.widthPt, width: s.width }));
     const aspect = pageSize.heightPt / pageSize.widthPt;
-    const everywhere = wallsFromBothEngines(inUnits, 1, aspect, { feetPerPoint: feetPerUnit });
+    // THE PARTITION SCHEDULE, which is printed on the drawing and is the first
+    // thing an estimator reads. In the product these thicknesses come from the
+    // company's wall-type library, filled by `wallTypesFromSchedule` off the
+    // schedule sheet. Handing the finder the same list here is representing
+    // that input, not consulting the answer key: the key's per-wall geometry,
+    // which is what the grading compares against, is not in scope here.
+    const scheduleIn = Object.values(PARTITION_TYPES).map((t) => t.thicknessIn);
+    const everywhere = wallsFromBothEngines(inUnits, 1, aspect, {
+      feetPerPoint: feetPerUnit,
+      knownThicknessesIn: scheduleIn,
+    });
     const inBuilding = wallsInTheBuilding(everywhere, feetPerUnit);
     const walls = wallsNotTheSheetBorder(wallsNotLettering(inBuilding, textBoxes, feetPerUnit), 1, aspect);
     page.cleanup();

@@ -868,3 +868,162 @@ describe("two faces of very different lengths", () => {
     expect(wall!.lengthFeet).toBeCloseTo(20, 1);
   });
 });
+
+/**
+ * ── 9-1/2 INCHES IS NOT A WALL ANYBODY BUILDS ──
+ *
+ * "The widest valid pair is the wall and the narrower ones are its layers" is
+ * right for one wall drawn in layers and wrong where two assemblies touch.
+ * 1-1/2in furring on an 8in block wall is drawn as three lines, and the pairs
+ * are 8in (the block), 1-1/2in (the furring) and 9-1/2in (across both). Widest
+ * won, so the finder returned ONE WALL AT 9-1/2IN: a thickness on no schedule,
+ * priced as an assembly nobody ordered. That is the 33 ft reported "on the
+ * block" on School-01's A-101. The furring is still missed — see the test
+ * below that pins why, which is a different rule and a separate piece of
+ * work.
+ *
+ * Thickness cannot separate that from a layered exterior, where the widest span
+ * IS the wall. The SCHEDULE can: 8 and 1-1/2 are on it, 9-1/2 is on nothing.
+ *
+ * Graded per wall on `reports/takeoff-bench`, against the key's centreline:
+ * Mesa Ridge 59,538 -> 61,253 ft found with not-on-a-wall DOWN 4,500 -> 3,902,
+ * and A-101 1,853 -> 1,936 ft with its 33 ft of block reporting gone.
+ */
+describe("the partition schedule", () => {
+  const PT = 9;
+  const face = (feet: number, offsetInches: number): StrokeSegment => ({
+    x1: 0,
+    y1: (offsetInches / 12) * PT,
+    x2: feet * PT,
+    y2: (offsetInches / 12) * PT,
+    width: 0.7,
+  });
+  const found = (offsets: number[], knownThicknessesIn?: number[]) =>
+    wallsFromStrokes(
+      offsets.map((at) => face(30, at)),
+      { feetPerPoint: 1 / PT, knownThicknessesIn },
+    )
+      .map((wall) => Number((wall.thicknessFeet * 12).toFixed(2)))
+      .sort((a, b) => b - a);
+
+  // 8in block, then 1-1/2in furring on its inner face.
+  const BLOCK_AND_FURRING = [0, 8, 9.5];
+  // EXT-2 as a real export draws it: PARTITION_TYPES["EXT-2"].planLines.
+  const LAYERED_EXTERIOR = [4.0625, 3.4375, -2.5625, -4.0625];
+  const SCHEDULE = [8, 1.5, 8.125, 4.875, 4.75, 14.5];
+
+  it("READS THE BLOCK WALL AT 8IN INSTEAD OF 9-1/2IN ACROSS BOTH", () => {
+    expect(found(BLOCK_AND_FURRING, SCHEDULE)).toEqual([8]);
+  });
+
+  it("DOES NOT YET RECOVER THE FURRING ITSELF, and this pins why", () => {
+    // Written as the limit rather than the goal, because the goal is not
+    // shipped. The furring's two faces are the block's inner face and the
+    // furring face, and the block has already taken the inner face — a face
+    // belongs to ONE wall. In construction it belongs to one wall per SIDE: the
+    // block on one side, the furring on the other.
+    //
+    // Allowing that was built and MEASURED, and it is not worth it. On the
+    // bench it bought about 100 ft of found footage and cost roughly 2,900 ft
+    // on Mesa Ridge and 2,000 ft on the holdout of footage that is not on any
+    // wall — because every face in the drawing gains a second chance to pair
+    // with something that is not its partner. Numbers in the changelog entry.
+    //
+    // So this is the next piece of work, and it needs a way to admit the second
+    // side of a face WITHOUT admitting all of them. Until then the furring on a
+    // block wall is missed, and the wall it is applied to is at least reported
+    // at a thickness that exists.
+    expect(found(BLOCK_AND_FURRING, SCHEDULE)).not.toContain(1.5);
+  });
+
+  it("reports the 9-1/2in span when it has no schedule to consult", () => {
+    // Not an aspiration — the behaviour this shipped with, pinned so the
+    // schedule is doing the work rather than some other change.
+    expect(found(BLOCK_AND_FURRING)).toEqual([9.5]);
+    expect(found(BLOCK_AND_FURRING, [])).toEqual([9.5]);
+  });
+
+  it("STILL READS A LAYERED EXTERIOR AS ONE WALL, not as wall plus furring", () => {
+    // EXT-2's inner two lines are 1.500in apart — the SAME as F1 furring, which
+    // is on the schedule. Thickness cannot tell them apart; only position can.
+    // See `enclosedByAScheduledWall`.
+    expect(found(LAYERED_EXTERIOR, SCHEDULE)).toEqual([8.13]);
+    expect(found(LAYERED_EXTERIOR)).toEqual([8.13]);
+  });
+
+  it("FINDS A 1-1/2IN WALL THE SCHEDULE NAMES, which the 2.4in floor refuses", () => {
+    // The floor exists because, knowing nothing about the building, a gap this
+    // thin is more likely a doubled stroke than a wall. The schedule answers
+    // that doubt for the thicknesses on it and for nothing else.
+    expect(found([0, 1.5], SCHEDULE)).toEqual([1.5]);
+    expect(found([0, 1.5]), "the floor let a sub-minimum pair through unasked").toEqual([]);
+  });
+
+  it("STILL REFUSES A LAYER LINE WHEN THE OUTER FACE IS BROKEN INTO PIECES", () => {
+    // THE SHAPE THAT ACTUALLY SHIPPED THE BUG, and the reason the clean
+    // four-line test above cannot catch it: with one unbroken outer face, the
+    // wall's own pair consumes it and there is nothing left to form the thin
+    // pair. A real sheet breaks that face at every window and corner.
+    //
+    // Here EXT-2's outer face is two 15 ft pieces, its inner layer line and far
+    // face run the full 30 ft. One piece pairs with the far face to make the
+    // 8-1/8in wall; the other is left over, 1.500in from the layer line, which
+    // is F1's thickness and ON THE SCHEDULE. Without the enclosure test that is
+    // a wall. Measured on one holdout sheet before the test existed: 438 ft of
+    // runs in a 1.68in cluster where the drawing has 40 ft of furring.
+    const piece = (fromFt: number, toFt: number, offsetInches: number): StrokeSegment => ({
+      x1: fromFt * PT,
+      y1: (offsetInches / 12) * PT,
+      x2: toFt * PT,
+      y2: (offsetInches / 12) * PT,
+      width: 0.7,
+    });
+    const brokenExterior = [
+      piece(0, 15, -4.0625),
+      piece(15, 30, -4.0625),
+      piece(0, 30, -2.5625),
+      piece(0, 30, 4.0625),
+    ];
+    const thicknesses = wallsFromStrokes(brokenExterior, {
+      feetPerPoint: 1 / PT,
+      knownThicknessesIn: SCHEDULE,
+    }).map((wall) => Number((wall.thicknessFeet * 12).toFixed(2)));
+    expect(thicknesses, "a layer line was reported as furring").not.toContain(1.5);
+  });
+
+  it("refuses it with the pieces the other way round, so the test is not one-sided", () => {
+    // `enclosedByAScheduledWall` is asked in BOTH directions — from each face of
+    // the pair — because which of the two is `i` depends on the order the finder
+    // happens to walk, which is length order, which the drawing decides. Mirrored
+    // here so one direction alone cannot pass.
+    const piece = (fromFt: number, toFt: number, offsetInches: number): StrokeSegment => ({
+      x1: fromFt * PT,
+      y1: (offsetInches / 12) * PT,
+      x2: toFt * PT,
+      y2: (offsetInches / 12) * PT,
+      width: 0.7,
+    });
+    const mirrored = [
+      piece(0, 30, -4.0625),
+      piece(0, 30, 2.5625),
+      piece(0, 15, 4.0625),
+      piece(15, 30, 4.0625),
+    ];
+    const thicknesses = wallsFromStrokes(mirrored, {
+      feetPerPoint: 1 / PT,
+      knownThicknessesIn: SCHEDULE,
+    }).map((wall) => Number((wall.thicknessFeet * 12).toFixed(2)));
+    expect(thicknesses, "a layer line was reported as furring").not.toContain(1.5);
+  });
+
+  it("REFUSES A THIN PAIR THE SCHEDULE DOES NOT NAME", () => {
+    // 0.75in is the gap a doubled stroke leaves. The floor still refuses it,
+    // and the schedule does not rescue it.
+    expect(found([0, 8, 8.75], SCHEDULE)).toEqual([8]);
+  });
+
+  it("refuses a thickness that is merely CLOSE to one on the schedule", () => {
+    // The slack is 1/4in, so 1-1/2in admits 1.25 to 1.75 and nothing else.
+    expect(found([0, 8, 10.1], SCHEDULE)).toEqual([8]);
+  });
+});
