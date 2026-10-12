@@ -69,7 +69,18 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
         />
       </label>
 
-      <div className="flex flex-col gap-2 rounded-lg border border-line-card bg-surface/60 p-4" data-tour="new-job-client">
+      {/* Enter in the GC picker or the add-a-GC boxes picks or types — it
+          never submits the whole form (UX test 2026-10-11: Enter to choose
+          the GC started the job). Buttons are left alone so Enter still
+          presses "+ Add a new GC". Enter in Job name still submits. */}
+      <div
+        className="flex flex-col gap-2 rounded-lg border border-line-card bg-surface/60 p-4"
+        data-tour="new-job-client"
+        onKeyDown={(event) => {
+          const tag = (event.target as HTMLElement).tagName;
+          if (event.key === "Enter" && (tag === "SELECT" || tag === "INPUT")) event.preventDefault();
+        }}
+      >
         <p className="text-sm font-medium text-ink-label">General contractor</p>
 
         {contacts.length === 0 ? (
@@ -135,7 +146,9 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
       <SubmitButton
         type="submit"
         data-tour="new-job-create"
-        className="mt-2 inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
+        // Sticky above the phone tabs (--shell-tabs, 0 on desktop): opening
+        // "+ Add a new GC" pushed it below the fold (UX test 2026-10-11).
+        className="sticky bottom-[calc(var(--shell-tabs,0px)+0.75rem)] z-10 mt-2 inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 shadow-md hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60 mouse:min-h-9"
       >
         {/* "Continue →" said nothing about what pressing it does. It starts
             the job — a real row, in the jobs list, from this moment — and

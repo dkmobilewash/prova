@@ -90,7 +90,7 @@ vi.mock("@/lib/actions", () => ({ hideGettingStarted: vi.fn() }));
 const { default: TodayPage } = await import("@/app/(app)/dashboard/page");
 
 async function render() {
-  return renderToStaticMarkup(await TodayPage({ searchParams: Promise.resolve({}) }));
+  return renderToStaticMarkup(await TodayPage());
 }
 
 /** Just the card's markup, so a link elsewhere on the page cannot satisfy

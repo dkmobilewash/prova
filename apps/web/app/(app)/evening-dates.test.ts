@@ -341,7 +341,7 @@ describe("/cash-flow, an invoice due today, read at 17:01 in California", () => 
 describe("/dashboard, the same invoice, the same minute", () => {
   const load = async () => {
     const { default: Page } = await import("@/app/(app)/dashboard/page");
-    return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+    return renderToStaticMarkup(await Page());
   };
 
   // The tiles became the Money and Needs-you blocks in the Concept G home

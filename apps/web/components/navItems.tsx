@@ -843,10 +843,11 @@ export function activeGroupHeading(groups: NavGroup[], pathname: string): string
 
 /**
  * Routes with no nav entry of their own that belong to one that has.
- * `/jobs/*` is every job page — where most of the work happens — and it has
- * no rail item because the jobs list IS the dashboard (`/jobs` redirects
- * there). Without this a job page matched nothing: every group collapsed
- * and nothing was highlighted, on the page people spend the most time on.
+ * `/jobs` (the jobs list) and `/jobs/*` (every job page — where most of the
+ * work happens) have no rail item of their own; they belong to "Jobs &
+ * Estimates" (/dashboard). Without this a job page matched nothing: every
+ * group collapsed and nothing was highlighted, on the page people spend the
+ * most time on.
  */
 const NAV_ALIASES: Record<string, string> = { "/jobs": "/dashboard" };
 

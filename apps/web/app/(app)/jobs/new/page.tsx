@@ -44,9 +44,12 @@ export default async function NewJobPage() {
   return (
     <div className="mx-auto max-w-xl px-6 py-8">
       <BidWizardSteps current={1} />
-      <h1 className="mb-1 text-xl font-semibold text-ink">Start a bid</h1>
+      {/* "New job", the same words as every button that opens this page —
+          it used to say "Start a bid" under a "+ New job" button (UX test
+          2026-10-11). The bid is the stage the job starts at, said below. */}
+      <h1 className="mb-1 text-xl font-semibold text-ink">New job</h1>
       <p className="mb-6 text-sm text-ink-body">
-        Name it and pick the GC — you&apos;ll add the work itself on the next screen.
+        It starts as a bid. Name it and pick the GC — you&apos;ll add the work itself on the next screen.
       </p>
       <NewJobForm contacts={options} />
     </div>

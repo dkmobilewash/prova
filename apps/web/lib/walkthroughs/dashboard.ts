@@ -1,7 +1,6 @@
 import type { Walkthrough } from "./types";
 
-/** /dashboard — the "Today" page, which is also the jobs list and the
- * estimating list (/jobs and /estimating both redirect here). */
+/** /dashboard — the "Today" page. The full jobs list is /jobs. */
 export const dashboardWalkthrough: Walkthrough = {
   route: "/dashboard",
   title: "Today and your jobs",
@@ -49,22 +48,10 @@ export const dashboardWalkthrough: Walkthrough = {
         "A card per job: where it has got to, from estimate to closeout, and the one thing to do next on it. A job heading over budget says so on its card.",
     },
     {
-      anchor: "dashboard-job-filters",
-      title: "Find a job",
-      body:
-        "These buttons show jobs at one stage — Estimating is everything you are still pricing. Or type a job or client name in the search box.",
-    },
-    {
       anchor: "dashboard-jobs-empty",
       title: "No jobs yet",
       body:
         "Your jobs will be listed here, and the rest of this page fills in once there is one. Press “Start your first job”, or bring a spreadsheet of them in. The faded rows underneath are only an example.",
-    },
-    {
-      anchor: "dashboard-job-list",
-      title: "Your jobs",
-      body:
-        "Every job, grouped by where it is: estimating, contracted, in progress, complete. The small tag on an estimate says what it still needs, like “Needs pricing”. Tap a job to open it.",
     },
   ],
 };

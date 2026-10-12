@@ -13,9 +13,13 @@ const { JobStatusControl } = await import("./JobStatusControl");
  * the product was a dead end. It must now link to where the button is.
  */
 describe("JobStatusControl on an estimate", () => {
-  it("links straight to Mark contracted on the Estimate tab", () => {
+  // The Estimate TAB is gone — the job page is five stage steps — and
+  // "at the bottom of the Estimate tab" sent people looking for nothing.
+  it("points at the header's Won it? box and links to the estimate page's lock-in", () => {
     const html = renderToStaticMarkup(<JobStatusControl jobId="job-1" status="ESTIMATE" />);
     expect(html).toContain('href="/jobs/job-1/estimate#job-lock-in"');
+    expect(html).toContain("Won it?");
+    expect(html).not.toMatch(/estimate tab/i);
     expect(html).not.toContain("further down this page");
   });
 
@@ -25,5 +29,6 @@ describe("JobStatusControl on an estimate", () => {
     );
     expect(html).toContain("Mark contracted");
     expect(html).not.toContain("/estimate#job-lock-in");
+    expect(html).not.toMatch(/estimate tab/i);
   });
 });
