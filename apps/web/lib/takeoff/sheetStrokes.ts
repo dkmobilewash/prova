@@ -228,6 +228,43 @@ export async function segmentsFromOpenPage(
           ctm = Util.transform(ctm, ops.argsArray[i] as number[]);
           continue;
         }
+        // ── A FORM XOBJECT CARRIES ITS OWN MATRIX, AND IT ARRIVES HERE ──
+        //
+        // The header above says "a Form XObject always carries a matrix, and
+        // Revit and AutoCAD both wrap drawing content in one", and the CTM
+        // stack was built for exactly that. It was never wired to the operator
+        // that delivers it: pdf.js does NOT emit the XObject's matrix as a
+        // `cm`. It emits `paintFormXObjectBegin` with `[matrix, bbox]`, inlines
+        // the form's own operators, and closes with `paintFormXObjectEnd`.
+        // Handling only `cm` means every one of those matrices is dropped.
+        //
+        // MEASURED, and it is the single biggest hole in wall detection. Graded
+        // per wall on `reports/takeoff-bench`, the loss diagnosed as "the
+        // reader returned no segment on this wall's faces" is 6,086 ft on Mesa
+        // Ridge and 7,575 ft on the holdout — and every sheet carrying it is an
+        // `__autocad` export, bar one scan that genuinely has no vectors.
+        //
+        // The geometry was never missing. `A-101__autocad` has 177 of these
+        // and returns MORE segments than the clean export of the same sheet
+        // (7,272 against 2,928). They land in the wrong place, so the building
+        // filter drops them, and the wall is reported as never read.
+        //
+        // `q`/`Q` do not bracket a form — the begin/end pair is its own scope —
+        // so the matrix is pushed and popped here rather than relying on them.
+        if (fn === OPS.paintFormXObjectBegin) {
+          stack.push({ ctm, lineWidth });
+          const matrix = (ops.argsArray[i] as unknown[])[0];
+          if (Array.isArray(matrix) && matrix.length === 6) {
+            ctm = Util.transform(ctm, matrix as number[]);
+          }
+          continue;
+        }
+        if (fn === OPS.paintFormXObjectEnd) {
+          const popped = stack.pop();
+          ctm = popped?.ctm ?? IDENTITY;
+          lineWidth = popped?.lineWidth ?? 1;
+          continue;
+        }
         // There is deliberately no "replace the matrix" case: PDF has no such
         // operator. `cm` is the only way to change the CTM and it always
         // concatenates, so `q`/`Q` are the only way back. Typecheck caught a
