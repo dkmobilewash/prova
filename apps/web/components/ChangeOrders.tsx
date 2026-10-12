@@ -616,10 +616,10 @@ function ChangeOrderCard({
       {co.description && <p className="mt-1 text-sm text-ink-body">{co.description}</p>}
 
       {co.supersedesLabel && (
-        <p className="mt-1 text-xs text-tag-blue-ink">Raised to correct {co.supersedesLabel}.</p>
+        <p className="mt-1 text-xs text-tag-brand-ink">Raised to correct {co.supersedesLabel}.</p>
       )}
       {co.revisedByLabels.length > 0 && (
-        <p className="mt-1 text-xs text-tag-blue-ink">
+        <p className="mt-1 text-xs text-tag-brand-ink">
           Corrected by {co.revisedByLabels.join(", ")}. This one stayed approved — it did move the
           contract value at the time.
         </p>

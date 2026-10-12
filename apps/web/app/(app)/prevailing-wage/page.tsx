@@ -159,7 +159,7 @@ export default async function PrevailingWagePage({
                                     <span className="font-mono text-xs text-ink-muted">{day.date}</span>{" "}
                                     entered <span className="text-tag-amber-ink">{splitLabel(day.entered)}</span>,
                                     rules imply{" "}
-                                    <span className="text-tag-blue-ink">
+                                    <span className="text-tag-brand-ink">
                                       {splitLabel(day.expected as Record<string, number>)}
                                     </span>
                                     {day.consecutiveDay === 7 && (

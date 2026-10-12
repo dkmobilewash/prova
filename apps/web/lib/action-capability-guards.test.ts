@@ -741,6 +741,61 @@ const KNOWN_OPEN: Record<string, Capability> = {
  * the code either way, so a "deliberately ungated" line that later acquires
  * a guard fails just as loudly as a guard that goes missing.
  */
+/* ---------------------------------------------------------------- *
+ * 3c. The fourth shape: guarded MORE STRICTLY than its page
+ * ---------------------------------------------------------------- */
+
+/**
+ * `STRICTER_THAN_ITS_PAGE` — an action whose own capability is narrower than
+ * the one its page withholds, on purpose.
+ *
+ * ── THIS FILE HAD NO SHAPE FOR IT, AND TWO REGISTERS REFUSED IT BY NAME ──
+ *
+ * Added 2026-10-11 by an action that fits none of the three above, and the
+ * refusals are what identified the gap rather than any reasoning:
+ *
+ *   - `MIXED_DOORS` answered *"its doors now agree; the ordinary rule decides
+ *     it, delete this entry"*. True — there is one page, not two;
+ *   - `SECTION_DECIDED` answered *"no page reaching it withholds several
+ *     capabilities any more"*. Also true — the page withholds exactly one.
+ *
+ * Both were right, and the ordinary rule was wrong, because every register here
+ * assumes the page is at least as strict as the action. The case that breaks
+ * the assumption is a COMPANY-LEVEL write offered on a JOB page: the data
+ * outlives the job, so the job's capability is not the one that should decide
+ * who writes it.
+ *
+ * ── WHAT AN ENTRY HAS TO EARN ──
+ *
+ * The danger of a register like this is obvious: "stricter" is what every
+ * unnecessary gate calls itself, and a stricter guard that nobody can see is a
+ * DEAD CONTROL — a button rendered for somebody it then refuses, which this
+ * repo has shipped before and has an entry about. So the honesty cases below
+ * require, of every entry:
+ *
+ *   - the action really does assert the capability named;
+ *   - that capability is NOT the page's, or the ordinary rule covers it and
+ *     the entry is noise;
+ *   - the page still reaches it, so the entry cannot outlive the wiring.
+ *
+ * What they cannot check is the one that matters most — that the CONTROL is
+ * hidden from whoever the action refuses — because no test here can see a
+ * screen. That belongs to a render test, and an entry must name the one that
+ * covers it.
+ */
+const STRICTER_THAN_ITS_PAGE: Record<
+  string,
+  { capability: Capability; pageCapability: Capability; hiddenBy: string; reason: string }
+> = {
+  "wallTypes.addWallTypesFromSchedule": {
+    capability: "MANAGE_ESTIMATING",
+    pageCapability: "VIEW_JOB_COSTS",
+    hiddenBy: "components/addWallTypesFromSchedule.test.tsx",
+    reason:
+      "Pressed on /jobs/[id]/takeoff, which withholds VIEW_JOB_COSTS, and writes WallType rows — the company library /wall-types guards with MANAGE_ESTIMATING, and which outlives the job whose schedule was read. On the page's capability an ACCOUNTING member, who may open that tab, would decide what A1 means for every future job. The button is gated to match: ScheduleProposals renders it only for `canAddWallTypes`, which the page computes as can(context, \"MANAGE_ESTIMATING\").",
+  },
+};
+
 const MIXED_DOORS: Record<string, { capability: Capability | null; reason: string }> = {
   "fieldReports.createDailyFieldReport": {
     capability: null,
@@ -1371,13 +1426,16 @@ for (const action of [...reachedBy.keys()].sort()) {
   const key = `${moduleName}.${action}`;
   const mixed = MIXED_DOORS[key];
   const decided = SECTION_DECIDED[key];
+  const stricter = STRICTER_THAN_ITS_PAGE[key];
   const capability = mixed
     ? mixed.capability
     : decided
       ? decided.capability
-      : soleCapabilityGating(action);
+      : stricter
+        ? stricter.capability
+        : soleCapabilityGating(action);
   if (!capability) continue;
-  if (!mixed && !decided && key in KNOWN_OPEN) continue;
+  if (!mixed && !decided && !stricter && key in KNOWN_OPEN) continue;
   MUST_ASSERT.push({ action, moduleName, capability });
 }
 
@@ -1390,7 +1448,7 @@ describe("every write behind a guarded page answers to the same capability", () 
       if (!capability) continue;
       const moduleName = definingModule.get(action) as string;
       const key = `${moduleName}.${action}`;
-      if (key in KNOWN_OPEN || key in MIXED_DOORS) continue;
+      if (key in KNOWN_OPEN || key in MIXED_DOORS || key in STRICTER_THAN_ITS_PAGE) continue;
       if (assertsCapability(action, capability)) continue;
 
       const doors = [...(reachedBy.get(action) as Map<string, Capability | null>).keys()];
@@ -1409,6 +1467,44 @@ describe("every write behind a guarded page answers to the same capability", () 
         `If it must stay open, say so in MIXED_DOORS or in one of the two lists above, ` +
         `with the reason. Absence is not a decision.`,
     ).toEqual([]);
+  });
+
+  it("keeps every stricter-than-its-page entry earning its place", () => {
+    // The register exists because the ordinary rule would UNDER-gate these.
+    // Its own risk is the opposite one: an entry that is merely a gate nobody
+    // argued for. Each line has to still be true of the code.
+    const stale: string[] = [];
+
+    for (const [key, decision] of Object.entries(STRICTER_THAN_ITS_PAGE)) {
+      const [moduleName, action] = key.split(".");
+      if (definingModule.get(action) !== moduleName) {
+        stale.push(`${key} — no such action in that module any more`);
+        continue;
+      }
+      if (!reachedBy.has(action)) {
+        stale.push(`${key} — no page reaches it, so nothing is being overridden`);
+        continue;
+      }
+      const page = soleCapabilityGating(action);
+      if (page === null) {
+        stale.push(`${key} — its page no longer withholds one capability; MIXED_DOORS is the register`);
+        continue;
+      }
+      if (page !== decision.pageCapability) {
+        stale.push(`${key} — its page now withholds ${page}, not ${decision.pageCapability}`);
+        continue;
+      }
+      if (page === decision.capability) {
+        stale.push(`${key} — the action and its page agree now; the ordinary rule covers it, delete this entry`);
+      }
+      // The claim this file cannot check itself. An entry that names a render
+      // test which does not exist is the dead-control case wearing a citation.
+      if (!existsSync(join(WEB, decision.hiddenBy))) {
+        stale.push(`${key} — names ${decision.hiddenBy} as hiding the control, and there is no such file`);
+      }
+    }
+
+    expect(stale, `The stricter-than-its-page entries no longer match the code:\n${stale.join("\n")}`).toEqual([]);
   });
 
   it("keeps the open lists honest — no stale entry, no entry that is now guarded", () => {

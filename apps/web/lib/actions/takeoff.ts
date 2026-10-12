@@ -34,6 +34,7 @@ import {
 } from "./shared";
 import { optionalDateFromString } from "@/lib/bid-pursuits";
 import { deleteDocument } from "@/lib/blob";
+import { onePackageOnly, describeForPackage } from "@/lib/takeoff/packages";
 
 /**
  * The Estimate tab's refusal, in the house voice. The estimate tab and the
@@ -117,6 +118,16 @@ function createLineItemRows(
   label: string,
   lines: TakeoffLine[],
   costCategory: ReturnType<typeof recipeCostCategory>,
+  /**
+   * The pricing package these quantities came from, or null for the base bid.
+   *
+   * NAMED ON THE DESCRIPTION and nothing more, which is the honest half of this
+   * feature: the estimate is not keyed by package, because `BidLine` hangs off
+   * `BidInvitation` and a takeoff hangs off a `Job` with no link between them
+   * before award. So an alternate's lines are findable and movable by a person,
+   * and nothing here claims the estimate knows. See `lib/takeoff/packages.ts`.
+   */
+  packageLabel: string | null = null,
 ) {
   return lines.map((line) =>
     prisma.jobLineItem.create({
@@ -125,7 +136,7 @@ function createLineItemRows(
         // The label names WHERE it was measured. Without it a bid with four
         // takeoffs on it has four lines called "Paint" and no way to tell
         // which room any of them came from.
-        description: label ? `${label} — ${line.label}` : line.label,
+        description: describeForPackage(label ? `${label} — ${line.label}` : line.label, packageLabel),
         unit: line.unit,
         quantity: line.quantity,
         costCategory,
@@ -512,6 +523,12 @@ export async function saveTakeoffMeasurement(jobId: string, formData: FormData):
   if (kind === "COUNT" && !label) {
     return actionFail("Name what you're counting — that name becomes the line item.");
   }
+  // WHICH PRICING PACKAGE THIS BELONGS TO. Empty is the BASE BID — the safe
+  // default both ways round, since a form that omits the field and an estimator
+  // who did not think about it both put the quantity in the number sent to the
+  // GC. The opposite default would bid LOW, and a low bid is work won at a loss
+  // and then built. See `lib/takeoff/packages.ts`.
+  const packageLabel = String(formData.get("packageLabel") ?? "").trim();
 
   // A ring that crosses itself has no area, and saying so now beats letting it
   // sit in the list looking like a measurement until posting time.
@@ -527,6 +544,7 @@ export async function saveTakeoffMeasurement(jobId: string, formData: FormData):
       xs: points.xs,
       ys: points.ys,
       label: label || null,
+      packageLabel: packageLabel || null,
       createdByUserId: userId,
     },
   });
@@ -577,9 +595,26 @@ export async function saveTakeoffMeasurements(jobId: string, formData: FormData)
   if (!calibration) return actionFail("Set the scale on this sheet before measuring it.");
 
   const label = String(formData.get("label") ?? "").trim();
+  // WHICH PRICING PACKAGE THESE BELONG TO. Empty is the BASE BID, which is the
+  // safe default both ways round: a form that omits the field, and an estimator
+  // who did not think about it, both put the quantities in the number sent to
+  // the GC. The opposite default would bid LOW, and a low bid is work won at a
+  // loss and then built. See `lib/takeoff/packages.ts`.
+  const packageLabel = String(formData.get("packageLabel") ?? "").trim();
 
   // One `shape` field per wall, each a JSON `{xs, ys}`. A flat pair of arrays
   // could not say where one run ends and the next begins.
+  // LINEAR unless asked otherwise. The wall finder sends runs and says
+  // nothing; the room finder sends rings and says AREA. COUNT is deliberately
+  // not accepted — nothing produces a batch of them, and a kind nothing sends
+  // is a branch nothing tests.
+  const askedKind = String(formData.get("kind") ?? "LINEAR");
+  if (askedKind !== "LINEAR" && askedKind !== "AREA") {
+    return actionFail("Those measurements didn't come through. Find them again.");
+  }
+  const kind = askedKind;
+  const noun = kind === "AREA" ? "Room" : "Wall";
+
   const raw = formData.getAll("shape").map(String);
   if (raw.length === 0) return actionFail("Nothing was selected to add.");
 
@@ -602,22 +637,88 @@ export async function saveTakeoffMeasurements(jobId: string, formData: FormData)
     }
     // NAMED, not counted. "Wall 14 of 47 didn't come through" tells somebody
     // which one to look at; "one of these is wrong" tells them to start again.
-    const problem = verticesProblem("LINEAR", xs, ys);
-    if (problem) return actionFail(`Wall ${i + 1} of ${raw.length} couldn't be added: ${problem}`);
+    const problem = verticesProblem(kind, xs, ys);
+    if (problem) return actionFail(`${noun} ${i + 1} of ${raw.length} couldn't be added: ${problem}`);
+    // The same guard the single save applies, for the same reason: a ring
+    // that crosses itself has no area anybody can price. It matters more here
+    // because these rings are TRACED rather than drawn — nobody watched this
+    // one being made, so nothing else would notice.
+    if (kind === "AREA" && ringSelfIntersects(xs, ys)) {
+      return actionFail(`${noun} ${i + 1} of ${raw.length} couldn't be added: that outline crosses itself.`);
+    }
     shapes.push({ xs, ys });
   }
 
-  await prisma.takeoffMeasurement.createMany({
+  // `createManyAndReturn` rather than `createMany`, because an optional
+  // `wallTypeId` turns this into the priced path and that needs the ids. The
+  // ordinary path ignores them, so nothing is paid for it.
+  const created = await prisma.takeoffMeasurement.createManyAndReturn({
     data: shapes.map((shape) => ({
       pageId: page.id,
       calibrationId: calibration.id,
-      kind: "LINEAR" as const,
+      kind,
       xs: shape.xs,
       ys: shape.ys,
       label: label || null,
+      packageLabel: packageLabel || null,
       createdByUserId: userId,
     })),
+    select: { id: true, kind: true, xs: true, ys: true, label: true },
   });
+
+  // ── AND IF THE DRAWING SAID WHICH WALL TYPE, POST IT PRICED ──
+  //
+  // THE LAST LINK, and the reason the rest of this feature was worth anything.
+  // Before this, accepting a detected group wrote plain measurements and the
+  // estimator then selected them, chose a wall type and a height, and posted a
+  // run — for every group, on every sheet, having already been shown that the
+  // drawing tags the group W1. `wallTypeMatch.ts` makes that match and it is
+  // the CALLER's, because this action must not decide what a wall is.
+  //
+  // It reuses `postMeasuredWallRun`, which carries every refusal
+  // `planMeasuredWallRun` can produce — a type with no layers, a run with no
+  // height, a contracted job. Writing a second path here would be a second
+  // authority on what a priced wall run is, which is the trap this file's
+  // neighbours keep recording.
+  const wallTypeId = String(formData.get("wallTypeId") ?? "").trim();
+  if (wallTypeId !== "") {
+    const stored: StoredMeasurement[] = created.map((row) => ({
+      kind: row.kind,
+      xs: row.xs,
+      ys: row.ys,
+      label: row.label,
+      // THE SAME calibration every one of these was just created against, so
+      // the geometry is read back at the scale it was drawn to — the
+      // append-only rule `takeoff.prisma` argues for, applied here by using the
+      // row rather than re-reading "the newest".
+      calibration: {
+        x1: calibration.x1,
+        y1: calibration.y1,
+        x2: calibration.x2,
+        y2: calibration.y2,
+        declaredDistanceFeet: calibration.declaredDistanceFeet.toNumber(),
+      },
+    }));
+    const posted = await postMeasuredWallRun({
+      companyId: company.id,
+      jobId,
+      label,
+      wallTypeId,
+      stored,
+      measurementIds: created.map((row) => row.id),
+      formData,
+    });
+    // THE MEASUREMENTS STAY IF THE RUN REFUSES, and they are not orphaned by
+    // it: they are on the sheet, in the list, and postable by hand — which is
+    // exactly where the old flow left every accepted group. The refusal names
+    // what went wrong, so this is a step back to the previous behaviour rather
+    // than a half-written state nobody can see.
+    if (!posted.ok) {
+      revalidatePath(`/jobs/${jobId}/takeoff`);
+      return posted;
+    }
+    return posted;
+  }
 
   revalidatePath(`/jobs/${jobId}/takeoff`);
   return actionOk;
@@ -741,6 +842,18 @@ export async function postTakeoffMeasurements(jobId: string, formData: FormData)
     );
   }
 
+  // ── ONE PRICING PACKAGE AT A TIME, AND THIS ONE REFUSES ──
+  //
+  // Nearly every other check in this product names a problem and lets the
+  // estimator proceed. This one refuses, and the difference is what happens
+  // after the press: a mixed post produces line items that are individually
+  // correct and collectively a base bid with an alternate folded into it, and
+  // nothing on a posted line says which package it came from — so it cannot be
+  // undone by looking. A refusal costs one press; the alternative costs the
+  // job. See `lib/takeoff/packages.ts`.
+  const onePackage = onePackageOnly(rows.map((row) => ({ id: row.id, packageLabel: row.packageLabel })));
+  if (!onePackage.ok) return actionFail(onePackage.reason);
+
   return runAction(async () => {
     const recipeId = String(formData.get("recipe") ?? "");
     const label = String(formData.get("label") ?? "").trim();
@@ -791,7 +904,7 @@ export async function postTakeoffMeasurements(jobId: string, formData: FormData)
     }
 
     await prisma.$transaction([
-      ...createLineItemRows(jobId, label, lines, recipeCostCategory(recipeId)),
+      ...createLineItemRows(jobId, label, lines, recipeCostCategory(recipeId), onePackage.label),
       prisma.takeoffMeasurement.updateMany({ where: { id: { in: ids } }, data: { postedAt: new Date() } }),
     ]);
 
@@ -872,7 +985,7 @@ async function postMeasuredWallRun(args: {
   }
 
   await prisma.$transaction(async (tx) => {
-    await tx.wallRun.create({
+    const run = await tx.wallRun.create({
       data: {
         companyId,
         jobId,
@@ -890,7 +1003,13 @@ async function postMeasuredWallRun(args: {
     await syncWallScheduleLines(tx, companyId, jobId);
     await tx.takeoffMeasurement.updateMany({
       where: { id: { in: measurementIds } },
-      data: { postedAt: new Date() },
+      // WHICH RUN, not just that it went somewhere. `postedAt` alone is a
+      // one-way door: delete this run and its estimate line goes with it while
+      // the measurement still reads "already on the estimate" and this action
+      // still refuses it — nothing on the estimate and no way to put it back.
+      // `deleteWallRun` undoes both fields together; without the id it has
+      // nothing to find.
+      data: { postedAt: new Date(), wallRunId: run.id },
     });
   });
 

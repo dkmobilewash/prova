@@ -41,9 +41,24 @@ import {
   wallsNotLettering,
   wallsNotTheSheetBorder,
   type WallCluster,
+  type StrokeSegment,
 } from "@/lib/takeoff/wallVectors";
 import { wallsFromBothEngines } from "@/lib/takeoff/wallRuns";
+import { pagesToSample, templateFromSheets, withoutTemplate } from "@/lib/takeoff/sheetTemplate";
+import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
+import { wallTypeTags, tagByRun, tagSentence } from "@/lib/takeoff/wallTags";
+import { defaultWallTypeFromNotes } from "@/lib/takeoff/wallNotes";
+import { scaleBarLabels, wallsNotTheScaleBar } from "@/lib/takeoff/scaleBar";
+import {
+  wallGroups,
+  verdictFor,
+  groupSentence,
+  wallsOnThisSheet,
+  type WallGroup,
+  type GroupVerdict,
+} from "@/lib/takeoff/wallGroups";
+import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 
 /**
  * THE MEASURING SURFACE — a PDF page rendered to a canvas, with an SVG
@@ -109,12 +124,13 @@ const BASE_SCALE = 1.5;
 const FIT = "fit" as const;
 type Zoom = number | typeof FIT;
 
-
 export function TakeoffPlanViewer({
   jobId,
   planId,
   sheets,
   printedScaleByPage,
+  levelByPage,
+  wallTypes,
   scalePrefillByPage,
   scaleDeclineByPage,
   duplicateWallsByPage = {},
@@ -122,6 +138,10 @@ export function TakeoffPlanViewer({
   jobId: string;
   planId: string;
   sheets: PlanSheet[];
+  /** The company's wall types that have layers, so they produce line items.
+   *  Used only to MATCH the drawing's own tags against — the viewer never
+   *  chooses a type, it reports which one the drawing named. */
+  wallTypes: MatchableWallType[];
   /**
    * The title-block scale per PAGE NUMBER, deliberately not per sheet.
    *
@@ -131,6 +151,10 @@ export function TakeoffPlanViewer({
    * `takeoff-plan-view.ts`.
    */
   printedScaleByPage: PrintedScaleByPage;
+  /** Which floor each sheet draws, read off its own title — see
+   *  `sheetLevel.ts`. Absent for a sheet whose title names no floor, which is
+   *  most of them on a single-storey job. */
+  levelByPage?: Record<number, string>;
   /** What each sheet said about its own scale, read off the dimensions
    *  printed on it. A PREFILL and never a calibration — see `ScalePrefill`. */
   scalePrefillByPage: ScalePrefillByPage;
@@ -153,6 +177,9 @@ export function TakeoffPlanViewer({
 }) {
   const [pageNumber, setPageNumber] = useState(1);
   const [pageCount, setPageCount] = useState<number | null>(null);
+  /** How many strokes the set's own template accounted for, so the panel can
+   *  SAY it rather than quietly returning a smaller number. */
+  const [templateStrokes, setTemplateStrokes] = useState(0);
   // FIT by default. A sheet opens showing all of itself, which is what
   // somebody opening a drawing wants to see first; they zoom IN to measure.
   const [zoom, setZoom] = useState<Zoom>(FIT);
@@ -164,7 +191,52 @@ export function TakeoffPlanViewer({
   // group. A found wall is a proposal; the measurements table is for things
   // somebody chose. That also means switching sheets or reloading simply
   // forgets them, which is the correct behaviour for a proposal nobody acted on.
-  const [found, setFound] = useState<WallCluster[] | null>(null);
+  //
+  // THE SENTENCE ABOVE WAS TRUE ABOUT RELOADING AND FALSE ABOUT SHEETS, for as
+  // long as this feature has existed. Nothing cleared `found` on a page change,
+  // so walls found on A-101 were drawn over whatever sheet you paged to next —
+  // reported 2026-10-11 from three screenshots showing one identical overlay on
+  // sheet 30, sheet 52 and S-101, none of which it had anything to do with.
+  //
+  // THE FIX IS THE PAGE NUMBER BESIDE THE RESULT rather than an effect that
+  // clears it, because an effect is a thing somebody has to remember and this
+  // file already has one for the half-drawn shape that nobody thought to extend.
+  // A result that knows which sheet it came from cannot be shown on another one,
+  // and `wallsOnThisSheet` below is the whole of the rule, in one place that
+  // both the panel and the ghost overlay read.
+  //
+  // It also makes paging AWAY and BACK free: the proposal is still the answer to
+  // the question somebody asked about that sheet, so returning restores it
+  // rather than demanding another press.
+  const [foundRaw, setFound] = useState<WallGroup[] | null>(null);
+  const [foundOnPage, setFoundOnPage] = useState<number | null>(null);
+  /**
+   * What this sheet has to show. Every render site reads THIS and not the raw
+   * state, which is why the name it kept is the one they were already using.
+   */
+  const found = wallsOnThisSheet(foundRaw, foundOnPage, pageNumber);
+  /**
+   * WHICH TYPE A PERSON PICKED for a group that could be more than one, by
+   * group index.
+   *
+   * Only an `ASK` group has one, and only because a floor plan cannot settle
+   * it: A1 and A2 are both 4-7/8in on School-01 and differ by fire rating. The
+   * app will not choose between them, so the estimator does, once per group
+   * rather than once per run.
+   *
+   * TWO PARALLEL ARRAYS LEFT WHEN THIS ARRIVED — `tagNames` and `typeMatches`,
+   * both indexed against `found`. They are gone: a `WallGroup` carries its own
+   * tag and its own candidates, so the three can no longer fall out of step
+   * with each other, which is a class of bug rather than a tidy-up.
+   */
+  const [chosen, setChosen] = useState<Record<number, string>>({});
+  /** Whether the groups below the fold are showing. See `SHOWN_AT_FIRST`. */
+  const [showingAll, setShowingAll] = useState(false);
+  /** The rows on screen. Indexes into this ARE the indexes into `found`,
+   *  because it only ever truncates — every handler, the colour and the
+   *  overlay all key off the same number, and a slice that reordered would
+   *  silently hover one group and add another. */
+  const shownGroups = showingAll ? (found ?? []) : (found ?? []).slice(0, SHOWN_AT_FIRST);
   /** How many strokes the sheet held when it was last read, so an empty result
    *  can say which kind of empty it is. See the message below. */
   const [strokesSeen, setStrokesSeen] = useState(0);
@@ -325,6 +397,7 @@ export function TakeoffPlanViewer({
     setDraft(EMPTY);
   }, [pageNumber, tool]);
 
+
   const aspect = pageSize ? pageSize.heightPt / pageSize.widthPt : 1.294;
 
   /** Pointer position as page-width units — both axes divided by the
@@ -403,6 +476,8 @@ export function TakeoffPlanViewer({
     setFinding(true);
     setFindError(null);
     setFound(null);
+    setChosen({});
+    setShowingAll(false);
     try {
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
       const page = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(pageNumber);
@@ -421,30 +496,89 @@ export function TakeoffPlanViewer({
       const content = (await (page as { getTextContent: () => Promise<{ items: unknown[] }> }).getTextContent()) ?? {
         items: [],
       };
-      const textBoxes = content.items.flatMap((raw) => {
+      // ONE PASS, TWO CONSUMERS. `wallsNotLettering` wants boxes in page-width
+      // units and `wallTypeTags` wants the STRING with its box in points, so
+      // the text is read once and both are derived from it. A second
+      // `getTextContent()` pass would be a second decode of every glyph on a
+      // sheet that can carry tens of thousands.
+      const textItems = content.items.flatMap((raw) => {
         const item = raw as { str?: string; transform?: number[]; width?: number; height?: number };
         if (typeof item.str !== "string" || item.str.trim() === "" || !Array.isArray(item.transform)) return [];
         const m = pdfjs.Util.transform(viewport.transform, item.transform);
         const h = item.height ?? 0;
-        return [
-          {
-            x: m[4] / pageSize.widthPt,
-            y: (m[5] - h) / pageSize.widthPt,
-            width: (item.width ?? 0) / pageSize.widthPt,
-            height: h / pageSize.widthPt,
-          },
-        ];
+        return [{ str: item.str, x: m[4], y: m[5] - h, width: item.width ?? 0, height: h }];
       });
-      const inUnits = segments.map((segment) => ({
-        x1: segment.x1 / pageSize.widthPt,
-        y1: segment.y1 / pageSize.widthPt,
-        x2: segment.x2 / pageSize.widthPt,
-        y2: segment.y2 / pageSize.widthPt,
-        // NOT divided by the page width. The pen is compared against other
-        // pens on the same sheet, never against a distance — scaling it into
-        // page-width units would be arithmetic with no meaning.
-        width: segment.width,
+      const textBoxes = textItems.map((item) => ({
+        x: item.x / pageSize.widthPt,
+        y: item.y / pageSize.widthPt,
+        width: item.width / pageSize.widthPt,
+        height: item.height / pageSize.widthPt,
       }));
+      // Page-width units: every stored figure is a fraction of THIS page's
+      // width, and `width` is deliberately left in points — the pen is compared
+      // against other pens on the same sheet, never against a distance, so
+      // scaling it would be arithmetic with no meaning.
+      const unitsOf = (over: number) => (one: StrokeSegment): StrokeSegment => ({
+        x1: one.x1 / over,
+        y1: one.y1 / over,
+        x2: one.x2 / over,
+        y2: one.y2 / over,
+        width: one.width,
+        // CARRIED, because this rebuilds the object field by field and the flag
+        // decides which engine may use the piece — see `StrokeSegment.curved`.
+        // Dropped here, a flattened arc would reach the room engine again and
+        // the lobby wall would be billed twice: 1,957 ft against a key of 1,894.
+        curved: one.curved,
+      });
+      const allInUnits = segments.map(unitsOf(pageSize.widthPt));
+
+      // ── THE SET'S OWN TEMPLATE, READ FROM OTHER SHEETS ──
+      //
+      // #722 fixed the drawing FRAME by geometry and said plainly that the
+      // title-block cells were still counted as walls: they are short runs
+      // inside the border, and every cheap way to guess that corner also drops
+      // real wall, because a plan is routinely drawn right up to it.
+      //
+      // This is the fix that needs no guess. The frame, the title block and the
+      // logo are the only geometry at the SAME page position on every sheet of
+      // a set. A wall is not.
+      //
+      // It costs a few extra page parses. `pagesToSample` spreads them across
+      // the whole document rather than taking neighbours, which is the
+      // identical-floors guard — levels 3 to 10 of a tower repeat their REAL
+      // walls, and evenly spaced samples cross disciplines, where nothing but
+      // the template survives. `sheetTemplate.ts` carries the reasoning and the
+      // fail-safe: too few sheets read and it filters nothing, because "cannot
+      // tell" must not mean "drop it".
+      let inUnits = allInUnits;
+      let templateDropped = 0;
+      try {
+        const sampled: StrokeSegment[][] = [];
+        for (const n of pagesToSample(doc.numPages, pageNumber)) {
+          if (n === pageNumber) {
+            sampled.push(allInUnits);
+            continue;
+          }
+          const other = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(n);
+          const read = await segmentsFromOpenPage(other, pdfjs, n);
+          // ITS OWN width, not this sheet's. A set with a mixed page size would
+          // otherwise compare one sheet's coordinates against another's scale.
+          sampled.push(read.segments.map(unitsOf(read.widthPt || pageSize.widthPt)));
+        }
+        const template = templateFromSheets(sampled);
+        if (template.size > 0) {
+          const kept = withoutTemplate(allInUnits, template);
+          templateDropped = allInUnits.length - kept.length;
+          inUnits = kept;
+        }
+      } catch {
+        // A page that will not parse is not a reason to refuse the sheet in
+        // front of somebody. Falling through leaves the geometric filters,
+        // which is exactly what this sheet had before.
+        inUnits = allInUnits;
+        templateDropped = 0;
+      }
+      setTemplateStrokes(templateDropped);
       // BOTH ENGINES, MERGED. Pairing asks "are these two lines a wall" and
       // needs no room to close; the room engine asks which enclosed regions are
       // thin AND separate two different spaces, and does not care how the wall
@@ -468,12 +602,73 @@ export function TakeoffPlanViewer({
       // AND NOT THE SHEET'S OWN BORDER, which a real set offered as a 114ft
       // wall — the longest single run in the panel and entirely false. The
       // height is in page-width units, hence the aspect rather than 1.
-      const walls = wallsNotTheSheetBorder(notLettering, 1, pageSize.heightPt / pageSize.widthPt);
-      setFound(clusterByThickness(walls));
-    } catch {
+      const notBorder = wallsNotTheSheetBorder(notLettering, 1, pageSize.heightPt / pageSize.widthPt);
+      // AND NOT THE GRAPHIC SCALE BAR, which is two parallel lines a
+      // wall-thickness apart and 32 ft long — a textbook wall by every
+      // measurement, and the one thing on the sheet that is literally a ruler.
+      // It sat in School-01's panel as a 5-3/8in group holding 32 ft and was
+      // found by somebody looking at the drawing, not by a filter. See
+      // `scaleBar.ts` for why no bound on the LINES can catch it.
+      //
+      // ONE PASS OVER THE TEXT for this and the wall-type tags: the items are
+      // read once above and both readers work from them.
+      const walls = wallsNotTheScaleBar(
+        notBorder,
+        scaleBarLabels(textItems, pageSize.widthPt),
+        feetPerUnit,
+      );
+      const clusters = clusterByThickness(walls);
+      // ── WHAT THE DRAWING CALLS THESE, where it says so ──
+      //
+      // The panel otherwise names a group by a NUMBER, and an estimator still
+      // has to work out which of their own assemblies a 4-7/8in wall is. The
+      // drawing already answers that: it tags walls `EXT-1`, `A1`, `B1` beside
+      // the runs they label, and a name is what a catalogue is keyed on.
+      // ONE PASS FOR BOTH. `namesForClusters` is derived from
+      // `taggedFeetForClusters`, so reading the feet here costs nothing extra
+      // and the names on screen cannot disagree with the match beside them.
+      const tags = wallTypeTags(textItems, pageSize.widthPt);
+      // ── AND THE GROUPS ARE SPLIT BY THOSE TAGS BEFORE ANYTHING IS SHOWN ──
+      //
+      // A thickness bucket is not one wall type. School-01's 4-7/8in bucket
+      // held A1, A2, EXT-1 and C1 — 1,117 ft that could not be priced as
+      // anything, which was 58% of the sheet. `wallGroups` splits it into one
+      // group per tag plus the untagged remainder, and gives each piece the
+      // types it could be: by NAME for a tagged one, by THICKNESS for the
+      // remainder. See `wallGroups.ts` for why that ordering is the safety.
+      // THE TYPES GO TO THE TAGGER TOO, because a tag's own name says which of two
+      // runs beside each other it means — see `tagByRun`, where the measurement is.
+      // ── AND WHAT THE SHEET'S GENERAL NOTES SAY ABOUT EVERYTHING UNTAGGED ──
+      //
+      // An architect tags the exceptions and lets a note cover the rest:
+      // "ALL PARTITIONS TYPE A1 U.N.O." On School-01's A-101 that is 577 ft,
+      // about 30% of the sheet, which the panel was offering as A1, A2 or C1
+      // with nothing to choose between them. Read from the SAME text items as
+      // the tags and the scale bar — one pass over the page's words.
+      const fromNote = defaultWallTypeFromNotes(textItems, wallTypes);
+      setFound(
+        wallGroups(clusters, tagByRun(walls, tags, feetPerUnit, wallTypes), wallTypes, fromNote),
+      );
+      // The sheet this answer is about, recorded WITH the answer. `pageNumber`
+      // is read here rather than at render, so a result can never be relabelled
+      // by paging — see `wallsOnThisSheet`.
+      setFoundOnPage(pageNumber);
+    } catch (problem) {
       // The sheet is still on screen and the manual tools still work, so this
       // says what failed and stops — it does not take the page down.
-      setFindError("The lines on this sheet couldn't be read. Trace the walls by hand as usual.");
+      //
+      // A SHEET THAT IS SIMPLY TOO DENSE GETS ITS OWN SENTENCE, because the
+      // generic one sends somebody looking for a broken file. Page 7 of a real
+      // airport concourse set carries 30,822 lines long enough to be walls —
+      // 475 million pairs to test, against about a million on a sheet that
+      // works — and before `SheetTooDenseError` the finder simply never
+      // returned. "Couldn't be read" would be false: it was read fine and there
+      // is too much of it.
+      setFindError(
+        problem instanceof SheetTooDenseError
+          ? problem.message
+          : "The lines on this sheet couldn't be read. Trace the walls by hand as usual.",
+      );
     } finally {
       setFinding(false);
     }
@@ -484,12 +679,31 @@ export function TakeoffPlanViewer({
    *  type, the height, the priced wall run — already works on those and needs
    *  no part of this. */
   async function onAcceptCluster(index: number) {
-    const cluster = found?.[index];
-    if (!cluster || !sheet) return;
+    const group = found?.[index];
+    if (!group || !sheet) return;
+    const priced = pricedTypeFor(group, chosen[index]);
+    // THE LABEL FOLLOWS THE NAME, NOT THE PRICE. A group the drawing calls A1
+    // is "A1 wall" in the measurement list whether or not A1 has layers yet —
+    // losing the name because the parts are missing would throw away the half
+    // of the schedule import that already works.
+    const named = namedTypeFor(group, chosen[index]);
     const body = new FormData();
     body.set("pageId", sheet.id);
-    body.set("label", `${inchLabel(cluster.inches)} wall`);
-    for (const run of cluster.runs) {
+    // ── THE LABEL CARRIES THE DRAWING'S OWN WORD WHERE THERE IS ONE ──
+    //
+    // `4⅞" wall` is what the app measured; `W1 wall` is what the drawing calls
+    // it, and it is what the estimator will be looking for in the list and on
+    // the recap. The thickness stays alongside it, because that is the evidence
+    // the match was right.
+    body.set(
+      "label",
+      named ? `${named.code} wall — ${inchLabel(group.inches)}` : `${inchLabel(group.inches)} wall`,
+    );
+    // AND THE TYPE, so the action posts a priced run instead of bare
+    // quantities. Null for every unresolved state: this component must not
+    // overrule a refusal, and must not price an ASK group nobody answered.
+    if (priced) body.set("wallTypeId", priced.id);
+    for (const run of group.runs) {
       body.append("shape", JSON.stringify({ xs: [run.x1, run.x2], ys: [run.y1, run.y2] }));
     }
     const result = await saveTakeoffMeasurements(jobId, body);
@@ -498,6 +712,59 @@ export function TakeoffPlanViewer({
     // an estimator works through them one at a time and re-running the finder
     // to get back to where they were would be a punishment for accepting one.
     setFound((current) => (current ?? []).filter((_, i) => i !== index));
+  }
+
+  /**
+   * The type a group would be POSTED as, or null for one that is not settled.
+   *
+   * ONE FUNCTION FOR THE BUTTON AND THE SUBMIT, deliberately. The button's
+   * words and the form's `wallTypeId` are two readings of the same question,
+   * and the way that goes wrong is a button promising "priced" over a submit
+   * that sends nothing — a bid short by a whole group, with the screen saying
+   * otherwise.
+   */
+  function namedTypeFor(group: WallGroup, pick: string | undefined): MatchableWallType | null {
+    const verdict = verdictFor(group);
+    // A SHEET NOTE IS AN ANSWER, not a question. It names one type for
+    // everything untagged, and the group only reaches this state when its
+    // measured thickness agrees — see `wallGroups`.
+    if (
+      verdict.state === "NAMED" ||
+      verdict.state === "BY_GENERAL_NOTE" ||
+      verdict.state === "ONLY_ONE_THAT_THICK"
+    ) {
+      return verdict.type;
+    }
+    // An ASK is priced only once a PERSON has answered it. No default, no
+    // first-in-the-list: that is the guess this whole module refuses to make.
+    if (verdict.state === "ASK") return verdict.types.find((type) => type.id === pick) ?? null;
+    return null;
+  }
+
+  /**
+   * The type a group would be POSTED as, or null for one that is not settled —
+   * AND NULL FOR A TYPE WITH NO PARTS, which is the whole of this change.
+   *
+   * Naming and pricing are two questions and this app used to ask only one of
+   * them. The takeoff page handed this component a list already filtered to
+   * types with layers, so a schedule-imported type was invisible: on School-01
+   * the app tagged a group `A1` off the drawing and said "no wall type you have
+   * is 4-7/8 inch thick" in the next breath, with A1 sitting in the library at
+   * exactly that thickness. See `MatchableWallType`.
+   *
+   * Now every type can NAME a group — `namedTypeFor` — and only a type with
+   * parts can PRICE one. A layerless match still reaches the label, the row and
+   * the sentence, so the estimator learns what the drawing's tag means and what
+   * is missing; it just does not reach `wallTypeId`, because posting against it
+   * would write a run that produces no line items.
+   *
+   * THE INVARIANT THE OLD COMMENT PROTECTED IS UNCHANGED: the button's words
+   * and the form's `wallTypeId` both read THIS function, so they cannot
+   * disagree. What changed is that the label reads the other one.
+   */
+  function pricedTypeFor(group: WallGroup, pick: string | undefined): MatchableWallType | null {
+    const named = namedTypeFor(group, pick);
+    return named !== null && named.hasParts ? named : null;
   }
 
   // ── What the draft currently measures, for the live readout ───────────
@@ -655,6 +922,45 @@ export function TakeoffPlanViewer({
           {finding ? "Reading the lines…" : "Find the walls"}
         </button>
 
+        {/* ── THERE IS NO "FIND THE ROOMS" BUTTON, AND THAT IS DELIBERATE ──
+            #702 shipped one and it was clicked on real sheets the same day.
+            It runs, it is fast, and ITS ANSWER IS WRONG in a way that reads as
+            right: on a West Herr floor plan it reported 46 rooms and 4,555 sf
+            for a building about 290 ft across, having missed Showroom 101,
+            Sales 103, Hospitality 105, New Car Delivery 140 and the whole
+            right-hand wing — while outlining a parked car, the gaps between
+            dimension strings, and two keynote tags.
+
+            That is the worst shape a takeoff can have: a confident number that
+            is far too low. An estimator who trusts it bids half a building.
+
+            The cause is known and is not a threshold. `roomAreas.ts` rasterises
+            EVERY stroke, so a leader line crossing a room cuts the region in
+            half and a dimension string encloses one of its own. The wall finder
+            has `wallsNotLettering`, `wallsInTheBuilding` and
+            `wallsNotTheSheetBorder` for exactly this; the room finder has none
+            of them. See `roomAreas.ts`'s header.
+
+            `roomAreas.ts` and its tests stay: the geometry is right and the fix
+            is to what reaches it. The BUTTON is gone until the numbers say it
+            is fit to use, and `takeoffRoomFinder.test.tsx` now asserts it is
+            absent so it cannot come back without somebody reading this. */}
+
+        {/* WHICH FLOOR THIS SHEET DRAWS, beside the scale because that is the
+            other thing about a sheet an estimator has to know before tracing
+            it. Silent when the title names no floor — a single-storey job has
+            no levels and a label saying "no level" would be noise on every
+            sheet of it. See `sheetLevel.ts` for why a sheet naming TWO floors
+            is also silent. */}
+        {levelByPage?.[pageNumber] !== undefined && (
+          <span
+            data-takeoff="sheet-level"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body"
+          >
+            {levelByPage[pageNumber]}
+          </span>
+        )}
+
         <span className="ml-auto text-xs text-ink-muted">
           {calibration ? (
             <>
@@ -746,13 +1052,35 @@ export function TakeoffPlanViewer({
           ) : (
             <>
               <p className="mb-2 text-sm text-ink-body">
-                Found {found.reduce((n, c) => n + c.runs.length, 0)} runs of wall. Each group is drawn on the
-                sheet in its own colour — check it sits on real walls before adding it.
+                Found {found.reduce((n, c) => n + c.runs.length, 0)} runs of wall. Hover a row to see which
+                lines are its — check they sit on real walls before adding them.
               </p>
+              {/* WHAT THE TEMPLATE ACCOUNTED FOR, SAID OUT LOUD.
+                  A filter that quietly returns a smaller number is how the next
+                  unexplained figure gets created — the same rule the drawing-index
+                  check learned the hard way. If this number is large and the panel
+                  is empty, the filter is the first thing to suspect rather than the
+                  sheet. */}
+              {templateStrokes > 0 && (
+                <p className="mb-2 text-xs text-ink-muted">
+                  {templateStrokes.toLocaleString()} line{templateStrokes === 1 ? "" : "s"} on this sheet also
+                  appear in the same place on the rest of the set — the border, the title block and the logo —
+                  so they were left out.
+                </p>
+              )}
               <ul className="flex flex-col gap-1">
-                {found.slice(0, 6).map((cluster, index) => (
+                {shownGroups.map((group, index) => {
+                  const verdict = verdictFor(group);
+                  const priced = pricedTypeFor(group, chosen[index]);
+                  // NAMED BUT NOT PRICEABLE: the drawing's tag matched a type
+                  // this company has, and that type has no layers yet — the
+                  // state a schedule import leaves every type in. Worth its own
+                  // sentence, because "Add these" with no explanation is what
+                  // sent somebody to the wall-types page to find nothing wrong.
+                  const namedOnly = priced === null ? namedTypeFor(group, chosen[index]) : null;
+                  return (
                   <li
-                    key={`${cluster.inches}-${index}`}
+                    key={`${group.inches}-${index}`}
                     className="flex flex-wrap items-center gap-3 rounded-md px-2 py-1 hover:bg-rail-hover"
                     onMouseEnter={() => setHovered(index)}
                     onMouseLeave={() => setHovered(null)}
@@ -762,28 +1090,119 @@ export function TakeoffPlanViewer({
                       className="h-3 w-3 shrink-0 rounded-sm"
                       style={{ backgroundColor: CLUSTER_COLOURS[index % CLUSTER_COLOURS.length] }}
                     />
-                    <span className="text-sm font-medium text-ink">{inchLabel(cluster.inches)}</span>
+                    <span className="text-sm font-medium text-ink">{inchLabel(group.inches)}</span>
+                    {/* THE TAG IS THE GROUP'S NAME NOW, not a list of every name
+                        in a bucket. A group either carries one tag or carries
+                        none, because the tags are what split it. */}
+                    <ClusterTag names={group.source.kind === "TAG" ? [group.source.tag] : []} />
                     <span className="text-sm text-ink-body">
-                      {cluster.runs.length} {cluster.runs.length === 1 ? "run" : "runs"} ·{" "}
-                      {Math.round(cluster.feet).toLocaleString()} ft
+                      {group.runs.length} {group.runs.length === 1 ? "run" : "runs"} ·{" "}
+                      {Math.round(group.feet).toLocaleString()} ft
+                      {/* ── THE FOOTAGE IS GROSS, AND IT SAYS SO ──
+                          A run joined across a doorway reports the whole wall,
+                          which is the correct take-off: `takeoff.ts` deducts
+                          nothing under 32 sq ft because a door still costs
+                          labour to cut and finish around, and the framing runs
+                          through it as a header. But a bigger number with no
+                          explanation is the next unexplained figure, so the
+                          openings it includes are counted here. */}
+                      {(() => {
+                        const openings = group.runs.reduce((n, run) => n + (run.openings?.length ?? 0), 0);
+                        return openings === 0 ? null : (
+                          <span className="text-ink-muted">
+                            {" "}
+                            · includes {openings} opening{openings === 1 ? "" : "s"}, not deducted
+                          </span>
+                        );
+                      })()}
                     </span>
+
+                    {/* ── THE ONE QUESTION THIS FEATURE IS ALLOWED TO ASK ──
+                        Two of the company's types are this thick and nothing on
+                        the drawing says which — A1 and A2 on School-01, which
+                        differ by fire rating. The app will not choose. It asks
+                        ONCE for the group rather than once for each of its
+                        runs, and the button stays unpriced until it is
+                        answered. */}
+                    {verdict.state === "ASK" && (
+                      <select
+                        aria-label={`Which wall type are the untagged ${inchLabel(group.inches)} walls?`}
+                        value={chosen[index] ?? ""}
+                        onChange={(event) =>
+                          setChosen((current) => ({ ...current, [index]: event.target.value }))
+                        }
+                        className="min-h-[36px] rounded-md border border-line-card bg-surface px-2 text-xs text-ink-body"
+                      >
+                        <option value="">Which type?</option>
+                        {verdict.types.map((type) => (
+                          <option key={type.id} value={type.id}>
+                            {type.code} — {type.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+                    {/* ── WHAT THE BUTTON PROMISES IS WHAT IT DOES ──
+                        A group with a type goes straight onto the estimate
+                        PRICED, so the button says so and names it. Everything
+                        else still writes plain measurements, exactly as before,
+                        and says that instead — one of them is finished work and
+                        the other is a step. Both read from `pricedTypeFor`, the
+                        same function the submit uses, so the words and the form
+                        cannot disagree.
+
+                        THE THIRD WORDING IS NEW AND IT IS THE HONEST ONE. A
+                        group can now be NAMED by a type that has no layers yet
+                        — every type a partition schedule imports is in that
+                        state — and "Add these", with no explanation, is what
+                        sent somebody to the wall-types page looking for a fault
+                        that was not there. It still writes plain measurements;
+                        it just says which type they are waiting on. */}
                     <button
                       type="button"
                       onClick={() => void onAcceptCluster(index)}
-                      className="ml-auto min-h-[36px] rounded-md border border-line-card px-3 text-xs font-medium text-ink-body hover:bg-rail-hover"
+                      className={`ml-auto min-h-[36px] rounded-md border px-3 text-xs font-medium ${
+                        priced
+                          ? "border-brand bg-tag-brand text-tag-brand-ink hover:opacity-90"
+                          : "border-line-card text-ink-body hover:bg-rail-hover"
+                      }`}
                     >
-                      Add these
+                      {priced
+                        ? `Add as ${priced.code} — priced`
+                        : namedOnly
+                          ? `Add as ${namedOnly.code} — not priced yet`
+                          : "Add these"}
                     </button>
+
+                    {/* ── AND WHY, UNDERNEATH ──
+                        Every sentence says WHERE the answer came from, because
+                        a name read off the drawing and a name inferred from a
+                        thickness are different kinds of claim and somebody
+                        pricing a bid is entitled to know which they have. */}
+                    {groupSentence(group, verdict) !== null && (
+                      <p className="w-full text-xs text-ink-muted">{groupSentence(group, verdict)}</p>
+                    )}
                   </li>
-                ))}
+                  );
+                })}
               </ul>
-              {found.length > 6 && (
-                <p className="mt-2 text-xs text-ink-muted">
-                  And {found.length - 6} smaller {found.length - 6 === 1 ? "group" : "groups"}, holding{" "}
-                  {Math.round(found.slice(6).reduce((f, c) => f + c.feet, 0)).toLocaleString()} ft between them.
-                  A real floor plan carries more wall thicknesses than anybody expects; these are the ones a bid
-                  usually turns on.
-                </p>
+              {/* ── NOTHING IS OUT OF REACH, AND THAT IS THE WHOLE CHANGE ──
+                  This was a sentence. A real sheet put 488 ft — 26% of the
+                  drawing — behind it, with no row, no colour and no button,
+                  and some of what it hid was LARGER than what was shown,
+                  because the cut landed by cluster order rather than by size.
+                  Both halves are fixed: `wallGroups` orders by footage, and
+                  the rest of the list is one press away. */}
+              {found.length > SHOWN_AT_FIRST && !showingAll && (
+                <button
+                  type="button"
+                  onClick={() => setShowingAll(true)}
+                  className="mt-2 text-xs text-link underline hover:text-link-hover"
+                >
+                  Show the other {found.length - SHOWN_AT_FIRST}{" "}
+                  {found.length - SHOWN_AT_FIRST === 1 ? "group" : "groups"}, holding{" "}
+                  {Math.round(found.slice(SHOWN_AT_FIRST).reduce((f, c) => f + c.feet, 0)).toLocaleString()} ft
+                </button>
               )}
             </>
           )}
@@ -955,6 +1374,22 @@ export function TakeoffPlanViewer({
 const CLUSTER_COLOURS = ["#38bdf8", "#f472b6", "#a78bfa", "#34d399", "#fbbf24", "#fb923c"];
 
 /**
+ * How many groups the panel opens with.
+ *
+ * TWICE THE PALETTE, and the two numbers are related on purpose. A colour
+ * repeats every six rows, so past twelve a chip stops being much of a
+ * signpost and HOVER is what tells a group apart — which is why the headline
+ * now says so rather than promising each group its own colour, a claim that
+ * stopped being true the moment the tag split multiplied the rows.
+ *
+ * Twelve is a starting point and not a ceiling: everything past it is one
+ * press away, which is the part that matters. The previous version of this
+ * was a hard cut at eight with a SENTENCE after it, and a real sheet put
+ * 488 ft behind that sentence.
+ */
+const SHOWN_AT_FIRST = 12;
+
+/**
  * THE FOUND WALLS, DRAWN ON THE DRAWING.
  *
  * ── THIS IS THE VERIFICATION CHANNEL, NOT DECORATION ──
@@ -979,11 +1414,50 @@ const CLUSTER_COLOURS = ["#38bdf8", "#f472b6", "#a78bfa", "#34d399", "#fbbf24", 
  * Dashed, and painted under the saved measurements, so a proposal never looks
  * like something already counted.
  */
+/**
+ * ── THE NAME THE DRAWING GIVES A THICKNESS GROUP ──
+ *
+ * A thickness is what was MEASURED; a name is what gets mapped to a wall type
+ * and priced. Shown beside the thickness rather than instead of it, because the
+ * thickness is what an estimator checks against the drawing and the name is
+ * what they act on.
+ *
+ * Renders NOTHING for a group the drawing did not tag, and that is the usual
+ * case: only 25-43% of footage carries a tag, because an architect tags
+ * representative walls and not every wall. A reassuring phrase on every
+ * untagged group would bury the real names.
+ *
+ * ── EXPORTED BECAUSE THE PANEL CANNOT BE MOUNTED IN A TEST ──
+ *
+ * The group list only exists after Find-the-walls has run, which needs pdf.js
+ * on a canvas — and that never renders in happy-dom, where
+ * `getBoundingClientRect` returns zeros. Measured rather than assumed: a probe
+ * pressed Set scale, then the port, then the SVG, and the sheet read
+ * "Drawing…" throughout. So this is a component so that `wallTags.test.ts`
+ * can render it, which is the #665 lesson — a census proves the code is there,
+ * only rendering proves somebody can see it.
+ */
+export function ClusterTag({ names }: { names: readonly string[] }) {
+  const sentence = tagSentence(names);
+  if (sentence === null) return null;
+  return (
+    <span
+      className="rounded bg-tag-slate px-1.5 py-0.5 text-xs font-medium text-tag-slate-ink"
+      data-takeoff="cluster-tag"
+      title={sentence}
+    >
+      {names.join(" / ")}
+    </span>
+  );
+}
+
 export function FoundWalls({
   clusters,
   hovered,
 }: {
-  clusters: WallCluster[] | null;
+  /** Anything with runs on it. A `WallGroup` since the tag split, a
+   *  `WallCluster` before it, and the drawing code never cared which. */
+  clusters: { runs: { x1: number; y1: number; x2: number; y2: number }[] }[] | null;
   hovered: number | null;
 }) {
   if (clusters === null) return null;
@@ -1084,7 +1558,21 @@ function Shape({
  * without somebody having looked at the line, which matters because a scale
  * error multiplies through every wall on the sheet.
  */
-function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => void }) {
+/**
+ * EXPORTED FOR A RENDER TEST, and the reason is a limit rather than a
+ * preference. The panel this returns lives inside `CalibrationForm`'s DRAFT
+ * branch, which needs a line drawn on the sheet — and the sheet is pdf.js on a
+ * canvas, which never renders in happy-dom (`getBoundingClientRect` returns
+ * zeros, so no click can become a point). Mounting the whole viewer therefore
+ * cannot reach this panel at all, measured rather than assumed: a probe clicked
+ * Set scale, then the port, then the SVG, and the sheet read "Drawing…"
+ * throughout.
+ *
+ * So `reducedPrintCaution.test.tsx` renders this directly. That proves the
+ * branch and its wording, and it deliberately does NOT claim the panel is
+ * navigable — see that file's own note on what it is and is not evidence for.
+ */
+export function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => void }) {
   // Both of these are PURE and live in `takeoff-plan-view.ts`, where they are
   // tested — the wording of a measured error and the order of the evidence are
   // decisions, and a decision written inline in JSX is one no test can reach.
@@ -1103,8 +1591,30 @@ function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => vo
   if (prefill.unconfirmed) {
     return (
       <div className="rounded-md border border-line-card bg-surface p-2">
+        {/* ── A REDUCED PRINT GOES FIRST, AND IN THE WARNING COLOUR ──
+            It is not a footnote to the scale, it is a correction OF the scale:
+            the number above it has already been changed, and an estimator who
+            reads only the first line has to be the one who learns that. The
+            key's page 50 measured every length at half without this. */}
+        {prefill.reducedPrintCaution !== undefined && (
+          <p
+            className="mb-2 rounded bg-tag-amber px-2 py-1 text-[11px] font-medium text-tag-amber-ink"
+            data-takeoff="reduced-print-caution"
+          >
+            {prefill.reducedPrintCaution}
+          </p>
+        )}
         <p className="text-xs text-ink-body">
-          The title block on this sheet says <span className="font-semibold text-ink">{prefill.scaleName}</span>.
+          {prefill.reducedPrintCaution === undefined ? (
+            <>
+              The title block on this sheet says <span className="font-semibold text-ink">{prefill.scaleName}</span>.
+            </>
+          ) : (
+            <>
+              Corrected for the reduction, this sheet measures{" "}
+              <span className="font-semibold text-ink">{prefill.scaleName}</span>.
+            </>
+          )}
         </p>
         <p className="mt-1 text-[11px] text-ink-muted">
           {/* Said plainly rather than softened. The estimator is accepting a
@@ -1456,6 +1966,29 @@ function MeasurementForm({
             name="label"
             placeholder={kind === "COUNT" ? "can light" : "North corridor"}
             className="w-56 rounded-md border border-line-card bg-surface-input px-2 py-1 text-sm text-ink-body"
+          />
+        </label>
+        {/* ── WHICH PRICING PACKAGE THIS QUANTITY IS IN ──
+
+            Blank is the BASE BID, and the placeholder says so rather than
+            leaving it to be inferred from an empty box. That default is the
+            safety argument: an estimator who does not think about this puts the
+            quantity in the number sent to the GC, which is the recoverable
+            error. The opposite default bids LOW, and a low bid is work won at a
+            loss and then built.
+
+            `bg-surface` rather than `bg-surface-input` like its neighbour, and
+            not a style choice: `surface-input` resolves to nothing on this
+            near-black canvas (issue #573) and `colorTokenCensus.test.ts` pins
+            the family at exactly 39 uses so it fails when it GROWS. A fortieth
+            would red CI. */}
+        <label className="flex flex-col gap-1 text-xs text-ink-label">
+          Pricing package
+          <input
+            name="packageLabel"
+            placeholder="Base bid"
+            data-takeoff="package-label"
+            className="w-48 rounded-md border border-line-card bg-surface px-2 py-1 text-sm text-ink-body"
           />
         </label>
         <SubmitButton

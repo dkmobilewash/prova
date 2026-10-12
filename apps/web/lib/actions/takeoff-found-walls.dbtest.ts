@@ -94,10 +94,11 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-function body(shapes: { xs: number[]; ys: number[] }[], label = '4-7/8" wall') {
+function body(shapes: { xs: number[]; ys: number[] }[], label = '4-7/8" wall', kind?: string) {
   const form = new FormData();
   form.set("pageId", pageId);
   form.set("label", label);
+  if (kind) form.set("kind", kind);
   for (const shape of shapes) form.append("shape", JSON.stringify(shape));
   return form;
 }
@@ -172,5 +173,66 @@ describe("adding a group of found walls", () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("unreachable");
     expect(result.error).toContain("Set the scale");
+  });
+
+  // ── AREA, for the room finder ──────────────────────────────────────
+  //
+  // Added with the room finder, and every one of these was found by
+  // MUTATION: the action hardcoded `kind: "LINEAR"` and nothing here could
+  // tell. Writing a room as a LINEAR measurement is not a cosmetic error —
+  // `measurementPrimitive` would read its ring as a polyline and hand the
+  // estimate a LENGTH where a square footage belongs.
+
+  const ring = (x: number, y: number) => ({ xs: [x, x + 0.1, x + 0.1, x], ys: [y, y, y + 0.1, y + 0.1] });
+
+  // These assert on the WHOLE table, so they start from an empty one. The
+  // tests above deliberately accumulate; teardown is `afterAll`.
+  const emptyTable = () => prisma.takeoffMeasurement.deleteMany({ where: { pageId } });
+
+  it("writes AREA when the batch asks for it, not LINEAR", async () => {
+    await emptyTable();
+    const result = await saveTakeoffMeasurements(jobId, body([ring(0.1, 0.1), ring(0.4, 0.1)], "Room", "AREA"));
+    expect(result).toEqual({ ok: true });
+    const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId } });
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.kind === "AREA")).toBe(true);
+  });
+
+  it("still writes LINEAR when nothing asks otherwise", async () => {
+    await emptyTable();
+    await saveTakeoffMeasurements(jobId, body([run(0.1)]));
+    const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("LINEAR");
+  });
+
+  it("REFUSES A RING THAT CROSSES ITSELF, naming which one", async () => {
+    await emptyTable();
+    // The single save has always refused these. It matters MORE in a batch,
+    // because these rings are TRACED rather than drawn: nobody watched this
+    // one being made, so nothing else would notice a bow tie.
+    const bowTie = { xs: [0.1, 0.3, 0.1, 0.3], ys: [0.1, 0.3, 0.3, 0.1] };
+    const result = await saveTakeoffMeasurements(jobId, body([ring(0.5, 0.5), bowTie], "Room", "AREA"));
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.error).toContain("Room 2 of 2");
+    expect(result.error).toContain("crosses itself");
+    // NOTHING written, including the good one before it.
+    expect(await prisma.takeoffMeasurement.count({ where: { pageId } })).toBe(0);
+  });
+
+  it("refuses an AREA with too few points to be a shape", async () => {
+    await emptyTable();
+    const result = await saveTakeoffMeasurements(jobId, body([{ xs: [0.1, 0.2], ys: [0.1, 0.2] }], "Room", "AREA"));
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.error).toContain("Room 1 of 1");
+  });
+
+  it("refuses a kind nothing sends, rather than writing something odd", async () => {
+    await emptyTable();
+    const result = await saveTakeoffMeasurements(jobId, body([ring(0.1, 0.1)], "Room", "COUNT"));
+    expect(result.ok).toBe(false);
+    expect(await prisma.takeoffMeasurement.count({ where: { pageId } })).toBe(0);
   });
 });

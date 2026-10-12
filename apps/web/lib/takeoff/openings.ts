@@ -232,8 +232,95 @@ export function openingsInWalls(
       if (after.to - after.from < eachSide) continue;
       const [x1, y1] = pointAt(before.to);
       const [x2, y2] = pointAt(after.from);
+      // ── A CORRIDOR IS NOT A DOORWAY, AND IT LOOKS EXACTLY LIKE ONE HERE ──
+      //
+      // Everything above is satisfied by a corridor crossing: wall on each
+      // side, a gap between `narrowest` and `widest`, on one line. A 5'-7"
+      // corridor is well inside those bounds, so this sealed it — and sealing
+      // it makes the corridor an enclosed thin region, which the region engine
+      // then reports as WALL.
+      //
+      // Measured on the exam-rooms fixture: the pairer puts nothing in the
+      // corridor and the region engine puts nothing there either, UNTIL this
+      // seals it — at which point six candidates appear inside it and the merge
+      // strings them into six forty-foot runs through open floor. 40 ft is a
+      // room, the corridor, and the room opposite.
+      //
+      // #726 tried to fix that downstream, in `mergeWalls`, and could not:
+      // union-find is transitive, so refusing the pair either side of a
+      // corridor does nothing once something bridges them. **The bridge is made
+      // here.** This is the root of it.
+      //
+      // The discriminator is the same one `mergeWalls` uses and it belongs in
+      // both places: a corridor has its own two walls running ACROSS the ends
+      // of the gap, and a doorway has nothing there.
+      if (crossesPerpendicularWalls(segments, ux, uy, x1, y1, x2, y2, feetPerUnit)) continue;
       openings.push({ x1, y1, x2, y2, widthFeet: gap * feetPerUnit });
     }
   }
   return openings;
+}
+
+/** How close to a gap's end a perpendicular face counts as bounding it. */
+const BOUNDS_THE_GAP_FEET = 1.5;
+
+/** Within this of perpendicular, as a dot product of unit vectors — about 15°
+ *  of slack for a building that is not quite square. */
+const ROUGHLY_PERPENDICULAR = 0.25;
+
+/**
+ * Is this gap a corridor rather than a doorway?
+ *
+ * A door is a hole in one wall: nothing crosses it. A corridor has its own two
+ * walls running across the ends of the gap, which is what makes it a corridor.
+ * So: a perpendicular face near EACH end, and they must be on two different
+ * lines — one long face passing both ends is a wall running alongside.
+ *
+ *   a DOOR       nothing perpendicular at either jamb   -> seal it
+ *   a CORRIDOR   a perpendicular face at BOTH ends      -> leave it open
+ *
+ * Works on raw FACES rather than detected walls, because that is what this
+ * module has and because a face is the earlier, more reliable evidence.
+ *
+ * Degrades the safe way: if the corridor's walls were not drawn, nothing bounds
+ * the gap and it is sealed exactly as before.
+ */
+function crossesPerpendicularWalls(
+  segments: readonly StrokeSegment[],
+  ux: number,
+  uy: number,
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  feetPerUnit: number,
+): boolean {
+  const near = BOUNDS_THE_GAP_FEET / feetPerUnit;
+  let atFrom: number | null = null;
+  let atTo: number | null = null;
+  for (const face of segments) {
+    const dx = face.x2 - face.x1;
+    const dy = face.y2 - face.y1;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) continue;
+    if (Math.abs((dx / len) * ux + (dy / len) * uy) > ROUGHLY_PERPENDICULAR) continue;
+    // Which LINE it is on, so the two ends cannot be bounded by one wall's own
+    // two faces — those are the same wall and bound nothing.
+    const line = Math.round((-(dy / len) * face.x1 + (dx / len) * face.y1) / near);
+    if (atFrom === null && pointToSegment(fromX, fromY, face) <= near) atFrom = line;
+    if (atTo === null && pointToSegment(toX, toY, face) <= near) atTo = line;
+    if (atFrom !== null && atTo !== null && atFrom !== atTo) return true;
+  }
+  return false;
+}
+
+/** Distance from a point to a segment. */
+function pointToSegment(px: number, py: number, s: StrokeSegment): number {
+  const dx = s.x2 - s.x1;
+  const dy = s.y2 - s.y1;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return Math.hypot(px - s.x1, py - s.y1);
+  let t = ((px - s.x1) * dx + (py - s.y1) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (s.x1 + t * dx), py - (s.y1 + t * dy));
 }

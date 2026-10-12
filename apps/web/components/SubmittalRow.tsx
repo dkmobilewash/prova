@@ -300,7 +300,7 @@ export function SubmittalRow({
       : state === "REVISE"
         ? "bg-tag-amber text-tag-amber-ink"
         : state === "WITH_GC"
-          ? "bg-tag-blue text-tag-blue-ink"
+          ? "bg-tag-brand text-tag-brand-ink"
           : "bg-neutral-800 text-ink-body";
 
   return (

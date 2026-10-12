@@ -42,7 +42,7 @@ export function statusBadgeClass(value: string) {
     case "amber":
       return "bg-tag-amber text-tag-amber-ink";
     case "blue":
-      return "bg-tag-blue text-tag-blue-ink";
+      return "bg-tag-brand text-tag-brand-ink";
     case "green":
       return "bg-tag-green text-tag-green-ink";
     default:

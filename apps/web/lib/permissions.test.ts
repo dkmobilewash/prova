@@ -245,6 +245,16 @@ const sourceFor = (route: string) => {
  * never "does it have brackets in it".
  */
 const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
+  // The regret letter — the polite decline that keeps a sub on a GC's bid
+  // list. MANAGE_ESTIMATING because it hangs off a bid invitation and
+  // /bids itself takes the same capability: a page that reads a bid's
+  // decline reason and composes a letter to the GC is estimating work, and
+  // a different capability here would be an inconsistency rather than a
+  // tightening.
+  //
+  // Page-only because no nav entry links it. The link is on a DECLINED bid's
+  // own row, which is the only place it makes sense.
+  "/bids/[id]/regret": "MANAGE_ESTIMATING",
   // A pay application IS the money document — schedule of values, stored
   // materials, retainage held. permissions.ts already says billing is not
   // an estimator's business and the field tier's audit row says the same;

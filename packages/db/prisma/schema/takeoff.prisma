@@ -269,6 +269,42 @@ model TakeoffMeasurement {
 
   kind TakeoffMeasurementKind
 
+  /// WHICH PRICING PACKAGE THIS QUANTITY BELONGS TO — null is the BASE BID.
+  ///
+  /// A GC's bid form asks for a base number, then alternates it may or may not
+  /// take. The estimator measures all of it off the same sheets, and before
+  /// this column there was nowhere to say which was which: `label` is free text
+  /// for whatever somebody wants to call a run, so forty traced runs for an
+  /// alternate and four hundred for the base were one undifferentiated list.
+  /// Posting them put every foot into the number sent to the GC.
+  ///
+  /// NULL IS THE BASE, and that default is the whole safety argument. Every
+  /// measurement traced before this column existed is untagged and stays in the
+  /// number; so is every one traced without thinking about it. The alternative
+  /// — an untagged quantity sitting OUTSIDE the base until somebody claims it —
+  /// would silently bid LOW, and low and high are not symmetric: a high bid is
+  /// lost work, a low bid is work won at a loss and then built.
+  ///
+  /// TEXT, AND DELIBERATELY NOT A RELATION TO `BidLine`. `bid-lines.prisma`
+  /// already models a bid's alternates properly — signed amounts, three-state
+  /// `accepted`, kept out of the base total — and pointing at one is the
+  /// obvious move. It cannot be done yet, for a structural reason rather than a
+  /// decision: `BidLine` hangs off `BidInvitation`, a `TakeoffPlan` hangs off a
+  /// `Job`, and the only link between them is `BidInvitation.wonJobId`, which
+  /// exists AFTER the bid is won. Measuring happens before, so at the moment an
+  /// estimator is tracing an alternate the job has no reachable bid at all.
+  ///
+  /// So the estimate side is NOT keyed by package. A posted line names its
+  /// package as a prefix on the description and nothing more — said here rather
+  /// than half-built. Joining the two wants the invitation reachable from the
+  /// job before award, which is its own piece of work.
+  ///
+  /// Matched EXACTLY as typed, trimmed only of surrounding whitespace.
+  /// `bid-levelling.ts` made the same call for the same reason: a typo showing
+  /// as two headings gets fixed in a second, and two scopes silently merged
+  /// into one is a wrong number nobody can see.
+  packageLabel String?
+
   /// WHERE IT WAS DRAWN, in page-width units (see the box at the top of this
   /// file). Two parallel arrays rather than a JSON blob or a row per vertex.
   ///
@@ -295,10 +331,28 @@ model TakeoffMeasurement {
   /// four runs twice silently doubles a bid and nothing on screen says so.
   postedAt DateTime?
 
+  /// WHAT IT WAS POSTED INTO, so deleting that can let go of it again.
+  ///
+  /// `postedAt` on its own is a one-way door. Delete the wall run a
+  /// measurement was posted into and its estimate line goes with it, while the
+  /// measurement still reads "already on the estimate" and `postMeasuredWallRun`
+  /// still refuses it — nothing on the estimate, and no way to put it back.
+  /// Nothing recorded which run it went into, so nothing could clear the flag.
+  ///
+  /// SetNull rather than Cascade: the MEASUREMENT is the survey and outlives
+  /// any pricing decision made from it. Cascade would delete somebody's traced
+  /// walls because they changed their mind about a wall type. It is also
+  /// deliberately not a blocking FK — a RESTRICT here would be a new child of
+  /// `WallRun` that both cleanup scripts would have to learn about, which is
+  /// the `InvoiceCounter` trap in CLAUDE.md.
+  wallRunId String?
+  wallRun   WallRun? @relation(fields: [wallRunId], references: [id], onDelete: SetNull)
+
   createdByUserId String?
   createdBy       User?    @relation("TakeoffMeasurementBy", fields: [createdByUserId], references: [id])
   createdAt       DateTime @default(now())
 
   @@index([pageId, createdAt])
   @@index([calibrationId])
+  @@index([wallRunId])
 }

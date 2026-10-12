@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 
 import { ActionForm } from "@/components/ActionForm";
+import { coverageWarning, deadlineCoverage } from "@/lib/bid-deadline-coverage";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { SubmitButton } from "@/components/SubmitButton";
 import {
@@ -59,6 +60,7 @@ export function BidLevelling({
   quotes,
   vendors,
   today,
+  bidDueDate,
 }: {
   bidInvitationId: string;
   /** Needed only by the quote reader's upload, which is scoped to the COMPANY:
@@ -71,6 +73,10 @@ export function BidLevelling({
    * read from a clock here: a `new Date()` during render is markup the client
    * then disagrees with, and "overdue" is a claim about a day. */
   today: string;
+  /** The day the GC wants the bid, as `YYYY-MM-DD`. Null when nobody dated it
+   *  — which is NOT the same as plenty of time, and `coverageWarning` says so
+   *  rather than going quiet. */
+  bidDueDate?: string | null;
 }) {
   const [adding, setAdding] = useState<null | "quote" | "request">(null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -125,6 +131,27 @@ export function BidLevelling({
         return lapsed ? (
           <p role="alert" className="mb-3 rounded-md border border-tag-amber bg-tag-amber p-2 text-xs text-tag-amber-ink">
             {lapsed}
+          </p>
+        ) : null;
+      })()}
+      {/* ── WHAT IS STILL UNPRICED, AGAINST THE DAY THE BID IS DUE ──
+          Above the packages for the same reason the lapsed-quote line is: it
+          is a fact about the whole bid, not about a row.
+
+          `requestState` already measures each quote against ITS OWN `dueBy` —
+          the date we asked the vendor for. Nothing measured anything against
+          the BID's date, so a quote could sit comfortably inside its window
+          while the bid was due tomorrow. The vendor is not late, and you are
+          about to be. See `bid-deadline-coverage.ts`. */}
+      {(() => {
+        const warning = coverageWarning(deadlineCoverage(packages, bidDueDate ?? null, today));
+        return warning ? (
+          <p
+            role="alert"
+            data-bid="deadline-coverage"
+            className="mb-3 rounded-md border border-tag-amber bg-tag-amber p-2 text-xs text-tag-amber-ink"
+          >
+            {warning}
           </p>
         ) : null;
       })()}

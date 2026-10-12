@@ -42,8 +42,8 @@ const OUTCOME_CLASS: Record<AuditOutcome, string> = {
   REFUSED: "text-tag-amber-ink",
   FAILED: "text-tag-rose-ink",
   CANCELLED: "text-ink-body",
-  PENDING: "text-tag-blue-ink",
-  OPENED: "text-tag-blue-ink",
+  PENDING: "text-tag-brand-ink",
+  OPENED: "text-tag-brand-ink",
   EXPIRED: "text-ink-muted",
 };
 

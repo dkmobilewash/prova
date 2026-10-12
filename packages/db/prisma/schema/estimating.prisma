@@ -3,6 +3,56 @@
 //
 // Part of the multi-file Prisma schema in this folder.
 
+/// WHY A BID WAS DECLINED.
+///
+/// `BidInvitationStatus.DECLINED` has existed since this model was written and
+/// is a bare status: no reason, no date. So the app could say a bid was
+/// declined and could never answer the question a sub asks at the end of a
+/// quarter — why are we turning work down?
+///
+/// The answers are different businesses. Eight declines for CAPACITY means
+/// hire, or raise prices. Eight for SCOPE_MISMATCH means the GCs inviting you
+/// have the wrong idea of what you do. Eight for CONTRACT_TERMS means one GC's
+/// paper is costing you the relationship. Same count, three decisions, and
+/// before this the count was all there was.
+///
+/// NULLABLE ON PURPOSE, and `lib/bid-decline.ts` argues it at length: a
+/// required dropdown gets its first option picked to get past the screen, and
+/// data that looks complete and is fiction is worse than blank. The unrecorded
+/// ones are counted and reported as their own number, never folded into OTHER —
+/// "nobody wrote it down" and "the estimator chose Something else" are
+/// different facts.
+enum BidDeclineReason {
+  /// The crew is committed. Bidding it means winning work we cannot staff.
+  CAPACITY
+
+  /// Not the trade scope we do, or mostly work we would have to sub out.
+  SCOPE_MISMATCH
+
+  /// Dates clash with committed work, or the duration is not buildable.
+  SCHEDULE
+
+  /// The bond requirement or the cash flow is beyond what we can carry.
+  BONDING
+
+  /// Liquidated damages, retainage, pay-when-paid or indemnity we will not
+  /// sign. Distinct from BONDING: that is capacity, this is the paper.
+  CONTRACT_TERMS
+
+  /// Not enough information to price without carrying the risk ourselves.
+  DRAWINGS_INCOMPLETE
+
+  /// Volatile material, an unclear existing condition, or a scope that will
+  /// grow. Distinct from DRAWINGS_INCOMPLETE: the drawings may be complete and
+  /// the risk still unpriceable.
+  PRICE_RISK
+
+  /// Payment history, how the last job went, or how this one is being run.
+  RELATIONSHIP
+
+  OTHER
+}
+
 enum BidInvitationStatus {
   INVITED
   SUBMITTED
@@ -34,6 +84,33 @@ model BidInvitation {
   projectName String
   dueDate     DateTime?
   status      BidInvitationStatus @default(INVITED)
+
+  /// WHY, when the status is DECLINED. Null means nobody recorded it, which is
+  /// a first-class case rather than a gap to be filled — see `BidDeclineReason`
+  /// and `lib/bid-decline.ts`.
+  ///
+  /// Deliberately NOT constrained to the DECLINED status by the schema. A check
+  /// constraint would be correct and would also mean a bid that is declined,
+  /// reasoned, then re-opened because the GC extended the date either loses the
+  /// reason or fails to save. The reason is a fact about a decision somebody
+  /// made; the status is where the bid is now.
+  declineReason BidDeclineReason?
+
+  /// WHEN the decision was made, as a DATE somebody entered.
+  ///
+  /// This app's rule for evidence records: dates that matter are entered, not
+  /// stamped. A decline is the fact in dispute if a GC later asks why you did
+  /// not bid, and `createdAt`/`updatedAt` answer a different question — the
+  /// row's history, not the decision's.
+  declinedOn DateTime?
+
+  /// What was actually said, for OTHER and for detail on any reason.
+  ///
+  /// "A reason nobody can read is a reason nobody can act on" — the hint the
+  /// form shows beside OTHER. Free text because the useful version of this is
+  /// a sentence, and an enum member for every reason a sub ever had would be a
+  /// list nobody maintains.
+  declineNote String?
   notes       String?
 
   /// Which trade this bid is for, and what was actually bid — together

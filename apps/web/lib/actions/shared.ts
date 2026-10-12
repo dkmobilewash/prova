@@ -299,6 +299,26 @@ export function enumFromForm<T extends readonly string[]>(formData: FormData, ke
 
 export const BID_INVITATION_STATUSES = ["INVITED", "SUBMITTED", "WON", "LOST", "DECLINED"] as const;
 
+/**
+ * Why a bid was declined. Mirrors `BidDeclineReason` in `estimating.prisma`.
+ *
+ * Here beside the statuses rather than in `lib/bid-decline.ts`, for the reason
+ * this file exists: a form-parsing list is shared by actions, and two feature
+ * modules exporting the same name is the `TS2308` build break the barrel makes
+ * unavoidable. `bid-decline.test.ts` holds this list and the labels in step.
+ */
+export const BID_DECLINE_REASONS = [
+  "CAPACITY",
+  "SCOPE_MISMATCH",
+  "SCHEDULE",
+  "BONDING",
+  "CONTRACT_TERMS",
+  "DRAWINGS_INCOMPLETE",
+  "PRICE_RISK",
+  "RELATIONSHIP",
+  "OTHER",
+] as const;
+
 export const CONTACT_STATUSES = ["PROSPECT", "ACTIVE", "INACTIVE"] as const;
 
 export const CONTACT_TYPES = ["GENERAL_CONTRACTOR", "DEVELOPER", "VENDOR", "SUBCONTRACTOR"] as const;

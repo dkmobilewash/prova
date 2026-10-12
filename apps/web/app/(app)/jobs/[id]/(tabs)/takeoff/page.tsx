@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
 
+import { can } from "@/lib/permissions";
 import { NoAccess } from "@/components/NoAccess";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { TakeoffMeasurementList } from "@/components/TakeoffMeasurementList";
@@ -9,6 +10,7 @@ import { PlanIngestPanel } from "@/components/PlanIngestPanel";
 import { ScheduleProposals } from "@/components/ScheduleProposals";
 import { loadScheduleProposals, scheduleSheetCountFor } from "@/lib/plan-ingest/scheduleProposalsQuery";
 import { PlanSheetReview } from "@/components/PlanSheetReview";
+import { levelsByPage } from "@/lib/plan-ingest/sheetLevel";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { effectiveSheetNumber, effectiveTitle } from "@/lib/plan-ingest/sheetIndex";
 import { sheetSuitability, duplicateWallsCaution } from "@/lib/takeoff/sheetSuitability";
@@ -65,11 +67,34 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   // produces no schedule lines, so posting against it would record a run and
   // add nothing to the estimate — worse than the quantities it replaced. The
   // action refuses a layerless type as well, because a form can send anything.
-  const postableWallTypes = await prisma.wallType.findMany({
-    where: { companyId: company.id, components: { some: {} } },
+  // ── EVERY TYPE, AND WHICH OF THEM HAVE PARTS ──
+  //
+  // One query rather than two: the wall FINDER needs every type so it can name
+  // a group after the drawing's own tag, and the measurement list needs only
+  // the ones that produce line items. Deriving the second from the first keeps
+  // them from drifting and costs one round trip instead of two.
+  //
+  // The filter used to be in the query, and the wall finder inherited it. That
+  // is why reading School-01's partition schedule produced ten wall types the
+  // finder could not see — see `MatchableWallType` for the measurement.
+  const allWallTypes = await prisma.wallType.findMany({
+    where: { companyId: company.id },
     orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
-    select: { id: true, code: true, name: true, defaultHeightFt: true, sides: true },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      defaultHeightFt: true,
+      sides: true,
+      thicknessIn: true,
+      _count: { select: { components: true } },
+    },
   });
+  // POSTING IS STILL GATED ON LAYERS, and this is the gate — unchanged in
+  // substance, moved so that naming is not gated with it. A type with no
+  // components produces no line items, so a measurement posted against one adds
+  // nothing to the estimate and loses the quantities it replaced.
+  const postableWallTypes = allWallTypes.filter((type) => type._count.components > 0);
 
   const plan = await prisma.takeoffPlan.findFirst({
     where: { jobId: job.id, companyId: company.id },
@@ -113,6 +138,27 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
       )
     : {};
 
+  // WHICH FLOOR EACH SHEET DRAWS, read off its own title. Keyed by page number
+  // for the same reason the printed scale above is — a `PlanSheet` row only
+  // exists once somebody has calibrated — and newest-first for the same reason
+  // too: `levelsByPage` keeps the first row it sees per page.
+  const levelByPage: Record<number, string> = {};
+  if (plan) {
+    const levels = levelsByPage(
+      await prisma.planSheetProposal.findMany({
+        where: { planId: plan.id },
+        orderBy: { createdAt: "desc" },
+        select: {
+          pageNumber: true,
+          proposedTitle: true,
+          acceptedTitle: true,
+          proposedPageType: true,
+        },
+      }),
+    );
+    for (const [pageNumber, level] of levels) levelByPage[pageNumber] = level.label;
+  }
+
   // WHAT EACH SHEET SAID ABOUT ITS OWN SCALE, read off the dimensions printed on
   // it by `PAGE_INVENTORY`. Keyed by page number for the same reason the printed
   // scale above is: a `PlanSheet` row only exists once somebody has calibrated,
@@ -139,7 +185,28 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         },
       })
     : [];
-  const scalePrefillByPage: ScalePrefillByPage = scalePrefillsFromReadings(scaleReadingRows);
+  // ── EVERY SHEET'S OWN SIZE, SO A REDUCED PRINT CAN BE CAUGHT ──
+  //
+  // A half-size print carries the FULL-SIZE scale name in its title block, and
+  // taking that name at face value measures every length at half. The answer
+  // key's page 50 is exactly that — an 18in sheet in a 36in set with no
+  // dimensions of its own to catch it — and it scored 32%, worst of sixty.
+  //
+  // A sheet cannot tell on its own: a half-size ARCH D is exactly an ARCH B, a
+  // size drawings are genuinely issued at. The SET is what tells, so the widths
+  // of all its pages are needed together. `widthPt` has been stored per page
+  // since the inventory stage was written, so this is a second select on a table
+  // already being written, not new extraction. See `takeoff/reducedPrint.ts`.
+  const sheetWidthByPage: Record<number, number> = {};
+  if (plan) {
+    for (const sheet of await prisma.planSheetText.findMany({
+      where: { planId: plan.id },
+      select: { pageNumber: true, widthPt: true },
+    })) {
+      sheetWidthByPage[sheet.pageNumber] = sheet.widthPt;
+    }
+  }
+  const scalePrefillByPage: ScalePrefillByPage = scalePrefillsFromReadings(scaleReadingRows, sheetWidthByPage);
   // THE SAME ROWS, ASKED THE OTHER QUESTION: why a sheet offered nothing. One
   // query, two derivations — the reason is already on the row, and re-querying
   // for it would be a second trip for data we are holding.
@@ -224,6 +291,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
       xs: m.xs,
       ys: m.ys,
       label: m.label,
+      packageLabel: m.packageLabel,
       postedAt: m.postedAt ? m.postedAt.toISOString() : null,
       calibration: {
         x1: m.calibration.x1,
@@ -323,12 +391,23 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           all times rather than behind a condition: an empty index says so in one
           sentence, which is more useful than a section that appears from nowhere
           the first time a run finishes. */}
-      {isEstimateStage && <PlanSheetReview rows={sheetRows} />}
+      {isEstimateStage && <PlanSheetReview rows={sheetRows} planId={plan.id} />}
 
       {/* BELOW the sheet review, because the page types it shows are what decide
           which sheets have schedules at all. Silent until something has been
           read — the convention every advisory surface here follows. */}
-      {isEstimateStage && <ScheduleProposals proposals={await loadScheduleProposals(plan.id)} />}
+      {/* `canAddWallTypes` is NOT this tab's own capability, deliberately. The
+          tab withholds on VIEW_JOB_COSTS; turning a partition schedule into
+          wall types writes the COMPANY library, which is MANAGE_ESTIMATING. An
+          accountant can open this page and must not meet a button that refuses
+          them. */}
+      {isEstimateStage && (
+        <ScheduleProposals
+          proposals={await loadScheduleProposals(plan.id)}
+          jobId={job.id}
+          canAddWallTypes={can(context, "MANAGE_ESTIMATING")}
+        />
+      )}
 
       <TakeoffPlanViewer
         duplicateWallsByPage={duplicateWallsByPage}
@@ -338,7 +417,43 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         printedScaleByPage={printedScaleByPage}
         scalePrefillByPage={scalePrefillByPage}
         scaleDeclineByPage={scaleDeclineByPage}
+        levelByPage={levelByPage}
+        // MATCHING ONLY. The viewer never picks a wall type — it reports which
+        // of these the DRAWING named beside a detected group. Already filtered
+        // to types with layers, so a match always produces line items.
+        // AND THE THICKNESS, which is what reaches the UNTAGGED walls: an
+        // architect tags representative walls, not every wall — 25-43% of the
+        // footage on a real sheet — so without it the majority of every
+        // drawing stays unpriced. Null where the company never recorded one,
+        // which the matcher reads as "cannot be matched by thickness".
+        wallTypes={allWallTypes.map((type) => ({
+          id: type.id,
+          code: type.code,
+          name: type.name,
+          hasParts: type._count.components > 0,
+          thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
+        }))}
       />
+
+      {/* ── WHOSE SHEET IS THIS, AND WHY THERE IS A HEADING ABOVE THE LIST ──
+          A browser run reported "Measured on sheet 21" as a stale caption,
+          seen while sheet 1 was open. It was not stale and nothing here was
+          wrong: there ARE measurements on sheet 21, and each measured sheet
+          gets its own section below the viewer.
+
+          It read as a caption because it sits directly under the drawing with
+          nothing saying these are ALL the measured sheets rather than the one
+          on screen. The heading costs a line and makes the next person's
+          reading the right one — which is cheaper than the report that comes
+          back a second time. */}
+      {sheets.length > 0 && (
+        <h2 className="text-sm font-semibold text-ink-label">
+          Measurements by sheet
+          <span className="ml-2 font-normal text-ink-muted">
+            every sheet with measurements on it, not just the one open above
+          </span>
+        </h2>
+      )}
 
       {sheets.map((sheet) => (
         <div key={sheet.id} className="flex flex-col gap-2">
@@ -351,7 +466,12 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
             sheet={sheet}
             // Decimal does not cross into a client component.
             wallTypes={postableWallTypes.map((type) => ({
-              ...type,
+              id: type.id,
+              code: type.code,
+              name: type.name,
+              sides: type.sides,
+              // `_count` is a query detail and does not cross into a client
+              // component; nor does Decimal.
               defaultHeightFt: type.defaultHeightFt != null ? type.defaultHeightFt.toNumber() : null,
             }))}
           />

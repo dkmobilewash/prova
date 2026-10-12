@@ -711,12 +711,12 @@ export function JobMediaCard({
                 — "we sent you that on the 8th" is a claim the timestamp
                 supports and a badge does not.
 
-                tag-blue-ink, matching the badge's brand family, so the two
+                tag-brand-ink, matching the badge's brand family, so the two
                 read as one state rather than as two unrelated pieces of
                 furniture. On the white card it measures well clear of the
                 4.5 floor #89 set. */}
             {media.sharedWithClientLabel && (
-              <p className="text-sm text-tag-blue-ink">
+              <p className="text-sm text-tag-brand-ink">
                 Shared by link, {media.sharedWithClientLabel}
               </p>
             )}

@@ -143,7 +143,7 @@ export function CloseoutJobCard({
 
   const warrantyChip =
     wState === "ACTIVE"
-      ? "bg-tag-blue text-tag-blue-ink"
+      ? "bg-tag-brand text-tag-brand-ink"
       : wState === "EXPIRED"
         ? "bg-neutral-800 text-ink-body"
         : "bg-neutral-800 text-ink-body";

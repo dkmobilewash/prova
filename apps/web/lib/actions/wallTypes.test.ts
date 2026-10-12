@@ -99,7 +99,11 @@ function model(name: string) {
 
 vi.mock("@prova/db", () => {
   const client: Record<string, unknown> = {};
-  for (const name of ["job", "wallType", "wallTypeComponent", "wallRun", "jobLineItem", "lineItemCatalogEntry", "craftClassification"]) {
+  // `takeoffMeasurement` is here because `deleteWallRun` releases the
+  // measurements posted into a run before deleting it. The real behaviour is
+  // proved in `takeoff-wall-run.dbtest.ts` against a real Postgres — a fake
+  // client cannot enforce ON DELETE SET NULL, which is half of that fix.
+  for (const name of ["job", "wallType", "wallTypeComponent", "wallRun", "jobLineItem", "lineItemCatalogEntry", "craftClassification", "takeoffMeasurement"]) {
     client[name] = new Proxy({}, { get: (_t, prop) => (model(name) as Record<string, unknown>)[prop as string] });
   }
   client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => fn(client);
@@ -145,6 +149,7 @@ beforeEach(() => {
     ],
     wallRun: [],
     jobLineItem: [],
+    takeoffMeasurement: [],
   };
 });
 
