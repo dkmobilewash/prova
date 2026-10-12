@@ -797,3 +797,74 @@ describe("what the dedup must NOT collapse", () => {
     expect(kept).toHaveLength(2);
   });
 });
+
+/**
+ * ── A CORRIDOR'S TWO SIDES ARE NOT THE SAME LENGTH ──
+ *
+ * `MAX_FACE_LENGTH_RATIO` was 3, and its own comment named the case it then
+ * rejected: "a wall whose far end is interrupted by a doorway is drawn as a
+ * long face and a short one". A corridor is that shape at its worst — one side
+ * runs continuously, the other is cut into pieces by every door off it.
+ *
+ * The numbers below are the real ones, traced on School-01's A-101: a 12.21 ft
+ * face whose partner is a 53.25 ft face 4.87in away, overlapping it along its
+ * whole length. Parallel, thickness, overlap and minimum length all pass; the
+ * pair died on 53.25 / 12.21 = 4.36 > 3.
+ *
+ * At 1/8" = 1'-0" a foot is 9pt, so these are built in points like the rest of
+ * the file.
+ */
+describe("two faces of very different lengths", () => {
+  const opts: WallFinderOptions = { feetPerPoint: 1 / 9 };
+  /** A horizontal face: `feet` long, starting at `atFt`, on line `yFt`. */
+  const face = (atFt: number, feet: number, yFt: number): StrokeSegment => ({
+    x1: atFt * 9,
+    y1: yFt * 9,
+    x2: (atFt + feet) * 9,
+    y2: yFt * 9,
+    width: 0.7,
+  });
+
+  it("PAIRS A DOORWAY-BROKEN FACE WITH THE LONG ONE OPPOSITE — the corridor", () => {
+    // 4.87in = 0.406 ft between the faces: A1.
+    const short = face(0, 12.21, 0);
+    const long = face(0, 53.25, 0.406);
+    const wall = wallFromPair(long, short, opts);
+    expect(wall, "a 4.4x length ratio refused a real wall").not.toBeNull();
+    expect(wall!.thicknessFeet * 12).toBeCloseTo(4.87, 1);
+    // The run is the OVERLAP, not the long face: claiming the whole 53 ft
+    // would be the over-reporting this must not buy.
+    expect(wall!.lengthFeet).toBeCloseTo(12.21, 1);
+    // AND THE GEOMETRY, not only the reported number. `lengthFeet` comes from
+    // the overlap, so it stays right even when the drawn run is stretched to
+    // the long face — mutation-tested, and blind until this line. A run that
+    // carries past its own wall is the over-reporting the bench counts as
+    // "not on a wall", and it is invisible to a length assertion alone.
+    const span = Math.hypot(wall!.x2 - wall!.x1, wall!.y2 - wall!.y1) / 9;
+    expect(span, "the run was stretched past its own wall").toBeCloseTo(12.21, 1);
+  });
+
+  it("STILL REFUSES THE SHEET BORDER AGAINST THE TITLE BLOCK", () => {
+    // The case the constant was first measured on: a 36in sheet border against
+    // a 180pt title-block rule, a 13-fold gap no wall has. 10pt apart, which at
+    // this scale is 1.1 ft and sits squarely inside the partition window — so
+    // nothing but the length ratio separates them.
+    const border = face(0, 288, 0);
+    const titleBlock = face(0, 20, 1.1);
+    expect(wallFromPair(border, titleBlock, opts), "the border paired with the title block").toBeNull();
+  });
+
+  it("refuses a ratio just past the limit, so the bound is real and not decorative", () => {
+    const a = face(0, 10, 0);
+    const beyond = face(0, 10 * 5 + 1, 0.406);
+    expect(wallFromPair(beyond, a, opts)).toBeNull();
+    const within = face(0, 10 * 5 - 1, 0.406);
+    expect(wallFromPair(within, a, opts)).not.toBeNull();
+  });
+
+  it("keeps pairing two faces of the same length, which is most walls", () => {
+    const wall = wallFromPair(face(0, 20, 0), face(0, 20, 0.406), opts);
+    expect(wall).not.toBeNull();
+    expect(wall!.lengthFeet).toBeCloseTo(20, 1);
+  });
+});
