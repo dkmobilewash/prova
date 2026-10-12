@@ -49,6 +49,35 @@ export type StrokeSegment = {
    *  question of whether it DISCRIMINATES a wall from a slab joint is being
    *  measured rather than assumed. */
   width?: number;
+  /**
+   * True when this piece came from flattening a Bézier — see `flattenCubic`.
+   *
+   * ── WHY A CURVE'S PIECES ARE MARKED, AND WHO READS IT ──
+   *
+   * The two engines flatten nothing themselves; they are handed the same
+   * segments. But they make different-sized runs out of a curve, and measured
+   * on School-01's lobby arc that is a DOUBLE COUNT rather than a disagreement:
+   *
+   *   pairer — 9 pieces of 2.5 ft, 7 degrees apart, 22.8 ft at 4-7/8"
+   *   rooms  — 4 pieces of 5.6 ft, 15 degrees apart, 22.4 ft at 3-3/4"
+   *
+   * One wall of about 23 ft, found twice, billed at 45 ft. Neither `mergeWalls`
+   * nor `oneWallPerPlace` can collapse them, and that is not a bug in either:
+   * both ask "are these parallel within ~3 degrees", and consecutive pieces of
+   * an arc are not. Every dedup in this module assumes a wall is straight.
+   *
+   * So the pairer owns curves and the room engine skips them. That is not
+   * merely a coin toss resolved by convenience: the pairer measures a wall
+   * face-to-face, which is what gives the arc its correct 4-7/8", while the
+   * room engine reasons about enclosed REGIONS, whose geometry a chord
+   * approximation distorts — and it returned a thickness the schedule does not
+   * have.
+   *
+   * THE COST, STATED: a curved wall that ONLY the room engine could find —
+   * drawn as fill with no two faces — stays missed, exactly as a straight
+   * poché wall does today.
+   */
+  curved?: boolean;
 };
 
 /** A wall this module is willing to claim: the centreline, in page points. */
