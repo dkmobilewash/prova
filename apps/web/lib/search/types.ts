@@ -102,6 +102,7 @@ export type SearchProvider = RouteSearchProvider | ToolSearchProvider;
  */
 export const SEARCH_TYPE_LABELS: Record<string, string> = {
   job: "Jobs",
+  bid: "Bids",
   contact: "Contacts",
   crew: "Team",
   vendor: "Vendors",

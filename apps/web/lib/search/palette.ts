@@ -19,6 +19,7 @@ export type PaletteResponse = {
  * not one heading per table. */
 export const PALETTE_GROUP: Record<string, "Jobs" | "People" | "Documents"> = {
   job: "Jobs",
+  bid: "Jobs",
   contact: "People",
   crew: "People",
   vendor: "People",

@@ -58,6 +58,7 @@ function gateLiteralsByGrep(): string[] {
  */
 const EXPECTED_CAPABILITY: Record<string, Capability | null> = {
   job: null, // /dashboard is open. Mirrors job_overview's no-capability slice: name/status/GC, no money.
+  bid: "MANAGE_ESTIMATING", // ROUTE_CAPABILITY["/bids"], the same gate /ai/bids/[id] checks.
   contact: null, // /contacts has no ROUTE_CAPABILITY entry. contact_lookup: "names and phone numbers are not a tier."
   crew: null, // /team has no ROUTE_CAPABILITY entry. team_roster's own comment: "a roster of who works here is not a tier" (its primary citation).
   vendor: null, // /vendors has no ROUTE_CAPABILITY entry -- same open tier as contacts.

@@ -36,7 +36,8 @@ export type AiRun = {
   summary: string | null;
   note: string | null;
   bidProjectName: string | null;
-  /** For Run again on a failed bid run (RunWayOut). */
+  /** Set when the run was about one bid — its name then opens that bid,
+   * and Run again (RunWayOut) can re-run it. */
   bidInvitationId?: string | null;
 };
 
@@ -167,7 +168,18 @@ export function RunningNow({ runs, now }: { runs: AiRun[]; now: Date }) {
               <div className="flex items-start justify-between gap-3">
                 <p className="min-w-0 break-words text-[14.5px] leading-snug text-ink">
                   {agentLabel(run.agent)}
-                  {run.bidProjectName && <span className="text-ink-body"> · {run.bidProjectName}</span>}
+                  {run.bidProjectName && (
+                    <span className="text-ink-body">
+                      {" · "}
+                      {run.bidInvitationId ? (
+                        <Link href={aiBidHref(run.bidInvitationId)} className="text-link hover:text-link-hover hover:underline">
+                          {run.bidProjectName}
+                        </Link>
+                      ) : (
+                        run.bidProjectName
+                      )}
+                    </span>
+                  )}
                 </p>
                 <RunStatusPill status={run.status} />
               </div>

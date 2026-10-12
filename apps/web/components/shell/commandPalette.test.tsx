@@ -227,4 +227,19 @@ describe("resultCount", () => {
     expect(resultCount(0)).toBe("0 results");
     expect(resultCount(7)).toBe("7 results");
   });
+
+  // UX test 2026-10-11 (#23): "Riverside" spun "Searching…" for 60s+.
+  it("a search that never answers stops spinning and says so", async () => {
+    act(() => window.dispatchEvent(new CustomEvent("cstream:open-search", { detail: { query: "" } })));
+    await flush();
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    type("riverside");
+    await flush();
+    expect(document.querySelector("[data-palette-status]")!.textContent).toBe("Searching…");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(document.querySelector("[data-palette-status]")!.textContent).toBe("Search took too long — try again.");
+    expect(dialog()!.textContent).not.toContain("Searching…");
+  });
 });

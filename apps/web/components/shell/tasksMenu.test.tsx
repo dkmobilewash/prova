@@ -107,13 +107,13 @@ describe("the Tasks item", () => {
     expect(button()).toBeNull();
   });
 
-  it("says how many are running, with a spinner, and is a quiet 'Tasks' otherwise", () => {
+  it("says how many are running, with a spinner, and a quiet 'AI tasks' otherwise — never a bare 'Tasks', which read as a to-do list", () => {
     mount(BUSY);
     expect(button()!.textContent).toBe("2 running");
-    expect(button()!.getAttribute("aria-label")).toBe("Agent tasks, 2 running");
+    expect(button()!.getAttribute("aria-label")).toBe("AI tasks, 2 running");
     expect(button()!.querySelector("svg")).not.toBeNull();
     mount(QUIET);
-    expect(button()!.textContent).toBe("Tasks");
+    expect(button()!.textContent).toBe("AI tasks");
     expect(button()!.querySelector("svg")).toBeNull();
   });
 
@@ -181,7 +181,7 @@ describe("the Tasks item", () => {
     expect(fetchMock.mock.calls[0]![0]).toBe("/api/agents/tasks");
     // The answer says nothing is running any more: the spinner stops, and so
     // does the polling.
-    expect(button()!.textContent).toBe("Tasks");
+    expect(button()!.textContent).toBe("AI tasks");
     await act(async () => vi.advanceTimersByTime(TASKS_REFRESH_MS * 3));
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

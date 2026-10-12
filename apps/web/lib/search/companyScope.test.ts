@@ -19,14 +19,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * for `recentJobs`.
  */
 
-const calls: { model: string; args: { where?: Record<string, unknown> } }[] = [];
+const calls: { model: string; args: { where?: Record<string, unknown>; take?: number } }[] = [];
 
 vi.mock("@prova/db", () => ({
   prisma: new Proxy(
     {},
     {
       get: (_target, model: string) => ({
-        findMany: vi.fn(async (args: { where?: Record<string, unknown> }) => {
+        findMany: vi.fn(async (args: { where?: Record<string, unknown>; take?: number }) => {
           calls.push({ model, args });
           return [];
         }),
@@ -60,6 +60,16 @@ describe("every search query is scoped to the caller's company", () => {
     for (const call of calls) {
       expect(scopedTo(call.args.where), `${call.model} query is not scoped to the company`).toBe(COMPANY);
     }
+  });
+
+  // The palette searches as you type and fans out to every provider at
+  // once; one query without a `take` reads a whole table per keystroke.
+  it("each provider is bounded by the limit it was given", async () => {
+    for (const provider of SEARCH_PROVIDERS) {
+      await provider.search({ companyId: COMPANY, query: "north", terms: ["north"], limit: 6 });
+    }
+    expect(calls).toHaveLength(SEARCH_PROVIDERS.length);
+    for (const call of calls) expect(call.args.take, `${call.model} query has no take`).toBe(6);
   });
 
   it("recentJobs filters on the company it was given", async () => {

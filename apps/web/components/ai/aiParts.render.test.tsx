@@ -143,6 +143,13 @@ describe("Running now", () => {
     expect(container.querySelector('a[href="/ai/activity"]')).not.toBeNull();
   });
 
+  // UX test 2026-10-11 (#33): "Bid research · Pell Riverfront Tower" was plain text.
+  it("a run about one bid links the bid's name to its page", () => {
+    const [first] = fullProps().runs;
+    render(<RunningNow runs={[{ ...first, bidInvitationId: "b9" }]} now={NOW} />);
+    expect(container.querySelector('a[href="/ai/bids/b9"]')?.textContent).toBe("Civic Center Garage");
+  });
+
   it("empty: says when agents run and offers Run now for the watcher and recommendations", () => {
     render(<RunningNow runs={[]} now={NOW} />);
     expect(text()).toContain("Nothing running. Agents run on their schedule, when a bid is logged, or when you press Run now.");
