@@ -7,15 +7,12 @@
  * not send. Plain text, like C-Stream's: a waiver email is a sentence and a
  * file, and HTML mail is filtered more.
  *
- * PREVIEWS EMAIL NOBODY BUT THE ALLOWLIST. Diego, 2026-10-08: no email to
- * anyone but diego@cstream.ai without his confirmation. So outside Vercel
- * production every recipient must be in EMAIL_ALLOWLIST (default exactly
- * that address); anyone else is SKIPPED, reported as skipped, and the flow
- * carries on so a preview can still be clicked end to end. Production has
- * no allowlist, and is not deployed.
+ * Previews and production send alike. There used to be a preview allowlist
+ * (only diego@cstream.ai) from the 2026-10-08 build rules; Diego removed it
+ * on 2026-10-12 so a preview can be tested with any address. The rate
+ * limits and the honeypot are what stand between a public preview URL and
+ * someone using it to send mail.
  */
-
-export const DEFAULT_ALLOWLIST = "diego@cstream.ai";
 
 export interface Attachment {
   filename: string;
@@ -24,7 +21,6 @@ export interface Attachment {
 
 export type SendResult =
   | { status: "sent"; id: string }
-  | { status: "skipped-preview" }
   | { status: "not-configured" }
   | { status: "rejected"; error: string }
   | { status: "failed"; error: string };
@@ -32,20 +28,18 @@ export type SendResult =
 export interface EmailEnv {
   RESEND_API_KEY?: string;
   LIEN_TOOL_EMAIL_FROM?: string;
-  EMAIL_ALLOWLIST?: string;
   VERCEL_ENV?: string;
 }
 
 /**
  * Did this send or sign-up put the address somewhere Diego can find it?
  *
- * A skipped preview send counts, because the allowlist skipping it is the
- * point. "Not configured" counts only outside production, so a preview
- * without a Resend key can still be clicked end to end. In production a
- * missing key is a lead lost.
+ * "Not configured" counts only outside production, so a preview without a
+ * Resend key can still be clicked end to end. In production a missing key
+ * is a lead lost.
  */
 export function landed(result: SendResult, env: EmailEnv): boolean {
-  if (result.status === "sent" || result.status === "skipped-preview") return true;
+  if (result.status === "sent") return true;
   return result.status === "not-configured" && env.VERCEL_ENV !== "production";
 }
 
@@ -72,15 +66,6 @@ export function reportUnlanded(
   log(`[lien-waiver] ${what} did not go out: ${result.status}${"error" in result ? ` (${result.error})` : ""}`);
 }
 
-export function allowed(to: string, env: EmailEnv): boolean {
-  if (env.VERCEL_ENV === "production") return true;
-  const list = (env.EMAIL_ALLOWLIST ?? DEFAULT_ALLOWLIST)
-    .split(",")
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
-  return list.includes(to.trim().toLowerCase());
-}
-
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export function isEmail(value: string): boolean {
@@ -92,7 +77,6 @@ export async function sendEmail(
   env: EmailEnv = process.env as EmailEnv,
   fetcher: typeof fetch = fetch,
 ): Promise<SendResult> {
-  if (!allowed(message.to, env)) return { status: "skipped-preview" };
   const key = env.RESEND_API_KEY?.trim();
   const from = env.LIEN_TOOL_EMAIL_FROM?.trim();
   if (!key || !from) return { status: "not-configured" };
@@ -121,13 +105,12 @@ export async function sendEmail(
 
 /** Add a person to the tool's Resend audience. `unsubscribed` is true
  * unless they ticked the marketing box -- the transactional email they
- * asked for is not consent to anything else. Same allowlist as sending. */
+ * asked for is not consent to anything else. */
 export async function addContact(
   contact: { email: string; name: string; marketingOptIn: boolean },
   env: EmailEnv & { RESEND_AUDIENCE_ID?: string } = process.env as EmailEnv,
   fetcher: typeof fetch = fetch,
 ): Promise<SendResult> {
-  if (!allowed(contact.email, env)) return { status: "skipped-preview" };
   const key = env.RESEND_API_KEY?.trim();
   const audience = env.RESEND_AUDIENCE_ID?.trim();
   if (!key || !audience) return { status: "not-configured" };

@@ -71,7 +71,6 @@ Settings (or through the API), which takes any path. Environment variables:
 | `LIEN_TOOL_EMAIL_FROM` | the sender, on a domain verified in Resend |
 | `RESEND_AUDIENCE_ID` | the Resend audience leads are added to |
 | `LEAD_NOTIFY_EMAIL` | where lead notes go (default `diego@cstream.ai`) -- **set** |
-| `EMAIL_ALLOWLIST` | outside production, the ONLY addresses email goes to (default `diego@cstream.ai`) -- **set** |
 | `LIEN_TOOL_MAILING_ADDRESS` | printed at the foot of every email (C-Stream's email rule) |
 | `NEXT_PUBLIC_CSTREAM_URL` | where "Get a free job breakdown" points (default `https://cstream.ai`) -- **set** |
 

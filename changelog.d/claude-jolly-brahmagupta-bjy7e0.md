@@ -64,3 +64,9 @@ never the address. Production refuses with "try again" when no send recorded
 the address at all: for a download, the person's own waiver email counts,
 since Resend's log holds it. A preview with no Resend key still clicks through.
 The check: `lib/waiver-request.test.ts`. Disable either guard and its test fails.
+
+**The preview email allowlist is gone (Diego, 2026-10-12).** Previews used to email
+only `diego@cstream.ai`, from the 2026-10-08 build rules. That made a real test
+with any other address look like a broken tool, so previews now send exactly as
+production does. The honeypot and the rate limits are what keep a public
+preview URL from being used to send mail. `EMAIL_ALLOWLIST` is no longer read.

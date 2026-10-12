@@ -271,11 +271,9 @@ function Download({
         text:
           status === "sent"
             ? `Downloaded, and a copy is on its way to ${to}.`
-            : status === "skipped-preview"
-              ? `Downloaded. This is a preview site, so the email to ${to} was not sent.`
-              : status === "failed"
-                ? "Downloaded. We could not email a copy just now."
-                : "Downloaded.",
+            : status === "failed"
+              ? "Downloaded. We could not email a copy just now."
+              : "Downloaded.",
       });
     } catch {
       setMessage({ tone: "error", text: "Could not reach the server. Check your signal and try again." });

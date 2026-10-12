@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { addContact, sendEmail, SendResult } from "./email";
-import { allowed } from "./email";
+import type { addContact, sendEmail as SendEmail, SendResult } from "./email";
+import { sendEmail as realSendEmail } from "./email";
 import { formatDate, formatMoney } from "./fills";
 import { handleNotifyRequest } from "./notify-request";
 import { LIMITS, MemoryRateStore } from "./rate-limit";
@@ -33,7 +33,7 @@ function deps(overrides: Partial<WaiverDeps> = {}) {
   const send = vi.fn(async (message: { to: string; subject: string; attachments?: unknown[] }) => {
     sent.push(message);
     return { status: "sent", id: "x" } as SendResult;
-  }) as unknown as typeof sendEmail;
+  }) as unknown as typeof SendEmail;
   const subscribe = vi.fn(async (contact: { email: string; marketingOptIn: boolean }) => {
     contacts.push(contact);
     return { status: "sent", id: "c" } as SendResult;
@@ -117,13 +117,13 @@ describe("the download gate", () => {
   it("fails closed when production cannot send email", async () => {
     const { deps: d } = deps({
       env: { VERCEL_ENV: "production" },
-      send: (async () => ({ status: "not-configured" })) as unknown as typeof sendEmail,
+      send: (async () => ({ status: "not-configured" })) as unknown as typeof SendEmail,
     });
     expect(await handleWaiverRequest(FIRST, d)).toMatchObject({ status: 503 });
   });
 
   it("still hands over the PDF when the email provider is down", async () => {
-    const { deps: d } = deps({ send: (async () => ({ status: "failed", error: "500" })) as unknown as typeof sendEmail });
+    const { deps: d } = deps({ send: (async () => ({ status: "failed", error: "500" })) as unknown as typeof SendEmail });
     expect(await handleWaiverRequest(FIRST, d)).toMatchObject({ kind: "pdf", emailStatus: "failed" });
   });
 
@@ -133,7 +133,7 @@ describe("the download gate", () => {
       env: { VERCEL_ENV: "production" },
       // The person's copy goes out; the note to Diego does not.
       send: (async (m: { to: string }) =>
-        m.to === "lead@example.com" ? { status: "sent", id: "x" } : { status: "failed", error: "500 boom" }) as unknown as typeof sendEmail,
+        m.to === "lead@example.com" ? { status: "sent", id: "x" } : { status: "failed", error: "500 boom" }) as unknown as typeof SendEmail,
       log: (line) => lines.push(line),
     });
     const result = await handleWaiverRequest({ ...FIRST, email: "lead@example.com" }, d);
@@ -146,7 +146,7 @@ describe("the download gate", () => {
     const lines: string[] = [];
     const { deps: d } = deps({
       env: { VERCEL_ENV: "production" },
-      send: (async () => ({ status: "failed", error: "503" })) as unknown as typeof sendEmail,
+      send: (async () => ({ status: "failed", error: "503" })) as unknown as typeof SendEmail,
       subscribe: (async () => ({ status: "not-configured" })) as unknown as typeof addContact,
       log: (line) => lines.push(line),
     });
@@ -160,7 +160,7 @@ describe("the download gate", () => {
     const { deps: d } = deps({
       send: (async () => {
         throw new Error("getaddrinfo ENOTFOUND api.resend.com");
-      }) as unknown as typeof sendEmail,
+      }) as unknown as typeof SendEmail,
       log: (line) => lines.push(line),
     });
     // Outside production, and the audience sign-up landed, so the PDF still comes.
@@ -169,7 +169,7 @@ describe("the download gate", () => {
   });
 
   it("tells the person when their address is rejected", async () => {
-    const { deps: d } = deps({ send: (async () => ({ status: "rejected", error: "x" })) as unknown as typeof sendEmail });
+    const { deps: d } = deps({ send: (async () => ({ status: "rejected", error: "x" })) as unknown as typeof SendEmail });
     expect(await handleWaiverRequest(FIRST, d)).toMatchObject({ status: 400, error: expect.stringMatching(/rejected/) });
   });
 });
@@ -202,14 +202,16 @@ describe("rate limits", () => {
   });
 });
 
-describe("preview email allowlist", () => {
-  it("emails only the allowlist outside production", () => {
-    expect(allowed("diego@cstream.ai", {})).toBe(true);
-    expect(allowed("Diego@CStream.ai ", {})).toBe(true);
-    expect(allowed("sub@example.com", {})).toBe(false);
-    expect(allowed("sub@example.com", { VERCEL_ENV: "preview" })).toBe(false);
-    expect(allowed("sub@example.com", { EMAIL_ALLOWLIST: "a@b.co, sub@example.com" })).toBe(true);
-    expect(allowed("sub@example.com", { VERCEL_ENV: "production" })).toBe(true);
+describe("previews email anyone (no allowlist since 2026-10-12)", () => {
+  it("sends to any address outside production, the same as production", async () => {
+    const calls: string[] = [];
+    const fetcher = (async (_url: string, init: { body: string }) => {
+      calls.push((JSON.parse(init.body) as { to: string[] }).to[0]);
+      return new Response(JSON.stringify({ id: "e1" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const env = { RESEND_API_KEY: "re_test", LIEN_TOOL_EMAIL_FROM: "W <w@mail.cstream.ai>", VERCEL_ENV: "preview" };
+    expect(await realSendEmail({ to: "sub@example.com", subject: "s", text: "t" }, env, fetcher)).toEqual({ status: "sent", id: "e1" });
+    expect(calls).toEqual(["sub@example.com"]);
   });
 });
 
@@ -241,7 +243,7 @@ describe("notify me (New Mexico)", () => {
         send: (async (m: { to: string }) => {
           sent.push(m.to);
           return { status: "sent", id: "x" };
-        }) as unknown as typeof sendEmail,
+        }) as unknown as typeof SendEmail,
         subscribe: (async () => ({ status: "sent", id: "c" })) as unknown as typeof addContact,
       },
     );
@@ -256,7 +258,7 @@ describe("notify me (New Mexico)", () => {
         env: overrides.env ?? {},
         rate: { store: new MemoryRateStore(), salt: "s" },
         ip: "1.1.1.1",
-        send: (overrides.send ?? (async () => ({ status: "sent", id: "x" }))) as typeof sendEmail,
+        send: (overrides.send ?? (async () => ({ status: "sent", id: "x" }))) as typeof SendEmail,
         subscribe: (overrides.subscribe ?? (async () => ({ status: "sent", id: "c" }))) as typeof addContact,
         log: overrides.log,
       },
