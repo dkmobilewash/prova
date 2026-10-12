@@ -470,7 +470,8 @@ export async function loadAreaWaiting(
           job: null,
           when: days === 0 ? "due today" : `due in ${plural(days, "day")}`,
           status: days <= 3 ? { text: "Due soon", tone: "amber" } : { text: "Invited", tone: "neutral" },
-          href: "/bids",
+          // The bid's own page — same MANAGE_ESTIMATING gate as /bids above.
+          href: `/ai/bids/${bid.id}`,
           action: "Open",
         });
       }

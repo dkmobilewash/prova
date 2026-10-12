@@ -259,6 +259,11 @@ export function HelpButton({
               </div>
             )}
 
+            {/* No support address on this install: nobody can be reached, so
+                the section is left out rather than telling a customer about
+                an environment variable. The tour above is still there. */}
+            {channel.kind !== "unavailable" && (
+            <>
             <h3 className="mb-1 text-sm font-semibold text-ink">Or ask a person</h3>
 
             {/* The expectation, stated before anything is typed and not
@@ -289,8 +294,6 @@ export function HelpButton({
                   Close
                 </button>
               </div>
-            ) : channel.kind === "unavailable" ? (
-              <p className="text-sm text-amber-200">{channel.reason}</p>
             ) : channel.kind === "mailto" ? (
               <div className="flex flex-col gap-3">
                 <p className="text-sm text-amber-200">{channel.reason}</p>
@@ -405,6 +408,8 @@ export function HelpButton({
                   else this app sends.
                 </p>
               </form>
+            )}
+            </>
             )}
           </div>
         </>

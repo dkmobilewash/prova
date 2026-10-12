@@ -109,6 +109,17 @@ async function render() {
   return renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
 }
 
+// UX test 2026-10-11 (#33): no bid opened its own page, so Research,
+// Estimate check, Addenda and Decision were unreachable from any list.
+describe("a bid's name opens its own page", () => {
+  it("links the project name to /ai/bids/<id> and the GC to its contact", async () => {
+    bids = [bid({ id: "b7", projectName: "Pell Riverfront Tower" })];
+    const html = await render();
+    expect(html).toMatch(/<a [^>]*href="\/ai\/bids\/b7"[^>]*>Pell Riverfront Tower<\/a>/);
+    expect(html).toContain('href="/contacts/contact-1"');
+  });
+});
+
 describe("EVERY bid offers the link, not just a won one", () => {
   /**
    * THIS TEST USED TO ASSERT THE OPPOSITE, and that is why the defect shipped.

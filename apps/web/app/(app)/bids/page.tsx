@@ -386,13 +386,15 @@ export default async function BidsPage({
         <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="bids-list">
           {bids.map((bid) => (
             <li key={bid.id} id={bid.id} className="scroll-mt-20 p-4">
-              <Link
-                href={`/contacts/${bid.contactId}`}
-                className="flex flex-wrap items-center justify-between gap-2"
-              >
+              {/* The name opens the bid's own page (Research, Estimate check,
+                  Addenda, Decision); the GC's name opens the GC. Two links, not
+                  one wrapping the row — a link inside a link is invalid. */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium text-ink">{bid.projectName}</p>
+                    <Link href={`/ai/bids/${bid.id}`} className="inline-flex min-h-11 items-center font-medium text-ink hover:underline mouse:min-h-0">
+                      {bid.projectName}
+                    </Link>
                     <span
                       className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[bid.status]}`}
                     >
@@ -400,7 +402,9 @@ export default async function BidsPage({
                     </span>
                   </div>
                   <p className="text-sm text-ink-body">
-                    {bid.contact.name}
+                    <Link href={`/contacts/${bid.contactId}`} className="hover:underline">
+                      {bid.contact.name}
+                    </Link>
                     {bid.tradeScope && <> · {labelFor(TRADE_SCOPE_OPTIONS, bid.tradeScope)}</>}
                     {bid.dueDate && <> · Due {formatCalendarDate(bid.dueDate, "numeric")}</>}
                   </p>
@@ -408,7 +412,7 @@ export default async function BidsPage({
                 {bid.bidAmount != null && (
                   <p className="text-sm font-medium text-ink">{money(Number(bid.bidAmount))}</p>
                 )}
-              </Link>
+              </div>
               {/* ── THE REGRET LETTER, ON A DECLINED BID ONLY ──
 
                   A page nothing links to is a page nobody uses — #665's lesson,

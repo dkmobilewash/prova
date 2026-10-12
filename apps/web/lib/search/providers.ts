@@ -152,6 +152,40 @@ const jobProvider: SearchProvider = {
   },
 };
 
+// ------------------------------------------------------------------ bid --
+
+const bidProvider: SearchProvider = {
+  type: "bid",
+  label: SEARCH_TYPE_LABELS.bid,
+  gate: "route",
+  // /bids and the bid's own page (/ai/bids/[id]) both sit at
+  // MANAGE_ESTIMATING, so the result opens the bid's workspace — the only
+  // page a single bid has.
+  route: "/bids",
+  async search({ companyId, query, limit }: RecordSearchArgs): Promise<SearchRecordResult[]> {
+    const bids = await prisma.bidInvitation.findMany({
+      where: {
+        companyId,
+        OR: [
+          { projectName: { contains: query, mode: "insensitive" } },
+          { contact: { name: { contains: query, mode: "insensitive" } } },
+        ],
+      },
+      select: { id: true, projectName: true, status: true, contact: { select: { name: true } } },
+      take: limit,
+      orderBy: { createdAt: "desc" },
+    });
+    return bids.map((bid) => ({
+      kind: "record",
+      type: "bid",
+      id: bid.id,
+      title: bid.projectName,
+      subtitle: `Bid — ${titleCase(bid.status)} — ${bid.contact.name}`,
+      href: `/ai/bids/${bid.id}`,
+    }));
+  },
+};
+
 // -------------------------------------------------------------- contact --
 
 const contactProvider: SearchProvider = {
@@ -468,6 +502,7 @@ const invoiceProvider: SearchProvider = {
  */
 export const SEARCH_PROVIDERS: SearchProvider[] = [
   jobProvider,
+  bidProvider,
   contactProvider,
   crewProvider,
   vendorProvider,
