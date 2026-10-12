@@ -221,7 +221,7 @@ describe("/pipeline with no pursuits and no invitations", () => {
 describe("/schedule with no jobs", () => {
   const load = async () => {
     const { default: Page } = await import("@/app/(app)/schedule/page");
-    return renderToStaticMarkup(await Page());
+    return renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
   };
 
   it("renders, and names the missing thing as the job rather than the schedule", async () => {

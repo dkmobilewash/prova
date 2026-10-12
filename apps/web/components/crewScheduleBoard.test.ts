@@ -22,7 +22,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fake = {
-  scheduleCrewDay: vi.fn<(formData: FormData) => Promise<{ ok: true } | { ok: false; error: string }>>(),
+  scheduleCrewDay:
+    vi.fn<(formData: FormData) => Promise<{ ok: true; value: { message: string } } | { ok: false; error: string }>>(),
   unscheduleCrewDay: vi.fn(),
 };
 
@@ -88,8 +89,17 @@ function openForm() {
   act(() => open.click());
 }
 
+function workerBox(value: string) {
+  const box = container.querySelector<HTMLInputElement>(`input[name="worker"][value="${value}"]`);
+  if (!box) throw new Error(`no worker checkbox ${value}`);
+  return box;
+}
+
 async function submitWith(values: Record<string, string>) {
-  for (const [name, value] of Object.entries(values)) field(name).value = value;
+  for (const [name, value] of Object.entries(values)) {
+    if (name === "worker") workerBox(value).checked = true;
+    else field(name).value = value;
+  }
   const form = container.querySelector("form");
   if (!form) throw new Error("no form");
   act(() => {
@@ -120,22 +130,51 @@ describe("putting someone on the crew schedule", () => {
     // Each of these is what a reset would have put back: the first job, the
     // first worker, today's date, "Not said", an empty note.
     expect(field("jobId").value).toBe("job-b");
-    expect(field("worker").value).toBe("crew:marco");
+    expect(workerBox("crew:marco").checked).toBe(true);
     expect(field("workDate").value).toBe("2026-09-30");
     expect(field("craftClassificationId").value).toBe("craft-1");
     expect(field("note").value).toBe("Starts at the hoist");
   });
 
   it("sends what was on screen, and closes the form when it worked", async () => {
-    fake.scheduleCrewDay.mockResolvedValue({ ok: true });
+    fake.scheduleCrewDay.mockResolvedValue({ ok: true, value: { message: "saved" } });
     openForm();
     await submitWith(CHOICES);
 
     const sent = fake.scheduleCrewDay.mock.calls[0][0];
     expect(sent.get("jobId")).toBe("job-b");
-    expect(sent.get("worker")).toBe("crew:marco");
+    expect(sent.getAll("worker")).toEqual(["crew:marco"]);
     expect(sent.get("workDate")).toBe("2026-09-30");
     expect(container.querySelector("form")).toBeNull();
+  });
+
+  // ux medium-B #8: Enter after picking from a select saved the default
+  // person on today, with nothing on screen to say so.
+  it("does not submit when Enter is pressed in a select", () => {
+    openForm();
+    const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    act(() => {
+      field("jobId").dispatchEvent(enter);
+    });
+    expect(enter.defaultPrevented, "Enter in the job select would submit the form").toBe(true);
+  });
+
+  // The other half of #8, and #10: say what was saved, and reopen on the
+  // job just used rather than the first one in the list.
+  it("says what it saved and reopens on the same job", async () => {
+    fake.scheduleCrewDay.mockResolvedValue({
+      ok: true,
+      value: { message: "Marco Silva on Birch Court, Wed, Sep 30 — saved." },
+    });
+    openForm();
+    await submitWith(CHOICES);
+
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(
+      "Marco Silva on Birch Court, Wed, Sep 30 — saved.",
+    );
+    const open = [...container.querySelectorAll("button")].find((b) => b.textContent === "Put someone on");
+    act(() => open!.click());
+    expect(field("jobId").value).toBe("job-b");
   });
 });
 
@@ -210,7 +249,8 @@ describe("a planned day in the past that nobody logged hours against", () => {
     // so it is read BEFORE the two-step arms.
     const said = container.querySelector('[role="tooltip"]')?.textContent ?? "";
     expect(said).toContain("Ana Reyes");
-    expect(said).toContain("2026-09-18");
+    // "Fri, Sep 18", never the raw ISO the row used to print (ux C2).
+    expect(said).toContain("Fri, Sep 18");
     // The sentence that keeps this button honest.
     expect(said).toMatch(/records no hours/);
     expect(said).toMatch(/not because the hours were logged/);

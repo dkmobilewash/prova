@@ -110,6 +110,7 @@ export const AREAS: Area[] = [
       { href: "/schedule", name: "Schedule", description: "Which crew is on which job, day by day" },
       { href: "/deployment", name: "Deployment", description: "Where every person and machine is right now" },
       { href: "/field-reports", name: "Field reports", description: "The daily report: weather, work done, delays" },
+      { href: "/hours", name: "Hours", description: "Everyone's hours for the week, across every job" },
       { href: "/photos", name: "Site photos", description: "Every photo from every job, tagged and dated" },
       { href: "/punch-lists", name: "Punch lists", description: "What is left to fix before you are done" },
       { href: "/team", name: "Team", description: "Your people, their trades and their papers" },

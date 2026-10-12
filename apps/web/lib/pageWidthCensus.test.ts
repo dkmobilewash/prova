@@ -312,7 +312,8 @@ describe("page width census", () => {
       // `working` with the shared PageHeader — /rfis, /submittals, /drawings,
       // /field-reports, /photos, /compliance, /safety, /material-orders,
       // /equipment, /schedule, /cash-flow, /backcharges, /team, /bids and
-      // /contacts: 33.
+      // /contacts: 33. (cyrus/fix-schedule's own /schedule
+      // conversion is the same page, so the merge leaves 33.)
     ).toBe(33);
     expect(new Set(UNCONVERTED_PAGES).size).toBe(UNCONVERTED_PAGES.length);
   });

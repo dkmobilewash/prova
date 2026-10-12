@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
 import { localToday } from "@/components/localToday";
 import { primaryActionClass } from "@/components/emptyStateStyles";
+import { dayLabel } from "@/components/fieldReportWeeks";
+import { blocksImplicitSubmit } from "@/lib/crew-schedule";
 import { scheduleCrewDay, unscheduleCrewDay } from "@/lib/actions";
 
 /**
@@ -44,7 +46,7 @@ function DayGroup({
 }) {
   return (
     <li className="px-4 py-3">
-      <p className="text-sm font-semibold text-ink-label">{date}</p>
+      <p className="text-sm font-semibold text-ink-label">{dayLabel(date)}</p>
       <ul className="mt-2 space-y-2">
         {days.map((day) => (
           <li key={day.id} className="flex items-start justify-between gap-3">
@@ -70,7 +72,7 @@ function DayGroup({
                     // decides whether Cancel covers the delete's position.
                     label="Remove"
                     confirmLabel="Remove it"
-                    describe={`Takes ${day.worker} off ${day.jobName} on ${date}. It does not touch any hours already logged.`}
+                    describe={`Takes ${day.worker} off ${day.jobName} on ${dayLabel(date)}. It does not touch any hours already logged.`}
                     pinned="end"
                     // The revalidate inside the action is what removes the
                     // row from the screen. Nothing here filters a local copy.
@@ -97,16 +99,37 @@ export function CrewScheduleBoard({
   workers,
   crafts,
   canWrite,
+  week,
+  initialJobId,
+  startOpen = false,
 }: {
   upcoming: ScheduleDay[];
   missingHours: ScheduleDay[];
+  /** Jobs the form offers — already without COMPLETE ones (schedulableJobs). */
   jobs: JobOption[];
   workers: WorkerOption[];
   crafts: CraftOption[];
   canWrite: boolean;
+  /** The week board, rendered under the form and above the two-week list. */
+  week?: ReactNode;
+  /** `?job=` — the Crew tab's "Schedule crew" link preselects its job. */
+  initialJobId?: string;
+  /** `?add=1` — open the form on arrival. */
+  startOpen?: boolean;
 }) {
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(startOpen);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
+  // The job the form opens on: the one asked for, else the last one saved
+  // to, else the only one there is, else nothing — never "the first job",
+  // which was a COMPLETE one (ux medium-B #10).
+  const [lastJob, setLastJob] = useState(
+    initialJobId && jobs.some((job) => job.id === initialJobId)
+      ? initialJobId
+      : jobs.length === 1
+        ? jobs[0].id
+        : "",
+  );
   const [pending, startTransition] = useTransition();
 
   // RENDERED FROM PROPS, NEVER FROM STATE, and this cost a click test.
@@ -134,7 +157,7 @@ export function CrewScheduleBoard({
     <>
       <section className="mb-10" data-tour="schedule-crew-board">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-ink-label">Who is on, next two weeks</h2>
+          <h2 className="text-lg font-semibold text-ink">Who is on where</h2>
           {canWrite && (
             // Collapsed behind a button, like every other list page in this
             // app — a form open by default on a page you came to READ is
@@ -145,6 +168,7 @@ export function CrewScheduleBoard({
               onClick={() => {
                 setAdding((open) => !open);
                 setError(null);
+                setSaved(null);
               }}
               className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label hover:border-link hover:text-link"
             >
@@ -163,6 +187,14 @@ export function CrewScheduleBoard({
             // that had snapped back to the first job, the first worker and
             // today. Reset only on success. formActionCensus.test.ts keeps
             // this from coming back.
+            // Enter in a select (or any field) does not save: only the
+            // button does. Enter-after-picking-a-job saved a default person
+            // on today, twice, with nothing on screen (ux medium-B #8).
+            onKeyDown={(event) => {
+              if (blocksImplicitSubmit(event.key, (event.target as HTMLElement).tagName)) {
+                event.preventDefault();
+              }
+            }}
             onSubmit={(event) => {
               event.preventDefault();
               const form = event.currentTarget;
@@ -170,7 +202,10 @@ export function CrewScheduleBoard({
               startTransition(async () => {
                 const result = await scheduleCrewDay(formData);
                 if (result.ok) {
-                  form.reset();
+                  // No form.reset(): the form unmounts on close, and the
+                  // next open starts on this job rather than the first.
+                  setLastJob(String(formData.get("jobId") ?? ""));
+                  setSaved(result.value.message);
                   setError(null);
                   setAdding(false);
                   // The row list is refreshed by the action's revalidate;
@@ -188,8 +223,12 @@ export function CrewScheduleBoard({
                 <select
                   name="jobId"
                   required
+                  defaultValue={lastJob}
                   className="mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink"
                 >
+                  <option value="" disabled>
+                    Pick a job
+                  </option>
                   {jobs.map((job) => (
                     <option key={job.id} value={job.id}>
                       {jobPickerLabel(job)}
@@ -197,22 +236,21 @@ export function CrewScheduleBoard({
                   ))}
                 </select>
               </label>
-              <label className="block text-sm">
-                <span className="text-ink-label">Who</span>
-                <select
-                  name="worker"
-                  required
-                  className="mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink"
-                >
+              {/* Checkboxes, not a <select multiple>: ctrl-click is not a
+                  thing anyone does on a phone, and a crew is several people. */}
+              <fieldset className="text-sm sm:row-span-3">
+                <legend className="text-ink-label">Who (pick one or more)</legend>
+                <div className="mt-1 max-h-64 overflow-y-auto rounded-md border border-line-card">
                   {workers.map((worker) => (
-                    <option key={worker.value} value={worker.value}>
+                    <label key={worker.value} className="flex min-h-11 items-center gap-2 px-3 text-ink">
+                      <input type="checkbox" name="worker" value={worker.value} className="size-4" />
                       {worker.label}
-                    </option>
+                    </label>
                   ))}
-                </select>
-              </label>
+                </div>
+              </fieldset>
               <label className="block text-sm">
-                <span className="text-ink-label">Day</span>
+                <span className="text-ink-label">From</span>
                 <input
                   type="date"
                   name="workDate"
@@ -231,6 +269,18 @@ export function CrewScheduleBoard({
                   defaultValue={localToday()}
                   className="mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink"
                 />
+              </label>
+              <label className="block text-sm">
+                <span className="text-ink-label">To (optional — blank for one day)</span>
+                <input
+                  type="date"
+                  name="endDate"
+                  className="mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink"
+                />
+              </label>
+              <label className="flex min-h-11 items-center gap-2 text-sm text-ink">
+                <input type="checkbox" name="skipWeekends" defaultChecked className="size-4" />
+                Skip Saturdays and Sundays in a range
               </label>
               <label className="block text-sm">
                 <span className="text-ink-label">As (optional)</span>
@@ -271,6 +321,15 @@ export function CrewScheduleBoard({
           </form>
         )}
 
+        {saved && (
+          <p className="mb-4 text-sm text-ink" role="status">
+            {saved}
+          </p>
+        )}
+
+        {week}
+
+        <h3 className="mb-2 text-base font-semibold text-ink">Next two weeks, as a list</h3>
         {dates.length === 0 ? (
           <div className="rounded-lg border border-line-card bg-surface p-6">
             <p className="text-ink-label">Nobody is on the schedule for the next two weeks.</p>
@@ -332,7 +391,7 @@ export function CrewScheduleBoard({
                 <div className="min-w-0">
                   <p className="text-sm text-ink">
                     {day.worker}
-                    <span className="text-ink-muted"> · {day.workDate}</span>
+                    <span className="text-ink-muted"> · {dayLabel(day.workDate)}</span>
                   </p>
                   <p className="text-xs text-ink-body">
                     <Link href={`/jobs/${day.jobId}`} className="underline hover:text-link">
@@ -372,7 +431,7 @@ export function CrewScheduleBoard({
                       <ConfirmDelete
                         label="Remove"
                         confirmLabel="Remove it"
-                        describe={`Takes ${day.worker} off ${day.jobName} on ${day.workDate}, a day that has already gone by. It records no hours: the row leaves this list because nobody is planned on that day any more, not because the hours were logged.`}
+                        describe={`Takes ${day.worker} off ${day.jobName} on ${dayLabel(day.workDate)}, a day that has already gone by. It records no hours: the row leaves this list because nobody is planned on that day any more, not because the hours were logged.`}
                         pinned="end"
                         action={async () => {
                           await unscheduleCrewDay(day.id);

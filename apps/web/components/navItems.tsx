@@ -482,6 +482,16 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/hours",
+    label: "Hours",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <circle cx="10" cy="10" r="6.5" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M10 6.5V10l2.5 1.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/photos",
     label: "Site photos",
     icon: (
@@ -694,6 +704,8 @@ export const NAV_GROUPS: NavGroup[] = [
       // mobile drawer draw from navGroupsFor().
       item("/deployment"),
       item("/field-reports"),
+      // Everyone's week across every job; per-job hours stay on Crew & time.
+      item("/hours"),
       item("/pipeline"),
       item("/cash-flow"),
       item("/contacts"),
