@@ -171,9 +171,7 @@ const UNCONVERTED_PAGES = [
   "apps/web/app/(app)/contacts/[id]/page.tsx",
   "apps/web/app/(app)/contacts/page.tsx",
   "apps/web/app/(app)/deployment/page.tsx",
-  "apps/web/app/(app)/drawings/page.tsx",
   "apps/web/app/(app)/equipment/page.tsx",
-  "apps/web/app/(app)/field-reports/page.tsx",
   "apps/web/app/(app)/intake/page.tsx",
   "apps/web/app/(app)/internal/usage/page.tsx",
   "apps/web/app/(app)/jobs/[id]/certified-payroll/page.tsx",
@@ -186,10 +184,8 @@ const UNCONVERTED_PAGES = [
   "apps/web/app/(app)/material-orders/page.tsx",
   "apps/web/app/(app)/messages/page.tsx",
   "apps/web/app/(app)/phase-codes/page.tsx",
-  "apps/web/app/(app)/photos/page.tsx",
   "apps/web/app/(app)/pipeline/page.tsx",
   "apps/web/app/(app)/prevailing-wage/page.tsx",
-  "apps/web/app/(app)/rfis/page.tsx",
   "apps/web/app/(app)/safety/page.tsx",
   "apps/web/app/(app)/sales/[id]/page.tsx",
   "apps/web/app/(app)/sales/page.tsx",
@@ -198,7 +194,6 @@ const UNCONVERTED_PAGES = [
   "apps/web/app/(app)/settings/export/page.tsx",
   "apps/web/app/(app)/settings/import/page.tsx",
   "apps/web/app/(app)/settings/integrations/page.tsx",
-  "apps/web/app/(app)/submittals/page.tsx",
   "apps/web/app/(app)/team/page.tsx",
   "apps/web/app/(app)/union-compliance/page.tsx",
   "apps/web/app/(app)/union-compliance/remittance/page.tsx",
@@ -322,8 +317,10 @@ describe("page width census", () => {
       // as converted for that purpose. Then #452 moved the dashboard (now
       // `working`) and the job-tabs layout (`working` for the header and
       // rail, each tab choosing its own body width through PageColumn) to
-      // the shell. All four removals together: 48.
-    ).toBe(48);
+      // the shell. All four removals together: 48. Then the Concept G page
+      // sweep moved /rfis, /submittals, /drawings, /field-reports and /photos
+      // to `working` with the shared PageHeader: 43.
+    ).toBe(43);
     expect(new Set(UNCONVERTED_PAGES).size).toBe(UNCONVERTED_PAGES.length);
   });
 

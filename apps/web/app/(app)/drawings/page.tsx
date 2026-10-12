@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { DrawingSetForm } from "@/components/DrawingSetForm";
@@ -93,7 +95,7 @@ export default async function DrawingsPage({
   const filterHref = (job: string | null) => (job ? `/drawings?job=${job}` : "/drawings");
 
   const chip = (active: boolean) =>
-    `rounded-md border px-3 py-1.5 text-sm ${
+    `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
       active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-rail-hover"
     }`;
 
@@ -102,15 +104,11 @@ export default async function DrawingsPage({
   const procoreFeed = await loadProcoreFeed(company.id, "DRAWING", activeJob);
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Drawings</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        Which revision of each set is current, and whether it&apos;s actually in the trailer. A
-        revision that has been issued supersedes the one before it whether or not it has reached you
-        — so an issue you haven&apos;t received means the crew is building from paper that is already
-        out of date, and that rework is nobody else&apos;s to pay for once you&apos;ve signed for the
-        set.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/drawings"
+        subtitle="Which revision of each set is current, and whether it is actually in the trailer."
+      />
 
       <section className="mb-8" data-tour="drawings-add">
         <DrawingSetForm jobs={jobs} defaultJobId={activeJob ?? undefined} />
@@ -184,6 +182,6 @@ export default async function DrawingsPage({
       {/* The GC's records from Procore: a separate section, never merged
           into this company's own log above. */}
       <ProcoreFeedSection feed={procoreFeed} />
-    </div>
+    </PageShell>
   );
 }
