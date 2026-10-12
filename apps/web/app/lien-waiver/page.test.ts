@@ -63,6 +63,11 @@ describe("/lien-waiver", () => {
     }
   });
 
+  it("never promises an email download while the tool is not open yet", () => {
+    expect(html).not.toContain("Enter your email once to download");
+    expect(html).toContain("The tool opens once an attorney has reviewed the state forms.");
+  });
+
   it("never shows a dead tool link: unset means 'opening soon', no <a> to the tool", () => {
     expect(html).toContain('data-lien-waiver-tool="soon"');
     expect(html).not.toContain('data-lien-waiver-tool="live"');
@@ -86,6 +91,7 @@ describe("/lien-waiver", () => {
       expect(toolLinks).toHaveLength(3);
       for (const link of toolLinks) expect(link).not.toContain("bg-brand");
       expect(live).not.toContain("opening soon");
+      expect(live).toContain("Enter your email once to download");
       const yellow = live.match(/<a[^>]*bg-brand[^>]*>/g) ?? [];
       expect(new Set(yellow.map((b) => b.match(/href="([^"]+)"/)?.[1]))).toEqual(new Set(["/sign-up"]));
     } finally {

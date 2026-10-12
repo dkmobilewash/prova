@@ -118,6 +118,9 @@ const STEPS = [
   {
     title: "Download the PDF",
     body: "See the whole form first. Enter your email once to download, and we send you the PDF too.",
+    // Shown while LIEN_WAIVER_TOOL_URL is unset, so this step never promises
+    // a download beside "opening soon".
+    bodySoon: "See the whole form first, then download the PDF. The tool opens once an attorney has reviewed the state forms.",
     instead: "Instead of a template with no way to tell where its wording came from.",
     icon: <path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14" />,
   },
@@ -369,7 +372,7 @@ export function LienWaiverLanding({ toolUrl }: { toolUrl?: string }) {
                 </span>
                 <p className="mt-5 font-mono text-xs text-ink-muted">0{i + 1}</p>
                 <p className="mt-1 text-lg font-semibold text-ink">{step.title}</p>
-                <p className="mt-2 text-sm leading-relaxed text-ink-body">{step.body}</p>
+                <p className="mt-2 text-sm leading-relaxed text-ink-body">{!toolUrl && step.bodySoon ? step.bodySoon : step.body}</p>
                 <p className="mt-4 border-t border-line-row pt-3 text-sm text-ink-muted">{step.instead}</p>
               </li>
             ))}
