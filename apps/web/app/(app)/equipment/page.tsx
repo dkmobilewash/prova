@@ -1,4 +1,6 @@
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { EquipmentForm } from "@/components/EquipmentForm";
@@ -99,13 +101,11 @@ export default async function EquipmentPage() {
   const inYard = items.filter((i) => i.where.kind !== "out").length;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Equipment</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        Company-owned equipment, where each piece is, and how hard it has been working. Where
-        something is now is worked out from its assignment history rather than stored, so a lift
-        can never be recorded in two places at once.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/equipment"
+        subtitle="Your equipment, where each piece is, and how hard it has been working."
+      />
 
       <div className="mb-8" data-tour="equipment-add">
         <EquipmentForm />
@@ -192,6 +192,6 @@ export default async function EquipmentPage() {
           </ul>
         )}
       </section>
-    </div>
+    </PageShell>
   );
 }

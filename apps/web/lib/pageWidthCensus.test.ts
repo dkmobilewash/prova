@@ -167,12 +167,10 @@ const UNCONVERTED_PAGES = [
   "apps/web/app/(app)/catalog/page.tsx",
   "apps/web/app/(app)/certifications/page.tsx",
   "apps/web/app/(app)/closeout/page.tsx",
-  "apps/web/app/(app)/compliance/page.tsx",
   "apps/web/app/(app)/contacts/[id]/page.tsx",
   "apps/web/app/(app)/contacts/page.tsx",
   "apps/web/app/(app)/deployment/page.tsx",
   "apps/web/app/(app)/drawings/page.tsx",
-  "apps/web/app/(app)/equipment/page.tsx",
   "apps/web/app/(app)/field-reports/page.tsx",
   "apps/web/app/(app)/intake/page.tsx",
   "apps/web/app/(app)/internal/usage/page.tsx",
@@ -183,17 +181,14 @@ const UNCONVERTED_PAGES = [
   "apps/web/app/(app)/jobs/new/[jobId]/items/page.tsx",
   "apps/web/app/(app)/jobs/new/page.tsx",
   "apps/web/app/(app)/lien-deadlines/page.tsx",
-  "apps/web/app/(app)/material-orders/page.tsx",
   "apps/web/app/(app)/messages/page.tsx",
   "apps/web/app/(app)/phase-codes/page.tsx",
   "apps/web/app/(app)/photos/page.tsx",
   "apps/web/app/(app)/pipeline/page.tsx",
   "apps/web/app/(app)/prevailing-wage/page.tsx",
   "apps/web/app/(app)/rfis/page.tsx",
-  "apps/web/app/(app)/safety/page.tsx",
   "apps/web/app/(app)/sales/[id]/page.tsx",
   "apps/web/app/(app)/sales/page.tsx",
-  "apps/web/app/(app)/schedule/page.tsx",
   "apps/web/app/(app)/settings/assistant/page.tsx",
   "apps/web/app/(app)/settings/export/page.tsx",
   "apps/web/app/(app)/settings/import/page.tsx",
@@ -322,8 +317,10 @@ describe("page width census", () => {
       // as converted for that purpose. Then #452 moved the dashboard (now
       // `working`) and the job-tabs layout (`working` for the header and
       // rail, each tab choosing its own body width through PageColumn) to
-      // the shell. All four removals together: 48.
-    ).toBe(48);
+      // the shell. All four removals together: 48. The page-header sweep
+      // then moved /compliance, /safety, /material-orders, /equipment and
+      // /schedule to `working`: 43.
+    ).toBe(43);
     expect(new Set(UNCONVERTED_PAGES).size).toBe(UNCONVERTED_PAGES.length);
   });
 

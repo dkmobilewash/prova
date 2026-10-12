@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { SafetyIncidentForm } from "@/components/SafetyIncidentForm";
@@ -86,12 +88,11 @@ export default async function SafetyPage({
   });
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Safety</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        The incident log and the toolbox talk record. These are the two things a GC or an OSHA inspector asks
-        for by name, and the two things that usually live in a binder in someone&apos;s truck.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/safety"
+        subtitle="Log incidents and toolbox talks — the two records a GC or OSHA inspector asks for by name."
+      />
 
       <section className="mb-8">
         <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -235,6 +236,6 @@ export default async function SafetyPage({
           </ul>
         )}
       </section>
-    </div>
+    </PageShell>
   );
 }
