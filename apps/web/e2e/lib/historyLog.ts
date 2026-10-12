@@ -267,8 +267,18 @@ export async function installHistoryLog(page: Page): Promise<void> {
           window.setTimeout(() => {
             const bar = document.querySelector("[data-nav-progress]")?.getAttribute("data-nav-progress") ?? "none";
             const skeleton = document.querySelector('main [role="status"]') ? "skeleton showing" : "no skeleton";
+            const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("form button"))
+              .filter((b) => b.type === "submit" || !b.getAttribute("type"))
+              .map((b) => `"${(b.textContent ?? "").trim().slice(0, 24)}" ${b.disabled ? "disabled" : "enabled"}${b.getAttribute("aria-busy") ? " BUSY" : ""}`)
+              .slice(0, 4)
+              .join(", ");
+            const alerts = Array.from(document.querySelectorAll('[role="alert"]'))
+              .map((a) => (a.textContent ?? "").trim().slice(0, 100))
+              .filter(Boolean)
+              .join(" / ");
+            const pendingUrl = (window as unknown as { next?: { __pendingUrl?: unknown } }).next?.__pendingUrl;
             log.push(
-              `${Date.now()} 3s after ${label}: reader ${state.opened ? `opened, ${state.chunks} chunks, ${state.bytes} bytes, ${state.ended ? "ended" : "NOT ended"}` : "NEVER OPENED"}; progress bar=${bar}; ${skeleton}; at ${location.pathname}`,
+              `${Date.now()} 3s after ${label}: reader ${state.opened ? `opened, ${state.chunks} chunks, ${state.bytes} bytes, ${state.ended ? "ended" : "NOT ended"}` : "NEVER OPENED"}; progress bar=${bar}; ${skeleton}; at ${location.pathname}; pendingUrl=${pendingUrl === undefined ? "undefined" : String(pendingUrl)}; submit buttons: ${buttons || "none"}; alerts: ${alerts || "none"}`,
             );
           }, 3000);
         }
@@ -278,6 +288,26 @@ export async function installHistoryLog(page: Page): Promise<void> {
         throw error;
       }
     };
+    // The public router appears when Next's client chunk runs; wrap it then.
+    const wrapRouter = () => {
+      const next = (window as unknown as { next?: { router?: Record<string, unknown> } }).next;
+      const router = next?.router;
+      if (!router) return false;
+      for (const method of ["push", "replace", "refresh", "prefetch", "back", "forward", "hmrRefresh", "fastRefresh"]) {
+        const original = router[method];
+        if (typeof original !== "function") continue;
+        router[method] = function wrappedRouterMethod(this: unknown, ...args: unknown[]) {
+          log.push(`${Date.now()} router.${method}(${args.map((a) => (typeof a === "string" ? a : JSON.stringify(a) ?? String(a))).join(", ").slice(0, 120)}) from ${frames()}`);
+          return (original as (...a: unknown[]) => unknown).apply(this, args);
+        };
+      }
+      log.push(`${Date.now()} router wrapped`);
+      return true;
+    };
+    const routerPoll = window.setInterval(() => {
+      if (wrapRouter()) window.clearInterval(routerPoll);
+    }, 50);
+    window.setTimeout(() => window.clearInterval(routerPoll), 30_000);
     for (const name of ["popstate", "hashchange"] as const) {
       window.addEventListener(name, () => log.push(`${Date.now()} ${name} ${location.pathname}${location.search}${location.hash} doc=${docId}`));
     }
