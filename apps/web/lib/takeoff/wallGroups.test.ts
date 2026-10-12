@@ -10,7 +10,7 @@ import {
   type WallGroup,
 } from "./wallGroups";
 import type { PostableWallType } from "./wallTypeMatch";
-import { CLUSTER_INCHES, type WallCandidate, type WallCluster } from "./wallVectors";
+import { CLUSTER_INCHES, inchLabel, type WallCandidate, type WallCluster } from "./wallVectors";
 
 /**
  * The case this module exists for is the LAST line of these tests, and the rest
@@ -317,6 +317,25 @@ describe("every sentence says WHERE the answer came from", () => {
     expect(sentence(group)).toContain('6"');
     expect(sentence(group)).not.toContain("6-0");
   });
+
+  it("USES THE SAME RENDERER AS THE ROW ABOVE IT", () => {
+    // ── TWO RENDERERS OF ONE NUMBER, AND BOTH ON SCREEN AT ONCE ──
+    //
+    // This file had its own inches-to-fraction helper, rounding to the nearest
+    // SIXTEENTH, while the row heading uses `inchLabel`, which rounds to the
+    // nearest EIGHTH. A click-through caught the result: a row headed 7-3/8"
+    // whose sentence read "no wall type you have is 7-7/16" thick". One wall,
+    // two numbers, one above the other.
+    //
+    // The local helper is gone. This is the second list CLAUDE.md warns about,
+    // in miniature, and the fix is the same one: there is one renderer.
+    const odd = 7.4375; // lands between eighths, which is where they disagreed
+    const a = run(40);
+    const [group] = wallGroups([cluster(odd, [a])], new Map(), []);
+    expect(sentence(group), "the sentence renders a thickness the row does not").toContain(
+      inchLabel(odd),
+    );
+  });
 });
 
 describe("School-01's 4-7/8in group, which is why this module exists", () => {
@@ -401,13 +420,25 @@ describe("nothing a sheet found is out of reach", () => {
   });
 
   it("STOPS PROMISING EACH GROUP ITS OWN COLOUR", () => {
-    // Six colours and up to twelve rows: a chip repeats, which a click-through
-    // reported as lines looking like they belonged to another group. Hover is
-    // what actually tells them apart, so that is what the headline says.
-    expect(viewer, "the panel still claims a colour per group").not.toContain(
-      "Each group is drawn on the",
-    );
-    expect(viewer).toContain("Hover a row to pick its");
+    // ── READ AS A SENTENCE, BECAUSE THE FIRST VERSION OF THIS CASE WAS NOT ──
+    //
+    // It asserted two fragments — that "Each group is drawn on the" was gone
+    // and "Hover a row to pick its" was present. Both were true of a headline
+    // that read:
+    //
+    //   "Hover a row to pick its sheet in its own colour"
+    //
+    // Nonsense, and it still carried the claim the change existed to remove.
+    // A find-and-replace had taken the first half of the old sentence and left
+    // the second, and a test of the halves cannot see that. So this reads the
+    // whole line and asserts the CLAIM is gone, not a fragment of it.
+    const headline = (viewer.match(/runs of wall\.[\s\S]{0,160}?<\/p>/) ?? [""])[0]
+      .replace(/\s+/g, " ");
+    expect(headline, "the headline still promises a colour per group").not.toMatch(/own colour/);
+    expect(headline, "nothing tells anybody how to tell two groups apart").toMatch(/Hover a row/);
+    // And it still says WHY somebody should look, which is the whole posture:
+    // a found wall is a proposal and the drawing is the check.
+    expect(headline).toMatch(/real walls/);
   });
 
   it("forgets that it was expanded when the sheet is read again", () => {

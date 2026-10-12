@@ -1,4 +1,4 @@
-import { CLUSTER_INCHES, type WallCandidate, type WallCluster } from "./wallVectors";
+import { CLUSTER_INCHES, inchLabel, type WallCandidate, type WallCluster } from "./wallVectors";
 import { sameDesignation, type PostableWallType } from "./wallTypeMatch";
 
 /**
@@ -247,18 +247,18 @@ export function groupSentence(group: WallGroup, verdict: GroupVerdict): string |
     case "ONLY_ONE_THAT_THICK":
       return (
         `Nothing on the drawing names these. ${verdict.type.code} is the only wall type you have at ` +
-        `${inches(group.inches)}, so that is what they would be priced as — check one against the drawing first.`
+        `${inchLabel(group.inches)}, so that is what they would be priced as — check one against the drawing first.`
       );
     case "ASK":
       return (
         `Nothing on the drawing names these, and you have ${verdict.types.length} wall types at ` +
-        `${inches(group.inches)} (${verdict.types.map((type) => type.code).join(", ")}). ` +
+        `${inchLabel(group.inches)} (${verdict.types.map((type) => type.code).join(", ")}). ` +
         `They differ in ways a floor plan cannot show, so pick one.`
       );
     case "TAG_DISAGREES":
       return (
-        `The drawing tags these ${verdict.tag}, but they measure ${inches(group.inches)} and your ` +
-        `${verdict.type.code} is ${inches(verdict.type.thicknessIn ?? 0)}. Either the tag belongs to a different ` +
+        `The drawing tags these ${verdict.tag}, but they measure ${inchLabel(group.inches)} and your ` +
+        `${verdict.type.code} is ${inchLabel(verdict.type.thicknessIn ?? 0)}. Either the tag belongs to a different ` +
         `wall or the thickness on your ${verdict.type.code} is wrong — look at this group on the drawing before ` +
         `pricing it.`
       );
@@ -270,20 +270,8 @@ export function groupSentence(group: WallGroup, verdict: GroupVerdict): string |
       );
     case "UNKNOWN":
       return (
-        `Nothing on the drawing names these and no wall type you have is ${inches(group.inches)} thick. ` +
+        `Nothing on the drawing names these and no wall type you have is ${inchLabel(group.inches)} thick. ` +
         `They can be added as plain measurements and priced by hand.`
       );
   }
-}
-
-/** Inches to the nearest sixteenth, as a drawing writes them. Local rather than
- *  imported from the finder, because that one labels a GROUP and this one is
- *  mid-sentence — `4-7/8"` reads correctly in prose and `4⅞″ wall` does not. */
-function inches(value: number): string {
-  const whole = Math.floor(value);
-  const sixteenths = Math.round((value - whole) * 16);
-  if (sixteenths === 0) return `${whole}"`;
-  if (sixteenths === 16) return `${whole + 1}"`;
-  const divide = (n: number, d: number): string => (n % 2 === 0 ? divide(n / 2, d / 2) : `${n}/${d}`);
-  return `${whole}-${divide(sixteenths, 16)}"`;
 }
