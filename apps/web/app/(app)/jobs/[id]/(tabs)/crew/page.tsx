@@ -7,7 +7,7 @@ import { TimesheetSignoffs } from "@/components/TimesheetSignoffs";
 import { SignatureImage } from "@/components/SignatureImage";
 import { DispatchSlipForm } from "@/components/DispatchSlipForm";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
-import { can } from "@/lib/permissions";
+import { can, canReach } from "@/lib/permissions";
 import { viewerTimeZone, viewerToday } from "@/lib/viewerToday";
 import { CrewWeekGrid } from "@/components/CrewWeekGrid";
 import { resolveWeekStart } from "@/lib/crew-schedule";
@@ -213,9 +213,11 @@ export default async function JobCrewPage({
             <h3 className="text-base font-semibold text-ink">
               This week: {formatHours(thisWeek.totalHours)} hrs
             </h3>
-            <Link href="/hours" className="text-sm text-link hover:underline">
-              Every job&rsquo;s hours →
-            </Link>
+            {canReach(principal, "/hours") && (
+              <Link href="/hours" className="text-sm text-link hover:underline">
+                Every job&rsquo;s hours →
+              </Link>
+            )}
           </div>
           {thisWeek.people.length > 0 ? (
             <WeeklyHoursTable week={thisWeek} caption="Hours on this job this week, by person and day" />

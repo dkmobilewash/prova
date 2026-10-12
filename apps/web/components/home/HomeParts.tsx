@@ -216,6 +216,8 @@ export type MoneyFigures = {
   retainage: number;
   overdue: number;
   overdueCount: number;
+  /** billingNoun(company.filesMonthlyPayApps) — "pay app" or "invoice". */
+  bill: { lower: string; lowerMany: string };
   outstanding: number;
   overdueHref?: string;
   retainageHref?: string;
@@ -261,7 +263,7 @@ export function MoneyBlock({ figures }: { figures: MoneyFigures }) {
           label={
             figures.overdueCount === 0
               ? "Nothing overdue"
-              : `Overdue · ${figures.overdueCount} ${figures.overdueCount === 1 ? "invoice" : "invoices"}`
+              : `Overdue · ${figures.overdueCount} ${figures.overdueCount === 1 ? figures.bill.lower : figures.bill.lowerMany}`
           }
           href={figures.overdueHref}
         >

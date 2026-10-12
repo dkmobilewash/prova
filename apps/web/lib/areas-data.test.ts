@@ -13,6 +13,8 @@ const db = vi.hoisted(() => ({
   rfi: { findMany: vi.fn() },
   submittal: { findMany: vi.fn() },
   materialOrder: { findMany: vi.fn() },
+  bidInvitation: { findMany: vi.fn() },
+  job: { findMany: vi.fn() },
 }));
 vi.mock("@prova/db", () => ({ prisma: db }));
 
@@ -47,6 +49,16 @@ describe("waiting rows link to the record", () => {
     ]);
     const { list } = await loadAreaWaiting("materials-equipment", "c1", owner, "2026-10-11");
     expect(list.rows[0]!.href).toBe("/material-orders?job=j1#order-o1");
+  });
+
+  // A bid row opens the bid's own page, not a hash on the /bids list.
+  it("a bid due lands on the bid's own page", async () => {
+    db.bidInvitation.findMany.mockResolvedValue([
+      { id: "b1", projectName: "Oak", dueDate: new Date("2026-10-20T00:00:00.000Z"), contact: { name: "Turner" } },
+    ]);
+    db.job.findMany.mockResolvedValue([]);
+    const { list } = await loadAreaWaiting("jobs-bids", "c1", owner, "2026-10-11");
+    expect(list.rows[0]!.href).toBe("/ai/bids/b1");
   });
 
   it("each row component carries the id the hash points at", () => {

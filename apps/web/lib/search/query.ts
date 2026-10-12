@@ -2,7 +2,7 @@ import { TOOLS } from "@/lib/ask/tools";
 import { reachableWalkthroughs, searchAppHelp } from "@/lib/ask/appHelp";
 import { can, capabilityForRoute, type Capability, type Principal } from "@/lib/permissions";
 import { navFooterFor, navGroupsFor } from "@/components/navItems";
-import { areaHref, areasFor } from "@/lib/areas";
+import { areaHref, areasFor, pagesByArea } from "@/lib/areas";
 import { SEARCH_PROVIDERS } from "./providers";
 import type { SearchPageResult, SearchProvider, SearchRecordResult } from "./types";
 
@@ -28,7 +28,9 @@ export function navPagesFor(principal: Principal, options: { showsInternal?: boo
   // The six areas first (lib/areas.ts) — the same boxes the home page opens,
   // narrowed by the same capability rule.
   for (const area of areasFor(principal)) add(areaHref(area.slug), area.name, "Areas");
-  for (const group of navGroupsFor(principal, { showsInternal: options.showsInternal })) {
+  // Filed and named as the area pages and "All pages" file them, so a result
+  // reads "Schedule — Crew & field", never an old rail heading.
+  for (const group of pagesByArea(navGroupsFor(principal, { showsInternal: options.showsInternal }))) {
     for (const item of group.items) if (!item.disabled) add(item.href, item.label, group.heading);
   }
   for (const item of navFooterFor(principal)) add(item.href, item.label, "Settings");

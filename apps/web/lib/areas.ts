@@ -1,4 +1,4 @@
-import { canOpen } from "@/components/navItems";
+import { canOpen, type NavGroup } from "@/components/navItems";
 import type { Principal } from "@/lib/permissions";
 
 /**
@@ -231,4 +231,30 @@ export function areaViews(areas: Area[], statuses: ToolStatuses): AreaView[] {
       tools: area.tools.map((tool) => ({ ...tool, route: toolRoute(tool), status: statuses[toolRoute(tool)] ?? null })),
     };
   });
+}
+
+/**
+ * The pages, regrouped under the six areas' names and in their order, each
+ * page called what its area calls it — so this panel speaks the home page's
+ * vocabulary instead of the old rail's group headings beside it. `groups`
+ * still decides WHICH pages appear (capability, business scope, operator);
+ * this only re-files them. A page in no area (the operator's Internal pages)
+ * keeps its own group.
+ */
+export function pagesByArea(groups: NavGroup[]): NavGroup[] {
+  const shown = new Map(groups.flatMap((g) => g.items).map((item) => [item.href, item]));
+  const filed = new Set<string>();
+  const byArea: NavGroup[] = AREAS.map((area) => ({
+    heading: area.name,
+    icon: null,
+    description: area.description,
+    items: area.tools.flatMap((tool) => {
+      const item = shown.get(toolRoute(tool));
+      if (!item || filed.has(item.href)) return [];
+      filed.add(item.href);
+      return [{ ...item, label: tool.name }];
+    }),
+  }));
+  const rest = groups.map((g) => ({ ...g, items: g.items.filter((item) => !filed.has(item.href)) }));
+  return [...byArea, ...rest].filter((g) => g.items.length > 0);
 }

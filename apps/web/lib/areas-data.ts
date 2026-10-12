@@ -481,7 +481,7 @@ export async function loadAreaWaiting(
           job: null,
           when: days === 0 ? "due today" : `due in ${plural(days, "day")}`,
           status: days <= 3 ? { text: "Due soon", tone: "amber" } : { text: "Invited", tone: "neutral" },
-          href: `/bids#${bid.id}`,
+          href: `/ai/bids/${bid.id}`,
           action: "Open",
         });
       }

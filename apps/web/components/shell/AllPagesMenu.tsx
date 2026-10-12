@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { activeItemHref, type NavGroup, type NavItem } from "@/components/navItems";
 import { money } from "@/lib/money";
-import { AREAS, areaHref, toolRoute, type Area } from "@/lib/areas";
+import { areaHref, pagesByArea, type Area } from "@/lib/areas";
 import { AreaIcon } from "@/components/areas/AreaParts";
 import type { MoneyRailFigure, MoneyRailStage } from "@/lib/moneyRail";
 
@@ -39,31 +39,9 @@ export const STAGE_KEY_FOR_HEADING: Record<string, MoneyRailStage["key"]> = {
   Money: "getting-paid",
 };
 
-/**
- * The pages, regrouped under the six areas' names and in their order, each
- * page called what its area calls it — so this panel speaks the home page's
- * vocabulary instead of the old rail's group headings beside it. `groups`
- * still decides WHICH pages appear (capability, business scope, operator);
- * this only re-files them. A page in no area (the operator's Internal pages)
- * keeps its own group.
- */
-export function pagesByArea(groups: NavGroup[]): NavGroup[] {
-  const shown = new Map(groups.flatMap((g) => g.items).map((item) => [item.href, item]));
-  const filed = new Set<string>();
-  const byArea: NavGroup[] = AREAS.map((area) => ({
-    heading: area.name,
-    icon: null,
-    description: area.description,
-    items: area.tools.flatMap((tool) => {
-      const item = shown.get(toolRoute(tool));
-      if (!item || filed.has(item.href)) return [];
-      filed.add(item.href);
-      return [{ ...item, label: tool.name }];
-    }),
-  }));
-  const rest = groups.map((g) => ({ ...g, items: g.items.filter((item) => !filed.has(item.href)) }));
-  return [...byArea, ...rest].filter((g) => g.items.length > 0);
-}
+// Lives in lib/areas.ts so server code (⌘K's page list) can call it too —
+// a function exported from a "use client" file is a client reference there.
+export { pagesByArea };
 
 function figureMain(figure: MoneyRailFigure): string {
   return figure.kind === "money" ? money(figure.amount) : String(figure.n);

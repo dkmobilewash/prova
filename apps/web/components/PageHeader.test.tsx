@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { PageHeader, trailFor } from "./PageHeader";
@@ -26,5 +27,20 @@ describe("PageHeader", () => {
     const settings = renderToStaticMarkup(<PageHeader route="/settings" title="Settings" />);
     expect(settings).toMatch(/aria-current="page"[^>]*>Settings</);
     expect(settings).not.toContain("/areas/");
+  });
+
+  // Polish round 2026-10-11: /hours was the one Crew & field page still on a
+  // bare <h1> with no way back up.
+  it("/hours wears it: Home / Crew & field / Hours", () => {
+    expect(trailFor("/hours")).toEqual({
+      trail: [
+        { href: "/dashboard", label: "Home" },
+        { href: "/areas/crew-field", label: "Crew & field" },
+      ],
+      current: "Hours",
+    });
+    const source = readFileSync(new URL("../app/(app)/hours/page.tsx", import.meta.url), "utf8");
+    expect(source).toMatch(/<PageHeader\s+route="\/hours"/);
+    expect(source).not.toMatch(/<h1/);
   });
 });

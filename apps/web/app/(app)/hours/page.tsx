@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
 import { PageShell } from "@prova/ui";
-import { requireCompanyContext } from "@/lib/auth";
+import { requireCapability } from "@/lib/authz";
+import { NoAccess } from "@/components/NoAccess";
+import { PageHeader } from "@/components/PageHeader";
 import { viewerToday } from "@/lib/viewerToday";
 import { formatHours } from "@/lib/render-hours";
 import { formatCalendarDay } from "@/lib/render-date";
@@ -20,7 +22,11 @@ export const dynamic = "force-dynamic";
  * each job's Crew & time tab, which this links back to.
  */
 export default async function HoursPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
-  const { company } = await requireCompanyContext();
+  // Office only (lib/permissions.ts ROUTE_CAPABILITY): everyone's time is
+  // the payroll view. A foreman reads his own job's hours on its crew tab.
+  const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
+  if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;
+  const { company } = context;
   const today = await viewerToday();
   const start = hoursWeekStart((await searchParams).week, today);
   const end = addDays(start, 6);
@@ -49,11 +55,15 @@ export default async function HoursPage({ searchParams }: { searchParams: Promis
 
   return (
     <PageShell width="working">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Hours</h1>
-      <p className="mb-4 text-sm text-ink-body">
-        Everyone&rsquo;s hours for the week, across every job. Hours are logged and corrected on each job&rsquo;s
-        Crew &amp; time tab.
-      </p>
+      <PageHeader
+        route="/hours"
+        subtitle={
+          <>
+            Everyone&rsquo;s hours for the week, across every job. Hours are logged and corrected on each job&rsquo;s
+            Crew &amp; time tab.
+          </>
+        }
+      />
 
       <nav data-tour="hours-week" aria-label="Week" className="mb-6 flex flex-wrap items-center gap-2">
         <Link href={`/hours?week=${addDays(start, -7)}`} className={navClass}>

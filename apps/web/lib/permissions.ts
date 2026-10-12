@@ -226,6 +226,13 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   "/settings/assistant": "MANAGE_COMPLIANCE",
   "/prevailing-wage": "MANAGE_COMPLIANCE",
   "/union-compliance": "MANAGE_COMPLIANCE",
+  // Everyone's hours across every job — the office's payroll view, office
+  // only by Cyrus's call (2026-10-11). MANAGE_COMPLIANCE because it is the
+  // capability that already gates reviewing other people's time: timesheet
+  // sign-off (lib/actions/timesheetSignoff.ts) and certified payroll above.
+  // MANAGE_FIELD would not do it — FIELD holds that. A foreman still logs
+  // and reads his own job's hours on its Crew & time tab, which is unchanged.
+  "/hours": "MANAGE_COMPLIANCE",
 
   // MANAGE_FIELD, exactly the routes its own doc comment names: "Field
   // reports, safety, punch lists, time, materials, equipment". FIELD,

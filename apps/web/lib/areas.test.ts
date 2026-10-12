@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { NAV_FOOTER, NAV_ITEMS } from "@/components/navItems";
+import { NAV_FOOTER, NAV_ITEMS, navGroupsFor } from "@/components/navItems";
 import { AREAS, NOT_IN_AN_AREA, areaBySlug, areasFor, toolRoute } from "./areas";
 import { JOB_FUNCTIONS, canReach, type Principal } from "./permissions";
 import { toolActions } from "@/components/areas/AreaParts";
@@ -74,6 +74,23 @@ describe("areas", () => {
     expect(areaBySlug("money")!.tools.every((t) => !canReach(field, toolRoute(t)))).toBe(true);
     expect(areasFor(field).map((a) => a.slug)).not.toContain("money");
     expect(areasFor({ role: "OWNER", jobFunction: null }).map((a) => a.slug)).toEqual(AREAS.map((a) => a.slug));
+  });
+
+  // Cyrus's call 2026-10-11: company-wide hours are office only. The nav,
+  // the area's tools and its status line (loadToolStatuses filters on
+  // canReach) all follow from ROUTE_CAPABILITY, so pin the three ends.
+  it("keeps /hours from a foreman and gives it to the office", () => {
+    const field: Principal = { role: "MEMBER", jobFunction: "FIELD" };
+    const hoursShown = (p: Principal) => areasFor(p).flatMap((a) => a.tools.map(toolRoute)).includes("/hours");
+    expect(canReach(field, "/hours")).toBe(false);
+    expect(hoursShown(field)).toBe(false);
+    expect(navGroupsFor(field).flatMap((g) => g.items.map((i) => i.href))).not.toContain("/hours");
+    for (const office of [{ role: "OWNER", jobFunction: null }, { role: "MEMBER", jobFunction: "PAYROLL_COMPLIANCE" }]) {
+      expect(hoursShown(office)).toBe(true);
+    }
+    // The job crew tab's "Every job's hours →" link is shown only to who can open it.
+    const crewTab = fs.readFileSync(path.join(__dirname, "../app/(app)/jobs/[id]/(tabs)/crew/page.tsx"), "utf8");
+    expect(crewTab).toMatch(/canReach\(principal, "\/hours"\) && \(\s*<Link href="\/hours"/);
   });
 
   // A tool card's button is never cut short: "Open Closeout & …" at 1555px

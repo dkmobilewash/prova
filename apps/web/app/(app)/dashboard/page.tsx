@@ -491,6 +491,7 @@ export default async function TodayPage() {
                       retainage: today.retainageHeld,
                       overdue: today.overdueTotal,
                       overdueCount: today.overdue.length,
+                      bill,
                       outstanding: today.receivables.reduce((sum, r) => sum + r.outstanding, 0),
                       overdueHref,
                       retainageHref,
@@ -533,7 +534,7 @@ export default async function TodayPage() {
                 <Card>
                   <h3 className="text-sm font-semibold text-ink">Accounts receivable</h3>
                   <p className="mb-2 text-xs text-ink-body">
-                    Outstanding invoices, longest overdue first. Open one for the detail.
+                    Outstanding {bill.lowerMany}, longest overdue first. Open one for the detail.
                   </p>
                   <ReceivablesList />
                 </Card>
@@ -542,7 +543,7 @@ export default async function TodayPage() {
                   <h3 className="text-sm font-semibold text-ink">How your GCs pay</h3>
                   {today.gcReliability.length === 0 ? (
                     <p className="mt-2 text-sm text-ink-body">
-                      No invoices raised yet, so there is nothing to judge.{" "}
+                      No {bill.lowerMany} raised yet, so there is nothing to judge.{" "}
                       <Link href="/jobs" className="text-link hover:underline">
                         Open a job
                       </Link>{" "}

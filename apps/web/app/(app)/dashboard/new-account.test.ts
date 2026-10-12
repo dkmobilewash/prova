@@ -304,7 +304,7 @@ describe("/dashboard on a company with jobs", () => {
       "$9,500<", // collected this month
       "$7,430<", // retainage held
       "$18,250<", // overdue
-      "Overdue · 2 invoices",
+      "Overdue · 2 pay apps", // billingNoun: filesMonthlyPayApps unanswered reads "pay app"
       "Luis Ortega, Ana Ruiz", // crews today, from the schedule
       "2 scheduled",
       "Pays in 41 days on average",
