@@ -64,6 +64,14 @@ export const PUBLIC_ROUTES: readonly PublicRoute[] = [
     pattern: "/pilot",
     mustShow: "Your whole job, in one place.",
   },
+  {
+    path: "/lien-waiver",
+    label: "lien waiver landing page",
+    pattern: "/lien-waiver",
+    // The hero headline, not "lien waiver" — that is in the <title> and
+    // the eyebrow, and would pass on a page whose body never rendered.
+    mustShow: "Make your lien waiver",
+  },
   // A section heading from the body of each, not the title in the header —
   // the shared PublicDocument chrome links to both pages by name from every
   // page, so "Privacy" and "Terms" are on screen whether or not the document
