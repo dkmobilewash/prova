@@ -129,7 +129,8 @@ describe("the home area boxes", () => {
     expect(box("Paperwork").getAttribute("aria-expanded")).toBe("true");
     const panel = document.getElementById(box("Paperwork").getAttribute("aria-controls")!)!;
     const hrefs = Array.from(panel.querySelectorAll("a")).map((a) => a.getAttribute("href"));
-    expect(hrefs).toEqual(["/rfis", "/submittals", "/drawings", "/closeout", "/intake", "/messages", "/alerts", "/areas/paperwork"]);
+    // "Open Paperwork" leads, in the panel's head (it was a footer row).
+    expect(hrefs).toEqual(["/areas/paperwork", "/rfis", "/submittals", "/drawings", "/closeout", "/intake", "/messages", "/alerts"]);
     expect(panel.textContent).toContain("Open Paperwork →");
     expect(panel.textContent).toContain("2 RFIs waiting");
 
@@ -138,6 +139,18 @@ describe("the home area boxes", () => {
     expect(box("Paperwork").getAttribute("aria-expanded")).toBe("false");
     expect(box("Money").getAttribute("aria-expanded")).toBe("true");
     expect(container.querySelectorAll("[role='region']")).toHaveLength(1);
+  });
+
+  it("puts Log hours first in Crew & field, going where the home's Log hours shortcut goes", () => {
+    act(() => root.render(<AreaBoxes areas={areaViews(areasFor(owner), {})} hours={{ label: "Log hours", href: "/jobs/job-1/crew", sub: "Oak Ave" }} />));
+    act(() => box("Crew & field").click());
+    const panel = document.getElementById(box("Crew & field").getAttribute("aria-controls")!)!;
+    const first = panel.querySelector("ul a")!;
+    expect(first.getAttribute("href")).toBe("/jobs/job-1/crew");
+    expect(first.textContent).toContain("Log hours");
+    // Only Crew & field carries it.
+    act(() => box("Paperwork").click());
+    expect(document.getElementById(box("Paperwork").getAttribute("aria-controls")!)!.textContent).not.toContain("Log hours");
   });
 
   it("closes on Escape, giving focus back to the box, and on a click outside", () => {

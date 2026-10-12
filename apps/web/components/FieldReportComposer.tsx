@@ -46,15 +46,18 @@ export type JobChoice = JobOption;
 export function FieldReportComposer({
   jobs,
   defaultJobId,
+  startOpen = false,
 }: {
   jobs: JobChoice[];
   defaultJobId?: string;
+  /** Open on arrival — the page was reached by a create shortcut (`?new=1`). */
+  startOpen?: boolean;
 }) {
   const initialJobId = defaultFieldReportJobId(jobs, defaultJobId);
   /** No job could be picked for him, so the select carries a placeholder and
    * the form refuses to submit until he says which. */
   const mustChoose = initialJobId === "";
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(startOpen);
   const [jobId, setJobId] = useState(initialJobId);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);

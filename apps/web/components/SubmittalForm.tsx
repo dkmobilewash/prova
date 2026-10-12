@@ -15,8 +15,8 @@ import { SubmitButton } from "@/components/SubmitButton";
  * hand-rolled `useFormDraft` used, so a draft saved before this change still
  * comes back.
  */
-export function SubmittalForm({ jobs, defaultJobId }: { jobs: JobOption[]; defaultJobId?: string }) {
-  const [isOpen, setIsOpen] = useState(false);
+export function SubmittalForm({ jobs, defaultJobId, startOpen = false }: { jobs: JobOption[]; defaultJobId?: string; startOpen?: boolean }) {
+  const [isOpen, setIsOpen] = useState(startOpen);
 
   if (jobs.length === 0) {
     return (

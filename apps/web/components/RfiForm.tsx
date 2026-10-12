@@ -12,6 +12,7 @@ export function RfiForm({
   jobs,
   defaultJobId,
   draft,
+  startOpen = false,
 }: {
   jobs: JobOption[];
   defaultJobId?: string;
@@ -19,8 +20,10 @@ export function RfiForm({
    * tells the card it saved. The sent date is NOT part of it — a draft
    * proposed by the assistant has not been sent to anybody either. */
   draft?: RfiDraft;
+  /** Open on arrival — the page was reached by a create shortcut (`?new=1`). */
+  startOpen?: boolean;
 }) {
-  const [isOpen, setIsOpen] = useState(draft !== undefined);
+  const [isOpen, setIsOpen] = useState(draft !== undefined || startOpen);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const formDraft = useFormDraft("rfi:create");

@@ -104,7 +104,7 @@ const ASIDE_LINK = "inline-flex min-h-11 items-center text-[13px] text-ink-muted
  * neither is still named. */
 export function Sources({ sources }: { sources: FindingSource[] }) {
   if (sources.length === 0) return null;
-  const chip = "inline-flex max-w-full items-center rounded-lg border border-line-card px-2 py-0.5 text-[12.5px] text-ink-body";
+  const chip = "inline-flex max-w-full items-center rounded-lg border border-line-card px-2 py-0.5 text-sm text-ink-body";
   return (
     <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Sources">
       {sources.map((source, i) => (
@@ -212,7 +212,7 @@ export function Recommendations({
             <li key={rec.id} className="rounded-2xl border border-line-card bg-surface px-3.5 py-2.5">
               <p className="break-words text-[14.5px] font-semibold leading-snug text-ink">{rec.title}</p>
               <p className="mt-1 break-words text-[13px] leading-snug text-ink-body">
-                {rec.reason} <span className="whitespace-nowrap text-[12px] text-ink-muted">· {CONFIDENCE[rec.confidence] ?? rec.confidence}</span>
+                {rec.reason} <span className="whitespace-nowrap text-sm text-ink-muted">· {CONFIDENCE[rec.confidence] ?? rec.confidence}</span>
               </p>
               <Sources sources={rec.sources} />
               <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -303,7 +303,7 @@ export function Watching({
           ) : (
             <p className="text-sm text-ink-body">Nothing due this week.</p>
           )}
-          <p className="mt-1 text-[12.5px] text-ink-muted">
+          <p className="mt-1 text-sm text-ink-muted">
             {summary.unreadAddenda > 0 && (
               <span className="text-ink-body">
                 {summary.unreadAddenda} unread {summary.unreadAddenda === 1 ? "addendum" : "addenda"} ·{" "}

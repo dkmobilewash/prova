@@ -13,11 +13,14 @@ import { Spinner } from "@/components/Spinner";
 export function BackchargeForm({
   jobs,
   defaultJobId,
+  startOpen = false,
 }: {
   jobs: JobOption[];
   defaultJobId?: string;
+  /** Open on arrival — the page was reached by a create shortcut (`?new=1`). */
+  startOpen?: boolean;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(startOpen);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);

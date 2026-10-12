@@ -3,6 +3,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { AreaView } from "@/lib/areas";
+import type { Shortcut } from "@/components/home/HomeParts";
+import { SearchChip } from "@/components/home/SearchChip";
 import { AreaIcon, StatusChip, StatusLine, ToolIcon, toolActions } from "./AreaParts";
 
 /**
@@ -52,7 +54,18 @@ export function placePanel(
   return { left, maxHeight };
 }
 
-export function AreaBoxes({ areas }: { areas: AreaView[] }) {
+/** One row of a dropdown's tool grid. Dense on purpose: 2 columns of 60px
+ * rows, so seven or eight tools are four rows and the whole panel fits under
+ * its box in a 1440x706 window (it measured an inner scroll at one column). */
+const ROW = "flex items-center gap-3.5 rounded-xl px-4 py-2 text-left hover:bg-rail-hover focus-visible:bg-rail-hover focus-visible:outline-none";
+
+/**
+ * `hours` is the home's own "Log hours" shortcut — the crew's job today, or
+ * the palette's job picker — shown first in Crew & field. Hours have no page
+ * of their own (they are logged on a job's crew tab), so it cannot be an
+ * AREAS tool; it is null for anyone without MANAGE_FIELD.
+ */
+export function AreaBoxes({ areas, hours = null }: { areas: AreaView[]; hours?: Shortcut | null }) {
   const [open, setOpen] = useState<string | null>(null);
   const [place, setPlace] = useState<{ left: number; maxHeight: number } | null>(null);
   const holder = useRef<HTMLDivElement>(null);
@@ -152,16 +165,39 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
                   style={{ left: place?.left ?? 0, maxHeight: place?.maxHeight }}
                   className="absolute top-full z-40 mt-3 w-[min(640px,calc(100vw-32px))] overflow-y-auto overscroll-contain rounded-2xl border border-line-card bg-surface p-3 shadow-2xl"
                 >
-                  <div className="flex items-baseline justify-between px-4 pb-2 pt-1.5">
+                  {/* "Open <Area>" sits in the head, not under the list: a
+                      footer row cost 67px of a short window. */}
+                  <div className="flex items-center justify-between gap-3 px-4 pb-1">
                     <span className="text-sm font-semibold uppercase tracking-wider text-ink-body">{area.name}</span>
-                    <span className="text-sm text-ink-muted">
-                      {area.tools.length} {area.tools.length === 1 ? "tool" : "tools"}
+                    <span className="flex flex-wrap items-center justify-end gap-x-5">
+                      {/* The area's creates ("+ New job", "+ Log a bid"), the same ones its page offers. */}
+                      {area.tools.flatMap(toolActions).filter((action) => action.create).map((action) => (
+                        <Link key={action.href} href={action.href} className="inline-flex min-h-11 items-center font-semibold text-link hover:text-link-hover hover:underline">
+                          {action.label}
+                        </Link>
+                      ))}
+                      <Link href={area.href} className="inline-flex min-h-11 items-center font-semibold text-link hover:text-link-hover hover:underline">
+                        Open {area.name} &rarr;
+                      </Link>
                     </span>
                   </div>
-                  <ul>
+                  <ul className="grid gap-x-2 sm:grid-cols-2">
+                    {area.slug === "crew-field" && hours && (
+                      <li>
+                        {"href" in hours ? (
+                          <Link href={hours.href} className={ROW}>
+                            <HoursRow sub={hours.sub} />
+                          </Link>
+                        ) : (
+                          <SearchChip query={hours.query} className={`w-full ${ROW}`}>
+                            <HoursRow sub={hours.sub} />
+                          </SearchChip>
+                        )}
+                      </li>
+                    )}
                     {area.tools.map((tool) => (
                       <li key={tool.href}>
-                        <Link href={tool.href} className="flex items-center gap-3.5 rounded-xl px-4 py-3 hover:bg-rail-hover focus-visible:bg-rail-hover focus-visible:outline-none">
+                        <Link href={tool.href} className={ROW}>
                           <ToolIcon route={tool.route} />
                           <span className="min-w-0 flex-1">
                             <span className="block font-semibold text-ink">{tool.name}</span>
@@ -172,17 +208,6 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
                       </li>
                     ))}
                   </ul>
-                  <div className="mt-1 flex flex-wrap gap-x-6 border-t border-line-row px-4 pb-1.5 pt-3">
-                    {/* The area's creates ("+ New job", "+ Log a bid"), the same ones its page offers. */}
-                    {area.tools.flatMap(toolActions).filter((action) => action.create).map((action) => (
-                      <Link key={action.href} href={action.href} className="inline-flex min-h-11 items-center font-semibold text-link hover:text-link-hover hover:underline">
-                        {action.label}
-                      </Link>
-                    ))}
-                    <Link href={area.href} className="inline-flex min-h-11 items-center font-semibold text-link hover:text-link-hover hover:underline">
-                      Open {area.name} &rarr;
-                    </Link>
-                  </div>
                 </div>
               )}
             </div>
@@ -207,6 +232,24 @@ export function AreaBoxes({ areas }: { areas: AreaView[] }) {
           </Link>
         ))}
       </nav>
+    </>
+  );
+}
+
+/** The Hours row: a clock, and where it goes ("Pick the job" or the job). */
+function HoursRow({ sub }: { sub?: string }) {
+  return (
+    <>
+      <span aria-hidden className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-rail-hover text-ink">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-5 w-5">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-semibold text-ink">Log hours</span>
+        <span className="block truncate text-sm text-ink-muted">{sub ?? "The crew's time, on its job"}</span>
+      </span>
     </>
   );
 }
