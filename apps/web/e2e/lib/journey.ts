@@ -81,7 +81,21 @@ export async function openJobTab(page: Page, label: string): Promise<void> {
   await expect(jobStageNav(page), "the job's stage boxes should be on screen").toBeVisible();
   const tab = jobTab(page, label);
   if ((await tab.count()) === 0) {
+    // The box is a Link to the stage's first page; opening the stage IS a
+    // soft navigation. On failure say whether the router fetched the new
+    // route at all, and where the URL ended up — #748's runs reported only
+    // that the row never appeared.
+    const rsc = nextRscAnswer(page);
+    const before = page.url();
+    const clickedAt = Date.now();
     await jobStageBox(page, stage).getByRole("link").click();
+    await expect(tab, `the ${stage} stage should list a "${label}" tab`)
+      .toBeVisible()
+      .catch(async (error: Error) => {
+        throw new Error(
+          `opening the ${stage} stage for "${label}": ${await rsc}; URL ${before} -> ${page.url()}; ${await historyLog(page, clickedAt)}. ${firstLine(error)}`,
+        );
+      });
   }
   await expect(tab, `the ${stage} stage should list a "${label}" tab`).toBeVisible();
   await tab.click();
@@ -307,6 +321,10 @@ export async function recordExecutedSubcontract(page: Page, monitor: HealthMonit
   await form.locator('input[name="executedSignedDate"]').fill("2026-09-15");
   await form.locator('input[name="note"]').fill("ZZ-E2E fully executed copy from the GC");
   const answer = nextActionAnswer(page);
+  // The component calls router.refresh() once the action says ok, which is
+  // what puts the executed state on screen; that refresh is the first RSC
+  // GET after the click (the upload token and the action are POSTs).
+  const refresh = nextRscAnswer(page);
   const clickedAt = Date.now();
   await form.getByRole("button", { name: "Record executed subcontract" }).click();
   const said = await answer;
@@ -315,7 +333,11 @@ export async function recordExecutedSubcontract(page: Page, monitor: HealthMonit
   await expect(page.getByText(/Executed — GC signed/).first())
     .toBeVisible()
     .catch(async (error: Error) => {
-      throw new Error(`"Record executed subcontract": ${said}, and the executed state never showed; ${await historyLog(page, clickedAt)}. ${firstLine(error)}`);
+      const formText = (await form.innerText().catch(() => "(form gone)")).replace(/\s+/g, " ").slice(0, 300);
+      throw new Error(
+        `"Record executed subcontract": ${said}; ${await refresh}; the executed state never showed; the form reads "${formText}"; ` +
+          `${await historyLog(page, clickedAt)}. ${firstLine(error)}`,
+      );
     });
   await expectHealthy(page, "job overview after recording the executed subcontract", { monitor });
 }
@@ -498,6 +520,23 @@ export function nextActionAnswer(page: Page, timeout = 20_000): Promise<string> 
     },
     (error: Error) => `${NEVER_ANSWERED} within ${timeout}ms (${firstLine(error)})`,
   );
+}
+
+/**
+ * The next RSC fetch the router makes — a soft navigation or a
+ * `router.refresh()` is a GET carrying the `RSC: 1` header — as one
+ * sentence: which path, what status, what content type; or that none was
+ * made within `timeout`. Register it BEFORE the click that should cause it.
+ */
+export function nextRscAnswer(page: Page, timeout = 15_000): Promise<string> {
+  return page
+    .waitForResponse((response) => response.request().method() === "GET" && response.request().headers()["rsc"] === "1", { timeout })
+    .then(
+      (response) =>
+        `the router's RSC fetch of ${new URL(response.url()).pathname} answered ${response.status()} ` +
+        `(${response.headers()["content-type"] ?? "no content-type"})`,
+      (error: Error) => `the router made no RSC fetch within ${timeout}ms (${firstLine(error)})`,
+    );
 }
 
 export async function settleAction(page: Page, act: () => Promise<unknown>): Promise<void> {
