@@ -1,3 +1,5 @@
+import { addDays, dayLabel, isWeekend, weekStart } from "@/components/fieldReportWeeks";
+
 /**
  * The crew schedule's derived state — the part with no database in it.
  *
@@ -126,4 +128,95 @@ export function plannedWithNoHours<T extends PlannedDay>(planned: readonly T[], 
  */
 export function isPastDay(workDate: Date, today: string): boolean {
   return dayKey(workDate) < today;
+}
+
+/* ------------------------------------------------- the week board + bulk add */
+
+/**
+ * The Monday of the week `/schedule?week=` asks for, or of the week holding
+ * `today` when it asks for nothing usable. Any day of a week names that week,
+ * so a link with a Wednesday in it still opens on Monday.
+ *
+ * `today` is the VIEWER'S day (viewerToday), not the server's: on a Sunday
+ * evening in Los Angeles the UTC date is already Monday, which is how a day
+ * planned for today went missing from the old two-week list (ux medium-B #12).
+ */
+export function resolveWeekStart(raw: string | undefined | null, today: string): string {
+  try {
+    return weekStart(dayKey(workDateFromString(raw)));
+  } catch {
+    return weekStart(today);
+  }
+}
+
+/** The longest range one bulk add will write. Two months is a long phase; a
+ * year is a typo in the end date, and it would be 260 rows per person. */
+export const MAX_RANGE_DAYS = 62;
+
+/**
+ * Every day a bulk add covers, as YYYY-MM-DD.
+ *
+ * `skipWeekends` only thins a RANGE. One day picked on its own is a day
+ * somebody chose, Saturday or not — weekend work is normal in this trade.
+ */
+export function scheduleDays(start: string, end: string, skipWeekends: boolean): string[] {
+  if (end < start) throw new CrewScheduleInputError("The end date is before the start date");
+  const days: string[] = [];
+  for (let day = start; day <= end; day = addDays(day, 1)) {
+    if (days.length >= MAX_RANGE_DAYS) {
+      throw new CrewScheduleInputError(`Pick a range of ${MAX_RANGE_DAYS} days or less`);
+    }
+    days.push(day);
+  }
+  return days.length > 1 && skipWeekends ? days.filter((day) => !isWeekend(day)) : days;
+}
+
+/** Jobs the schedule form offers. A COMPLETE job has nobody left to send, and
+ * the old picker defaulted to one (ux medium-B #10). An unknown status stays,
+ * so a status the schema gains later is not silently unschedulable. */
+export function schedulableJobs<T extends { status: string | null }>(jobs: readonly T[]): T[] {
+  return jobs.filter((job) => job.status !== "COMPLETE");
+}
+
+/**
+ * Enter in a form field submits the form — including from a `<select>` a
+ * person has just picked from, which saved a whole default row twice in one
+ * test session (ux medium-B #8). Only the submit button submits; a textarea
+ * keeps its newline.
+ */
+export function blocksImplicitSubmit(key: string, tagName: string): boolean {
+  return key === "Enter" && tagName !== "BUTTON" && tagName !== "TEXTAREA";
+}
+
+/**
+ * The sentence a save hands back: who, where, when, how many rows were new,
+ * and — a warning, not a refusal — anyone now on two jobs the same day.
+ * Double-booking is allowed (half a day on each is real); not being told is
+ * the defect (ux medium-B #9).
+ */
+export function scheduleSavedMessage(input: {
+  workers: string[];
+  jobName: string;
+  days: string[];
+  created: number;
+  clashes: { worker: string; jobName: string; day: string }[];
+}): string {
+  const { workers, jobName, days, created, clashes } = input;
+  const who = workers.length === 1 ? workers[0] : `${workers.length} people`;
+  const when =
+    days.length === 1 ? dayLabel(days[0]) : `${dayLabel(days[0])} – ${dayLabel(days[days.length - 1])}`;
+  const total = workers.length * days.length;
+  const existing = total - created;
+
+  let message =
+    created === 0
+      ? `${who} already on ${jobName}, ${when} — nothing new to save.`
+      : `${who} on ${jobName}, ${when} — saved` +
+        (total > 1 ? ` (${created} added${existing > 0 ? `, ${existing} already there` : ""})` : "") +
+        ".";
+
+  const shown = clashes.slice(0, 3).map((c) => `${c.worker} is also on ${c.jobName} ${dayLabel(c.day)}`);
+  if (clashes.length > 3) shown.push(`${clashes.length - 3} more`);
+  if (shown.length > 0) message += ` Double-booked: ${shown.join("; ")}.`;
+  return message;
 }

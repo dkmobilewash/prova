@@ -111,6 +111,14 @@ const BARE_NAME_EXCEPTIONS: Record<string, { count: number; why: string }> = {
       "its own job, nothing is filed from it, and the GC, trade and stage " +
       "strip on the same card tell two similarly named jobs apart.",
   },
+  "components/CrewWeekGrid.tsx": {
+    count: 1,
+    why:
+      "The week board's row headers. Read-only: each links to its own job and " +
+      "nothing is filed from the grid — the add form beside it uses " +
+      "jobPickerLabel. A GC suffix on every row would eat the column the " +
+      "names of the people are in.",
+  },
 };
 
 /** Copied from rowActionsCensus.test.ts, and for the same reason it exists

@@ -193,7 +193,6 @@ const UNCONVERTED_PAGES = [
   "apps/web/app/(app)/safety/page.tsx",
   "apps/web/app/(app)/sales/[id]/page.tsx",
   "apps/web/app/(app)/sales/page.tsx",
-  "apps/web/app/(app)/schedule/page.tsx",
   "apps/web/app/(app)/settings/assistant/page.tsx",
   "apps/web/app/(app)/settings/export/page.tsx",
   "apps/web/app/(app)/settings/import/page.tsx",
@@ -322,8 +321,9 @@ describe("page width census", () => {
       // as converted for that purpose. Then #452 moved the dashboard (now
       // `working`) and the job-tabs layout (`working` for the header and
       // rail, each tab choosing its own body width through PageColumn) to
-      // the shell. All four removals together: 48.
-    ).toBe(48);
+      // the shell. All four removals together: 48. Then /schedule went to
+      // `working` for its week board: 47.
+    ).toBe(47);
     expect(new Set(UNCONVERTED_PAGES).size).toBe(UNCONVERTED_PAGES.length);
   });
 
