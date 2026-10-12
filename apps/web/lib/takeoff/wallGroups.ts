@@ -276,6 +276,46 @@ export function verdictFor(group: WallGroup): GroupVerdict {
  * the drawing and a name inferred from a thickness are different kinds of claim
  * and an estimator pricing a bid is entitled to know which they are looking at.
  */
+/**
+ * A type's code, carrying its own recorded thickness where that differs from
+ * what the walls measured.
+ *
+ * ── THE SENTENCES USED TO SAY THE TYPE WAS THE GROUP'S THICKNESS ──
+ *
+ * Both read `… wall types at ${inchLabel(group.inches)} (A1, A2, C1)`, which
+ * states the group's MEASURED number and attributes it to the TYPES. They are
+ * only ever matched within `THICKNESS_SLACK_IN`, so that claim can be wrong by
+ * up to a quarter inch — and on School-01's A-101 it was wrong twice on one
+ * screen, caught by somebody reading the panel against the schedule:
+ *
+ *   "B1 is the only wall type you have at 7-3/8""   — B1 is recorded at 7-1/4"
+ *   "3 wall types at 4-7/8" (A1, A2, C1)"           — C1 is recorded at 4-3/4"
+ *
+ * Neither number was wrong on its own; the sentence joining them was. An
+ * estimator checking the panel against the partition schedule finds a
+ * contradiction the app invented, which is the fastest way to lose their trust
+ * in every other number on the screen.
+ *
+ * THE NULL BRANCH IS UNREACHABLE TODAY and is written down as such rather than
+ * trusted. Both sentences that call this take their candidates from
+ * `typesAtThickness`, which drops a type with no thickness — so nothing can
+ * arrive here with one, and a mutation deleting that branch stays GREEN.
+ * It is kept because `MatchableWallType.thicknessIn` IS nullable and removing
+ * the branch means asserting non-null, which is a worse lie than a line that
+ * never runs. If a name-filtered candidate list ever reaches these sentences,
+ * this is what stops "A1 at NaN" reaching a bid.
+ *
+ * THE CONDITION IS WHAT THE READER WOULD SEE, not a tolerance of its own: the
+ * thickness is spelled out exactly when `inchLabel` would render it
+ * differently. So the sentence never says "B1, recorded at 7-3/8"" beside
+ * "they measure 7-3/8"", and never hides a difference the reader could check.
+ */
+function named(type: MatchableWallType, groupInches: number): string {
+  if (type.thicknessIn === null) return type.code;
+  const mine = inchLabel(type.thicknessIn);
+  return mine === inchLabel(groupInches) ? type.code : `${type.code} at ${mine}`;
+}
+
 export function groupSentence(group: WallGroup, verdict: GroupVerdict): string | null {
   switch (verdict.state) {
     case "NAMED":
@@ -304,13 +344,15 @@ export function groupSentence(group: WallGroup, verdict: GroupVerdict): string |
       );
     case "ONLY_ONE_THAT_THICK":
       return (
-        `Nothing on the drawing names these. ${verdict.type.code} is the only wall type you have at ` +
-        `${inchLabel(group.inches)}, so that is what they would be priced as — check one against the drawing first.`
+        `Nothing on the drawing names these. They measure ${inchLabel(group.inches)}, and the only ` +
+        `wall type you have near that is ${named(verdict.type, group.inches)} — so that is what they ` +
+        `would be priced as — check one against the drawing first.`
       );
     case "ASK":
       return (
-        `Nothing on the drawing names these, and you have ${verdict.types.length} wall types at ` +
-        `${inchLabel(group.inches)} (${verdict.types.map((type) => type.code).join(", ")}). ` +
+        `Nothing on the drawing names these. They measure ${inchLabel(group.inches)}, and you have ` +
+        `${verdict.types.length} wall types near that: ` +
+        `${verdict.types.map((type) => named(type, group.inches)).join(", ")}. ` +
         `They differ in ways a floor plan cannot show, so pick one.`
       );
     case "TAG_DISAGREES":
