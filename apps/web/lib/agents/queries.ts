@@ -7,11 +7,13 @@ import { agentLabel, type FindingSource } from "./core";
  * lib/actions/agentFindings.ts and agentSettings.ts.
  */
 
-/** The watcher's cron, exactly as vercel.json has it — `queries.test.ts`
- *  fails if the two disagree, so the label on /ai cannot drift from the
- *  schedule that actually runs. */
-export const WATCHER_CRON_PATH = "/api/agents/run";
-export const WATCHER_CRON_SCHEDULE = "23 12 * * *";
+/** The cron entry that runs the watcher, exactly as vercel.json has it —
+ *  `queries.test.ts` fails if the two disagree, so the label on /ai cannot
+ *  drift from the schedule that actually runs. Since 2026-10-12 that entry
+ *  is the daily DIGEST's: the watcher rides it (lib/agents/cron.ts) because
+ *  Hobby allows two cron jobs and both were taken. */
+export const WATCHER_CRON_PATH = "/api/notifications/digest";
+export const WATCHER_CRON_SCHEDULE = "0 13 * * *";
 
 /** "23 12 * * *" → "Daily at 12:23 UTC". Only the daily shape is ever
  *  scheduled here (Hobby crons run at most once a day). */

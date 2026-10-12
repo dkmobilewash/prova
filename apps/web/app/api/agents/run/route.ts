@@ -1,11 +1,18 @@
 import crypto from "node:crypto";
-import { prisma, type AgentKind } from "@prova/db";
-import "@/lib/agents/all";
-import { runAgent } from "@/lib/agents/run";
+import { isCronAgent, runScheduledAgent, scheduledRunClean } from "@/lib/agents/cron";
 
 /**
- * The scheduled agent run: the bid watcher, daily, for every company that
- * has it on (or has never saved agent settings — absent means default ON).
+ * The agent run a person (or a one-off `curl`) can start with the
+ * CRON_SECRET: the bid watcher by default, `?agent=RECOMMENDATIONS` the
+ * other one. Nothing else: BID_RESEARCH and ESTIMATE_CHECK run on an event
+ * or a person's press, and a URL must not be able to start model runs
+ * across every company.
+ *
+ * NOT SCHEDULED ITSELF any more — see lib/agents/cron.ts: Vercel's Hobby
+ * plan allows two cron jobs on `prova-web` and both were taken, so the daily
+ * digest (`/api/notifications/digest`) runs the watcher after its own work.
+ * This route stays for a manual run and as the thing a schedule could point
+ * at again on a plan with room.
  *
  * NOT protected by Clerk — see the note in middleware.ts. A scheduler has no
  * session. It authenticates the request itself with a timing-safe check of
@@ -15,30 +22,12 @@ import { runAgent } from "@/lib/agents/run";
  * for anyone who knows the URL.
  *
  * A GET with side effects because Vercel Cron issues GET only. It is safe
- * to repeat: every watcher finding carries a dedupeKey, so a second GET a
- * second later writes run rows and no repeated findings.
- *
- * `?agent=RECOMMENDATIONS` runs that agent the same way. Nothing else:
- * BID_RESEARCH and ESTIMATE_CHECK run on an event or a person's press, and
- * a URL must not be able to start model runs across every company.
- *
- * Every per-company gate (AI switch, agent switch, spend cap) is runAgent's,
- * so a paused or skipped company still leaves a run row saying why.
+ * to repeat: every watcher finding carries a dedupeKey.
  */
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-/** Below maxDuration so the run stops itself and reports, rather than being
- *  killed mid-company with no body. Same figure as the digest's. */
-const RUN_BUDGET_MS = 45_000;
-
-const CRON_AGENTS = {
-  BID_WATCHER: "watcherEnabled",
-  RECOMMENDATIONS: "recommendationsEnabled",
-} as const satisfies Partial<Record<AgentKind, string>>;
-type CronAgent = keyof typeof CRON_AGENTS;
 
 function authorized(request: Request, secret: string): boolean {
   const offered = Buffer.from(request.headers.get("authorization") ?? "");
@@ -59,44 +48,13 @@ export async function GET(request: Request) {
   if (!authorized(request, secret)) return new Response("Unauthorized", { status: 401 });
 
   const asked = new URL(request.url).searchParams.get("agent") ?? "BID_WATCHER";
-  if (!Object.hasOwn(CRON_AGENTS, asked)) {
+  if (!isCronAgent(asked)) {
     return json({ ok: false, error: `${asked} does not run on a schedule` }, 400);
   }
-  const agent = asked as CronAgent;
-  const toggle = CRON_AGENTS[agent];
 
-  const companies = await prisma.company.findMany({
-    where: { OR: [{ agentSettings: null }, { agentSettings: { [toggle]: true } }] },
-    select: { id: true },
-    orderBy: { id: "asc" },
-  });
-
-  const started = Date.now();
-  const counts = { companies: companies.length, ran: 0, paused: 0, skipped: 0, failed: 0, notAttempted: 0 };
-  for (const { id } of companies) {
-    if (Date.now() - started > RUN_BUDGET_MS) {
-      counts.notAttempted++;
-      continue;
-    }
-    try {
-      const outcome = await runAgent({ companyId: id, agent, trigger: "cron" });
-      if (outcome.ran) counts.ran++;
-      else if (outcome.status === "PAUSED_CAP") counts.paused++;
-      else if (outcome.status === "SKIPPED") counts.skipped++;
-      else counts.failed++;
-    } catch (error) {
-      // runAgent catches the runner; this is the gate or the run row itself
-      // failing. One company's failure must not stop the rest.
-      console.error("[agents] cron run threw", { companyId: id, agent }, error);
-      counts.failed++;
-    }
-  }
-
-  console.log(
-    `[agents] cron ${agent} companies=${counts.companies} ran=${counts.ran} paused=${counts.paused} skipped=${counts.skipped} failed=${counts.failed} not-attempted=${counts.notAttempted}`,
-  );
+  const counts = await runScheduledAgent({ agent: asked });
   // Same rule as the digest: the status answers "did this run do its whole
   // job". A run that failed a company or ran out of time is not a 200.
-  const clean = counts.failed === 0 && counts.notAttempted === 0;
-  return json({ ok: clean, agent, ...counts }, clean ? 200 : 500);
+  const clean = scheduledRunClean(counts);
+  return json({ ok: clean, agent: asked, ...counts }, clean ? 200 : 500);
 }

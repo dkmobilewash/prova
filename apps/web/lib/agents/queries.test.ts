@@ -66,8 +66,8 @@ describe("the schedule", () => {
   });
 
   it("reads as words", () => {
-    expect(scheduleLabel(WATCHER_CRON_SCHEDULE)).toBe("Daily at 12:23 UTC");
-    expect(WATCHER_SCHEDULE_LABEL).toBe("Daily at 12:23 UTC");
+    expect(scheduleLabel(WATCHER_CRON_SCHEDULE)).toBe("Daily at 13:00 UTC");
+    expect(WATCHER_SCHEDULE_LABEL).toBe("Daily at 13:00 UTC");
     expect(scheduleLabel("5 4 * * 1")).toBe("On schedule 5 4 * * 1 (UTC)");
   });
 });
@@ -97,7 +97,7 @@ describe("watchingSummary", () => {
       dueThisWeek: [{ id: "b1", projectName: "Maple School", dueDate: new Date("2026-10-14T00:00:00Z"), gcName: "Northside" }],
       unreadAddenda: 2,
       lastRunAt: new Date("2026-10-12T12:23:04Z"),
-      nextRunLabel: "Daily at 12:23 UTC",
+      nextRunLabel: "Daily at 13:00 UTC",
     });
     expect(db.bidInvitation.findMany.mock.calls[0]![0].where.dueDate).toEqual({
       gte: new Date("2026-10-12T00:00:00Z"),

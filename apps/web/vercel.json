@@ -9,10 +9,6 @@
     {
       "path": "/api/plan-ingest/run",
       "schedule": "17 4 * * *"
-    },
-    {
-      "path": "/api/agents/run",
-      "schedule": "23 12 * * *"
     }
   ]
 }
