@@ -25,7 +25,8 @@ vi.mock("@/lib/agents/all", () => ({}));
 vi.mock("@/lib/agents/run", () => ({ runAgent: vi.fn() }));
 vi.mock("@prova/db", () => ({ prisma: {} }));
 
-import { GET, INVOCATION_BUDGET_MS } from "./route";
+import { DIGEST_INVOCATION_BUDGET_MS } from "@/lib/agents/cron";
+import { GET } from "./route";
 
 const cleanReport = {
   considered: 1,
@@ -60,7 +61,7 @@ describe("GET /api/notifications/digest runs the watcher too", () => {
     const call = runScheduledAgent.mock.calls[0]![0] as { agent: string; budgetMs: number };
     expect(call.agent).toBe("BID_WATCHER");
     expect(call.budgetMs).toBeGreaterThan(0);
-    expect(call.budgetMs).toBeLessThanOrEqual(INVOCATION_BUDGET_MS);
+    expect(call.budgetMs).toBeLessThanOrEqual(DIGEST_INVOCATION_BUDGET_MS);
     expect(runScheduledAgent.mock.invocationCallOrder[0]!).toBeGreaterThan(runDigests.mock.invocationCallOrder[0]!);
     expect(await res.json()).toMatchObject({ ok: true, agents: cleanAgents });
   });

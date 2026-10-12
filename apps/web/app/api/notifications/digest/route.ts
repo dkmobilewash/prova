@@ -8,7 +8,7 @@ import {
 } from "@/lib/notification-run";
 import { loadDigestRecipients } from "@/lib/notification-run-query";
 import { serverToday } from "@/lib/serverToday";
-import { runScheduledAgent, scheduledRunClean, type ScheduledRunCounts } from "@/lib/agents/cron";
+import { DIGEST_INVOCATION_BUDGET_MS, runScheduledAgent, scheduledRunClean, type ScheduledRunCounts } from "@/lib/agents/cron";
 
 /**
  * The thing that runs when nobody is looking.
@@ -60,12 +60,6 @@ export const dynamic = "force-dynamic";
  * valid everywhere. The run's own budget sits below it — see
  * DEFAULT_RUN_BUDGET_MS for why stopping ourselves beats being stopped. */
 export const maxDuration = 60;
-
-/** The whole invocation's budget, digest AND watcher, below maxDuration
- *  for the same reason DEFAULT_RUN_BUDGET_MS sits below it: stopping
- *  ourselves beats being stopped. The digest keeps its own budget; the
- *  watcher gets what remains of this one. */
-export const INVOCATION_BUDGET_MS = 55_000;
 
 /**
  * The scheduler proving it is the scheduler.
@@ -136,7 +130,10 @@ export async function GET(request: Request) {
   // company as not attempted — which is the honest answer, and a 500 below.
   const agents: ScheduledRunCounts = await runScheduledAgent({
     agent: "BID_WATCHER",
-    budgetMs: Math.max(0, INVOCATION_BUDGET_MS - (Date.now() - invocationStarted)),
+    // DIGEST_INVOCATION_BUDGET_MS lives in lib/agents/cron.ts rather than
+    // here: a route file may export only Next's own fields, and `next build`
+    // (not typecheck) refuses any other export.
+    budgetMs: Math.max(0, DIGEST_INVOCATION_BUDGET_MS - (Date.now() - invocationStarted)),
   });
 
   // One line per run, in the deployment log, with no addresses in it.

@@ -48,6 +48,13 @@ export type ScheduledRunCounts = {
  *  digest's own. */
 export const AGENT_RUN_BUDGET_MS = 45_000;
 
+/** The digest invocation's whole budget, digest AND watcher, below that
+ *  route's 60s maxDuration for the same reason: stopping ourselves beats
+ *  being stopped. The digest keeps its own budget; the watcher gets what
+ *  remains of this one. Here rather than in the route file because a route
+ *  may export only Next's own fields. */
+export const DIGEST_INVOCATION_BUDGET_MS = 55_000;
+
 export async function runScheduledAgent(options: { agent: CronAgent; budgetMs?: number }): Promise<ScheduledRunCounts> {
   const { agent } = options;
   const budgetMs = options.budgetMs ?? AGENT_RUN_BUDGET_MS;
