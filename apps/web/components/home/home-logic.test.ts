@@ -37,7 +37,10 @@ describe("nextAction", () => {
       overdueRfi: { number: 12 },
       scheduledToday: 5,
     });
-    expect(action).toEqual({ label: "Chase invoice #4", href: "/jobs/j1/billing", primary: true });
+    expect(action).toEqual({ label: "Chase pay app #4", href: "/jobs/j1/billing", primary: true });
+    // A company that said it sends invoices, not pay apps, reads its own word.
+    const late = { ...base, overdueInvoice: { number: 4, daysOverdue: 3 }, billNoun: "invoice" };
+    expect(nextAction(late).label).toBe("Chase invoice #4");
   });
 
   it("never offers a billing action to someone without billing", () => {

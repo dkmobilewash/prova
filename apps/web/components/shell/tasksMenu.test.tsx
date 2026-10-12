@@ -26,6 +26,10 @@ vi.mock("next/image", () => ({ default: () => null }));
 vi.mock("@clerk/nextjs", () => ({ useClerk: () => ({ signOut: vi.fn(), openUserProfile: vi.fn() }) }));
 vi.mock("@/components/AskLauncher", () => ({ AskLauncher: () => null }));
 vi.mock("@/components/HelpButton", () => ({ HelpButton: () => null }));
+// Its own file; it imports the run-now Server Action.
+vi.mock("@/components/RunAgentButton", () => ({
+  RunAgentButton: ({ agent, label }: { agent: string; label?: string }) => <button data-agent={agent}>{label}</button>,
+}));
 
 const { TopBar } = await import("@/components/shell/TopBar");
 const { TASKS_REFRESH_MS } = await import("@/components/shell/TasksMenu");
@@ -46,6 +50,8 @@ const row = (id: string, over: Partial<TaskRow> = {}): TaskRow => ({
   startedAt: iso(60),
   finishedAt: iso(59),
   href: "/ai/activity",
+  kind: "BID_WATCHER",
+  bidInvitationId: null,
   ...over,
 });
 
@@ -123,7 +129,9 @@ describe("the Tasks item", () => {
     expect(text).toContain("Model call timed out after 45 seconds");
     expect(text).toContain("Paused: cap reached");
     const hrefs = [...panel()!.querySelectorAll("a")].map((a) => a.getAttribute("href"));
-    expect(hrefs).toEqual(["/ai/bids/b1", "/ai/bids/b2", "/ai/activity", "/ai/activity", "/ai", "/ai/activity"]);
+    expect(hrefs).toEqual(["/ai/bids/b1", "/ai/bids/b2", "/ai/activity", "/ai/activity", "/ai/activity#cap", "/ai", "/ai/activity"]);
+    // The failed run can be run again from right here (UX review F6).
+    expect(panel()!.querySelector('[data-agent="BID_WATCHER"]')?.textContent).toBe("Run again");
     // Focus moves into the list, like the avatar menu.
     expect(panel()!.contains(document.activeElement)).toBe(true);
   });
@@ -190,5 +198,13 @@ describe("the home page's Running now card", () => {
     expect(html).toContain("started 2 minutes ago");
     expect(html).toContain('data-run-status="FAILED"');
     expect(html).toContain('href="/ai"');
+  });
+
+  it("shows the whole failure reason, never cut to one line, and a way out of it", () => {
+    const html = renderToStaticMarkup(<RunningCard tasks={BUSY} now={NOW} />);
+    expect(html).toContain("Model call timed out after 45 seconds");
+    expect(html).not.toContain("truncate");
+    expect(html).toContain(">Run again<");
+    expect(html).toContain('href="/ai/activity#cap"');
   });
 });

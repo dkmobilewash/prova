@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 /** /jobs has no page of its own — the job list lives on the dashboard,
- * which is also where the nav's "Jobs & Estimates" points.
+ * which is also where the nav's "Jobs" points.
  *
  * It existed only as /jobs/[id] and /jobs/new, so typing the bare URL got
  * a raw Next.js 404 rather than anything belonging to this app. Nothing in

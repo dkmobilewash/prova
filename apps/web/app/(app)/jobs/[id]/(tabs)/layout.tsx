@@ -77,6 +77,7 @@ export default async function JobTabsLayout({
     approvedChangeOrders: facts.approvedChangeOrders,
     invoiceCount: facts.invoiceCount,
     latestPayApp: showsBilling ? facts.latestPayApp : null,
+    filesMonthlyPayApps: company.filesMonthlyPayApps,
     asOf,
   });
 

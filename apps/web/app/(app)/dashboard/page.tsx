@@ -33,6 +33,7 @@ import {
   type Shortcut,
 } from "@/components/home/HomeParts";
 import { greeting, hourIn, jobStage, nextAction, type ActionRights } from "@/components/home/home-logic";
+import { billingNoun } from "@/components/job/jobStages";
 import { gettingStartedChecklist } from "@/lib/getting-started";
 import { loadGettingStartedCounts } from "@/lib/getting-started-counts";
 import { GETTING_STARTED_HIDDEN_COOKIE, isGettingStartedHidden } from "@/lib/getting-started-cookie";
@@ -171,6 +172,7 @@ export default async function TodayPage({
   // narrowed function loses the money and keeps the work.
   const principal = { role: currentUser.role, jobFunction: currentUser.jobFunction };
   const showsBilling = can(principal, "MANAGE_BILLING");
+  const bill = billingNoun(company.filesMonthlyPayApps);
   const showsJobMoney = can(principal, "VIEW_JOB_COSTS");
   const rights: ActionRights = {
     billing: showsBilling,
@@ -266,7 +268,7 @@ export default async function TodayPage({
       needs.push({
         key: `inv-${inv.id}`,
         tone: "red",
-        text: `Invoice #${inv.number} to ${inv.gcName} — ${inv.jobName}`,
+        text: `${bill.one} #${inv.number} to ${inv.gcName} — ${inv.jobName}`,
         when: overdueText(inv.daysOverdue),
         whenTone: "danger",
         action: { label: "Chase", href: `/jobs/${inv.jobId}/billing` },
@@ -347,6 +349,7 @@ export default async function TodayPage({
         overdueRfi: rfi,
         scheduledToday: crewByJob.get(job.id) ?? 0,
         rights,
+        billNoun: bill.lower,
       });
       const value = jobValue(job);
       const billed = job.invoices.reduce((sum, inv) => sum + Number(inv.amount), 0);
@@ -388,7 +391,7 @@ export default async function TodayPage({
   const logHours = rights.field
     ? pickJob("Log hours", crewedToday.length > 0 ? crewedToday : inProgress, "crew", "log hours")
     : null;
-  const sendPayApp = showsBilling ? pickJob("Send pay app", inProgress, "billing", "pay app") : null;
+  const sendPayApp = showsBilling ? pickJob(`Send ${bill.lower}`, inProgress, "billing", "pay app") : null;
   const rfisReachable = canReach(principal, "/rfis");
   // The field creates (Concept G's phone tiles, restored 2026-10-11): each
   // lands on its form already open. With one job to choose it rides along;
@@ -702,7 +705,7 @@ export default async function TodayPage({
                     </button>
                   </form>
                   <Link href="/catalog" className="inline-flex min-h-11 items-center text-sm text-link hover:underline">
-                    Line item catalog
+                    Price book
                   </Link>
                   <Link href="/bids" className="inline-flex min-h-11 items-center text-sm text-link hover:underline">
                     Bid history

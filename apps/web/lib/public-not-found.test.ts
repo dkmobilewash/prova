@@ -40,7 +40,7 @@ describe("the public 404 renders at all", () => {
 describe("it offers a signed-out reader no way into the app", () => {
   it.each(PAGES)("%s renders no link of any kind", (route, page) => {
     const html = renderPage(page);
-    // `(app)/not-found.tsx` offers "Back to jobs" and "Line item catalog".
+    // `(app)/not-found.tsx` offers "Back to jobs" and "Price book".
     // For a GC those are two doors into a product they have no account for
     // — a dead link turned into a dead end behind a login wall. The way out
     // of this page is a person, not a URL.

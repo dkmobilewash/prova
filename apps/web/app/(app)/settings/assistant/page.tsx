@@ -99,7 +99,7 @@ export default async function AssistantAuditPage() {
           It is also the section that makes this page's own header wrong. It read
           "nothing on this page writes" from the day it was built, which was true
           of an audit log and is not true any more. */}
-      <section className="mb-6 rounded-lg border border-line-card bg-surface p-4" data-ask="ai-settings">
+      <section id="ai-switch" className="mb-6 scroll-mt-20 rounded-lg border border-line-card bg-surface p-4" data-ask="ai-settings">
         <h2 className="mb-1 text-sm font-semibold text-ink">What AI is allowed to do</h2>
         <p className="mb-3 text-sm text-ink-body">
           Your company&apos;s choice, not ours. Switching something off here stops it for everyone in the

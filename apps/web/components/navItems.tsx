@@ -13,7 +13,7 @@ export type NavItem = { href: string; label: string; icon: ReactNode };
 export const NAV_ITEMS: NavItem[] = [
   {
     href: "/dashboard",
-    label: "Jobs & Estimates",
+    label: "Jobs",
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
         <path
@@ -114,7 +114,7 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/catalog",
-    label: "Catalog",
+    label: "Price book",
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
         <rect x="3.5" y="3.5" width="13" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.4" />

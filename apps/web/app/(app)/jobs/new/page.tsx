@@ -44,9 +44,10 @@ export default async function NewJobPage() {
   return (
     <div className="mx-auto max-w-xl px-6 py-8">
       <BidWizardSteps current={1} />
-      <h1 className="mb-1 text-xl font-semibold text-ink">Start a bid</h1>
+      <h1 className="mb-1 text-xl font-semibold text-ink">New job</h1>
       <p className="mb-6 text-sm text-ink-body">
-        Name it and pick the GC — you&apos;ll add the work itself on the next screen.
+        Name it and pick the GC — you&apos;ll add the work itself on the next screen. It stays a bid until
+        you win it.
       </p>
       <NewJobForm contacts={options} />
     </div>

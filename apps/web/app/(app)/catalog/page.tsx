@@ -330,7 +330,7 @@ export default async function CatalogPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Line item catalog</h1>
+      <h1 className="mb-2 text-xl font-semibold text-ink">Price book</h1>
       <p className="mb-6 text-sm text-ink-body">
         Reusable line items for estimating — add one here, or from an existing job&apos;s line item
         (&quot;Save as catalog item&quot;), then pull it into a new estimate with &quot;Add from

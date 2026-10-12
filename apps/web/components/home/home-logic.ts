@@ -63,6 +63,8 @@ export function nextAction(input: {
   overdueRfi: { number: number } | null;
   scheduledToday: number;
   rights: ActionRights;
+  /** billingNoun(company.filesMonthlyPayApps).lower (components/job/jobStages.ts). */
+  billNoun?: string;
 }): NextAction {
   const job = `/jobs/${input.jobId}`;
   const { rights } = input;
@@ -72,7 +74,7 @@ export function nextAction(input: {
     // in the danger tone (lib/due-date.ts). Red on this yellow button would
     // fail contrast, and saying it twice is the duplication Concept G drops.
     return {
-      label: `Chase invoice #${input.overdueInvoice.number}`,
+      label: `Chase ${input.billNoun ?? "pay app"} #${input.overdueInvoice.number}`,
       href: `${job}/billing`,
       primary: true,
     };
