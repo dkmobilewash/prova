@@ -138,7 +138,7 @@ describe("the flag reaching the engines", () => {
  * page and the module, so an operator list can be handed to it directly. That
  * is the whole seam, and it needs no PDF, no fixture and no bytes.
  */
-const OPS = { moveTo: 13, lineTo: 14, curveTo: 15, closePath: 16, rectangle: 19, constructPath: 91, save: 10, restore: 11, setLineWidth: 2, transform: 12, stroke: 20 };
+const OPS = { moveTo: 13, lineTo: 14, curveTo: 15, closePath: 16, rectangle: 19, constructPath: 91, save: 10, restore: 11, setLineWidth: 2, transform: 12, stroke: 20, paintFormXObjectBegin: 74, paintFormXObjectEnd: 75 };
 
 function stubPdfjs() {
   return {
@@ -221,5 +221,112 @@ describe("reading a curve off a page", () => {
     expect(straight).toHaveLength(1);
     expect([straight[0].x1, straight[0].y1]).toEqual([100, 0]);
     expect([straight[0].x2, straight[0].y2]).toEqual([150, 0]);
+  });
+});
+
+/**
+ * ── A FORM XOBJECT CARRIES ITS OWN MATRIX, AND IT NEVER REACHED THE CTM ──
+ *
+ * `sheetStrokes`'s header has always said "a Form XObject always carries a
+ * matrix, and Revit and AutoCAD both wrap drawing content in one", and the CTM
+ * stack was built for exactly that. It was wired to `cm` only. pdf.js does not
+ * emit an XObject's matrix as a `cm`: it emits `paintFormXObjectBegin` with
+ * `[matrix, bbox]`, inlines the form's operators, then `paintFormXObjectEnd`.
+ * Every one of those matrices was dropped.
+ *
+ * MEASURED ON THE BENCH, graded per wall against the key's centreline. The loss
+ * diagnosed as "the reader returned no segment on this wall's faces" was
+ * 6,086 ft on Mesa Ridge and 7,575 ft on the holdout, and every sheet carrying
+ * it is an `__autocad` export bar one scan with no vectors at all.
+ *
+ * The geometry was never missing. `A-101__autocad` carries 177 of these and
+ * returns MORE segments than the clean export of the same sheet — 7,272 against
+ * 2,928. They simply landed in the wrong place, so the building filter dropped
+ * them and the wall was reported as never read.
+ *
+ * With the matrix applied: Mesa found 52,109 → 59,538 ft (66.8% → 76.3%) and
+ * the holdout 24,057 → 31,088 ft (72.8% → 94.1%).
+ */
+function stubFormPage(kinds: number[], coords: number[], matrix: number[]) {
+  return {
+    getViewport: () => ({ transform: [1, 0, 0, 1, 0, 0], width: 100, height: 100 }),
+    getOperatorList: async () => ({
+      fnArray: [OPS.paintFormXObjectBegin, OPS.constructPath, OPS.paintFormXObjectEnd, OPS.constructPath],
+      argsArray: [
+        [matrix, [0, 0, 100, 100]],
+        [kinds, coords],
+        null,
+        // The same path again, AFTER the form closes: it must be untransformed.
+        [kinds, coords],
+      ],
+    }),
+  };
+}
+
+describe("a Form XObject's own matrix", () => {
+  const line = [OPS.moveTo, OPS.lineTo];
+  const at = [0, 0, 10, 0];
+
+  it("MOVES THE GEOMETRY INSIDE IT — the AutoCAD case", async () => {
+    // Translate by (100, 50). Without the fix the segment stays at the origin
+    // and lands nowhere near the building.
+    const out = await segmentsFromOpenPage(
+      stubFormPage(line, at, [1, 0, 0, 1, 100, 50]),
+      stubPdfjs(),
+      1,
+    );
+    const inside = out.segments[0];
+    expect([inside.x1, inside.y1], "the form's matrix was dropped").toEqual([100, 50]);
+    expect([inside.x2, inside.y2]).toEqual([110, 50]);
+  });
+
+  it("SCALES IT TOO, which is what makes a wall the wrong thickness", async () => {
+    const out = await segmentsFromOpenPage(stubFormPage(line, at, [2, 0, 0, 2, 0, 0]), stubPdfjs(), 1);
+    expect([out.segments[0].x1, out.segments[0].x2]).toEqual([0, 20]);
+  });
+
+  it("POPS THE MATRIX AT THE END, so the next path is not moved as well", async () => {
+    // The form's scope is the begin/end pair — `q`/`Q` do not bracket it. A
+    // matrix left in force would drag the whole rest of the sheet with it.
+    const out = await segmentsFromOpenPage(
+      stubFormPage(line, at, [1, 0, 0, 1, 100, 50]),
+      stubPdfjs(),
+      1,
+    );
+    expect(out.segments).toHaveLength(2);
+    const after = out.segments[1];
+    expect([after.x1, after.y1], "the form's matrix outlived the form").toEqual([0, 0]);
+    expect([after.x2, after.y2]).toEqual([10, 0]);
+  });
+
+  it("COMPOSES ONTO THE MATRIX IN FORCE, it does not replace it", async () => {
+    // The nested case the file's header names: "a Form XObject inside a scaled
+    // block". A `cm` is in force when the form begins, so composing gives
+    // 5+100 and replacing gives 100 — and with an identity CTM, which is what
+    // every other test here starts from, the two are indistinguishable.
+    // Mutation-tested: replacing instead of composing was BLIND until this.
+    const page = {
+      getViewport: () => ({ transform: [1, 0, 0, 1, 0, 0], width: 100, height: 100 }),
+      getOperatorList: async () => ({
+        fnArray: [OPS.transform, OPS.paintFormXObjectBegin, OPS.constructPath, OPS.paintFormXObjectEnd],
+        argsArray: [
+          [1, 0, 0, 1, 5, 5],
+          [[1, 0, 0, 1, 100, 50], [0, 0, 100, 100]],
+          [line, at],
+          null,
+        ],
+      }),
+    };
+    const out = await segmentsFromOpenPage(page, stubPdfjs(), 1);
+    expect(
+      [out.segments[0].x1, out.segments[0].y1],
+      "the form replaced the page's own transform",
+    ).toEqual([105, 55]);
+  });
+
+  it("survives a form with no usable matrix rather than throwing", async () => {
+    const out = await segmentsFromOpenPage(stubFormPage(line, at, []), stubPdfjs(), 1);
+    expect(out.segments).toHaveLength(2);
+    expect([out.segments[0].x1, out.segments[0].x2]).toEqual([0, 10]);
   });
 });
