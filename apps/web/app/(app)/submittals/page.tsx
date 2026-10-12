@@ -26,12 +26,12 @@ function isoDate(date: Date | null) {
 export default async function SubmittalsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; show?: string }>;
+  searchParams: Promise<{ job?: string; show?: string; new?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_JOBS");
   if (!allowed) return <NoAccess capability="MANAGE_JOBS" />;
   const { company, ...currentUser } = context;
-  const { job: jobFilter, show } = await searchParams;
+  const { job: jobFilter, show, new: startNew } = await searchParams;
   const showApproved = show === "all";
 
   // The READER'S calendar day, not the server's UTC one — see /rfis for the
@@ -145,7 +145,7 @@ export default async function SubmittalsPage({
       />
 
       <section className="mb-8" data-tour="submittals-log">
-        <SubmittalForm jobs={jobs} defaultJobId={activeJob ?? undefined} />
+        <SubmittalForm jobs={jobs} defaultJobId={activeJob ?? undefined} startOpen={startNew === "1"} />
       </section>
 
       {/* At zero-ever the EmptyState below is the whole answer. The status

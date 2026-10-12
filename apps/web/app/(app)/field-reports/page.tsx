@@ -44,12 +44,12 @@ const REPORT_LIMIT = 400;
 export default async function FieldReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string }>;
+  searchParams: Promise<{ job?: string; new?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_FIELD");
   if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
   const { company, ...currentUser } = context;
-  const { job: jobFilter } = await searchParams;
+  const { job: jobFilter, new: startNew } = await searchParams;
 
   // Jobs first, rather than the Promise.all this used to be: the report
   // query's own `where` depends on whether `?job=` names a job this company
@@ -149,7 +149,7 @@ export default async function FieldReportsPage({
             composer starts on — the same handover /punch-lists makes. With
             no filter the composer decides for itself, and only when there
             is exactly one active job to decide between. */}
-        <FieldReportComposer jobs={jobOptions} defaultJobId={activeJob ?? undefined} />
+        <FieldReportComposer jobs={jobOptions} defaultJobId={activeJob ?? undefined} startOpen={startNew === "1"} />
       </div>
 
       {/* The job filter /punch-lists and /photos both have and this page did

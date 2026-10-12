@@ -24,12 +24,12 @@ function isoDate(date: Date | null) {
 export default async function BackchargesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; show?: string }>;
+  searchParams: Promise<{ job?: string; show?: string; new?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_BILLING");
   if (!allowed) return <NoAccess capability="MANAGE_BILLING" />;
   const { company, ...currentUser } = context;
-  const { job: jobFilter, show } = await searchParams;
+  const { job: jobFilter, show, new: startNew } = await searchParams;
   const showResolved = show === "all";
 
   const today = await viewerToday();
@@ -122,7 +122,7 @@ export default async function BackchargesPage({
       />
 
       <section className="mb-8" data-tour="backcharges-log">
-        <BackchargeForm jobs={jobs} defaultJobId={activeJob ?? undefined} />
+        <BackchargeForm jobs={jobs} defaultJobId={activeJob ?? undefined} startOpen={startNew === "1"} />
       </section>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-4" data-tour="backcharges-totals">

@@ -79,6 +79,7 @@ vi.mock("@prova/db", () => ({
     // fixtures carry no quotes, and `lib/bid-levelling.test.ts` covers the
     // comparison against its own.
     vendor: { findMany: vi.fn(async () => []) },
+    contact: { findMany: vi.fn(async () => [{ id: "gc-1", name: "Acme GC" }]) },
   },
   BidInvitationStatus: {},
   TradeScope: {},
@@ -104,10 +105,44 @@ vi.mock("@/lib/bid-outcome-query", () => ({
   loadLinkableJobs: vi.fn(async () => []),
 }));
 
-async function render() {
+async function render(searchParams: Record<string, string> = {}) {
   const { default: Page } = await import("@/app/(app)/bids/page");
-  return renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
+  return renderToStaticMarkup(await Page({ searchParams: Promise.resolve(searchParams) }));
 }
+
+/**
+ * A bid invitation could only be logged from a GC's own contact page
+ * (contractor click test, 2026-10-11). /bids now carries "+ Log a bid",
+ * and `?new=1` (the Jobs & bids card and the command palette) opens it with
+ * a GC picker.
+ */
+describe("Log a bid from /bids", () => {
+  it("offers the button, collapsed, by default", async () => {
+    bids = [bid({ id: "1", status: "INVITED", bidAmount: null, projectName: "Open" })];
+    const html = await render();
+    expect(html).toContain("+ Log a bid");
+    expect(html).not.toContain('name="contactId"');
+  });
+
+  it("opens with the GC picker on ?new=1", async () => {
+    bids = [bid({ id: "1", status: "INVITED", bidAmount: null, projectName: "Open" })];
+    const html = await render({ new: "1" });
+    expect(html).toMatch(/<select[^>]*name="contactId"/);
+    expect(html).toContain('<option value="gc-1">Acme GC</option>');
+    expect(html).toContain('name="projectName"');
+  });
+});
+
+// UX test 2026-10-11 (#33): no bid opened its own page, so Research,
+// Estimate check, Addenda and Decision were unreachable from any list.
+describe("a bid's name opens its own page", () => {
+  it("links the project name to /ai/bids/<id> and the GC to its contact", async () => {
+    bids = [bid({ id: "b7", projectName: "Pell Riverfront Tower" })];
+    const html = await render();
+    expect(html).toMatch(/<a [^>]*href="\/ai\/bids\/b7"[^>]*>Pell Riverfront Tower<\/a>/);
+    expect(html).toContain('href="/contacts/contact-1"');
+  });
+});
 
 describe("EVERY bid offers the link, not just a won one", () => {
   /**

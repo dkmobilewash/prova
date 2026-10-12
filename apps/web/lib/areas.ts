@@ -96,7 +96,7 @@ export const AREAS: Area[] = [
       { href: "/cash-flow", name: "Cash flow", description: "Who owes you, how late, and retainage held" },
       { href: "/wip", name: "Work in progress", description: "Over and under billing on every open job" },
       { href: "/backcharges", name: "Backcharges", description: "Charges the GC put against you, and your answer" },
-      { href: "/lien-deadlines", name: "Lien deadlines", description: "Notices and lien dates that protect getting paid" },
+      { href: "/lien-deadlines", name: "Lien deadlines", description: "Lien dates that protect getting paid, and each job's lien waivers" },
       { href: "/phase-codes", name: "Phase codes", description: "Budget against actual by phase, across jobs" },
     ],
   },

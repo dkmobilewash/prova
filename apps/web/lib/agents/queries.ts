@@ -244,7 +244,7 @@ export async function agentActivity(companyId: string, opts: { limit?: number } 
         agent: r.agent,
         title: `${agentLabel(r.agent)} ${RUN_VERB[r.status]}${r.bidProjectName ? ` on ${r.bidProjectName}` : ""}`,
         detail: r.summary ?? r.note,
-        href: r.bidInvitationId ? `/bids#${r.bidInvitationId}` : null,
+        href: r.bidInvitationId ? `/ai/bids/${r.bidInvitationId}` : null,
       }),
     ),
     ...findings.map(

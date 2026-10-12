@@ -21,6 +21,7 @@ import { LienWaivers } from "@/components/LienWaivers";
 import { loadLienWaiverSection } from "@/lib/lien-waiver-query";
 import { ActionForm } from "@/components/ActionForm";
 import { PayAppSummary } from "@/components/job/PayAppSummary";
+import { billingNoun } from "@/components/job/jobStages";
 import { payAppFigures, payAppMonth } from "@/components/job/payAppFigures";
 import { loadPayApplication } from "@/lib/pay-application-query";
 
@@ -184,7 +185,7 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
       />
 
       <section className="mb-10" data-tour="job-invoices">
-        <h2 className="mb-3 text-lg font-semibold text-ink">Invoices</h2>
+        <h2 className="mb-3 text-lg font-semibold text-ink">{billingNoun(company.filesMonthlyPayApps).many}</h2>
         <div className="flex flex-col gap-4">
           {job.invoices.map((invoice) => {
             const paid = invoice.payments.reduce((s, p) => s + Number(p.amount), 0);
@@ -205,7 +206,7 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
               <div key={invoice.id} className="rounded-lg border border-line-card bg-surface p-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="font-medium text-ink">
-                    Invoice #{invoice.number}
+                    {billingNoun(company.filesMonthlyPayApps).one} #{invoice.number}
                     {invoice.description ? ` — ${invoice.description}` : ""}
                   </p>
                   <div className="flex items-center gap-4 text-sm">
@@ -227,16 +228,16 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                   </div>
                 </div>
                 {invoice.lineItems.length > 0 && (
-                  <Link href={`/jobs/${job.id}/pay-applications/${invoice.id}`} className="mt-1 inline-block text-xs text-link hover:underline">
+                  <Link href={`/jobs/${job.id}/pay-applications/${invoice.id}`} className="mt-1 inline-block text-sm text-link hover:underline">
                     View pay application →
                   </Link>
                 )}
                 {invoice.dueAt && (invoice.status !== "PAID" && dueStatus(invoice.dueAt, asOf).overdue ? (
-                  <p className="mt-1 text-xs font-semibold text-danger">
+                  <p className="mt-1 text-sm font-semibold text-danger">
                     Due {formatCalendarDate(invoice.dueAt)} · {dueStatus(invoice.dueAt, asOf).text}
                   </p>
                 ) : (
-                  <p className="mt-1 text-xs text-ink-muted">Due {formatCalendarDate(invoice.dueAt)}</p>
+                  <p className="mt-1 text-sm text-ink-muted">Due {formatCalendarDate(invoice.dueAt)}</p>
                 ))}
                 {/* The retainage figure and the balance it explains now
                     come from the same call, so the page cannot print one

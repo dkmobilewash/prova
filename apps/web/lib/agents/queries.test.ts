@@ -123,4 +123,13 @@ describe("agentActivity", () => {
     const all = await agentActivity("c1");
     expect(all[2]).toMatchObject({ title: "The bid watcher was paused", detail: "Paused: cap" });
   });
+
+  it("a run about one bid opens that bid's page, not the bid list", async () => {
+    db.agentRun.findMany.mockResolvedValue([
+      run("r3", "2026-10-12T12:23:00Z", { agent: "BID_RESEARCH", bidInvitationId: "b4", bidInvitation: { projectName: "Pell" } }),
+    ]);
+    db.agentFinding.findMany.mockResolvedValue([]);
+    const [item] = await agentActivity("c1");
+    expect(item.href).toBe("/ai/bids/b4");
+  });
 });

@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { NAV_FOOTER, NAV_ITEMS } from "@/components/navItems";
 import { AREAS, NOT_IN_AN_AREA, areaBySlug, areasFor, toolRoute } from "./areas";
@@ -83,12 +85,35 @@ describe("areas", () => {
   // fewer the button is 200px+ and "Open Work in progress" (21) fits.
   it("keeps every tool card's button label short enough for its card", () => {
     const labels = AREAS.flatMap((area) => area.tools.flatMap((tool) => toolActions({ ...tool, route: toolRoute(tool) }).map((a) => ({ area, label: a.label }))));
-    // One per tool, plus Jobs' second ("+ New job" and "Open jobs").
-    expect(labels.length).toBe(placed.length + 1);
+    // One per tool, plus Jobs' and Bids' second ("+ New job", "+ Log a bid").
+    expect(labels.length).toBe(placed.length + 2);
     for (const { area, label } of labels) {
       const ceiling = area.tools.length >= 6 ? 18 : 21;
       expect(label.length, `${area.slug}: "${label}"`).toBeLessThanOrEqual(ceiling);
       expect(label, area.slug).not.toBe("Open");
     }
+  });
+
+  // UX review F5: /catalog was "Catalog" in the nav, "Price book" here and
+  // "Line item catalog" on its own page; /dashboard was "Jobs & Estimates" in
+  // the nav and "Jobs" here. One page, one name: the nav label IS the tool's.
+  it("calls every page the same thing in the nav as in its area", () => {
+    const navLabel = new Map(NAV_ITEMS.map((item) => [item.href, item.label]));
+    const checked = AREAS.flatMap((area) => area.tools).filter((tool) => navLabel.has(toolRoute(tool)));
+    expect(checked.length).toBe(placed.length);
+    for (const tool of checked) expect(navLabel.get(toolRoute(tool)), toolRoute(tool)).toBe(tool.name);
+  });
+
+  it("leaves no screen using a retired name", () => {
+    const root = path.resolve(__dirname, "..");
+    const files = ["app", "components"].flatMap((dir) =>
+      (fs.readdirSync(path.join(root, dir), { recursive: true }) as string[])
+        .filter((f) => f.endsWith(".tsx") && !f.includes(".test."))
+        .map((f) => path.join(root, dir, f)),
+    );
+    expect(files.length).toBeGreaterThan(200);
+    const retired = ["Line item catalog", "Jobs & Estimates", "Jobs &amp; Estimates", ">Start a bid<"];
+    const hits = files.flatMap((f) => retired.filter((r) => fs.readFileSync(f, "utf8").includes(r)).map((r) => `${path.relative(root, f)}: ${r}`));
+    expect(hits).toEqual([]);
   });
 });

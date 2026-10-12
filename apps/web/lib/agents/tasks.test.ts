@@ -40,6 +40,8 @@ describe("toTaskList", () => {
         startedAt: minAgo(2).toISOString(),
         finishedAt: null,
         href: "/ai/bids/bid-9",
+        kind: "BID_RESEARCH",
+        bidInvitationId: "bid-9",
       },
     ]);
     // Running is shown once, not again under Finished.

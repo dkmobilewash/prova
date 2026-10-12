@@ -19,6 +19,8 @@ export type JobPaperworkCounts = {
   openPunchItems: number;
   drawingSets: number;
   materialOrders: number;
+  /** Read by the layout's own lien-waiver row, which is gated on billing. */
+  lienWaivers: number;
 };
 
 export type JobPaperworkLink = { href: string; label: string; detail: string };
@@ -48,12 +50,13 @@ export function jobPaperworkLinks(
 
 export async function loadJobPaperworkCounts(companyId: string, jobId: string): Promise<JobPaperworkCounts> {
   const where = { companyId, jobId };
-  const [openRfis, submittals, openPunchItems, drawingSets, materialOrders] = await Promise.all([
+  const [openRfis, submittals, openPunchItems, drawingSets, materialOrders, lienWaivers] = await Promise.all([
     prisma.rfi.count({ where: { ...where, status: { not: "CLOSED" } } }),
     prisma.submittal.count({ where }),
     prisma.punchListItem.count({ where: { ...where, status: { not: "VERIFIED" } } }),
     prisma.drawingSet.count({ where }),
     prisma.materialOrder.count({ where }),
+    prisma.lienWaiver.count({ where }),
   ]);
-  return { openRfis, submittals, openPunchItems, drawingSets, materialOrders };
+  return { openRfis, submittals, openPunchItems, drawingSets, materialOrders, lienWaivers };
 }

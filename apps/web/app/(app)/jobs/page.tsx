@@ -216,7 +216,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
 
       <p className="mt-6 flex flex-wrap gap-x-4 text-sm">
         <Link href="/catalog" className="inline-flex min-h-11 items-center text-link hover:underline mouse:min-h-7">
-          Line item catalog
+          Price book
         </Link>
         <Link href="/bids" className="inline-flex min-h-11 items-center text-link hover:underline mouse:min-h-7">
           Bid history

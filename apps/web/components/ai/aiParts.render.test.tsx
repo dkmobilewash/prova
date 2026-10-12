@@ -143,11 +143,40 @@ describe("Running now", () => {
     expect(container.querySelector('a[href="/ai/activity"]')).not.toBeNull();
   });
 
+  // UX test 2026-10-11 (#33): "Bid research · Pell Riverfront Tower" was plain text.
+  it("a run about one bid links the bid's name to its page", () => {
+    const [first] = fullProps().runs;
+    render(<RunningNow runs={[{ ...first, bidInvitationId: "b9" }]} now={NOW} />);
+    expect(container.querySelector('a[href="/ai/bids/b9"]')?.textContent).toBe("Civic Center Garage");
+  });
+
   it("empty: says when agents run and offers Run now for the watcher and recommendations", () => {
     render(<RunningNow runs={[]} now={NOW} />);
     expect(text()).toContain("Nothing running. Agents run on their schedule, when a bid is logged, or when you press Run now.");
     const agents = Array.from(container.querySelectorAll("[data-agent]")).map((b) => b.getAttribute("data-agent"));
     expect(agents).toEqual(["BID_WATCHER", "RECOMMENDATIONS"]);
+  });
+
+  // UX review F6: a stopped run is never a dead end.
+  it("offers Run again on a failed run, and links a capped or switched-off run to its setting", () => {
+    const base = { startedAt: minutesAgo(30), finishedAt: minutesAgo(29), summary: null, bidProjectName: null };
+    render(
+      <RunningNow
+        now={NOW}
+        runs={[
+          { ...base, id: "f", agent: "BID_RESEARCH", status: "FAILED", note: "Model call timed out after 45 seconds", bidInvitationId: "b9" },
+          { ...base, id: "p", agent: "BID_WATCHER", status: "PAUSED_CAP", note: "Paused: cap reached" },
+          { ...base, id: "s", agent: "RECOMMENDATIONS", status: "SKIPPED", note: "Recommendations is switched off for this company." },
+          { ...base, id: "a", agent: "BID_WATCHER", status: "SKIPPED", note: "AI is switched off for your company. The account owner can turn it back on under Settings → Assistant." },
+          { ...base, id: "d", agent: "BID_WATCHER", status: "DONE", note: null },
+        ]}
+      />,
+    );
+    const again = Array.from(container.querySelectorAll("[data-agent]"));
+    expect(again.map((b) => [b.getAttribute("data-agent"), b.textContent])).toEqual([["BID_RESEARCH", "Run again"]]);
+    expect(container.querySelector('a[href="/ai/activity#cap"]')?.textContent).toContain("See the spend cap");
+    expect(container.querySelector('a[href="/ai/activity#agent-switches"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/settings/assistant#ai-switch"]')).not.toBeNull();
   });
 });
 

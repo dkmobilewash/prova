@@ -12,6 +12,20 @@ import { STAGE_LABELS, type JobLifecycleStage } from "@/lib/job-lifecycle";
  * Pure: the layout loads the facts, this decides what the steps say.
  */
 
+/**
+ * One name for a bill sent on a job, per company. Every screen naming that
+ * record — Home's Needs list and job cards, the Billing stage line, the
+ * Billing tab's register, the "Send …" shortcut — calls it this, so one bill
+ * is never "Invoice #14" on one screen and "Pay app #14" on the next. The
+ * company's onboarding answer decides; unanswered reads "Pay app", the word
+ * a sub billing a GC uses.
+ */
+export function billingNoun(filesMonthlyPayApps: boolean | null | undefined) {
+  return filesMonthlyPayApps === false
+    ? { one: "Invoice", lower: "invoice", many: "Invoices", lowerMany: "invoices" }
+    : { one: "Pay app", lower: "pay app", many: "Pay apps", lowerMany: "pay apps" };
+}
+
 export type StageKey = "estimate" | "contract" | "crew" | "billing" | "closeout";
 /** `leavesJob`: the page is not one of this job's own tabs (the punch list,
  * company-wide closeout), so following it leaves the job header and these
@@ -54,6 +68,8 @@ export type JobStageInput = {
   approvedChangeOrders: number;
   invoiceCount: number;
   latestPayApp: { number: number; dueAt: Date | null; status: string } | null;
+  /** Company.filesMonthlyPayApps — what the bill is called (billingNoun). */
+  filesMonthlyPayApps?: boolean | null;
   /** The VIEWER'S calendar day at UTC midnight (`viewerAsOf()`), what a due
    * date is compared against. Never the server's clock — see lib/due-date.ts. */
   asOf: Date;
@@ -130,6 +146,7 @@ export function jobStages(input: JobStageInput): JobStage[] {
   };
 
   const pay = input.latestPayApp;
+  const noun = billingNoun(input.filesMonthlyPayApps);
   const payDue = pay && pay.status !== "PAID" && pay.dueAt ? dueStatus(pay.dueAt, input.asOf) : null;
   const billingStatus = !input.showsBilling
     ? null
@@ -137,12 +154,12 @@ export function jobStages(input: JobStageInput): JobStage[] {
       ? "Not started"
       : pay
         ? pay.status === "PAID"
-          ? `Pay app #${pay.number} paid`
+          ? `${noun.one} #${pay.number} paid`
           : payDue
-            ? `Pay app #${pay.number} ${payDue.text}`
-            : `Pay app #${pay.number} sent`
+            ? `${noun.one} #${pay.number} ${payDue.text}`
+            : `${noun.one} #${pay.number} sent`
         : input.invoiceCount > 0
-          ? plural(input.invoiceCount, "invoice", "invoices")
+          ? plural(input.invoiceCount, noun.lower, noun.lowerMany)
           : "Nothing billed yet";
 
   const contractParts = [
@@ -198,6 +215,13 @@ export function isCurrentLink(href: string, pathname: string, search = ""): bool
 /** The stage whose pages include the page being shown — the one shown open. */
 export function selectedStageKey(stages: JobStage[], pathname: string, search = ""): StageKey | null {
   return stages.find((stage) => stage.links.some((link) => isCurrentLink(link.href, pathname, search)))?.key ?? null;
+}
+
+/** The Paperwork panel's lien-waiver row. The waivers live at the foot of
+ * the Billing tab, which is the only place they could be found until
+ * 2026-10-11 — and they are what a GC asks for with every pay app. */
+export function lienWaiverPaperworkLink(jobId: string, count: number) {
+  return { href: `/jobs/${jobId}/billing#lien-waivers`, label: "Lien waivers", detail: String(count) };
 }
 
 /** The Paperwork panel's change-order row. Waiting ones first, so a

@@ -129,7 +129,8 @@ describe("the home area boxes", () => {
     expect(box("Paperwork").getAttribute("aria-expanded")).toBe("true");
     const panel = document.getElementById(box("Paperwork").getAttribute("aria-controls")!)!;
     const hrefs = Array.from(panel.querySelectorAll("a")).map((a) => a.getAttribute("href"));
-    expect(hrefs).toEqual(["/rfis", "/submittals", "/drawings", "/closeout", "/intake", "/messages", "/alerts", "/areas/paperwork"]);
+    // "Open Paperwork" leads, in the panel's head (it was a footer row).
+    expect(hrefs).toEqual(["/areas/paperwork", "/rfis", "/submittals", "/drawings", "/closeout", "/intake", "/messages", "/alerts"]);
     expect(panel.textContent).toContain("Open Paperwork →");
     expect(panel.textContent).toContain("2 RFIs waiting");
 
@@ -138,6 +139,18 @@ describe("the home area boxes", () => {
     expect(box("Paperwork").getAttribute("aria-expanded")).toBe("false");
     expect(box("Money").getAttribute("aria-expanded")).toBe("true");
     expect(container.querySelectorAll("[role='region']")).toHaveLength(1);
+  });
+
+  it("puts Log hours first in Crew & field, going where the home's Log hours shortcut goes", () => {
+    act(() => root.render(<AreaBoxes areas={areaViews(areasFor(owner), {})} hours={{ label: "Log hours", href: "/jobs/job-1/crew", sub: "Oak Ave" }} />));
+    act(() => box("Crew & field").click());
+    const panel = document.getElementById(box("Crew & field").getAttribute("aria-controls")!)!;
+    const first = panel.querySelector("ul a")!;
+    expect(first.getAttribute("href")).toBe("/jobs/job-1/crew");
+    expect(first.textContent).toContain("Log hours");
+    // Only Crew & field carries it.
+    act(() => box("Paperwork").click());
+    expect(document.getElementById(box("Paperwork").getAttribute("aria-controls")!)!.textContent).not.toContain("Log hours");
   });
 
   it("closes on Escape, giving focus back to the box, and on a click outside", () => {
@@ -253,12 +266,14 @@ describe("an area page", () => {
     expect(html).not.toContain(BRAND_FILL);
   });
 
-  it("fills the jobs area's create action, and only that one, in brand yellow", async () => {
+  it("fills the jobs area's two create actions, and only those, in brand yellow", async () => {
     const html = await render("jobs-bids");
     const brand = html.match(new RegExp(`<a [^>]*${BRAND_FILL}[^>]*>.*?</a>`, "g")) ?? [];
-    expect(brand).toHaveLength(1);
+    expect(brand).toHaveLength(2);
     expect(brand[0]).toContain('href="/jobs/new"');
-    expect(brand[0]).toContain("text-neutral-900");
+    expect(brand[1]).toContain('href="/bids?new=1"');
+    expect(brand[1]).toContain("+ Log a bid");
+    for (const link of brand) expect(link).toContain("text-neutral-900");
     // ...and the create is not the only door: the card also opens the list.
     const card = html.slice(html.indexOf('data-area-tool="/dashboard"'), html.indexOf('data-area-tool="/bids"'));
     expect(card).toMatch(/href="\/jobs"[^>]*>Open jobs</);

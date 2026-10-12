@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { TaskList } from "@/lib/agents/tasks";
-import { RunStatusPill, taskWhen } from "@/components/ai/RunStatusPill";
+import { RunStatusPill, RunWayOut, taskWhen } from "@/components/ai/RunStatusPill";
 import { STAGES, type NextAction, type Stage } from "./home-logic";
 import { SearchChip } from "./SearchChip";
 
@@ -86,28 +86,47 @@ export function ShortcutChips({ newJob, others }: { newJob: boolean; others: { i
 
 /* ------------------------------------------------------ phone tiles -- */
 
-/** Below md only: the one thing a foreman does from a phone every day, big.
- * The other field shortcuts the phone home used to tile (photo, RFI, daily
- * report) are one tap away in the Crew & field and Paperwork area tiles. */
-export function PhoneTiles({ primary }: { primary: Shortcut }) {
+/** Below md only: the one thing a foreman does from a phone every day, big,
+ * and under it the three he creates from the field (Concept G's tiles —
+ * dropped once for "one tap away in the area tiles", which measured 3-4
+ * taps to an open form). Each opens its form, not its list. */
+export function PhoneTiles({ primary, quick = [] }: { primary: Shortcut | null; quick?: { icon: string; shortcut: Shortcut }[] }) {
   return (
     <div className="mt-3 md:hidden" data-home="phone-tiles">
-      <ShortcutLink
-        shortcut={primary}
-        className="flex h-20 w-full items-center gap-4 rounded-[18px] bg-brand px-5 text-left text-neutral-900"
-      >
-        <svg aria-hidden width={34} height={34} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-          <circle cx="12" cy="12" r="9" />
-          <path d="M12 7v5l3 2" />
-        </svg>
-        <span className="min-w-0 flex-1">
-          <span className="block font-headline text-[26px] font-semibold leading-none">{primary.label}</span>
-          {primary.sub && <span className="mt-1.5 block truncate text-[15px] font-semibold opacity-75" title={primary.sub}>{primary.sub}</span>}
-        </span>
-        <svg aria-hidden width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="M9 6l6 6-6 6" />
-        </svg>
-      </ShortcutLink>
+      {primary && (
+        <ShortcutLink
+          shortcut={primary}
+          className="flex h-20 w-full items-center gap-4 rounded-[18px] bg-brand px-5 text-left text-neutral-900"
+        >
+          <svg aria-hidden width={34} height={34} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          <span className="min-w-0 flex-1">
+            <span className="block font-headline text-[26px] font-semibold leading-none">{primary.label}</span>
+            {primary.sub && <span className="mt-1.5 block truncate text-[15px] font-semibold opacity-75" title={primary.sub}>{primary.sub}</span>}
+          </span>
+          <svg aria-hidden width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M9 6l6 6-6 6" />
+          </svg>
+        </ShortcutLink>
+      )}
+      {quick.length > 0 && (
+        <div className={`grid grid-cols-3 gap-2.5 ${primary ? "mt-2.5" : ""}`} data-home="quick-tiles">
+          {quick.map(({ icon, shortcut }) => (
+            <ShortcutLink
+              key={shortcut.label}
+              shortcut={shortcut}
+              className="flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-[14px] border border-line-card bg-surface px-2 text-center text-[15px] font-semibold leading-tight text-ink active:bg-rail-hover"
+            >
+              <span aria-hidden className="text-lg text-ink-muted">
+                {icon}
+              </span>
+              {shortcut.label}
+            </ShortcutLink>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -294,7 +313,7 @@ export function CrewsBlock({ crews }: { crews: CrewToday[] }) {
                 </span>
                 <span className="min-w-0 flex-1 leading-snug">
                   <span className="block truncate text-sm font-medium text-ink">{crew.jobName}</span>
-                  <span className="block truncate text-[12.5px] text-ink-muted">{crew.people.join(", ")}</span>
+                  <span className="block truncate text-sm text-ink-muted">{crew.people.join(", ")}</span>
                 </span>
                 <span className="whitespace-nowrap text-ink">
                   {crew.people.length} <span className="text-[13px] text-ink-muted">ppl</span>
@@ -403,9 +422,8 @@ export function RunningCard({ tasks, now }: { tasks: TaskList; now: Date }) {
       <ul>
         {rows.map((row) => (
           <li key={row.id} className="border-t border-line-row first:border-t-0">
-            {/* The detail is cut to one line here (all of it in the title,
-                and in full on the Tasks list and /ai); the when and the
-                status never are. */}
+            {/* The detail wraps in full: cut to one line, a failure read
+                "Model call timed out afte…" (UX review F6). */}
             <Link href={row.href} className="block min-h-11 py-1.5 text-sm leading-snug mouse:min-h-9">
               <span className="flex items-start justify-between gap-2">
                 <span className="min-w-0 break-words">
@@ -414,18 +432,14 @@ export function RunningCard({ tasks, now }: { tasks: TaskList; now: Date }) {
                 </span>
                 <RunStatusPill status={row.status} />
               </span>
-              <span className="flex gap-1.5 text-[13px] text-ink-muted">
-                {row.detail && (
-                  <span className="min-w-0 truncate" title={row.detail}>
-                    {row.detail}
-                  </span>
-                )}
-                <span className="shrink-0 whitespace-nowrap">
-                  {row.detail && "· "}
-                  {taskWhen(row, now)}
-                </span>
+              <span className="block break-words text-[13px] text-ink-muted">
+                {row.detail && <>{row.detail} · </>}
+                <span className="whitespace-nowrap">{taskWhen(row, now)}</span>
               </span>
             </Link>
+            <div className="pb-1.5 empty:hidden">
+              <RunWayOut status={row.status} note={row.detail} agent={row.kind} bidInvitationId={row.bidInvitationId} />
+            </div>
           </li>
         ))}
       </ul>

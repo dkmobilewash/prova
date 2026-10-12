@@ -1083,6 +1083,16 @@ const SECTION_DECIDED: Record<
     reason:
       "The other half of enablePortalAccess, same section and same capability, and deliberately not a looser one on the grounds that revoking is the safe direction. It is not safe: it cuts a GC off from the invoices they are being asked to pay, mid-job, and the token cannot be rotated afterwards — enabling brings the SAME link back. Whoever may hand out the credential is who may take it away, or a job function ends up able to kill a live link it cannot restore.",
   },
+
+  /* ---- /dashboard — the Running now card ---- */
+
+  // "Run again" on a failed agent run (RunWayOut, UX review F6).
+  "agents.runAgentNow": {
+    capability: "MANAGE_ESTIMATING",
+    section: "Running now",
+    reason:
+      "The home page draws the Running now card only from a task list it loads for MANAGE_ESTIMATING (it passes none otherwise), and the Run again button inside it is the same RunAgentButton /ai offers behind that same capability. runAgentNow refuses anyone without MANAGE_ESTIMATING itself, because the agents read bids and estimates.",
+  },
 };
 
 /**

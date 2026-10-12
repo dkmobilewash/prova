@@ -320,7 +320,7 @@ describe("/dashboard on a company with jobs", () => {
     expect(needs).toContain("6 items");
     // Past due reads "overdue N days" in the danger tone (lib/due-date.ts).
     expect(needs).toMatch(/class="[^"]*text-danger[^"]*">overdue 40 days</);
-    const order = ["Invoice #3", "Invoice #2", "Contractor licence", "RFI 12", "Approve hours for Tue, Oct 13", "forecast over budget"];
+    const order = ["Pay app #3", "Pay app #2", "Contractor licence", "RFI 12", "Approve hours for Tue, Oct 13", "forecast over budget"];
     const at = order.map((needle) => needs.indexOf(needle));
     at.forEach((i, n) => expect(i, `${order[n]} missing`).toBeGreaterThan(-1));
     expect([...at].sort((a, b) => a - b)).toEqual(at);
@@ -332,7 +332,7 @@ describe("/dashboard on a company with jobs", () => {
   it("puts the job in its stage with ONE next action from real state", async () => {
     const html = await render();
     expect(html).toContain('data-stage="Billing"');
-    expect(html).toContain("Chase invoice #3</span>");
+    expect(html).toContain("Chase pay app #3</span>");
     expect(html).toContain(">Overdue 40 days<");
   });
 
@@ -341,6 +341,24 @@ describe("/dashboard on a company with jobs", () => {
     expect(html).toMatch(/href="\/jobs\/job-1\/crew"[^>]*><span[^>]*>◷<\/span>Log hours/);
     expect(html).toMatch(/href="\/jobs\/job-1\/billing"[^>]*><span[^>]*>↗<\/span>Send pay app/);
     expect(html).toContain('href="/rfis"');
+  });
+
+  it("puts Concept G's three field creates on the phone home, each landing on its open form", async () => {
+    const tiles = (await render()).match(/data-home="quick-tiles"[\s\S]*?<\/div>/)?.[0] ?? "";
+    // One job crewed today, so it rides along instead of a picker.
+    expect(tiles).toContain('href="/jobs/job-1/photos"');
+    expect(tiles).toContain('href="/rfis?new=1&amp;job=job-1"');
+    expect(tiles).toContain('href="/field-reports?new=1&amp;job=job-1"');
+  });
+
+  it("gates each field create like the page it opens", async () => {
+    // ACCOUNTING holds neither MANAGE_FIELD nor MANAGE_JOBS.
+    state.context.role = "MEMBER";
+    state.context.jobFunction = "ACCOUNTING";
+    const html = await render();
+    expect(html).not.toContain('data-home="quick-tiles"');
+    expect(html).not.toContain("/rfis?new=1");
+    expect(html).not.toContain("/field-reports?new=1");
   });
 
   it("shows a field role the work and none of the money", async () => {
@@ -355,7 +373,7 @@ describe("/dashboard on a company with jobs", () => {
     expect(html).not.toContain("$18,250");
     expect(html).not.toContain("% billed");
     const needs = block(html, "dashboard-needs-attention");
-    expect(needs).not.toContain("Invoice #");
+    expect(needs).not.toContain("Pay app #");
     // The licence is still news to them, but /compliance is not theirs to open.
     expect(needs).toContain("Contractor licence");
     expect(needs).not.toContain('href="/compliance"');

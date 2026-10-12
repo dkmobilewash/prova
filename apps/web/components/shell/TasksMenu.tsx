@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import Link from "next/link";
 import type { TaskList, TaskRow } from "@/lib/agents/tasks";
-import { RunStatusPill, taskWhen } from "@/components/ai/RunStatusPill";
+import { RunStatusPill, RunWayOut, taskWhen } from "@/components/ai/RunStatusPill";
 import { Spinner } from "@/components/Spinner";
 
 /**
@@ -73,6 +73,9 @@ function Row({ row, now }: { row: TaskRow; now: Date }) {
           <span className="whitespace-nowrap text-ink-muted">{taskWhen(row, now)}</span>
         </span>
       </Link>
+      <div className="px-3 empty:hidden">
+        <RunWayOut status={row.status} note={row.detail} agent={row.kind} bidInvitationId={row.bidInvitationId} />
+      </div>
     </li>
   );
 }
@@ -138,7 +141,7 @@ export function TasksMenu({
         data-tasks-button=""
         aria-expanded={open}
         aria-controls="tasks-panel"
-        aria-label={busy ? `Agent tasks, ${running} running` : "Agent tasks"}
+        aria-label={busy ? `AI tasks, ${running} running` : "AI tasks"}
         onClick={() => onOpenChange(!open)}
         className={`flex h-11 min-w-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-sm hover:bg-rail-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
           busy ? "font-semibold text-ink" : "text-ink-muted"
@@ -154,7 +157,7 @@ export function TasksMenu({
             <span className="max-sm:hidden"> running</span>
           </>
         ) : (
-          "Tasks"
+          "AI tasks"
         )}
       </button>
 
@@ -163,7 +166,7 @@ export function TasksMenu({
           ref={panel}
           id="tasks-panel"
           role="region"
-          aria-label="Agent tasks"
+          aria-label="AI tasks"
           className="fixed inset-x-2 top-14 z-50 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain rounded-xl border border-line-card bg-surface p-2 shadow-2xl md:absolute md:inset-x-auto md:right-0 md:top-full md:mt-2 md:w-[26rem]"
         >
           <h2 className={HEAD}>Running now</h2>

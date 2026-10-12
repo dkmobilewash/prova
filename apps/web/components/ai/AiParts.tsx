@@ -6,7 +6,7 @@ import type { ActionResult } from "@/lib/actions/shared";
 import { relativeTime } from "@/lib/integrations/relativeTime";
 import { formatCalendarDate } from "@/lib/render-date";
 import { RunAgentButton } from "@/components/RunAgentButton";
-import { RUN_PILL, RunStatusPill } from "./RunStatusPill";
+import { RUN_PILL, RunStatusPill, RunWayOut } from "./RunStatusPill";
 import { AiRowAction } from "./AiRowAction";
 import { AiSideToggle } from "./AiSideToggle";
 
@@ -36,6 +36,9 @@ export type AiRun = {
   summary: string | null;
   note: string | null;
   bidProjectName: string | null;
+  /** Set when the run was about one bid — its name then opens that bid,
+   * and Run again (RunWayOut) can re-run it. */
+  bidInvitationId?: string | null;
 };
 
 export type AiFinding = {
@@ -104,7 +107,7 @@ const ASIDE_LINK = "inline-flex min-h-11 items-center text-[13px] text-ink-muted
  * neither is still named. */
 export function Sources({ sources }: { sources: FindingSource[] }) {
   if (sources.length === 0) return null;
-  const chip = "inline-flex max-w-full items-center rounded-lg border border-line-card px-2 py-0.5 text-[12.5px] text-ink-body";
+  const chip = "inline-flex max-w-full items-center rounded-lg border border-line-card px-2 py-0.5 text-sm text-ink-body";
   return (
     <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Sources">
       {sources.map((source, i) => (
@@ -165,7 +168,18 @@ export function RunningNow({ runs, now }: { runs: AiRun[]; now: Date }) {
               <div className="flex items-start justify-between gap-3">
                 <p className="min-w-0 break-words text-[14.5px] leading-snug text-ink">
                   {agentLabel(run.agent)}
-                  {run.bidProjectName && <span className="text-ink-body"> · {run.bidProjectName}</span>}
+                  {run.bidProjectName && (
+                    <span className="text-ink-body">
+                      {" · "}
+                      {run.bidInvitationId ? (
+                        <Link href={aiBidHref(run.bidInvitationId)} className="text-link hover:text-link-hover hover:underline">
+                          {run.bidProjectName}
+                        </Link>
+                      ) : (
+                        run.bidProjectName
+                      )}
+                    </span>
+                  )}
                 </p>
                 <RunStatusPill status={run.status} />
               </div>
@@ -175,6 +189,9 @@ export function RunningNow({ runs, now }: { runs: AiRun[]; now: Date }) {
                 {(run.summary ?? run.note) && <>{run.summary ?? run.note} · </>}
                 <span className="text-ink-muted">{runWhen(run, now)}</span>
               </p>
+              <div className="mt-1 empty:hidden">
+                <RunWayOut status={run.status} note={run.note} agent={run.agent} bidInvitationId={run.bidInvitationId ?? null} />
+              </div>
             </li>
           ))}
         </ul>
@@ -212,7 +229,7 @@ export function Recommendations({
             <li key={rec.id} className="rounded-2xl border border-line-card bg-surface px-3.5 py-2.5">
               <p className="break-words text-[14.5px] font-semibold leading-snug text-ink">{rec.title}</p>
               <p className="mt-1 break-words text-[13px] leading-snug text-ink-body">
-                {rec.reason} <span className="whitespace-nowrap text-[12px] text-ink-muted">· {CONFIDENCE[rec.confidence] ?? rec.confidence}</span>
+                {rec.reason} <span className="whitespace-nowrap text-sm text-ink-muted">· {CONFIDENCE[rec.confidence] ?? rec.confidence}</span>
               </p>
               <Sources sources={rec.sources} />
               <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -303,7 +320,7 @@ export function Watching({
           ) : (
             <p className="text-sm text-ink-body">Nothing due this week.</p>
           )}
-          <p className="mt-1 text-[12.5px] text-ink-muted">
+          <p className="mt-1 text-sm text-ink-muted">
             {summary.unreadAddenda > 0 && (
               <span className="text-ink-body">
                 {summary.unreadAddenda} unread {summary.unreadAddenda === 1 ? "addendum" : "addenda"} ·{" "}

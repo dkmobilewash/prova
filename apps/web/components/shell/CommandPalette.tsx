@@ -39,11 +39,41 @@ export function resultCount(n: number): string {
  * in it is two IDREFs to aria-labelledby, and neither exists. */
 const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
+/** A search that has not answered by now is not going to be worth waiting
+ * for — say so, rather than spin "Searching…" forever. */
+const SEARCH_TIMEOUT_MS = 10_000;
+export const SEARCH_TOO_SLOW = "Search took too long — try again.";
+
 async function fetchPalette(query: string, signal: AbortSignal): Promise<PaletteResponse> {
-  const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`, { signal, headers: { accept: "application/json" } });
-  if (!res.ok) throw new Error(String(res.status));
-  return (await res.json()) as PaletteResponse;
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  signal.addEventListener("abort", stop);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // Raced, not only aborted: the reject settles the promise even if the
+  // request ignores its signal.
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error("timeout"));
+    }, SEARCH_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([
+      (async () => {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`, { signal: controller.signal, headers: { accept: "application/json" } });
+        if (!res.ok) throw new Error(String(res.status));
+        return (await res.json()) as PaletteResponse;
+      })(),
+      timeout,
+    ]);
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", stop);
+  }
 }
+
+const searchError = (err: unknown) =>
+  err instanceof Error && err.message === "401" ? "Sign in again to search." : err instanceof Error && err.message === "timeout" ? SEARCH_TOO_SLOW : SEARCH_UNAVAILABLE;
 
 export function CommandPalette() {
   const router = useRouter();
@@ -111,7 +141,7 @@ export function CommandPalette() {
     fetchPalette("", controller.signal)
       .then(setBase)
       .catch((err: unknown) => {
-        if (!controller.signal.aborted) setError(err instanceof Error && err.message === "401" ? "Sign in again to search." : SEARCH_UNAVAILABLE);
+        if (!controller.signal.aborted) setError(searchError(err));
       });
     return () => controller.abort();
   }, [open]);
@@ -135,9 +165,9 @@ export function CommandPalette() {
           setError(null);
           setLoading(false);
         })
-        .catch(() => {
+        .catch((err: unknown) => {
           if (controller.signal.aborted) return;
-          setError(SEARCH_UNAVAILABLE);
+          setError(searchError(err));
           setLoading(false);
         });
     }, DEBOUNCE_MS);

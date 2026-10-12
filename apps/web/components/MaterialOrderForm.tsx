@@ -36,13 +36,16 @@ export function MaterialOrderForm({
   vendors,
   lineItems,
   defaultJobId,
+  startOpen = false,
 }: {
   jobs: JobOption[];
   vendors: VendorOption[];
   lineItems: LineItemOption[];
   defaultJobId?: string;
+  /** Open on arrival — the page was reached by a create shortcut (`?new=1`). */
+  startOpen?: boolean;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(startOpen);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const draft = useFormDraft("material-order:create");

@@ -77,9 +77,10 @@ export function StatusChip({ status }: { status: ToolStatus }) {
  * is now never cut (areas.test.ts holds every one under the ceiling measured
  * in Chromium, and a label past it wraps rather than hides).
  *
- * `create` is true only for a genuine create action. Only the jobs list has
- * a create page of its own (/jobs/new); every other tool's create form lives
- * on its list page, so opening that page is not a create. Only a create
+ * `create` is true only for a genuine create action: the jobs list's create
+ * page (/jobs/new) and /bids?new=1, which opens the bids page with its add-form
+ * already open. Every other tool's create form lives on its list page, so
+ * opening that page is not a create. Only a create
  * gets the brand-yellow fill — it used to go to whichever card was first,
  * which made "Open Cash flow" look like the thing the Money area wanted
  * you to do. */
@@ -91,6 +92,9 @@ export function toolActions(tool: { route: string; href: string; name: string; a
   // ONLY way in: with just "+ New job" the card had no door to the list
   // itself (click test, 2026-10-11). Create first, in yellow; open under it.
   if (tool.route === "/dashboard") return [{ label: "+ New job", href: "/jobs/new", create: true }, { ...open, label: "Open jobs" }];
+  // Bids has no create page; ?new=1 opens /bids's own add-form, so a bid
+  // can be logged without first finding the GC's contact page.
+  if (tool.route === "/bids") return [{ label: "+ Log a bid", href: "/bids?new=1", create: true }, { ...open, label: "Open bids" }];
   return [open];
 }
 
