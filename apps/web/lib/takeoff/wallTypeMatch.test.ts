@@ -2,12 +2,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { TAG_MAJORITY, matchClusterToWallType, matchSentence, sameDesignation } from "./wallTypeMatch";
-import type { PostableWallType } from "./wallTypeMatch";
+import type { MatchableWallType } from "./wallTypeMatch";
 
-const TYPES: PostableWallType[] = [
-  { id: "wt_w1", code: "W1", name: "⅝″ Type X both sides, 3-5/8 stud", thicknessIn: null },
-  { id: "wt_w2", code: "W-2", name: "One hour, double layer", thicknessIn: null },
-  { id: "wt_ext", code: "EXT-1", name: "Exterior sheathing", thicknessIn: null },
+const TYPES: MatchableWallType[] = [
+  { id: "wt_w1", code: "W1", name: "⅝″ Type X both sides, 3-5/8 stud", hasParts: true, thicknessIn: null },
+  { id: "wt_w2", code: "W-2", name: "One hour, double layer", hasParts: true, thicknessIn: null },
+  { id: "wt_ext", code: "EXT-1", name: "Exterior sheathing", hasParts: true, thicknessIn: null },
 ];
 
 const tagged = (...parts: [string, number][]) => parts.map(([name, feet]) => ({ name, feet }));
@@ -214,14 +214,97 @@ describe("the call site, because no test here can open a PDF", () => {
   });
 
   it("CARRIES THE RESOLVED TYPE'S OWN CODE into the measurement label", () => {
-    // `4⅞" wall` is what the app measured; `A1 wall` is what it will be priced
-    // as, and it is what an estimator looks for in the list and on the recap.
+    // `4⅞" wall` is what the app measured; `A1 wall` is what the drawing calls
+    // it, and it is what an estimator looks for in the list and on the recap.
+    //
+    // THE LABEL FOLLOWS `named`, NOT `priced`, and that is the change this case
+    // was rewritten for rather than relaxed to admit. A type imported from a
+    // partition schedule has a thickness and no layers, so it can name a group
+    // and not price one; reading the label off the priced type would throw the
+    // drawing's own word away in exactly the case where reading the schedule
+    // just supplied it.
     const text = viewer();
-    expect(text).toContain("${priced.code} wall");
+    expect(text).toContain("${named.code} wall");
+    expect(text, "the label is read off the priced type again").not.toContain("${priced.code} wall");
+  });
+
+  it("PRICES ONLY A TYPE WITH PARTS, and the button and the form read one function", () => {
+    // The invariant the old comment protected: the words on the button and the
+    // `wallTypeId` on the form are two readings of the same question. Both go
+    // through `pricedTypeFor`, which is now `namedTypeFor` plus `hasParts`.
+    const text = viewer();
+    expect(text).toMatch(/return named !== null && named\.hasParts \? named : null;/);
+    expect(text).toContain('body.set("wallTypeId", priced.id)');
   });
 
   it("RENDERS THE REASON, and every reason says where it came from", () => {
     const text = viewer();
     expect(text).toContain("groupSentence(group, verdict)");
+  });
+});
+
+/**
+ * ── WHICH LIST THE PAGE HANDS THE MATCHER, WHICH IS WHERE THE DEFECT LIVED ──
+ *
+ * Every other case in this file reasons about the matcher and the viewer. The
+ * bug was in neither: the takeoff page queried `components: { some: {} }` and
+ * handed the result to the wall finder, so ten wall types read off School-01's
+ * partition schedule were not in the list the matcher was given. The matcher
+ * was correct about the list it had. The viewer was correct about the list it
+ * had. The list was wrong.
+ *
+ * FOUND BY MUTATION, NOT BY REVIEW. With the fix in place, reverting that one
+ * prop back to `postableWallTypes` restores the defect exactly — and every
+ * test in this repo stayed green, because nothing here could see the page.
+ * CLAUDE.md's sentence for it: nothing is ever missing from a list nobody
+ * imports.
+ *
+ * A census is the right instrument here rather than a fallback. The question is
+ * not what a function computes, it is which of two values is wired to a prop,
+ * and that is a fact about the source. It cannot tell you the page RUNS — the
+ * pilot journey does that — only that it is still wired this way.
+ */
+describe("the takeoff page's two wall-type lists", () => {
+  const page = () =>
+    readFileSync(resolve(process.cwd(), "app/(app)/jobs/[id]/(tabs)/takeoff/page.tsx"), "utf8");
+  const code = () =>
+    page().replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  it("QUERIES EVERY TYPE, so a schedule-imported one is not invisible", () => {
+    const text = code();
+    expect(text, "the wall-type query filters by components again").not.toMatch(
+      /findMany\(\{\s*where: \{ companyId: company\.id, components:/,
+    );
+    expect(text).toMatch(/const allWallTypes = await prisma\.wallType\.findMany/);
+    expect(text).toMatch(/_count: \{ select: \{ components: true \} \}/);
+  });
+
+  it("GIVES THE WALL FINDER THE WHOLE LIST — the defect, as shipped", () => {
+    // The single line that was wrong. Reverting it to `postableWallTypes` is
+    // the mutation that used to pass every test in the repo.
+    expect(code()).toMatch(/wallTypes=\{allWallTypes\.map/);
+    expect(code(), "the finder is back on the filtered list").not.toMatch(
+      /wallTypes=\{postableWallTypes\.map\(\(type\) => \(\{\s*id: type\.id,\s*code: type\.code,\s*name: type\.name,\s*hasParts/,
+    );
+  });
+
+  it("STILL GATES POSTING ON LAYERS, which is the guard that was moved not dropped", () => {
+    // If this stops filtering, a measurement can be posted against a type that
+    // produces no line items — the thing the original query was right about.
+    expect(code()).toMatch(
+      /const postableWallTypes = allWallTypes\.filter\(\(type\) => type\._count\.components > 0\);/,
+    );
+  });
+
+  it("hands the MEASUREMENT LIST the postable list, not every type", () => {
+    // The other consumer, which posts wall runs and must keep the old rule.
+    expect(code()).toMatch(/wallTypes=\{postableWallTypes\.map/);
+  });
+
+  it("READ A REAL FILE, so a path that stopped resolving fails loudly", () => {
+    // The size assertion this family needs: a census over an empty string
+    // passes every `not.toMatch` above it.
+    expect(page().length).toBeGreaterThan(2000);
+    expect(page()).toContain("TakeoffPlanViewer");
   });
 });

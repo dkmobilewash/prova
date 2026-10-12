@@ -57,7 +57,7 @@ import {
   type WallGroup,
   type GroupVerdict,
 } from "@/lib/takeoff/wallGroups";
-import type { PostableWallType } from "@/lib/takeoff/wallTypeMatch";
+import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 
 /**
  * THE MEASURING SURFACE — a PDF page rendered to a canvas, with an SVG
@@ -140,7 +140,7 @@ export function TakeoffPlanViewer({
   /** The company's wall types that have layers, so they produce line items.
    *  Used only to MATCH the drawing's own tags against — the viewer never
    *  chooses a type, it reports which one the drawing named. */
-  wallTypes: PostableWallType[];
+  wallTypes: MatchableWallType[];
   /**
    * The title-block scale per PAGE NUMBER, deliberately not per sheet.
    *
@@ -664,6 +664,11 @@ export function TakeoffPlanViewer({
     const group = found?.[index];
     if (!group || !sheet) return;
     const priced = pricedTypeFor(group, chosen[index]);
+    // THE LABEL FOLLOWS THE NAME, NOT THE PRICE. A group the drawing calls A1
+    // is "A1 wall" in the measurement list whether or not A1 has layers yet —
+    // losing the name because the parts are missing would throw away the half
+    // of the schedule import that already works.
+    const named = namedTypeFor(group, chosen[index]);
     const body = new FormData();
     body.set("pageId", sheet.id);
     // ── THE LABEL CARRIES THE DRAWING'S OWN WORD WHERE THERE IS ONE ──
@@ -674,7 +679,7 @@ export function TakeoffPlanViewer({
     // the match was right.
     body.set(
       "label",
-      priced ? `${priced.code} wall — ${inchLabel(group.inches)}` : `${inchLabel(group.inches)} wall`,
+      named ? `${named.code} wall — ${inchLabel(group.inches)}` : `${inchLabel(group.inches)} wall`,
     );
     // AND THE TYPE, so the action posts a priced run instead of bare
     // quantities. Null for every unresolved state: this component must not
@@ -700,13 +705,39 @@ export function TakeoffPlanViewer({
    * that sends nothing — a bid short by a whole group, with the screen saying
    * otherwise.
    */
-  function pricedTypeFor(group: WallGroup, pick: string | undefined): PostableWallType | null {
+  function namedTypeFor(group: WallGroup, pick: string | undefined): MatchableWallType | null {
     const verdict = verdictFor(group);
     if (verdict.state === "NAMED" || verdict.state === "ONLY_ONE_THAT_THICK") return verdict.type;
     // An ASK is priced only once a PERSON has answered it. No default, no
     // first-in-the-list: that is the guess this whole module refuses to make.
     if (verdict.state === "ASK") return verdict.types.find((type) => type.id === pick) ?? null;
     return null;
+  }
+
+  /**
+   * The type a group would be POSTED as, or null for one that is not settled —
+   * AND NULL FOR A TYPE WITH NO PARTS, which is the whole of this change.
+   *
+   * Naming and pricing are two questions and this app used to ask only one of
+   * them. The takeoff page handed this component a list already filtered to
+   * types with layers, so a schedule-imported type was invisible: on School-01
+   * the app tagged a group `A1` off the drawing and said "no wall type you have
+   * is 4-7/8 inch thick" in the next breath, with A1 sitting in the library at
+   * exactly that thickness. See `MatchableWallType`.
+   *
+   * Now every type can NAME a group — `namedTypeFor` — and only a type with
+   * parts can PRICE one. A layerless match still reaches the label, the row and
+   * the sentence, so the estimator learns what the drawing's tag means and what
+   * is missing; it just does not reach `wallTypeId`, because posting against it
+   * would write a run that produces no line items.
+   *
+   * THE INVARIANT THE OLD COMMENT PROTECTED IS UNCHANGED: the button's words
+   * and the form's `wallTypeId` both read THIS function, so they cannot
+   * disagree. What changed is that the label reads the other one.
+   */
+  function pricedTypeFor(group: WallGroup, pick: string | undefined): MatchableWallType | null {
+    const named = namedTypeFor(group, pick);
+    return named !== null && named.hasParts ? named : null;
   }
 
   // ── What the draft currently measures, for the live readout ───────────
@@ -1014,6 +1045,12 @@ export function TakeoffPlanViewer({
                 {shownGroups.map((group, index) => {
                   const verdict = verdictFor(group);
                   const priced = pricedTypeFor(group, chosen[index]);
+                  // NAMED BUT NOT PRICEABLE: the drawing's tag matched a type
+                  // this company has, and that type has no layers yet — the
+                  // state a schedule import leaves every type in. Worth its own
+                  // sentence, because "Add these" with no explanation is what
+                  // sent somebody to the wall-types page to find nothing wrong.
+                  const namedOnly = priced === null ? namedTypeFor(group, chosen[index]) : null;
                   return (
                   <li
                     key={`${group.inches}-${index}`}
@@ -1085,7 +1122,15 @@ export function TakeoffPlanViewer({
                         and says that instead — one of them is finished work and
                         the other is a step. Both read from `pricedTypeFor`, the
                         same function the submit uses, so the words and the form
-                        cannot disagree. */}
+                        cannot disagree.
+
+                        THE THIRD WORDING IS NEW AND IT IS THE HONEST ONE. A
+                        group can now be NAMED by a type that has no layers yet
+                        — every type a partition schedule imports is in that
+                        state — and "Add these", with no explanation, is what
+                        sent somebody to the wall-types page looking for a fault
+                        that was not there. It still writes plain measurements;
+                        it just says which type they are waiting on. */}
                     <button
                       type="button"
                       onClick={() => void onAcceptCluster(index)}
@@ -1095,7 +1140,11 @@ export function TakeoffPlanViewer({
                           : "border-line-card text-ink-body hover:bg-rail-hover"
                       }`}
                     >
-                      {priced ? `Add as ${priced.code} — priced` : "Add these"}
+                      {priced
+                        ? `Add as ${priced.code} — priced`
+                        : namedOnly
+                          ? `Add as ${namedOnly.code} — not priced yet`
+                          : "Add these"}
                     </button>
 
                     {/* ── AND WHY, UNDERNEATH ──

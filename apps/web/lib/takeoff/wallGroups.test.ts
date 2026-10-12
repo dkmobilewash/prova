@@ -9,7 +9,7 @@ import {
   THICKNESS_SLACK_IN,
   type WallGroup,
 } from "./wallGroups";
-import type { PostableWallType } from "./wallTypeMatch";
+import type { MatchableWallType } from "./wallTypeMatch";
 import { CLUSTER_INCHES, inchLabel, type WallCandidate, type WallCluster } from "./wallVectors";
 
 /**
@@ -34,10 +34,19 @@ const cluster = (inches: number, runs: WallCandidate[]): WallCluster => ({
   feet: runs.reduce((sum, one) => sum + one.lengthFeet, 0),
 });
 
-const type = (code: string, thicknessIn: number | null, name = `${code} partition`): PostableWallType => ({
+/** `hasParts` defaults TRUE so every case written before naming and pricing
+ *  were separated keeps the meaning it had — those types all had layers. The
+ *  cases that care pass it explicitly. */
+const type = (
+  code: string,
+  thicknessIn: number | null,
+  name = `${code} partition`,
+  hasParts = true,
+): MatchableWallType => ({
   id: `wt_${code}`,
   code,
   name,
+  hasParts,
   thicknessIn,
 });
 
@@ -137,7 +146,7 @@ describe("when the drawing's name and the measurement disagree", () => {
   // states the contradiction instead of resolving it. Before `WallType` carried
   // a thickness this could not even be noticed.
 
-  const tagged = (inches: number, type: PostableWallType) => {
+  const tagged = (inches: number, type: MatchableWallType) => {
     const a = run(40);
     const [group] = wallGroups([cluster(inches, [a])], new Map([[a, type.code]]), [type]);
     return group;
@@ -450,5 +459,74 @@ describe("nothing a sheet found is out of reach", () => {
   it("reads the file it thinks it is reading", () => {
     expect(viewer).toContain("Find the walls");
     expect(viewer.length).toBeGreaterThan(20000);
+  });
+});
+
+/**
+ * ── A TYPE CAN NAME A GROUP BEFORE IT CAN PRICE ONE ──
+ *
+ * Measured on School-01, 2026-10-11, and this is the case the whole change
+ * exists for. The partition schedule on A-501 was read into ten wall types —
+ * A1, A2, B1, C1, D1, F1, EXT-1, EXT-2, CMU, SF — each carrying the thickness
+ * the drawing prints. Then **Find the walls** on A-101 found 63 runs, tagged
+ * them A1 and A2 off the drawing, and said:
+ *
+ *   "Nothing on the drawing names these and no wall type you have is 4-7/8"
+ *    thick."
+ *
+ * beside a row it had just tagged A1, with A1 in the library at 4-7/8".
+ *
+ * Neither sentence was lying. The takeoff page filtered the matcher's list to
+ * `components: { some: {} }` — types with layers — so the imported types were
+ * not in the list the matcher was reasoning about. The filter was right about
+ * POSTING and was applied to NAMING, which is a different question, and the
+ * import's own button promises the opposite: "Each one arrives with its
+ * thickness, so a wall measured on the drawing can find it."
+ *
+ * So naming sees every type, pricing still requires parts, and the sentence
+ * says which of the two is missing.
+ */
+describe("a wall type with no parts on it yet", () => {
+  const partsless = (code: string, inches: number) => type(code, inches, `${code} partition`, false);
+
+  it("STILL NAMES A GROUP THE DRAWING TAGS — the School-01 case", () => {
+    const a = run(40);
+    const [group] = wallGroups(
+      [cluster(4.875, [a])],
+      new Map([[a, "A1"]]),
+      [partsless("A1", 4.875)],
+    );
+    const verdict = verdictFor(group);
+    expect(verdict.state, "a tagged group went unnamed because its type has no parts").toBe("NAMED");
+  });
+
+  it("says it cannot be priced YET, and where to fix that", () => {
+    const a = run(40);
+    const [group] = wallGroups(
+      [cluster(4.875, [a])],
+      new Map([[a, "A1"]]),
+      [partsless("A1", 4.875)],
+    );
+    const sentence = groupSentence(group, verdictFor(group)) ?? "";
+    expect(sentence).toContain("A1");
+    expect(sentence, "nothing says the type is unpriceable").toMatch(/no parts on it yet/);
+    expect(sentence, "nothing says where to put that right").toMatch(/Wall types/);
+  });
+
+  it("leaves a type WITH parts saying none of that", () => {
+    // The ordinary case must not acquire a caveat it does not have.
+    const a = run(40);
+    const [group] = wallGroups([cluster(4.875, [a])], new Map([[a, "A1"]]), [type("A1", 4.875)]);
+    const sentence = groupSentence(group, verdictFor(group)) ?? "";
+    expect(sentence).toContain("which is your A1");
+    expect(sentence).not.toMatch(/no parts on it yet/);
+  });
+
+  it("is still matched by THICKNESS when the drawing names nothing", () => {
+    // The untagged majority — 57% to 75% of a real sheet's footage — reaches a
+    // type by thickness alone, and that path must see partless types too.
+    const a = run(40);
+    const [group] = wallGroups([cluster(4.875, [a])], new Map(), [partsless("A1", 4.875)]);
+    expect(verdictFor(group).state).toBe("ONLY_ONE_THAT_THICK");
   });
 });

@@ -1,5 +1,5 @@
 import { CLUSTER_INCHES, inchLabel, type WallCandidate, type WallCluster } from "./wallVectors";
-import { sameDesignation, type PostableWallType } from "./wallTypeMatch";
+import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
 
 /**
  * ── A THICKNESS GROUP IS NOT ONE WALL TYPE, AND ON A REAL SHEET IT RARELY IS ──
@@ -64,7 +64,7 @@ export type WallGroup = {
   source: GroupSource;
   /** The company's types this group could be. One is an answer; several is a
    *  question; none is a plain measurement. */
-  candidates: PostableWallType[];
+  candidates: MatchableWallType[];
 };
 
 /**
@@ -85,8 +85,8 @@ export const THICKNESS_SLACK_IN = CLUSTER_INCHES / 2;
 /** The company's postable types that could be a wall of this thickness. */
 export function typesAtThickness(
   inches: number,
-  wallTypes: readonly PostableWallType[],
-): PostableWallType[] {
+  wallTypes: readonly MatchableWallType[],
+): MatchableWallType[] {
   return wallTypes.filter(
     (type) =>
       type.thicknessIn !== null && Math.abs(type.thicknessIn - inches) <= THICKNESS_SLACK_IN,
@@ -119,7 +119,7 @@ export function typesAtThickness(
 export function wallGroups(
   clusters: readonly WallCluster[],
   tagByRun: ReadonlyMap<WallCandidate, string>,
-  wallTypes: readonly PostableWallType[],
+  wallTypes: readonly MatchableWallType[],
 ): WallGroup[] {
   const out: WallGroup[] = [];
   for (const cluster of clusters) {
@@ -179,17 +179,17 @@ function feetOf(runs: readonly WallCandidate[]): number {
 /** What a group is, once its candidates are counted. */
 export type GroupVerdict =
   /** One type, and the drawing named it. Price it. */
-  | { state: "NAMED"; type: PostableWallType; tag: string }
+  | { state: "NAMED"; type: MatchableWallType; tag: string }
   /**
    * The drawing names a type this company HAS, and the wall is not the
    * thickness that type is recorded as. Two sources disagree; neither is
    * overruled here.
    */
-  | { state: "TAG_DISAGREES"; type: PostableWallType; tag: string }
+  | { state: "TAG_DISAGREES"; type: MatchableWallType; tag: string }
   /** One type, from the thickness alone, because nothing named these. */
-  | { state: "ONLY_ONE_THAT_THICK"; type: PostableWallType }
+  | { state: "ONLY_ONE_THAT_THICK"; type: MatchableWallType }
   /** Several types are this thick. Only a person can say which. */
-  | { state: "ASK"; types: PostableWallType[] }
+  | { state: "ASK"; types: MatchableWallType[] }
   /** The drawing names a type this company does not have. */
   | { state: "NO_SUCH_TYPE"; tag: string }
   /** Nothing named them and nothing in the library is that thick. */
@@ -243,7 +243,19 @@ export function verdictFor(group: WallGroup): GroupVerdict {
 export function groupSentence(group: WallGroup, verdict: GroupVerdict): string | null {
   switch (verdict.state) {
     case "NAMED":
-      return `The drawing tags these ${verdict.tag}, which is your ${verdict.type.code} — ${verdict.type.name}.`;
+      // ── AND WHETHER IT CAN BE PRICED, WHICH IS A SECOND FACT ──
+      //
+      // A type imported from a partition schedule arrives with its thickness
+      // and no layers, so it can name a group and not price one. Saying only
+      // the first half leaves an estimator with a button that writes plain
+      // measurements for a reason nothing on the screen states — which is what
+      // happened on School-01, where the app had just read A1 off A-501 and
+      // then declined to use it without ever saying why.
+      return verdict.type.hasParts
+        ? `The drawing tags these ${verdict.tag}, which is your ${verdict.type.code} — ${verdict.type.name}.`
+        : `The drawing tags these ${verdict.tag}, which is your ${verdict.type.code} — ${verdict.type.name}. ` +
+          `It has no parts on it yet, so these can be added as measurements but not priced — put the studs, ` +
+          `track and board on ${verdict.type.code} under Wall types and they will price themselves.`;
     case "ONLY_ONE_THAT_THICK":
       return (
         `Nothing on the drawing names these. ${verdict.type.code} is the only wall type you have at ` +
