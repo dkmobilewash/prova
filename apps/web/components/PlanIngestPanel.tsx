@@ -354,10 +354,41 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
             </div>
           )}
 
-          {/* THE THIRD STAGE. Gated on TITLE_BLOCK having finished, because the
-              page types it proposes are what decide which sheets this reads —
-              and therefore what it costs. */}
-          {view.complete && view.stage === "TITLE_BLOCK" && !running && (
+          {/* THE THIRD STAGE, GATED ON ITS OWN PRECONDITION RATHER THAN ON WHICH
+              STAGE RAN LAST.
+
+              It used to read `view.stage === "TITLE_BLOCK"`, for a reason that
+              sounded right: the page types a title-block pass proposes are what
+              decide which sheets this reads, and therefore what it costs. The
+              reason is sound and the gate did not express it. `view.stage` is
+              the stage of the LATEST run, so ANY later run hides this button —
+              and the re-read sitting directly below it is a later run, costs
+              nothing, and the app recommends pressing it.
+
+              Found on 2026-10-11 by doing exactly that. A fix had just landed
+              for three sheets that could not be read; the re-read recovered all
+              three, and the act of recovering them took away the button the
+              whole exercise was for. The only route back through the UI was
+              "Read the title blocks — uses 60 sheets", a second time, for work
+              already paid for.
+
+              THIS IS THE SAME BUG #663 FIXED ONE BUTTON LOWER, and that entry
+              says so in as many words — "the gate is now COMPLETION, not which
+              stage completed". It was fixed for the re-read button and left
+              here, which is the shape worth noticing: a diagnosis recorded
+              beside the one call site somebody happened to be looking at.
+
+              The real precondition is that some sheet IS a schedule, and
+              `scheduleSheetCount` already measures exactly that — it counts
+              proposed and accepted page types, which only a title-block pass can
+              produce. So the gate is the count. `view.stage` survives only for
+              the zero case, so that "None of the title blocks named a schedule"
+              appears when a title-block run has just finished and NOT on a set
+              nobody has read yet, where it would be an answer to a question
+              nobody asked. */}
+          {view.complete &&
+            !running &&
+            (scheduleSheetCount > 0 || view.stage === "TITLE_BLOCK") && (
             <div className="mt-1 border-t border-line-card pt-3" data-plan-ingest="schedule-stage">
               <button
                 type="button"
