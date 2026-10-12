@@ -272,29 +272,87 @@ export async function installHistoryLog(page: Page): Promise<void> {
             while (f && f.tag !== 3) f = f.return as typeof f;
             return (f?.stateNode as Record<string, unknown> | undefined) ?? null;
           };
-          type Fiber = { tag: number; type: unknown; child: Fiber | null; sibling: Fiber | null; memoizedState: unknown; alternate: Fiber | null };
+          type Fiber = {
+            tag: number;
+            type: unknown;
+            elementType: unknown;
+            child: Fiber | null;
+            sibling: Fiber | null;
+            return: Fiber | null;
+            memoizedState: unknown;
+            memoizedProps: unknown;
+            alternate: Fiber | null;
+            stateNode: unknown;
+          };
           const nameOf = (f: Fiber | null): string => {
             const t = f?.type as { displayName?: string; name?: string } | string | null | undefined;
             if (!t) return f ? `tag${f.tag}` : "-";
             return typeof t === "string" ? t : (t.displayName ?? t.name ?? "anon");
           };
-          const suspenseIn = (start: Fiber | null): string => {
+          const hostAncestor = (f: Fiber | null): string => {
+            let p = f?.return ?? null;
+            while (p && p.tag !== 5) p = p.return;
+            const el = p?.stateNode as HTMLElement | undefined;
+            if (!el) return "no host ancestor";
+            const cls = (el.getAttribute("class") ?? "").split(/\s+/).slice(0, 3).join(".");
+            const data = Array.from(el.attributes)
+              .filter((a) => a.name.startsWith("data-") || a.name === "aria-label")
+              .map((a) => `${a.name}=${a.value.slice(0, 20)}`)
+              .join(" ");
+            return `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ""}${cls ? `.${cls}` : ""}${data ? ` ${data}` : ""}`;
+          };
+          // The chain from a FALLBACK boundary down the first-child spine
+          // to where rendering stopped: tags, host names, and for a lazy
+          // (tag 16) the payload's status. tag 0 fn, 1 class, 5 host, 10
+          // context, 11 forwardRef, 13 suspense, 15 memo, 16 lazy, 22
+          // offscreen.
+          const spine = (boundary: Fiber): string => {
+            const parts: string[] = [];
+            let f: Fiber | null = boundary.child;
+            let depth = 0;
+            while (f && depth++ < 40) {
+              let tag = `${f.tag}:${nameOf(f)}`;
+              if (f.tag === 16) {
+                const payload = (f.elementType as { _payload?: { status?: unknown; reason?: unknown; value?: unknown } } | null)?._payload;
+                tag += `(lazy status=${String(payload?.status)}${payload?.reason ? ` reason=${String(payload.reason).slice(0, 60)}` : ""})`;
+              }
+              parts.push(tag);
+              if (!f.child && f.sibling && f.tag !== 5) {
+                // Nothing below: the last fiber the render reached. Say how
+                // many siblings were created beside it.
+                let n = 0;
+                let sib: Fiber | null = f.sibling;
+                while (sib && n++ < 50) sib = sib.sibling;
+                parts.push(`[+${n} siblings]`);
+              }
+              f = f.child;
+            }
+            return parts.join(" > ");
+          };
+          const suspenseIn = (start: Fiber | null, detail: boolean): string => {
             const out: string[] = [];
             const stack: Fiber[] = start ? [start] : [];
             let seen = 0;
             while (stack.length > 0 && seen++ < 5000) {
               const f = stack.pop()!;
-              if (f.tag === 13) out.push(`${f.memoizedState ? "FALLBACK" : "content"}:${nameOf(f.child)}`);
+              if (f.tag === 13) {
+                const fallback = Boolean(f.memoizedState);
+                out.push(
+                  fallback && detail
+                    ? `FALLBACK in ${hostAncestor(f)}; spine ${spine(f)}`
+                    : `${fallback ? "FALLBACK" : "content"} in ${hostAncestor(f)}`,
+                );
+              }
               if (f.sibling) stack.push(f.sibling);
               if (f.child) stack.push(f.child);
             }
-            return `${out.length}[${out.join(",")}]`;
+            return `${out.length}[${out.join(" | ")}]`;
           };
           const reactState = (): string => {
             const r = fiberRoot();
             if (!r) return "no fiber root";
             const current = r.current as Fiber | null;
-            return `lanes pending=${String(r.pendingLanes)} suspended=${String(r.suspendedLanes)} pinged=${String(r.pingedLanes)} entangled=${String(r.entangledLanes)} expired=${String(r.expiredLanes)} finished=${String(r.finishedLanes)} cbPrio=${String(r.callbackPriority)}; suspense current=${suspenseIn(current)} wip=${current?.alternate ? suspenseIn(current.alternate) : "none"}`;
+            return `lanes pending=${String(r.pendingLanes)} suspended=${String(r.suspendedLanes)} pinged=${String(r.pingedLanes)} entangled=${String(r.entangledLanes)} expired=${String(r.expiredLanes)} finished=${String(r.finishedLanes)} cbPrio=${String(r.callbackPriority)}; suspense current=${suspenseIn(current, false)} wip=${current?.alternate ? suspenseIn(current.alternate, true) : "none"}`;
           };
           window.setTimeout(() => log.push(`${Date.now()} 9s after ${label}: at ${location.pathname}; ${reactState()}`), 9000);
           // Three seconds on: did the router read it, and what is on screen.
