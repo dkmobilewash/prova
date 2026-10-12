@@ -8,7 +8,10 @@ import { SignatureImage } from "@/components/SignatureImage";
 import { DispatchSlipForm } from "@/components/DispatchSlipForm";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
 import { can } from "@/lib/permissions";
-import { viewerTimeZone } from "@/lib/viewerToday";
+import { viewerTimeZone, viewerToday } from "@/lib/viewerToday";
+import { CrewWeekGrid } from "@/components/CrewWeekGrid";
+import { resolveWeekStart } from "@/lib/crew-schedule";
+import { loadScheduleBetween, scheduledWorkerName } from "@/lib/crew-schedule-query";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
 import { money } from "@/lib/money";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
@@ -28,8 +31,15 @@ const rowConfirmClass =
  * monolith (only T&M tickets withhold on MANAGE_FIELD; everything else
  * here was always open to anyone who could open the job).
  */
-export default async function JobCrewPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function JobCrewPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ week?: string }>;
+}) {
   const { id } = await params;
+  const { week: weekParam } = await searchParams;
   const { principal, job: jobRef } = await requireJob(id);
   const { showsField } = jobCapabilities(principal);
   const canApproveTimesheet = can(principal, "MANAGE_COMPLIANCE");
@@ -102,6 +112,9 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
   }));
 
   const timeZone = await viewerTimeZone();
+  const today = await viewerToday();
+  const week = resolveWeekStart(weekParam, today);
+  const weekDays = await loadScheduleBetween(jobRef.companyId, week, 6, job.id);
 
   // Days with a live timesheet sign-off: their hours are locked. Uncapped,
   // unlike the sign-off history list above, so an old signed day never
@@ -142,6 +155,37 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
 
   return (
     <div>
+      {/* Scheduling lived only on /schedule, so the job's own Crew step had
+          no way to put anyone on it (ux medium-B #11). The link opens the
+          same form there with this job already picked. */}
+      <section className="mb-10">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-ink">Who is on this job</h2>
+          {showsField && (
+            <Link
+              href={`/schedule?job=${job.id}&add=1`}
+              className="inline-flex min-h-11 items-center rounded-md border border-line-card px-3 text-sm text-ink-label hover:border-link hover:text-link"
+            >
+              Schedule crew
+            </Link>
+          )}
+        </div>
+        <CrewWeekGrid
+          days={weekDays.map((row) => ({
+            id: row.id,
+            workDate: row.workDate.toISOString().slice(0, 10),
+            jobId: row.jobId,
+            jobName: row.job.name,
+            worker: scheduledWorkerName(row),
+            craft: row.craftClassification?.name ?? null,
+            note: row.note,
+          }))}
+          week={week}
+          today={today}
+          basePath={`/jobs/${job.id}/crew`}
+        />
+      </section>
+
       <section className="mb-10" data-tour="job-time">
         <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-lg font-semibold text-ink">Field time entries</h2>

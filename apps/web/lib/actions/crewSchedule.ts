@@ -4,8 +4,20 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { actionFail as fail, actionOk as ok, isUniqueConstraintError, type ActionResult } from "./shared";
-import { CrewScheduleInputError, workDateFromString } from "@/lib/crew-schedule";
+import { actionFail, actionOk as ok, type ActionResult, type ActionResultWith } from "./shared";
+import {
+  CrewScheduleInputError,
+  dayKey,
+  scheduleDays,
+  scheduleSavedMessage,
+  workDateFromString,
+  workerKey,
+} from "@/lib/crew-schedule";
+import { scheduledWorkerName } from "@/lib/crew-schedule-query";
+
+/** `actionFail`, narrowed so it also fits `ActionResultWith` — its failure
+ * branch is the same shape, typed as the wider union. */
+const fail = (error: string) => actionFail(error) as Extract<ActionResult, { ok: false }>;
 
 /**
  * Writing the crew schedule.
@@ -45,44 +57,66 @@ function workerFromValue(raw: string): { scheduledUserId: string } | { crewMembe
   return null;
 }
 
-export async function scheduleCrewDay(formData: FormData): Promise<ActionResult> {
+/**
+ * One person on one day, or several people across a date range — the same
+ * form and the same action, so the 1 × 1 case cannot drift from the N × range
+ * one. Every row goes in with ONE `createMany … skipDuplicates` (a single
+ * INSERT … ON CONFLICT DO NOTHING, so all or nothing), which makes a repeat
+ * save idempotent: rows already there are counted, not refused.
+ */
+export async function scheduleCrewDay(formData: FormData): Promise<ActionResultWith<{ message: string }>> {
   const { company, ...user } = await requireCompanyContext();
   if (!can(user, "MANAGE_FIELD")) return fail(NO_PERMISSION);
 
   const jobId = text(formData, "jobId");
-  const worker = workerFromValue(text(formData, "worker"));
+  const rawWorkers = [...new Set(formData.getAll("worker").map((v) => String(v).trim()).filter(Boolean))];
+  const workers = rawWorkers.map(workerFromValue);
   if (!jobId) return fail("Pick a job.");
-  if (!worker) return fail("Pick who is going.");
+  if (workers.length === 0 || workers.some((w) => w === null)) return fail("Pick who is going.");
 
-  let workDate: Date;
+  let days: string[];
   try {
-    workDate = workDateFromString(text(formData, "workDate"));
+    const start = dayKey(workDateFromString(text(formData, "workDate")));
+    const endRaw = text(formData, "endDate");
+    const end = endRaw ? dayKey(workDateFromString(endRaw)) : start;
+    days = scheduleDays(start, end, formData.get("skipWeekends") === "on");
   } catch (err) {
     if (err instanceof CrewScheduleInputError) return fail(err.message);
     throw err;
   }
+  if (days.length === 0) return fail("Every day in that range is a weekend — untick Skip weekends to plan them.");
 
-  // Both the job and the worker are re-read through THIS company rather
+  // Both the job and the workers are re-read through THIS company rather
   // than trusted from the form. A forged id finds no row and is refused in
   // the same words as a typo, which is the same rule page-context-query.ts
   // follows: no "that belongs to someone else" branch, because that is an
   // existence oracle.
-  const job = await prisma.job.findFirst({ where: { id: jobId, companyId: company.id }, select: { id: true } });
+  const job = await prisma.job.findFirst({
+    where: { id: jobId, companyId: company.id },
+    select: { id: true, name: true },
+  });
   if (!job) return fail("That job is not on your account.");
 
-  if ("scheduledUserId" in worker) {
-    const found = await prisma.user.findFirst({
-      where: { id: worker.scheduledUserId, companyId: company.id },
-      select: { id: true },
-    });
-    if (!found) return fail("That person is not on your account.");
-  } else {
-    const found = await prisma.crewMember.findFirst({
-      where: { id: worker.crewMemberId, companyId: company.id, archivedAt: null },
-      select: { id: true },
-    });
-    if (!found) return fail("That crew member is not on your account, or has been archived.");
+  const userIds = workers.flatMap((w) => (w && "scheduledUserId" in w ? [w.scheduledUserId] : []));
+  const crewIds = workers.flatMap((w) => (w && "crewMemberId" in w ? [w.crewMemberId] : []));
+  const [users, crew] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: userIds }, companyId: company.id },
+      select: { id: true, name: true, email: true },
+    }),
+    prisma.crewMember.findMany({
+      where: { id: { in: crewIds }, companyId: company.id, archivedAt: null },
+      select: { id: true, legalFirstName: true, legalMiddleName: true, legalLastName: true },
+    }),
+  ]);
+  if (users.length !== userIds.length) return fail("That person is not on your account.");
+  if (crew.length !== crewIds.length) {
+    return fail("That crew member is not on your account, or has been archived.");
   }
+  const names = new Map<string, string>([
+    ...users.map((u) => [`user:${u.id}`, scheduledWorkerName({ scheduledUser: u, crewMember: null })] as const),
+    ...crew.map((c) => [`crew:${c.id}`, scheduledWorkerName({ scheduledUser: null, crewMember: c })] as const),
+  ]);
 
   const craftRaw = text(formData, "craftClassificationId");
   const craftClassificationId =
@@ -94,45 +128,60 @@ export async function scheduleCrewDay(formData: FormData): Promise<ActionResult>
       ? craftRaw
       : null;
 
-  try {
-    await prisma.crewScheduleDay.create({
-      data: {
+  const note = text(formData, "note") || null;
+  const workDates = days.map((day) => workDateFromString(day));
+  const rows = workers.flatMap((worker) =>
+    workDates.map((workDate) => ({
+      companyId: company.id,
+      jobId,
+      workDate,
+      craftClassificationId,
+      note,
+      createdByUserId: user.id,
+      ...worker!,
+    })),
+  );
+
+  // One transaction: the double-booking read and the write see the same
+  // schedule. ANOTHER job, same worker, same day — warned about, not refused.
+  //
+  // The unique key (job, worker, day) used to be caught here as P2002 and
+  // refused as "already on that job that day". `skipDuplicates` turns that
+  // into ON CONFLICT DO NOTHING, so a repeat is counted in the message
+  // instead — and a range that overlaps last week's plan saves the new days
+  // rather than refusing all of them over one.
+  const [clashRows, { count: created }] = await prisma.$transaction([
+    prisma.crewScheduleDay.findMany({
+      where: {
         companyId: company.id,
-        jobId,
-        workDate,
-        craftClassificationId,
-        note: text(formData, "note") || null,
-        createdByUserId: user.id,
-        ...worker,
+        jobId: { not: jobId },
+        workDate: { in: workDates },
+        OR: [{ scheduledUserId: { in: userIds } }, { crewMemberId: { in: crewIds } }],
       },
-    });
-  } catch (err) {
-    // The unique key is (job, worker, day). Caught and said in words rather
-    // than left to throw: "already on that job that day" is information,
-    // and a redacted digest is not.
-    //
-    // BY `code`, NOT BY `instanceof`, and this line cost a click test. It
-    // was `err instanceof Prisma.PrismaClientKnownRequestError && err.code
-    // === "P2002"`, which is false at runtime even though the thrown error
-    // IS that class with that code — the server log printed
-    // `Error [PrismaClientKnownRequestError] … code: 'P2002'` while the
-    // branch did not take. So the second submit escaped as an unhandled
-    // throw and the person got the error boundary: "This page didn't load
-    // … reference 2348556877", on a form whose whole job was to say one
-    // readable sentence.
-    //
-    // `isUniqueConstraintError` already existed for exactly this and its
-    // own comment says instanceof is false here, measured 2026-08-28. The
-    // helper was written, documented — and not called by me.
-    if (isUniqueConstraintError(err)) {
-      return fail("They are already on that job that day.");
-    }
-    throw err;
-  }
+      select: { workDate: true, scheduledUserId: true, crewMemberId: true, job: { select: { name: true } } },
+      orderBy: { workDate: "asc" },
+    }),
+    prisma.crewScheduleDay.createMany({ data: rows, skipDuplicates: true }),
+  ]);
 
   revalidatePath("/schedule");
-  revalidatePath(`/jobs/${jobId}`);
-  return ok;
+  revalidatePath(`/jobs/${jobId}`, "layout");
+  return {
+    ok: true,
+    value: {
+      message: scheduleSavedMessage({
+        workers: rawWorkers.map((key) => names.get(key) ?? key),
+        jobName: job.name,
+        days,
+        created,
+        clashes: clashRows.map((row) => ({
+          worker: names.get(workerKey(row)) ?? "Someone",
+          jobName: row.job.name,
+          day: dayKey(row.workDate),
+        })),
+      }),
+    },
+  };
 }
 
 export async function unscheduleCrewDay(id: string): Promise<ActionResult> {

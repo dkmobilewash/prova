@@ -1,17 +1,20 @@
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
-import { StatusBadge } from "@prova/ui";
+import { PageShell, StatusBadge } from "@prova/ui";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { formatCalendarDate } from "@/lib/render-date";
 import { can } from "@/lib/permissions";
-import { serverToday } from "@/lib/serverToday";
+import { viewerToday } from "@/lib/viewerToday";
 import {
   loadPlannedDaysMissingHours,
+  loadScheduleBetween,
   loadUpcomingSchedule,
   scheduledWorkerName,
 } from "@/lib/crew-schedule-query";
+import { resolveWeekStart, schedulableJobs } from "@/lib/crew-schedule";
 import { CrewScheduleBoard, type ScheduleDay } from "@/components/CrewScheduleBoard";
+import { CrewWeekGrid } from "@/components/CrewWeekGrid";
 import { CalendarSubscribe } from "@/components/CalendarSubscribe";
 import { toJobOption } from "@/components/jobLabels";
 
@@ -36,12 +39,21 @@ function toDay(row: Awaited<ReturnType<typeof loadUpcomingSchedule>>[number]): S
   };
 }
 
-export default async function SchedulePage() {
+export default async function SchedulePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ week?: string; job?: string; add?: string }>;
+}) {
+  const { week: weekParam, job: jobParam, add } = await searchParams;
   const { company, ...user } = await requireCompanyContext();
-  const today = serverToday();
+  // The VIEWER'S day, not the server's. With serverToday a day planned for
+  // "today" on a Sunday evening in the US was already "yesterday" in UTC, so
+  // it fell out of the two-week list and into missing hours (ux medium-B #12).
+  const today = await viewerToday();
+  const week = resolveWeekStart(weekParam, today);
   const canWrite = can(user, "MANAGE_FIELD");
 
-  const [scheduled, unscheduled, upcoming, missing, people, crew, crafts, feedToken] = await Promise.all([
+  const [scheduled, unscheduled, upcoming, weekDays, missing, people, crew, crafts, feedToken] = await Promise.all([
     prisma.job.findMany({
       where: { companyId: company.id, startDate: { not: null } },
       orderBy: { startDate: "asc" },
@@ -53,6 +65,7 @@ export default async function SchedulePage() {
       include: { contact: true },
     }),
     loadUpcomingSchedule(company.id, today),
+    loadScheduleBetween(company.id, week, 6),
     loadPlannedDaysMissingHours(company.id, today),
     prisma.user.findMany({
       where: { companyId: company.id },
@@ -96,7 +109,7 @@ export default async function SchedulePage() {
   // as though the scheduling is the missing step when the job is.
   if (scheduled.length === 0 && unscheduled.length === 0) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-8">
+      <PageShell width="reading">
         <h1 className="mb-6 text-xl font-semibold text-ink">Schedule</h1>
         <EmptyState
           data-tour="schedule-no-jobs"
@@ -124,12 +137,18 @@ export default async function SchedulePage() {
             ],
           }}
         />
-      </div>
+      </PageShell>
     );
   }
 
+  // Complete jobs are not offered (ux medium-B #10) — unless the Crew tab's
+  // link asked for that job by name, which is somebody's stated choice.
+  const allJobs = [...scheduled, ...unscheduled];
+  const pickable = allJobs.filter((job) => schedulableJobs([job]).length > 0 || job.id === jobParam);
+
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    // `working`: the week board is a 7-column table and wants the width.
+    <PageShell width="working">
       <h1 className="mb-6 text-xl font-semibold text-ink">Schedule</h1>
 
       {/* The crew board goes FIRST. This page's own empty state has always
@@ -140,10 +159,13 @@ export default async function SchedulePage() {
       <CrewScheduleBoard
         upcoming={upcoming.map(toDay)}
         missingHours={missing.map(toDay)}
-        jobs={[...scheduled, ...unscheduled].map(toJobOption)}
+        jobs={pickable.map(toJobOption)}
         workers={workers}
         crafts={crafts}
-        canWrite={canWrite && workers.length > 0 && scheduled.length + unscheduled.length > 0}
+        canWrite={canWrite && workers.length > 0 && allJobs.length > 0}
+        initialJobId={jobParam}
+        startOpen={add === "1"}
+        week={<CrewWeekGrid days={weekDays.map(toDay)} week={week} today={today} basePath="/schedule" />}
       />
 
       {/* Below the board, above the start-date list: the feed serves what
@@ -220,6 +242,6 @@ export default async function SchedulePage() {
           </ul>
         )}
       </section>
-    </div>
+    </PageShell>
   );
 }
