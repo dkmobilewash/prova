@@ -2,6 +2,8 @@ import Link from "next/link";
 import { formatCalendarDate } from "@/lib/render-date";
 import { money } from "@/lib/money";
 import type { JobSummary } from "@/lib/jobs/job-summary";
+import type { ActionResult } from "@/lib/actions/shared";
+import { MarkContractedButton } from "@/components/MarkContractedButton";
 
 /**
  * The job's name and the three numbers a sub asks first — contract, billed
@@ -24,15 +26,27 @@ export function JobSummaryHeader({
   summary,
   showsJobMoney,
   showsBilling,
+  contractSigned = false,
+  markContracted,
 }: {
   summary: JobSummary;
   showsJobMoney: boolean;
   showsBilling: boolean;
+  /** Whether the GC's signature or an executed subcontract is on file —
+   * markJobContracted's evidence gate, read the same way it reads it. */
+  contractSigned?: boolean;
+  /** `markJobContracted` bound to this job, passed only to a viewer who may
+   * call it. While the job is a bid this is the "We won it" step, on every
+   * tab: it used to live only at the bottom of the estimate page. */
+  markContracted?: () => Promise<ActionResult>;
 }) {
+  // A bid has no contract and nothing to bill yet: the figure is the bid,
+  // and "Billed to date" / "Left to bill" would only restate zero as a fact.
+  const isBid = summary.status === "ESTIMATE";
   const figures = [
-    ...(showsJobMoney ? [{ label: "Contract", value: summary.contractValue }] : []),
-    ...(showsBilling ? [{ label: "Billed to date", value: summary.billedToDate }] : []),
-    ...(showsJobMoney && showsBilling
+    ...(showsJobMoney ? [{ label: isBid ? "Bid" : "Contract", value: summary.contractValue }] : []),
+    ...(showsBilling && !isBid ? [{ label: "Billed to date", value: summary.billedToDate }] : []),
+    ...(showsJobMoney && showsBilling && !isBid
       ? [{ label: "Left to bill", value: summary.contractValue - summary.billedToDate }]
       : []),
   ];
@@ -81,6 +95,26 @@ export function JobSummaryHeader({
           </dl>
         )}
       </div>
+      {isBid && markContracted && (
+        <div className="mt-3 flex flex-col gap-2 rounded-lg border border-line-card bg-surface p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-ink-body">
+            <span className="font-semibold text-ink">Won it?</span>{" "}
+            {contractSigned
+              ? "The contract is executed — mark the job contracted to open change orders and billing."
+              : "Record the executed subcontract the GC sent you (or send them a signing link) first, then mark it contracted."}
+          </p>
+          {contractSigned ? (
+            <MarkContractedButton markContracted={markContracted} />
+          ) : (
+            <Link
+              href={`/jobs/${summary.id}#contract-signature`}
+              className="inline-flex min-h-11 shrink-0 items-center text-sm font-semibold text-link hover:text-link-hover hover:underline mouse:min-h-8"
+            >
+              Go to Contract signature →
+            </Link>
+          )}
+        </div>
+      )}
     </header>
   );
 }

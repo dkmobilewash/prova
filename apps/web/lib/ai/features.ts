@@ -143,7 +143,7 @@ export function askFeatureLabel(ledgerFeature: string): string {
 export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
   ASK: "The Ask box: questions about your own jobs, and the cards it puts in front of you.",
   WIP_NARRATIVE:
-    "The plain-language reading of a job's WIP figures on the Estimate tab. The figures themselves are computed in code and do not use AI.",
+    "The plain-language reading of a job's WIP figures on its estimate page. The figures themselves are computed in code and do not use AI.",
   COMPLIANCE_EXTRACT:
     "Reading an uploaded lien waiver, COI or certified payroll into its fields. Filing a compliance document needs this — with it off, uploads are refused rather than filed blank.",
   DRAFT_ESTIMATE_LINES: "Turning a pasted scope of work into draft line items for you to price and correct.",

@@ -11,6 +11,7 @@ import { JobPaperworkPanel } from "@/components/job/JobPaperworkPanel";
 import { changeOrderPaperworkLink, jobStages } from "@/components/job/jobStages";
 import { loadJobStageFacts } from "@/components/job/loadJobStageFacts";
 import { viewerAsOf } from "@/lib/viewerToday";
+import { markJobContracted } from "@/lib/actions";
 
 /**
  * The shared shell for every `/jobs/[id]/*` tab: the summary header (always
@@ -99,7 +100,14 @@ export default async function JobTabsLayout({
     // Field reports). `print:px-0 print:py-0` keep the printed Overview
     // summary flush to the paper, as before.
     <PageShell width="working" className="print:px-0 print:py-0">
-      <JobSummaryHeader summary={summary} showsJobMoney={showsJobMoney} showsBilling={showsBilling} />
+      <JobSummaryHeader
+        summary={summary}
+        showsJobMoney={showsJobMoney}
+        showsBilling={showsBilling}
+        contractSigned={facts.contractSigned}
+        // markJobContracted is gated on VIEW_JOB_COSTS, which is showsJobMoney.
+        markContracted={isEstimateStage && showsJobMoney ? markJobContracted.bind(null, id) : undefined}
+      />
       <JobStageNav stages={stages} />
       {/* The open stage's page, with the job's paperwork beside it on a wide
           screen and below it on a narrow one. `min-w-0` lets a wide table

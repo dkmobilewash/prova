@@ -344,7 +344,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
         </section>
 
         {showsJobMoney && (
-          <section className="mb-10" data-tour="job-signature">
+          <section id="contract-signature" className="mb-10 scroll-mt-4" data-tour="job-signature">
             <h2 className="mb-3 text-lg font-semibold text-ink">Contract signature</h2>
 
             <div
