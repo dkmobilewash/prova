@@ -578,6 +578,15 @@ const INPUT_EXCEPTIONS: Record<string, { reason: string }> = {
   "apps/web/components/DocuSignPanel.tsx (unnamed)": {
     reason: "the void reason the signer reads — free text, maxLength 200",
   },
+  "apps/lien-waiver/components/WaiverTool.tsx (expression)": {
+    reason:
+      "the separate lien waiver tool's blanks, rendered from one slot list as `name={slot}`. The " +
+      "component splits them into three LITERAL branches by kind so this file can read them: money " +
+      'blanks carry inputMode="decimal" and dates type="date" in the source. Only the free-text ' +
+      "branch (names, addresses, job numbers) is left without a keypad, which is the right keyboard " +
+      "for it. That app parses no figure through lib/numeric-input.ts: its money goes through its " +
+      "own formatMoney, tested in apps/lien-waiver/lib/waiver-request.test.ts.",
+  },
   "apps/web/components/JobMediaAnnotator.tsx (unnamed)": {
     reason: "a photo annotation label — free text, and explicitly not a measurement",
   },

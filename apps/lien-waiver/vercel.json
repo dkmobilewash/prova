@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "pnpm install --frozen-lockfile --filter @prova/lien-waiver...",
+  "buildCommand": "next build",
+  "framework": "nextjs"
+}

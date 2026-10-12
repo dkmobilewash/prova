@@ -91,6 +91,21 @@ const nextConfig = {
   outputFileTracingIncludes: {
     "/**": ["../../node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client/**"],
   },
+  // The free lien waiver tool lives at cstream.ai/lien-waiver (Diego,
+  // 2026-10-12) but is a SEPARATE app: apps/lien-waiver, its own Vercel
+  // project, no Clerk, no access to this app's database. This app owns
+  // /lien-waiver itself (the landing page) and proxies everything BELOW it
+  // to the tool, which is built with basePath "/lien-waiver" so its pages,
+  // assets and API all sit under the same prefix.
+  //
+  // LIEN_WAIVER_TOOL_ORIGIN is the tool's production origin, read at build
+  // time. Unset (a laptop, CI, most previews) means no rewrite, and
+  // /lien-waiver/* 404s here exactly as it did before this existed.
+  async rewrites() {
+    const origin = process.env.LIEN_WAIVER_TOOL_ORIGIN?.trim().replace(/\/+$/, "");
+    if (!origin) return [];
+    return [{ source: "/lien-waiver/:path+", destination: `${origin}/lien-waiver/:path+` }];
+  },
 };
 
 export default nextConfig;
