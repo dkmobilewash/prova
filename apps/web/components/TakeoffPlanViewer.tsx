@@ -49,7 +49,14 @@ import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 import { wallTypeTags, tagByRun, tagSentence } from "@/lib/takeoff/wallTags";
 import { scaleBarLabels, wallsNotTheScaleBar } from "@/lib/takeoff/scaleBar";
-import { wallGroups, verdictFor, groupSentence, type WallGroup, type GroupVerdict } from "@/lib/takeoff/wallGroups";
+import {
+  wallGroups,
+  verdictFor,
+  groupSentence,
+  wallsOnThisSheet,
+  type WallGroup,
+  type GroupVerdict,
+} from "@/lib/takeoff/wallGroups";
 import type { PostableWallType } from "@/lib/takeoff/wallTypeMatch";
 
 /**
@@ -115,7 +122,6 @@ const BASE_SCALE = 1.5;
  */
 const FIT = "fit" as const;
 type Zoom = number | typeof FIT;
-
 
 export function TakeoffPlanViewer({
   jobId,
@@ -184,7 +190,30 @@ export function TakeoffPlanViewer({
   // group. A found wall is a proposal; the measurements table is for things
   // somebody chose. That also means switching sheets or reloading simply
   // forgets them, which is the correct behaviour for a proposal nobody acted on.
-  const [found, setFound] = useState<WallGroup[] | null>(null);
+  //
+  // THE SENTENCE ABOVE WAS TRUE ABOUT RELOADING AND FALSE ABOUT SHEETS, for as
+  // long as this feature has existed. Nothing cleared `found` on a page change,
+  // so walls found on A-101 were drawn over whatever sheet you paged to next —
+  // reported 2026-10-11 from three screenshots showing one identical overlay on
+  // sheet 30, sheet 52 and S-101, none of which it had anything to do with.
+  //
+  // THE FIX IS THE PAGE NUMBER BESIDE THE RESULT rather than an effect that
+  // clears it, because an effect is a thing somebody has to remember and this
+  // file already has one for the half-drawn shape that nobody thought to extend.
+  // A result that knows which sheet it came from cannot be shown on another one,
+  // and `wallsOnThisSheet` below is the whole of the rule, in one place that
+  // both the panel and the ghost overlay read.
+  //
+  // It also makes paging AWAY and BACK free: the proposal is still the answer to
+  // the question somebody asked about that sheet, so returning restores it
+  // rather than demanding another press.
+  const [foundRaw, setFound] = useState<WallGroup[] | null>(null);
+  const [foundOnPage, setFoundOnPage] = useState<number | null>(null);
+  /**
+   * What this sheet has to show. Every render site reads THIS and not the raw
+   * state, which is why the name it kept is the one they were already using.
+   */
+  const found = wallsOnThisSheet(foundRaw, foundOnPage, pageNumber);
   /**
    * WHICH TYPE A PERSON PICKED for a group that could be more than one, by
    * group index.
@@ -366,6 +395,7 @@ export function TakeoffPlanViewer({
   useEffect(() => {
     setDraft(EMPTY);
   }, [pageNumber, tool]);
+
 
   const aspect = pageSize ? pageSize.heightPt / pageSize.widthPt : 1.294;
 
@@ -601,6 +631,10 @@ export function TakeoffPlanViewer({
       // types it could be: by NAME for a tagged one, by THICKNESS for the
       // remainder. See `wallGroups.ts` for why that ordering is the safety.
       setFound(wallGroups(clusters, tagByRun(walls, tags, feetPerUnit), wallTypes));
+      // The sheet this answer is about, recorded WITH the answer. `pageNumber`
+      // is read here rather than at render, so a result can never be relabelled
+      // by paging — see `wallsOnThisSheet`.
+      setFoundOnPage(pageNumber);
     } catch (problem) {
       // The sheet is still on screen and the manual tools still work, so this
       // says what failed and stops — it does not take the page down.

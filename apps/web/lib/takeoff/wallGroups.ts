@@ -275,3 +275,31 @@ export function groupSentence(group: WallGroup, verdict: GroupVerdict): string |
       );
   }
 }
+
+/**
+ * THE FOUND WALLS A GIVEN SHEET IS ALLOWED TO SHOW.
+ *
+ * A proposal belongs to the sheet it was read off. This is the one place that
+ * says so, and both the results panel and the ghost overlay go through it —
+ * which is the point: the bug it closes was two render sites reading a single
+ * page-less variable, so neither of them was wrong on its own.
+ *
+ * Reported 2026-10-11 with three screenshots: Find the walls was pressed on a
+ * floor plan, and the identical dashed overlay then appeared on sheet 30, on
+ * sheet 52 and on S-101 — every run in the same place, on drawings it had
+ * nothing to do with. Two of those are the partition-types sheet, whose own
+ * scale is 3" = 1'-0", so the footage those lines implied was nonsense.
+ *
+ * HERE RATHER THAN IN THE VIEWER because `lib/client-boundary.test.ts` refuses
+ * a non-component value imported out of a "use client" module: across the RSC
+ * boundary that arrives as a client-reference proxy and not the function. It
+ * was written in the viewer first and that guard caught it.
+ */
+export function wallsOnThisSheet(
+  found: WallGroup[] | null,
+  foundOnPage: number | null,
+  pageNumber: number,
+): WallGroup[] | null {
+  if (found === null || foundOnPage !== pageNumber) return null;
+  return found;
+}

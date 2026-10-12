@@ -5,6 +5,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TakeoffPlanViewer, FoundWalls } from "./TakeoffPlanViewer";
+import { wallsOnThisSheet } from "@/lib/takeoff/wallGroups";
 import { inchLabel, type WallCluster } from "@/lib/takeoff/wallVectors";
 import { fitZoom, stepZoom } from "@/lib/takeoff-plan-view";
 import type { PlanSheet } from "@/lib/takeoff-plan-view";
@@ -330,6 +331,75 @@ describe("the ghost lines over the sheet", () => {
   it("draws nothing before anything has been found", () => {
     expect(svg(createElement(FoundWalls, { clusters: null, hovered: null })).lines).toHaveLength(0);
     expect(svg(createElement(FoundWalls, { clusters: [], hovered: null })).lines).toHaveLength(0);
+  });
+});
+
+/**
+ * A PROPOSAL BELONGS TO THE SHEET IT WAS READ OFF.
+ *
+ * Reported 2026-10-11 with three screenshots: Find the walls was pressed on a
+ * floor plan, and the identical dashed overlay then appeared on sheet 30, on
+ * sheet 52 and on S-101 — every run in the same place, on drawings it had
+ * nothing to do with. Two of those are the partition-types sheet, whose own
+ * scale is 3" = 1'-0", so the footage those lines implied was nonsense.
+ *
+ * `found` was page-less state that `onFindWalls` set and nothing cleared. The
+ * comment above it said "switching sheets or reloading simply forgets them",
+ * which was true of RELOADING and false of sheets for as long as the feature
+ * had existed — the same shape CLAUDE.md records elsewhere, a sentence everyone
+ * believed because it described what the code ought to do.
+ *
+ * THE REGRESSION THIS GUARDS IS THE WORST KIND THIS FEATURE CAN HAVE. The whole
+ * posture is that a found wall is a proposal and the drawing underneath is the
+ * check — the panel says "check they sit on real walls before adding them". An
+ * overlay that follows somebody to another sheet does not just show a wrong
+ * number, it corrupts the instrument they were told to verify with.
+ */
+describe("found walls stay on their own sheet", () => {
+  const group = (): WallCluster & { runs: unknown[] } =>
+    ({ inches: 4.875, feet: 100, runs: [{ feet: 100 }] }) as never;
+
+  it("shows a result on the sheet it was found on", () => {
+    expect(wallsOnThisSheet([group()] as never, 7, 7)).toHaveLength(1);
+  });
+
+  it("SHOWS NOTHING ON ANY OTHER SHEET — the defect as reported", () => {
+    // Found on sheet 1, paged to the partition-types sheet.
+    expect(wallsOnThisSheet([group()] as never, 1, 30)).toBeNull();
+    expect(wallsOnThisSheet([group()] as never, 1, 52)).toBeNull();
+    // And the neighbouring sheet, because off-by-one is the likely regression.
+    expect(wallsOnThisSheet([group()] as never, 1, 2)).toBeNull();
+  });
+
+  it("shows nothing when nothing has been found, on any sheet", () => {
+    expect(wallsOnThisSheet(null, null, 1)).toBeNull();
+    expect(wallsOnThisSheet(null, 1, 1)).toBeNull();
+  });
+
+  it("restores the result when you page back, rather than demanding another press", () => {
+    const groups = [group()] as never;
+    expect(wallsOnThisSheet(groups, 3, 4)).toBeNull();
+    expect(wallsOnThisSheet(groups, 3, 3)).toHaveLength(1);
+  });
+
+  it("IS WHAT THE VIEWER ACTUALLY RENDERS FROM, not merely written and correct", () => {
+    // The #665 lesson, and the reason this case exists next to the pure ones: a
+    // rule nothing calls is a rule the app does not have. Both the panel and the
+    // overlay must read the derived value, and the page must be recorded WITH
+    // the result rather than at render time.
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code, "the viewer never narrows the result to the sheet").toMatch(
+      /const found = wallsOnThisSheet\(foundRaw, foundOnPage, pageNumber\)/,
+    );
+    expect(code, "nothing records which sheet the result came from").toMatch(
+      /setFoundOnPage\(pageNumber\)/,
+    );
+    // The raw state must not reach a render site. If `foundRaw` appears outside
+    // its own declaration and the derivation, something is reading around the
+    // guard — which is exactly how this bug worked.
+    const rawUses = code.match(/foundRaw/g) ?? [];
+    expect(rawUses, "the raw found-walls state is read somewhere it should not be").toHaveLength(2);
   });
 });
 
