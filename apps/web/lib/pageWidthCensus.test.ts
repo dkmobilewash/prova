@@ -167,11 +167,9 @@ const UNCONVERTED_PAGES = [
   "apps/web/app/(app)/catalog/page.tsx",
   "apps/web/app/(app)/certifications/page.tsx",
   "apps/web/app/(app)/closeout/page.tsx",
-  "apps/web/app/(app)/compliance/page.tsx",
   "apps/web/app/(app)/contacts/[id]/page.tsx",
   "apps/web/app/(app)/contacts/page.tsx",
   "apps/web/app/(app)/deployment/page.tsx",
-  "apps/web/app/(app)/equipment/page.tsx",
   "apps/web/app/(app)/intake/page.tsx",
   "apps/web/app/(app)/internal/usage/page.tsx",
   "apps/web/app/(app)/jobs/[id]/certified-payroll/page.tsx",
@@ -181,15 +179,12 @@ const UNCONVERTED_PAGES = [
   "apps/web/app/(app)/jobs/new/[jobId]/items/page.tsx",
   "apps/web/app/(app)/jobs/new/page.tsx",
   "apps/web/app/(app)/lien-deadlines/page.tsx",
-  "apps/web/app/(app)/material-orders/page.tsx",
   "apps/web/app/(app)/messages/page.tsx",
   "apps/web/app/(app)/phase-codes/page.tsx",
   "apps/web/app/(app)/pipeline/page.tsx",
   "apps/web/app/(app)/prevailing-wage/page.tsx",
-  "apps/web/app/(app)/safety/page.tsx",
   "apps/web/app/(app)/sales/[id]/page.tsx",
   "apps/web/app/(app)/sales/page.tsx",
-  "apps/web/app/(app)/schedule/page.tsx",
   "apps/web/app/(app)/settings/assistant/page.tsx",
   "apps/web/app/(app)/settings/export/page.tsx",
   "apps/web/app/(app)/settings/import/page.tsx",
@@ -318,9 +313,12 @@ describe("page width census", () => {
       // `working`) and the job-tabs layout (`working` for the header and
       // rail, each tab choosing its own body width through PageColumn) to
       // the shell. All four removals together: 48. Then the Concept G page
-      // sweep moved /rfis, /submittals, /drawings, /field-reports and /photos
-      // to `working` with the shared PageHeader: 43.
-    ).toBe(43);
+      // sweep (cyrus/fix-pages) moved the fifteen area-linked list pages to
+      // `working` with the shared PageHeader — /rfis, /submittals, /drawings,
+      // /field-reports, /photos, /compliance, /safety, /material-orders,
+      // /equipment, /schedule, /cash-flow, /backcharges, /team, /bids and
+      // /contacts: 33.
+    ).toBe(33);
     expect(new Set(UNCONVERTED_PAGES).size).toBe(UNCONVERTED_PAGES.length);
   });
 
