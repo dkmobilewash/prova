@@ -159,7 +159,7 @@ describe("JobStageNav on a phone", () => {
       expect(c).not.toMatch(/(^|\s)truncate/);
       expect(c).toContain("max-sm:truncate");
     }
-    expect(html).toMatch(/data-stage-open-status[^>]*>.*?Billing:.*?>1 invoice</);
+    expect(html).toMatch(/data-stage-open-status[^>]*>.*?Billing:.*?>1 pay app</);
   });
 });
 
