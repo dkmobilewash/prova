@@ -192,7 +192,22 @@ describe("the call site, because no test here can open a PDF", () => {
     // A thickness bucket is not one wall type — School-01's 4-7/8in bucket
     // held A1, A2, EXT-1 and C1, and 1,117 ft that could be priced as nothing.
     const text = viewer();
-    expect(text).toContain("wallGroups(clusters, tagByRun(walls, tags, feetPerUnit), wallTypes)");
+    expect(text).toContain(
+      "wallGroups(clusters, tagByRun(walls, tags, feetPerUnit, wallTypes), wallTypes)",
+    );
+  });
+
+  it("HANDS THE TAGGER THE WALL TYPES, which is the half of the evidence it used to drop", () => {
+    // `tagByRun` takes the types as an OPTIONAL fourth argument, so leaving it
+    // off compiles, passes every unit test of the tagger, and silently restores
+    // nearest-wins on the real sheet — mutation-tested, and blind until this
+    // case existed. Measured on A-101: without it an EXT-1 tag takes a 4-7/8"
+    // run 0.47 ft away over the 8-7/8" wall at 2.32 ft.
+    const text = viewer();
+    expect(text, "the viewer calls tagByRun without its wall types").not.toMatch(
+      /tagByRun\(walls, tags, feetPerUnit\)/,
+    );
+    expect(text).toMatch(/tagByRun\(walls, tags, feetPerUnit, wallTypes\)/);
   });
 
   it("NEVER DEFAULTS THE ANSWER TO A QUESTION IT ASKED", () => {

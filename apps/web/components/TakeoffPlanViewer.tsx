@@ -630,7 +630,9 @@ export function TakeoffPlanViewer({
       // group per tag plus the untagged remainder, and gives each piece the
       // types it could be: by NAME for a tagged one, by THICKNESS for the
       // remainder. See `wallGroups.ts` for why that ordering is the safety.
-      setFound(wallGroups(clusters, tagByRun(walls, tags, feetPerUnit), wallTypes));
+      // THE TYPES GO TO THE TAGGER TOO, because a tag's own name says which of two
+      // runs beside each other it means — see `tagByRun`, where the measurement is.
+      setFound(wallGroups(clusters, tagByRun(walls, tags, feetPerUnit, wallTypes), wallTypes));
       // The sheet this answer is about, recorded WITH the answer. `pageNumber`
       // is read here rather than at render, so a result can never be relabelled
       // by paging — see `wallsOnThisSheet`.
