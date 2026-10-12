@@ -50,6 +50,33 @@ it("scrolls to the anchored section when it arrives after the navigation", async
   expect(scrolled).toHaveBeenCalledWith("retainage");
 });
 
+// A FRESH load (pasted link, reload): React streams the page into a
+// `<div hidden id="S:0">` and reveals it later. The id exists inside the
+// hidden div first; scrolling it then is a no-op, so landing must wait for
+// the reveal rather than count "found" as "landed" and stop watching.
+it("on a fresh load, waits for the streamed section to leave its hidden segment", async () => {
+  window.history.replaceState(null, "", "/cash-flow#retainage");
+  const segment = document.createElement("div");
+  segment.hidden = true;
+  segment.id = "S:0";
+  const section = document.createElement("section");
+  section.id = "retainage";
+  segment.appendChild(section);
+  document.body.appendChild(segment);
+  act(() => root.render(createElement(HashLanding)));
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(scrolled).not.toHaveBeenCalled();
+  // React's $RC: move the content into place, drop the hidden div.
+  document.body.appendChild(section);
+  segment.remove();
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(scrolled).toHaveBeenCalledWith("retainage");
+});
+
 it("does nothing without a hash", async () => {
   window.history.replaceState(null, "", "/cash-flow");
   act(() => root.render(createElement(HashLanding)));
