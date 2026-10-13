@@ -88,6 +88,7 @@ export const AI_FEATURE_LABEL: Record<AiFeatureKey, string> = {
   SCHEDULE_READ: "Reading schedules off a drawing",
   PROPOSAL_DRAFT: "Drafting proposal clauses",
   AI_AGENTS: "Background agents",
+  WALL_CLASSIFY: "Checking which runs on a plan are walls",
 };
 
 /**
@@ -164,6 +165,8 @@ export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
     "Writing the inclusions, exclusions and clarifications for a job's proposal \u2014 one per thing this app already knows about the bid: a spec requirement, an indirect nobody priced, a package carried from a sub. Every clause is proposed with the quote it came from, and nothing reaches the proposal until you accept it. With this off you can still write clauses by hand.",
   AI_AGENTS:
     "The bid watcher, bid research, the estimate check and recommendations: agents that read your bids and history, write down what they found with sources, and advise. They never submit, send or change a bid or estimate — every change still goes through a confirm card.",
+  WALL_CLASSIFY:
+    "Looking at a part of a floor plan and saying which of the runs the wall finder measured are walls, and which are countertops, fixtures, cabinets or reference lines \u2014 the one thing measuring cannot tell you, since a countertop is also two parallel lines. THE ONLY FEATURE HERE THAT SENDS A PICTURE OF YOUR DRAWING: every other one sends text the file already contains. It never changes a length or a thickness; those are measured from the drawing's own geometry either way, and you can accept or reject any run yourself. With this off the runs are still found and still measured \u2014 you just sort them by hand.",
 };
 
 /**

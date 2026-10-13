@@ -64,6 +64,7 @@ export const AI_FEATURES = {
    *  it is on the AgentRun row, and one key is one pass through every
    *  feature census rather than four. */
   AI_AGENTS: "ai-agents",
+  WALL_CLASSIFY: "wall-classify",
 } as const;
 
 export type AiFeatureKey = keyof typeof AI_FEATURES;
@@ -91,6 +92,11 @@ const FEATURE_MODEL: Record<AiFeatureKey, string> = {
   // The one cheap default, at Diego's direction, subject to the eval. Three
   // hundred calls per plan set is where a fifth of the price is worth having.
   PLAN_INGESTION: HAIKU_4_5,
+  // Opus, and the volume argument that bought Haiku above does not reach here.
+  // This runs on the sheets that HAVE walls, a handful per plan set and a few
+  // crops each, not on three hundred pages — and what it decides is whether a
+  // countertop is priced as drywall. A cheap wrong label is not cheap.
+  WALL_CLASSIFY: OPUS_5,
   // Opus, and the argument cuts closer here than anywhere else on this list.
   // An addendum reader is 2-6 documents per bid rather than the quote reader's
   // one, so it IS more volume — but the test this file applies is not "more

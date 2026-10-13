@@ -120,6 +120,46 @@ describe("the wall finder's control", () => {
     expect(paint([sheet()]).querySelector('[data-takeoff="found-walls"]')).toBeNull();
   });
 
+  it("KEEPS THE CHECK BUTTON AWAY UNTIL THERE IS SOMETHING TO CHECK", () => {
+    // "Check these are walls" asks a model what the found runs actually are —
+    // countertops and bathtubs measure like walls and a real permit set
+    // returned both. Before anything is found it can only refuse, so it is not
+    // on the toolbar yet.
+    expect(paint([sheet()]).querySelector('[data-takeoff="check-runs"]')).toBeNull();
+  });
+
+  it("A RENDER TEST, because the surface census cannot see this one", () => {
+    // `aiSurfaceCensus` proves the FILE named for a feature contains a control.
+    // This file contains a dozen, so pointing it at the viewer is satisfied by
+    // any of them — the census would stay green with this button deleted, and
+    // mutation showed exactly that.
+    //
+    // #665 is the precedent and the reason this suite exists at all: it shipped
+    // a control gated on a stage value, which existed, called the right action,
+    // sat in the right branch and appeared on no screen anybody used. A census
+    // proves the code is THERE; only rendering proves somebody can reach it.
+    //
+    // The button lives behind `found !== null && found.length > 0`, which no
+    // render here can reach without opening a PDF — so what this pins is the
+    // condition itself, read off the source, beside the two render assertions
+    // that prove the source is the one on screen.
+    const source = readFileSync(
+      resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"),
+      "utf8",
+    ).replace(/\s+/g, " ");
+    expect(source, "the check control is gone from the viewer").toContain(
+      'data-takeoff="check-runs"',
+    );
+    expect(
+      source,
+      "the check control is no longer gated on there being runs to check",
+    ).toMatch(/\{found !== null && found\.length > 0 && \( <button/);
+    expect(source, "the control no longer calls the classifier").toContain("onClick={onCheckRuns}");
+    expect(source, "the classifier is no longer wired to the action").toContain(
+      "await classifyWallCandidates(",
+    );
+  });
+
   it("rendered a real viewer, rather than passing against an empty page", () => {
     // The size assertion this family needs: every `toBeNull` above passes
     // vacuously against a component that threw and rendered nothing.
