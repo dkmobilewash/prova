@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, globSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -29,7 +29,7 @@ import { AREAS, toolRoute } from "@/lib/areas";
  *
  * CLAUDE.md's two failure modes for a census that derives its own set are
  * both asserted, not assumed. SIZE: the walk must find at least 70 pages, and
- * an independent `fs.globSync` must find the same set. SCOPE: every page git
+ * an independent second scan must find the same set. SCOPE: every page git
  * tracks under `app/(app)` must be in the walk — the walk, not git, is the
  * primary source, for the reason `pageWidthCensus.test.ts` records (a
  * `git ls-files '**' + '/page.tsx'` pre-scan missed a root route file once).
@@ -54,6 +54,40 @@ function walkPages(dir: string, out: string[] = []): string[] {
     const full = join(dir, name);
     if (statSync(full).isDirectory()) walkPages(full, out);
     else if (name === "page.tsx") out.push(relative(SHELL_ROOT, full).split(sep).join("/"));
+  }
+  return out;
+}
+
+/**
+ * The same question as `walkPages`, asked a different way — the size
+ * cross-check this census rests on.
+ *
+ * ── IT WAS `fs.globSync`, AND THAT IS NODE 22. CI IS NODE 20. ──
+ *
+ * `globSync` landed in Node 22. `ci.yml` pins `node-version: 20`, so on CI
+ * this threw `TypeError: (0 , globSync) is not a function` — the test failed,
+ * the Test step failed, and lint, typecheck and build were SKIPPED behind it.
+ * It passed for whoever wrote it, on a newer Node, which is why it reached
+ * main: a local run and CI were not asking the same question.
+ *
+ * So this uses nothing newer than `readdirSync` with `withFileTypes`, which is
+ * Node 10. And it stays INDEPENDENT of `walkPages` in the two ways that matter
+ * for a cross-check: it is ITERATIVE where that one recurses, and it reads the
+ * entry kind off the DIRENT where that one calls `statSync`. Two traversals
+ * that share an implementation prove nothing about each other.
+ */
+function scanPages(): string[] {
+  if (!existsSync(SHELL_ROOT)) return [];
+  const out: string[] = [];
+  const stack = [SHELL_ROOT];
+  while (stack.length > 0) {
+    const dir = stack.pop()!;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) stack.push(full);
+      else if (entry.name === "page.tsx") out.push(relative(SHELL_ROOT, full).split(sep).join("/"));
+    }
   }
   return out;
 }
@@ -218,10 +252,10 @@ describe("reachability census", () => {
   });
 
   /** SIZE, from a derivation that shares no code with the walk. */
-  it("finds exactly the pages an independent glob finds", () => {
-    const globbed = globSync("**/page.tsx", { cwd: SHELL_ROOT }).map((p) => p.split(sep).join("/"));
-    expect(globbed.length).toBeGreaterThanOrEqual(70);
-    expect([...walked].sort()).toEqual([...globbed].sort());
+  it("finds exactly the pages a second, independent scan finds", () => {
+    const found = scanPages();
+    expect(found.length).toBeGreaterThanOrEqual(70);
+    expect([...walked].sort()).toEqual([...found].sort());
   });
 
   /** SCOPE: git knows what is in the tree without knowing how we walk it.

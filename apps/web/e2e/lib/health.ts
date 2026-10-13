@@ -135,7 +135,8 @@ export class HealthMonitor {
    * in the browser as a deferred lazy; and Clerk's `<UserButton>`, which
    * renders markup only when `clerk.loaded` — a flag it reads during render
    * and one that is false on the server ALWAYS — now waits for mount
-   * (`components/AfterMount.tsx`). If this list is non-empty again, it is
+   * (a mount gate in `components/`, deleted with the widget on 2026-10-13 —
+   * see `components/clerkMountGate.test.ts`). If this list is non-empty again, it is
    * something NEW, and the first question is which element the two sides
    * disagree about rather than which page it says.
    */

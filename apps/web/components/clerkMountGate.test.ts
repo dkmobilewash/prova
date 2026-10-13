@@ -253,33 +253,49 @@ describe("Clerk's UI components are mounted behind the browser gate", () => {
     expect(rendered).toEqual(["SignIn", "SignUp"]);
   });
 
-  it("renders no Clerk widget outside <AfterMount>, except where the card is the page", () => {
-    const ungated: string[] = [];
-    for (const site of sites) {
-      if ((CARD_IS_THE_PAGE as readonly string[]).includes(site.file)) continue;
-      const ranges = gatedRanges(site.stripped);
-      for (const name of site.names) {
-        const use = new RegExp(`<${name}[\\s/>]`, "g");
-        let match: RegExpExecArray | null;
-        let seen = 0;
-        while ((match = use.exec(site.stripped)) !== null) {
-          seen += 1;
-          const inside = ranges.some(([from, to]) => match!.index > from && match!.index < to);
-          if (!inside) ungated.push(`${site.file}: <${name}> is rendered outside <AfterMount>`);
-        }
-        expect(
-          seen,
-          `${site.file} imports ${name} from Clerk and never renders it — an unused import, or the ` +
-            `render-site pattern has drifted`,
-        ).toBeGreaterThan(0);
-      }
-    }
+  it("RENDERS NO CLERK WIDGET AT ALL outside the two sign-in pages", () => {
+    /* ── THIS TEST USED TO SAY "outside <AfterMount>", AND IT WAS GUARDING
+       NOTHING ──
+
+       `AfterMount` was the mount gate written for #510: Clerk's `<UserButton>`
+       renders `clerk.loaded && <ClerkHostRenderer …/>`
+       (`@clerk/clerk-react@5.61.9`, `chunk-THNCS7QR.mjs:669`), and `loaded` is
+       a mutable flag read DURING render that is false on the server always. So
+       the server wrote no markup for it, and if Clerk's script won the race
+       against hydration the browser's FIRST render produced an element the
+       server's HTML did not have — an element-level React #418 on every
+       signed-in page. The gate rendered nothing until mount, which could not
+       change what anybody saw because the server already rendered nothing.
+
+       Concept G (#748) replaced `<UserButton>` with its own avatar menu, which
+       uses `useClerk()` only in click handlers and never to decide what to
+       render. That removed the last gated widget — and left this test
+       iterating a set of zero, passing for ever whatever anybody did. The
+       component it named went with it; both were deleted on 2026-10-13 rather
+       than kept as scenery.
+
+       WHAT REPLACES IT IS STRICTER, not weaker: no Clerk UI component may be
+       rendered anywhere this census can see, except the two sign-in pages. A
+       widget that comes back fails the test above FIRST — it names every Clerk
+       component it finds — and then fails here with the reason. Whoever brings
+       one back has to answer the hydration question again, and the paragraph
+       above is the answer: render nothing until mount, in a "use client"
+       wrapper, for a widget the server renders nothing for anyway. */
+    const outside = sites
+      .filter((site) => !(CARD_IS_THE_PAGE as readonly string[]).includes(site.file))
+      .flatMap((site) => site.names.map((name) => `${site.file}: <${name}>`));
     expect(
-      ungated,
-      "a Clerk UI component renders `clerk.loaded && …` — a flag read during render and false on the " +
-        "server always — so one rendered bare is a React #418 element mismatch on every signed-in " +
-        "page. Wrap it in <AfterMount> (components/AfterMount.tsx).",
+      outside,
+      "a Clerk UI component decides what to render from `clerk.loaded`, a flag read during render " +
+        "and false on the server always — so one rendered bare is a React #418 element mismatch on " +
+        "every page that mounts it. See this test's own comment for what to do instead.",
     ).toEqual([]);
+
+    /* AND THE SET IT REASONED ABOUT IS NOT EMPTY BY ACCIDENT. `sites` is every
+       file that imports Clerk; if the import pattern drifts it becomes empty
+       and the assertion above passes about nothing. The two exempt pages are
+       always in it, so this is the floor. */
+    expect(sites.length, "no file imports Clerk, so this census is about nothing").toBeGreaterThan(1);
   });
 
   it("the two exempt files still exist and still render a Clerk card", () => {
@@ -295,8 +311,9 @@ describe("Clerk's UI components are mounted behind the browser gate", () => {
   });
 
   it("CONTROL: a comment quoting the gate does not gate, and one quoting the widget is not a site", () => {
-    /* #185's shape, in both directions. `AfterMount.tsx` and `Topbar.tsx` both
-       print `<UserButton />` in their headers, so this is not hypothetical. */
+    /* #185's shape, in both directions. This file's own comments print
+       `<UserButton />` and `<AfterMount>`, so a raw-text census would find a
+       render site that does not exist and call a quoted gate a real one. */
     const commentedGate = stripComments(
       ['/* <AfterMount> */', "<UserButton />", "// </AfterMount>"].join("\n"),
     );
@@ -309,13 +326,9 @@ describe("Clerk's UI components are mounted behind the browser gate", () => {
     expect(gatedRanges(realGate)).toHaveLength(1);
   });
 
-  it("CONTROL: the gate module is the one the app imports, and it renders nothing first", () => {
-    /* A census pointed at a component that no longer gates would pass on
-       every file while the app hydrated wrong. `afterMount.test.ts` owns the
-       behaviour; this only checks the file the census names is still it. */
-    const gate = stripComments(readFileSync(resolve(appDir, "components/AfterMount.tsx"), "utf8"));
-    expect(gate).toMatch(/^["']use client["']/);
-    expect(gate).toMatch(/useState\(false\)/);
-    expect(gate).toMatch(/mounted \? <>\{children\}<\/> : null/);
-  });
+  /* THE CONTROL THAT CHECKED THE GATE MODULE WENT WITH THE MODULE. It read
+     `components/AfterMount.tsx` and asserted it still rendered nothing before
+     mount — the right check while something was wrapped in it, and about a
+     file that no longer exists. The rule it protected is now the stricter one
+     above: no Clerk widget outside the two sign-in pages at all. */
 });
