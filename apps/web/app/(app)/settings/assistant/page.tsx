@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { anthropicIsConfigured, ASK_DEFAULT_MODEL } from "@prova/integrations";
@@ -58,10 +60,10 @@ export default async function AssistantAuditPage() {
 
   if (currentUser.role !== "OWNER") {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-8">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Assistant</h1>
+      <PageShell width="reading">
+        <PageHeader route="/settings/assistant" parent={{ href: "/settings", label: "Settings" }} title="Assistant" />
         <p className="text-sm text-ink-body">Only the account owner can read what the assistant has proposed.</p>
-      </div>
+      </PageShell>
     );
   }
 
@@ -77,19 +79,13 @@ export default async function AssistantAuditPage() {
   const configured = anthropicIsConfigured();
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <p className="mb-2 text-sm text-ink-body">
-        <Link href="/settings" className="text-link hover:text-link-hover">
-          Settings
-        </Link>{" "}
-        / Assistant
-      </p>
-      <h1 className="mb-2 text-xl font-semibold text-ink">What the Ask box has proposed</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        Every card, newest first. A card is a proposal: nothing was written until the person tapped, and
-        the right-hand label says what happened when they did. A tap that wrote nothing carries the
-        app&apos;s own sentence for why; nothing here was decided by the model.
-      </p>
+    <PageShell width="reading">
+      <PageHeader
+        route="/settings/assistant"
+        parent={{ href: "/settings", label: "Settings" }}
+        title="Assistant"
+        subtitle="What AI is allowed to do here, what it costs, and what the Ask box has proposed."
+      />
 
       {/* WHAT AI IS ALLOWED TO DO — first, above everything, because it is the
           only section on this page that CHANGES anything, and because it is the
@@ -99,7 +95,7 @@ export default async function AssistantAuditPage() {
           It is also the section that makes this page's own header wrong. It read
           "nothing on this page writes" from the day it was built, which was true
           of an audit log and is not true any more. */}
-      <section id="ai-switch" className="mb-6 scroll-mt-20 rounded-lg border border-line-card bg-surface p-4" data-ask="ai-settings">
+      <section id="ai-switch" className="mb-6 scroll-mt-20 rounded-xl border border-line-card bg-surface p-4" data-ask="ai-settings">
         <h2 className="mb-1 text-sm font-semibold text-ink">What AI is allowed to do</h2>
         <p className="mb-3 text-sm text-ink-body">
           Your company&apos;s choice, not ours. Switching something off here stops it for everyone in the
@@ -111,7 +107,7 @@ export default async function AssistantAuditPage() {
       {/* The screen half of the loop's failure log line: an owner can see
           whether a key exists and press one button to learn whether it
           works, instead of asking somebody to read runtime logs. */}
-      <section className="mb-6 rounded-lg border border-line-card bg-surface p-4" data-ask="connection">
+      <section className="mb-6 rounded-xl border border-line-card bg-surface p-4" data-ask="connection">
         <h2 className="mb-1 text-sm font-semibold text-ink">Connection</h2>
         <p className="mb-3 text-sm text-ink-body">
           API key on this server:{" "}
@@ -143,7 +139,7 @@ export default async function AssistantAuditPage() {
           Both sentences have to be on this page and they have to disagree,
           because the two checks genuinely behave differently — see
           lib/ask/allowance.ts. */}
-      <section className="mb-6 rounded-lg border border-line-card bg-surface p-4" data-ask="allowance">
+      <section className="mb-6 rounded-xl border border-line-card bg-surface p-4" data-ask="allowance">
         <h2 className="mb-1 text-sm font-semibold text-ink">This month&apos;s AI allowance</h2>
         {allowance.readable ? (
           <>
@@ -254,7 +250,7 @@ export default async function AssistantAuditPage() {
           — and this is the page somebody opens to find out why the box is
           behaving oddly, which makes it the worst place in the app to be
           reassuring by accident. */}
-      <section className="mb-6 rounded-lg border border-line-card bg-surface p-4" data-ask="usage">
+      <section className="mb-6 rounded-xl border border-line-card bg-surface p-4" data-ask="usage">
         <h2 className="mb-1 text-sm font-semibold text-ink">Usage, last 30 days</h2>
         {usage.readable ? (
           <>
@@ -349,15 +345,26 @@ export default async function AssistantAuditPage() {
           Both were written down as "a figure, not a measurement". */}
       <CostPanel report={cost} />
 
+      <h2 className="mb-1 text-sm font-semibold text-ink-label">What the Ask box has proposed</h2>
+      <p className="mb-3 text-sm text-ink-body">
+        Every card, newest first. A card is a proposal: nothing was written until the person tapped, and
+        the right-hand label says what happened when they did. A tap that wrote nothing carries the
+        app&apos;s own sentence for why; nothing here was decided by the model.
+      </p>
+
       <StatusLine report={assistantStatus({ proposed: summary.proposed, done: summary.done, notDone: summary.notDone })} />
 
       {rows.length === 0 ? (
         <p className="text-ink-body">
-          Nothing yet. Ask the box on the dashboard to do something — &ldquo;create an estimate for
+          Nothing yet.{" "}
+          <Link href="/ask" className="text-link hover:text-link-hover">
+            Ask the box
+          </Link>{" "}
+          to do something — &ldquo;create an estimate for
           Riverside for Turner&rdquo; — and the card it shows will be recorded here.
         </p>
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-ask="audit">
+        <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-ask="audit">
           {rows.map((row) => (
             <li key={row.id} className="flex flex-col gap-1 px-4 py-3 text-sm">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -381,6 +388,6 @@ export default async function AssistantAuditPage() {
           ))}
         </ul>
       )}
-    </div>
+    </PageShell>
   );
 }
