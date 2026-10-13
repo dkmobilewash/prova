@@ -51,6 +51,22 @@ model Company {
   /// a shop that genuinely deducts everything was, until this column, unable
   /// to say so, and C Stream was quietly bidding their work the other way.
   openingDeduction OpeningDeduction?
+
+  /// The shop's own size threshold, in square feet, for "only the big ones".
+  ///
+  /// NULL MEANS "USE OUR DEFAULT" — `DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT`,
+  /// 32 — so nothing moves for a company that does not set it.
+  ///
+  /// IT EXISTS BECAUSE 32 IS NOT THE ONLY RULE. A practising estimator's
+  /// summary of the trade names "32 OR 50 square feet" as the common
+  /// thresholds, and a shop on 50 had no way to say so: the option read "only
+  /// the big ones, like a storefront" and secretly meant a number nobody could
+  /// see or change.
+  ///
+  /// Only consulted when `openingDeduction` is LARGE_ONLY. It is stored
+  /// regardless, so a shop that switches away and back does not lose its
+  /// figure.
+  openingDeductionSqFt Decimal? @db.Decimal(6, 2)
   doesPublicWork          Boolean?
   filesMonthlyPayApps     Boolean?
 

@@ -128,8 +128,11 @@ async function quantityAfterSync(): Promise<number> {
   return Number(line?.quantity);
 }
 
-async function setAnswer(answer: "NONE" | "LARGE_ONLY" | "ALL" | null) {
-  await prisma.company.update({ where: { id: companyId }, data: { openingDeduction: answer } });
+async function setAnswer(answer: "NONE" | "LARGE_ONLY" | "ALL" | null, sqFt: number | null = null) {
+  await prisma.company.update({
+    where: { id: companyId },
+    data: { openingDeduction: answer, openingDeductionSqFt: sqFt },
+  });
 }
 
 describe("the company's openings answer reaches the estimate line", () => {
@@ -173,6 +176,39 @@ describe("the company's openings answer reaches the estimate line", () => {
 
     // Put the door back, so the order these run in cannot change what they mean.
     await prisma.wallRun.updateMany({ where: { jobId }, data: { openings: [{ widthFt: 3, heightFt: 7 }] } });
+  });
+
+  it("THE SHOP'S OWN THRESHOLD reaches the quantity, as a Decimal from Postgres", async () => {
+    // ── "32 OR 50 SQUARE FEET", and 50 has to actually work ──
+    //
+    // This is the case the pure test cannot prove: the figure is a
+    // DECIMAL(6,2) column, so it arrives as a Prisma Decimal object, and the
+    // resolver compares it with `> 0`. A Decimal passed straight through is
+    // not a number — `Number()` at the boundary is the whole reason this case
+    // exists, and a fake client returning a plain number would have hidden it.
+    const storefront = { widthFt: 6, heightFt: 7 }; // 42 sq ft
+    const storefrontSqFt = storefront.widthFt * storefront.heightFt;
+    await prisma.wallRun.updateMany({ where: { jobId }, data: { openings: [storefront] } });
+
+    // 42 is OVER our 32 default, so the default would deduct it...
+    await setAnswer("LARGE_ONLY", null);
+    expect(await quantityAfterSync()).toBe(GROSS_SQFT - storefrontSqFt * SIDES);
+
+    // ...and UNDER a shop's 50, so that same opening must survive. Chosen so
+    // the two thresholds give different answers on one opening — a size that
+    // both agreed on would pass whether the number reached the quantity or not.
+    await setAnswer("LARGE_ONLY", 50);
+    expect(await quantityAfterSync(), "42 sq ft is not 'big' to a shop on 50").toBe(GROSS_SQFT);
+
+    await prisma.wallRun.updateMany({ where: { jobId }, data: { openings: [{ widthFt: 3, heightFt: 7 }] } });
+  });
+
+  it("a figure left on a company does NOT move an unanswered one", async () => {
+    // The safety case for the new column. A shop that typed 50, then cleared
+    // its answer, must be quantified exactly as a company that never saw any of
+    // this — the threshold belongs to the LARGE_ONLY answer alone.
+    await setAnswer(null, 50);
+    expect(await quantityAfterSync()).toBe(GROSS_SQFT);
   });
 
   it("changing the answer RE-QUANTIFIES an existing line rather than adding one", async () => {

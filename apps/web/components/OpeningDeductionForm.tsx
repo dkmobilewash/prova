@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { saveOpeningDeduction } from "@/lib/actions";
 import { Spinner } from "@/components/Spinner";
 import { BUSINESS_SCOPE_QUESTIONS, type BusinessScopeAnswers } from "@/lib/businessScope";
+import { DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT } from "@/lib/takeoff";
 
 /**
  * How this shop takes openings off the board — its own form, on purpose.
@@ -38,9 +39,12 @@ import { BUSINESS_SCOPE_QUESTIONS, type BusinessScopeAnswers } from "@/lib/busin
  */
 export function OpeningDeductionForm({
   answer,
+  thresholdSqFt,
   isOwner,
 }: {
   answer: BusinessScopeAnswers["openingDeduction"];
+  /** The shop's own size for "only the big ones". Null means use our 32. */
+  thresholdSqFt: BusinessScopeAnswers["openingDeductionSqFt"];
   isOwner: boolean;
 }) {
   const router = useRouter();
@@ -103,18 +107,62 @@ export function OpeningDeductionForm({
                   {option.label}
                 </label>
               ))}
+              {/* ── THE SHOP'S OWN SIZE FOR "THE BIG ONES" ──
+                  Always rendered rather than revealed when that option is
+                  picked: the radios are uncontrolled (`defaultChecked`, read
+                  with `new FormData`), so a conditional field would need this
+                  component to hold state it otherwise does not, and a shop that
+                  switches away and back would lose its figure. The resolver
+                  consults it only for LARGE_ONLY, so it is inert otherwise.
+
+                  Blank is meaningful — it means "use C Stream's default" — so
+                  there is no `required` here, and the placeholder shows what
+                  blank will do. `required` on this form is also what broke the
+                  whole setting once (see the header). */}
+              <label className="ml-6 flex flex-wrap items-center gap-2 text-sm text-ink-muted">
+                &ldquo;Big&rdquo; means
+                {/* ── `type="text"`, NOT `type="number"`, AND TWO CENSUSES SAID SO ──
+                    This shipped as `type="number"` with `bg-surface-input`, copied from
+                    the radios' own styling, and both were wrong:
+
+                    `numericInputCensus` forbids `type="number"` anywhere, from a real
+                    Chromium measurement — a value the browser dislikes submits an EMPTY
+                    STRING, and a typed thousands comma is dropped before the server sees
+                    it. On a NULLABLE field that is the worst possible failure: the figure
+                    silently becomes blank, blank means "use our default", and a shop that
+                    typed 50 would be quantified at 32 with nothing on screen to say so.
+
+                    `colorTokenCensus` refuses to let a KNOWN-UNDEFINED token grow — it
+                    tolerated `surface-input`'s 39 existing sites and caught this as the
+                    40th. Tailwind emits nothing for an undefined class, so the field would
+                    have had no background at all.
+
+                    So this is `AddCostEntryForm`'s input, verbatim but for the
+                    placeholder. Not required: blank is meaningful here. */}
+                <input
+                  name="openingDeductionSqFt"
+                  type="text"
+                  inputMode="decimal"
+                  defaultValue={thresholdSqFt ?? ""}
+                  placeholder={String(DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT)}
+                  className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+                />
+                sq ft and larger
+              </label>
+
               {/* ── THE WAY BACK TO THE DEFAULT, AND IT IS NOT A FOURTH CONVENTION ──
                   An empty value clears the column. Unanswered resolves to 32 sq ft
-                  (`openingThresholdSqFt`), which is exactly what LARGE_ONLY resolves
-                  to — so this option and "only the big ones" behave IDENTICALLY
-                  today, and the label says so rather than implying a difference an
-                  estimator would go looking for. A click-through caught the old
-                  wording promising its own behaviour.
+                  (`openingThresholdSqFt`), and it does NOT read the figure above —
+                  the number belongs to the LARGE_ONLY answer, and a company that has
+                  not answered must be quantified exactly as it was before any of
+                  this existed.
 
-                  They are still worth separating: choosing an answer PINS this shop's
-                  convention, while leaving it unanswered follows whatever C Stream
-                  defaults to. Identical today, and only one of them stays identical
-                  if that default ever moves. */}
+                  THE LABEL USED TO SAY THIS WAS "THE SAME AS only the big ones", and
+                  that stopped being true the moment that option got its own number:
+                  a shop on 50 sq ft is not the same as our 32. So it names OUR
+                  default instead, which is accurate whatever they type. The shape to
+                  notice is that a true sentence about two settings expired when one
+                  of them gained a parameter. */}
               <label className="flex items-center gap-2 text-sm text-ink-muted">
                 <input
                   type="radio"
@@ -123,8 +171,8 @@ export function OpeningDeductionForm({
                   defaultChecked={answer == null}
                   className="h-4 w-4 shrink-0"
                 />
-                Not answered — use C Stream&rsquo;s default, which today is the same as
-                &ldquo;only the big ones&rdquo;
+                Not answered — use C Stream&rsquo;s default of{" "}
+                {DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT} sq ft and larger
               </label>
             </div>
           </fieldset>

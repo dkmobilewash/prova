@@ -56,6 +56,8 @@ export type BusinessScopeAnswers = {
    * callers that only care about the three onboarding answers (the nav gate,
    * the Ask route) need not carry it. */
   openingDeduction?: OpeningDeduction | null;
+  /** The shop's own threshold for LARGE_ONLY, in sq ft. Null uses our 32. */
+  openingDeductionSqFt?: number | null;
 };
 
 export const UNANSWERED_SCOPE: BusinessScopeAnswers = {
@@ -73,7 +75,17 @@ export const UNANSWERED_SCOPE: BusinessScopeAnswers = {
  * see everything" and "skipping shows everything" the same one rule rather
  * than two behaviours that could drift apart.
  */
-export function hasNoScopeAnswers(answers: BusinessScopeAnswers): boolean {
+/** Just the three onboarding answers — what the nav gate and the summary line
+ * read. Narrower than `BusinessScopeAnswers` on purpose: those two functions
+ * do not look at the openings settings, and asking for the whole shape made a
+ * raw `Company` row stop satisfying them the moment `openingDeductionSqFt`
+ * arrived as a Prisma Decimal. A function should ask for what it uses. */
+export type ScopeQuestionAnswers = Pick<
+  BusinessScopeAnswers,
+  "contractingRelationship" | "doesPublicWork" | "filesMonthlyPayApps"
+>;
+
+export function hasNoScopeAnswers(answers: ScopeQuestionAnswers): boolean {
   return (
     answers.contractingRelationship === null &&
     answers.doesPublicWork === null &&
@@ -249,7 +261,7 @@ export function isHiddenByBusinessScope(
  * The full three answers — including the "no"s — are still on screen, in
  * the same settings section, in the source fields this line was built from.
  */
-export function businessScopeLine(answers: BusinessScopeAnswers): string | null {
+export function businessScopeLine(answers: ScopeQuestionAnswers): string | null {
   if (hasNoScopeAnswers(answers)) return null;
 
   const parts: string[] = [];
@@ -325,7 +337,11 @@ export const BUSINESS_SCOPE_QUESTIONS = {
  * `null` — unanswered — resolves to the same 32 the app already used, so no
  * existing quantity moves when this arrives.
  */
-export function openingThresholdSqFt(answer: OpeningDeduction | null | undefined): number {
+export function openingThresholdSqFt(
+  answer: OpeningDeduction | null | undefined,
+  /** The shop's own figure for LARGE_ONLY. Null or absent uses our 32. */
+  customSqFt?: number | null,
+): number {
   switch (answer) {
     case "ALL":
       // Zero, not "a small number": every opening, however small, comes off.
@@ -335,7 +351,25 @@ export function openingThresholdSqFt(answer: OpeningDeduction | null | undefined
       // storefront is tens of square feet; this is larger than a wall.
       return Number.POSITIVE_INFINITY;
     case "LARGE_ONLY":
+      // ── THE SHOP'S OWN NUMBER, AND WHY THIS IS NOT 32 ANY MORE ──
+      //
+      // A practising estimator's account of the trade names "32 OR 50 square
+      // feet" as the common thresholds, and before this a shop on 50 could not
+      // say so: the option read "only the big ones, like a storefront" and
+      // secretly meant 32.
+      //
+      // `> 0` rather than `!= null`: a zero typed here would mean "deduct
+      // everything", which is what the ALL answer is for, and reading it as a
+      // threshold would make two different answers do the same thing silently.
+      // A nonsensical value falls back to the default rather than quietly
+      // changing a bid.
+      return customSqFt != null && customSqFt > 0
+        ? customSqFt
+        : DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT;
     default:
+      // UNANSWERED, and deliberately NOT reading `customSqFt`: the number
+      // belongs to the LARGE_ONLY answer, and a company that has not answered
+      // must be quantified exactly as it was before any of this existed.
       return DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT;
   }
 }
