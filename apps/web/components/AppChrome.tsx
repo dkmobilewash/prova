@@ -6,6 +6,7 @@ import { HashLanding } from "@/components/shell/HashLanding";
 import { ShellRegion } from "@/components/ShellRegion";
 import { BottomTabs } from "@/components/shell/BottomTabs";
 import { CommandPalette } from "@/components/shell/CommandPalette";
+import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
 import { TimeZoneCookie } from "@/components/TimeZoneCookie";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
@@ -70,6 +71,14 @@ import type { Principal } from "@/lib/permissions";
  * CommandPalette joined as an invisible helper. The history above still names
  * the sidebar because that is where it happened; the reason applies unchanged
  * to every region below.
+ *
+ * AND IT CAME BACK, 2026-10-12 (restore-brief.md item 1). With the rail gone,
+ * about half the built pages were reachable only through ⌘K or "All pages",
+ * which is not reachable in any sense a contractor would recognise. The page
+ * list returned at ≥ lg only, as SidebarRegion below — filed under the six
+ * area names by `pagesByArea`, so it is the same list "All pages" shows — and
+ * the top bar, the phone's tabs and ⌘K are unchanged. Its region boundary is
+ * here for the same Flight reason as every other one.
  */
 
 export function TimeZoneCookieRegion() {
@@ -152,6 +161,25 @@ export function TopBarRegion({
         aiFindingCount={aiFindingCount}
         tasks={tasks}
       />
+    </ShellRegion>
+  );
+}
+
+export function SidebarRegion({
+  principal,
+  showsInternal,
+  businessScope,
+  routesWithData,
+}: {
+  principal: Principal;
+  showsInternal: boolean;
+  businessScope: BusinessScopeAnswers;
+  /** Same list the top bar gets, from the same layout. */
+  routesWithData: readonly string[];
+}) {
+  return (
+    <ShellRegion region="sidebar">
+      <Sidebar principal={principal} showsInternal={showsInternal} businessScope={businessScope} routesWithData={routesWithData} />
     </ShellRegion>
   );
 }

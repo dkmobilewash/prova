@@ -38,7 +38,9 @@ export const JOB_TAB_STAGE: Record<string, JobStageKey> = {
   Takeoff: "estimate",
   "Contract signature": "contract",
   Overview: "contract",
-  "Change orders": "contract",
+  // "Change orders" stopped being a stage link 2026-10-12 (restore-nav):
+  // the estimate route is "Estimate" at every stage, and change orders are
+  // a Paperwork-panel row at /estimate#change-orders.
   Compliance: "contract",
   "Crew & time": "crew",
   "Field reports": "crew",

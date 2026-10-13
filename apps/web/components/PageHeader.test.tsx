@@ -43,4 +43,26 @@ describe("PageHeader", () => {
     expect(source).toMatch(/<PageHeader\s+route="\/hours"/);
     expect(source).not.toMatch(/<h1/);
   });
+
+  it("adds the parent page to the trail for a page that hangs off another", () => {
+    const html = renderToStaticMarkup(
+      <PageHeader route="/settings/integrations" parent={{ href: "/settings", label: "Settings" }} title="Integrations" />,
+    );
+    expect(html).toMatch(/href="\/dashboard"[^>]*>Home<.*href="\/settings"[^>]*>Settings<.*aria-current="page"[^>]*>Integrations</s);
+    const contact = renderToStaticMarkup(
+      <PageHeader route="/contacts" parent={{ href: "/contacts", label: "Contacts" }} title="Northside Builders" />,
+    );
+    expect(contact).toMatch(/>Jobs &amp; bids<.*href="\/contacts"[^>]*>Contacts<.*aria-current="page"[^>]*>Northside Builders</s);
+    const form = renderToStaticMarkup(
+      <PageHeader
+        route="/dashboard"
+        parent={[
+          { href: "/jobs/j1", label: "Oak Ave" },
+          { href: "/jobs/j1/certified-payroll", label: "Certified payroll" },
+        ]}
+        title="Form WH-347"
+      />,
+    );
+    expect(form).toMatch(/href="\/jobs\/j1"[^>]*>Oak Ave<.*href="\/jobs\/j1\/certified-payroll"[^>]*>Certified payroll<.*>Form WH-347</s);
+  });
 });

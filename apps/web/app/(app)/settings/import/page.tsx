@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
@@ -70,13 +72,13 @@ export default async function ImportPage() {
 
   if (!isOwner && !canImportPayrollRegister) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-8">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Import from a spreadsheet</h1>
+      <PageShell width="reading">
+        <PageHeader route="/settings/import" parent={{ href: "/settings", label: "Settings" }} title="Import from a spreadsheet" />
         <p className="text-sm text-ink-body">
           Only the account owner can import records. Adding a whole spreadsheet of clients, jobs
           or crew at once is a different thing from adding one on its own page.
         </p>
-      </div>
+      </PageShell>
     );
   }
 
@@ -109,8 +111,8 @@ export default async function ImportPage() {
       }),
     ]);
     return (
-      <div className="mx-auto max-w-3xl px-6 py-8">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Import from a spreadsheet</h1>
+      <PageShell width="reading">
+        <PageHeader route="/settings/import" parent={{ href: "/settings", label: "Settings" }} title="Import from a spreadsheet" />
         <p className="mb-6 text-sm text-ink-body">
           Clients, jobs and certificates of insurance are the account owner&apos;s imports. The
           payroll register below is yours — it is part of certified payroll, not company
@@ -128,7 +130,7 @@ export default async function ImportPage() {
             Back to settings
           </Link>
         </p>
-      </div>
+      </PageShell>
     );
   }
 
@@ -185,10 +187,14 @@ export default async function ImportPage() {
   const contactNames = contacts.map((contact) => contact.name);
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink" data-tour="import-intro">
-        Import from a spreadsheet
-      </h1>
+    <PageShell width="reading">
+      <div data-tour="import-intro">
+        <PageHeader
+          route="/settings/import"
+          parent={{ href: "/settings", label: "Settings" }}
+          title="Import from a spreadsheet"
+        />
+      </div>
       <p className="mb-2 text-sm text-ink-body">
         Bring in the clients, jobs, crew and cost codes you already keep in Excel, Google Sheets,
         or an export from Sage 100 Contractor, Foundation, QuickBooks or any other system —
@@ -269,6 +275,6 @@ export default async function ImportPage() {
           Back to settings
         </Link>
       </p>
-    </div>
+    </PageShell>
   );
 }

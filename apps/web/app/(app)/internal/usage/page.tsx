@@ -1,4 +1,6 @@
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCompanyContext } from "@/lib/auth";
 import { formatInstant } from "@/lib/render-date";
 import { viewerTimeZone } from "@/lib/viewerToday";
@@ -47,17 +49,17 @@ export const metadata = { title: "Usage" };
 
 function NothingHere() {
   return (
-    <div className="mx-auto max-w-2xl px-6 py-16">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Not part of your access</h1>
+    <PageShell width="reading">
+      <PageHeader route="/internal/usage" title="Not part of your access" />
       <p className="text-sm text-ink-muted">Nothing here for this account.</p>
-    </div>
+    </PageShell>
   );
 }
 
 const BADGE: Record<UsageStatus, string> = {
-  ACTIVE: "border-emerald-800 bg-emerald-950 text-ok",
-  SLIPPING: "border-amber-800 bg-amber-950 text-warn",
-  QUIET: "border-red-900 bg-red-950 text-danger",
+  ACTIVE: "border-line-card bg-tag-green text-tag-green-ink",
+  SLIPPING: "border-line-card bg-tag-amber text-tag-amber-ink",
+  QUIET: "border-line-card bg-tag-rose text-tag-rose-ink",
   NEVER: "border-line-card bg-surface text-ink-muted",
 };
 
@@ -80,12 +82,12 @@ export default async function InternalUsagePage() {
 
   if (currentUser.role !== "OWNER") {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-16">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Owner only</h1>
+      <PageShell width="reading">
+        <PageHeader route="/internal/usage" title="Owner only" />
         <p className="text-sm text-ink-muted">
           Usage across companies is restricted to the account owner, same as the sales CRM.
         </p>
-      </div>
+      </PageShell>
     );
   }
 
@@ -161,10 +163,10 @@ export default async function InternalUsagePage() {
   }));
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Usage</h1>
+    <PageShell width="working">
+      <PageHeader route="/internal/usage" title="Usage" subtitle="C Stream's own instrument, across every company on this database." />
       <p className="mb-4 text-sm text-ink-muted">
-        C Stream&apos;s own instrument, across every company on this database. One recorded fact per
+        One recorded fact per
         person — the last time their browser made a signed-in request, written at most once every 15
         minutes. Everything else on this page is worked out from that timestamp and the clock when
         the page loads.
@@ -183,7 +185,7 @@ export default async function InternalUsagePage() {
         {tally.map(({ status, count }) => (
           <div
             key={status}
-            className="min-w-[7rem] flex-1 rounded-lg border border-line-row bg-surface px-4 py-3"
+            className="min-w-[7rem] flex-1 rounded-xl border border-line-row bg-surface px-4 py-3"
           >
             <p className="text-2xl font-semibold text-ink">{count}</p>
             <p className="text-xs text-ink-muted">{USAGE_STATUS_LABEL[status]}</p>
@@ -192,14 +194,14 @@ export default async function InternalUsagePage() {
       </section>
 
       {companies.length === 0 ? (
-        <p className="rounded-lg border border-line-row bg-surface p-6 text-sm text-ink-muted">
+        <p className="rounded-xl border border-line-row bg-surface p-6 text-sm text-ink-muted">
           No companies on this database yet. If you are reading this on a preview, it is talking to
           the demo project — run the <span className="text-ink-body">Seed demo data</span> workflow.
         </p>
       ) : (
         <ul className="space-y-4">
           {companies.map((row) => (
-            <li key={row.id} className="rounded-lg border border-line-row bg-surface">
+            <li key={row.id} className="rounded-xl border border-line-row bg-surface">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-row px-4 py-3">
                 <div className="min-w-0">
                   <p className="font-medium text-ink">
@@ -272,6 +274,6 @@ export default async function InternalUsagePage() {
       <p className="mt-6 text-xs text-ink-muted">
         Dates are on your own calendar ({timeZone}), not the server&apos;s.
       </p>
-    </div>
+    </PageShell>
   );
 }

@@ -9,6 +9,7 @@ import {
   CommandPaletteRegion,
   FullTourRegion,
   NavigationProgressRegion,
+  SidebarRegion,
   TimeZoneCookieRegion,
   TopBarRegion,
 } from "@/components/AppChrome";
@@ -133,7 +134,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
   return (
     // Concept G (2026-10-10): no left rail and no bottom strip. A column of
-    // top bar and the page, with the phone's bottom tabs fixed over the foot
+    // top bar and the page (since 2026-10-12, a row of the desktop page list
+    // and the page), with the phone's bottom tabs fixed over the foot
     // of the screen. h-dvh rather than h-screen so the column is the
     // VISIBLE viewport on a phone, whose browser bars make 100vh too tall.
     //
@@ -195,18 +197,30 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         aiFindingCount={aiFindingCount}
         tasks={tasks}
       />
-      {/* No background of its own: each page brings its own ground. Full
-          width now there is no rail; the centred column is each page's own
-          <PageShell> (packages/ui — `working` is max-w-7xl plus px-6, within
-          a few px of the G mockup's 1344px-with-48px-gutters), and
-          pageWidthCensus.test.ts forbids a second cap here. The bottom
-          padding clears the phone's fixed tabs; the matching SCROLL padding
-          makes scrollIntoView and keyboard focus stop above them too —
-          without it a focused "Review & send" scrolled in behind the tabs
-          (measured at 390x844, 2026-10-10). */}
-      <main className="min-h-0 flex-1 overflow-y-auto pb-[var(--shell-tabs)] scroll-pb-[var(--shell-tabs)] [--shell-port:calc(100dvh-var(--shell-topbar)-var(--shell-tabs))] focus:outline-none" id="main" tabIndex={-1}>
-        {children}
-      </main>
+      {/* Below the full-width top bar, a row: the desktop page list (≥ lg,
+          restored 2026-10-12 — components/shell/Sidebar.tsx; it scrolls on
+          its own) and the page, which stays the one scroll port. Below lg
+          the list renders nothing and the row is just the page. */}
+      <div className="flex min-h-0 flex-1">
+        <SidebarRegion
+          principal={principal}
+          showsInternal={showsInternal}
+          businessScope={businessScope}
+          routesWithData={routesWithData}
+        />
+        {/* No background of its own: each page brings its own ground. The
+            rest of the row's width; the centred column is each page's own
+            <PageShell> (packages/ui — `working` is max-w-7xl plus px-6, within
+            a few px of the G mockup's 1344px-with-48px-gutters), and
+            pageWidthCensus.test.ts forbids a second cap here. The bottom
+            padding clears the phone's fixed tabs; the matching SCROLL padding
+            makes scrollIntoView and keyboard focus stop above them too —
+            without it a focused "Review & send" scrolled in behind the tabs
+            (measured at 390x844, 2026-10-10). */}
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto pb-[var(--shell-tabs)] scroll-pb-[var(--shell-tabs)] [--shell-port:calc(100dvh-var(--shell-topbar)-var(--shell-tabs))] focus:outline-none" id="main" tabIndex={-1}>
+          {children}
+        </main>
+      </div>
       <BottomTabsRegion
         principal={principal}
         showsInternal={showsInternal}

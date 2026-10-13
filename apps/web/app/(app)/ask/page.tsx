@@ -1,4 +1,6 @@
 import { AskPanel } from "@/components/AskPanel";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { RecentThreads } from "@/components/ask/RecentThreads";
 import { requireCompanyContext } from "@/lib/auth";
 
@@ -32,14 +34,13 @@ export default async function AskPage({
   const initialQuestion = typeof q === "string" ? q.slice(0, 500) : "";
   const threadId = typeof thread === "string" && thread ? thread.slice(0, 64) : undefined;
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-      <h1 className="text-2xl font-semibold text-ink">Ask C Stream</h1>
-      <p className="mt-2 max-w-prose text-sm text-ink-body">
-        Ask about your jobs, money, drawings or crews in plain words — or tell it to do
-        something, and it will show you exactly what it will change before anything is
-        written.
-      </p>
-      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_16rem]">
+    <PageShell width="working">
+      <PageHeader
+        route="/ask"
+        title="Ask C Stream"
+        subtitle="Ask about your jobs, money, drawings or crews in plain words — or tell it to do something, and it will show you exactly what it will change before anything is written."
+      />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_16rem]">
         <div className="min-w-0" data-tour="ask-panel">
           {/* Keyed so a second palette ask, or a different thread from
               Recent, re-seeds the panel. */}
@@ -53,6 +54,6 @@ export default async function AskPage({
           <RecentThreads companyId={context.companyId} userId={context.id} activeId={threadId} />
         </aside>
       </div>
-    </div>
+    </PageShell>
   );
 }

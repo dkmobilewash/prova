@@ -118,11 +118,16 @@ export function jobStages(input: JobStageInput): JobStage[] {
 
   const links: Record<StageKey, StageLink[]> = {
     estimate: [
-      // `/estimate` is the estimate until the contract, then it holds the
-      // change orders (estimate/page.tsx) — so it moves to Contract with it,
-      // anchored at the change-order section, which sits below job costing.
-      ...(input.showsJobMoney && isEstimate ? [{ href: `/jobs/${id}/estimate`, label: "Estimate" }] : []),
-      ...(input.showsJobMoney ? [{ href: `/jobs/${id}/takeoff`, label: "Takeoff" }] : []),
+      // "Estimate" at every stage. After the contract the page also holds
+      // the change orders, but the estimate tools are still on it, and
+      // filing it under Contract as "Change orders" hid them (restore
+      // brief, 2026-10-12). Change orders keep their own Paperwork row.
+      ...(input.showsJobMoney
+        ? [
+            { href: `/jobs/${id}/estimate`, label: "Estimate" },
+            { href: `/jobs/${id}/takeoff`, label: "Takeoff" },
+          ]
+        : []),
     ],
     contract: [
       // On a bid the Contract step's job is getting the subcontract signed,
@@ -133,7 +138,6 @@ export function jobStages(input: JobStageInput): JobStage[] {
       isEstimate && input.showsJobMoney
         ? { href: `/jobs/${id}#contract-signature`, label: "Contract signature" }
         : { href: `/jobs/${id}`, label: "Overview" },
-      ...(input.showsJobMoney && !isEstimate ? [{ href: `/jobs/${id}/estimate#change-orders`, label: "Change orders" }] : []),
       { href: `/jobs/${id}/compliance`, label: "Compliance" },
     ],
     crew: [
