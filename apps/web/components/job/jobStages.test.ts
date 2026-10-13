@@ -59,6 +59,22 @@ describe("jobStages", () => {
     expect(combos).toBe(32);
   });
 
+  // Restore brief 2026-10-12: after the contract the estimate route was
+  // filed under Contract as "Change orders", which hid the estimate tools.
+  it("links the Estimate step to the estimate, labelled Estimate, at every stage", () => {
+    let checked = 0;
+    for (const status of ["ESTIMATE", "CONTRACTED", "IN_PROGRESS", "COMPLETE"]) {
+      const stages = jobStages({ ...base, status });
+      expect(stages[0].links[0], status).toEqual({ href: "/jobs/job-1/estimate", label: "Estimate" });
+      const labels = stages.flatMap((s) => s.links.map((l) => l.label));
+      expect(labels, status).not.toContain("Change orders");
+      checked++;
+    }
+    expect(checked).toBe(4);
+    // A viewer not shown job money gets no estimate link at any stage.
+    expect(jobStages({ ...base, showsJobMoney: false })[0].links).toEqual([]);
+  });
+
   it("shows the mockup's job in its real words", () => {
     const stages = jobStages(base);
     expect(stages.map((s) => [s.label, s.state, s.status])).toEqual([
@@ -193,7 +209,9 @@ describe("jobStages", () => {
     const stages = jobStages(base);
     expect(selectedStageKey(stages, "/jobs/job-1/retainage")).toBe("billing");
     expect(selectedStageKey(stages, "/jobs/job-1")).toBe("contract");
-    expect(selectedStageKey(stages, "/jobs/job-1/estimate")).toBe("contract");
+    // "Estimate" at every stage: on a contracted job the estimate route is
+    // the Estimate step's, not filed under Contract as "Change orders".
+    expect(selectedStageKey(stages, "/jobs/job-1/estimate")).toBe("estimate");
     expect(selectedStageKey(stages, "/jobs/job-1/photos")).toBe("crew");
     expect(selectedStageKey(stages, "/jobs/job-1/pay-applications/x")).toBeNull();
   });
@@ -224,14 +242,9 @@ describe("changeOrderPaperworkLink", () => {
   });
 
   // ux round 4: on a contracted job /estimate opens on the job-costing
-  // breakdown, and both "Change orders" links landed on top of it — the
-  // Paperwork one, clicked from that same page, did not move it at all.
-  it("lands on the change-order section, from Paperwork and from the Contract step", () => {
+  // breakdown, and the "Change orders" link landed on top of it.
+  it("lands on the change-order section of the estimate route", () => {
     expect(changeOrderPaperworkLink("job-1", 2, 1).href).toBe("/jobs/job-1/estimate#change-orders");
-    const contract = jobStages(base).find((s) => s.key === "contract")!;
-    expect(contract.links.find((l) => l.label === "Change orders")?.href).toBe("/jobs/job-1/estimate#change-orders");
-    // Still the open tab when you are on it — the fragment never reaches pathname.
-    expect(selectedStageKey(jobStages(base), "/jobs/job-1/estimate")).toBe("contract");
   });
 });
 

@@ -3,10 +3,14 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
-import { isCurrentLink, selectedStageKey, type JobStage } from "@/components/job/jobStages";
+import { selectedStageKey, type JobStage } from "@/components/job/jobStages";
 
 /**
- * The five stage steps and, under them, the open stage's own pages.
+ * The five stage steps — the job's progress bar. Each step links to its
+ * stage's first page; getting around the job is the tab row directly under
+ * this (`JobSectionNav`). The open stage's pages used to sit here as a
+ * second row of links, which duplicated the tab row once it came back
+ * (restore brief, 2026-10-12), so it went.
  *
  * Every step and sub-link is a real `<Link>` to a real URL — the reason the
  * job page was split into routes (`JobSectionNav`'s history): linkable,
@@ -22,8 +26,8 @@ import { isCurrentLink, selectedStageKey, type JobStage } from "@/components/job
  * its status line — it used to be `hidden sm:block` with the words only in
  * a `title`, which a finger never sees. A pill may cut a long status short
  * (every word stays in its text and title), so the stage in view also says
- * its status in full under the row. The two sideways rows fade at the
- * right edge, so a step or page past the edge reads as "more this way".
+ * its status in full under the row. The sideways row fades at the
+ * right edge, so a step past the edge reads as "more this way".
  *
  * Desktop: a status WRAPS, never truncates — "Pay app #2 overdue 8 d…" hid
  * the one word that mattered (2026-10-11). The grid stretches every step to
@@ -33,7 +37,7 @@ import { isCurrentLink, selectedStageKey, type JobStage } from "@/components/job
 /** The right-edge fade on a sideways-scrolling row, phones only. The rows
  * pad 24px on the right, so at the end of the scroll the fade covers only
  * that padding and the last item is fully visible. */
-const EDGE_FADE = "max-sm:[mask-image:linear-gradient(to_right,#000_calc(100%-24px),transparent)]";
+export const EDGE_FADE = "max-sm:[mask-image:linear-gradient(to_right,#000_calc(100%-24px),transparent)]";
 
 function statusTone(stage: JobStage): string {
   return stage.tone === "danger"
@@ -59,7 +63,6 @@ export function JobStageNav({ stages }: { stages: JobStage[] }) {
     list.scrollLeft = item.offsetLeft - (list.clientWidth - item.offsetWidth) / 2;
   }, [focusKey]);
 
-  const open = stages.find((s) => s.key === selected);
   // Phone: a pill may cut its status short, so the stage in view says it in
   // full under the row. aria-hidden: the pill's own text (and title) already
   // gives a screen reader every word, and this would say it twice.
@@ -146,39 +149,6 @@ export function JobStageNav({ stages }: { stages: JobStage[] }) {
         </p>
       )}
 
-      {open && open.links.length > 0 && (
-        <ul
-          aria-label={`${open.label} pages`}
-          className={`${EDGE_FADE} -mx-6 mt-3 flex gap-1 overflow-x-auto border-b border-line-card px-6 sm:mx-0 sm:px-0`}
-        >
-          {open.links.map((link) => {
-            const isActive = isCurrentLink(link.href, pathname, search);
-            return (
-              <li key={link.href} className="shrink-0">
-                <Link
-                  href={link.href}
-                  aria-current={isActive ? "page" : undefined}
-                  className={`inline-flex min-h-11 items-center gap-1 whitespace-nowrap border-b-2 px-3 text-sm font-medium mouse:min-h-9 ${
-                    isActive
-                      ? "border-brand text-ink"
-                      : "border-transparent text-ink-muted hover:border-line-card hover:text-ink-label"
-                  }`}
-                >
-                  {link.label}
-                  {link.leavesJob && (
-                    <>
-                      <svg aria-hidden viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" className="h-3.5 w-3.5 text-ink-muted">
-                        <path d="M6 3.5h6.5V10M12.5 3.5 4 12" />
-                      </svg>
-                      <span className="sr-only"> (leaves this job)</span>
-                    </>
-                  )}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      )}
     </nav>
   );
 }
