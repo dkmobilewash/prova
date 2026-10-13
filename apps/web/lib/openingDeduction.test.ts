@@ -62,65 +62,132 @@ describe("the openings question", () => {
   });
 });
 
-describe("the question reaches a screen and a quantity", () => {
+describe("the question reaches a screen, a save, and a quantity", () => {
   // ── A CENSUS, AND THE REASON IT IS NOT JUST A UNIT TEST ──
   //
   // The defect being prevented is a setting that saves and changes nothing.
-  // Every assertion above would pass with the resolver wired to no page and
-  // no pricing path — which is precisely how `openingDeductionThresholdSqFt`
-  // sat unused since it was written. So the wiring is asserted too.
+  // The unit tests above would all pass with the resolver wired to no page and
+  // no pricing path — which is how `openingDeductionThresholdSqFt` sat unused
+  // since it was written.
+  //
+  // THE FIRST VERSION OF THIS BLOCK WAS GREEN ON A SETTING NOBODY COULD SAVE,
+  // and that is the entry worth reading before adding to it. The question
+  // shipped as a fourth field inside `BusinessScopeFields`, whose other three
+  // radios are `required`. The BROWSER refused to submit the form until all
+  // three were answered, so any company that skipped onboarding could not save
+  // this setting at all. This census confirmed the question rendered; the unit
+  // test confirmed it was not in the required list. Both were true. Neither can
+  // see a native validation block on a sibling field — a census reads source,
+  // and `required` does its work in the browser.
+  //
+  // So the structural fix is asserted instead: the question has its OWN form
+  // with its OWN action and NO required input anywhere on it, which is a
+  // property source can actually be read for.
   const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
 
-  it("is asked on screen, with its wording from the one place that holds it", () => {
-    const fields = read("components/BusinessScopeFields.tsx");
-    expect(fields).toContain("BUSINESS_SCOPE_QUESTIONS.openingDeduction.prompt");
-    expect(fields).toContain('name="openingDeduction"');
-    // EVERY ANSWER IS OFFERED, and this asserts the mapping rather than the
-    // three literals — which is the stronger check and was not the obvious
-    // one. The first version of this test looked for "NONE", "LARGE_ONLY" and
-    // "ALL" in the component and FAILED: they are not there, because the
-    // component maps over the options list instead of retyping them. Looking
-    // for the literals would have passed only if somebody had hand-written
-    // them, i.e. it would have rewarded the duplication this repo keeps
-    // paying for. Asserting the map means a new answer appears on screen with
-    // no edit here at all.
-    expect(fields).toContain("BUSINESS_SCOPE_QUESTIONS.openingDeduction.options.map");
+  /**
+   * Source with COMMENTS STRIPPED, and that is not tidiness.
+   *
+   * `OpeningDeductionForm.tsx` explains the bug it exists to fix, and that
+   * explanation contains the word `required` — so the no-required assertion
+   * below failed on the prose describing why there is no required input. The
+   * mirror image of #185, where a comment quoting a census's own pattern
+   * disarmed it; `clerkMountGate.test.ts` strips comments for the same reason.
+   *
+   * Deliberately naive: it would also blank a `//` inside a string literal.
+   * Nothing in these two files has one, and a parser here would be more
+   * machinery than the question deserves.
+   */
+  const code = (path: string) =>
+    read(path)
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/\/\/[^\n]*/g, " ");
+  const form = () => read("components/OpeningDeductionForm.tsx");
+
+  it("is asked on its own form, with its wording from the one place that holds it", () => {
+    expect(form()).toContain("BUSINESS_SCOPE_QUESTIONS.openingDeduction.prompt");
+    expect(form()).toContain('name="openingDeduction"');
+    // EVERY ANSWER IS OFFERED, asserted as the MAPPING rather than the three
+    // literals — the stronger check, and not the obvious one. Looking for
+    // "NONE"/"LARGE_ONLY"/"ALL" in the component fails, because it maps over
+    // the options list instead of retyping them; a literal search would pass
+    // only if somebody had hand-written them, rewarding the duplication this
+    // repo keeps paying for.
+    expect(form()).toContain("BUSINESS_SCOPE_QUESTIONS.openingDeduction.options.map");
     expect(BUSINESS_SCOPE_QUESTIONS.openingDeduction.options.map((o) => o.value)).toEqual([
       ...OPENING_DEDUCTIONS,
     ]);
   });
 
-  it("is reachable on Settings and absent from the onboarding screen", () => {
-    // ── PROVING A CONTROL IS REACHABLE, NOT MERELY WRITTEN ──
+  it("CARRIES NO REQUIRED INPUT, so nothing else can block its Save", () => {
+    // The assertion that would have caught the bug. A `required` radio anywhere
+    // on this form reintroduces exactly the failure: the browser refuses the
+    // submit and names a field, and our own action never runs.
     //
-    // The fields component renders this question only behind `askOpenings`, so
-    // everything else in this file could pass with the question on no screen
-    // anybody opens. That has shipped here before — a control gated so it
-    // appeared nowhere — which is why the flag is asserted at both call sites
-    // rather than just defined.
-    expect(read("components/BusinessScopeSettingsForm.tsx")).toContain("askOpenings");
-    // /welcome asks the three REQUIRED questions and nothing else: a fourth,
-    // optional one on the first screen of the product contradicts its own
-    // "all three" copy. `companySetupGate.test.ts` counts the controls there.
-    expect(read("components/CompanySetupGate.tsx")).not.toContain("askOpenings");
+    // Read from CODE, not raw text — see `code()` above for why that is
+    // load-bearing rather than fussy.
+    expect(code("components/OpeningDeductionForm.tsx")).not.toContain("required");
+    // And the census can see SOMETHING, so a stripper that blanked the whole
+    // file could not pass this vacuously. Nothing is ever missing from an
+    // empty string.
+    expect(code("components/OpeningDeductionForm.tsx")).toContain('name="openingDeduction"');
   });
 
-  it("is NOT one of the required onboarding answers", () => {
-    // Making it required would block every company that has already answered
-    // the other three from saving this form at all.
+  it("saves through its own action, which writes nothing else", () => {
     const action = read("lib/actions/company.ts");
-    const required = action.slice(action.indexOf('(["contractingRelationship"'), action.indexOf("] as const).filter"));
-    expect(required).not.toContain("openingDeduction");
+    const fn = action.slice(action.indexOf("export async function saveOpeningDeduction"));
+    expect(fn).toContain("data: { openingDeduction }");
+    // Owner-only, and refusing by RETURN rather than by throw — production
+    // redacts a thrown Server Action message to a digest.
+    expect(fn).toContain("ownerRefusal");
+    expect(fn).not.toContain("assertOwner");
   });
 
-  it("is saved, and an empty answer clears rather than sticks", () => {
-    const action = read("lib/actions/company.ts");
-    expect(action).toContain("openingDeduction,");
-    expect(action).toContain("OPENING_DEDUCTIONS");
+  it("is NOT on the form whose other fields are required", () => {
+    // Where it used to be. If it comes back here, it stops being savable.
+    expect(read("components/BusinessScopeFields.tsx")).not.toContain('name="openingDeduction"');
+    const scope = read("lib/actions/company.ts");
+    const saveScope = scope.slice(
+      scope.indexOf("export async function saveBusinessScope"),
+      scope.indexOf("export async function clearBusinessScope"),
+    );
+    expect(saveScope).not.toContain("openingDeduction");
   });
 
-  it("is shown back on Settings, so it is not write-only", () => {
-    expect(read("app/(app)/settings/page.tsx")).toContain("openingDeduction: company.openingDeduction");
+  it("offers a way back to unset, so a shop can return to the default", () => {
+    // Null is a real answer (it resolves to 32 sq ft). Without a control for
+    // it, a shop that picks a convention can never get back to the default —
+    // and the click-through could not test clearing for that exact reason.
+    expect(form()).toContain('value=""');
+    expect(form()).toContain("answer == null");
+  });
+
+  it("is reachable on Settings, and not behind a dead condition", () => {
+    // Proving a control is REACHABLE, not merely written. Everything else here
+    // could pass with the form rendered on no page anybody opens.
+    const page = code("app/(app)/settings/page.tsx");
+    expect(page).toContain("<OpeningDeductionForm");
+    expect(page).toContain("businessScope.openingDeduction");
+
+    // ── AND THE MUTATION THAT GOT PAST THE FIRST VERSION OF THIS TEST ──
+    //
+    // `toContain("<OpeningDeductionForm")` passes on
+    // `{null && <OpeningDeductionForm …}`, which renders nothing. A substring
+    // search cannot tell a rendered component from a gated one, and this repo
+    // has shipped exactly that — #665's control, gated so it appeared on no
+    // screen anybody used.
+    //
+    // So the render site must OPEN its line: nothing before the tag but
+    // whitespace. That is a property source can be read for, and it reds the
+    // mutation above.
+    const site = page.split("\n").find((line) => line.includes("<OpeningDeductionForm"));
+    expect(site, "the render site is on its own line").toMatch(/^\s*<OpeningDeductionForm/);
+
+    // THE BOUND, stated rather than implied: a conditional spread over two
+    // lines would still evade this, and no source census can close that. What
+    // would is rendering the page, which is a server component reading Prisma
+    // and not something this suite can mount. The honest claim is that the
+    // cheap accidental gating is caught and a determined one is not.
   });
 
   it("reaches the priced quantity", () => {

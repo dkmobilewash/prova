@@ -562,29 +562,12 @@ export async function saveBusinessScope(formData: FormData): Promise<ActionResul
       "The monthly pay-application question",
     );
 
-    // ── THE FOURTH ANSWER IS OPTIONAL, AND ABSENT MEANS UNANSWERED ──
-    //
-    // Not in the `unanswered` check above, deliberately: those three gate
-    // onboarding and this one must not, or every company that has answered
-    // them is blocked from saving until it answers this as well. Null is a
-    // real state — `openingThresholdSqFt` resolves it to the 32 sq ft the app
-    // has always used, so a blank changes no quantity.
-    //
-    // `undefined` would leave a previous answer in place, which is wrong for a
-    // form that renders the current one and can be cleared, so an empty field
-    // writes null.
-    const openingDeductionRaw = text(formData, "openingDeduction");
-    const openingDeduction = openingDeductionRaw
-      ? enumFromForm(formData, "openingDeduction", OPENING_DEDUCTIONS)
-      : null;
-
     await prisma.company.update({
       where: { id: context.company.id },
       data: {
         contractingRelationship,
         doesPublicWork,
         filesMonthlyPayApps,
-        openingDeduction,
         businessScopeAskedAt: new Date(),
       },
     });
@@ -658,4 +641,53 @@ export async function clearBusinessScope(): Promise<ActionResult> {
 
   revalidatePath("/settings");
   return ok;
+}
+
+/**
+ * The openings question, saved ON ITS OWN.
+ *
+ * ── WHY IT IS NOT PART OF `saveBusinessScope`, WHICH IS WHERE IT STARTED ──
+ *
+ * It was a fourth field on that form for about an hour. The three onboarding
+ * radios are `required`, so the BROWSER refused to submit until all three were
+ * answered — and the openings answer went down with them. Any company that had
+ * skipped onboarding (which is every company that has not answered those three)
+ * could not save this setting at all. Not a permission error, not a validation
+ * message of ours: a native tooltip on a different question.
+ *
+ * A census said the question rendered. A unit test said it was not required.
+ * Both were true, and the setting was unusable. Only clicking it found that,
+ * which is why it now has its own form and its own action with nothing else on
+ * them.
+ *
+ * AN EMPTY ANSWER CLEARS, and that is deliberate rather than an oversight: null
+ * means unanswered, `openingThresholdSqFt` resolves it to the 32 sq ft the app
+ * has always used, and a shop that changes its mind must be able to get back to
+ * "however C Stream does it" without picking a convention it does not hold.
+ */
+export async function saveOpeningDeduction(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    if (!can(context, "MANAGE_COMPLIANCE")) return fail(COMPLIANCE_ONLY);
+
+    // Owner-only for the same reason the scope answers are: this decides how
+    // the WHOLE COMPANY's board quantities are taken off, so it is one person
+    // choosing the bid convention for everybody who estimates.
+    const refusal = ownerRefusal(
+      context,
+      "Only the account owner can set this — it decides how every bid takes off board.",
+    );
+    if (refusal) return refusal;
+
+    const raw = text(formData, "openingDeduction");
+    const openingDeduction = raw ? enumFromForm(formData, "openingDeduction", OPENING_DEDUCTIONS) : null;
+
+    await prisma.company.update({
+      where: { id: context.company.id },
+      data: { openingDeduction },
+    });
+
+    revalidatePath("/settings");
+    return ok;
+  });
 }

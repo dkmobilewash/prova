@@ -30,6 +30,7 @@ import { BidDefaultsForm } from "@/components/BidDefaultsForm";
 import { CompanyProfileForm } from "@/components/CompanyProfileForm";
 import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
 import { BusinessScopeSettingsForm } from "@/components/BusinessScopeSettingsForm";
+import { OpeningDeductionForm } from "@/components/OpeningDeductionForm";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
 import { QuickBooksReconcile } from "@/components/QuickBooksReconcile";
@@ -404,6 +405,21 @@ export default async function SettingsPage({
           by its own link, and you can change your answers any time.
         </p>
         <BusinessScopeSettingsForm scope={businessScope} isOwner={currentUser.role === "OWNER"} />
+      </section>
+
+      <section className="mb-10">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">How you take off board</h2>
+        {/* ── ITS OWN SECTION, NOT A FOURTH FIELD ABOVE ──
+            It was inside the setup questions and could not be saved: those
+            three radios are `required`, so the browser blocked the submit on a
+            different question until all three were answered. See
+            `OpeningDeductionForm.tsx`. Keeping it separate also reads better —
+            that section is about which MENUS you see, and this one changes a
+            quantity on a bid. */}
+        <OpeningDeductionForm
+          answer={businessScope.openingDeduction ?? null}
+          isOwner={currentUser.role === "OWNER"}
+        />
       </section>
 
       <section className="mb-10" data-tour="settings-quickbooks">
