@@ -85,7 +85,7 @@ import { Component, Suspense, type ErrorInfo, type ReactNode } from "react";
  * container.
  */
 
-export type ShellRegionName = "topbar" | "bottomtabs" | "helper";
+export type ShellRegionName = "topbar" | "sidebar" | "bottomtabs" | "helper";
 
 /** What stands in for a region that failed. Same box as the real thing so
  * the layout's declared chrome heights (`--shell-topbar`, `--shell-tabs`)
@@ -110,6 +110,15 @@ export function ShellRegionFallback({ region }: { region: ShellRegionName }) {
       return (
         <div className="print:hidden flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line-row bg-canvas px-4 text-sm text-ink-body md:h-16 md:px-6 lg:px-12">
           <p>The top bar couldn&apos;t load. The page still works.</p>
+          <ReloadLink />
+        </div>
+      );
+    case "sidebar":
+      // Desktop only and the expanded rail's width, so the page beside it
+      // does not jump sideways when the page list fails.
+      return (
+        <div className="print:hidden hidden w-64 shrink-0 flex-col items-start gap-2 border-r border-line-row bg-rail p-4 text-sm text-ink-body lg:flex">
+          <p>The page list couldn&apos;t load.</p>
           <ReloadLink />
         </div>
       );
