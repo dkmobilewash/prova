@@ -991,7 +991,11 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     // contradicts the narration, and it is what makes this a documentation
     // defect rather than a product one.
     await page.goto("/dashboard");
-    await expect(page.locator(`nav[aria-label="Main"] [title=${JSON.stringify(GETTING_PAID_DETAIL)}]`)).toHaveCount(1);
+    await page.getByRole("button", { name: /^Your menu/ }).click();
+    await page.getByRole("button", { name: "All pages" }).click();
+    await expect(
+      page.getByRole("dialog", { name: "All pages" }).locator(`[title=${JSON.stringify(GETTING_PAID_DETAIL)}]`),
+    ).toHaveCount(1);
   });
 
   test("the browser threw nothing the run sheet would have to explain on camera", async () => {
