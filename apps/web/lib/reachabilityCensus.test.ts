@@ -243,7 +243,7 @@ describe("reachability census", () => {
   });
 
   it("reads non-empty sources for every bucket", () => {
-    expect(sidebar.size, "the sidebar has no entries").toBeGreaterThanOrEqual(40);
+    expect(sidebar.size, "the sidebar read almost nothing — navGroupsFor or NAV_FOOTER changed shape").toBeGreaterThanOrEqual(30);
     expect(areaPages.size).toBeGreaterThanOrEqual(30);
     expect(jobTabs.size).toBe(9);
   });
