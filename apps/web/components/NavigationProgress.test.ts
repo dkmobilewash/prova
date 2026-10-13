@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { barStyle, startsNavigation } from "@/lib/navProgress";
-import Loading from "../app/(app)/loading";
+import Loading from "./RouteSkeleton";
 
 const HERE = "https://app.cstream.ai/rfis?status=open";
 const plain = { button: 0, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false };

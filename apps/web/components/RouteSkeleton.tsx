@@ -13,7 +13,11 @@
  * The pulse is `motion-safe:` only: under prefers-reduced-motion the
  * skeleton is still there, just still.
  */
-export default function Loading() {
+// EXPERIMENT 2026-10-13 (PR #748, CI runs 10-18): moved out of the route tree
+// from app/(app)/loading.tsx to test whether the (app) loading boundary is what
+// lets the router park a transition on its never-resolving thenable. Not a
+// design decision; see the commit message.
+export default function RouteSkeleton() {
   return (
     <div role="status" className="mx-auto max-w-4xl px-6 py-8">
       <span className="sr-only">Loading page</span>
