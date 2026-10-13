@@ -1,3 +1,4 @@
+import { openingThresholdSqFt as openingThresholdFor } from "@/lib/businessScope";
 import type { Prisma } from "@prova/db";
 import {
   openingsFromJson,
@@ -94,12 +95,23 @@ export async function loadWallSchedule(tx: Tx, companyId: string, jobId: string)
   }));
   const componentById = new Map(types.flatMap((type) => type.components).map((c) => [c.id, c]));
 
-  return { runs, runInputs, typeInputs, componentById };
+  // ── THE SHOP'S OWN ANSWER ABOUT OPENINGS ──
+  //
+  // Read here rather than at the call sites so every one of them prices the
+  // same way. `null` is unanswered and resolves to the 32 sq ft this app has
+  // always used, so a company that has never seen the question is unchanged.
+  const company = await tx.company.findUnique({
+    where: { id: companyId },
+    select: { openingDeduction: true },
+  });
+  const openingThresholdSqFt = openingThresholdFor(company?.openingDeduction ?? null);
+
+  return { runs, runInputs, typeInputs, componentById, openingThresholdSqFt };
 }
 
 export async function syncWallScheduleLines(tx: Tx, companyId: string, jobId: string): Promise<WallSyncSummary> {
-  const { runInputs, typeInputs, componentById } = await loadWallSchedule(tx, companyId, jobId);
-  const schedule = scheduleLines(runInputs, typeInputs);
+  const { runInputs, typeInputs, componentById, openingThresholdSqFt } = await loadWallSchedule(tx, companyId, jobId);
+  const schedule = scheduleLines(runInputs, typeInputs, { openingThresholdSqFt });
 
   // ── DELETED LINES ARE READ TOO, AND THAT IS THE WHOLE FIX ──
   //

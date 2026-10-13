@@ -24,9 +24,23 @@
  * files before changing either side of this.
  */
 
+import type { OpeningDeduction } from "@prova/db";
+import { DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT } from "./takeoff";
 import type { Principal } from "@/lib/permissions";
 
 export const CONTRACTING_RELATIONSHIPS = ["UNDER_GENERAL_CONTRACTORS", "DIRECT_FOR_OWNERS", "BOTH"] as const;
+
+/** The answers to the openings question, for the form parser.
+ *
+ * PARITY WITH THE SCHEMA ENUM IS CHECKED BY THE COMPILER, both ways, which is
+ * why there is no census test for it: `satisfies` rejects a member the enum
+ * does not have, and `_EveryOpeningDeductionListed` rejects a member of the
+ * enum this list has forgotten. Adding a value to `OpeningDeduction` in
+ * `company.prisma` and not here is a typecheck failure, not a silent subset —
+ * the "second list nobody updated" shape this repo keeps paying for. */
+export const OPENING_DEDUCTIONS = ["NONE", "LARGE_ONLY", "ALL"] as const satisfies readonly OpeningDeduction[];
+type _EveryOpeningDeductionListed =
+  Exclude<OpeningDeduction, (typeof OPENING_DEDUCTIONS)[number]> extends never ? true : never;
 export type ContractingRelationship = (typeof CONTRACTING_RELATIONSHIPS)[number];
 
 /** The three answers, exactly as stored on `Company`. Every field nullable,
@@ -37,12 +51,18 @@ export type BusinessScopeAnswers = {
   contractingRelationship: ContractingRelationship | null;
   doesPublicWork: boolean | null;
   filesMonthlyPayApps: boolean | null;
+  /** Null — and absent — is a real answer here, and resolves to the 32 sq ft
+   * the app has always used. See `openingThresholdSqFt`. Optional so the
+   * callers that only care about the three onboarding answers (the nav gate,
+   * the Ask route) need not carry it. */
+  openingDeduction?: OpeningDeduction | null;
 };
 
 export const UNANSWERED_SCOPE: BusinessScopeAnswers = {
   contractingRelationship: null,
   doesPublicWork: null,
   filesMonthlyPayApps: null,
+  openingDeduction: null,
 };
 
 /**
@@ -274,4 +294,48 @@ export const BUSINESS_SCOPE_QUESTIONS = {
   filesMonthlyPayApps: {
     prompt: "Does the GC make you fill in a form every month before they will pay you?",
   },
+  openingDeduction: {
+    // Asked as a HABIT, not as a threshold. An estimator knows what their shop
+    // does; nobody knows what "32 square feet" means without being told, and
+    // being told is what `openingThresholdSqFt` is for.
+    prompt: "When you bid board, do you take the door and window openings off the quantity?",
+    options: [
+      { value: "NONE", label: "No — bid the wall solid" },
+      { value: "LARGE_ONLY", label: "Only the big ones, like a storefront" },
+      { value: "ALL", label: "Yes — every opening comes off" },
+    ] as const,
+  },
 } as const;
+
+/**
+ * The square-foot threshold a company's answer means — the number
+ * `boardedArea` has always taken and nothing has ever passed it.
+ *
+ * ── WHY THIS IS A QUESTION AND NOT A CONSTANT ──
+ *
+ * `DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT` is 32, and its own comment says
+ * why that cannot be the end of it: "shops differ, and some deduct nothing at
+ * all". A 3'-0" x 7'-0" door is 21 sq ft, so at 32 a door is NOT deducted —
+ * which is right for most subs, because the board is still hung, cut out and
+ * framed with a header, and deducting it bills none of that labour.
+ *
+ * But it was the only behaviour available. A shop that deducts everything had
+ * no way to say so, and C Stream bid their work by somebody else's habit.
+ *
+ * `null` — unanswered — resolves to the same 32 the app already used, so no
+ * existing quantity moves when this arrives.
+ */
+export function openingThresholdSqFt(answer: OpeningDeduction | null | undefined): number {
+  switch (answer) {
+    case "ALL":
+      // Zero, not "a small number": every opening, however small, comes off.
+      return 0;
+    case "NONE":
+      // Above any opening a drawing can hold, so nothing is ever deducted. A
+      // storefront is tens of square feet; this is larger than a wall.
+      return Number.POSITIVE_INFINITY;
+    case "LARGE_ONLY":
+    default:
+      return DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT;
+  }
+}

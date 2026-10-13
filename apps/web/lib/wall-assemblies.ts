@@ -83,13 +83,26 @@ export function runHeight(run: Pick<WallRunInput, "heightFt">, type: Pick<WallTy
   return null;
 }
 
-/** A run's measurements, or null when it has no height to price at. */
-export function runGeometry(run: WallRunInput, type: WallTypeInput): RunGeometry | null {
+/**
+ * A run's measurements, or null when it has no height to price at.
+ *
+ * `openingThresholdSqFt` is the company's own answer to "do you take openings
+ * off the quantity" (`businessScope.ts`). Omitted, `boardedArea` falls back to
+ * the 32 sq ft it has always used, so an unanswered company is unchanged.
+ */
+export function runGeometry(
+  run: WallRunInput,
+  type: WallTypeInput,
+  options: { openingThresholdSqFt?: number } = {},
+): RunGeometry | null {
   const heightFt = runHeight(run, type);
   if (heightFt == null || run.lengthFt <= 0) return null;
   const sides = type.sides === 1 ? 1 : 2;
-  const faceSqFt = boardedArea({ lengthFt: run.lengthFt, heightFt, sides: 1, openings: run.openings });
-  const boardedSqFt = boardedArea({ lengthFt: run.lengthFt, heightFt, sides, openings: run.openings });
+  // `boardedArea` spells the option its own way; one translation here beats
+  // two spellings of the same number travelling through the app.
+  const deduct = { openingDeductionThresholdSqFt: options.openingThresholdSqFt };
+  const faceSqFt = boardedArea({ lengthFt: run.lengthFt, heightFt, sides: 1, openings: run.openings }, deduct);
+  const boardedSqFt = boardedArea({ lengthFt: run.lengthFt, heightFt, sides, openings: run.openings }, deduct);
   const studs = studsRequired(run.lengthFt, { spacingFt: type.studSpacingIn > 0 ? type.studSpacingIn / 12 : undefined });
   return { linearFt: run.lengthFt, heightFt, faceSqFt, boardedSqFt, studs };
 }
@@ -149,7 +162,11 @@ export type WallSchedule = {
  * A type with no runs produces no lines. Line order follows the type order, then
  * the component order, so the estimate reads like the partition schedule.
  */
-export function scheduleLines(runs: readonly WallRunInput[], types: readonly WallTypeInput[]): WallSchedule {
+export function scheduleLines(
+  runs: readonly WallRunInput[],
+  types: readonly WallTypeInput[],
+  options: { openingThresholdSqFt?: number } = {},
+): WallSchedule {
   const typeById = new Map(types.map((type) => [type.id, type]));
   const totals = new Map<string, number>();
   const unpricedRuns: WallSchedule["unpricedRuns"] = [];
@@ -161,7 +178,7 @@ export function scheduleLines(runs: readonly WallRunInput[], types: readonly Wal
       orphanRuns.push({ id: run.id, label: run.label });
       continue;
     }
-    const geometry = runGeometry(run, type);
+    const geometry = runGeometry(run, type, options);
     if (!geometry) {
       unpricedRuns.push({ id: run.id, label: run.label });
       continue;

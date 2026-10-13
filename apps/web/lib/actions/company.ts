@@ -24,7 +24,7 @@ import {
 import { normalizeEin, normalizeWebsite } from "@/lib/company-profile";
 import { can } from "@/lib/permissions";
 import { numericReaders, PERCENT_BOUNDS } from "@/lib/numeric-input";
-import { CONTRACTING_RELATIONSHIPS } from "@/lib/businessScope";
+import { CONTRACTING_RELATIONSHIPS, OPENING_DEDUCTIONS } from "@/lib/businessScope";
 
 /** The job-function refusal for the company record, worded the way
  * `closeoutSubmissions.ts` words its own: the person reading it has done
@@ -562,12 +562,29 @@ export async function saveBusinessScope(formData: FormData): Promise<ActionResul
       "The monthly pay-application question",
     );
 
+    // ── THE FOURTH ANSWER IS OPTIONAL, AND ABSENT MEANS UNANSWERED ──
+    //
+    // Not in the `unanswered` check above, deliberately: those three gate
+    // onboarding and this one must not, or every company that has answered
+    // them is blocked from saving until it answers this as well. Null is a
+    // real state — `openingThresholdSqFt` resolves it to the 32 sq ft the app
+    // has always used, so a blank changes no quantity.
+    //
+    // `undefined` would leave a previous answer in place, which is wrong for a
+    // form that renders the current one and can be cleared, so an empty field
+    // writes null.
+    const openingDeductionRaw = text(formData, "openingDeduction");
+    const openingDeduction = openingDeductionRaw
+      ? enumFromForm(formData, "openingDeduction", OPENING_DEDUCTIONS)
+      : null;
+
     await prisma.company.update({
       where: { id: context.company.id },
       data: {
         contractingRelationship,
         doesPublicWork,
         filesMonthlyPayApps,
+        openingDeduction,
         businessScopeAskedAt: new Date(),
       },
     });
