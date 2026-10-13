@@ -106,7 +106,7 @@ test.describe("the bid desk", () => {
 
     // ?view=all: since ux round 4, /bids opens on its "Due soon" view whenever
     // a bid is due within the window, and the list this asserts on is the
-    // "All" view's (data-tour="bids-list").
+    // "All" view's (the bids-list anchor, via dataTour()).
     await page.goto("/bids?view=all");
     await expectHealthy(page, "/bids with one bid", { monitor });
     await expect(bidRow()).toContainText(PROJECT);
