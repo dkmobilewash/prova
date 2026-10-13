@@ -301,7 +301,6 @@ export function WaiverTool({
                   const showError = Boolean(error && (tried || raw[slot]?.trim()));
                   const inputProps = {
                     id,
-                    name: slot,
                     autoComplete: "off",
                     placeholder: spec.placeholder,
                     value: raw[slot] ?? "",
@@ -323,11 +322,11 @@ export function WaiverTool({
                             expression, and an unreadable attribute is checked,
                             not trusted. */}
                         {spec.kind === "money" ? (
-                          <input type="text" inputMode="decimal" {...inputProps} />
+                          <input type="text" inputMode="decimal" name={slot} {...inputProps} />
                         ) : spec.kind === "date" ? (
-                          <input type="date" {...inputProps} />
+                          <input type="date" name={slot} {...inputProps} />
                         ) : (
-                          <input type="text" {...inputProps} />
+                          <input type="text" name={slot} {...inputProps} />
                         )}
                       </div>
                     </Card>
