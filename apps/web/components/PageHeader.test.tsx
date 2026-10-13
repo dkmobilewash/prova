@@ -43,4 +43,15 @@ describe("PageHeader", () => {
     expect(source).toMatch(/<PageHeader\s+route="\/hours"/);
     expect(source).not.toMatch(/<h1/);
   });
+
+  it("adds the parent page to the trail for a page that hangs off another", () => {
+    const html = renderToStaticMarkup(
+      <PageHeader route="/settings/integrations" parent={{ href: "/settings", label: "Settings" }} title="Integrations" />,
+    );
+    expect(html).toMatch(/href="\/dashboard"[^>]*>Home<.*href="\/settings"[^>]*>Settings<.*aria-current="page"[^>]*>Integrations</s);
+    const contact = renderToStaticMarkup(
+      <PageHeader route="/contacts" parent={{ href: "/contacts", label: "Contacts" }} title="Northside Builders" />,
+    );
+    expect(contact).toMatch(/>Jobs &amp; bids<.*href="\/contacts"[^>]*>Contacts<.*aria-current="page"[^>]*>Northside Builders</s);
+  });
 });

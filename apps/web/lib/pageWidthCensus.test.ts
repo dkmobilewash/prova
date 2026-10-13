@@ -159,14 +159,8 @@ function scan(): Scanned[] {
  * proof set is three pages and not fifty-nine.
  */
 const UNCONVERTED_PAGES = [
-  "apps/web/app/(app)/alerts/page.tsx",
   "apps/web/app/(app)/ask/page.tsx",
-  "apps/web/app/(app)/catalog/page.tsx",
-  "apps/web/app/(app)/certifications/page.tsx",
-  "apps/web/app/(app)/closeout/page.tsx",
   "apps/web/app/(app)/contacts/[id]/page.tsx",
-  "apps/web/app/(app)/deployment/page.tsx",
-  "apps/web/app/(app)/intake/page.tsx",
   "apps/web/app/(app)/internal/usage/page.tsx",
   "apps/web/app/(app)/jobs/[id]/certified-payroll/page.tsx",
   "apps/web/app/(app)/jobs/[id]/certified-payroll/wh-347/page.tsx",
@@ -174,20 +168,12 @@ const UNCONVERTED_PAGES = [
   "apps/web/app/(app)/jobs/[id]/photo-report/page.tsx",
   "apps/web/app/(app)/jobs/new/[jobId]/items/page.tsx",
   "apps/web/app/(app)/jobs/new/page.tsx",
-  "apps/web/app/(app)/lien-deadlines/page.tsx",
-  "apps/web/app/(app)/messages/page.tsx",
-  "apps/web/app/(app)/phase-codes/page.tsx",
-  "apps/web/app/(app)/pipeline/page.tsx",
-  "apps/web/app/(app)/prevailing-wage/page.tsx",
   "apps/web/app/(app)/sales/[id]/page.tsx",
   "apps/web/app/(app)/sales/page.tsx",
   "apps/web/app/(app)/settings/assistant/page.tsx",
   "apps/web/app/(app)/settings/export/page.tsx",
   "apps/web/app/(app)/settings/import/page.tsx",
-  "apps/web/app/(app)/settings/integrations/page.tsx",
-  "apps/web/app/(app)/union-compliance/page.tsx",
   "apps/web/app/(app)/union-compliance/remittance/page.tsx",
-  "apps/web/app/(app)/vendors/pricing/page.tsx",
   "apps/web/app/esign/[token]/page.tsx",
   // `apps/web/app/page.tsx` — the public marketing page — WAS here, with the
   // note that it was "being rewritten in #404 as this landed". #404 landed
@@ -314,7 +300,8 @@ describe("page width census", () => {
       // /equipment, /schedule, /cash-flow, /backcharges, /team, /bids and
       // /contacts: 33. (cyrus/fix-schedule's own /schedule
       // conversion is the same page, so the merge leaves 33.)
-    ).toBe(33);
+      // cyrus/restore-nav-pages put the fourteen pages the new sidebar points straight at on PageShell + PageHeader: /alerts, /messages, /pipeline, /catalog, /lien-deadlines, /phase-codes, /deployment, /closeout, /intake, /certifications, /prevailing-wage, /union-compliance, /vendors/pricing, /settings/integrations: 19.
+    ).toBe(19);
     expect(new Set(UNCONVERTED_PAGES).size).toBe(UNCONVERTED_PAGES.length);
   });
 
