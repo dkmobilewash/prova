@@ -88,8 +88,15 @@ function stripComments(source: string): string {
  * wrap the tree from the root layout, where an `AfterMount` would delay the
  * whole app by a frame. Named here so the exclusion is a decision on the
  * record rather than a regex that happens not to reach it.
+ *
+ * `useClerk` joined it 2026-10-10 (Concept G): a HOOK, not a component. The
+ * top bar's avatar menu (components/shell/TopBar.tsx) draws its own markup
+ * from server props and calls `useClerk()` only inside click handlers
+ * (`signOut`, `openUserProfile`), so nothing Clerk-rendered reaches the page
+ * and there is no `loaded`-gated element to race. If a Clerk COMPONENT is ever
+ * imported there, it is caught by name below.
  */
-const NOT_A_RENDERED_WIDGET = new Set(["ClerkProvider"]);
+const NOT_A_RENDERED_WIDGET = new Set(["ClerkProvider", "useClerk"]);
 
 /**
  * Where Clerk's own card is the page. See this file's header for why these two
@@ -217,7 +224,17 @@ describe("Clerk's UI components are mounted behind the browser gate", () => {
        statement and zero names — a widget this census cannot see. The one
        legitimate zero is a file whose only Clerk import is the provider. */
     for (const site of sites) {
-      const providerOnly = /import\s*\{[^}]*\bClerkProvider\b[^}]*\}/.test(site.stripped) && site.names.length === 0;
+      // The legitimate zero: every name the braces DO list is an excluded
+      // non-widget (ClerkProvider, useClerk). A default or namespace import
+      // lists none at all, so it still fails here.
+      const excludedOnly =
+        site.names.length === 0 &&
+        [...site.stripped.matchAll(CLERK_NAMED_IMPORT)]
+          .flatMap((match) => match[1].split(","))
+          .map((part) => part.trim().split(/\s+as\s+/)[0].trim())
+          .filter((name) => name.length > 0)
+          .some((name) => NOT_A_RENDERED_WIDGET.has(name));
+      const providerOnly = excludedOnly;
       expect(
         site.names.length > 0 || providerOnly,
         `${site.file} imports Clerk in ${site.statements} statement(s) and this census read no ` +
@@ -231,7 +248,9 @@ describe("Clerk's UI components are mounted behind the browser gate", () => {
     /* Pinned to the widgets this app actually mounts. A new Clerk component
        fails HERE, next to the sentence explaining what it has to be wrapped
        in, rather than silently joining the set below. */
-    expect(rendered).toEqual(["SignIn", "SignUp", "UserButton"]);
+    // `UserButton` left 2026-10-10: Concept G's avatar menu replaced it
+    // (components/shell/TopBar.tsx), so the shell mounts no Clerk widget now.
+    expect(rendered).toEqual(["SignIn", "SignUp"]);
   });
 
   it("renders no Clerk widget outside <AfterMount>, except where the card is the page", () => {

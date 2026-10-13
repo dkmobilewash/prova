@@ -65,14 +65,14 @@ export function DocuSignControls({ state, startHref }: { state: DocuSignCardStat
                 Envelopes already sent are kept.
               </span>
             }
-            deleteClassName="inline-flex items-center justify-center rounded-md border border-line-card bg-surface px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+            deleteClassName="inline-flex items-center justify-center rounded-md border border-line-card bg-surface px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-rail-hover disabled:cursor-not-allowed disabled:opacity-60"
             cancelClassName="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-body hover:text-ink disabled:opacity-60"
-            confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-tag-rose disabled:cursor-not-allowed disabled:opacity-60"
+            confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-danger hover:bg-tag-rose disabled:cursor-not-allowed disabled:opacity-60"
           />
         }
       />
       {error && (
-        <p role="alert" className="max-w-[18rem] text-right text-xs text-red-400">
+        <p role="alert" className="max-w-[18rem] text-right text-xs text-danger">
           {error}
         </p>
       )}

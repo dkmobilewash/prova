@@ -25,6 +25,8 @@ import { createElement } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { getRedirectError } from "next/dist/client/components/redirect";
+import { RedirectType } from "next/dist/client/components/redirect-error";
 import { ActionForm } from "@/components/ActionForm";
 import { SubmitButton } from "@/components/SubmitButton";
 
@@ -98,6 +100,21 @@ describe("the submit button still disables itself", () => {
       finish({ ok: true });
     });
     expect(button().disabled).toBe(false);
+  });
+});
+
+describe("an action that redirects", () => {
+  it("is a success — never 'That didn't save'", async () => {
+    // What next 15.5's server-action-reducer rejects the call with when the
+    // action ends in redirect(): createJob does, onto the bid wizard's step 2.
+    // Caught as a failure, a job that HAD saved said it hadn't (UX test,
+    // 2026-10-11) — and a second click made a duplicate.
+    const { form } = renderForm(async () => {
+      throw getRedirectError("/jobs/new/job-1/items", RedirectType.push);
+    });
+    await submit(form);
+    expect(container.textContent).not.toContain("didn't save");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 });
 

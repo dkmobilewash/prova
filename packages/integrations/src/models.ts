@@ -59,6 +59,11 @@ export const AI_FEATURES = {
   SPEC_READ: "spec-read",
   SCHEDULE_READ: "schedule-read",
   PROPOSAL_DRAFT: "proposal-draft",
+  /** The background agents (bid watcher, bid research, estimate check,
+   *  recommendations). ONE ledger feature for all four: which agent spent
+   *  it is on the AgentRun row, and one key is one pass through every
+   *  feature census rather than four. */
+  AI_AGENTS: "ai-agents",
 } as const;
 
 export type AiFeatureKey = keyof typeof AI_FEATURES;
@@ -105,6 +110,7 @@ const FEATURE_MODEL: Record<AiFeatureKey, string> = {
   // Opus: a handful of calls per bid, and the output is a sentence that
   // decides who pays when a GC disputes scope. Not page work.
   PROPOSAL_DRAFT: OPUS_5,
+  AI_AGENTS: OPUS_5,
 };
 
 /** `ANTHROPIC_MODEL_PLAN_INGESTION` etc. — the per-feature env override. */

@@ -12,11 +12,11 @@ import { Spinner } from "@/components/Spinner";
 // button at a time. `inline-flex` + `items-center` is what makes min-h centre
 // the label rather than pin it to the top.
 const rowBtn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 const rowBtnDanger =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-danger disabled:opacity-50";
 const rowBtnConfirm =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-danger hover:bg-tag-rose disabled:opacity-50";
 
 type EquipmentRowProps = {
   canDelete: boolean;
@@ -83,7 +83,7 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
           <EquipmentFields defaults={item} />
 
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}
@@ -110,7 +110,7 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
                 setIsEditing(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
             >
               Cancel
             </button>
@@ -138,7 +138,7 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
             slate-900 card, under the 4.5 text floor. */}
         {item.notes && <p className="mt-1 text-sm text-ink-body">{item.notes}</p>}
         {error && (
-          <p role="alert" className="mt-1 text-sm text-red-400">
+          <p role="alert" className="mt-1 text-sm text-danger">
             {error}
           </p>
         )}

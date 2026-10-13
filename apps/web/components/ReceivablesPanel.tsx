@@ -7,6 +7,7 @@ import { SidePanel } from "@prova/ui";
 import { money } from "@/lib/money";
 import { panelCanBeShown } from "@/lib/breakpoints";
 import type { OverdueInvoice } from "@/lib/today-dashboard";
+import { billingNoun } from "@/components/job/jobStages";
 
 /**
  * Split into a provider, a list and a panel so the panel can be a real
@@ -21,6 +22,9 @@ type ReceivablesContext = {
   rows: OverdueInvoice[];
   /** Invoices raised, ever — see the empty branch of ReceivablesList. */
   invoicesRaised: number;
+  /** "Pay app" or "Invoice" — the company's own word, same as Home's
+   * Money card (billingNoun). Labels only; the rows are the same rows. */
+  noun: ReturnType<typeof billingNoun>;
   openId: string | null;
   setOpenId: (id: string | null) => void;
 };
@@ -36,16 +40,19 @@ function useReceivables(): ReceivablesContext {
 export function ReceivablesProvider({
   rows,
   invoicesRaised,
+  filesMonthlyPayApps,
   children,
 }: {
   rows: OverdueInvoice[];
   invoicesRaised: number;
+  /** Company.filesMonthlyPayApps — picks the noun via billingNoun. */
+  filesMonthlyPayApps?: boolean | null;
   children: ReactNode;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const value = useMemo(
-    () => ({ rows, invoicesRaised, openId, setOpenId }),
-    [rows, invoicesRaised, openId],
+    () => ({ rows, invoicesRaised, noun: billingNoun(filesMonthlyPayApps), openId, setOpenId }),
+    [rows, invoicesRaised, filesMonthlyPayApps, openId],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
@@ -65,7 +72,7 @@ export function ReceivablesProvider({
  * goes to the page where a payment can actually be recorded.
  */
 export function ReceivablesList() {
-  const { rows, invoicesRaised, openId, setOpenId } = useReceivables();
+  const { rows, invoicesRaised, noun, openId, setOpenId } = useReceivables();
   const router = useRouter();
 
   if (rows.length === 0) {
@@ -79,7 +86,7 @@ export function ReceivablesList() {
       // invoice is raised from a job's Billing tab, which he has no way of
       // knowing on day one.
       <p className="text-sm text-ink-body">
-        No invoices raised yet. Once you bill a job, what each GC still owes shows up here, longest
+        No {noun.lowerMany} raised yet. Once you bill a job, what each GC still owes shows up here, longest
         overdue first.{" "}
         <Link href="/jobs" className="text-link hover:underline">
           Open a job
@@ -88,7 +95,7 @@ export function ReceivablesList() {
       </p>
     ) : (
       <p className="text-sm text-ink-body">
-        Nothing outstanding. Every invoice raised has been paid in full.
+        Nothing outstanding. Every {noun.lower} raised has been paid in full.
       </p>
     );
   }
@@ -112,8 +119,8 @@ export function ReceivablesList() {
                   setOpenId(isOpen ? null : row.id);
                 }}
                 aria-expanded={isOpen}
-                className={`flex w-full items-center justify-between gap-3 px-1 py-2.5 text-left transition-colors hover:bg-neutral-800 ${
-                  isOpen ? "bg-neutral-800" : ""
+                className={`flex w-full items-center justify-between gap-3 px-1 py-2.5 text-left transition-colors hover:bg-rail-hover ${
+                  isOpen ? "bg-rail-hover" : ""
                 }`}
               >
                 <span className="min-w-0">
@@ -121,7 +128,7 @@ export function ReceivablesList() {
                     {row.gcName}
                   </span>
                   <span className="block truncate text-xs text-ink-body">
-                    Invoice {row.number} · {row.jobName}
+                    {noun.one} {row.number} · {row.jobName}
                   </span>
                 </span>
                 <span className="shrink-0 text-right">
@@ -168,13 +175,13 @@ export function ReceivablesList() {
 /** Rendered at the end of the shell's flex row, so opening it narrows the
  * content column instead of covering it. */
 export function ReceivablesDetailPanel() {
-  const { rows, openId, setOpenId } = useReceivables();
+  const { rows, noun, openId, setOpenId } = useReceivables();
   const open = rows.find((row) => row.id === openId) ?? null;
   if (!open) return null;
 
   return (
     <SidePanel
-          title={`Invoice ${open.number}`}
+          title={`${noun.one} ${open.number}`}
           subtitle={`${open.gcName} · ${open.jobName}`}
           onClose={() => setOpenId(null)}
           footer={
@@ -194,7 +201,7 @@ export function ReceivablesDetailPanel() {
                 open.dueOn === null
                   ? "No due date, and no payment terms on file for this GC"
                   : open.dueIsDerived
-                    ? `${open.dueOn} — from this GC's payment terms, not stated on the invoice`
+                    ? `${open.dueOn} — from this GC's payment terms, not stated on the ${noun.lower}`
                     : open.dueOn
               }
             />
@@ -238,7 +245,7 @@ export function ReceivablesDetailPanel() {
               </button>
             </div>
             <p className="mt-3 text-xs text-ink-body">
-              Payments are recorded on the job, against this invoice.
+              Payments are recorded on the job, against this {noun.lower}.
             </p>
           </div>
     </SidePanel>

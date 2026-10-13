@@ -11,6 +11,12 @@
 // which domain files import directly.
 
 export * from "./jobs";
+export * from "./agents";
+export * from "./bidOutcomes";
+export * from "./recommendations";
+export * from "./agentFindings";
+export * from "./agentSettings";
+export * from "./askThreads";
 export * from "./jobDetails";
 export * from "./estimating";
 export * from "./billing";
@@ -29,6 +35,7 @@ export * from "./quickbooks";
 export * from "./fieldReports";
 export * from "./delays";
 export * from "./crewSchedule";
+export * from "./crews";
 export * from "./lienDeadlines";
 export * from "./lienWaivers";
 export * from "./bidPursuits";
@@ -77,7 +84,6 @@ export * from "./accFeed";
 export * from "./companycam";
 export * from "./calendarFeed";
 export * from "./bluebeam";
-export * from "./search";
 export * from "./wallTypes";
 export * from "./bidRecap";
 export * from "./quoteRead";

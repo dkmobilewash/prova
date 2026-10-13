@@ -491,7 +491,7 @@ function Header({ jobId }: { jobId: string }) {
         <Link href={`/jobs/${jobId}/estimate`} className="text-link hover:text-link-hover">
           Ceilings and anything you already have dimensions for
         </Link>{" "}
-        are typed on the Estimate tab instead — a traced outline has an area, not a length and a width.
+        are typed on the estimate page instead — a traced outline has an area, not a length and a width.
       </p>
     </div>
   );

@@ -99,7 +99,7 @@ export default async function AssistantAuditPage() {
           It is also the section that makes this page's own header wrong. It read
           "nothing on this page writes" from the day it was built, which was true
           of an audit log and is not true any more. */}
-      <section className="mb-6 rounded-lg border border-line-card bg-surface p-4" data-ask="ai-settings">
+      <section id="ai-switch" className="mb-6 scroll-mt-20 rounded-lg border border-line-card bg-surface p-4" data-ask="ai-settings">
         <h2 className="mb-1 text-sm font-semibold text-ink">What AI is allowed to do</h2>
         <p className="mb-3 text-sm text-ink-body">
           Your company&apos;s choice, not ours. Switching something off here stops it for everyone in the
@@ -233,7 +233,7 @@ export default async function AssistantAuditPage() {
             )}
           </>
         ) : (
-          <p className="mb-3 text-sm text-red-300" data-ask="allowance-unreadable">
+          <p className="mb-3 text-sm text-danger" data-ask="allowance-unreadable">
             This month&apos;s allowance can&apos;t be read on this deployment — the{" "}
             <code>AskAllowancePeriod</code> table is missing or unreadable, which means this database is behind
             the code. <strong>The assistant is refusing every question</strong> until it is fixed: this cap fails
@@ -305,7 +305,7 @@ export default async function AssistantAuditPage() {
           </p>
           </>
         ) : (
-          <p className="mb-3 text-sm text-red-300" data-ask="usage-unreadable">
+          <p className="mb-3 text-sm text-danger" data-ask="usage-unreadable">
             Usage can&apos;t be read on this deployment — the <code>AskUsage</code> table is missing or unreadable,
             which means this database is behind the code. The box still answers, but the{" "}
             {ASK_LIMITS.perPersonPerHour}-per-person-per-hour and {ASK_LIMITS.perCompanyPerDay}-per-company-per-day

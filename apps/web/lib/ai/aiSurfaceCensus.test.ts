@@ -126,6 +126,11 @@ const CONTROLS: Record<AiFeatureKey, Control> = {
     file: "components/PlanIngestPanel.tsx",
     why: "The panel on a job's takeoff tab that opens a plan set and then reads its title blocks. See stageReachableCensus for the separate question of whether each STAGE has a caller.",
   },
+  AI_AGENTS: {
+    kind: "component",
+    file: "components/RunAgentButton.tsx",
+    why: "The 'Run now' button on /ai: a person starts a background agent by hand, which is how the watcher, research and the estimate check are reached without waiting for the cron or a new bid. The runs themselves are gated in lib/agents/core.ts.",
+  },
   SCHEDULE_READ: {
     kind: "component",
     file: "components/ScheduleProposals.tsx",

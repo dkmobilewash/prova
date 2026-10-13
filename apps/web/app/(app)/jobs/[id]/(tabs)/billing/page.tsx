@@ -9,7 +9,8 @@ import { pushBlockers } from "@/lib/quickbooks-sync";
 import { paymentPushBlockers } from "@/lib/quickbooks-payment-sync";
 import { accountPurpose } from "@/lib/quickbooks-constants";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
-import { viewerTimeZone } from "@/lib/viewerToday";
+import { viewerAsOf, viewerTimeZone } from "@/lib/viewerToday";
+import { dueStatus } from "@/lib/due-date";
 import { formatCalendarDate } from "@/lib/render-date";
 import { cashReceived } from "@/lib/billing/payment-entry";
 import { money } from "@/lib/money";
@@ -19,12 +20,16 @@ import { createInvoice, deletePayment } from "@/lib/actions";
 import { LienWaivers } from "@/components/LienWaivers";
 import { loadLienWaiverSection } from "@/lib/lien-waiver-query";
 import { ActionForm } from "@/components/ActionForm";
+import { PayAppSummary } from "@/components/job/PayAppSummary";
+import { billingNoun } from "@/components/job/jobStages";
+import { payAppFigures, payAppMonth } from "@/components/job/payAppFigures";
+import { loadPayApplication } from "@/lib/pay-application-query";
 
-const rowDeleteClass = "text-xs text-red-400 hover:underline";
+const rowDeleteClass = "text-xs text-danger hover:underline";
 const rowCancelClass =
-  "rounded-md border border-slate-700 px-2 py-1 text-xs text-ink-label hover:border-slate-500";
+  "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:border-line-card";
 const rowConfirmClass =
-  "rounded-md border border-red-500 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10";
+  "rounded-md border border-red-500 px-2 py-1 text-xs text-danger hover:bg-red-500/10";
 
 /**
  * Billing — invoices, payments and pay applications. Withheld on
@@ -58,7 +63,7 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
   const job = await prisma.job.findUnique({
     where: { id: jobRef.id },
     include: {
-      contact: { select: { id: true } },
+      contact: { select: { id: true, name: true } },
       lineItems: { where: { isDeleted: false }, select: { id: true, description: true, quantity: true, unitPrice: true } },
       invoices: {
         orderBy: { number: "asc" },
@@ -141,14 +146,46 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
   }));
 
   const timeZone = await viewerTimeZone();
+  // The reader's calendar day, for "overdue N days" (lib/due-date.ts).
+  const asOf = await viewerAsOf();
   const createInvoiceWithId = createInvoice.bind(null, job.id);
 
   const lienWaiverSection = await loadLienWaiverSection(job.id);
 
+  // The summary at the top is the LATEST pay application, read through
+  // loadPayApplication — the same certificate its Review page prints — so
+  // the two cannot show different figures.
+  const latestPayApp = payApplications.at(-1);
+  const latestCertificate = latestPayApp ? await loadPayApplication(job.id, latestPayApp.id, company.id) : null;
+  // The counter, not max(number)+1 (CLAUDE.md, sequence numbers): it is
+  // what the next submit will actually issue. A read only — the bump stays
+  // in issueInvoiceNumber's transaction.
+  const invoiceCounter = await prisma.invoiceCounter.findUnique({ where: { jobId: job.id }, select: { lastNumber: true } });
+  const latestInvoice = latestPayApp ? job.invoices.find((invoice) => invoice.id === latestPayApp.id) : undefined;
+
   return (
     <div>
+      <PayAppSummary
+        jobId={job.id}
+        gcName={job.contact.name}
+        nextNumber={(invoiceCounter?.lastNumber ?? 0) + 1}
+        asOf={asOf}
+        payApp={
+          latestPayApp && latestInvoice && latestCertificate
+            ? {
+                id: latestPayApp.id,
+                number: latestPayApp.number,
+                month: payAppMonth(latestInvoice.issuedAt, timeZone, asOf),
+                dueAt: latestInvoice.dueAt,
+                status: latestPayApp.status,
+                figures: payAppFigures(latestCertificate),
+              }
+            : null
+        }
+      />
+
       <section className="mb-10" data-tour="job-invoices">
-        <h2 className="mb-3 text-lg font-semibold text-ink">Invoices</h2>
+        <h2 className="mb-3 text-lg font-semibold text-ink">{billingNoun(company.filesMonthlyPayApps).many}</h2>
         <div className="flex flex-col gap-4">
           {job.invoices.map((invoice) => {
             const paid = invoice.payments.reduce((s, p) => s + Number(p.amount), 0);
@@ -169,7 +206,7 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
               <div key={invoice.id} className="rounded-lg border border-line-card bg-surface p-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="font-medium text-ink">
-                    Invoice #{invoice.number}
+                    {billingNoun(company.filesMonthlyPayApps).one} #{invoice.number}
                     {invoice.description ? ` — ${invoice.description}` : ""}
                   </p>
                   <div className="flex items-center gap-4 text-sm">
@@ -191,11 +228,17 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                   </div>
                 </div>
                 {invoice.lineItems.length > 0 && (
-                  <Link href={`/jobs/${job.id}/pay-applications/${invoice.id}`} className="mt-1 inline-block text-xs text-link hover:underline">
+                  <Link href={`/jobs/${job.id}/pay-applications/${invoice.id}`} className="mt-1 inline-block text-sm text-link hover:underline">
                     View pay application →
                   </Link>
                 )}
-                {invoice.dueAt && <p className="mt-1 text-xs text-ink-muted">Due {formatCalendarDate(invoice.dueAt)}</p>}
+                {invoice.dueAt && (invoice.status !== "PAID" && dueStatus(invoice.dueAt, asOf).overdue ? (
+                  <p className="mt-1 text-sm font-semibold text-danger">
+                    Due {formatCalendarDate(invoice.dueAt)} · {dueStatus(invoice.dueAt, asOf).text}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-sm text-ink-muted">Due {formatCalendarDate(invoice.dueAt)}</p>
+                ))}
                 {/* The retainage figure and the balance it explains now
                     come from the same call, so the page cannot print one
                     without the other. */}
@@ -235,7 +278,7 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                                 cancelClassName={rowCancelClass}
                                 confirmClassName={rowConfirmClass}
                                 hint={
-                                  <span className="max-w-[16rem] text-right text-amber-300">
+                                  <span className="max-w-[16rem] text-right text-warn">
                                     {money(Number(payment.amount))} received comes off this invoice, and the balance
                                     goes back up.
                                   </span>
@@ -311,6 +354,9 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
         </ActionForm>
       </section>
 
+      {/* Anchor for older links here. The summary's "Start pay app" uses
+          NEW_PAY_APP_HASH, which PayApplications opens and focuses itself. */}
+      <div id="pay-applications" className="scroll-mt-6" />
       <PayApplications jobId={job.id} lineItems={payApplicationLineItemOptions} payApplications={payApplications} timeZone={timeZone} />
 
       <LienWaivers jobId={job.id} section={lienWaiverSection} canManage={showsBilling} />

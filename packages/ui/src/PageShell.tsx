@@ -65,7 +65,9 @@ import type { ReactNode } from "react";
  *              that class. Measured in Chrome at a 1272px content area, the
  *              pair resolves to 320px + 872px, so the main column keeps a
  *              list's worth of room rather than a squeezed remainder.
- *   gutters -> `px-6 py-8`, the combination 47 of the 72 containers already
+ *   gutters -> `px-6 py-6` since the compact pass (2026-10-11, the owner:
+ *              "compact everything"), 8px off the top and bottom of every
+ *              page. It was `px-6 py-8`, the combination 47 of the 72 containers already
  *              wrote by hand — a plurality large enough that the shell is
  *              adopting the app's habit rather than imposing one. 24px of
  *              side gutter at 375px, measured: nothing touches the bezel and
@@ -149,7 +151,7 @@ type Props =
     });
 
 export function PageShell({ width, children, className = "", ...rest }: Props) {
-  const container = `mx-auto ${MEASURE[width]} px-6 py-8 ${className}`.trim();
+  const container = `mx-auto ${MEASURE[width]} px-6 py-6 ${className}`.trim();
 
   if (width !== "split") {
     return <div className={container}>{children}</div>;

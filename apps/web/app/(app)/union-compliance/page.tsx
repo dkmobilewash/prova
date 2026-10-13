@@ -22,6 +22,8 @@ import { viewerToday } from "@/lib/viewerToday";
 import { ApprenticeshipCommitteePanel } from "@/components/ApprenticeshipCommitteePanel";
 import { loadApprenticeshipCommittees } from "@/lib/das-query";
 
+export const metadata = { title: "Fringe & apprentices" };
+
 const STATUS_TONE: Record<string, string> = {
   WITHIN: "text-tag-green-ink",
   OVER: "text-tag-rose-ink",
@@ -95,7 +97,7 @@ export default async function UnionCompliancePage({
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Union fringe &amp; apprenticeship</h1>
+      <h1 className="mb-2 text-xl font-semibold text-ink">Fringe &amp; apprentices</h1>
       <p className="mb-2 text-sm text-ink-body">
         What is owed to the trust funds this month, and whether the crews ran within their
         apprentice-to-journeyman ratio. Both computed from the hours actually logged — nothing here

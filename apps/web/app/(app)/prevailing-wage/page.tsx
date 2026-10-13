@@ -17,6 +17,8 @@ import { viewerToday } from "@/lib/viewerToday";
 import { determinationStanding, determinationStandingLine } from "@/lib/determination-standing";
 import { DeterminationStandingLine } from "@/components/DeterminationStandingLine";
 
+export const metadata = { title: "Prevailing wage" };
+
 export default async function PrevailingWagePage({
   searchParams,
 }: {
@@ -45,7 +47,7 @@ export default async function PrevailingWagePage({
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Prevailing wage rules</h1>
+      <h1 className="mb-2 text-xl font-semibold text-ink">Prevailing wage</h1>
       <p className="mb-2 text-sm text-ink-body">
         The rules a jurisdiction sets — when an hour becomes overtime, when it becomes double time,
         how soon the report is due — recorded per jurisdiction and per date range, then applied to
@@ -97,7 +99,7 @@ export default async function PrevailingWagePage({
                     className={`rounded-md border px-3 py-1.5 text-sm ${
                       active
                         ? "border-brand text-link"
-                        : "border-line-card text-ink-label hover:bg-neutral-800"
+                        : "border-line-card text-ink-label hover:bg-rail-hover"
                     }`}
                   >
                     {week.jobName} · week of {week.weekStart}

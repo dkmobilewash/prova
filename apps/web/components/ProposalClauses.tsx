@@ -33,9 +33,9 @@ type Result = { ok: true } | { ok: false; error: string };
 const field =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 const primary =
-  "rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-700 disabled:opacity-50";
+  "rounded-md bg-rail-hover px-4 py-2 text-sm font-medium text-ink hover:bg-lift disabled:opacity-50";
 const secondary =
-  "rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 /** `resetOnSuccess` is false for an edit-in-place row: what was typed IS the
  * saved value, and resetting would snap the input back to the pre-save
@@ -130,7 +130,7 @@ export function ProposalClauseRow({
           aria-label="Clause text"
           className={`${field} min-w-[220px] flex-1`}
         />
-        <button type="submit" disabled={save.isPending} className="rounded-md bg-neutral-800 px-2 py-1 text-xs font-medium text-ink hover:bg-neutral-700 disabled:opacity-50">
+        <button type="submit" disabled={save.isPending} className="rounded-md bg-rail-hover px-2 py-1 text-xs font-medium text-ink hover:bg-lift disabled:opacity-50">
           {save.isPending ? (
             <span className="inline-flex items-center gap-1.5">
               <Spinner />
@@ -264,7 +264,7 @@ export function JobProposalClauseRow({
               pendingLabel="Removing…"
               pending={isPending}
               onConfirm={handleRemove}
-              deleteClassName="text-xs text-red-400 hover:underline"
+              deleteClassName="text-xs text-danger hover:underline"
             />
           }
         />

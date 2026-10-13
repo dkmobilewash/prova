@@ -73,7 +73,7 @@ export function QuickBooksReconcile() {
           type="button"
           onClick={check}
           disabled={isPending}
-          className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+          className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-rail-hover disabled:opacity-50"
         >
           {isPending ? "Checking QuickBooks…" : rows ? "Check again" : "Check against QuickBooks"}
         </button>

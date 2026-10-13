@@ -8,10 +8,10 @@ import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { SALES_LEAD_SOURCE_OPTIONS } from "@/components/SalesLeadFields";
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 const FOLLOW_UP_STYLE = {
-  OVERDUE: "text-red-400",
+  OVERDUE: "text-danger",
   DUE_TODAY: "text-tag-amber-ink",
   UPCOMING: "text-ink-muted",
 } as const;
@@ -66,7 +66,7 @@ export function SalesLeadRow({
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-medium text-ink">{lead.companyName}</p>
               {lead.source && (
-                <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs text-ink-body">
+                <span className="rounded-full bg-rail-hover px-2 py-0.5 text-xs text-ink-body">
                   {SALES_LEAD_SOURCE_OPTIONS.find((o) => o.value === lead.source)?.label ?? lead.source}
                 </span>
               )}
@@ -125,7 +125,7 @@ export function SalesLeadRow({
         }
       />
 
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
     </li>
   );
 }

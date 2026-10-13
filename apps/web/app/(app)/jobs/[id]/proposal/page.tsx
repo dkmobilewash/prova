@@ -223,7 +223,7 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
           <p className="mt-1 text-sm text-ink-body print:hidden">
             This job has no line items yet.{" "}
             <Link href={`/jobs/${job.id}/estimate`} className="text-link hover:underline">
-              Price it on the Estimate tab
+              Price it on the estimate page
             </Link>{" "}
             and the schedule of values fills in here.
           </p>

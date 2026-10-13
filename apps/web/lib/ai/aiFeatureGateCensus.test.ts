@@ -351,6 +351,11 @@ describe("every AI feature is behind the per-company switch", () => {
     //
     // A new feature added to the enum and not yet built goes back in here, with
     // the date and the reason. Leaving it empty is the normal state.
+    // AI_AGENTS was here from the spine (2026-10-11) until the same day's
+    // research agents landed `agentPass` (packages/integrations/src/agentPass.ts,
+    // `model: … modelFor("AI_AGENTS")`), gated in lib/agents/bidResearch.ts by
+    // aiGate(ctx.companyId, "AI_AGENTS"). It is in `covered` now, so the
+    // assertion below would fail if it were still listed.
     const notBuilt: AiFeatureKey[] = [];
     const missing = AI_FEATURE_KEYS.filter((key) => !covered.has(key) && !notBuilt.includes(key));
     expect(missing).toEqual([]);

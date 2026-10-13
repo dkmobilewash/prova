@@ -172,7 +172,7 @@ function PhaseCodeRow({ phaseCode, canManage }: { phaseCode: PhaseCodeData; canM
                 setIsEditing(false);
                 setError(null);
               }}
-              className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
             >
               Cancel
             </button>
@@ -230,9 +230,9 @@ function PhaseCodeRow({ phaseCode, canManage }: { phaseCode: PhaseCodeData; canM
                 pendingLabel="Retiring…"
                 pending={isPending}
                 onConfirm={() => handleSetActive(false)}
-                deleteClassName="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50"
-                cancelClassName="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
-                confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-tag-rose disabled:opacity-50"
+                deleteClassName="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-danger disabled:opacity-50"
+                cancelClassName="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50"
+                confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-danger hover:bg-tag-rose disabled:opacity-50"
               />
             }
           >
@@ -240,7 +240,7 @@ function PhaseCodeRow({ phaseCode, canManage }: { phaseCode: PhaseCodeData; canM
               type="button"
               disabled={isPending}
               onClick={() => setIsEditing(true)}
-              className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50"
             >
               Edit
             </button>
@@ -253,7 +253,7 @@ function PhaseCodeRow({ phaseCode, canManage }: { phaseCode: PhaseCodeData; canM
             disabled={isPending}
             onClick={() => handleSetActive(true)}
             title="Offer this code on new work again"
-            className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+            className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50"
           >
             {isPending ? (
               <span className="inline-flex items-center gap-1.5">
@@ -331,7 +331,7 @@ export function PhaseCodes({
                   setIsAdding(false);
                   setError(null);
                 }}
-                className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+                className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -342,7 +342,7 @@ export function PhaseCodes({
           <button
             type="button"
             onClick={() => setIsAdding(true)}
-            className="self-start rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+            className="self-start rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover"
           >
             Add a phase code
           </button>

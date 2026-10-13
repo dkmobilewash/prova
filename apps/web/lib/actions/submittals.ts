@@ -47,13 +47,18 @@ const JOBS_ONLY =
 // redacted digest. That is what #407 found on /welcome, and this module
 // held the fifteenth copy of the class it found there.
 
+/** A refusal about one field — shown under that input by `ActionForm`. */
+function failOn(field: string, message: string) {
+  return fail(message, { [field]: message });
+}
+
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
 
 function required(formData: FormData, key: string, label: string) {
   const value = text(formData, key);
-  if (!value) throw new InputError(`${label} is required`);
+  if (!value) throw new InputError(`${label} is required`, key);
   return value;
 }
 
@@ -63,13 +68,13 @@ function optionalDate(formData: FormData, key: string): Date | null {
   const raw = text(formData, key);
   if (!raw) return null;
   const date = new Date(`${raw}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) throw new InputError("Date is not valid");
+  if (Number.isNaN(date.getTime())) throw new InputError("Date is not valid", key);
   return date;
 }
 
 function requiredDate(formData: FormData, key: string, label: string): Date {
   const date = optionalDate(formData, key);
-  if (!date) throw new InputError(`${label} is required`);
+  if (!date) throw new InputError(`${label} is required`, key);
   return date;
 }
 
@@ -118,10 +123,10 @@ export async function createSubmittal(formData: FormData): Promise<ActionResult>
     const sentOn = optionalDate(formData, "sentOn");
     const dueBack = optionalDate(formData, "dueBack");
     if (sentOn && dueBack && dueBack < sentOn) {
-      return fail("The answer-back date can't be before the submittal was sent");
+      return failOn("dueBack", "The answer-back date can't be before the submittal was sent");
     }
     if (!sentOn && dueBack) {
-      return fail("Set the sent date first — a due-back date on an unsent submittal means nothing");
+      return failOn("sentOn", "Set the sent date first — a due-back date on an unsent submittal means nothing");
     }
 
     await prisma.$transaction(async (tx) => {
@@ -191,7 +196,7 @@ export async function sendSubmittalRevision(submittalId: string, formData: FormD
     const sentOn = requiredDate(formData, "sentOn", "Date sent");
     const dueBack = optionalDate(formData, "dueBack");
     if (dueBack && dueBack < sentOn) {
-      return fail("The answer-back date can't be before the revision was sent");
+      return failOn("dueBack", "The answer-back date can't be before the revision was sent");
     }
 
     // The guards read the latest revision INSIDE the transaction. Checked
@@ -213,6 +218,7 @@ export async function sendSubmittalRevision(submittalId: string, formData: FormD
       if (latest?.returnedOn && sentOn < latest.returnedOn) {
         throw new InputError(
           `Revision ${latest.revisionNumber} came back ${latest.returnedOn.toISOString().slice(0, 10)} — the next one can't have been sent before that`,
+          "sentOn",
         );
       }
       const bumped = await tx.submittal.update({
@@ -250,16 +256,16 @@ export async function recordSubmittalResponse(submittalId: string, formData: For
     const outcomeRaw = text(formData, "outcome");
     const outcomes = ["APPROVED", "APPROVED_AS_NOTED", "REVISE_AND_RESUBMIT", "REJECTED"] as const;
     if (!outcomes.includes(outcomeRaw as (typeof outcomes)[number])) {
-      return fail("Pick what the reviewer's stamp actually said");
+      return failOn("outcome", "Pick what the reviewer's stamp actually said");
     }
 
     // Entered, not stamped: a response recorded a week late must not read
     // as a week-later response — that overstates the GC's turnaround, and
     // turnaround is the evidence this log exists to hold.
     const returnedOn = optionalDate(formData, "returnedOn") ?? latest.returnedOn;
-    if (!returnedOn) return fail("Date the response actually came back is required");
+    if (!returnedOn) return failOn("returnedOn", "Date the response actually came back is required");
     if (returnedOn < latest.sentOn) {
-      return fail("The response can't have come back before the revision was sent");
+      return failOn("returnedOn", "The response can't have come back before the revision was sent");
     }
 
     await prisma.submittalRevision.update({

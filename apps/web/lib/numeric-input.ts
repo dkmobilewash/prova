@@ -321,10 +321,10 @@ export function labelFromKey(key: string): string {
  * `raise` returns `never`, so TypeScript narrows the failure branch away
  * and callers get `{ ok: true; value; n }` with no check of their own.
  */
-export function numericReaders(raise: (message: string) => never) {
+export function numericReaders(raise: (message: string, key: string) => never) {
   function number(formData: FormData, key: string, options?: NumericInputOptions) {
     const parsed = parseNumericInput(formData.get(key), { label: labelFromKey(key), ...options });
-    if (!parsed.ok) raise(parsed.error);
+    if (!parsed.ok) raise(parsed.error, key);
     return parsed;
   }
 

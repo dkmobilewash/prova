@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { clerk } from "@clerk/testing/playwright";
+import { installHistoryLog } from "./historyLog";
 
 /**
  * Signs `page` in as one of the four seeded personas (see personas.ts),
@@ -12,6 +13,7 @@ import { clerk } from "@clerk/testing/playwright";
  * ever initializes.
  */
 export async function signInAs(page: Page, email: string): Promise<void> {
+  await installHistoryLog(page);
   await page.goto("/sign-in");
   await clerk.signIn({ page, emailAddress: email });
   await failOnSessionTask(page, email);

@@ -96,6 +96,25 @@ const rfiRows = [
     scheduleImpact: false,
     askedBy: { name: "Tester" },
   },
+  // ux round 4: no due date, so it can never be overdue — a week unanswered
+  // on the reader's day is what flags it instead.
+  {
+    id: "rfi-3",
+    number: 3,
+    job: { name: job.name },
+    subject: "Rated assembly at mechanical rooms",
+    question: "Which listing?",
+    drawingReference: null,
+    specSection: null,
+    status: "SENT",
+    sentOn: utc("2026-09-08"),
+    dueBy: null,
+    answeredOn: null,
+    answer: null,
+    costImpact: false,
+    scheduleImpact: false,
+    askedBy: { name: "Tester" },
+  },
 ];
 
 const submittalRows = [
@@ -279,6 +298,12 @@ describe("/rfis after the UTC day has rolled over", () => {
     // in the list at one day late.
     expect(html).not.toContain("2 RFIs past the date we asked for");
     expect(html).not.toContain("#1 Tower B");
+  });
+
+  it("flags the RFI with no due date that has waited a week", async () => {
+    const html = await load();
+    expect(html).toContain("1 RFI waiting a week+ with no due date — #3 Tower B (7 days)");
+    expect(html.split(">Waiting a week+<").length - 1).toBe(1);
   });
 });
 
