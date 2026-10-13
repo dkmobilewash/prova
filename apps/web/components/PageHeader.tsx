@@ -75,14 +75,15 @@ export function PageHeader({
   title?: string;
   subtitle?: ReactNode;
   actions?: ReactNode;
-  /** The page one level up, for a page that hangs off another one — a
-   * contact's own page under Contacts, Integrations under Settings. Added
-   * to the end of the trail, so the crumb still goes all the way home. */
-  parent?: Crumb;
+  /** The page(s) above this one, for a page that hangs off another — a
+   * contact's own page under Contacts, Integrations under Settings, a
+   * job's printable form under the job. Added to the end of the trail, so
+   * the crumb still goes all the way home. */
+  parent?: Crumb | Crumb[];
   children?: ReactNode;
 }) {
   const found = trailFor(route);
-  const trail = [...(found?.trail ?? [{ href: "/dashboard", label: "Home" }]), ...(parent ? [parent] : [])];
+  const trail = [...(found?.trail ?? [{ href: "/dashboard", label: "Home" }]), ...[parent ?? []].flat()];
   const heading = title ?? found?.current ?? route;
   return (
     <header className="mb-6">
