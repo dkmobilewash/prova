@@ -167,15 +167,15 @@ test.describe("the pilot contractor's journey", () => {
     await page.goto(`/jobs/${jobId}`);
     await expectHealthy(page, "job overview", { monitor });
 
-    // Concept G (2026-10-10): the tab rail became five stage boxes, each
-    // opening a row of its own pages (components/job/JobStageNav.tsx), and
-    // only the open stage's row is in the DOM. So the destinations are read
-    // by opening each stage in turn, the way a person would. The Estimate
-    // page of a contracted job is filed under Contract as "Change orders".
+    // The job's pages are one row again (#757, components/job/JobSectionNav.tsx):
+    // every destination is listed at once, so they are read in one pass rather
+    // than by opening each stage. The estimate route is "Estimate" at EVERY
+    // stage now — calling it "Change orders" on a contracted job is what hid
+    // the estimate tools on a running job, which is the thing #757 undid.
     const tabs = await allJobTabs(page);
     const labels = tabs.map((tab) => tab.label);
     expect(labels, "a contracted job, viewed by its owner, files every old tab under a stage").toEqual(
-      expect.arrayContaining(["Overview", "Change orders", "Takeoff", "Crew & time", "Compliance", "Billing", "Retainage", "Field reports", "Photos"]),
+      expect.arrayContaining(["Overview", "Estimate", "Takeoff", "Crew & time", "Compliance", "Billing", "Retainage", "Field reports", "Photos"]),
     );
 
     for (const tab of tabs) {
