@@ -68,7 +68,7 @@ export function BusinessScopeSettingsForm({
           }}
           className="flex flex-col gap-5"
         >
-          <BusinessScopeFields defaults={scope} />
+          <BusinessScopeFields defaults={scope} askOpenings />
 
           {error && (
             <p role="alert" className="rounded-md border border-red-700 bg-tag-rose px-3 py-2 text-sm text-danger">

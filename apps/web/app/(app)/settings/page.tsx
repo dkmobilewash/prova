@@ -263,6 +263,11 @@ export default async function SettingsPage({
     contractingRelationship: company.contractingRelationship,
     doesPublicWork: company.doesPublicWork,
     filesMonthlyPayApps: company.filesMonthlyPayApps,
+    // Carried so the form renders the CURRENT answer. Without it the question
+    // saves and then shows blank on the next load, which reads as a broken
+    // setting — this app's own "written and never called" shape, wearing a
+    // radio group.
+    openingDeduction: company.openingDeduction,
   };
 
   // Whether THIS install has QuickBooks' own client id/secret/redirect URI
