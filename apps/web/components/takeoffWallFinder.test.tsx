@@ -155,6 +155,16 @@ describe("the wall finder's control", () => {
       "the check control is no longer gated on there being runs to check",
     ).toMatch(/\{found !== null && found\.length > 0 && \( <button/);
     expect(source, "the control no longer calls the classifier").toContain("onClick={onCheckRuns}");
+    // AND THE OTHER HALF OF THE ANSWER IS ON SCREEN. The check reports walls
+    // the finder MISSED as well as runs that are not walls, and a wall nothing
+    // paired is in no cluster and no total — so if this panel stops rendering,
+    // the only thing in the app that can see an absent wall says nothing.
+    expect(source, "the missing-walls panel is gone from the viewer").toContain(
+      'data-takeoff="check-missing"',
+    );
+    expect(source, "the viewer no longer keeps what the check said was missing").toContain(
+      "setMissed(result.value.missing)",
+    );
     expect(source, "the classifier is no longer wired to the action").toContain(
       "await classifyWallCandidates(",
     );

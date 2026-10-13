@@ -1,6 +1,12 @@
 "use server";
 
-import { labelWallCandidates, type WallCandidateForLabel, type WallLabel } from "@prova/integrations";
+import {
+  labelWallCandidates,
+  WALL_CLASSIFY_PROMPT_VERSION,
+  type MissingWall,
+  type WallCandidateForLabel,
+  type WallLabel,
+} from "@prova/integrations";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { aiGate } from "@/lib/ai/settings";
@@ -40,6 +46,11 @@ const JOB_COSTS_ONLY =
 
 export type WallClassification = {
   labels: WallLabel[];
+  /**
+   * Walls the drawing shows and the finder did not — words, never a quantity.
+   * The estimator traces each one by hand; see `MissingWall`.
+   */
+  missing: MissingWall[];
   /** What the model ran on, for the panel to show beside the result. */
   model: string;
 };
@@ -84,9 +95,9 @@ export async function classifyWallCandidates(
   const spend = await claimAskAllowance(company.id, { questions: 0, pages: 1 });
   if (!spend.ok) return fail(spend.error);
 
-  let labels: WallLabel[];
+  let read: { labels: WallLabel[]; missing: MissingWall[] };
   try {
-    labels = await labelWallCandidates({
+    read = await labelWallCandidates({
       imageBase64,
       cropFeet,
       candidates,
@@ -99,7 +110,10 @@ export async function classifyWallCandidates(
           usage,
           outcome: "answered",
           feature: "wall-classify",
-          promptVersion: "wall-classify.1",
+          // THE CONSTANT, not a copy of it. Two spellings of a version is how
+          // one of them stops being true: the prompt moves and the ledger goes
+          // on reporting what the old one asked.
+          promptVersion: WALL_CLASSIFY_PROMPT_VERSION,
         }),
     });
   } catch (err) {
@@ -119,5 +133,5 @@ export async function classifyWallCandidates(
     );
   }
 
-  return { ok: true, value: { labels, model: gate.model } };
+  return { ok: true, value: { labels: read.labels, missing: read.missing, model: gate.model } };
 }
