@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { Fragment, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveOpeningDeduction } from "@/lib/actions";
 import { Spinner } from "@/components/Spinner";
@@ -52,6 +52,54 @@ export function OpeningDeductionForm({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
+  // ── THE SHOP'S OWN SIZE FOR "THE BIG ONES" ──
+  //
+  // Declared here and rendered inside the options loop below, directly under
+  // the answer it belongs to — a JSX comment cannot lead a parenthesised
+  // expression, so this prose lives out here rather than inside it.
+  //
+  // Always rendered rather than revealed when that option is picked: the radios
+  // are uncontrolled (`defaultChecked`, read with `new FormData`), so a
+  // conditional field would need this component to hold state it otherwise does
+  // not, and a shop that switches away and back would lose its figure. The
+  // resolver consults it only for LARGE_ONLY, so it is inert otherwise.
+  //
+  // Blank is meaningful — it means "use C Stream's default" — so there is no
+  // `required` here, and the placeholder shows what blank will do. `required` on
+  // this form is also what broke the whole setting once (see the header).
+  const LARGE_ONLY_FIELD = (
+    <label className="ml-6 flex flex-wrap items-center gap-2 text-sm text-ink-muted">
+      &ldquo;Big&rdquo; means
+      {/* ── `type="text"`, NOT `type="number"`, AND TWO CENSUSES SAID SO ──
+          This shipped as `type="number"` with `bg-surface-input`, copied from
+          the radios' own styling, and both were wrong:
+
+          `numericInputCensus` forbids `type="number"` anywhere, from a real
+          Chromium measurement — a value the browser dislikes submits an EMPTY
+          STRING, and a typed thousands comma is dropped before the server sees
+          it. On a NULLABLE field that is the worst possible failure: the figure
+          silently becomes blank, blank means "use our default", and a shop that
+          typed 50 would be quantified at 32 with nothing on screen to say so.
+
+          `colorTokenCensus` refuses to let a KNOWN-UNDEFINED token grow — it
+          tolerated `surface-input`'s 39 existing sites and caught this as the
+          40th. Tailwind emits nothing for an undefined class, so the field would
+          have had no background at all.
+
+          So this is `AddCostEntryForm`'s input, verbatim but for the
+          placeholder. Not required: blank is meaningful here. */}
+      <input
+        name="openingDeductionSqFt"
+        type="text"
+        inputMode="decimal"
+        defaultValue={thresholdSqFt ?? ""}
+        placeholder={String(DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT)}
+        className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+      />
+      sq ft and larger
+    </label>
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-ink-body">
@@ -96,60 +144,30 @@ export function OpeningDeductionForm({
             {/* Stacked, not a row — three long labels inline ran into each other. */}
             <div className="flex flex-col gap-2">
               {BUSINESS_SCOPE_QUESTIONS.openingDeduction.options.map((option) => (
-                <label key={option.value} className="flex items-center gap-2 text-sm text-ink">
-                  <input
-                    type="radio"
-                    name="openingDeduction"
-                    value={option.value}
-                    defaultChecked={answer === option.value}
-                    className="h-4 w-4 shrink-0"
-                  />
-                  {option.label}
-                </label>
+                <Fragment key={option.value}>
+                  <label className="flex items-center gap-2 text-sm text-ink">
+                    <input
+                      type="radio"
+                      name="openingDeduction"
+                      value={option.value}
+                      defaultChecked={answer === option.value}
+                      className="h-4 w-4 shrink-0"
+                    />
+                    {option.label}
+                  </label>
+                  {/* ── THE SIZE FIELD BELONGS TO *THIS* OPTION, AND IT HAS TO LOOK LIKE IT ──
+                      It was rendered after the whole loop, which put it under the LAST
+                      radio — "yes, every opening comes off" — while the number it sets
+                      only ever applies to LARGE_ONLY. A click-through read it exactly
+                      that way: "a user could easily think 'Big means 32 sq ft' is part
+                      of the 'Yes' answer."
+                      Nothing was mis-wired and no test could see it: the name, the
+                      parse, the save and the quantity were all correct. The field was
+                      simply sitting under somebody else's sentence, on the setting that
+                      decides how much board a sub charges for. */}
+                  {option.value === "LARGE_ONLY" ? LARGE_ONLY_FIELD : null}
+                </Fragment>
               ))}
-              {/* ── THE SHOP'S OWN SIZE FOR "THE BIG ONES" ──
-                  Always rendered rather than revealed when that option is
-                  picked: the radios are uncontrolled (`defaultChecked`, read
-                  with `new FormData`), so a conditional field would need this
-                  component to hold state it otherwise does not, and a shop that
-                  switches away and back would lose its figure. The resolver
-                  consults it only for LARGE_ONLY, so it is inert otherwise.
-
-                  Blank is meaningful — it means "use C Stream's default" — so
-                  there is no `required` here, and the placeholder shows what
-                  blank will do. `required` on this form is also what broke the
-                  whole setting once (see the header). */}
-              <label className="ml-6 flex flex-wrap items-center gap-2 text-sm text-ink-muted">
-                &ldquo;Big&rdquo; means
-                {/* ── `type="text"`, NOT `type="number"`, AND TWO CENSUSES SAID SO ──
-                    This shipped as `type="number"` with `bg-surface-input`, copied from
-                    the radios' own styling, and both were wrong:
-
-                    `numericInputCensus` forbids `type="number"` anywhere, from a real
-                    Chromium measurement — a value the browser dislikes submits an EMPTY
-                    STRING, and a typed thousands comma is dropped before the server sees
-                    it. On a NULLABLE field that is the worst possible failure: the figure
-                    silently becomes blank, blank means "use our default", and a shop that
-                    typed 50 would be quantified at 32 with nothing on screen to say so.
-
-                    `colorTokenCensus` refuses to let a KNOWN-UNDEFINED token grow — it
-                    tolerated `surface-input`'s 39 existing sites and caught this as the
-                    40th. Tailwind emits nothing for an undefined class, so the field would
-                    have had no background at all.
-
-                    So this is `AddCostEntryForm`'s input, verbatim but for the
-                    placeholder. Not required: blank is meaningful here. */}
-                <input
-                  name="openingDeductionSqFt"
-                  type="text"
-                  inputMode="decimal"
-                  defaultValue={thresholdSqFt ?? ""}
-                  placeholder={String(DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT)}
-                  className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
-                />
-                sq ft and larger
-              </label>
-
               {/* ── THE WAY BACK TO THE DEFAULT, AND IT IS NOT A FOURTH CONVENTION ──
                   An empty value clears the column. Unanswered resolves to 32 sq ft
                   (`openingThresholdSqFt`), and it does NOT read the figure above —

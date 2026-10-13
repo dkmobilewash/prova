@@ -232,15 +232,33 @@ export function parseNumericInput(raw: unknown, options?: NumericInputOptions): 
   }
 
   const unit = options?.unit ?? "";
+
+  /**
+   * A BOUND, WRITTEN THE WAY A PERSON WRITES A NUMBER.
+   *
+   * This module exists because a contractor types `2,800` and every parser in
+   * the app refused it. Its own refusals were then printing `10000` — so the
+   * message telling somebody their figure is out of range wrote that range in
+   * the one notation this module was built to stop insisting on. Reported from
+   * a click-through: "the error message writes 10000 without a comma, which is
+   * slightly odd next to a field that now accepts 2,800."
+   *
+   * `en-US` deliberately, matching the comma this module accepts as a thousands
+   * separator; it is the same convention in both directions rather than a
+   * locale decision. No effect on a bound under 1,000, which is every existing
+   * caller — the retainage message stays `between 0% and 100%`.
+   */
+  const bound = (value: number) => `${value.toLocaleString("en-US")}${unit}`;
+
   if (options?.min !== undefined && n < options.min) {
     return {
       ok: false,
       error:
         options.max !== undefined
-          ? `${label} has to be between ${options.min}${unit} and ${options.max}${unit}.`
+          ? `${label} has to be between ${bound(options.min)} and ${bound(options.max)}.`
           : options.min === 0
             ? `${label} can't be negative.`
-            : `${label} has to be ${options.min}${unit} or more.`,
+            : `${label} has to be ${bound(options.min)} or more.`,
     };
   }
   if (options?.max !== undefined && n > options.max) {
@@ -248,8 +266,8 @@ export function parseNumericInput(raw: unknown, options?: NumericInputOptions): 
       ok: false,
       error:
         options.min !== undefined
-          ? `${label} has to be between ${options.min}${unit} and ${options.max}${unit}.`
-          : `${label} has to be ${options.max}${unit} or less.`,
+          ? `${label} has to be between ${bound(options.min)} and ${bound(options.max)}.`
+          : `${label} has to be ${bound(options.max)} or less.`,
     };
   }
 
