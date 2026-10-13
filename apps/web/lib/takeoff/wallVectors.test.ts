@@ -914,6 +914,80 @@ describe("the partition schedule", () => {
   const LAYERED_EXTERIOR = [4.0625, 3.4375, -2.5625, -4.0625];
   const SCHEDULE = [8, 1.5, 8.125, 4.875, 4.75, 14.5];
 
+  // The bench's own partition schedule, and it is what made the collision below
+  // reachable: it carries EXT-1 at 8.875in, and 9.125in is a quarter inch away.
+  const BENCH_SCHEDULE = [4.875, 7.25, 4.75, 14.5, 1.5, 8.875, 8.125, 7.625, 4.5];
+
+  it("READS 1-1/2IN FURRING ON 7-5/8IN BLOCK AS THE BLOCK, NOT AS A 9-1/8IN WALL", () => {
+    // ── THE SLACK COLLISION, AND WHY THE FIXTURE BELOW HID IT FOR WEEKS ──
+    //
+    // These are the real numbers: furring face, block near face, block far
+    // face. The span across both is 9.125in and EXT-1 is 8.875in — exactly
+    // `KNOWN_SLACK_IN` apart — so the span LOOKED like a type this company
+    // builds. "The widest pair the schedule names" took it, and the finder
+    // returned one wall at 9.13in where the drawing has a block wall with
+    // furring in front of it.
+    //
+    // Worse, it poisoned both halves: `enclosedByAScheduledWall` saw the same
+    // phantom wall and marked the block AND the furring as layer lines of it,
+    // so each was refused before the schedule tier could prefer either. That
+    // is why this cost 1,210 ft of furring on Mesa Ridge rather than the 20 ft
+    // the probe table reports against one wall.
+    //
+    // The fixture in the next test uses 8in and 9.5in, where the span matches
+    // NOTHING on its schedule — which is exactly why the schedule preference
+    // looked like it worked.
+    expect(found([0, 7.625, 9.125], BENCH_SCHEDULE)).toEqual([7.63]);
+  });
+
+  it("believes a thickness a HAIR off the schedule, because a plotted line is not exact", () => {
+    // ── WHAT PINS `EXACT_SCHEDULE_IN` FROM BELOW ──
+    //
+    // The rule only overrides a LOOSE match, and "loose" cannot mean "not
+    // identical": a real export measures 8.10in where the legend says 8.125,
+    // and refusing that would price the wall as the wrong assembly.
+    //
+    // Added because a mutation said so. Setting the constant to 0 left the
+    // whole suite green — the window-broken exterior clears it either way,
+    // because its span is EXACTLY on its schedule. So nothing distinguished
+    // 1/16in from zero, and the tolerance that exists for plotter noise was
+    // unpinned. This case is 0.025in off and decomposes into two scheduled
+    // halves, so it is refused the moment the tolerance stops existing.
+    expect(found([0, 1.5, 8.1], [1.5, 6.6, 8.125])).toEqual([8.1]);
+  });
+
+  // ── TWO MUTATIONS OF THIS RULE STAY GREEN, WRITTEN DOWN RATHER THAN DRESSED
+  // UP, in the manner of `foundTwice`'s own unpinned choice above ──
+  //
+  // 1. Dropping the "is the second half scheduled" check does not change any
+  //    outcome I could construct. The case below is the closest: its halves are
+  //    3in (scheduled) and 6.125in (not), and with the check gone the span is
+  //    refused — and the finder still answers 9.13 from a lower tier, because
+  //    refusing a pair as SCHEDULED does not stop `bestWall` choosing it as the
+  //    widest balanced pair. So the requirement is real in the code and its
+  //    effect is masked by the fallback everywhere I could reach. Left in,
+  //    because "one named gap inside a wall" is the layered-exterior case and
+  //    dropping it is wrong on purpose rather than by accident.
+  //
+  // 2. Widening the `> 6` gate changes nothing, and should not: it exists so an
+  //    O(n) scan does not run on every candidate inside an O(n^2) loop — this
+  //    file's own note about `inAHatchSeries`. A performance gate asserted as
+  //    behaviour would be a test lying about what it protects.
+  it("NEEDS BOTH HALVES SCHEDULED, so one named gap inside a wall proves nothing", () => {
+    // The rule asks for the span to divide into TWO scheduled types. A single
+    // named gap inside a wider pair is an ordinary layer line and the wider
+    // pair is still the wall — 3in is on this schedule, 9.125 - 3 = 6.125in is
+    // not, so nothing is refused and the span stands.
+    //
+    // THE SUB-GAP IS 6.125IN DELIBERATELY, and the first version of this test
+    // used 1.875in and proved nothing: a 1.875in gap is under the 2.4in
+    // thickness floor and unscheduled, so `wallFromPair` returns null for it
+    // and the half is rejected before its thickness is ever considered. The
+    // mutation that drops the "is it scheduled" check stayed green. A case has
+    // to fail for the reason it names.
+    expect(found([0, 3, 9.125], [3, 8.875])).toEqual([9.13]);
+  });
+
   it("READS THE BLOCK WALL AT 8IN INSTEAD OF 9-1/2IN ACROSS BOTH", () => {
     expect(found(BLOCK_AND_FURRING, SCHEDULE)).toEqual([8]);
   });

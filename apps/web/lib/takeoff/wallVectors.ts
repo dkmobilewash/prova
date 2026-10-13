@@ -250,7 +250,20 @@ function enclosedByAScheduledWall(
     // `wallFromPair` keeps the parallel, overlap and length rules in one place.
     const wide = wallFromPair(order[i], order[k], options);
     if (wide === null) continue;
-    if (isAKnownType(wide.thicknessFeet, knownIn)) return true;
+    if (!isAKnownType(wide.thicknessFeet, knownIn)) continue;
+    // AND THE ENCLOSING WALL MUST NOT ITSELF BE TWO ASSEMBLIES. Without this,
+    // 1-1/2in furring on 7-5/8in block poisons both halves: the 9.125in span
+    // is within a quarter inch of EXT-1's 8.875in, so the block and the furring
+    // are each read as a layer line of a wall that is not there, and both are
+    // refused before the schedule tier can prefer either. Same width gate as
+    // the other call site — the scan is O(n) inside an O(n^2) loop.
+    if (
+      wide.thicknessFeet * 12 > 6 &&
+      splitsIntoScheduledAssemblies(order, i, k, wide.thicknessFeet, options, knownIn)
+    ) {
+      continue;
+    }
+    return true;
   }
   return false;
 }
@@ -258,6 +271,94 @@ function enclosedByAScheduledWall(
 /**
  * Which side of `of` the midpoint of `other` falls on: +1, -1 or 0 on the line.
  */
+/**
+ * Does this pair SPLIT into two assemblies the schedule names?
+ *
+ * ── THE SLACK COLLISION THIS EXISTS FOR, REPRODUCED IN A UNIT TEST ──
+ *
+ * 1-1/2in furring on 7-5/8in block is three lines at 0, 7.625 and 9.125in. The
+ * span across both is 9.125, and the schedule's EXT-1 is 8.875 — a quarter inch
+ * away, which is exactly `KNOWN_SLACK_IN`. So the span LOOKS like a type this
+ * company builds, "the widest pair the schedule names" takes it, and the finder
+ * returns ONE WALL AT 9.13IN where the drawing has a block wall and the furring
+ * in front of it.
+ *
+ * The schedule preference above was written for precisely this geometry and
+ * fixes it when the span matches NOTHING — with a schedule of 8 and 1-1/2 the
+ * 9-1/2in span is on nothing and the block comes back correctly. It cannot help
+ * when the span lands within slack of a real type, and on the bench's own
+ * schedule it does: Mesa Ridge finds 298 ft of a 1,582 ft furring key, and the
+ * grader's per-wall diagnosis says both faces were read and measured 1.5in
+ * apart. They were read, they were right, and this took them.
+ *
+ * ── THE RULE, AND WHY IT IS BETTER EVIDENCE THAN THE SLACK ──
+ *
+ * A gap with a face inside it that divides it into two gaps the schedule ALSO
+ * names is two assemblies touching, not one wall. "9.125 is 7.625 plus 1.5, and
+ * all three are on the schedule" is a coincidence of three numbers; "9.125 is
+ * within a quarter inch of 8.875" is a coincidence of two. The decomposition
+ * wins, and it is why this asks for both halves rather than just a face in
+ * between — an ordinary layered wall has faces inside it whose gaps are NOT
+ * types, and must keep reading as one wall.
+ *
+ * Deliberately only consulted for a pair already wide enough to be two
+ * assemblies, so the O(n) scan inside the pairing loop runs rarely rather than
+ * on every candidate — this file's own note about `inAHatchSeries` and O(n^3)
+ * applies.
+ */
+function splitsIntoScheduledAssemblies(
+  order: readonly StrokeSegment[],
+  i: number,
+  j: number,
+  thicknessFeet: number,
+  options: WallFinderOptions,
+  knownIn: readonly number[],
+): boolean {
+  if (knownIn.length === 0) return false;
+  // ── A TIGHT MATCH IS BELIEVED, AND THIS IS THE WHOLE DISCRIMINATOR ──
+  //
+  // Both shapes decompose, so the decomposition alone cannot tell them apart:
+  //
+  //   block + furring   9.125 = 7.625 + 1.5     span is 0.25in off EXT-1
+  //   EXT-2 layered     8.125 = 1.5   + 6.625   span is EXACTLY 8.125
+  //
+  // The first version of this rule refused both and broke the window-broken
+  // exterior, which is a wall priced as the wrong assembly — the failure this
+  // file calls worse than not finding it. The test that caught it says in as
+  // many words that 6.625in is on its schedule deliberately, so the schedule
+  // "cannot rescue this case".
+  //
+  // What separates them is how well the SPAN matches. A thickness sitting
+  // exactly on the schedule is the drawing agreeing with the legend; one a
+  // quarter inch off is the slack doing the work, and slack plus a
+  // decomposition into two named types is weaker evidence than either alone
+  // looks. So the decomposition only overrides a LOOSE match.
+  const inches = thicknessFeet * 12;
+  const closest = Math.min(...knownIn.map((known) => Math.abs(known - inches)));
+  if (closest <= EXACT_SCHEDULE_IN) return false;
+  const a = order[i];
+  const b = order[j];
+  const span = perpendicularDistance(a, (b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2);
+  if (span <= 0) return false;
+  for (let k = 0; k < order.length; k += 1) {
+    if (k === i || k === j) continue;
+    const c = order[k];
+    const midX = (c.x1 + c.x2) / 2;
+    const midY = (c.y1 + c.y2) / 2;
+    const fromA = perpendicularDistance(a, midX, midY);
+    // STRICTLY BETWEEN, measured off the same face the span is. A face level
+    // with either end is one of the two faces again, not a divider.
+    if (!(fromA > 0 && fromA < span)) continue;
+    if (sideOf(a, c) !== sideOf(a, b)) continue;
+    const first = wallFromPair(a, c, options);
+    if (first === null || !isAKnownType(first.thicknessFeet, knownIn)) continue;
+    const second = wallFromPair(c, b, options);
+    if (second === null || !isAKnownType(second.thicknessFeet, knownIn)) continue;
+    return true;
+  }
+  return false;
+}
+
 function sideOf(of: StrokeSegment, other: StrokeSegment): number {
   const dx = of.x2 - of.x1;
   const dy = of.y2 - of.y1;
@@ -422,6 +523,15 @@ export function oneFacePerLine(
  * disagree in the second decimal.
  */
 export const KNOWN_SLACK_IN = 0.25;
+
+/**
+ * How close a measured thickness has to be to a scheduled one before the match
+ * is taken as the drawing AGREEING with the legend rather than the slack doing
+ * the work. 1/16in — tighter than a plotter's own line weight, so a real wall
+ * drawn at its stated thickness clears it and a coincidence at the edge of
+ * `KNOWN_SLACK_IN` does not. Used only by `splitsIntoScheduledAssemblies`.
+ */
+export const EXACT_SCHEDULE_IN = 0.0625;
 
 /** Is this thickness one of the types the company builds? */
 function isAKnownType(thicknessFeet: number, knownIn: readonly number[]): boolean {
@@ -893,7 +1003,16 @@ export function wallsFromStrokes(
       // and it is worse than doing nothing — Mesa Ridge 58,438 ft found against
       // 59,538 before any of this.
       if (layerLine) continue;
-      const known = isAKnownType(wall.thicknessFeet, knownIn);
+      // A SPAN THAT DECOMPOSES INTO TWO SCHEDULED ASSEMBLIES IS NOT A WALL.
+      // Only asked of pairs wide enough for two assemblies to fit, because the
+      // scan is O(n) inside this loop; 6in is below the thinnest pair of
+      // scheduled types that could compose one.
+      const known =
+        isAKnownType(wall.thicknessFeet, knownIn) &&
+        !(
+          wall.thicknessFeet * 12 > 6 &&
+          splitsIntoScheduledAssemblies(order, i, j, wall.thicknessFeet, options, knownIn)
+        );
       if (known && (knownAnyWall === null || wall.thicknessFeet > knownAnyWall.thicknessFeet)) {
         knownAnyWall = wall;
         knownAnyJ = j;
