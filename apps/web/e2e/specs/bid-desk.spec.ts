@@ -300,7 +300,11 @@ test.describe("the bid desk", () => {
     await page.goto("/bids?view=all");
     await expect(bidRow().getByRole("button", { name: "Link the job this bid is for" })).toBeVisible();
 
-    await bidRow().getByRole("link", { name: new RegExp(PROJECT) }).click();
+    // The project name opens the bid's own page (/ai/bids/<id>) since the AI
+    // bid desk landed; the GC's name is the link to the GC. This clicked the
+    // project name and waited for /contacts until run 38327113148 timed out
+    // on /ai/bids/<id>.
+    await bidRow().getByRole("link", { name: GC_NAME }).click();
     await page.waitForURL(/\/contacts\/[^/]+$/);
     await expectHealthy(page, "the GC's contact page", { monitor });
     const statusForm = page

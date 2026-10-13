@@ -900,7 +900,17 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     await page.goto("/dashboard");
     await expectHealthy(page, "dashboard, reading the money rail", { monitor });
 
-    const railStage = page.locator(`nav[aria-label="Main"] [title=${JSON.stringify(GETTING_PAID_DETAIL)}]`);
+    // Concept G (2026-10-10): the left rail is gone and its five figures sit
+    // under the group headings of the avatar menu's "All pages" panel
+    // (AllPagesMenu.tsx's StageFigure, which still carries the stage's
+    // caption as its title). Open that panel and read the stage there; the
+    // old `nav[aria-label="Main"]` is now the top bar's five words and holds
+    // no figure (run 38327113148 found 0).
+    await page.getByRole("button", { name: /^Your menu/ }).click();
+    await page.getByRole("button", { name: "All pages" }).click();
+    const allPages = page.getByRole("dialog", { name: "All pages" });
+    await expect(allPages).toBeVisible();
+    const railStage = allPages.locator(`[title=${JSON.stringify(GETTING_PAID_DETAIL)}]`);
     await expect(
       railStage,
       "the rail's Getting paid stage is found by its own caption — if this caption has changed, the stage may no longer mean what this test measures",

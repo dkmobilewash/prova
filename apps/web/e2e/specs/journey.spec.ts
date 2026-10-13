@@ -202,10 +202,13 @@ test.describe("the pilot contractor's journey", () => {
 
     // Concept G (2026-10-10): no sidebar. Every destination the rail used to
     // list is in the avatar menu's "All pages" panel, every group open, so
-    // that panel is where the destinations are read from.
+    // that panel is where the destinations are read from. The panel is a
+    // DIALOG named "All pages" (AllPagesMenu.tsx); the navigation landmarks
+    // inside it are "Areas" and "Page groups". This asked for a navigation
+    // named "All pages" and found nothing (run 38327113148).
     await page.getByRole("button", { name: /^Your menu/ }).click();
     await page.getByRole("button", { name: "All pages" }).click();
-    const nav = page.getByRole("navigation", { name: "All pages" });
+    const nav = page.getByRole("dialog", { name: "All pages" });
     await expect(nav).toBeVisible();
 
     const hrefs = await nav.locator('a[href^="/"]').evaluateAll((anchors) =>
