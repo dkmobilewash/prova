@@ -22,8 +22,8 @@ if you need to change something the other person is actively working on,
 ask first. The money and estimating logic underneath any AI feature stays
 Diego's, exactly as the paragraph two below says.
 
-**This paragraph has now been wrong in both directions, which is the part
-worth reading — and on 2026-10-12 it became "shared" instead.** It first said AI was Diego's, then — from 2026-09-21 —
+**This paragraph has now been in three states — Diego's, Cyrus's, shared —
+which is the part worth reading.** It first said AI was Diego's, then — from 2026-09-21 —
 said in bold that it was Cyrus's and that the older version was "no longer
 true". Both were true when written and each was later quoted as authority
 against the other. An ownership line records an agreement between two

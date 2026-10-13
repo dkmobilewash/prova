@@ -104,15 +104,15 @@ Vercel deployment and repo settings). Each drives their own agent.
   surgically: schema files, `middleware.ts`, `navItems.tsx`,
   `lib/actions/shared.ts`, the actions barrel.
 
-  **AI IS DIEGO'S LANE AGAIN, FROM 2026-09-26.** That covers the whole of
-  it: the Ask assistant (`lib/ask/**`, `Ask*` components), the model
-  integration (`packages/integrations/src/{anthropic,ask,research,leads,
-  models}.ts`), the per-company AI switch (`lib/ai/**`,
-  `lib/actions/aiSettings.ts`), AI extraction, AI usage metering, and the
-  takeoff/estimating AI work now in progress.
+  **AI IS SHARED, FROM 2026-10-12 — NEITHER PERSON'S LANE.** Agreed by
+  both in `#prova-build` that day: no split. Whoever is working on an AI
+  piece (Ask, the agents and `/ai`, the model integration, the AI switch,
+  AI extraction, usage metering, the takeoff/estimating AI) keeps it; ask
+  before changing something the other is actively working on. The money
+  and estimating logic under any AI feature stays Diego's.
 
   **READ THE SHAPE OF THIS ENTRY BEFORE ITS CONTENT, because it has now been
-  wrong in both directions and each version was true when written.** This
+  in three states (Diego's, Cyrus's, shared) and each was true when written.** This
   paragraph said AI was Diego's until 2026-09-21, then said in bold that it
   had "moved from Diego to Cyrus" and that "any older line in this repo or
   its PR history calling AI 'Diego's lane' is stale" — which was correct for
