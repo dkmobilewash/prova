@@ -161,6 +161,35 @@ describe("the openings question", () => {
     );
   });
 
+  it("puts the size field UNDER THE OPTION IT BELONGS TO, not after them all", () => {
+    // ── A CORRECT FIELD SITTING UNDER SOMEBODY ELSE'S SENTENCE ──
+    //
+    // The field was rendered after the whole options loop, which put it beneath
+    // the LAST radio — "yes, every opening comes off" — while the number it
+    // sets only ever applies to LARGE_ONLY. A click-through read it exactly
+    // that way: "a user could easily think 'Big means 32 sq ft' is part of the
+    // 'Yes' answer."
+    //
+    // NOTHING WAS MIS-WIRED, which is why every other test here passed: the
+    // name, the parse, the save, the threshold and the quantity were all
+    // correct. It was a layout fact on the setting that decides how much board
+    // a sub charges for, and no test in this repo can see layout — the screen
+    // suite renders in happy-dom, which does no layout at all.
+    //
+    // So this asserts the one structural thing source CAN carry: the field is
+    // rendered INSIDE the options loop, conditional on that option's own value.
+    const form = code("components/OpeningDeductionForm.tsx");
+    expect(form).toContain('option.value === "LARGE_ONLY" ? LARGE_ONLY_FIELD : null');
+    // And inside the map rather than after it — the opening of the loop must
+    // come before the conditional, with the loop's close after.
+    const mapAt = form.indexOf("openingDeduction.options.map");
+    const condAt = form.indexOf('option.value === "LARGE_ONLY"');
+    const closeAt = form.indexOf("))}", mapAt);
+    expect(mapAt, "the loop exists").toBeGreaterThan(-1);
+    expect(condAt, "the field is placed after the loop opens").toBeGreaterThan(mapAt);
+    expect(condAt, "and before the loop closes").toBeLessThan(closeAt);
+  });
+
   it("asks for the shop's figure on screen, and blank means our default", () => {
     const form = code("components/OpeningDeductionForm.tsx");
     expect(form).toContain('name="openingDeductionSqFt"');
