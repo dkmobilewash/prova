@@ -60,6 +60,33 @@ describe("the openings question", () => {
     const thresholds = OPENING_DEDUCTIONS.map((answer) => openingThresholdSqFt(answer));
     expect(new Set(thresholds).size).toBe(OPENING_DEDUCTIONS.length);
   });
+
+  it("UNSET COLLIDES WITH LARGE_ONLY, and the screen has to say so", () => {
+    // ── THE HOLE IN THE TEST ABOVE, AND WHY IT IS PINNED RATHER THAN FIXED ──
+    //
+    // The distinctness check iterates OPENING_DEDUCTIONS — the three enum
+    // values. The FORM offers four choices, because unanswered needs a control
+    // of its own, and the fourth is not in that list. So the one collision the
+    // product can actually show a person was invisible to the check written to
+    // catch exactly that: "nothing is ever missing from a list that does not
+    // contain it."
+    //
+    // A click-through found it. The old label read "Not set — however C Stream
+    // does it (openings over 32 sq ft)", which promises its own behaviour while
+    // "Only the big ones, like a storefront" IS 32 sq ft. Two of four options,
+    // identical, described as though they differed.
+    //
+    // THE COLLISION IS NOT A BUG AND MUST NOT BE "FIXED": unanswered has to
+    // resolve to 32, because that is what every company got before this setting
+    // existed, and changing it would move live quantities. So it is pinned here
+    // instead, with the screen's own honesty asserted beside it.
+    expect(openingThresholdSqFt(null)).toBe(openingThresholdSqFt("LARGE_ONLY"));
+
+    const form = readFileSync(resolve(process.cwd(), "components/OpeningDeductionForm.tsx"), "utf8");
+    expect(form, "the unanswered option admits it matches another one").toContain(
+      "the same as",
+    );
+  });
 });
 
 describe("the question reaches a screen, a save, and a quantity", () => {
@@ -152,6 +179,30 @@ describe("the question reaches a screen, a save, and a quantity", () => {
       scope.indexOf("export async function clearBusinessScope"),
     );
     expect(saveScope).not.toContain("openingDeduction");
+  });
+
+  it('only says "Saved." after the action reported ok', () => {
+    // ── RAISED BY A CLICK-THROUGH, AND WORTH PINNING EVEN THOUGH IT HELD ──
+    //
+    // The tester saw "Saved." while their network panel showed a 503, and asked
+    // the right question: if the write ever really fails, would the screen still
+    // claim it saved? It would not, and this is why — the ok check comes FIRST
+    // and returns, so the success flag is unreachable on a failure, and a thrown
+    // (production-redacted) error is caught into a sentence.
+    //
+    // The 503 was therefore not the action: had that request failed, `await`
+    // would have thrown and this form would have shown its error line. Something
+    // else in the page's traffic returned it, and the value did persist both
+    // times. Cause not established; Vercel reported ZERO runtime errors for the
+    // window, so it is not our code throwing.
+    const src = code("components/OpeningDeductionForm.tsx");
+    const okCheck = src.indexOf("if (!result.ok)");
+    const saidSaved = src.indexOf("setSaved(true)");
+    expect(okCheck, "the form checks ok").toBeGreaterThan(-1);
+    expect(saidSaved, 'the form says "Saved."').toBeGreaterThan(-1);
+    expect(okCheck, "and it checks BEFORE it claims success").toBeLessThan(saidSaved);
+    expect(src, "a failure returns rather than falling through").toContain("return;");
+    expect(src, "and a throw becomes a sentence").toContain("Couldn't save just now");
   });
 
   it("offers a way back to unset, so a shop can return to the default", () => {
