@@ -94,6 +94,8 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: deterministic geometry over real drawings, guarded by a skip plus a non-zero input assertion",
     "takeoffBench.eval.ts":
       "calls no model: generated drawings through the real scale/wall/schedule pipeline, guarded by a skip plus non-zero case and path-operator assertions",
+    "realPlan.eval.ts":
+      "calls no model: a REAL plan set from outside the repo through the same deterministic path, guarded by a skip on REAL_PLAN_PDF plus a non-zero segment assertion — a scanned sheet returns none and must not read as a clean run",
   };
 
   it("NAMES EVERY KEYLESS EXEMPTION, and each one still exists", () => {
