@@ -7,6 +7,8 @@ import { canReach } from "@/lib/permissions";
 import { jobPaperworkLinks, loadJobPaperworkCounts } from "@/lib/jobs/job-paperwork";
 import { JobSummaryHeader } from "@/components/JobSummaryHeader";
 import { JobStageNav } from "@/components/job/JobStageNav";
+import { JobSectionNav } from "@/components/job/JobSectionNav";
+import { jobDocumentLinks, jobTabs } from "@/components/job/jobTabs";
 import { JobPaperworkPanel } from "@/components/job/JobPaperworkPanel";
 import { changeOrderPaperworkLink, jobStages, lienWaiverPaperworkLink } from "@/components/job/jobStages";
 import { loadJobStageFacts } from "@/components/job/loadJobStageFacts";
@@ -15,8 +17,9 @@ import { markJobContracted } from "@/lib/actions";
 
 /**
  * The shared shell for every `/jobs/[id]/*` tab: the summary header (always
- * visible, no scrolling to reach it), the five stage steps that every tab is
- * filed under, and the job's Paperwork panel beside the open tab. A route
+ * visible, no scrolling to reach it), the five stage steps (the progress
+ * bar), the tab row under them (every section, at every stage), and the
+ * job's Paperwork panel beside the open tab. A route
  * GROUP — `(tabs)`, invisible in the URL — so this does NOT wrap the three
  * pre-existing sibling routes that already had their own single-purpose
  * pages before this rebuild: `certified-payroll`, `pay-applications/
@@ -82,8 +85,14 @@ export default async function JobTabsLayout({
     asOf,
   });
 
+  // The pre-#748 rail, back under the stage boxes (components/job/jobTabs.ts).
+  const tabs = jobTabs({ jobId: id, status: summary.status, showsJobMoney, showsBilling, showsField });
+
   const paperwork = [
     ...jobPaperworkLinks(principal, id, paperworkCounts),
+    // The proposal and certified payroll, otherwise only reachable from
+    // inside the Estimate and Crew & time tabs.
+    ...jobDocumentLinks(principal, id),
     // Change orders live on the Estimate route once the job is contracted.
     ...(showsJobMoney && !isEstimateStage
       ? [changeOrderPaperworkLink(id, facts.approvedChangeOrders, facts.waitingChangeOrders)]
@@ -112,6 +121,7 @@ export default async function JobTabsLayout({
         markContracted={isEstimateStage && showsJobMoney ? markJobContracted.bind(null, id) : undefined}
       />
       <JobStageNav stages={stages} />
+      <JobSectionNav tabs={tabs} />
       {/* The open stage's page, with the job's paperwork beside it on a wide
           screen and below it on a narrow one. `min-w-0` lets a wide table
           inside a tab scroll in its own box instead of pushing the panel

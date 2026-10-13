@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
-import { Card, StatusBadge } from "@prova/ui";
+import { Card, PageShell, StatusBadge } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { connectSandboxIntegration, disconnectSandboxIntegration } from "@/lib/actions";
@@ -74,12 +75,12 @@ export default async function IntegrationsPage({
   // security boundary, it is the courtesy.
   if (currentUser.role !== "OWNER") {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-8">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Integrations</h1>
+      <PageShell width="reading">
+        <PageHeader route="/settings/integrations" parent={{ href: "/settings", label: "Settings" }} />
         <p className="text-sm text-ink-body" data-tour="integrations-owner-only">
           Only the account owner can manage integrations.
         </p>
-      </div>
+      </PageShell>
     );
   }
 
@@ -548,16 +549,18 @@ export default async function IntegrationsPage({
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
-      <div className="mb-6" data-tour="integrations-intro">
-        <Link href="/settings" className="text-sm text-ink-body hover:text-ink">
-          ← Settings
-        </Link>
-        <h1 className="mt-2 text-xl font-semibold text-ink">Integrations</h1>
-        <p className="mt-1 max-w-2xl text-sm text-ink-body">
-          Services this company connects to. Connecting one never gives it access to another
-          company&rsquo;s data, and a credential is stored encrypted and never shown back here.
-        </p>
+    <PageShell width="working">
+      <div data-tour="integrations-intro">
+        <PageHeader
+          route="/settings/integrations"
+          parent={{ href: "/settings", label: "Settings" }}
+          subtitle={
+            <>
+              Services this company connects to. Connecting one never gives it access to another
+              company&rsquo;s data, and a credential is stored encrypted and never shown back here.
+            </>
+          }
+        />
       </div>
 
       {docuSignReturn && (
@@ -673,6 +676,6 @@ export default async function IntegrationsPage({
         </Card>
       </section>
       )}
-    </div>
+    </PageShell>
   );
 }

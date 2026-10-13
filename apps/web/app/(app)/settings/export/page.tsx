@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import {
@@ -42,13 +44,13 @@ export default async function ExportPage() {
 
   if (context.role !== "OWNER") {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-8">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Export core records</h1>
+      <PageShell width="reading">
+        <PageHeader route="/settings/export" parent={{ href: "/settings", label: "Settings" }} title="Export core records" />
         <p className="text-sm text-ink-body">
           Only the account owner can export company data. One file holding every job, every
           price and every employee&rsquo;s hours is a different thing from any single page.
         </p>
-      </div>
+      </PageShell>
     );
   }
 
@@ -64,10 +66,10 @@ export default async function ExportPage() {
   const total = counts.reduce((sum, n) => sum + n, 0);
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    <PageShell width="reading">
       <ExportCoverageIntro companyName={company.name} />
 
-      <section className="mb-8 rounded-lg border border-line-card bg-surface p-4">
+      <section className="mb-8 rounded-xl border border-line-card bg-surface p-4">
         <h2 className="mb-1 text-sm font-semibold text-ink-label">All of them, as one file</h2>
         <p className="mb-3 text-xs text-ink-muted">
           JSON, every table below, exactly as stored. This is the copy to hand to another
@@ -75,7 +77,7 @@ export default async function ExportPage() {
         </p>
         <a
           href="/api/export"
-          className="inline-flex items-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
+          className="inline-flex min-h-11 items-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-brand-hover mouse:min-h-9"
         >
           {exportAllLabel(total)}
         </a>
@@ -89,7 +91,7 @@ export default async function ExportPage() {
         copy. The JSON above is.
       </p>
 
-      <ul className="mb-8 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+      <ul className="mb-8 divide-y divide-line-row rounded-xl border border-line-card bg-surface">
         {EXPORT_DATASETS.map((dataset, i) => (
           <li key={dataset.key} className="flex items-start justify-between gap-4 p-4">
             <div>
@@ -107,14 +109,14 @@ export default async function ExportPage() {
               // button with something behind it.
               <a
                 href={`/api/export?dataset=${dataset.key}`}
-                className="shrink-0 text-xs text-ink-muted hover:text-ink-label"
+                className="inline-flex min-h-11 shrink-0 items-center text-xs text-ink-muted hover:text-ink-label mouse:min-h-0"
               >
                 Empty
               </a>
             ) : (
               <a
                 href={`/api/export?dataset=${dataset.key}`}
-                className="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover"
+                className="inline-flex min-h-11 shrink-0 items-center rounded-md border border-line-card px-3 text-xs text-ink-label hover:bg-rail-hover mouse:min-h-8"
               >
                 CSV
               </a>
@@ -130,6 +132,6 @@ export default async function ExportPage() {
           Back to settings
         </Link>
       </p>
-    </div>
+    </PageShell>
   );
 }

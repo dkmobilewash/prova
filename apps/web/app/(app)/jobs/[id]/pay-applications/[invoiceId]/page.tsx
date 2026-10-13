@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { notFound } from "next/navigation";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -35,15 +36,23 @@ export default async function PayApplicationPage({
   const timeZone = await viewerTimeZone();
 
   return (
-    <div className="mx-auto max-w-4xl p-6 print:p-0">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <Link href={`/jobs/${job.id}`} className="text-sm text-link hover:underline">
-          ← Back to job
-        </Link>
-        <PrintButton />
+    // PRINTED OUTPUT IS UNCHANGED. On screen the page wears the shared
+    // header; on paper it prints the heading it always printed, from the
+    // print-only copy below, and the shell drops its gutters and measure
+    // exactly as `p-6 print:p-0` did.
+    <PageShell width="working" className="print:max-w-none print:p-0">
+      <div className="print:hidden">
+        <PageHeader
+          route="/dashboard"
+          parent={[
+            { href: `/jobs/${job.id}`, label: job.name },
+            { href: `/jobs/${job.id}/billing`, label: "Billing" },
+          ]}
+          title={`Application for payment #${invoice.number}`}
+          actions={<PrintButton />}
+        />
       </div>
-
-      <h1 className="text-xl font-semibold text-ink">
+      <h1 className="hidden text-xl font-semibold text-ink print:block">
         Application for payment #{invoice.number} — {job.name}
       </h1>
       {/* LABELLED, because unlabelled it is read as the wrong field. A
@@ -138,6 +147,6 @@ export default async function PayApplicationPage({
           </div>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }
