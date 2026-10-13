@@ -1,5 +1,5 @@
 import { FORM_NAMES, STATE_CONTENT } from "./content";
-import { addContact, isEmail, landed, reportUnlanded, sendEmail, settle, type SendResult } from "./email";
+import { addContact, isEmail, landed, reportUnlanded, sendEmail, settle } from "./email";
 import { checkFills, type FillErrors } from "./fills";
 import { renderWaiverPdf } from "./pdf";
 import { DAY, HOUR, LIMITS, rateKey, underLimit, type RateStore } from "./rate-limit";
@@ -10,19 +10,23 @@ import { FORM_KEYS, STATES, type FormKey, type StateCode } from "./statutes/type
  * POST /api/waiver, as a function of its inputs, so every branch of the
  * gate can be tested without a server.
  *
- * THE GATE (Diego, 2026-10-08): fill in and preview with no email at all;
- * an email is required to DOWNLOAD, and the PDF is emailed to it too. Once
- * a browser has given a valid email it is never asked again -- it sends
- * `returning: true` and gets the PDF straight back, with no email unless
- * it asks for a copy. That memory lives in the browser (localStorage), on
- * purpose: there is no account and no lead database to look it up in.
+ * THE GATE (Diego, 2026-10-13, replacing the 2026-10-08 rule): fill in and
+ * read the whole form with no email at all, but the PDF is NEVER handed to
+ * the browser. It goes to the email address given, and only there, so every
+ * PDF this tool makes reaches a real inbox and leaves an address behind.
+ * That is why this returns no bytes -- a response carrying the PDF would be
+ * a download button for anyone who opened the network tab.
  *
- * "Valid" means the address passed the format check and Resend did not
- * reject it. When OUR side fails (a provider outage) the person still gets
- * their PDF; the gate is for a lead, not a punishment for our outage --
- * PROVIDED at least one send recorded the address. If none did, production
- * refuses rather than handing over the PDF and losing the lead silently
- * (issue #747), and every send that failed is logged without the address.
+ * Every request needs a name and an email, including from a browser that
+ * has given them before (it sends them again, prefilled, with
+ * `returning: true`, which only means "do not send Diego a second lead note
+ * or add the contact twice").
+ *
+ * The waiver email has to GO: Resend rejecting the address is the person's
+ * typo (400), and our own failure is a 503 asking them to try again, because
+ * there is no other way for them to get the PDF. A preview with no Resend
+ * key still answers "sent-nowhere" so the steps can be clicked through.
+ * Every send that fails is logged without the address (issue #747).
  */
 
 export interface WaiverRequestBody {
@@ -33,10 +37,8 @@ export interface WaiverRequestBody {
   name?: string;
   company?: string;
   marketingOptIn?: boolean;
-  /** Set by a browser that has already given a valid email. */
+  /** Set by a browser whose email was accepted before: no second lead. */
   returning?: boolean;
-  /** A returning browser asking for an emailed copy anyway. */
-  emailCopy?: boolean;
   /** Honeypot: a field no person sees. */
   website?: string;
 }
@@ -56,9 +58,11 @@ export interface WaiverDeps {
 }
 
 export type WaiverResponse =
-  | { kind: "pdf"; pdf: Uint8Array; filename: string; emailStatus: SendResult["status"] | "not-requested" }
+  /** `notConfigured` only happens outside production: nothing was sent. */
+  | { kind: "sent"; to: string; notConfigured: boolean }
   | { kind: "error"; status: number; error: string; fieldErrors?: FillErrors };
 
+const PAUSED = "Sending is paused for a moment. Please try again shortly.";
 const fail = (status: number, error: string, fieldErrors?: FillErrors): WaiverResponse => ({ kind: "error", status, error, fieldErrors });
 
 export async function handleWaiverRequest(body: WaiverRequestBody, deps: WaiverDeps): Promise<WaiverResponse> {
@@ -79,7 +83,7 @@ export async function handleWaiverRequest(body: WaiverRequestBody, deps: WaiverD
   const { fills, errors } = checkFills(form, body.fills ?? {});
   if (Object.keys(errors).length) return fail(400, "Some of the form needs another look.", errors);
 
-  if (!deps.rate) return fail(503, "Downloads are paused for a moment. Please try again shortly.");
+  if (!deps.rate) return fail(503, PAUSED);
   if (!(await underLimit(deps.rate.store, rateKey("ip", deps.ip, deps.rate.salt), LIMITS.pdfPerIpPerHour, HOUR))) {
     return fail(429, "That is a lot of waivers in an hour. Please try again a little later.");
   }
@@ -87,19 +91,11 @@ export async function handleWaiverRequest(body: WaiverRequestBody, deps: WaiverD
   const returning = body.returning === true;
   const email = (body.email ?? "").trim();
   const name = (body.name ?? "").trim();
-  const wantsEmail = !returning || body.emailCopy === true;
-
-  if (!returning) {
-    if (!isEmail(email)) return fail(400, "Enter a valid email address to download.");
-    if (!name) return fail(400, "Enter your name to download.");
-  } else if (wantsEmail && !isEmail(email)) {
-    return fail(400, "Enter a valid email address for the copy.");
-  }
+  if (!name) return fail(400, "Enter your name so we know who the PDF is for.");
+  if (!isEmail(email)) return fail(400, "Enter a valid email address. The PDF is sent there.");
 
   const pdf = await renderWaiverPdf({ form, fills, reviewed: deps.reviewed(state) });
   const filename = `${STATE_CONTENT[state].slug}-${formKey.toLowerCase().replace(/_/g, "-")}-waiver.pdf`;
-
-  if (!wantsEmail) return { kind: "pdf", pdf, filename, emailStatus: "not-requested" };
 
   if (!(await underLimit(deps.rate.store, rateKey("email", email, deps.rate.salt), LIMITS.emailsPerAddressPerDay, DAY))) {
     return fail(429, "We have already sent that address several waivers today. Please try again tomorrow.");
@@ -134,10 +130,11 @@ export async function handleWaiverRequest(body: WaiverRequestBody, deps: WaiverD
     deps.env,
   );
   if (sent.status === "rejected") return fail(400, "That email address was rejected. Check it and try again.");
-  if (sent.status === "not-configured" && deps.env.VERCEL_ENV === "production") {
-    return fail(503, "Downloads are paused for a moment. Please try again shortly.");
-  }
   reportUnlanded("the waiver email to the person", sent, deps.env, deps.log);
+  // The email is the only way the person gets the PDF, so if it did not go
+  // there is nothing to hand over: tell them to try again. Outside
+  // production a missing key counts as landed so a preview can be clicked.
+  if (!landed(sent, deps.env)) return fail(503, "We could not send your PDF just now. Please try again in a minute.");
 
   if (!returning) {
     // The lead. Only who asked and what kind of form -- never the amounts,
@@ -162,21 +159,13 @@ export async function handleWaiverRequest(body: WaiverRequestBody, deps: WaiverD
       deps.env,
     );
     const contact = await subscribe({ email, name, marketingOptIn: body.marketingOptIn === true }, deps.env);
+    // The lead has already landed: the waiver email above went, and it sits
+    // in Resend's log with the address on it (issue #747's rule, now always
+    // met). These two failing costs a convenience, so it is logged, not
+    // refused.
     reportUnlanded("the lead note", note, deps.env, deps.log);
     reportUnlanded("the audience sign-up", contact, deps.env, deps.log);
-
-    // THE LEAD MUST LAND SOMEWHERE. The waiver email to the person counts:
-    // it sits in Resend's log with the address on it. But if the waiver
-    // email, the lead note and the audience sign-up ALL failed, nothing
-    // anywhere holds this address, and handing over the PDF anyway would
-    // lose the one thing the gate exists for, silently -- the bug Cyrus
-    // found (issue #747). So production refuses and the person is told to
-    // try again; the lines above say which sends failed.
-    if (![sent, note, contact].some((result) => landed(result, deps.env))) {
-      (deps.log ?? console.error)("[lien-waiver] a download was refused: no send recorded the lead");
-      return fail(503, "Downloads are paused for a moment. Please try again shortly.");
-    }
   }
 
-  return { kind: "pdf", pdf, filename, emailStatus: sent.status };
+  return { kind: "sent", to: email, notConfigured: sent.status === "not-configured" };
 }

@@ -21,12 +21,12 @@ export default function Privacy() {
           All states
         </Link>
         <h1 className="mt-2 text-3xl font-bold text-ink">Privacy</h1>
-        <p className="mt-2 text-sm">Last updated October 8, 2026.</p>
+        <p className="mt-2 text-sm">Last updated October 13, 2026.</p>
 
         <h2 className="mt-8 text-xl font-bold text-ink">What we collect</h2>
         <ul className="mt-3 list-disc space-y-2 pl-6">
           <li>
-            <strong className="text-ink">When you download a waiver the first time:</strong> your name, your email
+            <strong className="text-ink">When you ask for a waiver:</strong> your name, your email
             address, your company if you give it, and whether you ticked the box to get marketing email.
           </li>
           <li>
@@ -34,8 +34,8 @@ export default function Privacy() {
           </li>
           <li>
             <strong className="text-ink">What you type into the waiver</strong> (project, owner, GC, amounts, dates) is
-            sent to our server only to make your PDF and, when you ask for it, to email the PDF to you. We do not
-            keep a copy of it, and it is not in the note we send ourselves about your download.
+            sent to our server only to make your PDF and email it to you. We do not
+            keep a copy of it, and it is not in the note we send ourselves about your request.
           </li>
           <li>
             <strong className="text-ink">To stop abuse,</strong> we keep a scrambled (salted and hashed) form of your IP

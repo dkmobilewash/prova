@@ -51,18 +51,18 @@ function deps(overrides: Partial<WaiverDeps> = {}) {
   return { deps: base, sent, contacts };
 }
 
-describe("the download gate", () => {
-  it("a first download needs an email and a name", async () => {
+describe("the email-only gate", () => {
+  it("every request needs an email and a name", async () => {
     const { deps: d } = deps();
     expect(await handleWaiverRequest({ ...FIRST, email: "" }, d)).toMatchObject({ kind: "error", status: 400 });
     expect(await handleWaiverRequest({ ...FIRST, email: "not-an-email" }, d)).toMatchObject({ kind: "error", status: 400 });
     expect(await handleWaiverRequest({ ...FIRST, name: " " }, d)).toMatchObject({ kind: "error", status: 400 });
   });
 
-  it("a first download emails the PDF, tells Diego, and adds the contact unsubscribed", async () => {
+  it("emails the PDF, tells Diego, and adds the contact unsubscribed", async () => {
     const { deps: d, sent, contacts } = deps();
     const result = await handleWaiverRequest(FIRST, d);
-    expect(result).toMatchObject({ kind: "pdf", emailStatus: "sent" });
+    expect(result).toEqual({ kind: "sent", to: "diego@cstream.ai", notConfigured: false });
     expect(sent.map((m) => m.to)).toEqual(["diego@cstream.ai", "diego@cstream.ai"]);
     expect(sent[0].attachments).toHaveLength(1);
     expect(sent[1].subject).toMatch(/^Lien waiver lead/);
@@ -77,17 +77,24 @@ describe("the download gate", () => {
     for (const secret of ["48,250", "Mesa Medical Partners", "1234 E Main"]) expect(lead).not.toContain(secret);
   });
 
-  it("a returning browser downloads with no email and sends nothing", async () => {
+  it("NEVER returns the PDF itself -- the inbox is the only way out", async () => {
+    const { deps: d } = deps();
+    const result = await handleWaiverRequest(FIRST, d);
+    expect(Object.values(result).some((value) => value instanceof Uint8Array)).toBe(false);
+    expect(JSON.stringify(result)).not.toContain("%PDF");
+  });
+
+  it("a returning browser still needs an email -- there is no download to skip to", async () => {
     const { deps: d, sent } = deps();
-    const result = await handleWaiverRequest({ ...FIRST, email: "", name: "", returning: true }, d);
-    expect(result).toMatchObject({ kind: "pdf", emailStatus: "not-requested" });
+    expect(await handleWaiverRequest({ ...FIRST, email: "", name: "", returning: true }, d)).toMatchObject({ kind: "error", status: 400 });
     expect(sent).toEqual([]);
   });
 
-  it("a returning browser can still ask for a copy, and that is not a second lead", async () => {
+  it("a returning browser gets its PDF emailed, and that is not a second lead", async () => {
     const { deps: d, sent, contacts } = deps();
-    await handleWaiverRequest({ ...FIRST, returning: true, emailCopy: true }, d);
+    expect(await handleWaiverRequest({ ...FIRST, returning: true }, d)).toMatchObject({ kind: "sent" });
     expect(sent).toHaveLength(1);
+    expect(sent[0].attachments).toHaveLength(1);
     expect(contacts).toEqual([]);
   });
 
@@ -122,12 +129,28 @@ describe("the download gate", () => {
     expect(await handleWaiverRequest(FIRST, d)).toMatchObject({ status: 503 });
   });
 
-  it("still hands over the PDF when the email provider is down", async () => {
-    const { deps: d } = deps({ send: (async () => ({ status: "failed", error: "500" })) as unknown as typeof SendEmail });
-    expect(await handleWaiverRequest(FIRST, d)).toMatchObject({ kind: "pdf", emailStatus: "failed" });
+  it("asks the person to try again when the email provider is down, and sends no lead", async () => {
+    const { deps: d, sent, contacts } = deps({
+      send: (async (m: { to: string }) => {
+        sent.push(m as never);
+        return { status: "failed", error: "500" };
+      }) as unknown as typeof SendEmail,
+    });
+    expect(await handleWaiverRequest(FIRST, d)).toMatchObject({ kind: "error", status: 503, error: expect.stringMatching(/try again/) });
+    // Only the person's email was attempted; no lead note about a PDF they never got.
+    expect(sent).toHaveLength(1);
+    expect(contacts).toEqual([]);
   });
 
-  it("hands over the PDF and logs it when only the lead note fails", async () => {
+  it("lets a preview with no Resend key be clicked through, and says nothing was sent", async () => {
+    const { deps: d } = deps({
+      send: (async () => ({ status: "not-configured" })) as unknown as typeof SendEmail,
+      subscribe: (async () => ({ status: "not-configured" })) as unknown as typeof addContact,
+    });
+    expect(await handleWaiverRequest(FIRST, d)).toEqual({ kind: "sent", to: "diego@cstream.ai", notConfigured: true });
+  });
+
+  it("succeeds and logs it when only the lead note fails", async () => {
     const lines: string[] = [];
     const { deps: d } = deps({
       env: { VERCEL_ENV: "production" },
@@ -137,22 +160,9 @@ describe("the download gate", () => {
       log: (line) => lines.push(line),
     });
     const result = await handleWaiverRequest({ ...FIRST, email: "lead@example.com" }, d);
-    expect(result).toMatchObject({ kind: "pdf", emailStatus: "sent" });
+    expect(result).toMatchObject({ kind: "sent" });
     expect(lines).toEqual(["[lien-waiver] the lead note did not go out: failed (500 boom)"]);
     expect(lines.join("\n")).not.toContain("lead@example.com");
-  });
-
-  it("refuses in production when no send recorded the lead, rather than losing it silently", async () => {
-    const lines: string[] = [];
-    const { deps: d } = deps({
-      env: { VERCEL_ENV: "production" },
-      send: (async () => ({ status: "failed", error: "503" })) as unknown as typeof SendEmail,
-      subscribe: (async () => ({ status: "not-configured" })) as unknown as typeof addContact,
-      log: (line) => lines.push(line),
-    });
-    expect(await handleWaiverRequest(FIRST, d)).toMatchObject({ kind: "error", status: 503 });
-    expect(lines).toContain("[lien-waiver] a download was refused: no send recorded the lead");
-    expect(lines.filter((line) => line.includes("did not go out"))).toHaveLength(3);
   });
 
   it("turns a send that throws into a logged failure, not an unhandled error", async () => {
@@ -163,8 +173,7 @@ describe("the download gate", () => {
       }) as unknown as typeof SendEmail,
       log: (line) => lines.push(line),
     });
-    // Outside production, and the audience sign-up landed, so the PDF still comes.
-    expect(await handleWaiverRequest(FIRST, d)).toMatchObject({ kind: "pdf", emailStatus: "failed" });
+    expect(await handleWaiverRequest(FIRST, d)).toMatchObject({ kind: "error", status: 503 });
     expect(lines[0]).toMatch(/waiver email to the person did not go out: failed \(getaddrinfo ENOTFOUND/);
   });
 
@@ -177,17 +186,18 @@ describe("the download gate", () => {
 describe("rate limits", () => {
   it("caps PDFs per IP per hour", async () => {
     const { deps: d } = deps();
-    const body = { ...FIRST, returning: true, email: "", name: "" };
-    for (let i = 0; i < LIMITS.pdfPerIpPerHour; i += 1) expect((await handleWaiverRequest(body, d)).kind).toBe("pdf");
-    expect(await handleWaiverRequest(body, d)).toMatchObject({ status: 429 });
-    // A different address is not affected.
-    expect((await handleWaiverRequest(body, { ...d, ip: "5.6.7.8" })).kind).toBe("pdf");
+    // A different email each time, so only the per-IP cap can be what stops it.
+    const body = (i: number) => ({ ...FIRST, returning: true, email: `sub${i}@example.com` });
+    for (let i = 0; i < LIMITS.pdfPerIpPerHour; i += 1) expect((await handleWaiverRequest(body(i), d)).kind).toBe("sent");
+    expect(await handleWaiverRequest(body(99), d)).toMatchObject({ status: 429 });
+    // A different connection is not affected.
+    expect((await handleWaiverRequest(body(100), { ...d, ip: "5.6.7.8" })).kind).toBe("sent");
   });
 
   it("caps emails to one address per day, across IPs", async () => {
     const { deps: d } = deps();
     for (let i = 0; i < LIMITS.emailsPerAddressPerDay; i += 1) {
-      expect((await handleWaiverRequest(FIRST, { ...d, ip: `10.0.0.${i}` })).kind).toBe("pdf");
+      expect((await handleWaiverRequest(FIRST, { ...d, ip: `10.0.0.${i}` })).kind).toBe("sent");
     }
     expect(await handleWaiverRequest(FIRST, { ...d, ip: "10.0.1.1" })).toMatchObject({ status: 429 });
   });
