@@ -53,3 +53,39 @@ a component with no callers and a test that could not fail.
 #### Checks
 
 Preflight green, 10,793 tests, no migration.
+
+---
+
+### And `main` was red: a census using a Node CI does not have
+
+Found while this PR's own CI failed on a change that could not have caused it.
+
+`#757`'s `reachabilityCensus.test.ts` used **`fs.globSync`** for the independent
+size cross-check its header calls for. `globSync` is **Node 22**; `ci.yml` pins
+**Node 20** in all three jobs. So it passed on a current laptop and threw
+`TypeError: (0 , globSync) is not a function` on CI.
+
+**The damage was not one red test.** `Test` runs first in `ci.yml`, so **Lint,
+Typecheck and Build were all skipped behind it** — the job reported failure
+having checked almost nothing. #757's own run was red (`62ba2c33`) and it was
+merged anyway, so `main` has been red since, and the next PR inherited it.
+
+| | |
+| --- | --- |
+| replaced with | an iterative scan using `readdirSync(dir, { withFileTypes: true })` — Node 10 |
+| still independent | the primary walk RECURSES and calls `statSync`; this one uses a stack and reads the dirent |
+
+`lib/ciNodeApis.test.ts` stops it recurring: it reads **`node-version:` out of
+the workflows** rather than hardcoding it, lists the APIs that exist on a
+current laptop and not on that Node, and fails naming the file. Bumping the
+runner relaxes it automatically.
+
+Its own three ways of going quiet are each asserted — an empty source set, a
+version it could not read, and **an emptied rule**, which mutation caught: with
+every entry marked old enough to skip, the census reported clean.
+
+**Mutation-tested, 4 of 4 correct:** `globSync` returning turns two tests red;
+an emptied rule and an empty source set each fail; and bumping CI to Node 22
+correctly leaves it green, because the rule follows CI rather than a literal.
+
+Preflight green, 10,797 tests.
