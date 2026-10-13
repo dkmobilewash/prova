@@ -13,7 +13,8 @@ import { Suspense, useEffect, useState } from "react";
  * starts it (capture, because next/link calls preventDefault in its own
  * handler before a bubbling listener would see the event), and a change in
  * pathname or search params finishes it. Programmatic router.push and the
- * back button do not start it — app/(app)/loading.tsx still covers those.
+ * back button do not start it. (app/(app)/loading.tsx used to cover those
+ * with a skeleton; it is gone — see changelog.d/cyrus-ui-loading.md.)
  *
  * Motion is transform-only. Under prefers-reduced-motion the bar still
  * appears (it is status, not decoration) but never animates: barStyle()

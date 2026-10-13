@@ -156,12 +156,15 @@ export async function installHistoryLog(page: Page): Promise<void> {
       .then((id) => note(page, `framenavigated ${frame.url()} doc=${id}`))
       .catch(() => note(page, `framenavigated ${frame.url()} doc=unreadable`));
   });
-  // Registering a dialog listener switches off Playwright's auto-dismiss, so
-  // dismiss here — the same outcome the suite had before, now written down.
-  // For a beforeunload prompt, dismiss means the navigation is CANCELLED.
+  // Registering a dialog listener switches off Playwright's handling, so
+  // handle here. A beforeunload prompt (the leave guard, after a form was
+  // edited) is ACCEPTED: dismissing it cancels the navigation, which is how
+  // run 38325255906 lost page.goto("/catalog") to ERR_ABORTED and hung a
+  // page.reload() for its whole budget. Everything else is dismissed.
   page.on("dialog", (dialog) => {
-    note(page, `dialog ${dialog.type()} "${dialog.message().slice(0, 120)}" -> dismissed`);
-    dialog.dismiss().catch(() => {});
+    const accept = dialog.type() === "beforeunload";
+    note(page, `dialog ${dialog.type()} "${dialog.message().slice(0, 120)}" -> ${accept ? "accepted" : "dismissed"}`);
+    (accept ? dialog.accept() : dialog.dismiss()).catch(() => {});
   });
   page.on("crash", () => note(page, "page CRASHED"));
   page.on("close", () => note(page, "page closed"));

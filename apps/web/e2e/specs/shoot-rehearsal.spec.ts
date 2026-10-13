@@ -818,7 +818,9 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     // ════════════════════════════════════════════════════════════════════
     await page.goto("/union-compliance");
     await expectHealthy(page, "/union-compliance", { monitor });
-    await expect(page.getByRole("heading", { name: "Union fringe & apprenticeship" })).toBeVisible();
+    // "Fringe & apprentices" since the page-title round (every page names
+    // itself); it was "Union fringe & apprenticeship".
+    await expect(page.getByRole("heading", { name: "Fringe & apprentices" })).toBeVisible();
 
     // The two sections beat B points at exist, and both say they have nothing.
     await expect(page.getByRole("heading", { name: "Fringe remittance" })).toBeVisible();

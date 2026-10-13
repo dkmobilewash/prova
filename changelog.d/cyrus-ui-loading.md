@@ -30,3 +30,22 @@ the bar, because nothing would finish it.
 
 Not covered: a navigation started from code with `router.push`, and the
 back button, do not start the bar. The skeleton still covers those.
+
+**`app/(app)/loading.tsx` is gone again (Diego, 2026-10-13, #748), and the
+bar is the whole of this entry now.** Nineteen CI runs of the signed-in
+suite on #748 pinned a stall to that boundary: after a Server Action or a
+stage-box click the router accepted a complete, valid response and the
+React transition never committed — the page boundary inside `<main>` (the
+one that file creates around every page under `(app)`) was asked to go to
+fallback mid-transition and was held on a thenable that never pings. Next's
+layout router suspends on a never-resolving thenable by design when a
+segment has no content yet, expecting a later server patch to supersede it;
+with this boundary in place that supersede did not happen, in roughly one
+form submit or stage click in three on CI's runner. Taking the boundary out
+(run 38325255906) moved the signed-in suite from 41–49 passing to 70 of 94
+with the stall family gone. Not seen on a laptop click-through, which is
+what a race looks like. The skeleton is not replaced here: the bar still
+runs from the click until the URL commits, which without the boundary is
+when the page arrives. A skeleton that does not create a route-level
+loading boundary (driven by the bar's own state, for instance) is a
+follow-up for whoever owns the shell.

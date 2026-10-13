@@ -1,9 +1,6 @@
 import { readFileSync } from "node:fs";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { barStyle, startsNavigation } from "@/lib/navProgress";
-import Loading from "./RouteSkeleton";
 
 const HERE = "https://app.cstream.ai/rfis?status=open";
 const plain = { button: 0, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false };
@@ -62,13 +59,3 @@ describe("barStyle: transform only, and still under reduced motion", () => {
   });
 });
 
-describe("app/(app)/loading.tsx", () => {
-  const html = renderToStaticMarkup(createElement(Loading));
-
-  it("announces itself to assistive tech and pulses only under motion-safe", () => {
-    expect(html).toContain('role="status"');
-    expect(html).toContain("Loading page");
-    expect(html).toContain("motion-safe:animate-pulse");
-    expect(html).not.toMatch(/(?<!motion-safe:)animate-pulse/);
-  });
-});

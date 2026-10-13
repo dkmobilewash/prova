@@ -6,7 +6,8 @@ import { usePathname } from "next/navigation";
 /**
  * Lands a cross-page `#anchor` link on its section once the page arrives.
  *
- * Next scrolls to a hash itself, but `(app)/loading.tsx` defeats it: the
+ * Next scrolls to a hash itself, but a loading boundary defeats it (the
+ * (app) one is gone since #748; a route-level one would do the same): the
  * router's scroll handler sits OUTSIDE the loading boundary, so it fires
  * while the skeleton is showing, finds no element with that id, scrolls to
  * the skeleton instead and is spent before the real page streams in. So

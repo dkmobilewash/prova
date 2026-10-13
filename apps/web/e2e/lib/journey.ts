@@ -114,7 +114,14 @@ export async function allJobTabs(page: Page): Promise<Array<{ label: string; hre
   for (let i = 0; i < count; i++) {
     const box = boxes.nth(i).getByRole("link");
     if ((await box.count()) === 0) continue; // a stage with no pages yet is not a link
+    // The box links to the stage's first page; the row of that stage's pages
+    // renders in the same commit as the URL change. Reading the row before
+    // the URL moved read the PREVIOUS stage's row (run 38325255906: Takeoff
+    // four times over).
+    const href = (await box.getAttribute("href")) ?? "";
+    const target = new URL(href, "http://x");
     await box.click();
+    await page.waitForURL((url) => url.pathname === target.pathname && url.hash === target.hash);
     const row = jobStageNav(page).getByRole("list", { name: / pages$/ });
     await expect(row).toBeVisible();
     const links = row.getByRole("link");
@@ -146,7 +153,8 @@ export function homeHeading(page: Page): Locator {
 export async function landOnDashboard(page: Page, monitor: HealthMonitor): Promise<void> {
   await page.goto("/dashboard");
 
-  // Since app/(app)/loading.tsx (Concept G, 2026-10-10) the onboarding
+  // With a loading boundary on (app) (Concept G, 2026-10-10 — gone since
+  // #748, but this helper does not depend on which way it goes) the onboarding
   // redirect in dashboard/page.tsx is no longer an HTTP 307: the skeleton
   // streams first and the jump to /welcome is a client-side navigation
   // after hydration. So the URL reads /dashboard at `load` on BOTH paths,

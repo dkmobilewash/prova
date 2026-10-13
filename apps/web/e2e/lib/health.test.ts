@@ -137,16 +137,6 @@ describe("e2e shell-navigation check", () => {
     ).toContain(`aria-label="${name}"`);
   });
 
-  it("waits out the route skeleton components/RouteSkeleton.tsx actually renders", () => {
-    const declared = healthSource.match(/export const ROUTE_LOADING_TEXT = "([^"]+)";/);
-    expect(declared, "health.ts no longer declares ROUTE_LOADING_TEXT").not.toBeNull();
-    const loadingSource = codeOnly(readFileSync(path.join(webRoot, "components/RouteSkeleton.tsx"), "utf8"));
-    expect(
-      loadingSource,
-      `components/RouteSkeleton.tsx no longer renders "${declared![1]}" inside a role="status" element — update it and ROUTE_LOADING_TEXT together`,
-    ).toContain(`>${declared![1]}<`);
-    expect(loadingSource).toContain('role="status"');
-  });
 
   it("looks for the landmark the phone's bottom tabs actually render", () => {
     expect(

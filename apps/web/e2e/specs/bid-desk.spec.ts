@@ -104,7 +104,10 @@ test.describe("the bid desk", () => {
     await expect(page.locator("li").filter({ hasText: PROJECT }).first()).toBeVisible();
     await expectHealthy(page, "the GC's contact page after logging a bid", { monitor });
 
-    await page.goto("/bids");
+    // ?view=all: since ux round 4, /bids opens on its "Due soon" view whenever
+    // a bid is due within the window, and the list this asserts on is the
+    // "All" view's (data-tour="bids-list").
+    await page.goto("/bids?view=all");
     await expectHealthy(page, "/bids with one bid", { monitor });
     await expect(bidRow()).toContainText(PROJECT);
     await expect(bidRow()).toContainText("Metal framing / drywall");
