@@ -191,7 +191,7 @@ describe("3. a healthy region is invisible", () => {
   });
 
   it("every fallback that shows anything offers Reload, and the helper fallback shows nothing", () => {
-    for (const region of ["topbar", "bottomtabs"] as const) {
+    for (const region of ["topbar", "sidebar", "bottomtabs"] as const) {
       const html = renderToString(createElement(ShellRegionFallback, { region }));
       expect(html).toContain("couldn&#x27;t load");
       expect(html).toContain("Reload");
@@ -262,6 +262,8 @@ const KNOWN_SHELL_COMPONENTS = [
   "FullTour",
   "CommandPalette",
   "TopBar",
+  // Back 2026-10-12 (restore-brief.md item 1): the desktop page list.
+  "Sidebar",
   "BottomTabs",
 ];
 
