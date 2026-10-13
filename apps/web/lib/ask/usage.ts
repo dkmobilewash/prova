@@ -206,6 +206,15 @@ export type AskUsageFeature =
    *  are the measurement: hundreds per set, so they are the first place in this
    *  app where per-feature spend is a volume question rather than a unit price. */
   | "plan-ingestion"
+  /** One crop of one plan sheet, labelled run by run (lib/actions/
+   *  takeoffClassify.ts): which of the candidates the wall finder MEASURED are
+   *  walls, and which are countertops, fixtures or reference lines. Its own row
+   *  rather than folded into `plan-ingestion`, though both are plan work: this
+   *  is the only feature in this app that sends an IMAGE of a customer's
+   *  drawing, it is switched separately for exactly that reason, and it spends
+   *  the document-page ledger rather than the plan-sheet one. A bill that could
+   *  not tell them apart could not answer what the thing we turned off cost. */
+  | "wall-classify"
   /** Reading a bid addendum (lib/actions/addendumRead.ts). Its own row rather
    *  than folded into `quote-extract`, though both are one whole file into one
    *  request: they are switched separately and they spend DIFFERENT ledgers — a

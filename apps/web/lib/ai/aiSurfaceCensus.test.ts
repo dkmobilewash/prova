@@ -151,6 +151,11 @@ const CONTROLS: Record<AiFeatureKey, Control> = {
     file: "components/SpecFindings.tsx",
     why: "Attach a spec section on /bids and list what in it costs money — finish level, ratings, mock-ups, testing, named products — each with the sentence it was read from and a page to check it against.",
   },
+  WALL_CLASSIFY: {
+    kind: "component",
+    file: "components/TakeoffPlanViewer.tsx",
+    why: "Check these are walls, on the takeoff sheet toolbar beside Find the walls. It appears once runs have been found, reads the part of the sheet on screen, and sets aside the ones that are countertops, fixtures or reference lines — the lengths are measured from the drawing either way.",
+  },
 };
 
 function filesUnder(dir: string, out: string[] = []): string[] {
