@@ -1,48 +1,83 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { forgetEverything, loadContact, loadFields, saveContact, saveFields, type Contact } from "@/lib/browser-memory";
 import { FINAL_WARNING, FORM_MEANINGS, FORM_NAMES, UNCONDITIONAL_WARNING } from "@/lib/content";
+import { isEmail } from "@/lib/email";
 import { checkFills } from "@/lib/fills";
 import { BASE_PATH } from "@/lib/site";
-import { getForm, slotsAsked } from "@/lib/statutes/forms";
+import { fieldSteps, type FieldStep } from "@/lib/steps";
+import { getForm } from "@/lib/statutes/forms";
 import { SLOTS } from "@/lib/statutes/slots";
 import type { FormKey, StateCode } from "@/lib/statutes/types";
 import { WaiverPreview } from "./WaiverPreview";
 
 /**
- * The whole tool for one state: pick the form, fill it in, see it, download.
+ * The whole tool for one state, one screen at a time (Diego, 2026-10-13):
+ * pick the waiver, fill in each section, read the whole form, then give a
+ * name and an email and the PDF is EMAILED. There is no download button and
+ * the server never returns the PDF -- see lib/waiver-request.ts -- so every
+ * waiver made here reaches an inbox.
  *
- * Previewing needs nothing from anybody. Downloading the first time needs a
- * name and an email (the PDF goes to that address too); after the server
- * has accepted one, this browser is never asked again -- see
- * lib/waiver-request.ts for the rule and lib/browser-memory.ts for where
- * it is remembered.
+ * Next checks only the screen it is on; Back never checks anything, so a
+ * person can always go back and change an answer. What was typed is saved in
+ * this browser (lib/browser-memory.ts) for next pay period, and a browser
+ * that has sent before gets its name and email filled in -- but still sends.
  *
- * Nothing here says a waiver is safe to sign. The warnings describe what
- * the chosen form does, in the same words every time.
+ * Nothing here says a waiver is safe to sign. The warnings describe what the
+ * chosen form does, in the same words every time.
  */
 
 type Stage = "PROGRESS" | "FINAL";
+type Step = { kind: "type" } | { kind: "fields"; step: FieldStep } | { kind: "review" } | { kind: "send" };
 
-const chip =
-  "min-h-touch rounded-lg border-2 px-4 py-2 text-left font-semibold transition-colors focus-visible:outline-focus";
-const chipOn = "border-ink bg-brand text-ink";
-const chipOff = "border-line bg-paper text-ink hover:border-ink";
+const STEP_FORM = "waiver-step";
 
-export function WaiverTool({ state }: { state: StateCode }) {
+export function WaiverTool({
+  state,
+  stateName,
+  notice,
+  about,
+}: {
+  state: StateCode;
+  stateName: string;
+  /** Shown above every screen (the unreviewed-preview warning). */
+  notice?: ReactNode;
+  /** Shown under the first screen only. */
+  about?: ReactNode;
+}) {
   const [stage, setStage] = useState<Stage | null>(null);
   const [cleared, setCleared] = useState<boolean | null>(null);
   const [raw, setRaw] = useState<Record<string, string>>({});
   const [contact, setContact] = useState<Contact | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [index, setIndex] = useState(0);
+  const [tried, setTried] = useState(false);
+  const [sentTo, setSentTo] = useState<{ to: string; notConfigured: boolean } | null>(null);
+
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [company, setCompany] = useState("");
+  const [marketing, setMarketing] = useState(false);
+  const [website, setWebsite] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   // Read this browser's memory after mount, never during render: the server
   // has no localStorage, so reading it in render would hydrate differently.
   useEffect(() => {
-    setRaw(loadFields());
-    setContact(loadContact());
+    const fields = loadFields();
+    const known = loadContact();
+    setRaw(fields);
+    setContact(known);
+    if (known) {
+      setName(known.name);
+      setEmail(known.email);
+      setCompany(known.company);
+    } else if (fields.companyName) {
+      setCompany(fields.companyName);
+    }
     setLoaded(true);
   }, []);
 
@@ -55,178 +90,59 @@ export function WaiverTool({ state }: { state: StateCode }) {
   const form = formKey ? getForm(state, formKey) : null;
   const checked = useMemo(() => (form ? checkFills(form, raw) : null), [form, raw]);
 
-  const fieldProps = (id: string, slot: string, placeholder: string | undefined, help: string | undefined, invalid: boolean) => ({
-    id,
-    autoComplete: "off",
-    placeholder,
-    value: raw[slot] ?? "",
-    onChange: (event: React.ChangeEvent<HTMLInputElement>) => setRaw((current) => ({ ...current, [slot]: event.target.value })),
-    "aria-describedby": help ? `${id}-help` : undefined,
-    "aria-invalid": invalid,
-    className:
-      "min-h-touch w-full rounded-md border-2 border-line bg-paper px-3 text-lg text-ink placeholder:text-quiet/70 focus:border-ink",
-  });
-
-  return (
-    <div className="mt-8">
-      <section aria-labelledby="pick">
-        <h2 id="pick" className="text-xl font-bold text-ink">
-          1. Which waiver?
-        </h2>
-        <fieldset className="mt-4">
-          <legend className="font-semibold text-ink">Which payment is this for?</legend>
-          <div className="mt-2 grid grid-cols-2 gap-3">
-            <button type="button" aria-pressed={stage === "PROGRESS"} className={`${chip} ${stage === "PROGRESS" ? chipOn : chipOff}`} onClick={() => setStage("PROGRESS")}>
-              A progress payment
-            </button>
-            <button type="button" aria-pressed={stage === "FINAL"} className={`${chip} ${stage === "FINAL" ? chipOn : chipOff}`} onClick={() => setStage("FINAL")}>
-              The final payment
-            </button>
-          </div>
-        </fieldset>
-        <fieldset className="mt-5">
-          <legend className="font-semibold text-ink">Has this payment cleared your bank?</legend>
-          <div className="mt-2 grid grid-cols-2 gap-3">
-            <button type="button" aria-pressed={cleared === false} className={`${chip} ${cleared === false ? chipOn : chipOff}`} onClick={() => setCleared(false)}>
-              Not yet
-            </button>
-            <button type="button" aria-pressed={cleared === true} className={`${chip} ${cleared === true ? chipOn : chipOff}`} onClick={() => setCleared(true)}>
-              Yes, it has cleared
-            </button>
-          </div>
-        </fieldset>
-
-        {formKey && form ? (
-          <div className="mt-6 rounded-lg border-2 border-ink bg-paper p-4" aria-live="polite">
-            <p className="text-sm font-semibold uppercase tracking-wide text-quiet">Your form</p>
-            <p className="mt-1 text-lg font-bold text-ink">{FORM_NAMES[formKey]}</p>
-            <p className="text-sm text-quiet">{form.citation}</p>
-            <p className="mt-3 text-ink">{FORM_MEANINGS[formKey]}</p>
-            {cleared ? <p className="mt-3 rounded-md bg-warn-ground p-3 font-semibold text-warn">{UNCONDITIONAL_WARNING}</p> : null}
-            {stage === "FINAL" ? <p className="mt-3 rounded-md bg-warn-ground p-3 font-semibold text-warn">{FINAL_WARNING}</p> : null}
-          </div>
-        ) : null}
-      </section>
-
-      {form && checked ? (
-        <>
-          <section aria-labelledby="fill" className="mt-10">
-            <h2 id="fill" className="text-xl font-bold text-ink">
-              2. Fill in the blanks
-            </h2>
-            <p className="mt-1 text-sm text-quiet">Saved in this browser for next pay period. The signature line stays blank for your pen.</p>
-            <div className="mt-4 space-y-5">
-              {slotsAsked(form).map(({ slot, label }) => {
-                const spec = SLOTS[slot];
-                const id = `field-${slot}`;
-                const error = checked.errors[slot];
-                const showError = Boolean(error && raw[slot]?.trim());
-                return (
-                  <div key={slot}>
-                    <label htmlFor={id} className="block font-semibold text-ink">
-                      {label}
-                      {spec.required ? null : <span className="font-normal text-quiet"> (optional)</span>}
-                    </label>
-                    {spec.help ? (
-                      <p id={`${id}-help`} className="text-sm text-quiet">
-                        {spec.help}
-                      </p>
-                    ) : null}
-                    <div className="mt-1 flex items-center">
-                      {spec.kind === "money" ? <span className="mr-2 text-lg text-ink">$</span> : null}
-                      {/* Three literal branches rather than one input with
-                          computed type/inputMode, so C-Stream's repo-wide
-                          numeric-input census (apps/web/lib/
-                          numericInputCensus.test.ts) can READ that a money
-                          field opens a keypad -- it cannot evaluate an
-                          expression, and an unreadable attribute is checked,
-                          not trusted. */}
-                      {spec.kind === "money" ? (
-                        <input type="text" inputMode="decimal" name={slot} {...fieldProps(id, slot, spec.placeholder, spec.help, showError)} />
-                      ) : spec.kind === "date" ? (
-                        <input type="date" name={slot} {...fieldProps(id, slot, spec.placeholder, spec.help, showError)} />
-                      ) : (
-                        <input type="text" name={slot} {...fieldProps(id, slot, spec.placeholder, spec.help, showError)} />
-                      )}
-                    </div>
-                    {showError ? (
-                      <p role="alert" className="mt-1 text-sm font-semibold text-danger">
-                        {error}
-                      </p>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section aria-labelledby="check" className="mt-10">
-            <h2 id="check" className="text-xl font-bold text-ink">
-              3. Read it
-            </h2>
-            <p className="mt-1 text-sm text-quiet">This is the whole form as it will print. Your entries are underlined.</p>
-            <WaiverPreview form={form} fills={checked.fills} />
-          </section>
-
-          <Download state={state} formKey={formKey!} raw={raw} missing={Object.keys(checked.errors).length} contact={contact} onContact={setContact} />
-        </>
-      ) : null}
-
-      {loaded && (contact || Object.keys(raw).length > 0) ? (
-        <p className="mt-10 text-sm text-quiet">
-          This browser remembers your details.{" "}
-          <button
-            type="button"
-            className="inline-flex min-h-touch items-center underline"
-            onClick={() => {
-              forgetEverything();
-              setRaw({});
-              setContact(null);
-            }}
-          >
-            Forget them
-          </button>
-        </p>
-      ) : null}
-    </div>
+  const steps: Step[] = useMemo(
+    () => [
+      { kind: "type" },
+      ...(form ? fieldSteps(form).map((step) => ({ kind: "fields" as const, step })) : []),
+      { kind: "review" },
+      { kind: "send" },
+    ],
+    [form],
   );
-}
+  // Before the waiver is chosen the field screens are unknown; the bar
+  // assumes the usual three so it does not jump backwards once they appear.
+  const total = form ? steps.length : 6;
+  const current = steps[Math.min(index, steps.length - 1)];
 
-function Download({
-  state,
-  formKey,
-  raw,
-  missing,
-  contact,
-  onContact,
-}: {
-  state: StateCode;
-  formKey: FormKey;
-  raw: Record<string, string>;
-  missing: number;
-  contact: Contact | null;
-  onContact: (contact: Contact) => void;
-}) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [company, setCompany] = useState("");
-  const [marketing, setMarketing] = useState(false);
-  const [emailCopy, setEmailCopy] = useState(false);
-  const [website, setWebsite] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
-
+  // Move focus to the new screen's heading, so a screen reader announces it
+  // and the keyboard starts at the top. Not on first load: that would steal
+  // focus from whatever the person was reaching for.
+  const heading = useRef<HTMLHeadingElement>(null);
+  const firstRender = useRef(true);
   useEffect(() => {
-    if (raw.companyName && !company) setCompany(raw.companyName);
-    // Only a default; never overwrites what the person typed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [raw.companyName]);
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    window.scrollTo({ top: 0 });
+    heading.current?.focus();
+  }, [index, sentTo]);
 
-  const returning = contact !== null;
+  function go(to: number) {
+    setTried(false);
+    setSendError(null);
+    setIndex(to);
+  }
 
-  async function download() {
+  const stepErrors =
+    current.kind === "fields" && checked
+      ? current.step.fields.filter(({ slot }) => checked.errors[slot]).map(({ slot }) => slot)
+      : [];
+
+  function next() {
+    if (current.kind === "type" && !form) return setTried(true);
+    if (current.kind === "fields" && stepErrors.length) return setTried(true);
+    if (current.kind === "send") return void send();
+    go(index + 1);
+  }
+
+  const returning = contact !== null && contact.email.toLowerCase() === email.trim().toLowerCase();
+
+  async function send() {
+    setTried(true);
+    if (!name.trim() || !isEmail(email) || !formKey) return;
     setBusy(true);
-    setMessage(null);
+    setSendError(null);
     try {
       const response = await fetch(`${BASE_PATH}/api/waiver`, {
         method: "POST",
@@ -236,130 +152,404 @@ function Download({
           form: formKey,
           fills: raw,
           returning,
-          emailCopy: returning ? emailCopy : undefined,
-          email: returning ? contact.email : email,
-          name: returning ? contact.name : name,
-          company: returning ? contact.company : company,
+          email: email.trim(),
+          name: name.trim(),
+          company: company.trim(),
           marketingOptIn: returning ? undefined : marketing,
           website,
         }),
       });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => ({}))) as { error?: string };
-        setMessage({ tone: "error", text: body.error ?? "Something went wrong. Please try again." });
+      const body = (await response.json().catch(() => ({}))) as { error?: string; sentTo?: string; notConfigured?: boolean };
+      if (!response.ok || !body.sentTo) {
+        setSendError(body.error ?? "Something went wrong. Please try again.");
         return;
       }
-      const blob = await response.blob();
-      const filename = response.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "lien-waiver.pdf";
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
-
-      const status = response.headers.get("x-email-status");
-      const to = returning ? contact.email : email.trim();
-      if (!returning) {
-        const saved = { email: email.trim(), name: name.trim(), company: company.trim() };
-        saveContact(saved);
-        onContact(saved);
-      }
-      setMessage({
-        tone: "ok",
-        text:
-          status === "sent"
-            ? `Downloaded, and a copy is on its way to ${to}.`
-            : status === "failed"
-              ? "Downloaded. We could not email a copy just now."
-              : "Downloaded.",
-      });
+      const saved = { email: email.trim(), name: name.trim(), company: company.trim() };
+      saveContact(saved);
+      setContact(saved);
+      setSentTo({ to: body.sentTo, notConfigured: body.notConfigured === true });
     } catch {
-      setMessage({ tone: "error", text: "Could not reach the server. Check your signal and try again." });
+      setSendError("Could not reach the server. Check your signal and try again.");
     } finally {
       setBusy(false);
     }
   }
 
-  const blocked = missing > 0;
+  const done = sentTo !== null;
+  const shownIndex = done ? total : Math.min(index, steps.length - 1);
+  const title = done
+    ? "Check Your Inbox"
+    : current.kind === "type"
+      ? "Waiver Type"
+      : current.kind === "fields"
+        ? current.step.title
+        : current.kind === "review"
+          ? "Read Your Waiver"
+          : "Get Your PDF";
+
   return (
-    <section aria-labelledby="download" className="mt-10 rounded-lg border-2 border-ink bg-paper p-4">
-      <h2 id="download" className="text-xl font-bold text-ink">
-        4. Download
-      </h2>
-      <form
-        className="mt-3 space-y-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!blocked && !busy) void download();
-        }}
-      >
-        {returning ? (
-          <label className="flex min-h-touch items-center gap-3 text-ink">
-            <input type="checkbox" className="h-6 w-6" checked={emailCopy} onChange={(event) => setEmailCopy(event.target.checked)} />
-            Also email a copy to {contact.email}
-          </label>
+    <>
+      <div className="sticky top-0 z-10 border-b border-rule bg-paper">
+        <div className="mx-auto flex min-h-touch max-w-2xl items-center justify-between gap-4 px-4 py-2">
+          <Link href="/" className="inline-flex min-h-touch items-center font-bold text-ink">
+            C-Stream
+          </Link>
+          <h1 className="text-sm font-semibold text-quiet">{stateName} lien waiver</h1>
+        </div>
+        <div
+          role="progressbar"
+          aria-label="Progress"
+          aria-valuemin={1}
+          aria-valuemax={total}
+          aria-valuenow={shownIndex + 1 > total ? total : shownIndex + 1}
+          aria-valuetext={done ? "Sent" : `Step ${shownIndex + 1} of ${total}`}
+          className="h-1.5 bg-rule"
+        >
+          <div className="h-full bg-progress transition-[width] duration-300" style={{ width: `${(Math.min(shownIndex + 1, total) / total) * 100}%` }} />
+        </div>
+      </div>
+
+      <main className="mx-auto max-w-2xl px-4 pb-36 pt-6">
+        {notice}
+        {!done ? (
+          <p className="mt-2 text-sm font-semibold text-quiet">
+            Step {shownIndex + 1} of {total}
+          </p>
+        ) : null}
+        <h2 ref={heading} tabIndex={-1} className="mt-1 text-3xl font-bold leading-tight text-ink focus:outline-none">
+          {title}
+        </h2>
+
+        {sentTo ? (
+          <Sent
+            to={sentTo.to}
+            notConfigured={sentTo.notConfigured}
+            formName={formKey ? FORM_NAMES[formKey] : "waiver"}
+            onAnother={() => {
+              setSentTo(null);
+              go(0);
+            }}
+            onForget={() => {
+              forgetEverything();
+              setRaw({});
+              setContact(null);
+              setName("");
+              setEmail("");
+              setCompany("");
+              setSentTo(null);
+              setStage(null);
+              setCleared(null);
+              go(0);
+            }}
+          />
         ) : (
-          <>
-            <p className="text-quiet">Where should we send your PDF? You only need to do this once in this browser.</p>
-            <div>
-              <label htmlFor="dl-name" className="block font-semibold text-ink">
-                Your name
-              </label>
-              <input id="dl-name" type="text" name="name" required autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} className="mt-1 min-h-touch w-full rounded-md border-2 border-line px-3 text-lg focus:border-ink" />
-            </div>
-            <div>
-              <label htmlFor="dl-email" className="block font-semibold text-ink">
-                Email
-              </label>
-              <input id="dl-email" name="email" required type="email" inputMode="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-1 min-h-touch w-full rounded-md border-2 border-line px-3 text-lg focus:border-ink" />
-            </div>
-            <div>
-              <label htmlFor="dl-company" className="block font-semibold text-ink">
-                Company <span className="font-normal text-quiet">(optional)</span>
-              </label>
-              <input id="dl-company" type="text" name="company" autoComplete="organization" value={company} onChange={(event) => setCompany(event.target.value)} className="mt-1 min-h-touch w-full rounded-md border-2 border-line px-3 text-lg focus:border-ink" />
-            </div>
-            <label className="flex min-h-touch items-start gap-3 text-ink">
-              <input type="checkbox" className="mt-1 h-6 w-6 shrink-0" checked={marketing} onChange={(event) => setMarketing(event.target.checked)} />
-              <span>Send me occasional emails from C-Stream about running a subcontracting business. (Optional. You will get your PDF either way.)</span>
-            </label>
-            {/* Honeypot: hidden from people and from screen readers. */}
-            <div aria-hidden="true" className="absolute left-[-9999px] top-auto h-px w-px overflow-hidden">
-              <label htmlFor="dl-website">Website</label>
-              <input id="dl-website" type="text" name="website" tabIndex={-1} autoComplete="off" value={website} onChange={(event) => setWebsite(event.target.value)} />
-            </div>
-          </>
+          <form
+            id={STEP_FORM}
+            noValidate
+            className="mt-6 space-y-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!busy) next();
+            }}
+          >
+            {current.kind === "type" ? (
+              <>
+                <Choice
+                  name="stage"
+                  question="Which payment is this waiver for?"
+                  value={stage}
+                  onChange={(value) => setStage(value as Stage)}
+                  options={[
+                    { value: "PROGRESS", label: "A progress payment" },
+                    { value: "FINAL", label: "The final payment" },
+                  ]}
+                  missing={tried && stage === null}
+                />
+                <Choice
+                  name="cleared"
+                  question="Has this payment cleared your bank?"
+                  help="Cleared means the money is in your account, not just that a check is in the mail."
+                  value={cleared === null ? null : cleared ? "yes" : "no"}
+                  onChange={(value) => setCleared(value === "yes")}
+                  options={[
+                    { value: "no", label: "Not yet" },
+                    { value: "yes", label: "Yes, it has cleared" },
+                  ]}
+                  missing={tried && cleared === null}
+                />
+                {formKey && form ? (
+                  <div className="rounded-xl bg-paper p-5 ring-2 ring-ink" aria-live="polite">
+                    <p className="text-sm font-semibold uppercase tracking-wide text-quiet">Your form</p>
+                    <p className="mt-1 text-xl font-bold text-ink">{FORM_NAMES[formKey]}</p>
+                    <p className="text-sm text-quiet">{form.citation}</p>
+                    <p className="mt-3 text-ink">{FORM_MEANINGS[formKey]}</p>
+                    {cleared ? <p className="mt-3 rounded-md bg-warn-ground p-3 font-semibold text-warn">{UNCONDITIONAL_WARNING}</p> : null}
+                    {stage === "FINAL" ? <p className="mt-3 rounded-md bg-warn-ground p-3 font-semibold text-warn">{FINAL_WARNING}</p> : null}
+                  </div>
+                ) : null}
+                {about}
+              </>
+            ) : null}
+
+            {current.kind === "fields" && checked ? (
+              <>
+                <p className="text-quiet">Saved in this browser for next pay period.</p>
+                {current.step.fields.map(({ slot, label }) => {
+                  const spec = SLOTS[slot];
+                  const id = `field-${slot}`;
+                  const error = checked.errors[slot];
+                  const showError = Boolean(error && (tried || raw[slot]?.trim()));
+                  const inputProps = {
+                    id,
+                    name: slot,
+                    autoComplete: "off",
+                    placeholder: spec.placeholder,
+                    value: raw[slot] ?? "",
+                    onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+                      setRaw((existing) => ({ ...existing, [slot]: event.target.value })),
+                    "aria-describedby": [spec.help ? `${id}-help` : null, showError ? `${id}-error` : null].filter(Boolean).join(" ") || undefined,
+                    "aria-invalid": showError,
+                    className: INPUT,
+                  };
+                  return (
+                    <Card key={slot} htmlFor={id} label={label} optional={!spec.required} help={spec.help} helpId={`${id}-help`} error={showError ? error : undefined} errorId={`${id}-error`}>
+                      <div className="flex items-center">
+                        {spec.kind === "money" ? <span className="mr-2 text-lg text-quiet">$</span> : null}
+                        {/* Three literal branches rather than one input with
+                            computed type/inputMode, so C-Stream's repo-wide
+                            numeric-input census (apps/web/lib/
+                            numericInputCensus.test.ts) can READ that a money
+                            field opens a keypad -- it cannot evaluate an
+                            expression, and an unreadable attribute is checked,
+                            not trusted. */}
+                        {spec.kind === "money" ? (
+                          <input type="text" inputMode="decimal" {...inputProps} />
+                        ) : spec.kind === "date" ? (
+                          <input type="date" {...inputProps} />
+                        ) : (
+                          <input type="text" {...inputProps} />
+                        )}
+                      </div>
+                    </Card>
+                  );
+                })}
+                {tried && stepErrors.length ? (
+                  <p role="alert" className="font-semibold text-danger">
+                    {stepErrors.length === 1 ? "One answer on this page needs" : `${stepErrors.length} answers on this page need`} another look.
+                  </p>
+                ) : null}
+              </>
+            ) : null}
+
+            {current.kind === "review" && form && checked ? (
+              <>
+                <p className="text-quiet">
+                  This is the whole form as it will print. Your answers are highlighted. The signature line stays blank
+                  for your pen.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {steps.slice(0, -2).map((step, i) => (
+                    <button key={i} type="button" onClick={() => go(i)} className="min-h-touch rounded-full border-2 border-line bg-paper px-4 text-sm font-semibold text-ink hover:border-ink">
+                      Change {step.kind === "fields" ? step.step.title.toLowerCase() : "waiver type"}
+                    </button>
+                  ))}
+                </div>
+                <WaiverPreview form={form} fills={checked.fills} />
+              </>
+            ) : null}
+
+            {current.kind === "send" ? (
+              <>
+                <p className="text-quiet">
+                  We email your PDF. There is no download, so use an address you can open on the job.
+                </p>
+                <Card htmlFor="send-name" label="Your name" error={tried && !name.trim() ? "Enter your name." : undefined} errorId="send-name-error">
+                  <input id="send-name" type="text" name="name" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} aria-invalid={tried && !name.trim()} aria-describedby={tried && !name.trim() ? "send-name-error" : undefined} className={INPUT} placeholder="First and last name" />
+                </Card>
+                <Card htmlFor="send-email" label="Email" error={tried && !isEmail(email) ? "Enter a valid email address." : undefined} errorId="send-email-error">
+                  <input id="send-email" type="email" inputMode="email" name="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} aria-invalid={tried && !isEmail(email)} aria-describedby={tried && !isEmail(email) ? "send-email-error" : undefined} className={INPUT} placeholder="you@company.com" />
+                </Card>
+                <Card htmlFor="send-company" label="Company" optional>
+                  <input id="send-company" type="text" name="company" autoComplete="organization" value={company} onChange={(event) => setCompany(event.target.value)} className={INPUT} />
+                </Card>
+                {returning ? null : (
+                  <label className="flex min-h-touch items-start gap-4 rounded-xl bg-paper p-5 text-ink ring-1 ring-rule">
+                    <input type="checkbox" className="mt-0.5 h-6 w-6 shrink-0 accent-ink" checked={marketing} onChange={(event) => setMarketing(event.target.checked)} />
+                    <span>
+                      Send me occasional emails from C-Stream about running a subcontracting business.{" "}
+                      <span className="text-quiet">(Optional. You get your PDF either way.)</span>
+                    </span>
+                  </label>
+                )}
+                {/* Honeypot: hidden from people and from screen readers. */}
+                <div aria-hidden="true" className="absolute left-[-9999px] top-auto h-px w-px overflow-hidden">
+                  <label htmlFor="send-website">Website</label>
+                  <input id="send-website" type="text" name="website" tabIndex={-1} autoComplete="off" value={website} onChange={(event) => setWebsite(event.target.value)} />
+                </div>
+                <p className="text-sm text-quiet">
+                  Read the whole form before you sign it. C-Stream is not a law firm and this is not legal advice. See our{" "}
+                  <Link className="underline" href="/privacy">
+                    privacy notice
+                  </Link>
+                  .
+                </p>
+                {sendError ? (
+                  <p role="alert" className="rounded-md bg-warn-ground p-3 font-semibold text-danger">
+                    {sendError}
+                  </p>
+                ) : null}
+              </>
+            ) : null}
+          </form>
         )}
-        {blocked ? (
-          <p className="font-semibold text-danger">
-            {missing === 1 ? "One required blank is" : `${missing} required blanks are`} still empty or need another look above.
-          </p>
-        ) : null}
-        <button type="submit" disabled={blocked || busy} className="min-h-primary w-full rounded-lg bg-brand px-5 text-lg font-bold text-ink hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50">
-          {busy ? "Making your PDF..." : returning ? "Download PDF" : "Email me the PDF and download"}
-        </button>
-        <p className="text-sm text-quiet">
-          Read the whole form before you sign it. C-Stream is not a law firm and this is not legal advice.{" "}
-          {returning ? null : (
-            <>
-              See our{" "}
-              <Link className="underline" href="/privacy">
-                privacy notice
-              </Link>
-              .
-            </>
+      </main>
+
+      <nav aria-label="Steps" className="fixed inset-x-0 bottom-0 z-10 border-t border-rule bg-paper">
+        <div className="mx-auto flex max-w-2xl items-center justify-between gap-3 px-4 py-3">
+          {!done && index > 0 ? (
+            <button type="button" onClick={() => go(index - 1)} disabled={busy} className="inline-flex min-h-primary items-center gap-1 rounded-lg px-3 text-lg font-semibold text-ink hover:bg-canvas">
+              <span aria-hidden="true">‹</span> Back
+            </button>
+          ) : (
+            <span />
           )}
-        </p>
-        {message ? (
-          <p role="status" className={`rounded-md p-3 font-semibold ${message.tone === "ok" ? "bg-canvas text-ink" : "bg-warn-ground text-danger"}`}>
-            {message.text}
-          </p>
-        ) : null}
-      </form>
-    </section>
+          {done ? null : (
+            <button type="submit" form={STEP_FORM} disabled={busy} aria-busy={busy} className={PRIMARY}>
+              {current.kind === "send" ? (busy ? "Sending..." : "Email me the PDF") : current.kind === "review" ? "Looks right" : "Next"}
+            </button>
+          )}
+        </div>
+      </nav>
+    </>
   );
 }
 
+const INPUT =
+  "min-h-touch w-full bg-transparent py-2 text-lg text-ink placeholder:text-quiet/70 focus:outline-none focus-visible:outline-none";
+const PRIMARY =
+  "min-h-primary rounded-lg bg-ink px-8 text-lg font-bold text-paper hover:bg-quiet disabled:cursor-not-allowed disabled:opacity-60";
+
+/** One question: its label on top, a rule, then the answer -- the shape of
+ * every screen. The whole card shows focus, since the input itself has no
+ * border of its own. */
+function Card({
+  htmlFor,
+  label,
+  optional,
+  help,
+  helpId,
+  error,
+  errorId,
+  children,
+}: {
+  htmlFor: string;
+  label: string;
+  optional?: boolean;
+  help?: string;
+  helpId?: string;
+  error?: string;
+  errorId?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={`rounded-xl bg-paper focus-within:ring-2 focus-within:ring-focus ${error ? "ring-2 ring-danger" : "ring-1 ring-rule"}`}>
+      <div className="px-5 pb-4 pt-5">
+        <label htmlFor={htmlFor} className="block text-lg font-semibold text-ink">
+          {label}
+          {optional ? <span className="font-normal text-quiet"> (optional)</span> : null}
+        </label>
+        {help ? (
+          <p id={helpId} className="mt-1 text-sm text-quiet">
+            {help}
+          </p>
+        ) : null}
+      </div>
+      <div className="border-t border-rule px-5 py-2">{children}</div>
+      {error ? (
+        <p id={errorId} className="px-5 pb-4 text-sm font-semibold text-danger">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function Choice({
+  name,
+  question,
+  help,
+  value,
+  onChange,
+  options,
+  missing,
+}: {
+  name: string;
+  question: string;
+  help?: string;
+  value: string | null;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+  missing: boolean;
+}) {
+  return (
+    <fieldset className={`rounded-xl bg-paper ${missing ? "ring-2 ring-danger" : "ring-1 ring-rule"}`}>
+      <legend className="sr-only">{question}</legend>
+      <div className="px-5 pb-4 pt-5" aria-hidden="true">
+        <p className="text-lg font-semibold text-ink">{question}</p>
+        {help ? <p className="mt-1 text-sm text-quiet">{help}</p> : null}
+      </div>
+      <div className="border-t border-rule px-5 py-2">
+        {options.map((option) => (
+          <label key={option.value} className="flex min-h-touch cursor-pointer items-center gap-4 py-2 text-lg text-ink">
+            <input type="radio" name={name} value={option.value} checked={value === option.value} onChange={() => onChange(option.value)} className="h-6 w-6 shrink-0 accent-ink" />
+            {option.label}
+          </label>
+        ))}
+      </div>
+      {missing ? <p className="px-5 pb-4 text-sm font-semibold text-danger">Pick one to continue.</p> : null}
+    </fieldset>
+  );
+}
+
+function Sent({
+  to,
+  notConfigured,
+  formName,
+  onAnother,
+  onForget,
+}: {
+  to: string;
+  notConfigured: boolean;
+  formName: string;
+  onAnother: () => void;
+  onForget: () => void;
+}) {
+  return (
+    <div className="mt-6 space-y-5" role="status">
+      <div className="rounded-xl bg-paper p-5 ring-1 ring-rule">
+        {notConfigured ? (
+          <p className="text-lg text-ink">
+            This preview has no email set up, so nothing was sent. On the live site your {formName.toLowerCase()} would
+            go to <strong>{to}</strong>.
+          </p>
+        ) : (
+          <>
+            <p className="text-lg text-ink">
+              Your {formName.toLowerCase()} is on its way to <strong className="break-all">{to}</strong>.
+            </p>
+            <p className="mt-2 text-quiet">It usually arrives in a minute. If it is not there, check your spam folder.</p>
+          </>
+        )}
+      </div>
+      <button type="button" onClick={onAnother} className={`${PRIMARY} w-full`}>
+        Make another waiver
+      </button>
+      <p className="text-sm text-quiet">
+        This browser remembers your answers and email for next pay period.{" "}
+        <button type="button" onClick={onForget} className="inline-flex min-h-touch items-center underline">
+          Forget them
+        </button>
+      </p>
+    </div>
+  );
+}

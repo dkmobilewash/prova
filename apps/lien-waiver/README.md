@@ -1,8 +1,11 @@
 # Free lien waiver tool (`apps/lien-waiver`)
 
 A public, no-account tool: a commercial framing, drywall or EIFS/stucco sub
-picks a state, answers two questions, fills in the blanks on a phone and
-downloads that state's **statutory** lien waiver as a PDF. A lead magnet for
+picks a state, answers two questions, fills in the blanks one screen at a
+time on a phone, and gets that state's **statutory** lien waiver as a PDF
+**by email only** -- there is no download, and the API never returns the
+PDF, so every waiver leaves a name and an address behind (Diego,
+2026-10-13). A lead magnet for
 C-Stream, and deliberately **separate** from it: its own Vercel project and
 domain, no Clerk, no access to C-Stream's database, nothing imported from
 `apps/web`. It lives in this repo only so CI tests it.

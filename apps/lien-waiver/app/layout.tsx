@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     template: "%s — Free Lien Waiver Forms",
   },
   description:
-    "Fill out your state's statutory lien waiver on your phone and download a clean PDF. Arizona, California, Nevada and Texas. Free, from C-Stream.",
+    "Fill out your state's statutory lien waiver on your phone and get a clean PDF by email. Arizona, California, Nevada and Texas. Free, from C-Stream.",
 };
 
 export const viewport: Viewport = {

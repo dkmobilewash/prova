@@ -20,7 +20,7 @@ export default function Home() {
           Your state&apos;s statutory lien waiver, filled out on your phone.
         </h1>
         <p className="mt-4 text-lg text-quiet">
-          Pick your state, answer two questions, fill in the blanks, and download a clean PDF to hand the GC. The form
+          Pick your state, answer two questions, fill in the blanks one screen at a time, and we email you a clean PDF to hand the GC. The form
           text is copied from the state&apos;s own code, not rewritten.
         </p>
 
@@ -64,8 +64,8 @@ export default function Home() {
             details are saved in this browser for next pay period.
           </li>
           <li>
-            <strong className="text-ink">3. Check it and download.</strong> You see the whole form before you download
-            it. We email you the PDF too.
+            <strong className="text-ink">3. Read it, then get it by email.</strong> You see the whole form first. Leave
+            your name and email and we send you the PDF.
           </li>
         </ol>
 
