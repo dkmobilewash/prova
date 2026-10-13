@@ -188,12 +188,21 @@ describe("the call site, because no test here can open a PDF", () => {
     expect(text).toContain("`Add as ${priced.code} — priced`");
   });
 
+  /** The same source with every run of whitespace collapsed to one space. */
+  const flat = (text: string) => text.replace(/\s+/g, " ");
+
   it("SPLITS THE GROUPS BY TAG BEFORE SHOWING ANY OF THEM", () => {
     // A thickness bucket is not one wall type — School-01's 4-7/8in bucket
     // held A1, A2, EXT-1 and C1, and 1,117 ft that could be priced as nothing.
-    const text = viewer();
+    //
+    // MATCHED WITH THE WHITESPACE COLLAPSED, because this call now lives in a
+    // named closure the viewer rebuilds the panel with — once when the walls
+    // are found and again when some of them are labelled casework, so the two
+    // lists cannot be grouped differently. Pinning the formatting rather than
+    // the call made this census fail on a change that kept every argument.
+    const text = flat(viewer());
     expect(text).toContain(
-      "wallGroups(clusters, tagByRun(walls, tags, feetPerUnit, wallTypes), wallTypes, fromNote)",
+      "wallGroups( clusterByThickness(runs), tagByRun(runs, tags, feetPerUnit, wallTypes), wallTypes, fromNote, )",
     );
   });
 
@@ -204,7 +213,7 @@ describe("the call site, because no test here can open a PDF", () => {
     // is — 556 ft of School-01's A-101. Mutation-tested; blind without this.
     const text = viewer();
     expect(text).toMatch(/defaultWallTypeFromNotes\(textItems, wallTypes\)/);
-    expect(text).toMatch(/wallGroups\(clusters, tagByRun\(walls, tags, feetPerUnit, wallTypes\), wallTypes, fromNote\)/);
+    expect(flat(text)).toMatch(/wallGroups\(\s*clusterByThickness\(runs\), tagByRun\(runs, tags, feetPerUnit, wallTypes\), wallTypes, fromNote,?\s*\)/);
   });
 
   it("PRICES A GROUP THE NOTE NAMED, so the answer reaches the button", () => {
@@ -221,9 +230,9 @@ describe("the call site, because no test here can open a PDF", () => {
     // run 0.47 ft away over the 8-7/8" wall at 2.32 ft.
     const text = viewer();
     expect(text, "the viewer calls tagByRun without its wall types").not.toMatch(
-      /tagByRun\(walls, tags, feetPerUnit\)/,
+      /tagByRun\(runs, tags, feetPerUnit\)/,
     );
-    expect(text).toMatch(/tagByRun\(walls, tags, feetPerUnit, wallTypes\)/);
+    expect(flat(text)).toMatch(/tagByRun\(runs, tags, feetPerUnit, wallTypes\)/);
   });
 
   it("NEVER DEFAULTS THE ANSWER TO A QUESTION IT ASKED", () => {

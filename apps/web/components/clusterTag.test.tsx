@@ -133,6 +133,9 @@ describe("the panel's own use of it", () => {
   it("and the detection fills that name", () => {
     // The other end of the wire: without this the tag is absent for ever.
     // `wallGroups` is where a run's tag becomes its group's identity.
-    expect(source).toMatch(/wallGroups\(clusters, tagByRun\(/);
+    // Whitespace collapsed: the call lives in a named closure now — the viewer
+    // builds the panel with it when the walls are found and again when some are
+    // labelled casework, so both lists are grouped the same way.
+    expect(source.replace(/\s+/g, " ")).toMatch(/wallGroups\( clusterByThickness\(runs\), tagByRun\(/);
   });
 });

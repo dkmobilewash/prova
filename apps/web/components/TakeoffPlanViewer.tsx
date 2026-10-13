@@ -35,6 +35,7 @@ import {
   type ToolId,
 } from "@/lib/takeoff-plan-view";
 import {
+  type WallCandidate,
   clusterByThickness,
   inchLabel,
   wallsInTheBuilding,
@@ -44,6 +45,8 @@ import {
   type StrokeSegment,
 } from "@/lib/takeoff/wallVectors";
 import { wallsFromBothEngines } from "@/lib/takeoff/wallRuns";
+import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
+import type { WallClassifyLabel } from "@prova/integrations";
 import { pagesToSample, templateFromSheets, withoutTemplate } from "@/lib/takeoff/sheetTemplate";
 import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
@@ -210,6 +213,19 @@ export function TakeoffPlanViewer({
   // rather than demanding another press.
   const [foundRaw, setFound] = useState<WallGroup[] | null>(null);
   const [foundOnPage, setFoundOnPage] = useState<number | null>(null);
+  // ── WHAT THE RUNS ARE, as opposed to what they measure ──
+  //
+  // The runs themselves, kept so a label can be applied to one without finding
+  // them again, and a closure that rebuilds the panel from a filtered list —
+  // the tags, the schedule and the sheet's general note all live inside it, so
+  // re-grouping cannot drift from the grouping that was shown first.
+  const runsRef = useRef<WallCandidate[]>([]);
+  /** Feet across the page width, as the find that produced these runs read it. */
+  const feetAcrossRef = useRef<number>(0);
+  const regroupRef = useRef<((runs: WallCandidate[]) => WallGroup[]) | null>(null);
+  const [labels, setLabels] = useState<Map<number, WallClassifyLabel> | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checkError, setCheckError] = useState<string | null>(null);
   /**
    * What this sheet has to show. Every render site reads THIS and not the raw
    * state, which is why the name it kept is the one they were already using.
@@ -470,6 +486,129 @@ export function TakeoffPlanViewer({
    * nobody requested — and a found wall is a proposal, which should arrive
    * because a person asked a question.
    */
+  /**
+   * ── ASK WHAT THESE RUNS ACTUALLY ARE ──
+   *
+   * The geometry has already measured every one of them. This sends a picture
+   * of the part of the sheet on screen, with the runs drawn and numbered on it,
+   * and gets back a label each. Nothing it returns can change a length, a
+   * thickness or a quantity — only whether a run is counted.
+   *
+   * WHY THE PART ON SCREEN. `planSheets.ts` works out why it never sends an
+   * image: an ARCH D page fitted to a model's 2,576px long edge is about 65
+   * DPI, which puts 1/8in lettering at eight pixels. The same arithmetic is why
+   * this crops. What the estimator has zoomed to is already the region they
+   * care about, and at a readable zoom it is a readable image — the room tags
+   * and fixture outlines are what separate a kitchen from a corridor.
+   */
+  const onCheckRuns = useCallback(async () => {
+    const canvas = canvasRef.current;
+    const regroup = regroupRef.current;
+    if (!canvas || !regroup) return;
+    setChecking(true);
+    setCheckError(null);
+    try {
+      // The visible slice of the canvas, in canvas pixels. Taken from the
+      // boxes rather than from the scroll state so it cannot disagree with
+      // what is on screen.
+      const shown = canvas.getBoundingClientRect();
+      const frame = canvas.parentElement?.getBoundingClientRect() ?? shown;
+      const toCanvas = canvas.width / Math.max(shown.width, 1);
+      const left = Math.max(0, (frame.left - shown.left) * toCanvas);
+      const top = Math.max(0, (frame.top - shown.top) * toCanvas);
+      const right = Math.min(canvas.width, (frame.right - shown.left) * toCanvas);
+      const bottom = Math.min(canvas.height, (frame.bottom - shown.top) * toCanvas);
+      const cropW = Math.max(1, right - left);
+      const cropH = Math.max(1, bottom - top);
+
+      // The runs whose middle is in view, numbered from 1 in the order they are
+      // drawn — the number beside a run in the image IS its id.
+      const inView = runsRef.current.filter((run) => {
+        const x = ((run.x1 + run.x2) / 2) * canvas.width;
+        const y = ((run.y1 + run.y2) / 2) * canvas.width;
+        return x >= left && x <= right && y >= top && y <= bottom;
+      });
+      if (inView.length === 0) {
+        setCheckError("No runs are in view. Scroll to a part of the sheet that has some.");
+        return;
+      }
+
+      const side = 1600;
+      const scale = Math.min(side / cropW, side / cropH, 4);
+      const out = document.createElement("canvas");
+      out.width = Math.round(cropW * scale);
+      out.height = Math.round(cropH * scale);
+      const ctx = out.getContext("2d");
+      if (!ctx) {
+        setCheckError("This browser couldn't prepare the image. Nothing was sent.");
+        return;
+      }
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, out.width, out.height);
+      ctx.drawImage(canvas, left, top, cropW, cropH, 0, 0, out.width, out.height);
+
+      ctx.lineWidth = Math.max(2, out.width / 500);
+      ctx.strokeStyle = "rgba(225,17,17,0.85)";
+      ctx.fillStyle = "#e11";
+      ctx.font = `bold ${Math.max(11, Math.round(out.width / 110))}px sans-serif`;
+      inView.forEach((run, i) => {
+        const px = (v: number) => (v * canvas.width - left) * scale;
+        const py = (v: number) => (v * canvas.width - top) * scale;
+        ctx.beginPath();
+        ctx.moveTo(px(run.x1), py(run.y1));
+        ctx.lineTo(px(run.x2), py(run.y2));
+        ctx.stroke();
+        ctx.fillText(
+          String(i + 1),
+          (px(run.x1) + px(run.x2)) / 2 + 4,
+          (py(run.y1) + py(run.y2)) / 2 - 4,
+        );
+      });
+
+      const base64 = out.toDataURL("image/png").split(",")[1] ?? "";
+      const cropFeet = (cropW / canvas.width) * feetAcrossRef.current;
+      const result = await classifyWallCandidates(
+        base64,
+        cropFeet,
+        inView.map((run, i) => ({
+          id: i + 1,
+          thicknessIn: run.thicknessFeet * 12,
+          lengthFt: run.lengthFeet,
+        })),
+      );
+      if (!result.ok) {
+        setCheckError(result.error);
+        return;
+      }
+
+      // Applied to the runs by identity, so a run out of view keeps whatever it
+      // already had and nothing is re-labelled by scrolling.
+      const next = new Map(labels ?? []);
+      for (const one of result.value.labels) {
+        const run = inView[one.id - 1];
+        if (!run) continue;
+        const at = runsRef.current.indexOf(run);
+        if (at >= 0) next.set(at, one.label);
+      }
+      setLabels(next);
+      // UNSURE IS KEPT, not dropped. A run the model could not place is a run a
+      // person should look at, and the safe direction for a quantity nobody has
+      // accepted yet is to leave it on the list.
+      setFound(
+        regroup(
+          runsRef.current.filter((_, at) => {
+            const label = next.get(at);
+            return label === undefined || label === "WALL" || label === "UNSURE";
+          }),
+        ),
+      );
+    } catch {
+      setCheckError("The runs couldn't be checked just now. Nothing changed.");
+    } finally {
+      setChecking(false);
+    }
+  }, [labels]);
+
   async function onFindWalls() {
     const doc = docRef.current;
     if (!doc || !pageSize || feetPerUnit === null) return;
@@ -657,9 +796,23 @@ export function TakeoffPlanViewer({
       // with nothing to choose between them. Read from the SAME text items as
       // the tags and the scale bar — one pass over the page's words.
       const fromNote = defaultWallTypeFromNotes(textItems, wallTypes);
-      setFound(
-        wallGroups(clusters, tagByRun(walls, tags, feetPerUnit, wallTypes), wallTypes, fromNote),
-      );
+      // ONE DEFINITION OF THE PANEL, used now and again after labelling. A
+      // second call site building groups a slightly different way is how the
+      // list an estimator accepts stops matching the list they looked at.
+      const regroup = (runs: WallCandidate[]) =>
+        wallGroups(
+          clusterByThickness(runs),
+          tagByRun(runs, tags, feetPerUnit, wallTypes),
+          wallTypes,
+          fromNote,
+        );
+      runsRef.current = walls;
+      feetAcrossRef.current = feetPerUnit;
+      regroupRef.current = regroup;
+      setLabels(null);
+      setCheckError(null);
+      setFound(regroup(walls));
+      void clusters;
       // The sheet this answer is about, recorded WITH the answer. `pageNumber`
       // is read here rather than at render, so a result can never be relabelled
       // by paging — see `wallsOnThisSheet`.
@@ -932,6 +1085,35 @@ export function TakeoffPlanViewer({
         >
           {finding ? "Reading the lines…" : "Find the walls"}
         </button>
+
+        {/* ── AND THEN: ARE THEY WALLS? ──
+            Only once there is something to check, because a control that can
+            only refuse is noise on the toolbar. It reads the part of the sheet
+            on screen, so what it covers is whatever the estimator has zoomed
+            to — which is also why it says "in view". */}
+        {found !== null && found.length > 0 && (
+          <button
+            type="button"
+            onClick={onCheckRuns}
+            disabled={checking}
+            data-takeoff="check-runs"
+            title="Looks at the part of the sheet on screen and says which of these runs are walls and which are countertops, fixtures or reference lines. Lengths are measured from the drawing either way."
+            className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
+          >
+            {checking ? "Checking the runs…" : "Check these are walls"}
+          </button>
+        )}
+        {checkError !== null && (
+          <p data-takeoff="check-error" className="text-xs text-ink-muted">
+            {checkError}
+          </p>
+        )}
+        {labels !== null && checkError === null && (
+          <p data-takeoff="check-done" className="text-xs text-ink-muted">
+            {[...labels.values()].filter((one) => one !== "WALL" && one !== "UNSURE").length} run(s)
+            set aside as casework or reference. Press Find the walls again to start over.
+          </p>
+        )}
 
         {/* ── THERE IS NO "FIND THE ROOMS" BUTTON, AND THAT IS DELIBERATE ──
             #702 shipped one and it was clicked on real sheets the same day.

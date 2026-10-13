@@ -307,6 +307,11 @@ export const EXCLUSIONS: Exclusion[] = [
   ...messageExclusions,
   ...contactExclusions,
   {
+    action: "takeoffClassify.*",
+    reason:
+      "Says which of the runs on a sheet are walls and which are countertops or reference lines. It takes an IMAGE of the part of the drawing on screen, with the runs drawn and numbered on it, and there is no sentence a person could say that produces one — the whole input is the picture. Ask can describe a takeoff; it cannot look at a sheet.",
+  },
+  {
     action: "sheetPins.*",
     reason:
       "Marks on a drawing sheet are placed by TAPPING THE DRAWING — the whole value is the x/y, and there is no sentence a person could say that puts a pin in the right spot. Ask can describe what is pinned; it cannot pin.",
