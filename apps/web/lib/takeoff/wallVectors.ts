@@ -896,6 +896,18 @@ export function wallsFromStrokes(
   );
   const order = [...usable].sort((a, b) => lengthOf(b) - lengthOf(a));
   const used = new Set<number>();
+  // ── WHICH SIDE OF EACH CLAIMED FACE IS SPOKEN FOR ──
+  //
+  // `used` says a face belongs to a wall. It does not say WHICH OF ITS TWO
+  // SIDES that wall is on, and a face has two — the near face of a block wall
+  // has the block behind it and furring in front. See `secondAssemblyPass`.
+  const claimedSides = new Map<number, Set<number>>();
+  const claimSide = (face: number, partner: number) => {
+    const side = sideOf(order[face], order[partner]);
+    const sides = claimedSides.get(face) ?? new Set<number>();
+    sides.add(side);
+    claimedSides.set(face, sides);
+  };
   const walls: WallCandidate[] = [];
 
   // REFUSED BEFORE ANY WORK, not part-way through. The pair count is known from
@@ -1043,11 +1055,112 @@ export function wallsFromStrokes(
     if (chosen !== null) {
       used.add(i);
       used.add(chosenJ);
+      claimSide(i, chosenJ);
+      claimSide(chosenJ, i);
       walls.push({ ...chosen, fromBalancedFaces: balanced });
     }
   }
 
+  walls.push(...secondAssemblyPass(order, walls, used, claimedSides, options));
+
   return oneWallPerPlace(walls, options.feetPerPoint);
+}
+
+/**
+ * The assembly on the OTHER side of a face the main loop already claimed.
+ *
+ * ── THE DEFECT, MEASURED NOT ARGUED ──
+ *
+ * 1-1/2in furring on 8in block is three parallel lines: the furring face F, the
+ * block's near face C, the block's far face D. Two of the three gaps are
+ * thicknesses this company builds — F-C is the furring, C-D is the block — and
+ * the pair across both (9-1/2in) is on nothing, which the schedule preference
+ * in the main loop already refuses.
+ *
+ * It still loses the furring, and the reason is `used`. Whichever of F or C the
+ * loop reaches first claims the other, and C is shared: once the block has
+ * taken C, F has no unclaimed partner left and is dropped. On the bench the
+ * block comes back correct — 1,408 ft of it, every foot graded out-of-scope
+ * because this sub does not lay block — and the furring in front of it, which
+ * IS their work, comes back at 298 ft against a key of 1,582.
+ *
+ * Diagnosed from the answer key's own words. 32 of 64 furring walls carry
+ * "only one face reached the reader, or the faces came back 1.5": both faces
+ * WERE read, the measurement WAS right, and the pair was thrown away.
+ *
+ * ── WHY A SECOND PASS AND NOT A FIX TO THE LOOP ──
+ *
+ * Because the loop is where this was tried before and it regressed the holdout
+ * by 1,514 ft. A pass that only ADDS cannot change any wall the loop already
+ * found: every existing number is reproduced by construction, so a measurement
+ * afterwards reads only what this introduced. That is worth more here than
+ * elegance.
+ *
+ * ── THE RULE ──
+ *
+ * A face may serve a second wall when that wall is on its OTHER SIDE. That is
+ * not a loosening of `used`, it is the physical fact `used` was eliding: a line
+ * on a drawing is a surface with a side facing each way, and what is built
+ * against one says nothing about the other.
+ *
+ * Three guards, each load-bearing:
+ *   - the thickness must be one the SCHEDULE names. Without it this would pair
+ *     any two thin coincidences on the sheet, which is the sweep the floor's
+ *     own comment records as making the holdout worse on both counts;
+ *   - neither face may be a LAYER LINE of a scheduled wall
+ *     (`enclosedByAScheduledWall`) — the inside of a wider assembly is not a
+ *     second assembly;
+ *   - and the side has to be FREE on both faces. Without that this re-finds the
+ *     wall the loop just built, from the other end.
+ *
+ * `oneWallPerPlace` is the backstop and it is not relied on here: its own
+ * header works the furring case out, noting a furring centreline sits outside
+ * the band of the wall it leans on and so survives. This pass is written to
+ * emit nothing that would need dropping.
+ */
+function secondAssemblyPass(
+  order: readonly StrokeSegment[],
+  found: readonly WallCandidate[],
+  used: ReadonlySet<number>,
+  claimedSides: ReadonlyMap<number, ReadonlySet<number>>,
+  options: WallFinderOptions,
+): WallCandidate[] {
+  const knownIn = options.knownThicknessesIn ?? [];
+  // WITHOUT A SCHEDULE THIS PASS DOES NOTHING, deliberately: the schedule is
+  // the only thing separating "two assemblies touching" from "two lines that
+  // happen to be close", and the finder has to behave exactly as before for a
+  // caller that has not read one.
+  if (knownIn.length === 0 || found.length === 0) return [];
+
+  const extra: WallCandidate[] = [];
+  const sideFree = (face: number, partner: number) =>
+    !(claimedSides.get(face)?.has(sideOf(order[face], order[partner])) ?? false);
+
+  for (let i = 0; i < order.length; i += 1) {
+    // Only a face the loop CLAIMED can have a free side worth revisiting; an
+    // unclaimed face was offered to the loop and refused on its merits.
+    if (!used.has(i)) continue;
+    for (let j = 0; j < order.length; j += 1) {
+      if (j === i) continue;
+      if (!sideFree(i, j) || !sideFree(j, i)) continue;
+      const wall = wallFromPair(order[i], order[j], options);
+      if (wall === null) continue;
+      // The schedule names it, and it is not the inside of something wider.
+      if (!isAKnownType(wall.thicknessFeet, knownIn)) continue;
+      if (
+        enclosedByAScheduledWall(order, i, j, options, knownIn) ||
+        enclosedByAScheduledWall(order, j, i, options, knownIn)
+      ) {
+        continue;
+      }
+      if (inAHatchSeries(order, i, j, options)) continue;
+      // Nothing already found or already added describes this place.
+      if (found.some((already) => foundTwice(already, wall, options.feetPerPoint))) continue;
+      if (extra.some((already) => foundTwice(already, wall, options.feetPerPoint))) continue;
+      extra.push({ ...wall, fromBalancedFaces: false });
+    }
+  }
+  return extra;
 }
 
 /**
