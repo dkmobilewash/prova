@@ -21,6 +21,35 @@ import { DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT, boardedArea } from "./takeoff
  * here does not crash anything, it quietly changes what a sub charges. So the
  * unanswered case is pinned hardest.
  */
+/** A source file, raw. */
+const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
+
+/**
+ * Source with COMMENTS STRIPPED, and that is not tidiness. MODULE SCOPE because
+ * both describes need it — it was inside the second one and the first block's
+ * assertions used the raw text instead, which cost the same mistake twice.
+ *
+ * `OpeningDeductionForm.tsx` explains the bugs it exists to fix, and those
+ * explanations quote the very strings these assertions look for: once the word
+ * `required`, and then the phrase "the same as" in the comment recording that
+ * the label no longer says it. Each time, the census failed on prose describing
+ * why the code is correct. The mirror image of #185, where a comment quoting a
+ * census's own pattern disarmed it; `clerkMountGate.test.ts` strips comments for
+ * the same reason.
+ *
+ * The lesson, having paid it twice in one file: a census over a file that
+ * DOCUMENTS ITS OWN HISTORY must read code, never text. The better the comment,
+ * the more likely it contains the string you are forbidding.
+ *
+ * Deliberately naive: it would also blank a `//` inside a string literal.
+ * Nothing in these files has one, and a parser here would be more machinery
+ * than the question deserves.
+ */
+const code = (path: string) =>
+  read(path)
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/\/\/[^\n]*/g, " ");
+
 describe("the openings question", () => {
   it("leaves an UNANSWERED company exactly where it was", () => {
     // The whole safety of this change. null and undefined both mean "never
@@ -61,7 +90,36 @@ describe("the openings question", () => {
     expect(new Set(thresholds).size).toBe(OPENING_DEDUCTIONS.length);
   });
 
-  it("UNSET COLLIDES WITH LARGE_ONLY, and the screen has to say so", () => {
+  it("the shop's own threshold replaces our 32, and only for LARGE_ONLY", () => {
+    // ── "32 OR 50 SQUARE FEET", per a practising estimator's account ──
+    //
+    // A shop on 50 could not say so: the option read "only the big ones, like a
+    // storefront" and secretly meant 32.
+    expect(openingThresholdSqFt("LARGE_ONLY", 50)).toBe(50);
+    expect(openingThresholdSqFt("LARGE_ONLY", null)).toBe(DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT);
+    expect(openingThresholdSqFt("LARGE_ONLY")).toBe(DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT);
+
+    // THE NUMBER BELONGS TO THAT ANSWER ALONE. An unanswered company must be
+    // quantified exactly as it was before any of this existed, so a figure left
+    // over from a previous answer cannot move it — and "bid solid" and "deduct
+    // everything" are not thresholds at all.
+    expect(openingThresholdSqFt(null, 50)).toBe(DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT);
+    expect(openingThresholdSqFt("NONE", 50)).toBe(Number.POSITIVE_INFINITY);
+    expect(openingThresholdSqFt("ALL", 50)).toBe(0);
+  });
+
+  it("refuses a nonsensical figure rather than quietly changing a bid", () => {
+    // Zero would mean "deduct everything", which is what the ALL answer is for —
+    // reading it as a threshold would make two answers do the same thing
+    // silently. Negative and NaN are the same class of mistake.
+    expect(openingThresholdSqFt("LARGE_ONLY", 0)).toBe(DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT);
+    expect(openingThresholdSqFt("LARGE_ONLY", -5)).toBe(DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT);
+    expect(openingThresholdSqFt("LARGE_ONLY", Number.NaN)).toBe(
+      DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT,
+    );
+  });
+
+  it("no longer claims unanswered EQUALS large-only, because it need not", () => {
     // ── THE HOLE IN THE TEST ABOVE, AND WHY IT IS PINNED RATHER THAN FIXED ──
     //
     // The distinctness check iterates OPENING_DEDUCTIONS — the three enum
@@ -80,12 +138,43 @@ describe("the openings question", () => {
     // resolve to 32, because that is what every company got before this setting
     // existed, and changing it would move live quantities. So it is pinned here
     // instead, with the screen's own honesty asserted beside it.
-    expect(openingThresholdSqFt(null)).toBe(openingThresholdSqFt("LARGE_ONLY"));
+    // ── A TRUE SENTENCE THAT EXPIRED WHEN A SETTING GAINED A PARAMETER ──
+    //
+    // The label used to read "the same as 'only the big ones'", and that was
+    // correct and worth saying: both resolved to 32, and a click-through had
+    // caught the earlier wording implying they differed.
+    //
+    // It stopped being true the moment that option got its own number. A shop
+    // on 50 sq ft is NOT the same as our 32, so the claim is now false for
+    // exactly the companies most likely to read it. The label names OUR default
+    // instead, which is accurate whatever they type.
+    //
+    // Pinned as inequality rather than deleted, because this is the second time
+    // this one sentence has been wrong in two different directions.
+    expect(openingThresholdSqFt(null)).not.toBe(openingThresholdSqFt("LARGE_ONLY", 50));
+    expect(openingThresholdSqFt(null)).toBe(openingThresholdSqFt("LARGE_ONLY", null));
 
-    const form = readFileSync(resolve(process.cwd(), "components/OpeningDeductionForm.tsx"), "utf8");
-    expect(form, "the unanswered option admits it matches another one").toContain(
-      "the same as",
+    const form = code("components/OpeningDeductionForm.tsx");
+    expect(form, "the label no longer claims the two are the same").not.toContain("the same as");
+    expect(form, "and it names our default from the constant, not a literal").toContain(
+      "{DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT} sq ft and larger",
     );
+  });
+
+  it("asks for the shop's figure on screen, and blank means our default", () => {
+    const form = code("components/OpeningDeductionForm.tsx");
+    expect(form).toContain('name="openingDeductionSqFt"');
+    // Blank is meaningful, so the field must not be required — and `required`
+    // on this form is what broke the whole setting once.
+    expect(form).toContain("placeholder={String(DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT)}");
+  });
+
+  it("reaches the priced quantity along with the answer", () => {
+    const schedule = code("lib/estimating/wall-schedule.ts");
+    expect(schedule).toContain("openingDeductionSqFt: true");
+    // Decimal out of Postgres, so it has to become a number before the resolver
+    // compares it with `> 0`.
+    expect(schedule).toContain("Number(company.openingDeductionSqFt)");
   });
 });
 
@@ -110,25 +199,6 @@ describe("the question reaches a screen, a save, and a quantity", () => {
   // So the structural fix is asserted instead: the question has its OWN form
   // with its OWN action and NO required input anywhere on it, which is a
   // property source can actually be read for.
-  const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
-
-  /**
-   * Source with COMMENTS STRIPPED, and that is not tidiness.
-   *
-   * `OpeningDeductionForm.tsx` explains the bug it exists to fix, and that
-   * explanation contains the word `required` — so the no-required assertion
-   * below failed on the prose describing why there is no required input. The
-   * mirror image of #185, where a comment quoting a census's own pattern
-   * disarmed it; `clerkMountGate.test.ts` strips comments for the same reason.
-   *
-   * Deliberately naive: it would also blank a `//` inside a string literal.
-   * Nothing in these two files has one, and a parser here would be more
-   * machinery than the question deserves.
-   */
-  const code = (path: string) =>
-    read(path)
-      .replace(/\/\*[\s\S]*?\*\//g, " ")
-      .replace(/\/\/[^\n]*/g, " ");
   const form = () => read("components/OpeningDeductionForm.tsx");
 
   it("is asked on its own form, with its wording from the one place that holds it", () => {
@@ -163,7 +233,12 @@ describe("the question reaches a screen, a save, and a quantity", () => {
   it("saves through its own action, which writes nothing else", () => {
     const action = read("lib/actions/company.ts");
     const fn = action.slice(action.indexOf("export async function saveOpeningDeduction"));
-    expect(fn).toContain("data: { openingDeduction }");
+    // Its own TWO columns now — the answer and the shop's threshold — and
+    // nothing else. The point of the assertion is unchanged: this action must
+    // not touch a field belonging to another form, which is how the business
+    // scope and this setting got entangled in the first place.
+    expect(fn).toContain("data: { openingDeduction, openingDeductionSqFt }");
+    expect(fn, "and not the scope form's stamp").not.toContain("businessScopeAskedAt");
     // Owner-only, and refusing by RETURN rather than by throw — production
     // redacts a thrown Server Action message to a digest.
     expect(fn).toContain("ownerRefusal");

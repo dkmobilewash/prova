@@ -269,6 +269,10 @@ export default async function SettingsPage({
     // setting — this app's own "written and never called" shape, wearing a
     // radio group.
     openingDeduction: company.openingDeduction,
+    // Decimal -> number at the boundary, because this crosses into a client
+    // component and a Prisma Decimal is not serialisable as one.
+    openingDeductionSqFt:
+      company.openingDeductionSqFt == null ? null : Number(company.openingDeductionSqFt),
   };
 
   // Whether THIS install has QuickBooks' own client id/secret/redirect URI
@@ -418,6 +422,7 @@ export default async function SettingsPage({
             quantity on a bid. */}
         <OpeningDeductionForm
           answer={businessScope.openingDeduction ?? null}
+          thresholdSqFt={businessScope.openingDeductionSqFt ?? null}
           isOwner={currentUser.role === "OWNER"}
         />
       </section>

@@ -23,7 +23,7 @@ import {
 } from "./shared";
 import { normalizeEin, normalizeWebsite } from "@/lib/company-profile";
 import { can } from "@/lib/permissions";
-import { numericReaders, PERCENT_BOUNDS } from "@/lib/numeric-input";
+import { isBlank, numericReaders, parseNumericInput, PERCENT_BOUNDS } from "@/lib/numeric-input";
 import { CONTRACTING_RELATIONSHIPS, OPENING_DEDUCTIONS } from "@/lib/businessScope";
 
 /** The job-function refusal for the company record, worded the way
@@ -682,9 +682,47 @@ export async function saveOpeningDeduction(formData: FormData): Promise<ActionRe
     const raw = text(formData, "openingDeduction");
     const openingDeduction = raw ? enumFromForm(formData, "openingDeduction", OPENING_DEDUCTIONS) : null;
 
+    // ── THE SHOP'S OWN THRESHOLD, VALIDATED IN ITS OWN TERMS ──
+    //
+    // Blank means "use our default" and stores null; the resolver turns that
+    // into 32. A figure is a size in square feet, so it must be positive, and
+    // the ceiling is a sanity bound rather than a rule — an opening larger than
+    // 10,000 sq ft is a wall, not a hole, and a typo of that size would silently
+    // turn "only the big ones" into "deduct nothing".
+    //
+    // Stored whatever the answer is, so a shop that switches to "bid solid" and
+    // back does not lose its number.
+    // ── PARSED THE WAY EVERY OTHER NUMBER IN THIS APP IS ──
+    //
+    // `Number(raw)` was here and it is the exact parser `lib/numeric-input.ts`
+    // exists to replace: `Number("2,800")` is NaN, and a contractor writes the
+    // comma without thinking. The field is `type="text"` precisely so the
+    // thousands comma REACHES the server rather than being eaten by the
+    // browser, which makes tolerant parsing the server's job.
+    //
+    // Blank stays null — "use our default". A figure must be a positive size in
+    // square feet; the ceiling is a sanity bound rather than a rule, since an
+    // opening larger than 10,000 sq ft is a wall and a typo of that size would
+    // silently turn "only the big ones" into "deduct nothing".
+    const sqFtRaw = formData.get("openingDeductionSqFt");
+    let openingDeductionSqFt: number | null = null;
+    if (!isBlank(sqFtRaw)) {
+      // `maxDecimals: 2` because the column is DECIMAL(6,2) and Postgres rounds
+      // a third place SILENTLY — the parser refuses it with a sentence instead.
+      const parsed = parseNumericInput(sqFtRaw, {
+        label: "The opening size",
+        min: 1,
+        max: 10000,
+        maxDecimals: 2,
+        unit: " sq ft",
+      });
+      if (!parsed.ok) return fail(parsed.error);
+      openingDeductionSqFt = parsed.n;
+    }
+
     await prisma.company.update({
       where: { id: context.company.id },
-      data: { openingDeduction },
+      data: { openingDeduction, openingDeductionSqFt },
     });
 
     revalidatePath("/settings");

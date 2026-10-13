@@ -102,9 +102,14 @@ export async function loadWallSchedule(tx: Tx, companyId: string, jobId: string)
   // always used, so a company that has never seen the question is unchanged.
   const company = await tx.company.findUnique({
     where: { id: companyId },
-    select: { openingDeduction: true },
+    select: { openingDeduction: true, openingDeductionSqFt: true },
   });
-  const openingThresholdSqFt = openingThresholdFor(company?.openingDeduction ?? null);
+  const openingThresholdSqFt = openingThresholdFor(
+    company?.openingDeduction ?? null,
+    // Decimal out of Postgres, so through Number rather than used raw — the
+    // resolver compares it with `> 0` and a Decimal object is not a number.
+    company?.openingDeductionSqFt == null ? null : Number(company.openingDeductionSqFt),
+  );
 
   return { runs, runInputs, typeInputs, componentById, openingThresholdSqFt };
 }
