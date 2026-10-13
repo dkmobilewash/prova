@@ -32,25 +32,29 @@ import { BUSINESS_SCOPE_QUESTIONS, type BusinessScopeAnswers } from "@/lib/busin
  * block, and gives the question text itself the weight to be the thing a
  * reader's eye lands on, while the answer OPTIONS stay a visibly quieter
  * size underneath it.
+ *
+ * ── THE OPENINGS QUESTION IS DELIBERATELY NOT HERE, AND THAT IS A BUG FIX ──
+ *
+ * It was added to this component behind an `askOpenings` flag and that was
+ * wrong, for a reason no test here could see: the three questions above are
+ * `required`, so the BROWSER refuses to submit the form until all three are
+ * answered. An optional fourth question sharing their form therefore could not
+ * be saved AT ALL by a company that had not answered the other three — which is
+ * every company that skipped onboarding. Found by clicking it, after a census
+ * had confirmed the question rendered and a unit test had confirmed it was not
+ * in the required list. Both were true; neither could see a native validation
+ * block on a form.
+ *
+ * It lives in `OpeningDeductionForm.tsx` now, with its own action, so it saves
+ * on its own. The lesson is the one this repo keeps relearning: proving a
+ * control is PRESENT is not proving it can be USED.
  */
 export function BusinessScopeFields({
   defaults,
   spacious = false,
-  askOpenings = false,
 }: {
   defaults: BusinessScopeAnswers;
   spacious?: boolean;
-  /** ── OFF ON `/welcome`, ON IN SETTINGS, AND NOT A PRESENTATION SWITCH ──
-   *
-   * The three questions above gate onboarding and are `required`. The openings
-   * question is optional, so putting it on the first screen of the product
-   * would add a fourth decision to a form whose own copy says "all three" —
-   * and the one place an estimator looks for a bidding convention is Settings,
-   * not the welcome screen.
-   *
-   * A test caught this rather than a review: `companySetupGate.test.ts` counts
-   * the controls on that screen and went from 7 to 10. */
-  askOpenings?: boolean;
 }) {
   const legendClass = spacious ? "block text-base font-medium text-ink" : "mb-1 text-sm text-ink-label";
   const optionsWrapClass = spacious ? "mt-3 flex flex-col gap-3" : "flex flex-col gap-2";
@@ -98,37 +102,6 @@ export function BusinessScopeFields({
         />
       </fieldset>
 
-      {askOpenings ? (
-      <fieldset className={fieldsetClass}>
-        <legend className={legendClass}>{BUSINESS_SCOPE_QUESTIONS.openingDeduction.prompt}</legend>
-        <div className={optionsRowClass}>
-          {BUSINESS_SCOPE_QUESTIONS.openingDeduction.options.map((option) => (
-            <label key={option.value} className={optionClass}>
-              <input
-                type="radio"
-                name="openingDeduction"
-                value={option.value}
-                defaultChecked={defaults.openingDeduction === option.value}
-                // ── DELIBERATELY NOT `required`, UNLIKE THE THREE ABOVE ──
-                //
-                // Those three gate onboarding, and adding a fourth required
-                // answer would stop every company that has already answered
-                // them from saving this form until they answered this too.
-                // Unanswered is a legitimate state here: it resolves to the
-                // 32 sq ft the app has always used, so a blank leaves the
-                // quantities exactly where they were.
-                className="h-4 w-4 shrink-0"
-              />
-              {option.label}
-            </label>
-          ))}
-        </div>
-        <p className="mt-1 text-xs text-ink-muted">
-          Most subs bid the wall solid — the board is still hung, cut out and framed with a header, so
-          deducting a door bills none of that. Leave it blank and nothing changes.
-        </p>
-      </fieldset>
-      ) : null}
     </div>
   );
 }
