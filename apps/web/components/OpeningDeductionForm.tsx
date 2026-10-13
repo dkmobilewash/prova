@@ -52,8 +52,8 @@ export function OpeningDeductionForm({
     <div className="flex flex-col gap-4">
       <p className="text-sm text-ink-body">
         Most subs bid the wall solid — the board is still hung, cut out and framed with a header, so
-        deducting a door bills none of that work. Leave this unset and C Stream deducts only openings
-        over 32 sq ft, which is roughly a single door.
+        deducting a door bills none of that work. A 3&prime;&times;7&prime; door is 21 sq ft; a storefront
+        is many times that.
       </p>
 
       {!isOwner && <p className="text-sm text-ink-muted">Only the account owner can change this.</p>}
@@ -103,7 +103,18 @@ export function OpeningDeductionForm({
                   {option.label}
                 </label>
               ))}
-              {/* The way back to the default. An empty value clears the column. */}
+              {/* ── THE WAY BACK TO THE DEFAULT, AND IT IS NOT A FOURTH CONVENTION ──
+                  An empty value clears the column. Unanswered resolves to 32 sq ft
+                  (`openingThresholdSqFt`), which is exactly what LARGE_ONLY resolves
+                  to — so this option and "only the big ones" behave IDENTICALLY
+                  today, and the label says so rather than implying a difference an
+                  estimator would go looking for. A click-through caught the old
+                  wording promising its own behaviour.
+
+                  They are still worth separating: choosing an answer PINS this shop's
+                  convention, while leaving it unanswered follows whatever C Stream
+                  defaults to. Identical today, and only one of them stays identical
+                  if that default ever moves. */}
               <label className="flex items-center gap-2 text-sm text-ink-muted">
                 <input
                   type="radio"
@@ -112,7 +123,8 @@ export function OpeningDeductionForm({
                   defaultChecked={answer == null}
                   className="h-4 w-4 shrink-0"
                 />
-                Not set — however C Stream does it (openings over 32 sq ft)
+                Not answered — use C Stream&rsquo;s default, which today is the same as
+                &ldquo;only the big ones&rdquo;
               </label>
             </div>
           </fieldset>
