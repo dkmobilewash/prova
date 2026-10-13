@@ -297,7 +297,7 @@ test.describe("the bid desk", () => {
     // it pinned the gate that made the action unreachable. Asserting the
     // control is HERE is the browser half of that regression guard: carrying a
     // quote onto a job's estimate happens while the bid is still out.
-    await page.goto("/bids");
+    await page.goto("/bids?view=all");
     await expect(bidRow().getByRole("button", { name: "Link the job this bid is for" })).toBeVisible();
 
     await bidRow().getByRole("link", { name: new RegExp(PROJECT) }).click();
@@ -312,7 +312,7 @@ test.describe("the bid desk", () => {
     await statusForm.locator('select[name="status"]').selectOption("WON");
     await settleAction(page, () => statusForm.getByRole("button", { name: "Update" }).click());
 
-    await page.goto("/bids");
+    await page.goto("/bids?view=all");
     await expectHealthy(page, "/bids with a won bid", { monitor });
     // Still here after the win — the control is not gated either way.
     const link = bidRow().getByRole("button", { name: "Link the job this bid is for" });

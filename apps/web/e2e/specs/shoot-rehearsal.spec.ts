@@ -849,7 +849,9 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     await page.goto(`/jobs/${jobId}/billing`);
     await expectHealthy(page, "billing tab, before beat 6's click", { monitor });
 
-    await page.getByRole("link", { name: /go to the dashboard$/ }).click();
+    // The wordmark's name is "C Stream — <company> home" in the Concept G
+    // top bar (components/shell/TopBar.tsx); it was "… go to the dashboard".
+    await page.getByRole("link", { name: /^C Stream — .* home$/ }).click();
     await page.waitForURL(/\/dashboard(\?|$)/);
     await expectHealthy(page, "dashboard, after beat 6's click", { monitor });
     await expect(homeHeading(page)).toBeVisible();

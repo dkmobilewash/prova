@@ -119,6 +119,10 @@ export async function allJobTabs(page: Page): Promise<Array<{ label: string; hre
     // the URL moved read the PREVIOUS stage's row (run 38325255906: Takeoff
     // four times over).
     const href = (await box.getAttribute("href")) ?? "";
+    // A stage whose first page is not one of the job's own (Closeout links to
+    // /closeout, "all jobs") leaves the job page, and with it the stage nav;
+    // there is no row to read there. Same rule as the tab filter below.
+    if (!href.startsWith("/jobs/")) continue;
     const target = new URL(href, "http://x");
     await box.click();
     await page.waitForURL((url) => url.pathname === target.pathname && url.hash === target.hash);
