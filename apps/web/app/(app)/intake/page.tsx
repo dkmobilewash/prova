@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -177,12 +179,14 @@ export default async function IntakePage() {
   const withheld = trayTotal - rows.length;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
-      <h1 className="mb-2 text-2xl font-semibold text-ink">Document intake</h1>
+    <PageShell width="working">
+      <PageHeader
+        route="/intake"
+        subtitle="Drop in everything a GC has sent you and we will say what each file looks like and where it should go."
+      />
       <p className="mb-6 max-w-3xl text-sm text-ink-body">
-        Drop in everything a GC has sent you and we will tell you what each file looks like and
-        where it should go. We read the filename; we do not file anything —
-        you confirm every row, and you can overrule any answer on the row itself.
+        We read the filename; we do not file anything — you confirm every row, and you can overrule
+        any answer on the row itself.
       </p>
 
       <section className="mb-8" data-tour="intake-drop">
@@ -205,7 +209,7 @@ export default async function IntakePage() {
           have learned" panel on a new account teaches the reader that the
           feature does nothing. */}
       {learnedLines.length > 0 && (
-        <section className="mb-8 rounded-lg border border-line-card bg-surface p-4" data-tour="intake-learned">
+        <section className="mb-8 rounded-xl border border-line-card bg-surface p-4" data-tour="intake-learned">
           <h2 className="mb-1 text-sm font-semibold text-ink-label">What this has picked up from you</h2>
           <p className="mb-3 text-xs text-ink-muted">
             Taken from what you filed, not from anything we were told. It only fills a blank — a
@@ -245,21 +249,21 @@ export default async function IntakePage() {
       {rows.length === 0 ? (
         /* A real empty state with a way out, not a shrug. The two links are
            where the paperwork this tray is full of ends up being read. */
-        <div className="rounded-lg border border-line-card bg-surface p-8 text-center" data-tour="intake-empty">
+        <div className="flex flex-col items-center rounded-xl border border-line-card bg-surface p-8 text-center" data-tour="intake-empty">
           <p className="text-base font-medium text-ink">Nothing waiting for you</p>
-          <p className="mx-auto mt-1 max-w-md text-sm text-ink-body">
+          <p className="mt-1 max-w-md text-sm text-ink-body">
             {counts.filed > 0 || counts.dismissed > 0
               ? "The tray is empty — everything dropped in so far has been dealt with."
               : "Drop a folder above and every file in it gets a row here, with a proposal you can accept or change."}
           </p>
           <div className="mt-4 flex flex-wrap items-center justify-center gap-4 text-sm">
-            <Link href="/submittals" className="text-ink-label underline underline-offset-2">
+            <Link href="/submittals" className="inline-flex min-h-11 items-center text-ink-label underline underline-offset-2 mouse:min-h-0">
               Submittals
             </Link>
-            <Link href="/rfis" className="text-ink-label underline underline-offset-2">
+            <Link href="/rfis" className="inline-flex min-h-11 items-center text-ink-label underline underline-offset-2 mouse:min-h-0">
               RFIs
             </Link>
-            <Link href="/compliance" className="text-ink-label underline underline-offset-2">
+            <Link href="/compliance" className="inline-flex min-h-11 items-center text-ink-label underline underline-offset-2 mouse:min-h-0">
               Compliance documents
             </Link>
           </div>
@@ -283,6 +287,6 @@ export default async function IntakePage() {
           </p>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

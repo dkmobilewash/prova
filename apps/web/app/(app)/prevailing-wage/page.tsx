@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import {
@@ -46,13 +48,11 @@ export default async function PrevailingWagePage({
   const options = ruleSets.map((rs) => ({ id: rs.id, name: rs.name, jurisdiction: rs.jurisdiction }));
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Prevailing wage</h1>
-      <p className="mb-2 text-sm text-ink-body">
-        The rules a jurisdiction sets — when an hour becomes overtime, when it becomes double time,
-        how soon the report is due — recorded per jurisdiction and per date range, then applied to
-        the hours your crews actually logged.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/prevailing-wage"
+        subtitle="A jurisdiction's overtime, double-time and reporting rules, applied to the hours your crews actually logged."
+      />
       <p className="mb-6 text-xs text-ink-muted">
         <span className="text-ink-body">These are rules, never rates.</span> There is no
         prevailing-wage dataset in this app and nothing here is seeded: every threshold is one you
@@ -68,7 +68,7 @@ export default async function PrevailingWagePage({
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Check a week against the rules</h2>
 
         {weeks.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-line-card bg-surface/50 p-5 text-sm text-ink-body">
+          <div className="rounded-xl border border-dashed border-line-card bg-surface/50 p-5 text-sm text-ink-body">
             <p>
               No hours logged on a job that carries a wage determination. Only those jobs are
               checked — certified payroll isn&apos;t required on private work, and offering to
@@ -96,7 +96,7 @@ export default async function PrevailingWagePage({
                   <Link
                     key={`${week.jobId}-${week.weekStart}`}
                     href={`/prevailing-wage?job=${week.jobId}&week=${week.weekStart}`}
-                    className={`rounded-md border px-3 py-1.5 text-sm ${
+                    className={`inline-flex min-h-11 items-center rounded-md border px-3 text-sm mouse:min-h-8 ${
                       active
                         ? "border-brand text-link"
                         : "border-line-card text-ink-label hover:bg-rail-hover"
@@ -109,7 +109,7 @@ export default async function PrevailingWagePage({
             </div>
 
             {review && (
-              <div className="rounded-lg border border-line-card bg-surface p-4">
+              <div className="rounded-xl border border-line-card bg-surface p-4">
                 <p className="mb-3 text-sm text-ink-label">
                   {review.jobName} · week of {selected?.weekStart}
                   {review.ruleSetName ? (
@@ -212,7 +212,7 @@ export default async function PrevailingWagePage({
             and add it under Compliance.
           </p>
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+          <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface">
             {determinations.map((determination) => (
               <li
                 key={determination.id}
@@ -263,7 +263,7 @@ export default async function PrevailingWagePage({
             thresholds you can cite, and leave the rest blank.
           </p>
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="pw-rule-sets">
+          <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-tour="pw-rule-sets">
             {ruleSets.map((ruleSet) => (
               <RuleSetRow
                 key={ruleSet.id}
@@ -275,6 +275,6 @@ export default async function PrevailingWagePage({
           </ul>
         )}
       </section>
-    </div>
+    </PageShell>
   );
 }

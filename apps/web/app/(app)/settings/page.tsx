@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
@@ -153,7 +154,7 @@ export default async function SettingsPage({
   if (currentUser.role !== "OWNER") {
     return (
       <PageShell width="reading">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
+        <PageHeader route="/settings" title="Settings" />
         {/* NAMES WHAT IS BEHIND THE DOOR. It said "Only the account owner
             can manage integrations", which describes ONE of this page's ten
             sections — the rest are the company profile that prints on the
@@ -301,7 +302,7 @@ export default async function SettingsPage({
     // a later phase. Widening it would have made that worse by stretching
     // every field.
     <PageShell width="reading">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
+      <PageHeader route="/settings" title="Settings" />
 
       {/* The Integrations page is the framework's own surface; QuickBooks
           keeps its section below because it predates that framework and has

@@ -159,35 +159,7 @@ function scan(): Scanned[] {
  * proof set is three pages and not fifty-nine.
  */
 const UNCONVERTED_PAGES = [
-  "apps/web/app/(app)/alerts/page.tsx",
-  "apps/web/app/(app)/ask/page.tsx",
-  "apps/web/app/(app)/catalog/page.tsx",
-  "apps/web/app/(app)/certifications/page.tsx",
-  "apps/web/app/(app)/closeout/page.tsx",
-  "apps/web/app/(app)/contacts/[id]/page.tsx",
-  "apps/web/app/(app)/deployment/page.tsx",
-  "apps/web/app/(app)/intake/page.tsx",
-  "apps/web/app/(app)/internal/usage/page.tsx",
-  "apps/web/app/(app)/jobs/[id]/certified-payroll/page.tsx",
-  "apps/web/app/(app)/jobs/[id]/certified-payroll/wh-347/page.tsx",
-  "apps/web/app/(app)/jobs/[id]/pay-applications/[invoiceId]/page.tsx",
   "apps/web/app/(app)/jobs/[id]/photo-report/page.tsx",
-  "apps/web/app/(app)/jobs/new/[jobId]/items/page.tsx",
-  "apps/web/app/(app)/jobs/new/page.tsx",
-  "apps/web/app/(app)/lien-deadlines/page.tsx",
-  "apps/web/app/(app)/messages/page.tsx",
-  "apps/web/app/(app)/phase-codes/page.tsx",
-  "apps/web/app/(app)/pipeline/page.tsx",
-  "apps/web/app/(app)/prevailing-wage/page.tsx",
-  "apps/web/app/(app)/sales/[id]/page.tsx",
-  "apps/web/app/(app)/sales/page.tsx",
-  "apps/web/app/(app)/settings/assistant/page.tsx",
-  "apps/web/app/(app)/settings/export/page.tsx",
-  "apps/web/app/(app)/settings/import/page.tsx",
-  "apps/web/app/(app)/settings/integrations/page.tsx",
-  "apps/web/app/(app)/union-compliance/page.tsx",
-  "apps/web/app/(app)/union-compliance/remittance/page.tsx",
-  "apps/web/app/(app)/vendors/pricing/page.tsx",
   "apps/web/app/esign/[token]/page.tsx",
   // `apps/web/app/page.tsx` — the public marketing page — WAS here, with the
   // note that it was "being rewritten in #404 as this landed". #404 landed
@@ -222,9 +194,53 @@ const CONVERTED_PAGES = {
   "apps/web/app/(app)/punch-lists/page.tsx": "split",
 } as const;
 
+/**
+ * THE SHELL'S OTHER HALF: THE HEADER. A page on PageShell also wears the
+ * shared `PageHeader` (components/PageHeader.tsx) — the one breadcrumb, Home /
+ * Area / Page, and the one headline scale — so a page reached from the
+ * sidebar does not arrive looking like the old app. (cyrus/restore-nav-pages,
+ * when the sidebar came back and every page became one click away.)
+ *
+ * These carry a header of their own on purpose, each for the reason given.
+ * Same ratchet as the list above: an entry that starts using PageHeader, or
+ * stops existing, has to leave.
+ */
+const SHELL_WITHOUT_PAGE_HEADER: Record<string, string> = {
+  "apps/web/app/(app)/dashboard/page.tsx": "Home — the area boxes are its header.",
+  "apps/web/app/(app)/jobs/page.tsx": "The jobs board's own Concept G heading with the pipeline figure beside it.",
+  "apps/web/app/(app)/areas/[slug]/page.tsx": "An area page — it renders the Breadcrumb itself above the area's own card.",
+  "apps/web/app/(app)/ai/page.tsx": "The AI home's own hero heading.",
+  "apps/web/app/(app)/ai/activity/page.tsx": "The AI section's own heading and back link.",
+  "apps/web/app/(app)/ai/bids/[id]/page.tsx": "A bid workspace, headed by the bid itself.",
+  "apps/web/app/(app)/bids/[id]/regret/page.tsx": "A lost bid's review, headed by the bid.",
+  "apps/web/app/(app)/drawings/[revisionId]/page.tsx": "A drawing viewer, headed by the sheet.",
+  "apps/web/app/(app)/jobs/[id]/das-140/[noticeId]/page.tsx": "A printable DAS 140 filing view.",
+  "apps/web/app/(app)/jobs/[id]/das-142/[requestId]/page.tsx": "A printable DAS 142 filing view.",
+  "apps/web/app/(app)/jobs/[id]/proposal/page.tsx": "The proposal document the GC receives.",
+};
+
 describe("page width census", () => {
   const scanned = scan();
   const byPath = new Map(scanned.map((file) => [file.path, file]));
+
+  it("puts the shared PageHeader on every page that is on the shell", () => {
+    const shellPages = scanned.filter(
+      (file) => file.path.startsWith("apps/web/app/(app)/") && file.path.endsWith("/page.tsx") && file.rendersShell,
+    );
+    expect(shellPages.length, "found almost no pages on the shell — the scan read nothing").toBeGreaterThan(50);
+    const headed = (path: string) =>
+      /<PageHeader\b|<ExportCoverageIntro\b/.test(withoutComments(readFileSync(join(repoRoot, path), "utf8")));
+    const missing = shellPages.map((file) => file.path).filter((path) => !headed(path) && !(path in SHELL_WITHOUT_PAGE_HEADER));
+    expect(
+      missing,
+      'these pages are on PageShell without the shared header: import { PageHeader } from "@/components/PageHeader" ' +
+        `and render <PageHeader route="/the-nav-href" /> where the old <h1> was: ${missing.join(", ")}`,
+    ).toEqual([]);
+    for (const path of Object.keys(SHELL_WITHOUT_PAGE_HEADER)) {
+      expect(byPath.has(path), `${path} is exempt from PageHeader and no longer exists — remove the entry`).toBe(true);
+      expect(headed(path), `${path} renders PageHeader now — remove it from SHELL_WITHOUT_PAGE_HEADER`).toBe(false);
+    }
+  });
 
   it("walks a root that exists and finds route files in it", () => {
     expect(
@@ -314,7 +330,14 @@ describe("page width census", () => {
       // /equipment, /schedule, /cash-flow, /backcharges, /team, /bids and
       // /contacts: 33. (cyrus/fix-schedule's own /schedule
       // conversion is the same page, so the merge leaves 33.)
-    ).toBe(33);
+      // Then cyrus/restore-nav-pages moved the 28 the new sidebar and its
+      // pages reach to PageShell + PageHeader — every `(app)` page but one,
+      // the printable ones (WH-347, certified payroll, pay application,
+      // fringe remittance) printing exactly what they printed before: 5.
+      // /jobs/[id]/photo-report stays: its photos are centred with
+      // `mx-auto max-w-xl` inside the printed sheet, a content cap this
+      // census cannot tell from a container, and moving it risks the print.
+    ).toBe(5);
     expect(new Set(UNCONVERTED_PAGES).size).toBe(UNCONVERTED_PAGES.length);
   });
 
