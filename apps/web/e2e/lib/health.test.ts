@@ -30,8 +30,9 @@ const boundarySource = readFileSync(path.join(webRoot, "components/PageLoadError
  * deleted from the JSX, because the comment explaining the attribute
  * quoted it. An attribute in a comment is not rendered to anybody.
  */
-const railSource = codeOnly(readFileSync(path.join(webRoot, "components/Sidebar.tsx"), "utf8"));
-const drawerSource = codeOnly(readFileSync(path.join(webRoot, "components/MobileNav.tsx"), "utf8"));
+// Concept G (2026-10-10): the rail and the drawer were replaced by these two.
+const railSource = codeOnly(readFileSync(path.join(webRoot, "components/shell/TopBar.tsx"), "utf8"));
+const drawerSource = codeOnly(readFileSync(path.join(webRoot, "components/shell/BottomTabs.tsx"), "utf8"));
 
 function codeOnly(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -96,20 +97,19 @@ describe("e2e crash markers", () => {
  * landmark is what made both field-screens.mobile specs red for days at
  * 375px, where that rail is `display: none` by design.
  *
- * Three things are pinned, each to a source that cannot drift with
- * health.ts:
+ * Pinned, each to a source that cannot drift with health.ts:
  *
  *   - the breakpoint, to what Tailwind's own config resolves `md` to. The
- *     `md:` classes in Sidebar.tsx and MobileNav.tsx are that number; a
- *     copy of it in a Playwright helper is a second opinion waiting to be
- *     wrong.
- *   - the rail's name, to the `aria-label` in Sidebar.tsx;
- *   - the drawer button's name AND the drawer landmark's name, to
- *     MobileNav.tsx. The drawer carrying the SAME name as the rail is the
- *     point rather than a coincidence: the two are never in the
- *     accessibility tree at once (`hidden md:block` against `md:hidden`),
- *     so one name across both shapes is what makes "the shell's main
- *     navigation" a single idea.
+ *     `md:` classes in TopBar.tsx and BottomTabs.tsx are that number;
+ *   - the landmark's name, to the `aria-label` on BOTH the top bar's words
+ *     and the bottom tabs. They are never in the accessibility tree at once
+ *     (`hidden md:flex` against `md:hidden`), so one name across both is
+ *     what makes "the shell's main navigation" a single idea.
+ *
+ * CHANGED 2026-10-10 (Concept G): this used to pin Sidebar.tsx's rail and
+ * MobileNav.tsx's hamburger button. Both files are deleted; the phone no
+ * longer has a drawer button, it has a landmark, so the button constant
+ * left with it rather than being kept pointing at nothing.
  */
 describe("e2e shell-navigation check", () => {
   /** A `const NAME = 768;` or `const NAME = "text";` out of health.ts's source. */
@@ -129,28 +129,20 @@ describe("e2e shell-navigation check", () => {
     ).toBe(screens!.md);
   });
 
-  it("looks for the landmark the desktop rail actually renders", () => {
+  it("looks for the landmark the desktop top bar actually renders", () => {
     const name = constantInHealth("RAIL_NAV_NAME");
     expect(
       railSource,
-      `Sidebar.tsx no longer renders aria-label="${name}" — update it and health.ts's RAIL_NAV_NAME together`,
+      `TopBar.tsx no longer renders aria-label="${name}" — update it and health.ts's RAIL_NAV_NAME together`,
     ).toContain(`aria-label="${name}"`);
   });
 
-  it("looks for the button and the landmark the phone drawer actually renders", () => {
-    const button = constantInHealth("DRAWER_BUTTON_NAME");
+
+  it("looks for the landmark the phone's bottom tabs actually render", () => {
     expect(
       drawerSource,
-      `MobileNav.tsx no longer renders aria-label="${button}" — at phone width that button IS the navigation, ` +
-        "and health.ts's DRAWER_BUTTON_NAME is how every signed-in mobile check finds it",
-    ).toContain(`aria-label="${button}"`);
-    // The drawer's own landmark carries the rail's name, so `navigation
-    // "Main"` means the same thing at both widths. components/
-    // MobileNav.test.ts asserts this on the RENDERED markup; this line is
-    // here so the two names cannot be changed apart.
-    expect(
-      drawerSource,
-      'the phone drawer\'s <nav> must carry the rail\'s own aria-label — an unnamed landmark is announced as bare "navigation"',
+      'BottomTabs.tsx no longer renders aria-label="Main" — at phone width those tabs ARE the navigation, ' +
+        "and health.ts's RAIL_NAV_NAME is how every signed-in mobile check finds them",
     ).toContain(`aria-label="${constantInHealth("RAIL_NAV_NAME")}"`);
   });
 });

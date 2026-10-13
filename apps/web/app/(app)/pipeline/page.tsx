@@ -188,7 +188,7 @@ export default async function PipelinePage() {
                       className={`rounded px-1.5 py-0.5 text-xs ${
                         bidRow.status === "SUBMITTED"
                           ? "bg-tag-brand text-tag-brand-ink"
-                          : "bg-neutral-800 text-ink-label"
+                          : "bg-rail-hover text-ink-label"
                       }`}
                     >
                       {bidRow.status === "SUBMITTED" ? "Submitted" : "Invited"}

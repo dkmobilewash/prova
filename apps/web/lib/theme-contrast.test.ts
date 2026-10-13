@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import config from "../tailwind.config";
+import config, { palette } from "../tailwind.config";
 
 /** WCAG relative luminance and contrast ratio.
  *
@@ -22,7 +22,11 @@ export function contrastRatio(foreground: string, background: string): number {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
-const colors = (config.theme?.extend?.colors ?? {}) as Record<string, string>;
+/** The DARK palette as hex. The config's `colors` are now `rgb(var(--c-…))`
+ * references, so the hex lives in `palette` — the same object the config
+ * emits as CSS variables, so what this file measures is what ships. The
+ * light palette is measured in the block at the end of this file. */
+const colors: Record<string, string> = palette.dark;
 
 /** The grounds text sits on: the page canvas (#0f0f0f), a card (#1a1a1a),
  * and the chrome (#171717 rail/topbar, shared with the mobile drawer).
@@ -487,5 +491,96 @@ describe("theme contrast", () => {
       "this shade clears 4.5:1 on no ground this app paints, dark or brand — " +
         "use text-ink-muted (6.9:1 on surface) or brighter",
     ).toEqual([]);
+  });
+});
+
+/**
+ * BOTH PALETTES, EVERY TEXT TOKEN ON EVERY GROUND IT IS PAINTED ON.
+ *
+ * Added with the light theme (2026-10-10). The light palette exists for a
+ * phone read outdoors, so its floors are higher than the dark one's: body
+ * text 7:1, muted 4.5:1, and card outlines 3:1 against their ground — a soft
+ * 1px grey that reads on a monitor is gone in sunlight. Dark keeps the floors
+ * it was approved under (4.5 / 3 / 1.5 for its deliberately soft outline).
+ *
+ * A pair that fails in EITHER theme fails here. Grounds are the four the app
+ * paints text on: page, card, chrome, and the hover lift a row sits on while
+ * the pointer is over it.
+ */
+describe("both themes", () => {
+  const FLOORS = {
+    dark: { text: 4.5, muted: 3, status: 4.5, outline: 1.5 },
+    light: { text: 7, muted: 4.5, status: 4.5, outline: 3 },
+  } as const;
+  const TEXT_GROUNDS = ["canvas", "surface", "rail", "rail-hover"] as const;
+
+  it("defines the same tokens in both palettes", () => {
+    expect(Object.keys(palette.light).sort()).toEqual(Object.keys(palette.dark).sort());
+    expect(Object.keys(palette.dark).length).toBeGreaterThanOrEqual(25);
+  });
+
+  for (const theme of ["dark", "light"] as const) {
+    const p: Record<string, string> = palette[theme];
+    const floor = FLOORS[theme];
+    const pairs: [string, string, number][] = [];
+    for (const ground of TEXT_GROUNDS) {
+      for (const ink of ["ink", "ink-label", "ink-body"]) pairs.push([ink, ground, floor.text]);
+      pairs.push(["ink-muted", ground, floor.muted]);
+      for (const status of ["link", "link-hover", "danger", "warn", "ok"]) {
+        pairs.push([status, ground, floor.status]);
+      }
+    }
+    for (const ground of ["canvas", "surface"]) pairs.push(["line-card", ground, floor.outline]);
+    // The focus ring is non-text: 3:1 against every ground it can be drawn on.
+    for (const ground of TEXT_GROUNDS) pairs.push(["focus", ground, 3]);
+    for (const name of Object.keys(p)) {
+      if (name.startsWith("tag-") && name.endsWith("-ink")) {
+        pairs.push([name, name.replace(/-ink$/, ""), 4.5]);
+      }
+    }
+
+    it(`${theme}: measures a real set of pairs`, () => {
+      // The size assertion: a filter that stopped matching would pass below.
+      expect(pairs.length).toBeGreaterThanOrEqual(40);
+    });
+
+    for (const [fg, bg, min] of pairs) {
+      it(`${theme}: ${fg} on ${bg} clears ${min}:1`, () => {
+        expect(p[fg], `${theme} palette has no ${fg}`).toBeDefined();
+        expect(p[bg], `${theme} palette has no ${bg}`).toBeDefined();
+        const ratio = contrastRatio(p[fg], p[bg]);
+        expect(ratio, `${fg} ${p[fg]} on ${bg} ${p[bg]} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(min);
+      });
+    }
+
+    it(`${theme}: keeps the brand a yellow fill that carries the dark label`, () => {
+      expect(p.brand).toBe("#facc15");
+      expect(contrastRatio("#171717", p.brand)).toBeGreaterThanOrEqual(4.5);
+      // The hover fill carries the same dark label, so it is held to the same floor.
+      expect(contrastRatio("#171717", p["brand-hover"])).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(p["tag-brand-ink"], p["tag-brand"])).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it(`${theme}: keeps the ink ramp in order on the page`, () => {
+      const ramp = ["ink", "ink-label", "ink-body", "ink-muted"];
+      for (let i = 0; i < ramp.length - 1; i += 1) {
+        expect(contrastRatio(p[ramp[i]], p.canvas)).toBeGreaterThan(contrastRatio(p[ramp[i + 1]], p.canvas));
+      }
+    });
+  }
+
+  it("light: every tag pair is a light ground under a dark ink", () => {
+    for (const name of Object.keys(palette.light)) {
+      if (!name.startsWith("tag-") || !name.endsWith("-ink")) continue;
+      const ground = name.replace(/-ink$/, "") as keyof typeof palette.light;
+      expect(luminance(palette.light[ground]), name).toBeGreaterThan(
+        luminance(palette.light[name as keyof typeof palette.light]),
+      );
+    }
+  });
+
+  it("light: would fail the dark theme's muted grey, so the floors can fail", () => {
+    // #a3a3a3 is dark's ink-muted; on the light canvas it is 2.3:1.
+    expect(contrastRatio(palette.dark["ink-muted"], palette.light.canvas)).toBeLessThan(FLOORS.light.muted);
   });
 });

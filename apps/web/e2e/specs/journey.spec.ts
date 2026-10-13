@@ -5,11 +5,14 @@ import { HealthMonitor, expectHealthy } from "../lib/health";
 import {
   addLineForm,
   estimateRow,
+  allJobTabs,
   finishWizard,
+  homeHeading,
   invoiceForm,
   jobTab,
   landOnDashboard,
   markContracted,
+  openJobTab,
   recordExecutedSubcontract,
   retainageForm,
   startJob,
@@ -118,7 +121,7 @@ test.describe("the pilot contractor's journey", () => {
   });
 
   test("6. set a retainage percentage", async () => {
-    await jobTab(page, "Retainage").click();
+    await openJobTab(page, "Retainage");
     await page.waitForURL(new RegExp(`/jobs/${jobId}/retainage$`));
     await expectHealthy(page, "retainage tab", { monitor });
 
@@ -136,7 +139,7 @@ test.describe("the pilot contractor's journey", () => {
   });
 
   test("7. create the first invoice", async () => {
-    await jobTab(page, "Billing").click();
+    await openJobTab(page, "Billing");
     await page.waitForURL(new RegExp(`/jobs/${jobId}/billing$`));
     await expectHealthy(page, "billing tab", { monitor });
 
@@ -164,32 +167,28 @@ test.describe("the pilot contractor's journey", () => {
     await page.goto(`/jobs/${jobId}`);
     await expectHealthy(page, "job overview", { monitor });
 
-    const rail = page.getByRole("navigation", { name: "Job sections" });
-    const links = rail.getByRole("link");
-    const labels = (await links.allInnerTexts()).map((label) => label.trim());
-    expect(labels, "a contracted job, viewed by its owner, shows all eight tabs").toEqual(
-      expect.arrayContaining(["Overview", "Estimate", "Crew & time", "Compliance", "Billing", "Retainage", "Field reports", "Photos"]),
+    // Concept G (2026-10-10): the tab rail became five stage boxes, each
+    // opening a row of its own pages (components/job/JobStageNav.tsx), and
+    // only the open stage's row is in the DOM. So the destinations are read
+    // by opening each stage in turn, the way a person would. The Estimate
+    // page of a contracted job is filed under Contract as "Change orders".
+    const tabs = await allJobTabs(page);
+    const labels = tabs.map((tab) => tab.label);
+    expect(labels, "a contracted job, viewed by its owner, files every old tab under a stage").toEqual(
+      expect.arrayContaining(["Overview", "Change orders", "Takeoff", "Crew & time", "Compliance", "Billing", "Retainage", "Field reports", "Photos"]),
     );
 
-    const hrefs = await links.evaluateAll((anchors) =>
-      anchors.map((anchor) => (anchor as HTMLAnchorElement).getAttribute("href") ?? ""),
-    );
-    expect(hrefs.length).toBe(labels.length);
-
-    for (let i = 0; i < hrefs.length; i++) {
-      await page.goto(hrefs[i]);
-      await expectHealthy(page, `job tab "${labels[i]}"`, { monitor });
-      await expect(
-        rail.getByRole("link", { name: labels[i], exact: true }),
-        `tab "${labels[i]}" should mark itself current`,
-      ).toHaveAttribute("aria-current", "page");
+    for (const tab of tabs) {
+      await page.goto(tab.href);
+      await expectHealthy(page, `job tab "${tab.label}"`, { monitor });
+      await expect(jobTab(page, tab.label), `tab "${tab.label}" should mark itself current`).toHaveAttribute("aria-current", "page");
     }
   });
 
   test("9. return to the dashboard and the jobs list", async () => {
     await page.goto("/dashboard");
     await expectHealthy(page, "dashboard", { monitor });
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+    await expect(homeHeading(page)).toBeVisible();
 
     await page.goto("/jobs");
     await expectHealthy(page, "jobs list", { monitor });
@@ -201,28 +200,23 @@ test.describe("the pilot contractor's journey", () => {
     await page.goto("/dashboard");
     await expectHealthy(page, "dashboard", { monitor });
 
-    const nav = page.getByRole("navigation", { name: "Main" });
-
-    // The sidebar's groups are collapsible (components/Sidebar.tsx: a
-    // heading <button aria-expanded> per group), and a COLLAPSED group's
-    // links are not in the DOM at all — the first run of this step found
-    // ten links, all from the one group the current page lives in. So every
-    // closed group is opened first, the way a person exploring the product
-    // would, and only then are the destinations read.
-    const closedGroups = nav.locator('button[aria-expanded="false"]');
-    const groupCount = await closedGroups.count();
-    for (let i = 0; i < groupCount; i++) {
-      // Re-query each time: opening one group re-renders the list.
-      await nav.locator('button[aria-expanded="false"]').first().click();
-    }
-    await expect(nav.locator('button[aria-expanded="false"]'), "every nav group should be open").toHaveCount(0);
+    // Concept G (2026-10-10): no sidebar. Every destination the rail used to
+    // list is in the avatar menu's "All pages" panel, every group open, so
+    // that panel is where the destinations are read from. The panel is a
+    // DIALOG named "All pages" (AllPagesMenu.tsx); the navigation landmarks
+    // inside it are "Areas" and "Page groups". This asked for a navigation
+    // named "All pages" and found nothing (run 38327113148).
+    await page.getByRole("button", { name: /^Your menu/ }).click();
+    await page.getByRole("button", { name: "All pages" }).click();
+    const nav = page.getByRole("dialog", { name: "All pages" });
+    await expect(nav).toBeVisible();
 
     const hrefs = await nav.locator('a[href^="/"]').evaluateAll((anchors) =>
       anchors.map((anchor) => (anchor as HTMLAnchorElement).getAttribute("href") ?? ""),
     );
     const destinations = [...new Set(hrefs)].filter((href) => href.length > 1);
-    // A nav with a handful of links is a nav that lost its groups; the
-    // sidebar carries thirty-odd destinations for an owner.
+    // A panel with a handful of links is one that lost its groups; it
+    // carries thirty-odd destinations for an owner.
     expect(destinations.length, "the main nav should offer a real set of destinations").toBeGreaterThanOrEqual(20);
 
     const broken: string[] = [];

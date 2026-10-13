@@ -1,16 +1,20 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { SafetyIncidentForm } from "@/components/SafetyIncidentForm";
 import { SafetyIncidentRow } from "@/components/SafetyIncidentRow";
 import { ToolboxTalkForm } from "@/components/ToolboxTalkForm";
 import { ToolboxTalkRow } from "@/components/ToolboxTalkRow";
-import { isRecordable } from "@/components/safetyLabels";
+import { caseLabel, isNearMiss, isRecordable } from "@/components/safetyLabels";
 import { EmptyState } from "@/components/EmptyState";
 import { StatusLine } from "@/components/StatusLine";
 import { safetyStatus } from "@/lib/status-sentences";
 import { toJobOption } from "@/components/jobLabels";
+
+export const metadata = { title: "Safety" };
 
 /** Dates are stored at UTC midnight and rendered in UTC, same rule as
  * daily field reports. Rendering local would show yesterday's date to
@@ -63,7 +67,8 @@ export default async function SafetyPage({
 
   const incidents = await prisma.safetyIncident.findMany({
     where: { companyId: company.id, caseYear: activeYear },
-    orderBy: { caseNumber: "desc" },
+    // Near misses carry no number; they sort after the numbered cases.
+    orderBy: [{ caseNumber: { sort: "desc", nulls: "last" } }, { occurredAt: "desc" }],
     include: { job: { select: { name: true } }, reportedBy: { select: { name: true } } },
   });
 
@@ -75,21 +80,23 @@ export default async function SafetyPage({
   });
 
   const recordableCount = incidents.filter((i) => isRecordable(i.outcome)).length;
+  const nearMissCount = incidents.filter((i) => isNearMiss(i.outcome)).length;
   const daysAwayCases = incidents.filter((i) => i.outcome === "DAYS_AWAY").length;
   const status = safetyStatus({
     year: activeYear,
-    cases: incidents.length,
+    // A near miss is not an OSHA case, so it is not counted as one.
+    cases: incidents.length - nearMissCount,
+    nearMisses: nearMissCount,
     recordable: recordableCount,
     daysAway: daysAwayCases,
   });
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Safety</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        The incident log and the toolbox talk record. These are the two things a GC or an OSHA inspector asks
-        for by name, and the two things that usually live in a binder in someone&apos;s truck.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/safety"
+        subtitle="Log incidents and toolbox talks — the two records a GC or OSHA inspector asks for by name."
+      />
 
       <section className="mb-8">
         <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -111,7 +118,7 @@ export default async function SafetyPage({
                 className={`inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
                   y === activeYear
                     ? "border-brand text-link"
-                    : "border-line-card text-ink-label hover:bg-neutral-800"
+                    : "border-line-card text-ink-label hover:bg-rail-hover"
                 }`}
               >
                 {y}
@@ -170,7 +177,7 @@ export default async function SafetyPage({
                 canDelete={currentUser.role === "OWNER"}
                 incident={{
                   id: incident.id,
-                  caseLabel: `${incident.caseYear}-${String(incident.caseNumber).padStart(3, "0")}`,
+                  caseLabel: caseLabel(incident.caseYear, incident.caseNumber),
                   occurredAt: isoDate(incident.occurredAt),
                   jobId: incident.jobId,
                   jobName: incident.job?.name ?? null,
@@ -233,6 +240,6 @@ export default async function SafetyPage({
           </ul>
         )}
       </section>
-    </div>
+    </PageShell>
   );
 }

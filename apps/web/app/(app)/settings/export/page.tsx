@@ -8,6 +8,8 @@ import {
 } from "@/components/ExportCoverage";
 import { EXPORT_DATASETS } from "@/lib/export";
 
+export const metadata = { title: "Export core records" };
+
 /**
  * The page that exists so nobody ever has to ask for their data.
  *
@@ -112,7 +114,7 @@ export default async function ExportPage() {
             ) : (
               <a
                 href={`/api/export?dataset=${dataset.key}`}
-                className="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800"
+                className="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover"
               >
                 CSV
               </a>

@@ -881,6 +881,9 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "SalesActivity",
       "SalesStageChange",
       "BidInvitation",
+      // Why a bid was won or lost, entered by a person — the result itself
+      // is on the invitation. Lives with the bidding it explains.
+      "BidOutcome",
       "VendorPriceQuote",
       "ContactPerson",
       "ContactInteraction",
@@ -1041,6 +1044,8 @@ export const EXPORT_COLUMN_OMISSIONS: Record<string, string> = {
 };
 
 export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
+  Crew: "picking aid — a saved name for people the schedule form ticks together; the planned days themselves are exported",
+  CrewMembership: "picking aid — who a saved crew ticks; the planned days themselves are exported",
   BackchargeCounter: "sequence counter — the numbers it issued are on the rows themselves",
   ChangeOrderCounter: "sequence counter — the numbers it issued are on the exported change orders",
   CloseoutSubmissionCounter: "sequence counter — the numbers it issued are on the rows themselves",
@@ -1072,6 +1077,13 @@ export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
   AskAllowancePeriod:
     "AI usage metering — how much of this month's included allowance has been claimed. Our bookkeeping about what we owe them, not a record of their work, and it is meaningless outside this app.",
   AskProposal: "AI usage — a change the assistant proposed and waited on; anything confirmed is in the real tables",
+  AskThread:
+    "AI conversation — a person's own chat with the assistant. What it changed is in the real tables; what it said is advice about them, not a record of the work.",
+  AskMessage: "AI conversation — one turn of an AskThread, same argument",
+  AgentRun: "AI bookkeeping — one run of a background agent, when it started and how it ended; what it found is advice, not a record of the work",
+  AgentFinding: "AI bookkeeping — what an agent run flagged, with its sources; every source it cites is a real record that exports on its own",
+  AiRecommendation: "AI bookkeeping — a ranked suggestion derived from the real tables, which export on their own",
+  CompanyAgentSettings: "AI settings — which agents are on and what they may spend, meaningless outside this app",
   PlanIngestJob:
     "processing bookkeeping — one run of plan-set ingestion, its stage and when it started and stopped. What the run PRODUCED is in the real tables and exports with them; this is the scaffolding, and it means nothing outside this app.",
   PlanIngestTask:

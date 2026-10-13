@@ -64,7 +64,7 @@ export function CalendarSubscribe({ token: initialToken }: { token: string | nul
           type="button"
           onClick={create}
           disabled={isPending}
-          className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md border border-line-card bg-surface px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800 disabled:opacity-60"
+          className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md border border-line-card bg-surface px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover disabled:opacity-60"
         >
           {isPending ? "Creating…" : "Create my calendar link"}
         </button>
@@ -81,7 +81,7 @@ export function CalendarSubscribe({ token: initialToken }: { token: string | nul
               type="button"
               onClick={copy}
               disabled={!url}
-              className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md border border-line-card bg-surface px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800 disabled:opacity-60"
+              className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md border border-line-card bg-surface px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover disabled:opacity-60"
             >
               {copied ? "Copied" : "Copy link"}
             </button>
@@ -123,7 +123,7 @@ export function CalendarSubscribe({ token: initialToken }: { token: string | nul
       )}
 
       {error && (
-        <p role="alert" className="mt-2 text-xs text-red-400">
+        <p role="alert" className="mt-2 text-xs text-danger">
           {error}
         </p>
       )}

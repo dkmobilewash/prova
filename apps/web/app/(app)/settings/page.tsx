@@ -42,6 +42,9 @@ import {
 import { serverToday } from "@/lib/serverToday";
 import { quickBooksConnectCardState, quickBooksSetup } from "@/lib/quickbooks-setup";
 import { ActionForm } from "@/components/ActionForm";
+import { ThemeSwitch } from "@/components/ThemeSwitch";
+
+export const metadata = { title: "Settings" };
 
 const QB_ERROR_MESSAGES: Record<string, string> = {
   access_denied: "You declined the QuickBooks connection request.",
@@ -121,9 +124,9 @@ function dateStatus(date: Date | null, kind: RenewalKind) {
     },
     serverToday(),
   );
-  if (renewal.urgency === "EXPIRED") return { text: "Expired", className: "text-red-400" };
+  if (renewal.urgency === "EXPIRED") return { text: "Expired", className: "text-danger" };
   if (renewal.urgency === "DUE_SOON") {
-    return { text: renewalTiming(renewal), className: "text-amber-400" };
+    return { text: renewalTiming(renewal), className: "text-warn" };
   }
   return null;
 }
@@ -132,7 +135,7 @@ const inputClass =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 const addButtonClass =
-  "inline-flex items-center justify-center rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-700";
+  "inline-flex items-center justify-center rounded-md bg-rail-hover px-4 py-2 text-sm font-medium text-ink hover:bg-lift";
 
 export default async function SettingsPage({
   searchParams,
@@ -343,12 +346,12 @@ export default async function SettingsPage({
       </p>
 
       {qb === "connected" && (
-        <p className="mb-6 rounded-md border border-green-700 bg-tag-green px-4 py-3 text-sm text-green-400">
+        <p className="mb-6 rounded-md border border-green-700 bg-tag-green px-4 py-3 text-sm text-ok">
           QuickBooks connected successfully.
         </p>
       )}
       {qb === "error" && (
-        <p className="mb-6 rounded-md border border-red-700 bg-tag-rose px-4 py-3 text-sm text-red-400">
+        <p className="mb-6 rounded-md border border-red-700 bg-tag-rose px-4 py-3 text-sm text-danger">
           {(qb_detail && QB_ERROR_MESSAGES[qb_detail]) ?? "Couldn't connect to QuickBooks — please try again."}
         </p>
       )}
@@ -456,7 +459,7 @@ export default async function SettingsPage({
                   describe="Stops the push to QuickBooks until somebody reconnects. Nothing already in QuickBooks is changed or removed, and your chart-of-accounts mapping below is kept."
                   label="Disconnect"
                   confirmLabel="Confirm disconnect"
-                  deleteClassName="text-sm text-red-400 hover:underline"
+                  deleteClassName="text-sm text-danger hover:underline"
                   hint={
                     <span className="max-w-[20rem] text-ink-muted">
                       Reconnecting is a fresh sign-in through Intuit. Your account mapping is kept.
@@ -924,6 +927,14 @@ export default async function SettingsPage({
             </SubmitButton>
           </ActionForm>
         </details>
+      </section>
+
+      <section id="appearance" className="mt-10">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">Appearance</h2>
+        <p className="mb-3 text-sm text-ink-body">
+          Light is easier to read outdoors. Saved on this device only.
+        </p>
+        <ThemeSwitch className="max-w-xs" />
       </section>
     </PageShell>
   );

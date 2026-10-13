@@ -10,6 +10,8 @@ import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { can } from "@/lib/permissions";
 import type { PunchListPeople } from "@/components/PunchItemFields";
 
+export const metadata = { title: "Punch lists" };
+
 export default async function PunchListsPage({
   searchParams,
 }: {
@@ -141,7 +143,7 @@ export default async function PunchListsPage({
   // on the page.
   const chip = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
-      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-rail-hover"
     }`;
 
   return (

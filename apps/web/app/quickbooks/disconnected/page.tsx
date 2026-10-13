@@ -12,7 +12,7 @@ import { PublicDocument } from "@/components/PublicDocument";
  * shows. Imported records and the account mapping are untouched.
  */
 
-export const metadata: Metadata = { title: "QuickBooks disconnected — C Stream" };
+export const metadata: Metadata = { title: "QuickBooks is disconnected" };
 
 export default function QuickBooksDisconnectedPage() {
   return (

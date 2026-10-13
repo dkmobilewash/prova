@@ -20,6 +20,8 @@ import {
 } from "@/lib/sales-pipeline";
 import { daysInCurrentStage, type RecordedStageChange } from "@/lib/sales-stage-history";
 
+export const metadata = { title: "Sales CRM" };
+
 /**
  * Prova's own sales pipeline -- for selling Prova itself, not a tenant's
  * GC/vendor relationships (that's /contacts). Gated on two independent
@@ -150,7 +152,7 @@ export default async function SalesPage() {
         <section className="mb-6 rounded-lg border border-line-card bg-surface p-4">
           <h2 className="mb-1 text-sm font-semibold text-ink">
             {queue.length} {queue.length === 1 ? "lead owes" : "leads owe"} a follow-up
-            {overdueCount > 0 && <span className="text-red-400"> — {overdueCount} overdue</span>}
+            {overdueCount > 0 && <span className="text-danger"> — {overdueCount} overdue</span>}
           </h2>
           <p className="mb-3 text-xs text-ink-muted">
             Read from each lead&apos;s most recent activity. Logging the next one with the follow-up
@@ -165,7 +167,7 @@ export default async function SalesPage() {
                 <span
                   className={`text-xs ${
                     row.followUpStanding === "OVERDUE"
-                      ? "text-red-400"
+                      ? "text-danger"
                       : row.followUpStanding === "DUE_TODAY"
                         ? "text-tag-amber-ink"
                         : "text-ink-muted"

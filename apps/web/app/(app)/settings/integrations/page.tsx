@@ -29,6 +29,8 @@ import { BluebeamControls } from "@/components/BluebeamControls";
 import { BluebeamLinks } from "@/components/BluebeamLinks";
 import { bluebeamCardState, bluebeamCallbackMessage, bluebeamSetup } from "@/lib/bluebeam/setup";
 
+export const metadata = { title: "Integrations" };
+
 /**
  * Settings → Integrations.
  *
@@ -311,7 +313,7 @@ export default async function IntegrationsPage({
               <Link
                 href={impl.importHref}
                 data-tour="mycoi-import-link"
-                className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card bg-surface px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+                className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card bg-surface px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover"
               >
                 {impl.importLabel}
               </Link>
@@ -331,7 +333,7 @@ export default async function IntegrationsPage({
             {impl.kind === "external" && (
               <Link
                 href={impl.href}
-                className="inline-flex items-center justify-center rounded-md border border-line-card bg-surface px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+                className="inline-flex items-center justify-center rounded-md border border-line-card bg-surface px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover"
               >
                 Manage in {impl.managedAt}
               </Link>

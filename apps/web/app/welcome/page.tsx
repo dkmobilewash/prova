@@ -2,6 +2,8 @@ import { requireCompanyContext } from "@/lib/auth";
 import { redirectAwayFromOnboardingIfAsked } from "@/lib/onboarding-gate";
 import { CompanySetupGate } from "@/components/CompanySetupGate";
 
+export const metadata = { title: "Welcome" };
+
 /**
  * The three onboarding questions, as their own page — reached ONLY by a
  * server-side redirect from `app/(app)/dashboard/page.tsx`

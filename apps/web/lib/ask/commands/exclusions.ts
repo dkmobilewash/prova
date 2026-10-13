@@ -90,6 +90,31 @@ export const notYetRegistered: Exclusion[] = [
       "Drafting, accepting and dismissing the clauses a scope letter is missing. Excluded for `specRead.*`'s second reason, sharpened: what these actions produce is a SENTENCE SENT TO A GENERAL CONTRACTOR that decides who pays when scope is disputed. An inclusion nobody read gives work away for free and an exclusion nobody read is one the sub cannot defend when asked where it came from, so accepting one is deliberately a press beside its citation and could not be a prompt — the whole review step exists because `draft-lines.ts` writes rows directly and a line item is a number somebody can see, while a clause is a legal statement. The draft action also spends a model call, so a command would spend money on a prompt's say-so. And `saveClauseToLibrary` writes to a company-wide list every future bid copies from, which is owner-only for the reason `aiSettings.*` is below it. The estimator does all of this on the job's proposal page. Never a command.",
   },
   {
+    action: "askThreads.*",
+    reason:
+      "The person's own stored Ask conversations (open, rename, delete). Not a business record and nothing leaves the building; the assistant managing its own memory on a prompt's say-so would let an injected instruction delete the conversation it arrived in. Never a command.",
+  },
+  {
+    action: "agents.*",
+    reason:
+      "Starting a background agent run. Excluded for `aiSettings.*`'s reason one step removed: a model must not be able to start model runs on a prompt's say-so — a run spends the company's AI allowance, and an injected instruction in a bid name could otherwise burn a month's cap. The Run-now button on /ai is a deliberate press by a person who can see the spend beside it. Never a command.",
+  },
+  {
+    action: "recommendations.*",
+    reason:
+      "Dismissing or closing one of the agents' recommendations. A recommendation is advice the person is weighing, and closing it is the person saying they have weighed it — a model closing its own advice on a prompt's say-so would let an injected sentence in a bid name hide the one warning that mattered. A press on /ai, beside the reason and its sources. Never a command.",
+  },
+  {
+    action: "agentFindings.*",
+    reason:
+      "Dismissing and restoring what a background agent found. A finding exists to be read by a person, and a model clearing it on a prompt's say-so is the agent marking its own homework — an injected line in a bid name could otherwise hide a past-due or unread-addendum warning before anyone saw it. The press is beside the finding on /ai. Never a command.",
+  },
+  {
+    action: "agentSettings.*",
+    reason:
+      "Turning agents on and off and setting their monthly spend cap. Owner-only for `aiSettings.*`'s reason: it decides what runs over every estimator's bids and what the company spends on it, and a model must not be able to raise its own cap. Never a command.",
+  },
+  {
     action: "aiSettings.*",
     reason:
       "The switch that decides whether AI runs for this company at all. Reachable from a prompt it would let the assistant be asked to re-enable itself, or to turn off the audit trail of its own proposals — a model must never hold the control over whether a model is used. Owner-only on /settings/assistant, and permanently never a command.",
@@ -152,14 +177,6 @@ export const notYetRegistered: Exclusion[] = [
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
   { action: "notifications.*", reason: "Sends the person their own digest; not a task anyone asks the box for." },
   { action: "gettingStarted.*", reason: "Hides the dashboard's getting-started card on this browser — a cookie about one card, not work anyone asks the box for. Never a command." },
-  // Global search (lib/search). A read with its own box and its own
-  // keyboard shortcut, not a fact Ask narrates — app_help already answers
-  // "how do I find X" from the same walkthrough registry this reads for
-  // its page half. Registering it as a command would let the model return
-  // a company's own record titles and hrefs as an answer, second-guessing
-  // capability filtering that already runs once, correctly, inside
-  // globalSearch. Never a command.
-  { action: "search.*", reason: "Its own box and shortcut, not a fact for Ask to narrate; app_help already answers 'how do I find X'. Never a command." },
   { action: "prevailingWage.*", reason: "Rule sets are compliance configuration edited on their own page; needs a File for determinations." },
   // The dates a prevailing-wage determination's standing is derived from
   // (lib/determination-standing.ts): the job's bid-advertisement date and

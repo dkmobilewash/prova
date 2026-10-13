@@ -233,7 +233,10 @@ export type AskUsageFeature =
    *  `draft-estimate-lines`: the two are switched separately, and a bill
    *  that could not tell them apart could not answer "what did the thing we
    *  turned off actually cost us". */
-  | "proposal-draft";
+  | "proposal-draft"
+  /** A background agent run (lib/agents/core.ts). One feature for all four
+   *  agents; the AgentRun row says which. */
+  | "ai-agents";
 
 export type AskUsageRecord = {
   companyId: string;

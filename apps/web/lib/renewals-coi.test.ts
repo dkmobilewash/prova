@@ -58,3 +58,14 @@ describe("imported certificates in the renewal alerts", () => {
     expect(wcOn("2026-10-02")).toBe("EXPIRED");
   });
 });
+
+describe("the alert's Open link", () => {
+  // ux round 4: it was plain /compliance — the page the alert sits on — so
+  // clicking it on an expired certificate did nothing.
+  it("lands on that document's own row, which carries the same id", async () => {
+    const { complianceDocumentAnchor } = await import("./compliance-expiry");
+    const sources = await renewalSourcesForCompany("co_A");
+    expect(sources.find((s) => s.id === "legacy")?.href).toBe("/compliance#doc-legacy");
+    expect(complianceDocumentAnchor("legacy")).toBe("doc-legacy");
+  });
+});

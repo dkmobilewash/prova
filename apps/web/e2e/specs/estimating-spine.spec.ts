@@ -3,7 +3,7 @@ import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { dataTour } from "../lib/dataTour";
-import { finishWizard, jobTab, landOnDashboard, settleAction, startJob, submitLineItem } from "../lib/journey";
+import { finishWizard, jobTab, landOnDashboard, openJobTab, settleAction, startJob, submitLineItem } from "../lib/journey";
 
 /**
  * THE ESTIMATING DESK, IN A REAL BROWSER, FOR THE FIRST TIME.
@@ -122,7 +122,7 @@ test.describe("the estimating desk", () => {
   });
 
   test("2. the Estimate tab loads and carries every panel the three days added", async () => {
-    await jobTab(page, "Estimate").click();
+    await openJobTab(page, "Estimate");
     await page.waitForURL(new RegExp(`/jobs/${jobId}/estimate$`));
     await expectHealthy(page, "estimate tab", { monitor });
 
@@ -141,7 +141,8 @@ test.describe("the estimating desk", () => {
     // where to go rather than showing an unusable form.
     await expect(section("job-wall-schedule").getByRole("link", { name: "Open wall types" })).toBeVisible();
 
-    // The Takeoff tab (#476) is reachable from here and from the rail.
+    // The Takeoff tab (#476) is reachable from here and from the Estimate
+    // stage's row, which is open while this page is.
     await expect(jobTab(page, "Takeoff")).toBeVisible();
     await expect(section("job-line-items").getByRole("link", { name: "Measure off a plan" })).toBeVisible();
   });

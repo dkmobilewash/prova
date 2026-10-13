@@ -31,11 +31,11 @@ export type DelayView = {
 export type Option = { value: string; label: string };
 
 const rowBtn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50";
 const rowBtnDanger =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-xs text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-xs text-ink-label hover:border-red-500 hover:text-danger disabled:opacity-50";
 const rowBtnConfirm =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-xs text-red-400 hover:bg-tag-rose disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-xs text-danger hover:bg-tag-rose disabled:opacity-50";
 
 /**
  * The job's delays, one row each: what happened, why, who caused it, how
@@ -91,7 +91,7 @@ export function DelayLog({
           <button
             type="button"
             onClick={() => setIsOpen(true)}
-            className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800"
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover"
           >
             Log a delay
           </button>
@@ -209,7 +209,7 @@ export function DelayLog({
               </>
             )}
           </div>
-          {error && errorId === null && <p className="text-sm text-red-400">{error}</p>}
+          {error && errorId === null && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
@@ -232,7 +232,7 @@ export function DelayLog({
                 setIsOpen(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
             >
               Cancel
             </button>
@@ -270,14 +270,14 @@ export function DelayLog({
                         .join(" · ")}
                     </p>
                   )}
-                  <p className={d.notifiedLabel ? "mt-1 text-ink-body" : "mt-1 text-amber-400"}>
+                  <p className={d.notifiedLabel ? "mt-1 text-ink-body" : "mt-1 text-warn"}>
                     {d.notifiedLabel ? `GC notified: ${d.notifiedLabel}` : "GC not recorded as notified"}
                   </p>
                   {d.changeOrderLabel && <p className="mt-1 text-ink-body">Change order drafted: {d.changeOrderLabel}</p>}
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
                   {d.lockedLabel && (
-                    <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs text-emerald-300">
+                    <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs text-ok">
                       {d.lockedLabel} · locked
                     </span>
                   )}
@@ -312,7 +312,7 @@ export function DelayLog({
                   </RowActions>
                 </div>
               </div>
-              {error && errorId === d.id && <p className="mt-1 text-sm text-red-400">{error}</p>}
+              {error && errorId === d.id && <p className="mt-1 text-sm text-danger">{error}</p>}
             </li>
           ))}
         </ul>

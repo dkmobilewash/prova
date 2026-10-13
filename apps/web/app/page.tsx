@@ -22,7 +22,7 @@ import { LandingPage } from "@/components/LandingPage";
  */
 
 export const metadata: Metadata = {
-  title: "C Stream — built for union specialty-trade subcontractors",
+  title: { absolute: "C Stream — built for union specialty-trade subcontractors" },
   description:
     "The estimate, the contract, the crew's hours, certified payroll and the GC's pay application in one place — for framing and drywall, plaster, EIFS, ceiling and fireproofing subcontractors.",
 };

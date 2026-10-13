@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { AskDraftNotice } from "@/components/AskDraftNotice";
@@ -7,13 +9,15 @@ import { loadRfiDraft } from "@/lib/ask/drafts";
 import { RfiForm } from "@/components/RfiForm";
 import { EmptyState } from "@/components/EmptyState";
 import { RfiRow } from "@/components/RfiRow";
-import { daysBetween, isOpen, isOverdue } from "@/components/rfiLabels";
+import { daysBetween, isOpen, isOverdue, isWaitingAWeekPlus } from "@/components/rfiLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { rfisStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { viewerToday } from "@/lib/viewerToday";
 import { ProcoreFeedSection, loadProcoreFeed } from "@/components/ProcoreFeedSection";
 import { ACCFeedSection, loadAccFeed } from "@/components/ACCFeedSection";
+
+export const metadata = { title: "RFIs" };
 
 /** Stored at UTC midnight, rendered in UTC — same rule as the safety log
  * and daily field reports. Local rendering shows the previous day to
@@ -25,12 +29,12 @@ function isoDate(date: Date | null) {
 export default async function RfisPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; show?: string; draft?: string }>;
+  searchParams: Promise<{ job?: string; show?: string; draft?: string; new?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_JOBS");
   if (!allowed) return <NoAccess capability="MANAGE_JOBS" />;
   const { company, ...currentUser } = context;
-  const { job: jobFilter, show, draft } = await searchParams;
+  const { job: jobFilter, show, draft, new: startNew } = await searchParams;
   const showClosed = show === "all";
 
   // A card from the Ask box (lib/ask/drafts.ts): the form opens prefilled
@@ -114,7 +118,10 @@ export default async function RfisPage({
       OR: [{ costImpact: true }, { scheduleImpact: true }],
     },
   });
-  const status = rfisStatus({ overdue, open: openCount, impact: impactCount });
+  const waiting = rows
+    .filter((r) => isWaitingAWeekPlus(r, today))
+    .map((r) => ({ number: r.number, jobName: r.jobName, daysWaiting: daysBetween(r.sentOn as string, today) }));
+  const status = rfisStatus({ overdue, open: openCount, impact: impactCount, waiting });
 
   const filterHref = (params: { job?: string | null; show?: string | null }) => {
     const next = new URLSearchParams();
@@ -130,7 +137,7 @@ export default async function RfisPage({
   // taps to reach their own job's RFIs.
   const chip = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
-      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-rail-hover"
     }`;
 
   // The GC's records from Procore, if this company links any (see
@@ -140,14 +147,11 @@ export default async function RfisPage({
   const accFeed = await loadAccFeed(company.id, "RFI", activeJob);
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">RFIs</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        Questions to the GC or architect, and what came back. This is evidence before it&apos;s a
-        to-do list: an RFI sent on a date and answered three weeks later is the documentation behind a
-        delay claim, and &ldquo;we asked and nobody got back to us&rdquo; is worth nothing without the
-        dates.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/rfis"
+        subtitle="Questions to the GC or architect, with the dates you asked and they answered."
+      />
 
       <section className="mb-8" data-tour="rfis-raise">
         {askDraft.kind === "gone" && <AskDraftNotice what="RFI" />}
@@ -158,6 +162,7 @@ export default async function RfisPage({
           jobs={jobs}
           defaultJobId={rfiDraft?.jobId ?? activeJob ?? undefined}
           draft={rfiDraft}
+          startOpen={startNew === "1"}
         />
       </section>
 
@@ -246,6 +251,6 @@ export default async function RfisPage({
       <ProcoreFeedSection feed={procoreFeed} />
       {/* Same, from Autodesk Construction Cloud. */}
       <ACCFeedSection feed={accFeed} />
-    </div>
+    </PageShell>
   );
 }

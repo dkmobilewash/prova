@@ -850,6 +850,15 @@ const MIXED_DOORS: Record<string, { capability: Capability | null; reason: strin
   // `log_payment` Ask command declares MANAGE_BILLING already
   // (lib/ask/commands/billing.ts), so the two surfaces now agree instead
   // of one of them being open.
+  // Same shape as billing.logPayment below: /settings/assistant reaches this
+  // only by importing the command registry (record_bid_outcome), never by
+  // rendering an outcome form. The bid workspace on /ai is the real door and
+  // /ai is MANAGE_ESTIMATING, which is also what the command declares.
+  "bidOutcomes.recordBidOutcome": {
+    capability: "MANAGE_ESTIMATING",
+    reason:
+      "Reached from /settings/assistant only through the Ask command registry (record_bid_outcome, MANAGE_ESTIMATING); its real form is on the /ai bid workspace, MANAGE_ESTIMATING like /bids. Gated on MANAGE_ESTIMATING so the command, the page and the action agree.",
+  },
   "billing.logPayment": {
     capability: "MANAGE_BILLING",
     reason:
@@ -1096,28 +1105,10 @@ const SECTION_DECIDED: Record<
       "The other half of approveTimesheetDay, same control, same capability, already asserted. Reopening unlocks a day's hours for editing, so it is if anything the more consequential of the two. Recorded for execution, no behaviour change.",
   },
 
-  /* ---- An eleventh that already asserts the right capability, and which
-   * this file could not SEE rather than merely never executing.
-   *
-   * It moved out of UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE below, where it was
-   * recorded as an open endpoint behind the dashboard's several gates. That
-   * record was false and had always been false: the action asserts
-   * MANAGE_JOBS on its second line. The entry existed because
-   * `assertsCapability` read the function body by counting braces from the
-   * first `{` after the declaration, and this signature ends
-   * `: Promise<ActionResultWith<{ pathname: string }>> {` — so the count
-   * closed on the return TYPE and the "body" was the signature.
-   *
-   * Worth separating from the ten above, because the ten were a gap in what
-   * this file CHOSE to execute and this was a gap in what it could read. The
-   * ten were honest and idle; this one was wrong. Nothing in the Ask lane
-   * changed to pay it off — the guard was there the whole time. ---- */
-  "ask.prepareAskAttachment": {
-    capability: "MANAGE_JOBS",
-    section: "Ask panel — attach a file",
-    reason:
-      "Already asserts MANAGE_JOBS and always has; it was invisible to this file's own body reader, not ungated (see the parser note above assertsCapability). MANAGE_JOBS is the right capability and is not a new judgement: the attachment goes through DOCUMENT INTAKE, and `intake.recordIntakeDocument` — the action that records what lands there — is gated on MANAGE_JOBS by the entry in MIXED_DOORS above, for /intake's own stated reason that a drop of GC paperwork is the correspondence that capability names. Its doors are /dashboard and /ask, neither of which refuses anyone at the route level, so the ordinary rule derives nothing and this records it instead. No behaviour change.",
-  },
+  // `ask.prepareAskAttachment` was here (it asserts MANAGE_JOBS). Removed
+  // 2026-10-10 when the Concept G home dropped the Ask panel from
+  // /dashboard: its one remaining door is /ask, which withholds nothing, so
+  // the ordinary rule decides it and this suite said to delete the entry.
 
   /* ---- /contacts/[id] — the "Client portal" section.
    *
@@ -1146,6 +1137,16 @@ const SECTION_DECIDED: Record<
     section: "Client portal",
     reason:
       "The other half of enablePortalAccess, same section and same capability, and deliberately not a looser one on the grounds that revoking is the safe direction. It is not safe: it cuts a GC off from the invoices they are being asked to pay, mid-job, and the token cannot be rotated afterwards — enabling brings the SAME link back. Whoever may hand out the credential is who may take it away, or a job function ends up able to kill a live link it cannot restore.",
+  },
+
+  /* ---- /dashboard — the Running now card ---- */
+
+  // "Run again" on a failed agent run (RunWayOut, UX review F6).
+  "agents.runAgentNow": {
+    capability: "MANAGE_ESTIMATING",
+    section: "Running now",
+    reason:
+      "The home page draws the Running now card only from a task list it loads for MANAGE_ESTIMATING (it passes none otherwise), and the Run again button inside it is the same RunAgentButton /ai offers behind that same capability. runAgentNow refuses anyone without MANAGE_ESTIMATING itself, because the agents read bids and estimates.",
   },
 };
 
@@ -1200,10 +1201,8 @@ const UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE: Record<string, { page: string; reason:
   "quickbooks.linkContactToQuickBooks": { page: "/contacts/[id]", reason: "Links a contact to a QuickBooks customer. MANAGE_BILLING is the likely answer given every other QuickBooks action, but its door is this page rather than /settings, so it is a per-section read this pass did not do." },
 
   // `/dashboard` withholds its money tiles on VIEW_JOB_COSTS and
-  // MANAGE_BILLING. Everything below is reached from it.
-  "ask.cancelAskProposal": { page: "/dashboard", reason: "An Ask card action, also reached from /ask, which withholds nothing. Its guard is not capability-shaped: what it should ask is whether the card's own command is one this person could run (canRunCommand), which follows the card rather than the page. Same argument this file already records for settleAskDraft, and the same lane." },
-  "ask.confirmAskProposal": { page: "/dashboard", reason: "Same as cancelAskProposal — and it already refuses anyone lacking the command's declared capability in a returned sentence, per lib/ask/commands/schedule.ts's own note, so a page-derived capability on top would be the wrong boundary rather than a missing one." },
-  "ask.loadAskProposal": { page: "/dashboard", reason: "Same as cancelAskProposal. A read of a card the asking person already owns." },
+  // MANAGE_BILLING. Everything below is reached from it. (The three Ask card
+  // actions left with the Ask panel on 2026-10-10; /ask is their door now.)
   "gettingStarted.hideGettingStarted": { page: "/dashboard", reason: "A per-person preference write — it hides a panel on the person's own dashboard and touches no job, no money and nothing a GC sees. Explicitly the lowest-risk category in this sweep and left for last on purpose. Recorded rather than fixed so that the count stays honest." },
 };
 
@@ -1860,6 +1859,8 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // and this suite found it by the walk on the day it was added, which is
   // the behaviour the file is for.
   company: () => import("./actions/company"),
+  agentSettings: () => import("./actions/agentSettings"),
+  agentFindings: () => import("./actions/agentFindings"),
   proposalDrafts: () => import("./actions/proposalDrafts"),
   sheetPins: () => import("./actions/sheetPins"),
   // Only `uploadComplianceDocument` — the other eight actions in this
@@ -2069,6 +2070,10 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // turning AI off stops work for every member of the company, and turning it
   // back on is a decision about where their documents may go.
   aiSettings: () => import("./actions/aiSettings"),
+  agents: () => import("./actions/agents"),
+  // Dismiss on /ai's findings (2026-10-11), a MANAGE_ESTIMATING page.
+  bidOutcomes: () => import("./actions/bidOutcomes"),
+  recommendations: () => import("./actions/recommendations"),
   // The plan-ingestion runner, reachable from /jobs/[id]/takeoff alone, which is
   // hard-gated on VIEW_JOB_COSTS. All four actions assert that — the first
   // version asserted MANAGE_ESTIMATING, which sounds right for a plan set and is

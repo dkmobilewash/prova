@@ -7,6 +7,7 @@ export * from "./ask";
 export * from "./email";
 export * from "./expo-push";
 export * from "./research";
+export * from "./agentPass";
 export * from "./leads";
 export * from "./quotes";
 export * from "./addenda";

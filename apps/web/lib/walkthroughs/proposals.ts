@@ -21,7 +21,7 @@ export const proposalsWalkthrough: Walkthrough = {
       anchor: "proposals-add",
       title: "Add a clause",
       body:
-        "Pick what kind it is, type it the way you would write it on a bid, and press Add clause. Then open a job's Estimate tab and choose Proposal & exclusions to put it on that bid.",
+        "Pick what kind it is, type it the way you would write it on a bid, and press Add clause. Then open a job's estimate page (its Estimate step) and choose Proposal & exclusions to put it on that bid.",
     },
   ],
 };

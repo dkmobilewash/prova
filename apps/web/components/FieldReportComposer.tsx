@@ -46,15 +46,18 @@ export type JobChoice = JobOption;
 export function FieldReportComposer({
   jobs,
   defaultJobId,
+  startOpen = false,
 }: {
   jobs: JobChoice[];
   defaultJobId?: string;
+  /** Open on arrival — the page was reached by a create shortcut (`?new=1`). */
+  startOpen?: boolean;
 }) {
   const initialJobId = defaultFieldReportJobId(jobs, defaultJobId);
   /** No job could be picked for him, so the select carries a placeholder and
    * the form refuses to submit until he says which. */
   const mustChoose = initialJobId === "";
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(startOpen);
   const [jobId, setJobId] = useState(initialJobId);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -186,7 +189,7 @@ export function FieldReportComposer({
 
       <FieldReportFields />
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       <div className="flex gap-2">
         {/* Disabled in flight: this create is not idempotent, and a second
@@ -213,7 +216,7 @@ export function FieldReportComposer({
             setIsOpen(false);
             setError(null);
           }}
-          className="rounded-md border border-line-card px-5 py-3 text-base text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+          className="rounded-md border border-line-card px-5 py-3 text-base text-ink-label hover:bg-rail-hover disabled:opacity-50"
         >
           Cancel
         </button>

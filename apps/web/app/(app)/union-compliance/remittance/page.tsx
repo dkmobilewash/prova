@@ -52,6 +52,8 @@ import {
   type RemittanceFilingCompany,
 } from "@/lib/fringe-remittance-filing";
 
+export const metadata = { title: "Fringe remittance" };
+
 /** What goes where a value should have been. A sentence or a short phrase
  * in red, never a dash — the reader has to learn what to do about it.
  * Same call lib/worker-name.ts makes with "Name not recorded". */
@@ -423,7 +425,7 @@ export default async function FringeRemittanceDocumentPage({
     <div className="mx-auto max-w-6xl px-6 py-8 print:px-0 print:py-0">
       <div className="print:hidden">
         <Link href={`/union-compliance?month=${month}`} className="text-sm text-link hover:underline">
-          ← Union fringe &amp; apprenticeship for this month
+          ← Fringe &amp; apprentices for this month
         </Link>
         <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
           <div>

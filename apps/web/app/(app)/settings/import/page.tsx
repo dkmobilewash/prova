@@ -8,6 +8,8 @@ import { PayrollRegisterImport } from "@/components/PayrollRegisterImport";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import type { ExistingRegisterEntry, RegisterDeductionsDetail } from "@/lib/payroll-register-import";
 
+export const metadata = { title: "Import from a spreadsheet" };
+
 /** Prisma's Date fields, as the pure planner wants them: YYYY-MM-DD. */
 function toRegisterEntry(row: {
   crewMemberId: string;

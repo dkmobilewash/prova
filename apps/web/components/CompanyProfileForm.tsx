@@ -45,7 +45,7 @@ const labelClass = "flex flex-col gap-1 text-xs text-ink-body";
 function GapNote({ gaps, field }: { gaps: CompanyProfileGap[]; field: CompanyProfileGap["field"] }) {
   const gap = gaps.find((g) => g.field === field);
   if (!gap) return null;
-  return <span className="max-w-prose text-[11px] font-normal text-amber-300">{gap.consequence}</span>;
+  return <span className="max-w-prose text-[11px] font-normal text-warn">{gap.consequence}</span>;
 }
 
 export function CompanyProfileForm({
@@ -90,7 +90,7 @@ export function CompanyProfileForm({
     >
       {gaps.length > 0 && (
         <div className="rounded-md border border-amber-900 bg-amber-950/40 p-3">
-          <p className="text-xs font-semibold text-amber-300">
+          <p className="text-xs font-semibold text-warn">
             {gaps.length === 1
               ? "One thing on this record is printed on a document somebody else reads:"
               : `${gaps.length} things on this record are printed on documents somebody else reads:`}
@@ -248,8 +248,8 @@ export function CompanyProfileForm({
         </button>
         {/* The refusal, rendered. A thrown message would reach a real user
             as an opaque digest — see lib/actions/shared.ts. */}
-        {error && <p className="text-sm text-rose-300">{error}</p>}
-        {saved && !error && <p className="text-sm text-green-400">Saved.</p>}
+        {error && <p className="text-sm text-danger">{error}</p>}
+        {saved && !error && <p className="text-sm text-ok">Saved.</p>}
       </div>
     </form>
   );

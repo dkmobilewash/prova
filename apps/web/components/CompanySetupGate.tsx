@@ -112,7 +112,7 @@ export function CompanySetupGate() {
           <BusinessScopeFields defaults={UNANSWERED_SCOPE} spacious />
 
           {error && (
-            <p role="alert" className="rounded-md border border-red-700 bg-tag-rose px-3 py-2 text-sm text-red-400">
+            <p role="alert" className="rounded-md border border-red-700 bg-tag-rose px-3 py-2 text-sm text-danger">
               {error}
             </p>
           )}

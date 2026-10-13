@@ -238,7 +238,7 @@ function RfiSaved() {
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-xs text-ink-body">RFI {RFI.number}</span>
           <span className="text-ink">{RFI.subject}</span>
-          <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">{PRODUCT_COPY.draft}</span>
+          <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-body">{PRODUCT_COPY.draft}</span>
         </div>
         <p className="mt-1 text-sm text-ink-label">{RFI.question}</p>
       </div>

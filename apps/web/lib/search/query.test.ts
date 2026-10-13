@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Principal } from "@/lib/permissions";
 import type { SearchProvider } from "./types";
-import { allowedProviders, globalSearch, providerCapability } from "./query";
+import { allowedProviders, globalSearch, navPagesFor, providerCapability } from "./query";
+import { AREAS } from "@/lib/areas";
 
 const OWNER: Principal = { role: "OWNER", jobFunction: null };
 const FIELD: Principal = { role: "MEMBER", jobFunction: "FIELD" };
@@ -131,5 +132,19 @@ describe("globalSearch — the merged, capability-filtered response", () => {
 
     const forOwner = await globalSearch({ companyId: "co_1", principal: OWNER, query: "backcharge" }, []);
     expect(forOwner.pages[0]?.route).toBe("/backcharges");
+  });
+});
+
+describe("navPagesFor — the ⌘K page list", () => {
+  // Polish round 2026-10-11: results read "Schedule — Daily work" and
+  // "Team — Compliance & safety", the old rail's headings, beside area pages
+  // that file the same pages elsewhere. Every page now names its AREA.
+  it("names each page's area, not an old rail heading", () => {
+    const pages = navPagesFor(OWNER);
+    const areaNames = new Set(AREAS.map((a) => a.name));
+    const stray = pages.filter((p) => p.group !== "Areas" && p.group !== "Settings" && !areaNames.has(p.group));
+    expect(stray).toEqual([]);
+    expect(pages.find((p) => p.href === "/schedule")?.group).toBe("Crew & field");
+    expect(pages.some((p) => p.group === "Daily work")).toBe(false);
   });
 });

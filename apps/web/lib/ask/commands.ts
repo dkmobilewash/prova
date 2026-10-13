@@ -6,6 +6,7 @@ import { equipmentCommands, equipmentExclusions } from "./commands/equipment";
 import { estimatingCommands, estimatingExclusions } from "./commands/estimating";
 import { notYetRegistered } from "./commands/exclusions";
 import { bidCommands } from "./commands/bids";
+import { bidOutcomeCommands } from "./commands/bidOutcomes";
 import { billingCommands, billingExclusions } from "./commands/billing";
 import { fieldCommands, fieldExclusions } from "./commands/field";
 import { laborCommands, laborExclusions } from "./commands/labor";
@@ -67,6 +68,7 @@ export type CommandName =
   | "send_email"
   | "reschedule_job"
   | "log_bid_invitation"
+  | "record_bid_outcome"
   | "add_bid_pursuit"
   | "set_pursuit_stage"
   | "schedule_crew"
@@ -287,6 +289,7 @@ export const COMMANDS: CommandDefinition[] = [
   ...messageCommands,
   ...scheduleCommands,
   ...bidCommands,
+  ...bidOutcomeCommands,
   ...pursuitCommands,
   ...crewScheduleCommands,
   ...contactCommands,
@@ -307,6 +310,11 @@ export const EXCLUSIONS: Exclusion[] = [
     action: "sheetPins.*",
     reason:
       "Marks on a drawing sheet are placed by TAPPING THE DRAWING — the whole value is the x/y, and there is no sentence a person could say that puts a pin in the right spot. Ask can describe what is pinned; it cannot pin.",
+  },
+  {
+    action: "crews.*",
+    reason:
+      "A saved crew is a picking aid for the schedule form's checkboxes, not a record. Ask already schedules people by name (crew schedule commands), so a crew there would be a second way to say the same thing.",
   },
   ...notYetRegistered,
 ];

@@ -158,6 +158,7 @@ describe("who is offered what", () => {
       "send_email",
       "reschedule_job",
       "log_bid_invitation",
+      "record_bid_outcome",
       "add_bid_pursuit",
       "set_pursuit_stage",
       "add_contact",
@@ -258,6 +259,9 @@ describe("who is offered what", () => {
       "send_equipment_to_job",
       "bring_equipment_back",
       "reschedule_job",
+      // 2026-10-11: rewrites a bid's status to the result the person stated,
+      // beside the BidOutcome row it records (commands/bidOutcomes.ts).
+      "record_bid_outcome",
       "set_pursuit_stage",
     ]);
     const reschedule = COMMANDS.find((c) => c.name === "reschedule_job")!;

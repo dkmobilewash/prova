@@ -262,7 +262,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
             type="button"
             onClick={onStart}
             disabled={isPending}
-            className="min-h-[48px] rounded-md bg-neutral-800 px-4 text-sm font-medium text-ink hover:bg-neutral-700 disabled:opacity-50"
+            className="min-h-[48px] rounded-md bg-rail-hover px-4 text-sm font-medium text-ink hover:bg-lift disabled:opacity-50"
           >
             {isPending ? "Starting…" : "Read the sheets"}
           </button>
@@ -319,7 +319,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
             <button
               type="button"
               onClick={onResume}
-              className="min-h-[48px] rounded-md bg-neutral-800 px-4 text-sm font-medium text-ink hover:bg-neutral-700"
+              className="min-h-[48px] rounded-md bg-rail-hover px-4 text-sm font-medium text-ink hover:bg-lift"
             >
               Keep reading
             </button>
@@ -339,7 +339,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
                 type="button"
                 onClick={onStartTitleBlocks}
                 disabled={isPending}
-                className="min-h-[48px] rounded-md bg-neutral-800 px-4 text-sm font-medium text-ink hover:bg-neutral-700 disabled:opacity-50"
+                className="min-h-[48px] rounded-md bg-rail-hover px-4 text-sm font-medium text-ink hover:bg-lift disabled:opacity-50"
               >
                 {isPending
                   ? "Starting…"
@@ -394,7 +394,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
                 type="button"
                 onClick={onStartSchedules}
                 disabled={isPending || scheduleSheetCount === 0}
-                className="min-h-[48px] rounded-md bg-neutral-800 px-4 text-sm font-medium text-ink hover:bg-neutral-700 disabled:opacity-50"
+                className="min-h-[48px] rounded-md bg-rail-hover px-4 text-sm font-medium text-ink hover:bg-lift disabled:opacity-50"
               >
                 {isPending
                   ? "Starting\u2026"

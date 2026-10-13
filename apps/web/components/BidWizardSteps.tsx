@@ -64,7 +64,7 @@ export function BidWizardSteps({
   ];
 
   return (
-    <nav aria-label="Start a bid" className="mb-6">
+    <nav aria-label="New job steps" className="mb-6">
       <ol className="flex flex-wrap items-center gap-2 text-sm">
         {steps.map((step, index) => {
           const isCurrent = step.n === current;
@@ -81,7 +81,7 @@ export function BidWizardSteps({
             >
               <span
                 className={`flex h-5 w-5 items-center justify-center rounded-full text-xs ${
-                  isCurrent ? "bg-brand text-neutral-900" : isDone ? "bg-neutral-700 text-ink" : "bg-neutral-800 text-ink-muted"
+                  isCurrent ? "bg-brand text-neutral-900" : isDone ? "bg-lift text-ink" : "bg-rail-hover text-ink-muted"
                 }`}
               >
                 {isDone ? "✓" : step.n}

@@ -317,6 +317,11 @@ export const fieldExclusions: Exclusion[] = [
     reason:
       "Taking somebody off a day is done on /schedule, where the day being removed is visible. Same rule every other removal in this registry follows.",
   },
+  {
+    action: "moveCrewDay",
+    reason:
+      "Moving a planned day to another date or job is done on /schedule, on the row being moved, where the double-booking it reports is visible.",
+  },
   { action: "updateDailyFieldReport", reason: "Editing a filed report is done on the field reports page, where the report being changed is visible." },
   { action: "deleteDailyFieldReport", reason: "Deletes are never commands (T5); a daily report is what a delay claim is argued from." },
   { action: "createMaterialOrder", reason: "A counter-numbered order with a vendor, a promised date and a reference the person types; a later phase once the vendor resolver exists." },

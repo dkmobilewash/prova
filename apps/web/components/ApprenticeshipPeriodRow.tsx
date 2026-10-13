@@ -95,7 +95,7 @@ export function ApprenticeshipPeriodRow({
           </div>
 
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}
@@ -122,7 +122,7 @@ export function ApprenticeshipPeriodRow({
                 setEditing(false);
                 setError(null);
               }}
-              className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800"
+              className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover"
             >
               Cancel
             </button>
@@ -153,7 +153,7 @@ export function ApprenticeshipPeriodRow({
               onConfirm={() => run(() => deleteApprenticeshipPeriod(periodId))}
               deleteClassName={linkBtn}
               cancelClassName={linkBtn}
-              confirmClassName="text-xs text-red-400 underline hover:text-tag-rose-ink disabled:opacity-50"
+              confirmClassName="text-xs text-danger underline hover:text-tag-rose-ink disabled:opacity-50"
             />
           ) : null
         }
@@ -163,7 +163,7 @@ export function ApprenticeshipPeriodRow({
         </button>
       </RowActions>
       {error && (
-        <p role="alert" className="w-full text-sm text-red-400">
+        <p role="alert" className="w-full text-sm text-danger">
           {error}
         </p>
       )}

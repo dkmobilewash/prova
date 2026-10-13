@@ -1,8 +1,41 @@
 import { TOOLS } from "@/lib/ask/tools";
 import { reachableWalkthroughs, searchAppHelp } from "@/lib/ask/appHelp";
 import { can, capabilityForRoute, type Capability, type Principal } from "@/lib/permissions";
+import { navFooterFor, navGroupsFor } from "@/components/navItems";
+import { areaHref, areasFor, pagesByArea } from "@/lib/areas";
 import { SEARCH_PROVIDERS } from "./providers";
 import type { SearchPageResult, SearchProvider, SearchRecordResult } from "./types";
+
+/** One destination for the palette's Pages group. */
+export type NavPage = { href: string; label: string; group: string };
+
+/**
+ * Every nav destination this person can open — the same doors the old
+ * sidebar offered, so taking the sidebar away takes nothing out of reach.
+ * `navGroupsFor` is the exact capability filter the rail used, plus the
+ * footer. Deliberately WITHOUT the business-scope answers the rail hid
+ * entries by: search is the safety net for a page the simplified nav left
+ * out (see components/Topbar.tsx's note on search).
+ */
+export function navPagesFor(principal: Principal, options: { showsInternal?: boolean } = {}): NavPage[] {
+  const seen = new Set<string>();
+  const out: NavPage[] = [];
+  const add = (href: string, label: string, group: string) => {
+    if (seen.has(href)) return;
+    seen.add(href);
+    out.push({ href, label, group });
+  };
+  // The six areas first (lib/areas.ts) — the same boxes the home page opens,
+  // narrowed by the same capability rule.
+  for (const area of areasFor(principal)) add(areaHref(area.slug), area.name, "Areas");
+  // Filed and named as the area pages and "All pages" file them, so a result
+  // reads "Schedule — Crew & field", never an old rail heading.
+  for (const group of pagesByArea(navGroupsFor(principal, { showsInternal: options.showsInternal }))) {
+    for (const item of group.items) if (!item.disabled) add(item.href, item.label, group.heading);
+  }
+  for (const item of navFooterFor(principal)) add(item.href, item.label, "Settings");
+  return out;
+}
 
 /** Below this, a query is too short to mean anything and would just cost a
  * round trip and a wall of noise — "a" or "in" matches everything. */
@@ -109,7 +142,7 @@ export type GlobalSearchResponse = {
 const EMPTY_RESPONSE: GlobalSearchResponse = { records: [], pages: [] };
 
 /**
- * The whole feature, minus the transport (see lib/actions/search.ts). Two
+ * The whole feature, minus the transport (see app/api/search/route.ts). Two
  * halves that never touch: records come from `SEARCH_PROVIDERS`, already
  * filtered to what this person may reach; pages come from the SAME
  * capability-filtered walkthrough registry `lib/ask/appHelp.ts`'s

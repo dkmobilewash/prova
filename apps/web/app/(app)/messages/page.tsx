@@ -13,6 +13,8 @@ import { toJobOption } from "@/components/jobLabels";
 import { EmptyState } from "@/components/EmptyState";
 import { viewerToday } from "@/lib/viewerToday";
 
+export const metadata = { title: "Messages" };
+
 /** Stored at UTC midnight, rendered in UTC — same rule as every other date
  * in this app. */
 function isoDate(date: Date | null) {
@@ -107,7 +109,7 @@ export default async function MessagesPage({
 
   const chip = (active: boolean) =>
     `rounded-md border px-3 py-1.5 text-sm ${
-      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-rail-hover"
     }`;
 
   return (

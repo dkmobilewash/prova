@@ -3,12 +3,20 @@ import { PageShell } from "@prova/ui";
 import { requireCompanyContext } from "@/lib/auth";
 import { loadJobSummary } from "@/lib/jobs/job-summary";
 import { jobCapabilities } from "@/lib/jobs/job-access";
+import { canReach } from "@/lib/permissions";
+import { jobPaperworkLinks, loadJobPaperworkCounts } from "@/lib/jobs/job-paperwork";
 import { JobSummaryHeader } from "@/components/JobSummaryHeader";
-import { JobSectionNav, type JobSectionTab } from "@/components/JobSectionNav";
+import { JobStageNav } from "@/components/job/JobStageNav";
+import { JobPaperworkPanel } from "@/components/job/JobPaperworkPanel";
+import { changeOrderPaperworkLink, jobStages, lienWaiverPaperworkLink } from "@/components/job/jobStages";
+import { loadJobStageFacts } from "@/components/job/loadJobStageFacts";
+import { viewerAsOf, viewerToday } from "@/lib/viewerToday";
+import { markJobContracted } from "@/lib/actions";
 
 /**
  * The shared shell for every `/jobs/[id]/*` tab: the summary header (always
- * visible, no scrolling to reach it) and the tab rail underneath. A route
+ * visible, no scrolling to reach it), the five stage steps that every tab is
+ * filed under, and the job's Paperwork panel beside the open tab. A route
  * GROUP — `(tabs)`, invisible in the URL — so this does NOT wrap the three
  * pre-existing sibling routes that already had their own single-purpose
  * pages before this rebuild: `certified-payroll`, `pay-applications/
@@ -41,23 +49,47 @@ export default async function JobTabsLayout({
   const { showsJobMoney, showsBilling, showsField } = jobCapabilities(principal);
   const isEstimateStage = summary.status === "ESTIMATE";
 
-  // Which tabs this viewer would have seen SOMETHING under in the old
-  // single-page layout. Hiding a tab is cosmetic (`lib/permissions.ts`'s
-  // own `canReach` comment: "NOT a security boundary... hides nothing");
-  // each route re-checks for itself. Invoices/Retainage were absent
-  // entirely pre-contract in the monolith (`!isEstimateStage &&
-  // showsBilling`) — same condition, now a hidden tab instead of an
-  // absent section.
-  const tabs: JobSectionTab[] = [
-    { href: `/jobs/${id}`, label: "Overview" },
-    ...(showsJobMoney ? [{ href: `/jobs/${id}/estimate`, label: "Estimate" }] : []),
-    ...(showsJobMoney ? [{ href: `/jobs/${id}/takeoff`, label: "Takeoff" }] : []),
-    { href: `/jobs/${id}/crew`, label: "Crew & time" },
-    { href: `/jobs/${id}/compliance`, label: "Compliance" },
-    ...(!isEstimateStage && showsBilling ? [{ href: `/jobs/${id}/billing`, label: "Billing" }] : []),
-    ...(!isEstimateStage && showsBilling ? [{ href: `/jobs/${id}/retainage`, label: "Retainage" }] : []),
-    { href: `/jobs/${id}/field-reports`, label: "Field reports" },
-    ...(showsField ? [{ href: `/jobs/${id}/photos`, label: "Photos" }] : []),
+  const [facts, paperworkCounts, asOf] = await Promise.all([
+    loadJobStageFacts(company.id, id),
+    viewerToday().then((today) => loadJobPaperworkCounts(company.id, id, today)),
+    // The reader's calendar day, so "overdue" on the Billing step flips at
+    // THEIR midnight, not the server's UTC one (lib/due-date.ts).
+    viewerAsOf(),
+  ]);
+
+  // The old tab rail, refiled under five stages (components/job/jobStages.ts).
+  // Every tab keeps its own route; jobStages.test.ts holds the stages' links
+  // equal to the rail this replaced, for every capability combination.
+  // Hiding a link is cosmetic (`lib/permissions.ts`'s `canReach`: "NOT a
+  // security boundary"); each route re-checks for itself. Billing and
+  // Retainage stay absent before the contract (`!isEstimateStage &&
+  // showsBilling`), exactly as the rail had them.
+  const stages = jobStages({
+    jobId: id,
+    status: summary.status,
+    lifecycleStage: summary.lifecycle.stage,
+    showsJobMoney,
+    showsBilling,
+    showsField,
+    canReachPunchList: canReach(principal, "/punch-lists"),
+    canReachCloseout: canReach(principal, "/closeout"),
+    crewSize: summary.crewSize,
+    contractSigned: facts.contractSigned,
+    approvedChangeOrders: facts.approvedChangeOrders,
+    invoiceCount: facts.invoiceCount,
+    latestPayApp: showsBilling ? facts.latestPayApp : null,
+    filesMonthlyPayApps: company.filesMonthlyPayApps,
+    asOf,
+  });
+
+  const paperwork = [
+    ...jobPaperworkLinks(principal, id, paperworkCounts),
+    // Change orders live on the Estimate route once the job is contracted.
+    ...(showsJobMoney && !isEstimateStage
+      ? [changeOrderPaperworkLink(id, facts.approvedChangeOrders, facts.waitingChangeOrders)]
+      : []),
+    // Same gate as the Billing tab the waivers live on.
+    ...(showsBilling && !isEstimateStage ? [lienWaiverPaperworkLink(id, paperworkCounts.lienWaivers)] : []),
   ];
 
   return (
@@ -71,15 +103,27 @@ export default async function JobTabsLayout({
     // Field reports). `print:px-0 print:py-0` keep the printed Overview
     // summary flush to the paper, as before.
     <PageShell width="working" className="print:px-0 print:py-0">
-      <JobSummaryHeader summary={summary} showsJobMoney={showsJobMoney} showsBilling={showsBilling} />
-      <JobSectionNav tabs={tabs} />
-      {/* NOT wrapped in print:hidden here — the Overview tab's printable
-          ContractSummary block lives in `children` and must still print.
-          The header and nav above hide themselves individually; every
-          other section below does the same where it needs to (see
-          Overview's own print:hidden wrapper around its non-summary
-          content, unchanged from the monolith). */}
-      {children}
+      <JobSummaryHeader
+        summary={summary}
+        showsJobMoney={showsJobMoney}
+        showsBilling={showsBilling}
+        contractSigned={facts.contractSigned}
+        // markJobContracted is gated on VIEW_JOB_COSTS, which is showsJobMoney.
+        markContracted={isEstimateStage && showsJobMoney ? markJobContracted.bind(null, id) : undefined}
+      />
+      <JobStageNav stages={stages} />
+      {/* The open stage's page, with the job's paperwork beside it on a wide
+          screen and below it on a narrow one. `min-w-0` lets a wide table
+          inside a tab scroll in its own box instead of pushing the panel
+          off the page. NOT wrapped in print:hidden — the Overview tab's
+          printable ContractSummary lives in `children` and must still
+          print; the panel hides itself. */}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0">{children}</div>
+        <aside className="xl:sticky xl:top-6 xl:self-start print:hidden">
+          <JobPaperworkPanel links={paperwork} />
+        </aside>
+      </div>
     </PageShell>
   );
 }

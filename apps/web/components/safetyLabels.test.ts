@@ -74,9 +74,15 @@ describe("isRecordable, as a delete guard", () => {
     }
   });
 
-  it("treats first aid as the only removable outcome", () => {
-    expect(isRecordable("FIRST_AID_ONLY")).toBe(false);
-    const recordable = SCHEMA_OUTCOMES.filter((o) => o !== "FIRST_AID_ONLY");
+  // NEAR_MISS joined first aid here on purpose (2026-10-11): nobody was hurt,
+  // it never had a case number, so removing it leaves no gap in the log.
+  // This list is the deliberate decision; a new enum member still fails the
+  // loop below until someone makes one about it.
+  const REMOVABLE = ["FIRST_AID_ONLY", "NEAR_MISS"];
+
+  it("treats first aid and near misses as the only removable outcomes", () => {
+    for (const outcome of REMOVABLE) expect(isRecordable(outcome)).toBe(false);
+    const recordable = SCHEMA_OUTCOMES.filter((o) => !REMOVABLE.includes(o));
     expect(recordable.length).toBeGreaterThan(0);
     for (const outcome of recordable) {
       expect(isRecordable(outcome)).toBe(true);

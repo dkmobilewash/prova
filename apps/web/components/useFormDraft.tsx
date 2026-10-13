@@ -138,14 +138,14 @@ export function FormDraftNotice({ draft }: { draft: FormDraft }) {
         <button
           type="button"
           onClick={draft.discard}
-          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800"
+          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover"
         >
           Discard it
         </button>
         <button
           type="button"
           onClick={draft.dismiss}
-          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800"
+          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover"
         >
           Dismiss
         </button>

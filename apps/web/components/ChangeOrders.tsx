@@ -31,6 +31,7 @@ import {
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { DocuSignPanel, type DocuSignEnvelopeView } from "@/components/DocuSignPanel";
 import { Spinner } from "@/components/Spinner";
+import { reportFieldErrors } from "@/components/formFieldErrors";
 import type { DocuSignCardState } from "@/lib/docusign/setup";
 
 /** "Send with DocuSign" on a submitted change order — optional, and absent
@@ -67,10 +68,11 @@ function useActionRunner() {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function run(fn: () => Promise<ActionResult>, onOk?: () => void) {
+  function run(fn: () => Promise<ActionResult>, onOk?: () => void, form?: HTMLFormElement) {
     setError(null);
     startTransition(async () => {
       const result = await fn();
+      reportFieldErrors(form, result);
       if (result.ok) onOk?.();
       else setError(result.error);
     });
@@ -181,7 +183,7 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
     // to be taken now rather than read off `event` again inside the callback.
     const form = event.currentTarget;
     const formData = new FormData(form);
-    run(() => action(formData), () => form.reset());
+    run(() => action(formData), () => form.reset(), form);
   }
 
   return (
@@ -376,7 +378,7 @@ function Decision({ changeOrder, today }: { changeOrder: ChangeOrderView } & Tod
           <button
             type="submit"
             disabled={void_.isPending}
-            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-rail-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {void_.isPending ? "Withdrawing…" : "Withdraw"}
           </button>
@@ -500,7 +502,7 @@ function ProposalRow({ proposal, canRemove }: { proposal: ProposalView; canRemov
                 onConfirm={() => run(() => removeProposal(proposal.id))}
                 deleteClassName="text-xs text-ink-muted hover:text-rose-600 disabled:opacity-50"
                 cancelClassName="text-xs text-ink-label underline hover:text-ink-body disabled:opacity-50"
-                confirmClassName="text-xs text-red-400 underline disabled:opacity-50"
+                confirmClassName="text-xs text-danger underline disabled:opacity-50"
               />
             }
           />
@@ -540,9 +542,9 @@ function DraftActions({ changeOrder, today }: { changeOrder: ChangeOrderView } &
             pending={discard.isPending}
             onConfirm={() => discard.run(() => deleteChangeOrderDraft(changeOrder.id))}
             armedClassName="flex flex-wrap items-center gap-2"
-            deleteClassName="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
-            cancelClassName="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-neutral-800 disabled:opacity-50"
-            confirmClassName="rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+            deleteClassName="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-rail-hover disabled:cursor-not-allowed disabled:opacity-50"
+            cancelClassName="rounded-md border border-line-card px-3 py-2 text-sm text-ink-body hover:bg-rail-hover disabled:opacity-50"
+            confirmClassName="rounded-md border border-red-500 px-3 py-2 text-sm text-danger hover:bg-tag-rose disabled:opacity-50"
           />
         }
       >
@@ -721,7 +723,7 @@ export function ChangeOrders({
   const create = useActionRunner();
 
   return (
-    <section className="mb-10" data-tour="job-change-orders">
+    <section id="change-orders" className="mb-10 scroll-mt-24" data-tour="job-change-orders">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold text-ink">Change orders</h2>
         {pendingCount > 0 && (
@@ -754,7 +756,7 @@ export function ChangeOrders({
           event.preventDefault();
           const form = event.currentTarget;
           const formData = new FormData(form);
-          create.run(() => createChangeOrder(jobId, formData), () => form.reset());
+          create.run(() => createChangeOrder(jobId, formData), () => form.reset(), form);
         }}
         className="mb-4 flex flex-wrap items-end gap-3 rounded-md border border-line-card bg-surface p-3"
       >

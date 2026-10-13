@@ -38,7 +38,7 @@ export type WallRunView = {
 
 const field =
   "rounded-md border border-line-card bg-canvas px-2 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
-const small = "rounded-md bg-neutral-800 px-3 py-1.5 text-xs font-medium text-ink hover:bg-neutral-700 disabled:opacity-50";
+const small = "rounded-md bg-rail-hover px-3 py-1.5 text-xs font-medium text-ink hover:bg-lift disabled:opacity-50";
 const labelClass = "flex flex-col gap-1 text-xs text-ink-label";
 
 function describe(summary: Summary): string {
@@ -227,7 +227,7 @@ function WallRunRow({
                   else onDone(describe(result.value));
                 });
               }}
-              deleteClassName="text-xs text-red-400 hover:underline"
+              deleteClassName="text-xs text-danger hover:underline"
             />
           }
         />

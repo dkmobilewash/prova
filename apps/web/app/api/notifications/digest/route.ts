@@ -8,6 +8,7 @@ import {
 } from "@/lib/notification-run";
 import { loadDigestRecipients } from "@/lib/notification-run-query";
 import { serverToday } from "@/lib/serverToday";
+import { DIGEST_INVOCATION_BUDGET_MS, runScheduledAgent, scheduledRunClean, type ScheduledRunCounts } from "@/lib/agents/cron";
 
 /**
  * The thing that runs when nobody is looking.
@@ -39,6 +40,17 @@ import { serverToday } from "@/lib/serverToday";
  * idempotent by construction. A notice is claimed by its milestone key
  * before the provider is called, so a second GET a second later sends
  * nothing. That is also why a retry after a failed invocation is safe.
+ *
+ * **AND SINCE 2026-10-12 THIS INVOCATION ALSO RUNS THE BID WATCHER**, after
+ * the digest, with whatever is left of the function's time. `vercel.json`
+ * on `prova-web` may declare two cron jobs on the Hobby plan; the digest and
+ * plan ingest were those two, and a deploy declaring a third is refused. So
+ * the watcher rides here rather than on its own entry — see
+ * lib/agents/cron.ts, and `/api/agents/run` for the manual route. The
+ * watcher's counts are in the body under `agents`, and they count toward
+ * the status: a watcher that failed a company, or that the digest left no
+ * time for, is not a 200. The watcher is idempotent too (findings carry a
+ * dedupeKey), so a retry repeats nothing.
  */
 
 export const runtime = "nodejs";
@@ -100,6 +112,7 @@ export async function GET(request: Request) {
   const today = serverToday();
 
   const budgetMs = Number(process.env.NOTIFY_RUN_BUDGET_MS) || DEFAULT_RUN_BUDGET_MS;
+  const invocationStarted = Date.now();
 
   const recipients = await loadDigestRecipients();
   const report = await runDigests({
@@ -110,6 +123,17 @@ export async function GET(request: Request) {
     // unconfigured Expo token is recorded, never a stop — the email half's
     // status and the run's status stay what they were.
     pushDispatch: (recipient) => dispatchAlertPush(recipient, today),
+  });
+
+  // The watcher, on the time the digest left. Its own loader is a company
+  // list, so an empty budget still costs one query and reports every
+  // company as not attempted — which is the honest answer, and a 500 below.
+  const agents: ScheduledRunCounts = await runScheduledAgent({
+    agent: "BID_WATCHER",
+    // DIGEST_INVOCATION_BUDGET_MS lives in lib/agents/cron.ts rather than
+    // here: a route file may export only Next's own fields, and `next build`
+    // (not typecheck) refuses any other export.
+    budgetMs: Math.max(0, DIGEST_INVOCATION_BUDGET_MS - (Date.now() - invocationStarted)),
   });
 
   // One line per run, in the deployment log, with no addresses in it.
@@ -125,10 +149,11 @@ export async function GET(request: Request) {
   // failed is a non-2xx, and the body carries the detail either way.
   // Re-running is safe, so a red invocation is a thing that can simply be
   // retried.
-  const clean = report.failed === 0 && report.stopped === null;
+  const digestClean = report.failed === 0 && report.stopped === null;
+  const clean = digestClean && scheduledRunClean(agents);
   const status = clean ? 200 : report.stopped === "email-not-configured" ? 503 : 500;
 
-  return json({ ok: clean, today, baseUrl, ...report }, status);
+  return json({ ok: clean, today, baseUrl, ...report, agents }, status);
 }
 
 function json(body: unknown, status: number): Response {

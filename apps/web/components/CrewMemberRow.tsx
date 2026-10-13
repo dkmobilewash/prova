@@ -90,7 +90,7 @@ export function CrewMemberRow({
           />
 
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}
@@ -117,7 +117,7 @@ export function CrewMemberRow({
                 setIsEditing(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
             >
               Cancel
             </button>
@@ -152,7 +152,7 @@ export function CrewMemberRow({
                 cancelLabel="Keep"
                 pending={isPending}
                 onConfirm={() => run(() => archiveCrewMember(member.id))}
-                deleteClassName="text-sm text-red-400 hover:underline disabled:opacity-50"
+                deleteClassName="text-sm text-danger hover:underline disabled:opacity-50"
               />
             ) : undefined
           }
@@ -164,13 +164,13 @@ export function CrewMemberRow({
                 setIsEditing(true);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover"
             >
               Edit
             </button>
           )}
         </RowActions>
-        {error && <p className="max-w-[16rem] text-xs text-rose-300 sm:text-right">{error}</p>}
+        {error && <p className="max-w-[16rem] text-xs text-danger sm:text-right">{error}</p>}
       </div>
     </div>
   );

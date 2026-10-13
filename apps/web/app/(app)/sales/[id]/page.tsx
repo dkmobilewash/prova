@@ -19,6 +19,8 @@ import {
   type RecordedStageChange,
 } from "@/lib/sales-stage-history";
 
+export const metadata = { title: "Edit lead" };
+
 export default async function SalesLeadPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { company, ...currentUser } = await requireCompanyContext();

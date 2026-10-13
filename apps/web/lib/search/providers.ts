@@ -68,8 +68,8 @@ const PG_INT_MAX = 2_147_483_647;
  * so the filter was never going to match. At best it is a branch of an
  * `OR` that costs a comparison and returns nothing; at worst it is an
  * error out of the query engine, and a global search that throws is the
- * one this app hangs on (see `lib/actions/search.ts` and
- * `SearchLauncher`). Dropping it loses nothing either way.
+ * one this app hangs on (see `app/api/search/route.ts` and
+ * `components/shell/CommandPalette.tsx`). Dropping it loses nothing either way.
  *
  * Kept as a shared function rather than four copies because four copies is
  * exactly how three of them get fixed.
@@ -90,6 +90,29 @@ const titleCase = (value: string): string =>
     .replace(/_/g, " ")
     .replace(/^\w/, (c) => c.toUpperCase());
 
+/**
+ * The jobs most recently touched, for the empty command palette. The same
+ * slice and the same open gate as `jobProvider` below (name, status, GC —
+ * no money), scoped by `companyId`, which `companyScope.test.ts` asserts
+ * against a mocked client.
+ */
+export async function recentJobs(companyId: string, limit = 5): Promise<SearchRecordResult[]> {
+  const jobs = await prisma.job.findMany({
+    where: { companyId },
+    select: { id: true, name: true, status: true, contact: { select: { name: true } } },
+    orderBy: { updatedAt: "desc" },
+    take: limit,
+  });
+  return jobs.map((job) => ({
+    kind: "record",
+    type: "job",
+    id: job.id,
+    title: job.name,
+    subtitle: `${titleCase(job.status)} — ${job.contact.name}`,
+    href: `/jobs/${job.id}`,
+  }));
+}
+
 // ------------------------------------------------------------------ job --
 
 const jobProvider: SearchProvider = {
@@ -106,7 +129,13 @@ const jobProvider: SearchProvider = {
     const jobs = await prisma.job.findMany({
       where: {
         companyId,
-        OR: [{ name: { contains: query, mode: "insensitive" } }, { contact: { name: { contains: query, mode: "insensitive" } } }],
+        OR: [
+          { name: { contains: query, mode: "insensitive" } },
+          { contact: { name: { contains: query, mode: "insensitive" } } },
+          // The contract number the awarding body assigned — what a PM
+          // reads off the paperwork and types.
+          { contractNumber: { contains: query, mode: "insensitive" } },
+        ],
       },
       select: { id: true, name: true, status: true, contact: { select: { name: true } } },
       take: limit,
@@ -119,6 +148,40 @@ const jobProvider: SearchProvider = {
       title: job.name,
       subtitle: `${titleCase(job.status)} — ${job.contact.name}`,
       href: `/jobs/${job.id}`,
+    }));
+  },
+};
+
+// ------------------------------------------------------------------ bid --
+
+const bidProvider: SearchProvider = {
+  type: "bid",
+  label: SEARCH_TYPE_LABELS.bid,
+  gate: "route",
+  // /bids and the bid's own page (/ai/bids/[id]) both sit at
+  // MANAGE_ESTIMATING, so the result opens the bid's workspace — the only
+  // page a single bid has.
+  route: "/bids",
+  async search({ companyId, query, limit }: RecordSearchArgs): Promise<SearchRecordResult[]> {
+    const bids = await prisma.bidInvitation.findMany({
+      where: {
+        companyId,
+        OR: [
+          { projectName: { contains: query, mode: "insensitive" } },
+          { contact: { name: { contains: query, mode: "insensitive" } } },
+        ],
+      },
+      select: { id: true, projectName: true, status: true, contact: { select: { name: true } } },
+      take: limit,
+      orderBy: { createdAt: "desc" },
+    });
+    return bids.map((bid) => ({
+      kind: "record",
+      type: "bid",
+      id: bid.id,
+      title: bid.projectName,
+      subtitle: `Bid — ${titleCase(bid.status)} — ${bid.contact.name}`,
+      href: `/ai/bids/${bid.id}`,
     }));
   },
 };
@@ -439,6 +502,7 @@ const invoiceProvider: SearchProvider = {
  */
 export const SEARCH_PROVIDERS: SearchProvider[] = [
   jobProvider,
+  bidProvider,
   contactProvider,
   crewProvider,
   vendorProvider,

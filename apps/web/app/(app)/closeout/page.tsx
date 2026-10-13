@@ -17,6 +17,8 @@ import { StatusLine } from "@/components/StatusLine";
 import { closeoutStatus } from "@/lib/status-sentences";
 import { viewerToday } from "@/lib/viewerToday";
 
+export const metadata = { title: "Closeout & warranty" };
+
 export default async function CloseoutPage() {
   const { context, allowed } = await requireCapability("MANAGE_JOBS");
   if (!allowed) return <NoAccess capability="MANAGE_JOBS" />;

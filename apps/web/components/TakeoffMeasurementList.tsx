@@ -143,7 +143,7 @@ export function TakeoffMeasurementList({
             <input type="hidden" name="pageId" value={sheet.id} />
             <SubmitButton
               type="submit"
-              className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+              className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
             >
               Move them to the current scale
             </SubmitButton>
@@ -411,7 +411,7 @@ function WallBridgeFields({ wallTypes }: { wallTypes: PostableWallType[] }) {
         <button
           type="button"
           onClick={() => setOpenings((current) => [...current, { w: "", h: "" }])}
-          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
         >
           Add an opening
         </button>
@@ -450,7 +450,7 @@ function WallBridgeFields({ wallTypes }: { wallTypes: PostableWallType[] }) {
           <button
             type="button"
             onClick={() => setOpenings((current) => current.filter((_, i) => i !== index))}
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
           >
             Remove
           </button>
