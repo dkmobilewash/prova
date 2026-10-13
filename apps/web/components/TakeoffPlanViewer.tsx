@@ -224,6 +224,9 @@ export function TakeoffPlanViewer({
   const feetAcrossRef = useRef<number>(0);
   const regroupRef = useRef<((runs: WallCandidate[]) => WallGroup[]) | null>(null);
   const [labels, setLabels] = useState<Map<number, WallClassifyLabel> | null>(null);
+  /** Walls the check says the finder missed. Words, never a quantity — the
+   *  estimator traces each one with the measuring tools. */
+  const [missed, setMissed] = useState<{ where: string; why: string }[]>([]);
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
   /**
@@ -591,6 +594,7 @@ export function TakeoffPlanViewer({
         if (at >= 0) next.set(at, one.label);
       }
       setLabels(next);
+      setMissed(result.value.missing);
       // UNSURE IS KEPT, not dropped. A run the model could not place is a run a
       // person should look at, and the safe direction for a quantity nobody has
       // accepted yet is to leave it on the list.
@@ -810,6 +814,7 @@ export function TakeoffPlanViewer({
       feetAcrossRef.current = feetPerUnit;
       regroupRef.current = regroup;
       setLabels(null);
+      setMissed([]);
       setCheckError(null);
       setFound(regroup(walls));
       void clusters;
@@ -1113,6 +1118,27 @@ export function TakeoffPlanViewer({
             {[...labels.values()].filter((one) => one !== "WALL" && one !== "UNSURE").length} run(s)
             set aside as casework or reference. Press Find the walls again to start over.
           </p>
+        )}
+        {/* ── AND WHAT IT SAYS IS MISSING ──
+            The other half of the question, and the half nothing else in this
+            app can answer: a wall that was never paired is in no cluster and no
+            total, so no check downstream can notice it. There is no length
+            here on purpose — the estimator traces each one, and the quantity
+            comes off the drawing like every other. */}
+        {missed.length > 0 && checkError === null && (
+          <div data-takeoff="check-missing" className="w-full rounded-md border border-line-card bg-surface p-3">
+            <p className="text-xs font-medium text-ink">
+              {missed.length} wall{missed.length === 1 ? "" : "s"} on the drawing with no run on {missed.length === 1 ? "it" : "them"} — trace {missed.length === 1 ? "it" : "these"} by hand
+            </p>
+            <ul className="mt-1 space-y-1">
+              {missed.map((one, at) => (
+                <li key={`${one.where}-${at}`} className="text-xs text-ink-muted">
+                  <span className="text-ink-body">{one.where}</span>
+                  {one.why ? ` — ${one.why}` : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {/* ── THERE IS NO "FIND THE ROOMS" BUTTON, AND THAT IS DELIBERATE ──

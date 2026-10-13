@@ -52,7 +52,18 @@ import { reportUsage, type ModelUsageReporter } from "./anthropic";
  */
 
 export const WALL_CLASSIFY_TOOL_NAME = "label_candidates";
-export const WALL_CLASSIFY_PROMPT_VERSION = "wall-classify.1";
+/**
+ * Bumped whenever the system prompt changes, because the usage ledger records
+ * it and a row that says `.1` must mean the prompt `.1` asked.
+ *
+ * `.2` (2026-10-13): named the objects a dealership plan draws — vehicles above
+ * all, whose body curves pair as neatly as any wall — and added the rule that
+ * outlives any list: a wall is two STRAIGHT parallel lines a constant distance
+ * apart, and an outline that curves or closes on itself is an object. Also
+ * started asking what is MISSING, which is the half no other check here can
+ * see.
+ */
+export const WALL_CLASSIFY_PROMPT_VERSION = "wall-classify.2";
 
 /** What a candidate turned out to be. */
 export const WALL_CLASSIFY_LABELS = ["WALL", "CASEWORK", "REFERENCE", "UNSURE"] as const;
@@ -72,6 +83,26 @@ export type WallLabel = {
   reason: string;
 };
 
+/**
+ * A wall the drawing shows and the finder did not.
+ *
+ * WORDS, NEVER A QUANTITY. There is no length, no thickness and no geometry
+ * here on purpose: the estimator traces it by hand, and the measurement comes
+ * off the drawing the way every other one does. What this carries is the one
+ * thing geometry cannot produce — the knowledge that something is absent.
+ *
+ * It is the half of the job the rest of the pipeline cannot do at all. Every
+ * other check in this repo reasons about runs that EXIST; a wall that was never
+ * paired is in no list, no cluster and no total, so nothing downstream can
+ * notice it. Only looking at the drawing can.
+ */
+export type MissingWall = {
+  /** Where it is, in words an estimator can find on the sheet. */
+  where: string;
+  /** What makes it a wall, in a few words. */
+  why: string;
+};
+
 const SYSTEM_PROMPT = `You are helping a drywall and framing subcontractor take off wall quantities from an architectural floor plan.
 
 A deterministic geometry pass has already found candidate runs — pairs of parallel lines a plausible wall thickness apart — and drawn each one in RED with its number beside it. The grey and black linework is the architect's own drawing; dimensions and room tags are usually in blue.
@@ -80,7 +111,11 @@ That geometry cannot tell a wall from a countertop, a bathtub, a cabinet run, a 
 
 Judge every candidate you are given. Be specific rather than cautious: a countertop called a wall is money on a bid nobody built, and a wall called casework is money left off it. When a run genuinely could be either, say UNSURE rather than guessing — an UNSURE run is kept and flagged for the estimator, so it is the safe answer and not the useless one.
 
-Things that are NOT walls, however wall-like they measure: kitchen counters and islands, cabinet and closet runs, appliances, plumbing fixtures and tubs, stair treads and handrails, furniture, dimension and extension lines, grid lines, leaders, match lines, and anything outside the building's footprint.`;
+WHAT A WALL LOOKS LIKE, and this rule matters more than the list below because it covers the thing nobody thought of: a wall is drawn as TWO STRAIGHT PARALLEL LINES a constant distance apart, running between other walls. An outline that curves, tapers, or closes on itself is an OBJECT, however neatly two of its edges happen to run parallel for a stretch.
+
+Things that are NOT walls, however wall-like they measure: vehicles (a dealership or garage plan draws cars, and their body curves pair beautifully); equipment, machinery and racking; kitchen counters and islands; cabinet, millwork and closet runs; appliances; plumbing fixtures and tubs; stair treads and handrails; furniture and planters; dimension and extension lines; grid lines, leaders and match lines; and anything outside the building's footprint.
+
+AND SAY WHAT IS MISSING. After judging the candidates, look over the drawing again for walls that have NO red line on them at all. Report each one by where it is, in words an estimator can find on the sheet — the room it bounds, the rooms it separates, or the nearest room number. Do not guess a length: somebody will trace it by hand. Missing a wall costs a bid more than keeping a countertop does, and nothing else in this pipeline can see a wall that was never found.`;
 
 export async function labelWallCandidates(params: {
   /** PNG of the crop, base64, with the candidates drawn and numbered on it. */
@@ -91,8 +126,8 @@ export async function labelWallCandidates(params: {
   onUsage?: ModelUsageReporter;
   /** The model this company's `aiGate` resolved. */
   model?: string;
-}): Promise<WallLabel[]> {
-  if (params.candidates.length === 0) return [];
+}): Promise<{ labels: WallLabel[]; missing: MissingWall[] }> {
+  if (params.candidates.length === 0) return { labels: [], missing: [] };
   const client = new Anthropic(AI_CLIENT_OPTIONS);
 
   const list = params.candidates
@@ -124,8 +159,24 @@ export async function labelWallCandidates(params: {
                 additionalProperties: false,
               },
             },
+            missing: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  where: { type: "string" },
+                  why: { type: "string" },
+                },
+                required: ["where", "why"],
+                additionalProperties: false,
+              },
+            },
           },
-          required: ["labels"],
+          // REQUIRED, including when it is empty. A key the model may omit
+          // comes back `undefined`, and "found nothing missing" then reads the
+          // same as "was not asked" — the distinction this whole repo is built
+          // on. An empty array says it looked.
+          required: ["labels", "missing"],
           additionalProperties: false,
         },
       },
@@ -153,8 +204,34 @@ export async function labelWallCandidates(params: {
     (one): one is Extract<typeof one, { type: "tool_use" }> =>
       one.type === "tool_use" && one.name === WALL_CLASSIFY_TOOL_NAME,
   );
-  if (!block) return [];
-  return readWallLabels((block.input as { labels?: unknown }).labels, params.candidates);
+  if (!block) return { labels: [], missing: [] };
+  const input = block.input as { labels?: unknown; missing?: unknown };
+  return {
+    labels: readWallLabels(input.labels, params.candidates),
+    missing: readMissingWalls(input.missing),
+  };
+}
+
+/**
+ * The missing-wall half of the reply, bounded.
+ *
+ * Nothing here can move a number, so the only risks are a flood of them on
+ * screen and a row that says nothing. Both are capped: at most 25, each field
+ * trimmed, and a row with no `where` is dropped — it would put "a wall is
+ * missing" in front of somebody with no way to find it.
+ */
+export function readMissingWalls(raw: unknown): MissingWall[] {
+  if (!Array.isArray(raw)) return [];
+  const out: MissingWall[] = [];
+  for (const one of raw) {
+    if (typeof one !== "object" || one === null) continue;
+    const row = one as { where?: unknown; why?: unknown };
+    const where = typeof row.where === "string" ? row.where.trim().slice(0, 200) : "";
+    if (where === "") continue;
+    out.push({ where, why: typeof row.why === "string" ? row.why.trim().slice(0, 200) : "" });
+    if (out.length >= 25) break;
+  }
+  return out;
 }
 
 /**

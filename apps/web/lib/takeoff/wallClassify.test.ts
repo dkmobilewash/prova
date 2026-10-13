@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readWallLabels, type WallCandidateForLabel } from "@prova/integrations";
+import { readMissingWalls, readWallLabels, type WallCandidateForLabel } from "@prova/integrations";
 
 /**
  * WHAT A LABEL IS ALLOWED TO DO TO A QUANTITY, which is: decide whether a run
@@ -99,5 +99,58 @@ describe("reading the labels back", () => {
 
   it("asks for nothing when there is nothing to ask about", () => {
     expect(readWallLabels([{ id: 1, label: "WALL", reason: "" }], [])).toEqual([]);
+  });
+});
+
+/**
+ * ── WHAT IT SAYS IS MISSING, which nothing else here can say ──
+ *
+ * Every other check in this repo reasons about runs that EXIST. A wall the
+ * finder never paired is in no cluster, no group and no total, so no census, no
+ * bench diagnosis and no sum downstream can notice it is gone. Only looking at
+ * the drawing can — which is why the reply carries this half at all.
+ *
+ * It carries WORDS, never a quantity. There is no length, thickness or geometry
+ * in a `MissingWall` on purpose: the estimator traces it with the measuring
+ * tools and the number comes off the drawing like every other one. So the risks
+ * are small and bounded, and these are the bounds.
+ */
+describe("the missing walls it reports", () => {
+  it("keeps what it can act on", () => {
+    expect(
+      readMissingWalls([
+        { where: "south side of EX'G FORD SPACE 139", why: "encloses the room, no run on it" },
+        { where: "between the men's and women's restrooms", why: "demising wall" },
+      ]),
+    ).toEqual([
+      { where: "south side of EX'G FORD SPACE 139", why: "encloses the room, no run on it" },
+      { where: "between the men's and women's restrooms", why: "demising wall" },
+    ]);
+  });
+
+  it("DROPS A ROW WITH NOWHERE TO LOOK, which is worse than no row", () => {
+    // "a wall is missing" with no location is an alarm nobody can act on, and
+    // it would sit on screen beside the ones they can.
+    expect(readMissingWalls([{ where: "   ", why: "it is a wall" }, { where: "", why: "x" }])).toEqual([]);
+  });
+
+  it("survives a reply that is not a list, or rows that are not objects", () => {
+    for (const nonsense of [null, undefined, "a wall", 7, {}]) expect(readMissingWalls(nonsense)).toEqual([]);
+    expect(readMissingWalls([null, 3, "wall", { where: "north wall", why: "" }])).toHaveLength(1);
+  });
+
+  it("bounds the list, so a flood cannot bury the runs beside it", () => {
+    const many = Array.from({ length: 200 }, (_, i) => ({ where: `wall ${i}`, why: "" }));
+    expect(readMissingWalls(many)).toHaveLength(25);
+  });
+
+  it("bounds each field, which is rendered straight onto the panel", () => {
+    const [one] = readMissingWalls([{ where: "x".repeat(900), why: "y".repeat(900) }]);
+    expect(one.where.length).toBeLessThanOrEqual(200);
+    expect(one.why.length).toBeLessThanOrEqual(200);
+  });
+
+  it("gives a row with no reason an empty one rather than undefined", () => {
+    expect(readMissingWalls([{ where: "the corridor's north wall" }])[0].why).toBe("");
   });
 });
