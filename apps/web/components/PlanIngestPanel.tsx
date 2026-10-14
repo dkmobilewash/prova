@@ -233,6 +233,47 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
     if (existing && existing.exhausted > 0) void loadFailures(existing.jobId);
   }, [existing, loadFailures]);
 
+  /**
+   * ── THE FREE READ STARTS ITSELF ──
+   *
+   * Uploading a plan set used to do NOTHING. `startPlanIngest` had two callers
+   * and both were buttons, so a set sat unread until somebody pressed "Read the
+   * sheets" — and everything downstream waits on it: the sheet numbers, the
+   * titles, which sheets are worth a takeoff, and the per-page scale readings
+   * that prefill a calibration.
+   *
+   * ── WHY THIS ONE MAY START AND THE NEXT ONE MAY NOT ──
+   *
+   * `PAGE_INVENTORY` calls no model. `stageCost.ts` says so in the table the
+   * Retry buttons read: *"Reads the PDF. No model call, so a retry costs a fetch
+   * and a parse."* So starting it spends nothing of anybody's allowance, and the
+   * cost-visibility rule this panel is built on is untouched —
+   * `onStartTitleBlocks` below is still a press that names its price first,
+   * which is Diego's call and is not being quietly overturned here.
+   *
+   * ── IT RUNS ONCE, AND ONLY ON A SET NOBODY HAS TOUCHED ──
+   *
+   * Guarded on `existing === null` — no run of any stage has ever been created
+   * for this plan — rather than on progress, so it cannot restart a finished
+   * run, cannot resume a paused one behind somebody's back, and cannot fire
+   * twice. A set that was read and whose tab was closed still shows "Paused" and
+   * still waits for "Keep reading": resuming is a decision about work already
+   * begun, and this is only about work never begun at all.
+   *
+   * `startedOnce` is a ref rather than state because React runs effects twice in
+   * development and a second `startPlanIngest` would be a second job over the
+   * same pages — the exact duplicate the schema's own index exists to stop.
+   */
+  const startedOnce = useRef(false);
+  useEffect(() => {
+    if (existing !== null || startedOnce.current) return;
+    startedOnce.current = true;
+    onStart();
+    // `onStart` is stable for this component's lifetime and re-running on its
+    // identity would defeat the ref above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existing]);
+
   return (
     <section className="rounded-lg border border-line-card bg-surface p-4" data-plan-ingest="panel">
       <h3 className="mb-1 text-sm font-semibold text-ink">Reading the sheets</h3>
@@ -254,9 +295,24 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
               `error` nothing cleared, then derived guidance — which is worth
               remembering as a shape: a message that needs fixing twice is usually
               a message that should not need to exist. */}
+          {/* ── THE BUTTON STAYS, AND IT IS NOT DECORATION ──
+
+              The effect above starts this read on a set nobody has touched, so
+              in the ordinary case nobody sees this control at all — it is
+              replaced by the progress line within a tick.
+
+              It is kept for the case where the start FAILED. `startPlanIngest`
+              refuses a set over 2,000 pages, a plan whose file cannot be read,
+              and a caller without `VIEW_JOB_COSTS`; every one of those leaves
+              `view` null with a sentence beside it, and a panel with no way to
+              try again would be a dead end. It is also what
+              `stageReachableCensus.test.ts` reads: that census requires a
+              literal `startPlanIngest(planId, "PAGE_INVENTORY")` in `app/` or
+              `components/`, and it exists so a stage cannot be built, metered
+              and unreachable — which is what #551 shipped. */}
           <p className="mb-3 text-sm text-ink-body">
-            C Stream can walk this plan set sheet by sheet, reading what each one says. It stops and resumes safely,
-            so you can close this page and come back.
+            C Stream walks this plan set sheet by sheet, reading what each one says. It starts on its own, stops and
+            resumes safely, so you can close this page and come back.
           </p>
           <button
             type="button"
