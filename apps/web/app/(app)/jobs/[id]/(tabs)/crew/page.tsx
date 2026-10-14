@@ -43,10 +43,10 @@ export default async function JobCrewPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ week?: string; all?: string }>;
+  searchParams: Promise<{ week?: string; all?: string; open?: string }>;
 }) {
   const { id } = await params;
-  const { week: weekParam, all } = await searchParams;
+  const { week: weekParam, all, open } = await searchParams;
   const { principal, job: jobRef } = await requireJob(id);
   const { showsField } = jobCapabilities(principal);
   const canApproveTimesheet = can(principal, "MANAGE_COMPLIANCE");
@@ -100,6 +100,28 @@ export default async function JobCrewPage({
     // query rather than just hiding the result.
     showsField ? prisma.tmTicket.findMany({ where: { jobId: jobRef.id }, orderBy: { workDate: "desc" }, take: 20 }) : Promise.resolve([]),
   ]);
+
+  // A job still at ESTIMATE has nothing to log yet (density audit #39: the
+  // full tab, with its open forms, on a bid). One line instead, the way
+  // Billing does it — but only while the tab is EMPTY, so no hour, sign-off,
+  // slip or ticket already on the job is ever hidden, and `?open=1` opens
+  // the whole tab anyway (pre-construction hours are real). jobTabs.ts is
+  // untouched: the tab stays in the row.
+  const nothingYet =
+    job.timeEntries.length === 0 &&
+    job.timesheetSignoffs.length === 0 &&
+    job.dispatchSlips.length === 0 &&
+    tmTickets.length === 0;
+  if (jobRef.status === "ESTIMATE" && nothingYet && open !== "1") {
+    return (
+      <p className="text-sm text-ink-muted" data-tour="crew-before-contract">
+        This job is still an estimate — crew, hours and dispatch open up once it&rsquo;s contracted.{" "}
+        <Link href={`/jobs/${jobRef.id}/crew?open=1#log-time`} className="text-link hover:text-link-hover">
+          Log time anyway
+        </Link>
+      </p>
+    );
+  }
   /**
    * Everybody hours can be logged for, in one list — and everybody a hiring
    * hall can dispatch, which is the same people: the dispatch form takes this

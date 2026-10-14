@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { requireCompanyContext } from "@/lib/auth";
 import { CancelInviteButton } from "@/components/CancelInviteButton";
 import { CopyLinkButton } from "@/components/CopyLinkButton";
+import { CollapsedForm } from "@/components/CollapsedForm";
 import { CrewRoster } from "@/components/CrewRoster";
 import { InviteTeamMemberForm } from "@/components/InviteTeamMemberForm";
 import { JobFunctionPicker } from "@/components/JobFunctionPicker";
@@ -173,19 +174,24 @@ export default async function TeamPage() {
 
       {isOwner && (
         <>
+          {/* Behind a button, sign-up link included (density audit #20): an
+              invite is a once-in-a-while job, and the form plus the URL sat
+              open at the foot of every visit. Secondary — the crew's add
+              button is this page's one yellow action. */}
           <section className="mb-10" data-tour="team-invite">
-            <h2 className="mb-3 text-sm font-semibold text-ink-label">Invite a teammate</h2>
-            <InviteTeamMemberForm />
-            <p className="mt-2 text-xs text-ink-muted">
-              This doesn&apos;t send an email — share the sign-up link below with them yourself. When
-              they sign up with this email, they&apos;ll join your company automatically.
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <p className="break-all rounded-md bg-canvas px-3 py-2 font-mono text-xs text-link">
-                {signUpUrl}
+            <CollapsedForm label="Invite a teammate" tone="secondary">
+              <InviteTeamMemberForm />
+              <p className="text-xs text-ink-muted">
+                This doesn&apos;t send an email — share the sign-up link below with them yourself.
+                When they sign up with this email, they&apos;ll join your company automatically.
               </p>
-              <CopyLinkButton url={signUpUrl} />
-            </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="break-all rounded-md bg-canvas px-3 py-2 font-mono text-xs text-link">
+                  {signUpUrl}
+                </p>
+                <CopyLinkButton url={signUpUrl} />
+              </div>
+            </CollapsedForm>
           </section>
 
           {invites.length > 0 && (

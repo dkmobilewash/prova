@@ -59,11 +59,10 @@ export function CrewRoster({
 }) {
   return (
     <section className="mb-10" data-tour="team-crew">
-      <h2 className="mb-1 text-sm font-semibold text-ink-label">Crew</h2>
-      <p className="mb-3 text-sm text-ink-body">
-        The people who work the hours. They don&apos;t sign in and they don&apos;t need an email
-        address — a name is enough to log their hours and put them on a certified payroll.
-      </p>
+      {/* No explainer here: /team says what crew is once, at the top
+          ("Two kinds of people"), and this section used to say it twice
+          more (density audit #20). */}
+      <h2 className="mb-3 text-sm font-semibold text-ink-label">Crew</h2>
 
       {crew.length > 0 ? (
         <ul className="mb-4 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
@@ -111,7 +110,9 @@ export function CrewRoster({
               Settings. Forty hands typed one at a time is not a serious
               offer, and the import was the only path that worked — but it
               lived somewhere nothing on this page named. */}
-          <SpreadsheetImport kind="crew" existingCrew={existingCrew} />
+          {/* Titled for what it does here — its default title, "Crew", was a
+              second Crew heading inside the Crew section. */}
+          <SpreadsheetImport kind="crew" existingCrew={existingCrew} title="From a spreadsheet" />
         </div>
       )}
 
@@ -123,8 +124,6 @@ export function CrewRoster({
       )}
 
       <p className="mt-2 text-xs text-ink-muted">
-        Somebody who needs to sign in — a foreman, the office — goes under Team members above
-        instead.{" "}
         <Link href="/union-compliance?tab=setup" className="text-link hover:text-link-hover">
           Union compliance
         </Link>{" "}

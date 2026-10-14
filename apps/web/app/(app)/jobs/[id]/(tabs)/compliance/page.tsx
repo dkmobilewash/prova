@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@prova/db";
 import { PageColumn } from "@prova/ui";
 import { RowActions, ConfirmDelete } from "@/components/RowActions";
@@ -59,8 +60,15 @@ const isoDay = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : 
  * filled in from. The committees themselves are company-level and live on
  * /union-compliance beside the apprentice ratio.
  */
-export default async function JobCompliancePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function JobCompliancePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ open?: string }>;
+}) {
   const { id } = await params;
+  const { open } = (await searchParams) ?? {};
   const { job: jobRef, company, currentUser } = await requireJob(id);
 
   const [job, determinations, today, committees, notices140, requests142, firstWorkerDay, craftHours, craftOptions] =
@@ -112,6 +120,31 @@ export default async function JobCompliancePage({ params }: { params: Promise<{ 
   // Standing is DERIVED on every read and stored nowhere, and it is derived
   // HERE rather than in the client panels: "today" has to be the reader's own
   // calendar day, which only the server can resolve (lib/viewerToday.ts).
+  // A job still at ESTIMATE that is not marked public works and has no
+  // determination or DAS record: nothing on this tab is due yet (density
+  // audit #39). One line instead of three sections and an open form, the
+  // way Billing does it. A public-works bid keeps the whole tab — its wage
+  // determination prices the bid — and `?open=1` opens it for any job, so
+  // recording the call-for-bids facts is one click. jobTabs.ts untouched.
+  if (
+    job.status === "ESTIMATE" &&
+    !job.publicWorks &&
+    determinations.length === 0 &&
+    notices140.length === 0 &&
+    requests142.length === 0 &&
+    open !== "1"
+  ) {
+    return (
+      <p className="text-sm text-ink-muted" data-tour="compliance-before-contract">
+        This job is still an estimate and isn&rsquo;t marked public works — wage determinations and
+        apprenticeship notices open up once it&rsquo;s contracted.{" "}
+        <Link href={`/jobs/${jobRef.id}/compliance?open=1`} className="text-link hover:text-link-hover">
+          Record public-works facts now
+        </Link>
+      </p>
+    );
+  }
+
   const das140Rows: Das140WithStanding[] = notices140.map((notice) => ({
     ...notice,
     standing: das140Standing(notice, firstWorkerDay, today),

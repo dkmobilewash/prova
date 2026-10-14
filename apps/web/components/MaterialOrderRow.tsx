@@ -25,6 +25,7 @@ import {
 } from "@/components/materialOrderLabels";
 import { localToday } from "@/components/localToday";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Disclosure } from "@/components/Disclosure";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { Spinner } from "@/components/Spinner";
 
@@ -243,40 +244,49 @@ export function MaterialOrderRow({
             {order.promisedFor && ` · promised ${order.promisedFor}`}
             {!order.promisedFor && " · no date promised"}
           </li>
-          {order.deliveries.map((delivery) => (
-            <li key={delivery.id} className="text-xs text-ink-body">
-              <span className="font-mono text-ink-muted">DEL</span>
-              {` · arrived ${delivery.deliveredOn}`}
-              {` · ${daysBetween(order.orderedOn, delivery.deliveredOn)} day${
-                daysBetween(order.orderedOn, delivery.deliveredOn) === 1 ? "" : "s"
-              } after ordering`}
-              {delivery.completesOrder && " · closed the order out"}
-              {delivery.notes && <span className="text-ink-muted"> — {delivery.notes}</span>}
-              {/* A delivery line has no other action TODAY. It goes through
-                  RowActions anyway so that it cannot grow one: the next
-                  button added here becomes a child and is covered by the
-                  armed state without anyone remembering to cover it. Each
-                  delivery owns its own armed state, so the keyed
-                  `confirmingDeliveryId` is gone. */}
-              <RowActions
-                as="span"
-                destructive={
-                  <ConfirmDelete
-                    describe="Removes this delivery record, so the order shows that much less as arrived. Nothing is sent to the vendor."
-                    label="Remove"
-                    confirmLabel="Confirm remove"
-                    pendingLabel="Removing…"
-                    pending={isPending}
-                    onConfirm={() => run(() => deleteMaterialDelivery(delivery.id))}
-                    deleteClassName="ml-2 text-ink-muted underline disabled:opacity-50"
-                    cancelClassName="ml-2 text-ink-body underline disabled:opacity-50"
-                    confirmClassName="ml-2 text-danger underline disabled:opacity-50"
-                  />
-                }
-              />
-            </li>
-          ))}
         </ul>
+
+        {/* Each delivery opens on click (density audit #32); the state chip
+            above already says partly or fully delivered. */}
+        {order.deliveries.length > 0 && (
+          <Disclosure variant="plain" className="mt-2" summary={`Deliveries · ${order.deliveries.length}`}>
+            <ul className="-mt-2 flex flex-col gap-1 border-l-2 border-line-card pl-3">
+              {order.deliveries.map((delivery) => (
+                <li key={delivery.id} className="text-xs text-ink-body">
+                  <span className="font-mono text-ink-muted">DEL</span>
+                  {` · arrived ${delivery.deliveredOn}`}
+                  {` · ${daysBetween(order.orderedOn, delivery.deliveredOn)} day${
+                    daysBetween(order.orderedOn, delivery.deliveredOn) === 1 ? "" : "s"
+                  } after ordering`}
+                  {delivery.completesOrder && " · closed the order out"}
+                  {delivery.notes && <span className="text-ink-muted"> — {delivery.notes}</span>}
+                  {/* A delivery line has no other action TODAY. It goes through
+                      RowActions anyway so that it cannot grow one: the next
+                      button added here becomes a child and is covered by the
+                      armed state without anyone remembering to cover it. Each
+                      delivery owns its own armed state, so the keyed
+                      `confirmingDeliveryId` is gone. */}
+                  <RowActions
+                    as="span"
+                    destructive={
+                      <ConfirmDelete
+                        describe="Removes this delivery record, so the order shows that much less as arrived. Nothing is sent to the vendor."
+                        label="Remove"
+                        confirmLabel="Confirm remove"
+                        pendingLabel="Removing…"
+                        pending={isPending}
+                        onConfirm={() => run(() => deleteMaterialDelivery(delivery.id))}
+                        deleteClassName="ml-2 text-ink-muted underline disabled:opacity-50"
+                        cancelClassName="ml-2 text-ink-body underline disabled:opacity-50"
+                        confirmClassName="ml-2 text-danger underline disabled:opacity-50"
+                      />
+                    }
+                  />
+                </li>
+              ))}
+            </ul>
+          </Disclosure>
+        )}
 
         <p className="mt-1 text-xs text-ink-muted">
           {showJob && <span className="text-link">{order.jobName} · </span>}

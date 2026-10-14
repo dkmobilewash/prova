@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { StatusLine } from "@/components/StatusLine";
 import { safetyStatus } from "@/lib/status-sentences";
 import { toJobOption } from "@/components/jobLabels";
+import { SeeAll, seeAllWindow } from "@/components/SeeAll";
 
 export const metadata = { title: "Safety" };
 
@@ -26,12 +27,12 @@ function isoDate(date: Date) {
 export default async function SafetyPage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string }>;
+  searchParams: Promise<{ year?: string; all?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_FIELD");
   if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
   const { company, ...currentUser } = context;
-  const { year: yearParam } = await searchParams;
+  const { year: yearParam, all } = await searchParams;
 
   const today = isoDate(new Date());
   const thisYear = Number(today.slice(0, 4));
@@ -72,12 +73,19 @@ export default async function SafetyPage({
     include: { job: { select: { name: true } }, reportedBy: { select: { name: true } } },
   });
 
-  const talks = await prisma.toolboxTalk.findMany({
-    where: { companyId: company.id },
-    orderBy: { heldOn: "desc" },
-    take: 50,
-    include: { job: { select: { name: true } }, recordedBy: { select: { name: true } } },
-  });
+  // The latest 10 talks, See all for the rest (density audit #31). This
+  // was a silent take: 50 with no way past it.
+  const talkWindow = seeAllWindow(all, 10);
+  const [talks, talkCount] = await Promise.all([
+    prisma.toolboxTalk.findMany({
+      where: { companyId: company.id },
+      orderBy: { heldOn: "desc" },
+      take: talkWindow.take,
+      include: { job: { select: { name: true } }, recordedBy: { select: { name: true } } },
+    }),
+    prisma.toolboxTalk.count({ where: { companyId: company.id } }),
+  ]);
+  const keepYear = yearParam ? `year=${encodeURIComponent(yearParam)}&` : "";
 
   const recordableCount = incidents.filter((i) => isRecordable(i.outcome)).length;
   const nearMissCount = incidents.filter((i) => isNearMiss(i.outcome)).length;
@@ -197,7 +205,7 @@ export default async function SafetyPage({
         )}
       </section>
 
-      <section data-tour="safety-talks">
+      <section id="talks" data-tour="safety-talks">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Toolbox talks</h2>
         {talks.length === 0 ? (
           <EmptyState
@@ -239,6 +247,14 @@ export default async function SafetyPage({
             ))}
           </ul>
         )}
+        <SeeAll
+          total={talkCount}
+          limit={talkWindow.limit}
+          showingAll={talkWindow.showingAll}
+          noun="toolbox talks"
+          href={`?${keepYear}all=1#talks`}
+          fewerHref={`?${keepYear}#talks`.replace("&#", "#")}
+        />
       </section>
     </PageShell>
   );
