@@ -135,7 +135,7 @@ export default async function JobCompliancePage({
     open !== "1"
   ) {
     return (
-      <p className="text-sm text-ink-muted" data-tour="compliance-before-contract">
+      <p className="text-sm text-ink-muted">
         This job is still an estimate and isn&rsquo;t marked public works — wage determinations and
         apprenticeship notices open up once it&rsquo;s contracted.{" "}
         <Link href={`/jobs/${jobRef.id}/compliance?open=1`} className="text-link hover:text-link-hover">

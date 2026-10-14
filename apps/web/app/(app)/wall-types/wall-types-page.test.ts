@@ -65,7 +65,7 @@ const { default: WallTypesPage } = await import("@/app/(app)/wall-types/page");
 describe("/wall-types", () => {
   it("keeps the add form behind its button", async () => {
     const html = renderToStaticMarkup(await WallTypesPage());
-    expect(html).toMatch(/data-tour="wall-types-add"[^>]*><button[^>]*>Add wall type</);
+    expect(html).toMatch(/data-tour="wall-types-add"[^>]*>(?:<div>)?<button[^>]*>Add wall type</);
   });
 
   it("shows each wall type as one closed row with its tag and part count", async () => {

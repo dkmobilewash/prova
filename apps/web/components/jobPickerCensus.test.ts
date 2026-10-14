@@ -126,6 +126,13 @@ const BARE_NAME_EXCEPTIONS: Record<string, { count: number; why: string }> = {
       "composer's picker above still uses jobPickerLabel — and each chip " +
       "keeps the full jobPickerLabel in its title.",
   },
+  "app/(app)/lien-deadlines/page.tsx": {
+    count: 1,
+    why:
+      "The lien-waivers line (declutter round 3, #26): one link per billed " +
+      "job to that job's Billing tab, GC in the title. Read-only — nothing is " +
+      "filed or filtered from it; the waivers themselves live on the job.",
+  },
   // The same chip change as /field-reports, on five more logs (density
   // audit #32 and #40). Nothing is filed from a chip — each page's own
   // add form still uses jobPickerLabel — and every chip keeps the full

@@ -120,3 +120,76 @@ those four, so none was dropped. "Work turned down" is one line with a link
 to the declined bids. Check: `bids/page.test.ts` (+4) — five mutants killed.
 Noted for Diego: `lib/agents/bidWatcher.ts:52` links `/bids#<id>`, which a
 bid older than 20 no longer renders; `/ai/bids/<id>` is the right target.
+
+**Round 3 — the rest of the density audit, ranks 11–40 (2026-10-14).** Same
+rule, 26 more pages: first screen = what the page is, what needs you, the one
+primary action; everything else one click away. Takeoff (#37) was left alone
+on purpose — Diego is in it. Every control moved behind a click is listed in
+`prova-ux-reports/declutter-results.md` under "Round 3" so the e2e specs can
+follow (#774: `CollapsedForm` renders its children only once opened).
+
+**Field & paperwork.** /schedule showed the week twice — the grid, then the
+same days as a list: grid at ≥md, list on a phone, the other view one click
+away at each width; the gap list is a count that opens; calendar steps
+collapse; start dates and unscheduled capped at 5 + See all (sliced in
+render, the query is untouched because the form's picker needs every job).
+/team: Invite behind its button with the sign-up URL inside, the team-vs-crew
+explainer said once, one Crew heading. /rfis, /submittals, /drawings,
+/material-orders: job chips by name only; the GC's answer, "Revisions · N",
+"Earlier revisions · N" and "Deliveries · N" open per row; Procore/ACC feeds
+closed with a count. /punch-lists: job filter first, Add behind its button
+(`?new=1` opens it). /safety: "What happened" per incident, talks latest 10 +
+See all (replacing a silent `take: 50`). /equipment: two lines per piece with
+every action on the row. /photos: filter chips wait for a photo. Job → Crew
+and Compliance on an EMPTY estimate are one line with a way in (`?open=1`),
+like Billing; a public-works bid keeps its full Compliance tab, and nothing
+with a record is ever shortened.
+
+**Compliance, AI, alerts.** /alerts: explainer in a disclosure, Email-me in
+the header, the banner that restated the heading gone, Snooze/Seen under
+hover with a mouse and always there on touch and focus; the list stays
+uncapped — it IS the See-all page. /ai/activity: Settings on `?tab=settings`
+(the `#cap` / `#agent-switches` links follow), consecutive same-kind events
+folded ("New invitation × 10"), 50 rows + See all — display slice only, the
+queries unchanged. /ai rail: a finding is one line that opens, capped at 5
+at the render (the page already asks for 5; the audit's "14" was the count
+badge); Running now is "N running · N recent" and opens itself when a run
+needs a hand. /prevailing-wage: "Check a week" first, one row per worker
+("matches" via the same `reviewIsClean`), rules and the job mapping on
+`?tab=setup`. /compliance: EMR one status line, documents one row each.
+/lien-deadlines: the paragraph said once, tiles → `StatusLine`
+(`lienDeadlinesStatus`), waivers one line of job links. /certifications:
+START HERE one closed disclosure while nothing is set up, one row per person,
+By job as `?view=job`. /messages: one setup warning, no banner.
+
+**Money & catalog — Diego's lane, layout only.** Read line by line: no
+figure, Prisma query, server action, field name/default or `action=` changed;
+blocks were wrapped, moved or re-indented. /cash-flow: forecast first, the
+WIP CSV a header link with its paragraph in a disclosure, the overdue total
+stated only when more than one bucket holds money (same `totalOutstanding`).
+/catalog: Add and Import on top, entries a table with actuals/quotes/owner
+forms per row, templates behind "Estimate templates · N". /vendors/pricing:
+one row per item, the unit rule said once. /backcharges: tiles →
+`backchargesStatus`, rows that open (and open themselves on `#<id>`). /wip:
+eight key columns fit one screen, the eleven breakdown columns at
+`?detail=1`, over/under definitions as hints on the headings. /phase-codes:
+empty state is the heading and button. Job → Retainage: totals, releases,
+then Log release behind a button, then "10% · expected substantial
+completion …" with Edit holding the unchanged form (`retainage-single-source`
+green). Job Overview, three spots only and no section moved: details as a
+read-only list with Edit details, Upload subcontract behind a button, "how to
+mark contracted" said once (the header's Won it? box). `HintedText` is the one
+new piece — a focusable label with a `<Hint>` for server pages, since `Hint`
+is client-only.
+
+**Round 2 leftovers from the after-pass.** The burden sentence's double full
+stop; the Save in an opened estimate row at 44px; `CollapsedForm`'s closed
+button wrapped so a flex column cannot stretch it (Billing's Create invoice
+ran full width beside Submit pay application); /bids rows with nothing in
+them say "Add lines, addenda, quotes or link the job" instead of a string of
+zeros; "1 bid declined, with no reason recorded." in the singular.
+
+Check: one `declutter` test per page (31 new or extended files), each with
+its mutants recorded in the results file; reachability, theme-contrast,
+ciNodeApis, walkthrough, row-actions and retainage-single-source censuses
+green on the merged branch.

@@ -42,6 +42,7 @@ type Bid = {
   requirements: [];
   specSections: [];
   declineReason?: string | null;
+  wonJob?: { id: string; name: string } | null;
 };
 
 function bid(over: Partial<Bid> & { id: string }): Bid {
@@ -305,7 +306,7 @@ describe("/bids declutter", () => {
     expect(empty).toMatch(/<details[^>]*name="bid"/);
     expect(empty).toContain("Link the job this bid is for");
 
-    bids = [bid({ id: "e2", wonJob: { id: "job-9", name: "Pell Tower" } as never })];
+    bids = [bid({ id: "e2", wonJob: { id: "job-9", name: "Pell Tower" } })];
     const some = await render({ view: "all" });
     expect(some).toContain("job: Pell Tower");
     expect(some).not.toContain("Add lines, addenda, quotes or link the job");

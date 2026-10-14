@@ -31,7 +31,7 @@ const { default: ProposalsPage } = await import("@/app/(app)/proposals/page");
 describe("/proposals", () => {
   it("keeps the add form behind its button", async () => {
     const html = renderToStaticMarkup(await ProposalsPage());
-    expect(html).toMatch(/data-tour="proposals-add"[^>]*><button[^>]*>Add clause</);
+    expect(html).toMatch(/data-tour="proposals-add"[^>]*>(?:<div>)?<button[^>]*>Add clause</);
     expect(html).not.toContain('placeholder="Excluded: owner-furnished dumpsters"');
   });
 

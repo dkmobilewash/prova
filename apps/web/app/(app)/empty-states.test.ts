@@ -393,7 +393,7 @@ describe("/team on a brand-new account with nobody on the crew", () => {
 
   it("keeps the invite form and the sign-up link behind Invite a teammate", async () => {
     const html = await load();
-    expect(html).toMatch(/data-tour="team-invite"><button[^>]*>Invite a teammate<\/button>/);
+    expect(html).toMatch(/data-tour="team-invite">(?:<div>)?<button[^>]*>Invite a teammate<\/button>/);
     expect(html).not.toContain("app.example.com/sign-up");
     expect(html).not.toContain('name="email"');
   });

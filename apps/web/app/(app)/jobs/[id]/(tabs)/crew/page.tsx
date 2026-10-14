@@ -114,7 +114,7 @@ export default async function JobCrewPage({
     tmTickets.length === 0;
   if (jobRef.status === "ESTIMATE" && nothingYet && open !== "1") {
     return (
-      <p className="text-sm text-ink-muted" data-tour="crew-before-contract">
+      <p className="text-sm text-ink-muted">
         This job is still an estimate — crew, hours and dispatch open up once it&rsquo;s contracted.{" "}
         <Link href={`/jobs/${jobRef.id}/crew?open=1#log-time`} className="text-link hover:text-link-hover">
           Log time anyway

@@ -73,6 +73,6 @@ describe("/punch-lists aside", () => {
     const filter = html.indexOf('data-tour="punch-job-filter"');
     expect(filter).toBeGreaterThan(-1);
     expect(filter).toBeLessThan(html.indexOf('data-tour="punch-add"'));
-    expect(html).toMatch(/data-tour="punch-add"><button[^>]*>Add an item<\/button>/);
+    expect(html).toMatch(/data-tour="punch-add">(?:<div>)?<button[^>]*>Add an item<\/button>/);
   });
 });
