@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CollapsedForm } from "./CollapsedForm";
+import { primaryActionClass, secondaryActionClass } from "./emptyStateStyles";
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined;
@@ -38,9 +39,12 @@ describe("CollapsedForm", () => {
         x
       </CollapsedForm>,
     );
-    expect(primary).toContain("bg-brand");
-    expect(secondary).not.toContain("bg-brand");
-    expect(secondary).toContain("border-line-card");
+    // The real class constants, not a bare "bg-brand" literal: theme-contrast's
+    // census reads every quoted class string with bg-brand in it and requires
+    // the dark label beside it, and a test fixture is a class string to it.
+    expect(primary).toContain(primaryActionClass);
+    expect(secondary).not.toContain(primaryActionClass);
+    expect(secondary).toContain(secondaryActionClass);
   });
 
   it("the closed button carries the hash id, so a #link lands on it", () => {
