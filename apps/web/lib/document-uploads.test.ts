@@ -88,20 +88,30 @@ group("every purpose and where each one lands", () => {
     const companyScoped = DOCUMENT_UPLOAD_PURPOSES.filter(
       (p) => DOCUMENT_UPLOAD_TARGETS[p].scope === "company",
     );
-    // FOUR now, and every one past the first follows its ROW rather than a
-    // preference: `bid-quote`, `bid-addendum` and `bid-spec-section` all file
-    // against a `BidInvitation`, which is company-scoped and carries no `jobId`
-    // at all — on a bid the company has not won there is no job to name, so a
-    // job prefix would be a path with nothing to put in it.
+    // FIVE now, and every one past the first follows its ROW rather than a
+    // preference: `bid-quote`, `bid-addendum`, `bid-spec-section` and
+    // `bid-package` all file against a `BidInvitation`, which is
+    // company-scoped and carries no `jobId` at all — on a bid the company has
+    // not won there is no job to name, so a job prefix would be a path with
+    // nothing to put in it.
+    //
+    // `bid-package` is the one that is company-scoped for a SECOND reason as
+    // well, and it is worth stating because it is not like the others: the
+    // file is a transit buffer rather than a stored document. The package is
+    // merged in the browser, the bytes need a way past the framework's 1 MB
+    // Server Action body cap to be attached to an email, and `submitBidPackage`
+    // deletes the blob in a `finally` the way `quoteRead.ts` does. Nothing
+    // reads it later, from a job or from anywhere else.
     //
     // The test's NAME is the part worth keeping. It used to say "exactly one",
     // which read as a rule about the product when it was a count of the rows
     // that happened to exist; a legitimate addition should not look like a
-    // violation. That correction has now been needed three times on this list
+    // violation. That correction has now been needed four times on this list
     // and once more on the ceilings test below, which is the signal that the
     // shape — a name describing the current rows — is the thing that rots.
     expect(companyScoped.sort()).toEqual([
       "bid-addendum",
+      "bid-package",
       "bid-quote",
       "bid-spec-section",
       "compliance-document",

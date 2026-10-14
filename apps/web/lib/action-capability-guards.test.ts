@@ -1986,6 +1986,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // note on /closeout argues is worse than a consistent state.
   jobMedia: () => import("./actions/jobMedia"),
   materialOrders: () => import("./actions/materialOrders"),
+  // Messages — `submitBidPackage` is reachable from the job's proposal page,
+  // which demands MANAGE_ESTIMATING, and asserts it before it reads the bid or
+  // touches the uploaded package. The other two senders in this module are not
+  // reachable from a capability-gated page and are not walked to from here.
+  messages: () => import("./actions/messages"),
   // Lien deadlines — every write reachable only from /lien-deadlines, which
   // demands MANAGE_BILLING, and every one asserts it before any query.
   lienDeadlines: () => import("./actions/lienDeadlines"),

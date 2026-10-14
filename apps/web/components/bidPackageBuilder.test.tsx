@@ -44,10 +44,26 @@ afterEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = false;
 });
 
-function paint() {
+const TARGET = {
+  bidInvitationId: "bid_1",
+  companyId: "co_1",
+  companyName: "Cyrus Drywall",
+  gcName: "Turner Construction",
+  addresses: [
+    { address: "dana@turner.com", name: "Dana Reyes" },
+    { address: "bids@turner.com", name: "Turner Construction" },
+  ],
+  problem: null,
+  findings: [] as { id: string; title: string; href: string | null }[],
+};
+
+function paint(submit?: Partial<typeof TARGET>) {
   act(() =>
     root.render(
-      createElement(BidPackageBuilder, { projectName: "West Herr Jaguar" }),
+      createElement(BidPackageBuilder, {
+        projectName: "West Herr Jaguar",
+        ...(submit ? { submit: { ...TARGET, ...submit } } : {}),
+      }),
     ),
   );
   return {
@@ -167,7 +183,7 @@ describe("and the proposal page actually mounts it", () => {
       .replace(/^\s*\/\/.*$/gm, "");
 
     // Called at the point of use, with a fresh Date.
-    expect(code).toMatch(/link\.download = packageFileName\(projectName, packageStamp\(new Date\(\)\)\);/);
+    expect(code).toMatch(/packageFileName\(projectName, packageStamp\(new Date\(\)\)\)/);
     // And nowhere else: a stamp held in state or a module constant is the
     // regression, whatever it is named.
     expect(code.match(/packageStamp\(/g) ?? []).toHaveLength(1);
@@ -179,5 +195,88 @@ describe("and the proposal page actually mounts it", () => {
     // ends up in the PDF a general contractor receives.
     const component = readFileSync(resolve(__dirname, "BidPackageBuilder.tsx"), "utf8");
     expect(component).toContain('className="print:hidden');
+  });
+});
+
+describe("sending it to the GC", () => {
+  /**
+   * ── WHAT THESE CAN AND CANNOT SEE ──
+   *
+   * The send panel only renders once a package has been BUILT, and building
+   * needs `File.arrayBuffer`, pdf-lib and `URL.createObjectURL` — none of
+   * which happy-dom can run. So nothing below presses Send; the refusals and
+   * the ordering are `action-capability-guards.test.ts` and
+   * `messages.test.ts`'s business, and both execute the real action.
+   *
+   * What IS asserted here is the part no test elsewhere can reach: that the
+   * control is absent when it must be, and that the sentence a person reads
+   * before an unrecallable send says who it is going to.
+   */
+
+  it("SHOWS NO SEND CONTROL AT ALL when no bid is linked to this job", () => {
+    // Most jobs have none: a `BidInvitation` is company-scoped and only a WON
+    // one carries `wonJobId`. Assembling is useful on its own and was the
+    // whole of this control before sending existed.
+    paint();
+    expect(host.textContent).not.toMatch(/send it to/i);
+    expect(host.querySelector('[data-submit="send"]')).toBeNull();
+  });
+
+  it("shows no send control before anything has been built", () => {
+    // The thing being sent is the file the person just downloaded and
+    // checked — not a rebuild that might differ from it.
+    paint({});
+    expect(host.querySelector('[data-submit="send"]')).toBeNull();
+  });
+});
+
+describe("the send panel's own source, since happy-dom cannot build a package", () => {
+  const code = (() => {
+    const raw = readFileSync(resolve(__dirname, "BidPackageBuilder.tsx"), "utf8");
+    return raw
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+  })();
+
+  it("PARSED SOMETHING", () => {
+    expect(code.length).toBeGreaterThan(4_000);
+    expect(code).toContain("export function BidPackageBuilder");
+  });
+
+  it("NAMES THE GC IN THE CONFIRM, not just 'are you sure'", () => {
+    // `PayApplications` asks this way before a credit note: the figure and the
+    // party spelled out beside the tick. A bid reaching a GC cannot be
+    // recalled by anybody.
+    expect(code).toMatch(/name="confirmSend"/);
+    expect(code).toMatch(/send this bid to \{submit\.gcName\}/);
+    expect(code).toMatch(/cannot be unsent/i);
+  });
+
+  it("OFFERS ADDRESSES RATHER THAN A TEXT BOX", () => {
+    // The address is never typed. A free-text recipient would make "who did we
+    // send the bid to" a question about somebody's typing, on the one write in
+    // this app nobody can undo.
+    expect(code).toMatch(/<select\s+name="toAddress"/);
+    expect(code).not.toMatch(/<input[^>]*name="toAddress"/);
+  });
+
+  it("uploads under the bid-package purpose and hands the action the URL", () => {
+    expect(code).toMatch(/uploadDocumentFile\("bid-package", submit\.companyId, file\)/);
+    expect(code).toMatch(/submitBidPackage\(submit\.bidInvitationId, uploaded\.fileUrl, form\)/);
+  });
+
+  it("READS THE FORM BEFORE THE FIRST AWAIT", () => {
+    // React 19's rule, which `formActionCensus` enforces elsewhere: the
+    // event's own FormData is gone by the time an upload resolves.
+    const handler = code.slice(code.indexOf("function send("));
+    const readsForm = handler.indexOf("new FormData(event.currentTarget)");
+    const firstAwait = handler.indexOf("await ");
+    expect(readsForm).toBeGreaterThan(-1);
+    expect(readsForm).toBeLessThan(firstAwait);
+  });
+
+  it("attaches exactly what was built, not a rebuild", () => {
+    expect(code).toMatch(/new File\(\[built\.bytes as BlobPart\], built\.fileName/);
   });
 });
