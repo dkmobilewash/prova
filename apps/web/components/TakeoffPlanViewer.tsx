@@ -37,25 +37,17 @@ import {
 } from "@/lib/takeoff-plan-view";
 import {
   type WallCandidate,
-  clusterByThickness,
   inchLabel,
-  wallsInTheBuilding,
-  wallsNotLettering,
-  wallsNotTheSheetBorder,
-  type WallCluster,
   type StrokeSegment,
 } from "@/lib/takeoff/wallVectors";
-import { wallsFromBothEngines } from "@/lib/takeoff/wallRuns";
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
 import type { WallClassifyLabel } from "@prova/integrations";
-import { pagesToSample, templateFromSheets, withoutTemplate } from "@/lib/takeoff/sheetTemplate";
+import { pagesToSample } from "@/lib/takeoff/sheetTemplate";
+import { findWallsOnSheet, inPageWidthUnits } from "@/lib/takeoff/findWallsOnSheet";
 import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
 import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
-import { wallTypeTags, tagByRun, tagSentence } from "@/lib/takeoff/wallTags";
-import { defaultWallTypeFromNotes } from "@/lib/takeoff/wallNotes";
-import { scaleBarLabels, wallsNotTheScaleBar } from "@/lib/takeoff/scaleBar";
+import { tagSentence } from "@/lib/takeoff/wallTags";
 import {
-  wallGroups,
   verdictFor,
   groupSentence,
   wallsOnThisSheet,
@@ -640,195 +632,88 @@ export function TakeoffPlanViewer({
 
       // ── WHERE THE WORDS ARE ──
       //
-      // Same derivation as `planPdf.ts`: an item's own matrix composed with the
-      // viewport's, whose translation is the item's position on the page as
-      // displayed. `y` is reported from the TOP of the glyph, so the box is
-      // grown downwards by its height.
+      // Read here because only this side has the open document; the BASELINE is
+      // handed on untouched. `findWallsOnSheet` applies the glyph-height shift
+      // itself, once, so the browser and the server cannot disagree about where
+      // a word is — which they would, because `planPdf.pageText` stores the
+      // baseline and this used to subtract before passing anything on.
       const viewport = (page as { getViewport: (o: { scale: number }) => { transform: number[] } }).getViewport({
         scale: 1,
       });
       const content = (await (page as { getTextContent: () => Promise<{ items: unknown[] }> }).getTextContent()) ?? {
         items: [],
       };
-      // ONE PASS, TWO CONSUMERS. `wallsNotLettering` wants boxes in page-width
-      // units and `wallTypeTags` wants the STRING with its box in points, so
-      // the text is read once and both are derived from it. A second
-      // `getTextContent()` pass would be a second decode of every glyph on a
-      // sheet that can carry tens of thousands.
       const textItems = content.items.flatMap((raw) => {
         const item = raw as { str?: string; transform?: number[]; width?: number; height?: number };
         if (typeof item.str !== "string" || item.str.trim() === "" || !Array.isArray(item.transform)) return [];
         const m = pdfjs.Util.transform(viewport.transform, item.transform);
-        const h = item.height ?? 0;
-        return [{ str: item.str, x: m[4], y: m[5] - h, width: item.width ?? 0, height: h }];
+        return [{ str: item.str, x: m[4], y: m[5], width: item.width ?? 0, height: item.height ?? 0 }];
       });
-      const textBoxes = textItems.map((item) => ({
-        x: item.x / pageSize.widthPt,
-        y: item.y / pageSize.widthPt,
-        width: item.width / pageSize.widthPt,
-        height: item.height / pageSize.widthPt,
-      }));
-      // Page-width units: every stored figure is a fraction of THIS page's
-      // width, and `width` is deliberately left in points — the pen is compared
-      // against other pens on the same sheet, never against a distance, so
-      // scaling it would be arithmetic with no meaning.
-      const unitsOf = (over: number) => (one: StrokeSegment): StrokeSegment => ({
-        x1: one.x1 / over,
-        y1: one.y1 / over,
-        x2: one.x2 / over,
-        y2: one.y2 / over,
-        width: one.width,
-        // CARRIED, because this rebuilds the object field by field and the flag
-        // decides which engine may use the piece — see `StrokeSegment.curved`.
-        // Dropped here, a flattened arc would reach the room engine again and
-        // the lobby wall would be billed twice: 1,957 ft against a key of 1,894.
-        curved: one.curved,
-      });
-      const allInUnits = segments.map(unitsOf(pageSize.widthPt));
 
       // ── THE SET'S OWN TEMPLATE, READ FROM OTHER SHEETS ──
       //
-      // #722 fixed the drawing FRAME by geometry and said plainly that the
-      // title-block cells were still counted as walls: they are short runs
-      // inside the border, and every cheap way to guess that corner also drops
-      // real wall, because a plan is routinely drawn right up to it.
+      // The frame, the title block and the logo are the only geometry at the
+      // SAME page position on every sheet of a set. A wall is not. It costs a
+      // few extra page parses; `pagesToSample` spreads them across the whole
+      // document rather than taking neighbours, which is the identical-floors
+      // guard — levels 3 to 10 of a tower repeat their REAL walls, and evenly
+      // spaced samples cross disciplines, where nothing but the template
+      // survives.
       //
-      // This is the fix that needs no guess. The frame, the title block and the
-      // logo are the only geometry at the SAME page position on every sheet of
-      // a set. A wall is not.
-      //
-      // It costs a few extra page parses. `pagesToSample` spreads them across
-      // the whole document rather than taking neighbours, which is the
-      // identical-floors guard — levels 3 to 10 of a tower repeat their REAL
-      // walls, and evenly spaced samples cross disciplines, where nothing but
-      // the template survives. `sheetTemplate.ts` carries the reasoning and the
-      // fail-safe: too few sheets read and it filters nothing, because "cannot
-      // tell" must not mean "drop it".
-      let inUnits = allInUnits;
-      let templateDropped = 0;
+      // THE READING IS HERE AND THE FILTERING IS NOT. Only this side can open
+      // another page; what it produces is handed over as data. A page that will
+      // not parse yields `null`, which is not an error — the geometric filters
+      // still run and the sheet gets exactly what it had before this existed.
+      let sampledSheets: StrokeSegment[][] | null = null;
       try {
         const sampled: StrokeSegment[][] = [];
         for (const n of pagesToSample(doc.numPages, pageNumber)) {
           if (n === pageNumber) {
-            sampled.push(allInUnits);
+            sampled.push(segments.map(inPageWidthUnits(pageSize.widthPt)));
             continue;
           }
           const other = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(n);
           const read = await segmentsFromOpenPage(other, pdfjs, n);
           // ITS OWN width, not this sheet's. A set with a mixed page size would
           // otherwise compare one sheet's coordinates against another's scale.
-          sampled.push(read.segments.map(unitsOf(read.widthPt || pageSize.widthPt)));
+          sampled.push(read.segments.map(inPageWidthUnits(read.widthPt || pageSize.widthPt)));
         }
-        const template = templateFromSheets(sampled);
-        if (template.size > 0) {
-          const kept = withoutTemplate(allInUnits, template);
-          templateDropped = allInUnits.length - kept.length;
-          inUnits = kept;
-        }
+        sampledSheets = sampled;
       } catch {
-        // A page that will not parse is not a reason to refuse the sheet in
-        // front of somebody. Falling through leaves the geometric filters,
-        // which is exactly what this sheet had before.
-        inUnits = allInUnits;
-        templateDropped = 0;
+        sampledSheets = null;
       }
-      setTemplateStrokes(templateDropped);
-      // BOTH ENGINES, MERGED. Pairing asks "are these two lines a wall" and
-      // needs no room to close; the room engine asks which enclosed regions are
-      // thin AND separate two different spaces, and does not care how the wall
-      // was drawn. Opposite blind spots, so neither wins alone -- measured
-      // through the filters below on three real sheets, the union beats both on
-      // every one of them (augusta 608/472 -> 707ft, naples 657/789 -> 1,302ft,
-      // west-herr 1,495/1,093 -> 1,679ft). `mergeWalls` is what stops the
-      // overlap being billed twice; see `wallRuns.ts`.
-      // AND THE PARTITION SCHEDULE GOES IN WITH IT. The thicknesses of the
-      // types this company builds are what let the finder tell an assembly from
-      // a span across two of them: 1-1/2in furring on an 8in block wall is 8
-      // and 1-1/2, never one wall of 9-1/2in, because 9-1/2in is on no
-      // schedule. Without this list the finder behaves exactly as it did
-      // before, which is the whole point of passing it here rather than
-      // guessing inside.
-      const scheduleIn = wallTypes
-        .map((type) => type.thicknessIn)
-        .filter((inches): inches is number => inches !== null);
-      const everywhere = wallsFromBothEngines(inUnits, 1, pageSize.heightPt / pageSize.widthPt, {
-        feetPerPoint: feetPerUnit,
-        knownThicknessesIn: scheduleIn,
-      });
-      // ONLY THE ONES IN THE BUILDING. Without this the title block, the notes
-      // column, the sheet border and any detail drawn above the plan all come
-      // back as walls — see `wallsInTheBuilding`, which exists because somebody
-      // looked at the output rather than at its statistics.
-      const inBuilding = wallsInTheBuilding(everywhere, feetPerUnit);
-      // AND NOT THE LETTERING. A stroked glyph is two parallel lines and the
-      // pairer takes it — two whole groups on one real sheet were dimension
-      // strings and room tags. See `wallsNotLettering`.
-      const notLettering = wallsNotLettering(inBuilding, textBoxes, feetPerUnit);
-      // AND NOT THE SHEET'S OWN BORDER, which a real set offered as a 114ft
-      // wall — the longest single run in the panel and entirely false. The
-      // height is in page-width units, hence the aspect rather than 1.
-      const notBorder = wallsNotTheSheetBorder(notLettering, 1, pageSize.heightPt / pageSize.widthPt);
-      // AND NOT THE GRAPHIC SCALE BAR, which is two parallel lines a
-      // wall-thickness apart and 32 ft long — a textbook wall by every
-      // measurement, and the one thing on the sheet that is literally a ruler.
-      // It sat in School-01's panel as a 5-3/8in group holding 32 ft and was
-      // found by somebody looking at the drawing, not by a filter. See
-      // `scaleBar.ts` for why no bound on the LINES can catch it.
+
+      // ── ONE PIPELINE, SHARED ──
       //
-      // ONE PASS OVER THE TEXT for this and the wall-type tags: the items are
-      // read once above and both readers work from them.
-      const walls = wallsNotTheScaleBar(
-        notBorder,
-        scaleBarLabels(textItems, pageSize.widthPt),
+      // Everything from here to the groups lives in `findWallsOnSheet` so that
+      // the bench and the server run the SAME filters in the SAME order. It was
+      // inline here, and the bench's copy of it had silently drifted — no
+      // scale-bar filter and a dropped `curved` flag, both of which invent
+      // walls. See that file's header.
+      const found = findWallsOnSheet({
+        segments,
+        textItems,
+        pageSize,
         feetPerUnit,
-      );
-      const clusters = clusterByThickness(walls);
-      // ── WHAT THE DRAWING CALLS THESE, where it says so ──
-      //
-      // The panel otherwise names a group by a NUMBER, and an estimator still
-      // has to work out which of their own assemblies a 4-7/8in wall is. The
-      // drawing already answers that: it tags walls `EXT-1`, `A1`, `B1` beside
-      // the runs they label, and a name is what a catalogue is keyed on.
-      // ONE PASS FOR BOTH. `namesForClusters` is derived from
-      // `taggedFeetForClusters`, so reading the feet here costs nothing extra
-      // and the names on screen cannot disagree with the match beside them.
-      const tags = wallTypeTags(textItems, pageSize.widthPt);
-      // ── AND THE GROUPS ARE SPLIT BY THOSE TAGS BEFORE ANYTHING IS SHOWN ──
-      //
-      // A thickness bucket is not one wall type. School-01's 4-7/8in bucket
-      // held A1, A2, EXT-1 and C1 — 1,117 ft that could not be priced as
-      // anything, which was 58% of the sheet. `wallGroups` splits it into one
-      // group per tag plus the untagged remainder, and gives each piece the
-      // types it could be: by NAME for a tagged one, by THICKNESS for the
-      // remainder. See `wallGroups.ts` for why that ordering is the safety.
-      // THE TYPES GO TO THE TAGGER TOO, because a tag's own name says which of two
-      // runs beside each other it means — see `tagByRun`, where the measurement is.
-      // ── AND WHAT THE SHEET'S GENERAL NOTES SAY ABOUT EVERYTHING UNTAGGED ──
-      //
-      // An architect tags the exceptions and lets a note cover the rest:
-      // "ALL PARTITIONS TYPE A1 U.N.O." On School-01's A-101 that is 577 ft,
-      // about 30% of the sheet, which the panel was offering as A1, A2 or C1
-      // with nothing to choose between them. Read from the SAME text items as
-      // the tags and the scale bar — one pass over the page's words.
-      const fromNote = defaultWallTypeFromNotes(textItems, wallTypes);
-      // ONE DEFINITION OF THE PANEL, used now and again after labelling. A
-      // second call site building groups a slightly different way is how the
-      // list an estimator accepts stops matching the list they looked at.
-      const regroup = (runs: WallCandidate[]) =>
-        wallGroups(
-          clusterByThickness(runs),
-          tagByRun(runs, tags, feetPerUnit, wallTypes),
-          wallTypes,
-          fromNote,
-        );
+        wallTypes,
+        sampledSheets,
+      });
+      const walls = found.walls;
+      const regroup = found.regroup;
+      setTemplateStrokes(found.templateDropped);
+
       runsRef.current = walls;
       feetAcrossRef.current = feetPerUnit;
       regroupRef.current = regroup;
       setLabels(null);
       setMissed([]);
       setCheckError(null);
-      setFound(regroup(walls));
-      void clusters;
+      // `found.groups` IS `regroup(walls)`, computed once inside the pipeline
+      // rather than twice here. The `void clusters` that used to sit on the
+      // next line went with it: `clusterByThickness` was called, assigned and
+      // then deliberately discarded, because the real clustering happens inside
+      // `regroup`. The pipeline still returns it for the bench.
+      setFound(found.groups);
       // The sheet this answer is about, recorded WITH the answer. `pageNumber`
       // is read here rather than at render, so a result can never be relabelled
       // by paging — see `wallsOnThisSheet`.

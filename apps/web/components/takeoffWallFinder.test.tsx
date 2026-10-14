@@ -439,7 +439,12 @@ describe("the ghost lines over the sheet", () => {
     // Source text, because the detect path needs a real PDF to reach. It is the
     // weaker half of a pair: the function's own behaviour is tested above, this
     // asks only whether anything calls it.
-    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    // THE FILTERS MOVED. They were inline in this component until the pipeline
+    // was lifted into `lib/takeoff/findWallsOnSheet.ts` so the bench and the
+    // server could run the SAME ones — the bench's copy had drifted and was
+    // inventing walls. The assertion is unchanged; the file that can contain
+    // the answer is not.
+    const viewer = readFileSync(resolve(process.cwd(), "lib/takeoff/findWallsOnSheet.ts"), "utf8");
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     expect(code).toMatch(/wallsInTheBuilding\(\s*everywhere\s*,\s*feetPerUnit\s*\)/);
     // And that what gets grouped is the FILTERED set, not the raw one.
@@ -452,13 +457,22 @@ describe("the ghost lines over the sheet", () => {
     // and every test above stayed green, because they exercise the function
     // directly. Without it, dimension strings and room-number tags come back as
     // walls — 79 of 205 runs on a real sheet, in two whole groups.
-    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    // THE FILTERS MOVED. They were inline in this component until the pipeline
+    // was lifted into `lib/takeoff/findWallsOnSheet.ts` so the bench and the
+    // server could run the SAME ones — the bench's copy had drifted and was
+    // inventing walls. The assertion is unchanged; the file that can contain
+    // the answer is not.
+    const viewer = readFileSync(resolve(process.cwd(), "lib/takeoff/findWallsOnSheet.ts"), "utf8");
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     expect(code).toMatch(/wallsNotLettering\(\s*inBuilding\s*,\s*textBoxes\s*,\s*feetPerUnit\s*\)/);
     expect(code).toMatch(/clusterByThickness\(walls\)/);
     expect(code).not.toMatch(/clusterByThickness\(inBuilding\)/);
     // And that Fit is computed by the tested function rather than inline again.
-    expect(code).toMatch(/fitZoom\(/);
+    // THE VIEWER'S FILE, not the pipeline's: zoom is a thing the screen does,
+    // and it stayed behind when the filters moved.
+    expect(
+      readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8"),
+    ).toMatch(/fitZoom\(/);
   });
 
   it("the viewer SHOWS the decline reason, and only when it has nothing to offer", () => {
@@ -482,9 +496,19 @@ describe("the ghost lines over the sheet", () => {
     // than 1. Passing 1 would compare a vertical border against the width and
     // let it straight through, which is the one mistake this filter exists to
     // avoid.
-    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    // THE FILTERS MOVED. They were inline in this component until the pipeline
+    // was lifted into `lib/takeoff/findWallsOnSheet.ts` so the bench and the
+    // server could run the SAME ones — the bench's copy had drifted and was
+    // inventing walls. The assertion is unchanged; the file that can contain
+    // the answer is not.
+    const viewer = readFileSync(resolve(process.cwd(), "lib/takeoff/findWallsOnSheet.ts"), "utf8");
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code).toMatch(/wallsNotTheSheetBorder\(\s*notLettering\s*,\s*1\s*,\s*pageSize\.heightPt \/ pageSize\.widthPt\s*\)/);
+    // THE ASPECT IS NAMED NOW rather than spelled inline twice — the same
+    // value, computed once where the pipeline also hands it to the detector.
+    // The census still pins that the border is measured against the page's own
+    // height and not against 1, which is the thing that was wrong.
+    expect(code).toMatch(/const aspect = pageSize\.heightPt \/ pageSize\.widthPt;/);
+    expect(code).toMatch(/wallsNotTheSheetBorder\(\s*notLettering\s*,\s*1\s*,\s*aspect\s*\)/);
     expect(code).toMatch(/clusterByThickness\(walls\)/);
     expect(code).not.toMatch(/clusterByThickness\(notLettering\)/);
   });
