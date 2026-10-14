@@ -17,6 +17,7 @@ import {
 import { requireJob } from "@/lib/jobs/job-access";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
 import { viewerTimeZone } from "@/lib/viewerToday";
+import { SeeAll, seeAllWindow } from "@/components/SeeAll";
 
 /**
  * Field reports — a daily log of what happened on site, plus the delay
@@ -25,8 +26,17 @@ import { viewerTimeZone } from "@/lib/viewerToday";
  * route, exactly as the monolith left it — this section carried no
  * capability check there, unlike the Photos gallery next to it.
  */
-export default async function JobFieldReportsPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function JobFieldReportsPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ all?: string }>;
+}) {
   const { id } = await params;
+  // The latest 7 reports, each a one-line row; ?all=1 for every one
+  // (declutter, density audit #8 — this list was uncapped and expanded).
+  const reportWindow = seeAllWindow((await searchParams).all);
   const { currentUser, job: jobRef } = await requireJob(id);
 
   const job = await prisma.job.findUnique({
@@ -39,8 +49,10 @@ export default async function JobFieldReportsPage({ params }: { params: Promise<
       siteTimeZone: true,
       dailyFieldReports: {
         orderBy: { reportDate: "desc" },
+        take: reportWindow.take,
         include: { filedBy: true, _count: { select: { media: true } } },
       },
+      _count: { select: { dailyFieldReports: true } },
       delayEvents: {
         orderBy: [{ date: "desc" }, { createdAt: "asc" }],
         take: 100,
@@ -53,6 +65,7 @@ export default async function JobFieldReportsPage({ params }: { params: Promise<
   const reportWeather = await refreshReportWeather(job, job.dailyFieldReports);
   const reportManpower = await loadManpower(job.id, job.dailyFieldReports.map((r) => r.reportDate));
   const timeZone = await viewerTimeZone();
+  const delayDays = new Set(job.delayEvents.map((d) => d.date.toISOString().slice(0, 10)));
 
   // Days with a live timesheet sign-off — the delay log shows the same
   // "locked" label the Crew tab's time entries do, for a day whose hours
@@ -83,6 +96,7 @@ export default async function JobFieldReportsPage({ params }: { params: Promise<
       reports={job.dailyFieldReports.map((report) => {
         const auto = (reportWeather.get(report.id) ?? report.weatherAuto) as DayWeather | null;
         const day = report.reportDate.toISOString().slice(0, 10);
+        const manpower = reportManpower.get(day) ?? { headcount: 0, hours: 0, byCraft: [] };
         return {
           id: report.id,
           reportDate: report.reportDate.toISOString(),
@@ -93,11 +107,21 @@ export default async function JobFieldReportsPage({ params }: { params: Promise<
           filedByName: report.filedBy?.name ?? null,
           weatherAutoLine: auto ? weatherLine(auto) : null,
           weatherAutoKind: auto?.kind ?? null,
-          manpowerLine: manpowerLine(reportManpower.get(day) ?? { headcount: 0, hours: 0, byCraft: [] }),
+          manpowerLine: manpowerLine(manpower),
+          manpower: { headcount: manpower.headcount, hours: manpower.hours },
+          hasDelayEvent: delayDays.has(day),
           lockedLabel: lockedTimeDays.get(day) ?? null,
           photoCount: report._count.media,
         };
       })}
+      seeAll={
+        <SeeAll
+          total={job._count.dailyFieldReports}
+          limit={reportWindow.limit}
+          showingAll={reportWindow.showingAll}
+          noun="reports"
+        />
+      }
     >
       <DelayLog
         jobId={job.id}

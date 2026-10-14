@@ -59,6 +59,35 @@ export function manpowerLine(m: Manpower): string {
   return `${who} — ${m.byCraft.map((c) => `${c.craft} ${c.headcount} · ${c.hours}h`).join(", ")}`;
 }
 
+/** Manpower for the reports on the company-wide log, keyed
+ * `${jobId}:yyyy-mm-dd`, in one query over the date span they cover. */
+export async function loadReportsManpower(
+  companyId: string,
+  reports: { jobId: string; reportDate: string }[],
+): Promise<Map<string, Manpower>> {
+  const out = new Map<string, Manpower>();
+  if (reports.length === 0) return out;
+  const days = reports.map((r) => r.reportDate).sort();
+  const entries = await prisma.timeEntry.findMany({
+    where: {
+      job: { companyId },
+      jobId: { in: [...new Set(reports.map((r) => r.jobId))] },
+      date: { gte: new Date(`${days[0]}T00:00:00.000Z`), lte: new Date(`${days[days.length - 1]}T00:00:00.000Z`) },
+    },
+    select: { jobId: true, date: true, hours: true, employeeUserId: true, crewMemberId: true, craftClassification: { select: { name: true } } },
+  });
+  const byKey = new Map<string, ManpowerEntry[]>();
+  for (const e of entries) {
+    const key = `${e.jobId}:${e.date.toISOString().slice(0, 10)}`;
+    byKey.set(key, [...(byKey.get(key) ?? []), e]);
+  }
+  for (const r of reports) {
+    const key = `${r.jobId}:${r.reportDate}`;
+    out.set(key, summarizeManpower(byKey.get(key) ?? []));
+  }
+  return out;
+}
+
 /** Manpower for several days of one job, keyed yyyy-mm-dd, in one query. */
 export async function loadManpower(jobId: string, dates: Date[]): Promise<Map<string, Manpower>> {
   const out = new Map<string, Manpower>();

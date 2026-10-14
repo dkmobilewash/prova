@@ -11,6 +11,8 @@ import { type ReportData, dayLabel } from "@/components/fieldReportWeeks";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { Spinner } from "@/components/Spinner";
+import { Disclosure } from "@/components/Disclosure";
+import { FieldReportFacts } from "@/components/FieldReportFacts";
 
 // Defined once so the row's controls can't drift back under 44px a button at
 // a time. `inline-flex` + `items-center` is what makes min-h centre the label
@@ -54,7 +56,7 @@ export function FieldReportEntry({
 
   if (isEditing) {
     return (
-      <li className="rounded-md border border-line-card bg-surface p-4">
+      <li className="py-3">
         <form
           ref={draft.formRef}
           onChange={draft.save}
@@ -111,26 +113,39 @@ export function FieldReportEntry({
   }
 
   return (
-    <li className="rounded-md border border-line-card bg-surface p-4">
+    <li>
+      {/* One line until opened (declutter, density audit #8): every report
+          used to render its whole body — up to 400 of them on this page.
+          The summary carries the facts a scan needs; the body and the
+          row's actions open under it, one report at a time. */}
+      <Disclosure
+        variant="row"
+        name="field-report"
+        summary={
+          <FieldReportFacts
+            dateLabel={dayLabel(report.reportDate)}
+            jobName={report.jobName}
+            manpower={report.manpower}
+            hasDelays={Boolean(report.delays)}
+            filedByName={report.filedByName}
+          />
+        }
+      >
       {/* Stacks on a phone: the three confirm-delete buttons are ~266px wide
           and this row only has 293px of content box at 375px, which left the
           report itself nothing to render in. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <p className="flex flex-wrap items-baseline gap-x-2">
-            <span className="font-medium text-ink">{dayLabel(report.reportDate)}</span>
-            {/* A report is evidence ABOUT a job, so the job is where you go
-                next. This was already styled link-blue and wasn't a link,
-                which is worse than plain text: it invites a click that does
-                nothing. */}
-            <Link
-              href={`/jobs/${report.jobId}`}
-              className="text-sm text-link hover:text-link-hover hover:underline"
-            >
-              {report.jobName}
-            </Link>
-          </p>
-          {report.crewPresent && <p className="text-sm text-ink-body">{report.crewPresent}</p>}
+          {/* A report is evidence ABOUT a job, so the job is where you go
+              next. A link, not summary text: a link inside <summary> would
+              also toggle the row. */}
+          <Link
+            href={`/jobs/${report.jobId}`}
+            className="text-sm text-link hover:text-link-hover hover:underline"
+          >
+            {report.jobName} →
+          </Link>
+          {report.crewPresent && <p className="text-sm text-ink-body">Also on site: {report.crewPresent}</p>}
           <p className="mt-1 text-sm text-ink-label">{report.workPerformed}</p>
           {/* ink-body, not ink-muted — the muted level is under
               the 4.5 floor for text. Weather is what a delay claim is argued
@@ -194,6 +209,7 @@ export function FieldReportEntry({
           </button>
         </RowActions>
       </div>
+      </Disclosure>
     </li>
   );
 }

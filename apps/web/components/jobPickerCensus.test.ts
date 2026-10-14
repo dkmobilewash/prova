@@ -118,6 +118,14 @@ const BARE_NAME_EXCEPTIONS: Record<string, { count: number; why: string }> = {
       "its own job, nothing is filed from it, and the GC, trade and stage " +
       "strip on the same card tell two similarly named jobs apart.",
   },
+  "app/(app)/field-reports/page.tsx": {
+    count: 1,
+    why:
+      "The job FILTER chips (declutter, 2026-10-13): the GC and status suffix " +
+      "wrapped the chips to two rows. Nothing is filed from a chip — the " +
+      "composer's picker above still uses jobPickerLabel — and each chip " +
+      "keeps the full jobPickerLabel in its title.",
+  },
   "components/CrewWeekGrid.tsx": {
     count: 1,
     why:
