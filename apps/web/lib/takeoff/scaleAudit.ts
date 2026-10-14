@@ -6,6 +6,8 @@ import { dimensionLabels } from "../plan-ingest/dimensionLabels";
 import { standardScaleFromText } from "../takeoff-plan";
 import { readSheetScale } from "./scaleFromDimensions";
 import { scaleFromPrinted } from "./scaleFromPrinted";
+import { scaleFromBar } from "./scaleFromBar";
+import { scaleBarLabels } from "./scaleBar";
 
 /**
  * AUDITING AUTOMATIC SCALE OVER A WHOLE BID PACKAGE, and the point is that the
@@ -186,6 +188,15 @@ export type AuditPage = {
   inheritedError: number | null;
   /** Why it declined, when it did. */
   reason: string | null;
+  /**
+   * What the sheet's own GRAPHIC SCALE BAR says, if it carries one.
+   *
+   * A fourth witness, and reported beside the others rather than folded into
+   * `derived` so the question this audit exists to answer stays askable: of the
+   * pages the three text-and-geometry readers DECLINE, how many does the bar
+   * rescue? Folding it in would improve the headline and lose the measurement.
+   */
+  bar: string | null;
   widthPt: number;
   heightPt: number;
 };
@@ -272,6 +283,11 @@ export async function auditPlanFile(file: string, bytes: Buffer, maxPages = 400)
         // picking one.
         const printedScales = printedScalesOnPage(text.items);
         const printed = printedScales.length === 1 ? printedScales[0] : null;
+        // THE SHEET'S OWN RULER, read from the same text pass. Needs no scale
+        // and no other sheet, which is why it can rescue a page both the
+        // dimension reader and the printed name have declined.
+        const barRead = scaleFromBar(scaleBarLabels(text.items, text.widthPt), text.widthPt);
+        const bar = barRead.ok ? barRead.scaleName : null;
 
         if (!verdict.ok) {
           const fallback = scaleFromPrinted(printedScales, text.widthPt, text.heightPt);
@@ -289,6 +305,7 @@ export async function auditPlanFile(file: string, bytes: Buffer, maxPages = 400)
             agreed: 0,
             inheritedError: null,
             reason: verdict.reason,
+            bar,
             widthPt: text.widthPt,
             heightPt: text.heightPt,
           });
@@ -306,6 +323,7 @@ export async function auditPlanFile(file: string, bytes: Buffer, maxPages = 400)
           agreed: verdict.agreed.length,
           inheritedError: verdict.inheritedError,
           reason: null,
+          bar,
           widthPt: text.widthPt,
           heightPt: text.heightPt,
         });
@@ -321,6 +339,7 @@ export async function auditPlanFile(file: string, bytes: Buffer, maxPages = 400)
           agreed: 0,
           inheritedError: null,
           reason: error instanceof Error ? error.message : String(error),
+          bar: null,
           widthPt: 0,
           heightPt: 0,
         });

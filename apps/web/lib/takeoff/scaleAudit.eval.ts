@@ -148,6 +148,36 @@ describe.skipIf(targets.length === 0)("automatic scale, over real drawings", () 
           `(${total.AGREES} of ${total.AGREES + total.DISAGREES + total.MISSED})`,
     );
 
+    // ── WHAT THE FOURTH WITNESS ADDS, AS ITS OWN LINE ──
+    //
+    // The bar is reported separately rather than folded into the headline,
+    // because the only question worth asking of it is the one a combined number
+    // hides: of the pages the dimension reader and the printed name BOTH
+    // decline, how many does the sheet's own ruler rescue? And of the pages
+    // they do cover, does it ever contradict them — which would be a reading
+    // nobody should ship.
+    const withBar = all.filter((p) => p.bar !== null);
+    const declined = all.filter((p) => p.outcome === "DECLINED");
+    const rescued = declined.filter((p) => p.bar !== null);
+    const covered = all.filter((p) => p.derived !== null && p.bar !== null);
+    const contradicts = covered.filter((p) => p.bar !== p.derived);
+    console.log(
+      [
+        "",
+        `  the graphic scale bar read ${withBar.length} of ${all.length} pages`,
+        `  of the ${declined.length} pages nothing else could read, the bar rescues ${rescued.length}`,
+        covered.length === 0
+          ? "  no page had both a derived scale and a bar, so the bar is unchecked here"
+          : `  where both exist it agrees on ${covered.length - contradicts.length} of ${covered.length}`,
+      ].join("\n"),
+    );
+    for (const page of contradicts) {
+      console.log(
+        `  BAR CONTRADICTS p${page.pageNumber} of ${basename(page.file)}: ` +
+          `bar ${page.bar}, derived ${page.derived}`,
+      );
+    }
+
     // EVERY DISAGREEMENT NAMED. One wrong scale on one sheet is the whole risk
     // this feature carries, and a percentage hides it.
     const wrong = all.filter((p) => p.outcome === "DISAGREES");
