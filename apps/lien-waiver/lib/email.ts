@@ -105,27 +105,45 @@ export async function sendEmail(
 
 /** Add a person to the tool's Resend audience. `unsubscribed` is true
  * unless they ticked the marketing box -- the transactional email they
- * asked for is not consent to anything else. */
+ * asked for is not consent to anything else.
+ *
+ * `ref` (a pre-fill link's tracking code, lib/prefill.ts) is saved as the
+ * contact's `ref` property, so it shows in Resend's contact list and its CSV
+ * export. Resend refuses a property that has not been created in the
+ * dashboard first, and losing the CONTACT over a tracking code would be the
+ * wrong trade -- so a refusal with the property is retried once without it,
+ * and the caller is told the ref did not stick (`refDropped`). */
 export async function addContact(
-  contact: { email: string; name: string; marketingOptIn: boolean },
+  contact: { email: string; name: string; marketingOptIn: boolean; ref?: string | null },
   env: EmailEnv & { RESEND_AUDIENCE_ID?: string } = process.env as EmailEnv,
   fetcher: typeof fetch = fetch,
-): Promise<SendResult> {
+): Promise<SendResult & { refDropped?: string }> {
   const key = env.RESEND_API_KEY?.trim();
   const audience = env.RESEND_AUDIENCE_ID?.trim();
   if (!key || !audience) return { status: "not-configured" };
   const [first, ...rest] = contact.name.trim().split(/\s+/);
-  const response = await fetcher(`https://api.resend.com/audiences/${encodeURIComponent(audience)}/contacts`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      email: contact.email.trim(),
-      first_name: first ?? "",
-      last_name: rest.join(" "),
-      unsubscribed: !contact.marketingOptIn,
-    }),
-  });
-  const body = (await response.json().catch(() => ({}))) as { id?: string; message?: string };
-  if (response.ok) return { status: "sent", id: body.id ?? "" };
+  const post = (properties?: Record<string, string>) =>
+    fetcher(`https://api.resend.com/audiences/${encodeURIComponent(audience)}/contacts`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        email: contact.email.trim(),
+        first_name: first ?? "",
+        last_name: rest.join(" "),
+        unsubscribed: !contact.marketingOptIn,
+        ...(properties ? { properties } : {}),
+      }),
+    });
+  const read = async (response: Response) => (await response.json().catch(() => ({}))) as { id?: string; message?: string };
+
+  let response = await post(contact.ref ? { ref: contact.ref } : undefined);
+  let body = await read(response);
+  let refDropped: string | undefined;
+  if (!response.ok && contact.ref) {
+    refDropped = `${response.status} ${body.message ?? ""}`.trim();
+    response = await post();
+    body = await read(response);
+  }
+  if (response.ok) return { status: "sent", id: body.id ?? "", ...(refDropped ? { refDropped } : {}) };
   return { status: "failed", error: `${response.status} ${body.message ?? ""}`.trim() };
 }
