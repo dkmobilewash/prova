@@ -209,7 +209,7 @@ const REACHED_FROM: Record<string, Reached> = {
   },
   "/jobs/[id]/pay-applications/[invoiceId]": {
     reason: "Each pay application on the job's Billing tab.",
-    parents: ["apps/web/components/PayApplications.tsx", "apps/web/components/job/PayAppSummary.tsx"],
+    parents: ["apps/web/app/(app)/jobs/[id]/(tabs)/billing/page.tsx", "apps/web/components/job/PayAppSummary.tsx"],
     needle: "/pay-applications/${",
   },
   "/jobs/[id]/photo-report": {
