@@ -97,11 +97,14 @@ describe("with nobody on the crew", () => {
     expect(render()).toContain("Import crew");
   });
 
-  it("says a crew member needs no email and no login", () => {
+  it("leaves 'crew need no email and no login' to the page, said once", () => {
     // The sentence a union sub is looking for. Without it the page reads as
     // "everyone here needs an email address", which is the belief that makes
-    // him conclude the payroll half is not real.
-    expect(render()).toMatch(/don&#x27;t sign in and they don&#x27;t need an email/);
+    // him conclude the payroll half is not real. /team says it at the top
+    // ("Two kinds of people … no login, no email needed" — empty-states.test.ts
+    // pins it there); this section restating it was two of the three copies
+    // density audit #20 counted.
+    expect(render()).not.toMatch(/don&#x27;t sign in and they don&#x27;t need an email/);
   });
 
   it("explains itself to somebody who may not add, instead of showing nothing", () => {

@@ -380,6 +380,23 @@ describe("/team on a brand-new account with nobody on the crew", () => {
     // who reads permission models for a living.
     expect(html).not.toContain("leaving it unset gives the full office access");
   });
+
+  // Density audit #20: the team-vs-crew explainer appeared three times and
+  // the invite form plus the sign-up URL sat open at the foot of the page.
+  it("explains team vs crew once, and has one Crew heading", async () => {
+    const html = await load();
+    expect(html.split("no login, no email needed").length - 1).toBe(1);
+    expect(html).not.toContain("The people who work the hours");
+    expect(html).not.toContain("goes under Team members above");
+    expect(html.match(/<h[23][^>]*>Crew<\/h[23]>/g) ?? []).toHaveLength(1);
+  });
+
+  it("keeps the invite form and the sign-up link behind Invite a teammate", async () => {
+    const html = await load();
+    expect(html).toMatch(/data-tour="team-invite"><button[^>]*>Invite a teammate<\/button>/);
+    expect(html).not.toContain("app.example.com/sign-up");
+    expect(html).not.toContain('name="email"');
+  });
 });
 
 describe("/deployment with no jobs", () => {
