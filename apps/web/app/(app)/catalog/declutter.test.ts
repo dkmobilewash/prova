@@ -44,4 +44,19 @@ describe("/catalog declutter", () => {
       expect(i, part).toBeLessThan(end);
     }
   });
+
+  it("the column header uses the SAME grid as the rows — columns and gap from one const, nothing ad hoc", () => {
+    // The gap used to be on the rows only, so the header's fixed columns
+    // packed to the right of their values and "Cost" ran into "Trade".
+    const decl = page.match(/const CATALOG_ROW_GRID =\s*"([^"]+)"/);
+    expect(decl, "CATALOG_ROW_GRID declaration").not.toBeNull();
+    expect(decl![1]).toMatch(/(^| )gap-x-\d/);
+    const lines = page.split("\n").filter((l) => l.includes("${CATALOG_ROW_GRID}"));
+    expect(lines).toHaveLength(2); // the header and the row summary
+    for (const line of lines) {
+      expect(line, line).not.toMatch(/grid-cols-|gap-/);
+    }
+    const header = page.indexOf("<span>Description</span>");
+    expect(header).toBeGreaterThan(page.indexOf(lines[0]!.trim()));
+  });
 });

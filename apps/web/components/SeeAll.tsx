@@ -32,6 +32,7 @@ export function SeeAll({
   noun,
   href = "?all=1",
   fewerHref = "?",
+  order = "latest",
   className = "",
 }: {
   /** How many there are in all — a count, not the rows loaded. */
@@ -43,6 +44,9 @@ export function SeeAll({
   noun: string;
   href?: string;
   fewerHref?: string;
+  /** "latest" for a dated list; "first" for one ranked some other way
+   *  (/alerts is worst first, so "the latest 15" would be untrue). */
+  order?: "latest" | "first";
   className?: string;
 }) {
   if (total <= limit) return null;
@@ -53,12 +57,12 @@ export function SeeAll({
         <>
           Showing all {total} {noun}.{" "}
           <Link href={fewerHref} className={link}>
-            Show the latest {limit}
+            Show the {order} {limit}
           </Link>
         </>
       ) : (
         <>
-          Showing the latest {limit} of {total} {noun}.{" "}
+          Showing the {order} {limit} of {total} {noun}.{" "}
           <Link href={href} className={link}>
             See all {total}
           </Link>

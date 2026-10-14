@@ -146,6 +146,15 @@ describe("/certifications, nothing set up", () => {
     expect(html).toContain("at the top of the page");
     expect(html).not.toContain("Require OSHA 10 below");
   });
+
+  it("names the CLOSED section the control is in, not just 'the top of the page'", async () => {
+    const html = await load();
+    // The requirement form is inside the "Start here" disclosure, closed on
+    // load — pointing at "the top of the page" alone sent people to a
+    // heading with nothing visible under it.
+    expect(html).toMatch(/<details id="certifications-required"(?![^>]*\bopen\b)/);
+    expect(html).toContain("Open “Start here” at the top of the page and require OSHA 10 there");
+  });
 });
 
 describe("/certifications, an account with something on file keeps its page", () => {

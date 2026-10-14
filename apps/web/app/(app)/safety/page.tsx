@@ -85,6 +85,11 @@ export default async function SafetyPage({
     }),
     prisma.toolboxTalk.count({ where: { companyId: company.id } }),
   ]);
+  // The incident list renders its latest 10 too, but the QUERY stays whole:
+  // the status line's case, recordable and days-away counts are read off
+  // every incident this year, so only the rendered rows are sliced.
+  const incidentWindow = seeAllWindow(all, 10);
+  const shownIncidents = incidents.slice(0, incidentWindow.take);
   const keepYear = yearParam ? `year=${encodeURIComponent(yearParam)}&` : "";
 
   const recordableCount = incidents.filter((i) => isRecordable(i.outcome)).length;
@@ -113,7 +118,7 @@ export default async function SafetyPage({
         </div>
       </section>
 
-      <section className="mb-10" data-tour="safety-incident-log">
+      <section id="incidents" className="mb-10" data-tour="safety-incident-log">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink-label">Incident log — {activeYear}</h2>
           <div className="flex flex-wrap gap-2" data-tour="safety-years">
@@ -177,8 +182,9 @@ export default async function SafetyPage({
             happened.
           </p>
         ) : (
+          <>
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
-            {incidents.map((incident) => (
+            {shownIncidents.map((incident) => (
               <SafetyIncidentRow
                 key={incident.id}
                 jobs={jobs}
@@ -202,6 +208,15 @@ export default async function SafetyPage({
               />
             ))}
           </ul>
+          <SeeAll
+            total={incidents.length}
+            limit={incidentWindow.limit}
+            showingAll={incidentWindow.showingAll}
+            noun={`cases logged for ${activeYear}`}
+            href={`?${keepYear}all=1#incidents`}
+            fewerHref={`?${keepYear}#incidents`.replace("&#", "#")}
+          />
+          </>
         )}
       </section>
 

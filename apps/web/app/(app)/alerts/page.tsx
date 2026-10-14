@@ -13,16 +13,17 @@ import { viewerToday } from "@/lib/viewerToday";
 import { Disclosure } from "@/components/Disclosure";
 import { CollapsedForm } from "@/components/CollapsedForm";
 import { alertsStatus } from "@/lib/status-sentences";
+import { SeeAll, seeAllWindow } from "@/components/SeeAll";
 
 export const metadata = { title: "Alerts" };
 
 export default async function AlertsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ show?: string }>;
+  searchParams: Promise<{ show?: string; all?: string }>;
 }) {
   const { company, ...currentUser } = await requireCompanyContext();
-  const { show } = await searchParams;
+  const { show, all } = await searchParams;
   const showSilenced = show === "silenced";
 
   // The day on the READER'S calendar, not the server's. This line was
@@ -52,6 +53,11 @@ export default async function AlertsPage({
   });
 
   const rows = showSilenced ? silenced : visible;
+  // The first 15, worst first, with See all. RENDER slice only: the count in
+  // the heading and the breakdown under it are read off every alert above.
+  const alertWindow = seeAllWindow(all, 15);
+  const shownRows = rows.slice(0, alertWindow.take);
+  const keepShow = showSilenced ? "show=silenced&" : "";
 
   // Nothing derived at all, in either list. Four tiles reading 0, 0, 0 and
   // $0.00 are a summary of nothing, and this page's own point is that it
@@ -163,11 +169,20 @@ export default async function AlertsPage({
         )
       ) : (
         <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-tour="alerts-list">
-          {rows.map((alert) => (
+          {shownRows.map((alert) => (
             <AlertRow key={alert.key} alert={alert} silenced={showSilenced} />
           ))}
         </ul>
       )}
+      <SeeAll
+        total={rows.length}
+        limit={alertWindow.limit}
+        showingAll={alertWindow.showingAll}
+        order="first"
+        noun={showSilenced ? "silenced alerts" : "alerts"}
+        href={`?${keepShow}all=1`}
+        fewerHref={showSilenced ? "?show=silenced" : "?"}
+      />
     </PageShell>
   );
 }

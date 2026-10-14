@@ -112,16 +112,21 @@ export default async function VendorPricingPage() {
   return (
     <PageShell width="working">
       <PageHeader route="/vendors/pricing" subtitle="What your suppliers have actually quoted, and when." />
-      <p className="mb-6 text-sm text-ink-body">
-        Nothing here is stored as a
-        &ldquo;current price&rdquo; — current, expired and cheapest are all worked out from the
-        quotes every time this page loads, so a price you enter today changes the answer
-        immediately.{" "}
+      {/* One line on screen, the rest one click down (declutter final pass:
+          this opened with a two-line paragraph). */}
+      <p className="text-sm text-ink-body" data-vp="lead">
+        A price you enter today changes the answer straight away.{" "}
         <Link href="/vendors" className="text-link hover:text-link-hover">
           The vendor directory
         </Link>{" "}
-        is where the suppliers themselves live.
+        holds the suppliers themselves.
       </p>
+      <Disclosure variant="plain" className="mb-6 mt-1" summary="How current prices are worked out">
+        <p className="text-sm text-ink-body">
+          Nothing here is stored as a &ldquo;current price&rdquo; — current, expired and cheapest
+          are all worked out from the quotes every time this page loads.
+        </p>
+      </Disclosure>
 
       <div className="mb-8" data-tour="vp-record">
         <VendorPriceQuoteForm vendors={vendors} catalogEntries={catalogEntries} />

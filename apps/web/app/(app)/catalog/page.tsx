@@ -256,10 +256,14 @@ function QuoteLine({
   );
 }
 
-/** desc · unit · price · cost · trade, shared by the header and each row so
- *  the columns line up. Applied at `sm:` and up; a phone gets description and
- *  price. Literal so Tailwind sees every class. */
-const CATALOG_ROW_GRID = "sm:grid-cols-[minmax(0,1fr)_5rem_6rem_6rem_9rem]";
+/** desc · unit · price · cost · trade — the WHOLE grid (columns and gap),
+ *  shared by the header and each row so the columns line up. The gap lives
+ *  here too: when only the rows carried `gap-x-3`, the header's fixed
+ *  columns packed 2-3rem to the right of their values and "Cost" ran into
+ *  "Trade". Callers add only `grid`/`hidden sm:grid`. A phone gets
+ *  description and price. Literal so Tailwind sees every class. */
+const CATALOG_ROW_GRID =
+  "gap-x-4 grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_5rem_6rem_6rem_9rem]";
 
 export default async function CatalogPage() {
   const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
@@ -592,7 +596,7 @@ export default async function CatalogPage() {
                   variant="row"
                   name="catalog-entry"
                   summary={
-                    <span className={`grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] gap-x-3 ${CATALOG_ROW_GRID}`}>
+                    <span className={`grid min-w-0 flex-1 ${CATALOG_ROW_GRID}`}>
                       <span className="truncate font-medium text-ink">{entry.description}</span>
                       <span className="hidden text-ink-body sm:block">{entry.unit ?? "—"}</span>
                       <span className="text-right text-ink-body">

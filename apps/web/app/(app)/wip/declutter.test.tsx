@@ -55,4 +55,24 @@ describe("/wip declutter", () => {
     expect(html).toContain("Cost to date");
     expect(html).toContain('href="/wip"');
   });
+
+  it("wears the shared PageHeader: Home / Money / Work in progress, one-line subtitle", async () => {
+    const html = await render();
+    const crumb = html.match(/<nav aria-label="Breadcrumb"[\s\S]*?<\/nav>/)?.[0] ?? "";
+    expect(crumb).toContain(">Home</a>");
+    expect(crumb).toContain('href="/areas/money"');
+    expect(crumb).toContain(">Money</a>");
+    expect(crumb).toContain('aria-current="page"');
+    expect(crumb).toContain(">Work in progress</span>");
+    expect(html).toMatch(/<h1[^>]*>Work in progress<\/h1>/);
+  });
+
+  it("says what the dash means in ONE sentence — no \"— is not zero. Not zero —\"", async () => {
+    const html = await render();
+    const line = html.match(/<p[^>]*data-tour="wip-coverage"[^>]*>([\s\S]*?)<\/p>/)?.[1] ?? "";
+    const text = line.replace(/<[^>]+>/g, "").replace(/&#x27;|&apos;/g, "'").replace(/\s+/g, " ").trim();
+    expect(text).toMatch(/^A — means the figure cannot be worked out yet, not that it is zero/);
+    expect(text).not.toMatch(/Not zero/i);
+    expect(text.match(/\./g) ?? []).toHaveLength(1);
+  });
 });

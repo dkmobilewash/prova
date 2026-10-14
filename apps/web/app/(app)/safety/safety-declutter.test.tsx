@@ -18,6 +18,24 @@ const talk = (n: number) => ({
   recordedBy: null,
 });
 const TALKS = Array.from({ length: 12 }, (_, i) => talk(i + 1));
+const incident = (n: number) => ({
+  id: `i-${n}`,
+  caseYear: 2026,
+  caseNumber: n,
+  occurredAt: new Date("2026-09-03T00:00:00Z"),
+  jobId: null,
+  job: null,
+  employeeName: n === 1 ? "Luis Ortega" : `Worker ${n}`,
+  jobTitle: null,
+  location: null,
+  description: n === 1 ? "Cut on the left hand from a utility knife." : `Incident ${n}.`,
+  classification: "INJURY",
+  outcome: n % 4 === 0 ? "DAYS_AWAY" : "FIRST_AID",
+  daysAway: n % 4 === 0 ? 2 : null,
+  daysRestricted: null,
+  reportedBy: null,
+});
+let INCIDENTS = [incident(1)];
 const takes: (number | undefined)[] = [];
 
 vi.mock("@prova/db", () => ({
@@ -26,25 +44,7 @@ vi.mock("@prova/db", () => ({
       findMany: vi.fn(async (args: { distinct?: unknown }) =>
         args.distinct
           ? [{ caseYear: 2026 }]
-          : [
-              {
-                id: "i-1",
-                caseYear: 2026,
-                caseNumber: 1,
-                occurredAt: new Date("2026-09-03T00:00:00Z"),
-                jobId: null,
-                job: null,
-                employeeName: "Luis Ortega",
-                jobTitle: null,
-                location: null,
-                description: "Cut on the left hand from a utility knife.",
-                classification: "INJURY",
-                outcome: "FIRST_AID",
-                daysAway: null,
-                daysRestricted: null,
-                reportedBy: null,
-              },
-            ],
+          : INCIDENTS,
       ),
     },
     job: { findMany: vi.fn(async () => []) },
@@ -90,5 +90,26 @@ describe("/safety", () => {
     expect(takes).toEqual([undefined]);
     expect(html).toContain(">Talk 12<");
     expect(html).toMatch(/href="\?#talks"[^>]*>Show the latest 10</);
+  });
+
+  it("shows the latest 10 incidents with See all, while the status line counts EVERY case", async () => {
+    INCIDENTS = Array.from({ length: 12 }, (_, i) => incident(12 - i));
+    try {
+      const html = await render({ year: "2026" });
+      const rows = html.match(/>What happened</g) ?? [];
+      expect(rows).toHaveLength(10);
+      expect(html).toContain("Incident 3.");
+      expect(html).not.toContain("Incident 2.");
+      expect(html).toMatch(/href="\?year=2026&amp;all=1#incidents"[^>]*>See all 12</);
+      // Counts read off all 12, not the 10 rendered: 3 of them (4, 8, 12)
+      // are days-away cases.
+      expect(html).toContain("12 cases logged for 2026: 3 recordable on the 300 log, 3 with days away.");
+
+      const all = await render({ all: "1" });
+      expect(all.match(/>What happened</g) ?? []).toHaveLength(12);
+      expect(all).toMatch(/href="\?#incidents"[^>]*>Show the latest 10</);
+    } finally {
+      INCIDENTS = [incident(1)];
+    }
   });
 });

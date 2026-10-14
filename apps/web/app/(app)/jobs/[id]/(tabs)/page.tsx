@@ -214,6 +214,23 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
           <h2 className="mb-3 text-lg font-semibold text-ink">Schedule</h2>
           <div className="rounded-lg border border-line-card bg-surface p-4">
             {showsJobManagement ? (
+              <>
+              {/* Declutter (final pass): the dates read as one line, and the
+                  form waits behind "Edit dates" — wrapped where it was, not
+                  moved. The form inside is unchanged. */}
+              <p className="mb-3 text-sm text-ink" data-schedule="current">
+                <span className="text-ink-label">Start</span>{" "}
+                {job.startDate ? formatCalendarDate(job.startDate) : "not set"}
+                {" · "}
+                <span className="text-ink-label">End</span>{" "}
+                {job.endDate ? formatCalendarDate(job.endDate) : "not set"}
+                {" · "}
+                {job.operatingLocation
+                  ? job.operatingLocation.name ??
+                    `${job.operatingLocation.city}, ${job.operatingLocation.state}`
+                  : "No operating location"}
+              </p>
+              <CollapsedForm label="Edit dates" tone="secondary">
               <form action={updateScheduleWithId} className="flex flex-wrap items-end gap-3">
                 <label className="flex flex-col gap-1 text-sm text-ink-label">
                   Start date
@@ -255,6 +272,8 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
                   Save dates
                 </SubmitButton>
               </form>
+              </CollapsedForm>
+              </>
             ) : (
               /* The same three facts, as plain text. `formatCalendarDate`
                  renders in UTC, which is how these are stored — the date a

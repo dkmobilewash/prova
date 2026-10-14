@@ -4,11 +4,13 @@ import { EmptyState } from "@/components/EmptyState";
 import { NoAccess } from "@/components/NoAccess";
 import { loadWipSchedule } from "@/lib/wip-schedule-query";
 import { WIP_SCHEDULE_COLUMNS } from "@/lib/wip-schedule";
-import { wipScheduleCell, CANNOT_SAY, CANNOT_SAY_TITLE } from "@/lib/wip-schedule-cell";
+import { wipScheduleCell, CANNOT_SAY } from "@/lib/wip-schedule-cell";
 import { viewerToday } from "@/lib/viewerToday";
 import { secondaryActionClass } from "@/components/emptyStateStyles";
 import { HintedText } from "@/components/HintedText";
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 
 /**
  * The work-in-progress schedule, on screen.
@@ -93,15 +95,11 @@ export default async function WipSchedulePage({
   const jobCount = Math.max(rows.length - 1, 0);
 
   return (
-    <div className="p-4 sm:p-6">
-      <header className="mb-4">
-        <h1 className="text-lg font-semibold text-ink">Work in progress</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          Every contracted and in-progress job: what it is worth, what it has cost, what has been
-          earned, and whether it is over- or under-billed. Percentage of completion, cost-to-cost.
-          As of {today}.
-        </p>
-      </header>
+    <PageShell width="working">
+      <PageHeader
+        route="/wip"
+        subtitle={<>Earned against billed on every contracted job, cost-to-cost. As of {today}.</>}
+      />
 
       {/* A job forecast over its contract value is a fact about THIS table,
           and until now it reached only /alerts — a list somebody has to
@@ -134,8 +132,13 @@ export default async function WipSchedulePage({
               that means "we cannot say" is worthless if the sentence
               explaining it only exists in the download. */}
           <p className="mb-3 text-xs text-ink-muted" data-tour="wip-coverage">
-            <span className="font-medium text-ink-body">{CANNOT_SAY}</span> is not zero.{" "}
-            {CANNOT_SAY_TITLE}
+            {/* One sentence. It used to print "— is not zero." and then the
+                cell tooltip ("Not zero — not enough…"), which read as the
+                dash being garbled into the copy. The tooltip on each cell
+                is unchanged. */}
+            A <span className="font-medium text-ink-body">{CANNOT_SAY}</span> means the figure
+            cannot be worked out yet, not that it is zero: too little of that job carries the
+            estimate it depends on, and the cost breakdown&apos;s coverage columns show how much does.
           </p>
 
           <p className="mb-2 text-sm">
@@ -220,6 +223,6 @@ export default async function WipSchedulePage({
           </div>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

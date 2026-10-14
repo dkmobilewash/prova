@@ -222,9 +222,14 @@ export default async function CertificationsPage({
             {requirements.length === 0 ? (
               <>
                 Nothing to act on — but nothing is required of everyone yet either, so this page can
-                only see cards somebody already entered. Require OSHA 10{" "}
-                {nothingSetUp ? "at the top of the page" : "below"} and anyone with no record of one
-                will say so by name.
+                only see cards somebody already entered.{" "}
+                {/* "At the top of the page" alone pointed at a control that is
+                    inside the CLOSED "Start here" section, so it was not there
+                    to see. Name the section that has to be opened. */}
+                {nothingSetUp
+                  ? "Open “Start here” at the top of the page and require OSHA 10 there"
+                  : "Require OSHA 10 below"}{" "}
+                and anyone with no record of one will say so by name.
               </>
             ) : (
               <>

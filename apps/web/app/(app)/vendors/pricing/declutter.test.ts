@@ -18,6 +18,17 @@ const at = (needle: string, from = 0) => {
 };
 
 describe("/vendors/pricing declutter", () => {
+  it("opens with one line; how current prices are worked out is in a Disclosure", () => {
+    const lead = page.slice(at('data-vp="lead"'), at("</p>", at('data-vp="lead"')));
+    const text = lead.replace(/<[^>]+>|\{" "\}|\s+/g, " ").replace(/\s+/g, " ");
+    expect(text.length, text).toBeLessThanOrEqual(140);
+    const disclosure = at('summary="How current prices are worked out"');
+    const stored = at("Nothing here is stored as a");
+    expect(stored).toBeGreaterThan(disclosure);
+    expect(stored).toBeLessThan(at("</Disclosure>", disclosure));
+    expect(at("</Disclosure>", disclosure)).toBeLessThan(at('data-tour="vp-record"'));
+  });
+
   it("says the unit rule once, as a hint above the list, not under every item", () => {
     expect(page).not.toContain("Compared only within a unit.");
     expect(page.match(/<HintedText/g)).toHaveLength(1);

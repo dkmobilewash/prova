@@ -226,3 +226,20 @@ one invoice, so it is an exact ONE now (still read inside its own section).
 Nothing could be run in a browser here. Check: `collapsed.test.ts` now also
 pins every `details#id` a spec opens to an `id="…"` in the app, with its own
 independent count — mutation-checked.
+
+**Final pass.** /catalog's column header drifted right of its values and ran
+"Cost" into "Trade": the header and rows shared the column template but only
+the rows carried the gap. `CATALOG_ROW_GRID` is now the whole grid, gap
+included, and both use it unchanged. /wip wears the shared PageHeader (Home /
+Money / Work in progress) and says what a "—" means in one sentence instead of
+"— is not zero. Not zero — …". /certifications' empty state names the closed
+"Start here" section it points at. /safety renders the latest 10 incidents and
+/alerts the first 15 (worst first, so SeeAll gained `order="first"`), each with
+See all — the status line, heading count and breakdown are still read off every
+row. /team and /vendors/pricing open with one line and keep the rest in a
+Disclosure. The job Overview's schedule shows the current dates as one line,
+with the form behind "Edit dates" — wrapped in place in `(tabs)/page.tsx`, its
+fields unchanged. No e2e spec reads any of these. Checks: catalog/declutter,
+wip/declutter, certifications/setup-first, safety-declutter, alerts/declutter,
+empty-states (/team), vendors/pricing/declutter and schedule-visibility each
+fail with their fix reverted.

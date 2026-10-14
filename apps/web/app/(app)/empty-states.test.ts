@@ -381,6 +381,17 @@ describe("/team on a brand-new account with nobody on the crew", () => {
     expect(html).not.toContain("leaving it unset gives the full office access");
   });
 
+  it("opens with ONE line; the full team-vs-crew explainer is one click down", async () => {
+    const html = await load();
+    const lead = html.match(/<p[^>]*data-team="kinds"[^>]*>([\s\S]*?)<\/p>/)?.[1] ?? "";
+    const text = lead.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    expect(text).toMatch(/^Two kinds of people/);
+    expect(text.length).toBeLessThanOrEqual(80);
+    // The detail is inside a closed <details>, not an open paragraph.
+    const details = html.match(/<details(?![^>]*\bopen\b)[^>]*><summary[^>]*>Team members or crew\?<\/summary>([\s\S]*?)<\/details>/);
+    expect(details?.[1]).toContain("no login, no email needed");
+  });
+
   // Density audit #20: the team-vs-crew explainer appeared three times and
   // the invite form plus the sign-up URL sat open at the foot of the page.
   it("explains team vs crew once, and has one Crew heading", async () => {
