@@ -7,6 +7,7 @@ import {
   SKIP_SENTENCE,
   buildPackage,
   packageFileName,
+  packageStamp,
   planPackage,
   type PackageEntry,
   type PackagePart,
@@ -53,17 +54,7 @@ const OFFERED: readonly PackageSlot[] = PACKAGE_SLOTS;
 
 type Picked = Partial<Record<PackageSlot, File[]>>;
 
-export function BidPackageBuilder({
-  projectName,
-  today,
-}: {
-  projectName: string;
-  /** The USER'S calendar date, passed in rather than read from a clock here —
-   *  it lands in a file name, and `localToday.ts` is the rule: a date derived
-   *  in server-rendered markup breaks hydration, and one derived from the
-   *  server's clock is the wrong day for half the country. */
-  today: string;
-}) {
+export function BidPackageBuilder({ projectName }: { projectName: string }) {
   const [picked, setPicked] = useState<Picked>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +93,18 @@ export function BidPackageBuilder({
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = packageFileName(projectName, today);
+      // ── THE CLOCK IS READ HERE, INSIDE THE PRESS, AND THAT IS THE POINT ──
+      //
+      // A production click-through found two builds of one bid downloading
+      // under the same name, with the browser quietly appending `(1)`. A date
+      // passed down as a prop would not fix it: every build made from one page
+      // load would still share a stamp. Reading the clock at the press is what
+      // makes two packages two names.
+      //
+      // Safe to read a clock here for the reason `localToday.ts` gives — this
+      // is an event handler, not render, so there is no server-rendered markup
+      // for it to disagree with.
+      link.download = packageFileName(projectName, packageStamp(new Date()));
       link.click();
       URL.revokeObjectURL(url);
     } catch {

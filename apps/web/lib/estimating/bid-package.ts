@@ -326,18 +326,51 @@ export function isEncryptedPdfError(error: unknown): boolean {
 }
 
 /**
+ * WHEN A PACKAGE WAS BUILT, to the second, as a file name can carry it.
+ *
+ * ── WHY THE SECOND AND NOT THE DAY ──
+ *
+ * The first version stamped the DATE, and a click-through on production found
+ * what that costs: two builds of the same bid downloaded as the same name, and
+ * the browser silently appended `(1)`. The failure is quiet and specific —
+ * build a package, notice a wrong attachment, rebuild, then upload the FIRST
+ * one to the GC portal, because both are sitting in Downloads under names that
+ * differ by a character nobody reads.
+ *
+ * Minutes would not have fixed it. The rebuild in that story happens twenty
+ * seconds after the mistake is spotted, which is inside the same minute.
+ *
+ * LOCAL TIME, not UTC: this is the only string in this product that is a label
+ * for a human's own filing rather than a stored instant, and "the package I
+ * built after lunch" has to sort where they expect. The app's standing rule —
+ * dates stored at UTC midnight and rendered in UTC — is about data, and nothing
+ * here is stored.
+ */
+export function packageStamp(at: Date): string {
+  const pad = (value: number, width = 2) => String(value).padStart(width, "0");
+  return (
+    `${pad(at.getFullYear(), 4)}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}` +
+    `-${pad(at.getHours())}${pad(at.getMinutes())}${pad(at.getSeconds())}`
+  );
+}
+
+/**
  * What the package is called when it lands in somebody's downloads.
  *
- * The project and the date, because a GC portal's upload field and an email
+ * The project and the moment, because a GC portal's upload field and an email
  * attachment both show a file name and "package.pdf" is what three bids in a
  * row look like. Punctuation a file system or an upload form would argue about
  * is replaced rather than stripped, so two different projects cannot collapse
  * to the same name.
+ *
+ * `stamp` comes from `packageStamp` AT THE MOMENT OF THE PRESS, never from the
+ * page render. A stamp taken when the page loaded would be identical for every
+ * build made from that page, which is precisely the case this is here to stop.
  */
-export function packageFileName(projectName: string, today: string): string {
+export function packageFileName(projectName: string, stamp: string): string {
   const safe = projectName
     .replace(/[^A-Za-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
-  return `${safe || "bid"}-${today}-bid-package.pdf`;
+  return `${safe || "bid"}-${stamp}-bid-package.pdf`;
 }

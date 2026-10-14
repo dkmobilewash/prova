@@ -8,6 +8,7 @@ import {
   isEncryptedPdfError,
   looksLikePdf,
   packageFileName,
+  packageStamp,
   planPackage,
   type PackagePart,
 } from "./bid-package";
@@ -285,20 +286,56 @@ describe("the merge itself, on real PDFs", () => {
   });
 });
 
+describe("when it was built", () => {
+  // ── THE DEFECT THIS PINS WAS FOUND BY CLICKING PRODUCTION ──
+  //
+  // The stamp was the DATE. A tester built the package, added a file, built it
+  // again, and both landed in Downloads as the same name with the browser
+  // quietly appending `(1)`. The quiet part is the danger: the next step is
+  // uploading one of them to a GC portal.
+
+  it("goes to the SECOND, because the rebuild happens within the minute", () => {
+    const at = new Date(2026, 9, 14, 14, 32, 7);
+    expect(packageStamp(at)).toBe("2026-10-14-143207");
+  });
+
+  it("gives two builds twenty seconds apart two different names", () => {
+    // Exactly the story above: spot the mistake, fix it, build again.
+    const first = packageStamp(new Date(2026, 9, 14, 14, 32, 7));
+    const second = packageStamp(new Date(2026, 9, 14, 14, 32, 27));
+    expect(first).not.toBe(second);
+    expect(packageFileName("West Herr Jaguar", first)).not.toBe(
+      packageFileName("West Herr Jaguar", second),
+    );
+  });
+
+  it("pads every field, so names sort in the order they were built", () => {
+    expect(packageStamp(new Date(2026, 0, 2, 3, 4, 5))).toBe("2026-01-02-030405");
+  });
+
+  it("carries no character a file system or an upload form argues about", () => {
+    const name = packageFileName("West Herr Jaguar", packageStamp(new Date(2026, 9, 14, 14, 32, 7)));
+    // A colon is illegal in a Windows file name and a space is what turns an
+    // attachment into `West%20Herr` in somebody's portal.
+    expect(name).not.toMatch(/[:\s]/);
+    expect(name).toMatch(/^[A-Za-z0-9.-]+$/);
+  });
+});
+
 describe("what the file is called", () => {
-  it("names the project and the date", () => {
-    expect(packageFileName("West Herr Jaguar", "2026-10-14")).toBe(
-      "West-Herr-Jaguar-2026-10-14-bid-package.pdf",
+  it("names the project and the moment", () => {
+    expect(packageFileName("West Herr Jaguar", "2026-10-14-143207")).toBe(
+      "West-Herr-Jaguar-2026-10-14-143207-bid-package.pdf",
     );
   });
 
   it("replaces punctuation rather than stripping it, so two projects cannot collide", () => {
-    expect(packageFileName("Tower A/B", "2026-10-14")).not.toBe(
-      packageFileName("Tower AB", "2026-10-14"),
+    expect(packageFileName("Tower A/B", "2026-10-14-143207")).not.toBe(
+      packageFileName("Tower AB", "2026-10-14-143207"),
     );
   });
 
   it("still produces a name for a project called nothing a file system likes", () => {
-    expect(packageFileName("///", "2026-10-14")).toBe("bid-2026-10-14-bid-package.pdf");
+    expect(packageFileName("///", "2026-10-14-143207")).toBe("bid-2026-10-14-143207-bid-package.pdf");
   });
 });
