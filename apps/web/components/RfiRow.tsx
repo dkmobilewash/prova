@@ -6,6 +6,7 @@ import type { ActionResult } from "@/lib/actions/shared";
 import { RfiFields, fieldInputClass, labelClass, type RfiDefaults } from "@/components/RfiFields";
 import { daysBetween, isOpen, isOverdue, isWaitingAWeekPlus, statusLabel } from "@/components/rfiLabels";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Disclosure } from "@/components/Disclosure";
 import { formatCalendarDay } from "@/lib/render-date";
 import { localToday } from "@/components/localToday";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
@@ -303,20 +304,30 @@ export function RfiRow({
 
         <p className="mt-1 text-sm text-ink-label">{rfi.question}</p>
 
-        {rfi.answer && (
-          <p className="mt-2 border-l-2 border-line-card pl-3 text-sm text-ink-body">{rfi.answer}</p>
-        )}
-        {rfi.answerUrl && (
-          <p className="mt-1 border-l-2 border-line-card pl-3 text-xs">
-            <a
-              href={rfi.answerUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-link hover:underline"
-            >
-              {rfi.answerFileName || "the GC's written answer"}
-            </a>
-          </p>
+        {/* The answer opens on click (density audit #32: every row printed
+            its full Q&A). The question stays — it is what the RFI is. */}
+        {(rfi.answer || rfi.answerUrl) && (
+          <Disclosure
+            variant="plain"
+            className="mt-2"
+            summary={rfi.answer ? "The GC's answer" : "The GC's answer · 1 file"}
+          >
+            {rfi.answer && (
+              <p className="-mt-2 border-l-2 border-line-card pl-3 text-sm text-ink-body">{rfi.answer}</p>
+            )}
+            {rfi.answerUrl && (
+              <p className="mt-1 border-l-2 border-line-card pl-3 text-xs">
+                <a
+                  href={rfi.answerUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-link hover:underline"
+                >
+                  {rfi.answerFileName || "the GC's written answer"}
+                </a>
+              </p>
+            )}
+          </Disclosure>
         )}
 
         {/* ink-body, not ink-muted: the muted level is under the 4.5 text floor. */}

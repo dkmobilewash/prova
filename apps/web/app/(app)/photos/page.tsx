@@ -214,8 +214,11 @@ export default async function PhotosPage({
                   located: activeLocated,
                 })}
                 className={chip(activeJob === job.id)}
+                // Name only on the chip (density audit #40); the full label
+                // stays here.
+                title={jobPickerLabel(job)}
               >
-                {jobPickerLabel(job)}
+                {job.name}
               </Link>
             ))}
           </div>

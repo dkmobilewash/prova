@@ -126,6 +126,19 @@ const BARE_NAME_EXCEPTIONS: Record<string, { count: number; why: string }> = {
       "composer's picker above still uses jobPickerLabel — and each chip " +
       "keeps the full jobPickerLabel in its title.",
   },
+  // The same chip change as /field-reports, on five more logs (density
+  // audit #32 and #40). Nothing is filed from a chip — each page's own
+  // add form still uses jobPickerLabel — and every chip keeps the full
+  // label in its title.
+  ...Object.fromEntries(
+    ["drawings", "material-orders", "photos", "rfis", "submittals"].map((page) => [
+      `app/(app)/${page}/page.tsx`,
+      {
+        count: 1,
+        why: "The job FILTER chips: name only, so the row stays one row. Nothing is filed from a chip, and the full jobPickerLabel is the chip's title.",
+      },
+    ]),
+  ),
   "components/CrewWeekGrid.tsx": {
     count: 1,
     why:
