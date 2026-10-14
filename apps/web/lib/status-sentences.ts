@@ -236,6 +236,17 @@ export function alertsStatus(input: {
   return { quiet, problems };
 }
 
+// --------------------------------------------------------- lien deadlines
+
+/** /lien-deadlines — replaces its three tiles (density audit #26). Red for
+ * an overdue unserved deadline (lien rights at risk), amber for one due soon. */
+export function lienDeadlinesStatus(input: { overdueUnserved: number; dueSoon: number; dueSoonDays: number; served: number }): StatusReport {
+  const problems: StatusProblem[] = [];
+  if (input.overdueUnserved > 0) problems.push({ tone: "red", text: `${count(input.overdueUnserved, "deadline")} overdue and not served.` });
+  if (input.dueSoon > 0) problems.push({ tone: "amber", text: `${count(input.dueSoon, "deadline")} due in the next ${input.dueSoonDays} days.` });
+  return { quiet: `Nothing overdue or due in the next ${input.dueSoonDays} days. ${input.served} served.`, problems };
+}
+
 // -------------------------------------------------------------- closeout
 
 export function closeoutStatus(input: {

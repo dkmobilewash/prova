@@ -5,6 +5,7 @@ import {
   closeoutStatus,
   count,
   drawingsStatus,
+  lienDeadlinesStatus,
   listed,
   LISTED,
   materialOrdersStatus,
@@ -218,6 +219,22 @@ describe("alerts", () => {
     expect(alertsStatus({ overdue: 3, dueSoon: 5, standing: 0, amountNamed: null }).problems).toEqual([
       { tone: "red", text: "3 alerts past due." },
       { tone: "amber", text: "5 alerts coming up." },
+    ]);
+  });
+});
+
+describe("lien deadlines", () => {
+  it("is quiet with nothing at risk, and says how many are served", () => {
+    expect(lienDeadlinesStatus({ overdueUnserved: 0, dueSoon: 0, dueSoonDays: 14, served: 2 })).toEqual({
+      quiet: "Nothing overdue or due in the next 14 days. 2 served.",
+      problems: [],
+    });
+  });
+
+  it("is red for an overdue unserved deadline and amber for one due soon", () => {
+    expect(lienDeadlinesStatus({ overdueUnserved: 1, dueSoon: 3, dueSoonDays: 14, served: 0 }).problems).toEqual([
+      { tone: "red", text: "1 deadline overdue and not served." },
+      { tone: "amber", text: "3 deadlines due in the next 14 days." },
     ]);
   });
 });

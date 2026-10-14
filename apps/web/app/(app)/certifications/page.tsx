@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { PageShell } from "@prova/ui";
 import { PageHeader } from "@/components/PageHeader";
+import { Disclosure } from "@/components/Disclosure";
+import { PageTabs } from "@/components/PageTabs";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -28,16 +30,25 @@ function isoDate(date: Date | null) {
   return date ? date.toISOString().slice(0, 10) : null;
 }
 
+const VIEWS = [
+  { href: "/certifications", label: "By person" },
+  { href: "/certifications?view=job", label: "By job" },
+] as const;
+
 export default async function CertificationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ show?: string }>;
+  searchParams: Promise<{ show?: string; view?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_FIELD");
   if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
   const { company, ...currentUser } = context;
-  const { show } = await searchParams;
+  const { show, view } = await searchParams;
   const showEverything = show === "all";
+  // One list, cut two ways (density audit #27): by person is the default,
+  // `?view=job` is the same findings per job's crew — it used to be a second
+  // list under the first.
+  const byJob = view === "job";
 
   const today = await viewerToday();
 
@@ -113,26 +124,42 @@ export default async function CertificationsPage({
   // the order and the tiles it had.
   const nothingSetUp = requirements.length === 0 && records.length === 0;
 
-  const requirementsSection = (startHere: boolean) => (
-    <section
-      id="certifications-required"
-      className={startHere ? "mb-10 rounded-xl border border-brand bg-surface p-4" : undefined}
-      data-tour="certifications-required"
-      {...(startHere ? { "data-start-here": "" } : {})}
-    >
-      {startHere && (
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-link">Start here</p>
-      )}
-      <h2 className="mb-2 text-sm font-semibold text-ink-label">What everyone here needs</h2>
-      {startHere && (
+  const requirementsList = (
+    <CertificationRequirements requirements={requirements} canRemove={currentUser.role === "OWNER"} />
+  );
+  const requirementsSection = (startHere: boolean) =>
+    startHere ? (
+      // Density audit #27: the page's explainer and the START HERE card were
+      // two blocks of prose before anything else. One disclosure now, and
+      // only while nothing is set up — after that the requirements live at
+      // the foot of the page and the explainer has done its job.
+      <Disclosure
+        id="certifications-required"
+        className="mb-6"
+        summary={
+          <span data-tour="certifications-required" data-start-here="">
+            <span className="mr-2 text-xs font-semibold uppercase tracking-wide text-link">Start here</span>
+            What everyone here needs — set it first
+          </span>
+        }
+      >
+        <p className="mb-3 text-sm text-ink-body">
+          A man turned away on Monday morning doesn&apos;t stand there alone: the rest of
+          the crew waits, the GC notices, and nobody pays you for the hour. This page answers the
+          question before the gate does.
+        </p>
         <p className="mb-3 text-sm text-ink-body">
           Everything else on this page is measured against this list. Add the first card everyone
           has to carry, and anyone without it shows up by name below.
         </p>
-      )}
-      <CertificationRequirements requirements={requirements} canRemove={currentUser.role === "OWNER"} />
-    </section>
-  );
+        {requirementsList}
+      </Disclosure>
+    ) : (
+      <section id="certifications-required" data-tour="certifications-required">
+        <h2 className="mb-2 text-sm font-semibold text-ink-label">What everyone here needs</h2>
+        {requirementsList}
+      </section>
+    );
 
   const tile = (value: number, caption: string, tone: string) => (
     <div className="rounded-xl border border-line-card bg-surface p-4">
@@ -147,12 +174,6 @@ export default async function CertificationsPage({
         route="/certifications"
         subtitle="The cards your crew has to produce at the gate — OSHA 10, scaffold, lift, silica, fit tests."
       />
-      <p className="mb-6 text-sm text-ink-body">
-        A man turned away on Monday morning doesn&apos;t stand there alone: the rest of
-        the crew waits, the GC notices, and nobody pays you for the hour. This page answers the
-        question before the gate does.
-      </p>
-
       {nothingSetUp && requirementsSection(true)}
 
       <section className="mb-8" data-tour="certifications-record">
@@ -168,6 +189,9 @@ export default async function CertificationsPage({
         </div>
       )}
 
+      <PageTabs tabs={VIEWS} label="Certifications views" />
+
+      {!byJob && (
       <section className="mb-10" data-tour="certifications-people">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink-label">
@@ -225,7 +249,9 @@ export default async function CertificationsPage({
           </ul>
         )}
       </section>
+      )}
 
+      {byJob && (
       <section className="mb-10" data-tour="certifications-by-job">
         <h2 className="mb-2 text-sm font-semibold text-ink-label">By job</h2>
         <p className="mb-3 text-sm text-ink-body">
@@ -274,6 +300,7 @@ export default async function CertificationsPage({
           </ul>
         )}
       </section>
+      )}
 
       {!nothingSetUp && requirementsSection(false)}
     </PageShell>
