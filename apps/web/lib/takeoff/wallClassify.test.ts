@@ -1,5 +1,13 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { readMissingWalls, readWallLabels, type WallCandidateForLabel } from "@prova/integrations";
+import {
+  readMissingWalls,
+  readWallLabels,
+  wallClassifyToolCall,
+  WALL_CLASSIFY_TOOL_NAME,
+  type WallCandidateForLabel,
+} from "@prova/integrations";
 
 /**
  * WHAT A LABEL IS ALLOWED TO DO TO A QUANTITY, which is: decide whether a run
@@ -152,5 +160,87 @@ describe("the missing walls it reports", () => {
 
   it("gives a row with no reason an empty one rather than undefined", () => {
     expect(readMissingWalls([{ where: "the corridor's north wall" }])[0].why).toBe("");
+  });
+});
+
+describe("no tool call is a FAILURE, not a clean bill of health", () => {
+  // ── THE DEFECT THIS PINS, FROM A REAL DRAWING ──
+  //
+  // 2026-10-13, a West Herr floor plan on production: the finder returned 216
+  // runs, the estimator pressed "Check these are walls", it thought for about a
+  // minute, and printed "0 run(s) set aside as casework or reference" — while
+  // the overlay held title-block dividers, the company logo, five car outlines
+  // and a dozen room-name tags. Nothing had been judged. The model returned no
+  // tool call and the code read that as an empty verdict.
+  //
+  // A silent failure reported as a clean pass is the exact shape this repo
+  // keeps paying for, and here it reached an estimator about to price a bid.
+
+  const asked: WallCandidateForLabel[] = [{ id: 1, thicknessIn: 5, lengthFt: 10 }];
+
+  it("throws when the response carries no tool call", () => {
+    expect(() => wallClassifyToolCall([{ type: "text" }], "max_tokens", 216)).toThrow(
+      /no label_candidates call for 216 candidates/,
+    );
+  });
+
+  it("carries the stop reason in the NAME, because that is all the action logs", () => {
+    // `takeoffClassify.ts` logs `err.name` and deliberately not the message —
+    // metadata only, never text that could carry a key. So the one fact worth
+    // having has to travel in the name.
+    try {
+      wallClassifyToolCall([{ type: "text" }], "max_tokens", 216);
+      expect.unreachable("it should have thrown");
+    } catch (err) {
+      expect((err as Error).name).toBe("WallClassifyIncomplete:max_tokens");
+    }
+  });
+
+  it("names it when there is no stop reason at all", () => {
+    try {
+      wallClassifyToolCall([], null, 3);
+      expect.unreachable("it should have thrown");
+    } catch (err) {
+      expect((err as Error).name).toBe("WallClassifyIncomplete:none");
+    }
+  });
+
+  it("returns the block when the model did call the tool", () => {
+    const block = { type: "tool_use", name: WALL_CLASSIFY_TOOL_NAME, input: { labels: [] } };
+    expect(wallClassifyToolCall([{ type: "text" }, block], "tool_use", 1)).toBe(block);
+  });
+
+  it("ignores a tool call by another name, rather than reading its input", () => {
+    // A different tool's output is not a verdict about walls, and reading it
+    // would be the same failure wearing a different hat.
+    expect(() =>
+      wallClassifyToolCall([{ type: "tool_use", name: "something_else", input: {} }], "tool_use", 1),
+    ).toThrow();
+  });
+
+  void asked;
+});
+
+describe("the estimator is told what to do about it", () => {
+  const source = readFileSync(
+    resolve(process.cwd(), "lib/actions/takeoffClassify.ts"),
+    "utf8",
+  );
+
+  it("tells them to check a smaller area, not to try again", () => {
+    // "Try again in a minute" is wrong for this one: 216 runs will fail the
+    // same way every time. The message has to name the number and the way out.
+    // THE WIRING, not the strings. The first version asserted that both the
+    // name and the sentence appeared somewhere in the file, and a mutation
+    // setting `const incomplete = false` left both in place and stayed green —
+    // the message was present and unreachable. So the derivation is what is
+    // pinned.
+    expect(source).toContain('err.name.startsWith("WallClassifyIncomplete")');
+    expect(source).toContain("Zoom into part of the sheet");
+    expect(source).toContain("${candidates.length} runs in one go");
+  });
+
+  it("still marks the allowance, because the call was made and billed", () => {
+    expect(source).toContain("markAskAllowanceFailure");
   });
 });
