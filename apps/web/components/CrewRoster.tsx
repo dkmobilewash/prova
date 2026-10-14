@@ -125,7 +125,7 @@ export function CrewRoster({
       <p className="mt-2 text-xs text-ink-muted">
         Somebody who needs to sign in — a foreman, the office — goes under Team members above
         instead.{" "}
-        <Link href="/union-compliance" className="text-link hover:text-link-hover">
+        <Link href="/union-compliance?tab=setup" className="text-link hover:text-link-hover">
           Union compliance
         </Link>{" "}
         is where crafts and union locals are set up.

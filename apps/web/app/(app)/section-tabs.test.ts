@@ -16,6 +16,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
  *      because a `#hash` never reaches the server — so every
  *      `/settings?tab=…#id` in the app must land on a render carrying that id.
  *
+ * /union-compliance gets the same census (audit #5): three tabs, each
+ * section in exactly one.
+ *
  * Rendered from the real page against an empty database, as
  * empty-states.test.ts does.
  */
@@ -40,13 +43,14 @@ const emptyPrisma = new Proxy(
 const context = { company: { id: "company-1", name: "Test Drywall" }, id: "user-1", name: "Tester", email: null, role: "OWNER", jobFunction: null };
 
 let search = new URLSearchParams();
+let pathname = "/settings";
 
 vi.mock("@prova/db", () => ({ prisma: emptyPrisma, Prisma: { Decimal: class {} } }));
 vi.mock("@/lib/authz", () => ({ requireCapability: vi.fn(async () => ({ allowed: true, context })) }));
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: vi.fn(async () => context) }));
 vi.mock("@/lib/viewerToday", () => ({ viewerToday: vi.fn(async () => "2026-10-13"), viewerTimeZone: vi.fn(async () => "UTC") }));
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/settings",
+  usePathname: () => pathname,
   useSearchParams: () => search,
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
@@ -72,6 +76,7 @@ const EXPECTED: Record<string, string[]> = {
 
 async function render(params: Record<string, string>) {
   search = new URLSearchParams(params);
+  pathname = "/settings";
   const { default: Page } = await import("@/app/(app)/settings/page");
   return renderToStaticMarkup(await Page({ searchParams: Promise.resolve(params) }));
 }
@@ -139,5 +144,105 @@ describe("/settings tabs", () => {
     const html = await render({ tab: "quickbooks", qb: "connected" });
     expect(html).toContain("QuickBooks connected successfully.");
     expect(h2s(html)).toEqual(EXPECTED.quickbooks);
+  });
+});
+
+// ------------------------------------------------------- /union-compliance --
+
+const UC_EXPECTED: Record<string, string[]> = {
+  month: ["Fringe remittance", "Apprentice ratio"],
+  apprenticeships: ["Apprenticeship programs", "Apprenticeship committees"],
+  setup: ["Who works under each craft", "Locals, classifications and rates"],
+};
+
+async function renderUc(params: Record<string, string>) {
+  search = new URLSearchParams(params);
+  pathname = "/union-compliance";
+  const { default: Page } = await import("@/app/(app)/union-compliance/page");
+  return renderToStaticMarkup(await Page({ searchParams: Promise.resolve(params) }));
+}
+const ucParams = (tab: string): Record<string, string> => (tab === "month" ? {} : { tab });
+
+describe("/union-compliance tabs", () => {
+  it("renders each tab's sections and nothing from another tab", async () => {
+    for (const [tab, headings] of Object.entries(UC_EXPECTED)) {
+      expect(h2s(await renderUc(ucParams(tab))), `?tab=${tab}`).toEqual(headings);
+    }
+  });
+
+  it("puts every section the page had in exactly one tab", async () => {
+    const all = Object.values(UC_EXPECTED).flat();
+    expect(all.length).toBe(6);
+    const seen = new Map<string, number>();
+    for (const tab of Object.keys(UC_EXPECTED)) {
+      for (const h of h2s(await renderUc(ucParams(tab)))) seen.set(h, (seen.get(h) ?? 0) + 1);
+    }
+    for (const heading of all) expect(seen.get(heading), heading).toBe(1);
+  });
+
+  it("a ?month= visit stays on This month, and lights it", async () => {
+    const html = await renderUc({ month: "2026-09" });
+    expect(h2s(html)).toEqual(UC_EXPECTED.month);
+    const tabsNav = html.match(/<nav aria-label="Fringe and apprentice sections"[\s\S]*?<\/nav>/)?.[0] ?? "";
+    expect(tabsNav).toMatch(/<a(?=[^>]*href="\/union-compliance")(?=[^>]*aria-current="page")/);
+  });
+
+  it("explains the DAS committee once, not twice, when none are recorded", async () => {
+    const html = await renderUc({ tab: "apprenticeships" });
+    expect(html).toContain("Apprenticeship committees");
+    expect(html.match(/own list/g)?.length).toBe(1);
+  });
+
+  it("the Start here pointer names the Setup tab, and is not on Setup itself", async () => {
+    expect(await renderUc({})).toContain('href="/union-compliance?tab=setup#setup"');
+    const setup = await renderUc({ tab: "setup" });
+    expect(setup).toContain('id="setup"');
+    expect(setup).not.toContain('data-testid="uc-start-here"');
+  });
+});
+
+describe("a union local card", () => {
+  const local = (crafts: number) => ({
+    unionLocalId: "ul-1",
+    label: "IUPAT DC 16 · Local 9",
+    parentInternational: "IUPAT",
+    localNumber: "9",
+    jurisdictionName: "CA",
+    tradeJurisdiction: null,
+    agreementId: "ag-1",
+    effectiveFrom: "2026-01-01",
+    effectiveTo: null,
+    ratio: null,
+    crafts: Array.from({ length: crafts }, (_, i) => ({
+      id: `c${i}`,
+      name: `Taper ${i}`,
+      tier: i === 0 ? null : ("JOURNEYMAN" as const),
+      apprenticePeriod: null,
+      unionLocalId: "ul-1",
+      unionLocalLabel: "Local 9",
+      schedules: [],
+      usageCount: 0,
+    })),
+  });
+  const card = async (crafts: number) => {
+    const { UnionLocalCard } = await import("@/components/UnionLocalCard");
+    const { createElement } = await import("react");
+    return renderToStaticMarkup(createElement(UnionLocalCard, { local: local(crafts), today: "2026-10-13", canDelete: true }));
+  };
+
+  it("is one closed row carrying the name, the classification count and what is missing", async () => {
+    const html = await card(2);
+    expect(html).toMatch(/<details(?![^>]*\sopen)[^>]*name="union-local"/);
+    const summary = html.match(/<summary[\s\S]*?<\/summary>/)?.[0] ?? "";
+    expect(summary).toContain("IUPAT DC 16 · Local 9");
+    expect(summary).toContain("2 classifications");
+    expect(summary).toContain("1 not tiered");
+    expect(summary).toContain("2 with no rate");
+    // The rates and classifications are inside, not gone.
+    expect(html).toContain("Taper 1");
+  });
+
+  it("opens when it has no classifications, since adding one is the only thing to do", async () => {
+    expect(await card(0)).toMatch(/<details(?=[^>]*\sopen)[^>]*name="union-local"/);
   });
 });
