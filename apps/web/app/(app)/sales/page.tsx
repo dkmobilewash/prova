@@ -144,6 +144,13 @@ export default async function SalesPage() {
         subtitle="Prospective C Stream customers and the deals in progress with them — internal, not visible to any tenant."
       />
 
+      <p className="mb-4 text-sm text-ink-body">
+        <Link href="/sales/public-works" className="text-ink-label hover:underline">
+          Public works market
+        </Link>
+        {" "}— who is filing certified payroll in California this week, from the state&apos;s own record.
+      </p>
+
       <SalesPipelineBand
         pipeline={pipeline}
         sittingLongest={sittingLongest}

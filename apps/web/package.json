@@ -9,6 +9,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "public-works:sync": "tsx scripts/public-works-sync.ts",
     "test:db": "vitest run --config vitest.db.config.mts",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "test:e2e:local": "node e2e/run.mjs",
@@ -51,6 +52,7 @@
     "happy-dom": "^20.14.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
+    "tsx": "4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^3.2.7"
   }
