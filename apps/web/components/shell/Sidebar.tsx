@@ -127,7 +127,7 @@ export function Sidebar({
     <nav
       aria-label="Pages"
       className={`print:hidden hidden shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-line-row bg-rail lg:flex ${
-        collapsed ? "w-16" : "w-64"
+        collapsed ? "w-16" : "w-72"
       }`}
     >
       <div className={`flex px-2 pt-2 ${collapsed ? "justify-center" : "justify-end"}`}>
