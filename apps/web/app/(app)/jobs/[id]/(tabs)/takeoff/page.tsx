@@ -12,7 +12,7 @@ import { loadScheduleProposals, scheduleSheetCountFor } from "@/lib/plan-ingest/
 import { PlanSheetReview } from "@/components/PlanSheetReview";
 import { levelsByPage } from "@/lib/plan-ingest/sheetLevel";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
-import { effectiveSheetNumber, effectiveTitle } from "@/lib/plan-ingest/sheetIndex";
+import { effectiveSheetNumber, effectiveTitle, sheetPickerLabel } from "@/lib/plan-ingest/sheetIndex";
 import { sheetSuitability, duplicateWallsCaution } from "@/lib/takeoff/sheetSuitability";
 import { latestIngestFor } from "@/lib/plan-ingest/claim";
 import { TakeoffCurrencyBanner } from "@/components/TakeoffCurrencyBanner";
@@ -256,6 +256,29 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
    */
   const sheetRows = isEstimateStage ? await sheetIndexFor(plan.id, company.id) : [];
   const duplicateWallsByPage: Record<number, string> = {};
+  /**
+   * WHAT EACH SHEET IS CALLED, so the pager can be jumped to one.
+   *
+   * Measured before it was built: reaching `A-101` on a 52-sheet set took
+   * TWENTY presses of Next, and the pager reads "Sheet 23 of 52" — a position
+   * in the file, not the sheet's own number — so all twenty were blind. It was
+   * the largest single number in a nine-step press count of one real bid, and
+   * the only one that was pure navigation.
+   *
+   * NOTHING IS QUERIED FOR IT. These are the rows two lines above, which the
+   * sheet review already renders on this same page; the numbers were on screen
+   * and were not reachable. One more assignment in a loop that was already
+   * running is the whole server cost.
+   *
+   * AND IT LABELS NO QUANTITY, which is the distinction that makes this
+   * legitimate. `TakeoffPlanPage.label` is "TYPED, never parsed off the title
+   * block", because "a wrong one labels somebody's quantities with another
+   * floor's name" — that argument is about naming measurements and it stands.
+   * A jump target is not a name: nothing is stored, nothing is attached to a
+   * measurement, and the worst a wrong number can do is open the wrong sheet,
+   * which the estimator is looking straight at.
+   */
+  const sheetLabelByPage: Record<number, string> = {};
   for (const row of sheetRows) {
     const number = effectiveSheetNumber(row);
     const title = effectiveTitle(row);
@@ -264,6 +287,8 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
       number,
     );
     if (caution) duplicateWallsByPage[row.pageNumber] = caution;
+    const label = sheetPickerLabel(number, title);
+    if (label !== null) sheetLabelByPage[row.pageNumber] = label;
   }
 
   const scheduleSheetCount = await scheduleSheetCountFor(plan.id);
@@ -411,6 +436,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
 
       <TakeoffPlanViewer
         duplicateWallsByPage={duplicateWallsByPage}
+        sheetLabelByPage={sheetLabelByPage}
         jobId={job.id}
         planId={plan.id}
         sheets={sheets}
