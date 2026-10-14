@@ -15,10 +15,13 @@ const { JobStatusControl } = await import("./JobStatusControl");
 describe("JobStatusControl on an estimate", () => {
   // The Estimate TAB is gone — the job page is five stage steps — and
   // "at the bottom of the Estimate tab" sent people looking for nothing.
-  it("points at the header's Won it? box and links to the estimate page's lock-in", () => {
+  // Declutter round 3 (density audit #12): the header's "Won it?" box is
+  // the one place that says how — and is the button — for a viewer who has
+  // it, so this control no longer repeats it.
+  it("says nothing about marking contracted to a viewer who has the header's Won it? box", () => {
     const html = renderToStaticMarkup(<JobStatusControl jobId="job-1" status="ESTIMATE" />);
-    expect(html).toContain('href="/jobs/job-1/estimate#job-lock-in"');
-    expect(html).toContain("Won it?");
+    expect(html).not.toContain("Mark contracted");
+    expect(html).not.toContain("Won it?");
     expect(html).not.toMatch(/estimate tab/i);
     expect(html).not.toContain("further down this page");
   });
