@@ -97,6 +97,15 @@ describe("Estimate tab — contracted", () => {
     expect(page).toContain('href="/settings?tab=estimating"');
     expect(page).not.toContain('href="/settings"');
   });
+
+  it("ends the burden sentence with ONE full stop (the shared '.' after the ternary is the only one)", () => {
+    expect(page).toContain("to include them\n");
+    expect(page).not.toMatch(/include them\./);
+  });
+
+  it("gives the row's Save button the 44px target like every other control", () => {
+    expect(page).toMatch(/title="Save"\s+className="min-h-11 [^"]*mouse:min-h-9"/);
+  });
 });
 
 vi.mock("@/lib/actions", () => ({

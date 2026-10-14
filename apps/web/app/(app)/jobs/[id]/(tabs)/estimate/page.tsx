@@ -578,7 +578,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
               <Link href="/settings?tab=estimating" className="text-link hover:text-link-hover">
                 Settings
               </Link>{" "}
-              to include them.
+              to include them
             </>
           ) : (
             ", applied to the base wage and not to the fringes"
@@ -970,7 +970,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                       <SubmitButton
                         type="submit"
                         title="Save"
-                        className="rounded-md bg-rail-hover px-2 py-1 text-xs font-medium text-ink hover:bg-lift"
+                        className="min-h-11 rounded-md bg-rail-hover px-2 py-1 text-xs font-medium text-ink hover:bg-lift mouse:min-h-9"
                       >
                         Save
                       </SubmitButton>

@@ -536,15 +536,22 @@ export default async function BidsPage({
                 name="bid"
                 className="mt-2"
                 summary={
-                  <span data-bids="row-panels">
-                    Lines, addenda, quotes and job
-                    <span className="text-ink-muted">
-                      {" "}
-                      · {bid.lines.length} {bid.lines.length === 1 ? "line" : "lines"} · {bid.addenda.length}{" "}
-                      {bid.addenda.length === 1 ? "addendum" : "addenda"} · {bid.quotes.length}{" "}
-                      {bid.quotes.length === 1 ? "quote" : "quotes"} · {bid.wonJob ? `job: ${bid.wonJob.name}` : "no job linked"}
+                  bid.lines.length + bid.addenda.length + bid.quotes.length === 0 && !bid.wonJob ? (
+                    // Nothing in it yet: the row still opens (it is how lines,
+                    // addenda and quotes get ADDED), but a string of zeros is
+                    // noise on every empty row.
+                    <span data-bids="row-panels">Add lines, addenda, quotes or link the job</span>
+                  ) : (
+                    <span data-bids="row-panels">
+                      Lines, addenda, quotes and job
+                      <span className="text-ink-muted">
+                        {" "}
+                        · {bid.lines.length} {bid.lines.length === 1 ? "line" : "lines"} · {bid.addenda.length}{" "}
+                        {bid.addenda.length === 1 ? "addendum" : "addenda"} · {bid.quotes.length}{" "}
+                        {bid.quotes.length === 1 ? "quote" : "quotes"} · {bid.wonJob ? `job: ${bid.wonJob.name}` : "no job linked"}
+                      </span>
                     </span>
-                  </span>
+                  )
                 }
               >
               <BidLines

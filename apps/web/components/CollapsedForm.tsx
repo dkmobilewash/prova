@@ -53,15 +53,21 @@ export function CollapsedForm({
     return () => window.removeEventListener("hashchange", check);
   }, [openOnHash]);
   if (!open) {
+    // In a `<div>` so a flex-column parent cannot stretch the button to the
+    // row's full width: the class is `w-full sm:w-auto`, and a bare flex item
+    // ignores `w-auto` under align-items: stretch (Billing's Create invoice
+    // ran full width beside a compact Submit pay application).
     return (
-      <button
-        type="button"
-        id={openOnHash}
-        onClick={() => setOpen(true)}
-        className={tone === "primary" ? primaryActionClass : secondaryActionClass}
-      >
-        {label}
-      </button>
+      <div>
+        <button
+          type="button"
+          id={openOnHash}
+          onClick={() => setOpen(true)}
+          className={tone === "primary" ? primaryActionClass : secondaryActionClass}
+        >
+          {label}
+        </button>
+      </div>
     );
   }
   return (

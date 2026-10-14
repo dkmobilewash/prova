@@ -22,6 +22,14 @@ describe("CollapsedForm", () => {
     expect(html).not.toContain('name="description"');
   });
 
+  it("wraps the closed button in a block, so a flex-column parent cannot stretch it full width", () => {
+    // The class is `w-full sm:w-auto`; a bare flex item under align-items:
+    // stretch ignores w-auto. Billing's Create invoice rendered full width
+    // beside a compact Submit pay application for exactly this reason.
+    const html = renderToStaticMarkup(<CollapsedForm label="Create invoice">x</CollapsedForm>);
+    expect(html).toMatch(/^<div><button /);
+  });
+
   it("renders the form when told to start open", () => {
     const html = renderToStaticMarkup(
       <CollapsedForm label="Add a catalog entry" startOpen>

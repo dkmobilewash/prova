@@ -296,6 +296,21 @@ describe("/bids declutter", () => {
     expect(details).not.toContain("Pell Riverfront Tower");
   });
 
+  it("an empty row's disclosure invites adding, instead of reading a string of zeros", async () => {
+    bids = [bid({ id: "e1" })];
+    const empty = await render({ view: "all" });
+    expect(empty).toContain("Add lines, addenda, quotes or link the job");
+    expect(empty).not.toContain("0 lines");
+    // Still a closed disclosure with the panels inside — the way to add them.
+    expect(empty).toMatch(/<details[^>]*name="bid"/);
+    expect(empty).toContain("Link the job this bid is for");
+
+    bids = [bid({ id: "e2", wonJob: { id: "job-9", name: "Pell Tower" } as never })];
+    const some = await render({ view: "all" });
+    expect(some).toContain("job: Pell Tower");
+    expect(some).not.toContain("Add lines, addenda, quotes or link the job");
+  });
+
   it("says the decline picture in one line, with every figure and a way to the bids", async () => {
     bids = [
       bid({ id: "d1", status: "DECLINED", declineReason: "CAPACITY" }),
