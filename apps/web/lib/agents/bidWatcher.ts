@@ -49,7 +49,9 @@ export function utcDay(now: Date): Date {
 }
 
 const isoDay = (d: Date) => d.toISOString().slice(0, 10);
-const bidHref = (id: string) => `/bids#${id}`;
+// The bid's own page: /bids now shows the latest 20, so an older bid's
+// #anchor would land on nothing.
+const bidHref = (id: string) => `/ai/bids/${id}`;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 function daysWord(days: number): string {
