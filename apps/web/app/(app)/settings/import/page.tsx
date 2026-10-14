@@ -212,7 +212,7 @@ export default async function ImportPage() {
       </p>
       <p className="mb-2 text-sm text-ink-body" data-tour="import-quickbooks">
         Use QuickBooks Online?{" "}
-        <Link href="/settings#quickbooks-import" className="text-link hover:text-link-hover">
+        <Link href="/settings?tab=quickbooks#quickbooks-import" className="text-link hover:text-link-hover">
           Import from QuickBooks
         </Link>{" "}
         — your customers, vendors and products and services come straight across. It only reads
