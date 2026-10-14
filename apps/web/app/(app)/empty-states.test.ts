@@ -641,23 +641,26 @@ describe("an empty state has to offer a way out of being empty", () => {
     [...html.matchAll(/<a[^>]*href="([^"]*)"/g)].map((m) => m[1]);
 
   describe("/prevailing-wage with nothing filed", () => {
-    const load = async () => {
+    // The week check is the default tab; the job mapping is on ?tab=setup
+    // (declutter round 3, density audit #22).
+    const load = async (tab?: string) => {
       const { default: Page } = await import("@/app/(app)/prevailing-wage/page");
-      return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      return renderToStaticMarkup(await Page({ searchParams: tab ? Promise.resolve({ tab }) : noSearchParams() }));
     };
 
     it("renders both of its empty sections", async () => {
-      const html = await load();
       // Anti-vacuity, twice: these are the two headings the sections below
       // belong to, so a page that failed to render fails here rather than
       // passing the link assertions on an empty string.
-      expect(html).toContain("Check a week against the rules");
-      expect(html).toContain("Which rules apply to which job");
-      expect(html).toContain("No wage determinations recorded yet");
+      expect(await load()).toContain("Check a week against the rules");
+      const setup = await load("setup");
+      expect(setup).toContain("Which rules apply to which job");
+      expect(setup).toContain("No wage determinations recorded yet");
     });
 
     it("gives the reader somewhere to press, not just something to read", async () => {
       expect(wayOut(await load())).toContain("/jobs");
+      expect(wayOut(await load("setup"))).toContain("/jobs");
     });
   });
 

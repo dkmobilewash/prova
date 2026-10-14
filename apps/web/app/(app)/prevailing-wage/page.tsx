@@ -76,8 +76,8 @@ export default async function PrevailingWagePage({
       </Disclosure>
       <PageTabs tabs={TABS} label="Prevailing wage sections" />
 
-      {!onSetup && (
       {/* --------------------------------------------------- review --- */}
+      {!onSetup && (
       <section className="mb-10" data-tour="pw-check-week">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Check a week against the rules</h2>
 
