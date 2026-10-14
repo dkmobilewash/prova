@@ -3,6 +3,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { CRASH_MARKERS, expectHealthy, type HealthMonitor } from "./health";
 import { stubDocumentUpload } from "./blobStub";
 import { historyLog } from "./historyLog";
+import { openCollapsed } from "./collapsed";
 
 /**
  * The pilot contractor's path through the product, as reusable steps.
@@ -418,6 +419,17 @@ export function invoiceForm(page: Page): Locator {
 }
 
 /**
+ * The invoice form sits behind its own "Create invoice" button since
+ * declutter round 2 (a `CollapsedForm` in `#pay-applications`, under the
+ * pay-app list). The opener and the form's submit carry the same words, so
+ * the press is scoped to that block and confirmed by the FORM appearing.
+ * Already open (a second invoice in one visit) presses nothing.
+ */
+export async function openInvoiceForm(page: Page): Promise<void> {
+  await openCollapsed(page.locator("#pay-applications"), "Create invoice", invoiceForm(page));
+}
+
+/**
  * Fills and submits the Billing tab's invoice form. Asserts nothing about
  * the outcome, for the same reason as submitLineItem.
  */
@@ -425,6 +437,7 @@ export async function submitInvoice(
   page: Page,
   input: { description: string; amount: string; dueAt?: string },
 ): Promise<void> {
+  await openInvoiceForm(page);
   const form = invoiceForm(page);
   await form.locator('input[name="description"]').fill(input.description);
   await form.locator('input[name="amount"]').fill(input.amount);

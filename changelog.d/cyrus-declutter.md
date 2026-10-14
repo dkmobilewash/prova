@@ -120,3 +120,21 @@ those four, so none was dropped. "Work turned down" is one line with a link
 to the declined bids. Check: `bids/page.test.ts` (+4) — five mutants killed.
 Noted for Diego: `lib/agents/bidWatcher.ts:52` links `/bids#<id>`, which a
 bid older than 20 no longer renders; `/ai/bids/<id>` is the right target.
+
+**The e2e specs, made to press what the declutter put one click down.**
+`CollapsedForm` renders nothing inside until it is pressed, so a spec that
+filled a field inside one waited forever — a timeout, not an assertion
+failure (#774: the proposals step of `estimating-spine` and
+`wage-rates.spec.ts`). Fixed in the specs, never with `startOpen`: two helpers
+in `e2e/lib/collapsed.ts` — `openCollapsed(scope, opener, revealed)` presses a
+client opener and retries until what it hides is on screen (a press before
+hydration does nothing; the opener and the submit often share words, so the
+reveal is what is checked), and `openDisclosure(details)` opens a native row by
+its group name (`details[name="bid"]`, `"estimate-line"`, `"cost-line"`,
+`"proposal-clause"`), because `getByRole` skips what a closed `<details>` hides.
+`submitInvoice` opens "Create invoice" itself; bid rows reopen after every
+reload so read-backs are read on screen; job-detail's Billing tab checks the
+"Submit pay application" button where the deleted "Pay applications" heading
+was. Nothing could be run in a browser here. Check: `e2e/lib/collapsed.test.ts`
+fails in a second when a pressed opener or opened row name no longer exists in
+the app, and counts its parse independently — mutation-checked both ways.

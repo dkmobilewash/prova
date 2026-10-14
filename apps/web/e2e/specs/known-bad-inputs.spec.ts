@@ -8,6 +8,7 @@ import {
   invoiceForm,
   landOnDashboard,
   markContracted,
+  openInvoiceForm,
   readableRefusal,
   recordExecutedSubcontract,
   retainageForm,
@@ -146,6 +147,9 @@ test.describe("known-bad inputs from 2026-09-21", () => {
     await expectHealthy(page, "dashboard after the 12,500 attempt", { monitor });
     await page.goto(`/jobs/${contractedJob.jobId}/billing`);
     await expectHealthy(page, "billing tab, reopened after the 12,500 attempt", { monitor });
+    // Behind "Create invoice" since declutter round 2: a reopened page shows
+    // the opener, and the form must still come up from it.
+    await openInvoiceForm(page);
     await expect(invoiceForm(page)).toBeVisible();
   });
 
