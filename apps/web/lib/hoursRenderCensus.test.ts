@@ -93,6 +93,18 @@ const NOT_AN_HOURS_NUMBER: Record<string, string> = {
   "lib/ask/handlers.ts\t{Math.round((labor.pricedHours / hours) * 100)}":
     "A percentage, already integer-rounded by Math.round.",
 
+  "lib/estimating/bid-package.ts\t{pad(at.getHours())}":
+    "A CLOCK hour inside a file name, not a quantity of work. `packageStamp` " +
+    "builds `2026-10-14-143207` so two bid packages built minutes apart cannot " +
+    "land in Downloads under one name — a production click-through found that " +
+    "collision, with the browser quietly appending `(1)`. `formatHours` would " +
+    "render `14.00`, which is wrong in a file name and would reintroduce the " +
+    "very collision by dropping minutes and seconds. The value is already an " +
+    "integer from `Date#getHours`, so the floating-point sum this census exists " +
+    "to catch cannot arise. Caught by this census on the branch that added it, " +
+    "which is the census doing its job: `getHours` is exactly the name worth " +
+    "stopping, and this is the rare caller that means a time of day.",
+
   "lib/labor-productivity.ts\t{quantity, actualHours}":
     "Not a render at all — a destructure of this pure module's own input. " +
     "labor-productivity.ts imports no React and returns numbers; the screen " +

@@ -47,7 +47,7 @@ afterEach(() => {
 function paint() {
   act(() =>
     root.render(
-      createElement(BidPackageBuilder, { projectName: "West Herr Jaguar", today: "2026-10-14" }),
+      createElement(BidPackageBuilder, { projectName: "West Herr Jaguar" }),
     ),
   );
   return {
@@ -129,14 +129,49 @@ describe("and the proposal page actually mounts it", () => {
     expect(source).toContain("export default async function JobProposalPage");
   });
 
-  it("renders the builder, with the project and the viewer's own date", () => {
+  it("renders the builder, with the project it belongs to", () => {
     expect(source).toMatch(/<BidPackageBuilder\s/);
     expect(source).toMatch(/projectName=\{job\.name\}/);
-    expect(source).toMatch(/today=\{today\}/);
-    // The date comes from the viewer's timezone cookie on the SERVER. A
-    // `localToday()` in the component would be a hydration mismatch for a file
-    // name, which is not a trade worth making.
-    expect(source).toMatch(/const today = await viewerToday\(\);/);
+  });
+
+  it("DOES NOT hand it a date rendered on the server", () => {
+    // ── WHY THIS IS ASSERTED AS AN ABSENCE ──
+    //
+    // The first version passed `today` down from `viewerToday()`. That was
+    // safe for hydration and useless for the defect: every package built from
+    // one page load shared a stamp, so two builds of one bid collided in
+    // Downloads — found by clicking production. The clock is read inside the
+    // press now, and a prop reappearing here is the regression.
+    expect(source).not.toMatch(/today=\{/);
+    expect(source).not.toMatch(/viewerToday\(\)/);
+  });
+
+  it("READS THE CLOCK AT THE PRESS, not once when the page opens", () => {
+    // ── A MUTATION GOT PAST EVERYTHING ELSE HERE, WHICH IS WHY THIS EXISTS ──
+    //
+    // Hoisting the stamp to `useState(() => packageStamp(new Date()))` compiles
+    // cleanly, renders identically, and restores the exact defect a production
+    // click-through found: every package built from one page load shares a name,
+    // so two builds of one bid collide in Downloads under a `(1)` nobody reads.
+    // Every test in this file stayed green under it, because happy-dom cannot
+    // run the build at all — no `File`, no `URL.createObjectURL`.
+    //
+    // So this is a SOURCE assertion, deliberately, and it is an honest one here
+    // in a way it usually is not: the defect is WHERE THE CALL SITS, which is
+    // the one thing reading the source can actually see. It would be dishonest
+    // if it stood in for behaviour; it is not standing in for anything, because
+    // nothing in this environment can press the button.
+    const component = readFileSync(resolve(__dirname, "BidPackageBuilder.tsx"), "utf8");
+    const code = component
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+
+    // Called at the point of use, with a fresh Date.
+    expect(code).toMatch(/link\.download = packageFileName\(projectName, packageStamp\(new Date\(\)\)\);/);
+    // And nowhere else: a stamp held in state or a module constant is the
+    // regression, whatever it is named.
+    expect(code.match(/packageStamp\(/g) ?? []).toHaveLength(1);
+    expect(code).not.toMatch(/useState\([^)]*packageStamp/);
   });
 
   it("is not part of the printed document", () => {
