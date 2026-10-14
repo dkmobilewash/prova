@@ -279,7 +279,7 @@ describe("/alerts with nothing recorded anywhere", () => {
 describe("/closeout with no jobs", () => {
   const load = async () => {
     const { default: Page } = await import("@/app/(app)/closeout/page");
-    return renderToStaticMarkup(await Page());
+    return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
   };
 
   it("renders, and explains what a closeout package is before there is one", async () => {
