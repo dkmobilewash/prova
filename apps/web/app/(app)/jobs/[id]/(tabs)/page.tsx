@@ -6,6 +6,7 @@ import { ContractSummary } from "@/components/ContractSummary";
 import { JobDetailsForm } from "@/components/JobDetailsForm";
 import { JobBidDetails } from "@/components/JobBidDetails";
 import { JobStatusControl } from "@/components/JobStatusControl";
+import { CollapsedForm } from "@/components/CollapsedForm";
 import { RecordExecutedSubcontract } from "@/components/RecordExecutedSubcontract";
 import { ContractDocumentUploadForm } from "@/components/ContractDocumentUploadForm";
 import { DocuSignPanel } from "@/components/DocuSignPanel";
@@ -418,7 +419,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
               ) : (
                 <div>
                   <p className="mb-3 text-sm text-ink-body">
-                    No signing link yet. Once the client signs, this job can be marked as contracted.
+                    No signing link yet.
                   </p>
                   <form action={createSignatureRequestWithId}>
                     <SubmitButton
@@ -532,7 +533,11 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
                 ))}
               </ul>
             )}
-            <ContractDocumentUploadForm jobId={job.id} hasDocuments={job.contractDocuments.length > 0} />
+            {/* Behind a button (density audit #12): an open file picker on
+                every Overview load. The form inside is unchanged. */}
+            <CollapsedForm label="Upload subcontract" tone="secondary">
+              <ContractDocumentUploadForm jobId={job.id} hasDocuments={job.contractDocuments.length > 0} />
+            </CollapsedForm>
           </section>
         )}
       </div>

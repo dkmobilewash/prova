@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   deleteBackcharge,
@@ -17,6 +17,7 @@ import { localToday } from "@/components/localToday";
 import { money } from "@/lib/money";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
+import { Disclosure } from "@/components/Disclosure";
 
 export type BackchargeRowData = BackchargeDefaults & {
   id: string;
@@ -50,6 +51,12 @@ export function BackchargeRow({
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState("SETTLED");
+  // Home's "Needs you today" links to /backcharges#<id> so the person can
+  // object; a closed row would make them hunt for the button.
+  const [landed, setLanded] = useState(false);
+  useEffect(() => {
+    if (window.location.hash === `#${backcharge.id}`) setLanded(true);
+  }, [backcharge.id]);
 
   function run(fn: () => Promise<{ ok: true } | { ok: false; error: string }>, fallback: string) {
     setError(null);
@@ -307,19 +314,42 @@ export function BackchargeRow({
 
   return (
     // `id`: Home's "Needs you today" links to /backcharges#<id>.
-    <li id={backcharge.id} className="flex scroll-mt-24 flex-col gap-3 p-4 target:ring-2 target:ring-inset target:ring-brand sm:flex-row sm:items-start">
+    // Declutter (density audit #29): one line per backcharge — number · job ·
+    // amount · status · deadline — that opens into what the card showed,
+    // with its actions. Opens itself when the hash names it.
+    <li id={backcharge.id} className="scroll-mt-24 px-4 target:ring-2 target:ring-inset target:ring-brand">
+      <Disclosure
+        variant="row"
+        name="backcharge"
+        open={landed || undefined}
+        summary={
+          <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-mono text-xs text-ink-muted">BC {backcharge.number}</span>
+            {showJob && <span className="text-link">{backcharge.jobName}</span>}
+            <span className="font-mono text-ink">{money(claimed)}</span>
+            <span className={`rounded px-1.5 py-0.5 text-xs ${statusBadgeClass(backcharge.status)}`}>
+              {statusLabel(backcharge.status)}
+            </span>
+            {overdue && (
+              <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">
+                Past the deadline to object
+              </span>
+            )}
+            <span className="text-xs text-ink-muted">
+              {unresolved
+                ? backcharge.respondByDate
+                  ? `object by ${backcharge.respondByDate}`
+                  : "no deadline recorded"
+                : backcharge.resolvedOn
+                  ? `resolved ${backcharge.resolvedOn}`
+                  : null}
+            </span>
+          </span>
+        }
+      >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-xs text-ink-muted">BC {backcharge.number}</span>
-          <span className="font-mono text-ink">{money(claimed)}</span>
-          <span className={`rounded px-1.5 py-0.5 text-xs ${statusBadgeClass(backcharge.status)}`}>
-            {statusLabel(backcharge.status)}
-          </span>
-          {overdue && (
-            <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">
-              Past the deadline to object
-            </span>
-          )}
           <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-body">
             {categoryLabel(backcharge.category)}
           </span>
@@ -439,6 +469,8 @@ export function BackchargeRow({
           Edit
         </button>
       </RowActions>
+      </div>
+      </Disclosure>
     </li>
   );
 }

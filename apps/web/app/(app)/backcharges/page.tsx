@@ -8,6 +8,9 @@ import { BackchargeForm } from "@/components/BackchargeForm";
 import { EmptyState } from "@/components/EmptyState";
 import { BackchargeRow } from "@/components/BackchargeRow";
 import { isResponseOverdue, summarizeBackcharges } from "@/lib/backcharges";
+import { StatusLine } from "@/components/StatusLine";
+import { HintedText } from "@/components/HintedText";
+import { backchargesStatus } from "@/lib/status-sentences";
 import { money } from "@/lib/money";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { viewerToday } from "@/lib/viewerToday";
@@ -125,43 +128,27 @@ export default async function BackchargesPage({
         <BackchargeForm jobs={jobs} defaultJobId={activeJob ?? undefined} startOpen={startNew === "1"} />
       </section>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-4" data-tour="backcharges-totals">
-        <div className="rounded-xl border border-line-card bg-surface p-4">
-          <p className="font-mono text-xl font-semibold text-ink">{money(summary.openClaimed)}</p>
-          <p className="text-xs text-ink-muted">
-            Claimed and unresolved ({summary.openCount})
-          </p>
-        </div>
-        <div className="rounded-xl border border-line-card bg-surface p-4">
-          <p className={`text-2xl font-semibold ${overdueCount > 0 ? "text-tag-rose-ink" : "text-ink"}`}>
-            {overdueCount}
-          </p>
-          <p className="text-xs text-ink-muted">Past the deadline to object</p>
-        </div>
-        <div className="rounded-xl border border-line-card bg-surface p-4">
-          <p className="font-mono text-xl font-semibold text-ink">{money(summary.concededTotal)}</p>
-          <p className="text-xs text-ink-muted">
-            What resolved ones cost us
-            {summary.unknownConcededCount > 0 && (
-              <span className="text-tag-amber-ink">
-                {" "}
-                · {summary.unknownConcededCount} settled with no figure recorded, not counted
-              </span>
-            )}
-          </p>
-        </div>
-        <div className="rounded-xl border border-line-card bg-surface p-4">
-          <p className="font-mono text-xl font-semibold text-tag-green-ink">{money(summary.avoidedTotal)}</p>
-          <p className="text-xs text-ink-muted">Argued off or withdrawn</p>
-        </div>
+      {/* The four tiles became one sentence and the disclaimer a hint
+          (density audit #29). Same figures, same expressions: `summary`
+          and `overdueCount` are computed above exactly as before. */}
+      <div className="mb-4" data-tour="backcharges-totals">
+        <StatusLine
+          report={backchargesStatus({
+            openCount: summary.openCount,
+            openClaimed: money(summary.openClaimed),
+            overdue: overdueCount,
+            conceded: money(summary.concededTotal),
+            avoided: money(summary.avoidedTotal),
+            unknownConceded: summary.unknownConcededCount,
+          })}
+        />
+        <p className="-mt-2 text-xs text-ink-muted">
+          <HintedText
+            label="A record, not a deduction"
+            hint="These figures are a log of what the GC has charged us, not a deduction from any pay application — nothing here changes an invoice, a contract value or a WIP number. An accepted backcharge is not netted against billing automatically; if the GC deducts it, adjust the invoice yourself."
+          />
+        </p>
       </div>
-
-      <p className="mb-4 text-xs text-ink-muted">
-        These figures are a log of what the GC has charged us, not a deduction from any pay
-        application — nothing here changes an invoice, a contract value or a WIP number. An
-        accepted backcharge is not netted against billing automatically; if the GC deducts it,
-        adjust the invoice yourself.
-      </p>
 
       {jobs.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2" data-tour="backcharges-job-filter">

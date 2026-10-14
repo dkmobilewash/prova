@@ -29,13 +29,13 @@ export const jobDetailWalkthrough: Walkthrough = {
     {
       anchor: "job-details",
       title: "Fix the basics",
-      body: "Change the job's name, the description of the work, or who it is for. Press Save details when you are done.",
+      body: "The job's name, who it is for, where it is and what the work is. Press Edit details to change them, then Save details.",
     },
     {
       anchor: "job-status",
       title: "Where the job is",
       body:
-        "Estimate, contracted, in progress or complete. An estimate becomes contracted with Mark contracted, in the box under the job name or at the bottom of the estimate page (the link here), once it is signed. After that, press the button here when the work starts, and again when it is finished.",
+        "Estimate, contracted, in progress or complete. An estimate becomes contracted with Mark contracted, in the box under the job name, once it is signed. After that, press the button here when the work starts, and again when it is finished.",
     },
     {
       anchor: "job-schedule",

@@ -12,6 +12,7 @@ import { money } from "@/lib/money";
 import { updateJobRetainageTerms, createRetainageRelease, deleteRetainageRelease } from "@/lib/actions";
 import { ActionForm } from "@/components/ActionForm";
 import { PercentField } from "@/components/PercentField";
+import { CollapsedForm } from "@/components/CollapsedForm";
 
 const rowDeleteClass = "text-xs text-danger hover:underline";
 const rowCancelClass =
@@ -94,43 +95,14 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
   return (
     <PageColumn width="reading">
     <section>
-      <h2 className="mb-1 text-lg font-semibold text-ink">Retainage</h2>
-      <p className="mb-3 text-sm text-ink-muted">
-        Each invoice keeps the retainage worked out when it was created, at the rate below. Changing the rate
-        only affects invoices you create after the change.
-      </p>
-
-      <ActionForm action={updateJobRetainageTermsWithId} resetOnSuccess={false} className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-line-card bg-surface p-3">
-        {/* A `%` that stays put and a live money preview — `0.10` typed
-            meaning ten percent used to save as a tenth of one percent in
-            total silence. See components/PercentField.tsx. */}
-        <PercentField
-          name="retainagePercent"
-          label="Retainage"
-          defaultValue={job.retainagePercent?.toString() ?? job.contact.defaultRetainagePercent?.toString() ?? ""}
-          contractValue={contractValue}
-        />
-        <label className="flex flex-col gap-1 text-xs text-ink-body">
-          Expected substantial completion
-          <input
-            type="date"
-            name="substantialCompletionDate"
-            defaultValue={dateInputValue(job.substantialCompletionDate)}
-            className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
-          />
-        </label>
-        <SubmitButton type="submit" className="rounded-md bg-rail-hover px-3 py-1.5 text-sm font-medium text-ink hover:bg-lift">
-          Save
-        </SubmitButton>
-      </ActionForm>
-
+      <h2 className="mb-3 text-lg font-semibold text-ink">Retainage</h2>
       {nothingYet ? (
-        <p className="rounded-lg border border-line-card bg-surface p-4 text-sm text-ink-body" data-retainage-empty="">
+        <p className="mb-4 rounded-lg border border-line-card bg-surface p-4 text-sm text-ink-body" data-retainage-empty="">
           Nothing withheld yet. Retainage comes off each invoice you create on the{" "}
           <Link href={`/jobs/${job.id}/billing`} className="text-link hover:underline">
             Billing tab
           </Link>
-          , at the rate above.
+          , at the rate below.
         </p>
       ) : (
       <>
@@ -153,7 +125,7 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
         <p className="mb-4 text-sm text-ink-body">
           Expected release: {money(retainageSummary.balance)} around{" "}
           {formatCalendarDate(retainageSummary.substantialCompletionDate)} (this job&rsquo;s expected substantial
-          completion date) — a forecast based on the date set above, not a guarantee of when the GC will actually
+          completion date) — a forecast based on the date set below, not a guarantee of when the GC will actually
           release it.
         </p>
       )}
@@ -197,6 +169,7 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
         </ul>
       )}
 
+      <CollapsedForm label="Log release">
       <ActionForm action={createRetainageReleaseWithId} className="flex flex-wrap items-end gap-2 rounded-lg border border-line-card bg-surface p-3">
         <label className="flex flex-col gap-1 text-xs text-ink-body">
           Amount released
@@ -226,8 +199,55 @@ export default async function JobRetainagePage({ params }: { params: Promise<{ i
           Log release
         </SubmitButton>
       </ActionForm>
+      </CollapsedForm>
       </>
       )}
+
+      {/* The terms as one line with an Edit — the form used to sit open
+          ABOVE the figures it governs (density audit #38). The form inside
+          is unchanged. Display only: the stored percent and date as-is. */}
+      <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-ink-body" data-retainage-terms="">
+        <span>
+          {(job.retainagePercent ?? job.contact.defaultRetainagePercent) != null
+            ? `${Number(job.retainagePercent ?? job.contact.defaultRetainagePercent)}%`
+            : "No rate set"}
+          {" · "}
+          {job.substantialCompletionDate
+            ? `expected substantial completion ${formatCalendarDate(job.substantialCompletionDate)}`
+            : "no expected substantial completion date"}
+        </span>
+        <CollapsedForm label="Edit" tone="secondary">
+      <p className="text-sm text-ink-muted">
+        Each invoice keeps the retainage worked out when it was created, at this rate. Changing the rate
+        only affects invoices you create after the change.
+      </p>
+
+      <ActionForm action={updateJobRetainageTermsWithId} resetOnSuccess={false} className="flex flex-wrap items-end gap-2 rounded-lg border border-line-card bg-surface p-3">
+        {/* A `%` that stays put and a live money preview — `0.10` typed
+            meaning ten percent used to save as a tenth of one percent in
+            total silence. See components/PercentField.tsx. */}
+        <PercentField
+          name="retainagePercent"
+          label="Retainage"
+          defaultValue={job.retainagePercent?.toString() ?? job.contact.defaultRetainagePercent?.toString() ?? ""}
+          contractValue={contractValue}
+        />
+        <label className="flex flex-col gap-1 text-xs text-ink-body">
+          Expected substantial completion
+          <input
+            type="date"
+            name="substantialCompletionDate"
+            defaultValue={dateInputValue(job.substantialCompletionDate)}
+            className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
+          />
+        </label>
+        <SubmitButton type="submit" className="rounded-md bg-rail-hover px-3 py-1.5 text-sm font-medium text-ink hover:bg-lift">
+          Save
+        </SubmitButton>
+      </ActionForm>
+
+        </CollapsedForm>
+      </div>
     </section>
     </PageColumn>
   );

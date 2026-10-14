@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { Spinner } from "@/components/Spinner";
 import { deleteEstimateJob, updateJobDetails } from "@/lib/actions";
+import { secondaryActionClass } from "@/components/emptyStateStyles";
 
 type Contact = { id: string; name: string };
 
@@ -52,6 +53,9 @@ export function JobDetailsForm({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [pending, startTransition] = useTransition();
+  // Declutter (density audit #12): the details READ as a list and the form
+  // opens in place on Edit. The form itself is unchanged.
+  const [editing, setEditing] = useState(false);
 
   const label = "flex flex-col gap-1 text-sm text-ink-label";
   const input =
@@ -73,6 +77,39 @@ export function JobDetailsForm({
 
   return (
     <div className="rounded-lg border border-line-card bg-surface p-4">
+      {!editing ? (
+        <div className="flex flex-col gap-3">
+          <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[max-content_minmax(0,1fr)]">
+            <dt className="text-ink-muted">Job name</dt>
+            <dd className="text-ink">{name}</dd>
+            <dt className="text-ink-muted">Client</dt>
+            <dd className="text-ink">{contacts.find((contact) => contact.id === contactId)?.name ?? "—"}</dd>
+            <dt className="text-ink-muted">Site address</dt>
+            <dd className="text-ink">
+              {siteAddress || "—"}
+              {siteStatus !== "found" && (
+                <span className="block text-xs text-ink-muted">
+                  {siteStatus === "notFound"
+                    ? "Couldn't find this address on a map, so daily reports can't fill in the weather."
+                    : "Save where the work is and daily reports fill in the weather automatically."}
+                </span>
+              )}
+            </dd>
+            <dt className="text-ink-muted">Gross area (SF)</dt>
+            <dd className="text-ink">{grossAreaSqFt || "—"}</dd>
+            <dt className="text-ink-muted">Scope</dt>
+            <dd className="whitespace-pre-line text-ink">{scope || "—"}</dd>
+          </dl>
+          <div>
+            <button type="button" onClick={() => setEditing(true)} className={secondaryActionClass}>
+              Edit details
+            </button>
+          </div>
+          {/* The Remove below reports here while the form is closed. */}
+          {error && <p className="text-sm text-danger">{error}</p>}
+        </div>
+      ) : (
+      <>
       {/* `onSubmit`, NOT `action={save}` — issue #311. React 19 calls
           `requestFormReset` unconditionally BEFORE running a form's
           `action`, so every refusal `updateJobDetails` returns arrived over
@@ -181,6 +218,9 @@ export function JobDetailsForm({
             )}
           </button>
           {saved && !error && <span className="text-sm text-ink-muted">Saved.</span>}
+          <button type="button" onClick={() => setEditing(false)} className={secondaryActionClass}>
+            Close
+          </button>
         </div>
 
         {error && (
@@ -189,6 +229,8 @@ export function JobDetailsForm({
           <p className="text-sm text-danger">{error}</p>
         )}
       </form>
+      </>
+      )}
 
       {canRemove && isEstimate && (
         <div className="mt-4 border-t border-line-card pt-4">

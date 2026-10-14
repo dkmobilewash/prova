@@ -15,13 +15,13 @@ export const catalogWalkthrough: Walkthrough = {
       anchor: "catalog-empty",
       title: "Nothing saved yet",
       body:
-        "Your saved line items will be listed here. Add one with the form at the bottom of the page, or import a list.",
+        "Your saved line items will be listed here. Add one with the Add a catalog entry button at the top, or import a list.",
     },
     {
       anchor: "catalog-list",
       title: "Your saved line items",
       body:
-        "Each one shows its unit, price, cost and trade. Once a finished job has used it, you also see what it really cost you, and a button to update the price if it was off.",
+        "One row each: unit, price, cost and trade. Press a row for the rest — once a finished job has used it, what it really cost you, and a button to update the price if it was off.",
     },
     {
       anchor: "catalog-add",

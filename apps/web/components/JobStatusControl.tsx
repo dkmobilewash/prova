@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { setJobStatus } from "@/lib/actions";
 import { StatusBadge } from "@prova/ui";
@@ -81,23 +80,18 @@ export function JobStatusControl({
         ))}
       </div>
 
+      {/* Declutter (density audit #12): "how to mark contracted" was said
+          three times on the Overview. A viewer with the Estimate step has the
+          header's "Won it?" box, which says it once and IS the button — so
+          the sentence here is only for a viewer without that box. */}
       {status === "ESTIMATE" ? (
-        <p className="mt-2 text-sm text-ink-muted">
-          An estimate becomes a contracted job with Mark contracted{" "}
-          {showsEstimateTab ? (
-            <>
-              — the &ldquo;Won it?&rdquo; box at the top of this job, or the{" "}
-              <Link href={`/jobs/${jobId}/estimate#job-lock-in`} className="text-link hover:underline">
-                bottom of the estimate page
-              </Link>{" "}
-              —
-            </>
-          ) : (
-            "on the job's estimate page (the Estimate step)"
-          )}
-          , once the contract is executed — either the GC signs it in C Stream or you record the
-          executed subcontract they sent, under Contract signature below.
-        </p>
+        showsEstimateTab ? null : (
+          <p className="mt-2 text-sm text-ink-muted">
+            An estimate becomes a contracted job with Mark contracted on the job&apos;s estimate page
+            (the Estimate step), once the contract is executed — either the GC signs it in C Stream or
+            you record the executed subcontract they sent, under Contract signature below.
+          </p>
+        )
       ) : (
         <p className="mt-2 text-sm text-ink-muted">
           Status is set by hand, never guessed from time entries or dates. Currently{" "}
