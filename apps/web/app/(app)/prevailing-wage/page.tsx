@@ -18,19 +18,29 @@ import { reviewIsClean, weeklyUnresolvedSentence } from "@/lib/prevailing-wage";
 import { viewerToday } from "@/lib/viewerToday";
 import { determinationStanding, determinationStandingLine } from "@/lib/determination-standing";
 import { DeterminationStandingLine } from "@/components/DeterminationStandingLine";
+import { Disclosure } from "@/components/Disclosure";
+import { PageTabs } from "@/components/PageTabs";
+
+// The week check is the page's job; the rules and the job → rule-set mapping
+// are setup you visit once in a while (density audit #22).
+const TABS = [
+  { href: "/prevailing-wage", label: "Check a week" },
+  { href: "/prevailing-wage?tab=setup", label: "Rules & jobs" },
+] as const;
 
 export const metadata = { title: "Prevailing wage" };
 
 export default async function PrevailingWagePage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; week?: string }>;
+  searchParams: Promise<{ job?: string; week?: string; tab?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
   if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;
   const { company, ...currentUser } = context;
 
-  const { job: jobParam, week: weekParam } = await searchParams;
+  const { job: jobParam, week: weekParam, tab } = await searchParams;
+  const onSetup = tab === "setup";
   const today = await viewerToday();
 
   const [ruleSets, determinations, weeks] = await Promise.all([
@@ -53,16 +63,20 @@ export default async function PrevailingWagePage({
         route="/prevailing-wage"
         subtitle="A jurisdiction's overtime, double-time and reporting rules, applied to the hours your crews actually logged."
       />
-      <p className="mb-6 text-xs text-ink-muted">
-        <span className="text-ink-body">These are rules, never rates.</span> There is no
-        prevailing-wage dataset in this app and nothing here is seeded: every threshold is one you
-        enter from the awarding body&apos;s own documents, with the citation next to it. A blank
-        threshold means nobody has looked it up, and a week is then reported as{" "}
-        <span className="text-ink-body">unchecked</span> rather than measured against a number we
-        invented. Nothing here rewrites a time entry — it reports where what was entered and what
-        the rules imply disagree, and a person decides which is wrong.
-      </p>
+      <Disclosure variant="plain" summary="How these rules work · rules, never rates" className="mb-4">
+        <p className="text-xs text-ink-muted">
+          <span className="text-ink-body">These are rules, never rates.</span> There is no
+          prevailing-wage dataset in this app and nothing here is seeded: every threshold is one you
+          enter from the awarding body&apos;s own documents, with the citation next to it. A blank
+          threshold means nobody has looked it up, and a week is then reported as{" "}
+          <span className="text-ink-body">unchecked</span> rather than measured against a number we
+          invented. Nothing here rewrites a time entry — it reports where what was entered and what
+          the rules imply disagree, and a person decides which is wrong.
+        </p>
+      </Disclosure>
+      <PageTabs tabs={TABS} label="Prevailing wage sections" />
 
+      {!onSetup && (
       {/* --------------------------------------------------- review --- */}
       <section className="mb-10" data-tour="pw-check-week">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Check a week against the rules</h2>
@@ -122,15 +136,25 @@ export default async function PrevailingWagePage({
                 {review.employees.length === 0 ? (
                   <p className="text-sm text-ink-body">No hours logged that week.</p>
                 ) : (
-                  <ul className="flex flex-col gap-4">
+                  <ul>
                     {review.employees.map((employee) => (
+                      // One line per worker — name, hours, verdict — opening
+                      // to the days (density audit #22).
                       <li key={employee.employeeUserId}>
-                        <p className="text-sm font-medium text-ink-label">
-                          {employee.employeeName}
-                          <span className="ml-2 font-normal text-ink-muted">
-                            {formatHours(employee.review.totalHours)} hrs
-                          </span>
-                        </p>
+                        <Disclosure
+                          variant="row"
+                          summary={
+                            <span className="text-sm font-medium text-ink-label">
+                              {employee.employeeName}
+                              <span className="ml-2 font-normal text-ink-muted">
+                                {formatHours(employee.review.totalHours)} hrs
+                              </span>
+                              <span data-pw-verdict className="ml-2 font-normal">
+                                {weekVerdict(employee.review)}
+                              </span>
+                            </span>
+                          }
+                        >
 
                         {/* The green sentence is gated on `reviewIsClean`,
                             NOT on `disagreements.length === 0`. A week whose
@@ -180,6 +204,7 @@ export default async function PrevailingWagePage({
                             is for when the shift ran, not how long it was.
                           </p>
                         )}
+                        </Disclosure>
                       </li>
                     ))}
                   </ul>
@@ -194,7 +219,10 @@ export default async function PrevailingWagePage({
           </>
         )}
       </section>
+      )}
 
+      {onSetup && (
+      <>
       {/* ---------------------------------------------- attachments --- */}
       <section className="mb-10" data-tour="pw-which-job">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Which rules apply to which job</h2>
@@ -275,6 +303,18 @@ export default async function PrevailingWagePage({
           </ul>
         )}
       </section>
+      </>
+      )}
     </PageShell>
   );
+}
+
+/** The closed row's verdict. Wording only — `reviewIsClean` decides "matches",
+ * exactly as the green sentence inside does. */
+function weekVerdict(review: Parameters<typeof reviewIsClean>[0]) {
+  if (!review.checked) return <span className="text-tag-amber-ink">unchecked</span>;
+  if (reviewIsClean(review)) return <span className="text-tag-green-ink">matches</span>;
+  const n = review.disagreements.length;
+  if (n > 0) return <span className="text-tag-amber-ink">{n} {n === 1 ? "day disagrees" : "days disagree"}</span>;
+  return <span className="text-tag-amber-ink">weekly hours unresolved</span>;
 }
