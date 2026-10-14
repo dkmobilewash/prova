@@ -276,3 +276,29 @@ export function assistantStatus(input: { proposed: number; done: number; notDone
       : `${count(input.proposed, "card")} in the last 30 days: ${input.done} done, ${input.notDone} refused by the app when tapped.`;
   return { quiet, problems: [] };
 }
+
+// ----------------------------------------------------------- backcharges
+
+/** Replaces /backcharges' four tiles (density audit #29). Every figure the
+ * tiles showed is in the sentence, so nothing is lost; a backcharge past its
+ * deadline to object is money at risk and the only thing that colours, and
+ * its red line still carries the figures. Money arrives already formatted —
+ * the page sums it, exactly as it did for the tiles. */
+export function backchargesStatus(input: {
+  openCount: number;
+  openClaimed: string;
+  overdue: number;
+  conceded: string;
+  avoided: string;
+  unknownConceded: number;
+}): StatusReport {
+  const unknown = input.unknownConceded
+    ? ` ${input.unknownConceded} settled with no figure recorded, not counted.`
+    : "";
+  const totals = `${count(input.openCount, "unresolved backcharge")}, ${input.openClaimed} claimed. Resolved ones cost us ${input.conceded}; ${input.avoided} argued off or withdrawn.${unknown}`;
+  const problems: StatusProblem[] =
+    input.overdue > 0
+      ? [{ tone: "red", text: `${count(input.overdue, "backcharge")} past the deadline to object. ${totals}` }]
+      : [];
+  return { quiet: totals, problems };
+}
