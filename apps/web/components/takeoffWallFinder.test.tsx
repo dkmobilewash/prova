@@ -4,7 +4,13 @@ import { resolve } from "node:path";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { TakeoffPlanViewer, FoundWalls } from "./TakeoffPlanViewer";
+import { TakeoffPlanViewer, FoundWalls, ClusterMark } from "./TakeoffPlanViewer";
+// THE PLAIN VALUES COME FROM A PLAIN MODULE, not from the viewer. Importing
+// them from a `"use client"` file is what `lib/client-boundary.test.ts` fails
+// the build over: across the RSC boundary they arrive as a client-reference
+// proxy rather than the number or the function. The guard caught this the
+// moment these cases were written, which is the whole reason it exists.
+import { DISTINCT_MARKS, SHOWN_AT_FIRST, markFor } from "@/lib/takeoff/clusterMarks";
 import { wallsOnThisSheet } from "@/lib/takeoff/wallGroups";
 import { inchLabel, type WallCluster } from "@/lib/takeoff/wallVectors";
 import { fitZoom, stepZoom } from "@/lib/takeoff-plan-view";
@@ -296,11 +302,131 @@ describe("the ghost lines over the sheet", () => {
     // is the half nothing else can cover.
     const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code).toMatch(/<FoundWalls\s+clusters=\{found\}\s+hovered=\{hovered\}\s*\/>/);
+    expect(code).toMatch(/<FoundWalls\s+clusters=\{shownGroups\}\s+hovered=\{hovered\}\s*\/>/);
     // And that it sits inside the overlay rather than somewhere harmless.
     const overlay = code.slice(code.indexOf("<svg"), code.indexOf("</svg>"));
     expect(overlay).toContain("<FoundWalls");
     expect(overlay.length).toBeGreaterThan(200);
+  });
+
+  it("DRAWS ONLY WHAT THE PANEL LISTS, so no line is unattributable", () => {
+    // ── THE DEFECT, FROM A REAL SHEET ──
+    //
+    // This was `clusters={found}` — every group — while the panel lists
+    // `shownGroups`, which is `found.slice(0, SHOWN_AT_FIRST)`. A West Herr
+    // floor plan clicked on production 2026-10-13 returned NINETEEN groups, so
+    // seven of them had lines on the drawing and no row beside them. Worse,
+    // the colour came from `index % 6`, so those seven wore the colours of
+    // rows 1 to 6: a blue line could be row 1's wall, which an estimator can
+    // accept, or row 13's, which they could not even see.
+    //
+    // The overlay is the verification channel for this whole feature —
+    // `wallVectors.ts` returns centrelines precisely so a wrong answer is a
+    // line where there is no wall. A line nobody can attribute breaks that.
+    //
+    // COMMENTS STRIPPED, and it is load-bearing: the comment at that call site
+    // quotes `clusters={found}` in order to record what was wrong, so a
+    // raw-text census would find the defect it is checking is gone.
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+    expect(code.length, "the viewer read as empty — this census guards nothing").toBeGreaterThan(10_000);
+    expect(code, "the overlay is drawing groups the panel does not list").not.toMatch(
+      /<FoundWalls\s+clusters=\{found\}/,
+    );
+    // And the list it follows is still the truncated one rather than having
+    // been quietly widened to all of them, which would restore the defect from
+    // the other end.
+    expect(code).toMatch(/shownGroups\s*=\s*showingAll\s*\?\s*\(found \?\? \[\]\)\s*:\s*\(found \?\? \[\]\)\.slice\(0, SHOWN_AT_FIRST\)/);
+  });
+
+  // ── SIX COLOURS WERE LABELLING NINETEEN GROUPS ──
+  //
+  // On the West Herr sheet `index % 6` put groups 0, 6, 12 and 18 in the same
+  // `#38bdf8`. The existing colour case above compares TWO groups and passes,
+  // which is why nothing caught it: the collision needs the seventh.
+  //
+  // These assert the arithmetic at every index rather than at the two a render
+  // test sets up by hand, which is the whole reason `markFor` was pulled out of
+  // JSX. A decision inside JSX is a decision no test can reach.
+
+  it("gives the first twelve groups — the panel's default — distinct marks", () => {
+    const marks = Array.from({ length: SHOWN_AT_FIRST }, (_, i) => {
+      const m = markFor(i, 2);
+      return `${m.stroke}|${m.dash}`;
+    });
+    expect(new Set(marks).size, "two of the twelve listed groups share a mark").toBe(SHOWN_AT_FIRST);
+  });
+
+  it("separates the groups that used to collide, by name", () => {
+    // The exact four from the sheet. Colour alone cannot tell them apart and
+    // is not expected to — the dash is the rest of the mark.
+    const blue = [0, 6, 12, 18].map((i) => markFor(i, 2));
+    expect(new Set(blue.map((m) => m.stroke)).size, "all four are the same colour, as before").toBe(1);
+    expect(new Set(blue.slice(0, 3).map((m) => m.dash)).size, "0, 6 and 12 must differ").toBe(3);
+  });
+
+  it("runs out at DISTINCT_MARKS and does not pretend otherwise", () => {
+    // A finite palette cannot label an arbitrary number of groups. Claiming it
+    // can is the failure the template filter's message was corrected for, so
+    // the repeat is pinned as a known fact and the panel says it out loud.
+    const all = Array.from({ length: DISTINCT_MARKS }, (_, i) => {
+      const m = markFor(i, 2);
+      return `${m.stroke}|${m.dash}`;
+    });
+    expect(new Set(all).size, "the marks are not all distinct below the limit").toBe(DISTINCT_MARKS);
+
+    const first = markFor(0, 2);
+    const wrapped = markFor(DISTINCT_MARKS, 2);
+    expect(wrapped.stroke, "the cycle must wrap, not invent a colour").toBe(first.stroke);
+    expect(wrapped.dash).toBe(first.dash);
+
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code, "the panel never tells anybody the marks repeat").toContain("repeat marks");
+    // THE WHOLE GATE, not the condition on its own. Measured as a mutation:
+    // replacing `showingAll` with `false` left both strings in the file and
+    // this case green — the sentence was present and unreachable, which is the
+    // same weakness the classifier fix was caught by hours earlier. A census
+    // over a string proves the string exists; only the derivation proves
+    // anybody can see it.
+    expect(code, "the repeat warning is in the file but can never render").toMatch(
+      /\{showingAll && found\.length > DISTINCT_MARKS && \(/,
+    );
+  });
+
+  it("the PANEL and the DRAWING use the same mark for the same group", () => {
+    // The disagreement this ends: a 12px coloured square in the panel beside a
+    // drawing holding three different lines of that colour. Rendered on both
+    // sides rather than asserted from the shared function, because "both call
+    // markFor" is a claim about the source and this is a claim about pixels.
+    //
+    // COLOUR is compared and dash LENGTHS are not: the swatch is 16 CSS pixels
+    // and the overlay is in page-width units, so the ratios match and the
+    // absolute lengths deliberately do not — a dash scaled for the drawing is
+    // one solid blob at swatch size.
+    const groups = Array.from({ length: SHOWN_AT_FIRST }, (_, i) => cluster(4 + i / 8, 1));
+    const { lines: drawn } = svg(createElement(FoundWalls, { clusters: groups, hovered: null }));
+    expect(drawn).toHaveLength(SHOWN_AT_FIRST);
+
+    for (let i = 0; i < SHOWN_AT_FIRST; i += 1) {
+      const { lines: swatch } = svg(createElement(ClusterMark, { index: i }));
+      expect(swatch, `no swatch rendered for group ${i}`).toHaveLength(1);
+      expect(
+        swatch[0].getAttribute("stroke"),
+        `the panel and the drawing disagree about group ${i}`,
+      ).toBe(drawn[i].getAttribute("stroke"));
+
+      // The dash SHAPE: on-length over off-length, which is scale-free.
+      const ratio = (value: string | null) => {
+        const [on, off] = (value ?? "").split(" ").map(Number);
+        return on / off;
+      };
+      expect(
+        ratio(swatch[0].getAttribute("stroke-dasharray")),
+        `group ${i}'s dash reads differently in the panel than on the sheet`,
+      ).toBeCloseTo(ratio(drawn[i].getAttribute("stroke-dasharray")), 5);
+    }
   });
 
   it("the viewer FILTERS to the building before grouping", () => {
