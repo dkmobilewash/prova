@@ -267,9 +267,7 @@ export default async function BidsPage({
           {declineSummary.groups.length > 1 && (
             <span className="text-ink-muted">
               {" "}
-              {declineSummary.groups
-                .map((group) => `${group.label} ${group.count} ${group.count === 1 ? "bid" : "bids"}`)
-                .join(" · ")}
+              {declineSummary.groups.map((group) => `${group.label} ${group.count} ${group.count === 1 ? "bid" : "bids"}`).join(" · ")}
               .
             </span>
           )}{" "}
