@@ -1,5 +1,6 @@
 import { prisma } from "@prova/db";
 import { PageHeader } from "@/components/PageHeader";
+import { CollapsedForm } from "@/components/CollapsedForm";
 import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -116,8 +117,11 @@ export default async function WallTypesPage() {
         </ul>
       )}
 
+      {/* Behind its button (declutter, 2026-10-13: it rendered open). */}
       <div data-tour="wall-types-add">
-        <NewWallTypeForm />
+        <CollapsedForm label="Add wall type">
+          <NewWallTypeForm />
+        </CollapsedForm>
       </div>
     </PageShell>
   );
