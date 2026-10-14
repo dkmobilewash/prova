@@ -1279,12 +1279,31 @@ export function TakeoffPlanViewer({
                   unexplained figure gets created — the same rule the drawing-index
                   check learned the hard way. If this number is large and the panel
                   is empty, the filter is the first thing to suspect rather than the
-                  sheet. */}
+                  sheet.
+
+                  ── IT USED TO NAME WHAT IT HAD REMOVED, AND THAT WAS FALSE ──
+
+                  It read "— the border, the title block and the logo — so they
+                  were left out". On a West Herr floor plan clicked on production
+                  2026-10-13 it said that of 12,641 lines while about 32 runs sat
+                  on the title block and the logo in the overlay below it. The
+                  filter knows ONE thing: these lines are at the same page
+                  position on other sheets. Which drawing furniture that turned
+                  out to be is not something it establishes, and listing three
+                  kinds told an estimator all three were handled.
+
+                  Same defect as the no-walls sentence directly below, which
+                  asserted "a scanned or image-only sheet" as the cause of an
+                  empty panel on a sheet that was plainly not a scan. A message
+                  may state what was measured; it may not name a cause nobody
+                  checked. */}
               {templateStrokes > 0 && (
                 <p className="mb-2 text-xs text-ink-muted">
-                  {templateStrokes.toLocaleString()} line{templateStrokes === 1 ? "" : "s"} on this sheet also
-                  appear in the same place on the rest of the set — the border, the title block and the logo —
-                  so they were left out.
+                  {templateStrokes.toLocaleString()} line{templateStrokes === 1 ? "" : "s"} on this sheet
+                  {templateStrokes === 1 ? " is" : " are"} in the same place on other sheets of the set, so
+                  {templateStrokes === 1 ? " it was" : " they were"} left out as page furniture. Not all of it
+                  recurs closely enough to catch — a border, title block or logo can still show up below, so
+                  check the runs against the drawing.
                 </p>
               )}
               <ul className="flex flex-col gap-1">
