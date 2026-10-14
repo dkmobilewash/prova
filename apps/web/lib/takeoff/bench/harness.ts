@@ -6,7 +6,7 @@ import { calibrationNotices, calibrationRefusal, feetPerPageWidth, readScale, re
 import { scheduleLines, type WallRunInput, type WallTypeInput } from "../../wall-assemblies";
 import { segmentsFromOpenPage } from "../sheetStrokes";
 import { clusterByThickness, wallFromPair, wallsInTheBuilding, wallsNotLettering, wallsNotTheSheetBorder, type WallCandidate, type WallCluster } from "../wallVectors";
-import { wallsFromBothEngines } from "../wallRuns";
+import { findWallsOnSheet } from "../findWallsOnSheet";
 import { displayMap, type CaseKey, type KeyWall, type Variant } from "./cases";
 import { PARTITION_TYPES, type Pt, type TypeCode } from "./model";
 import type { Prim, Sheet } from "./sheets";
@@ -90,7 +90,22 @@ export type FoundWalls = {
   textBoxes: number;
 };
 
-/** `TakeoffPlanViewer.onFindWalls`, line for line, against a PDF in memory. */
+/**
+ * The product's own wall pipeline, against a PDF in memory.
+ *
+ * ── THIS USED TO BE A COPY, AND THE COPY HAD DRIFTED ──
+ *
+ * It said *"`TakeoffPlanViewer.onFindWalls`, line for line"* and was not: by the
+ * time anybody checked it had **no `wallsNotTheScaleBar`** and **dropped the
+ * `curved` flag** when it rebuilt the stroke objects. Both invent walls — the
+ * scale bar is 32 ft of textbook wall, and an arc the room engine is supposed to
+ * skip gets counted a second time. So the instrument was grading a worse
+ * pipeline than the one that ships, and every phantom figure it reported was
+ * pessimistic by that much.
+ *
+ * It now calls `findWallsOnSheet`, which is the product's path. There is no copy
+ * left to drift.
+ */
 export async function findWalls(bytes: Buffer, feetPerUnit: number): Promise<FoundWalls> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   // @ts-expect-error pdfjs ships no types for the worker build; imported for its side effect.
@@ -103,30 +118,55 @@ export async function findWalls(bytes: Buffer, feetPerUnit: number): Promise<Fou
     const { segments, pathOperators } = await segmentsFromOpenPage(page, pdfjs, 1);
     const viewport = page.getViewport({ scale: 1 });
     const content = (await page.getTextContent()) ?? { items: [] };
-    const textBoxes = content.items.flatMap((raw: unknown) => {
+    // THE BASELINE, in points, handed over untouched — `findWallsOnSheet`
+    // applies the glyph-height shift and the page-width scaling itself. This
+    // used to pre-shift and pre-scale, which is a second convention for one
+    // thing and exactly how two readers drift apart.
+    const textItems = content.items.flatMap((raw: unknown) => {
       const item = raw as { str?: string; transform?: number[]; width?: number; height?: number };
       if (typeof item.str !== "string" || item.str.trim() === "" || !Array.isArray(item.transform)) return [];
       const m = pdfjs.Util.transform(viewport.transform, item.transform);
-      const h = item.height ?? 0;
-      return [{ x: m[4] / pageSize.widthPt, y: (m[5] - h) / pageSize.widthPt, width: (item.width ?? 0) / pageSize.widthPt, height: h / pageSize.widthPt }];
+      return [{ str: item.str, x: m[4], y: m[5], width: item.width ?? 0, height: item.height ?? 0 }];
     });
-    const inUnits = segments.map((s) => ({ x1: s.x1 / pageSize.widthPt, y1: s.y1 / pageSize.widthPt, x2: s.x2 / pageSize.widthPt, y2: s.y2 / pageSize.widthPt, width: s.width }));
-    const aspect = pageSize.heightPt / pageSize.widthPt;
     // THE PARTITION SCHEDULE, which is printed on the drawing and is the first
     // thing an estimator reads. In the product these thicknesses come from the
     // company's wall-type library, filled by `wallTypesFromSchedule` off the
     // schedule sheet. Handing the finder the same list here is representing
     // that input, not consulting the answer key: the key's per-wall geometry,
     // which is what the grading compares against, is not in scope here.
-    const scheduleIn = Object.values(PARTITION_TYPES).map((t) => t.thicknessIn);
-    const everywhere = wallsFromBothEngines(inUnits, 1, aspect, {
-      feetPerPoint: feetPerUnit,
-      knownThicknessesIn: scheduleIn,
+    //
+    // Shaped as `MatchableWallType` because that is what the product passes —
+    // the thicknesses are the part the detector reads.
+    const wallTypes = Object.entries(PARTITION_TYPES).map(([code, t]) => ({
+      id: code,
+      code,
+      name: code,
+      hasParts: true,
+      thicknessIn: t.thicknessIn,
+    }));
+    // NO SAMPLED SHEETS: a fixture is one page, and `templateFromSheets` needs
+    // `MIN_SHEETS` of them — so the product filters nothing here either. Said
+    // as `null` rather than an array of one, which is the same answer honestly
+    // spelled.
+    const found = findWallsOnSheet({
+      segments,
+      textItems,
+      pageSize,
+      feetPerUnit,
+      wallTypes,
+      sampledSheets: null,
     });
-    const inBuilding = wallsInTheBuilding(everywhere, feetPerUnit);
-    const walls = wallsNotTheSheetBorder(wallsNotLettering(inBuilding, textBoxes, feetPerUnit), 1, aspect);
     page.cleanup();
-    return { pathOperators, segments: segments.length, segs: inUnits, everywhere, inBuilding, walls, clusters: clusterByThickness(walls), textBoxes: textBoxes.length };
+    return {
+      pathOperators,
+      segments: segments.length,
+      segs: found.inUnits,
+      everywhere: found.everywhere,
+      inBuilding: found.inBuilding,
+      walls: found.walls,
+      clusters: found.clusters,
+      textBoxes: textItems.length,
+    };
   } finally {
     await doc.destroy();
   }
