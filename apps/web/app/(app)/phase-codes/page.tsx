@@ -162,7 +162,7 @@ export default async function PhaseCodesPage() {
           <>
             Budget against actual for each of your own cost codes, totalled across every job. Your
             codes come from{" "}
-            <Link href="/settings#phase-codes" className="text-link hover:text-link-hover">
+            <Link href="/settings?tab=estimating#phase-codes" className="text-link hover:text-link-hover">
               Settings
             </Link>
             ; a line item is counted once somebody codes it to one.
@@ -202,7 +202,7 @@ export default async function PhaseCodesPage() {
             )}
           </p>
           <Link
-            href="/settings#phase-codes"
+            href="/settings?tab=estimating#phase-codes"
             data-tour="phase-codes-set-up"
             className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-brand-hover mouse:min-h-9"
           >

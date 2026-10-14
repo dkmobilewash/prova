@@ -1,3 +1,4 @@
+import { Disclosure } from "@/components/Disclosure";
 import { EmployerBurdenRateForm } from "@/components/EmployerBurdenRateForm";
 import {
   EmployerBurdenRateRow,
@@ -34,22 +35,9 @@ export function EmployerBurdenRates({
 
   return (
     <section className="mb-8">
-      <h2 className="mb-1 text-sm font-semibold text-ink-label">Employer burden</h2>
-      <p className="mb-3 text-sm text-ink-body">
-        What an hour of work costs you BEYOND the wage and the CBA fringes — employer FICA, federal
-        and state unemployment, workers&apos; comp premium. Entered as a percentage of the base wage,
-        once a year, from whatever your accountant works it out against. It is added to the labor
-        inside every job&apos;s cost to date, which moves percent complete, earned revenue and the WIP
-        schedule.
-      </p>
-      <p className="mb-3 text-xs text-ink-muted">
-        The percentage is applied to the BASE WAGE only, not to the fringes — bona fide contributions
-        to a benefit plan are generally outside the wage base employer payroll taxes are computed on,
-        so burdening them again would count the same dollars twice.{" "}
-        <span className="text-tag-amber-ink">
-          That is a modelling choice your CPA should confirm, not a tax rule this app verified.
-        </span>
-      </p>
+      <h2 className="mb-3 text-sm font-semibold text-ink-label">Employer burden</h2>
+      {/* What it is and the base-wage-only modelling choice live in the
+          Estimating tab's one "How this works" on /settings (declutter). */}
 
       {current ? (
         <p className="mb-3 text-sm text-ink">
@@ -80,12 +68,17 @@ export function EmployerBurdenRates({
           <p className="mt-1 text-sm text-ink-body">
             Until you record one, every job&apos;s labor cost is the base wage plus the four CBA
             fringes and nothing else — no employer FICA, no unemployment, no workers&apos; comp. That
-            understates cost to date and OVERSTATES percent complete, which is the direction that
-            hurts. This app will not guess the figure: employer FICA has a wage base per employee per
-            year, unemployment is per-state with your own experience rating, and comp is a class-code
-            rate times your mod times what the carrier actually wrote — none of which is in here. Ask
-            your accountant for the percentage and record it with the button above.
+            understates cost to date and OVERSTATES percent complete. Ask your accountant for the
+            percentage and record it with the button above.
           </p>
+          <Disclosure variant="plain" summary="Why there is no default" className="mt-2">
+            <p className="text-sm text-ink-body">
+              This app will not guess the figure: employer FICA has a wage base per employee per
+              year, unemployment is per-state with your own experience rating, and comp is a
+              class-code rate times your mod times what the carrier actually wrote — none of which
+              is in here.
+            </p>
+          </Disclosure>
         </div>
       ) : (
         <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">

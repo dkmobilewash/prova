@@ -120,7 +120,7 @@ export default async function AlertsPage({
               </p>
             }
             actions={[
-              { label: "Record your cover and licence dates", href: "/settings" },
+              { label: "Record your cover and licence dates", href: "/settings?tab=licences" },
               { label: "Go to your jobs", href: "/jobs" },
             ]}
             sources={

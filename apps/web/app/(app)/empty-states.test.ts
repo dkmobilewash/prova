@@ -110,6 +110,8 @@ vi.mock("@/lib/viewerToday", () => ({
 vi.mock("next/navigation", () => ({
   usePathname: () => "/contacts",
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  // /settings' section tabs read the query to light the current one.
+  useSearchParams: () => new URLSearchParams(),
 }));
 // Server actions, imported by these pages only to hand to a form.
 vi.mock("@/lib/actions/notifications", () => ({ sendMyAlertDigest: vi.fn() }));
@@ -258,7 +260,7 @@ describe("/alerts with nothing recorded anywhere", () => {
 
   it("offers the two places a new account can record a date it will watch", async () => {
     const html = await load();
-    expect(html).toContain('href="/settings"');
+    expect(html).toContain('href="/settings?tab=licences"');
     expect(html).toContain('href="/jobs"');
   });
 });
@@ -290,9 +292,14 @@ describe("/closeout with no jobs", () => {
 });
 
 describe("/settings with nothing filled in", () => {
+  // Tabbed since the declutter: locations are on Company (the bare URL),
+  // licences, insurance and bonding on their own tab. Both renders, joined,
+  // are what this block used to read off one page.
   const load = async () => {
     const { default: Page } = await import("@/app/(app)/settings/page");
-    return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+    const company = renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+    const papers = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tab: "licences" }) }));
+    return company + papers;
   };
 
   it("renders all four compliance sections", async () => {
