@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ActionForm } from "@/components/ActionForm";
 import { SubmitButton } from "@/components/SubmitButton";
+import { DISTINCT_MARKS, SHOWN_AT_FIRST, markFor } from "@/lib/takeoff/clusterMarks";
 import { formatFeetInches, parseFeetInches } from "@/lib/feet-inches";
 import {
   calibrationNotices,
@@ -1279,12 +1280,31 @@ export function TakeoffPlanViewer({
                   unexplained figure gets created — the same rule the drawing-index
                   check learned the hard way. If this number is large and the panel
                   is empty, the filter is the first thing to suspect rather than the
-                  sheet. */}
+                  sheet.
+
+                  ── IT USED TO NAME WHAT IT HAD REMOVED, AND THAT WAS FALSE ──
+
+                  It read "— the border, the title block and the logo — so they
+                  were left out". On a West Herr floor plan clicked on production
+                  2026-10-13 it said that of 12,641 lines while about 32 runs sat
+                  on the title block and the logo in the overlay below it. The
+                  filter knows ONE thing: these lines are at the same page
+                  position on other sheets. Which drawing furniture that turned
+                  out to be is not something it establishes, and listing three
+                  kinds told an estimator all three were handled.
+
+                  Same defect as the no-walls sentence directly below, which
+                  asserted "a scanned or image-only sheet" as the cause of an
+                  empty panel on a sheet that was plainly not a scan. A message
+                  may state what was measured; it may not name a cause nobody
+                  checked. */}
               {templateStrokes > 0 && (
                 <p className="mb-2 text-xs text-ink-muted">
-                  {templateStrokes.toLocaleString()} line{templateStrokes === 1 ? "" : "s"} on this sheet also
-                  appear in the same place on the rest of the set — the border, the title block and the logo —
-                  so they were left out.
+                  {templateStrokes.toLocaleString()} line{templateStrokes === 1 ? "" : "s"} on this sheet
+                  {templateStrokes === 1 ? " is" : " are"} in the same place on other sheets of the set, so
+                  {templateStrokes === 1 ? " it was" : " they were"} left out as page furniture. Not all of it
+                  recurs closely enough to catch — a border, title block or logo can still show up below, so
+                  check the runs against the drawing.
                 </p>
               )}
               <ul className="flex flex-col gap-1">
@@ -1304,11 +1324,15 @@ export function TakeoffPlanViewer({
                     onMouseEnter={() => setHovered(index)}
                     onMouseLeave={() => setHovered(null)}
                   >
-                    <span
-                      aria-hidden
-                      className="h-3 w-3 shrink-0 rounded-sm"
-                      style={{ backgroundColor: CLUSTER_COLOURS[index % CLUSTER_COLOURS.length] }}
-                    />
+                    {/* ── THE SWATCH IS A LINE NOW, BECAUSE THE MARK IS NOT
+                        JUST A COLOUR ──
+                        It was a 12px coloured square, which could only ever
+                        carry half of a mark that is a colour AND a dash. A
+                        square showing the right blue beside a drawing holding
+                        three different blues is the disagreement this change
+                        exists to end, so the swatch draws what the overlay
+                        draws: same colour, same dash, same function. */}
+                    <ClusterMark index={index} />
                     <span className="text-sm font-medium text-ink">{inchLabel(group.inches)}</span>
                     {/* THE TAG IS THE GROUP'S NAME NOW, not a list of every name
                         in a bucket. A group either carries one tag or carries
@@ -1423,6 +1447,20 @@ export function TakeoffPlanViewer({
                   {Math.round(found.slice(SHOWN_AT_FIRST).reduce((f, c) => f + c.feet, 0)).toLocaleString()} ft
                 </button>
               )}
+              {/* ── WHERE THE MARKS RUN OUT, SAID OUT LOUD ──
+                  Eighteen distinct marks is not an arbitrary number of groups,
+                  and a panel that quietly reuses one is how a reviewer
+                  attributes a line to the wrong thickness. Shown only once the
+                  list is long enough for it to be true, which on the default
+                  twelve it never is. Same rule as the template filter's count:
+                  state the limit rather than let somebody discover it. */}
+              {showingAll && found.length > DISTINCT_MARKS && (
+                <p className="mt-2 text-xs text-ink-muted">
+                  The last {found.length - DISTINCT_MARKS}{" "}
+                  {found.length - DISTINCT_MARKS === 1 ? "group repeats a mark" : "groups repeat marks"} used
+                  above — there are only {DISTINCT_MARKS}. Hover a row to pick its runs out of the drawing.
+                </p>
+              )}
             </>
           )}
           <button
@@ -1482,7 +1520,24 @@ export function TakeoffPlanViewer({
                 <Shape key={m.id} kind={m.kind} xs={m.xs} ys={m.ys} colour={m.postedAt ? "#6b7280" : "#38bdf8"} />
               ))}
 
-              <FoundWalls clusters={found} hovered={hovered} />
+              {/* ── WHAT THE PANEL LISTS, AND NOTHING ELSE ──
+                  This was `clusters={found}` and the panel lists `shownGroups`,
+                  which is `found.slice(0, 12)`. On a West Herr floor plan that
+                  returned 19 groups it meant SEVEN groups' lines were on the
+                  drawing with no row beside them — and because the colour came
+                  from `index % 6`, they wore the colours of rows 1 to 6. A
+                  reviewer looking at a blue line could not tell whether it was
+                  row 1's wall, which they can accept, or row 13's, which they
+                  could not even see.
+
+                  The overlay is the verification channel for this whole
+                  feature — `wallVectors.ts` returns centrelines so that a wrong
+                  answer is a line where there is no wall. A line nobody can
+                  attribute breaks exactly that, so the overlay now follows the
+                  list: "Show the other 7" reveals the rows and their lines
+                  together. Nothing is lost, because it was never actionable —
+                  only visible. */}
+              <FoundWalls clusters={shownGroups} hovered={hovered} />
 
               {draft.xs.length > 0 && (
                 <Shape
@@ -1581,32 +1636,41 @@ export function TakeoffPlanViewer({
 }
 
 /** One shape on the overlay. `open` is a polyline still being drawn. */
-/**
- * One colour per group, so the panel and the drawing refer to each other.
- *
- * Six, because a real sheet returns 15-21 thickness clusters and the panel
- * shows the biggest few — a palette per cluster would be unreadable, and these
- * are distinguishable against both a white drawing and each other. They are
- * deliberately not `DESIGN.md` status colours: these mean "group 2", not
- * "warning".
- */
-const CLUSTER_COLOURS = ["#38bdf8", "#f472b6", "#a78bfa", "#34d399", "#fbbf24", "#fb923c"];
 
 /**
- * How many groups the panel opens with.
+ * A group's mark, drawn in the panel exactly as the drawing draws it.
  *
- * TWICE THE PALETTE, and the two numbers are related on purpose. A colour
- * repeats every six rows, so past twelve a chip stops being much of a
- * signpost and HOVER is what tells a group apart — which is why the headline
- * now says so rather than promising each group its own colour, a claim that
- * stopped being true the moment the tag split multiplied the rows.
+ * ── A COMPONENT SO THAT A TEST CAN LOOK AT IT ──
  *
- * Twelve is a starting point and not a ceiling: everything past it is one
- * press away, which is the part that matters. The previous version of this
- * was a hard cut at eight with a SENTENCE after it, and a real sheet put
- * 488 ft behind that sentence.
+ * The group list only exists after Find-the-walls has run, which needs pdf.js
+ * on a canvas and never renders in happy-dom — the same bound `ClusterTag`
+ * documents. So the swatch is a component for the same reason: mounted on its
+ * own it can be rendered and compared against `FoundWalls`, and the one
+ * property that matters — that the panel and the drawing agree about which
+ * group is which — becomes something a test can assert rather than something a
+ * person has to notice.
+ *
+ * Its own `strokePx`, because the swatch is 16 CSS pixels wide and the overlay
+ * is in page-width units: the dash RATIOS must match, the absolute lengths
+ * cannot. A dash scaled for the drawing renders as one solid blob at this size.
  */
-const SHOWN_AT_FIRST = 12;
+export function ClusterMark({ index }: { index: number }) {
+  const mark = markFor(index, 2);
+  return (
+    <svg aria-hidden width="16" height="8" viewBox="0 0 16 8" className="shrink-0">
+      <line
+        x1="0"
+        y1="4"
+        x2="16"
+        y2="4"
+        stroke={mark.stroke}
+        strokeWidth="3"
+        strokeDasharray={mark.dash}
+      />
+    </svg>
+  );
+}
+
 
 /**
  * THE FOUND WALLS, DRAWN ON THE DRAWING.
@@ -1691,9 +1755,9 @@ export function FoundWalls({
             y1={run.y1}
             x2={run.x2}
             y2={run.y2}
-            stroke={CLUSTER_COLOURS[index % CLUSTER_COLOURS.length]}
+            stroke={markFor(index, STROKE_PX).stroke}
             strokeWidth={hovered === index ? STROKE_PX * 2.5 : STROKE_PX}
-            strokeDasharray={`${STROKE_PX * 3} ${STROKE_PX * 2}`}
+            strokeDasharray={markFor(index, STROKE_PX).dash}
             strokeOpacity={hovered === null || hovered === index ? 1 : 0.25}
             vectorEffect="non-scaling-stroke"
           />

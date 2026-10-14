@@ -128,8 +128,19 @@ export async function classifyWallCandidates(
       candidates: candidates.length,
       kind: err instanceof Error ? err.name : "unknown",
     });
+    // ── TOO MANY RUNS IS ITS OWN ANSWER, NOT A TRANSIENT FAILURE ──
+    //
+    // `WallClassifyIncomplete` means the model returned no tool call at all,
+    // and on a real sheet the reason is volume: 216 runs on one West Herr floor
+    // plan produced no call and, before this, a cheerful "0 set aside". "Try
+    // again in a minute" is wrong for that — it will fail the same way every
+    // time — so it gets a sentence that says what to do instead.
+    const incomplete = err instanceof Error && err.name.startsWith("WallClassifyIncomplete");
     return fail(
-      "The runs couldn't be checked just now. Nothing changed — accept or reject them yourself, or try again in a minute.",
+      incomplete
+        ? `The check couldn't cover ${candidates.length} runs in one go — it came back with nothing rather than a verdict. ` +
+          `Zoom into part of the sheet and check that, or judge these yourself.`
+        : "The runs couldn't be checked just now. Nothing changed — accept or reject them yourself, or try again in a minute.",
     );
   }
 

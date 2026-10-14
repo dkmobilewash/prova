@@ -200,11 +200,10 @@ export async function labelWallCandidates(params: {
   // that produced nothing usable still cost the money.
   await reportUsage(params.onUsage, response.usage);
 
-  const block = response.content.find(
-    (one): one is Extract<typeof one, { type: "tool_use" }> =>
-      one.type === "tool_use" && one.name === WALL_CLASSIFY_TOOL_NAME,
-  );
-  if (!block) return { labels: [], missing: [] };
+  // THROWS when there is no tool call, rather than reporting an empty verdict
+  // as though the model had looked and found nothing — see
+  // `wallClassifyToolCall`.
+  const block = wallClassifyToolCall(response.content, response.stop_reason, params.candidates.length);
   const input = block.input as { labels?: unknown; missing?: unknown };
   return {
     labels: readWallLabels(input.labels, params.candidates),
@@ -220,6 +219,58 @@ export async function labelWallCandidates(params: {
  * trimmed, and a row with no `where` is dropped — it would put "a wall is
  * missing" in front of somebody with no way to find it.
  */
+/**
+ * The tool call, or an error saying why there is not one.
+ *
+ * ── THIS EXISTS BECAUSE THE ABSENCE USED TO READ AS "NOTHING TO REJECT" ──
+ *
+ * The line here was `if (!block) return { labels: [], missing: [] };`, and on
+ * 2026-10-13 that turned a failed check into a clean bill of health on a real
+ * drawing. A West Herr floor plan, 216 runs found, the check pressed, sixty
+ * seconds of "Checking the runs…", and then **"0 run(s) set aside as casework
+ * or reference"** — while the overlay demonstrably held title-block dividers,
+ * the company logo, five car outlines and a dozen room-name tags. The estimator
+ * was told the machine had looked and found nothing wrong with any of it.
+ *
+ * A model that returns no tool call has not judged anything. It ran out of
+ * output tokens mid-call, or declined, or answered in prose — and every one of
+ * those is a FAILURE, which this product already knows how to show: the action
+ * marks the allowance, logs metadata and tells the estimator to judge the runs
+ * themselves. All of that was sitting unused behind an early return.
+ *
+ * ── WHY IT IS A SEPARATE PURE FUNCTION ──
+ *
+ * `labelWallCandidates` builds its own `Anthropic` client, so the path cannot
+ * be reached from a test without mocking the SDK. The readers below are
+ * exported for exactly that reason and this is the same move: the decision is
+ * testable, and the network call around it stays untested, which is the right
+ * split.
+ *
+ * The `stop_reason` rides in the error's NAME rather than its message because
+ * the action logs `err.name` and nothing else — metadata only, never the
+ * error's text, which can carry a key or a connection string.
+ */
+export class WallClassifyIncomplete extends Error {
+  constructor(stopReason: string | null, asked: number) {
+    super(
+      `the model returned no ${WALL_CLASSIFY_TOOL_NAME} call for ${asked} candidates (stop_reason: ${stopReason ?? "none"})`,
+    );
+    this.name = `WallClassifyIncomplete:${stopReason ?? "none"}`;
+  }
+}
+
+type ToolUseBlock = { type: "tool_use"; name: string; input: unknown };
+
+export function wallClassifyToolCall(
+  content: readonly { type: string; name?: string; input?: unknown }[],
+  stopReason: string | null,
+  asked: number,
+): ToolUseBlock {
+  const block = content.find((one) => one.type === "tool_use" && one.name === WALL_CLASSIFY_TOOL_NAME);
+  if (block === undefined) throw new WallClassifyIncomplete(stopReason, asked);
+  return block as ToolUseBlock;
+}
+
 export function readMissingWalls(raw: unknown): MissingWall[] {
   if (!Array.isArray(raw)) return [];
   const out: MissingWall[] = [];
