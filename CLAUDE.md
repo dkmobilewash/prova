@@ -825,6 +825,79 @@ anything about SIZE.
   `deploymentId` for the window of the run before reading a single
   verdict, and treat "the paste came through empty" as a separate problem
   from "the run happened".
+- **THE PAGE WILL TELL YOU WHICH COMMIT IT IS SERVING, AND IT IS THE ONLY
+  ANSWER HERE THAT CANNOT BE STALE.** 2026-10-13. Every `<script>` Next emits
+  carries a `dpl=` query parameter, and on this project **its value is the first
+  32 characters of the git commit SHA**:
+
+  ```js
+  [...document.querySelectorAll('script[src*="dpl="]')]
+    .map((s) => s.src.match(/dpl=([0-9a-f]{32})/)?.[1]).filter(Boolean)[0]
+  ```
+
+  | read from | `dpl=` | commit |
+  | --- | --- | --- |
+  | `app.cstream.ai` | `4c9a33f0e231d702288296f6a5236069` | `4c9a33f0…7c3ca878` (prod) |
+  | the previous production deployment's own URL | `8ca399f67f7ba79f8fb590e1041267cb` | `8ca399f6…fa33fc66` (prod) |
+  | a preview deployment's own URL | `205795e9c75a640f7796d60b1ec88d62` | `205795e9…739664e8` (preview) |
+
+  **Why it outranks everything else this file tells you to check.** It needs no
+  dashboard, no token and no MCP, so a browser tester can answer "am I on the
+  new build" themselves — and `curl | grep` answers it for an agent in one
+  line. An alias listing, a project's `latestDeployment` and a deployment's
+  `state` are all assertions ABOUT the serving; this is the serving. The
+  entries above about a cached `status` field and about green checks on a
+  commit nobody asked about are the same lesson twice, and this is the first
+  instrument in this section that is immune to it.
+
+  **It was a browser tester who produced it, unprompted**, by reporting the
+  `dpl=` value as circumstantial evidence while stopping at step 0 of a
+  click-list. It was the fact that cracked the whole afternoon, and no API call
+  anybody made that day was as decisive.
+
+  **Put it at the top of any click-list that follows a deploy**, as one exact
+  string to match rather than a sentence to compare. Telling a tester to look
+  for changed wording makes them judge; telling them to match 32 hex characters
+  does not, and a stale tab is then one line into the run instead of six steps
+  in.
+
+  **Two bounds, both real.** It names the COMMIT, not whether users are getting
+  it — for that you still need the hostname the app actually runs on, which is
+  the trap in the next paragraph. And all four samples are git-sourced
+  deployments; what a CLI or file-upload deployment puts there is UNTESTED, so
+  verify the mapping before trusting it on a project that deploys that way.
+
+- **NAME THE HOSTNAME, NOT "THE CUSTOM DOMAINS" — AND PRODUCTION CAN GO
+  BACKWARDS WITHOUT ANYBODY ROLLING IT BACK.** 2026-10-13, the episode the entry
+  above came out of, and the fourth member of the "name the endpoint, never say
+  'the database'" family alongside the two Neon projects and the three Clerk
+  instances.
+
+  Vercel's GitHub integration refused three successive merges to `main` with
+  **"Deployment rate limited — retry in 24 hours"** (the Hobby daily deploy cap,
+  tripped at 00:25Z), so each one landed with **no Vercel deployment at all** —
+  the "a push produced no Vercel deployment" scar, three times in one evening.
+  One session then made a DIRECT deployment request for the oldest of them to
+  get it shipped. That was accepted while the cap was still refusing pushes, so:
+  **the cap applies to the git integration, not to the API**, which is the
+  escape hatch worth knowing. It also deployed a commit that two newer merges
+  had already superseded, and it took the production alias — moving production
+  BACK to its own parent commit for 26 minutes. Nobody rolled anything back.
+
+  **The expensive part was a falsifier aimed at the wrong hostname.** That
+  session checked whether the deployment had taken "the custom domains", found
+  their `updatedAt` frozen, and reported it had NOT taken production. The
+  domains it read were `cstream.ai` and `www.cstream.ai`. **The app runs on
+  `app.cstream.ai`**, whose `updatedAt` had moved — and a click-through
+  independently read the superseded commit off the live page thirteen minutes
+  later. The reasoning was sound and the hostname was wrong, and a tester was
+  sent at a build that did not exist yet.
+
+  This project has SIX domains (`get_project` lists them) and only one of them
+  is the app. So: assert the alias of the HOST you mean by name, and read the
+  page's own `dpl=` as the second witness. One of those two alone is what this
+  cost.
+
 - **A 503 ON A SAVE IN THE FIRST MINUTES AFTER A DEPLOY IS THE ALIAS SWAP,
   NOT YOUR CODE — AND THE WRITE STILL LANDS.** 2026-10-13, reported twice by
   browser click-throughs of the same form, each run started within minutes of
