@@ -246,3 +246,35 @@ describe("a union local card", () => {
     expect(await card(0)).toMatch(/<details(?=[^>]*\sopen)[^>]*name="union-local"/);
   });
 });
+
+// ------------------------------------------------- /settings/integrations --
+
+describe("/settings/integrations", () => {
+  const load = async () => {
+    search = new URLSearchParams();
+    pathname = "/settings/integrations";
+    const { default: Page } = await import("@/app/(app)/settings/integrations/page");
+    return renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
+  };
+
+  it("is headed Integrations, never its raw path", async () => {
+    const html = await load();
+    expect(html).toMatch(/<h1[^>]*>Integrations<\/h1>/);
+    expect(html.replace(/<[^>]*>/g, " ")).not.toContain("/settings/integrations");
+  });
+
+  it("says 'not set up on this install' once, above the list, not on every card", async () => {
+    const html = await load();
+    // Anti-vacuity: on this test install several providers have no keys.
+    expect(html.match(/>Not set up</g)?.length ?? 0).toBeGreaterThan(1);
+    expect(html.match(/not set up on this\s+install/gi)?.length).toBe(1);
+    expect(html.indexOf('data-testid="integrations-not-set-up"')).toBeLessThan(html.indexOf('data-tour="integrations-list"'));
+  });
+
+  it("keeps each provider's description, behind its card's own expand", async () => {
+    const html = await load();
+    const details = html.match(/<details[^>]*>\s*<summary[^>]*>What it does<\/summary>/g) ?? [];
+    expect(details.length).toBeGreaterThan(3);
+    expect(html).toContain("One direction only");
+  });
+});

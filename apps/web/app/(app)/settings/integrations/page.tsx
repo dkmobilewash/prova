@@ -29,6 +29,7 @@ import { toJobOption, jobPickerLabel } from "@/components/jobLabels";
 import { BluebeamControls } from "@/components/BluebeamControls";
 import { BluebeamLinks } from "@/components/BluebeamLinks";
 import { bluebeamCardState, bluebeamCallbackMessage, bluebeamSetup } from "@/lib/bluebeam/setup";
+import { Disclosure } from "@/components/Disclosure";
 
 export const metadata = { title: "Integrations" };
 
@@ -208,6 +209,10 @@ export default async function IntegrationsPage({
     }),
   );
 
+  // Counted while the cards render, so "not set up on this install" is said
+  // once above the list instead of as two lines on every such card.
+  let notSetUpCount = 0;
+
   function renderCard(entry: ProviderEntry) {
     const impl = entry.implementation;
     const planned = impl.kind === "planned";
@@ -252,6 +257,9 @@ export default async function IntegrationsPage({
       impl.kind === "studio" ? bluebeamCardState(bluebeam.configured && integrationEncryptionConfigured(), connection?.status) : null;
 
     const isConnected = status === "CONNECTED";
+    const notSetUp =
+      importState === "not-set-up" || esignState === "not-set-up" || companycamState === "not-set-up" || studioState === "not-set-up";
+    if (notSetUp && !planned) notSetUpCount += 1;
 
     return (
       <Card
@@ -278,7 +286,7 @@ export default async function IntegrationsPage({
                   <span className="inline-flex items-center rounded-full border border-line-card bg-tag-slate px-2.5 py-0.5 text-xs font-medium text-tag-slate-ink">
                     File import
                   </span>
-                ) : importState === "not-set-up" || esignState === "not-set-up" || companycamState === "not-set-up" || studioState === "not-set-up" ? (
+                ) : notSetUp ? (
                   <span className="inline-flex items-center rounded-full border border-line-card bg-tag-slate px-2.5 py-0.5 text-xs font-medium text-tag-slate-ink">
                     Not set up
                   </span>
@@ -286,7 +294,11 @@ export default async function IntegrationsPage({
                   <StatusBadge status={status} />
                 )}
               </div>
-              <p className="max-w-xl text-sm text-ink-body">{entry.description}</p>
+              {/* The paragraph per card was most of this page's height
+                  (density audit #21); the name and the pill say what it is. */}
+              <Disclosure variant="plain" summary="What it does" className="max-w-xl">
+                <p className="text-sm text-ink-body">{entry.description}</p>
+              </Disclosure>
               {impl.kind === "file-import" && (
                 <p className="max-w-xl text-xs text-ink-muted" data-tour="mycoi-live-api">
                   <span className="font-medium text-ink-label">Live connection: not available.</span> {impl.liveApi}
@@ -548,6 +560,10 @@ export default async function IntegrationsPage({
     );
   }
 
+  // Rendered before the return so notSetUpCount is final for the note above
+  // the list.
+  const cards = visibleProviders.map(renderCard);
+
   return (
     <PageShell width="working">
       <div data-tour="integrations-intro">
@@ -641,8 +657,16 @@ export default async function IntegrationsPage({
         </p>
       )}
 
+      {notSetUpCount > 0 && (
+        <p className="mb-4 text-sm text-ink-muted" data-testid="integrations-not-set-up">
+          Cards marked <span className="text-ink-label">Not set up</span> are not set up on this
+          install yet: whoever runs C Stream for you has to add that service&rsquo;s app keys before
+          it can connect.
+        </p>
+      )}
+
       <div className="flex flex-col gap-4" data-tour="integrations-list">
-        {visibleProviders.map(renderCard)}
+        {cards}
       </div>
 
       {/* Not a provider card: photo storage is infrastructure this deployment
