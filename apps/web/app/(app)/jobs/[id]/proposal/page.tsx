@@ -5,7 +5,9 @@ import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
-import { BidPackageBuilder } from "@/components/BidPackageBuilder";
+import { BidPackageBuilder, type SubmitTarget } from "@/components/BidPackageBuilder";
+import { recipientFor } from "@/lib/estimating/bid-submission";
+import { emailSetupProblem } from "@prova/integrations";
 import { JobProposalClauseBuilder, JobProposalClauseRow } from "@/components/ProposalClauses";
 import { money } from "@/lib/money";
 import { formatInstant } from "@/lib/render-date";
@@ -170,6 +172,58 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
     money,
   );
 
+  /**
+   * WHAT THIS JOB'S BID CAN BE SENT TO, when one is linked to it.
+   *
+   * `BidInvitation` is company-scoped and carries no `jobId`; only a bid that
+   * was WON points back at a job, through `wonJobId`. So most jobs have no bid
+   * here, the send controls do not appear, and the package still builds and
+   * downloads — which is what this whole control was until sending existed.
+   *
+   * EVERY REASON IT CANNOT BE SENT IS WORKED OUT HERE AND SHOWN, rather than
+   * discovered on the press. "No email on file" and "sending is not set up"
+   * are both fixed somewhere else entirely, and a person who reads them before
+   * they have built a package can go and fix them.
+   */
+  const linkedBid = await prisma.bidInvitation.findFirst({
+    where: { wonJobId: job.id, companyId: company.id },
+    include: { contact: { include: { people: true } } },
+  });
+
+  let submitTarget: SubmitTarget | undefined;
+  if (linkedBid) {
+    const choice = recipientFor({
+      contactName: linkedBid.contact.name,
+      contactEmail: linkedBid.contact.email,
+      people: linkedBid.contact.people.map((person) => ({ name: person.name, email: person.email })),
+    });
+
+    // Not dismissed, newest first — the same rows `/ai` shows, read here
+    // rather than re-derived. The agent advises; this only displays.
+    const findings = await prisma.agentFinding.findMany({
+      where: { companyId: company.id, bidInvitationId: linkedBid.id, dismissedAt: null },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: { id: true, title: true, fixHref: true },
+    });
+
+    submitTarget = {
+      bidInvitationId: linkedBid.id,
+      companyId: company.id,
+      companyName: company.name,
+      gcName: linkedBid.contact.name,
+      addresses: choice.ok ? [choice.recipient, ...choice.alternatives] : [],
+      // The setup problem outranks the address one: an install that cannot
+      // send at all is not a contact record somebody should go and edit.
+      problem: emailSetupProblem() ?? (choice.ok ? null : choice.problem),
+      findings: findings.map((finding) => ({
+        id: finding.id,
+        title: finding.title,
+        href: finding.fixHref,
+      })),
+    };
+  }
+
   return (
     // A document, so "reading" — and `print:p-0` so the printed page runs to
     // the browser's own margins, the way the G702/G703 does.
@@ -297,7 +351,7 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
           proposal has to exist and be printed before there is a package to
           assemble. `print:hidden` on the section itself — it is a working
           surface, not part of the document the GC receives. */}
-      <BidPackageBuilder projectName={job.name} />
+      <BidPackageBuilder projectName={job.name} submit={submitTarget} />
     </PageShell>
   );
 }

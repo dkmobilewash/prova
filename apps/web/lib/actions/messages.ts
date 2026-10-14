@@ -3,7 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
-import { looksLikeEmail, readEmailConfig, sendEmail } from "@prova/integrations";
+import { emailSetupProblem, looksLikeEmail, readEmailConfig, sendEmail } from "@prova/integrations";
+import { deleteDocument } from "@/lib/blob";
+import {
+  documentUrlProblem,
+  formatDocumentSize,
+  isAllowedDocumentType,
+  uploadMaxBytesFor,
+} from "@/lib/document-uploads";
+import { recipientFor, submissionBody, submissionSubject } from "@/lib/estimating/bid-submission";
 import { can } from "@/lib/permissions";
 import { readSupportAddress } from "@/lib/help-config";
 import { outboundEmailAllowance } from "@/lib/outbound-email-limit";
@@ -80,12 +88,20 @@ function required(formData: FormData, key: string, label: string) {
  * `messages.test.ts`'s #111 ordering tests exercise it exactly as before,
  * through the new entry point.
  *
- * UNEXPORTED ON PURPOSE. There are exactly two ways into this function —
- * `sendOutboundEmail`, gated on a capability and a rate cap, and
- * `sendHelpRequestEmail`, which accepts no recipient argument at all — and
- * that is deliberately the complete set. A third caller could hand this
- * an arbitrary recipient with neither check, which is the exact hole this
- * split exists to close.
+ * UNEXPORTED ON PURPOSE. There are exactly THREE ways into this function —
+ * `sendOutboundEmail`, gated on a capability and a rate cap;
+ * `sendHelpRequestEmail`, which accepts no recipient argument at all; and
+ * `submitBidPackage`, gated on a capability and the same rate cap, whose
+ * recipient is READ OFF THE BID'S OWN CONTACT and is not a parameter either
+ * — and that is deliberately the complete set. A caller that could hand this
+ * an arbitrary recipient with neither check is the exact hole this split
+ * exists to close.
+ *
+ * THAT SENTENCE SAID "TWO" UNTIL A BID PACKAGE NEEDED TO REACH A GC, and the
+ * number is not the point — the property is. Every entry point either asserts
+ * a capability AND the rate cap, or takes no recipient at all. A fourth may be
+ * added on the same terms; one that takes an address from its caller without
+ * both checks may not, whatever it is called.
  */
 async function deliverEmail(input: {
   companyId: string;
@@ -97,6 +113,21 @@ async function deliverEmail(input: {
   relatedType: string | null;
   relatedId: string | null;
   sentByUserId: string;
+  /**
+   * Files to send with it.
+   *
+   * NOT RECORDED ON THE ROW, and that is a decision rather than an omission.
+   * `OutboundMessage` stores what was sent as TEXT — recipient, subject,
+   * body — and a column holding a copy of a 6 MB PDF would make the message
+   * log a document store. What goes on the row instead is the filename, named
+   * in the body by the caller, so the log still answers "what did we send
+   * them" in the form a person reads.
+   *
+   * A stored copy of the bytes is a different feature with its own schema
+   * decision — `DocuSignEnvelope.sentSnapshot` is the shape it would take —
+   * and it is deliberately not smuggled in here.
+   */
+  attachments?: readonly { filename: string; content: Buffer }[];
 }): Promise<ActionResult> {
   const config = readEmailConfig();
   // Recorded even when unconfigured, so the from-address on the row is
@@ -132,6 +163,7 @@ async function deliverEmail(input: {
     toName: input.toName,
     subject: input.subject,
     text: input.body,
+    attachments: input.attachments,
   });
 
   if (!result.ok) {
@@ -359,5 +391,182 @@ export async function deleteOutboundMessage(messageId: string): Promise<ActionRe
     await prisma.outboundMessage.delete({ where: { id: message.id } });
     revalidatePath("/messages");
     return ok;
+  });
+}
+
+
+/**
+ * SUBMITTING A BID PACKAGE TO A GENERAL CONTRACTOR.
+ *
+ * The third and last way into `deliverEmail`, on the terms that function's
+ * comment sets: a capability, the same rate cap, and a recipient this action
+ * reads for itself rather than accepts.
+ *
+ * ── WHY IT IS IN THIS FILE AND NOT AN ESTIMATING ONE ──
+ *
+ * The write ordering around the provider call is the most carefully reasoned
+ * sequence in this app and it was paid for once already (#111, DATA-LOST): the
+ * handover is claimed BEFORE the send and given back only when the provider
+ * provably never took it. A bid submission needs exactly that sequence, and a
+ * second copy of it in `lib/actions/` would be two implementations of one
+ * rule — the shape `CostCategory` taught this repo to look for, pointed at the
+ * code that decides whether a sent email is deletable. So this calls the one
+ * implementation, and the estimating-specific decisions live in
+ * `lib/estimating/bid-submission.ts` where a test can reach them.
+ *
+ * ── THE ADDRESS IS NOT A PARAMETER ──
+ *
+ * The form may CHOOSE among the addresses already recorded against this bid's
+ * contact; it cannot introduce one. `chosenAddress` is matched against the set
+ * `recipientFor` returns and anything else is refused. A free-text recipient
+ * would make "who did we send the bid to" a question about somebody's typing,
+ * on the one write in this app that cannot be undone by anyone.
+ *
+ * ── THE PDF IS A TRANSIT BUFFER AND IS DELETED EITHER WAY ──
+ *
+ * The package is merged in the BROWSER (`lib/estimating/bid-package.ts` says
+ * why), so the bytes reach the server through the blob store under a one-shot
+ * `bid-package` token — the framework caps a Server Action body at 1 MB. This
+ * attaches them and deletes the blob in a `finally`, exactly as `quoteRead.ts`
+ * does and for the same reason: every early return otherwise strands a
+ * public-readable file containing a company's pricing. Nothing keeps a copy;
+ * the message log is the record, which is the posture Diego chose.
+ */
+export async function submitBidPackage(
+  bidInvitationId: string,
+  fileUrl: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return fail("Estimating isn't part of your job function.");
+  }
+
+  return runAction(async () => {
+    // REFUSED BEFORE THE BLOB IS TOUCHED when sending is not set up, so an
+    // unconfigured install does not delete somebody's package to tell them so.
+    const setup = emailSetupProblem();
+    if (setup) return fail(setup);
+
+    const bid = await prisma.bidInvitation.findFirst({
+      where: { id: bidInvitationId, companyId: company.id },
+      include: { contact: { include: { people: true } } },
+    });
+    // The id in the argument is a claim; this is the check.
+    if (!bid) return fail("Bid not found");
+
+    const choice = recipientFor({
+      contactName: bid.contact.name,
+      contactEmail: bid.contact.email,
+      people: bid.contact.people.map((person) => ({ name: person.name, email: person.email })),
+    });
+    if (!choice.ok) return fail(choice.problem);
+
+    // CHOSEN FROM THE SET, never supplied. An address the company has not
+    // recorded cannot be reached from here whatever the form says.
+    const chosen = text(formData, "toAddress");
+    const allowed = [choice.recipient, ...choice.alternatives];
+    const recipient = chosen
+      ? allowed.find((one) => one.address.toLowerCase() === chosen.toLowerCase())
+      : choice.recipient;
+    if (!recipient) {
+      return fail(
+        "That address isn't on this GC's contact record. Pick one of the addresses listed, or add it to their contact first.",
+      );
+    }
+
+    // ── THE NAMED-INTENT CONFIRM, ENFORCED HERE AND NOT ONLY EXPLAINED ──
+    //
+    // `PayApplications` asks the same way before a credit note, and its action
+    // refuses one that arrives without the box ticked: the screen is the
+    // explanation, this is the enforcement. A bid reaching a GC cannot be
+    // recalled by anybody, so the press that sends it says who it is going to.
+    if (text(formData, "confirmSend") !== "on") {
+      return fail("Tick the box to confirm who this is going to before it sends.");
+    }
+
+    // THE PAGE COUNT IS NOT READ HERE, and `numericInputCensus` is why it is
+    // worth a line. A `Number()` over a form value was in this action and was
+    // never used: the count already reaches the GC inside the body the client
+    // composed. The census refuses a bare `Number()` on a form because a
+    // contractor's thousands comma parses to NaN and `0x10` does not — true,
+    // and the better answer here was that nothing needed the figure at all.
+    const fileName = required(formData, "fileName", "The package file name");
+
+    const urlProblem = documentUrlProblem(fileUrl, "bid-package", company.id, process.env);
+    if (urlProblem) return fail(urlProblem);
+
+    // EVERY EXIT FROM HERE DELETES THE BLOB. `quoteRead.ts` carries the full
+    // account: five early returns each stranded a file, and a `finally` is the
+    // only shape that cannot grow a sixth.
+    try {
+      const allowance = await outboundEmailAllowance(company.id);
+      if (!allowance.ok) return fail(allowance.error);
+
+      let response: Response;
+      try {
+        response = await fetch(fileUrl);
+      } catch {
+        return fail("That package couldn't be read back from storage — build it again.");
+      }
+      if (!response.ok) {
+        return fail("That package couldn't be read back from storage — build it again.");
+      }
+
+      const served = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+      // Taken from the STORE's response rather than the caller's claim, the
+      // same way `readStoredQuote` does it.
+      if (served !== "application/pdf" || !isAllowedDocumentType(served)) {
+        return fail("A bid package has to be a PDF.");
+      }
+
+      const bytes = Buffer.from(await response.arrayBuffer());
+      const max = uploadMaxBytesFor("bid-package");
+      if (bytes.byteLength === 0) return fail("That package is empty — build it again.");
+      if (bytes.byteLength > max) {
+        return fail(`That package is ${formatDocumentSize(bytes.byteLength)}, over the ${formatDocumentSize(max)} limit for one email.`);
+      }
+
+      const sent = await deliverEmail({
+        companyId: company.id,
+        // A bid has no job — `BidInvitation` carries no `jobId` at all, and on
+        // a bid nobody has won there is none to name.
+        jobId: null,
+        toAddress: recipient.address,
+        toName: recipient.name,
+        subject: required(formData, "subject", "Subject"),
+        body: required(formData, "body", "Message"),
+        // The polymorphic pair, so the send is linked to the bid with no
+        // migration (`messaging.prisma`).
+        relatedType: "BID_INVITATION",
+        relatedId: bid.id,
+        sentByUserId: user.id,
+        attachments: [{ filename: fileName, content: bytes }],
+      });
+
+      // ── THE STATUS MOVES ONLY ON A SEND THAT WENT ──
+      //
+      // Marking it SUBMITTED after a failed send is the lie this whole feature
+      // exists to stop: the estimator would read "submitted" on a bid the GC
+      // never received, on bid day. A failure returns the sentence and leaves
+      // the status alone.
+      if (!sent.ok) return sent;
+
+      if (bid.status !== "SUBMITTED") {
+        await prisma.bidInvitation.update({
+          where: { id: bid.id },
+          data: { status: "SUBMITTED" },
+        });
+      }
+
+      revalidatePath("/bids");
+      revalidatePath(`/contacts/${bid.contactId}`);
+      return ok;
+    } finally {
+      // SAFE BECAUSE `documentUrlProblem` ACCEPTED IT ABOVE — our own store,
+      // this company's own prefix — not because the caller named it.
+      await deleteDocument(fileUrl);
+    }
   });
 }
