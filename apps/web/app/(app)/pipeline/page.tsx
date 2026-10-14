@@ -13,6 +13,8 @@ import { loadBidPursuits, loadLinkableInvitations } from "@/lib/bid-pursuits-que
 import { BidPursuitList } from "@/components/BidPursuitList";
 import { ProjectLookup } from "@/components/ProjectLookup";
 import { LeadSearch } from "@/components/LeadSearch";
+import { CollapsedForm } from "@/components/CollapsedForm";
+import { Disclosure } from "@/components/Disclosure";
 import { viewerToday } from "@/lib/viewerToday";
 
 /**
@@ -81,6 +83,21 @@ export default async function PipelinePage() {
     [...standings.dueSoon, ...standings.missed, ...standings.cold].map((one) => [one.bid.id, one.standing]),
   );
 
+  // What feeds the chase list, as two buttons on one row, under the chase
+  // list and Waiting on us (declutter, 2026-10-13: an open AI lookup form was
+  // the first screen). Each is a billed set of web searches, so neither form
+  // is open until pressed. BID_RESEARCH and LEAD_SEARCH had no control
+  // anywhere until these — each ran only inside one Ask command. Neither
+  // writes anything itself; the pursuit form is still the only writer here.
+  const feeders = (
+    <div className="mb-8 flex flex-wrap items-start gap-2 [&>div]:basis-full [&>section]:basis-full" data-pipeline="feeders">
+      <CollapsedForm label="Look up a project">
+        <ProjectLookup />
+      </CollapsedForm>
+      <LeadSearch />
+    </div>
+  );
+
   return (
     <PageShell width="working">
       <PageHeader
@@ -88,30 +105,8 @@ export default async function PipelinePage() {
         title="Bid pipeline"
         subtitle="What you are chasing before anyone invites you, then who invites you to bid and what comes of it."
       />
-      <p className="mb-6 text-xs text-ink-muted">
-        The chase list is its own record, kept here. Everything below it is worked out from the bid
-        invitations listed on{" "}
-        <Link href="/bids" className="text-link hover:underline">
-          Bids
-        </Link>
-        , so correcting a bid moves these figures with it. A status or an amount is changed on the
-        GC&apos;s own contact record, under &ldquo;Bid invitations&rdquo;.
-      </p>
-
-      {/* AHEAD OF THE CHASE LIST, because it is what feeds it: a project name
-          heard from somebody, looked up on the public web, and then tracked.
-          BID_RESEARCH had no control anywhere until this — it ran only inside
-          one Ask command. It writes nothing itself; the pursuit form below is
-          still the only writer on this page. */}
-      <ProjectLookup />
-      {/* AHEAD OF THE CHASE LIST, because it is what feeds it: public projects
-          out to bid that nobody has invited us to. LEAD_SEARCH had no control
-          anywhere until this — it ran only inside one Ask command. Collapsed by
-          default: /pipeline's job is the chase list, and each press is a billed
-          set of web searches. It writes nothing itself; the pursuit form below
-          is still the only writer on this page. */}
-      <LeadSearch />
-
+      {/* The chase list first — it is what this page is for (declutter,
+          2026-10-13: an open AI lookup form used to be the first screen). */}
       <BidPursuitList
         pursuits={pursuits}
         invitations={invitations}
@@ -119,33 +114,36 @@ export default async function PipelinePage() {
       />
 
       {rows.length === 0 ? (
-        <EmptyState
-          data-tour="pipeline-no-invitations"
-          title="No bid invitations recorded yet"
-          purpose={
-            <p>
-              Where your next jobs are coming from: who asks you to price work, how often you win
-              it, and which bids are waiting on you. It fills in on its own from the bids you log —
-              nothing here is typed twice.
-            </p>
-          }
-          actions={[{ label: "Open your contacts", href: "/contacts" }, { label: "See all bids", href: "/bids" }]}
-          ask="Northside Builders invited us to bid the Oak Ave addition, due October 3"
-          sources={
-            <p>
-              Every bid invitation logged on a contact&apos;s page. The chase list above is separate
-              — jobs you are after before anyone has asked you to bid.
-            </p>
-          }
-          example={{
-            caption: "What the pipeline looks like after a few months of bids. Not your data — nothing here is saved.",
-            rows: [
-              { title: "Northside Builders", detail: "9 invitations · won 4 · 44%", meta: "$186,000 won" },
-              { title: "Crestview Development (owner's rep)", detail: "2 invitations · won 1", meta: "$18,200 won" },
-              { title: "Waiting on us: Oak Ave addition", tag: "Due Oct 3", detail: "Northside Builders", meta: "5 days left" },
-            ],
-          }}
-        />
+        <>
+          {feeders}
+          <EmptyState
+            data-tour="pipeline-no-invitations"
+            title="No bid invitations recorded yet"
+            purpose={
+              <p>
+                Where your next jobs are coming from: who asks you to price work, how often you win
+                it, and which bids are waiting on you. It fills in on its own from the bids you log —
+                nothing here is typed twice.
+              </p>
+            }
+            actions={[{ label: "Open your contacts", href: "/contacts" }, { label: "See all bids", href: "/bids" }]}
+            ask="Northside Builders invited us to bid the Oak Ave addition, due October 3"
+            sources={
+              <p>
+                Every bid invitation logged on a contact&apos;s page. The chase list above is separate
+                — jobs you are after before anyone has asked you to bid.
+              </p>
+            }
+            example={{
+              caption: "What the pipeline looks like after a few months of bids. Not your data — nothing here is saved.",
+              rows: [
+                { title: "Northside Builders", detail: "9 invitations · won 4 · 44%", meta: "$186,000 won" },
+                { title: "Crestview Development (owner's rep)", detail: "2 invitations · won 1", meta: "$18,200 won" },
+                { title: "Waiting on us: Oak Ave addition", tag: "Due Oct 3", detail: "Northside Builders", meta: "5 days left" },
+              ],
+            }}
+          />
+        </>
       ) : (
         <>
           <section className="mb-8" data-tour="pipeline-waiting">
@@ -224,6 +222,8 @@ export default async function PipelinePage() {
             )}
           </section>
 
+          {feeders}
+
           <section data-tour="pipeline-by-gc">
             <h2 className="mb-3 text-sm font-medium text-ink-label">By general contractor</h2>
             <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface">
@@ -292,6 +292,18 @@ export default async function PipelinePage() {
           </section>
         </>
       )}
+
+      <Disclosure summary="Where these figures come from" className="mt-8">
+        <p className="text-sm text-ink-body">
+          The chase list is its own record, kept here. Everything below it is worked out from the bid
+          invitations listed on{" "}
+          <Link href="/bids" className="text-link hover:underline">
+            Bids
+          </Link>
+          , so correcting a bid moves these figures with it. A status or an amount is changed on the
+          GC&apos;s own contact record, under &ldquo;Bid invitations&rdquo;.
+        </p>
+      </Disclosure>
     </PageShell>
   );
 }
