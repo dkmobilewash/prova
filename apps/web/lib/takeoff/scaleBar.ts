@@ -67,6 +67,85 @@ export const SPANS_THE_RUN = 0.5;
  *  two that can disagree. */
 export type ScaleLabel = { value: number; x: number; y: number };
 
+/**
+ * A ruler's numbers, with how far along they sit — and what they imply.
+ *
+ * ── ONE DERIVATION, TWO CALLERS, BECAUSE THEY MUST NOT DISAGREE ──
+ *
+ * This file already decided what a ruler is: three or more bare numbers,
+ * ascending, starting at zero. `wearsARuler` used that to DROP a run, computed
+ * exactly the ladder below, and then returned a boolean — throwing away the one
+ * number the ladder contains. `scaleFromBar.ts` needs that number.
+ *
+ * If each of them tested "is this a ruler" its own way, the two could disagree:
+ * a bar read for its scale but not removed from the walls would be billed as a
+ * 32 ft wall AND used to scale the sheet. So the test lives here once.
+ *
+ * ── WHAT THE LINEAR FIT ADDS, AND WHY IT IS NOT JUST TIDINESS ──
+ *
+ * Ascending-from-zero is enough to RECOGNISE a bar. It is not enough to MEASURE
+ * one. A graphic scale is linear — `0 · 4 · 8 · 16 · 32` is printed with 8-to-16
+ * twice as far as 4-to-8 — so value is proportional to distance along the bar,
+ * and the constant of proportionality IS the scale. Checking that the fit holds
+ * is therefore the same thing as checking the reading is worth having: a set of
+ * numbers that ascends from zero but is not proportional to its own positions
+ * is not a ruler, whatever else it is.
+ *
+ * Tolerance is relative to the bar's own span, so this needs no notion of paper
+ * size, page units or scale — which is the whole point. `scaleFromBar` runs
+ * BEFORE any scale is known.
+ *
+ * Returns feet per unit of whatever `at` was measured in. Callers in page-width
+ * units get feet per page-width unit; `wearsARuler` already works in those.
+ */
+export type Ladder = { feetPerUnit: number; span: number };
+
+/** How far a label may sit off a perfect fit, as a fraction of the bar's span.
+ *  A printed ruler's numbers are set by the drawing program, not by hand, so
+ *  the real error is typesetting centring — well inside a fiftieth. */
+export const LADDER_FIT = 0.02;
+
+export function rulerLadder(pairs: readonly { at: number; value: number }[]): Ladder | null {
+  if (pairs.length < LABELS_FOR_A_RULER) return null;
+
+  const along = [...pairs].sort((a, b) => a.at - b.at);
+  const values = along.map((one) => one.value);
+  const climbs = (list: number[]) => list.every((value, i) => i === 0 || value > list[i - 1]);
+  // Read in both directions: which end a bar's zero sits at depends on how it
+  // was drawn, and a run's own direction is an artefact of which face the
+  // pairer met first.
+  if (!climbs(values) && !climbs([...values].reverse())) return null;
+  // ── THE ZERO, AND AN HONEST NOTE THAT THE FIT BELOW ALREADY IMPLIES IT ──
+  //
+  // This file's header calls the zero the whole safety argument, and it is — it
+  // is why a row of room numbers cannot be a ruler. It is kept here because it
+  // states the rule where a reader looks for it.
+  //
+  // But it is NOT independently load-bearing, which was measured rather than
+  // assumed: a mutation deleting this line leaves every test green. The linear
+  // fit anchors at whichever end holds the smallest value and requires that
+  // end's value to be zero, so a row that fails this already fails the fit.
+  // Recorded instead of quietly removed, because the next person to delete it
+  // deserves to know it is redundant rather than untested.
+  if (Math.min(...values) !== 0) return null;
+
+  const span = along[along.length - 1].at - along[0].at;
+  if (!(span > 0)) return null;
+
+  // Zero is one end or the other, and feet grow away from it.
+  const zeroFirst = along[0].value === 0;
+  const feetPerUnit = (Math.max(...values) - Math.min(...values)) / span;
+  if (!(feetPerUnit > 0) || !Number.isFinite(feetPerUnit)) return null;
+
+  // THE FIT. Every label must sit where its own value says it should.
+  const zeroAt = zeroFirst ? along[0].at : along[along.length - 1].at;
+  for (const one of along) {
+    const expected = Math.abs(one.at - zeroAt) * feetPerUnit;
+    if (Math.abs(expected - one.value) > span * feetPerUnit * LADDER_FIT) return null;
+  }
+  return { feetPerUnit, span };
+}
+
 export function scaleBarLabels(items: readonly PageTextItem[], widthPt: number): ScaleLabel[] {
   if (!(widthPt > 0)) return [];
   const out: ScaleLabel[] = [];
@@ -124,15 +203,11 @@ function wearsARuler(
   if (along.length < LABELS_FOR_A_RULER) return false;
 
   along.sort((a, b) => a.at - b.at);
+  // SPANS THE RUN, which is the one test that is about the WALL rather than
+  // about the ruler — a cluster of numbers against one end of a long wall is
+  // something else. It stays here; the ruler test itself moved to
+  // `rulerLadder`, so this cannot drift from what `scaleFromBar` reads.
   if (along[along.length - 1].at - along[0].at < length * SPANS_THE_RUN) return false;
 
-  // ── ASCENDING, AND STARTING AT ZERO ──
-  //
-  // A ruler counts up from one end. Read in both directions, because which end
-  // a bar's zero sits at depends on how it was drawn, and the run's own
-  // direction is an artefact of which face the pairer met first.
-  const values = along.map((one) => one.value);
-  const climbs = (list: number[]) => list.every((value, i) => i === 0 || value > list[i - 1]);
-  if (!climbs(values) && !climbs([...values].reverse())) return false;
-  return Math.min(...values) === 0;
+  return rulerLadder(along) !== null;
 }
