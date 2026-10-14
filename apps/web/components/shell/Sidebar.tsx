@@ -166,7 +166,7 @@ export function Sidebar({
                 <span className={`shrink-0 ${accent.icon}`} aria-hidden="true">
                   {group.icon}
                 </span>
-                <span className={collapsed ? "sr-only" : "min-w-0 flex-1 truncate"}>{group.heading}</span>
+                <span className={collapsed ? "sr-only" : "min-w-0 flex-1 leading-tight"}>{group.heading}</span>
                 {!collapsed && (
                   <>
                     <span className="shrink-0 rounded-full bg-rail-hover px-1.5 text-xs font-medium text-ink-muted" aria-hidden="true">
