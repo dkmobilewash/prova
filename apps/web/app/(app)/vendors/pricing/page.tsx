@@ -4,6 +4,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
+import { Disclosure } from "@/components/Disclosure";
+import { HintedText } from "@/components/HintedText";
 import { money } from "@/lib/money";
 import { VendorPriceQuoteForm } from "@/components/VendorPriceQuoteForm";
 import { VendorPriceQuoteRow } from "@/components/VendorPriceQuoteRow";
@@ -136,7 +138,20 @@ export default async function VendorPricingPage() {
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-6" data-tour="vp-items">
+        <>
+        {/* Said once for the whole list, not under every item (density
+            audit #28). */}
+        <p className="mb-2 text-xs text-ink-muted">
+          <HintedText
+            label="Prices are compared only within a unit"
+            hint="A price per MSF is never converted to a price per SF — the factor is the vendor's to state, and guessing it would make someone look a thousand times cheaper than they are."
+          />
+        </p>
+        {/* One row per item — item · cheapest · range · movement — that
+            opens into what the card showed (density audit #28). Display
+            only: every figure is the same `comparisons`/`movements`/`gap`
+            value the card already rendered. */}
+        <div className="rounded-xl border border-line-card bg-surface px-4" data-tour="vp-items">
           {items.map((item) => {
             const comparisons = currentByUnit(item.quotes, today);
             const gap = catalogGap(item.catalogCost, item.catalogUnit, comparisons);
@@ -149,13 +164,47 @@ export default async function VendorPricingPage() {
               .map((vendorId) => priceMovement(item.quotes.filter((q) => q.vendorId === vendorId)))
               .filter((m): m is NonNullable<typeof m> => m !== null && m.changePercent !== 0);
 
+            const first = comparisons[0];
             return (
-              <section
+              <Disclosure
                 key={item.key}
-                className="rounded-xl border border-line-card bg-surface"
+                variant="row"
+                name="vendor-price-item"
+                summary={
+                  <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="font-semibold text-ink">{item.title}</span>
+                    {first ? (
+                      <span className="text-ok">
+                        {money(first.cheapest.unitPrice)}/{unitLabel(first.unit)} ({first.cheapest.vendorName})
+                      </span>
+                    ) : (
+                      <span className="text-ink-muted">no live quote</span>
+                    )}
+                    {first && first.spreadPercent !== null && (
+                      <span className="text-ink-body">
+                        {money(first.cheapest.unitPrice)}–{money(first.dearest.unitPrice)}
+                      </span>
+                    )}
+                    {comparisons.length > 1 && (
+                      <span className="text-xs text-ink-muted">+{comparisons.length - 1} more units</span>
+                    )}
+                    {movements.map((movement) => (
+                      <span
+                        key={movement.to.id}
+                        className={`text-xs ${movement.changePercent > 0 ? "text-danger" : "text-ok"}`}
+                      >
+                        {movement.changePercent > 0 ? "up" : "down"} {Math.abs(movement.changePercent)}%
+                      </span>
+                    ))}
+                    {gap && (
+                      <span className="rounded bg-tag-amber px-1.5 py-0.5 text-xs text-tag-amber-ink">
+                        Catalog {gap.shortfallPercent}% low
+                      </span>
+                    )}
+                  </span>
+                }
               >
-                <header className="border-b border-line-row p-4">
-                  <h2 className="font-semibold text-ink">{item.title}</h2>
+                <header className="border-b border-line-row pb-3">
                   <p className="text-xs text-ink-muted">
                     {item.catalogEntryId ? (
                       <>
@@ -174,7 +223,7 @@ export default async function VendorPricingPage() {
                 </header>
 
                 {gap && (
-                  <div className="border-b border-line-row bg-amber-500/5 p-4" data-tour="vp-catalog-gap">
+                  <div className="border-b border-line-row bg-amber-500/5 py-3" data-tour="vp-catalog-gap">
                     <p className="text-sm text-tag-amber-ink">
                       Your catalog default is {gap.shortfallPercent}% under what anyone will
                       actually sell this at.
@@ -193,7 +242,7 @@ export default async function VendorPricingPage() {
                 )}
 
                 {comparisons.length > 0 && (
-                  <div className="border-b border-line-row p-4" data-tour="vp-live-prices">
+                  <div className="border-b border-line-row py-3" data-tour="vp-live-prices">
                     <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Live prices
                     </h3>
@@ -220,16 +269,11 @@ export default async function VendorPricingPage() {
                         </p>
                       </div>
                     ))}
-                    <p className="mt-2 text-xs text-ink-muted">
-                      Compared only within a unit. A price per MSF is never converted to a price
-                      per SF — the factor is the vendor&apos;s to state, and guessing it would make
-                      someone look a thousand times cheaper than they are.
-                    </p>
                   </div>
                 )}
 
                 {movements.length > 0 && (
-                  <div className="border-b border-line-row p-4" data-tour="vp-movement">
+                  <div className="border-b border-line-row py-3" data-tour="vp-movement">
                     <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       Movement
                     </h3>
@@ -264,10 +308,11 @@ export default async function VendorPricingPage() {
                     />
                   ))}
                 </ul>
-              </section>
+              </Disclosure>
             );
           })}
         </div>
+        </>
       )}
     </PageShell>
   );
