@@ -193,7 +193,7 @@ describe("the whole page", () => {
   it("a fresh page lists recent conversations under the chat; an open one moves them behind Recent", () => {
     render(<AiHome {...fullProps()} />);
     expect(container.querySelector("[data-ai-recent] [data-recent]")).not.toBeNull();
-    expect(container.querySelector("details")).toBeNull();
+    expect(container.querySelector("header details")).toBeNull();
     render(<AiHome {...fullProps({ threadOpen: true })} />);
     expect(container.querySelector("[data-ai-recent]")).toBeNull();
     expect(container.querySelector("details [data-recent]")).not.toBeNull();
@@ -290,5 +290,28 @@ describe("the whole page", () => {
     act(() => (strip as HTMLButtonElement).click());
     expect(strip.getAttribute("aria-expanded")).toBe("true");
     expect(panel.className).not.toContain("hidden");
+  });
+});
+
+describe("declutter (density audit #19)", () => {
+  const finding = (i: number) => ({ ...fullProps().findings[0], id: `f${i}`, title: `Finding ${i}` });
+
+  it("draws each finding as one closed line (severity + title) and never more than five", () => {
+    render(<AiHome {...fullProps({ findings: Array.from({ length: 8 }, (_, i) => finding(i)), findingCount: 8 })} />);
+    const watching = container.querySelector('[aria-labelledby="ai-watching"]')!;
+    const rows = Array.from(watching.querySelectorAll('details[name="ai-finding"]'));
+    expect(rows).toHaveLength(5);
+    expect(rows.every((d) => !d.hasAttribute("open"))).toBe(true);
+    expect(rows[0].querySelector("summary")?.textContent).toContain("Finding 0");
+    expect(rows[0].querySelector("summary")?.textContent).not.toContain("13/16 inch");
+    expect(rows[0].querySelector("summary button")).toBeNull();
+  });
+
+  it("puts Running now behind a count, opening itself when a run has a way out", () => {
+    render(<RunningNow runs={fullProps().runs} now={NOW} />);
+    expect(container.querySelector("[data-ai-running-count]")?.textContent).toBe("1 running · 2 recent");
+    expect(container.querySelector("details")?.hasAttribute("open")).toBe(true);
+    render(<RunningNow runs={fullProps().runs.slice(0, 2)} now={NOW} />);
+    expect(container.querySelector("details")?.hasAttribute("open")).toBe(false);
   });
 });
