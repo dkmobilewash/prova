@@ -4,7 +4,7 @@ import { DailyFieldReports } from "@/components/DailyFieldReports";
 import { DelayLog } from "@/components/DelayLog";
 import { refreshReportWeather } from "@/lib/report-weather";
 import { loadManpower, manpowerLine } from "@/lib/manpower";
-import { weatherLine, type DayWeather } from "@/lib/weather";
+import { siteWeatherNote, weatherLine, type DayWeather } from "@/lib/weather";
 import {
   DELAY_CAUSES,
   NOTIFICATION_METHODS,
@@ -73,13 +73,7 @@ export default async function JobFieldReportsPage({ params }: { params: Promise<
     <DailyFieldReports
       jobId={job.id}
       canDelete={currentUser.role === "OWNER"}
-      siteNote={
-        job.siteLatitude === null
-          ? job.siteAddress
-            ? "Weather can't be filled in: the site address above wasn't found on a map. Try a street address or \"City, ST\"."
-            : "Add the job's site address on the Overview tab and each report fills in the day's weather automatically."
-          : null
-      }
+      siteNote={siteWeatherNote(job)}
       reports={job.dailyFieldReports.map((report) => {
         const auto = (reportWeather.get(report.id) ?? report.weatherAuto) as DayWeather | null;
         const day = report.reportDate.toISOString().slice(0, 10);

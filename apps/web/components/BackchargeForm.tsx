@@ -9,6 +9,7 @@ import { BackchargeFields } from "@/components/BackchargeFields";
 import type { JobOption } from "@/components/RfiFields";
 import { useLocalToday } from "@/components/localToday";
 import { Spinner } from "@/components/Spinner";
+import { primaryActionClass } from "@/components/emptyStateStyles";
 
 export function BackchargeForm({
   jobs,
@@ -52,7 +53,7 @@ export function BackchargeForm({
         <button
           type="button"
           onClick={() => setIsOpen(true)}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+          className={primaryActionClass}
         >
           Log a backcharge
         </button>
@@ -125,7 +126,7 @@ export function BackchargeForm({
           <button
             type="submit"
             disabled={isPending}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className={`${primaryActionClass} disabled:opacity-50`}
           >
             {isPending ? (
               <span className="inline-flex items-center gap-1.5">

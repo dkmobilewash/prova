@@ -6,6 +6,7 @@ import { loadWipSchedule } from "@/lib/wip-schedule-query";
 import { WIP_SCHEDULE_COLUMNS } from "@/lib/wip-schedule";
 import { wipScheduleCell, CANNOT_SAY, CANNOT_SAY_TITLE } from "@/lib/wip-schedule-cell";
 import { viewerToday } from "@/lib/viewerToday";
+import { secondaryActionClass } from "@/components/emptyStateStyles";
 
 /**
  * The work-in-progress schedule, on screen.
@@ -175,7 +176,7 @@ export default async function WipSchedulePage() {
             <a
               href="/api/wip-schedule"
               download
-              className="inline-flex rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
+              className={secondaryActionClass}
             >
               Download WIP schedule (CSV)
             </a>

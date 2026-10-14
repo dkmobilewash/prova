@@ -1,5 +1,6 @@
 import { money } from "@/lib/money";
 import type { WipScheduleRow } from "@/lib/wip-schedule";
+import { JOB_STATUS_LABELS, type JobStatusValue } from "@/lib/job-status-transitions";
 
 /**
  * One cell of the WIP schedule, as a person reads it on screen.
@@ -62,6 +63,11 @@ export interface WipCell {
 }
 
 export function wipScheduleCell(key: keyof WipScheduleRow, value: WipScheduleRow[keyof WipScheduleRow]): WipCell {
+  if (key === "status" && typeof value === "string" && value in JOB_STATUS_LABELS) {
+    // The enum is the CSV's business; a person reads "In progress", not
+    // `IN_PROGRESS` (declutter, 2026-10-13). Label only.
+    return { text: JOB_STATUS_LABELS[value as JobStatusValue], numeric: false };
+  }
   if (TEXT_COLUMNS.has(key)) {
     // A missing NAME is a different problem from a missing FIGURE, and an
     // em dash here would borrow a meaning that does not apply.

@@ -79,6 +79,37 @@ describe("the job details form", () => {
   it("sends the picked client, once, on an estimate", () => {
     expect(submitted(true)).toEqual(["contact-1"]);
   });
+
+  // Declutter audit, 2026-10-13: an empty site-address box showing
+  // "123 Main St, Portland, OR 97201" was read as the job's address, so the
+  // field reports' "add the site address" hint looked like a bug.
+  it("never shows a sample address that could be read as the job's own", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        createElement(JobDetailsForm, {
+          jobId: "job-1",
+          name: "Riverside",
+          scope: null,
+          contactId: "contact-1",
+          contacts: [{ id: "contact-1", name: "Acme GC" }],
+          isEstimate: false,
+          canRemove: false,
+          siteAddress: null,
+          grossAreaSqFt: null,
+          siteStatus: "none",
+        }),
+      );
+    });
+    const input = container.querySelector<HTMLInputElement>("input[name='siteAddress']");
+    expect(input, "the field rendered").not.toBeNull();
+    expect(input!.value).toBe("");
+    expect(input!.placeholder).not.toMatch(/\d/);
+    act(() => root.unmount());
+    container.remove();
+  });
 });
 
 /**
