@@ -51,6 +51,7 @@ import {
   verdictFor,
   groupSentence,
   wallsOnThisSheet,
+  storedWallsFor,
   type WallGroup,
   type GroupVerdict,
 } from "@/lib/takeoff/wallGroups";
@@ -125,6 +126,7 @@ export function TakeoffPlanViewer({
   planId,
   sheets,
   printedScaleByPage,
+  storedWallsByPage,
   levelByPage,
   wallTypes,
   scalePrefillByPage,
@@ -148,6 +150,24 @@ export function TakeoffPlanViewer({
    * `takeoff-plan-view.ts`.
    */
   printedScaleByPage: PrintedScaleByPage;
+  /**
+   * THE WALLS ALREADY FOUND ON EACH SHEET, from `TakeoffWallProposal`, keyed by
+   * page number.
+   *
+   * KEYED BY PAGE RATHER THAN READ OFF `sheet`, which is the shape
+   * `printedScaleByPage` above was moved to after the field version turned out
+   * to be unreachable. This one would in fact be safe on `PlanSheet` — a
+   * proposal only exists once a calibration does, and saving a calibration is
+   * what creates the page row, so the row is guaranteed present exactly when
+   * there is something to show. It is keyed anyway, because two props that
+   * mean "something the server knows about page N" should not be reached two
+   * different ways.
+   *
+   * Optional and absent is normal: an uncalibrated sheet has nothing stored,
+   * and a sheet whose scale changed has nothing stored UNDER THE CURRENT
+   * calibration, which is the same thing from the reader's side.
+   */
+  storedWallsByPage?: Record<number, WallGroup[]>;
   /** Which floor each sheet draws, read off its own title — see
    *  `sheetLevel.ts`. Absent for a sheet whose title names no floor, which is
    *  most of them on a single-storey job. */
@@ -215,6 +235,14 @@ export function TakeoffPlanViewer({
   // the question somebody asked about that sheet, so returning restores it
   // rather than demanding another press.
   const [foundRaw, setFound] = useState<WallGroup[] | null>(null);
+  /**
+   * WHICH PAGES HAVE ALREADY BEEN SEEDED FROM THE SERVER, so a sheet is seeded
+   * once and "Clear" sticks.
+   *
+   * A ref and not state: nothing renders from it, and React double-invokes
+   * effects in development, which would otherwise seed twice.
+   */
+  const seeded = useRef<Set<number>>(new Set());
   const [foundOnPage, setFoundOnPage] = useState<number | null>(null);
   // ── WHAT THE RUNS ARE, as opposed to what they measure ──
   //
@@ -615,6 +643,38 @@ export function TakeoffPlanViewer({
       setChecking(false);
     }
   }, [labels]);
+
+  /**
+   * ── THE WALLS FOUND EARLIER, PUT BACK ON THE SHEET ──
+   *
+   * Detection now runs when a scale is saved, so by the time somebody opens the
+   * sheet the groups are usually already stored. This is what makes that
+   * visible: without it the work happened and the panel still said to press a
+   * button.
+   *
+   * IT SEEDS THE SAME STATE `onFindWalls` WRITES, deliberately, rather than
+   * adding a second source for the panel to read. Every render site, the ghost
+   * overlay, accepting a group and Clear all go on working untouched — and the
+   * bug that shape avoids is the one `wallsOnThisSheet` was written for: two
+   * render sites reading two variables, neither wrong on its own.
+   *
+   * ONCE PER PAGE. `seeded` means Clear is honoured rather than undone on the
+   * next render, and that a sheet somebody has already worked through does not
+   * refill itself behind them.
+   */
+  useEffect(() => {
+    if (seeded.current.has(pageNumber)) return;
+    const stored = storedWallsFor(storedWallsByPage, pageNumber);
+    if (stored === null) return;
+    // NOT OVER THE TOP OF A LIVE RESULT. A press of Find the walls on this very
+    // sheet is newer than anything on the server and must win.
+    if (foundRaw !== null && foundOnPage === pageNumber) return;
+    seeded.current.add(pageNumber);
+    setFound(stored);
+    setFoundOnPage(pageNumber);
+    setChosen({});
+    setShowingAll(false);
+  }, [pageNumber, storedWallsByPage, foundRaw, foundOnPage]);
 
   async function onFindWalls() {
     const doc = docRef.current;

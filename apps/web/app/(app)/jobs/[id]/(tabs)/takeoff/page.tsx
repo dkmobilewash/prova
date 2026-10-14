@@ -28,6 +28,9 @@ import { printedScalesFromProposals, scalePrefillsFromReadings,
 } from "@/lib/takeoff-plan-view";
 import { measurementScaleLabel, zoneNotices, zoneScales } from "@/lib/takeoff-zones";
 import type { PlanMeasurementRow, PlanSheet, PrintedScaleByPage, ScalePrefillByPage } from "@/lib/takeoff-plan-view";
+import { feetPerPageWidth } from "@/lib/takeoff-plan";
+import type { WallGroup } from "@/lib/takeoff/wallGroups";
+import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
 
 /**
  * TAKEOFF — measure a drawing on screen and turn what you traced into
@@ -104,6 +107,16 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         orderBy: { pageNumber: "asc" },
         include: {
           calibrations: { orderBy: { createdAt: "desc" } },
+          /**
+           * THE WALLS FOUND WHEN THE SCALE WAS SAVED. Newest first, and
+           * filtered to the CURRENT calibration below rather than here —
+           * `calibrations[0]` is only known once this query has returned.
+           *
+           * That filter is the whole invalidation story: a recalibration
+           * inserts a new calibration, so proposals found under the old one
+           * are simply never read again. No staleness flag, no sweep.
+           */
+          wallProposals: { orderBy: { createdAt: "desc" } },
           measurements: {
             orderBy: { createdAt: "asc" },
             include: { calibration: true },
@@ -350,6 +363,64 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
     };
   });
 
+  /**
+   * ── THE WALLS ALREADY FOUND, PER SHEET ──
+   *
+   * Detection runs when a calibration is saved, so these are usually waiting
+   * before anybody opens the sheet. Read here so the viewer can show them
+   * without a press.
+   *
+   * ONLY THE NEWEST RUN, AND ONLY UNDER THE CURRENT CALIBRATION. The rows are
+   * append-only — a second detection writes a second set rather than replacing
+   * one — so "newest `createdAt`" is what makes a re-run win, and the
+   * calibration filter is what makes a RECALIBRATION invalidate the lot for
+   * free.
+   *
+   * AND IT REFUSES THE WHOLE SHEET ON A SINGLE BAD ROW. `groupsFromProposals`
+   * returns null rather than a shorter list: a page showing three of its four
+   * groups looks exactly like a page that has three, and the estimator has no
+   * way to tell. Falling back to the Find the walls button is slow and honest.
+   */
+  const storedWallsByPage: Record<number, WallGroup[]> = {};
+  for (const page of plan.pages) {
+    const current = page.calibrations[0] ?? null;
+    if (!current) continue;
+    const feetPerUnit = feetPerPageWidth({
+      x1: current.x1,
+      y1: current.y1,
+      x2: current.x2,
+      y2: current.y2,
+      declaredDistanceFeet: current.declaredDistanceFeet.toNumber(),
+    });
+    if (feetPerUnit === null) continue;
+
+    const mine = page.wallProposals.filter((row) => row.calibrationId === current.id);
+    if (mine.length === 0) continue;
+    // One detection run writes every row at one timestamp, so the newest run is
+    // every row sharing the newest `createdAt`.
+    const newest = mine[0].createdAt.getTime();
+    const groups = groupsFromProposals(
+      mine
+        .filter((row) => row.createdAt.getTime() === newest)
+        .map((row) => ({
+          thicknessInches: row.thicknessInches,
+          source: row.source,
+          sourceLabel: row.sourceLabel,
+          namedCode: row.namedCode,
+          runs: row.runs,
+        })),
+      allWallTypes.map((type) => ({
+        id: type.id,
+        code: type.code,
+        name: type.name,
+        hasParts: type._count.components > 0,
+        thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
+      })),
+      feetPerUnit,
+    );
+    if (groups !== null && groups.length > 0) storedWallsByPage[page.pageNumber] = groups;
+  }
+
   return (
     <section className="flex flex-col gap-4">
       <Header jobId={job.id} />
@@ -441,6 +512,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         planId={plan.id}
         sheets={sheets}
         printedScaleByPage={printedScaleByPage}
+        storedWallsByPage={storedWallsByPage}
         scalePrefillByPage={scalePrefillByPage}
         scaleDeclineByPage={scaleDeclineByPage}
         levelByPage={levelByPage}

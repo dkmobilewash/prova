@@ -595,11 +595,34 @@ describe("found walls stay on their own sheet", () => {
     expect(code, "nothing records which sheet the result came from").toMatch(
       /setFoundOnPage\(pageNumber\)/,
     );
-    // The raw state must not reach a render site. If `foundRaw` appears outside
-    // its own declaration and the derivation, something is reading around the
-    // guard — which is exactly how this bug worked.
-    const rawUses = code.match(/foundRaw/g) ?? [];
-    expect(rawUses, "the raw found-walls state is read somewhere it should not be").toHaveLength(2);
+    // ── THE RAW STATE MUST NOT REACH A RENDER SITE ──
+    //
+    // THIS ASSERTION USED TO BE A COUNT — `foundRaw` exactly twice, its own
+    // declaration and the derivation — and the count was the wrong instrument.
+    // It broke the day a legitimate NON-render read was added (an effect that
+    // seeds the state from stored proposals reads it in a guard and in its
+    // dependency list), which took it to four and failed a viewer that was
+    // correct.
+    //
+    // The temptation then is to change the 2 to a 4, which turns the guard into
+    // "however many there happen to be" and is this repo's own lesson about a
+    // check that cannot say what it means. So it now asserts WHERE rather than
+    // HOW MANY, which is both stronger and stable: a render site is inside the
+    // component's returned JSX, and the raw state has no business there.
+    const jsxAt = code.indexOf("\n  return (");
+    expect(jsxAt, "the component's JSX could not be located — fix this before trusting it").toBeGreaterThan(0);
+
+    const render = code.slice(jsxAt);
+    // The derivation must be ABOVE the JSX, so this cannot pass by the whole
+    // file landing on the wrong side of the split.
+    expect(code.slice(0, jsxAt)).toContain("const found = wallsOnThisSheet(");
+    expect(
+      render.match(/foundRaw/g) ?? [],
+      "the raw found-walls state is read in the viewer's JSX, around the per-sheet guard",
+    ).toHaveLength(0);
+    // And `found` IS read there, so a render region that simply shows no walls
+    // at all cannot satisfy the line above.
+    expect(render).toMatch(/\bfound\b/);
   });
 });
 

@@ -696,6 +696,23 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     models: ["PlanSheetText", "PlanSheetProposal", "PlanSheetScaleReading"],
   },
   {
+    key: "plan-wall-proposals",
+    title: "The walls found on each calibrated sheet",
+    detail:
+      "When a sheet is calibrated, the geometry is read for walls and what it finds is kept as " +
+      "one proposal per group — the centrelines, the thickness, and whether the drawing named " +
+      "the group with a printed tag or a general note. Not exported, and for the strongest of " +
+      "the three reasons this file gives: a proposal is not anybody's work. It is a reading of " +
+      "a PDF this file does not contain, re-derived from that PDF at no cost, and it is keyed " +
+      "to the calibration it was found under, so it is thrown away for free the moment somebody " +
+      "recalibrates the sheet. Nothing here is lost by leaving it out. What an estimator " +
+      "ACCEPTED from it is a different matter entirely, and it is already exported: accepting a " +
+      "group writes a `TakeoffMeasurement`, which is in the takeoff dataset with the " +
+      "calibration it was measured at. That is the line this table exists to keep — found is " +
+      "not chosen — and the export boundary is where it shows.",
+    models: ["TakeoffWallProposal"],
+  },
+  {
     key: "plan-schedule-readings",
     title: "The schedules read off each plan sheet",
     detail:
