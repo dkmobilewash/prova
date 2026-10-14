@@ -52,6 +52,9 @@ describe.each([
   ["/submittals", () => import("@/app/(app)/submittals/page")],
   ["/material-orders", () => import("@/app/(app)/material-orders/page")],
   ["/backcharges", () => import("@/app/(app)/backcharges/page")],
+  // Declutter (density audit #30): the walkthrough form waits behind its
+  // button like every other add form, and ?new=1 still lands on it open.
+  ["/punch-lists", () => import("@/app/(app)/punch-lists/page")],
 ])("%s", (_route, load) => {
   it("opens its add form on ?new=1, and only then", async () => {
     const { default: Page } = await load();
@@ -60,5 +63,16 @@ describe.each([
     const closed = await render({});
     const open = await render({ new: "1" });
     expect(forms(open)).toBe(forms(closed) + 1);
+  });
+});
+
+describe("/punch-lists aside", () => {
+  it("leads with the job filter, then the add form's button", async () => {
+    const { default: Page } = await import("@/app/(app)/punch-lists/page");
+    const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
+    const filter = html.indexOf('data-tour="punch-job-filter"');
+    expect(filter).toBeGreaterThan(-1);
+    expect(filter).toBeLessThan(html.indexOf('data-tour="punch-add"'));
+    expect(html).toMatch(/data-tour="punch-add"><button[^>]*>Add an item<\/button>/);
   });
 });
