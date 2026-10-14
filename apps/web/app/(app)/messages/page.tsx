@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { emailSetupProblem } from "@prova/integrations";
@@ -108,21 +110,19 @@ export default async function MessagesPage({
   const visible = onlyProblems ? problems : rows;
 
   const chip = (active: boolean) =>
-    `rounded-md border px-3 py-1.5 text-sm ${
+    `inline-flex min-h-11 items-center rounded-md border px-3 text-sm mouse:min-h-8 ${
       active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-rail-hover"
     }`;
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Messages</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        Everything this company has sent, and whether it actually arrived. Mail that silently never
-        lands is the failure nobody catches — you find out when the GC says they never heard from
-        you, on a date that matters.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/messages"
+        subtitle="Everything this company has sent, and whether it actually arrived."
+      />
 
       {setupProblem && (
-        <div className="mb-6 rounded-lg border border-amber-700 bg-tag-amber p-4" data-tour="messages-setup">
+        <div className="mb-6 rounded-xl border border-amber-700 bg-tag-amber p-4" data-tour="messages-setup">
           <p className="text-sm font-medium text-tag-amber-ink">Sending isn&apos;t set up yet</p>
           <p className="mt-1 text-sm text-tag-amber-ink/80">{setupProblem}</p>
           {company.isProvaOperator ? (
@@ -209,7 +209,7 @@ export default async function MessagesPage({
               Nothing needs attention — everything sent has either been delivered or is still in flight.
             </p>
           ) : (
-            <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="messages-list">
+            <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-tour="messages-list">
               {visible.map((message) => (
                 <MessageRow
                   key={message.id}
@@ -222,6 +222,6 @@ export default async function MessagesPage({
           )}
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

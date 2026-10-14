@@ -914,28 +914,152 @@ describe("the partition schedule", () => {
   const LAYERED_EXTERIOR = [4.0625, 3.4375, -2.5625, -4.0625];
   const SCHEDULE = [8, 1.5, 8.125, 4.875, 4.75, 14.5];
 
-  it("READS THE BLOCK WALL AT 8IN INSTEAD OF 9-1/2IN ACROSS BOTH", () => {
-    expect(found(BLOCK_AND_FURRING, SCHEDULE)).toEqual([8]);
+  // The bench's own partition schedule, and it is what made the collision below
+  // reachable: it carries EXT-1 at 8.875in, and 9.125in is a quarter inch away.
+  const BENCH_SCHEDULE = [4.875, 7.25, 4.75, 14.5, 1.5, 8.875, 8.125, 7.625, 4.5];
+
+  it("READS 1-1/2IN FURRING ON 7-5/8IN BLOCK AS THE BLOCK, NOT AS A 9-1/8IN WALL", () => {
+    // ── THE SLACK COLLISION, AND WHY THE FIXTURE BELOW HID IT FOR WEEKS ──
+    //
+    // These are the real numbers: furring face, block near face, block far
+    // face. The span across both is 9.125in and EXT-1 is 8.875in — exactly
+    // `KNOWN_SLACK_IN` apart — so the span LOOKED like a type this company
+    // builds. "The widest pair the schedule names" took it, and the finder
+    // returned one wall at 9.13in where the drawing has a block wall with
+    // furring in front of it.
+    //
+    // Worse, it poisoned both halves: `enclosedByAScheduledWall` saw the same
+    // phantom wall and marked the block AND the furring as layer lines of it,
+    // so each was refused before the schedule tier could prefer either. That
+    // is why this cost 1,210 ft of furring on Mesa Ridge rather than the 20 ft
+    // the probe table reports against one wall.
+    //
+    // The fixture in the next test uses 8in and 9.5in, where the span matches
+    // NOTHING on its schedule — which is exactly why the schedule preference
+    // looked like it worked.
+    // The block at 7.63 rather than a phantom 9.13, and the furring with it
+    // once the phantom stops claiming both faces — see `secondAssemblyPass`.
+    expect(found([0, 7.625, 9.125], BENCH_SCHEDULE)).toEqual([7.63, 1.5]);
   });
 
-  it("DOES NOT YET RECOVER THE FURRING ITSELF, and this pins why", () => {
-    // Written as the limit rather than the goal, because the goal is not
-    // shipped. The furring's two faces are the block's inner face and the
-    // furring face, and the block has already taken the inner face — a face
-    // belongs to ONE wall. In construction it belongs to one wall per SIDE: the
-    // block on one side, the furring on the other.
+  it("believes a thickness a HAIR off the schedule, because a plotted line is not exact", () => {
+    // ── WHAT PINS `EXACT_SCHEDULE_IN` FROM BELOW ──
     //
-    // Allowing that was built and MEASURED, and it is not worth it. On the
-    // bench it bought about 100 ft of found footage and cost roughly 2,900 ft
-    // on Mesa Ridge and 2,000 ft on the holdout of footage that is not on any
-    // wall — because every face in the drawing gains a second chance to pair
-    // with something that is not its partner. Numbers in the changelog entry.
+    // The rule only overrides a LOOSE match, and "loose" cannot mean "not
+    // identical": a real export measures 8.10in where the legend says 8.125,
+    // and refusing that would price the wall as the wrong assembly.
     //
-    // So this is the next piece of work, and it needs a way to admit the second
-    // side of a face WITHOUT admitting all of them. Until then the furring on a
-    // block wall is missed, and the wall it is applied to is at least reported
-    // at a thickness that exists.
-    expect(found(BLOCK_AND_FURRING, SCHEDULE)).not.toContain(1.5);
+    // Added because a mutation said so. Setting the constant to 0 left the
+    // whole suite green — the window-broken exterior clears it either way,
+    // because its span is EXACTLY on its schedule. So nothing distinguished
+    // 1/16in from zero, and the tolerance that exists for plotter noise was
+    // unpinned. This case is 0.025in off and decomposes into two scheduled
+    // halves, so it is refused the moment the tolerance stops existing.
+    expect(found([0, 1.5, 8.1], [1.5, 6.6, 8.125])).toEqual([8.1]);
+  });
+
+  // ── TWO MUTATIONS OF THIS RULE STAY GREEN, WRITTEN DOWN RATHER THAN DRESSED
+  // UP, in the manner of `foundTwice`'s own unpinned choice above ──
+  //
+  // 1. Dropping the "is the second half scheduled" check does not change any
+  //    outcome I could construct. The case below is the closest: its halves are
+  //    3in (scheduled) and 6.125in (not), and with the check gone the span is
+  //    refused — and the finder still answers 9.13 from a lower tier, because
+  //    refusing a pair as SCHEDULED does not stop `bestWall` choosing it as the
+  //    widest balanced pair. So the requirement is real in the code and its
+  //    effect is masked by the fallback everywhere I could reach. Left in,
+  //    because "one named gap inside a wall" is the layered-exterior case and
+  //    dropping it is wrong on purpose rather than by accident.
+  //
+  // 2. Widening the `> 6` gate changes nothing, and should not: it exists so an
+  //    O(n) scan does not run on every candidate inside an O(n^2) loop — this
+  //    file's own note about `inAHatchSeries`. A performance gate asserted as
+  //    behaviour would be a test lying about what it protects.
+  it("NEEDS BOTH HALVES SCHEDULED, so one named gap inside a wall proves nothing", () => {
+    // The rule asks for the span to divide into TWO scheduled types. A single
+    // named gap inside a wider pair is an ordinary layer line and the wider
+    // pair is still the wall — 3in is on this schedule, 9.125 - 3 = 6.125in is
+    // not, so nothing is refused and the span stands.
+    //
+    // THE SUB-GAP IS 6.125IN DELIBERATELY, and the first version of this test
+    // used 1.875in and proved nothing: a 1.875in gap is under the 2.4in
+    // thickness floor and unscheduled, so `wallFromPair` returns null for it
+    // and the half is rejected before its thickness is ever considered. The
+    // mutation that drops the "is it scheduled" check stayed green. A case has
+    // to fail for the reason it names.
+    expect(found([0, 3, 9.125], [3, 8.875])).toEqual([9.13]);
+  });
+
+  it("READS THE BLOCK WALL AT 8IN INSTEAD OF 9-1/2IN ACROSS BOTH", () => {
+    // The block at its own thickness, which is what #751 fixed. The 1.5in
+    // beside it is the furring, recovered by `secondAssemblyPass` — asserted
+    // in its own test below rather than here, so a regression in either one
+    // names itself.
+    expect(found(BLOCK_AND_FURRING, SCHEDULE)).toContain(8);
+  });
+
+  it("RECOVERS THE FURRING TOO, on the other side of the face the block took", () => {
+    // ── THE TEST THIS REPLACES SAID "DOES NOT YET", AND NAMED THE CONDITION ──
+    //
+    // It read: "this is the next piece of work, and it needs a way to admit the
+    // second side of a face WITHOUT admitting all of them." That is what
+    // `secondAssemblyPass` does, and the condition is the whole reason it is
+    // safe: a face may serve a second wall only when that wall is on its OTHER
+    // SIDE, only at a thickness the schedule names, and only where no layer
+    // line or hatch series explains it.
+    //
+    // THE OLD TEST'S MEASUREMENT WAS HONEST AND IS NOW MISLEADING, so it is
+    // worth saying exactly what changed. It recorded the unguarded version
+    // buying "about 100 ft" and costing "roughly 2,900 ft on Mesa Ridge and
+    // 2,000 ft on the holdout" of footage not on any wall, because every face
+    // gained a second chance to pair with something that is not its partner.
+    // That was true of THAT version.
+    //
+    // It was also measured again, guarded, and it bought 27 ft for nothing —
+    // because the thing it was trying to find was being eaten by a different
+    // defect. The span across block and furring was being read as a 9-1/8in
+    // wall (see the slack-collision test below), so there was no free side to
+    // find: the phantom wall had claimed both faces. Fixing that first is what
+    // made this pass worth having, and the order matters — on its own it is a
+    // wash, and after the decomposition fix it is 101 ft of holdout furring at
+    // no cost in not-on-a-wall footage.
+    //
+    // Graded on `reports/takeoff-bench`: holdout furring 162 -> 263 ft of a 307
+    // ft key, holdout found 31,998 -> 32,100, Mesa 64,993 -> 65,021, and
+    // not-on-a-wall UNCHANGED on both sets at 3,610 and 389.
+    expect(found(BLOCK_AND_FURRING, SCHEDULE)).toEqual([8, 1.5]);
+  });
+
+  // ── FIVE OF THIS PASS'S SIX GUARDS ARE NOT PINNED BY THE CASES BELOW, AND
+  // SAYING SO IS WORTH MORE THAN PRETENDING OTHERWISE ──
+  //
+  // Mutation-tested six ways. Only "never call the pass at all" reds this
+  // suite. Dropping the opposite-side condition, the scheduled-thickness
+  // check, the layer-line check, the empty-schedule early return or the
+  // claimed-face restriction all leave it green — because these fixtures are
+  // three parallel lines, and three lines cannot produce the junk those guards
+  // exist to refuse. A richer fixture was not written because the thing it
+  // would have to model is a busy sheet, which is what the bench is.
+  //
+  // So the guards are measured there instead, and ONE of them turns out not to
+  // earn its place on the evidence available:
+  //
+  //   opposite-side condition removed:  Mesa found 65,021 -> 65,078 (+57)
+  //                                     holdout not-on-a-wall 389 -> 408 (+19)
+  //
+  // That is nearly behaviour-neutral, and it is NOT the 2,900 ft the earlier
+  // unguarded attempt cost. The guards doing that work are the scheduled
+  // thickness and the layer-line test; the side condition is kept because it
+  // is the physical statement the pass is built on — a face has two sides and
+  // what is built against one says nothing about the other — and because the
+  // 19 ft it saves on the holdout is the direction this bench is graded in.
+  // Recorded rather than asserted, so the next person weighing a simplification
+  // starts from a number instead of an argument.
+  it("STILL REFUSES THE SECOND SIDE WITHOUT A SCHEDULE, so nothing changes for a caller that has none", () => {
+    // The pass returns early on an empty schedule. Pinned because it is the
+    // only thing standing between this and the unguarded version the old test
+    // measured at 2,900 ft of false footage.
+    expect(found(BLOCK_AND_FURRING, [])).toEqual([9.5]);
   });
 
   it("reports the 9-1/2in span when it has no schedule to consult", () => {

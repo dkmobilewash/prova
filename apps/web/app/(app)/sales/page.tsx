@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { SalesLeadForm } from "@/components/SalesLeadForm";
@@ -36,22 +38,22 @@ export default async function SalesPage() {
 
   if (!company.isProvaOperator) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-16">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Not part of your access</h1>
+      <PageShell width="reading">
+        <PageHeader route="/sales" title="Not part of your access" />
         <p className="text-sm text-ink-body">Nothing here for this account.</p>
-      </div>
+      </PageShell>
     );
   }
 
   if (currentUser.role !== "OWNER") {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-16">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Owner only</h1>
+      <PageShell width="reading">
+        <PageHeader route="/sales" title="Owner only" />
         <p className="text-sm text-ink-body">
           The sales CRM is restricted to the account owner, same as Team management and billing
           settings.
         </p>
-      </div>
+      </PageShell>
     );
   }
 
@@ -135,12 +137,12 @@ export default async function SalesPage() {
   );
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-1 text-lg font-semibold text-ink">Sales CRM</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        Prospective C Stream customers and the deals in progress with them -- internal, not visible
-        to any tenant.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/sales"
+        title="Sales CRM"
+        subtitle="Prospective C Stream customers and the deals in progress with them — internal, not visible to any tenant."
+      />
 
       <SalesPipelineBand
         pipeline={pipeline}
@@ -149,7 +151,7 @@ export default async function SalesPage() {
       />
 
       {queue.length > 0 && (
-        <section className="mb-6 rounded-lg border border-line-card bg-surface p-4">
+        <section className="mb-6 rounded-xl border border-line-card bg-surface p-4">
           <h2 className="mb-1 text-sm font-semibold text-ink">
             {queue.length} {queue.length === 1 ? "lead owes" : "leads owe"} a follow-up
             {overdueCount > 0 && <span className="text-danger"> — {overdueCount} overdue</span>}
@@ -188,7 +190,7 @@ export default async function SalesPage() {
       {leads.length === 0 ? (
         <p className="mb-4 text-sm text-ink-body">No leads recorded yet.</p>
       ) : (
-        <ul className="mb-4 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        <ul className="mb-4 divide-y divide-line-row rounded-xl border border-line-card bg-surface">
           {leads.map((lead) => (
             <SalesLeadRow
               key={lead.id}
@@ -211,6 +213,6 @@ export default async function SalesPage() {
       )}
 
       <SalesLeadForm />
-    </div>
+    </PageShell>
   );
 }

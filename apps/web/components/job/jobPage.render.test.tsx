@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("next/navigation", () => ({ usePathname: () => "/jobs/job-1/retainage", useSearchParams: () => new URLSearchParams() }));
 
 const { JobStageNav } = await import("@/components/job/JobStageNav");
+const { JobSectionNav } = await import("@/components/job/JobSectionNav");
+const { jobTabs } = await import("@/components/job/jobTabs");
 const { PayAppSummary } = await import("@/components/job/PayAppSummary");
 const { jobStages } = await import("@/components/job/jobStages");
 const { payAppMonth } = await import("@/components/job/payAppFigures");
@@ -28,16 +30,18 @@ const stages = jobStages({
 describe("JobStageNav", () => {
   const html = renderToStaticMarkup(<JobStageNav stages={stages} />);
 
-  it("opens the stage holding the current page and lists its pages underneath", () => {
-    expect(html).toContain('aria-label="Billing pages"');
+  it("outlines the stage holding the current page, and leaves the page links to the tab row", () => {
     const anchor = (href: string) => html.match(new RegExp(`<a[^>]*href="${href}"[^>]*>`))?.[0] ?? "";
-    expect(anchor("/jobs/job-1/retainage")).toContain('aria-current="page"');
-    // The Billing STEP is the open stage; the Billing sub-link is not the open page.
+    // The Billing STEP is the open stage (on /retainage).
     expect(anchor("/jobs/job-1/billing")).toContain('aria-current="true"');
+    // Restore brief 2026-10-12: the open stage's own row of page links
+    // duplicated the tab row (JobSectionNav) directly under it, so it went.
+    expect(html).not.toContain(" pages\"");
+    expect(html).not.toContain('href="/jobs/job-1/retainage"');
   });
 
   it("links every stage that has a page to its first one", () => {
-    for (const href of ["/jobs/job-1/takeoff", "/jobs/job-1", "/jobs/job-1/crew", "/punch-lists?job=job-1"]) {
+    for (const href of ["/jobs/job-1/estimate", "/jobs/job-1", "/jobs/job-1/crew", "/jobs/job-1/billing", "/punch-lists?job=job-1"]) {
       expect(html).toContain(`href="${href}"`);
     }
   });
@@ -49,6 +53,32 @@ describe("JobStageNav", () => {
     expect((html.match(/✓/g) ?? []).length).toBe(2);
     expect(html).toContain("(needs attention)");
     expect(html).toMatch(/text-tag-amber-ink">Not signed</);
+  });
+});
+
+describe("JobSectionNav", () => {
+  const tabs = jobTabs({ jobId: "job-1", status: "IN_PROGRESS", showsJobMoney: true, showsBilling: true, showsField: true });
+  const html = renderToStaticMarkup(<JobSectionNav tabs={tabs} />);
+  const anchor = (href: string) => html.match(new RegExp(`<a[^>]*href="${href}"[^>]*>`))?.[0] ?? "";
+
+  it("is a nav named Job sections, never Main (the shell owns that landmark)", () => {
+    expect(html).toMatch(/^<nav aria-label="Job sections"/);
+    expect(html).not.toContain('aria-label="Main"');
+    expect(html).toContain("print:hidden");
+  });
+
+  it("marks the open tab, and only that one, as the current page", () => {
+    // The mocked pathname is /jobs/job-1/retainage.
+    expect(anchor("/jobs/job-1/retainage")).toContain('aria-current="page"');
+    expect((html.match(/aria-current=/g) ?? []).length).toBe(1);
+    expect(anchor("/jobs/job-1")).not.toContain("aria-current");
+  });
+
+  it("draws every tab, Estimate by that name, as a 44px touch target", () => {
+    expect((html.match(/<a /g) ?? []).length).toBe(9);
+    expect(html).toContain(">Estimate</a>");
+    expect(anchor("/jobs/job-1/estimate")).toContain("min-h-11");
+    expect(anchor("/jobs/job-1/estimate")).toContain("mouse:min-h-9");
   });
 });
 

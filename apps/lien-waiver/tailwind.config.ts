@@ -30,6 +30,13 @@ const config: Config = {
         "warn-ground": "#fff7ed",
         danger: "#991b1b",
         focus: "#1d4ed8",
+        // The step-by-step screens (2026-10-13). `rule` is DECORATIVE only --
+        // the divider inside a card and the progress bar's empty track; no
+        // control relies on it to be seen. `progress` is the filled bar,
+        // 4.1:1 against that track and 5.0:1 on `paper`, over the 3:1 floor
+        // for a non-text indicator.
+        rule: "#e7e5e4",
+        progress: "#15803d",
       },
       minHeight: {
         touch: "48px",

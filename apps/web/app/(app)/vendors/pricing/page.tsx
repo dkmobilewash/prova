@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -106,10 +108,10 @@ export default async function VendorPricingPage() {
   const items = [...groups.values()].sort((a, b) => a.title.localeCompare(b.title));
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Vendor pricing</h1>
+    <PageShell width="working">
+      <PageHeader route="/vendors/pricing" subtitle="What your suppliers have actually quoted, and when." />
       <p className="mb-6 text-sm text-ink-body">
-        What your suppliers have actually quoted, and when. Nothing here is stored as a
+        Nothing here is stored as a
         &ldquo;current price&rdquo; — current, expired and cheapest are all worked out from the
         quotes every time this page loads, so a price you enter today changes the answer
         immediately.{" "}
@@ -124,7 +126,7 @@ export default async function VendorPricingPage() {
       </div>
 
       {items.length === 0 ? (
-        <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="vp-empty">
+        <div className="rounded-xl border border-line-card bg-surface p-6" data-tour="vp-empty">
           <p className="text-ink-label">No prices recorded yet.</p>
           <p className="mt-2 text-sm text-ink-body">
             Record what a supplier last quoted you for the things you buy most — board, studs,
@@ -150,7 +152,7 @@ export default async function VendorPricingPage() {
             return (
               <section
                 key={item.key}
-                className="rounded-lg border border-line-card bg-surface"
+                className="rounded-xl border border-line-card bg-surface"
               >
                 <header className="border-b border-line-row p-4">
                   <h2 className="font-semibold text-ink">{item.title}</h2>
@@ -267,6 +269,6 @@ export default async function VendorPricingPage() {
           })}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

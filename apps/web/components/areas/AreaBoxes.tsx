@@ -6,6 +6,7 @@ import type { AreaView } from "@/lib/areas";
 import type { Shortcut } from "@/components/home/HomeParts";
 import { SearchChip } from "@/components/home/SearchChip";
 import { AreaIcon, StatusChip, StatusLine, ToolIcon, toolActions } from "./AreaParts";
+import { accentFor } from "@/components/areaAccent";
 
 /**
  * The six area boxes under the home greeting (Concept H): "small boxes on
@@ -137,7 +138,7 @@ export function AreaBoxes({ areas, hours = null }: { areas: AreaView[]; hours?: 
                   isOpen ? "border-brand shadow-[0_0_0_1px_rgb(var(--c-brand))]" : "border-line-card hover:border-ink-muted/60"
                 }`}
               >
-                <span className="grid h-8 w-8 place-items-center rounded-[10px] bg-rail-hover text-ink">
+                <span className={`grid h-8 w-8 place-items-center rounded-[10px] ${accentFor(area.name).tint} ${accentFor(area.name).icon}`}>
                   <AreaIcon paths={area.icon} />
                 </span>
                 <svg
@@ -221,7 +222,7 @@ export function AreaBoxes({ areas, hours = null }: { areas: AreaView[]; hours?: 
       <nav aria-label="Areas" className="mt-4 grid grid-cols-2 gap-2.5 md:hidden" data-home="area-tiles">
         {areas.map((area) => (
           <Link key={area.slug} href={area.href} className="relative flex min-h-[104px] flex-col rounded-[18px] border border-line-card bg-surface px-4 pb-3 pt-3.5 hover:border-ink-muted/60 active:bg-rail-hover">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-rail-hover text-ink">
+            <span className={`grid h-10 w-10 place-items-center rounded-xl ${accentFor(area.name).tint} ${accentFor(area.name).icon}`}>
               <AreaIcon paths={area.icon} className="h-[22px] w-[22px]" />
             </span>
             <svg aria-hidden viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" className="absolute right-3.5 top-4 h-5 w-5 text-ink-muted">

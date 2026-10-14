@@ -250,7 +250,20 @@ function enclosedByAScheduledWall(
     // `wallFromPair` keeps the parallel, overlap and length rules in one place.
     const wide = wallFromPair(order[i], order[k], options);
     if (wide === null) continue;
-    if (isAKnownType(wide.thicknessFeet, knownIn)) return true;
+    if (!isAKnownType(wide.thicknessFeet, knownIn)) continue;
+    // AND THE ENCLOSING WALL MUST NOT ITSELF BE TWO ASSEMBLIES. Without this,
+    // 1-1/2in furring on 7-5/8in block poisons both halves: the 9.125in span
+    // is within a quarter inch of EXT-1's 8.875in, so the block and the furring
+    // are each read as a layer line of a wall that is not there, and both are
+    // refused before the schedule tier can prefer either. Same width gate as
+    // the other call site — the scan is O(n) inside an O(n^2) loop.
+    if (
+      wide.thicknessFeet * 12 > 6 &&
+      splitsIntoScheduledAssemblies(order, i, k, wide.thicknessFeet, options, knownIn)
+    ) {
+      continue;
+    }
+    return true;
   }
   return false;
 }
@@ -258,6 +271,94 @@ function enclosedByAScheduledWall(
 /**
  * Which side of `of` the midpoint of `other` falls on: +1, -1 or 0 on the line.
  */
+/**
+ * Does this pair SPLIT into two assemblies the schedule names?
+ *
+ * ── THE SLACK COLLISION THIS EXISTS FOR, REPRODUCED IN A UNIT TEST ──
+ *
+ * 1-1/2in furring on 7-5/8in block is three lines at 0, 7.625 and 9.125in. The
+ * span across both is 9.125, and the schedule's EXT-1 is 8.875 — a quarter inch
+ * away, which is exactly `KNOWN_SLACK_IN`. So the span LOOKS like a type this
+ * company builds, "the widest pair the schedule names" takes it, and the finder
+ * returns ONE WALL AT 9.13IN where the drawing has a block wall and the furring
+ * in front of it.
+ *
+ * The schedule preference above was written for precisely this geometry and
+ * fixes it when the span matches NOTHING — with a schedule of 8 and 1-1/2 the
+ * 9-1/2in span is on nothing and the block comes back correctly. It cannot help
+ * when the span lands within slack of a real type, and on the bench's own
+ * schedule it does: Mesa Ridge finds 298 ft of a 1,582 ft furring key, and the
+ * grader's per-wall diagnosis says both faces were read and measured 1.5in
+ * apart. They were read, they were right, and this took them.
+ *
+ * ── THE RULE, AND WHY IT IS BETTER EVIDENCE THAN THE SLACK ──
+ *
+ * A gap with a face inside it that divides it into two gaps the schedule ALSO
+ * names is two assemblies touching, not one wall. "9.125 is 7.625 plus 1.5, and
+ * all three are on the schedule" is a coincidence of three numbers; "9.125 is
+ * within a quarter inch of 8.875" is a coincidence of two. The decomposition
+ * wins, and it is why this asks for both halves rather than just a face in
+ * between — an ordinary layered wall has faces inside it whose gaps are NOT
+ * types, and must keep reading as one wall.
+ *
+ * Deliberately only consulted for a pair already wide enough to be two
+ * assemblies, so the O(n) scan inside the pairing loop runs rarely rather than
+ * on every candidate — this file's own note about `inAHatchSeries` and O(n^3)
+ * applies.
+ */
+function splitsIntoScheduledAssemblies(
+  order: readonly StrokeSegment[],
+  i: number,
+  j: number,
+  thicknessFeet: number,
+  options: WallFinderOptions,
+  knownIn: readonly number[],
+): boolean {
+  if (knownIn.length === 0) return false;
+  // ── A TIGHT MATCH IS BELIEVED, AND THIS IS THE WHOLE DISCRIMINATOR ──
+  //
+  // Both shapes decompose, so the decomposition alone cannot tell them apart:
+  //
+  //   block + furring   9.125 = 7.625 + 1.5     span is 0.25in off EXT-1
+  //   EXT-2 layered     8.125 = 1.5   + 6.625   span is EXACTLY 8.125
+  //
+  // The first version of this rule refused both and broke the window-broken
+  // exterior, which is a wall priced as the wrong assembly — the failure this
+  // file calls worse than not finding it. The test that caught it says in as
+  // many words that 6.625in is on its schedule deliberately, so the schedule
+  // "cannot rescue this case".
+  //
+  // What separates them is how well the SPAN matches. A thickness sitting
+  // exactly on the schedule is the drawing agreeing with the legend; one a
+  // quarter inch off is the slack doing the work, and slack plus a
+  // decomposition into two named types is weaker evidence than either alone
+  // looks. So the decomposition only overrides a LOOSE match.
+  const inches = thicknessFeet * 12;
+  const closest = Math.min(...knownIn.map((known) => Math.abs(known - inches)));
+  if (closest <= EXACT_SCHEDULE_IN) return false;
+  const a = order[i];
+  const b = order[j];
+  const span = perpendicularDistance(a, (b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2);
+  if (span <= 0) return false;
+  for (let k = 0; k < order.length; k += 1) {
+    if (k === i || k === j) continue;
+    const c = order[k];
+    const midX = (c.x1 + c.x2) / 2;
+    const midY = (c.y1 + c.y2) / 2;
+    const fromA = perpendicularDistance(a, midX, midY);
+    // STRICTLY BETWEEN, measured off the same face the span is. A face level
+    // with either end is one of the two faces again, not a divider.
+    if (!(fromA > 0 && fromA < span)) continue;
+    if (sideOf(a, c) !== sideOf(a, b)) continue;
+    const first = wallFromPair(a, c, options);
+    if (first === null || !isAKnownType(first.thicknessFeet, knownIn)) continue;
+    const second = wallFromPair(c, b, options);
+    if (second === null || !isAKnownType(second.thicknessFeet, knownIn)) continue;
+    return true;
+  }
+  return false;
+}
+
 function sideOf(of: StrokeSegment, other: StrokeSegment): number {
   const dx = of.x2 - of.x1;
   const dy = of.y2 - of.y1;
@@ -422,6 +523,15 @@ export function oneFacePerLine(
  * disagree in the second decimal.
  */
 export const KNOWN_SLACK_IN = 0.25;
+
+/**
+ * How close a measured thickness has to be to a scheduled one before the match
+ * is taken as the drawing AGREEING with the legend rather than the slack doing
+ * the work. 1/16in — tighter than a plotter's own line weight, so a real wall
+ * drawn at its stated thickness clears it and a coincidence at the edge of
+ * `KNOWN_SLACK_IN` does not. Used only by `splitsIntoScheduledAssemblies`.
+ */
+export const EXACT_SCHEDULE_IN = 0.0625;
 
 /** Is this thickness one of the types the company builds? */
 function isAKnownType(thicknessFeet: number, knownIn: readonly number[]): boolean {
@@ -786,6 +896,18 @@ export function wallsFromStrokes(
   );
   const order = [...usable].sort((a, b) => lengthOf(b) - lengthOf(a));
   const used = new Set<number>();
+  // ── WHICH SIDE OF EACH CLAIMED FACE IS SPOKEN FOR ──
+  //
+  // `used` says a face belongs to a wall. It does not say WHICH OF ITS TWO
+  // SIDES that wall is on, and a face has two — the near face of a block wall
+  // has the block behind it and furring in front. See `secondAssemblyPass`.
+  const claimedSides = new Map<number, Set<number>>();
+  const claimSide = (face: number, partner: number) => {
+    const side = sideOf(order[face], order[partner]);
+    const sides = claimedSides.get(face) ?? new Set<number>();
+    sides.add(side);
+    claimedSides.set(face, sides);
+  };
   const walls: WallCandidate[] = [];
 
   // REFUSED BEFORE ANY WORK, not part-way through. The pair count is known from
@@ -893,7 +1015,16 @@ export function wallsFromStrokes(
       // and it is worse than doing nothing — Mesa Ridge 58,438 ft found against
       // 59,538 before any of this.
       if (layerLine) continue;
-      const known = isAKnownType(wall.thicknessFeet, knownIn);
+      // A SPAN THAT DECOMPOSES INTO TWO SCHEDULED ASSEMBLIES IS NOT A WALL.
+      // Only asked of pairs wide enough for two assemblies to fit, because the
+      // scan is O(n) inside this loop; 6in is below the thinnest pair of
+      // scheduled types that could compose one.
+      const known =
+        isAKnownType(wall.thicknessFeet, knownIn) &&
+        !(
+          wall.thicknessFeet * 12 > 6 &&
+          splitsIntoScheduledAssemblies(order, i, j, wall.thicknessFeet, options, knownIn)
+        );
       if (known && (knownAnyWall === null || wall.thicknessFeet > knownAnyWall.thicknessFeet)) {
         knownAnyWall = wall;
         knownAnyJ = j;
@@ -924,11 +1055,112 @@ export function wallsFromStrokes(
     if (chosen !== null) {
       used.add(i);
       used.add(chosenJ);
+      claimSide(i, chosenJ);
+      claimSide(chosenJ, i);
       walls.push({ ...chosen, fromBalancedFaces: balanced });
     }
   }
 
+  walls.push(...secondAssemblyPass(order, walls, used, claimedSides, options));
+
   return oneWallPerPlace(walls, options.feetPerPoint);
+}
+
+/**
+ * The assembly on the OTHER side of a face the main loop already claimed.
+ *
+ * ── THE DEFECT, MEASURED NOT ARGUED ──
+ *
+ * 1-1/2in furring on 8in block is three parallel lines: the furring face F, the
+ * block's near face C, the block's far face D. Two of the three gaps are
+ * thicknesses this company builds — F-C is the furring, C-D is the block — and
+ * the pair across both (9-1/2in) is on nothing, which the schedule preference
+ * in the main loop already refuses.
+ *
+ * It still loses the furring, and the reason is `used`. Whichever of F or C the
+ * loop reaches first claims the other, and C is shared: once the block has
+ * taken C, F has no unclaimed partner left and is dropped. On the bench the
+ * block comes back correct — 1,408 ft of it, every foot graded out-of-scope
+ * because this sub does not lay block — and the furring in front of it, which
+ * IS their work, comes back at 298 ft against a key of 1,582.
+ *
+ * Diagnosed from the answer key's own words. 32 of 64 furring walls carry
+ * "only one face reached the reader, or the faces came back 1.5": both faces
+ * WERE read, the measurement WAS right, and the pair was thrown away.
+ *
+ * ── WHY A SECOND PASS AND NOT A FIX TO THE LOOP ──
+ *
+ * Because the loop is where this was tried before and it regressed the holdout
+ * by 1,514 ft. A pass that only ADDS cannot change any wall the loop already
+ * found: every existing number is reproduced by construction, so a measurement
+ * afterwards reads only what this introduced. That is worth more here than
+ * elegance.
+ *
+ * ── THE RULE ──
+ *
+ * A face may serve a second wall when that wall is on its OTHER SIDE. That is
+ * not a loosening of `used`, it is the physical fact `used` was eliding: a line
+ * on a drawing is a surface with a side facing each way, and what is built
+ * against one says nothing about the other.
+ *
+ * Three guards, each load-bearing:
+ *   - the thickness must be one the SCHEDULE names. Without it this would pair
+ *     any two thin coincidences on the sheet, which is the sweep the floor's
+ *     own comment records as making the holdout worse on both counts;
+ *   - neither face may be a LAYER LINE of a scheduled wall
+ *     (`enclosedByAScheduledWall`) — the inside of a wider assembly is not a
+ *     second assembly;
+ *   - and the side has to be FREE on both faces. Without that this re-finds the
+ *     wall the loop just built, from the other end.
+ *
+ * `oneWallPerPlace` is the backstop and it is not relied on here: its own
+ * header works the furring case out, noting a furring centreline sits outside
+ * the band of the wall it leans on and so survives. This pass is written to
+ * emit nothing that would need dropping.
+ */
+function secondAssemblyPass(
+  order: readonly StrokeSegment[],
+  found: readonly WallCandidate[],
+  used: ReadonlySet<number>,
+  claimedSides: ReadonlyMap<number, ReadonlySet<number>>,
+  options: WallFinderOptions,
+): WallCandidate[] {
+  const knownIn = options.knownThicknessesIn ?? [];
+  // WITHOUT A SCHEDULE THIS PASS DOES NOTHING, deliberately: the schedule is
+  // the only thing separating "two assemblies touching" from "two lines that
+  // happen to be close", and the finder has to behave exactly as before for a
+  // caller that has not read one.
+  if (knownIn.length === 0 || found.length === 0) return [];
+
+  const extra: WallCandidate[] = [];
+  const sideFree = (face: number, partner: number) =>
+    !(claimedSides.get(face)?.has(sideOf(order[face], order[partner])) ?? false);
+
+  for (let i = 0; i < order.length; i += 1) {
+    // Only a face the loop CLAIMED can have a free side worth revisiting; an
+    // unclaimed face was offered to the loop and refused on its merits.
+    if (!used.has(i)) continue;
+    for (let j = 0; j < order.length; j += 1) {
+      if (j === i) continue;
+      if (!sideFree(i, j) || !sideFree(j, i)) continue;
+      const wall = wallFromPair(order[i], order[j], options);
+      if (wall === null) continue;
+      // The schedule names it, and it is not the inside of something wider.
+      if (!isAKnownType(wall.thicknessFeet, knownIn)) continue;
+      if (
+        enclosedByAScheduledWall(order, i, j, options, knownIn) ||
+        enclosedByAScheduledWall(order, j, i, options, knownIn)
+      ) {
+        continue;
+      }
+      if (inAHatchSeries(order, i, j, options)) continue;
+      // Nothing already found or already added describes this place.
+      if (found.some((already) => foundTwice(already, wall, options.feetPerPoint))) continue;
+      if (extra.some((already) => foundTwice(already, wall, options.feetPerPoint))) continue;
+      extra.push({ ...wall, fromBalancedFaces: false });
+    }
+  }
+  return extra;
 }
 
 /**

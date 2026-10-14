@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
@@ -29,6 +30,7 @@ import { BidDefaultsForm } from "@/components/BidDefaultsForm";
 import { CompanyProfileForm } from "@/components/CompanyProfileForm";
 import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
 import { BusinessScopeSettingsForm } from "@/components/BusinessScopeSettingsForm";
+import { OpeningDeductionForm } from "@/components/OpeningDeductionForm";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
 import { QuickBooksReconcile } from "@/components/QuickBooksReconcile";
@@ -153,7 +155,7 @@ export default async function SettingsPage({
   if (currentUser.role !== "OWNER") {
     return (
       <PageShell width="reading">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
+        <PageHeader route="/settings" title="Settings" />
         {/* NAMES WHAT IS BEHIND THE DOOR. It said "Only the account owner
             can manage integrations", which describes ONE of this page's ten
             sections — the rest are the company profile that prints on the
@@ -262,6 +264,15 @@ export default async function SettingsPage({
     contractingRelationship: company.contractingRelationship,
     doesPublicWork: company.doesPublicWork,
     filesMonthlyPayApps: company.filesMonthlyPayApps,
+    // Carried so the form renders the CURRENT answer. Without it the question
+    // saves and then shows blank on the next load, which reads as a broken
+    // setting — this app's own "written and never called" shape, wearing a
+    // radio group.
+    openingDeduction: company.openingDeduction,
+    // Decimal -> number at the boundary, because this crosses into a client
+    // component and a Prisma Decimal is not serialisable as one.
+    openingDeductionSqFt:
+      company.openingDeductionSqFt == null ? null : Number(company.openingDeductionSqFt),
   };
 
   // Whether THIS install has QuickBooks' own client id/secret/redirect URI
@@ -301,7 +312,7 @@ export default async function SettingsPage({
     // a later phase. Widening it would have made that worse by stretching
     // every field.
     <PageShell width="reading">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Settings</h1>
+      <PageHeader route="/settings" title="Settings" />
 
       {/* The Integrations page is the framework's own surface; QuickBooks
           keeps its section below because it predates that framework and has
@@ -398,6 +409,22 @@ export default async function SettingsPage({
           by its own link, and you can change your answers any time.
         </p>
         <BusinessScopeSettingsForm scope={businessScope} isOwner={currentUser.role === "OWNER"} />
+      </section>
+
+      <section className="mb-10">
+        <h2 className="mb-3 text-sm font-semibold text-ink-label">How you take off board</h2>
+        {/* ── ITS OWN SECTION, NOT A FOURTH FIELD ABOVE ──
+            It was inside the setup questions and could not be saved: those
+            three radios are `required`, so the browser blocked the submit on a
+            different question until all three were answered. See
+            `OpeningDeductionForm.tsx`. Keeping it separate also reads better —
+            that section is about which MENUS you see, and this one changes a
+            quantity on a bid. */}
+        <OpeningDeductionForm
+          answer={businessScope.openingDeduction ?? null}
+          thresholdSqFt={businessScope.openingDeductionSqFt ?? null}
+          isOwner={currentUser.role === "OWNER"}
+        />
       </section>
 
       <section className="mb-10" data-tour="settings-quickbooks">

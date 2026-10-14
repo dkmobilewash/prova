@@ -1,4 +1,5 @@
 import { prisma } from "@prova/db";
+import { PageHeader } from "@/components/PageHeader";
 import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -75,10 +76,12 @@ export default async function WallTypesPage() {
 
   return (
     <PageShell width="working">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Wall types</h1>
+      <PageHeader
+        route="/wall-types"
+        subtitle="Your partition schedule: each wall type by its drawing tag, and what goes into a foot of it."
+      />
       <p className="mb-6 max-w-3xl text-sm text-ink-body">
-        Your partition schedule: each wall type by the tag the drawings give it, and what goes into a foot of it —
-        studs, track, board, insulation. On a job you enter each run of wall by its type, length and height, and the
+        On a job you enter each run of wall by its type, length and height, and the
         estimate&rsquo;s lines are worked out from these. Link a part to your price book to price it, and give it your
         crew&rsquo;s rate to get the hours.
       </p>

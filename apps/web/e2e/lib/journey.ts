@@ -38,7 +38,9 @@ export const JOB_TAB_STAGE: Record<string, JobStageKey> = {
   Takeoff: "estimate",
   "Contract signature": "contract",
   Overview: "contract",
-  "Change orders": "contract",
+  // "Change orders" stopped being a stage link 2026-10-12 (restore-nav):
+  // the estimate route is "Estimate" at every stage, and change orders are
+  // a Paperwork-panel row at /estimate#change-orders.
   Compliance: "contract",
   "Crew & time": "crew",
   "Field reports": "crew",
@@ -60,20 +62,48 @@ export function jobStageBox(page: Page, stage: JobStageKey): Locator {
   return jobStageNav(page).locator(`li[data-stage="${stage}"]`);
 }
 
-/**
- * A tab of the OPEN stage — the row of page links under the stage boxes
- * (`<ul aria-label="<Stage> pages">`). Only the open stage's row is in the
- * DOM, so this is a locator for a tab already on screen; `openJobTab` is
- * the way to reach one under another stage.
- */
-export function jobTab(page: Page, label: string): Locator {
-  return jobStageNav(page).getByRole("list", { name: / pages$/ }).getByRole("link", { name: label, exact: true });
+/** The job's tab row (components/job/JobSectionNav.tsx). */
+export function jobSectionNav(page: Page): Locator {
+  return page.getByRole("navigation", { name: "Job sections" });
 }
 
 /**
- * Open a tab by its label, the way a person does: if its stage is not the
- * open one, click the stage box (which goes to that stage's first page and
- * opens its row), then click the tab. Ends on the tab's own URL.
+ * One tab of the job's page row.
+ *
+ * ── THIS LOOKED IN THE WRONG PLACE FOR A DAY, AND SIX SPECS BLAMED THE APP ──
+ *
+ * It used to read `jobStageNav(page).getByRole("list", { name: / pages$/ })`,
+ * because the shell it was written against gave each stage its own row of
+ * pages INSIDE the stage boxes, `<ul aria-label="<Stage> pages">`, and put only
+ * the open stage's row in the DOM. #757 replaced that with ONE row listing
+ * every page of the job, in a sibling `<nav aria-label="Job sections">`.
+ *
+ * So the locator matched nothing, on a page that was rendering the tabs
+ * perfectly well. Six specs failed — the estimating desk, the job detail tabs,
+ * retainage, plan ingestion, on-screen takeoff — and every one of them read as
+ * "the Estimate tab is missing", which is exactly what somebody looking at the
+ * new UI had reported for other reasons. The product was never at fault:
+ * captured in the failure's own page snapshot, the row holds Overview,
+ * Estimate, Takeoff, Crew & time, Compliance, Field reports and Photos, each
+ * with the right href.
+ *
+ * The lesson is the repo's own and this is a fresh instance of it: a locator
+ * that stops matching does not say "I stopped matching", it says the thing it
+ * was looking for is gone. Read the page snapshot before believing the app
+ * broke.
+ */
+export function jobTab(page: Page, label: string): Locator {
+  return jobSectionNav(page).getByRole("link", { name: label, exact: true });
+}
+
+/**
+ * Open a tab by its label, the way a person does.
+ *
+ * The row lists every page of the job at once now (#757), so the tab is
+ * normally there to click. The stage-box step below is kept for the case the
+ * row genuinely does not carry it — a page gated on a capability or on the
+ * job's stage, like Billing before the contract — where clicking the stage is
+ * still how a person gets there. Ends on the tab's own URL.
  */
 export async function openJobTab(page: Page, label: string): Promise<void> {
   const stage = JOB_TAB_STAGE[label];
@@ -107,34 +137,30 @@ export async function openJobTab(page: Page, label: string): Promise<void> {
  * left out: they are doors to other pages, not pages of this job.
  */
 export async function allJobTabs(page: Page): Promise<Array<{ label: string; href: string }>> {
-  const tabs: Array<{ label: string; href: string }> = [];
+  // ── ONE ROW, READ ONCE ──
+  //
+  // This used to click each stage box in turn and read that stage's own row of
+  // pages, because the shell it was written against put only the open stage's
+  // row in the DOM. #757 replaced that with a single `<nav aria-label="Job
+  // sections">` carrying every page of the job, so the walk had nothing left to
+  // walk: the row it looked for, `<ul aria-label="<Stage> pages">`, no longer
+  // exists and the locator matched nothing.
+  //
+  // The stage boxes are still asserted, because they are still the thing that
+  // tells somebody where the job IS — they just no longer own the tabs.
   const boxes = jobStageNav(page).locator("li[data-stage]");
-  const count = await boxes.count();
-  expect(count, "a job should show its five stage boxes").toBe(5);
-  for (let i = 0; i < count; i++) {
-    const box = boxes.nth(i).getByRole("link");
-    if ((await box.count()) === 0) continue; // a stage with no pages yet is not a link
-    // The box links to the stage's first page; the row of that stage's pages
-    // renders in the same commit as the URL change. Reading the row before
-    // the URL moved read the PREVIOUS stage's row (run 38325255906: Takeoff
-    // four times over).
-    const href = (await box.getAttribute("href")) ?? "";
-    // A stage whose first page is not one of the job's own (Closeout links to
-    // /closeout, "all jobs") leaves the job page, and with it the stage nav;
-    // there is no row to read there. Same rule as the tab filter below.
+  expect(await boxes.count(), "a job should show its five stage boxes").toBe(5);
+
+  const row = jobSectionNav(page);
+  await expect(row, "the job's page row should be on screen").toBeVisible();
+  const links = row.getByRole("link");
+  const tabs: Array<{ label: string; href: string }> = [];
+  for (let i = 0; i < (await links.count()); i++) {
+    const href = (await links.nth(i).getAttribute("href")) ?? "";
+    // A destination that leaves the job (Closeout goes to /punch-lists for all
+    // jobs) is not one of the job's own pages.
     if (!href.startsWith("/jobs/")) continue;
-    const target = new URL(href, "http://x");
-    await box.click();
-    await page.waitForURL((url) => url.pathname === target.pathname && url.hash === target.hash);
-    const row = jobStageNav(page).getByRole("list", { name: / pages$/ });
-    await expect(row).toBeVisible();
-    const links = row.getByRole("link");
-    const n = await links.count();
-    for (let j = 0; j < n; j++) {
-      const href = (await links.nth(j).getAttribute("href")) ?? "";
-      if (!href.startsWith("/jobs/")) continue;
-      tabs.push({ label: (await links.nth(j).innerText()).trim(), href });
-    }
+    tabs.push({ label: (await links.nth(i).innerText()).trim(), href });
   }
   return tabs;
 }

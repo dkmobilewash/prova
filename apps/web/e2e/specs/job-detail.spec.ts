@@ -32,7 +32,7 @@ import { jobStageNav, jobTab, openJobTab } from "../lib/journey";
  *
  * MAIN's seeded job is IN_PROGRESS, not ESTIMATE, and MAIN is the OWNER,
  * so every tab the layout can offer is on the rail. The Estimate tab then
- * shows Change orders where an ESTIMATE-stage job shows "Line items
+ * shows change orders where an ESTIMATE-stage job shows "Line items
  * (estimate)" ((tabs)/estimate/page.tsx, the `isEstimateStage` branch).
  * The spec asserts that swap happened, so a regression in either direction
  * is caught, and this is not a heading that just went missing.
@@ -80,7 +80,13 @@ test("job detail: every tab renders its sections, in the rail's order, no crash"
   const tabs: Array<{ label: string; path: string; headings: string[]; absent?: string[] }> = [
     { label: "Takeoff", path: `${jobPath}/takeoff`, headings: ["Takeoff"] },
     {
-      label: "Change orders",
+      // THE TAB IS "Estimate" AT EVERY STAGE NOW (#757). It was "Change
+      // orders" once a job left ESTIMATE, and filing it under Contract by that
+      // name hid the estimate tools on a running job — the restore brief's own
+      // words. The PAGE is unchanged: on an IN_PROGRESS job it still leads with
+      // job costing and the change orders, and still has no estimate line-item
+      // editor, which is what the headings below check.
+      label: "Estimate",
       path: `${jobPath}/estimate`,
       headings: ["Job costing & WIP", "Change orders"],
       absent: ["Line items (estimate)"],

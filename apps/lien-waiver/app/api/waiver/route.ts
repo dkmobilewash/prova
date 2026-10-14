@@ -2,7 +2,7 @@ import { clientIp, rateStore } from "@/lib/rate-limit";
 import { isPublished, reviewStatus } from "@/lib/statutes/review";
 import { handleWaiverRequest, type WaiverRequestBody } from "@/lib/waiver-request";
 
-/** POST: make the PDF (and, the first time, email it). The rules are in
+/** POST: make the PDF and email it -- the only way it leaves the server. The rules are in
  * lib/waiver-request.ts; this file only adapts HTTP to them. */
 
 export const runtime = "nodejs";
@@ -25,13 +25,6 @@ export async function POST(request: Request) {
   if (result.kind === "error") {
     return Response.json({ error: result.error, fieldErrors: result.fieldErrors }, { status: result.status });
   }
-  return new Response(Buffer.from(result.pdf), {
-    status: 200,
-    headers: {
-      "content-type": "application/pdf",
-      "content-disposition": `attachment; filename="${result.filename}"`,
-      "x-email-status": result.emailStatus,
-      "cache-control": "no-store",
-    },
-  });
+  // JSON only, never the PDF: the PDF goes to the inbox and nowhere else.
+  return Response.json({ sentTo: result.to, notConfigured: result.notConfigured }, { headers: { "cache-control": "no-store" } });
 }

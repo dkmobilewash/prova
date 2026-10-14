@@ -24,8 +24,11 @@ export const LIMITS = {
   /** PDFs made per IP address per hour. Generous: a sub doing a month's
    * waivers for six jobs makes a dozen in a sitting. */
   pdfPerIpPerHour: 30,
-  /** Emails sent to one address per day. */
-  emailsPerAddressPerDay: 5,
+  /** Emails sent to one address per day. Was 5 while a returning browser
+   * downloaded without an email; since 2026-10-13 EVERY waiver is an
+   * email, so this is the sub's own daily ceiling too -- 20 covers a heavy
+   * pay-app day and still stops anyone using us to flood a stranger. */
+  emailsPerAddressPerDay: 20,
   /** "Notify me" sign-ups per IP per hour. */
   notifyPerIpPerHour: 5,
 } as const;
