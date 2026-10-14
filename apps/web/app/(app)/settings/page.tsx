@@ -44,6 +44,7 @@ import {
 import { serverToday } from "@/lib/serverToday";
 import { quickBooksConnectCardState, quickBooksSetup } from "@/lib/quickbooks-setup";
 import { ActionForm } from "@/components/ActionForm";
+import { Disclosure } from "@/components/Disclosure";
 import { ThemeSwitch } from "@/components/ThemeSwitch";
 
 export const metadata = { title: "Settings" };
@@ -611,9 +612,8 @@ export default async function SettingsPage({
           </ul>
         )}
 
-        <details className="rounded-lg border border-line-card bg-surface p-4">
-          <summary className="cursor-pointer text-sm font-medium text-ink-label">Add a location</summary>
-          <form action={createCompanyLocation} className="mt-4 flex flex-col gap-3">
+        <Disclosure summary="Add a location">
+          <form action={createCompanyLocation} className="flex flex-col gap-3">
             <div className="flex flex-wrap gap-3">
               <label className={labelClass}>
                 Type
@@ -666,7 +666,7 @@ export default async function SettingsPage({
               Add location
             </SubmitButton>
           </form>
-        </details>
+        </Disclosure>
       </section>
 
       <section id="licences" className="mb-10" data-tour="settings-licences">
@@ -801,9 +801,8 @@ export default async function SettingsPage({
           </ul>
         )}
 
-        <details className="rounded-lg border border-line-card bg-surface p-4">
-          <summary className="cursor-pointer text-sm font-medium text-ink-label">Add a policy</summary>
-          <form action={createInsurancePolicy} className="mt-4 flex flex-col gap-3">
+        <Disclosure summary="Add a policy">
+          <form action={createInsurancePolicy} className="flex flex-col gap-3">
             <div className="flex flex-wrap gap-3">
               <label className={labelClass}>
                 Type
@@ -846,7 +845,7 @@ export default async function SettingsPage({
               Add policy
             </SubmitButton>
           </form>
-        </details>
+        </Disclosure>
       </section>
 
       <section id="bonding" data-tour="settings-bonding">
@@ -902,9 +901,8 @@ export default async function SettingsPage({
           </ul>
         )}
 
-        <details className="rounded-lg border border-line-card bg-surface p-4">
-          <summary className="cursor-pointer text-sm font-medium text-ink-label">Add a bond</summary>
-          <ActionForm action={createBond} className="mt-4 flex flex-col gap-3">
+        <Disclosure summary="Add a bond">
+          <ActionForm action={createBond} className="flex flex-col gap-3">
             <div className="flex flex-wrap gap-3">
               <label className={labelClass}>
                 Type
@@ -953,7 +951,7 @@ export default async function SettingsPage({
               Add bond
             </SubmitButton>
           </ActionForm>
-        </details>
+        </Disclosure>
       </section>
 
       <section id="appearance" className="mt-10">
