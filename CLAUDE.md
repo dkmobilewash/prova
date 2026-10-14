@@ -898,6 +898,37 @@ anything about SIZE.
   page's own `dpl=` as the second witness. One of those two alone is what this
   cost.
 
+  **WHAT THE LIMIT ACTUALLY IS, measured rather than inherited.** It was first
+  diagnosed in Slack as the Hobby *daily* deploy cap. It is not: only **17
+  deployments existed in the 24 hours before the refusal**, and all of that
+  day's nineteen sit inside a four-and-a-half-hour window, six of them in the
+  hour before it. So it is a BURST limit. The account is `plan: "hobby"` with
+  `concurrentBuilds: 1` and `softBlock: null` (from `get_auth_user`), and Vercel
+  does not publish the threshold — so do not write a number here.
+
+  Two consequences worth more than the diagnosis:
+
+    - **A direct deployment request still works while pushes are being
+      refused.** `create_deployment` with a `gitSource` was accepted 33 minutes
+      into the refusal and went live normally. That is the way to ship a merge
+      the integration has dropped, and it builds rather than promotes, so
+      `check-schema.mjs` still runs.
+    - **Every commit was building BOTH projects**, because neither
+      `vercel.json` had an `ignoreCommand`. Over `main`'s last 30 commits, 27
+      changed nothing `apps/lien-waiver` depends on — nine builds in ten spent
+      rebuilding a marketing tool whose files had not moved, while the product's
+      own merges were refused for going too fast. `apps/lien-waiver/vercel.json`
+      now skips those; `apps/lien-waiver/lib/deployTrigger.test.ts` carries the
+      reasoning, because `vercel.json` cannot hold a comment and the polarity is
+      invertible in a way that fails silently.
+
+  **`apps/web` DELIBERATELY HAS NO `ignoreCommand`, and that asymmetry is the
+  point.** A skipped build leaves the previous deployment serving, so a project
+  that skips can legitimately sit behind `main` — which is indistinguishable, on
+  the `dpl=` check above, from the deploy failure that produced this entry. The
+  saving is taken only where being a commit behind costs nothing. The test pins
+  it so nobody optimises the product's deploys into that ambiguity.
+
 - **A 503 ON A SAVE IN THE FIRST MINUTES AFTER A DEPLOY IS THE ALIAS SWAP,
   NOT YOUR CODE — AND THE WRITE STILL LANDS.** 2026-10-13, reported twice by
   browser click-throughs of the same form, each run started within minutes of

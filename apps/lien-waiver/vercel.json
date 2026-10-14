@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- :/apps/lien-waiver :/pnpm-lock.yaml :/package.json",
   "installCommand": "pnpm install --frozen-lockfile --filter @prova/lien-waiver...",
   "buildCommand": "next build",
   "framework": "nextjs"
