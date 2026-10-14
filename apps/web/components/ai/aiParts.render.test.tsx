@@ -175,8 +175,8 @@ describe("Running now", () => {
     );
     const again = Array.from(container.querySelectorAll("[data-agent]"));
     expect(again.map((b) => [b.getAttribute("data-agent"), b.textContent])).toEqual([["BID_RESEARCH", "Run again"]]);
-    expect(container.querySelector('a[href="/ai/activity#cap"]')?.textContent).toContain("See the spend cap");
-    expect(container.querySelector('a[href="/ai/activity#agent-switches"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/ai/activity?tab=settings#cap"]')?.textContent).toContain("See the spend cap");
+    expect(container.querySelector('a[href="/ai/activity?tab=settings#agent-switches"]')).not.toBeNull();
     expect(container.querySelector('a[href="/settings/assistant#ai-switch"]')).not.toBeNull();
   });
 });

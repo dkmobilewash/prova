@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { SeverityDot } from "@/components/ai-bid/parts";
 import { RestoreFindingButton } from "@/components/ai-activity/RestoreFindingButton";
-import type { ActivityDay } from "@/components/ai-activity/activity";
+import { Disclosure } from "@/components/Disclosure";
+import { groupConsecutive, type ActivityDay, type ActivityItem } from "@/components/ai-activity/activity";
 
 /** The filter chips, in the order the agents run in a morning. */
 export const AGENT_FILTERS = [
@@ -74,42 +75,69 @@ export function ActivityTimeline({ days, agent, zone }: { days: ActivityDay[]; a
           <section key={day.key} className="mt-5" aria-label={day.label}>
             <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">{day.label}</h3>
             <ol className="mt-2">
-              {day.items.map((item) => {
-                const body = (
-                  <>
-                    <span className="w-[4.5rem] shrink-0 pt-px text-sm tabular-nums text-ink-muted">
-                      <time dateTime={item.at.toISOString()}>{time.format(item.at)}</time>
-                    </span>
-                    <SeverityDot severity={item.severity} />
-                    <span className="min-w-0 flex-1">
-                      <span className={`font-semibold ${item.dismissedFindingId ? "text-ink-muted line-through" : "text-ink"}`}>{item.title}</span>{" "}
-                      <span className="whitespace-nowrap text-sm text-ink-muted">{shortLabel(item.agent)}</span>
-                      {item.dismissedFindingId && <span className="ml-2 rounded-full bg-rail-hover px-2 py-0.5 text-xs font-semibold text-ink-body">{item.markedWrong ? "Marked not right" : "Dismissed"}</span>}
-                      {item.detail && <span className="mt-0.5 block break-words text-sm text-ink-body">{item.detail}</span>}
-                    </span>
-                  </>
-                );
-                return (
-                  <li key={item.id} className="border-t border-line-row first:border-t-0">
-                    {item.href ? (
-                      <Link href={item.href} className="-mx-2 flex gap-3 rounded-lg px-2 py-2.5 hover:bg-rail-hover">
-                        {body}
-                      </Link>
-                    ) : (
-                      <div className="flex gap-3 py-2.5">{body}</div>
-                    )}
-                    {item.dismissedFindingId && (
-                      <div className="pb-2.5 pl-[6.25rem]">
-                        <RestoreFindingButton findingId={item.dismissedFindingId} />
-                      </div>
-                    )}
+              {groupConsecutive(day.items).map((entry) =>
+                "items" in entry ? (
+                  <li key={entry.id} className="border-t border-line-row first:border-t-0" data-activity-group>
+                    <Disclosure
+                      variant="row"
+                      name="activity-group"
+                      summary={
+                        <>
+                          <span className="w-[4.5rem] shrink-0 text-sm tabular-nums text-ink-muted">
+                            <time dateTime={entry.items[0].at.toISOString()}>{time.format(entry.items[0].at)}</time>
+                          </span>
+                          <SeverityDot severity={entry.items[0].severity} />
+                          <span className="min-w-0 flex-1">
+                            <span className="font-semibold text-ink">{entry.label}</span>{" "}
+                            <span className="whitespace-nowrap text-sm text-ink-muted">{shortLabel(entry.items[0].agent)}</span>
+                          </span>
+                        </>
+                      }
+                    >
+                      <ol>{entry.items.map(row)}</ol>
+                    </Disclosure>
                   </li>
-                );
-              })}
+                ) : (
+                  row(entry)
+                ),
+              )}
             </ol>
           </section>
         ))
       )}
     </section>
   );
+
+  function row(item: ActivityItem) {
+    const body = (
+      <>
+        <span className="w-[4.5rem] shrink-0 pt-px text-sm tabular-nums text-ink-muted">
+          <time dateTime={item.at.toISOString()}>{time.format(item.at)}</time>
+        </span>
+        <SeverityDot severity={item.severity} />
+        <span className="min-w-0 flex-1">
+          <span className={`font-semibold ${item.dismissedFindingId ? "text-ink-muted line-through" : "text-ink"}`}>{item.title}</span>{" "}
+          <span className="whitespace-nowrap text-sm text-ink-muted">{shortLabel(item.agent)}</span>
+          {item.dismissedFindingId && <span className="ml-2 rounded-full bg-rail-hover px-2 py-0.5 text-xs font-semibold text-ink-body">{item.markedWrong ? "Marked not right" : "Dismissed"}</span>}
+          {item.detail && <span className="mt-0.5 block break-words text-sm text-ink-body">{item.detail}</span>}
+        </span>
+      </>
+    );
+    return (
+      <li key={item.id} className="border-t border-line-row first:border-t-0">
+        {item.href ? (
+          <Link href={item.href} className="-mx-2 flex gap-3 rounded-lg px-2 py-2.5 hover:bg-rail-hover">
+            {body}
+          </Link>
+        ) : (
+          <div className="flex gap-3 py-2.5">{body}</div>
+        )}
+        {item.dismissedFindingId && (
+          <div className="pb-2.5 pl-[6.25rem]">
+            <RestoreFindingButton findingId={item.dismissedFindingId} />
+          </div>
+        )}
+      </li>
+    );
+  }
 }
