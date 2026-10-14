@@ -1,3 +1,4 @@
+import { isValidElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -65,6 +66,7 @@ const LAKESHORE = {
 vi.mock("@/lib/closeout-query", () => ({ loadCloseoutJobs: vi.fn(async () => [LAKESHORE, RIVERSIDE]) }));
 
 const { default: CloseoutPage } = await import("@/app/(app)/closeout/page");
+const { CloseoutJobCard } = await import("@/components/CloseoutJobCard");
 
 async function render(all?: string) {
   return renderToStaticMarkup(await CloseoutPage({ searchParams: Promise.resolve(all ? { all } : {}) }));
@@ -98,5 +100,30 @@ describe("/closeout", () => {
     expect(html.split("2 required documents outstanding").length - 1).toBe(1);
     expect(html).not.toContain("Holding it up");
     expect(html).not.toContain("documents still outstanding");
+  });
+
+  it("hands each job's card no element built inside the .map", async () => {
+    // A client element made inside the server page's `.map` and passed as a
+    // prop arrives keyless in the card's children, and React warns "Each
+    // child in a list should have a unique key prop" (the after-pass saw it
+    // at page.tsx:173, `packageSlot={<CloseoutPackagePanel …/>}`). The card
+    // takes the package's DATA and builds the panel itself.
+    const cards: ReactElement<Record<string, unknown>>[] = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (!isValidElement(node)) return;
+      const el = node as ReactElement<Record<string, unknown>>;
+      if (el.type === CloseoutJobCard) cards.push(el);
+      Object.values(el.props ?? {}).forEach(walk);
+    };
+    walk(await CloseoutPage({ searchParams: Promise.resolve({ all: "1" }) }));
+    expect(cards.length, "found every job's card").toBe(2);
+    for (const card of cards) {
+      for (const [prop, value] of Object.entries(card.props)) {
+        expect(isValidElement(value), `CloseoutJobCard prop "${prop}" is an element`).toBe(false);
+      }
+      expect(card.props.pkg, "the package section still reaches the card").toBeTruthy();
+    }
+    expect(await render()).toContain('data-tour="closeout-package"');
   });
 });

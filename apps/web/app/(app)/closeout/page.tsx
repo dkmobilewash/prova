@@ -4,7 +4,6 @@ import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { CloseoutJobCard } from "@/components/CloseoutJobCard";
-import { CloseoutPackagePanel } from "@/components/CloseoutPackagePanel";
 import { blockerLabel, plural, stageLabel } from "@/components/closeoutPackageLabels";
 import {
   isOpen,
@@ -169,14 +168,10 @@ export default async function CloseoutPage({
                   <CloseoutJobCard
                     job={job}
                     today={today}
-                    packageSlot={
-                      <CloseoutPackagePanel
-                        jobId={job.id}
-                        readiness={showsMoney ? job.readiness : { ...job.readiness, retainageAtStake: 0 }}
-                        submissions={job.submissions}
-                        canDelete={currentUser.role === "OWNER"}
-                      />
-                    }
+                    pkg={{
+                      readiness: showsMoney ? job.readiness : { ...job.readiness, retainageAtStake: 0 },
+                      submissions: job.submissions,
+                    }}
                     canDelete={currentUser.role === "OWNER"}
                   />
                 </Disclosure>

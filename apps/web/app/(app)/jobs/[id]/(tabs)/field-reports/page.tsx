@@ -65,6 +65,12 @@ export default async function JobFieldReportsPage({
   const reportWeather = await refreshReportWeather(job, job.dailyFieldReports);
   const reportManpower = await loadManpower(job.id, job.dailyFieldReports.map((r) => r.reportDate));
   const timeZone = await viewerTimeZone();
+  // Reports whose free-text "Delays" note is filled — they carry the Delay
+  // tag without being in the delay log, so an empty log names them. Counted
+  // over every report, not just the shown window.
+  const reportsMentioningDelay = await prisma.dailyFieldReport.count({
+    where: { jobId: job.id, delays: { not: null }, NOT: { delays: "" } },
+  });
   const delayDays = new Set(job.delayEvents.map((d) => d.date.toISOString().slice(0, 10)));
 
   // Days with a live timesheet sign-off — the delay log shows the same
@@ -123,6 +129,7 @@ export default async function JobFieldReportsPage({
         parties={RESPONSIBLE_PARTIES}
         methods={NOTIFICATION_METHODS}
         canDraftChangeOrder={jobRef.status !== "ESTIMATE"}
+        reportsMentioningDelay={reportsMentioningDelay}
         delays={job.delayEvents.map((d) => ({
           id: d.id,
           dateLabel: formatCalendarDate(d.date),

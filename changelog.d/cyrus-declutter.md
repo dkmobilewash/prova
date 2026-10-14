@@ -61,3 +61,18 @@ cleanly. Noted, not started. `estimate/page.tsx:566` still links bare
 Reachability census and theme-contrast census green on the merged branch;
 nothing a user could reach before is unreachable now (tab, disclosure or
 See all for each).
+
+**Follow-ups from the after-pass.** `/closeout`'s key warning: the page built
+a `<CloseoutPackagePanel>` inside its `.map` and handed it to the card as a
+prop, so it reached the card's children with no key; the card now takes the
+package's data and builds the panel itself (a test walks the page's tree and
+fails on any element prop). The Apprenticeships tab's empty state said "the
+ratio review above" — it links to the This month tab now. Job → Field
+reports: an empty delay log beside reports tagged Delay (the tag also reads a
+report's free-text note) now says "Nothing in the delay log yet — N field
+reports mention a delay in their notes" instead of "No delays logged"; the
+count is over every report, not the shown window, and no data changed.
+Settings → Company: the gap box names each gap and its consequence is said
+once, under the field that fixes it — the auto-generated-name sentence was on
+the first screen twice. `/pipeline`: the "past the deadline and never sent"
+badge is gone; the standing line that names the bid says it once, in red.

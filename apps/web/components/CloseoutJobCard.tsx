@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition, type ReactNode } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   addCloseoutItem,
@@ -34,6 +34,8 @@ import { localToday } from "@/components/localToday";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { jobPickerLabel } from "@/components/jobLabels";
 import { Spinner } from "@/components/Spinner";
+import { CloseoutPackagePanel, type CloseoutSubmissionData } from "@/components/CloseoutPackagePanel";
+import type { CloseoutReadiness } from "@/lib/closeout-readiness";
 
 export type CloseoutJobData = {
   id: string;
@@ -60,16 +62,17 @@ export function CloseoutJobCard({
   job,
   today,
   canDelete,
-  /** Rendered above the checklist. The closeout-package section lives in
-   * its own component (CloseoutPackagePanel) and is passed in rather than
-   * built here, so this card stays the checklist/warranty/callbacks card
-   * it already was. */
-  packageSlot,
+  /** The closeout-package section, rendered above the checklist by its own
+   * component (CloseoutPackagePanel). Passed as DATA, not as an element:
+   * /closeout builds one card per job inside a `.map`, and a client element
+   * made there and handed over as a prop arrives keyless inside this card's
+   * children — React's "Each child in a list should have a unique key". */
+  pkg,
 }: {
   job: CloseoutJobData;
   today: string;
   canDelete: boolean;
-  packageSlot?: ReactNode;
+  pkg?: { readiness: CloseoutReadiness; submissions: CloseoutSubmissionData[] };
 }) {
   const [openForm, setOpenForm] = useState<"none" | "item" | "warranty" | "request">("none");
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -140,7 +143,14 @@ export function CloseoutJobCard({
         </span>
       </div>
 
-      {packageSlot}
+      {pkg && (
+        <CloseoutPackagePanel
+          jobId={job.id}
+          readiness={pkg.readiness}
+          submissions={pkg.submissions}
+          canDelete={canDelete}
+        />
+      )}
 
       {/* ------------------------------------------------------ checklist */}
       <section data-tour="closeout-checklist">

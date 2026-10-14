@@ -69,6 +69,9 @@ export default async function PipelinePage() {
   // apart, because they want different people.
   const standings = bidStandings(live, today);
   const lines = standingLines(standings);
+  // The same function's sentence for the missed bids alone, so the page can
+  // pick that line out of `lines` without matching on its wording.
+  const missedLine = standingLines({ dueSoon: [], missed: standings.missed, cold: [] })[0] ?? null;
   // ── AND THE WEEKS WITH TOO MUCH IN THEM ──
   //
   // `standingLines` is about bids that are already late or already cold. This
@@ -149,21 +152,24 @@ export default async function PipelinePage() {
           <section className="mb-8" data-tour="pipeline-waiting">
             <div className="mb-3 flex items-baseline gap-3">
               <h2 className="text-sm font-medium text-ink-label">Waiting on us</h2>
-              {standings.missed.length > 0 && (
-                <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">
-                  {standings.missed.length} past the deadline and never sent
-                </span>
-              )}
             </div>
 
             {/* ONE LINE PER THING THAT WANTS DOING, above the list rather than
-                beside a row: each is about the desk, not about one bid. */}
+                beside a row: each is about the desk, not about one bid. The
+                missed-deadline line is the one state that is actually wrong,
+                so it is the red one — it used to be a red badge saying the
+                same count again directly above it (declutter follow-up). */}
             {lines.length + crowding.length > 0 && (
               <ul data-pipeline="standings" className="mb-3 flex flex-col gap-1">
                 {[...lines, ...crowding].map((line) => (
                   <li
                     key={line}
-                    className="rounded-md border border-line-card bg-surface p-2 text-xs text-ink-body"
+                    data-pipeline-missed={line === missedLine ? "" : undefined}
+                    className={`rounded-md border p-2 text-xs ${
+                      line === missedLine
+                        ? "border-transparent bg-tag-rose text-tag-rose-ink"
+                        : "border-line-card bg-surface text-ink-body"
+                    }`}
                   >
                     {line}
                   </li>

@@ -54,6 +54,7 @@ export function DelayLog({
   parties,
   methods,
   canDraftChangeOrder,
+  reportsMentioningDelay = 0,
 }: {
   jobId: string;
   delays: DelayView[];
@@ -62,6 +63,10 @@ export function DelayLog({
   methods: Option[];
   /** False while the job is an estimate: there is no contract to change. */
   canDraftChangeOrder: boolean;
+  /** Field reports on this job whose free-text "Delays" note is filled in.
+   * Those carry the Delay tag on their row without being in this log, so an
+   * empty log has to say so rather than read "no delays" beside them. */
+  reportsMentioningDelay?: number;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -242,7 +247,12 @@ export function DelayLog({
 
       {delays.length === 0 ? (
         <p className="text-sm text-ink-body">
-          No delays logged. Log each one with its cause, who caused it, the crew-hours it cost and who at the GC
+          {reportsMentioningDelay > 0
+            ? `Nothing in the delay log yet — ${reportsMentioningDelay} field ${
+                reportsMentioningDelay === 1 ? "report mentions a delay in its" : "reports mention a delay in their"
+              } notes (the Delay tag on the reports below). `
+            : "No delays logged. "}
+          Log each one with its cause, who caused it, the crew-hours it cost and who at the GC
           you told — that record is what a change order or a delay claim is built from.
         </p>
       ) : (
