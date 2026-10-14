@@ -10,7 +10,8 @@ import { money } from "@/lib/money";
 import { SendDigestButton } from "@/components/SendDigestButton";
 import { sendMyAlertDigest } from "@/lib/actions/notifications";
 import { viewerToday } from "@/lib/viewerToday";
-import { StatusLine } from "@/components/StatusLine";
+import { Disclosure } from "@/components/Disclosure";
+import { CollapsedForm } from "@/components/CollapsedForm";
 import { alertsStatus } from "@/lib/status-sentences";
 
 export const metadata = { title: "Alerts" };
@@ -65,31 +66,45 @@ export default async function AlertsPage({
       <PageHeader
         route="/alerts"
         subtitle="Everything with a date on it that nobody has dealt with — worst first, then most money first."
+        actions={
+          currentUser.email && (
+            // One small button in the header; the card (who it goes to, the
+            // real send button) opens under it. Density audit #17.
+            <div data-tour="alerts-email" data-alerts="email">
+              <CollapsedForm label="Email these to me" tone="secondary">
+                <SendDigestButton
+                  sendMyAlertDigest={sendMyAlertDigest}
+                  recipientEmail={currentUser.email}
+                />
+              </CollapsedForm>
+            </div>
+          )
+        }
       />
-      <p className="mb-6 text-xs text-ink-muted">
-        Nothing here is stored. Every line is derived from the record it is
-        about, every time this page loads — so fixing the thing removes the
-        alert, and no alert can go stale against the data underneath it.{" "}
-        <span className="text-ink-body">These can now be emailed to you</span>,
-        once per thing per stage — not once a day until you deal with it. Fixing
-        the thing is what stops the reminders.
-      </p>
-
-      <StatusLine report={status} />
-
-      {currentUser.email && (
-        <div className="mb-6" data-tour="alerts-email">
-          <SendDigestButton
-            sendMyAlertDigest={sendMyAlertDigest}
-            recipientEmail={currentUser.email}
-          />
-        </div>
-      )}
+      <Disclosure variant="plain" className="mb-6" summary="How this list works · nothing stored, emailed once per stage">
+        <p className="text-xs text-ink-muted">
+          Nothing here is stored. Every line is derived from the record it is
+          about, every time this page loads — so fixing the thing removes the
+          alert, and no alert can go stale against the data underneath it.{" "}
+          <span className="text-ink-body">These can now be emailed to you</span>,
+          once per thing per stage — not once a day until you deal with it. Fixing
+          the thing is what stops the reminders.
+        </p>
+      </Disclosure>
 
       <div className="mb-3 flex items-center justify-between" data-tour="alerts-silenced">
-        <h2 className="text-sm font-semibold text-ink-label">
-          {rows.length} {showSilenced ? "silenced" : "needing attention"}
-        </h2>
+        <div>
+          <h2 className="text-sm font-semibold text-ink-label">
+            {rows.length} {showSilenced ? "silenced" : "needing attention"}
+          </h2>
+          {/* The breakdown, as plain words beside the count — it was a red
+              banner restating the same list above it (density audit #17). */}
+          {!showSilenced && (
+            <p data-alerts="breakdown" className="text-xs text-ink-muted">
+              {status.problems.length > 0 ? status.problems.map((p) => p.text).join(" ") : status.quiet}
+            </p>
+          )}
+        </div>
         <Link
           href={showSilenced ? "/alerts" : "/alerts?show=silenced"}
           className="inline-flex min-h-11 items-center text-sm text-link mouse:min-h-0"
