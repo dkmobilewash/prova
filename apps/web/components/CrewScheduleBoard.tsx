@@ -6,6 +6,7 @@ import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
 import { useLocalToday } from "@/components/localToday";
 import { primaryActionClass } from "@/components/emptyStateStyles";
+import { Disclosure } from "@/components/Disclosure";
 import { dayLabel } from "@/components/fieldReportWeeks";
 import { blocksImplicitSubmit } from "@/lib/crew-schedule";
 import { moveCrewDay, scheduleCrewDay, unscheduleCrewDay } from "@/lib/actions";
@@ -287,6 +288,14 @@ export function CrewScheduleBoard({
     return acc;
   }, {});
   const dates = Object.keys(byDate).sort();
+  const twoWeekList =
+    dates.length === 0 ? null : (
+      <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+        {dates.map((date) => (
+          <DayGroup key={date} date={date} days={byDate[date]} jobs={jobs} canWrite={canWrite} onMoved={setSaved} />
+        ))}
+      </ul>
+    );
 
   return (
     <>
@@ -465,10 +474,39 @@ export function CrewScheduleBoard({
           </p>
         )}
 
-        {week}
-
-        <h3 className="mb-2 text-base font-semibold text-ink">Next two weeks, as a list</h3>
-        {dates.length === 0 ? (
+        {/* ONE view of the next two weeks per screen size, not both
+            (density audit #16: the grid was followed by the same days again
+            as a list). The grid at md and up; the list on a phone, where a
+            7-column table only scrolls sideways. Each width keeps the other
+            view one click away, because each carries something the other
+            lacks: the list holds Move and Remove, the grid holds the
+            previous/next-week links. The copy for the other width is
+            display:none, so nobody — screen readers included — meets it
+            twice. */}
+        <div className="hidden md:block">
+          {week}
+          {twoWeekList && (
+            <Disclosure
+              summary={`Move or take someone off · ${upcoming.length} planned ${upcoming.length === 1 ? "day" : "days"} in the next two weeks`}
+            >
+              {twoWeekList}
+            </Disclosure>
+          )}
+        </div>
+        <div className="md:hidden">
+          {twoWeekList && (
+            <>
+              <h3 className="mb-2 text-base font-semibold text-ink">Next two weeks</h3>
+              {twoWeekList}
+            </>
+          )}
+          {week && (
+            <Disclosure summary="Week board, by job" className="mt-4">
+              {week}
+            </Disclosure>
+          )}
+        </div>
+        {dates.length === 0 && (
           <div className="rounded-lg border border-line-card bg-surface p-6">
             <p className="text-ink-label">Nobody is on the schedule for the next two weeks.</p>
             <p className="mt-2 max-w-xl text-sm text-ink-body">
@@ -493,19 +531,6 @@ export function CrewScheduleBoard({
               </div>
             )}
           </div>
-        ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
-            {dates.map((date) => (
-              <DayGroup
-                key={date}
-                date={date}
-                days={byDate[date]}
-                jobs={jobs}
-                canWrite={canWrite}
-                onMoved={setSaved}
-              />
-            ))}
-          </ul>
         )}
       </section>
 
@@ -525,66 +550,72 @@ export function CrewScheduleBoard({
             </p>
           </div>
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
-            {missingHours.map((day) => (
-              <li key={day.id} className="flex items-start justify-between gap-3 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="text-sm text-ink">
-                    {day.worker}
-                    <span className="text-ink-muted"> · {dayLabel(day.workDate)}</span>
-                  </p>
-                  <p className="text-xs text-ink-body">
-                    <Link href={`/jobs/${day.jobId}`} className="underline hover:text-link">
-                      {day.jobName}
-                    </Link>
-                    <span className="text-ink-muted">
-                      {" "}
-                      — planned, and nobody logged hours. That is a gap in the paperwork, not a claim
-                      that they did not work.
-                    </span>
-                  </p>
-                </div>
-                {/* A day that has already gone by can be taken off the
-                    schedule HERE, and nowhere else in the product — which
-                    is the whole reason this control exists. Removal lived
-                    only on the two-week list above, so a plan entered by
-                    mistake, or one for a job that was called off, could be
-                    made and never unmade: the day aged out of the top list
-                    and stayed on the record with nothing anywhere able to
-                    correct it.
+          // A count line, the rows behind it (density audit #16). The
+          // sentence that keeps this list honest is said ONCE, inside, not
+          // repeated on every row.
+          <Disclosure
+            summary={`${missingHours.length} planned ${missingHours.length === 1 ? "day" : "days"} with no hours`}
+          >
+            <p className="mb-3 max-w-xl text-sm text-ink-body">
+              Planned, and nobody logged hours. That is a gap in the paperwork, not a claim that they
+              did not work.
+            </p>
+            <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+              {missingHours.map((day) => (
+                <li key={day.id} className="flex items-start justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm text-ink">
+                      {day.worker}
+                      <span className="text-ink-muted"> · {dayLabel(day.workDate)}</span>
+                    </p>
+                    <p className="text-xs text-ink-body">
+                      <Link href={`/jobs/${day.jobId}`} className="underline hover:text-link">
+                        {day.jobName}
+                      </Link>
+                    </p>
+                  </div>
+                  {/* A day that has already gone by can be taken off the
+                      schedule HERE, and nowhere else in the product — which
+                      is the whole reason this control exists. Removal lived
+                      only on the two-week list above, so a plan entered by
+                      mistake, or one for a job that was called off, could be
+                      made and never unmade: the day aged out of the top list
+                      and stayed on the record with nothing anywhere able to
+                      correct it.
 
-                    The objection to putting it here is real, and it is
-                    answered in the sentence rather than by leaving people
-                    stuck: this is a gap report, so a Remove on it could be
-                    used to make a gap disappear. `describe` therefore says
-                    exactly what removal does and does not do — it unmakes
-                    the PLAN, it does not record the HOURS, and the row
-                    leaves this list because nobody is planned on that day
-                    any more. Same capability as every other change on this
-                    page (MANAGE_FIELD, asserted in the action itself),
-                    same two-step confirm, and no logged hours are touched
-                    because by definition there are none. */}
-                {canWrite && (
-                  <RowActions
-                    className="flex shrink-0 flex-col items-end gap-1"
-                    destructive={
-                      <ConfirmDelete
-                        label="Remove"
-                        confirmLabel="Remove it"
-                        describe={`Takes ${day.worker} off ${day.jobName} on ${dayLabel(day.workDate)}, a day that has already gone by. It records no hours: the row leaves this list because nobody is planned on that day any more, not because the hours were logged.`}
-                        pinned="end"
-                        action={async () => {
-                          await unscheduleCrewDay(day.id);
-                        }}
-                        armedClassName="flex flex-wrap items-center justify-end gap-2"
-                        deleteClassName="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-danger"
-                      />
-                    }
-                  />
-                )}
-              </li>
-            ))}
-          </ul>
+                      The objection to putting it here is real, and it is
+                      answered in the sentence rather than by leaving people
+                      stuck: this is a gap report, so a Remove on it could be
+                      used to make a gap disappear. `describe` therefore says
+                      exactly what removal does and does not do — it unmakes
+                      the PLAN, it does not record the HOURS, and the row
+                      leaves this list because nobody is planned on that day
+                      any more. Same capability as every other change on this
+                      page (MANAGE_FIELD, asserted in the action itself),
+                      same two-step confirm, and no logged hours are touched
+                      because by definition there are none. */}
+                  {canWrite && (
+                    <RowActions
+                      className="flex shrink-0 flex-col items-end gap-1"
+                      destructive={
+                        <ConfirmDelete
+                          label="Remove"
+                          confirmLabel="Remove it"
+                          describe={`Takes ${day.worker} off ${day.jobName} on ${dayLabel(day.workDate)}, a day that has already gone by. It records no hours: the row leaves this list because nobody is planned on that day any more, not because the hours were logged.`}
+                          pinned="end"
+                          action={async () => {
+                            await unscheduleCrewDay(day.id);
+                          }}
+                          armedClassName="flex flex-wrap items-center justify-end gap-2"
+                          deleteClassName="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-danger"
+                        />
+                      }
+                    />
+                  )}
+                </li>
+              ))}
+            </ul>
+          </Disclosure>
         )}
       </section>
     </>
