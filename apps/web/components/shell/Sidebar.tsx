@@ -8,6 +8,7 @@ import { AreaIcon } from "@/components/areas/AreaParts";
 import { AREAS, pagesByArea, toolRoute } from "@/lib/areas";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import type { Principal } from "@/lib/permissions";
+import { accentFor } from "@/components/areaAccent";
 
 /**
  * The desktop page list (≥ lg), back on 2026-10-12 — restore-brief.md item 1.
@@ -145,10 +146,11 @@ export function Sidebar({
           </svg>
         </button>
       </div>
-      <div className="flex flex-col gap-1 px-2 pb-4">
+      <div className="flex flex-col gap-2 px-2 pb-4">
         {groups.map((group, index) => {
           const open = isOpen(group.heading);
           const listId = `sidebar-group-${index}`;
+          const accent = accentFor(group.heading);
           return (
             <section key={group.heading} data-nav-group={group.heading} className={group.heading === "Account" ? "mt-3 border-t border-line-row pt-3" : ""}>
               <button
@@ -157,22 +159,29 @@ export function Sidebar({
                 aria-controls={listId}
                 title={collapsed ? group.heading : group.description}
                 onClick={() => update({ ...saved, open: { ...saved.open, [group.heading]: !open } })}
-                className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-2 text-left text-[13px] font-semibold uppercase tracking-wide text-ink-muted hover:bg-rail-hover hover:text-ink mouse:min-h-9 ${
-                  collapsed ? "justify-center" : ""
-                } ${focusRing}`}
+                className={`flex min-h-12 w-full items-center gap-3 rounded-lg border border-line-card px-2.5 text-left text-[15px] font-semibold text-ink mouse:min-h-10 ${
+                  open ? accent.tint : "bg-surface hover:bg-rail-hover"
+                } ${collapsed ? "justify-center" : ""} ${focusRing}`}
               >
-                <span className="shrink-0" aria-hidden="true">
+                <span className={`shrink-0 ${accent.icon}`} aria-hidden="true">
                   {group.icon}
                 </span>
                 <span className={collapsed ? "sr-only" : "min-w-0 flex-1 truncate"}>{group.heading}</span>
                 {!collapsed && (
-                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" className={`h-4 w-4 shrink-0 ${open ? "rotate-180" : ""}`} aria-hidden="true">
-                    <path d="m6 8 4 4 4-4" />
-                  </svg>
+                  <>
+                    <span className="shrink-0 rounded-full bg-rail-hover px-1.5 text-xs font-medium text-ink-muted" aria-hidden="true">
+                      {group.items.length}
+                    </span>
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-line-card text-ink-muted" aria-hidden="true">
+                      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}>
+                        <path d="m6 8 4 4 4-4" />
+                      </svg>
+                    </span>
+                  </>
                 )}
               </button>
               {open && (
-                <ul id={listId} className="mt-0.5 flex flex-col gap-0.5">
+                <ul id={listId} className={`mt-1 flex flex-col gap-0.5 ${collapsed ? "" : `ml-4 border-l-2 pl-2 ${accent.rule}`}`}>
                   {group.items.map((item) => {
                     const active = item.href === activeHref;
                     return (
@@ -181,13 +190,17 @@ export function Sidebar({
                           href={item.href}
                           aria-current={active ? "page" : undefined}
                           title={collapsed ? item.label : undefined}
-                          className={`flex min-h-11 items-center gap-3 rounded-lg px-2 text-[15px] font-medium mouse:min-h-9 ${collapsed ? "justify-center" : ""} ${
-                            active ? "bg-rail-hover text-ink shadow-[inset_3px_0_0_rgb(var(--c-brand))]" : "text-ink-body hover:bg-rail-hover hover:text-ink"
+                          className={`flex min-h-11 items-center gap-2.5 rounded-md px-2 text-[15px] mouse:min-h-9 ${collapsed ? "justify-center" : ""} ${
+                            active ? `${accent.tint} font-semibold text-ink` : "font-normal text-ink-body hover:bg-rail-hover hover:text-ink"
                           } ${focusRing}`}
                         >
-                          <span className="shrink-0 text-ink-muted" aria-hidden="true">
-                            {item.icon}
-                          </span>
+                          {collapsed ? (
+                            <span className={`shrink-0 ${accent.icon}`} aria-hidden="true">
+                              {item.icon}
+                            </span>
+                          ) : (
+                            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${active ? accent.dot : "bg-line-card"}`} aria-hidden="true" />
+                          )}
                           <span className={collapsed ? "sr-only" : "min-w-0 truncate"}>{item.label}</span>
                         </Link>
                       </li>
