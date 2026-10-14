@@ -3,6 +3,7 @@ import { PageShell } from "@prova/ui";
 import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
+import { Disclosure } from "@/components/Disclosure";
 import { money } from "@/lib/money";
 import { formatHours } from "@/lib/render-hours";
 import { formatCoveragePercent } from "@/lib/wip";
@@ -179,6 +180,10 @@ export default async function PhaseCodesPage() {
           <h2 className="mb-2 text-sm font-semibold text-ink-label">
             You haven&apos;t set up any phase codes yet
           </h2>
+          {/* The two paragraphs below were ~600 characters on a page with
+              nothing else on it (density audit #36). They wait one click
+              away; the heading and the button are the empty state. */}
+          <Disclosure variant="plain" summary="What a phase code is, and what this page does with it" className="mb-4">
           <p className="mb-3 max-w-2xl text-sm text-ink-body">
             A phase code is your own name for a bucket of work — a number and a description, the way
             you already write them on your budget: <span className="text-ink-label">04112</span> for{" "}
@@ -201,6 +206,7 @@ export default async function PhaseCodesPage() {
               </>
             )}
           </p>
+          </Disclosure>
           <Link
             href="/settings?tab=estimating#phase-codes"
             data-tour="phase-codes-set-up"
@@ -225,7 +231,13 @@ export default async function PhaseCodesPage() {
                 : "border-line-card bg-surface"
             }`}
           >
-            <p className="text-sm text-ink">
+            {/* The coverage sentence stays on screen as the summary; the
+                why-and-what-is-missing paragraphs open from it (density
+                audit #36). Unpriced hours are still flagged on each row. */}
+            <Disclosure
+              variant="plain"
+              summary={
+            <span className="text-sm font-normal text-ink">
               <span className="font-semibold">
                 {formatCoveragePercent(rollup.budgetCoverage)} of your budgeted cost
               </span>{" "}
@@ -237,7 +249,9 @@ export default async function PhaseCodesPage() {
                 </>
               )}
               .
-            </p>
+            </span>
+              }
+            >
             {rollup.budgetCoverage < 1 || rollup.actualCoverage < 1 ? (
               <p className="mt-1 text-sm text-ink-body">
                 The rest is in the <span className="text-tag-amber-ink">Not coded to a phase</span>{" "}
@@ -262,6 +276,7 @@ export default async function PhaseCodesPage() {
                 schedule covering the craft and dates those hours were worked.
               </p>
             )}
+            </Disclosure>
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-line-card bg-surface" data-tour="phase-codes-table">
@@ -304,12 +319,14 @@ export default async function PhaseCodesPage() {
             </table>
           </div>
 
-          <p className="mt-4 max-w-3xl text-xs text-ink-muted">
+          <Disclosure variant="plain" summary="How Budgeted and Actual are worked out" className="mt-4">
+          <p className="max-w-3xl text-xs text-ink-muted">
             Budgeted is quantity × the budgeted unit cost captured when the line was priced; actual
             is every cost entry booked against the line. Lines removed by a change order are in
             neither. Nothing on this page is stored — it is totalled from the line items each time
             you open it, so it cannot drift from them.
           </p>
+          </Disclosure>
         </>
       )}
     </PageShell>
