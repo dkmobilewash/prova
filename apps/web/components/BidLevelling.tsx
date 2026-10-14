@@ -15,6 +15,9 @@ import {
   type QuoteSuggestion,
 } from "@/lib/actions";
 import { QuoteReader, QuoteReadingNotes } from "@/components/QuoteReader";
+import { Spinner } from "@/components/Spinner";
+import { sendQuoteRequest } from "@/lib/actions";
+import { rfqBody, rfqRecipient, rfqSubject } from "@/lib/estimating/rfq";
 import {
   carriedQuoteLapsed,
   exclusionLines,
@@ -41,6 +44,26 @@ import {
  * caution, above the numbers, and never in a collapsed section.
  */
 
+/**
+ * A supplier as the levelling table knows them.
+ *
+ * ONE NAMED TYPE BECAUSE THERE WERE TWO IDENTICAL INLINE ONES — this component
+ * and `QuoteForm` below each declared `{ id, name }[]` separately, which is the
+ * two-lists shape CLAUDE.md names. Adding an address to one and not the other
+ * is exactly how they would have drifted.
+ *
+ * `email` and `contactName` are new, and nothing had ever read them: the
+ * columns have been on `Vendor` with a form behind them on /vendors the whole
+ * time while `/bids` selected `{ id, name }`. Sending an RFQ is the first thing
+ * that needs an address.
+ */
+export type LevellingVendor = {
+  id: string;
+  name: string;
+  email: string | null;
+  contactName: string | null;
+};
+
 export type BidQuoteRow = LevelQuote & {
   notes: string | null;
   vendorId: string | null;
@@ -59,6 +82,9 @@ export function BidLevelling({
   companyId,
   quotes,
   vendors,
+  sendable = [],
+  companyName = "",
+  projectName = "",
   today,
   bidDueDate,
 }: {
@@ -68,7 +94,15 @@ export function BidLevelling({
    *  no job to file an attachment under. */
   companyId: string;
   quotes: BidQuoteRow[];
-  vendors: { id: string; name: string }[];
+  vendors: LevellingVendor[];
+  /** The spec sections and addenda on THIS bid that HAVE a file — what a
+   *  supplier can actually be sent. Logged-without-a-file is the normal case
+   *  (`bid-specs.prisma` says so) and those are filtered out before here. */
+  sendable?: { id: string; kind: "SPEC_SECTION" | "ADDENDUM"; label: string }[];
+  /** For the message a supplier reads. Defaulted so every existing call site
+   *  and test keeps working unchanged. */
+  companyName?: string;
+  projectName?: string;
   /** The reader's calendar day, resolved on the server. Passed in rather than
    * read from a clock here: a `new Date()` during render is markup the client
    * then disagrees with, and "overdue" is a claim about a day. */
@@ -82,6 +116,8 @@ export function BidLevelling({
   const [editing, setEditing] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [rowError, setRowError] = useState<string | null>(null);
+  /** Which outstanding request has its send panel open, if any. */
+  const [sendingFor, setSendingFor] = useState<string | null>(null);
 
   const packages = levelBid(quotes);
   // The labels already used on this bid, so the common case is picking a
@@ -339,6 +375,16 @@ export function BidLevelling({
                           {row.dueBy ? ` · wanted back by ${row.dueBy}` : " · no date asked for"}
                         </p>
                         {row.notes && <p className="mt-1 text-xs text-ink-muted">{row.notes}</p>}
+                        {sendingFor === row.id && (
+                          <RfqSender
+                            quote={row}
+                            vendor={vendors.find((v) => v.id === row.vendorId) ?? null}
+                            sendable={sendable}
+                            companyName={companyName}
+                            projectName={projectName}
+                            onSent={() => setSendingFor(null)}
+                          />
+                        )}
                       </div>
 
                       <RowActions
@@ -361,6 +407,25 @@ export function BidLevelling({
                           className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
                         >
                           Enter their price
+                        </button>
+                        {/* ── SENDING THE REQUEST, WHICH THIS SCREEN NEVER DID ──
+
+                            Every other control here records a conversation that
+                            happened somewhere else. This one is the conversation:
+                            it emails the supplier the spec sections and addenda
+                            on this bid and stamps `requestedOn` if it was blank.
+
+                            Only on an outstanding row, because a request that
+                            has been answered or declined is finished, and
+                            "re-ask somebody who already said no" is not a
+                            button anybody wants next to a price. */}
+                        <button
+                          type="button"
+                          data-rfq="open"
+                          onClick={() => setSendingFor(sendingFor === row.id ? null : row.id)}
+                          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
+                        >
+                          {sendingFor === row.id ? "Close" : "Send the request"}
                         </button>
                         <DeclineButton
                           id={row.id}
@@ -515,7 +580,7 @@ export function QuoteForm({
   bidInvitationId: string;
   companyId: string;
   quote: BidQuoteRow | null;
-  vendors: { id: string; name: string }[];
+  vendors: LevellingVendor[];
   usedLabels: string[];
   mode: "quote" | "request";
   onDone: () => void;
@@ -717,5 +782,151 @@ export function QuoteForm({
         Cancel
       </button>
     </ActionForm>
+  );
+}
+
+
+/**
+ * SENDING ONE REQUEST FOR QUOTE.
+ *
+ * ── THIS SCREEN RECORDED THE CONVERSATION AND NEVER HAD IT ──
+ *
+ * `requestedOn`, `dueBy`, who declined, who is overdue — all of it was typed in
+ * after the fact, because the estimator had exported the spec section, opened
+ * their mail client, found the supplier's address and written the same sentence
+ * they write every time. The two delete confirmations on this screen still say
+ * what was true until now: *"Nothing is sent to them."*
+ *
+ * ── A PANEL, NOT A CONFIRM CARD, AND THAT IS THE DIFFERENCE FROM A BID ──
+ *
+ * `BidPackageBuilder`'s send makes somebody tick a box naming the GC, because a
+ * bid cannot be recalled and arrives against a deadline. An RFQ is a question to
+ * a supplier: the worst case of sending the wrong one is a second email, and a
+ * named-intent tick on every one of five requests trains people to tick. What
+ * it does instead is show exactly what is going out — the address, the subject,
+ * the message and which documents — and let it be read.
+ *
+ * The addresses and the documents are both things the company already recorded.
+ * Neither is typed here, and the action re-reads both from the database rather
+ * than trusting this form about them.
+ */
+function RfqSender({
+  quote,
+  vendor,
+  sendable,
+  companyName,
+  projectName,
+  onSent,
+}: {
+  quote: BidQuoteRow;
+  vendor: LevellingVendor | null;
+  sendable: { id: string; kind: "SPEC_SECTION" | "ADDENDUM"; label: string }[];
+  companyName: string;
+  projectName: string;
+  onSent: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const to = rfqRecipient({
+    quotedVendorName: quote.vendorName,
+    vendor: vendor ? { name: vendor.name, contactName: vendor.contactName, email: vendor.email } : null,
+  });
+
+  if (!to.ok) {
+    // THE REASON, NOT A DISABLED BUTTON. "No address on file" is fixed on the
+    // Vendors page and "not a recorded vendor" is fixed by linking the row, and
+    // a greyed control says neither.
+    return <p className="mt-2 text-xs text-amber-300">{to.problem}</p>;
+  }
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setBusy(true);
+    setError(null);
+    void sendQuoteRequest(quote.id, form)
+      .then((result) => {
+        if (result.ok) onSent();
+        else setError(result.error);
+      })
+      .finally(() => setBusy(false));
+  }
+
+  return (
+    <form onSubmit={submit} className="mt-2 flex flex-col gap-2 rounded-md border border-line-row p-2">
+      <p className="text-xs text-ink-muted">
+        To {to.name} — {to.address}
+      </p>
+
+      <label className="flex flex-col text-xs text-ink-label">
+        Subject
+        <input
+          name="subject"
+          defaultValue={rfqSubject(quote.packageLabel, projectName)}
+          className="mt-1 min-h-[36px] rounded-md border border-line-card bg-surface px-2 text-xs text-ink-body"
+        />
+      </label>
+
+      <label className="flex flex-col text-xs text-ink-label">
+        Message
+        <textarea
+          name="body"
+          rows={7}
+          defaultValue={rfqBody({
+            packageLabel: quote.packageLabel,
+            projectName,
+            companyName,
+            dueBy: quote.dueBy ?? null,
+            documents: sendable.map((one) => one.label),
+          })}
+          className="mt-1 rounded-md border border-line-card bg-surface px-2 py-1 text-xs text-ink-body"
+        />
+      </label>
+
+      {sendable.length > 0 ? (
+        <fieldset className="flex flex-col gap-1 text-xs text-ink-body">
+          <legend className="text-ink-label">Send with it</legend>
+          {sendable.map((one) => (
+            <label key={one.id} className="flex items-center gap-2">
+              <input type="checkbox" name="documentId" value={one.id} defaultChecked data-rfq="doc" />
+              <span>
+                {one.label}
+                <span className="ml-1 text-ink-muted">
+                  {one.kind === "ADDENDUM" ? "addendum" : "spec section"}
+                </span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      ) : (
+        // SAYS SO RATHER THAN GOING QUIET. A request with nothing attached is
+        // legitimate — a supplier who already has the drawings just needs
+        // asking — but somebody who expected the spec to go needs to know why
+        // it did not.
+        <p className="text-xs text-ink-muted">
+          Nothing on this bid has a file to send yet. The request will go on its own.
+        </p>
+      )}
+
+      {error && <p className="text-xs text-rose-300">{error}</p>}
+
+      <button
+        type="submit"
+        disabled={busy}
+        aria-busy={busy}
+        data-rfq="send"
+        className="inline-flex min-h-[36px] w-fit items-center rounded-md bg-brand px-3 py-1 text-xs font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-40"
+      >
+        {busy ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Spinner />
+            Sending…
+          </span>
+        ) : (
+          "Send it"
+        )}
+      </button>
+    </form>
   );
 }

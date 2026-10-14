@@ -195,6 +195,17 @@ export const messageExclusions: Exclusion[] = [
       "T5: deletes are never commands, and a message that reached the provider cannot be deleted at all — owner only, from the row on the log.",
   },
   {
+    action: "sendQuoteRequest",
+    reason:
+      "Emails a supplier the spec sections and addenda they need to price, from the bid's own " +
+      "levelling table. Outward send with no composer, which commands.ts puts at T5 — and the " +
+      "attachments are the reason there is no composer to hand off to: the card cannot carry " +
+      "them, and which pages a supplier is sent is the whole content of the request. Lower " +
+      "stakes than submitBidPackage above and excluded on the same ground rather than a softer " +
+      "one, because the thing a model must not choose here is not the price, it is WHICH " +
+      "DOCUMENTS a third party receives. Sent from the row on /bids. Never a command.",
+  },
+  {
     action: "submitBidPackage",
     reason:
       "Sends the bid itself to a general contractor, with the priced package attached. " +
