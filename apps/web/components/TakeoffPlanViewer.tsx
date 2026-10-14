@@ -138,6 +138,7 @@ export function TakeoffPlanViewer({
   scalePrefillByPage,
   scaleDeclineByPage,
   duplicateWallsByPage = {},
+  sheetLabelByPage = {},
 }: {
   jobId: string;
   planId: string;
@@ -178,6 +179,15 @@ export function TakeoffPlanViewer({
    * here" from "the app decided for me".
    */
   duplicateWallsByPage?: Record<number, string>;
+  /**
+   * What each sheet is called, so the pager can be jumped rather than walked.
+   *
+   * Absent for a page nothing has read a number off — a scan, or a set whose
+   * ingest has not run — and the picker falls back to "Sheet 23" for those,
+   * which is what this control said for every page before it existed. A page
+   * is never missing from the list; only its name is.
+   */
+  sheetLabelByPage?: Record<number, string>;
 }) {
   const [pageNumber, setPageNumber] = useState(1);
   const [pageCount, setPageCount] = useState<number | null>(null);
@@ -1035,27 +1045,12 @@ export function TakeoffPlanViewer({
         {pageCount !== null && pageCount > 1 && (
           <>
             <span className="mx-1 h-4 w-px bg-line-card" aria-hidden />
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setPageNumber((n) => Math.max(1, n - 1))}
-                disabled={pageNumber <= 1}
-                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-40"
-              >
-                Prev
-              </button>
-              <span className="text-xs text-ink-muted">
-                Sheet {pageNumber} of {pageCount}
-              </span>
-              <button
-                type="button"
-                onClick={() => setPageNumber((n) => Math.min(pageCount, n + 1))}
-                disabled={pageNumber >= pageCount}
-                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-40"
-              >
-                Next
-              </button>
-            </div>
+            <SheetPager
+              pageNumber={pageNumber}
+              pageCount={pageCount}
+              sheetLabelByPage={sheetLabelByPage}
+              onJump={setPageNumber}
+            />
           </>
         )}
 
@@ -1697,6 +1692,85 @@ export function ClusterMark({ index }: { index: number }) {
  * Dashed, and painted under the saved measurements, so a proposal never looks
  * like something already counted.
  */
+/**
+ * WHICH SHEET, AND A WAY TO REACH ANOTHER ONE.
+ *
+ * ── JUMP, DO NOT WALK ──
+ *
+ * This was `Sheet 23 of 52` as plain text between Prev and Next, and reaching
+ * `A-101` on a real 52-sheet set was measured at TWENTY presses of Next. Blind
+ * ones: a position in the file does not tell you which sheet you are near, so
+ * there was nothing to aim at. That was the largest single number in a press
+ * count of all nine estimating steps on one real bid, and the only one of them
+ * that was navigation rather than judgement — every other step's cost was a
+ * decision somebody has to make.
+ *
+ * EVERY PAGE IS AN OPTION, including the ones nothing has read a number off,
+ * which keep the old wording. Listing only the named sheets would make a
+ * scanned page reachable by nothing but Prev and Next — the control this is
+ * here to replace — so the unread pages are exactly the ones that must stay in
+ * the list.
+ *
+ * PREV AND NEXT STAY. Reading a set is often "the next sheet", and a picker is
+ * the wrong shape for that. This adds a way to aim; it takes nothing away.
+ *
+ * ── EXPORTED FOR THE SAME REASON `ClusterTag` BELOW IS ──
+ *
+ * The pager renders only once the PDF has reported a page count, and pdf.js
+ * never runs in happy-dom. A test that mounted the viewer would assert against
+ * a sheet reading "Drawing…". So the control is its own component and
+ * `sheetPager.test.tsx` renders it — the #665 lesson, that a census proves the
+ * code is there and only rendering proves somebody can reach it.
+ */
+export function SheetPager({
+  pageNumber,
+  pageCount,
+  sheetLabelByPage,
+  onJump,
+}: {
+  pageNumber: number;
+  pageCount: number;
+  sheetLabelByPage: Record<number, string>;
+  onJump: (page: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => onJump(Math.max(1, pageNumber - 1))}
+        disabled={pageNumber <= 1}
+        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-40"
+      >
+        Prev
+      </button>
+      <label className="flex items-center gap-1 text-xs text-ink-muted">
+        <span className="sr-only">Jump to a sheet</span>
+        <select
+          value={pageNumber}
+          onChange={(event) => onJump(Number(event.target.value))}
+          data-takeoff="sheet-picker"
+          className="min-h-[36px] max-w-[18rem] rounded-md border border-line-card bg-surface px-2 text-xs text-ink-body"
+        >
+          {Array.from({ length: pageCount }, (_, index) => index + 1).map((number) => (
+            <option key={number} value={number}>
+              {sheetLabelByPage[number] ?? `Sheet ${number}`}
+            </option>
+          ))}
+        </select>
+        <span>of {pageCount}</span>
+      </label>
+      <button
+        type="button"
+        onClick={() => onJump(Math.min(pageCount, pageNumber + 1))}
+        disabled={pageNumber >= pageCount}
+        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-40"
+      >
+        Next
+      </button>
+    </div>
+  );
+}
+
 /**
  * ── THE NAME THE DRAWING GIVES A THICKNESS GROUP ──
  *
