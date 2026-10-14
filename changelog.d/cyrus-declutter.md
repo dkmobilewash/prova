@@ -211,3 +211,18 @@ reload so read-backs are read on screen; job-detail's Billing tab checks the
 was. Nothing could be run in a browser here. Check: `e2e/lib/collapsed.test.ts`
 fails in a second when a pressed opener or opened row name no longer exists in
 the app, and counts its parse independently — mutation-checked both ways.
+
+**The e2e specs, again, for round 3.** Same rule — press what a person
+presses, never `startOpen`. Retainage terms are one line with an "Edit"
+(`openRetainageTerms` in `e2e/lib/journey.ts`, scoped to the terms line) before
+every fill and every read-back after a reload, in `journey`, `known-bad-inputs`
+and `shoot-rehearsal`. The job Overview's details open on "Edit details", and
+/catalog's templates are `details#templates`, in `estimating-spine`. Every spec
+that finds the seeded job on /schedule now loads `/schedule?all=1`: the job
+lists show 5 each and the seeded job is the oldest on the account. And
+`shoot-rehearsal` counted "Total outstanding" as TWO on /cash-flow; round 3
+prints the aging total only when two buckets hold money, and that company has
+one invoice, so it is an exact ONE now (still read inside its own section).
+Nothing could be run in a browser here. Check: `collapsed.test.ts` now also
+pins every `details#id` a spec opens to an `id="…"` in the app, with its own
+independent count — mutation-checked.

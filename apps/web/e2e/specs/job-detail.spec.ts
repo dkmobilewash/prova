@@ -44,7 +44,9 @@ test("job detail: every tab renders its sections, in the rail's order, no crash"
   test.setTimeout(90_000);
   const monitor = new HealthMonitor(page);
   await signInAs(page, PERSONAS.main.email);
-  await page.goto("/schedule");
+  // ?all=1: since declutter round 3 the start-date and Unscheduled lists show
+  // 5 each (newest first), and the seeded job is the OLDEST one on the account.
+  await page.goto("/schedule?all=1");
 
   await page.getByRole("link", { name: new RegExp(`${E2E_TAG} Seeded Job`) }).first().click();
   await page.waitForURL(/\/jobs\/[^/]+$/);

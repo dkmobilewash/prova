@@ -24,7 +24,9 @@ test("a determination carries its rates, and a refusal keeps what you typed", as
   const monitor = new HealthMonitor(page);
   await signInAs(page, PERSONAS.main.email);
 
-  await page.goto("/schedule");
+  // ?all=1: since declutter round 3 the start-date and Unscheduled lists show
+  // 5 each (newest first), and the seeded job is the OLDEST one on the account.
+  await page.goto("/schedule?all=1");
   await page.getByRole("link", { name: new RegExp(`${E2E_TAG} Seeded Job`) }).first().click();
   await page.waitForURL(/\/jobs\/[^/]+$/);
   const jobPath = new URL(page.url()).pathname;

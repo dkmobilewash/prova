@@ -11,6 +11,7 @@ import {
   openInvoiceForm,
   readableRefusal,
   recordExecutedSubcontract,
+  openRetainageTerms,
   retainageForm,
   settleOutcome,
   startJob,
@@ -163,6 +164,8 @@ test.describe("known-bad inputs from 2026-09-21", () => {
     await page.goto(`/jobs/${contractedJob.jobId}/retainage`);
     await expectHealthy(page, "retainage tab", { monitor });
 
+    // Behind "Edit" since declutter round 3 (lib/journey.ts openRetainageTerms).
+    await openRetainageTerms(page);
     const form = retainageForm(page);
     const percent = form.locator('input[name="retainagePercent"]');
     await percent.fill("0.10");
@@ -180,6 +183,7 @@ test.describe("known-bad inputs from 2026-09-21", () => {
     await page.reload();
     await expectHealthy(page, "retainage tab after saving 0.10", { monitor });
 
+    await openRetainageTerms(page);
     const storedValue = await retainageForm(page).locator('input[name="retainagePercent"]').inputValue();
     const explainedAfterSave = moneySentence.test(await page.locator("main").innerText());
     await recordOutcome(

@@ -366,6 +366,11 @@ test.describe("the estimating desk", () => {
   test("7. an estimate template, created on /catalog (#499)", async () => {
     await page.goto("/catalog");
     await expectHealthy(page, "/catalog", { monitor });
+    // One click down since declutter round 3: the templates panel is the
+    // `<details id="templates">` summarised "Estimate templates · N", below
+    // the price book. Opened here, and again after the reload below.
+    const templates = page.locator("details#templates");
+    await openDisclosure(templates);
     await expect(page.getByRole("heading", { name: "Estimate templates" })).toBeVisible();
 
     await page.getByRole("button", { name: "Create a template" }).click();
@@ -390,6 +395,7 @@ test.describe("the estimating desk", () => {
 
     await page.reload();
     await expectHealthy(page, "/catalog after putting a line on the template", { monitor });
+    await openDisclosure(templates);
     const templateRow = page.locator("li").filter({ hasText: TEMPLATE_NAME }).first();
     await expect(templateRow.getByText(TEMPLATE_NAME, { exact: true })).toBeVisible();
     await expect(templateRow).toBeVisible();
@@ -480,13 +486,20 @@ test.describe("the estimating desk", () => {
     await page.goto(`/jobs/${jobId}`);
     await expectHealthy(page, "job overview", { monitor });
 
+    // The details READ as a list since declutter round 3, and the form opens
+    // in place on "Edit details" (a client toggle — not rendered until
+    // pressed). Confirmed by the form, since its own button is "Save details".
     const details = page.locator("form").filter({ has: page.getByRole("button", { name: "Save details" }) });
+    await openCollapsed(page.locator(dataTour("job-details")), "Edit details", details);
     await details.locator('input[name="grossAreaSqFt"]').fill("40000");
     await details.getByRole("button", { name: "Save details" }).click();
     await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
 
     await page.reload();
     await expectHealthy(page, "job overview after saving the gross area", { monitor });
+    // A reload puts the details back to the read-only list; read the stored
+    // value from the reopened form, as before.
+    await openCollapsed(page.locator(dataTour("job-details")), "Edit details", details);
     await expect(
       page.locator("form").filter({ has: page.getByRole("button", { name: "Save details" }) }).locator('input[name="grossAreaSqFt"]'),
     ).toHaveValue("40000");

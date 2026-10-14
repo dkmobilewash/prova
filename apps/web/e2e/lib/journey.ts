@@ -413,6 +413,15 @@ export function retainageForm(page: Page): Locator {
   return page.locator("form").filter({ has: page.locator('input[name="retainagePercent"]') });
 }
 
+/** Open the retainage terms. Since declutter round 3 they read as one line
+ * ("10% · expected substantial completion …") with an "Edit" CollapsedForm,
+ * which renders the form only once pressed — so every fill AND every
+ * read-back after a reload opens it first. Scoped to the terms line, so a
+ * release row's controls can never be the "Edit" pressed. */
+export async function openRetainageTerms(page: Page): Promise<void> {
+  await openCollapsed(page.locator("[data-retainage-terms]"), "Edit", retainageForm(page));
+}
+
 /** The invoice form on the Billing tab — the one with a "Create invoice" button. */
 export function invoiceForm(page: Page): Locator {
   return page.locator("form").filter({ has: page.getByRole("button", { name: "Create invoice" }) });

@@ -10,6 +10,7 @@ import {
   markContracted,
   openJobTab,
   recordExecutedSubcontract,
+  openRetainageTerms,
   retainageForm,
   startJob,
   submitLineItem,
@@ -355,6 +356,8 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     // "Nothing withheld yet" panel rather than three figures.
     await expect(page.locator("[data-retainage-empty]")).toHaveCount(1);
 
+    // Behind "Edit" since declutter round 3 (lib/journey.ts openRetainageTerms).
+    await openRetainageTerms(page);
     const form = retainageForm(page);
     await settleOnThisOrigin("saving the retainage percentage", async () => {
       await form.locator('input[name="retainagePercent"]').fill(String(RETAINAGE_PERCENT));
@@ -363,6 +366,7 @@ test.describe("the launch-video run sheet, beat by beat", () => {
 
     await page.reload();
     await expectHealthy(page, "retainage tab after saving 10%", { monitor });
+    await openRetainageTerms(page);
     await expect(retainageForm(page).locator('input[name="retainagePercent"]')).toHaveValue(
       String(RETAINAGE_PERCENT),
     );
@@ -935,7 +939,7 @@ test.describe("the launch-video run sheet, beat by beat", () => {
 
     // ════════════════════════════════════════════════════════════════════
     // AND A FOURTH THING FOR WHOEVER POINTS A CAMERA AT THIS PAGE:
-    // /cash-flow SAYS "Total outstanding" TWICE, ABOUT TWO DIFFERENT SUMS.
+    // /cash-flow CAN SAY "Total outstanding" TWICE, ABOUT TWO DIFFERENT SUMS.
     //
     // One is the AR aging total, NET of retainage; the other is the
     // retainage receivable. Same three words, same type size, one section
@@ -944,14 +948,20 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     // reached first — which is the only reason it is written down here
     // instead of having produced a confidently wrong figure.
     //
-    // It is asserted as TWO, deliberately: if the page ever grows a third,
-    // or loses one, this says so. Beat 2's cross-check sends a finger at
-    // "the retainage total on /cash-flow", and there are two candidates.
+    // It was asserted as TWO. Declutter round 3 (density audit #23) states
+    // the AGING total only when more than one aging bucket holds money —
+    // with one bucket, the total IS that bucket's figure, printed again. This
+    // company has exactly one invoice (beat 5's single "Application #n"), and
+    // one invoice sits in one bucket, so the aging total is not printed and
+    // the one "Total outstanding" left is the retainage receivable. Still an
+    // exact count: a third, or the aging duplicate coming back on a
+    // one-bucket page, says so. The read below stays scoped to its section
+    // regardless, because a second invoice would bring the twin back.
     // ════════════════════════════════════════════════════════════════════
     await expect(
       page.getByText(/^Total outstanding: /),
-      '/cash-flow labels two different sums "Total outstanding" — the AR aging total (net of retainage) and the retainage receivable. Read the one inside the Retainage receivable section, never the first one on the page.',
-    ).toHaveCount(2);
+      '/cash-flow states the AR aging total only when two or more buckets hold money; with this company\'s one invoice the only "Total outstanding" is the retainage receivable. Read it inside the Retainage receivable section, never the first one on the page.',
+    ).toHaveCount(1);
 
     // BY ITS HEADING, not by the section's `data-tour` hook — and that is a
     // constraint from a census rather than a preference.
