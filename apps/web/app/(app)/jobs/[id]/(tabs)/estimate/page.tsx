@@ -55,6 +55,8 @@ import {
 import { serverToday } from "@/lib/serverToday";
 import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
 import { ActionForm } from "@/components/ActionForm";
+import { CollapsedForm } from "@/components/CollapsedForm";
+import { Disclosure } from "@/components/Disclosure";
 import { WallSchedule } from "@/components/WallSchedule";
 import { estimatedHours, productionBackCheck } from "@/lib/labor-productivity";
 import { openingsFromJson, scheduleLines, type WallComponentBasis, type WallTypeInput } from "@/lib/wall-assemblies";
@@ -73,6 +75,16 @@ import {
 } from "@/lib/actions";
 
 const rowDeleteClass = "text-xs text-danger hover:underline";
+
+// The line-item tables (declutter round 2): a header row and one
+// `Disclosure variant="row"` per line, sharing one grid so the columns line
+// up. A `<details>` cannot be a `<tr>`, hence a grid rather than a <table>.
+// On a phone only the first and last columns show (the rest ride on a
+// second line under the description), so nothing scrolls sideways.
+const estimateLineGrid = "grid flex-1 min-w-0 items-baseline gap-3 grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_4rem_4rem_6rem_7rem]";
+const costLineGrid = "grid flex-1 min-w-0 items-baseline gap-3 grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_7rem_7rem_5rem_7rem]";
+const tableHeadClass = "border-b border-line-row py-2 pl-5 text-xs font-medium text-ink-muted";
+const wideCell = "hidden text-right tabular-nums sm:block";
 const rowCancelClass =
   "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:border-line-card";
 const rowConfirmClass =
@@ -563,7 +575,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
               {" "}
               — employer payroll taxes and workers&apos; comp are not in these figures. Record an
               employer burden percentage on{" "}
-              <Link href="/settings" className="text-link hover:text-link-hover">
+              <Link href="/settings?tab=estimating" className="text-link hover:text-link-hover">
                 Settings
               </Link>{" "}
               to include them.
@@ -632,11 +644,37 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
 
         <WipNarrativeButton jobId={job.id} />
 
-        <div className="mt-6 flex flex-col gap-4">
+        <div className="mt-6 rounded-lg border border-line-card bg-surface px-4 pb-1">
+          <div className={`${costLineGrid} ${tableHeadClass}`}>
+            <span>Line</span>
+            <span className="text-right">Contract</span>
+            <span className={wideCell}>Actual</span>
+            <span className={wideCell}>% complete</span>
+            <span className={wideCell}>Earned</span>
+          </div>
           {lineItemWip.map(({ item, wip }) => {
             const tradeLabel = TRADE_SCOPE_OPTIONS.find((t) => t.value === item.tradeScope)?.label;
             return (
-              <div key={item.id} className="rounded-lg border border-line-card bg-surface p-4">
+              <Disclosure
+                key={item.id}
+                variant="row"
+                name="cost-line"
+                summary={
+                  <span className={costLineGrid}>
+                    <span className="min-w-0 break-words">
+                      {item.description}
+                      <span className="block text-xs text-ink-muted sm:hidden">
+                        Actual {money(wip.actualCostToDate)} · {formatPercentComplete(wip.percentComplete) ?? "—"} ·
+                        Earned {wip.earnedRevenue != null ? money(wip.earnedRevenue) : "—"}
+                      </span>
+                    </span>
+                    <span className="text-right tabular-nums">{money(wip.contractValue)}</span>
+                    <span className={wideCell}>{money(wip.actualCostToDate)}</span>
+                    <span className={wideCell}>{formatPercentComplete(wip.percentComplete) ?? "—"}</span>
+                    <span className={wideCell}>{wip.earnedRevenue != null ? money(wip.earnedRevenue) : "—"}</span>
+                  </span>
+                }
+              >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="font-medium text-ink">
                     {item.description}
@@ -732,7 +770,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                     Save forecast
                   </SubmitButton>
                 </ActionForm>
-              </div>
+              </Disclosure>
             );
           })}
         </div>
@@ -748,26 +786,56 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
           <div className="mb-6 flex justify-end">{proposalLink}</div>
 
           <section className="mb-10" data-tour="job-line-items">
-            <h2 className="mb-3 text-lg font-semibold text-ink">Line items (estimate)</h2>
-            <DraftLineItemsForm jobId={job.id} initialScope={job.scope ?? ""} />
-            <TakeoffForm
-              jobId={job.id}
-              defaultWastePercent={bidDefaults?.defaultWastePercent?.toString() ?? null}
-            />
-            {/* The other way in. This form does the arithmetic from
-                dimensions somebody already has; the Takeoff tab is where you
-                get those dimensions off a drawing. */}
-            <p className="mb-3 text-sm text-ink-muted">
-              Working from a PDF instead?{" "}
-              <Link href={`/jobs/${job.id}/takeoff`} className="text-link hover:text-link-hover">
-                Measure off a plan
-              </Link>{" "}
-              — set the scale on a sheet and trace what you&rsquo;re taking off.
-            </p>
-            <div className="rounded-lg border border-line-card bg-surface p-4">
-              {job.lineItems.length === 0 && <p className="py-2 text-sm text-ink-body">No line items yet — add one below.</p>}
-              {job.lineItems.map((item) => (
-                <div key={item.id} className="border-t border-line-row py-3 first:border-t-0">
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-lg font-semibold text-ink">Line items (estimate)</h2>
+              {/* The same sum of quantity x unit price the costing section
+                  below calls Contract value (`calculateJobWip`), read here
+                  rather than added up again. */}
+              <p className="text-sm text-ink-body">
+                Lines total <span className="font-semibold tabular-nums text-ink">{money(jobWip.contractValue)}</span>
+              </p>
+            </div>
+            {/* SEE IT, THEN CLICK INTO IT (declutter round 2). Every line used
+                to be an open edit form, ~10 inputs each. Now one summary row
+                per line; opening a row shows exactly the form it always had,
+                same action and fields, and `name` keeps one open at a time. */}
+            <div className="rounded-lg border border-line-card bg-surface px-4 pb-1">
+              {lineItemWip.length === 0 ? (
+                <p className="py-3 text-sm text-ink-body">No line items yet — add one below.</p>
+              ) : (
+                <div className={`${estimateLineGrid} ${tableHeadClass}`}>
+                  <span>Description</span>
+                  <span className={wideCell}>Qty</span>
+                  <span className="hidden sm:block">Unit</span>
+                  <span className={wideCell}>Unit price</span>
+                  <span className="text-right">Total</span>
+                </div>
+              )}
+              {lineItemWip.map(({ item, wip }) => (
+                <Disclosure
+                  key={item.id}
+                  variant="row"
+                  name="estimate-line"
+                  summary={
+                    <span className={estimateLineGrid}>
+                      <span className="min-w-0 break-words">
+                        {item.description}
+                        <span className="block text-xs text-ink-muted sm:hidden">
+                          {item.quantity.toString()} {item.unit ?? ""} @{" "}
+                          {item.unitPrice != null ? money(Number(item.unitPrice)) : "cost-only"}
+                        </span>
+                      </span>
+                      <span className={wideCell}>{item.quantity.toString()}</span>
+                      <span className="hidden text-ink-body sm:block">{item.unit ?? "—"}</span>
+                      <span className={wideCell}>
+                        {item.unitPrice != null ? money(Number(item.unitPrice)) : "cost-only"}
+                      </span>
+                      <span className="text-right tabular-nums">
+                        {item.unitPrice != null ? money(wip.contractValue) : "—"}
+                      </span>
+                    </span>
+                  }
+                >
                   <ActionForm action={updateLineItemWithId(item.id)} resetOnSuccess={false} className="flex flex-col gap-2">
                     <div className="flex flex-wrap items-center gap-2">
                       {item.aiDrafted && <PriceBasisBadge basis={item.priceBasis} />}
@@ -935,13 +1003,16 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                       </SubmitButton>
                     </form>
                   </RowActions>
-                </div>
+                </Disclosure>
               ))}
             </div>
-          </section>
 
-          <section className="mb-10" data-tour="job-add-line-item">
-            <h2 className="mb-3 text-lg font-semibold text-ink">Add line item</h2>
+            {/* Three ways to add lines, three buttons on one row: one yellow
+                primary, the other two secondary. The AI draft box used to be
+                the first thing on the tab, above every price. */}
+            <div className="mt-4 flex flex-wrap items-start gap-3">
+              <div className="w-full max-w-full sm:w-auto" data-tour="job-add-line-item">
+                <CollapsedForm label="Add line item">
             <ActionForm action={addLineItemWithId} className="flex flex-wrap items-end gap-3">
               <label className="flex flex-col gap-1 text-sm text-ink-label">
                 Description
@@ -1015,39 +1086,12 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                 Add line item
               </SubmitButton>
             </ActionForm>
-
-            {/* START FROM A TEMPLATE — above "Add from catalog" because it
-                is the bulk path and the catalog picker is the one-at-a-time
-                one. The collision warning lives inside it, on screen before
-                the press: applying a template APPENDS, so applying one twice
-                doubles the estimate. */}
-            {estimateTemplates.length > 0 && (
-              <div className="mt-4">
-                <ApplyEstimateTemplate
-                  jobId={job.id}
-                  jobTradeScope={dominantTradeScope(job.lineItems)}
-                  templates={estimateTemplates.map((template) => ({
-                    id: template.id,
-                    name: template.name,
-                    tradeScope: template.tradeScope,
-                    items: template.items.map((item) => ({
-                      id: item.id,
-                      description: item.description,
-                      unit: item.unit,
-                      defaultQuantity: item.defaultQuantity === null ? null : Number(item.defaultQuantity),
-                      catalogEntryId: item.catalogEntryId,
-                    })),
-                  }))}
-                  existingLines={job.lineItems.map((item) => ({
-                    description: item.description,
-                    isDeleted: item.isDeleted,
-                  }))}
-                />
+                </CollapsedForm>
               </div>
-            )}
-
-            {catalogEntries.length > 0 && (
-              <ActionForm action={addLineItemFromCatalogWithId} className="mt-4 flex flex-wrap items-end gap-3">
+              {catalogEntries.length > 0 && (
+                <div className="w-full max-w-full sm:w-auto">
+                  <CollapsedForm label="Add from catalog" tone="secondary">
+              <ActionForm action={addLineItemFromCatalogWithId} className="flex flex-wrap items-end gap-3">
                 <label className="flex flex-col gap-1 text-sm text-ink-label">
                   Add from catalog
                   <select
@@ -1080,12 +1124,62 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                   Add from catalog
                 </SubmitButton>
               </ActionForm>
-            )}
-          </section>
+                  </CollapsedForm>
+                </div>
+              )}
+              <div className="w-full max-w-full sm:w-auto">
+                <CollapsedForm label="Draft line items from scope" tone="secondary">
+                  <DraftLineItemsForm jobId={job.id} initialScope={job.scope ?? ""} />
+                </CollapsedForm>
+              </div>
+            </div>
 
-          <section className="mb-10" data-tour="job-wall-schedule">
-            <h2 className="mb-3 text-lg font-semibold text-ink">Wall schedule</h2>
-            <WallSchedule jobId={job.id} types={wallTypeInputs} runs={wallRunViews} unpricedRunLabels={unpricedWallRuns} />
+            {/* START FROM A TEMPLATE — above "Add from catalog" because it
+                is the bulk path and the catalog picker is the one-at-a-time
+                one. The collision warning lives inside it, on screen before
+                the press: applying a template APPENDS, so applying one twice
+                doubles the estimate. */}
+            {estimateTemplates.length > 0 && (
+              <div className="mt-4">
+                <ApplyEstimateTemplate
+                  jobId={job.id}
+                  jobTradeScope={dominantTradeScope(job.lineItems)}
+                  templates={estimateTemplates.map((template) => ({
+                    id: template.id,
+                    name: template.name,
+                    tradeScope: template.tradeScope,
+                    items: template.items.map((item) => ({
+                      id: item.id,
+                      description: item.description,
+                      unit: item.unit,
+                      defaultQuantity: item.defaultQuantity === null ? null : Number(item.defaultQuantity),
+                      catalogEntryId: item.catalogEntryId,
+                    })),
+                  }))}
+                  existingLines={job.lineItems.map((item) => ({
+                    description: item.description,
+                    isDeleted: item.isDeleted,
+                  }))}
+                />
+              </div>
+            )}
+
+            <div className="mt-4">
+            <TakeoffForm
+              jobId={job.id}
+              defaultWastePercent={bidDefaults?.defaultWastePercent?.toString() ?? null}
+            />
+            {/* The other way in. This form does the arithmetic from
+                dimensions somebody already has; the Takeoff tab is where you
+                get those dimensions off a drawing. */}
+            <p className="mb-3 text-sm text-ink-muted">
+              Working from a PDF instead?{" "}
+              <Link href={`/jobs/${job.id}/takeoff`} className="text-link hover:text-link-hover">
+                Measure off a plan
+              </Link>{" "}
+              — set the scale on a sheet and trace what you&rsquo;re taking off.
+            </p>
+            </div>
           </section>
 
           <section className="mb-10" data-tour="job-bid-recap">
@@ -1102,6 +1196,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
               jobId={job.id}
               lines={bidRecapLines}
               rates={bidRecapRates}
+              ratesCollapsed
               applied={
                 bidRecapRow?.appliedAt != null
                   ? {
@@ -1132,8 +1227,53 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
             <PriceAnomalies report={priceAnomalyReport} />
           </section>
 
-          <section className="mb-10">
-            <h2 className="mb-1 text-lg font-semibold text-ink">Estimate versions</h2>
+          <section id="job-lock-in" className="mb-10 scroll-mt-4 rounded-lg border border-line-card bg-surface p-4" data-tour="job-lock-in">
+            <h2 className="mb-2 text-lg font-semibold text-ink">Ready to lock this in?</h2>
+            <p className="mb-3 text-sm text-ink-body">
+              Once contracted, line items can only change through a change order — this keeps an audit trail of
+              anything that changes after the client agrees to it.
+            </p>
+            {isContractExecuted ? (
+              <MarkContractedButton markContracted={markContractedWithId} />
+            ) : (
+              <p className="text-sm text-warn">
+                This job has no executed contract yet. Either send the GC a signing link on the Overview tab and
+                wait for them to sign it in C Stream, or — if they already sent you the executed subcontract —
+                record it there under Contract signature.
+              </p>
+            )}
+          </section>
+
+
+          {/* Collapsed by default (density audit #3): every wall run is an
+              open edit form, and the lines it generates are already in the
+              table above. */}
+          <div className="mb-4" data-tour="job-wall-schedule">
+            <Disclosure
+              summary={
+                <>
+                  <h2 className="inline text-lg font-semibold text-ink">Wall schedule</h2>
+                  <span className="ml-2 text-sm font-normal text-ink-muted">
+                    {wallRunViews.length} run{wallRunViews.length === 1 ? "" : "s"}
+                  </span>
+                </>
+              }
+            >
+              <WallSchedule jobId={job.id} types={wallTypeInputs} runs={wallRunViews} unpricedRunLabels={unpricedWallRuns} />
+            </Disclosure>
+          </div>
+
+          <Disclosure
+            className="mb-4"
+            summary={
+              <>
+                <h2 className="inline text-lg font-semibold text-ink">Estimate versions</h2>
+                <span className="ml-2 text-sm font-normal text-ink-muted">
+                  {job.estimateVersions.length} saved
+                </span>
+              </>
+            }
+          >
             <p className="mb-3 text-sm text-ink-body">
               A manual checkpoint of the line items above — save one before a scope change so you can see what this
               was priced at before.
@@ -1181,24 +1321,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                 Save version
               </SubmitButton>
             </form>
-          </section>
-
-          <section id="job-lock-in" className="mb-10 scroll-mt-4 rounded-lg border border-line-card bg-surface p-4" data-tour="job-lock-in">
-            <h2 className="mb-2 text-lg font-semibold text-ink">Ready to lock this in?</h2>
-            <p className="mb-3 text-sm text-ink-body">
-              Once contracted, line items can only change through a change order — this keeps an audit trail of
-              anything that changes after the client agrees to it.
-            </p>
-            {isContractExecuted ? (
-              <MarkContractedButton markContracted={markContractedWithId} />
-            ) : (
-              <p className="text-sm text-warn">
-                This job has no executed contract yet. Either send the GC a signing link on the Overview tab and
-                wait for them to sign it in C Stream, or — if they already sent you the executed subcontract —
-                record it there under Contract signature.
-              </p>
-            )}
-          </section>
+          </Disclosure>
 
           <details className="mb-10 rounded-lg border border-line-card p-4">
             <summary className="cursor-pointer text-lg font-semibold text-ink">
