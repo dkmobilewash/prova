@@ -5,10 +5,11 @@ import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
+import { BidPackageBuilder } from "@/components/BidPackageBuilder";
 import { JobProposalClauseBuilder, JobProposalClauseRow } from "@/components/ProposalClauses";
 import { money } from "@/lib/money";
 import { formatInstant } from "@/lib/render-date";
-import { viewerTimeZone } from "@/lib/viewerToday";
+import { viewerTimeZone, viewerToday } from "@/lib/viewerToday";
 import { groupProposalClauses, PROPOSAL_CLAUSE_HEADINGS } from "@/lib/proposal-clauses";
 import { ProposalDrafts, type ProposalDraftView } from "@/components/ProposalDrafts";
 import { loadProposalFacts } from "@/lib/estimating/proposal-facts-query";
@@ -114,6 +115,12 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
   const bidTotal = lines.reduce((sum, line) => sum + (line.total ?? 0), 0);
   const groups = groupProposalClauses(job.proposalClauses);
   const timeZone = await viewerTimeZone();
+  // The VIEWER'S calendar date, for the package's file name. Read on the
+  // server from their own timezone cookie rather than with `localToday()` in
+  // the component: a date computed in the browser against one rendered here
+  // is the hydration break `components/localToday.ts` warns about, and a file
+  // name is not worth it.
+  const today = await viewerToday();
 
   // `addedTotal` is what the rates WOULD add, recomputed here from the job's
   // current lines rather than read off a column — the recap stores percentages
@@ -291,6 +298,12 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
         canOfferLibrary={context.role === "OWNER"}
       />
       </section>
+
+      {/* LAST ON THE PAGE, because it is the last thing done to a bid: the
+          proposal has to exist and be printed before there is a package to
+          assemble. `print:hidden` on the section itself — it is a working
+          surface, not part of the document the GC receives. */}
+      <BidPackageBuilder projectName={job.name} today={today} />
     </PageShell>
   );
 }
