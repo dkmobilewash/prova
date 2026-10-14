@@ -141,7 +141,7 @@ export default async function CloseoutPage({
           {shown.length === 0 && (
             <p className="py-2 text-sm text-ink-body">No job has reached In progress yet, so there is nothing to close out.</p>
           )}
-          <ul data-tour="closeout-jobs">
+          <ul data-tour="closeout-jobs" className="divide-y divide-line-row">{/* one <details> per <li>, so its own row rule never shows */}
             {shown.map((job) => (
               <li key={job.id} data-closeout-job={job.id}>
                 <Disclosure

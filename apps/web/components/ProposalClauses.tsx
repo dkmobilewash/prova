@@ -10,6 +10,7 @@ import {
 } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
+import { Disclosure } from "@/components/Disclosure";
 import {
   PROPOSAL_CLAUSE_KINDS,
   PROPOSAL_CLAUSE_LABELS,
@@ -120,45 +121,60 @@ export function ProposalClauseRow({
     });
   }
 
+  // Read-only until opened (declutter, 2026-10-13: every clause was an open
+  // edit form). The closed row says the kind and the text; opening it is Edit.
   return (
-    <li className="flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:justify-between">
-      <form onSubmit={save.onSubmit} className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-        <KindSelect defaultValue={clause.kind} />
-        <input
-          name="text"
-          defaultValue={clause.text}
-          aria-label="Clause text"
-          className={`${field} min-w-[220px] flex-1`}
-        />
-        <button type="submit" disabled={save.isPending} className="rounded-md bg-rail-hover px-2 py-1 text-xs font-medium text-ink hover:bg-lift disabled:opacity-50">
-          {save.isPending ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Spinner />
-              Saving…
-            </span>
-          ) : (
-            "Save"
-          )}
-        </button>
-        <ErrorLine error={save.error} />
-      </form>
-      <div className="flex shrink-0 flex-col items-end gap-1">
-        <RowActions
-          className="flex items-center justify-end gap-2"
-          destructive={
-            <ConfirmDelete
-              pinned="end"
-              describe="Takes this clause out of your library. Proposals that already include it keep their copy."
-              label="Remove"
-              confirmLabel="Remove it"
-              pendingLabel="Removing…"
-              pending={isRemoving}
-              onConfirm={handleRemove}
+    <li className="px-4">
+      <Disclosure
+        variant="row"
+        name="proposal-clause"
+        summary={
+          <span className="min-w-0 break-words">
+            <span className="text-ink-muted">{PROPOSAL_CLAUSE_LABELS[clause.kind]} · </span>
+            {clause.text}
+          </span>
+        }
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <form onSubmit={save.onSubmit} className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <KindSelect defaultValue={clause.kind} />
+            <input
+              name="text"
+              defaultValue={clause.text}
+              aria-label="Clause text"
+              className={`${field} min-w-[220px] flex-1`}
             />
-          }
-        />
-        {removeError && <p className="max-w-[16rem] text-right text-xs text-tag-amber-ink">{removeError}</p>}
-      </div>
+            <button type="submit" disabled={save.isPending} className="rounded-md bg-rail-hover px-2 py-1 text-xs font-medium text-ink hover:bg-lift disabled:opacity-50">
+              {save.isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save"
+              )}
+            </button>
+            <ErrorLine error={save.error} />
+          </form>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <RowActions
+              className="flex items-center justify-end gap-2"
+              destructive={
+                <ConfirmDelete
+                  pinned="end"
+                  describe="Takes this clause out of your library. Proposals that already include it keep their copy."
+                  label="Remove"
+                  confirmLabel="Remove it"
+                  pendingLabel="Removing…"
+                  pending={isRemoving}
+                  onConfirm={handleRemove}
+                />
+              }
+            />
+            {removeError && <p className="max-w-[16rem] text-right text-xs text-tag-amber-ink">{removeError}</p>}
+          </div>
+        </div>
+      </Disclosure>
     </li>
   );
 }
