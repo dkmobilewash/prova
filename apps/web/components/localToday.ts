@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 /** The date on the USER'S calendar, not the server's.
  *
  * Dates are stored and rendered at UTC midnight, which is right. But
@@ -16,4 +18,19 @@ export function localToday() {
   const now = new Date();
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 10);
+}
+
+/** `localToday()` for a form that can be in SERVER-RENDERED markup — one
+ * opened on arrival by `startOpen` (`?new=1`), so no click mounted it.
+ *
+ * "" on the server and in the hydration render, so the two agree; the
+ * user's date one effect later. Use it as an uncontrolled input's
+ * `defaultValue`: React writes the new default onto the element, and an
+ * input nobody has typed in (or had a draft restored into) shows it.
+ * `startOpenDateCensus.test.ts` fails the build if a startOpen form calls
+ * `localToday()` in render instead. */
+export function useLocalToday() {
+  const [today, setToday] = useState("");
+  useEffect(() => setToday(localToday()), []);
+  return today;
 }

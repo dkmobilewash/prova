@@ -4,7 +4,7 @@ import { useRef, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
-import { localToday } from "@/components/localToday";
+import { useLocalToday } from "@/components/localToday";
 import { primaryActionClass } from "@/components/emptyStateStyles";
 import { dayLabel } from "@/components/fieldReportWeeks";
 import { blocksImplicitSubmit } from "@/lib/crew-schedule";
@@ -250,6 +250,7 @@ export function CrewScheduleBoard({
   canArchiveCrews?: boolean;
 }) {
   const [adding, setAdding] = useState(startOpen);
+  const today = useLocalToday();
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   // The job the form opens on: the one asked for, else the last one saved
@@ -398,11 +399,10 @@ export function CrewScheduleBoard({
                   // foreman whose day was the 17th. localToday.ts's own
                   // comment describes exactly that case.
                   //
-                  // Safe to call during render here for the reason that
-                  // file gives: this form only exists once somebody has
-                  // clicked "Put someone on", so it is never in
-                  // server-rendered markup and cannot break hydration.
-                  defaultValue={localToday()}
+                  // Set after mount (useLocalToday), not in render: `?add=1`
+                  // (startOpen) puts this form in server-rendered markup,
+                  // where a render-time date would break hydration.
+                  defaultValue={today}
                   className="mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink"
                 />
               </label>

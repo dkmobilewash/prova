@@ -17,6 +17,15 @@ import { usePathname } from "next/navigation";
  *
  * After each navigation: if the URL carries a hash, wait for that id to
  * exist and scroll it into view once. Gives up after ten seconds.
+ *
+ * A FRESH page load (pasted link, reload) needs one more condition, and it
+ * is why /cash-flow#retainage opened at the top while click-through worked
+ * (ux round 5). On a full load React streams the page into a
+ * `<div hidden id="S:…">` first and only moves it into place when the
+ * boundary is revealed (React 19.2 batches reveals, so it sits there a
+ * while). The id EXISTS inside that hidden div, scrolling a display:none
+ * element does nothing, and the old check counted "found" as "landed" and
+ * stopped watching. So the section only counts once it is out of `[hidden]`.
  */
 export function HashLanding() {
   const pathname = usePathname();
@@ -25,14 +34,15 @@ export function HashLanding() {
     if (!id) return;
     const land = () => {
       const target = document.getElementById(id);
-      target?.scrollIntoView?.({ block: "start" });
-      return target !== null;
+      if (!target || target.closest("[hidden]")) return false;
+      target.scrollIntoView?.({ block: "start" });
+      return true;
     };
     if (land()) return;
     const observer = new MutationObserver(() => {
       if (land()) observer.disconnect();
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
     const stop = window.setTimeout(() => observer.disconnect(), 10_000);
     return () => {
       observer.disconnect();

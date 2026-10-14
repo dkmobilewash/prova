@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { createDailyFieldReport } from "@/lib/actions";
-import { localToday } from "@/components/localToday";
+import { useLocalToday } from "@/components/localToday";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import {
   FieldReportFields,
@@ -28,10 +28,11 @@ export type JobChoice = JobOption;
  * opening the app to record what happened today should not have to walk
  * through the office's paperwork to get there.
  *
- * `localToday()` runs during this component's render, which is safe ONLY
- * because nothing renders until the button is clicked. A server-rendered
- * default would be the server's UTC date — already tomorrow after 5pm in
- * California, which is exactly when a foreman files.
+ * The date defaults to the USER'S today via `useLocalToday()`, set after
+ * mount: `?new=1` (startOpen) puts this form in server-rendered markup, so
+ * a date computed in render would disagree with the server's HTML. And a
+ * server-computed default would be UTC's date — already tomorrow after 5pm
+ * in California, which is exactly when a foreman files.
  *
  * THE JOB IS NO LONGER `jobs[0]`. It was, and the page hands its jobs over
  * `orderBy: { name: "asc" }` with every status in the list, so the default
@@ -58,6 +59,7 @@ export function FieldReportComposer({
    * the form refuses to submit until he says which. */
   const mustChoose = initialJobId === "";
   const [isOpen, setIsOpen] = useState(startOpen);
+  const today = useLocalToday();
   const [jobId, setJobId] = useState(initialJobId);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -174,7 +176,7 @@ export function FieldReportComposer({
             type="date"
             name="reportDate"
             required
-            defaultValue={localToday()}
+            defaultValue={today}
             className={inputClass}
           />
           {/* ink-body, not ink-muted — the muted level is under the 4.5 floor,

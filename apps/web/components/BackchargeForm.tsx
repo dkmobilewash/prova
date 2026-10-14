@@ -7,7 +7,7 @@ import { createBackcharge } from "@/lib/actions";
 import { Hint } from "@/components/Hint";
 import { BackchargeFields } from "@/components/BackchargeFields";
 import type { JobOption } from "@/components/RfiFields";
-import { localToday } from "@/components/localToday";
+import { useLocalToday } from "@/components/localToday";
 import { Spinner } from "@/components/Spinner";
 
 export function BackchargeForm({
@@ -25,6 +25,8 @@ export function BackchargeForm({
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  // After mount, not in render: `?new=1` opens this form in server markup.
+  const today = useLocalToday();
 
   if (jobs.length === 0) {
     return (
@@ -110,8 +112,8 @@ export function BackchargeForm({
           // The date the GC's notice is dated is usually not today, but
           // today is the closest useful starting point and the field is
           // required — an empty required date reads as a broken form.
-          issuedOn: localToday(),
-          receivedOn: localToday(),
+          issuedOn: today,
+          receivedOn: today,
           respondByDate: null,
         }}
       />
