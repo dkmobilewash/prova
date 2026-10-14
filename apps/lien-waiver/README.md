@@ -86,3 +86,41 @@ Settings (or through the API), which takes any path. Environment variables:
 
 Optional extra layer, not configured by code: a Vercel Firewall rate-limit rule
 on `/api/waiver` and `/api/notify`.
+
+## Pre-fill links (2026-10-14)
+
+An outreach link can open a waiver that is already started. Every parameter
+is optional and only ever fills a blank, which stays editable; with no
+parameters the tool is exactly what it was.
+
+    /lien-waiver/start?state=CA&type=cp&company=Test%20Drywall%20Inc&gc=Test%20GC&ref=TEST-0001
+
+| parameter | what it does |
+| --- | --- |
+| `state` | `AZ` `CA` `NV` `TX`: skips the picker. Anything else, or a state this deployment hides (Texas in production), shows the picker. |
+| `type` | `cp` `up` `cf` `uf`: pre-selects the two answers on the waiver-type screen, which is still shown with its warnings. |
+| `company` `owner` `project` `address` `gc` | fill the matching blank -- per state, via `PREFILL_MAP` in `lib/prefill.ts`. `company` also fills the send screen's Company. |
+| `license` | accepted and ignored: no state's statutory form has a licence blank. |
+| `ref` | tracking code, letters/digits/`.-_`, 40 max. Never on screen or in the PDF; goes on the lead note to Diego (subject and body) and on the Resend contact as the `ref` property. |
+
+Which blank each one fills, per state (from the forms themselves):
+
+| | company | gc | owner | project | address |
+| --- | --- | --- | --- | --- | --- |
+| AZ | companyName | customer | owner | project | jobDescription ("located at") |
+| CA | companyName | customer | owner | -- | jobLocation |
+| NV | companyName | customer | -- | project ("Property name") | jobLocation ("Property location") |
+| TX | companyName | customer | owner | project | jobLocation |
+
+Values are plain text: tags stripped, trimmed, 120 characters (address 200).
+Unknown parameters -- `email`, `phone`, anything else -- are dropped and not
+even forwarded from `/start`. Link values override this browser's memory for
+the visit and are only saved to it when the person sends. Opening a link with
+a `ref` logs one JSON line, `{"event":"prefill_link_opened","ref":...,"state":...}`
+(`/api/prefill-opened`), and nothing about the person.
+
+**For the `ref` to show in Resend's contact list and CSV, create a contact
+property named `ref` in Resend first.** Until it exists Resend refuses the
+property; the contact is then saved without it (the lead note still carries
+the ref) and the runtime log says so.
+

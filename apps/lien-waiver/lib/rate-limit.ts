@@ -31,6 +31,9 @@ export const LIMITS = {
   emailsPerAddressPerDay: 20,
   /** "Notify me" sign-ups per IP per hour. */
   notifyPerIpPerHour: 5,
+  /** "prefill_link_opened" log lines per IP per hour -- enough for anyone
+   * opening a few outreach links, too few to flood the log. */
+  prefillEventsPerIpPerHour: 30,
 } as const;
 
 export const HOUR = 60 * 60 * 1000;
@@ -84,7 +87,7 @@ export class PostgresRateStore implements RateStore {
 
 /** The key stored for an IP or an email: salted so the table cannot be
  * reversed into a list of addresses by hashing guesses. */
-export function rateKey(kind: "ip" | "email", value: string, salt: string): string {
+export function rateKey(kind: "ip" | "email" | "prefill", value: string, salt: string): string {
   return createHash("sha256").update(`${salt}\u0000${kind}:${value.trim().toLowerCase()}`).digest("hex");
 }
 

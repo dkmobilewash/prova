@@ -33,6 +33,8 @@ apps/web/test-results
 # assuming the same default is how one of them ends up committing a report.
 apps/web/playwright-report-public
 apps/web/test-results-public
+apps/web/playwright-report-lien-waiver
+apps/web/test-results-lien-waiver
 apps/web/blob-report
 
 # expo prebuild output — generated from app.json + plugins/, never edited by hand

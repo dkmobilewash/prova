@@ -1,5 +1,6 @@
 import { FORM_NAMES, STATE_CONTENT } from "./content";
 import { addContact, isEmail, landed, reportUnlanded, sendEmail, settle } from "./email";
+import { sanitizeRef } from "./prefill";
 import { checkFills, type FillErrors } from "./fills";
 import { renderWaiverPdf } from "./pdf";
 import { DAY, HOUR, LIMITS, rateKey, underLimit, type RateStore } from "./rate-limit";
@@ -41,6 +42,9 @@ export interface WaiverRequestBody {
   returning?: boolean;
   /** Honeypot: a field no person sees. */
   website?: string;
+  /** A pre-fill link's tracking code (lib/prefill.ts). Goes on the lead
+   * only -- never into the PDF or the person's own email. */
+  ref?: string;
 }
 
 export interface WaiverDeps {
@@ -89,6 +93,9 @@ export async function handleWaiverRequest(body: WaiverRequestBody, deps: WaiverD
   }
 
   const returning = body.returning === true;
+  // Re-checked here, not trusted from the page: anything that is not a
+  // plain code is dropped rather than written into a lead email.
+  const ref = sanitizeRef(body.ref);
   const email = (body.email ?? "").trim();
   const name = (body.name ?? "").trim();
   if (!name) return fail(400, "Enter your name so we know who the PDF is for.");
@@ -136,21 +143,25 @@ export async function handleWaiverRequest(body: WaiverRequestBody, deps: WaiverD
   // production a missing key counts as landed so a preview can be clicked.
   if (!landed(sent, deps.env)) return fail(503, "We could not send your PDF just now. Please try again in a minute.");
 
-  if (!returning) {
+  // A returning browser is not a new lead -- UNLESS it came from an outreach
+  // link, when the note is how Diego learns which link worked.
+  if (!returning || ref) {
     // The lead. Only who asked and what kind of form -- never the amounts,
     // the owner or the GC typed into it.
     const notifyTo = deps.env.LEAD_NOTIFY_EMAIL?.trim() || "diego@cstream.ai";
     const note = await send(
       {
         to: notifyTo,
-        subject: `Lien waiver lead: ${name}${body.company ? `, ${body.company}` : ""} (${state})`,
+        subject: `Lien waiver lead: ${name}${body.company ? `, ${body.company}` : ""} (${state})${ref ? ` [${ref}]` : ""}`,
         text: [
           `Name: ${name}`,
           `Email: ${email}`,
           `Company: ${(body.company ?? "").trim() || "(not given)"}`,
           `State: ${STATE_CONTENT[state].name}`,
           `Form: ${formName}`,
-          `Marketing email: ${body.marketingOptIn ? "opted in" : "not opted in"}`,
+          `Marketing email: ${body.marketingOptIn ? "opted in" : returning ? "(returning visitor, not asked)" : "not opted in"}`,
+          `Ref: ${ref ?? "(none -- not from a pre-fill link)"}`,
+          ...(returning ? ["Returning: yes -- already a contact, not added again"] : []),
           `Waiver emailed: ${sent.status}`,
           `At: ${(deps.now?.() ?? new Date()).toISOString()}`,
         ].join("\n"),
@@ -158,7 +169,12 @@ export async function handleWaiverRequest(body: WaiverRequestBody, deps: WaiverD
       },
       deps.env,
     );
-    const contact = await subscribe({ email, name, marketingOptIn: body.marketingOptIn === true }, deps.env);
+    const contact = returning
+      ? ({ status: "sent", id: "" } as const)
+      : await subscribe({ email, name, marketingOptIn: body.marketingOptIn === true, ref }, deps.env);
+    if ("refDropped" in contact && contact.refDropped) {
+      (deps.log ?? console.error)(`[lien-waiver] the contact was saved without its ref property: ${contact.refDropped}`);
+    }
     // The lead has already landed: the waiver email above went, and it sits
     // in Resend's log with the address on it (issue #747's rule, now always
     // met). These two failing costs a convenience, so it is logged, not
