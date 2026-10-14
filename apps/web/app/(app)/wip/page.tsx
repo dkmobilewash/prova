@@ -7,6 +7,8 @@ import { WIP_SCHEDULE_COLUMNS } from "@/lib/wip-schedule";
 import { wipScheduleCell, CANNOT_SAY, CANNOT_SAY_TITLE } from "@/lib/wip-schedule-cell";
 import { viewerToday } from "@/lib/viewerToday";
 import { secondaryActionClass } from "@/components/emptyStateStyles";
+import { HintedText } from "@/components/HintedText";
+import Link from "next/link";
 
 /**
  * The work-in-progress schedule, on screen.
@@ -40,7 +42,44 @@ import { secondaryActionClass } from "@/components/emptyStateStyles";
 
 export const dynamic = "force-dynamic";
 
-export default async function WipSchedulePage() {
+/**
+ * The columns that fit one screen (density audit #35: earned and over/under,
+ * the point of the schedule, were off-screen to the right). The other
+ * eleven — the cost breakdown and coverage — are one link away at
+ * `?detail=1`, which renders exactly the table this page always rendered.
+ * Same rows, same cells, same `wipScheduleCell`; only which columns show.
+ *
+ * The short headings are LABELS ONLY. The CSV's full heading is the hint on
+ * each, so nothing that names the figure is lost.
+ */
+const KEY_COLUMNS: Partial<Record<(typeof WIP_SCHEDULE_COLUMNS)[number]["key"], string>> = {
+  job: "Job",
+  status: "Status",
+  contractValue: "Contract",
+  percentComplete: "% complete",
+  earnedRevenue: "Earned",
+  billedToDate: "Billed",
+  overbilled: "Overbilled",
+  underbilled: "Underbilled",
+};
+
+/** The two columns most often read backwards. Overbilled is a LIABILITY —
+ *  money taken for work not yet done — and it looks like good news to
+ *  anybody reading it as "we billed more". Said on the heading itself. */
+const COLUMN_DEFINITIONS: Partial<Record<(typeof WIP_SCHEDULE_COLUMNS)[number]["key"], string>> = {
+  overbilled: "Billed ahead of the work earned. That money is not yours yet — it is owed back in work.",
+  underbilled: "Work earned that has not been billed. It is yours; nobody has been asked for it yet.",
+};
+
+export default async function WipSchedulePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ detail?: string | string[] }>;
+}) {
+  const showDetail = (await searchParams).detail === "1";
+  const columns = showDetail
+    ? WIP_SCHEDULE_COLUMNS
+    : WIP_SCHEDULE_COLUMNS.filter((column) => column.key in KEY_COLUMNS);
   const { context, allowed } = await requireCapability("VIEW_COMPANY_FINANCIALS");
   if (!allowed) return <NoAccess capability="VIEW_COMPANY_FINANCIALS" />;
 
@@ -99,11 +138,19 @@ export default async function WipSchedulePage() {
             {CANNOT_SAY_TITLE}
           </p>
 
+          <p className="mb-2 text-sm">
+            <Link href={showDetail ? "/wip" : "/wip?detail=1"} className="inline-flex min-h-11 items-center text-link hover:text-link-hover mouse:min-h-8">
+              {showDetail
+                ? "Hide the cost breakdown"
+                : `Show the cost breakdown (${WIP_SCHEDULE_COLUMNS.length - columns.length} more columns)`}
+            </Link>
+          </p>
+
           <div className="overflow-x-auto rounded-md border border-line-card" data-tour="wip-table">
             <table className="min-w-full border-collapse text-sm">
-              <thead>
+              <thead data-tour="wip-billing">
                 <tr className="bg-surface">
-                  {WIP_SCHEDULE_COLUMNS.map((column, index) => (
+                  {columns.map((column, index) => (
                     <th
                       key={column.key}
                       scope="col"
@@ -111,7 +158,14 @@ export default async function WipSchedulePage() {
                         index === 0 ? "sticky left-0 z-10 bg-surface" : ""
                       }`}
                     >
-                      {column.label}
+                      {showDetail ? (
+                        column.label
+                      ) : (
+                        <HintedText
+                          label={KEY_COLUMNS[column.key] ?? column.label}
+                          hint={[column.label, COLUMN_DEFINITIONS[column.key]].filter(Boolean).join(". ")}
+                        />
+                      )}
                     </th>
                   ))}
                 </tr>
@@ -124,7 +178,7 @@ export default async function WipSchedulePage() {
                       key={`${row.job}-${rowIndex}`}
                       className={isTotal ? "bg-surface font-semibold" : "odd:bg-canvas"}
                     >
-                      {WIP_SCHEDULE_COLUMNS.map((column, index) => {
+                      {columns.map((column, index) => {
                         const cell = wipScheduleCell(column.key, row[column.key]);
                         return (
                           <td
@@ -148,27 +202,6 @@ export default async function WipSchedulePage() {
               </tbody>
             </table>
           </div>
-
-          {/* The two columns most often read backwards, said once under
-              the table rather than left to a tooltip. Overbilled is a
-              LIABILITY — money taken for work not yet done — and it looks
-              like good news to anybody reading it as "we billed more". */}
-          <dl className="mt-3 grid gap-2 text-xs text-ink-muted sm:grid-cols-2" data-tour="wip-billing">
-            <div>
-              <dt className="inline font-medium text-ink-body">Overbilled: </dt>
-              <dd className="inline">
-                billed ahead of the work earned. That money is not yours yet — it is owed back in
-                work.
-              </dd>
-            </div>
-            <div>
-              <dt className="inline font-medium text-ink-body">Underbilled: </dt>
-              <dd className="inline">
-                work earned that has not been billed. It is yours; nobody has been asked for it
-                yet.
-              </dd>
-            </div>
-          </dl>
 
           <div className="mt-4 flex flex-wrap items-center gap-3" data-tour="wip-download">
             {/* A plain link, not a button: this is a GET returning a file,
