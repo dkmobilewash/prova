@@ -4,6 +4,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { dataTour } from "../lib/dataTour";
 import { finishWizard, jobTab, landOnDashboard, openJobTab, settleAction, startJob, submitLineItem } from "../lib/journey";
+import { openCollapsed, openDisclosure } from "../lib/collapsed";
 
 /**
  * THE ESTIMATING DESK, IN A REAL BROWSER, FOR THE FIRST TIME.
@@ -91,11 +92,25 @@ test.describe("the estimating desk", () => {
    * exactly this and which this file first ignored and paid for. */
   const section = (name: string): Locator => page.locator(dataTour(name));
 
-  /** How many line items the estimate carries. Counted inside the line-items
-   * section only: nothing else in it has a `description` input — the draft
-   * form posts `scopeText` and the typed takeoff form posts `label` — so this
-   * is the row count and not a form's field. */
-  const lineItemCount = () => section("job-line-items").locator('input[name="description"]').count();
+  /** How many line items the estimate carries. Since declutter round 2 each
+   * line is one `<details name="estimate-line">` row whose edit form opens
+   * under it, and the "Add line item" form — which has a `description` input
+   * of its own — lives in the same section once opened. Counting inputs
+   * inside the ROWS keeps this the row count whether that form is open or
+   * not. (Counted, not seen: a closed row's inputs are still in the DOM.) */
+  const lineItemCount = () =>
+    section("job-line-items").locator('details[name="estimate-line"] input[name="description"]').count();
+
+  /** One estimate line's row, by the description its edit form holds. A CSS
+   * `has:`, not a role query: `getByRole` skips what a closed row hides. */
+  const lineRow = (description: string): Locator =>
+    section("job-line-items")
+      .locator('details[name="estimate-line"]')
+      .filter({ has: page.locator(`input[name="description"][value="${description}"]`) })
+      .first();
+
+  /** The wall schedule, one line until opened (declutter round 2). */
+  const wallSchedule = (): Locator => section("job-wall-schedule").locator(":scope > details");
 
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext();
@@ -129,16 +144,27 @@ test.describe("the estimating desk", () => {
     // Each of these is a whole feature's entry point. A heading missing here
     // means the panel did not render at all, which is the failure mode a
     // typecheck cannot see.
-    for (const heading of ["Wall schedule", "Bid recap", "Line items (estimate)", "Add line item", "Estimate versions"]) {
+    //
+    // "Wall schedule" and "Estimate versions" are the one-line summaries of
+    // their disclosures now, still headings and still on screen. "Add line
+    // item" stopped being a heading in declutter round 2: it is the button the
+    // form waits behind, so the button is what is checked.
+    for (const heading of ["Wall schedule", "Bid recap", "Line items (estimate)", "Estimate versions"]) {
       await expect(
         page.getByRole("heading", { name: heading, exact: true }),
         `the Estimate tab should show the "${heading}" panel`,
       ).toBeVisible();
     }
+    await expect(
+      section("job-add-line-item").getByRole("button", { name: "Add line item", exact: true }),
+      'the Estimate tab should offer "Add line item"',
+    ).toBeVisible();
     expect(await lineItemCount(), "the wizard's one line is on the estimate").toBe(1);
 
     // #467's own empty state, before any wall type exists: the schedule says
-    // where to go rather than showing an unusable form.
+    // where to go rather than showing an unusable form. One click down since
+    // the schedule became a disclosure.
+    await openDisclosure(wallSchedule());
     await expect(section("job-wall-schedule").getByRole("link", { name: "Open wall types" })).toBeVisible();
 
     // The Takeoff tab (#476) is reachable from here and from the Estimate
@@ -195,6 +221,7 @@ test.describe("the estimating desk", () => {
     await page.goto(`/jobs/${jobId}/estimate`);
     await expectHealthy(page, "estimate tab with wall types in the library", { monitor });
 
+    await openDisclosure(wallSchedule());
     const form = section("job-wall-schedule")
       .locator("form")
       .filter({ has: page.getByRole("button", { name: "Add run" }) });
@@ -222,7 +249,15 @@ test.describe("the estimating desk", () => {
     // W1 has four parts — studs, track, board, hang-and-finish — so the run
     // is four derived lines on top of the wizard's one.
     expect(await lineItemCount(), "one typed line plus W1's four parts").toBe(5);
-    await expect(section("job-line-items").getByText("From wall schedule").first()).toBeVisible();
+    // The badge is inside a line's row, which opens on click (declutter round
+    // 2). Open the first derived line and read the badge there, on screen —
+    // not merely present in a closed row's markup.
+    const derived = section("job-line-items")
+      .locator('details[name="estimate-line"]')
+      .filter({ hasText: "From wall schedule" })
+      .first();
+    await openDisclosure(derived);
+    await expect(derived.getByText("From wall schedule", { exact: true })).toBeVisible();
     // The run's own row is an edit-in-place form, like the wall-type cards, so
     // its name is an input's VALUE and not page text. Read it that way — the
     // first version of this looked for an <li> containing the label and found
@@ -251,6 +286,9 @@ test.describe("the estimating desk", () => {
     await settleAction(page, () =>
       recap.getByRole("combobox", { name: `Cost type for ${LINE.description}` }).selectOption("MATERIAL"),
     );
+    // The rates form waits behind "Edit rates" since declutter round 2; the
+    // recap figures below it are on screen either way.
+    await openCollapsed(recap, "Edit rates", recap.locator('input[name="materialMarkupPercent"]'));
     await recap.locator('input[name="materialMarkupPercent"]').fill("10");
     await recap.locator('input[name="overheadPercent"]').fill("5");
     await recap.locator('input[name="profitPercent"]').fill("8");
@@ -259,7 +297,10 @@ test.describe("the estimating desk", () => {
     await page.reload();
     await expectHealthy(page, "estimate tab after saving the recap rates", { monitor });
     const saved = section("job-bid-recap");
-    // Read back from the server, not from the boxes that were typed into.
+    // Read back from the server, not from the boxes that were typed into —
+    // which a reload has put back behind "Edit rates" (the form is not even
+    // rendered until it is pressed).
+    await openCollapsed(saved, "Edit rates", saved.locator('input[name="materialMarkupPercent"]'));
     await expect(saved.locator('input[name="materialMarkupPercent"]')).toHaveValue("10");
     await expect(saved.locator('input[name="overheadPercent"]')).toHaveValue("5");
     await expect(saved.locator('input[name="profitPercent"]')).toHaveValue("8");
@@ -293,6 +334,8 @@ test.describe("the estimating desk", () => {
   });
 
   test("6. labor hours and a production rate on a line (#435)", async () => {
+    // The line's edit form opens under its row (declutter round 2).
+    await openDisclosure(lineRow(LINE.description));
     const row = section("job-line-items")
       .locator("form")
       .filter({ has: page.locator(`input[name="description"][value="${LINE.description}"]`) })
@@ -314,6 +357,7 @@ test.describe("the estimating desk", () => {
     // hours with no craft cannot be priced, and it says which is missing
     // rather than leaving a blank space.
     const addForm = section("job-add-line-item");
+    await openCollapsed(addForm, "Add line item", addForm.locator('input[name="laborHours"]'));
     await addForm.locator('input[name="laborHours"]').fill("12");
     await expect(addForm.getByText("Pick a craft to price these hours")).toBeVisible();
     await addForm.locator('input[name="laborHours"]').fill("");
@@ -386,7 +430,12 @@ test.describe("the estimating desk", () => {
     await expect(page.getByRole("heading", { name: "Proposal clauses", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "No clauses yet", exact: true })).toBeVisible();
 
+    // Behind its "Add clause" button since the declutter — the same words as
+    // the form's own submit, so the press is confirmed by the FORM appearing.
+    // This is the step #774 saw time out: the fill below waited on a form
+    // that a CollapsedForm does not render until it is opened.
     const library = page.locator("form").filter({ has: page.getByRole("button", { name: "Add clause" }) });
+    await openCollapsed(page.locator(dataTour("proposals-add")), "Add clause", library);
     await library.getByRole("combobox", { name: "Kind" }).selectOption("EXCLUSION");
     await library.locator('input[name="text"]').fill(CLAUSE_TEXT);
     await settleAction(page, () => library.getByRole("button", { name: "Add clause" }).click());
@@ -395,7 +444,9 @@ test.describe("the estimating desk", () => {
     await expectHealthy(page, "/proposals after adding a clause", { monitor });
     // The library row is an edit-in-place form, so the clause is an input's
     // VALUE and not page text. Read it the way it is rendered — the job's
-    // proposal below is where it prints as prose.
+    // proposal below is where it prints as prose. The row is one line until
+    // opened (declutter), so it is opened first and read on screen.
+    await openDisclosure(page.locator(dataTour("proposals-list")).locator('details[name="proposal-clause"]'));
     await expect(
       page.locator(dataTour("proposals-list")).getByLabel("Clause text"),
       "the clause is stored, not held in the form that added it",

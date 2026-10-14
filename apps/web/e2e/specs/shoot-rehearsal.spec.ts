@@ -14,6 +14,7 @@ import {
   startJob,
   submitLineItem,
 } from "../lib/journey";
+import { openDisclosure } from "../lib/collapsed";
 
 /**
  * THE LAUNCH-VIDEO RUN SHEET, REHEARSED BY A MACHINE THE NIGHT BEFORE THE
@@ -375,6 +376,14 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     // form does. Asserted rather than assumed: after the change order lands
     // there will be two, and a spec that silently logged against whichever
     // one it found first would make every figure below unreproducible.
+    //
+    // The form sits inside the line's costing row, one line until opened
+    // (declutter round 2), so the one row is opened first. By its group name,
+    // not by the form: `getByRole` skips what a closed row hides, so the
+    // `has:` below matches nothing until the row is open.
+    const costRows = page.locator('details[name="cost-line"]');
+    await expect(costRows, "one line item, one costing row").toHaveCount(1);
+    await openDisclosure(costRows);
     const costForm = page.locator("form").filter({ has: page.getByRole("button", { name: "Log cost" }) });
     await expect(costForm, "one line item, one cost form").toHaveCount(1);
 
