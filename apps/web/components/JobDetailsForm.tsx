@@ -125,7 +125,10 @@ export function JobDetailsForm({
           <input
             name="siteAddress"
             defaultValue={siteAddress ?? ""}
-            placeholder="123 Main St, Portland, OR 97201"
+            // Not a sample address: a realistic one in an empty box was read
+            // as the job's address by a reviewer (declutter audit,
+            // 2026-10-13), and so the "add the site address" hint looked wrong.
+            placeholder="Street, city, state"
             className={input}
           />
         </label>

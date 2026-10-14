@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fetchDayWeather, geocodeSite, siteToday, weatherIsStale, weatherLine } from "./weather";
+import { fetchDayWeather, geocodeSite, siteToday, siteWeatherNote, weatherIsStale, weatherLine } from "./weather";
 
 const reply = (body: unknown, ok = true) => async () => ({ ok, json: async () => body });
 
@@ -71,5 +71,23 @@ describe("site weather", () => {
     expect(await geocodeSite("Portland, OR", fetcher)).toEqual({ latitude: 45.52, longitude: -122.67, timeZone: "America/Los_Angeles" });
     expect(calls.filter((c) => c.includes("census.gov"))).toHaveLength(1);
     expect(await geocodeSite("  ", fetcher)).toBeNull();
+  });
+});
+
+describe("siteWeatherNote — the field reports hint", () => {
+  it("says nothing once the address was found on a map", () => {
+    expect(siteWeatherNote({ siteAddress: "1140 SE Ankeny St, Portland, OR", siteLatitude: 45.5 })).toBeNull();
+  });
+
+  it("never asks for an address the job already has", () => {
+    const note = siteWeatherNote({ siteAddress: "Somewhere vague", siteLatitude: null });
+    expect(note).toContain("wasn't found on a map");
+    expect(note).not.toContain("Add the job's site address");
+  });
+
+  it("asks for one when there is none, a blank one included", () => {
+    for (const siteAddress of [null, "", "   "]) {
+      expect(siteWeatherNote({ siteAddress, siteLatitude: null })).toContain("Add the job's site address");
+    }
   });
 });

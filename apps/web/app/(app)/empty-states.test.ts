@@ -218,6 +218,19 @@ describe("/pipeline with no pursuits and no invitations", () => {
     const html = await load();
     expect(html).not.toContain('data-testid="bid-pursuit-form"');
   });
+
+  it("leads with the chase list; the two web lookups are buttons under it, their inputs absent until opened", async () => {
+    const html = await load();
+    const chase = html.indexOf("Nothing on the chase list yet.");
+    const lookup = html.indexOf(">Look up a project<");
+    const leads = html.indexOf('data-pipeline="lead-search-open"');
+    expect(chase, "the chase list rendered").toBeGreaterThan(-1);
+    expect(lookup, "the lookup is a button").toBeGreaterThan(chase);
+    expect(leads, "Find projects out to bid is beside it").toBeGreaterThan(lookup);
+    // Declutter (2026-10-13): the lookup form rendered open on load.
+    expect(html).not.toContain('name="projectName"');
+    expect(html).not.toContain('data-pipeline="project-lookup"');
+  });
 });
 
 describe("/schedule with no jobs", () => {
@@ -268,7 +281,7 @@ describe("/alerts with nothing recorded anywhere", () => {
 describe("/closeout with no jobs", () => {
   const load = async () => {
     const { default: Page } = await import("@/app/(app)/closeout/page");
-    return renderToStaticMarkup(await Page());
+    return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
   };
 
   it("renders, and explains what a closeout package is before there is one", async () => {
