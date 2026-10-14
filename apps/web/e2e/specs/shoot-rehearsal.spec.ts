@@ -877,6 +877,9 @@ test.describe("the launch-video run sheet, beat by beat", () => {
       await page.goto(target);
       await expectHealthy(page, `after the shoot's invoice: ${target}`, { monitor });
     }
+    // The last page is /cash-flow, whose invoice table sits behind a closed
+    // "Outstanding invoices · N" row since the declutter (#774).
+    await openDisclosure(page.locator("details#outstanding-invoices"));
     await expect(page.locator("main").getByText(JOB_NAME).first()).toBeVisible();
   });
 

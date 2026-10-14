@@ -276,6 +276,7 @@ export default async function CashFlowPage() {
           </p>
         ) : (
           <Disclosure
+            id="outstanding-invoices"
             variant="plain"
             summary={`Outstanding invoices · ${sortedInvoices.length}`}
           >
