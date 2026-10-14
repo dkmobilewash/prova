@@ -110,12 +110,14 @@ describe("retainage tab with nothing withheld", () => {
     expect(html, "the real page rendered").toContain("Retainage");
     expect(html).toContain("Nothing withheld yet. Retainage comes off each invoice you create on the");
     expect(html).toMatch(/href="\/jobs\/job-1\/billing"[^>]*>\s*Billing tab/);
-    expect(html).toContain("at the rate above.");
+    expect(html).toContain("at the rate below.");
     expect(html).not.toContain("$0.00");
     expect(html).not.toContain("Log release");
     expect(html).not.toContain("Total withheld");
-    // The rate form stays — the sentence points at it.
-    expect(html).toContain('name="retainagePercent"');
+    // The rate stays — the sentence points at it. Since declutter round 3
+    // it is one line with an Edit that opens the unchanged form.
+    expect(html).toMatch(/data-retainage-terms=""[^>]*><span>10%/);
+    expect(html).toMatch(/<button type="button"[^>]*>Edit<\/button>/);
   });
 
   it("an invoice that withheld nothing is still nothing withheld", async () => {
@@ -126,7 +128,11 @@ describe("retainage tab with nothing withheld", () => {
   it("speaks plain English about the rate — no 'snapshotted'", async () => {
     const html = await renderRetainage();
     expect(html).not.toMatch(/snapshot/i);
-    expect(html).toContain("Each invoice keeps the retainage worked out when it was created");
+    // The sentence now sits inside the Edit form (declutter round 3), which
+    // renders only once opened — so it is checked in the page source.
+    expect(readFileSync(fileURLToPath(new URL("./(tabs)/retainage/page.tsx", import.meta.url)), "utf8")).toContain(
+      "Each invoice keeps the retainage worked out when it was created",
+    );
   });
 });
 
