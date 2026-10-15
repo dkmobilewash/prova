@@ -54,14 +54,14 @@ export function RunStatusPill({ status }: { status: TaskStatus }) {
  */
 export function runWayOut(status: TaskStatus, note: string | null): { href: string; label: string } | "rerun" | null {
   if (status === "FAILED" || status === "STALLED") return "rerun";
-  if (status === "PAUSED_CAP") return { href: "/ai/activity#cap", label: "See the spend cap" };
+  if (status === "PAUSED_CAP") return { href: "/ai/activity?tab=settings#cap", label: "See the spend cap" };
   if (status !== "SKIPPED") return null;
   // The company-wide switch's refusal names Settings → Assistant
   // (lib/ai/features.ts); the per-agent switch's says "switched off for this
   // company" (lib/agents/core.ts). Anything else (settings unreadable) says
   // to try again.
   if (note?.includes("Settings → Assistant")) return { href: "/settings/assistant#ai-switch", label: "See the AI switch" };
-  if (note?.includes("switched off")) return { href: "/ai/activity#agent-switches", label: "See the agent switches" };
+  if (note?.includes("switched off")) return { href: "/ai/activity?tab=settings#agent-switches", label: "See the agent switches" };
   return "rerun";
 }
 

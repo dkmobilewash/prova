@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { AREAS, areaHref, toolRoute } from "@/lib/areas";
+import { NAV_ITEMS } from "@/components/navItems";
 
 /**
  * THE ONE BREADCRUMB AND THE ONE PAGE TITLE (Concept G, 2026-10-11).
@@ -84,7 +85,10 @@ export function PageHeader({
 }) {
   const found = trailFor(route);
   const trail = [...(found?.trail ?? [{ href: "/dashboard", label: "Home" }]), ...[parent ?? []].flat()];
-  const heading = title ?? found?.current ?? route;
+  // A route in no area but in the nav (/settings/integrations) is named by
+  // its nav label. It fell through to `route` and printed the raw path as
+  // the H1 and the crumb (density audit, incidental).
+  const heading = title ?? found?.current ?? NAV_ITEMS.find((item) => item.href === route)?.label ?? route;
   return (
     <header className="mb-6">
       <Breadcrumb trail={trail} current={heading} />

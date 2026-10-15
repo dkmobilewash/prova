@@ -11,7 +11,10 @@ import { accountPurpose } from "@/lib/quickbooks-constants";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
 import { viewerAsOf, viewerTimeZone } from "@/lib/viewerToday";
 import { dueStatus } from "@/lib/due-date";
-import { formatCalendarDate } from "@/lib/render-date";
+import { formatCalendarDate, formatInstant } from "@/lib/render-date";
+import { CollapsedForm } from "@/components/CollapsedForm";
+import { Disclosure } from "@/components/Disclosure";
+import { SeeAll, seeAllWindow } from "@/components/SeeAll";
 import { cashReceived } from "@/lib/billing/payment-entry";
 import { money } from "@/lib/money";
 import { invoiceBalanceLabel, balanceToneClass } from "@/lib/invoice-balance-label";
@@ -24,6 +27,10 @@ import { PayAppSummary } from "@/components/job/PayAppSummary";
 import { billingNoun } from "@/components/job/jobStages";
 import { payAppFigures, payAppMonth } from "@/components/job/payAppFigures";
 import { loadPayApplication } from "@/lib/pay-application-query";
+
+/** "PARTIALLY_PAID" → "Partially paid": the same words StatusForm's select
+ * shows, for the closed row's summary line. A label only. */
+const statusLabel = (status: string) => status.charAt(0) + status.slice(1).toLowerCase().replace("_", " ");
 
 const rowDeleteClass = "text-xs text-danger hover:underline";
 const rowCancelClass =
@@ -44,7 +51,13 @@ const rowConfirmClass =
  * detail is held privately since it names exactly what is unguarded on a
  * public repo.
  */
-export default async function JobBillingPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function JobBillingPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ all?: string }>;
+}) {
   const { id } = await params;
   const { company, principal, job: jobRef } = await requireJob(id);
   const { showsBilling } = jobCapabilities(principal);
@@ -163,6 +176,42 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
   const invoiceCounter = await prisma.invoiceCounter.findUnique({ where: { jobId: job.id }, select: { lastNumber: true } });
   const latestInvoice = latestPayApp ? job.invoices.find((invoice) => invoice.id === latestPayApp.id) : undefined;
 
+  // Why each QuickBooks button is off — the same two calls, with the same
+  // arguments, each button below still makes for itself; repeated here only
+  // so the page can see every list at once. A sentence EVERY button carries
+  // ("QuickBooks isn't connected.") is said once above the list instead of
+  // under each invoice and each payment (four times on Riverside). The
+  // buttons still receive their full lists, so what is disabled is unchanged;
+  // `shownAbove` only drops the repeated sentence from the note beside them.
+  const blockerLists = job.invoices.flatMap((invoice) => [
+    pushBlockers({
+      hasConnection: quickBooksUsable,
+      customerQboId: jobCustomerLink?.qboId ?? null,
+      incomeAccountId: incomeAccountMapping?.qboAccountId ?? null,
+      totalCents: Math.round(Number(invoice.amount) * 100),
+    }),
+    ...invoice.payments.map((payment) =>
+      paymentPushBlockers({
+        hasConnection: quickBooksUsable,
+        customerQboId: jobCustomerLink?.qboId ?? null,
+        invoiceQboId: quickBooksInvoiceLinks.get(invoice.id)?.qboId ?? null,
+        amountCents: Math.round(Number(payment.amount) * 100),
+      }),
+    ),
+  ]);
+  // Only lifted when there are two or more buttons: one button's own reasons
+  // read better beside it than above a list.
+  const sharedBlockers =
+    blockerLists.length > 1 ? blockerLists[0].filter((blocker) => blockerLists.every((list) => list.includes(blocker))) : [];
+
+  // One list, newest last, capped at the latest few with "See all" (?all=1).
+  // A slice of what was loaded, never a narrower query: every row stays one
+  // click away.
+  const noun = billingNoun(company.filesMonthlyPayApps);
+  const { limit, showingAll } = seeAllWindow((await searchParams)?.all);
+  const shownInvoices = showingAll ? job.invoices : job.invoices.slice(-limit);
+  const newestInvoiceId = job.invoices.at(-1)?.id;
+
   return (
     <div>
       <PayAppSummary
@@ -184,10 +233,30 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
         }
       />
 
+      {/* ONE list of invoices and pay applications. It used to be two: every
+          invoice as a card here, then the same pay applications again further
+          down (PayApplications.tsx), each with its own status select. A pay
+          application IS an invoice with line items, so this list — every
+          invoice on the job — already holds every pay application; what the
+          second list had that this one lacked (the "Application #N" link and
+          the issued date) is on the row now. One row per invoice, one status
+          control each; the newest opens, the rest are one line. */}
       <section className="mb-10" data-tour="job-invoices">
-        <h2 className="mb-3 text-lg font-semibold text-ink">{billingNoun(company.filesMonthlyPayApps).many}</h2>
-        <div className="flex flex-col gap-4">
-          {job.invoices.map((invoice) => {
+        <h2 className="mb-3 text-lg font-semibold text-ink">{noun.many}</h2>
+        {sharedBlockers.length > 0 && (
+          <p className="mb-3 text-sm text-ink-muted">
+            {sharedBlockers.join(" ")} The QuickBooks buttons below stay off until that&rsquo;s sorted —{" "}
+            <Link href="/settings?tab=quickbooks" className="text-link hover:text-link-hover hover:underline">
+              QuickBooks settings
+            </Link>
+            .
+          </p>
+        )}
+        {payApplications.length === 0 && (
+          <p className="mb-3 text-sm text-ink-body">No pay applications submitted yet.</p>
+        )}
+        <div className="border-t border-line-row">
+          {shownInvoices.map((invoice) => {
             const paid = invoice.payments.reduce((s, p) => s + Number(p.amount), 0);
             // ONE definition of "balance", shared with /cash-flow, the
             // Today receivables tile and the GC's portal. This line used
@@ -203,16 +272,53 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
               format: money,
             });
             return (
-              <div key={invoice.id} className="rounded-lg border border-line-card bg-surface p-4">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <p className="font-medium text-ink">
-                    {billingNoun(company.filesMonthlyPayApps).one} #{invoice.number}
-                    {invoice.description ? ` — ${invoice.description}` : ""}
-                  </p>
-                  <div className="flex items-center gap-4 text-sm">
-                    <span className="text-ink-body">Amount {money(Number(invoice.amount))}</span>
-                    <span className="text-ink-body">Paid {money(paid)}</span>
-                    <span className={balanceToneClass[balance.tone]}>{balance.headline}</span>
+              <Disclosure
+                key={invoice.id}
+                variant="row"
+                name="pay-app"
+                open={invoice.id === newestInvoiceId}
+                summary={
+                  // The closed row answers "which one, how much, where is it,
+                  // when is it due" — an overdue date stays red here, so a
+                  // closed row still shows what needs chasing.
+                  <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                    <span className="font-medium text-ink">
+                      {noun.one} #{invoice.number}
+                      {invoice.description ? ` — ${invoice.description}` : ""}
+                    </span>
+                    <span className="tabular-nums text-ink-body">· {money(Number(invoice.amount))}</span>
+                    <span className="text-ink-body">· {statusLabel(invoice.status)}</span>
+                    {invoice.dueAt && (invoice.status !== "PAID" && dueStatus(invoice.dueAt, asOf).overdue ? (
+                      <span className="font-semibold text-danger">
+                        · Due {formatCalendarDate(invoice.dueAt)} · {dueStatus(invoice.dueAt, asOf).text}
+                      </span>
+                    ) : (
+                      <span className="text-ink-muted">· Due {formatCalendarDate(invoice.dueAt)}</span>
+                    ))}
+                  </span>
+                }
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex flex-col gap-1">
+                    {invoice.lineItems.length > 0 && (
+                      <p className="text-ink-muted">
+                        <Link href={`/jobs/${job.id}/pay-applications/${invoice.id}`} className="text-link hover:underline">
+                          Application #{invoice.number}
+                        </Link>
+                        {" · issued "}
+                        {formatInstant(invoice.issuedAt, timeZone)}
+                        {" · "}
+                        <Link href={`/jobs/${job.id}/pay-applications/${invoice.id}`} className="text-link hover:underline">
+                          View pay application →
+                        </Link>
+                      </p>
+                    )}
+                    <p className="flex flex-wrap items-baseline gap-x-4">
+                      <span className="text-ink-body">Paid {money(paid)}</span>
+                      <span className={balanceToneClass[balance.tone]}>{balance.headline}</span>
+                    </p>
+                  </div>
+                  <div className="flex items-start gap-4">
                     <StatusForm jobId={job.id} invoiceId={invoice.id} status={invoice.status} />
                     <PushInvoiceToQuickBooks
                       invoiceId={invoice.id}
@@ -224,21 +330,10 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                         incomeAccountId: incomeAccountMapping?.qboAccountId ?? null,
                         totalCents: Math.round(Number(invoice.amount) * 100),
                       })}
+                      shownAbove={sharedBlockers}
                     />
                   </div>
                 </div>
-                {invoice.lineItems.length > 0 && (
-                  <Link href={`/jobs/${job.id}/pay-applications/${invoice.id}`} className="mt-1 inline-block text-sm text-link hover:underline">
-                    View pay application →
-                  </Link>
-                )}
-                {invoice.dueAt && (invoice.status !== "PAID" && dueStatus(invoice.dueAt, asOf).overdue ? (
-                  <p className="mt-1 text-sm font-semibold text-danger">
-                    Due {formatCalendarDate(invoice.dueAt)} · {dueStatus(invoice.dueAt, asOf).text}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-sm text-ink-muted">Due {formatCalendarDate(invoice.dueAt)}</p>
-                ))}
                 {/* The retainage figure and the balance it explains now
                     come from the same call, so the page cannot print one
                     without the other. */}
@@ -296,6 +391,7 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                                 invoiceQboId: quickBooksInvoiceLinks.get(invoice.id)?.qboId ?? null,
                                 amountCents: Math.round(Number(payment.amount) * 100),
                               })}
+                              shownAbove={sharedBlockers}
                             />
                           </RowActions>
                         </span>
@@ -316,48 +412,51 @@ export default async function JobBillingPage({ params }: { params: Promise<{ id:
                 {(balance.tone === "owing" || balance.tone === "retainage-only") && (
                   <LogPaymentForm jobId={job.id} invoiceId={invoice.id} />
                 )}
-              </div>
+              </Disclosure>
             );
           })}
         </div>
+        <SeeAll total={job.invoices.length} limit={limit} showingAll={showingAll} noun={noun.lowerMany} />
 
-        <ActionForm action={createInvoiceWithId} className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-line-card bg-surface p-4">
-          <label className="flex flex-col gap-1 text-sm text-ink-label">
-            Description
-            <input
-              name="description"
-              placeholder="Deposit, final payment, etc."
-              className="w-56 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-ink-label">
-            Amount
-            <input
-              name="amount"
-              type="text"
-              inputMode="decimal"
-              required
-              className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-ink-label">
-            Due date
-            <input
-              type="date"
-              name="dueAt"
-              className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
-            />
-          </label>
-          <SubmitButton type="submit" className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500">
-            Create invoice
-          </SubmitButton>
-        </ActionForm>
+        {/* Anchor for older links here. The summary's "Start pay app" uses
+            NEW_PAY_APP_HASH, which PayApplications opens and focuses itself. */}
+        <div id="pay-applications" className="mt-4 flex scroll-mt-6 flex-col gap-3">
+          <PayApplications jobId={job.id} lineItems={payApplicationLineItemOptions} />
+          <CollapsedForm label="Create invoice" tone="secondary">
+            <ActionForm action={createInvoiceWithId} className="flex flex-wrap items-end gap-3 rounded-lg border border-line-card bg-surface p-4">
+              <label className="flex flex-col gap-1 text-sm text-ink-label">
+                Description
+                <input
+                  name="description"
+                  placeholder="Deposit, final payment, etc."
+                  className="w-56 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-ink-label">
+                Amount
+                <input
+                  name="amount"
+                  type="text"
+                  inputMode="decimal"
+                  required
+                  className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-ink-label">
+                Due date
+                <input
+                  type="date"
+                  name="dueAt"
+                  className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
+                />
+              </label>
+              <SubmitButton type="submit" className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500">
+                Create invoice
+              </SubmitButton>
+            </ActionForm>
+          </CollapsedForm>
+        </div>
       </section>
-
-      {/* Anchor for older links here. The summary's "Start pay app" uses
-          NEW_PAY_APP_HASH, which PayApplications opens and focuses itself. */}
-      <div id="pay-applications" className="scroll-mt-6" />
-      <PayApplications jobId={job.id} lineItems={payApplicationLineItemOptions} payApplications={payApplications} timeZone={timeZone} />
 
       <LienWaivers jobId={job.id} section={lienWaiverSection} canManage={showsBilling} />
     </div>

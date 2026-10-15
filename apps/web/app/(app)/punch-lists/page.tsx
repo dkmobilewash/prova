@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CollapsedForm } from "@/components/CollapsedForm";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { PageShell } from "@prova/ui";
@@ -16,12 +17,12 @@ export const metadata = { title: "Punch lists" };
 export default async function PunchListsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; show?: string }>;
+  searchParams: Promise<{ job?: string; show?: string; new?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_FIELD");
   if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
   const { company, ...currentUser } = context;
-  const { job: jobFilter, show } = await searchParams;
+  const { job: jobFilter, show, new: newParam } = await searchParams;
   const showDone = show === "all";
 
   // No ?draft= here any more: the Ask box's punch command is DIRECT and
@@ -165,16 +166,12 @@ export default async function PunchListsPage({
       }
       aside={
         <>
-          <section
-            className="mb-4 rounded-lg border border-line-card bg-surface p-4"
-            data-tour="punch-add"
-          >
-            <h2 className="mb-3 text-sm font-semibold text-ink-label">Add an item</h2>
-            <PunchListForm jobs={jobOptions} defaultJobId={activeJob ?? undefined} people={people} />
-          </section>
-
+          {/* The job filter first, then the add form behind its button
+              (density audit #30): open on arrival only for `?new=1`, the
+              link the home tiles and ⌘K use. Once open it stays open after
+              each save — PunchListForm's walkthrough-burst rule. */}
           {jobOptions.length > 0 && (
-            <div className="flex flex-wrap gap-2" data-tour="punch-job-filter">
+            <div className="mb-4 flex flex-wrap gap-2" data-tour="punch-job-filter">
               <Link href={filterHref({ job: null })} className={chip(!activeJob)}>
                 All jobs
               </Link>
@@ -185,6 +182,14 @@ export default async function PunchListsPage({
               ))}
             </div>
           )}
+
+          <section data-tour="punch-add">
+            <CollapsedForm label="Add an item" startOpen={newParam === "1"}>
+              <div className="rounded-lg border border-line-card bg-surface p-4">
+                <PunchListForm jobs={jobOptions} defaultJobId={activeJob ?? undefined} people={people} />
+              </div>
+            </CollapsedForm>
+          </section>
         </>
       }
     >

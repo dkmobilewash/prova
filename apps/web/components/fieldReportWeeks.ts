@@ -23,6 +23,9 @@ export type ReportData = {
   weather: string | null;
   delays: string | null;
   filedByName: string | null;
+  /** The day's crew from its time entries, for the one-line row. Absent
+   *  where the caller did not load it. */
+  manpower?: { headcount: number; hours: number };
 };
 
 const DAY_MS = 86_400_000;

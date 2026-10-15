@@ -218,3 +218,19 @@ describe("submitting the company record actually saves", () => {
     expect(button().disabled).toBe(false);
   });
 });
+
+describe("each gap is said once", () => {
+  it("the box names the gaps; each consequence sits only under the field that fixes it", async () => {
+    const { companyProfileGaps } = await import("@/lib/company-profile");
+    const gaps = companyProfileGaps(EMPTY);
+    expect(gaps.map((g) => g.field), "the auto-generated name is one of them").toContain("name");
+    act(() => {
+      root.render(createElement(CompanyProfileForm, { company: EMPTY, gaps }));
+    });
+    const text = container.textContent ?? "";
+    for (const gap of gaps) {
+      expect(text.split(gap.consequence).length - 1, `"${gap.label}" consequence`).toBe(1);
+      expect(text).toContain(gap.label);
+    }
+  });
+});

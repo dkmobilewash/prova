@@ -65,11 +65,15 @@ import { Spinner } from "@/components/Spinner";
  * server re-parses, with no separate write path of its own.
  */
 
-type Props =
+type Props = (
   | { kind: "clients"; existingContactNames: string[]; existingPeople: ExistingPerson[] }
   | { kind: "jobs"; existingContactNames: string[]; existingJobs: ExistingJob[] }
   | { kind: "crew"; existingCrew: ExistingCrew[] }
-  | { kind: "costCodes"; existingPhaseCodeCodes: string[] };
+  | { kind: "costCodes"; existingPhaseCodeCodes: string[] }
+) & {
+  /** The box's heading, when the section around it already names the kind. */
+  title?: string;
+};
 
 type Result = { ok: true; message: string } | { ok: false; message: string };
 
@@ -352,7 +356,7 @@ const td = "px-3 py-1.5";
 
 export function SpreadsheetImport(props: Props) {
   const { kind } = props;
-  const copy = COPY[kind];
+  const copy = props.title ? { ...COPY[kind], title: props.title } : COPY[kind];
   const fieldOptions = FIELD_OPTIONS[kind];
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");

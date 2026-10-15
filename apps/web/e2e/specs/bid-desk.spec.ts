@@ -4,6 +4,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { finishWizard, landOnDashboard, settleAction, startJob } from "../lib/journey";
 import { dataTour } from "../lib/dataTour";
+import { openDisclosure } from "../lib/collapsed";
 
 /**
  * /bids GREW FOUR WHOLE PANELS IN THREE DAYS AND NOBODY OPENED IT.
@@ -57,6 +58,14 @@ test.describe("the bid desk", () => {
   // bid due within the window is ALSO listed above it, as a short row with
   // no trade scope or amount, and a bare `li` filter found that one first.
   const bidRow = (): Locator => page.locator(`${dataTour("bids-list")} li`).filter({ hasText: PROJECT }).first();
+
+  /** THE FOUR PANELS ARE ONE CLICK DOWN since declutter round 2: a row's
+   * lines, addenda, compliance, quotes and job link sit in one
+   * `<details name="bid">` under the bid's summary line, and a load or a
+   * reload closes it. Every step opens it before touching a panel — and after
+   * every reload, so what is read back is read ON SCREEN rather than out of a
+   * closed row's markup (toContainText reads hidden text; a click cannot). */
+  const openPanels = (): Promise<void> => openDisclosure(bidRow().locator('details[name="bid"]'));
 
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext();
@@ -115,6 +124,7 @@ test.describe("the bid desk", () => {
   });
 
   test("3. alternates, a unit price and an allowance, and what each does to the total (#492)", async () => {
+    await openPanels();
     await bidRow().getByRole("button", { name: "Add an alternate, unit price or allowance" }).click();
 
     const lineForm = () => bidRow().locator("form").filter({ has: page.getByRole("button", { name: "Add", exact: true }) });
@@ -179,12 +189,14 @@ test.describe("the bid desk", () => {
 
     await page.reload();
     await expectHealthy(page, "/bids after the GC takes the alternate", { monitor });
+    await openPanels();
     await expect(bidRow()).toContainText(`Alternates accepted ${ALTERNATE} of ${ALTERNATE} offered`);
     await expect(bidRow(), "base plus the accepted alternate").toContainText(`Base plus accepted ${AWARDED}`);
     await expect(bidRow().getByText(/provisional/)).toHaveCount(0);
   });
 
   test("4. an unacknowledged addendum makes the bid non-responsive (#496)", async () => {
+    await openPanels();
     await bidRow().getByRole("button", { name: "Log an addendum" }).click();
     // Identified by the field only this form has, so a form opened later in
     // the same row cannot be picked up by accident.
@@ -197,6 +209,7 @@ test.describe("the bid desk", () => {
 
     await page.reload();
     await expectHealthy(page, "/bids with an unacknowledged addendum", { monitor });
+    await openPanels();
     const row = bidRow();
     await expect(row).toContainText("Addendum 3");
     await expect(row).toContainText("not acknowledged");
@@ -216,6 +229,7 @@ test.describe("the bid desk", () => {
     await settleAction(page, () => row.getByRole("button", { name: "Acknowledge" }).click());
     await page.reload();
     await expectHealthy(page, "/bids after acknowledging the addendum", { monitor });
+    await openPanels();
     await expect(bidRow().getByText("not acknowledged")).toHaveCount(0);
     await expect(bidRow()).toContainText(/acknowledged \d{4}-\d{2}-\d{2}/);
     await expect(bidRow()).toContainText(
@@ -226,6 +240,7 @@ test.describe("the bid desk", () => {
   });
 
   test("5. what the bid form asks for, outstanding and then done (#496)", async () => {
+    await openPanels();
     await bidRow().getByRole("button", { name: "Add a bid-form requirement" }).click();
     const requirement = bidRow().locator("form").filter({ has: page.locator('input[name="satisfiedOn"]') });
     await requirement.locator('select[name="kind"]').selectOption("BID_BOND");
@@ -234,6 +249,7 @@ test.describe("the bid desk", () => {
 
     await page.reload();
     await expectHealthy(page, "/bids with an outstanding requirement", { monitor });
+    await openPanels();
     await expect(bidRow()).toContainText("Bid bond, 10% of base bid");
     await expect(bidRow()).toContainText("outstanding");
     await expect(bidRow()).toContainText("Bid bond, 10% of base bid — not recorded as done.");
@@ -242,11 +258,13 @@ test.describe("the bid desk", () => {
     await settleAction(page, () => bidRow().getByRole("button", { name: "Mark done" }).click());
     await page.reload();
     await expectHealthy(page, "/bids after the bond is recorded", { monitor });
+    await openPanels();
     await expect(bidRow()).toContainText(/done \d{4}-\d{2}-\d{2}/);
     await expect(bidRow().getByText("1 thing would make this bid non-responsive.")).toHaveCount(0);
   });
 
   test("6. two quotes, and the caution that decides whether the low one is the best (#494)", async () => {
+    await openPanels();
     await bidRow().getByRole("button", { name: "Log a quote you received" }).click();
     const quoteForm = () =>
       bidRow().locator("form").filter({ has: page.getByRole("button", { name: "Add quote" }) });
@@ -273,6 +291,7 @@ test.describe("the bid desk", () => {
 
     await page.reload();
     await expectHealthy(page, "/bids with two quotes on one package", { monitor });
+    await openPanels();
     const row = bidRow();
     await expect(row).toContainText("2 quotes · $3,000 between high and low");
     await expect(row, "the cheapest is named lowest, and never on its own").toContainText("lowest");
@@ -298,6 +317,7 @@ test.describe("the bid desk", () => {
     // control is HERE is the browser half of that regression guard: carrying a
     // quote onto a job's estimate happens while the bid is still out.
     await page.goto("/bids?view=all");
+    await openPanels();
     await expect(bidRow().getByRole("button", { name: "Link the job this bid is for" })).toBeVisible();
 
     // The project name opens the bid's own page (/ai/bids/<id>) since the AI
@@ -318,6 +338,7 @@ test.describe("the bid desk", () => {
 
     await page.goto("/bids?view=all");
     await expectHealthy(page, "/bids with a won bid", { monitor });
+    await openPanels();
     // Still here after the win — the control is not gated either way.
     const link = bidRow().getByRole("button", { name: "Link the job this bid is for" });
     await expect(link).toBeVisible();
@@ -333,6 +354,7 @@ test.describe("the bid desk", () => {
 
     await page.reload();
     await expectHealthy(page, "/bids with the bid linked to its job", { monitor });
+    await openPanels();
     const row = bidRow();
     await expect(row).toContainText("This bid is for");
     await expect(row).toContainText(JOB_NAME);

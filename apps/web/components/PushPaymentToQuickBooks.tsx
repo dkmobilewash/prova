@@ -24,6 +24,7 @@ export function PushPaymentToQuickBooks({
   linkedQboId,
   lastVerifiedAt,
   blockers,
+  shownAbove = [],
 }: {
   paymentId: string;
   /** Set once this payment exists in QuickBooks. */
@@ -48,8 +49,13 @@ export function PushPaymentToQuickBooks({
    * done as cheaply.
    */
   blockers: string[];
+  /** Blocker sentences the page already states once above the list.
+   * Display only, as on PushInvoiceToQuickBooks: `blocked` still reads the
+   * full `blockers`. */
+  shownAbove?: string[];
 }) {
   const blocked = blockers.length > 0;
+  const ownBlockers = blockers.filter((blocker) => !shownAbove.includes(blocker));
   const [message, setMessage] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -113,8 +119,8 @@ export function PushPaymentToQuickBooks({
       {/* Said on the row, not after a click. A disabled control with no
           reason beside it is the same unanswered question as an enabled
           one that refuses. */}
-      {blocked && message === null && (
-        <p className="max-w-[18rem] text-right text-xs text-ink-muted">{blockers.join(" ")}</p>
+      {ownBlockers.length > 0 && message === null && (
+        <p className="max-w-[18rem] text-right text-xs text-ink-muted">{ownBlockers.join(" ")}</p>
       )}
 
       {message === null && linkedQboId && (

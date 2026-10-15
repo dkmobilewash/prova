@@ -118,6 +118,34 @@ const BARE_NAME_EXCEPTIONS: Record<string, { count: number; why: string }> = {
       "its own job, nothing is filed from it, and the GC, trade and stage " +
       "strip on the same card tell two similarly named jobs apart.",
   },
+  "app/(app)/field-reports/page.tsx": {
+    count: 1,
+    why:
+      "The job FILTER chips (declutter, 2026-10-13): the GC and status suffix " +
+      "wrapped the chips to two rows. Nothing is filed from a chip — the " +
+      "composer's picker above still uses jobPickerLabel — and each chip " +
+      "keeps the full jobPickerLabel in its title.",
+  },
+  "app/(app)/lien-deadlines/page.tsx": {
+    count: 1,
+    why:
+      "The lien-waivers line (declutter round 3, #26): one link per billed " +
+      "job to that job's Billing tab, GC in the title. Read-only — nothing is " +
+      "filed or filtered from it; the waivers themselves live on the job.",
+  },
+  // The same chip change as /field-reports, on five more logs (density
+  // audit #32 and #40). Nothing is filed from a chip — each page's own
+  // add form still uses jobPickerLabel — and every chip keeps the full
+  // label in its title.
+  ...Object.fromEntries(
+    ["drawings", "material-orders", "photos", "rfis", "submittals"].map((page) => [
+      `app/(app)/${page}/page.tsx`,
+      {
+        count: 1,
+        why: "The job FILTER chips: name only, so the row stays one row. Nothing is filed from a chip, and the full jobPickerLabel is the chip's title.",
+      },
+    ]),
+  ),
   "components/CrewWeekGrid.tsx": {
     count: 1,
     why:

@@ -156,7 +156,7 @@ export const PROVIDERS: ProviderEntry[] = [
     name: "QuickBooks Online",
     description:
       "Invoices push to QuickBooks, the record is read back to confirm what landed, and reconciliation reports where the two disagree. One direction only — C Stream does not pull QuickBooks edits back. Starting out, you can also import your customers, vendors and products once, with a preview first.",
-    implementation: { kind: "external", href: "/settings", managedAt: "Settings" },
+    implementation: { kind: "external", href: "/settings?tab=quickbooks", managedAt: "Settings" },
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className={iconClass} aria-hidden="true">
         <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.4" />

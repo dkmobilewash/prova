@@ -41,6 +41,8 @@ type Bid = {
   addenda: [];
   requirements: [];
   specSections: [];
+  declineReason?: string | null;
+  wonJob?: { id: string; name: string } | null;
 };
 
 function bid(over: Partial<Bid> & { id: string }): Bid {
@@ -245,5 +247,85 @@ describe("/bids total won value", () => {
 
     expect(html).toContain("1 bid");
     expect(html).not.toContain("won bids");
+  });
+});
+
+/**
+ * Declutter round 2 (density audit #14): every bid ever, uncapped, and every
+ * row a four-panel mini workspace. Now: the latest 20 + See all, each row one
+ * summary line with its panels behind a row disclosure, and the decline card
+ * one line. The totals still count EVERY matching bid, not the shown window.
+ */
+describe("/bids declutter", () => {
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      // The one WON bid is the OLDEST, outside the 20 shown, so the won value
+      // can only read $1,000 if it is summed over every bid.
+      bid({ id: `b${i}`, projectName: `Project ${i}`, status: i === n - 1 ? "WON" : "INVITED", bidAmount: i === n - 1 ? 1_000 : null }),
+    );
+  const rows = (html: string) => html.split('data-bids="row-panels"').length - 1;
+
+  it("shows the latest 20 with a See all line, while the count and won value cover all 25", async () => {
+    bids = many(25);
+    const html = await render({ view: "all" });
+    expect(rows(html)).toBe(20);
+    expect(html).toContain("Project 19");
+    expect(html).not.toContain("Project 20<");
+    // ">25 bids" is the count line's own start, not the See-all sentence's tail.
+    expect(html).toMatch(/>25 bids/);
+    expect(html).toContain("$1,000.00 in won bids");
+    expect(html).toContain("Showing the latest 20 of 25 bids");
+    expect(html).toContain('href="/bids?view=all&amp;all=1"');
+  });
+
+  it("?all=1 lifts the cap and keeps the filters in its links", async () => {
+    bids = many(25);
+    const html = await render({ view: "all", all: "1", status: "INVITED" });
+    expect(rows(html)).toBe(25);
+    expect(html).toContain("Showing all 25 bids");
+    expect(html).toContain('href="/bids?view=all&amp;status=INVITED"');
+  });
+
+  it("each row links to its workspace, with the four panels inside a closed row disclosure", async () => {
+    bids = [bid({ id: "b7", projectName: "Pell Riverfront Tower" })];
+    const html = await render({ view: "all" });
+    expect(html).toContain('href="/ai/bids/b7"');
+    const details = html.match(/<details[^>]*name="bid"[^>]*>[\s\S]*?<\/details>/)?.[0] ?? "";
+    expect(details).not.toContain(" open");
+    expect(details).toContain("Link the job this bid is for");
+    // The summary line (name, GC) is outside the disclosure, always visible.
+    expect(details).not.toContain("Pell Riverfront Tower");
+  });
+
+  it("an empty row's disclosure invites adding, instead of reading a string of zeros", async () => {
+    bids = [bid({ id: "e1" })];
+    const empty = await render({ view: "all" });
+    expect(empty).toContain("Add lines, addenda, quotes or link the job");
+    expect(empty).not.toContain("0 lines");
+    // Still a closed disclosure with the panels inside — the way to add them.
+    expect(empty).toMatch(/<details[^>]*name="bid"/);
+    expect(empty).toContain("Link the job this bid is for");
+
+    bids = [bid({ id: "e2", wonJob: { id: "job-9", name: "Pell Tower" } })];
+    const some = await render({ view: "all" });
+    expect(some).toContain("job: Pell Tower");
+    expect(some).not.toContain("Add lines, addenda, quotes or link the job");
+  });
+
+  it("says the decline picture in one line, with every figure and a way to the bids", async () => {
+    bids = [
+      bid({ id: "d1", status: "DECLINED", declineReason: "CAPACITY" }),
+      bid({ id: "d2", status: "DECLINED", declineReason: "CAPACITY" }),
+      bid({ id: "d3", status: "DECLINED", declineReason: "CONTRACT_TERMS" }),
+      bid({ id: "d4", status: "DECLINED", declineReason: null }),
+    ];
+    const html = await render({ view: "all" });
+    const line = html.match(/<p[^>]*data-bids="decline-summary"[^>]*>[\s\S]*?<\/p>/)?.[0] ?? "";
+    expect(line).toContain("4 bids declined, most often for no capacity (2 of 4). 1 had no reason recorded.");
+    expect(line).toContain("Contract terms 1 bid");
+    expect(line).toContain('href="/bids?view=all&amp;status=DECLINED"');
+    expect(html).not.toMatch(/<section[^>]*data-bids="decline-summary"/);
+    // The regret letter is still one click from a declined row.
+    expect(html).toContain('href="/bids/d1/regret"');
   });
 });

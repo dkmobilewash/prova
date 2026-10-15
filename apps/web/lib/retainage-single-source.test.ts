@@ -187,6 +187,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
     "Proves BOTH write paths snapshot the same cent for the same bill, against a real Postgres, and reads the G702 back through loadPayApplication. The behavioural half that this census and the formula's unit test cannot reach.",
   "lib/billing/payment-entry.test.ts":
     "A TEST FIXTURE, and the only reason it names the column at all: #288 made retainageWithheld required on ReliabilityInvoiceInput, so every fixture building one must now state it. This one passes null — a job with no retainage terms — because its subject is the recorded platform fee and it makes no claim about retainage. Reads no total and exercises no retainage behaviour. Added when the fee work and #288 were merged together; each was green alone and only this type disagreed.",
+  "app/(app)/jobs/[id]/(tabs)/billing/declutter.test.tsx":
+    "A TEST FIXTURE for the Billing tab's declutter (round 2): it renders the real page against mocked invoices, and an invoice row must state the column because the page hands it to invoiceBalanceLabel. Passes null, reads no total, makes no claim about retainage — it counts status selects, QuickBooks notes and rows.",
   "lib/billing/retainage-release.ts":
     "READS one job's snapshots to sum them the way the job page does — the same calculateRetainageSummary call over the same rows — for the release_retainage card's three figures and for the ceiling and the stale-card check on its tap. Per-job by necessity; never a total. Arrived with phase 4d of the Ask build.",
   "lib/actions/quickbooks.ts": "Maps one invoice's snapshot into a QuickBooks memo.",

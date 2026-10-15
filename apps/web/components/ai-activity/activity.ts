@@ -72,3 +72,27 @@ export function groupByDay(items: ActivityItem[], zone: string, today: string): 
   }
   return days;
 }
+
+/** A run of same-kind lines collapsed to one ("New invitation × 10"). */
+export type ActivityGroup = { id: string; label: string; items: ActivityItem[] };
+
+/**
+ * Collapses CONSECUTIVE lines from the same agent whose titles share a lead
+ * ("New invitation: A", "New invitation: B" → "New invitation") into one
+ * group, so a morning's ten invitations read as one line that opens (density
+ * audit #18). Order is untouched. A dismissed finding is never folded — it
+ * carries its own Restore button.
+ */
+export function groupConsecutive(items: ActivityItem[]): Array<ActivityItem | ActivityGroup> {
+  const lead = (i: ActivityItem) => (i.dismissedFindingId ? null : `${i.agent}|${i.title.split(": ")[0]}`);
+  const out: Array<ActivityItem | ActivityGroup> = [];
+  for (let i = 0; i < items.length; ) {
+    let j = i + 1;
+    const key = lead(items[i]);
+    while (key && j < items.length && lead(items[j]) === key) j++;
+    if (j - i > 1) out.push({ id: `g-${items[i].id}`, label: `${items[i].title.split(": ")[0]} × ${j - i}`, items: items.slice(i, j) });
+    else out.push(items[i]);
+    i = j;
+  }
+  return out;
+}

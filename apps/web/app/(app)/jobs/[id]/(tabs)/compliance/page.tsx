@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@prova/db";
 import { PageColumn } from "@prova/ui";
 import { RowActions, ConfirmDelete } from "@/components/RowActions";
@@ -15,6 +16,9 @@ import { Das140Panel, type Das140WithStanding } from "@/components/Das140Panel";
 import { Das142Panel, type Das142WithStanding } from "@/components/Das142Panel";
 import { DasProposalList } from "@/components/DasProposalList";
 import { DasUnverifiedNote } from "@/components/DasUnverifiedNote";
+import { CollapsedForm } from "@/components/CollapsedForm";
+import { Disclosure } from "@/components/Disclosure";
+import { dasSectionSummary } from "@/components/dasSectionSummary";
 import { das140Standing, das142Standing, dasProposals } from "@/lib/das-forms";
 import {
   loadApprenticeshipCommittees,
@@ -56,8 +60,15 @@ const isoDay = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : 
  * filled in from. The committees themselves are company-level and live on
  * /union-compliance beside the apprentice ratio.
  */
-export default async function JobCompliancePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function JobCompliancePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ open?: string }>;
+}) {
   const { id } = await params;
+  const { open } = (await searchParams) ?? {};
   const { job: jobRef, company, currentUser } = await requireJob(id);
 
   const [job, determinations, today, committees, notices140, requests142, firstWorkerDay, craftHours, craftOptions] =
@@ -109,6 +120,31 @@ export default async function JobCompliancePage({ params }: { params: Promise<{ 
   // Standing is DERIVED on every read and stored nowhere, and it is derived
   // HERE rather than in the client panels: "today" has to be the reader's own
   // calendar day, which only the server can resolve (lib/viewerToday.ts).
+  // A job still at ESTIMATE that is not marked public works and has no
+  // determination or DAS record: nothing on this tab is due yet (density
+  // audit #39). One line instead of three sections and an open form, the
+  // way Billing does it. A public-works bid keeps the whole tab — its wage
+  // determination prices the bid — and `?open=1` opens it for any job, so
+  // recording the call-for-bids facts is one click. jobTabs.ts untouched.
+  if (
+    job.status === "ESTIMATE" &&
+    !job.publicWorks &&
+    determinations.length === 0 &&
+    notices140.length === 0 &&
+    requests142.length === 0 &&
+    open !== "1"
+  ) {
+    return (
+      <p className="text-sm text-ink-muted">
+        This job is still an estimate and isn&rsquo;t marked public works — wage determinations and
+        apprenticeship notices open up once it&rsquo;s contracted.{" "}
+        <Link href={`/jobs/${jobRef.id}/compliance?open=1`} className="text-link hover:text-link-hover">
+          Record public-works facts now
+        </Link>
+      </p>
+    );
+  }
+
   const das140Rows: Das140WithStanding[] = notices140.map((notice) => ({
     ...notice,
     standing: das140Standing(notice, firstWorkerDay, today),
@@ -117,6 +153,8 @@ export default async function JobCompliancePage({ params }: { params: Promise<{ 
     ...request,
     standing: das142Standing(request, today),
   }));
+  const das140Summary = dasSectionSummary(das140Rows.map((r) => r.standing.status));
+  const das142Summary = dasSectionSummary(das142Rows.map((r) => r.standing.status));
   const proposals = dasProposals({
     publicWorks: job.publicWorks,
     contracted: job.status !== "ESTIMATE",
@@ -165,11 +203,13 @@ export default async function JobCompliancePage({ params }: { params: Promise<{ 
         />
         <section className="mb-8">
           <h2 className="mb-1 text-lg font-semibold text-ink">Public-works facts</h2>
-          <p className="mb-3 text-sm text-ink-muted">
-            What the call for bids says about this job. The date it was first advertised for bid is what
-            picks which prevailing-wage determination governs the whole job, so the standing of every
-            determination below is judged against it.
-          </p>
+          <Disclosure variant="plain" summary="How this works" className="mb-3">
+            <p className="text-sm text-ink-muted">
+              What the call for bids says about this job. The date it was first advertised for bid is what
+              picks which prevailing-wage determination governs the whole job, so the standing of every
+              determination below is judged against it.
+            </p>
+          </Disclosure>
           <JobComplianceFactsForm
             jobId={jobRef.id}
             facts={{
@@ -184,12 +224,14 @@ export default async function JobCompliancePage({ params }: { params: Promise<{ 
 
         <section>
           <h2 className="mb-1 text-lg font-semibold text-ink">Prevailing wage determination</h2>
-          <p className="mb-3 text-sm text-ink-muted">
-            The government wage determination for this job&rsquo;s jurisdiction (federal or state) — attach a copy or a
-            link to it. This app doesn&rsquo;t look one up automatically; there&rsquo;s no licensed prevailing-wage
-            dataset built in. Enter the dates printed on it and the line under each one says whether it is
-            still the determination in force for this job.
-          </p>
+          <Disclosure variant="plain" summary="How this works" className="mb-3">
+            <p className="text-sm text-ink-muted">
+              The government wage determination for this job&rsquo;s jurisdiction (federal or state) — attach a copy or a
+              link to it. This app doesn&rsquo;t look one up automatically; there&rsquo;s no licensed prevailing-wage
+              dataset built in. Enter the dates printed on it and the line under each one says whether it is
+              still the determination in force for this job.
+            </p>
+          </Disclosure>
 
         {determinations.length > 0 && (
           <ul className="mb-4 flex flex-col gap-2">
@@ -292,40 +334,68 @@ export default async function JobCompliancePage({ params }: { params: Promise<{ 
           </ul>
         )}
 
-        <PrevailingWageDeterminationForm jobId={jobRef.id} />
+        <CollapsedForm label="Attach a determination">
+          <PrevailingWageDeterminationForm jobId={jobRef.id} />
+        </CollapsedForm>
       </section>
 
       <section className="mt-10">
         <h2 className="mb-1 text-lg font-semibold text-ink">Apprenticeship notices</h2>
-        <p className="mb-3 text-sm text-ink-muted">
-          California public works. A <strong className="font-semibold text-ink-label">DAS 140</strong>{" "}
-          tells an apprenticeship committee you were awarded this contract, once per craft, within ten
-          days of signing it. A <strong className="font-semibold text-ink-label">DAS 142</strong> asks
-          a committee to send you an apprentice, and has to go out days before you need one. They are
-          different documents with different deadlines, so they are kept apart here.
-        </p>
+        <Disclosure variant="plain" summary="How this works" className="mb-3">
+          <p className="text-sm text-ink-muted">
+            California public works. A <strong className="font-semibold text-ink-label">DAS 140</strong>{" "}
+            tells an apprenticeship committee you were awarded this contract, once per craft, within ten
+            days of signing it. A <strong className="font-semibold text-ink-label">DAS 142</strong> asks
+            a committee to send you an apprentice, and has to go out days before you need one. They are
+            different documents with different deadlines, so they are kept apart here.
+          </p>
+        </Disclosure>
 
         <DasProposalList proposals={proposals} />
 
-        <h3 className="mb-2 mt-6 text-sm font-semibold text-ink-label">
-          DAS 140 — contract award information
-        </h3>
-        <Das140Panel
-          jobId={jobRef.id}
-          notices={das140Rows}
-          committees={committeeOptions}
-          canDelete={currentUser.role === "OWNER"}
-        />
+        {/* Each notice type is one line until opened: its status (past
+            due / to send / sent) is what the tab needs to say; the forms
+            and history are one click under it. A past-due one also sits
+            in PageAlerts at the top. */}
+        <div className="mt-6 flex flex-col gap-3">
+          <Disclosure
+            id="das-140"
+            summary={
+              <>
+                <h3 className="inline text-sm font-semibold text-ink-label">DAS 140 — contract award information</h3>
+                <span data-das-status className={`ml-2 text-sm font-normal ${das140Summary.pastDue ? "text-danger" : "text-ink-muted"}`}>
+                  {das140Summary.text}
+                </span>
+              </>
+            }
+          >
+            <Das140Panel
+              jobId={jobRef.id}
+              notices={das140Rows}
+              committees={committeeOptions}
+              canDelete={currentUser.role === "OWNER"}
+            />
+          </Disclosure>
 
-        <h3 className="mb-2 mt-8 text-sm font-semibold text-ink-label">
-          DAS 142 — request to dispatch an apprentice
-        </h3>
-        <Das142Panel
-          jobId={jobRef.id}
-          requests={das142Rows}
-          committees={committeeOptions}
-          canDelete={currentUser.role === "OWNER"}
-        />
+          <Disclosure
+            id="das-142"
+            summary={
+              <>
+                <h3 className="inline text-sm font-semibold text-ink-label">DAS 142 — request to dispatch an apprentice</h3>
+                <span data-das-status className={`ml-2 text-sm font-normal ${das142Summary.pastDue ? "text-danger" : "text-ink-muted"}`}>
+                  {das142Summary.text}
+                </span>
+              </>
+            }
+          >
+            <Das142Panel
+              jobId={jobRef.id}
+              requests={das142Rows}
+              committees={committeeOptions}
+              canDelete={currentUser.role === "OWNER"}
+            />
+          </Disclosure>
+        </div>
 
         <DasUnverifiedNote />
       </section>

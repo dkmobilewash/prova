@@ -95,10 +95,13 @@ export function CompanyProfileForm({
               ? "One thing on this record is printed on a document somebody else reads:"
               : `${gaps.length} things on this record are printed on documents somebody else reads:`}
           </p>
+          {/* Names only: each gap's consequence is said ONCE, under the
+              field that fixes it (GapNote). The box listed it too, so the
+              placeholder-name warning was on the first screen twice. */}
           <ul className="mt-2 list-disc space-y-1 pl-5 text-[11px] text-amber-200/90">
             {gaps.map((gap) => (
               <li key={gap.field}>
-                <span className="font-medium">{gap.label}</span> — {gap.consequence}
+                <span className="font-medium">{gap.label}</span>
               </li>
             ))}
           </ul>

@@ -132,8 +132,11 @@ export function EquipmentRow({ canDelete, item }: EquipmentRowProps) {
     // right-pinned from sm up, which is where justify-between still applies.
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
-        <p className="font-medium text-ink">{item.name}</p>
-        {detail && <p className="text-sm text-ink-body">{detail}</p>}
+        {/* Name, type and ID on one line (density audit #33). */}
+        <p className="text-ink">
+          <span className="font-medium">{item.name}</span>
+          {detail && <span className="text-sm text-ink-body"> · {detail}</span>}
+        </p>
         {/* slate-400 rather than slate-500: slate-500 measures 3.83:1 on the
             slate-900 card, under the 4.5 text floor. */}
         {item.notes && <p className="mt-1 text-sm text-ink-body">{item.notes}</p>}
