@@ -1,5 +1,3 @@
-## Takeoff
-
 ### A scanned sheet gives up its lines
 
 Three of the twenty fixtures are scans — zero strokes, zero text — and the
