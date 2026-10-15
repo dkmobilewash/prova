@@ -299,6 +299,17 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
    * again — one answer, one round trip.
    */
   const sheetRows = isEstimateStage ? await sheetIndexFor(plan.id, company.id) : [];
+  /**
+   * WHICH PAGES ARE SCANS, straight off the ingest record.
+   *
+   * A scanned page has no text layer, which is the one thing that CANNOT be
+   * worked out from a `PlanSheet`: a sheet row only exists once somebody has
+   * saved a calibration, and a scan is precisely the page nobody can calibrate
+   * until its printed scale has been read off the picture.
+   *
+   * `sheetIndexFor` already selects `hasTextLayer`, so this is free.
+   */
+  const scannedPages = sheetRows.filter((row) => !row.hasTextLayer).map((row) => row.pageNumber);
   const duplicateWallsByPage: Record<number, string> = {};
   /**
    * WHAT EACH SHEET IS CALLED, so the pager can be jumped to one.
@@ -543,6 +554,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         planId={plan.id}
         sheets={sheets}
         printedScaleByPage={printedScaleByPage}
+        scannedPages={scannedPages}
         storedWallsByPage={storedWallsByPage}
         scalePrefillByPage={scalePrefillByPage}
         scaleDeclineByPage={scaleDeclineByPage}
