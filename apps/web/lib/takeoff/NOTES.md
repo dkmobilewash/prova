@@ -38,7 +38,8 @@ homework. Unknown fields are `null` and the scorer skips them —
 ## Latest run — `fixtures/score.eval.ts`, 2026-10-15
 
 ```
-SCALE: 11 correct of 15 scored; 3 correctly declined (the raster sheets)
+SCALE: 13 correct of 14 scored; 3 correctly declined (the raster sheets);
+       1 sheet contradicts its own title block and the dimensions were followed
 WALL FOOTAGE: reported, NOT SCORED — no sheet in this set prints one
 ROOMS: 122 tagged in the key; the pipeline does not yet report a room list here
 ```
@@ -48,8 +49,8 @@ ROOMS: 122 tagged in the key; the pipeline does not yet report a room list here
 | sheet | printed | read | |
 | --- | --- | --- | --- |
 | S01 | `1/4" = 1'-0"` | declined | small sheet, 1 room, 4 dimensions — likely below the agreement floor |
-| S16 | `1:100` | declined | **metric** — dimensions are bare millimetres |
-| S17 | `1:50` | declined | **metric** |
+| ~~S16~~ | `1:100` | **`1:100`** | fixed 2026-10-15 — metric dimensions |
+| ~~S17~~ | `1:50` | **`1:50`** | fixed |
 
 **S11 was reported here as the worst failure on the board and it was the KEY
 that was wrong, not the pipeline.** The sheet prints `1/8" = 1'-0"` and its own
@@ -64,8 +65,17 @@ scale on it, because adjudicating would mean re-measuring the drawing with the
 code under test. **A key that assumes a title block tells the truth will send
 somebody to fix a pipeline that is right.**
 
-S16/S17 are a real capability gap: nothing in the dimension reader understands
-millimetres.
+**S16/S17 are fixed.** A metric sheet dimensions in bare millimetres and the
+imperial pattern requires feet, so both read nothing at all. The fix is a
+second reader and a second scale table, tried ONLY when the imperial pass
+declines — so no sheet that already reads a scale can change, and the bench is
+byte-identical. Both now find walls as well (10 runs each).
+
+The bug that made it take two attempts is worth keeping: the vote was taught
+the metric table and the line-proposing `snap` below it was not, so a sheet
+agreed unanimously on `1:100` and was then refused because that name is not in
+the imperial list — "the best line to set it from is **Infinity%** out". Two
+call sites, one updated.
 
 ### Three sheets find a correct scale and ZERO walls — and it is NOT poché
 
@@ -137,7 +147,8 @@ stale one is worse than none. Regenerate before looking.
 
 1. **A floor plan under ten wall runs returns nothing.** 3 of 15 vector
    fixtures. Needs an enclosure test, not a lower constant — see above.
-2. **No metric dimension reading.** 2 of 15 fixtures decline a scale they print.
+2. **S01 declines a scale it prints.** One sheet, one room, four dimensions —
+   probably under the three-agreeing floor. Not yet diagnosed.
 3. **No raster path at all.** 3 of 20 fixtures, and a real share of real sets.
 4. **Rooms are not scored here.** The pipeline does not surface a room list from
    the entry point the scorer uses, so 122 tagged rooms sit unused.

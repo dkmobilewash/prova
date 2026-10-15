@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
-import { dimensionLabels } from "../../plan-ingest/dimensionLabels";
+import { dimensionLabels, metricDimensionLabels } from "../../plan-ingest/dimensionLabels";
 import { readSheetScale } from "../scaleFromDimensions";
 import { findWallsOnSheet, type SheetTextItem } from "../findWallsOnSheet";
 import type { ExpectedSheet } from "./expected";
@@ -122,7 +122,7 @@ describe.skipIf(!existsSync(join(DIR, "plans")))("the shipped pipeline on twenty
         // reads the dimension strings beside them. The key's value came from
         // the title block's printed NOTE, which this reader never consults —
         // so agreement is a real cross-check rather than a tautology.
-        const verdict = readSheetScale(text, strokes.segments, dimensionLabels(text));
+        const verdict = readSheetScale(text, strokes.segments, dimensionLabels(text), {}, metricDimensionLabels(text));
         if (verdict.ok) {
           row.scaleHow = "dimensions";
           const got = verdict.scaleName;

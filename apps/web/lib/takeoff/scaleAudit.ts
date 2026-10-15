@@ -2,7 +2,7 @@ import type { Buffer } from "node:buffer";
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { openPlanPdf, titleBlockText } from "../plan-ingest/planPdf";
-import { dimensionLabels } from "../plan-ingest/dimensionLabels";
+import { dimensionLabels, metricDimensionLabels } from "../plan-ingest/dimensionLabels";
 import { standardScaleFromText } from "../takeoff-plan";
 import { readSheetScale } from "./scaleFromDimensions";
 import { scaleFromPrinted } from "./scaleFromPrinted";
@@ -276,7 +276,10 @@ export async function auditPlanFile(file: string, bytes: Buffer, maxPages = 400)
         // the app does not have. `pageInventory.ts` passes it because a line
         // under `MIN_CALIBRATION_SPAN` cannot be saved — an audit without it
         // would keep reporting coverage that an estimator cannot reach.
-        const verdict = readSheetScale(text, strokes.segments, labels);
+        // THE SAME TWO PASSES THE STAGE RUNS. An audit that reads only
+        // imperial would report a metric set as unreadable and send somebody
+        // to fix a reader that works — the shape this file exists to avoid.
+        const verdict = readSheetScale(text, strokes.segments, labels, {}, metricDimensionLabels(text));
         // THE WHOLE PAGE, not the title block — see `printedScalesOnPage`. More
         // than one distinct scale means the sheet carries views at different
         // scales, which is ordinary drafting and not something to resolve by

@@ -165,3 +165,52 @@ limitation is now documented with its measurements instead of being unknown.
 `stages.eval.ts` is kept for this reason. "Which filter ate it" is the question
 that comes up every time, and reasoning about it from a picture was wrong once
 already today.
+
+### Metric sheets read their own scale now
+
+Two of the twenty print `1:100` and `1:50`, are covered in dimensions, and
+declined with *"No printed dimensions were found on this sheet"* — because a
+metric sheet dimensions in **bare millimetres** (`7150`, `12300`) and the
+imperial pattern requires feet.
+
+`metricDimensionLabels` reads them and converts to feet once, at the edge, so
+nothing downstream learns a second unit. `METRIC_SCALES` gives the vote
+something to land on.
+
+**The safety is the ordering, not the pattern.** A bare four-digit figure is as
+likely to be a year or a job number, so the metric pass runs ONLY after the
+imperial one declines — a sheet that already reads a scale never sees it. The
+figure must still sit beside a line of the right length, and three distinct
+figures must still agree. **The bench is byte-identical**, which is that
+ordering doing its job rather than a claim about it.
+
+Both sheets now read correctly and find walls (10 runs each). Scale on the
+fixture set goes **11 of 15 → 13 of 14 scored**.
+
+Checked rather than assumed: **no metric scale sits within the 2% tolerance of
+an imperial one.** The nearest pairs are `1:50` vs `1/4"` and `1:100` vs `1/8"`,
+both 4.2% apart — which is also why those two sheets declined honestly instead
+of reading a confidently wrong imperial scale. A test pins it, so widening
+`SCALE_TOLERANCE` past ~4% fails loudly rather than silently overlapping the
+tables.
+
+**It took two attempts, and the first failure is the useful one.** The vote was
+taught the metric table and the line-proposing `snap` below it was not. A sheet
+agreed unanimously on `1:100` and was then refused because that name is not in
+the imperial list: the inherited error came out as `Infinity` and the message
+read *"the best line to set it from is Infinity% out"*. Two call sites, one
+updated — the shape this repo keeps paying for.
+
+**10 of 10 mutations red**, control green. The first run had three survivors and
+each was a real gap:
+
+- the ordering was only tested on a page where the metric pass would decline
+  anyway, so removing `imperial.ok ||` changed nothing. There is now a page
+  readable BOTH ways, with a control asserting the metric arm really answers;
+- `MIN_MM` was dead code — the `\d{4,6}` pattern enforced the lower bound a
+  second time by accident. The bound is stated once now;
+- **nothing tested that the production stage was wired.** `pageInventory` could
+  hand `readSheetScale` only the imperial labels with every test green — "built
+  and not wired" is this codebase's most expensive recurring shape. The stage
+  test now drives the real stage over the real S16 and asserts it records
+  `1:100`.

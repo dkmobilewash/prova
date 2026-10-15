@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
-import { dimensionLabels } from "../../plan-ingest/dimensionLabels";
+import { dimensionLabels, metricDimensionLabels } from "../../plan-ingest/dimensionLabels";
 import { readSheetScale } from "../scaleFromDimensions";
 import { findWallsOnSheet, type SheetTextItem } from "../findWallsOnSheet";
 import type { StrokeSegment } from "../wallVectors";
@@ -36,7 +36,7 @@ describe.skipIf(!existsSync(join(import.meta.dirname, "plans")))("where the wall
         const text = await doc.pageText(1);
         const strokes = await doc.pageStrokes(1);
         read.push(strokes.segments.length);
-        const verdict = readSheetScale(text, strokes.segments, dimensionLabels(text));
+        const verdict = readSheetScale(text, strokes.segments, dimensionLabels(text), {}, metricDimensionLabels(text));
         if (!verdict.ok) {
           rows.push(`${id.padEnd(5)} ${String(strokes.segments.length).padStart(5)}   (no scale)`);
           continue;
