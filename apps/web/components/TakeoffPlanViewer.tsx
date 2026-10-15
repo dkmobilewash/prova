@@ -370,6 +370,7 @@ export function TakeoffPlanViewer({
   const [reading, setReading] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
   const [wordsRead, setWordsRead] = useState<number | null>(null);
+  const [readProgress, setReadProgress] = useState<string | null>(null);
   const scannedWordsRef = useRef<{ str: string; x: number; y: number; width: number; height: number }[] | null>(null);
   const [finding, setFinding] = useState(false);
   const [findError, setFindError] = useState<string | null>(null);
@@ -650,6 +651,9 @@ export function TakeoffPlanViewer({
       const scale = TILE_PX / TILE_PT;
 
       const words: { str: string; x: number; y: number; width: number; height: number }[] = [];
+      const total = across * down;
+      let done = 0;
+      setReadProgress(`Reading the sheet — 0 of ${total} parts…`);
       for (let ty = 0; ty < down; ty += 1) {
         for (let tx = 0; tx < across; tx += 1) {
           const tile = document.createElement("canvas");
@@ -669,23 +673,55 @@ export function TakeoffPlanViewer({
           await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale }) }).promise;
           ctx.restore();
 
-          const result = await readScannedSheetTile({
-            imageBase64: tile.toDataURL("image/png").split(",")[1] ?? "",
-            tileX: tx,
-            tileY: ty,
-            tilePt: TILE_PT,
-          });
+          // ── JPEG, BECAUSE THIS READS SCANS ──
+          //
+          // PNG is the wrong format for speckled paper: the same tile measured
+          // 1.20 MB as PNG against 0.54 MB as JPEG, and the PNG was over a
+          // Server Action's body limit — so the feature failed on exactly the
+          // sheets it exists for and worked on the clean ones.
+          const base64 = tile.toDataURL("image/jpeg", 0.9).split(",")[1] ?? "";
+
+          // ── A FAILED TILE MUST NOT LEAVE THE BUTTON SPINNING ──
+          //
+          // A browser tester watched this sit on "Reading the sheet…" for
+          // three minutes after a 503 and never say anything. The action
+          // returns a readable refusal for every case it can see, but a
+          // request the PLATFORM ends never reaches it — so the throw has to
+          // be caught here, or the page stops having an opinion at all.
+          let result;
+          try {
+            result = await readScannedSheetTile({
+              imageBase64: base64,
+              tileX: tx,
+              tileY: ty,
+              tilePt: TILE_PT,
+              mediaType: "image/jpeg",
+            });
+          } catch {
+            setReadError(
+              `The sheet stopped being read part way through (${done} of ${total} parts done). ` +
+                "Nothing was changed. Press Read this sheet to try again.",
+            );
+            return;
+          }
           if (!result.ok) {
             setReadError(result.error);
             return;
           }
           words.push(...result.value.items);
+          done += 1;
+          // WHAT IT IS DOING, not merely that it is doing something. Nine
+          // requests take a while, and a button that only says "Reading…" is
+          // indistinguishable from one that has died — which is precisely how
+          // the failure above was reported.
+          setReadProgress(`Reading the sheet — ${done} of ${total} parts…`);
         }
       }
       scannedWordsRef.current = words;
       setWordsRead(words.length);
     } finally {
       setReading(false);
+      setReadProgress(null);
     }
   }, [pageNumber]);
 
@@ -1303,7 +1339,7 @@ export function TakeoffPlanViewer({
             title="This sheet has no writing in the file, which means it was scanned rather than exported. Reads the room names, dimensions and scale note off the picture so the sheet can be scaled. Lengths are still measured from the drawing."
             className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
           >
-            {reading ? "Reading the sheet…" : "Read this sheet"}
+            {reading ? (readProgress ?? "Reading the sheet…") : "Read this sheet"}
           </button>
         )}
         {readError !== null && (

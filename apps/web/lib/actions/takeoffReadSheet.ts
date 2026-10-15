@@ -57,6 +57,8 @@ export async function readScannedSheetTile(params: {
   tileY: number;
   /** The tile's side in points, so the caller and this agree on the grid. */
   tilePt: number;
+  /** The rendered tile's format. JPEG, for a scan — see `readSheetTextTile`. */
+  mediaType?: "image/jpeg" | "image/png";
 }): Promise<ActionResultWith<SheetTextRead>> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return fail(JOB_COSTS_ONLY);
@@ -68,8 +70,18 @@ export async function readScannedSheetTile(params: {
   if (!(params.tilePt > 0) || !Number.isFinite(params.tilePt)) {
     return fail("That tile has no size.");
   }
-  if (params.imageBase64.length > 7_000_000) {
-    return fail("That image is too large to send. Read a smaller part of the sheet.");
+  // ── THE CEILING THAT ACTUALLY APPLIES, NOT ONE ABOVE IT ──
+  //
+  // This said 7 MB, copied from the wall classifier, while a Server Action's
+  // body limit was Next's unstated 1 MB default. So the guard could never
+  // fire: a 1.2 MB tile was refused by the framework before this line was
+  // reached, and the browser got a dead socket instead of this sentence.
+  // `next.config.mjs` now states the limit, and this sits under it.
+  if (params.imageBase64.length > 3_500_000) {
+    return fail("That part of the sheet is too detailed to send in one go. Try a different sheet.");
+  }
+  if (params.mediaType !== undefined && params.mediaType !== "image/jpeg" && params.mediaType !== "image/png") {
+    return fail("That image format cannot be read.");
   }
 
   // THE SWITCH FIRST, before the image is looked at or anything is claimed.
@@ -90,6 +102,7 @@ export async function readScannedSheetTile(params: {
   try {
     boxes = await readSheetTextTile({
       imageBase64: params.imageBase64,
+      mediaType: params.mediaType,
       model: gate.model,
       onUsage: (usage: Parameters<typeof recordAskUsage>[0]["usage"]) =>
         recordAskUsage({

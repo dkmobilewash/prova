@@ -65,6 +65,16 @@ export async function readSheetTextTile(params: {
   onUsage?: ModelUsageReporter;
   /** The model this company's `aiGate` resolved. */
   model?: string;
+  /**
+   * The image's media type.
+   *
+   * JPEG by default and that is deliberate: this reads SCANS, and a scan's
+   * speckle is the worst case for PNG — the same tile measured 1.20 MB as PNG
+   * and 0.54 MB as JPEG. Smaller is twice useful, since the payload has to
+   * cross a Server Action's body limit and the image's own tokens are most of
+   * what the call costs.
+   */
+  mediaType?: "image/jpeg" | "image/png";
 }): Promise<TextBox[]> {
   const client = new Anthropic(AI_CLIENT_OPTIONS);
   const response = await client.messages.create({
@@ -102,7 +112,10 @@ export async function readSheetTextTile(params: {
       {
         role: "user",
         content: [
-          { type: "image", source: { type: "base64", media_type: "image/png", data: params.imageBase64 } },
+          {
+            type: "image",
+            source: { type: "base64", media_type: params.mediaType ?? "image/jpeg", data: params.imageBase64 },
+          },
           { type: "text", text: "Report every piece of text in this crop." },
         ],
       },
