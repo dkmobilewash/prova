@@ -5,6 +5,7 @@ import { scaleFromDimensions } from "../scaleFromDimensions";
 import { scaleFromPrinted } from "../scaleFromPrinted";
 import { sheetStrokes } from "../sheetStrokes";
 import { clusterByThickness, type StrokeSegment } from "../wallVectors";
+import { withoutNonWallLayers } from "../layerNames";
 import { wallsFromBothEngines } from "../wallRuns";
 import { wallTypeInputs } from "./harness";
 import type { Prim, Sheet } from "./sheets";
@@ -206,6 +207,78 @@ export async function runProbes(): Promise<Probe[]> {
     expected: `${studs(separate)} studs (each run has its own end stud)`,
     observed: `${studs(merged)} studs`,
     holds: studs(merged) === studs(separate),
+  });
+
+  // ── LAYER NAMES: THE DRAWING SAYS WHICH LINES ARE WALLS ──
+
+  // P16 REPORTS A CLAIM I COULD NOT PROVE, which is why it measures what it
+  // measures rather than what it was written to measure.
+  //
+  // The claim: a column gridline on `S-GRID` trips `inAHatchSeries` and vetoes
+  // the real wall beside it, so dropping it by layer should RECOVER footage.
+  // That is the shape the 20-plan holdout names as its most common cause of
+  // missed footage, attributed to `S-GRID` on 7 of 20 plans.
+  //
+  // Two constructions were tried — a line at 1.5 face-spacings, and one at
+  // exactly 2, the whole-number pitch the series test actually requires — and
+  // BOTH arms returned 20.0 ft. On this input the geometric filters already
+  // cope, so the footage claim is UNPROVEN. Rather than keep reshaping an input
+  // until it flatters the change, this asserts the thing that is true and says
+  // which thing is not.
+  //
+  // A probe whose two arms read the same is measuring nothing. These arms are
+  // segment counts, and they differ.
+  const spacing = ft(4.875 / 12);
+  const nearFace = ft(10) - spacing / 2;
+  const beyond: StrokeSegment[] = [
+    ...wall(0, 20, 10, 4.875),
+    { x1: ft(0), y1: nearFace + spacing * 2, x2: ft(20), y2: nearFace + spacing * 2, layer: "S-GRID" },
+  ];
+  const reaching = withoutNonWallLayers(beyond).kept;
+  const spared = sumFt(reaching);
+  add({
+    id: "P16",
+    heuristic: "layerNames: another discipline's line never reaches the pairer",
+    input: "a 20' A1 wall + a column-grid line at exactly 2 face-spacings, on S-GRID",
+    expected: "2 of the 3 segments reach the pairer, and it still returns 20.0 ft",
+    observed: `${reaching.length} of 3 segments reach it, ${spared.toFixed(1)} ft (footage UNCHANGED here — see the note in probes.ts)`,
+    holds: reaching.length === 2 && Math.abs(spared - 20) < 0.05,
+  });
+
+  // P17 is the defect Diego photographed: the architect's logo and the cars on
+  // a parking plan, both measured as walls. Two parallel lines a wall-thickness
+  // apart is what they ARE, so no geometry can separate them — only the name.
+  const furniture: StrokeSegment[] = [
+    ...wall(0, 20, 10, 4.875).map((g) => ({ ...g, layer: "A-FURN" })),
+    ...wall(0, 20, 30, 4.875).map((g) => ({ ...g, layer: "G-ANNO-TTLB" })),
+    ...wall(0, 20, 50, 4.875).map((g) => ({ ...g, layer: "A-WALL" })),
+  ];
+  const asWalls = sumFt(furniture.map((g) => ({ ...g, layer: undefined })));
+  const filtered = sumFt(withoutNonWallLayers(furniture).kept);
+  add({
+    id: "P17",
+    heuristic: "layerNames: furniture and the title block are not walls",
+    input: "three identical 20' wall shapes, on A-FURN, on G-ANNO-TTLB and on A-WALL",
+    expected: "20.0 ft — only the one the drawing calls a wall",
+    observed: `${filtered.toFixed(1)} ft with layers, ${asWalls.toFixed(1)} ft without`,
+    holds: Math.abs(filtered - 20) < 0.05,
+  });
+
+  // P18 is the guard, and the one worth failing loudly. Every rule above only
+  // REMOVES things; this asserts the removal can never reach the building. A
+  // house style calling its partitions something this vocabulary reads as
+  // furniture would otherwise empty the sheet — and "No walls found on this
+  // sheet" is a sentence the viewer already says honestly for a scan, so nobody
+  // would think to look at layer names.
+  const allOdd: StrokeSegment[] = wall(0, 20, 10, 4.875).map((g) => ({ ...g, layer: "A-FURN" }));
+  const rescued = sumFt(withoutNonWallLayers(allOdd).kept);
+  add({
+    id: "P18",
+    heuristic: "layerNames: the filter may never empty a sheet",
+    input: "a sheet whose ONLY geometry is on a layer the vocabulary calls furniture",
+    expected: "20.0 ft — drop nothing rather than everything",
+    observed: `${rescued.toFixed(1)} ft`,
+    holds: Math.abs(rescued - 20) < 0.05,
   });
 
   return out;

@@ -12,7 +12,7 @@ import { loadScheduleProposals, scheduleSheetCountFor } from "@/lib/plan-ingest/
 import { PlanSheetReview } from "@/components/PlanSheetReview";
 import { levelsByPage } from "@/lib/plan-ingest/sheetLevel";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
-import { effectiveSheetNumber, effectiveTitle } from "@/lib/plan-ingest/sheetIndex";
+import { effectiveSheetNumber, effectiveTitle, sheetPickerLabel } from "@/lib/plan-ingest/sheetIndex";
 import { sheetSuitability, duplicateWallsCaution } from "@/lib/takeoff/sheetSuitability";
 import { latestIngestFor } from "@/lib/plan-ingest/claim";
 import { TakeoffCurrencyBanner } from "@/components/TakeoffCurrencyBanner";
@@ -28,6 +28,61 @@ import { printedScalesFromProposals, scalePrefillsFromReadings,
 } from "@/lib/takeoff-plan-view";
 import { measurementScaleLabel, zoneNotices, zoneScales } from "@/lib/takeoff-zones";
 import type { PlanMeasurementRow, PlanSheet, PrintedScaleByPage, ScalePrefillByPage } from "@/lib/takeoff-plan-view";
+import { feetPerPageWidth } from "@/lib/takeoff-plan";
+import type { WallGroup } from "@/lib/takeoff/wallGroups";
+import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
+
+/**
+ * ── THIS ROUTE NEEDS LONGER THAN A PAGE DOES, AND IT IS THE SAVE THAT NEEDS IT ──
+ *
+ * A Server Action posts to the route of the page it was rendered from, so this
+ * number governs `saveTakeoffCalibration` as well as this render — and that
+ * action starts wall detection in an `after()` callback, which runs inside the
+ * same invocation.
+ *
+ * MEASURED IN PRODUCTION rather than feared. On a 52-sheet bid set, runtime
+ * logs for one save (request `7lj2t-…`, 2026-10-15) read:
+ *
+ *   02:11:38.758  [db] connected                     — the action begins
+ *   02:11:46.464  Cannot polyfill Path2D / DOMMatrix — pdf.js loading, 7.7s later
+ *   —             nothing further from that request
+ *
+ * Those pdf.js lines are detection starting. It never got to a `pageStrokes`
+ * call, nothing was written, and the browser got a 503 — the platform ended the
+ * invocation. Most of the 7.7 seconds is `readPlanBytes` pulling the whole plan
+ * set out of blob storage before a single wall can be looked at.
+ *
+ * So the budget is raised here and detection is given a DEADLINE of its own
+ * (`DETECTION_BUDGET_MS`) that expires first, because the failure this fixes was
+ * silent: being killed leaves no log line, and stopping ourselves writes one.
+ * `plan-ingest/runner.ts` and `agents/cron.ts` both take that trade already.
+ *
+ * NO TEST IN THIS REPO CAN SEE THIS NUMBER. A platform limit is not observable
+ * from vitest, so the proof is the production log after a save: proposals on the
+ * sheet, or detection's own ran-out-of-time line. Silence is now a bug.
+ */
+/**
+ * ── RAISED FROM 60 TO 300 ON 2026-10-15, FOR THE SAME FAILURE AGAIN ──
+ *
+ * Read this sheet hit exactly what the paragraph above describes: a browser
+ * tester pressed it, one request sat pending and came back 503, and the page
+ * showed nothing at all. Being killed leaves no log line, which is why the
+ * symptom was a button that span for three minutes.
+ *
+ * The ordering was inverted and that is the real defect. `AI_CLIENT_OPTIONS`
+ * gives the model call 120 seconds, and the platform was ending the whole
+ * invocation at 60 — so the budget that was supposed to expire FIRST, and
+ * write a line saying so, could never run. 300 puts the route's ceiling above
+ * the SDK's own timeout, so a slow tile now fails as a readable sentence
+ * instead of a dead socket.
+ *
+ * It does not loosen wall detection, which still stops itself at
+ * `DETECTION_BUDGET_MS` well inside the old 60.
+ *
+ * NO TEST IN THIS REPO CAN SEE THIS NUMBER, as above. The proof is a
+ * production press that either reports words or reports why not.
+ */
+export const maxDuration = 300;
 
 /**
  * TAKEOFF — measure a drawing on screen and turn what you traced into
@@ -104,6 +159,16 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         orderBy: { pageNumber: "asc" },
         include: {
           calibrations: { orderBy: { createdAt: "desc" } },
+          /**
+           * THE WALLS FOUND WHEN THE SCALE WAS SAVED. Newest first, and
+           * filtered to the CURRENT calibration below rather than here —
+           * `calibrations[0]` is only known once this query has returned.
+           *
+           * That filter is the whole invalidation story: a recalibration
+           * inserts a new calibration, so proposals found under the old one
+           * are simply never read again. No staleness flag, no sweep.
+           */
+          wallProposals: { orderBy: { createdAt: "desc" } },
           measurements: {
             orderBy: { createdAt: "asc" },
             include: { calibration: true },
@@ -255,7 +320,41 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
    * again — one answer, one round trip.
    */
   const sheetRows = isEstimateStage ? await sheetIndexFor(plan.id, company.id) : [];
+  /**
+   * WHICH PAGES ARE SCANS, straight off the ingest record.
+   *
+   * A scanned page has no text layer, which is the one thing that CANNOT be
+   * worked out from a `PlanSheet`: a sheet row only exists once somebody has
+   * saved a calibration, and a scan is precisely the page nobody can calibrate
+   * until its printed scale has been read off the picture.
+   *
+   * `sheetIndexFor` already selects `hasTextLayer`, so this is free.
+   */
+  const scannedPages = sheetRows.filter((row) => !row.hasTextLayer).map((row) => row.pageNumber);
   const duplicateWallsByPage: Record<number, string> = {};
+  /**
+   * WHAT EACH SHEET IS CALLED, so the pager can be jumped to one.
+   *
+   * Measured before it was built: reaching `A-101` on a 52-sheet set took
+   * TWENTY presses of Next, and the pager reads "Sheet 23 of 52" — a position
+   * in the file, not the sheet's own number — so all twenty were blind. It was
+   * the largest single number in a nine-step press count of one real bid, and
+   * the only one that was pure navigation.
+   *
+   * NOTHING IS QUERIED FOR IT. These are the rows two lines above, which the
+   * sheet review already renders on this same page; the numbers were on screen
+   * and were not reachable. One more assignment in a loop that was already
+   * running is the whole server cost.
+   *
+   * AND IT LABELS NO QUANTITY, which is the distinction that makes this
+   * legitimate. `TakeoffPlanPage.label` is "TYPED, never parsed off the title
+   * block", because "a wrong one labels somebody's quantities with another
+   * floor's name" — that argument is about naming measurements and it stands.
+   * A jump target is not a name: nothing is stored, nothing is attached to a
+   * measurement, and the worst a wrong number can do is open the wrong sheet,
+   * which the estimator is looking straight at.
+   */
+  const sheetLabelByPage: Record<number, string> = {};
   for (const row of sheetRows) {
     const number = effectiveSheetNumber(row);
     const title = effectiveTitle(row);
@@ -264,6 +363,8 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
       number,
     );
     if (caution) duplicateWallsByPage[row.pageNumber] = caution;
+    const label = sheetPickerLabel(number, title);
+    if (label !== null) sheetLabelByPage[row.pageNumber] = label;
   }
 
   const scheduleSheetCount = await scheduleSheetCountFor(plan.id);
@@ -324,6 +425,64 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
       zoneNotices: notices,
     };
   });
+
+  /**
+   * ── THE WALLS ALREADY FOUND, PER SHEET ──
+   *
+   * Detection runs when a calibration is saved, so these are usually waiting
+   * before anybody opens the sheet. Read here so the viewer can show them
+   * without a press.
+   *
+   * ONLY THE NEWEST RUN, AND ONLY UNDER THE CURRENT CALIBRATION. The rows are
+   * append-only — a second detection writes a second set rather than replacing
+   * one — so "newest `createdAt`" is what makes a re-run win, and the
+   * calibration filter is what makes a RECALIBRATION invalidate the lot for
+   * free.
+   *
+   * AND IT REFUSES THE WHOLE SHEET ON A SINGLE BAD ROW. `groupsFromProposals`
+   * returns null rather than a shorter list: a page showing three of its four
+   * groups looks exactly like a page that has three, and the estimator has no
+   * way to tell. Falling back to the Find the walls button is slow and honest.
+   */
+  const storedWallsByPage: Record<number, WallGroup[]> = {};
+  for (const page of plan.pages) {
+    const current = page.calibrations[0] ?? null;
+    if (!current) continue;
+    const feetPerUnit = feetPerPageWidth({
+      x1: current.x1,
+      y1: current.y1,
+      x2: current.x2,
+      y2: current.y2,
+      declaredDistanceFeet: current.declaredDistanceFeet.toNumber(),
+    });
+    if (feetPerUnit === null) continue;
+
+    const mine = page.wallProposals.filter((row) => row.calibrationId === current.id);
+    if (mine.length === 0) continue;
+    // One detection run writes every row at one timestamp, so the newest run is
+    // every row sharing the newest `createdAt`.
+    const newest = mine[0].createdAt.getTime();
+    const groups = groupsFromProposals(
+      mine
+        .filter((row) => row.createdAt.getTime() === newest)
+        .map((row) => ({
+          thicknessInches: row.thicknessInches,
+          source: row.source,
+          sourceLabel: row.sourceLabel,
+          namedCode: row.namedCode,
+          runs: row.runs,
+        })),
+      allWallTypes.map((type) => ({
+        id: type.id,
+        code: type.code,
+        name: type.name,
+        hasParts: type._count.components > 0,
+        thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
+      })),
+      feetPerUnit,
+    );
+    if (groups !== null && groups.length > 0) storedWallsByPage[page.pageNumber] = groups;
+  }
 
   return (
     <section className="flex flex-col gap-4">
@@ -411,10 +570,13 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
 
       <TakeoffPlanViewer
         duplicateWallsByPage={duplicateWallsByPage}
+        sheetLabelByPage={sheetLabelByPage}
         jobId={job.id}
         planId={plan.id}
         sheets={sheets}
         printedScaleByPage={printedScaleByPage}
+        scannedPages={scannedPages}
+        storedWallsByPage={storedWallsByPage}
         scalePrefillByPage={scalePrefillByPage}
         scaleDeclineByPage={scaleDeclineByPage}
         levelByPage={levelByPage}

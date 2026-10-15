@@ -30,6 +30,26 @@ export type PdfOptions = {
   xref?: { k: number };
   /** Layers on optional content: names that are OFF and names that are ON. */
   ocg?: { off: string[]; on: string[] };
+  /**
+   * Put EVERY primitive's own `layer` on optional content, all visible.
+   *
+   * ── WHAT A MODERN CAD EXPORT ACTUALLY LOOKS LIKE ──
+   *
+   * `ocg` was written for one narrow case — a wall hidden on a layer that is
+   * OFF — so it names two or three layers and everything else is drawn
+   * untagged. That is not how AutoCAD's "include layer information" or Revit's
+   * export behaves: those tag EVERYTHING, and a sheet where only the furniture
+   * is on a layer would flatter a layer-aware filter enormously.
+   *
+   * Every `Prim` in this bench already carries a realistic NCS layer name —
+   * `A-WALL`, `S-GRID`, `G-ANNO-TTLB`, `M-DUCT` — because the sheets were
+   * written that way long before anything read them. This switch is what puts
+   * them in the PDF.
+   *
+   * Combines with `ocg`: names listed there keep their on/off state, and
+   * everything else is added as visible.
+   */
+  layersAsOcg?: boolean;
   /** A viewport clip path in paper points: [x0, y0, x1, y1]. */
   clip?: [number, number, number, number];
   /** Landscape content in a portrait MediaBox with /Rotate 90, and a CropBox
@@ -128,6 +148,15 @@ export function writePdf(sheet: Sheet, prims: Prim[], o: PdfOptions = {}): Buffe
   if (o.ocg) {
     for (const name of [...o.ocg.off, ...o.ocg.on]) ocgRefs[name] = add({ body: `<< /Type /OCG /Name (${name}) >>` });
   }
+  if (o.layersAsOcg) {
+    // Order matters only in that `ocg`'s names are registered FIRST above, so
+    // a name in both keeps the on/off state that case asked for.
+    for (const prim of prims) {
+      if (prim.layer && !(prim.layer in ocgRefs)) {
+        ocgRefs[prim.layer] = add({ body: `<< /Type /OCG /Name (${prim.layer}) >>` });
+      }
+    }
+  }
   const props = Object.entries(ocgRefs)
     .map(([, id], i) => `/oc${i} ${id} 0 R`)
     .join(" ");
@@ -158,7 +187,7 @@ export function writePdf(sheet: Sheet, prims: Prim[], o: PdfOptions = {}): Buffe
       let i = 0;
       let currentOc: string | null = null;
       const setOc = (layer: string) => {
-        const tag = o.ocg ? ocTag(layer) : null;
+        const tag = o.ocg || o.layersAsOcg ? ocTag(layer) : null;
         if (tag !== currentOc) {
           if (currentOc) out.push("EMC");
           if (tag) out.push(`/OC ${tag} BDC`);
@@ -210,7 +239,7 @@ export function writePdf(sheet: Sheet, prims: Prim[], o: PdfOptions = {}): Buffe
       const xrefId = add(
         streamObj(
           inner,
-          ` /Type /XObject /Subtype /Form /BBox [0 0 ${f(W * k)} ${f(H * k)}] /Matrix [${f(0.5 / k)} 0 0 ${f(0.5 / k)} 0 0] /Resources << /Font << ${fonts} >> /XObject << ${xobjsInside} >> ${o.ocg ? `/Properties << ${props} >>` : ""} >>`,
+          ` /Type /XObject /Subtype /Form /BBox [0 0 ${f(W * k)} ${f(H * k)}] /Matrix [${f(0.5 / k)} 0 0 ${f(0.5 / k)} 0 0] /Resources << /Font << ${fonts} >> /XObject << ${xobjsInside} >> ${o.ocg || o.layersAsOcg ? `/Properties << ${props} >>` : ""} >>`,
         ),
       );
       xobjects.push(`/Xref0 ${xrefId} 0 R`);
@@ -244,11 +273,11 @@ export function writePdf(sheet: Sheet, prims: Prim[], o: PdfOptions = {}): Buffe
   }
 
   const contentId = add(streamObj(content));
-  const resources = `<< /Font << /F1 ${fontId} 0 R >> ${xobjects.length ? `/XObject << ${xobjects.join(" ")} >>` : imageRes} ${o.ocg ? `/Properties << ${props} >>` : ""} >>`;
+  const resources = `<< /Font << /F1 ${fontId} 0 R >> ${xobjects.length ? `/XObject << ${xobjects.join(" ")} >>` : imageRes} ${o.ocg || o.layersAsOcg ? `/Properties << ${props} >>` : ""} >>`;
   objects[pageId - 1] = { body: `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox ${media}${extra} /Resources ${resources} /Contents ${contentId} 0 R >>` };
   objects[pagesId - 1] = { body: `<< /Type /Pages /Kids [${pageId} 0 R] /Count 1 >>` };
-  const ocProps = o.ocg
-    ? ` /OCProperties << /OCGs [${Object.values(ocgRefs).map((id) => `${id} 0 R`).join(" ")}] /D << /Order [${Object.values(ocgRefs).map((id) => `${id} 0 R`).join(" ")}] /OFF [${o.ocg.off.map((n) => `${ocgRefs[n]} 0 R`).join(" ")}] >> >>`
+  const ocProps = o.ocg || o.layersAsOcg
+    ? ` /OCProperties << /OCGs [${Object.values(ocgRefs).map((id) => `${id} 0 R`).join(" ")}] /D << /Order [${Object.values(ocgRefs).map((id) => `${id} 0 R`).join(" ")}] /OFF [${(o.ocg?.off ?? []).map((n) => `${ocgRefs[n]} 0 R`).join(" ")}] >> >>`
     : "";
   objects[catalogId - 1] = { body: `<< /Type /Catalog /Pages ${pagesId} 0 R${ocProps} >>` };
 

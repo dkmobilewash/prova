@@ -150,6 +150,27 @@ enum AiFeature {
   /// drop a wall or keep a countertop — both visible on screen, both
   /// overridable. See `wallClassify.ts`.
   WALL_CLASSIFY
+
+  /// `readSheetTextTile` — reading the room names, dimensions and scale note
+  /// off a sheet that was SCANNED rather than exported.
+  ///
+  /// THE SECOND MEMBER HANDED AN IMAGE OF THE CUSTOMER'S DRAWING, and the
+  /// entry above should be read with that in mind: it says every other
+  /// feature here sends text the file already contains, and from this one
+  /// onwards that is no longer true of all of them. The argument it makes is
+  /// unchanged and applies to both — a contractor content for us to read
+  /// their title blocks may not be content for us to send a picture of their
+  /// client's building, and the two are switched separately because they are
+  /// separate decisions: one asks what a run IS, this asks what the writing
+  /// SAYS.
+  ///
+  /// It cannot change a quantity either. A scan's LINES are recovered from
+  /// the picture by code (`rasterStrokes.ts`), and every length and area is
+  /// measured from those. What this returns is words and where they sit — a
+  /// dimension's value, which code then divides by a line code measured.
+  /// With it off, a scanned sheet behaves as it does today: recognised as a
+  /// scan and set aside.
+  SHEET_TEXT
 }
 
 /// One row per company. Absent means every default below.

@@ -86,6 +86,40 @@ export const ARCHITECTURAL_SCALES: { feetPerInch: number; name: string }[] = [
   { feetPerInch: 1 / 3, name: '3" = 1\'-0"' },
 ];
 
+/**
+ * The metric drawing scales, as a ratio names them.
+ *
+ * ── FEET PER INCH, BECAUSE EVERYTHING DOWNSTREAM IS FEET ──
+ *
+ * A `1:N` drawing puts N inches of building in an inch of paper, which is N/12
+ * feet. The unit is not a statement about the building — a metric sheet's walls
+ * are still quoted in feet by a sub who buys studs in feet — it is the unit
+ * this pipeline measures in, and converting once here keeps every later stage
+ * ignorant of the difference.
+ *
+ * ── NONE OF THESE COLLIDES WITH AN IMPERIAL SCALE, which is checked rather
+ * than assumed ──
+ *
+ * The nearest pairs are `1:50` against `1/4" = 1'-0"` (4.167 vs 4.000) and
+ * `1:100` against `1/8"` (8.333 vs 8.000) — both **4.2% apart**, where
+ * `SCALE_TOLERANCE` is 2%. So a reading can land on one or the other and never
+ * both, and `scaleFromDimensions.test.ts` pins that rather than leaving it to
+ * arithmetic nobody re-runs. It is also why S16 and S17 DECLINED rather than
+ * reading a confidently wrong imperial scale: the tolerance was doing its job
+ * with nothing to offer.
+ */
+export const METRIC_SCALES: { feetPerInch: number; name: string }[] = [
+  { feetPerInch: 1000 / 12, name: "1:1000" },
+  { feetPerInch: 500 / 12, name: "1:500" },
+  { feetPerInch: 200 / 12, name: "1:200" },
+  { feetPerInch: 100 / 12, name: "1:100" },
+  { feetPerInch: 50 / 12, name: "1:50" },
+  { feetPerInch: 25 / 12, name: "1:25" },
+  { feetPerInch: 20 / 12, name: "1:20" },
+  { feetPerInch: 10 / 12, name: "1:10" },
+  { feetPerInch: 5 / 12, name: "1:5" },
+];
+
 /** The civil scales, held here ONLY so a reading landing near one can be
  *  declined as the wrong kind of sheet. Never voted on. */
 export const ENGINEERING_SCALES: number[] = [10, 20, 30, 40, 50, 60, 100];
@@ -98,7 +132,7 @@ export const ENGINEERING_SCALES: number[] = [10, 20, 30, 40, 50, 60, 100];
  * for the measurement — it absorbs the dimension string being rounded on the
  * drawing. A plan prints `11' - 0"` for a wall the model holds at 10.97 ft.
  */
-const SCALE_TOLERANCE = 0.02;
+export const SCALE_TOLERANCE = 0.02;
 
 /**
  * Within this of the winning scale counts as "accurate enough to prefer the
@@ -176,6 +210,16 @@ export type ScaleCandidate = {
   declaredFeet: number;
   /** The label it came from, for the evidence sentence. */
   text: string;
+  /**
+   * WHICH label, not merely what it said.
+   *
+   * Two `24'-6 1/2"` strings lettered at opposite ends of a plan are two
+   * independent readings of the scale. The SAME string paired with five
+   * different lines is one reading and four guesses about which line it
+   * measures. Only the first deserves two votes, and text alone cannot tell
+   * them apart — which is the whole of the bug this field exists to fix.
+   */
+  labelKey: string;
   /** Feet of building per inch of paper this pair implies. */
   feetPerInch: number;
 };
@@ -281,8 +325,11 @@ const lengthOf = (s: StrokeSegment) => Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
 
 /** The nearest standard architectural scale, or null if the reading is not
  *  within tolerance of any. */
-function snap(feetPerInch: number): { feetPerInch: number; name: string } | null {
-  for (const scale of ARCHITECTURAL_SCALES) {
+function snap(
+  feetPerInch: number,
+  scales: readonly { feetPerInch: number; name: string }[] = ARCHITECTURAL_SCALES,
+): { feetPerInch: number; name: string } | null {
+  for (const scale of scales) {
     if (Math.abs(feetPerInch - scale.feetPerInch) / scale.feetPerInch <= SCALE_TOLERANCE) return scale;
   }
   return null;
@@ -329,6 +376,7 @@ export function scaleCandidates(
         y2: segment.y2,
         declaredFeet: label.feet,
         text: label.text,
+        labelKey: `${label.text}@${label.x.toFixed(1)},${label.y.toFixed(1)}`,
         // Feet per inch of paper: the pair's own reading, 72 points to the inch.
         feetPerInch: label.feet / (lenPt / 72),
       });
@@ -357,8 +405,37 @@ export function readSheetScale(
   segments: readonly StrokeSegment[],
   labels: readonly DimensionLabel[],
   options: Omit<ScaleOptions, "pageWidthPt"> = {},
+  /**
+   * The same sheet's dimensions read as bare MILLIMETRES, from
+   * `metricDimensionLabels`. Omitted by a caller that has none, which is every
+   * caller that existed before metric sheets were handled.
+   */
+  metricLabels: readonly DimensionLabel[] = [],
 ): ScaleVerdict {
-  return scaleFromDimensions(labels, segments, { ...options, pageWidthPt: page.widthPt });
+  const imperial = scaleFromDimensions(labels, segments, { ...options, pageWidthPt: page.widthPt });
+
+  // ── IMPERIAL FIRST, ALWAYS, AND METRIC ONLY ON A DECLINE ──
+  //
+  // Strictly additive: a sheet that already reads a scale never reaches the
+  // metric pass, so no existing reading can change. That ordering is the whole
+  // safety of the feature rather than a preference — a bare four-digit figure
+  // is a plausible dimension and an equally plausible job number, and the only
+  // reason it can be trusted at all is that nothing else explained the sheet.
+  //
+  // Measured on S16 (`1:100`) and S17 (`1:50`): both print their scale, both
+  // are covered in dimensions, and both declined saying none were found.
+  if (imperial.ok || metricLabels.length === 0) return imperial;
+
+  const metric = scaleFromDimensions(metricLabels, segments, {
+    ...options,
+    pageWidthPt: page.widthPt,
+    scales: METRIC_SCALES,
+  });
+  // A METRIC DECLINE MUST NOT REPLACE THE IMPERIAL ONE. The imperial reason is
+  // the one that describes the sheet an estimator is looking at — "no printed
+  // dimensions were found" — and swapping it for a second failure about a
+  // reading they never asked for would make a confusing message worse.
+  return metric.ok ? metric : imperial;
 }
 
 export type ScaleOptions = {
@@ -389,6 +466,16 @@ export type ScaleOptions = {
    * removes the question.
    */
   pageWidthPt: number;
+  /**
+   * Which standard scales a reading may snap to. Defaults to the imperial
+   * table, which is every existing caller's behaviour unchanged.
+   *
+   * Supplied as `METRIC_SCALES` by the metric fallback in `readSheetScale`, and
+   * only there. The two tables are never consulted together: a sheet is
+   * dimensioned one way or the other, and offering both would let a stray
+   * four-digit figure on an imperial sheet find a metric scale to agree with.
+   */
+  scales?: readonly { feetPerInch: number; name: string }[];
   /**
    * The fewest DISTINCT dimension labels that must agree before a scale is
    * proposed.
@@ -474,15 +561,39 @@ export function scaleFromDimensions(
     };
   }
 
-  // Votes per scale name, counting distinct labels.
+  // ── VOTES ARE DISTINCT LABELS, WHICH IS NOT THE SAME AS DISTINCT TEXT ──
+  //
+  // This counted distinct TEXT, and the bench has carried the resulting defect
+  // as a failing probe since it was written. P13: eight `30'-0"` bay dimensions,
+  // each lettered on its own 270pt line, each independently confirming 1/8" —
+  // and the sheet declined with "Only 1 printed dimension on this sheet agree
+  // on a scale". Eight witnesses counted as one because they said the same
+  // thing.
+  //
+  // Found again on a real drawing: fixture S01 letters `24'-6 1/2"` twice and
+  // `16'-7 1/4"` twice, four readings in four places, and declined for want of
+  // a third.
+  //
+  // The guard the old rule was reaching for is still needed and still here: one
+  // label paired with five candidate lines is ONE reading and four guesses
+  // about which line it measures, and `labelKey` collapses those to a single
+  // vote exactly as before. What changes is only that two labels in two places
+  // now count as two.
+  //
+  // `agreed` stays TEXT, because it is the sentence an estimator reads as
+  // evidence and `24'-6 1/2"@131.0,512.0` is not evidence to a person.
   const supporters = new Map<string, Set<string>>();
+  const agreedText = new Map<string, Set<string>>();
   const bestPerScale = new Map<string, ScaleCandidate>();
   for (const candidate of candidates) {
-    const scale = snap(candidate.feetPerInch);
+    const scale = snap(candidate.feetPerInch, options.scales);
     if (scale === null) continue;
     const set = supporters.get(scale.name) ?? new Set<string>();
-    set.add(candidate.text);
+    set.add(candidate.labelKey);
     supporters.set(scale.name, set);
+    const texts = agreedText.get(scale.name) ?? new Set<string>();
+    texts.add(candidate.text);
+    agreedText.set(scale.name, texts);
     // THE PAIR TO PROPOSE: THE LONGEST ACCURATE ONE, not the most accurate.
     //
     // The stored line is what every later measurement inherits, and `takeoff-plan.ts`
@@ -523,7 +634,7 @@ export function scaleFromDimensions(
   }
 
   const ranked = [...supporters.entries()]
-    .map(([name, set]) => ({ name, votes: set.size, agreed: [...set] }))
+    .map(([name, set]) => ({ name, votes: set.size, agreed: [...(agreedText.get(name) ?? new Set<string>())] }))
     .sort((a, b) => b.votes - a.votes);
   const winner = ranked[0];
   const runnerUp = ranked[1];
@@ -581,7 +692,13 @@ export function scaleFromDimensions(
     };
   }
 
-  const scale = snap(best.feetPerInch);
+  // THE SAME TABLE THE VOTE USED. This read `snap(best.feetPerInch)` with no
+  // table while the vote above passed one, so a sheet could agree unanimously
+  // on `1:100` and then be refused because that name is not in the imperial
+  // list — `scale` came back null, the inherited error was Infinity, and the
+  // message read "the best line to set it from is Infinity% out". Two call
+  // sites, one of them updated: this repo's commonest shape.
+  const scale = snap(best.feetPerInch, options.scales);
   // The error every later measurement inherits: how far the pair being stored
   // sits from the scale the sheet voted for.
   const inheritedError =

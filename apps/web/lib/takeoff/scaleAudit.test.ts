@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   agreementRate,
   auditTargets,
@@ -28,6 +28,10 @@ const page = (over: Partial<AuditPage> = {}): AuditPage => ({
   derived: '1/8" = 1\'-0"',
   printed: '1/8" = 1\'-0"',
   printedAll: ['1/8" = 1\'-0"'],
+  // The bar is absent by default: most sheets in these cases are about the two
+  // text readings, and a factory that supplied a bar would quietly make every
+  // case a three-witness one.
+  bar: null,
   found: 30,
   agreed: 6,
   inheritedError: 0.00315,
@@ -345,5 +349,45 @@ describe("a sheet that prints more than one scale", () => {
       page({ outcome: "MANY_PRINTED", printedAll: [EIGHTH, HALF] }),
     ]);
     expect(rate).toBe(1);
+  });
+});
+
+describe("the audit actually reads the bar, not merely a column for it", () => {
+  // ── A CENSUS, AND WHY THIS ONE IS NEEDED ──
+  //
+  // `auditPlanFile` needs a real PDF, so no case in this file can reach it. The
+  // arithmetic above is all testable; whether the bar is READ is not.
+  //
+  // Measured as a mutation rather than assumed: replacing the reading with
+  // `const bar = null` left all 39 cases above green, because the field still
+  // existed and every case supplies its own. The column would have gone on
+  // reporting "the bar read 0 pages" for ever, which is indistinguishable from
+  // the finding it actually produced — that the bar reads 3 of 218.
+  //
+  // So this pins the DERIVATION, not the presence of a name. Same lesson the
+  // classifier fix was caught by: a census over a string proves the string is
+  // there, never that anything computes it.
+  const source = () => readFileSync(resolve(process.cwd(), "lib/takeoff/scaleAudit.ts"), "utf8");
+
+  it("reads the sheet's own ruler and reports it", () => {
+    const text = source();
+    expect(text.length, "the audit read as empty — this census guards nothing").toBeGreaterThan(5_000);
+    expect(text, "the bar is never read").toContain("scaleFromBar(scaleBarLabels(");
+    expect(text, "the bar column is not derived from the reading").toMatch(
+      /const bar = barRead\.ok \? barRead\.scaleName : null;/,
+    );
+  });
+
+  it("keeps the bar in its OWN column rather than folding it into the headline", () => {
+    // The whole value of the column is the question it leaves askable: of the
+    // pages nothing else can read, how many does the bar rescue? Folding it
+    // into `derived` would improve the headline and destroy the measurement —
+    // and on this evidence the headline would have improved by 1.4%.
+    const text = source();
+    const derivedAssignments = text.match(/derived: [^,\n]+/g) ?? [];
+    expect(derivedAssignments.length, "no derived assignments parsed").toBeGreaterThanOrEqual(3);
+    for (const line of derivedAssignments) {
+      expect(line, "the bar has been folded into the derived column").not.toContain("bar");
+    }
   });
 });

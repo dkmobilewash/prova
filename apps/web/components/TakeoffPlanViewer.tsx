@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ActionForm } from "@/components/ActionForm";
 import { SubmitButton } from "@/components/SubmitButton";
+import { DISTINCT_MARKS, SHOWN_AT_FIRST, markFor } from "@/lib/takeoff/clusterMarks";
 import { formatFeetInches, parseFeetInches } from "@/lib/feet-inches";
 import {
   calibrationNotices,
@@ -36,28 +37,26 @@ import {
 } from "@/lib/takeoff-plan-view";
 import {
   type WallCandidate,
-  clusterByThickness,
   inchLabel,
-  wallsInTheBuilding,
-  wallsNotLettering,
-  wallsNotTheSheetBorder,
-  type WallCluster,
   type StrokeSegment,
 } from "@/lib/takeoff/wallVectors";
-import { wallsFromBothEngines } from "@/lib/takeoff/wallRuns";
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
+import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
+import { TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
 import type { WallClassifyLabel } from "@prova/integrations";
-import { pagesToSample, templateFromSheets, withoutTemplate } from "@/lib/takeoff/sheetTemplate";
+import { pagesToSample } from "@/lib/takeoff/sheetTemplate";
+import { findWallsOnSheet, inPageWidthUnits } from "@/lib/takeoff/findWallsOnSheet";
 import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
-import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
-import { wallTypeTags, tagByRun, tagSentence } from "@/lib/takeoff/wallTags";
-import { defaultWallTypeFromNotes } from "@/lib/takeoff/wallNotes";
-import { scaleBarLabels, wallsNotTheScaleBar } from "@/lib/takeoff/scaleBar";
+import { layersOf, segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
+import { droppedLayersSentence, type LayerDrop } from "@/lib/takeoff/layerNames";
+import { sheetNumberFrom } from "@/lib/plan-ingest/sheetNumber";
+import { cautionToShow, duplicateWallsCaution, sheetSuitability } from "@/lib/takeoff/sheetSuitability";
+import { tagSentence } from "@/lib/takeoff/wallTags";
 import {
-  wallGroups,
   verdictFor,
   groupSentence,
   wallsOnThisSheet,
+  storedWallsFor,
   type WallGroup,
   type GroupVerdict,
 } from "@/lib/takeoff/wallGroups";
@@ -127,16 +126,52 @@ const BASE_SCALE = 1.5;
 const FIT = "fit" as const;
 type Zoom = number | typeof FIT;
 
+/**
+ * ── THE WORDS ON A PAGE, IN `planPdf`'s CONVENTION, READ ONCE ──
+ *
+ * `y` is the BASELINE and runs DOWN from the top, which is what
+ * `plan-ingest/planPdf.ts` stores and therefore what every consumer in this
+ * repo expects. `findWallsOnSheet` does the glyph-height shift itself, once —
+ * see `fromBaseline` — so nothing here subtracts anything.
+ *
+ * EXTRACTED BECAUSE THERE WERE ABOUT TO BE TWO COPIES in this one file: the
+ * wall finder reads the text, and so does the sheet-kind caution below. Two
+ * copies of a coordinate convention is exactly the drift that put every text
+ * box one glyph height out the last time, and nothing threw.
+ */
+async function pageTextItems(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pdfjs ships no types for the legacy build entry.
+  page: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- as above.
+  pdfjs: any,
+): Promise<{ str: string; x: number; y: number; width: number; height: number }[]> {
+  const viewport = page.getViewport({ scale: 1 });
+  const content = (await page.getTextContent()) ?? { items: [] };
+  return (content.items as unknown[]).flatMap((raw) => {
+    const item = raw as { str?: string; transform?: number[]; width?: number; height?: number };
+    if (typeof item.str !== "string" || item.str.trim() === "" || !Array.isArray(item.transform)) return [];
+    const m = pdfjs.Util.transform(viewport.transform, item.transform);
+    return [{ str: item.str, x: m[4], y: m[5], width: item.width ?? 0, height: item.height ?? 0 }];
+  });
+}
+
 export function TakeoffPlanViewer({
   jobId,
   planId,
   sheets,
   printedScaleByPage,
+  // Defaulted for the test renders that build partial props through
+  // `as never`. The TYPE still requires it, so a real caller that forgets it
+  // is a build error rather than a button that silently never appears —
+  // which is the failure this prop exists to fix.
+  scannedPages = [],
+  storedWallsByPage,
   levelByPage,
   wallTypes,
   scalePrefillByPage,
   scaleDeclineByPage,
   duplicateWallsByPage = {},
+  sheetLabelByPage = {},
 }: {
   jobId: string;
   planId: string;
@@ -154,6 +189,46 @@ export function TakeoffPlanViewer({
    * `takeoff-plan-view.ts`.
    */
   printedScaleByPage: PrintedScaleByPage;
+  /**
+   * Page numbers whose page carries NO TEXT LAYER — that is, scans.
+   *
+   * ── WHY THIS IS A PROP AND NOT SOMETHING THE VIEWER WORKS OUT ──
+   *
+   * Read this sheet first appeared only once Find the walls had run and come
+   * back with no lines, which reads as the careful choice and is a DEADLOCK.
+   * Find the walls is disabled until a sheet has a scale (`!calibration`); a
+   * scan's scale is printed on the drawing and can only be got at by reading
+   * the picture; and reading the picture was the thing behind the button. So
+   * the one control that could break the cycle was inside it, and the feature
+   * was unreachable on exactly the sheets it exists for.
+   *
+   * Found by a person clicking, after a census asserted the control existed
+   * and was rendered from a page — which it was. The same shape as #764:
+   * PRESENT IS NOT USABLE, and a sibling condition is what makes it so.
+   *
+   * Being a scan is a fact about the FILE, settled at ingest and independent
+   * of scale, of Find the walls and of anything the viewer has done. So the
+   * gate is that fact, and nothing else.
+   */
+  scannedPages: number[];
+  /**
+   * THE WALLS ALREADY FOUND ON EACH SHEET, from `TakeoffWallProposal`, keyed by
+   * page number.
+   *
+   * KEYED BY PAGE RATHER THAN READ OFF `sheet`, which is the shape
+   * `printedScaleByPage` above was moved to after the field version turned out
+   * to be unreachable. This one would in fact be safe on `PlanSheet` — a
+   * proposal only exists once a calibration does, and saving a calibration is
+   * what creates the page row, so the row is guaranteed present exactly when
+   * there is something to show. It is keyed anyway, because two props that
+   * mean "something the server knows about page N" should not be reached two
+   * different ways.
+   *
+   * Optional and absent is normal: an uncalibrated sheet has nothing stored,
+   * and a sheet whose scale changed has nothing stored UNDER THE CURRENT
+   * calibration, which is the same thing from the reader's side.
+   */
+  storedWallsByPage?: Record<number, WallGroup[]>;
   /** Which floor each sheet draws, read off its own title — see
    *  `sheetLevel.ts`. Absent for a sheet whose title names no floor, which is
    *  most of them on a single-storey job. */
@@ -177,12 +252,30 @@ export function TakeoffPlanViewer({
    * here" from "the app decided for me".
    */
   duplicateWallsByPage?: Record<number, string>;
+  /**
+   * What each sheet is called, so the pager can be jumped rather than walked.
+   *
+   * Absent for a page nothing has read a number off — a scan, or a set whose
+   * ingest has not run — and the picker falls back to "Sheet 23" for those,
+   * which is what this control said for every page before it existed. A page
+   * is never missing from the list; only its name is.
+   */
+  sheetLabelByPage?: Record<number, string>;
 }) {
   const [pageNumber, setPageNumber] = useState(1);
   const [pageCount, setPageCount] = useState<number | null>(null);
   /** How many strokes the set's own template accounted for, so the panel can
    *  SAY it rather than quietly returning a smaller number. */
   const [templateStrokes, setTemplateStrokes] = useState(0);
+  /** What the LAYER filter left out, so the panel can say it. Empty on a
+   *  flattened plot, which carries no layer names at all. */
+  const [layerDropped, setLayerDropped] = useState<LayerDrop[]>([]);
+  /** The sheet-kind caution read off the drawing's own title block, per
+   *  page. Only ever consulted where the server had nothing to say. */
+  const [readCaution, setReadCaution] = useState<Record<number, string>>({});
+  /** Pages already asked about, so a page with no caution is not re-read on
+   *  every render — `seeded`'s trick, and for its reason. */
+  const cautionAsked = useRef<Set<number>>(new Set());
   // FIT by default. A sheet opens showing all of itself, which is what
   // somebody opening a drawing wants to see first; they zoom IN to measure.
   const [zoom, setZoom] = useState<Zoom>(FIT);
@@ -212,6 +305,14 @@ export function TakeoffPlanViewer({
   // the question somebody asked about that sheet, so returning restores it
   // rather than demanding another press.
   const [foundRaw, setFound] = useState<WallGroup[] | null>(null);
+  /**
+   * WHICH PAGES HAVE ALREADY BEEN SEEDED FROM THE SERVER, so a sheet is seeded
+   * once and "Clear" sticks.
+   *
+   * A ref and not state: nothing renders from it, and React double-invokes
+   * effects in development, which would otherwise seed twice.
+   */
+  const seeded = useRef<Set<number>>(new Set());
   const [foundOnPage, setFoundOnPage] = useState<number | null>(null);
   // ── WHAT THE RUNS ARE, as opposed to what they measure ──
   //
@@ -234,6 +335,8 @@ export function TakeoffPlanViewer({
    * state, which is why the name it kept is the one they were already using.
    */
   const found = wallsOnThisSheet(foundRaw, foundOnPage, pageNumber);
+  // ONE SLOT, and `cautionToShow` owns which of the two fills it.
+  const sheetCaution = cautionToShow(duplicateWallsByPage[pageNumber], readCaution[pageNumber]);
   /**
    * WHICH TYPE A PERSON PICKED for a group that could be more than one, by
    * group index.
@@ -259,6 +362,16 @@ export function TakeoffPlanViewer({
   /** How many strokes the sheet held when it was last read, so an empty result
    *  can say which kind of empty it is. See the message below. */
   const [strokesSeen, setStrokesSeen] = useState(0);
+  // ── READING A SCANNED SHEET ──
+  // `reading` drives the button; `readError` and `wordsRead` are what the
+  // estimator is told. The WORDS themselves go in a ref rather than state
+  // because nothing renders them — `onFindWalls` reads them on its next pass,
+  // and putting them in state would re-render the canvas for no pixels.
+  const [reading, setReading] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [wordsRead, setWordsRead] = useState<number | null>(null);
+  const [readProgress, setReadProgress] = useState<string | null>(null);
+  const scannedWordsRef = useRef<{ str: string; x: number; y: number; width: number; height: number }[] | null>(null);
   const [finding, setFinding] = useState(false);
   const [findError, setFindError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
@@ -504,6 +617,114 @@ export function TakeoffPlanViewer({
    * care about, and at a readable zoom it is a readable image — the room tags
    * and fixture outlines are what separate a kitchen from a corridor.
    */
+  /**
+   * Read a scanned sheet's lettering, one tile at a time.
+   *
+   * Tiled because a whole ARCH D sheet in one image is a thumbnail by the time
+   * the model sees it — nobody reads a dimension string at 44 dpi. Each tile
+   * is rendered at `TILE_PX` across `TILE_PT` of paper, about 190 dpi, and the
+   * tile's own offset is applied on the server so page coordinates cannot
+   * drift between the two sides.
+   *
+   * Tiles go ONE AT A TIME rather than in parallel: each is a separate charge
+   * against the company's allowance, and a refusal part way through should
+   * stop the rest rather than race a dozen requests that have already been
+   * sent.
+   */
+  const onReadSheet = useCallback(async () => {
+    setReading(true);
+    setReadError(null);
+    try {
+      const doc = docRef.current;
+      if (!doc) {
+        setReadError("The sheet isn't open yet.");
+        return;
+      }
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const page = (await doc.getPage(pageNumber)) as {
+        getViewport: (o: { scale: number }) => { width: number; height: number };
+        render: (o: unknown) => { promise: Promise<void> };
+      };
+      const full = page.getViewport({ scale: 1 });
+      const across = Math.ceil(full.width / TILE_PT);
+      const down = Math.ceil(full.height / TILE_PT);
+      const scale = TILE_PX / TILE_PT;
+
+      const words: { str: string; x: number; y: number; width: number; height: number }[] = [];
+      const total = across * down;
+      let done = 0;
+      setReadProgress(`Reading the sheet — 0 of ${total} parts…`);
+      for (let ty = 0; ty < down; ty += 1) {
+        for (let tx = 0; tx < across; tx += 1) {
+          const tile = document.createElement("canvas");
+          tile.width = TILE_PX;
+          tile.height = TILE_PX;
+          const ctx = tile.getContext("2d");
+          if (!ctx) {
+            setReadError("This browser couldn't prepare the image. Nothing was sent.");
+            return;
+          }
+          // Paper first: a PDF page is transparent where nothing is drawn, and
+          // a transparent pixel reads as black once alpha is dropped.
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(0, 0, TILE_PX, TILE_PX);
+          ctx.save();
+          ctx.translate(-tx * TILE_PT * scale, -ty * TILE_PT * scale);
+          await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale }) }).promise;
+          ctx.restore();
+
+          // ── JPEG, BECAUSE THIS READS SCANS ──
+          //
+          // PNG is the wrong format for speckled paper: the same tile measured
+          // 1.20 MB as PNG against 0.54 MB as JPEG, and the PNG was over a
+          // Server Action's body limit — so the feature failed on exactly the
+          // sheets it exists for and worked on the clean ones.
+          const base64 = tile.toDataURL("image/jpeg", 0.9).split(",")[1] ?? "";
+
+          // ── A FAILED TILE MUST NOT LEAVE THE BUTTON SPINNING ──
+          //
+          // A browser tester watched this sit on "Reading the sheet…" for
+          // three minutes after a 503 and never say anything. The action
+          // returns a readable refusal for every case it can see, but a
+          // request the PLATFORM ends never reaches it — so the throw has to
+          // be caught here, or the page stops having an opinion at all.
+          let result;
+          try {
+            result = await readScannedSheetTile({
+              imageBase64: base64,
+              tileX: tx,
+              tileY: ty,
+              tilePt: TILE_PT,
+              mediaType: "image/jpeg",
+            });
+          } catch {
+            setReadError(
+              `The sheet stopped being read part way through (${done} of ${total} parts done). ` +
+                "Nothing was changed. Press Read this sheet to try again.",
+            );
+            return;
+          }
+          if (!result.ok) {
+            setReadError(result.error);
+            return;
+          }
+          words.push(...result.value.items);
+          done += 1;
+          // WHAT IT IS DOING, not merely that it is doing something. Nine
+          // requests take a while, and a button that only says "Reading…" is
+          // indistinguishable from one that has died — which is precisely how
+          // the failure above was reported.
+          setReadProgress(`Reading the sheet — ${done} of ${total} parts…`);
+        }
+      }
+      scannedWordsRef.current = words;
+      setWordsRead(words.length);
+    } finally {
+      setReading(false);
+      setReadProgress(null);
+    }
+  }, [pageNumber]);
+
   const onCheckRuns = useCallback(async () => {
     const canvas = canvasRef.current;
     const regroup = regroupRef.current;
@@ -613,6 +834,112 @@ export function TakeoffPlanViewer({
     }
   }, [labels]);
 
+  /**
+   * ── THE WALLS FOUND EARLIER, PUT BACK ON THE SHEET ──
+   *
+   * Detection now runs when a scale is saved, so by the time somebody opens the
+   * sheet the groups are usually already stored. This is what makes that
+   * visible: without it the work happened and the panel still said to press a
+   * button.
+   *
+   * IT SEEDS THE SAME STATE `onFindWalls` WRITES, deliberately, rather than
+   * adding a second source for the panel to read. Every render site, the ghost
+   * overlay, accepting a group and Clear all go on working untouched — and the
+   * bug that shape avoids is the one `wallsOnThisSheet` was written for: two
+   * render sites reading two variables, neither wrong on its own.
+   *
+   * ONCE PER PAGE. `seeded` means Clear is honoured rather than undone on the
+   * next render, and that a sheet somebody has already worked through does not
+   * refill itself behind them.
+   */
+  useEffect(() => {
+    if (seeded.current.has(pageNumber)) return;
+    const stored = storedWallsFor(storedWallsByPage, pageNumber);
+    if (stored === null) return;
+    // NOT OVER THE TOP OF A LIVE RESULT. A press of Find the walls on this very
+    // sheet is newer than anything on the server and must win.
+    if (foundRaw !== null && foundOnPage === pageNumber) return;
+    seeded.current.add(pageNumber);
+    setFound(stored);
+    setFoundOnPage(pageNumber);
+    setChosen({});
+    setShowingAll(false);
+  }, [pageNumber, storedWallsByPage, foundRaw, foundOnPage]);
+
+  /**
+   * ── WHAT KIND OF SHEET IS THIS, READ OFF THE DRAWING ITSELF ──
+   *
+   * `sheetSuitability` is the thing that keeps a mechanical plan's walls out of
+   * a bid — an M-101 carries the architectural walls in grey under the ductwork
+   * and they are the SAME walls the A-101 already has, so adding them bids the
+   * job twice. The takeoff page already runs it, and on a real plan set it says
+   * nothing at all: it is fed `effectiveSheetNumber`/`effectiveTitle`, which
+   * both return null when the page has no `PlanSheetProposal` row — every sheet
+   * of every set uploaded before the ingest shipped. Fifty-two sheets reading
+   * "need their numbers typed in" is fifty-two sheets this cannot judge.
+   *
+   * `sheetNumber.ts` was written for exactly that gap and its own header says
+   * so, ending "IT HAS NO PRODUCTION CALLER YET, SAID OUT LOUD" — because the
+   * takeoff PAGE reads database rows and cannot open the PDF.
+   *
+   * THIS SIDE CAN. The viewer has the document open and is already reading the
+   * page's text for the wall finder, so the two fields that need no model are
+   * one pure call away. No schema, no stage, no allowance, and it works on a
+   * set uploaded a year ago.
+   *
+   * ONLY WHERE THE SERVER HAD NOTHING. A proposal that a model read and a
+   * person may have corrected beats a heuristic every time, so this fills a
+   * silence rather than competing for the same space.
+   *
+   * ONLY FOR A SHEET SHOWING WALLS, which is both the cheap option and the
+   * honest one: the caution's whole job is to be read beside the quantities it
+   * doubts, and a sheet nobody has measured has nothing to doubt yet.
+   *
+   * IT NEVER THROWS. A caution is a courtesy; a page whose text will not parse
+   * keeps the takeoff it already had.
+   */
+  useEffect(() => {
+    if (found === null || found.length === 0) return;
+    if (duplicateWallsByPage[pageNumber]) return;
+    if (cautionAsked.current.has(pageNumber)) return;
+    const doc = docRef.current;
+    if (!doc || !pageSize) return;
+    cautionAsked.current.add(pageNumber);
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        const page = await doc.getPage(pageNumber);
+        const items = await pageTextItems(page, pdfjs);
+        const reading = sheetNumberFrom({
+          pageNumber,
+          widthPt: pageSize.widthPt,
+          heightPt: pageSize.heightPt,
+          // The viewport has already applied the page's own `/Rotate`, so the
+          // coordinates above are of the sheet AS DISPLAYED and the angle has
+          // nothing left to say. `sheetNumberFrom` reads only x and y.
+          rotation: 0,
+          items,
+        });
+        // `regionText` is the title block's whole text, which is the right
+        // shape for `sheetSuitability`'s unanchored substring rules and the
+        // wrong shape for showing anybody — it carries the project name and the
+        // architect's address. It is never rendered.
+        const caution = duplicateWallsCaution(
+          sheetSuitability(reading.sheetNumber, reading.regionText, null),
+          reading.sheetNumber,
+        );
+        if (!cancelled && caution) setReadCaution((prev) => ({ ...prev, [pageNumber]: caution }));
+      } catch {
+        // Nothing: the sheet keeps the takeoff it already had.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [found, pageNumber, duplicateWallsByPage, pageSize]);
+
   async function onFindWalls() {
     const doc = docRef.current;
     if (!doc || !pageSize || feetPerUnit === null) return;
@@ -623,201 +950,104 @@ export function TakeoffPlanViewer({
     setShowingAll(false);
     try {
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      // ── WHAT THE DRAFTER CALLED EACH LINE, WHERE THE EXPORT SAYS SO ──
+      //
+      // Read ONCE for the document, because the names are the same on every
+      // sheet and the sampling loop below opens six more of them. `null` on a
+      // flattened plot, which is the ordinary case and means every filter
+      // downstream behaves exactly as it did before layers existed.
+      const layers = await layersOf(doc);
       const page = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(pageNumber);
-      const { segments } = await segmentsFromOpenPage(page, pdfjs, pageNumber);
+      const { segments } = await segmentsFromOpenPage(page, pdfjs, pageNumber, layers);
       setStrokesSeen(segments.length);
 
       // ── WHERE THE WORDS ARE ──
       //
-      // Same derivation as `planPdf.ts`: an item's own matrix composed with the
-      // viewport's, whose translation is the item's position on the page as
-      // displayed. `y` is reported from the TOP of the glyph, so the box is
-      // grown downwards by its height.
-      const viewport = (page as { getViewport: (o: { scale: number }) => { transform: number[] } }).getViewport({
-        scale: 1,
-      });
-      const content = (await (page as { getTextContent: () => Promise<{ items: unknown[] }> }).getTextContent()) ?? {
-        items: [],
-      };
-      // ONE PASS, TWO CONSUMERS. `wallsNotLettering` wants boxes in page-width
-      // units and `wallTypeTags` wants the STRING with its box in points, so
-      // the text is read once and both are derived from it. A second
-      // `getTextContent()` pass would be a second decode of every glyph on a
-      // sheet that can carry tens of thousands.
-      const textItems = content.items.flatMap((raw) => {
-        const item = raw as { str?: string; transform?: number[]; width?: number; height?: number };
-        if (typeof item.str !== "string" || item.str.trim() === "" || !Array.isArray(item.transform)) return [];
-        const m = pdfjs.Util.transform(viewport.transform, item.transform);
-        const h = item.height ?? 0;
-        return [{ str: item.str, x: m[4], y: m[5] - h, width: item.width ?? 0, height: h }];
-      });
-      const textBoxes = textItems.map((item) => ({
-        x: item.x / pageSize.widthPt,
-        y: item.y / pageSize.widthPt,
-        width: item.width / pageSize.widthPt,
-        height: item.height / pageSize.widthPt,
-      }));
-      // Page-width units: every stored figure is a fraction of THIS page's
-      // width, and `width` is deliberately left in points — the pen is compared
-      // against other pens on the same sheet, never against a distance, so
-      // scaling it would be arithmetic with no meaning.
-      const unitsOf = (over: number) => (one: StrokeSegment): StrokeSegment => ({
-        x1: one.x1 / over,
-        y1: one.y1 / over,
-        x2: one.x2 / over,
-        y2: one.y2 / over,
-        width: one.width,
-        // CARRIED, because this rebuilds the object field by field and the flag
-        // decides which engine may use the piece — see `StrokeSegment.curved`.
-        // Dropped here, a flattened arc would reach the room engine again and
-        // the lobby wall would be billed twice: 1,957 ft against a key of 1,894.
-        curved: one.curved,
-      });
-      const allInUnits = segments.map(unitsOf(pageSize.widthPt));
+      // Read here because only this side has the open document; the BASELINE is
+      // handed on untouched. `findWallsOnSheet` applies the glyph-height shift
+      // itself, once, so the browser and the server cannot disagree about where
+      // a word is — which they would, because `planPdf.pageText` stores the
+      // baseline and this used to subtract before passing anything on.
+      const vectorWords = await pageTextItems(page, pdfjs);
+      // ── A SCAN'S WORDS ENTER EXACTLY HERE ──
+      //
+      // A scanned sheet has no text layer, so `pageTextItems` returns nothing
+      // and every reader downstream — the printed scale, the dimension
+      // labels, the lettering filter — has nothing to work with. Read this
+      // sheet puts the model's reading in `scannedWordsRef`, in the SAME
+      // baseline-y page coordinates this function returns, so nothing below
+      // can tell the difference.
+      //
+      // The vector text wins whenever there is any: a sheet that carries its
+      // own words must never be served a model's reading of a picture of
+      // them.
+      const textItems = vectorWords.length > 0 ? vectorWords : (scannedWordsRef.current ?? []);
 
       // ── THE SET'S OWN TEMPLATE, READ FROM OTHER SHEETS ──
       //
-      // #722 fixed the drawing FRAME by geometry and said plainly that the
-      // title-block cells were still counted as walls: they are short runs
-      // inside the border, and every cheap way to guess that corner also drops
-      // real wall, because a plan is routinely drawn right up to it.
+      // The frame, the title block and the logo are the only geometry at the
+      // SAME page position on every sheet of a set. A wall is not. It costs a
+      // few extra page parses; `pagesToSample` spreads them across the whole
+      // document rather than taking neighbours, which is the identical-floors
+      // guard — levels 3 to 10 of a tower repeat their REAL walls, and evenly
+      // spaced samples cross disciplines, where nothing but the template
+      // survives.
       //
-      // This is the fix that needs no guess. The frame, the title block and the
-      // logo are the only geometry at the SAME page position on every sheet of
-      // a set. A wall is not.
-      //
-      // It costs a few extra page parses. `pagesToSample` spreads them across
-      // the whole document rather than taking neighbours, which is the
-      // identical-floors guard — levels 3 to 10 of a tower repeat their REAL
-      // walls, and evenly spaced samples cross disciplines, where nothing but
-      // the template survives. `sheetTemplate.ts` carries the reasoning and the
-      // fail-safe: too few sheets read and it filters nothing, because "cannot
-      // tell" must not mean "drop it".
-      let inUnits = allInUnits;
-      let templateDropped = 0;
+      // THE READING IS HERE AND THE FILTERING IS NOT. Only this side can open
+      // another page; what it produces is handed over as data. A page that will
+      // not parse yields `null`, which is not an error — the geometric filters
+      // still run and the sheet gets exactly what it had before this existed.
+      let sampledSheets: StrokeSegment[][] | null = null;
       try {
         const sampled: StrokeSegment[][] = [];
         for (const n of pagesToSample(doc.numPages, pageNumber)) {
           if (n === pageNumber) {
-            sampled.push(allInUnits);
+            sampled.push(segments.map(inPageWidthUnits(pageSize.widthPt)));
             continue;
           }
           const other = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(n);
-          const read = await segmentsFromOpenPage(other, pdfjs, n);
+          const read = await segmentsFromOpenPage(other, pdfjs, n, layers);
           // ITS OWN width, not this sheet's. A set with a mixed page size would
           // otherwise compare one sheet's coordinates against another's scale.
-          sampled.push(read.segments.map(unitsOf(read.widthPt || pageSize.widthPt)));
+          sampled.push(read.segments.map(inPageWidthUnits(read.widthPt || pageSize.widthPt)));
         }
-        const template = templateFromSheets(sampled);
-        if (template.size > 0) {
-          const kept = withoutTemplate(allInUnits, template);
-          templateDropped = allInUnits.length - kept.length;
-          inUnits = kept;
-        }
+        sampledSheets = sampled;
       } catch {
-        // A page that will not parse is not a reason to refuse the sheet in
-        // front of somebody. Falling through leaves the geometric filters,
-        // which is exactly what this sheet had before.
-        inUnits = allInUnits;
-        templateDropped = 0;
+        sampledSheets = null;
       }
-      setTemplateStrokes(templateDropped);
-      // BOTH ENGINES, MERGED. Pairing asks "are these two lines a wall" and
-      // needs no room to close; the room engine asks which enclosed regions are
-      // thin AND separate two different spaces, and does not care how the wall
-      // was drawn. Opposite blind spots, so neither wins alone -- measured
-      // through the filters below on three real sheets, the union beats both on
-      // every one of them (augusta 608/472 -> 707ft, naples 657/789 -> 1,302ft,
-      // west-herr 1,495/1,093 -> 1,679ft). `mergeWalls` is what stops the
-      // overlap being billed twice; see `wallRuns.ts`.
-      // AND THE PARTITION SCHEDULE GOES IN WITH IT. The thicknesses of the
-      // types this company builds are what let the finder tell an assembly from
-      // a span across two of them: 1-1/2in furring on an 8in block wall is 8
-      // and 1-1/2, never one wall of 9-1/2in, because 9-1/2in is on no
-      // schedule. Without this list the finder behaves exactly as it did
-      // before, which is the whole point of passing it here rather than
-      // guessing inside.
-      const scheduleIn = wallTypes
-        .map((type) => type.thicknessIn)
-        .filter((inches): inches is number => inches !== null);
-      const everywhere = wallsFromBothEngines(inUnits, 1, pageSize.heightPt / pageSize.widthPt, {
-        feetPerPoint: feetPerUnit,
-        knownThicknessesIn: scheduleIn,
-      });
-      // ONLY THE ONES IN THE BUILDING. Without this the title block, the notes
-      // column, the sheet border and any detail drawn above the plan all come
-      // back as walls — see `wallsInTheBuilding`, which exists because somebody
-      // looked at the output rather than at its statistics.
-      const inBuilding = wallsInTheBuilding(everywhere, feetPerUnit);
-      // AND NOT THE LETTERING. A stroked glyph is two parallel lines and the
-      // pairer takes it — two whole groups on one real sheet were dimension
-      // strings and room tags. See `wallsNotLettering`.
-      const notLettering = wallsNotLettering(inBuilding, textBoxes, feetPerUnit);
-      // AND NOT THE SHEET'S OWN BORDER, which a real set offered as a 114ft
-      // wall — the longest single run in the panel and entirely false. The
-      // height is in page-width units, hence the aspect rather than 1.
-      const notBorder = wallsNotTheSheetBorder(notLettering, 1, pageSize.heightPt / pageSize.widthPt);
-      // AND NOT THE GRAPHIC SCALE BAR, which is two parallel lines a
-      // wall-thickness apart and 32 ft long — a textbook wall by every
-      // measurement, and the one thing on the sheet that is literally a ruler.
-      // It sat in School-01's panel as a 5-3/8in group holding 32 ft and was
-      // found by somebody looking at the drawing, not by a filter. See
-      // `scaleBar.ts` for why no bound on the LINES can catch it.
+
+      // ── ONE PIPELINE, SHARED ──
       //
-      // ONE PASS OVER THE TEXT for this and the wall-type tags: the items are
-      // read once above and both readers work from them.
-      const walls = wallsNotTheScaleBar(
-        notBorder,
-        scaleBarLabels(textItems, pageSize.widthPt),
+      // Everything from here to the groups lives in `findWallsOnSheet` so that
+      // the bench and the server run the SAME filters in the SAME order. It was
+      // inline here, and the bench's copy of it had silently drifted — no
+      // scale-bar filter and a dropped `curved` flag, both of which invent
+      // walls. See that file's header.
+      const found = findWallsOnSheet({
+        segments,
+        textItems,
+        pageSize,
         feetPerUnit,
-      );
-      const clusters = clusterByThickness(walls);
-      // ── WHAT THE DRAWING CALLS THESE, where it says so ──
-      //
-      // The panel otherwise names a group by a NUMBER, and an estimator still
-      // has to work out which of their own assemblies a 4-7/8in wall is. The
-      // drawing already answers that: it tags walls `EXT-1`, `A1`, `B1` beside
-      // the runs they label, and a name is what a catalogue is keyed on.
-      // ONE PASS FOR BOTH. `namesForClusters` is derived from
-      // `taggedFeetForClusters`, so reading the feet here costs nothing extra
-      // and the names on screen cannot disagree with the match beside them.
-      const tags = wallTypeTags(textItems, pageSize.widthPt);
-      // ── AND THE GROUPS ARE SPLIT BY THOSE TAGS BEFORE ANYTHING IS SHOWN ──
-      //
-      // A thickness bucket is not one wall type. School-01's 4-7/8in bucket
-      // held A1, A2, EXT-1 and C1 — 1,117 ft that could not be priced as
-      // anything, which was 58% of the sheet. `wallGroups` splits it into one
-      // group per tag plus the untagged remainder, and gives each piece the
-      // types it could be: by NAME for a tagged one, by THICKNESS for the
-      // remainder. See `wallGroups.ts` for why that ordering is the safety.
-      // THE TYPES GO TO THE TAGGER TOO, because a tag's own name says which of two
-      // runs beside each other it means — see `tagByRun`, where the measurement is.
-      // ── AND WHAT THE SHEET'S GENERAL NOTES SAY ABOUT EVERYTHING UNTAGGED ──
-      //
-      // An architect tags the exceptions and lets a note cover the rest:
-      // "ALL PARTITIONS TYPE A1 U.N.O." On School-01's A-101 that is 577 ft,
-      // about 30% of the sheet, which the panel was offering as A1, A2 or C1
-      // with nothing to choose between them. Read from the SAME text items as
-      // the tags and the scale bar — one pass over the page's words.
-      const fromNote = defaultWallTypeFromNotes(textItems, wallTypes);
-      // ONE DEFINITION OF THE PANEL, used now and again after labelling. A
-      // second call site building groups a slightly different way is how the
-      // list an estimator accepts stops matching the list they looked at.
-      const regroup = (runs: WallCandidate[]) =>
-        wallGroups(
-          clusterByThickness(runs),
-          tagByRun(runs, tags, feetPerUnit, wallTypes),
-          wallTypes,
-          fromNote,
-        );
+        wallTypes,
+        sampledSheets,
+      });
+      const walls = found.walls;
+      const regroup = found.regroup;
+      setTemplateStrokes(found.templateDropped);
+      setLayerDropped(found.layerDropped);
+
       runsRef.current = walls;
       feetAcrossRef.current = feetPerUnit;
       regroupRef.current = regroup;
       setLabels(null);
       setMissed([]);
       setCheckError(null);
-      setFound(regroup(walls));
-      void clusters;
+      // `found.groups` IS `regroup(walls)`, computed once inside the pipeline
+      // rather than twice here. The `void clusters` that used to sit on the
+      // next line went with it: `clusterByThickness` was called, assigned and
+      // then deliberately discarded, because the real clustering happens inside
+      // `regroup`. The pipeline still returns it for the bench.
+      setFound(found.groups);
       // The sheet this answer is about, recorded WITH the answer. `pageNumber`
       // is read here rather than at render, so a result can never be relabelled
       // by paging — see `wallsOnThisSheet`.
@@ -1034,27 +1264,12 @@ export function TakeoffPlanViewer({
         {pageCount !== null && pageCount > 1 && (
           <>
             <span className="mx-1 h-4 w-px bg-line-card" aria-hidden />
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setPageNumber((n) => Math.max(1, n - 1))}
-                disabled={pageNumber <= 1}
-                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-40"
-              >
-                Prev
-              </button>
-              <span className="text-xs text-ink-muted">
-                Sheet {pageNumber} of {pageCount}
-              </span>
-              <button
-                type="button"
-                onClick={() => setPageNumber((n) => Math.min(pageCount, n + 1))}
-                disabled={pageNumber >= pageCount}
-                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-40"
-              >
-                Next
-              </button>
-            </div>
+            <SheetPager
+              pageNumber={pageNumber}
+              pageCount={pageCount}
+              sheetLabelByPage={sheetLabelByPage}
+              onJump={setPageNumber}
+            />
           </>
         )}
 
@@ -1107,6 +1322,36 @@ export function TakeoffPlanViewer({
           >
             {checking ? "Checking the runs…" : "Check these are walls"}
           </button>
+        )}
+        {/* ── A SHEET THAT IS A SCAN ──
+            Gated on the page having no TEXT LAYER, a fact settled at ingest.
+            It deliberately does not wait for Find the walls: that button is
+            disabled until the sheet has a scale, a scan's scale can only be
+            had by reading the picture, and this is the thing that reads it —
+            so gating on it made the feature unreachable on every sheet it was
+            built for. See `scannedPages`. */}
+        {scannedPages.includes(pageNumber) && (
+          <button
+            type="button"
+            onClick={onReadSheet}
+            disabled={reading}
+            data-takeoff="read-sheet"
+            title="This sheet has no writing in the file, which means it was scanned rather than exported. Reads the room names, dimensions and scale note off the picture so the sheet can be scaled. Lengths are still measured from the drawing."
+            className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
+          >
+            {reading ? (readProgress ?? "Reading the sheet…") : "Read this sheet"}
+          </button>
+        )}
+        {readError !== null && (
+          <p data-takeoff="read-error" className="text-xs text-ink-muted">
+            {readError}
+          </p>
+        )}
+        {wordsRead !== null && readError === null && (
+          <p data-takeoff="read-done" className="text-xs text-ink-muted">
+            Read {wordsRead} {wordsRead === 1 ? "word" : "words"} off this sheet. Press Find the walls again to
+            use them.
+          </p>
         )}
         {checkError !== null && (
           <p data-takeoff="check-error" className="text-xs text-ink-muted">
@@ -1240,13 +1485,17 @@ export function TakeoffPlanViewer({
           {/* ABOVE the groups, because a caution under the thing it is about is
               read after the decision has been made — `PlanSheetReview`'s
               convention and the one the quote reader's cautions follow. */}
-          {duplicateWallsByPage[pageNumber] && found.length > 0 && (
+          {/* THE SERVER'S ANSWER FIRST. It comes from a proposal a model read
+              and a person may have corrected; the one below is read off the
+              title block here and only fills a silence. One slot, never two
+              cautions saying the same thing in different words. */}
+          {sheetCaution && found.length > 0 && (
             <p
               className="mb-3 rounded-md bg-tag-amber p-2 text-xs text-tag-amber-ink"
               data-takeoff="duplicate-walls-caution"
             >
               <span className="font-semibold">Check this is the right sheet. </span>
-              {duplicateWallsByPage[pageNumber]}
+              {sheetCaution}
             </p>
           )}
           {found.length === 0 ? (
@@ -1279,12 +1528,48 @@ export function TakeoffPlanViewer({
                   unexplained figure gets created — the same rule the drawing-index
                   check learned the hard way. If this number is large and the panel
                   is empty, the filter is the first thing to suspect rather than the
-                  sheet. */}
+                  sheet.
+
+                  ── IT USED TO NAME WHAT IT HAD REMOVED, AND THAT WAS FALSE ──
+
+                  It read "— the border, the title block and the logo — so they
+                  were left out". On a West Herr floor plan clicked on production
+                  2026-10-13 it said that of 12,641 lines while about 32 runs sat
+                  on the title block and the logo in the overlay below it. The
+                  filter knows ONE thing: these lines are at the same page
+                  position on other sheets. Which drawing furniture that turned
+                  out to be is not something it establishes, and listing three
+                  kinds told an estimator all three were handled.
+
+                  Same defect as the no-walls sentence directly below, which
+                  asserted "a scanned or image-only sheet" as the cause of an
+                  empty panel on a sheet that was plainly not a scan. A message
+                  may state what was measured; it may not name a cause nobody
+                  checked. */}
+              {/* ── WHAT THE DRAWING'S OWN LAYER NAMES REMOVED ──
+
+                  Said for the reason the template count above is said: a filter
+                  that quietly returns a smaller number is how somebody stops
+                  believing the number. This one can remove a whole discipline's
+                  line work, so an estimator looking for the ducts they can see
+                  on the sheet has to be able to find out where they went.
+
+                  It names the LAYERS rather than a total, because the layer name
+                  is the only part a person can check against the drawing. */}
+              {layerDropped.length > 0 && (
+                <p className="mb-2 text-xs text-ink-muted">
+                  {droppedLayersSentence(layerDropped)} The drawing puts those lines on layers that are not
+                  walls, so they were never measured. If something below is missing, that is the first place
+                  to look.
+                </p>
+              )}
               {templateStrokes > 0 && (
                 <p className="mb-2 text-xs text-ink-muted">
-                  {templateStrokes.toLocaleString()} line{templateStrokes === 1 ? "" : "s"} on this sheet also
-                  appear in the same place on the rest of the set — the border, the title block and the logo —
-                  so they were left out.
+                  {templateStrokes.toLocaleString()} line{templateStrokes === 1 ? "" : "s"} on this sheet
+                  {templateStrokes === 1 ? " is" : " are"} in the same place on other sheets of the set, so
+                  {templateStrokes === 1 ? " it was" : " they were"} left out as page furniture. Not all of it
+                  recurs closely enough to catch — a border, title block or logo can still show up below, so
+                  check the runs against the drawing.
                 </p>
               )}
               <ul className="flex flex-col gap-1">
@@ -1304,11 +1589,15 @@ export function TakeoffPlanViewer({
                     onMouseEnter={() => setHovered(index)}
                     onMouseLeave={() => setHovered(null)}
                   >
-                    <span
-                      aria-hidden
-                      className="h-3 w-3 shrink-0 rounded-sm"
-                      style={{ backgroundColor: CLUSTER_COLOURS[index % CLUSTER_COLOURS.length] }}
-                    />
+                    {/* ── THE SWATCH IS A LINE NOW, BECAUSE THE MARK IS NOT
+                        JUST A COLOUR ──
+                        It was a 12px coloured square, which could only ever
+                        carry half of a mark that is a colour AND a dash. A
+                        square showing the right blue beside a drawing holding
+                        three different blues is the disagreement this change
+                        exists to end, so the swatch draws what the overlay
+                        draws: same colour, same dash, same function. */}
+                    <ClusterMark index={index} />
                     <span className="text-sm font-medium text-ink">{inchLabel(group.inches)}</span>
                     {/* THE TAG IS THE GROUP'S NAME NOW, not a list of every name
                         in a bucket. A group either carries one tag or carries
@@ -1423,6 +1712,20 @@ export function TakeoffPlanViewer({
                   {Math.round(found.slice(SHOWN_AT_FIRST).reduce((f, c) => f + c.feet, 0)).toLocaleString()} ft
                 </button>
               )}
+              {/* ── WHERE THE MARKS RUN OUT, SAID OUT LOUD ──
+                  Eighteen distinct marks is not an arbitrary number of groups,
+                  and a panel that quietly reuses one is how a reviewer
+                  attributes a line to the wrong thickness. Shown only once the
+                  list is long enough for it to be true, which on the default
+                  twelve it never is. Same rule as the template filter's count:
+                  state the limit rather than let somebody discover it. */}
+              {showingAll && found.length > DISTINCT_MARKS && (
+                <p className="mt-2 text-xs text-ink-muted">
+                  The last {found.length - DISTINCT_MARKS}{" "}
+                  {found.length - DISTINCT_MARKS === 1 ? "group repeats a mark" : "groups repeat marks"} used
+                  above — there are only {DISTINCT_MARKS}. Hover a row to pick its runs out of the drawing.
+                </p>
+              )}
             </>
           )}
           <button
@@ -1482,7 +1785,24 @@ export function TakeoffPlanViewer({
                 <Shape key={m.id} kind={m.kind} xs={m.xs} ys={m.ys} colour={m.postedAt ? "#6b7280" : "#38bdf8"} />
               ))}
 
-              <FoundWalls clusters={found} hovered={hovered} />
+              {/* ── WHAT THE PANEL LISTS, AND NOTHING ELSE ──
+                  This was `clusters={found}` and the panel lists `shownGroups`,
+                  which is `found.slice(0, 12)`. On a West Herr floor plan that
+                  returned 19 groups it meant SEVEN groups' lines were on the
+                  drawing with no row beside them — and because the colour came
+                  from `index % 6`, they wore the colours of rows 1 to 6. A
+                  reviewer looking at a blue line could not tell whether it was
+                  row 1's wall, which they can accept, or row 13's, which they
+                  could not even see.
+
+                  The overlay is the verification channel for this whole
+                  feature — `wallVectors.ts` returns centrelines so that a wrong
+                  answer is a line where there is no wall. A line nobody can
+                  attribute breaks exactly that, so the overlay now follows the
+                  list: "Show the other 7" reveals the rows and their lines
+                  together. Nothing is lost, because it was never actionable —
+                  only visible. */}
+              <FoundWalls clusters={shownGroups} hovered={hovered} />
 
               {draft.xs.length > 0 && (
                 <Shape
@@ -1581,32 +1901,41 @@ export function TakeoffPlanViewer({
 }
 
 /** One shape on the overlay. `open` is a polyline still being drawn. */
-/**
- * One colour per group, so the panel and the drawing refer to each other.
- *
- * Six, because a real sheet returns 15-21 thickness clusters and the panel
- * shows the biggest few — a palette per cluster would be unreadable, and these
- * are distinguishable against both a white drawing and each other. They are
- * deliberately not `DESIGN.md` status colours: these mean "group 2", not
- * "warning".
- */
-const CLUSTER_COLOURS = ["#38bdf8", "#f472b6", "#a78bfa", "#34d399", "#fbbf24", "#fb923c"];
 
 /**
- * How many groups the panel opens with.
+ * A group's mark, drawn in the panel exactly as the drawing draws it.
  *
- * TWICE THE PALETTE, and the two numbers are related on purpose. A colour
- * repeats every six rows, so past twelve a chip stops being much of a
- * signpost and HOVER is what tells a group apart — which is why the headline
- * now says so rather than promising each group its own colour, a claim that
- * stopped being true the moment the tag split multiplied the rows.
+ * ── A COMPONENT SO THAT A TEST CAN LOOK AT IT ──
  *
- * Twelve is a starting point and not a ceiling: everything past it is one
- * press away, which is the part that matters. The previous version of this
- * was a hard cut at eight with a SENTENCE after it, and a real sheet put
- * 488 ft behind that sentence.
+ * The group list only exists after Find-the-walls has run, which needs pdf.js
+ * on a canvas and never renders in happy-dom — the same bound `ClusterTag`
+ * documents. So the swatch is a component for the same reason: mounted on its
+ * own it can be rendered and compared against `FoundWalls`, and the one
+ * property that matters — that the panel and the drawing agree about which
+ * group is which — becomes something a test can assert rather than something a
+ * person has to notice.
+ *
+ * Its own `strokePx`, because the swatch is 16 CSS pixels wide and the overlay
+ * is in page-width units: the dash RATIOS must match, the absolute lengths
+ * cannot. A dash scaled for the drawing renders as one solid blob at this size.
  */
-const SHOWN_AT_FIRST = 12;
+export function ClusterMark({ index }: { index: number }) {
+  const mark = markFor(index, 2);
+  return (
+    <svg aria-hidden width="16" height="8" viewBox="0 0 16 8" className="shrink-0">
+      <line
+        x1="0"
+        y1="4"
+        x2="16"
+        y2="4"
+        stroke={mark.stroke}
+        strokeWidth="3"
+        strokeDasharray={mark.dash}
+      />
+    </svg>
+  );
+}
+
 
 /**
  * THE FOUND WALLS, DRAWN ON THE DRAWING.
@@ -1633,6 +1962,85 @@ const SHOWN_AT_FIRST = 12;
  * Dashed, and painted under the saved measurements, so a proposal never looks
  * like something already counted.
  */
+/**
+ * WHICH SHEET, AND A WAY TO REACH ANOTHER ONE.
+ *
+ * ── JUMP, DO NOT WALK ──
+ *
+ * This was `Sheet 23 of 52` as plain text between Prev and Next, and reaching
+ * `A-101` on a real 52-sheet set was measured at TWENTY presses of Next. Blind
+ * ones: a position in the file does not tell you which sheet you are near, so
+ * there was nothing to aim at. That was the largest single number in a press
+ * count of all nine estimating steps on one real bid, and the only one of them
+ * that was navigation rather than judgement — every other step's cost was a
+ * decision somebody has to make.
+ *
+ * EVERY PAGE IS AN OPTION, including the ones nothing has read a number off,
+ * which keep the old wording. Listing only the named sheets would make a
+ * scanned page reachable by nothing but Prev and Next — the control this is
+ * here to replace — so the unread pages are exactly the ones that must stay in
+ * the list.
+ *
+ * PREV AND NEXT STAY. Reading a set is often "the next sheet", and a picker is
+ * the wrong shape for that. This adds a way to aim; it takes nothing away.
+ *
+ * ── EXPORTED FOR THE SAME REASON `ClusterTag` BELOW IS ──
+ *
+ * The pager renders only once the PDF has reported a page count, and pdf.js
+ * never runs in happy-dom. A test that mounted the viewer would assert against
+ * a sheet reading "Drawing…". So the control is its own component and
+ * `sheetPager.test.tsx` renders it — the #665 lesson, that a census proves the
+ * code is there and only rendering proves somebody can reach it.
+ */
+export function SheetPager({
+  pageNumber,
+  pageCount,
+  sheetLabelByPage,
+  onJump,
+}: {
+  pageNumber: number;
+  pageCount: number;
+  sheetLabelByPage: Record<number, string>;
+  onJump: (page: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => onJump(Math.max(1, pageNumber - 1))}
+        disabled={pageNumber <= 1}
+        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-40"
+      >
+        Prev
+      </button>
+      <label className="flex items-center gap-1 text-xs text-ink-muted">
+        <span className="sr-only">Jump to a sheet</span>
+        <select
+          value={pageNumber}
+          onChange={(event) => onJump(Number(event.target.value))}
+          data-takeoff="sheet-picker"
+          className="min-h-[36px] max-w-[18rem] rounded-md border border-line-card bg-surface px-2 text-xs text-ink-body"
+        >
+          {Array.from({ length: pageCount }, (_, index) => index + 1).map((number) => (
+            <option key={number} value={number}>
+              {sheetLabelByPage[number] ?? `Sheet ${number}`}
+            </option>
+          ))}
+        </select>
+        <span>of {pageCount}</span>
+      </label>
+      <button
+        type="button"
+        onClick={() => onJump(Math.min(pageCount, pageNumber + 1))}
+        disabled={pageNumber >= pageCount}
+        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-40"
+      >
+        Next
+      </button>
+    </div>
+  );
+}
+
 /**
  * ── THE NAME THE DRAWING GIVES A THICKNESS GROUP ──
  *
@@ -1691,9 +2099,9 @@ export function FoundWalls({
             y1={run.y1}
             x2={run.x2}
             y2={run.y2}
-            stroke={CLUSTER_COLOURS[index % CLUSTER_COLOURS.length]}
+            stroke={markFor(index, STROKE_PX).stroke}
             strokeWidth={hovered === index ? STROKE_PX * 2.5 : STROKE_PX}
-            strokeDasharray={`${STROKE_PX * 3} ${STROKE_PX * 2}`}
+            strokeDasharray={markFor(index, STROKE_PX).dash}
             strokeOpacity={hovered === null || hovered === index ? 1 : 0.25}
             vectorEffect="non-scaling-stroke"
           />

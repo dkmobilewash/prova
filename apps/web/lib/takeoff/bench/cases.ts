@@ -238,6 +238,19 @@ export const VARIANTS: Variant[] = [
     pdf: () => ({ ocg: { off: ["A-WALL-HIDN"], on: ["A-FURN"] } }),
   },
   {
+    id: "layers",
+    label: "AutoCAD export WITH layer information: every stroke on its own named layer",
+    producer: "raw",
+    targets:
+      "layerNames: the drawing says which lines are walls. The title block (G-ANNO-TTLB), the column grid (S-GRID), the ducts (M-DUCT), the ceiling grid (A-CLNG-GRID) and the furniture (A-FURN) are all nameable, and the grid is what the series test trips over",
+    // THE `ocg` VARIANT IS NOT THIS. That one tags two layers and leaves
+    // everything else untagged, which is a narrow case about hidden content.
+    // This is what "Export to PDF with layer information" actually produces,
+    // and it is the only variant on which a layer-aware filter can be graded
+    // honestly — a sheet where only the furniture is tagged would flatter it.
+    pdf: () => ({ layersAsOcg: true }),
+  },
+  {
     id: "clip",
     label: "Viewport clip path hides the east third of the plan",
     producer: "raw",
@@ -278,7 +291,14 @@ function clipRect(sheet: Sheet): [number, number, number, number] {
 /** Which variants run on which sheets. Everything runs clean and through Skia;
  *  the plans carry the full matrix. */
 export function variantsFor(sheetId: string): string[] {
-  const core = ["clean", "revit", "autocad", "skia"];
+  // `layers` is CORE rather than an A-101 extra, and the reason is that the
+  // sheets it should help most are the ones it is not on otherwise: A-111 (a
+  // reflected ceiling plan) and M-101 (mechanical) each invent ~2,300 ft of
+  // wall out of grid and duct line work, and both are `default` sheets. A
+  // layer-aware filter graded only on the floor plan — where almost every line
+  // IS a wall — would be graded where it cannot show anything, and where it can
+  // only lose.
+  const core = ["clean", "revit", "autocad", "skia", "layers"];
   switch (sheetId) {
     case "A-101":
       return VARIANTS.map((v) => v.id);

@@ -62,8 +62,22 @@ export const WALL_CLASSIFY_TOOL_NAME = "label_candidates";
  * apart, and an outline that curves or closes on itself is an object. Also
  * started asking what is MISSING, which is the half no other check here can
  * see.
+ *
+ * `.3` (2026-10-15): **the word STRAIGHT in `.2` was costing curved walls, and
+ * the bench caught it the first time anybody graded this.** On A-101, nine of
+ * thirteen real walls dropped were consecutive chords of ONE curved reception
+ * wall — a 22ft-radius partition the answer key calls an A1 — each rejected in
+ * as many words for being "part of a continuous curve, not a straight run".
+ * The rule was written to catch a car's bodywork and it was catching a radius
+ * wall, which is a thing architects draw constantly.
+ *
+ * So `.3` moves the test from HOW IT BENDS to WHAT ITS OUTLINE DOES: an object
+ * closes on itself or tapers and stands free; a wall's two faces stay a
+ * constant distance apart and END ON OTHER WALLS, whether straight or
+ * concentric. Graded before and after by `bench/wallClassify.eval.ts`, which is
+ * the only reason this could be changed on evidence rather than on taste.
  */
-export const WALL_CLASSIFY_PROMPT_VERSION = "wall-classify.2";
+export const WALL_CLASSIFY_PROMPT_VERSION = "wall-classify.3";
 
 /** What a candidate turned out to be. */
 export const WALL_CLASSIFY_LABELS = ["WALL", "CASEWORK", "REFERENCE", "UNSURE"] as const;
@@ -111,7 +125,9 @@ That geometry cannot tell a wall from a countertop, a bathtub, a cabinet run, a 
 
 Judge every candidate you are given. Be specific rather than cautious: a countertop called a wall is money on a bid nobody built, and a wall called casework is money left off it. When a run genuinely could be either, say UNSURE rather than guessing — an UNSURE run is kept and flagged for the estimator, so it is the safe answer and not the useless one.
 
-WHAT A WALL LOOKS LIKE, and this rule matters more than the list below because it covers the thing nobody thought of: a wall is drawn as TWO STRAIGHT PARALLEL LINES a constant distance apart, running between other walls. An outline that curves, tapers, or closes on itself is an OBJECT, however neatly two of its edges happen to run parallel for a stretch.
+WHAT A WALL LOOKS LIKE, and this rule matters more than the list below because it covers the thing nobody thought of: a wall is drawn as TWO PARALLEL LINES a constant distance apart, running BETWEEN OTHER WALLS or along the building's edge. What makes something an OBJECT rather than a wall is that its outline CLOSES ON ITSELF or TAPERS — a car, a counter, a tub — however neatly two of its edges happen to run parallel for a stretch.
+
+A CURVE IS NOT BY ITSELF AN OBJECT, and this correction is worth more than the rule it qualifies. A radius wall is common and is a wall: two CONCENTRIC faces a constant distance apart, ending where they meet other walls, often drawn as a run of short straight chords. Judge it by whether the two faces stay a constant distance apart and whether its ends land on other walls — not by whether it bends. A curved reception counter is an object because its outline closes and its ends stand free, not because it curves.
 
 Things that are NOT walls, however wall-like they measure: vehicles (a dealership or garage plan draws cars, and their body curves pair beautifully); equipment, machinery and racking; kitchen counters and islands; cabinet, millwork and closet runs; appliances; plumbing fixtures and tubs; stair treads and handrails; furniture and planters; dimension and extension lines; grid lines, leaders and match lines; and anything outside the building's footprint.
 
@@ -200,11 +216,10 @@ export async function labelWallCandidates(params: {
   // that produced nothing usable still cost the money.
   await reportUsage(params.onUsage, response.usage);
 
-  const block = response.content.find(
-    (one): one is Extract<typeof one, { type: "tool_use" }> =>
-      one.type === "tool_use" && one.name === WALL_CLASSIFY_TOOL_NAME,
-  );
-  if (!block) return { labels: [], missing: [] };
+  // THROWS when there is no tool call, rather than reporting an empty verdict
+  // as though the model had looked and found nothing — see
+  // `wallClassifyToolCall`.
+  const block = wallClassifyToolCall(response.content, response.stop_reason, params.candidates.length);
   const input = block.input as { labels?: unknown; missing?: unknown };
   return {
     labels: readWallLabels(input.labels, params.candidates),
@@ -220,6 +235,58 @@ export async function labelWallCandidates(params: {
  * trimmed, and a row with no `where` is dropped — it would put "a wall is
  * missing" in front of somebody with no way to find it.
  */
+/**
+ * The tool call, or an error saying why there is not one.
+ *
+ * ── THIS EXISTS BECAUSE THE ABSENCE USED TO READ AS "NOTHING TO REJECT" ──
+ *
+ * The line here was `if (!block) return { labels: [], missing: [] };`, and on
+ * 2026-10-13 that turned a failed check into a clean bill of health on a real
+ * drawing. A West Herr floor plan, 216 runs found, the check pressed, sixty
+ * seconds of "Checking the runs…", and then **"0 run(s) set aside as casework
+ * or reference"** — while the overlay demonstrably held title-block dividers,
+ * the company logo, five car outlines and a dozen room-name tags. The estimator
+ * was told the machine had looked and found nothing wrong with any of it.
+ *
+ * A model that returns no tool call has not judged anything. It ran out of
+ * output tokens mid-call, or declined, or answered in prose — and every one of
+ * those is a FAILURE, which this product already knows how to show: the action
+ * marks the allowance, logs metadata and tells the estimator to judge the runs
+ * themselves. All of that was sitting unused behind an early return.
+ *
+ * ── WHY IT IS A SEPARATE PURE FUNCTION ──
+ *
+ * `labelWallCandidates` builds its own `Anthropic` client, so the path cannot
+ * be reached from a test without mocking the SDK. The readers below are
+ * exported for exactly that reason and this is the same move: the decision is
+ * testable, and the network call around it stays untested, which is the right
+ * split.
+ *
+ * The `stop_reason` rides in the error's NAME rather than its message because
+ * the action logs `err.name` and nothing else — metadata only, never the
+ * error's text, which can carry a key or a connection string.
+ */
+export class WallClassifyIncomplete extends Error {
+  constructor(stopReason: string | null, asked: number) {
+    super(
+      `the model returned no ${WALL_CLASSIFY_TOOL_NAME} call for ${asked} candidates (stop_reason: ${stopReason ?? "none"})`,
+    );
+    this.name = `WallClassifyIncomplete:${stopReason ?? "none"}`;
+  }
+}
+
+type ToolUseBlock = { type: "tool_use"; name: string; input: unknown };
+
+export function wallClassifyToolCall(
+  content: readonly { type: string; name?: string; input?: unknown }[],
+  stopReason: string | null,
+  asked: number,
+): ToolUseBlock {
+  const block = content.find((one) => one.type === "tool_use" && one.name === WALL_CLASSIFY_TOOL_NAME);
+  if (block === undefined) throw new WallClassifyIncomplete(stopReason, asked);
+  return block as ToolUseBlock;
+}
+
 export function readMissingWalls(raw: unknown): MissingWall[] {
   if (!Array.isArray(raw)) return [];
   const out: MissingWall[] = [];

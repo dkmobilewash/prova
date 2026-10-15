@@ -6,6 +6,8 @@ import {
   reviewRank,
   pageRanges,
   sheetIndexSentence,
+  sheetPickerLabel,
+  PICKER_TITLE_LIMIT,
   sortForReview,
   splitForReview,
   type SheetRow,
@@ -238,5 +240,55 @@ describe("collapsing page numbers into ranges", () => {
   it("handles one page and none", () => {
     expect(pageRanges([40])).toBe("40");
     expect(pageRanges([])).toBe("");
+  });
+});
+
+describe("what one option in the sheet picker reads", () => {
+  /**
+   * WHY THIS IS TESTED AT ALL, for a function this small: the control it feeds
+   * replaced TWENTY measured presses of Next, and the only way it can fail
+   * quietly is by labelling an option with something nobody can aim at.
+   */
+
+  it("leads with the number and confirms with the title", () => {
+    expect(sheetPickerLabel("A-101", "First floor plan")).toBe("A-101 · First floor plan");
+  });
+
+  it("is the number alone when nothing read a title", () => {
+    expect(sheetPickerLabel("A-101", null)).toBe("A-101");
+  });
+
+  it("REFUSES a title with no number, which is not a choosable option", () => {
+    // Six sheets reading "ENLARGED PLAN" are six options a person cannot pick
+    // between — worse than the page number the pager already had. Null sends
+    // the caller back to "Sheet 23", which is exactly the old wording.
+    expect(sheetPickerLabel(null, "ENLARGED PLAN")).toBeNull();
+    expect(sheetPickerLabel("", "ENLARGED PLAN")).toBeNull();
+    expect(sheetPickerLabel("   ", "ENLARGED PLAN")).toBeNull();
+  });
+
+  it("says nothing for a page nothing was read off", () => {
+    expect(sheetPickerLabel(null, null)).toBeNull();
+  });
+
+  it("trims, because an accepted value was typed by a person", () => {
+    expect(sheetPickerLabel("  A-101 ", "  First floor plan  ")).toBe("A-101 · First floor plan");
+  });
+
+  it("does not let a long title push the number off the control", () => {
+    const label = sheetPickerLabel("A-101", "FIRST FLOOR PLAN — AREA B — NEW WORK AND DEMOLITION");
+    expect(label?.startsWith("A-101 · ")).toBe(true);
+    expect(label?.endsWith("…")).toBe(true);
+    expect(label!.length).toBeLessThanOrEqual("A-101 · ".length + PICKER_TITLE_LIMIT);
+  });
+
+  it("leaves the longest title measured on a real set uncut", () => {
+    // "FIRST FLOOR DEMOLITION PLAN" is 27 characters and is the longest title
+    // on the bid set this limit was picked from — so the limit cuts nothing
+    // that was actually measured, which is the point of choosing it that way
+    // rather than rounding to a tidy number.
+    const real = "FIRST FLOOR DEMOLITION PLAN";
+    expect(real.length).toBeLessThanOrEqual(PICKER_TITLE_LIMIT);
+    expect(sheetPickerLabel("M011A", real)).toBe(`M011A · ${real}`);
   });
 });

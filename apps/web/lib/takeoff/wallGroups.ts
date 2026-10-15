@@ -403,3 +403,37 @@ export function wallsOnThisSheet(
   if (found === null || foundOnPage !== pageNumber) return null;
   return found;
 }
+
+/**
+ * THE STORED WALLS A SHEET MAY BE SEEDED WITH, or null when there are none.
+ *
+ * ── WHY THIS IS A FUNCTION AND NOT A LOOKUP INSIDE THE EFFECT ──
+ *
+ * It was a lookup inside the effect, and a mutation showed nothing could see
+ * it: keying the read to page 1 instead of to the page being viewed left every
+ * test green. It had to, for a reason worth writing down rather than working
+ * around — `TakeoffPlanViewer` opens on page 1 and its pager only renders once
+ * a real PDF has reported `numPages`, which never happens in a DOM test. So no
+ * rendered test can put the viewer on page 2, and the page-keying was
+ * unobservable from outside.
+ *
+ * That is the same shape as `wallsOnThisSheet` above, which exists because two
+ * render sites read one page-less variable. Pulling the decision out gives it a
+ * caller a test can be, which is this file's answer both times.
+ *
+ * It lives HERE and not in the viewer for the reason `wallsOnThisSheet` does:
+ * `lib/client-boundary.test.ts` refuses a non-component value imported out of a
+ * "use client" module, because across the RSC boundary that arrives as a
+ * client-reference proxy rather than the function.
+ */
+export function storedWallsFor(
+  byPage: Record<number, WallGroup[]> | undefined,
+  pageNumber: number,
+): WallGroup[] | null {
+  const stored = byPage?.[pageNumber];
+  // AN EMPTY LIST IS NOTHING TO SHOW, not an empty result to display. A sheet
+  // with no stored walls and a sheet whose stored list is empty are the same
+  // fact, and seeding `[]` would replace "press to look" with "none found".
+  if (stored === undefined || stored.length === 0) return null;
+  return stored;
+}

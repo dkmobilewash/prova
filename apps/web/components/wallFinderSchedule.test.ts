@@ -29,7 +29,7 @@ import { describe, expect, it } from "vitest";
  * viewer discuss `knownThicknessesIn` in prose, and a census that reads its own
  * subject matter in a comment is the #185 defect.
  */
-const SOURCE = resolve(import.meta.dirname, "TakeoffPlanViewer.tsx");
+const SOURCE = resolve(import.meta.dirname, "../lib/takeoff/findWallsOnSheet.ts");
 
 /** Source with block and line comments removed, so prose cannot satisfy a test. */
 function withoutComments(text: string): string {
@@ -51,7 +51,13 @@ describe("the viewer hands the partition schedule to the wall finder", () => {
     expect(at, "the call is not in this file any more").toBeGreaterThan(-1);
     // The options object is the last argument; read to the end of the call.
     const call = code.slice(at, code.indexOf(");", at));
-    expect(call, "the finder is called without the schedule").toContain("knownThicknessesIn");
+    // THE VALUE, NOT JUST THE KEY. Mutation-tested: `knownThicknessesIn: []`
+    // kept the key and passed this case, which is the "derives its input"
+    // failure CLAUDE.md names — an empty question looks exactly like a
+    // satisfied one. An empty list restores nearest-wins on the real sheet.
+    expect(call, "the finder is called without the schedule").toMatch(
+      /knownThicknessesIn:\s*scheduleIn/,
+    );
   });
 
   it("drops the types whose thickness nobody has filled in", () => {

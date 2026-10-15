@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { inPageWidthUnits } from "./findWallsOnSheet";
 import {
   CURVE_FLATNESS_POINTS,
   CURVE_MAX_PIECES,
@@ -111,17 +112,37 @@ describe("the flag reaching the engines", () => {
     expect(stripped("lib/takeoff/wallRuns.ts")).toMatch(/segments\.filter\(\(one\) => one\.curved !== true\)/);
   });
 
-  it("THE VIEWER CARRIES IT through its unit conversion", () => {
-    // `unitsOf` rebuilds each segment field by field. Leaving `curved` off
-    // compiles, passes every test above, and silently hands the room engine the
-    // arc again — the lobby wall billed twice, 1,957 ft against a key of 1,894.
-    const viewer = stripped("components/TakeoffPlanViewer.tsx");
-    expect(viewer, "unitsOf drops the curved flag").toMatch(/curved: one\.curved/);
+  it("THE UNIT CONVERSION CARRIES IT — called, not read", () => {
+    // ── THIS WAS A SOURCE CENSUS AND IS NOW A TEST, which is the dividend of
+    //    lifting the pipeline out of the React component ──
+    //
+    // It used to grep `TakeoffPlanViewer.tsx` for `curved: one.curved`, because
+    // the conversion lived inside a component and nothing could call it. The
+    // apology is gone: `inPageWidthUnits` is a function, so this runs it.
+    //
+    // THE DEFECT IT GUARDS, which is not hypothetical: the bench's own copy of
+    // this conversion dropped the flag. `wallRuns` filters `curved !== true`,
+    // so a missing flag reads as "not curved" and hands the room engine the arc
+    // again — the lobby wall billed twice, 1,957 ft against a key of 1,894.
+    const arc = { x1: 0, y1: 0, x2: 10, y2: 0, width: 2, curved: true };
+    const straight = { x1: 0, y1: 0, x2: 10, y2: 0, width: 2 };
+
+    expect(inPageWidthUnits(100)(arc).curved).toBe(true);
+    // And an ordinary segment does not acquire one — `!== true` would read an
+    // invented `false` the same way, but a caller checking `curved === false`
+    // later would be told something nobody measured.
+    expect(inPageWidthUnits(100)(straight).curved).toBeUndefined();
+
+    // The scaling still happens, so this cannot pass by returning its input.
+    expect(inPageWidthUnits(100)(arc).x2).toBe(0.1);
+    // `width` is deliberately NOT scaled: the pen is compared against other
+    // pens on the same sheet, never against a distance.
+    expect(inPageWidthUnits(100)(arc).width).toBe(2);
   });
 
   it("read real files, so a moved path fails loudly", () => {
     expect(read("lib/takeoff/sheetStrokes.ts").length).toBeGreaterThan(2000);
-    expect(read("components/TakeoffPlanViewer.tsx").length).toBeGreaterThan(2000);
+    expect(read("lib/takeoff/findWallsOnSheet.ts").length).toBeGreaterThan(2000);
   });
 });
 
