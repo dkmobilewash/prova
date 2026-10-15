@@ -103,6 +103,65 @@ const OUT_OF_SCOPE = new Set([
 ]);
 
 /**
+ * NCS STATUS CODES, WHICH ARE A SINGLE LETTER IN THE LAST FIELD.
+ *
+ * ── MEASURED ON A REAL SET, AND THE WORDS ABOVE FOUND NOTHING ──
+ *
+ * The National CAD Standard's layer name ends with a one-character STATUS:
+ * `N` new, `E` existing to remain, `D` to be demolished, `X` existing to be
+ * removed, `R` relocated, `F` future, `T` temporary. The spelled-out words
+ * above are a house style; this is the published one, and on the drawings that
+ * actually arrive it is the common one.
+ *
+ * Probed on West Herr's A-101, 2026-10-15 — the sheet this whole effort began
+ * with. 47 layers, every stroke on one, and the `out-of-scope` bucket came back
+ * **ZERO** while the drawing carried:
+ *
+ *     A-Wall-E        281 path operators    existing walls, read as new
+ *     A-Door-E        242
+ *     A-Glaz-E        240
+ *     P-Flor-Fixt-E   125
+ *     A-Wall-Blow-E    14
+ *     A-Wall-Open-E     2
+ *
+ * 297 of those operators are WALL layers, so without this they are measured and
+ * priced as new construction — which is the third thing the original report
+ * asked for, in the drawing's own words: *"it says existing space so those
+ * would not need to be accounted for"*.
+ *
+ * ── IT MUST BE THE LAST FIELD, AND THAT IS NOT A DETAIL ──
+ *
+ * `E` in the FIRST field is the ELECTRICAL discipline — `E-Lite`, `E-Powr`.
+ * Reading a leading `E` as "existing" would silently drop every electrical
+ * layer under the wrong name, and worse, would read as a scope judgement when
+ * it is a discipline. Position carries the meaning here, which is why this is a
+ * positional rule and not another entry in the set above.
+ *
+ * ── THREE LETTERS, NOT SEVEN, AND THE OMISSIONS ARE THE ARGUMENT ──
+ *
+ * `R` relocated and `T` temporary are WORK — relocating a partition is a thing
+ * somebody is paid to do, and a temporary partition is built and later removed.
+ * `F` future is genuinely out of this contract and is still left out, because a
+ * lone `F` is also how more than one office abbreviates FURRING, and dropping
+ * furring is dropping a wall. `N` is new and is the whole point of the bid.
+ *
+ * So: E, D and X. Each is unambiguously "drawn, and not new work to build".
+ */
+const STATUS_NOT_NEW_WORK = new Set(["E", "D", "X"]);
+
+/**
+ * Whether the layer's last field is a status code meaning "not new work".
+ *
+ * A name of ONE token is never judged this way: a layer called simply `E` is
+ * the electrical discipline with nothing after it, not a status.
+ */
+function endsOutOfScope(tokens: readonly string[]): boolean {
+  if (tokens.length < 2) return false;
+  const last = tokens[tokens.length - 1];
+  return last.length === 1 && STATUS_NOT_NEW_WORK.has(last);
+}
+
+/**
  * Majors that positively name a wall.
  *
  * NARROW ON PURPOSE. This set does not gate anything — `unknown` is kept, so a
@@ -166,7 +225,7 @@ export function layerVerdict(name: string | undefined): LayerVerdict {
   if (!name) return "unknown";
   const tokens = layerTokens(name);
   if (tokens.length === 0) return "unknown";
-  if (tokens.some((t) => OUT_OF_SCOPE.has(t))) return "out-of-scope";
+  if (tokens.some((t) => OUT_OF_SCOPE.has(t)) || endsOutOfScope(tokens)) return "out-of-scope";
   if (tokens.some((t) => NOT_WALL.has(t))) return "not-wall";
   if (tokens.some((t) => WALL.has(t))) return "wall";
   return "unknown";
