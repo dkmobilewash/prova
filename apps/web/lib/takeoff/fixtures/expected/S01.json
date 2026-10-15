@@ -1,0 +1,33 @@
+{
+  "id": "S01",
+  "title": "STUDIO OFFICE",
+  "page": 1,
+  "sheetNumber": "A-101",
+  "raster": false,
+  "scale": "1/4\" = 1'-0\"",
+  "scalesPrinted": [
+    "1/4\" = 1'-0\""
+  ],
+  "widthPt": 1224,
+  "heightPt": 792,
+  "rooms": [
+    {
+      "name": "OFFICE",
+      "number": "101",
+      "area": {
+        "value": 361,
+        "unit": "sf"
+      }
+    }
+  ],
+  "dimensions": [
+    "24'-6 1/2\"",
+    "24'-6 1/2\"",
+    "16'-7 1/4\"",
+    "16'-7 1/4\""
+  ],
+  "wallLfTotal": null,
+  "doorCount": null,
+  "windowCount": null,
+  "notes": []
+}

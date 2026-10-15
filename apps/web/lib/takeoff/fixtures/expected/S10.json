@@ -1,0 +1,51 @@
+{
+  "id": "S10",
+  "title": "GARDEN COTTAGE",
+  "page": 1,
+  "sheetNumber": "A-101",
+  "raster": false,
+  "scale": null,
+  "scalesPrinted": [],
+  "widthPt": 1224,
+  "heightPt": 792,
+  "rooms": [
+    {
+      "name": "LIVING",
+      "number": "101",
+      "area": null
+    },
+    {
+      "name": "KITCHEN",
+      "number": "102",
+      "area": null
+    },
+    {
+      "name": "BEDROOM",
+      "number": "103",
+      "area": null
+    },
+    {
+      "name": "BATH",
+      "number": "104",
+      "area": null
+    },
+    {
+      "name": "UTILITY",
+      "number": "105",
+      "area": null
+    }
+  ],
+  "dimensions": [
+    "14'-4\"",
+    "20'-4\"",
+    "34'-8\"",
+    "26'-8\"",
+    "26'-8\""
+  ],
+  "wallLfTotal": null,
+  "doorCount": null,
+  "windowCount": null,
+  "notes": [
+    "No scale printed on this sheet. The app must DECLINE rather than guess."
+  ]
+}

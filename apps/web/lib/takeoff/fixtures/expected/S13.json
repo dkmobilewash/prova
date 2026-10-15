@@ -1,0 +1,98 @@
+{
+  "id": "S13",
+  "title": "PROFESSIONAL OFFICE SUITE",
+  "page": 1,
+  "sheetNumber": "A-101",
+  "raster": false,
+  "scale": "1/8\" = 1'-0\"",
+  "scalesPrinted": [
+    "1/8\" = 1'-0\""
+  ],
+  "widthPt": 1728,
+  "heightPt": 1296,
+  "rooms": [
+    {
+      "name": "LOBBY",
+      "number": "101",
+      "area": null
+    },
+    {
+      "name": "CONFERENCE",
+      "number": "102",
+      "area": null
+    },
+    {
+      "name": "STORAGE",
+      "number": "103",
+      "area": null
+    },
+    {
+      "name": "CORRIDOR",
+      "number": "104",
+      "area": null
+    },
+    {
+      "name": "OFFICE",
+      "number": "105",
+      "area": null
+    },
+    {
+      "name": "OFFICE",
+      "number": "106",
+      "area": null
+    },
+    {
+      "name": "OFFICE",
+      "number": "107",
+      "area": null
+    },
+    {
+      "name": "OFFICE",
+      "number": "108",
+      "area": null
+    },
+    {
+      "name": "OFFICE",
+      "number": "109",
+      "area": null
+    },
+    {
+      "name": "BREAK",
+      "number": "110",
+      "area": null
+    },
+    {
+      "name": "MEN",
+      "number": "111",
+      "area": null
+    },
+    {
+      "name": "WOMEN",
+      "number": "112",
+      "area": null
+    }
+  ],
+  "dimensions": [
+    "20'-4\"",
+    "6'-0\"",
+    "16'-0\"",
+    "15'-0\"",
+    "15'-4\"",
+    "72'-8\"",
+    "18'-4\"",
+    "16'-0\"",
+    "14'-4\"",
+    "48'-8\"",
+    "72'-8\"",
+    "48'-8\"",
+    "20'-4\"",
+    "6'-0\"",
+    "16'-0\"",
+    "15'-0\"",
+    "15'-4\""
+  ],
+  "wallLfTotal": null,
+  "doorCount": null,
+  "windowCount": null,
+  "notes": []
+}

@@ -1,0 +1,56 @@
+{
+  "id": "S17",
+  "title": "RETAIL UNIT 3",
+  "page": 1,
+  "sheetNumber": "A-101",
+  "raster": false,
+  "scale": "1:50",
+  "scalesPrinted": [
+    "1:50"
+  ],
+  "widthPt": 1728,
+  "heightPt": 1296,
+  "rooms": [
+    {
+      "name": "SALES FLOOR",
+      "number": "01",
+      "area": null
+    },
+    {
+      "name": "STOCK",
+      "number": "02",
+      "area": null
+    },
+    {
+      "name": "CORRIDOR",
+      "number": "03",
+      "area": null
+    },
+    {
+      "name": "OFFICE",
+      "number": "04",
+      "area": null
+    },
+    {
+      "name": "WC",
+      "number": "05",
+      "area": null
+    },
+    {
+      "name": "STAFF",
+      "number": "06",
+      "area": null
+    }
+  ],
+  "dimensions": [
+    "10150",
+    "5150",
+    "15300",
+    "10300",
+    "10300"
+  ],
+  "wallLfTotal": null,
+  "doorCount": null,
+  "windowCount": null,
+  "notes": []
+}
