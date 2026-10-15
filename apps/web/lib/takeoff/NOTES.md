@@ -159,11 +159,36 @@ stale one is worse than none. Regenerate before looking.
    | S20 / S13 | 505 ft of 555 — **91%** |
    | S18 / S02 | not graded: the vector original declines a scale under the eval's own call |
 
-   What is NOT built: a scan has no text layer, so nothing reads its printed
-   scale or its room names, and the eval borrows the vector original's scale to
-   isolate the line question from that one. Reading the words is the next
-   piece — Claude for interpretation, per the rule above that geometry stays in
-   code.
+   **Its WORDS are read now too** (`rasterText.ts`, `sheetText.eval.ts`). A
+   model reads one rendered TILE at a time and returns the lettering and where
+   it sits; every length and quantity is still measured from geometry, so no
+   number anybody is billed from comes out of a model. Measured against the
+   same vector originals: **101 of 101 printed strings read exactly, 98%
+   placed within the 30 points the dimension pairing allows.** Both scans then
+   read their OWN printed scale correctly, and one came out at 91% of the
+   drawing's footage end to end with nothing borrowed.
+
+   **It has to be Opus, and the measured reason is not the one first written
+   down.** The argument for it was that a misread dimension sets the scale —
+   weak, because the vote needs three labels to agree and outvotes a misread.
+   Priced against the same bar:
+
+   | | Opus 5 | Haiku 4.5 |
+   | --- | --- | --- |
+   | strings read exactly | 101/101 | 89/101 (88%) |
+   | **placed within 30pt** | **99 (98%)** | **16 (16%)** |
+
+   Haiku can mostly READ the lettering and cannot say WHERE it is, and
+   placement is the half that decides anything: a label 30 points from its
+   line pairs with nothing. So this is bought for COORDINATES, not characters.
+   The prompt was only ever tuned against Opus, which is the honest bound on
+   that comparison.
+
+   **Tiles are JPEG, not PNG**, and that is not cosmetic: a speckled tile is
+   1.20 MB as PNG against 0.54 MB as JPEG, and the PNG was over a Server
+   Action's body limit — so the feature worked on clean sheets and failed on
+   real scans until #803. Re-measured on JPEG, the figures above are
+   unchanged.
 
    Two bounds worth knowing. The detector is **axis-aligned only**, and reports
    `diagonalInk` so a sheet whose walls it cannot see is distinguishable from a
