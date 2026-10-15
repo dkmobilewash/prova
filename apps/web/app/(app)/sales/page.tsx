@@ -273,6 +273,9 @@ export default async function SalesPage() {
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h2 className="text-sm font-semibold text-ink">Today&apos;s calls</h2>
           <span className="flex gap-3">
+            <Link href="/sales/scoreboard" className="text-xs text-ink-label hover:underline">
+              Scoreboard →
+            </Link>
             <Link href="/sales/replies" className="text-xs text-ink-label hover:underline">
               Replies to answer →
             </Link>
