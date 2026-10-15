@@ -609,7 +609,21 @@ describe("found walls stay on their own sheet", () => {
     // check that cannot say what it means. So it now asserts WHERE rather than
     // HOW MANY, which is both stronger and stable: a render site is inside the
     // component's returned JSX, and the raw state has no business there.
-    const jsxAt = code.indexOf("\n  return (");
+    // ── LOCATED FROM THE COMPONENT, NOT FROM THE FIRST `return (` IN THE FILE ──
+    //
+    // This was `code.indexOf("\n  return (")` and a MODULE-SCOPE HELPER broke
+    // it: any top-level function whose body returns a parenthesised expression
+    // at two spaces of indent sits earlier in the file, so the split landed
+    // above it and every assertion below was then made about the wrong half.
+    // The failure message it printed — "the viewer never narrows the result to
+    // the sheet" — pointed at a line that was present and correct two hundred
+    // lines further down.
+    //
+    // Its own next line already said to fix this rather than trust it. Anchored
+    // on the component now, so a helper added above it cannot move the split.
+    const componentAt = code.indexOf("export function TakeoffPlanViewer(");
+    expect(componentAt, "the component's declaration could not be found").toBeGreaterThan(0);
+    const jsxAt = code.indexOf("\n  return (", componentAt);
     expect(jsxAt, "the component's JSX could not be located — fix this before trusting it").toBeGreaterThan(0);
 
     const render = code.slice(jsxAt);

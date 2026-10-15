@@ -47,6 +47,8 @@ import { findWallsOnSheet, inPageWidthUnits } from "@/lib/takeoff/findWallsOnShe
 import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
 import { layersOf, segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 import { droppedLayersSentence, type LayerDrop } from "@/lib/takeoff/layerNames";
+import { sheetNumberFrom } from "@/lib/plan-ingest/sheetNumber";
+import { cautionToShow, duplicateWallsCaution, sheetSuitability } from "@/lib/takeoff/sheetSuitability";
 import { tagSentence } from "@/lib/takeoff/wallTags";
 import {
   verdictFor,
@@ -121,6 +123,35 @@ const BASE_SCALE = 1.5;
  */
 const FIT = "fit" as const;
 type Zoom = number | typeof FIT;
+
+/**
+ * ── THE WORDS ON A PAGE, IN `planPdf`'s CONVENTION, READ ONCE ──
+ *
+ * `y` is the BASELINE and runs DOWN from the top, which is what
+ * `plan-ingest/planPdf.ts` stores and therefore what every consumer in this
+ * repo expects. `findWallsOnSheet` does the glyph-height shift itself, once —
+ * see `fromBaseline` — so nothing here subtracts anything.
+ *
+ * EXTRACTED BECAUSE THERE WERE ABOUT TO BE TWO COPIES in this one file: the
+ * wall finder reads the text, and so does the sheet-kind caution below. Two
+ * copies of a coordinate convention is exactly the drift that put every text
+ * box one glyph height out the last time, and nothing threw.
+ */
+async function pageTextItems(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pdfjs ships no types for the legacy build entry.
+  page: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- as above.
+  pdfjs: any,
+): Promise<{ str: string; x: number; y: number; width: number; height: number }[]> {
+  const viewport = page.getViewport({ scale: 1 });
+  const content = (await page.getTextContent()) ?? { items: [] };
+  return (content.items as unknown[]).flatMap((raw) => {
+    const item = raw as { str?: string; transform?: number[]; width?: number; height?: number };
+    if (typeof item.str !== "string" || item.str.trim() === "" || !Array.isArray(item.transform)) return [];
+    const m = pdfjs.Util.transform(viewport.transform, item.transform);
+    return [{ str: item.str, x: m[4], y: m[5], width: item.width ?? 0, height: item.height ?? 0 }];
+  });
+}
 
 export function TakeoffPlanViewer({
   jobId,
@@ -210,6 +241,12 @@ export function TakeoffPlanViewer({
   /** What the LAYER filter left out, so the panel can say it. Empty on a
    *  flattened plot, which carries no layer names at all. */
   const [layerDropped, setLayerDropped] = useState<LayerDrop[]>([]);
+  /** The sheet-kind caution read off the drawing's own title block, per
+   *  page. Only ever consulted where the server had nothing to say. */
+  const [readCaution, setReadCaution] = useState<Record<number, string>>({});
+  /** Pages already asked about, so a page with no caution is not re-read on
+   *  every render — `seeded`'s trick, and for its reason. */
+  const cautionAsked = useRef<Set<number>>(new Set());
   // FIT by default. A sheet opens showing all of itself, which is what
   // somebody opening a drawing wants to see first; they zoom IN to measure.
   const [zoom, setZoom] = useState<Zoom>(FIT);
@@ -269,6 +306,8 @@ export function TakeoffPlanViewer({
    * state, which is why the name it kept is the one they were already using.
    */
   const found = wallsOnThisSheet(foundRaw, foundOnPage, pageNumber);
+  // ONE SLOT, and `cautionToShow` owns which of the two fills it.
+  const sheetCaution = cautionToShow(duplicateWallsByPage[pageNumber], readCaution[pageNumber]);
   /**
    * WHICH TYPE A PERSON PICKED for a group that could be more than one, by
    * group index.
@@ -680,6 +719,80 @@ export function TakeoffPlanViewer({
     setShowingAll(false);
   }, [pageNumber, storedWallsByPage, foundRaw, foundOnPage]);
 
+  /**
+   * ── WHAT KIND OF SHEET IS THIS, READ OFF THE DRAWING ITSELF ──
+   *
+   * `sheetSuitability` is the thing that keeps a mechanical plan's walls out of
+   * a bid — an M-101 carries the architectural walls in grey under the ductwork
+   * and they are the SAME walls the A-101 already has, so adding them bids the
+   * job twice. The takeoff page already runs it, and on a real plan set it says
+   * nothing at all: it is fed `effectiveSheetNumber`/`effectiveTitle`, which
+   * both return null when the page has no `PlanSheetProposal` row — every sheet
+   * of every set uploaded before the ingest shipped. Fifty-two sheets reading
+   * "need their numbers typed in" is fifty-two sheets this cannot judge.
+   *
+   * `sheetNumber.ts` was written for exactly that gap and its own header says
+   * so, ending "IT HAS NO PRODUCTION CALLER YET, SAID OUT LOUD" — because the
+   * takeoff PAGE reads database rows and cannot open the PDF.
+   *
+   * THIS SIDE CAN. The viewer has the document open and is already reading the
+   * page's text for the wall finder, so the two fields that need no model are
+   * one pure call away. No schema, no stage, no allowance, and it works on a
+   * set uploaded a year ago.
+   *
+   * ONLY WHERE THE SERVER HAD NOTHING. A proposal that a model read and a
+   * person may have corrected beats a heuristic every time, so this fills a
+   * silence rather than competing for the same space.
+   *
+   * ONLY FOR A SHEET SHOWING WALLS, which is both the cheap option and the
+   * honest one: the caution's whole job is to be read beside the quantities it
+   * doubts, and a sheet nobody has measured has nothing to doubt yet.
+   *
+   * IT NEVER THROWS. A caution is a courtesy; a page whose text will not parse
+   * keeps the takeoff it already had.
+   */
+  useEffect(() => {
+    if (found === null || found.length === 0) return;
+    if (duplicateWallsByPage[pageNumber]) return;
+    if (cautionAsked.current.has(pageNumber)) return;
+    const doc = docRef.current;
+    if (!doc || !pageSize) return;
+    cautionAsked.current.add(pageNumber);
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        const page = await doc.getPage(pageNumber);
+        const items = await pageTextItems(page, pdfjs);
+        const reading = sheetNumberFrom({
+          pageNumber,
+          widthPt: pageSize.widthPt,
+          heightPt: pageSize.heightPt,
+          // The viewport has already applied the page's own `/Rotate`, so the
+          // coordinates above are of the sheet AS DISPLAYED and the angle has
+          // nothing left to say. `sheetNumberFrom` reads only x and y.
+          rotation: 0,
+          items,
+        });
+        // `regionText` is the title block's whole text, which is the right
+        // shape for `sheetSuitability`'s unanchored substring rules and the
+        // wrong shape for showing anybody — it carries the project name and the
+        // architect's address. It is never rendered.
+        const caution = duplicateWallsCaution(
+          sheetSuitability(reading.sheetNumber, reading.regionText, null),
+          reading.sheetNumber,
+        );
+        if (!cancelled && caution) setReadCaution((prev) => ({ ...prev, [pageNumber]: caution }));
+      } catch {
+        // Nothing: the sheet keeps the takeoff it already had.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [found, pageNumber, duplicateWallsByPage, pageSize]);
+
   async function onFindWalls() {
     const doc = docRef.current;
     if (!doc || !pageSize || feetPerUnit === null) return;
@@ -708,18 +821,7 @@ export function TakeoffPlanViewer({
       // itself, once, so the browser and the server cannot disagree about where
       // a word is — which they would, because `planPdf.pageText` stores the
       // baseline and this used to subtract before passing anything on.
-      const viewport = (page as { getViewport: (o: { scale: number }) => { transform: number[] } }).getViewport({
-        scale: 1,
-      });
-      const content = (await (page as { getTextContent: () => Promise<{ items: unknown[] }> }).getTextContent()) ?? {
-        items: [],
-      };
-      const textItems = content.items.flatMap((raw) => {
-        const item = raw as { str?: string; transform?: number[]; width?: number; height?: number };
-        if (typeof item.str !== "string" || item.str.trim() === "" || !Array.isArray(item.transform)) return [];
-        const m = pdfjs.Util.transform(viewport.transform, item.transform);
-        return [{ str: item.str, x: m[4], y: m[5], width: item.width ?? 0, height: item.height ?? 0 }];
-      });
+      const textItems = await pageTextItems(page, pdfjs);
 
       // ── THE SET'S OWN TEMPLATE, READ FROM OTHER SHEETS ──
       //
@@ -1193,13 +1295,17 @@ export function TakeoffPlanViewer({
           {/* ABOVE the groups, because a caution under the thing it is about is
               read after the decision has been made — `PlanSheetReview`'s
               convention and the one the quote reader's cautions follow. */}
-          {duplicateWallsByPage[pageNumber] && found.length > 0 && (
+          {/* THE SERVER'S ANSWER FIRST. It comes from a proposal a model read
+              and a person may have corrected; the one below is read off the
+              title block here and only fills a silence. One slot, never two
+              cautions saying the same thing in different words. */}
+          {sheetCaution && found.length > 0 && (
             <p
               className="mb-3 rounded-md bg-tag-amber p-2 text-xs text-tag-amber-ink"
               data-takeoff="duplicate-walls-caution"
             >
               <span className="font-semibold">Check this is the right sheet. </span>
-              {duplicateWallsByPage[pageNumber]}
+              {sheetCaution}
             </p>
           )}
           {found.length === 0 ? (
