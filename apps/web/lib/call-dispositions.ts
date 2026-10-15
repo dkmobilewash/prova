@@ -21,6 +21,11 @@
  * disposition. That is the honest outcome: the row still says a call
  * happened, and the scoreboard says it could not tell what kind.
  *
+ * `WANTS_REPORT` is the "want me to?" yes — the person said yes to the free
+ * one (report, sample pay app, takeoff). It is a conversation that ended in
+ * a yes, so it counts as a conversation AND as a yes; nothing owes a
+ * follow-up date because the thing owed is the delivery, logged by hand.
+ *
  * `DO_NOT_CALL` is deliberately a disposition rather than a flag on the lead.
  * The flag is coming (`doNotContact`, in the announced schema) and when it
  * lands this tag is what it is backfilled from. Until then
@@ -33,6 +38,7 @@ export const CALL_DISPOSITIONS = [
   "VOICEMAIL",
   "GATEKEEPER",
   "CONVERSATION",
+  "WANTS_REPORT",
   "MEETING_BOOKED",
   "NOT_NOW",
   "WRONG_NUMBER",
@@ -46,6 +52,7 @@ export const CALL_DISPOSITION_LABEL: Record<CallDisposition, string> = {
   VOICEMAIL: "Left voicemail",
   GATEKEEPER: "Gatekeeper",
   CONVERSATION: "Conversation",
+  WANTS_REPORT: "Yes to the free one",
   MEETING_BOOKED: "Meeting booked",
   NOT_NOW: "Not now",
   WRONG_NUMBER: "Wrong number",
@@ -64,6 +71,7 @@ export const CALL_FOLLOW_UP_DAYS: Record<CallDisposition, number | null> = {
   VOICEMAIL: 2,
   GATEKEEPER: 2,
   CONVERSATION: null,
+  WANTS_REPORT: null,
   MEETING_BOOKED: null,
   NOT_NOW: 30,
   WRONG_NUMBER: null,
@@ -95,6 +103,8 @@ export type CallScoreboard = {
   dials: number;
   connects: number;
   conversations: number;
+  /** Said yes to the free one — the "want me to" the playbook counts. */
+  wantsReport: number;
   meetings: number;
   untagged: number;
   byDisposition: Record<CallDisposition, number>;
@@ -120,6 +130,7 @@ export function callScoreboard(summaries: readonly string[]): CallScoreboard {
   }
   const conversations =
     byDisposition.CONVERSATION +
+    byDisposition.WANTS_REPORT +
     byDisposition.MEETING_BOOKED +
     byDisposition.NOT_NOW +
     byDisposition.DO_NOT_CALL;
@@ -127,6 +138,7 @@ export function callScoreboard(summaries: readonly string[]): CallScoreboard {
     dials: summaries.length,
     connects: conversations + byDisposition.GATEKEEPER + byDisposition.WRONG_NUMBER,
     conversations,
+    wantsReport: byDisposition.WANTS_REPORT,
     meetings: byDisposition.MEETING_BOOKED,
     untagged,
     byDisposition,
