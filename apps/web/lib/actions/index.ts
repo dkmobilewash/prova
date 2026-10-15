@@ -76,6 +76,7 @@ export * from "./docusign";
 export * from "./quickbooksImport";
 export * from "./mycoi";
 export * from "./gettingStarted";
+export * from "./publicWorks";
 export * from "./procore";
 export * from "./procoreFeed";
 export * from "./proposals";
