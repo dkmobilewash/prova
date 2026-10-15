@@ -898,13 +898,52 @@ anything about SIZE.
   page's own `dpl=` as the second witness. One of those two alone is what this
   cost.
 
-  **WHAT THE LIMIT ACTUALLY IS, measured rather than inherited.** It was first
-  diagnosed in Slack as the Hobby *daily* deploy cap. It is not: only **17
-  deployments existed in the 24 hours before the refusal**, and all of that
-  day's nineteen sit inside a four-and-a-half-hour window, six of them in the
-  hour before it. So it is a BURST limit. The account is `plan: "hobby"` with
-  `concurrentBuilds: 1` and `softBlock: null` (from `get_auth_user`), and Vercel
-  does not publish the threshold — so do not write a number here.
+  **WHAT THE LIMIT ACTUALLY IS — CORRECTED 2026-10-15, AND IT IS THE DAILY CAP
+  AFTER ALL.** This paragraph said: *"It was first diagnosed in Slack as the
+  Hobby daily deploy cap. It is not: only 17 deployments existed in the 24
+  hours before the refusal… So it is a BURST limit… Vercel does not publish the
+  threshold — so do not write a number here."*
+
+  Vercel published it, in the error itself:
+
+      Resource is limited - try again in 24 hours
+      (more than 100, code: "api-deployments-free-per-day")
+
+  So it is **100 deployments per day**, it is daily rather than burst, and the
+  number is knowable. The original reasoning was sound and its premise was
+  incomplete: it counted 17 deployments **on one project**. THE CAP IS ON THE
+  ACCOUNT. Counted on the day it fired, 61 deployments in 18 hours across FOUR
+  projects:
+
+  | project | deployments | |
+  | --- | ---: | --- |
+  | `prova-web` | 22 | all READY |
+  | `lien-waiver-tool` | 19 | **17 CANCELED**, 2 READY |
+  | `martinez-brothers-stucco` | 14 | 13 READY, 1 ERROR |
+  | `on-q-asphalt-maintenance-llc` | 6 | all READY |
+
+  **`prova-web` was a third of its own outage.** Looking only at this project —
+  which is what "17 deployments" did — can never find a ceiling three other
+  projects are also pushing against, and that is the whole correction: it is
+  not a different KIND of limit, it was the right limit measured on too small a
+  set. The same shape as the census that had the right pattern and the wrong
+  scope: *nothing is ever missing from a project you do not count.*
+
+  **AND THE SKIPPED BUILDS STILL COUNT, which undoes an optimisation recorded
+  two paragraphs below as a saving.** `apps/lien-waiver/vercel.json` got an
+  `ignoreCommand` so it would stop rebuilding on commits that do not touch it.
+  It works — 17 of its 19 are `CANCELED` — and **every one of them is still a
+  deployment against the cap.** The saving is build MINUTES, not deployment
+  QUOTA. On the day this fired, 17 of 61 deployments, 28%, were skips that
+  bought nothing against the thing that actually stopped the work.
+
+  So the lever for quota is not `ignoreCommand`. It is fewer deployment
+  EVENTS: auto-deploy turned off on projects that do not need a preview per
+  push, batched pushes rather than a push per commit, or a plan without the
+  cap.
+
+  The account is `plan: "hobby"` with `concurrentBuilds: 1` and
+  `softBlock: null` (from `get_auth_user`).
 
   Two consequences worth more than the diagnosis:
 
