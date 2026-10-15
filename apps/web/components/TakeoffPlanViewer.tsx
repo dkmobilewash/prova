@@ -41,6 +41,8 @@ import {
   type StrokeSegment,
 } from "@/lib/takeoff/wallVectors";
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
+import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
+import { TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
 import type { WallClassifyLabel } from "@prova/integrations";
 import { pagesToSample } from "@/lib/takeoff/sheetTemplate";
 import { findWallsOnSheet, inPageWidthUnits } from "@/lib/takeoff/findWallsOnSheet";
@@ -333,6 +335,15 @@ export function TakeoffPlanViewer({
   /** How many strokes the sheet held when it was last read, so an empty result
    *  can say which kind of empty it is. See the message below. */
   const [strokesSeen, setStrokesSeen] = useState(0);
+  // ── READING A SCANNED SHEET ──
+  // `reading` drives the button; `readError` and `wordsRead` are what the
+  // estimator is told. The WORDS themselves go in a ref rather than state
+  // because nothing renders them — `onFindWalls` reads them on its next pass,
+  // and putting them in state would re-render the canvas for no pixels.
+  const [reading, setReading] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [wordsRead, setWordsRead] = useState<number | null>(null);
+  const scannedWordsRef = useRef<{ str: string; x: number; y: number; width: number; height: number }[] | null>(null);
   const [finding, setFinding] = useState(false);
   const [findError, setFindError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
@@ -578,6 +589,79 @@ export function TakeoffPlanViewer({
    * care about, and at a readable zoom it is a readable image — the room tags
    * and fixture outlines are what separate a kitchen from a corridor.
    */
+  /**
+   * Read a scanned sheet's lettering, one tile at a time.
+   *
+   * Tiled because a whole ARCH D sheet in one image is a thumbnail by the time
+   * the model sees it — nobody reads a dimension string at 44 dpi. Each tile
+   * is rendered at `TILE_PX` across `TILE_PT` of paper, about 190 dpi, and the
+   * tile's own offset is applied on the server so page coordinates cannot
+   * drift between the two sides.
+   *
+   * Tiles go ONE AT A TIME rather than in parallel: each is a separate charge
+   * against the company's allowance, and a refusal part way through should
+   * stop the rest rather than race a dozen requests that have already been
+   * sent.
+   */
+  const onReadSheet = useCallback(async () => {
+    setReading(true);
+    setReadError(null);
+    try {
+      const doc = docRef.current;
+      if (!doc) {
+        setReadError("The sheet isn't open yet.");
+        return;
+      }
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const page = (await doc.getPage(pageNumber)) as {
+        getViewport: (o: { scale: number }) => { width: number; height: number };
+        render: (o: unknown) => { promise: Promise<void> };
+      };
+      const full = page.getViewport({ scale: 1 });
+      const across = Math.ceil(full.width / TILE_PT);
+      const down = Math.ceil(full.height / TILE_PT);
+      const scale = TILE_PX / TILE_PT;
+
+      const words: { str: string; x: number; y: number; width: number; height: number }[] = [];
+      for (let ty = 0; ty < down; ty += 1) {
+        for (let tx = 0; tx < across; tx += 1) {
+          const tile = document.createElement("canvas");
+          tile.width = TILE_PX;
+          tile.height = TILE_PX;
+          const ctx = tile.getContext("2d");
+          if (!ctx) {
+            setReadError("This browser couldn't prepare the image. Nothing was sent.");
+            return;
+          }
+          // Paper first: a PDF page is transparent where nothing is drawn, and
+          // a transparent pixel reads as black once alpha is dropped.
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(0, 0, TILE_PX, TILE_PX);
+          ctx.save();
+          ctx.translate(-tx * TILE_PT * scale, -ty * TILE_PT * scale);
+          await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale }) }).promise;
+          ctx.restore();
+
+          const result = await readScannedSheetTile({
+            imageBase64: tile.toDataURL("image/png").split(",")[1] ?? "",
+            tileX: tx,
+            tileY: ty,
+            tilePt: TILE_PT,
+          });
+          if (!result.ok) {
+            setReadError(result.error);
+            return;
+          }
+          words.push(...result.value.items);
+        }
+      }
+      scannedWordsRef.current = words;
+      setWordsRead(words.length);
+    } finally {
+      setReading(false);
+    }
+  }, [pageNumber]);
+
   const onCheckRuns = useCallback(async () => {
     const canvas = canvasRef.current;
     const regroup = regroupRef.current;
@@ -821,7 +905,20 @@ export function TakeoffPlanViewer({
       // itself, once, so the browser and the server cannot disagree about where
       // a word is — which they would, because `planPdf.pageText` stores the
       // baseline and this used to subtract before passing anything on.
-      const textItems = await pageTextItems(page, pdfjs);
+      const vectorWords = await pageTextItems(page, pdfjs);
+      // ── A SCAN'S WORDS ENTER EXACTLY HERE ──
+      //
+      // A scanned sheet has no text layer, so `pageTextItems` returns nothing
+      // and every reader downstream — the printed scale, the dimension
+      // labels, the lettering filter — has nothing to work with. Read this
+      // sheet puts the model's reading in `scannedWordsRef`, in the SAME
+      // baseline-y page coordinates this function returns, so nothing below
+      // can tell the difference.
+      //
+      // The vector text wins whenever there is any: a sheet that carries its
+      // own words must never be served a model's reading of a picture of
+      // them.
+      const textItems = vectorWords.length > 0 ? vectorWords : (scannedWordsRef.current ?? []);
 
       // ── THE SET'S OWN TEMPLATE, READ FROM OTHER SHEETS ──
       //
@@ -1162,6 +1259,34 @@ export function TakeoffPlanViewer({
           >
             {checking ? "Checking the runs…" : "Check these are walls"}
           </button>
+        )}
+        {/* ── A SHEET THAT TURNED OUT TO BE A SCAN ──
+            Shown only once Find the walls has run and found NO lines, which is
+            exactly what a scan looks like from here: a picture has no strokes
+            to read and no words either. Offering it before then would put a
+            control for a rare case on every sheet's toolbar. */}
+        {found !== null && strokesSeen === 0 && (
+          <button
+            type="button"
+            onClick={onReadSheet}
+            disabled={reading}
+            data-takeoff="read-sheet"
+            title="This sheet has no writing in the file, which means it was scanned rather than exported. Reads the room names, dimensions and scale note off the picture so the sheet can be scaled. Lengths are still measured from the drawing."
+            className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
+          >
+            {reading ? "Reading the sheet…" : "Read this sheet"}
+          </button>
+        )}
+        {readError !== null && (
+          <p data-takeoff="read-error" className="text-xs text-ink-muted">
+            {readError}
+          </p>
+        )}
+        {wordsRead !== null && readError === null && (
+          <p data-takeoff="read-done" className="text-xs text-ink-muted">
+            Read {wordsRead} {wordsRead === 1 ? "word" : "words"} off this sheet. Press Find the walls again to
+            use them.
+          </p>
         )}
         {checkError !== null && (
           <p data-takeoff="check-error" className="text-xs text-ink-muted">

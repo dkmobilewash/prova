@@ -65,6 +65,8 @@ export const AI_FEATURES = {
    *  feature census rather than four. */
   AI_AGENTS: "ai-agents",
   WALL_CLASSIFY: "wall-classify",
+  /** Reading the lettering off a SCANNED sheet, which has no text layer. */
+  SHEET_TEXT: "sheet-text",
 } as const;
 
 export type AiFeatureKey = keyof typeof AI_FEATURES;
@@ -92,6 +94,16 @@ const FEATURE_MODEL: Record<AiFeatureKey, string> = {
   // The one cheap default, at Diego's direction, subject to the eval. Three
   // hundred calls per plan set is where a fifth of the price is worth having.
   PLAN_INGESTION: HAIKU_4_5,
+  // Opus, and the argument is the one directly below rather than the one above
+  // it. This is OCR, so it has ingestion's volume — nine tiles a sheet — and
+  // the cheap model is genuinely good at reading letters. What stops it being
+  // Haiku is what the letters DO: a dimension string read off a scan is what
+  // sets that sheet's scale, and the scale multiplies every quantity taken
+  // from the drawing. Measured at Opus: every printed string on two scanned
+  // fixtures read exactly, and 98% of them placed within the 30 points the
+  // pairing allows. Haiku has not been measured against that bar; the eval
+  // takes SHEET_TEXT_MODEL so it can be, and this line should move if it wins.
+  SHEET_TEXT: OPUS_5,
   // Opus, and the volume argument that bought Haiku above does not reach here.
   // This runs on the sheets that HAVE walls, a handful per plan set and a few
   // crops each, not on three hundred pages — and what it decides is whether a

@@ -89,6 +89,7 @@ export const AI_FEATURE_LABEL: Record<AiFeatureKey, string> = {
   PROPOSAL_DRAFT: "Drafting proposal clauses",
   AI_AGENTS: "Background agents",
   WALL_CLASSIFY: "Checking which runs on a plan are walls",
+  SHEET_TEXT: "Reading the writing on a scanned sheet",
 };
 
 /**
@@ -166,7 +167,9 @@ export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
   AI_AGENTS:
     "The bid watcher, bid research, the estimate check and recommendations: agents that read your bids and history, write down what they found with sources, and advise. They never submit, send or change a bid or estimate — every change still goes through a confirm card.",
   WALL_CLASSIFY:
-    "Looking at a part of a floor plan and saying which of the runs the wall finder measured are walls, and which are countertops, fixtures, cabinets or reference lines \u2014 the one thing measuring cannot tell you, since a countertop is also two parallel lines. THE ONLY FEATURE HERE THAT SENDS A PICTURE OF YOUR DRAWING: every other one sends text the file already contains. It never changes a length or a thickness; those are measured from the drawing's own geometry either way, and you can accept or reject any run yourself. With this off the runs are still found and still measured \u2014 you just sort them by hand.",
+    "Looking at a part of a floor plan and saying which of the runs the wall finder measured are walls, and which are countertops, fixtures, cabinets or reference lines \u2014 the one thing measuring cannot tell you, since a countertop is also two parallel lines. ONE OF TWO FEATURES HERE THAT SEND A PICTURE OF YOUR DRAWING, the other being reading a scanned sheet; every other one sends text the file already contains. It never changes a length or a thickness; those are measured from the drawing's own geometry either way, and you can accept or reject any run yourself. With this off the runs are still found and still measured \u2014 you just sort them by hand.",
+  SHEET_TEXT:
+    "Reading the room names, dimensions and scale note off a sheet that was SCANNED rather than exported \u2014 a scan is a picture, so there is no writing in the file to read and nothing else in this app can get at it. ONE OF TWO FEATURES HERE THAT SEND A PICTURE OF YOUR DRAWING, the other being checking which runs are walls. It reads the writing only: the lines are found by measuring the picture, in code, and every length and quantity is still worked out from that geometry rather than from anything the model says. With this off, a scanned sheet behaves as it does today \u2014 it is recognised as a scan and set aside, and you take it off by hand.",
 };
 
 /**

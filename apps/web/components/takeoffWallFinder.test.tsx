@@ -522,7 +522,14 @@ describe("the ghost lines over the sheet", () => {
     expect(code).toMatch(/\{strokesSeen === 0/);
     expect(code).toMatch(/setStrokesSeen\(segments\.length\)/);
     // The branch for a sheet that DOES have line work must not claim a scan.
-    const branch = code.slice(code.indexOf("strokesSeen === 0"));
+    //
+    // Anchored on the BRACE, which is the empty state's own ternary. It used
+    // to slice from the first bare `strokesSeen === 0` anywhere in the file,
+    // and the Read this sheet button -- whose condition is `found !== null &&
+    // strokesSeen === 0` and which sits higher up -- moved that first
+    // occurrence into a piece of JSX this case is not about. The property
+    // being asserted has not changed; only which branch it is read from.
+    const branch = code.slice(code.indexOf("{strokesSeen === 0"));
     const elseArm = branch.slice(branch.indexOf(": `"), branch.indexOf("`}"));
     expect(elseArm).not.toMatch(/scan/i);
     expect(elseArm).toMatch(/does have line work/);
