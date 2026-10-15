@@ -1,21 +1,39 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { Card, PageShell, StatusBadge } from "@prova/ui";
-import { JobStatus, Prisma, prisma } from "@prova/db";
+import { Card, PageShell } from "@prova/ui";
+import type { JobStatus } from "@prova/db";
+import { jobValue, loadJobs } from "@/lib/jobs-list";
 import { requireCompanyContext } from "@/lib/auth";
 import { redirectToOnboardingIfUnasked } from "@/lib/onboarding-gate";
 import { estimateStage } from "@/lib/estimate-stage";
-import { can } from "@/lib/permissions";
-import { money } from "@/lib/money";
+import { can, canReach } from "@/lib/permissions";
 import { renewalSourcesForCompany } from "@/lib/renewals";
 import { renewalAlerts, renewalTiming } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
-import { viewerAsOf } from "@/lib/viewerToday";
+import { viewerTimeZone } from "@/lib/viewerToday";
+import { todayInZone } from "@/lib/viewer-timezone";
 import { loadTodayDashboard } from "@/lib/today-dashboard";
-import { AskPanel } from "@/components/AskPanel";
 import { EmptyState } from "@/components/EmptyState";
 import { GettingStartedCard } from "@/components/GettingStartedCard";
 import { FullTourOffer } from "@/components/FullTourOffer";
+import { tradeScopeLabel } from "@/components/tradeScopeLabels";
+import { AreaBoxes } from "@/components/areas/AreaBoxes";
+import { areaViews, areasFor } from "@/lib/areas";
+import { loadToolStatuses } from "@/lib/areas-data";
+import {
+  CrewsBlock,
+  JobCard,
+  MoneyBlock,
+  NeedsBlock,
+  PhoneTiles,
+  RunningCard,
+  ShortcutChips,
+  type JobCardData,
+  type NeedItem,
+  type Shortcut,
+} from "@/components/home/HomeParts";
+import { backchargeNeeds, greeting, hourIn, jobStage, nextAction, type ActionRights } from "@/components/home/home-logic";
+import { billingNoun } from "@/components/job/jobStages";
 import { gettingStartedChecklist } from "@/lib/getting-started";
 import { loadGettingStartedCounts } from "@/lib/getting-started-counts";
 import { GETTING_STARTED_HIDDEN_COOKIE, isGettingStartedHidden } from "@/lib/getting-started-cookie";
@@ -24,100 +42,63 @@ import {
   ReceivablesList,
   ReceivablesProvider,
 } from "@/components/ReceivablesPanel";
+import { loadHomeExtras } from "./home-data";
+import { overdueText } from "@/lib/due-date";
+import { EMPTY_TASKS, loadTaskList } from "@/lib/agents/tasks";
 
 /**
- * Today.
+ * Home (Concept G, 2026-10-10; Concept H the same day).
  *
- * This page used to be a searchable table of jobs and nothing else. Every
- * number an owner needs on a Monday morning — what is overdue, what is
- * about to lapse, which job is drifting past its budget, what retainage is
- * due back this month — already existed in the data model, and none of it
- * appeared unless someone went looking for it on the right sub-page.
+ * A greeting with the day's real counts and the shortcuts beside it (the
+ * search box made compact: the top bar's search is on every page), the six
+ * AREA boxes — every page in the app, filed where a sub would look for it,
+ * each with one live line (lib/areas.ts, lib/areas-data.ts) — then three
+ * blocks (Needs you today, Money, Crews today) and the jobs as cards, each
+ * with its stage and the ONE thing to do next. On a phone the areas are
+ * two-column tiles straight to each area page, then "Log today's hours".
  *
- * So the table is still here, at the bottom, unchanged in function. What
- * is new is everything above it: the same figures, asked on load.
+ * Every number is derived on read — from Invoice, Payment, CostEntry,
+ * JobLineItem, Rfi, TimesheetSignoff and CrewScheduleDay, through
+ * lib/today-dashboard.ts and ./home-data.ts. Nothing here is stored or
+ * cached, per ARCHITECTURE.md, and a block with nothing to say says so
+ * rather than showing a made-up figure.
  *
- * Every number is derived on read — from Invoice, Payment, CostEntry and
- * JobLineItem, through lib/wip.ts, lib/retainage.ts and
- * lib/gc-reliability.ts. Nothing here is stored or cached, per
- * ARCHITECTURE.md: a saved "over budget" flag is wrong the moment a cost
- * entry lands, and a stale number on the screen someone trusts first is
- * worse than no number.
+ * The searchable, filterable list of every job is /jobs (it sat at the
+ * bottom of this page until 2026-10-11); "All N jobs" under the cards and the
+ * top bar's Jobs both go there.
  */
 
-const STATUS_FILTERS: { value: JobStatus | "ALL"; label: string }[] = [
-  { value: "ALL", label: "All" },
-  { value: "ESTIMATE", label: "Estimating" },
-  { value: "CONTRACTED", label: "Contracted" },
-  { value: "IN_PROGRESS", label: "In progress" },
-  { value: "COMPLETE", label: "Complete" },
-];
-
-const ALL_STATUSES: JobStatus[] = ["ESTIMATE", "CONTRACTED", "IN_PROGRESS", "COMPLETE"];
-
-const GROUP_HEADING: Record<JobStatus, string> = {
-  ESTIMATE: "Estimating",
-  CONTRACTED: "Contracted",
-  IN_PROGRESS: "In progress",
-  COMPLETE: "Complete",
+/** Whole literals so Tailwind sees every class. 20/16px since the compact
+ * pass (2026-10-11), from 26/20. */
+const BLOCK_GRID = {
+  three: "mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr_1fr]",
+  two: "mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr]",
 };
 
-const STAGE_TONE: Record<string, string> = {
-  NEEDS_PRICING: "border-line-card bg-tag-slate text-tag-slate-ink",
-  READY_TO_SEND: "border-transparent bg-tag-brand text-tag-brand-ink",
-  OUT_FOR_SIGNATURE: "border-transparent bg-tag-amber text-tag-amber-ink",
-  SIGNED: "border-transparent bg-tag-green text-tag-green-ink",
-};
+/** How many job cards the home shows before "All N jobs". */
+const CARDS_SHOWN = 6;
 
-const HEALTH_TONE: Record<string, string> = {
-  over: "text-tag-rose-ink",
-  watch: "text-tag-amber-ink",
-  fine: "text-ink-body",
-  unknown: "text-ink-body",
-};
-
-/** Whole literals so Tailwind sees every class. Index = tile count. */
-const NEEDS_ATTENTION_GRID: Record<number, string> = {
-  1: "grid grid-cols-1 gap-3",
-  2: "grid grid-cols-1 gap-3 sm:grid-cols-2",
-  3: "grid grid-cols-1 gap-3 sm:grid-cols-3",
-  4: "grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4",
-};
-
-type JobRow = Awaited<ReturnType<typeof loadJobs>>[number];
-
-async function loadJobs(companyId: string, where: Prisma.JobWhereInput) {
-  return prisma.job.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    include: {
-      contact: true,
-      lineItems: { where: { isDeleted: false } },
-      signatureRequests: { select: { status: true } },
-    },
+function dayLabel(iso: string, style: "long" | "short") {
+  return new Date(`${iso}T00:00:00.000Z`).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    weekday: style,
+    month: style,
+    day: "numeric",
   });
 }
 
-function jobValue(job: JobRow) {
-  return job.lineItems.reduce(
-    (sum, item) => sum + Number(item.quantity) * Number(item.unitPrice ?? 0),
-    0,
-  );
+function plural(n: number, one: string, many = `${one}s`) {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
-function filterHref(status: JobStatus | "ALL", q?: string) {
-  const params = new URLSearchParams();
-  if (status !== "ALL") params.set("status", status);
-  if (q) params.set("q", q);
-  const query = params.toString();
-  return query ? `/dashboard?${query}` : "/dashboard";
+/** One job to send a shortcut to, or the palette when there is a choice. */
+function pickJob(label: string, jobs: { id: string; name: string }[], path: string, query: string): Shortcut | null {
+  if (jobs.length === 0) return null;
+  if (jobs.length === 1) return { label, href: `/jobs/${jobs[0]!.id}/${path}`, sub: jobs[0]!.name };
+  return { label, query, sub: "Pick the job" };
 }
 
-export default async function TodayPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ q?: string; status?: string }>;
-}) {
+export default async function TodayPage() {
   const { company, ...currentUser } = await requireCompanyContext();
 
   // The onboarding gate. THIS MUST STAY THE FIRST THING AFTER
@@ -127,48 +108,51 @@ export default async function TodayPage({
   // that makes this the only page that should ever call it).
   redirectToOnboardingIfUnasked({ role: currentUser.role, businessScopeAskedAt: company.businessScopeAskedAt });
 
-  // Both TRUE for an owner and for a member with no job function set, so
-  // this screen is unchanged for everyone who has ever used it. A narrowed
-  // function loses the money and keeps the work.
+  // Both TRUE for an owner and for a member with no job function set. A
+  // narrowed function loses the money and keeps the work.
   const principal = { role: currentUser.role, jobFunction: currentUser.jobFunction };
   const showsBilling = can(principal, "MANAGE_BILLING");
+  const bill = billingNoun(company.filesMonthlyPayApps);
   const showsJobMoney = can(principal, "VIEW_JOB_COSTS");
-  const { q, status } = await searchParams;
-
-  const activeStatus = ALL_STATUSES.includes(status as JobStatus) ? (status as JobStatus) : null;
-
-  const where: Prisma.JobWhereInput = { companyId: company.id };
-  if (activeStatus) where.status = activeStatus;
-  if (q) {
-    where.OR = [
-      { name: { contains: q, mode: "insensitive" } },
-      { contact: { name: { contains: q, mode: "insensitive" } } },
-    ];
-  }
-
-  // The READER'S calendar day, at UTC midnight — what the receivables
-  // tile ages against. A raw `new Date()` here put an invoice due TODAY on
-  // the Overdue invoices tile from 17:00 Pacific, at its full value, on
-  // the first screen an owner sees. See the note on `daysPastDueFor` in
-  // lib/cash-flow.ts.
-  const asOf = await viewerAsOf();
+  const rights: ActionRights = {
+    billing: showsBilling,
+    field: can(principal, "MANAGE_FIELD"),
+    jobs: can(principal, "MANAGE_JOBS"),
+    estimating: can(principal, "MANAGE_ESTIMATING"),
+  };
+  // The READER'S calendar day and clock — what "overdue", "today's crew"
+  // and "good morning" are all claims about. See lib/viewerToday.ts.
+  const timeZone = await viewerTimeZone();
+  const todayIso = todayInZone(timeZone);
+  const asOf = new Date(`${todayIso}T00:00:00.000Z`);
 
   // The getting-started card. Hidden-by-cookie is decided HERE, on the
   // server, from the request — so the markup the browser hydrates already
-  // either has the card or does not, and nothing on the client re-decides
-  // it. Once hidden, the counts are not even asked for.
+  // either has the card or does not. Once hidden, the counts are not asked.
   const cookieStore = await cookies();
   const gettingStartedHidden = isGettingStartedHidden(
     cookieStore.get(GETTING_STARTED_HIDDEN_COOKIE)?.value,
     company.id,
   );
 
-  const [jobs, allJobs, renewalSources, today, gettingStartedCounts] = await Promise.all([
-    loadJobs(company.id, where),
-    loadJobs(company.id, { companyId: company.id }),
+  const [allJobs, renewalSources, today, gettingStartedCounts, extras, tasks] = await Promise.all([
+    loadJobs({ companyId: company.id }),
     renewalSourcesForCompany(company.id),
     loadTodayDashboard(company.id, asOf),
     gettingStartedHidden ? null : loadGettingStartedCounts(company.id),
+    loadHomeExtras(company.id, todayIso, {
+      rfis: rights.jobs,
+      signoffs: can(principal, "MANAGE_COMPLIANCE"),
+      money: showsBilling,
+    }),
+    // The Running now card: the agents' runs, behind the /ai gate. A failed
+    // read costs the card, never the home page.
+    rights.estimating
+      ? loadTaskList(company.id).catch((error: unknown) => {
+          console.error("[home] agent runs failed to load; the card is hidden.", error);
+          return EMPTY_TASKS;
+        })
+      : EMPTY_TASKS,
   ]);
 
   const gettingStarted = gettingStartedCounts
@@ -180,99 +164,270 @@ export default async function TodayPage({
     (renewal) => renewal.urgency === "EXPIRED" || renewal.urgency === "DUE_SOON",
   );
 
-  const estimating = allJobs.filter((job) => job.status === "ESTIMATE");
-  const pipelineValue = estimating.reduce((sum, job) => sum + jobValue(job), 0);
+  const inProgress = allJobs.filter((job) => job.status === "IN_PROGRESS");
 
   // A company with no jobs has nothing for most of this page to say — no
-  // invoice, cost, crew day or GC exists without a job to hang it on — so
-  // it gets the one thing it can do (start a job) and the checklist, and
-  // every section below returns the moment the first job exists. The ONE
-  // company-level figure that can be non-zero before any job is a licence
-  // or certificate running out, so that card still shows when it has
-  // something in it. Presentation only: every figure above is computed
-  // exactly as before, and a company with a job renders the same page.
+  // invoice, cost, crew day or GC exists without a job to hang it on — so it
+  // gets the checklist (or the jobs empty state once that is hidden), and
+  // every block returns the moment the first job exists. The ONE
+  // company-level thing that can exist before a job is a licence running
+  // out, so that card still shows when it has something in it.
   const isNewAccount = allJobs.length === 0;
+  // While the checklist shows on a brand-new account it is the ONE start:
+  // its first step is "start your first job" and it links Ask, so the
+  // search box, the empty state and the tour offer would be the same door.
+  const checklistShowing = gettingStarted !== null && !gettingStarted.complete;
+  const onlyChecklist = isNewAccount && checklistShowing;
 
-  // Written once and placed in one of two spots below: beside "Crews
-  // today" for a company with jobs (where it always was), or alone for a
-  // company with none yet that has a document running out.
+  // Only doors this viewer can open.
+  const overdueHref = canReach(principal, "/cash-flow") ? "/cash-flow#aging" : undefined;
+  const retainageHref = canReach(principal, "/cash-flow") ? "/cash-flow#retainage" : undefined;
+  const complianceHref = canReach(principal, "/compliance") ? "/compliance" : undefined;
+
+  /* -------------------------------------------- needs you today ---- */
+  // Red before amber; inside each, the order each source already sorts by.
+  const needs: NeedItem[] = [];
+  if (showsBilling) {
+    for (const inv of today.overdue) {
+      needs.push({
+        key: `inv-${inv.id}`,
+        tone: "red",
+        text: `${bill.one} #${inv.number} to ${inv.gcName} — ${inv.jobName}`,
+        when: overdueText(inv.daysOverdue),
+        whenTone: "danger",
+        action: { label: "Chase", href: `/jobs/${inv.jobId}/billing` },
+      });
+    }
+  }
+  // Empty unless showsBilling (loadHomeExtras skips the read otherwise).
+  needs.push(...backchargeNeeds(extras.backcharges, todayIso));
+  for (const renewal of expiringSoon) {
+    needs.push({
+      key: `doc-${renewal.kind}-${renewal.id}`,
+      tone: renewal.urgency === "EXPIRED" ? "red" : "amber",
+      text: renewal.detail ? `${renewal.title} — ${renewal.detail}` : renewal.title,
+      when: renewalTiming(renewal),
+      // Lapsed is past due, and reads like an overdue invoice: red, not grey
+      // beside a red dot (click test, 2026-10-11).
+      ...(renewal.urgency === "EXPIRED" ? { whenTone: "danger" as const } : {}),
+      action: complianceHref ? { label: "Renew", href: complianceHref } : undefined,
+    });
+  }
+  for (const rfi of extras.overdueRfis) {
+    needs.push({
+      key: `rfi-${rfi.id}`,
+      tone: "amber",
+      text: `RFI ${rfi.number} answer is late — ${rfi.jobName}`,
+      when: overdueText(rfi.daysLate),
+      whenTone: "danger",
+      action: { label: "Chase", href: `/rfis?job=${rfi.jobId}` },
+    });
+  }
+  for (const day of extras.unapprovedDays) {
+    needs.push({
+      key: `hours-${day.id}`,
+      tone: "amber",
+      text: `Approve hours for ${dayLabel(day.date, "short")} — ${day.jobName}`,
+      when: "Signed",
+      action: { label: "Approve", href: `/jobs/${day.jobId}/crew` },
+    });
+  }
+  if (showsJobMoney) {
+    for (const row of today.jobHealth.filter((r) => r.tone === "over")) {
+      needs.push({
+        key: `budget-${row.jobId}`,
+        tone: "amber",
+        text: `${row.name} is forecast over budget`,
+        when: "",
+        action: { label: "Review", href: canReach(principal, "/wip") ? "/wip" : `/jobs/${row.jobId}` },
+      });
+    }
+  }
+  needs.sort((a, b) => (a.tone === "red" ? 0 : 1) - (b.tone === "red" ? 0 : 1));
+
+  /* ------------------------------------------------------ job cards -- */
+  const overdueByJob = new Map<string, { number: number; daysOverdue: number }>();
+  for (const inv of today.overdue) if (!overdueByJob.has(inv.jobId)) overdueByJob.set(inv.jobId, inv);
+  const rfisByJob = new Map<string, { number: number; count: number }>();
+  for (const rfi of extras.overdueRfis) {
+    const seen = rfisByJob.get(rfi.jobId);
+    rfisByJob.set(rfi.jobId, { number: seen?.number ?? rfi.number, count: (seen?.count ?? 0) + 1 });
+  }
+  const crewByJob = new Map(extras.crewsToday.map((c) => [c.jobId, c.people.length]));
+  const healthByJob = new Map(today.jobHealth.map((r) => [r.jobId, r]));
+
+  const STATUS_ORDER: Record<JobStatus, number> = { IN_PROGRESS: 0, CONTRACTED: 1, ESTIMATE: 2, COMPLETE: 3 };
+  const open = allJobs.filter((job) => job.status !== "COMPLETE");
+  const cards: JobCardData[] = (open.length > 0 ? open : allJobs)
+    .map((job) => {
+      const est =
+        job.status === "ESTIMATE"
+          ? estimateStage(job.lineItems.length, job.signatureRequests.map((r) => r.status)).key
+          : null;
+      const overdueInvoice = showsBilling ? overdueByJob.get(job.id) ?? null : null;
+      const rfi = rights.jobs ? rfisByJob.get(job.id) ?? null : null;
+      const action = nextAction({
+        jobId: job.id,
+        status: job.status,
+        estimateStage: est,
+        invoiceCount: job.invoices.length,
+        overdueInvoice,
+        overdueRfi: rfi,
+        scheduledToday: crewByJob.get(job.id) ?? 0,
+        rights,
+        billNoun: bill.lower,
+      });
+      const value = jobValue(job);
+      const billed = job.invoices.reduce((sum, inv) => sum + Number(inv.amount), 0);
+      const trades = [...new Set(job.lineItems.map((l) => tradeScopeLabel(l.tradeScope)).filter(Boolean))];
+      const line = [
+        job.contact.name,
+        trades.length === 1 ? trades[0] : trades.length > 1 ? `${trades.length} trades` : null,
+        showsJobMoney && value > 0 ? `${Math.round((billed / value) * 100)}% billed` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      const health = showsJobMoney ? healthByJob.get(job.id) : undefined;
+      return {
+        sort: (action.primary ? 0 : 10) + STATUS_ORDER[job.status],
+        card: {
+          id: job.id,
+          name: job.name,
+          line,
+          stage: jobStage({ status: job.status, estimateStage: est, invoiceCount: job.invoices.length }),
+          tag: overdueInvoice
+            ? { text: overdueText(overdueInvoice.daysOverdue, true), tone: "rose" as const }
+            : rfi
+              ? { text: `${rfi.count} ${rfi.count === 1 ? "RFI" : "RFIs"} late`, tone: "amber" as const }
+              : undefined,
+          health:
+            health && (health.tone === "over" || health.tone === "watch")
+              ? { sentence: health.sentence, tone: health.tone }
+              : undefined,
+          action,
+        } satisfies JobCardData,
+      };
+    })
+    .sort((a, b) => a.sort - b.sort)
+    .slice(0, CARDS_SHOWN)
+    .map((entry) => entry.card);
+
+  /* ------------------------------------------------------ shortcuts -- */
+  const crewedToday = extras.crewsToday.map((c) => ({ id: c.jobId, name: c.jobName }));
+  const logHours = rights.field
+    ? pickJob("Log hours", crewedToday.length > 0 ? crewedToday : inProgress, "crew#log-time", "log hours")
+    : null;
+  const sendPayApp = showsBilling ? pickJob(`Send ${bill.lower}`, inProgress, "billing", "pay app") : null;
+  const rfisReachable = canReach(principal, "/rfis");
+  // The field creates (Concept G's phone tiles, restored 2026-10-11): each
+  // lands on its form already open. With one job to choose it rides along;
+  // with more, the form's own job select (RFI, daily report) or the
+  // palette's job picker (a photo needs a job before anything) asks.
+  const fieldJobs = crewedToday.length > 0 ? crewedToday : inProgress;
+  const onlyJob = fieldJobs.length === 1 ? `&job=${fieldJobs[0]!.id}` : "";
+  const takePhoto = canReach(principal, "/photos") ? pickJob("Take a photo", fieldJobs, "photos", "add a photo") : null;
+  const quick = [
+    ...(takePhoto ? [{ icon: "◉", shortcut: takePhoto }] : []),
+    ...(rfisReachable ? [{ icon: "?", shortcut: { label: "New RFI", href: `/rfis?new=1${onlyJob}` } }] : []),
+    ...(canReach(principal, "/field-reports") ? [{ icon: "✎", shortcut: { label: "Daily report", href: `/field-reports?new=1${onlyJob}` } }] : []),
+  ];
+  const chips = [
+    ...(logHours ? [{ icon: "◷", shortcut: logHours }] : []),
+    ...(sendPayApp ? [{ icon: "↗", shortcut: sendPayApp }] : []),
+    ...(rfisReachable ? [{ icon: "?", shortcut: { label: "Find an RFI", href: "/rfis" } }] : []),
+    ...quick,
+  ];
+
+  /* ---------------------------------------------------------- areas -- */
+  // Each box's one line, from the same rows the pages read. Overdue money
+  // and today's crews are already in hand above, so they are passed in.
+  const areas = isNewAccount
+    ? null
+    : areaViews(
+        areasFor(principal),
+        await loadToolStatuses(company.id, principal, todayIso, {
+          overdue: showsBilling ? { total: today.overdueTotal, count: today.overdue.length } : undefined,
+          crewsOut: extras.crewsToday.length,
+          inProgress: inProgress.length,
+        }),
+      );
+
+  /* ------------------------------------------------------- greeting -- */
+  const firstName = currentUser.name?.trim().split(/\s+/)[0];
+  const hello = `${greeting(hourIn(timeZone))}${firstName ? `, ${firstName}` : ""}`;
+  const crewsOut = extras.crewsToday.length;
+  const dateLine = [
+    dayLabel(todayIso, "long"),
+    crewsOut > 0 ? `${plural(crewsOut, "crew")} out` : null,
+    isNewAccount ? null : `${plural(inProgress.length, "job")} in progress`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   const complianceCard = (
     <Card>
       <h3 className="text-sm font-semibold text-ink">Compliance</h3>
-      {expiringSoon.length === 0 ? (
-        <p className="mt-2 text-sm text-ink-body">
-          Nothing expiring. Certificates, licences, policies and bonds are current.
-        </p>
-      ) : (
-        <ul className="mt-3 divide-y divide-line-row">
-          {expiringSoon.slice(0, 6).map((renewal) => (
-            <li key={`${renewal.kind}-${renewal.id}`} className="py-2.5">
-              <p className="text-sm font-medium text-ink">
-                {renewal.title}
-                {renewal.detail && (
-                  <span className="font-normal text-ink-body"> — {renewal.detail}</span>
-                )}
-              </p>
-              <p
-                className={`text-xs ${
-                  renewal.urgency === "EXPIRED"
-                    ? "text-tag-rose-ink"
-                    : "text-tag-amber-ink"
-                }`}
-              >
-                {renewalTiming(renewal)}
-              </p>
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul className="mt-3 divide-y divide-line-row">
+        {expiringSoon.slice(0, 6).map((renewal) => (
+          <li key={`${renewal.kind}-${renewal.id}`} className="py-2.5">
+            <p className="text-sm font-medium text-ink">
+              {renewal.title}
+              {renewal.detail && <span className="font-normal text-ink-body"> — {renewal.detail}</span>}
+            </p>
+            <p className={`text-xs ${renewal.urgency === "EXPIRED" ? "text-tag-rose-ink" : "text-tag-amber-ink"}`}>
+              {renewalTiming(renewal)}
+            </p>
+          </li>
+        ))}
+      </ul>
     </Card>
   );
-
-  // Owner and unrestricted members have all four tiles, and their row is
-  // unchanged; a narrowed job function gets a row sized to what it sees.
-  const needsAttentionTiles = 1 + (showsBilling ? 2 : 0) + (showsJobMoney ? 1 : 0);
-
-  const grouped = activeStatus
-    ? [{ status: activeStatus, rows: jobs }]
-    : ALL_STATUSES.map((s) => ({ status: s, rows: jobs.filter((job) => job.status === s) })).filter(
-        (group) => group.rows.length > 0,
-      );
 
   return (
     // The rows, not the markup. This is a client provider, so anything
     // handed to it reaches the browser whether or not a list renders it —
-    // hiding the panel while still shipping the receivables would be the
-    // exact "looks enforced, isn't" failure this work exists to avoid.
-    // Gated the same way as the rows above it, for the same reason: a count
-    // of this company's invoices is a billing fact, so it reaches the
-    // browser only for a viewer who can see billing.
+    // gated like the list itself, so a count of this company's invoices
+    // reaches the browser only for a viewer who can see billing.
     <ReceivablesProvider
       rows={showsBilling ? today.receivables : []}
       invoicesRaised={showsBilling ? today.invoicesRaised : 0}
+      filesMonthlyPayApps={company.filesMonthlyPayApps}
     >
       {/* The panel is a sibling of this column, not a child of it — that is
           what lets it push rather than cover. */}
-      {/* The one light surface in the app so far. Scoped here rather than
-          applied to the body, because the pages that have not been
-          converted put tables and buttons directly on the page background
-          and render unreadable on a light one. */}
       <div className="flex min-h-full bg-canvas">
         <div className="min-w-0 flex-1">
           <PageShell width="working">
-            <h1 className="text-xl font-semibold text-ink">Today</h1>
-            <p className="mt-1 text-sm text-ink-body">
-              What needs a decision, before you go looking for it.
-            </p>
+            {/* ------------------------------------------------- hero -- */}
+            <div className="md:flex md:items-end md:justify-between md:gap-6">
+              <div data-home="greeting">
+                <h1 className="font-headline text-[32px] font-semibold leading-none text-ink md:text-[38px] md:leading-tight">
+                  {hello}
+                </h1>
+                <p className="mt-1 text-[15px] text-ink-muted">{dateLine}</p>
+              </div>
+              {!onlyChecklist && <ShortcutChips newJob={!isNewAccount} others={isNewAccount ? [] : chips} />}
+            </div>
 
-            {/* The full tour, offered once to an account with no jobs yet —
-                a brand-new one. Dismissed per browser; see FullTourOffer. */}
-            {isNewAccount && <FullTourOffer />}
+            {/* ------------------------------------------------ areas -- */}
+            {/* Where everything is. Once there is a job: before that every
+                box would read zero, and the checklist is the one start. */}
+            {areas && <AreaBoxes areas={areas} hours={logHours} />}
 
-            {/* A brand-new company's first screen leads with the one thing
-                it can do. The example rows are static markup, labelled as
-                an example by EmptyState itself — never data. */}
-            {isNewAccount && (
+            {/* On a phone the foreman's one big action stays first, and the
+                three things he creates from the field sit under it. */}
+            {!isNewAccount && (logHours || quick.length > 0) && (
+              <PhoneTiles primary={logHours ? { ...logHours, label: "Log today's hours" } : null} quick={quick} />
+            )}
+
+            {/* The full tour, offered once to a brand-new account — but not
+                while the checklist is the one start on screen. */}
+            {isNewAccount && !onlyChecklist && <FullTourOffer />}
+
+            {/* A brand-new company that has hidden the checklist still gets
+                the one thing it can do. The example rows are static markup,
+                labelled as an example by EmptyState itself — never data. */}
+            {isNewAccount && !onlyChecklist && (
               <EmptyState
                 data-tour="dashboard-jobs-empty"
                 className="mt-6"
@@ -281,7 +436,7 @@ export default async function TodayPage({
                   <p>
                     Everything in C Stream hangs off a job: the estimate, the crew&rsquo;s hours, the
                     invoices, the paperwork. Start your first one and this page fills in with what
-                    is overdue, who is on site today and which jobs are drifting past budget.
+                    needs you, who is on site today and where the money stands.
                   </p>
                 }
                 actions={[
@@ -314,135 +469,75 @@ export default async function TodayPage({
               />
             )}
 
-            {/* First, and only until the required steps are done or someone
-                hides it on this browser. Everything below keeps its order. */}
-            {gettingStarted && !gettingStarted.complete && (
+            {gettingStarted && checklistShowing && (
               <div className="mt-6" data-tour="dashboard-getting-started">
                 <GettingStartedCard checklist={gettingStarted} />
               </div>
             )}
 
-            {/* Above the tiles on purpose. The tiles answer the four
-                questions we guessed at; this answers the one they actually
-                have. */}
-            <div className="mt-6" data-tour="dashboard-ask">
-              <AskPanel />
-            </div>
+            {/* Before the first job, the one block with something to say. */}
+            {isNewAccount && expiringSoon.length > 0 && <div className="mt-6">{complianceCard}</div>}
 
-            {/* Before the first job, the one section with something to say. */}
-            {isNewAccount && expiringSoon.length > 0 && (
-              <section className="mt-6" data-tour="dashboard-field">
-                <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
-                  Needs attention
-                </h2>
-                {complianceCard}
+            {/* ----------------------------------------- three blocks -- */}
+            {!isNewAccount && (
+              <div className={showsBilling ? BLOCK_GRID.three : BLOCK_GRID.two}>
+                <NeedsBlock items={needs} />
+                {showsBilling && (
+                  <MoneyBlock
+                    figures={{
+                      month: new Date(`${todayIso}T00:00:00.000Z`).toLocaleDateString("en-US", {
+                        timeZone: "UTC",
+                        month: "long",
+                      }),
+                      billed: extras.billedThisMonth,
+                      collected: extras.collectedThisMonth,
+                      retainage: today.retainageHeld,
+                      overdue: today.overdueTotal,
+                      overdueCount: today.overdue.length,
+                      bill,
+                      outstanding: today.receivables.reduce((sum, r) => sum + r.outstanding, 0),
+                      overdueHref,
+                      retainageHref,
+                    }}
+                  />
+                )}
+                {/* Running now shares the last column with Crews today, the
+                    shortest block, so it costs the page no row of its own
+                    (measured: under Needs you today it pushed Your jobs down
+                    342px at 1440x900). The last card stretches to the row. */}
+                <div className="flex min-w-0 flex-col gap-4 [&>section:last-child]:flex-1">
+                  <CrewsBlock crews={extras.crewsToday} />
+                  <RunningCard tasks={tasks} now={new Date()} />
+                </div>
+              </div>
+            )}
+
+            {/* ------------------------------------------- your jobs -- */}
+            {!isNewAccount && (
+              <section id="jobs" className="mt-5 scroll-mt-20" data-tour="dashboard-job-health">
+                <div className="mb-1 flex items-baseline justify-between gap-3">
+                  <h2 className="font-headline text-xl font-semibold text-ink">Your jobs</h2>
+                  <Link href="/jobs" className="inline-flex min-h-11 items-center text-sm text-ink-muted hover:text-ink hover:underline">
+                    All {allJobs.length} {allJobs.length === 1 ? "job" : "jobs"} &rarr;
+                  </Link>
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {cards.map((card) => (
+                    <JobCard key={card.id} job={card} />
+                  ))}
+                </div>
               </section>
             )}
 
-            {/* ------------------------------------ needs attention --- */}
-            {!isNewAccount && (
-            <section className="mt-6" data-tour="dashboard-needs-attention">
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
-                Needs attention
-              </h2>
-              {/* As many columns as this viewer has tiles, so a field role's
-                  single tile does not sit alone in a four-wide row. */}
-              <div className={NEEDS_ATTENTION_GRID[needsAttentionTiles]}>
-                {showsBilling && (
-                  <StatCard
-                    accent="rose"
-                    label="Overdue invoices"
-                    value={money(today.overdueTotal)}
-                    detail={
-                      today.overdue.length === 0
-                        ? "Nothing past its due date."
-                        : `${today.overdue.length} ${today.overdue.length === 1 ? "invoice" : "invoices"} past due`
-                    }
-                  />
-                )}
-                <StatCard
-                  accent="amber"
-                  label="Documents expiring"
-                  value={String(expiringSoon.length)}
-                  detail={
-                    expiringSoon.length === 0
-                      ? "Certificates and licences are current."
-                      : "Expired or due within 30 days"
-                  }
-                  href="/compliance"
-                />
-                {showsJobMoney && (
-                  <StatCard
-                    accent="violet"
-                    label="Jobs over budget"
-                    value={String(today.jobsOverBudget)}
-                    detail={
-                      today.jobsOverBudget === 0
-                        ? "No active job is forecast past its contract value."
-                        : "Forecast cost above contract value"
-                    }
-                  />
-                )}
-                {showsBilling && (
-                  <StatCard
-                    accent="teal"
-                    label="Retainage held"
-                    value={money(today.retainageHeld)}
-                    detail="Withheld and not yet released"
-                  />
-                )}
-              </div>
-            </section>
-            )}
-
-            {/* -------------------------------- today in the field ---- */}
-            {!isNewAccount && (
-            <section className="mt-8" data-tour="dashboard-field">
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
-                Today in the field
-              </h2>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <Card>
-                  <h3 className="text-sm font-semibold text-ink">Crews today</h3>
-                  {today.crews.length === 0 ? (
-                    <p className="mt-2 text-sm text-ink-body">
-                      No jobs are in progress right now.
-                    </p>
-                  ) : (
-                    <ul className="mt-3 divide-y divide-line-row">
-                      {today.crews.map((crew) => (
-                        <li key={crew.jobId} className="py-2.5">
-                          <Link href={`/jobs/${crew.jobId}`} className="block">
-                            <p className="text-sm font-medium text-ink">{crew.name}</p>
-                            <p className="text-xs text-ink-body">{crew.gcName}</p>
-                            <p className="mt-0.5 text-xs text-ink-body">
-                              {crew.crew.length === 0
-                                ? "Nobody assigned yet"
-                                : crew.crew.join(", ")}
-                            </p>
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </Card>
-
-                {complianceCard}
-              </div>
-            </section>
-            )}
-
-            {/* ------------------------------------------------ money -- */}
+            {/* ------------------------------------- who owes you -- */}
+            {/* The detail behind the Money block: every open invoice, and
+                how each GC has paid. */}
             {showsBilling && !isNewAccount && (
-            <section className="mt-8" data-tour="dashboard-money">
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
-                Money
-              </h2>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <section className="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <Card>
                   <h3 className="text-sm font-semibold text-ink">Accounts receivable</h3>
                   <p className="mb-2 text-xs text-ink-body">
-                    Outstanding invoices, longest overdue first. Open one for the detail.
+                    Outstanding {bill.lowerMany}, longest overdue first. Open one for the detail.
                   </p>
                   <ReceivablesList />
                 </Card>
@@ -451,27 +546,21 @@ export default async function TodayPage({
                   <h3 className="text-sm font-semibold text-ink">How your GCs pay</h3>
                   {today.gcReliability.length === 0 ? (
                     <p className="mt-2 text-sm text-ink-body">
-                      No invoices raised yet, so there is nothing to judge.{" "}
+                      No {bill.lowerMany} raised yet, so there is nothing to judge.{" "}
                       <Link href="/jobs" className="text-link hover:underline">
                         Open a job
                       </Link>{" "}
-                      and bill it under Billing — this fills in once a GC has paid one.
+                      and use its Billing tab — this fills in once a GC has paid one.
                     </p>
                   ) : (
                     <ul className="mt-3 divide-y divide-line-row">
                       {today.gcReliability.slice(0, 6).map((row) => (
                         <li key={row.contactId} className="flex items-baseline justify-between gap-3 py-2.5">
                           <Link href={`/contacts/${row.contactId}`} className="min-w-0">
-                            {/* NOT `truncate`. The GC's name is the only thing
-                                telling these rows apart, and at 375px this
-                                column is ~215px — enough for about 24
-                                characters, which turns "Turner Construction —
-                                West Region" and "…— East Region" into the same
-                                row. Wrapping costs a line; clipping costs the
-                                answer to the question the card exists for. */}
-                            <span className="block break-words text-sm font-medium text-ink">
-                              {row.name}
-                            </span>
+                            {/* NOT `truncate`: the GC's name is the only thing
+                                telling these rows apart, and at 375px two
+                                regions of one GC would clip to the same row. */}
+                            <span className="block break-words text-sm font-medium text-ink">{row.name}</span>
                             <span className="block text-xs text-ink-body">
                               {row.reliability.averageDaysToPay === null
                                 ? "Nothing paid in full yet"
@@ -479,10 +568,6 @@ export default async function TodayPage({
                             </span>
                           </Link>
                           <span className="shrink-0 text-right">
-                            {/* A bare em dash in a percentage slot reads as a
-                                broken screen. It means "nobody has paid one of
-                                theirs in full yet", which is a fact about the
-                                account rather than a fault, so it says so. */}
                             {row.reliability.onTimeRate === null ? (
                               <span className="block max-w-[7.5rem] text-xs text-ink-body">
                                 Not enough paid yet to say
@@ -501,229 +586,14 @@ export default async function TodayPage({
                     </ul>
                   )}
                 </Card>
-              </div>
-            </section>
+              </section>
             )}
 
-            {/* ------------------------------------------- job health -- */}
-            {/* The sentences here ARE the margin — "forecast 8% past
-                contract value" is the number said out loud. */}
-            {showsJobMoney && !isNewAccount && (
-            <section className="mt-8" data-tour="dashboard-job-health">
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-label">
-                Job health
-              </h2>
-              <Card>
-                {today.jobHealth.length === 0 ? (
-                  <p className="text-sm text-ink-body">No active jobs.</p>
-                ) : (
-                  <ul className="divide-y divide-line-row">
-                    {today.jobHealth.map((row) => (
-                      <li key={row.jobId} className="py-2.5">
-                        <Link href={`/jobs/${row.jobId}`} className="block">
-                          <div className="flex flex-wrap items-baseline justify-between gap-2">
-                            <p className="text-sm font-medium text-ink">{row.name}</p>
-                            <p className="text-xs text-ink-body">{row.gcName}</p>
-                          </div>
-                          <p className={`mt-0.5 text-sm ${HEALTH_TONE[row.tone]}`}>{row.sentence}</p>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Card>
-            </section>
-            )}
-
-            {/* --------------------------------------- browse all jobs - */}
-            {/* A new account's jobs empty state is at the top of the page. */}
-            {!isNewAccount && (
-            <section className="mt-10 border-t border-line-card pt-6">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="text-sm font-semibold text-ink">Browse all jobs</h2>
-                <p className="text-xs text-ink-body">
-                  {showsJobMoney
-                    ? `${money(pipelineValue)} still being priced across ${estimating.length} ${estimating.length === 1 ? "estimate" : "estimates"}`
-                    : `${estimating.length} ${estimating.length === 1 ? "estimate" : "estimates"} still being priced`}
-                </p>
-              </div>
-
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <Link
-                    href="/jobs/new"
-                    data-tour="dashboard-new-job"
-                    className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
-                  >
-                    New job
-                  </Link>
-                  <Link href="/catalog" className="text-sm text-link hover:underline">
-                    Line item catalog
-                  </Link>
-                  <Link href="/bids" className="text-sm text-link hover:underline">
-                    Bid history
-                  </Link>
-                </div>
-
-                <form className="flex flex-wrap items-center gap-2">
-                  {activeStatus && <input type="hidden" name="status" value={activeStatus} />}
-                  <input
-                    type="search"
-                    name="q"
-                    defaultValue={q}
-                    placeholder="Search job or client"
-                    className="w-52 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
-                  />
-                  <button
-                    type="submit"
-                    className="rounded-md border border-line-card bg-surface px-3 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
-                  >
-                    Search
-                  </button>
-                </form>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2 border-b border-line-card pb-4" data-tour="dashboard-job-filters">
-                {STATUS_FILTERS.map((filter) => {
-                  const isActive =
-                    filter.value === "ALL" ? activeStatus === null : activeStatus === filter.value;
-                  return (
-                    <Link
-                      key={filter.value}
-                      href={filterHref(filter.value, q)}
-                      className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
-                        isActive
-                          ? "border-brand bg-tag-brand text-tag-brand-ink"
-                          : "border-line-card bg-surface text-ink-body hover:text-ink"
-                      }`}
-                    >
-                      {filter.label}
-                    </Link>
-                  );
-                })}
-              </div>
-
-              {jobs.length === 0 ? (
-                <Card className="mt-6 text-sm text-ink-body">
-                  {q ? (
-                    <>
-                      Nothing matches “{q}”
-                      {activeStatus ? ` in ${GROUP_HEADING[activeStatus].toLowerCase()}` : ""}.{" "}
-                      <Link
-                        href={filterHref(activeStatus ?? "ALL")}
-                        className="text-link hover:underline"
-                      >
-                        Clear the search
-                      </Link>
-                      .
-                    </>
-                  ) : (
-                    <>
-                      Nothing {GROUP_HEADING[activeStatus as JobStatus].toLowerCase() === "estimating" ? "being estimated" : `marked ${GROUP_HEADING[activeStatus as JobStatus].toLowerCase()}`} right now.{" "}
-                      <Link href={filterHref("ALL", q)} className="text-link hover:underline">
-                        Show all jobs
-                      </Link>
-                      .
-                    </>
-                  )}
-                </Card>
-              ) : (
-                <div className="mt-6 flex flex-col gap-6" data-tour="dashboard-job-list">
-                  {grouped.map((group) => (
-                    <div key={group.status}>
-                      {!activeStatus && (
-                        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-label">
-                          {GROUP_HEADING[group.status]} · {group.rows.length}
-                        </h3>
-                      )}
-                      <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
-                        {group.rows.map((job) => {
-                          const stage =
-                            job.status === "ESTIMATE"
-                              ? estimateStage(
-                                  job.lineItems.length,
-                                  job.signatureRequests.map((request) => request.status),
-                                )
-                              : null;
-                          return (
-                            <li key={job.id} className="p-4">
-                              <Link href={`/jobs/${job.id}`} className="block">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <p className="font-medium text-ink">{job.name}</p>
-                                    <StatusBadge status={job.status} />
-                                    {stage && (
-                                      <span
-                                        className={`rounded-full border px-2 py-0.5 text-xs ${
-                                          STAGE_TONE[stage.key]
-                                        }`}
-                                      >
-                                        {stage.label}
-                                      </span>
-                                    )}
-                                  </div>
-                                  {showsJobMoney && (
-                                    <p className="text-sm font-medium tabular-nums text-ink">
-                                      {money(jobValue(job))}
-                                    </p>
-                                  )}
-                                </div>
-                                <p className="mt-0.5 text-sm text-ink-body">{job.contact.name}</p>
-                                {stage && (
-                                  <p className="mt-1 text-xs text-ink-body">{stage.detail}</p>
-                                )}
-                              </Link>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-            )}
           </PageShell>
         </div>
 
         <ReceivablesDetailPanel />
       </div>
     </ReceivablesProvider>
-  );
-}
-
-/** A summary tile. The accent bar is what separates these from the plain
- * cards below — a bar on everything would mark nothing. */
-function StatCard({
-  accent,
-  label,
-  value,
-  detail,
-  href,
-}: {
-  accent: "rose" | "amber" | "violet" | "teal";
-  label: string;
-  value: string;
-  detail: string;
-  href?: string;
-}) {
-  const body = (
-    <>
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-label">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums text-ink">{value}</p>
-      <p className="mt-0.5 text-xs text-ink-body">{detail}</p>
-    </>
-  );
-
-  return (
-    <Card accent={accent} className="p-4">
-      {href ? (
-        <Link href={href} className="block">
-          {body}
-        </Link>
-      ) : (
-        body
-      )}
-    </Card>
   );
 }

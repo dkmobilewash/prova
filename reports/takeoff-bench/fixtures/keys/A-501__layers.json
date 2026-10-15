@@ -1,0 +1,25 @@
+{
+ "caseId": "A-501__layers",
+ "sheetId": "A-501",
+ "variant": "layers",
+ "producer": "raw",
+ "title": "PARTITION TYPES",
+ "targets": "layerNames: the drawing says which lines are walls. The title block (G-ANNO-TTLB), the column grid (S-GRID), the ducts (M-DUCT), the ceiling grid (A-CLNG-GRID) and the furniture (A-FURN) are all nameable, and the grid is what the series test trips over",
+ "displayWidthPt": 2592,
+ "displayHeightPt": 1728,
+ "expectWalls": false,
+ "traps": [
+  "each partition type drawn as 2-6 parallel layer lines",
+  "legend is drawn at 3\" = 1'-0\""
+ ],
+ "scales": [
+  {
+   "view": "PARTITION TYPES",
+   "scaleName": "3\" = 1'-0\"",
+   "feetPerInch": 0.3333333333333333
+  }
+ ],
+ "scaleBehaviour": "name-it",
+ "expectedRefusal": null,
+ "walls": []
+}

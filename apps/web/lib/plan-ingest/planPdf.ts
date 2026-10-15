@@ -1,5 +1,5 @@
 import type { Buffer } from "node:buffer";
-import { segmentsFromOpenPage, type SheetStrokes } from "../takeoff/sheetStrokes";
+import { layersOf, segmentsFromOpenPage, type SheetStrokes } from "../takeoff/sheetStrokes";
 
 /**
  * READING A PLAN PDF ON THE SERVER — which six comments in this repo said was
@@ -150,6 +150,50 @@ export type PlanPdf = {
  * would then be handed a region with no title block in it, which reads as the
  * model failing. The first draft of this file had that bug.
  */
+/**
+ * ── A PDF'S TEXT IS NOT NECESSARILY SOMETHING POSTGRES WILL ACCEPT ──
+ *
+ * Three sheets of a 60-sheet set could not be read, every attempt, with the only
+ * message anybody saw being "This page could not be read. Nothing about it was
+ * saved." That sentence is what `runner.ts` writes when a stage THROWS, and it is
+ * deliberately generic because a thrown error's own text can carry a connection
+ * string. The real one was in the runtime log:
+ *
+ *   PostgresError { code: "22021",
+ *     message: "invalid byte sequence for encoding \"UTF8\": 0x00" }
+ *   at saveSheetText → prisma.planSheetText.upsert()
+ *
+ * A NUL byte in the title-block text. Postgres `text` cannot store `\u0000` at
+ * any length — it is not a size limit or an escaping problem, the type simply
+ * has no representation for it — and the three sheets carried two each. Measured
+ * over the whole file: 3 pages of 60, and they are exactly the three that failed.
+ *
+ * WHY IT LOOKED LIKE A BROKEN PAGE AND WAS NOT. Every other instrument said the
+ * pages were fine, because they are: pdfjs reads all three in 2-5ms, they are the
+ * CHEAPEST pages in the set at 47 text items and 76 segments, and running the real
+ * stage against the real file with in-memory ports returns `ok` for all of them.
+ * Only a real Postgres refuses. So the message blamed the drawing for something
+ * the storage layer could not swallow, and the three sheets it hid happened to be
+ * the partition schedule — the one sheet the estimating side actually needs.
+ *
+ * HERE RATHER THAN IN `saveSheetText`, which is where the throw came from. Every
+ * reader of a page's items goes through one loop in `openPlanPdf`, and several of
+ * them reach a `text` column by other routes — `declaredText` and `agreedText` on
+ * the scale reading, and the title-block prompt. Fixing the one call site named
+ * in the stack would leave the siblings broken for the next such file.
+ *
+ * LONE SURROGATES go too. They are not what was measured, and they are the same
+ * failure: an unpaired `\uD800`-`\uDFFF` has no UTF-8 encoding, so the driver
+ * raises the same class of error on the same write. PDFs produce them from
+ * damaged `ToUnicode` maps. The replacement character keeps the text's length
+ * and position meaningful rather than silently shortening a title block.
+ */
+export function storableText(raw: string): string {
+  return raw
+    .replace(/\u0000/g, "")
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "�");
+}
+
 export async function openPlanPdf(bytes: Buffer): Promise<PlanPdf> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   // THE WORKER, IMPORTED FOR ITS SIDE EFFECT, AND THIS LINE IS THE WHOLE FEATURE
@@ -208,6 +252,18 @@ export async function openPlanPdf(bytes: Buffer): Promise<PlanPdf> {
     verbosity: 0,
   }).promise;
 
+  // ── THE LAYER TABLE, READ ONCE FOR THE DOCUMENT ──
+  //
+  // `getOptionalContentConfig()` is a DOCUMENT call and the names it holds are
+  // the same on every page, so resolving it per page would re-read the same
+  // table for every sheet of a 300-page set. `null` for a file with no optional
+  // content, which is the ordinary flattened plot and must stay distinguishable
+  // from a group with no name.
+  //
+  // Lazily, and ONCE: a caller that never asks for strokes never pays for it,
+  // and `pageText` is a whole stage that never does.
+  let layers: Awaited<ReturnType<typeof layersOf>> | undefined;
+
   return {
     pageCount: doc.numPages,
     pageText: async (pageNumber: number) => {
@@ -218,7 +274,10 @@ export async function openPlanPdf(bytes: Buffer): Promise<PlanPdf> {
         const items: PlanTextItem[] = [];
         for (const item of content.items) {
           if (!("str" in item) || !("transform" in item)) continue;
-          const str = item.str;
+          // SANITISED AT THE SOURCE, not at the write. See `storableText`: every
+          // reader of a page's items routes through this loop, and several of
+          // them end up in a Postgres `text` column.
+          const str = storableText(item.str);
           if (str.trim().length === 0) continue;
           // [a, b, c, d, e, f]; e and f are the translation once the viewport's
           // rotation and flip have been composed in, so y runs DOWN from the top.
@@ -237,9 +296,10 @@ export async function openPlanPdf(bytes: Buffer): Promise<PlanPdf> {
       }
     },
     pageStrokes: async (pageNumber: number) => {
+      if (layers === undefined) layers = await layersOf(doc);
       const page = await doc.getPage(pageNumber);
       try {
-        return await segmentsFromOpenPage(page, pdfjs, pageNumber);
+        return await segmentsFromOpenPage(page, pdfjs, pageNumber, layers);
       } finally {
         page.cleanup();
       }

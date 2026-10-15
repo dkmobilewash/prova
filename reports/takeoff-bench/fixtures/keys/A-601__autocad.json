@@ -1,0 +1,552 @@
+{
+ "caseId": "A-601__autocad",
+ "sheetId": "A-601",
+ "variant": "autocad",
+ "producer": "raw",
+ "title": "DOOR AND WINDOW SCHEDULES",
+ "targets": "sheetStrokes CTM stack: Form XObject /Matrix arrives as paintFormXObjectBegin, not as a `cm`",
+ "displayWidthPt": 2592,
+ "displayHeightPt": 1728,
+ "expectWalls": false,
+ "traps": [
+  "two schedules side by side on the same baselines",
+  "blank cells (unrated doors)",
+  "remarks wrapped onto two lines",
+  "table rules 14pt apart"
+ ],
+ "scales": [],
+ "scaleBehaviour": "decline",
+ "expectedRefusal": null,
+ "walls": [],
+ "schedules": {
+  "door": {
+   "columns": [
+    "MARK",
+    "WIDTH",
+    "HEIGHT",
+    "TYPE",
+    "MATERIAL",
+    "FRAME",
+    "RATING",
+    "HDW SET",
+    "REMARKS"
+   ],
+   "rows": [
+    {
+     "MARK": "100A",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "20 MIN",
+     "HDW SET": "1",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "150A",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "90 MIN",
+     "HDW SET": "2",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "110",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "3",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "111",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "4",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "112",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "5",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "113",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "6",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "114",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "1",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "130",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "20 MIN",
+     "HDW SET": "2",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "131",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "3",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "132",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "4",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "133",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "5",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "134",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "6",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "120",
+     "WIDTH": "6'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "PR",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "90 MIN",
+     "HDW SET": "1",
+     "REMARKS": "PROVIDE CLOSERS AND FLUSH BOLTS"
+    },
+    {
+     "MARK": "118",
+     "WIDTH": "4'-6\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "SL",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "2",
+     "REMARKS": "TEMPERED SIDELITE"
+    },
+    {
+     "MARK": "116",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "20 MIN",
+     "HDW SET": "3",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "140",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "4",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "141",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "5",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "142",
+     "WIDTH": "6'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "PR",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "6",
+     "REMARKS": "PROVIDE CLOSERS AND FLUSH BOLTS"
+    },
+    {
+     "MARK": "143",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "HM",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "1",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "144",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "HM",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "2",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "145",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "HM",
+     "FRAME": "HM",
+     "RATING": "90 MIN",
+     "HDW SET": "3",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "146",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "HM",
+     "FRAME": "HM",
+     "RATING": "20 MIN",
+     "HDW SET": "4",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "121",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "5",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "122",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "90 MIN",
+     "HDW SET": "6",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "125",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "1",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "126",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "2",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "127",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "3",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "128",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "4",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "135",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "20 MIN",
+     "HDW SET": "5",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "136",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "6",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "137",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "1",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "102",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "2",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "103",
+     "WIDTH": "3'-0\"",
+     "HEIGHT": "7'-0\"",
+     "TYPE": "A",
+     "MATERIAL": "WD",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "3",
+     "REMARKS": ""
+    },
+    {
+     "MARK": "CO1",
+     "WIDTH": "6'-0\"",
+     "HEIGHT": "8'-0\"",
+     "TYPE": "CO",
+     "MATERIAL": "",
+     "FRAME": "HM",
+     "RATING": "",
+     "HDW SET": "",
+     "REMARKS": ""
+    }
+   ]
+  },
+  "window": {
+   "columns": [
+    "MARK",
+    "TYPE",
+    "WIDTH",
+    "HEIGHT",
+    "SILL",
+    "GLAZING"
+   ],
+   "rows": [
+    {
+     "MARK": "SF1",
+     "TYPE": "SF",
+     "WIDTH": "20'-0\"",
+     "HEIGHT": "10'-0\"",
+     "SILL": "0'-0\"",
+     "GLAZING": "1\" IGU LOW-E"
+    },
+    {
+     "MARK": "W1-1",
+     "TYPE": "W1",
+     "WIDTH": "4'-0\"",
+     "HEIGHT": "5'-0\"",
+     "SILL": "3'-0\"",
+     "GLAZING": "1\" IGU LOW-E"
+    },
+    {
+     "MARK": "W1-2",
+     "TYPE": "W1",
+     "WIDTH": "4'-0\"",
+     "HEIGHT": "5'-0\"",
+     "SILL": "3'-0\"",
+     "GLAZING": "1\" IGU LOW-E"
+    },
+    {
+     "MARK": "W1-3",
+     "TYPE": "W1",
+     "WIDTH": "4'-0\"",
+     "HEIGHT": "5'-0\"",
+     "SILL": "3'-0\"",
+     "GLAZING": "1\" IGU LOW-E"
+    },
+    {
+     "MARK": "W1-4",
+     "TYPE": "W1",
+     "WIDTH": "4'-0\"",
+     "HEIGHT": "5'-0\"",
+     "SILL": "3'-0\"",
+     "GLAZING": "1\" IGU LOW-E"
+    },
+    {
+     "MARK": "W1-E1",
+     "TYPE": "W1",
+     "WIDTH": "4'-0\"",
+     "HEIGHT": "5'-0\"",
+     "SILL": "3'-0\"",
+     "GLAZING": "1\" IGU LOW-E"
+    },
+    {
+     "MARK": "W1-E2",
+     "TYPE": "W1",
+     "WIDTH": "4'-0\"",
+     "HEIGHT": "5'-0\"",
+     "SILL": "3'-0\"",
+     "GLAZING": "1\" IGU LOW-E"
+    },
+    {
+     "MARK": "W2-1",
+     "TYPE": "W2",
+     "WIDTH": "5'-0\"",
+     "HEIGHT": "5'-0\"",
+     "SILL": "3'-0\"",
+     "GLAZING": "1\" IGU LOW-E"
+    },
+    {
+     "MARK": "W2-2",
+     "TYPE": "W2",
+     "WIDTH": "5'-0\"",
+     "HEIGHT": "5'-0\"",
+     "SILL": "3'-0\"",
+     "GLAZING": "1\" IGU LOW-E"
+    },
+    {
+     "MARK": "W2-3",
+     "TYPE": "W2",
+     "WIDTH": "5'-0\"",
+     "HEIGHT": "5'-0\"",
+     "SILL": "3'-0\"",
+     "GLAZING": "1\" IGU LOW-E"
+    },
+    {
+     "MARK": "W2-4",
+     "TYPE": "W2",
+     "WIDTH": "5'-0\"",
+     "HEIGHT": "5'-0\"",
+     "SILL": "3'-0\"",
+     "GLAZING": "1\" IGU LOW-E"
+    },
+    {
+     "MARK": "W2-5",
+     "TYPE": "W2",
+     "WIDTH": "5'-0\"",
+     "HEIGHT": "5'-0\"",
+     "SILL": "3'-0\"",
+     "GLAZING": "1\" IGU LOW-E"
+    },
+    {
+     "MARK": "W2-6",
+     "TYPE": "W2",
+     "WIDTH": "5'-0\"",
+     "HEIGHT": "5'-0\"",
+     "SILL": "3'-0\"",
+     "GLAZING": "1\" IGU LOW-E"
+    },
+    {
+     "MARK": "W1-W1",
+     "TYPE": "W1",
+     "WIDTH": "4'-0\"",
+     "HEIGHT": "5'-0\"",
+     "SILL": "3'-0\"",
+     "GLAZING": "1\" IGU LOW-E"
+    },
+    {
+     "MARK": "W1-W2",
+     "TYPE": "W1",
+     "WIDTH": "4'-0\"",
+     "HEIGHT": "5'-0\"",
+     "SILL": "3'-0\"",
+     "GLAZING": "1\" IGU LOW-E"
+    },
+    {
+     "MARK": "RL1",
+     "TYPE": "RL",
+     "WIDTH": "4'-0\"",
+     "HEIGHT": "4'-0\"",
+     "SILL": "3'-0\"",
+     "GLAZING": "1/4\" TEMP"
+    }
+   ]
+  }
+ }
+}

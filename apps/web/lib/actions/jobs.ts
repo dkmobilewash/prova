@@ -59,10 +59,12 @@ export async function createJob(formData: FormData): Promise<ActionResult> {
   const contactEmail = String(formData.get("contactEmail") ?? "").trim();
 
   if (!jobName) {
-    return actionFail("Give the job a name.");
+    return actionFail("Give the job a name.", { jobName: "Give the job a name." });
   }
   if (!contactId && !contactName) {
-    return actionFail("Pick the GC this job is for, or enter a name to add a new one.");
+    const message = "Pick the GC this job is for, or enter a name to add a new one.";
+    // Only one half of the picker is on screen; the other key finds nothing.
+    return actionFail(message, { contactId: message, contactName: message });
   }
 
   // The body lives in lib/estimating/create-job.ts, shared with the Ask
@@ -138,7 +140,7 @@ export async function addLineItem(jobId: string, formData: FormData): Promise<Ac
     const phaseCodeId = await phaseCodeIdFromForm(formData, company.id);
 
     if (!description) {
-      throw new InputError("Description is required");
+      throw new InputError("Description is required", "description");
     }
 
     await prisma.jobLineItem.create({

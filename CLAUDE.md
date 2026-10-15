@@ -104,15 +104,15 @@ Vercel deployment and repo settings). Each drives their own agent.
   surgically: schema files, `middleware.ts`, `navItems.tsx`,
   `lib/actions/shared.ts`, the actions barrel.
 
-  **AI IS DIEGO'S LANE AGAIN, FROM 2026-09-26.** That covers the whole of
-  it: the Ask assistant (`lib/ask/**`, `Ask*` components), the model
-  integration (`packages/integrations/src/{anthropic,ask,research,leads,
-  models}.ts`), the per-company AI switch (`lib/ai/**`,
-  `lib/actions/aiSettings.ts`), AI extraction, AI usage metering, and the
-  takeoff/estimating AI work now in progress.
+  **AI IS SHARED, FROM 2026-10-12 — NEITHER PERSON'S LANE.** Agreed by
+  both in `#prova-build` that day: no split. Whoever is working on an AI
+  piece (Ask, the agents and `/ai`, the model integration, the AI switch,
+  AI extraction, usage metering, the takeoff/estimating AI) keeps it; ask
+  before changing something the other is actively working on. The money
+  and estimating logic under any AI feature stays Diego's.
 
   **READ THE SHAPE OF THIS ENTRY BEFORE ITS CONTENT, because it has now been
-  wrong in both directions and each version was true when written.** This
+  in three states (Diego's, Cyrus's, shared) and each was true when written.** This
   paragraph said AI was Diego's until 2026-09-21, then said in bold that it
   had "moved from Diego to Cyrus" and that "any older line in this repo or
   its PR history calling AI 'Diego's lane' is stale" — which was correct for
@@ -825,6 +825,160 @@ anything about SIZE.
   `deploymentId` for the window of the run before reading a single
   verdict, and treat "the paste came through empty" as a separate problem
   from "the run happened".
+- **THE PAGE WILL TELL YOU WHICH COMMIT IT IS SERVING, AND IT IS THE ONLY
+  ANSWER HERE THAT CANNOT BE STALE.** 2026-10-13. Every `<script>` Next emits
+  carries a `dpl=` query parameter, and on this project **its value is the first
+  32 characters of the git commit SHA**:
+
+  ```js
+  [...document.querySelectorAll('script[src*="dpl="]')]
+    .map((s) => s.src.match(/dpl=([0-9a-f]{32})/)?.[1]).filter(Boolean)[0]
+  ```
+
+  | read from | `dpl=` | commit |
+  | --- | --- | --- |
+  | `app.cstream.ai` | `4c9a33f0e231d702288296f6a5236069` | `4c9a33f0…7c3ca878` (prod) |
+  | the previous production deployment's own URL | `8ca399f67f7ba79f8fb590e1041267cb` | `8ca399f6…fa33fc66` (prod) |
+  | a preview deployment's own URL | `205795e9c75a640f7796d60b1ec88d62` | `205795e9…739664e8` (preview) |
+
+  **Why it outranks everything else this file tells you to check.** It needs no
+  dashboard, no token and no MCP, so a browser tester can answer "am I on the
+  new build" themselves — and `curl | grep` answers it for an agent in one
+  line. An alias listing, a project's `latestDeployment` and a deployment's
+  `state` are all assertions ABOUT the serving; this is the serving. The
+  entries above about a cached `status` field and about green checks on a
+  commit nobody asked about are the same lesson twice, and this is the first
+  instrument in this section that is immune to it.
+
+  **It was a browser tester who produced it, unprompted**, by reporting the
+  `dpl=` value as circumstantial evidence while stopping at step 0 of a
+  click-list. It was the fact that cracked the whole afternoon, and no API call
+  anybody made that day was as decisive.
+
+  **Put it at the top of any click-list that follows a deploy**, as one exact
+  string to match rather than a sentence to compare. Telling a tester to look
+  for changed wording makes them judge; telling them to match 32 hex characters
+  does not, and a stale tab is then one line into the run instead of six steps
+  in.
+
+  **Two bounds, both real.** It names the COMMIT, not whether users are getting
+  it — for that you still need the hostname the app actually runs on, which is
+  the trap in the next paragraph. And all four samples are git-sourced
+  deployments; what a CLI or file-upload deployment puts there is UNTESTED, so
+  verify the mapping before trusting it on a project that deploys that way.
+
+- **NAME THE HOSTNAME, NOT "THE CUSTOM DOMAINS" — AND PRODUCTION CAN GO
+  BACKWARDS WITHOUT ANYBODY ROLLING IT BACK.** 2026-10-13, the episode the entry
+  above came out of, and the fourth member of the "name the endpoint, never say
+  'the database'" family alongside the two Neon projects and the three Clerk
+  instances.
+
+  Vercel's GitHub integration refused three successive merges to `main` with
+  **"Deployment rate limited — retry in 24 hours"** (the Hobby daily deploy cap,
+  tripped at 00:25Z), so each one landed with **no Vercel deployment at all** —
+  the "a push produced no Vercel deployment" scar, three times in one evening.
+  One session then made a DIRECT deployment request for the oldest of them to
+  get it shipped. That was accepted while the cap was still refusing pushes, so:
+  **the cap applies to the git integration, not to the API**, which is the
+  escape hatch worth knowing. It also deployed a commit that two newer merges
+  had already superseded, and it took the production alias — moving production
+  BACK to its own parent commit for 26 minutes. Nobody rolled anything back.
+
+  **The expensive part was a falsifier aimed at the wrong hostname.** That
+  session checked whether the deployment had taken "the custom domains", found
+  their `updatedAt` frozen, and reported it had NOT taken production. The
+  domains it read were `cstream.ai` and `www.cstream.ai`. **The app runs on
+  `app.cstream.ai`**, whose `updatedAt` had moved — and a click-through
+  independently read the superseded commit off the live page thirteen minutes
+  later. The reasoning was sound and the hostname was wrong, and a tester was
+  sent at a build that did not exist yet.
+
+  This project has SIX domains (`get_project` lists them) and only one of them
+  is the app. So: assert the alias of the HOST you mean by name, and read the
+  page's own `dpl=` as the second witness. One of those two alone is what this
+  cost.
+
+  **WHAT THE LIMIT ACTUALLY IS, measured rather than inherited.** It was first
+  diagnosed in Slack as the Hobby *daily* deploy cap. It is not: only **17
+  deployments existed in the 24 hours before the refusal**, and all of that
+  day's nineteen sit inside a four-and-a-half-hour window, six of them in the
+  hour before it. So it is a BURST limit. The account is `plan: "hobby"` with
+  `concurrentBuilds: 1` and `softBlock: null` (from `get_auth_user`), and Vercel
+  does not publish the threshold — so do not write a number here.
+
+  Two consequences worth more than the diagnosis:
+
+    - **A direct deployment request still works while pushes are being
+      refused.** `create_deployment` with a `gitSource` was accepted 33 minutes
+      into the refusal and went live normally. That is the way to ship a merge
+      the integration has dropped, and it builds rather than promotes, so
+      `check-schema.mjs` still runs.
+    - **Every commit was building BOTH projects**, because neither
+      `vercel.json` had an `ignoreCommand`. Over `main`'s last 30 commits, 27
+      changed nothing `apps/lien-waiver` depends on — nine builds in ten spent
+      rebuilding a marketing tool whose files had not moved, while the product's
+      own merges were refused for going too fast. `apps/lien-waiver/vercel.json`
+      now skips those; `apps/lien-waiver/lib/deployTrigger.test.ts` carries the
+      reasoning, because `vercel.json` cannot hold a comment and the polarity is
+      invertible in a way that fails silently.
+
+  **`apps/web` DELIBERATELY HAS NO `ignoreCommand`, and that asymmetry is the
+  point.** A skipped build leaves the previous deployment serving, so a project
+  that skips can legitimately sit behind `main` — which is indistinguishable, on
+  the `dpl=` check above, from the deploy failure that produced this entry. The
+  saving is taken only where being a commit behind costs nothing. The test pins
+  it so nobody optimises the product's deploys into that ambiguity.
+
+- **A 503 ON A SAVE IN THE FIRST MINUTES AFTER A DEPLOY IS THE ALIAS SWAP,
+  NOT YOUR CODE — AND THE WRITE STILL LANDS.** 2026-10-13, reported twice by
+  browser click-throughs of the same form, each run started within minutes of
+  being told the build was live.
+
+  The shape, because it reads alarmingly: the page says **"Saved."**, the
+  network panel shows the POST returning **503**, and the value is correctly
+  stored — confirmed by reload every time. A tester's natural reading is "the
+  UI lies about saving", which is the right worry and the wrong conclusion.
+
+  | saves observed | result |
+  | --- | --- |
+  | run 1, minutes after a deploy | 2 of 2 said "Saved."; both 503; both persisted |
+  | run 2, minutes after a deploy | 4 saves, 2 × 200 and 2 × 503; **all four persisted** |
+  | run 3, build ~10 min old and warm | repeated saves, **no 503 at all** |
+
+  **ELIMINATED, so nobody spends the afternoon:**
+    - **Not our code throwing.** Vercel reported ZERO runtime errors across
+      two separate windows covering both runs.
+    - **Not the action's own request.** An `ActionResult` form awaits the
+      action and branches on `result.ok` BEFORE showing success, and a thrown
+      (production-redacted) error is caught into a sentence — so a failed
+      action request produces an error line, not "Saved.". The data landing
+      every time says the same thing from the other side.
+    - **Not a lying success indicator.** Worth stating separately because it
+      is what the report alleges. `openingDeduction.test.ts` pins the
+      ordering: the ok check returns before the success flag is set.
+
+  So the remaining candidate is the `router.refresh()` that follows a
+  successful save, landing on a deployment whose alias has just been swapped
+  onto a cold function. Its failure is invisible to the person, because the
+  form already shows what they typed.
+
+  **NOT PROVEN, and here is the bound.** The MCP's runtime logs carry no
+  status codes (the tool's own CLI-fallback note says so), so they cannot
+  identify which request 503'd; the Vercel CLI, which reads request logs that
+  do, is not installed on this machine. The evidence is the correlation with
+  deploy age plus the three eliminations above — not a log row naming the
+  path. **A request log would settle it, and the dashboard's Logs tab keeps
+  only the last hour**, so it has to be read while the run is fresh: press
+  Save a few times, then filter `/settings` immediately and look for
+  `GET /settings?_rsc=…` (the refresh) against `POST /settings` (the action).
+  A fresh attempt on a warm build produced no 503 to read.
+
+  **What reopens this:** a 503 with NO deploy in the preceding ten minutes.
+  Until then, do not re-diagnose it, and do not let a click-through's "the
+  page said Saved but the request failed" send you looking at the form —
+  check the deployment's age first. It is also why the live-build check in
+  this file's own workflow matters: telling somebody to click the moment a
+  deploy lands is how you walk them into this.
 - **Do not promote a preview to production.** Merge to `main` instead, so
   the build actually runs. Previews are public (no deployment protection),
   carry the branch's latest commit at a stable alias, and are what browser
@@ -2774,6 +2928,91 @@ anything about SIZE.
   on never appeared.** A defect inside dead code is invisible to every
   instrument, including the ones written for that exact defect.
 
+- **ONE SETTING, FIVE PRs, AND FOUR OF THE FIVE DEFECTS WERE FOUND BY
+  CLICKING.** 2026-10-13, the openings-deduction setting (#763 → #767). The
+  fifth member of the family directly above, and the one that says what the
+  other four were circling: the instruments in this repo are good at the
+  questions they ask, and a person on the screen asks a different question
+  entirely.
+
+  Every defect below shipped with its own census or unit test, written for
+  that exact feature, passing honestly. Not one of them was weak. Each was
+  blind in a way that only a human looking at the screen could see:
+
+  | # | the defect | the check that was green |
+  | --- | --- | --- |
+  | #764 | the setting could not be SAVED at all | a census said the question rendered; a unit test said it was not `required` |
+  | #765 | two of four options did the IDENTICAL thing, labelled as differing | "gives every answer a distinct threshold, so none is a dead option" |
+  | #766 | "only the big ones" secretly meant 32 and no shop could say 50 | every test about what 32 does, all correct |
+  | #767 | the size field sat under the WRONG option | the name, parse, save, threshold and quantity, all asserted |
+
+  **Each one has a transferable shape, and they are different shapes.**
+
+  **PRESENT IS NOT USABLE (#764).** The three business-scope radios are
+  `required`, so the BROWSER refused to submit the form until all three were
+  answered — and an optional fourth question sharing their form could not be
+  saved by any company that had skipped onboarding, which is every company
+  that had not answered those three. A census reads SOURCE; `required` does
+  its work in the browser. No assertion about the new field could have found
+  it, because the field was perfect and a SIBLING killed the submit. The fix
+  was structural — its own form, its own action, nothing else on either — and
+  the replacement assertion is a property source can carry: no `required`
+  input anywhere on that form.
+
+  **A DISTINCTNESS CHECK OVER A STORED ENUM CANNOT SEE A UI OPTION THAT IS NOT
+  IN IT (#765).** The test iterated the three enum values. The form offered
+  FOUR, because "unanswered" needs a control of its own, and unanswered
+  resolves to the same 32 sq ft as "only the big ones" — so two of the four
+  did the same thing while the label promised they differed. The collision is
+  NOT a bug and must not be "fixed": unanswered has to stay 32 or existing
+  quantities move. It is pinned as an equality now, with the screen's honesty
+  asserted beside it. Same sentence as the rest of the family, one step
+  sideways: *nothing is ever missing from a list that does not contain it.*
+
+  **NO TEST HERE CAN SEE LAYOUT, AND THIS IS THE SECOND ENTRY TO PAY FOR IT
+  (#767).** The size field was rendered after the options loop, which put it
+  under the LAST radio while the number it sets applies only to the middle
+  one. Nothing was mis-wired — name, parse, save, threshold, quantity all
+  correct and all asserted. The "Cancel inherits the delete pixel" entry
+  already records that happy-dom does no layout and returns zeros from
+  `getBoundingClientRect`; that entry is about geometry WITHIN a control
+  cluster, and this one is about which sentence a control appears to belong
+  to. The only instrument for either is an eye. What source CAN carry, and
+  now does, is that the field renders INSIDE the loop, conditional on its own
+  option's value.
+
+  **AND A CENSUS OVER A FILE THAT DOCUMENTS ITS OWN HISTORY MUST READ CODE,
+  NEVER TEXT.** Paid twice in one file, hours apart. `OpeningDeductionForm.tsx`
+  explains the bugs it exists to fix, and those explanations quote the very
+  strings the assertions forbid: first the word `required`, then the phrase
+  "the same as" in the comment recording that the label no longer says it.
+  Both times the census failed on prose describing why the code is correct —
+  the mirror image of #185, where a comment quoting a census's own pattern
+  disarmed it. `clerkMountGate.test.ts` strips comments for the same reason.
+  **The better the comment, the more likely it contains the string you are
+  forbidding.** The helper is at module scope in
+  `openingDeduction.test.ts`; use it, and do not assert over raw text in a
+  file written in this repo's house style.
+
+  **What this does NOT mean.** It is not an argument for fewer tests: the
+  censuses caught four separate defects in the same work that a person would
+  not have — an invented colour token (`text-ink-on-brand`, which Tailwind
+  emits nothing for, so the Save label would have been invisible on the
+  yellow), a `type="number"` input that would have SILENTLY BLANKED a shop's
+  threshold and billed them at 32 (measured in real Chromium: a value the
+  browser dislikes submits an empty string), an action nobody had decided
+  whether Ask may call, and a function asking for a wider type than it reads.
+  Two of those four were money bugs. The rule is not "trust clicking over
+  tests"; it is **ask what question each instrument is answering, and notice
+  that a screen answers one no test in this repo asks.**
+
+  So the practical form, for the next feature: after the suites are green,
+  the click-list is not a formality. Write it to ask the questions the suites
+  structurally cannot — can a person actually complete this, do two controls
+  do the same thing, is each control beside the thing it affects — and put a
+  PERSON on it, with a numbered expected result per step so a wrong result is
+  unmistakable.
+
 - **A FILE THE AGENT BROWSER CANNOT FETCH, AND THE SEED THAT MAKES IT NOT
   MATTER.** 2026-10-03, verifying #596's payroll export.
 
@@ -2813,6 +3052,16 @@ anything about SIZE.
   needs real rows to say anything, grow the fixture rather than reaching for
   production.**
 
+- **Takeoff geometry is computed by code in `apps/web/lib/takeoff/`, never by
+  the LLM.** Every length, thickness, area and coordinate comes from the PDF's
+  own vector geometry; the model is used for interpretation only — what kind of
+  sheet this is, what a run IS, what a label means — and no model reply in this
+  repo carries a coordinate, a length or an area. Two fixture sets grade it and
+  they are not interchangeable: `reports/takeoff-bench` is the only one with
+  wall-footage ground truth, and `lib/takeoff/fixtures` is twenty sheets drawn
+  by a different generator, where **only what a drawing PRINTS may be ground
+  truth**. See `apps/web/lib/takeoff/NOTES.md` for the latest numbers and the
+  known limitations in the order they cost the most.
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.
 - `CHANGELOG.md`: newest first; says why decisions were made and the

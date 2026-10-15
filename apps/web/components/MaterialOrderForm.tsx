@@ -10,7 +10,7 @@ import {
   type LineItemOption,
   type VendorOption,
 } from "@/components/MaterialOrderFields";
-import { localToday } from "@/components/localToday";
+import { useLocalToday } from "@/components/localToday";
 import { Spinner } from "@/components/Spinner";
 
 /** An order needs both a job to belong to and a vendor to be owed by, so
@@ -36,16 +36,21 @@ export function MaterialOrderForm({
   vendors,
   lineItems,
   defaultJobId,
+  startOpen = false,
 }: {
   jobs: JobOption[];
   vendors: VendorOption[];
   lineItems: LineItemOption[];
   defaultJobId?: string;
+  /** Open on arrival — the page was reached by a create shortcut (`?new=1`). */
+  startOpen?: boolean;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(startOpen);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const draft = useFormDraft("material-order:create");
+  // After mount, not in render: `?new=1` opens this form in server markup.
+  const today = useLocalToday();
 
   if (jobs.length === 0) {
     return (
@@ -125,14 +130,14 @@ export function MaterialOrderForm({
 
       <label className={labelClass}>
         Date ordered
-        <input type="date" name="orderedOn" required defaultValue={localToday()} className={inputClass} />
+        <input type="date" name="orderedOn" required defaultValue={today} className={inputClass} />
         <span className="text-xs text-ink-muted">
           The date you actually placed it, not today — backdate it when you&apos;re entering orders
           already out.
         </span>
       </label>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       <div className="flex gap-2">
         <button
@@ -156,7 +161,7 @@ export function MaterialOrderForm({
             setIsOpen(false);
             setError(null);
           }}
-          className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+          className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
         >
           Cancel
         </button>

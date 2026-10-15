@@ -45,6 +45,22 @@ model WallType {
   /// type without a default and a run without a height produce NOTHING rather
   /// than a guessed 10 feet.
   defaultHeightFt Decimal? @db.Decimal(8, 2)
+  /// Finish to finish, in inches — what a tape measure reads across the wall.
+  ///
+  /// THE ONE THING THAT CONNECTS A DRAWING TO A PRICE. The wall finder measures
+  /// thickness off the sheet's own line work and knows nothing else about a
+  /// wall; this library knows everything about a wall except how thick it is.
+  /// Without this column a detected 4⅞″ group can only be priced when the
+  /// architect happened to tag that particular run, which is 25-43% of the
+  /// footage on a sheet — an architect tags representative walls, not every
+  /// wall.
+  ///
+  /// NULLABLE, and it stays nullable. A company's own standing assemblies were
+  /// typed in by a person who was never asked for a thickness, and backfilling
+  /// one by inference from the components would be a guess that prices walls.
+  /// Null means "this type cannot be matched by thickness", which is the honest
+  /// state and is what the matcher reads it as.
+  thicknessIn     Decimal? @db.Decimal(6, 2)
   /// 1 or 2 boarded sides. A demising wall is 2; furring against masonry is 1.
   sides           Int      @default(2)
   studSpacingIn   Decimal  @default(16) @db.Decimal(6, 2)

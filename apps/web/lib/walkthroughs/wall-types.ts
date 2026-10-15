@@ -21,7 +21,7 @@ export const wallTypesWalkthrough: Walkthrough = {
       anchor: "wall-types-add",
       title: "Add a wall type",
       body:
-        "Give it the tag from the drawings and say what it is. Then open a job's Estimate tab and enter each run of wall under Wall schedule — the studs, track and board are worked out for you.",
+        "Give it the tag from the drawings and say what it is. Then open a job's estimate page (its Estimate step) and enter each run of wall under Wall schedule — the studs, track and board are worked out for you.",
     },
   ],
 };

@@ -242,8 +242,8 @@ export function SheetPinSurface({
       )}
 
       {pages.length === 0 ? (
-        <div className="space-y-2 rounded-md border border-slate-700 bg-slate-900/60 p-4">
-          <p className="text-sm text-slate-200">
+        <div className="space-y-2 rounded-md border border-line-card bg-surface/60 p-4">
+          <p className="text-sm text-ink-label">
             {/* Said as the thing it is. A link to Procore is fine for reading
                 the drawing and cannot be pinned on, and a person has no way to
                 know that unless it is written here. */}
@@ -259,12 +259,12 @@ export function SheetPinSurface({
               const file = e.target.files?.[0];
               if (file) void uploadDrawing(file);
             }}
-            className="block w-full text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-sky-500 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-950"
+            className="block w-full text-sm text-ink-body file:mr-3 file:rounded-md file:border-0 file:bg-sky-500 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-950"
           />
         </div>
       ) : unprepared > 0 ? (
-        <div className="flex flex-wrap items-center gap-3 rounded-md border border-slate-700 bg-slate-900/60 p-3 text-sm">
-          <span className="text-slate-300">
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-line-card bg-surface/60 p-3 text-sm">
+          <span className="text-ink-body">
             {unprepared} of {pages.length} {pages.length === 1 ? "sheet is" : "sheets are"} not ready for the
             phone yet.
           </span>
@@ -287,7 +287,7 @@ export function SheetPinSurface({
       ) : null}
 
       {busy && pages.length === 0 && (
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-ink-muted">
           <Spinner />
           {busy}
         </p>
@@ -295,7 +295,7 @@ export function SheetPinSurface({
 
       {pages.length > 1 && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm text-slate-400">Sheet</span>
+          <span className="text-sm text-ink-muted">Sheet</span>
           {pages.map((row, i) => (
             <button
               key={row.id}
@@ -305,11 +305,11 @@ export function SheetPinSurface({
               className={`rounded-md border px-3 py-2 text-sm ${
                 i === index
                   ? "border-sky-400 bg-sky-400/15 text-sky-100"
-                  : "border-slate-700 text-slate-300 hover:border-slate-500"
+                  : "border-line-card text-ink-body hover:border-line-card"
               }`}
             >
               {row.pageNumber}
-              {row.pins.length > 0 && <span className="ml-1 text-xs text-slate-400">({row.pins.length})</span>}
+              {row.pins.length > 0 && <span className="ml-1 text-xs text-ink-muted">({row.pins.length})</span>}
             </button>
           ))}
         </div>

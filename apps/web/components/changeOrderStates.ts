@@ -46,7 +46,7 @@ export const STATUS_LABEL: Record<ChangeOrderStatus, string> = {
  * nothing-happened states are not the same colour.
  */
 export const STATUS_STYLE: Record<ChangeOrderStatus, string> = {
-  DRAFT: "border-neutral-400 bg-neutral-800 text-ink-label",
+  DRAFT: "border-neutral-400 bg-rail-hover text-ink-label",
   SUBMITTED: "border-amber-600 bg-tag-amber text-tag-amber-ink",
   APPROVED: "border-emerald-700 bg-tag-green text-tag-green-ink",
   REJECTED: "border-rose-700 bg-tag-rose text-tag-rose-ink",

@@ -14,10 +14,10 @@ import {
 import { registrySummaryLine } from "@/lib/sales-registry";
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 const FOLLOW_UP_STYLE = {
-  OVERDUE: "text-red-400",
+  OVERDUE: "text-danger",
   DUE_TODAY: "text-tag-amber-ink",
   UPCOMING: "text-ink-muted",
 } as const;
@@ -132,10 +132,8 @@ export function SalesLeadRow({ lead }: { lead: SalesLeadRowLead }) {
                 </span>
               )}
               {lead.source && (
-                <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs text-ink-body">
-                  {SALES_LEAD_SOURCE_OPTIONS.find(
-                    (o) => o.value === lead.source,
-                  )?.label ?? lead.source}
+                <span className="rounded-full bg-rail-hover px-2 py-0.5 text-xs text-ink-body">
+                  {SALES_LEAD_SOURCE_OPTIONS.find((o) => o.value === lead.source)?.label ?? lead.source}
                 </span>
               )}
             </div>
@@ -204,7 +202,7 @@ export function SalesLeadRow({ lead }: { lead: SalesLeadRowLead }) {
         }
       />
 
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
     </li>
   );
 }

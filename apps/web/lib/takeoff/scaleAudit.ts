@@ -2,10 +2,12 @@ import type { Buffer } from "node:buffer";
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { openPlanPdf, titleBlockText } from "../plan-ingest/planPdf";
-import { dimensionLabels } from "../plan-ingest/dimensionLabels";
+import { dimensionLabels, metricDimensionLabels } from "../plan-ingest/dimensionLabels";
 import { standardScaleFromText } from "../takeoff-plan";
 import { readSheetScale } from "./scaleFromDimensions";
 import { scaleFromPrinted } from "./scaleFromPrinted";
+import { scaleFromBar } from "./scaleFromBar";
+import { scaleBarLabels } from "./scaleBar";
 
 /**
  * AUDITING AUTOMATIC SCALE OVER A WHOLE BID PACKAGE, and the point is that the
@@ -186,6 +188,15 @@ export type AuditPage = {
   inheritedError: number | null;
   /** Why it declined, when it did. */
   reason: string | null;
+  /**
+   * What the sheet's own GRAPHIC SCALE BAR says, if it carries one.
+   *
+   * A fourth witness, and reported beside the others rather than folded into
+   * `derived` so the question this audit exists to answer stays askable: of the
+   * pages the three text-and-geometry readers DECLINE, how many does the bar
+   * rescue? Folding it in would improve the headline and lose the measurement.
+   */
+  bar: string | null;
   widthPt: number;
   heightPt: number;
 };
@@ -265,13 +276,21 @@ export async function auditPlanFile(file: string, bytes: Buffer, maxPages = 400)
         // the app does not have. `pageInventory.ts` passes it because a line
         // under `MIN_CALIBRATION_SPAN` cannot be saved — an audit without it
         // would keep reporting coverage that an estimator cannot reach.
-        const verdict = readSheetScale(text, strokes.segments, labels);
+        // THE SAME TWO PASSES THE STAGE RUNS. An audit that reads only
+        // imperial would report a metric set as unreadable and send somebody
+        // to fix a reader that works — the shape this file exists to avoid.
+        const verdict = readSheetScale(text, strokes.segments, labels, {}, metricDimensionLabels(text));
         // THE WHOLE PAGE, not the title block — see `printedScalesOnPage`. More
         // than one distinct scale means the sheet carries views at different
         // scales, which is ordinary drafting and not something to resolve by
         // picking one.
         const printedScales = printedScalesOnPage(text.items);
         const printed = printedScales.length === 1 ? printedScales[0] : null;
+        // THE SHEET'S OWN RULER, read from the same text pass. Needs no scale
+        // and no other sheet, which is why it can rescue a page both the
+        // dimension reader and the printed name have declined.
+        const barRead = scaleFromBar(scaleBarLabels(text.items, text.widthPt), text.widthPt);
+        const bar = barRead.ok ? barRead.scaleName : null;
 
         if (!verdict.ok) {
           const fallback = scaleFromPrinted(printedScales, text.widthPt, text.heightPt);
@@ -289,6 +308,7 @@ export async function auditPlanFile(file: string, bytes: Buffer, maxPages = 400)
             agreed: 0,
             inheritedError: null,
             reason: verdict.reason,
+            bar,
             widthPt: text.widthPt,
             heightPt: text.heightPt,
           });
@@ -306,6 +326,7 @@ export async function auditPlanFile(file: string, bytes: Buffer, maxPages = 400)
           agreed: verdict.agreed.length,
           inheritedError: verdict.inheritedError,
           reason: null,
+          bar,
           widthPt: text.widthPt,
           heightPt: text.heightPt,
         });
@@ -321,6 +342,7 @@ export async function auditPlanFile(file: string, bytes: Buffer, maxPages = 400)
           agreed: 0,
           inheritedError: null,
           reason: error instanceof Error ? error.message : String(error),
+          bar: null,
           widthPt: 0,
           heightPt: 0,
         });

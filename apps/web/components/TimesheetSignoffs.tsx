@@ -21,7 +21,7 @@ export type TimesheetSignoffRowData = {
 };
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-body hover:border-line-card disabled:opacity-50";
 
 const STATE_LABEL: Record<TimesheetSignoffRowData["state"], string> = {
   SUBMITTED: "Signed — waiting for approval",
@@ -30,9 +30,9 @@ const STATE_LABEL: Record<TimesheetSignoffRowData["state"], string> = {
 };
 
 const STATE_CLASS: Record<TimesheetSignoffRowData["state"], string> = {
-  SUBMITTED: "bg-amber-500/10 text-amber-300",
-  APPROVED: "bg-emerald-500/10 text-emerald-300",
-  REOPENED: "bg-slate-800 text-slate-400",
+  SUBMITTED: "bg-amber-500/10 text-warn",
+  APPROVED: "bg-emerald-500/10 text-ok",
+  REOPENED: "bg-rail-hover text-ink-muted",
 };
 
 /**
@@ -86,7 +86,7 @@ function SignoffRow({ row, canApprove }: { row: TimesheetSignoffRowData; canAppr
 
   return (
     <li
-      className={`flex flex-wrap items-start justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm ${
+      className={`flex flex-wrap items-start justify-between gap-3 rounded-lg border border-line-row bg-surface p-3 text-sm ${
         live ? "" : "opacity-70"
       }`}
     >
@@ -94,10 +94,10 @@ function SignoffRow({ row, canApprove }: { row: TimesheetSignoffRowData; canAppr
         <SignatureImage path={row.signaturePath} label={`Signature of ${row.signerName}`} />
         <div className="flex flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-slate-100">{row.dateLabel}</span>
+            <span className="text-ink">{row.dateLabel}</span>
             <span className={`rounded px-1.5 py-0.5 text-xs ${STATE_CLASS[row.state]}`}>{STATE_LABEL[row.state]}</span>
           </div>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-ink-muted">
             {row.signerName} signed {row.entryCount} {row.entryCount === 1 ? "entry" : "entries"}, {row.totalHours}h
           </span>
           <span className="text-xs text-ink-muted">{row.signedLabel}</span>
@@ -108,7 +108,7 @@ function SignoffRow({ row, canApprove }: { row: TimesheetSignoffRowData; canAppr
               {row.reopenReason ? ` — ${row.reopenReason}` : ""}
             </span>
           )}
-          {error && <span className="text-sm text-red-400">{error}</span>}
+          {error && <span className="text-sm text-danger">{error}</span>}
         </div>
       </div>
 
@@ -143,21 +143,21 @@ function SignoffRow({ row, canApprove }: { row: TimesheetSignoffRowData; canAppr
             );
           }}
         >
-          <label className="flex flex-col gap-1 text-xs text-slate-400">
+          <label className="flex flex-col gap-1 text-xs text-ink-muted">
             Why is it being reopened? This stays on the record.
             <input
               name="reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               maxLength={500}
-              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100"
+              className="rounded-md border border-line-card bg-canvas px-2 py-1.5 text-sm text-ink"
             />
           </label>
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending || reason.trim() === ""}
-              className="rounded-md border border-amber-500 px-3 py-1.5 text-xs text-amber-300 hover:bg-amber-500/10 disabled:opacity-50"
+              className="rounded-md border border-amber-500 px-3 py-1.5 text-xs text-warn hover:bg-amber-500/10 disabled:opacity-50"
             >
               {isPending ? "Reopening…" : "Reopen the day"}
             </button>

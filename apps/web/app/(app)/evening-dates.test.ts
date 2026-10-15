@@ -275,12 +275,12 @@ afterAll(() => {
   vi.useRealTimers();
 });
 
-/** The money in a labelled StatCard, so an assertion names a figure rather
- * than a blob of markup. */
-function statCard(html: string, label: string): string | null {
-  const at = html.indexOf(`>${label}</p>`);
+/** The whole-dollar figure stacked directly above a Money-block caption. */
+function moneyFigure(html: string, label: string): string | null {
+  // `<` rather than `</span>`: a linked figure's label is followed by its " →" cue.
+  const at = html.indexOf(`>${label}<`);
   if (at === -1) return null;
-  return html.slice(at).match(/\$[\d,]+\.\d\d/)?.[0] ?? null;
+  return html.slice(0, at).match(/>(\$[\d,]+)<\/span><span[^>]*$/)?.[1] ?? null;
 }
 
 /** The amount rendered under one aging-bucket heading. */
@@ -341,20 +341,23 @@ describe("/cash-flow, an invoice due today, read at 17:01 in California", () => 
 describe("/dashboard, the same invoice, the same minute", () => {
   const load = async () => {
     const { default: Page } = await import("@/app/(app)/dashboard/page");
-    return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+    return renderToStaticMarkup(await Page());
   };
 
-  it("renders the tiles — the page ran", async () => {
+  // The tiles became the Money and Needs-you blocks in the Concept G home
+  // (2026-10-10); the claim is unchanged — the day is the reader's, so an
+  // invoice due today is not overdue at 17:01 in California.
+  it("renders the money block — the page ran", async () => {
     const html = await load();
-    expect(html).toContain("Overdue invoices");
+    expect(html).toContain('data-tour="dashboard-money"');
     expect(html).toContain("Retainage held");
   });
 
   it("shows nothing past its due date", async () => {
     const html = await load();
-    expect(statCard(html, "Overdue invoices")).toBe("$0.00");
-    expect(html).toContain("Nothing past its due date.");
-    expect(html).not.toContain("1 invoice past due");
+    expect(moneyFigure(html, "Nothing overdue")).toBe("$0");
+    expect(html).not.toContain("Overdue · 1 invoice");
+    expect(html).not.toMatch(/(Invoice|Pay app) #\d+ to /);
   });
 });
 

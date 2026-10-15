@@ -9,9 +9,11 @@ import type { Opening, TakeoffLine } from "@/lib/takeoff";
 import { recipeCostCategory, recipeLines, type RecipeArgs, type RecipeInput } from "@/lib/takeoff-recipes";
 import { documentUrlProblem } from "@/lib/document-uploads";
 import { parseFeetInches } from "@/lib/feet-inches";
+import { detectWallsAfterResponse } from "@/lib/takeoff/detectWallsForCalibration";
 import {
   calibrationNotices,
   calibrationRefusal,
+  feetPerPageWidth,
   recipeInputsFromMeasurements,
   ringSelfIntersects,
   verticesProblem,
@@ -473,7 +475,7 @@ export async function saveTakeoffCalibration(jobId: string, formData: FormData):
       },
     });
 
-    await prisma.takeoffScaleCalibration.create({
+    const calibration = await prisma.takeoffScaleCalibration.create({
       data: {
         pageId: page.id,
         x1: line.x1,
@@ -484,7 +486,65 @@ export async function saveTakeoffCalibration(jobId: string, formData: FormData):
         note: note || null,
         createdByUserId: userId,
       },
+      select: { id: true, x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true },
     });
+
+    // ── AND NOW FIND THE WALLS, WITHOUT ANYBODY ASKING ──
+    //
+    // The sheet has a scale, so its geometry is finally measurable; and
+    // somebody has just said which sheet they care about. Those two facts
+    // arrive together exactly once, which is why this is the only trigger.
+    //
+    // AFTER THE RESPONSE, AND IT CANNOT FAIL THIS SAVE. Everything below the
+    // call is caught inside it — see `detectWallsForCalibration`. A calibration
+    // that stored correctly and then reported failure because a courtesy job
+    // threw would have the estimator retyping a scale that is already on file.
+    //
+    // `feetPerPageWidth` is the app's one reader for the scale, so detection
+    // measures with exactly what the screen measures with. Null is possible —
+    // a span too short to divide by — and is the one case where there is
+    // nothing to detect WITH rather than nothing to detect.
+    const feetPerUnit = feetPerPageWidth({
+      x1: calibration.x1,
+      y1: calibration.y1,
+      x2: calibration.x2,
+      y2: calibration.y2,
+      declaredDistanceFeet: Number(calibration.declaredDistanceFeet),
+    });
+    if (feetPerUnit !== null) {
+      // THE COMPANY'S TYPES, SHAPED THE WAY THE VIEWER SHAPES THEM — the same
+      // three uses: the partition schedule handed to the detector, the tag
+      // matcher, and the general note. `thicknessIn` is nullable because a
+      // company can name an assembly before measuring it, and the matcher
+      // reads null as "cannot be matched by thickness".
+      const wallTypes = await prisma.wallType.findMany({
+        where: { companyId: company.id },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          thicknessIn: true,
+          _count: { select: { components: true } },
+        },
+        orderBy: { sortOrder: "asc" },
+      });
+
+      detectWallsAfterResponse({
+        pageId: page.id,
+        calibrationId: calibration.id,
+        planId,
+        companyId: company.id,
+        pageNumber,
+        feetPerUnit,
+        wallTypes: wallTypes.map((type) => ({
+          id: type.id,
+          code: type.code,
+          name: type.name,
+          hasParts: type._count.components > 0,
+          thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
+        })),
+      });
+    }
 
     revalidatePath(`/jobs/${jobId}/takeoff`);
     return actionOk;

@@ -255,6 +255,10 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   // Page-only because no nav entry links it. The link is on a DECLINED bid's
   // own row, which is the only place it makes sense.
   "/bids/[id]/regret": "MANAGE_ESTIMATING",
+  // One bid as the AI agents see it (research, estimate check, addenda,
+  // advice). MANAGE_ESTIMATING like /bids and /ai; page-only because it is
+  // reached from a bid, a finding or /ai, never by a static nav href.
+  "/ai/bids/[id]": "MANAGE_ESTIMATING",
   // A pay application IS the money document — schedule of values, stored
   // materials, retainage held. permissions.ts already says billing is not
   // an estimator's business and the field tier's audit row says the same;
@@ -387,8 +391,10 @@ const OPEN_ROUTES: Record<string, string> = {
     "Same reasoning as /jobs/[id]/estimate, same issue #383: withholds on MANAGE_BILLING in-page rather than a hard gate, because this tab's write actions are not independently guarded either.",
   "/jobs/[id]/retainage":
     "Same reasoning as /jobs/[id]/billing beside it, same issue #383: withholds on MANAGE_BILLING in-page — its write actions are not independently guarded.",
-  "/jobs": "A bare redirect to /dashboard. Guarding a redirect claims a protection it redirects straight past.",
-  "/estimating": "A bare redirect to /dashboard?status=ESTIMATE. Same reason as /jobs.",
+  "/areas/[slug]":
+    "The six area pages behind the home boxes (Concept H). Open like /dashboard, and its content is not: the page draws only the tools areasFor() says this person can open (canReach, the same rule as the nav), 404s an area with none of them, and reads each count and waiting row only behind canReach/can for the page it describes (lib/areas-data.ts). Every card links to a page that still runs its own requireCapability.",
+  "/jobs": "The jobs list (it was a redirect to /dashboard until 2026-10-11). Open like /dashboard, which listed the same jobs to the same people; job values show only with VIEW_JOB_COSTS, read in-page.",
+  "/estimating": "A bare redirect to /jobs?status=ESTIMATE. Guarding a redirect claims a protection it redirects straight past.",
   "/settings/export":
     "Guarded HARDER than any capability: the page itself refuses anyone whose role is not OWNER, because it hands over the whole company's data. A capability would loosen it.",
   "/settings/import":

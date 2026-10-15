@@ -75,12 +75,12 @@ export function SendDigestButton({
         </button>
       </div>
       {sent && (
-        <p className="mt-3 text-sm text-emerald-400">
+        <p className="mt-3 text-sm text-ok">
           Sent. It is in the delivery log, which will say whether it actually
           arrived.
         </p>
       )}
-      {error && <p className="mt-3 text-sm text-amber-400">{error}</p>}
+      {error && <p className="mt-3 text-sm text-warn">{error}</p>}
     </div>
   );
 }

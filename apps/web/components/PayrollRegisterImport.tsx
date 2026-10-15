@@ -135,7 +135,7 @@ export function PayrollRegisterImport({ crew, existing }: Props) {
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className="min-h-11 rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+            className="min-h-11 rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover"
           >
             Import payroll register
           </button>
@@ -194,7 +194,7 @@ export function PayrollRegisterImport({ crew, existing }: Props) {
           accept=".csv,.tsv,.txt,text/csv,text/plain"
           onChange={(event) => onFile(event.target.files?.[0])}
           aria-label="Choose a payroll register as a CSV file"
-          className="min-h-11 text-xs text-ink-body file:mr-3 file:min-h-11 file:rounded-md file:border file:border-line-card file:bg-neutral-800 file:px-3 file:text-xs file:text-ink-label"
+          className="min-h-11 text-xs text-ink-body file:mr-3 file:min-h-11 file:rounded-md file:border file:border-line-card file:bg-rail-hover file:px-3 file:text-xs file:text-ink-label"
         />
       </div>
       {fileError && <p className="mb-3 text-xs text-tag-rose-ink">{fileError}</p>}

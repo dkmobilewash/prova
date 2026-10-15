@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -80,18 +82,20 @@ export default async function PipelinePage() {
   );
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Bid pipeline</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        What we are chasing before anyone has invited us, then who invites us to bid and what comes
-        of it. The chase list is its own record, kept here. Everything below it is worked out from
-        the bid invitations listed on {""}
+    <PageShell width="working">
+      <PageHeader
+        route="/pipeline"
+        title="Bid pipeline"
+        subtitle="What you are chasing before anyone invites you, then who invites you to bid and what comes of it."
+      />
+      <p className="mb-6 text-xs text-ink-muted">
+        The chase list is its own record, kept here. Everything below it is worked out from the bid
+        invitations listed on{" "}
         <Link href="/bids" className="text-link hover:underline">
           Bids
         </Link>
-        . Those figures are not stored separately, so correcting a bid moves them with it —
-        and a status or an amount is changed on the GC&apos;s own contact record, under
-        &ldquo;Bid invitations&rdquo;, not on the Bids list, which only filters and reads.
+        , so correcting a bid moves these figures with it. A status or an amount is changed on the
+        GC&apos;s own contact record, under &ldquo;Bid invitations&rdquo;.
       </p>
 
       {/* AHEAD OF THE CHASE LIST, because it is what feeds it: a project name
@@ -170,11 +174,11 @@ export default async function PipelinePage() {
             )}
 
             {live.length === 0 ? (
-              <p className="rounded-lg border border-line-card bg-surface p-4 text-sm text-ink-body">
+              <p className="rounded-xl border border-line-card bg-surface p-4 text-sm text-ink-body">
                 Nothing outstanding — every invitation on file has been won, lost or declined.
               </p>
             ) : (
-              <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+              <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface">
                 {live.map((bidRow) => (
                   <li key={bidRow.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 p-4">
                     <span className="text-ink">{bidRow.projectName}</span>
@@ -188,7 +192,7 @@ export default async function PipelinePage() {
                       className={`rounded px-1.5 py-0.5 text-xs ${
                         bidRow.status === "SUBMITTED"
                           ? "bg-tag-brand text-tag-brand-ink"
-                          : "bg-neutral-800 text-ink-label"
+                          : "bg-rail-hover text-ink-label"
                       }`}
                     >
                       {bidRow.status === "SUBMITTED" ? "Submitted" : "Invited"}
@@ -222,7 +226,7 @@ export default async function PipelinePage() {
 
           <section data-tour="pipeline-by-gc">
             <h2 className="mb-3 text-sm font-medium text-ink-label">By general contractor</h2>
-            <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+            <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface">
               {rows.map((row) => (
                 <li key={row.contactId} className="p-4">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -288,6 +292,6 @@ export default async function PipelinePage() {
           </section>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

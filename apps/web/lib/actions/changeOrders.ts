@@ -75,7 +75,7 @@ function text(formData: FormData, key: string) {
 
 function required(formData: FormData, key: string, label: string) {
   const value = text(formData, key);
-  if (!value) throw new InputError(`${label} is required.`);
+  if (!value) throw new InputError(`${label} is required.`, key);
   return value;
 }
 

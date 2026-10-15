@@ -16,7 +16,7 @@ import { PublicDocument } from "@/components/PublicDocument";
  * it as one.
  */
 
-export const metadata: Metadata = { title: "Privacy — C Stream" };
+export const metadata: Metadata = { title: "Privacy" };
 
 export default function PrivacyPage() {
   return (

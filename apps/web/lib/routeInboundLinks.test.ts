@@ -67,9 +67,10 @@ const NOT_SCANNED: Record<string, string> = {
  * one fails here until it is removed from this list, so the list cannot
  * quietly outlive its reasons. */
 const REACHED_FROM_OUTSIDE: Record<string, string> = {
-  "/estimating": "a redirect kept for old bookmarks and Slack links; it forwards to /dashboard?status=ESTIMATE",
+  "/estimating": "a redirect kept for old bookmarks and Slack links; it forwards to /jobs?status=ESTIMATE",
   "/jobs/new/[jobId]/review":
     "the bid wizard's old step 3, removed by #413 and kept as a redirect to /jobs/[id] so an open tab or history entry does not 404; delete the page and this line together",
+  "/lien-waiver": "the public lien waiver generator page, handed out as a bare link",
   "/pilot": "the public pilot page, handed to prospects as a bare link",
   "/quickbooks/disconnected": "Intuit's disconnect landing URL, registered in Intuit's developer dashboard",
   "/sign-in/[[...sign-in]]": "Clerk's sign-in route, reached by Clerk's own redirects and the middleware",

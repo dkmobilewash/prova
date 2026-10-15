@@ -20,12 +20,12 @@ const STANDING_LABEL: Record<EmployerBurdenRateStanding, string> = {
 
 const STANDING_CHIP: Record<EmployerBurdenRateStanding, string> = {
   current: "bg-tag-green text-tag-green-ink",
-  upcoming: "bg-neutral-800 text-ink-body",
-  past: "bg-neutral-800 text-ink-muted",
+  upcoming: "bg-rail-hover text-ink-body",
+  past: "bg-rail-hover text-ink-muted",
 };
 
 const btn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 function EditForm({
   record,
@@ -60,7 +60,7 @@ function EditForm({
       </p>
       <FormDraftNotice draft={draft} />
       <EmployerBurdenRateFields defaults={record} showEffectiveDate={false} />
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
       <div className="flex gap-2">
         <button
           type="submit"
@@ -136,7 +136,7 @@ export function EmployerBurdenRateRow({
           <span className="text-xs text-ink-body">from {record.effectiveDate}</span>
         </div>
         {record.note && <p className="mt-1 text-sm text-ink-body">{record.note}</p>}
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {error && <p className="mt-1 text-sm text-danger">{error}</p>}
       </div>
 
       {/* Right-pinned (`shrink-0` beside a flex-1 body), so `pinned="end"`:
@@ -164,9 +164,9 @@ export function EmployerBurdenRateRow({
                   if (!result.ok) setError(result.error);
                 });
               }}
-              deleteClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50"
+              deleteClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-danger disabled:opacity-50"
               cancelClassName={btn}
-              confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+              confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-danger hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }

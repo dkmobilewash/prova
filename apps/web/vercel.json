@@ -9,10 +9,6 @@
     {
       "path": "/api/plan-ingest/run",
       "schedule": "17 4 * * *"
-    },
-    {
-      "path": "/api/cron/outbound-push",
-      "schedule": "0 14 * * *"
     }
   ]
 }

@@ -1,8 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { palette } from "../tailwind.config";
 import localFont from "next/font/local";
 import { ClerkProvider } from "@clerk/nextjs";
 import { StaleDeployBanner } from "@/components/StaleDeployBanner";
 import { RscFailureBanner } from "@/components/RscFailureBanner";
+import { THEME_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
 /**
@@ -79,9 +81,30 @@ export const metadata: Metadata = {
   // Absolute base for the link-preview image (app/opengraph-image.png) and
   // the icons, which Next turns into full URLs. The live app's own address.
   metadataBase: new URL("https://app.cstream.ai"),
-  title: "C Stream",
+  // Every page names itself; the tab reads "Safety · C Stream", not "C Stream" x 67.
+  title: { template: "%s · C Stream", default: "C Stream" },
   description: "Contractor operating system",
   openGraph: { siteName: "C Stream", title: "C Stream", description: "Contractor operating system" },
+};
+
+/**
+ * `viewportFit: "cover"` is what makes `env(safe-area-inset-*)` non-zero on
+ * an iPhone. Without it the bottom tabs' `pb-[env(safe-area-inset-bottom)]`
+ * and the shell's `--shell-tabs` read 0, and Safari letterboxes the page
+ * above the home indicator instead. `themeColor` tints the browser chrome to
+ * the canvas of whichever theme the OS asks for. (ponytail: follows the OS
+ * preference, not the in-app switch — a reader who overrides the OS sees the
+ * other canvas in the address bar; update the meta from applyThemeChoice if
+ * that ever matters.)
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: palette.light.canvas },
+    { media: "(prefers-color-scheme: dark)", color: palette.dark.canvas },
+  ],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -131,7 +154,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         },
       }}
     >
-      <html lang="en" className={headline.variable}>
+      {/* suppressHydrationWarning: the script below sets data-theme on
+          this element before React hydrates, on purpose (no dark flash). */}
+      <html lang="en" className={headline.variable} suppressHydrationWarning>
+        <head>
+          <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        </head>
         <body className="min-h-screen bg-canvas text-ink">
           {/* #118: covers every route group, including the public portal
               and esign pages, which are just as likely to be left open

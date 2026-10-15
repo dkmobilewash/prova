@@ -1,4 +1,6 @@
 import type { WallCandidate, WallCluster } from "./wallVectors";
+import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
+import { THICKNESS_SLACK_IN } from "./wallGroups";
 
 /**
  * ── WHAT THE DRAWING CALLS THE WALLS IT HAS ALREADY GROUPED BY THICKNESS ──
@@ -132,6 +134,29 @@ function distanceFeet(px: number, py: number, wall: WallCandidate, feetPerUnit: 
   return Math.hypot(px - (wall.x1 + t * dx), py - (wall.y1 + t * dy)) * feetPerUnit;
 }
 
+/** The nearest run to a tag and the runner-up's distance, which is what the
+ *  clear-margin test needs. Returns `wall: null` for an empty field. */
+function nearest(
+  tag: WallTypeTag,
+  walls: readonly WallCandidate[],
+  feetPerUnit: number,
+): { wall: WallCandidate | null; best: number; second: number } {
+  let best = Infinity;
+  let second = Infinity;
+  let wall: WallCandidate | null = null;
+  for (const one of walls) {
+    const d = distanceFeet(tag.x, tag.y, one, feetPerUnit);
+    if (d < best) {
+      second = best;
+      best = d;
+      wall = one;
+    } else if (d < second) {
+      second = d;
+    }
+  }
+  return { wall, best, second };
+}
+
 /**
  * Which run each tag labels, as a map from run to tag name.
  *
@@ -146,27 +171,67 @@ export function tagByRun(
   walls: readonly WallCandidate[],
   tags: readonly WallTypeTag[],
   feetPerUnit: number,
+  wallTypes: readonly MatchableWallType[] = [],
 ): Map<WallCandidate, string> {
   const out = new Map<WallCandidate, string>();
   if (!(feetPerUnit > 0) || walls.length === 0 || tags.length === 0) return out;
 
-  // Every tag's best claim first, so the NEAREST tag wins a contested run
-  // rather than whichever happened to come first in the page's text order.
+  /**
+   * ── THE TAG'S OWN NAME IS EVIDENCE ABOUT WHICH RUN IT MEANS ──
+   *
+   * Proximity alone picks the wrong wall where two run side by side, and
+   * School-01's A-101 has three such cases, measured rather than argued:
+   *
+   *   EXT-1 at (0.805,0.282) — 4-7/8" at 0.47 ft WON; 8-7/8" at 2.32 ft lost
+   *   B1    at (0.641,0.203) — 6-3/4"  at 1.21 ft WON; 7-1/4" at 5.84 ft lost
+   *   B1    at (0.656,0.196) — 7-1/4"  at 1.71 ft was NEAREST and was DROPPED,
+   *                            because 6-3/4" at 3.34 ft failed the clear margin
+   *
+   * In all three the company HAS a wall type of that exact name, with a
+   * thickness, and exactly one candidate matches it. The drawing is not being
+   * ambiguous; the reader was throwing away the half of the evidence that
+   * settles it.
+   *
+   * SO THE NAME NARROWS THE FIELD FIRST, and distance decides among what is
+   * left. Where no candidate fits the named type — which is every EXT tag on
+   * the long perimeter runs, because the plan draws 6-5/8" of framing and the
+   * schedule totals 8-7/8" with sheathing and cladding — this changes nothing
+   * and the old rule stands. That disagreement is real and must keep reaching
+   * the screen rather than being tidied away by a better guess.
+   *
+   * IT NARROWS, IT NEVER REACHES. A fitting run still has to be within
+   * `TAG_REACH_FEET` and still has to beat its rivals by `TAG_CLEAR_MARGIN` —
+   * measured against the other FITTING runs, since a non-fitting neighbour is
+   * no longer a rival for a tag whose name rules it out.
+   */
+  const named = (name: string): MatchableWallType | null =>
+    wallTypes.find((type) => type.thicknessIn !== null && sameDesignation(type.code, name)) ?? null;
+
   const claims: { name: string; wall: WallCandidate; feet: number }[] = [];
   for (const tag of tags) {
-    let best = Infinity;
-    let second = Infinity;
-    let bestWall: WallCandidate | null = null;
-    for (const wall of walls) {
-      const d = distanceFeet(tag.x, tag.y, wall, feetPerUnit);
-      if (d < best) {
-        second = best;
-        best = d;
-        bestWall = wall;
-      } else if (d < second) {
-        second = d;
-      }
-    }
+    const type = named(tag.name);
+    const inches = type?.thicknessIn ?? null;
+    // The runs this tag is allowed to claim: the ones its name fits, when the
+    // name resolves to a thickness and anything fits it at all. Otherwise all
+    // of them, which is the behaviour this function has always had.
+    const fitting =
+      inches === null
+        ? []
+        : walls.filter((wall) => Math.abs(wall.thicknessFeet * 12 - inches) <= THICKNESS_SLACK_IN);
+
+    // WITHIN REACH, NOT ANYWHERE ON THE SHEET — and the first draft of this got
+    // it wrong in a way its own probe caught. Asking "does a fitting run exist"
+    // globally dropped four tags that were right: the perimeter EXT tags, whose
+    // nearest 8-7/8" run is most of a building away, fell back to nothing
+    // instead of to the 6-5/8" run beside them. That silently deleted the
+    // drawing-vs-schedule disagreement this change exists to preserve.
+    const fromFitting = nearest(tag, fitting, feetPerUnit);
+    const chosen =
+      fromFitting.wall !== null && fromFitting.best <= TAG_REACH_FEET
+        ? fromFitting
+        : nearest(tag, walls, feetPerUnit);
+
+    const { best, second, wall: bestWall } = chosen;
     if (bestWall === null || best > TAG_REACH_FEET || second < best * TAG_CLEAR_MARGIN) continue;
     claims.push({ name: tag.name, wall: bestWall, feet: best });
   }

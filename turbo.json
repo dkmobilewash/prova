@@ -21,7 +21,9 @@
         "QUICKBOOKS_REDIRECT_URI",
         "QUICKBOOKS_ENVIRONMENT",
         "ANTHROPIC_API_KEY",
-        "BLOB_READ_WRITE_TOKEN"
+        "BLOB_READ_WRITE_TOKEN",
+        "LIEN_WAIVER_TOOL_ORIGIN",
+        "LIEN_WAIVER_TOOL_URL"
       ]
     },
     "dev": {

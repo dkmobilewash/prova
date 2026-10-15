@@ -20,7 +20,8 @@
     "eval:lead-search": "vitest run --config vitest.eval.config.mts lib/leads/leadSearch.eval.ts",
     "eval:symbols": "vitest run --config vitest.eval.config.mts lib/takeoff/symbolCount.eval.ts",
     "eval:specs": "vitest run --config vitest.eval.config.mts lib/specs/specRead.eval.ts",
-    "scale:audit": "vitest run --config vitest.eval.config.mts lib/takeoff/scaleAudit.eval.ts"
+    "scale:audit": "vitest run --config vitest.eval.config.mts lib/takeoff/scaleAudit.eval.ts",
+    "takeoff:bench": "vitest run --config vitest.eval.config.mts lib/takeoff/bench/takeoffBench.eval.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.9.6",
@@ -29,6 +30,7 @@
     "@prova/ui": "workspace:*",
     "@vercel/blob": "^2.8.0",
     "next": "^15.1.3",
+    "pdf-lib": "1.17.1",
     "pdfjs-dist": "4.10.38",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

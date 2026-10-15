@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import { SalesLeadEditForm } from "@/components/SalesLeadEditForm";
@@ -30,11 +32,9 @@ import {
  * 45 seconds; sixty is the ceiling it is budgeted against, as on /sales. */
 export const maxDuration = 60;
 
-export default async function SalesLeadPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export const metadata = { title: "Edit lead" };
+
+export default async function SalesLeadPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { company, ...currentUser } = await requireCompanyContext();
 
@@ -44,13 +44,13 @@ export default async function SalesLeadPage({
 
   if (currentUser.role !== "OWNER") {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-16">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Owner only</h1>
+      <PageShell width="reading">
+        <PageHeader route="/sales" parent={{ href: "/sales", label: "Sales CRM" }} title="Owner only" />
         <p className="text-sm text-ink-body">
           The sales CRM is restricted to the account owner, same as Team
           management and billing settings.
         </p>
-      </div>
+      </PageShell>
     );
   }
 
@@ -166,9 +166,10 @@ export default async function SalesLeadPage({
   }));
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <section className="mb-10 rounded-lg border border-line-card bg-surface p-6">
-        <h1 className="mb-4 text-lg font-semibold text-ink">Edit lead</h1>
+    <PageShell width="reading">
+      <PageHeader route="/sales" parent={{ href: "/sales", label: "Sales CRM" }} title={lead.companyName} />
+      <section className="mb-10 rounded-xl border border-line-card bg-surface p-6">
+        <h2 className="mb-4 text-lg font-semibold text-ink">Edit lead</h2>
         <SalesLeadEditForm
           leadId={lead.id}
           defaults={{
@@ -301,6 +302,6 @@ export default async function SalesLeadPage({
           opportunityOptions={opportunityOptions}
         />
       </section>
-    </div>
+    </PageShell>
   );
 }

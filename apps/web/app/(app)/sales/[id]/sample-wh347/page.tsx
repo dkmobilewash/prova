@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { notFound } from "next/navigation";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
@@ -28,7 +28,7 @@ export default async function SampleWh347Page({
   if (currentUser.role !== "OWNER") {
     return (
       <PageShell width="reading">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Owner only</h1>
+        <PageHeader route="/sales" parent={{ href: "/sales", label: "Sales CRM" }} title="Owner only" />
         <p className="text-sm text-ink-body">The sales CRM is restricted to the account owner.</p>
       </PageShell>
     );
@@ -50,22 +50,27 @@ export default async function SampleWh347Page({
   return (
     // A document: `reading`, like the filing page this is a facsimile of.
     <PageShell width="reading">
-      <p className="print:hidden mb-2 text-xs text-ink-muted">
-        <Link href={`/sales/${lead.id}`} className="hover:underline">← {lead.companyName}</Link>
-      </p>
-      <div className="print:hidden mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-ink">Sample WH-347 for {lead.companyName}</h1>
-          <p className="mt-1 max-w-2xl text-sm text-ink-body">
-            Built by the same code that builds a real one, on an illustrative three-person crew with
-            illustrative wage and fringe rates — not a prevailing-wage determination, and not a filing.
-            {projectKnown
-              ? ` The project is the one ${lead.listedByGc ? `${lead.listedByGc} ` : ""}listed them on.`
-              : ` No public listing named a project for this firm, so it reads "${SAMPLE_PROJECT_FALLBACK}".`}{" "}
-            Their real one comes from one week of their real timecards.
-          </p>
-        </div>
-        <PrintButton />
+      {/* The shared header, hidden from print: the sheet below is the document. */}
+      <div className="print:hidden">
+        <PageHeader
+          route="/sales"
+          parent={[
+            { href: "/sales", label: "Sales CRM" },
+            { href: `/sales/${lead.id}`, label: lead.companyName },
+          ]}
+          title={`Sample WH-347 for ${lead.companyName}`}
+          subtitle={
+            <>
+              Built by the same code that builds a real one, on an illustrative three-person crew with
+              illustrative wage and fringe rates — not a prevailing-wage determination, and not a filing.
+              {projectKnown
+                ? ` The project is the one ${lead.listedByGc ? `${lead.listedByGc} ` : ""}listed them on.`
+                : ` No public listing named a project for this firm, so it reads "${SAMPLE_PROJECT_FALLBACK}".`}{" "}
+              Their real one comes from one week of their real timecards.
+            </>
+          }
+          actions={<PrintButton />}
+        />
       </div>
 
       <div className="[container-type:inline-size]">

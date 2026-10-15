@@ -14,8 +14,9 @@ import { groupRowsBy, rowsFor } from "./group-rows";
  *
  * This was one `job.findMany` with the lines, cost entries, hours and
  * invoices nested under it, which Prisma resolves as five queries run one
- * after another -- and this runs in the (app) layout, so on every page and
- * after every Server Action (measured 2026-09-18). It is now the job query
+ * after another -- and this ran in the (app) layout, so on every page and
+ * after every Server Action (measured 2026-09-18; since 2026-10-10 it runs
+ * on /areas/money only). It is now the job query
  * and then every relation at once. Each child query is the SQL Prisma was
  * already sending (`WHERE "jobId" IN (...)`, same filters), so the rows,
  * their order and every figure computed from them are unchanged; the shape
@@ -71,8 +72,9 @@ async function readActiveJobCostRows(companyId: string) {
 /**
  * Cached per server request, because the Money Rail reads the very same
  * active-job population (lib/moneyRail.ts says so: "the same population
- * lib/company-financials-query.ts calls active") and the (app) layout runs
- * both on every page. Once per render instead of twice. Outside a React
+ * lib/company-financials-query.ts calls active"). The (app) layout ran both on every page until 2026-10-10;
+ * /areas/money still renders both under one layout. Once per render instead
+ * of twice. Outside a React
  * server render (tests, scripts) `cache()` calls straight through.
  */
 export const loadActiveJobCostRows = cache(readActiveJobCostRows);

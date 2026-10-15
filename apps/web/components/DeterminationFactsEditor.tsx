@@ -117,7 +117,7 @@ export function DeterminationFactsEditor({
             setOpen(false);
             setError(null);
           }}
-          className="rounded-md border border-line-card px-3 py-1 text-xs text-ink-label hover:bg-neutral-800"
+          className="rounded-md border border-line-card px-3 py-1 text-xs text-ink-label hover:bg-rail-hover"
         >
           Cancel
         </button>

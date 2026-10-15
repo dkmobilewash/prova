@@ -46,7 +46,7 @@ export function PriceBasisBadge({
     );
   }
   return (
-    <span className="inline-flex items-center rounded-full bg-neutral-700 px-2 py-0.5 text-xs font-medium text-ink-label">
+    <span className="inline-flex items-center rounded-full bg-lift px-2 py-0.5 text-xs font-medium text-ink-label">
       AI-drafted, unpriced — verify
     </span>
   );

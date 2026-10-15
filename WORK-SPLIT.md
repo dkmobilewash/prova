@@ -13,17 +13,17 @@ page. Also anything touching billing/AIA pay applications and retainage
 next, since those extend the existing `Invoice`/`Payment` models Diego's
 been building on.
 
-**AI is Diego's lane, as of 2026-09-26.** It came back. Diego owns the Ask
-assistant (`apps/web/lib/ask/**`, the `Ask*` components, its tools and
-write commands, research and web search), the model integration
-(`packages/integrations/src/{anthropic,ask,research,leads,models}.ts`), the
-per-company AI switch (`apps/web/lib/ai/**`,
-`apps/web/lib/actions/aiSettings.ts`), AI document extraction, AI usage
-metering and billing (`AskUsage`), and the takeoff/estimating AI work now
-in progress. Announced in `#prova-build` on 2026-09-26.
+**AI is shared, as of 2026-10-12 — neither person's lane.** Agreed by both
+in `#prova-build` that day: there is no split. Whoever is working on an AI
+piece (the Ask assistant, the agents and the `/ai` section, the model
+integration in `packages/integrations`, the per-company AI switch, AI
+document extraction, AI usage metering, the takeoff/estimating AI) keeps it;
+if you need to change something the other person is actively working on,
+ask first. The money and estimating logic underneath any AI feature stays
+Diego's, exactly as the paragraph two below says.
 
-**This paragraph has now been wrong in both directions, which is the part
-worth reading.** It first said AI was Diego's, then — from 2026-09-21 —
+**This paragraph has now been in three states — Diego's, Cyrus's, shared —
+which is the part worth reading.** It first said AI was Diego's, then — from 2026-09-21 —
 said in bold that it was Cyrus's and that the older version was "no longer
 true". Both were true when written and each was later quoted as authority
 against the other. An ownership line records an agreement between two

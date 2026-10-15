@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { BidInvitationStatus, prisma, TradeScope } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -22,6 +24,10 @@ import { findingsFromJson } from "@/lib/specs/spec-findings";
 import { BidJobLink } from "@/components/BidJobLink";
 import { bidRecord, settledSentence } from "@/lib/bid-outcome";
 import { loadBidOutcomes, loadLinkableJobs } from "@/lib/bid-outcome-query";
+import { BidOutcomeForm } from "@/components/BidOutcomeForm";
+import { outcomeReasonLabel } from "@/components/ai-bid/outcome";
+import { LogBidForm } from "@/components/LogBidForm";
+import { bidsDueSoon, bidsView, daysLeftLabel } from "@/lib/bids-due-soon";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -40,11 +46,11 @@ const STATUS_OPTIONS = [
 ] as const;
 
 const STATUS_STYLE: Record<string, string> = {
-  INVITED: "bg-neutral-800 text-ink-label",
+  INVITED: "bg-rail-hover text-ink-label",
   SUBMITTED: "bg-tag-brand text-tag-brand-ink",
   WON: "bg-tag-green text-tag-green-ink",
-  LOST: "bg-tag-rose text-red-400",
-  DECLINED: "bg-neutral-800 text-ink-muted",
+  LOST: "bg-tag-rose text-danger",
+  DECLINED: "bg-rail-hover text-ink-muted",
 };
 
 function labelFor(options: readonly { value: string; label: string }[], value: string | null) {
@@ -59,12 +65,12 @@ const day = (value: Date | null) => (value === null ? null : value.toISOString()
 export default async function BidsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ trade?: string; status?: string }>;
+  searchParams: Promise<{ trade?: string; status?: string; new?: string; view?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
   const { company } = context;
-  const { trade, status } = await searchParams;
+  const { trade, status, new: isNew, view: viewParam } = await searchParams;
 
   const tradeFilter = trade && trade in TradeScope ? (trade as TradeScope) : undefined;
   const statusFilter = status && status in BidInvitationStatus ? (status as BidInvitationStatus) : undefined;
@@ -84,14 +90,29 @@ export default async function BidsPage({
   // not happened where they were sitting.
   const zone = await viewerTimeZone();
 
-  const [vendors, outcomesByBid, linkableJobs] = await Promise.all([
+  const [vendors, outcomesByBid, linkableJobs, gcs] = await Promise.all([
     prisma.vendor.findMany({
       where: { companyId: company.id },
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      // EMAIL AND CONTACT NAME, which nothing has ever selected. The column
+      // has been on the model with a form field behind it on /vendors the
+      // whole time, and a grep for a query reading it returned nothing — so
+      // every supplier address a company typed in was write-only. Sending an
+      // RFQ is the first thing that needs it.
+      select: { id: true, name: true, email: true, contactName: true },
     }),
     loadBidOutcomes(company.id),
     loadLinkableJobs(company.id),
+    // Who can have invited you: GCs and developers, and contacts nobody
+    // typed (accountType is optional). Never a vendor or a sub.
+    prisma.contact.findMany({
+      where: {
+        companyId: company.id,
+        OR: [{ accountType: null }, { accountType: { in: ["GENERAL_CONTRACTOR", "DEVELOPER"] } }],
+      },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
   ]);
   // How this company's finished bids have run against what the work cost.
   // Derived here, never stored, and it counts only what has SETTLED — see
@@ -115,6 +136,9 @@ export default async function BidsPage({
       // again, which is how the control came to be gated on WON in the first
       // place. The link is its own fact and is read as one.
       wonJob: { select: { id: true, name: true } },
+      // Why it was won or lost (BidOutcome, ai-agents.prisma) — whether to
+      // offer "Record why" below, or say the reason already recorded.
+      outcome: { select: { reason: true } },
       quotes: { orderBy: [{ packageLabel: "asc" }, { amount: "asc" }] },
       lines: { orderBy: { sortOrder: "asc" } },
       // Addenda oldest first: they are read as a sequence, and the one you
@@ -190,13 +214,28 @@ export default async function BidsPage({
   // bids. A count would be a second read that could only agree.
   const isFiltered = tradeFilter != null || statusFilter != null;
 
+  // Read-only over the same rows: what is still to price, soonest first.
+  // Its own query because the history filters above must not hide it.
+  const dueSoon = bidsDueSoon(
+    await prisma.bidInvitation.findMany({
+      where: { companyId: company.id, status: "INVITED", dueDate: { gte: new Date(`${today}T00:00:00.000Z`) } },
+      select: { id: true, projectName: true, status: true, dueDate: true, contact: { select: { name: true } } },
+    }),
+    today,
+  );
+  const view = bidsView(viewParam, dueSoon.length, isFiltered);
+  const viewTab = (active: boolean) =>
+    `inline-flex min-h-11 items-center rounded-md px-3 text-sm font-medium ${active ? "bg-rail-hover text-ink" : "text-ink-body hover:text-ink"}`;
+
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Bid history</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        Every bid invitation logged across every GC — filter by trade or outcome to see what similar
-        work has priced at before.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/bids"
+        title="Bid history"
+        subtitle="Every bid invitation from every GC — filter by trade or outcome to see what similar work priced at."
+      />
+
+      <LogBidForm gcs={gcs} startOpen={isNew === "1"} />
 
       {/* ── THE DECLINE PICTURE, WHEN THERE IS ONE ──
 
@@ -211,7 +250,7 @@ export default async function BidsPage({
           authoritative. */}
       {declineSummary.headline !== null && (
         <section
-          className="mb-6 rounded-lg border border-line-card p-4"
+          className="mb-6 rounded-xl border border-line-card bg-surface p-4"
           data-bids="decline-summary"
         >
           <h2 className="text-sm font-semibold text-ink-label">Work turned down</h2>
@@ -242,7 +281,49 @@ export default async function BidsPage({
         </section>
       )}
 
+      <nav aria-label="Bid views" className="mb-4 flex gap-1" data-bids="views">
+        <Link href="/bids?view=due" aria-current={view === "due" ? "page" : undefined} className={viewTab(view === "due")}>
+          Due soon ({dueSoon.length})
+        </Link>
+        <Link href="/bids?view=all" aria-current={view === "all" ? "page" : undefined} className={viewTab(view === "all")}>
+          All bids
+        </Link>
+      </nav>
+
+      {view === "due" ? (
+        dueSoon.length === 0 ? (
+          <p className="text-sm text-ink-body">
+            No invited bids due in the next 30 days.{" "}
+            <Link href="/bids?view=all" className="text-link hover:text-link-hover">
+              See all bids
+            </Link>
+            .
+          </p>
+        ) : (
+          <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-bids="due-soon">
+            {dueSoon.map((bid) => (
+              <li key={bid.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
+                <div className="min-w-0">
+                  <Link href={`/ai/bids/${bid.id}`} className="font-medium text-ink hover:underline">
+                    {bid.projectName}
+                  </Link>
+                  <p className="text-sm text-ink-body">
+                    {bid.gcName} · Due {formatCalendarDate(new Date(`${bid.dueIso}T00:00:00.000Z`), "numeric")}
+                  </p>
+                </div>
+                <span
+                  className={`shrink-0 text-sm font-medium tabular-nums ${bid.daysLeft <= 7 ? "text-tag-amber-ink" : "text-ink-label"}`}
+                >
+                  {daysLeftLabel(bid.daysLeft)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : (
+      <>
       <form method="get" className="mb-6 flex flex-wrap items-end gap-3" data-tour="bids-filter">
+        <input type="hidden" name="view" value="all" />
         <label className="flex flex-col gap-1 text-sm text-ink-label">
           Trade
           <select
@@ -275,12 +356,12 @@ export default async function BidsPage({
         </label>
         <button
           type="submit"
-          className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+          className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover"
         >
           Filter
         </button>
         {(trade || status) && (
-          <Link href="/bids" className="text-sm text-ink-body hover:underline">
+          <Link href="/bids?view=all" className="text-sm text-ink-body hover:underline">
             Clear
           </Link>
         )}
@@ -343,7 +424,7 @@ export default async function BidsPage({
         isFiltered ? (
           <p className="text-ink-body">
             No bids match this filter.{" "}
-            <Link href="/bids" className="text-link hover:text-brand">
+            <Link href="/bids?view=all" className="text-link hover:text-link-hover">
               Show them all
             </Link>
             .
@@ -378,16 +459,18 @@ export default async function BidsPage({
           />
         )
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="bids-list">
+        <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-tour="bids-list">
           {bids.map((bid) => (
-            <li key={bid.id} className="p-4">
-              <Link
-                href={`/contacts/${bid.contactId}`}
-                className="flex flex-wrap items-center justify-between gap-2"
-              >
+            <li key={bid.id} id={bid.id} className="scroll-mt-24 p-4 target:ring-2 target:ring-inset target:ring-brand">
+              {/* The name opens the bid's own page (Research, Estimate check,
+                  Addenda, Decision); the GC's name opens the GC. Two links, not
+                  one wrapping the row — a link inside a link is invalid. */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium text-ink">{bid.projectName}</p>
+                    <Link href={`/ai/bids/${bid.id}`} className="inline-flex min-h-11 items-center font-medium text-ink hover:underline mouse:min-h-0">
+                      {bid.projectName}
+                    </Link>
                     <span
                       className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[bid.status]}`}
                     >
@@ -395,7 +478,9 @@ export default async function BidsPage({
                     </span>
                   </div>
                   <p className="text-sm text-ink-body">
-                    {bid.contact.name}
+                    <Link href={`/contacts/${bid.contactId}`} className="hover:underline">
+                      {bid.contact.name}
+                    </Link>
                     {bid.tradeScope && <> · {labelFor(TRADE_SCOPE_OPTIONS, bid.tradeScope)}</>}
                     {bid.dueDate && <> · Due {formatCalendarDate(bid.dueDate, "numeric")}</>}
                   </p>
@@ -403,7 +488,7 @@ export default async function BidsPage({
                 {bid.bidAmount != null && (
                   <p className="text-sm font-medium text-ink">{money(Number(bid.bidAmount))}</p>
                 )}
-              </Link>
+              </div>
               {/* ── THE REGRET LETTER, ON A DECLINED BID ONLY ──
 
                   A page nothing links to is a page nobody uses — #665's lesson,
@@ -423,6 +508,18 @@ export default async function BidsPage({
                   >
                     Write the regret letter →
                   </Link>
+                </div>
+              )}
+              {/* WHY IT WAS WON OR LOST, on a decided bid only — the fact the
+                  bid recommendations learn from (BidOutcomeForm). Collapsed
+                  behind "Record why", per the list-page convention. */}
+              {(bid.status === "WON" || bid.status === "LOST") && (
+                <div className="pt-2" data-bids="outcome-why">
+                  {bid.outcome ? (
+                    <p className="text-sm text-ink-muted">Why: {outcomeReasonLabel(bid.outcome.reason)}</p>
+                  ) : (
+                    <BidOutcomeForm bidInvitationId={bid.id} defaultResult={bid.status} collapsed />
+                  )}
                 </div>
               )}
               <BidLines
@@ -536,6 +633,28 @@ export default async function BidsPage({
                 companyId={company.id}
                 bidInvitationId={bid.id}
                 vendors={vendors}
+                companyName={company.name}
+                projectName={bid.projectName}
+                /* ONLY WHAT HAS A FILE. A spec section or addendum logged
+                   without its PDF is the normal case, not an error, and
+                   offering one that cannot be attached would be a tick box
+                   that silently sends nothing. */
+                sendable={[
+                  ...bid.specSections
+                    .filter((section) => section.fileUrl)
+                    .map((section) => ({
+                      id: section.id,
+                      kind: "SPEC_SECTION" as const,
+                      label: section.sectionNumber,
+                    })),
+                  ...bid.addenda
+                    .filter((addendum) => addendum.fileUrl)
+                    .map((addendum) => ({
+                      id: addendum.id,
+                      kind: "ADDENDUM" as const,
+                      label: addendum.reference,
+                    })),
+                ]}
                 today={today}
                 bidDueDate={day(bid.dueDate)}
                 quotes={bid.quotes.map(
@@ -594,6 +713,8 @@ export default async function BidsPage({
           ))}
         </ul>
       )}
-    </div>
+      </>
+      )}
+    </PageShell>
   );
 }

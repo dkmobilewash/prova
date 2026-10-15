@@ -103,6 +103,53 @@ enum AiFeature {
   /// demands and whether that costs money; whether the bid CARRIES the cost is a
   /// judgement about an estimate the model has never seen.
   SPEC_READ
+  /// The background agents — see ai-agents.prisma.
+  AI_AGENTS
+
+  /// `readScheduleRows` — reading a schedule off a drawing sheet.
+  ///
+  /// ── THIS MEMBER AND THE NEXT ONE WERE MISSING, AND THE SWITCH COULD NOT
+  /// REFUSE WITHOUT THEM ──
+  ///
+  /// Both features have been live in `AI_FEATURES` and have had their own
+  /// toggle on Settings → Assistant, with no enum member behind it. The toggles
+  /// do not silently do nothing, which would be bad enough — `aiSettings.ts`
+  /// builds `disabledFeatures` by casting the feature keys with `as
+  /// AiFeature[]`, so unchecking either one wrote a value this type did not
+  /// have and POSTGRES REFUSED THE WHOLE UPSERT. One unchecked box took every
+  /// other setting on the form down with it.
+  ///
+  /// Proved from the migrations rather than the schema file, which is the only
+  /// place that says what the database enforces: `add_company_ai_settings`
+  /// created seven values and three `ADD VALUE` migrations brought it to ten,
+  /// against twelve keys in the app at the time. `AI_AGENTS` landed after that
+  /// WITH its migration, which is the shape every member should have had.
+  ///
+  /// `aiFeatureEnumParity.test.ts` is why it cannot happen again: it reads the
+  /// members out of THIS block and the keys out of `AI_FEATURES` and requires
+  /// the two sets to be equal.
+  SCHEDULE_READ
+
+  /// `draftProposalSections` — drafting the prose of a proposal.
+  PROPOSAL_DRAFT
+
+  /// `labelWallCandidates` — deciding which of the runs the wall finder
+  /// measured are walls, and which are countertops, fixtures or reference
+  /// lines.
+  ///
+  /// ITS OWN MEMBER, for the reason `QUOTE_EXTRACT` gives above and with the
+  /// sharpest version of it on this list: this one is handed an IMAGE of the
+  /// customer's floor plan. Every other feature here sends text the file
+  /// already contains. A contractor content for us to read their title blocks
+  /// may not be content for us to send a picture of their client's building to
+  /// a model, and that is exactly the question a per-feature switch exists to
+  /// let them answer separately.
+  ///
+  /// It cannot change a quantity. The geometry measures every run before this
+  /// runs and the reply is a label per run, so the worst a wrong answer does is
+  /// drop a wall or keep a countertop — both visible on screen, both
+  /// overridable. See `wallClassify.ts`.
+  WALL_CLASSIFY
 }
 
 /// One row per company. Absent means every default below.

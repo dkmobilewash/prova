@@ -92,7 +92,7 @@ describe("command coverage of lib/actions", () => {
     // a throwing action would put a digest on the card. A DIRECT command's
     // core is therefore either a lifted core in lib/estimating,
     // lib/billing or lib/field (plain result) or an action whose signature
-    // promises ActionResult. A throwing action is HANDOFF until its owner
+    // promises ActionResult (or ActionResultWith<T>, which also returns failures). A throwing action is HANDOFF until its owner
     // converts it.
     const libDir = fileURLToPath(new URL("../", import.meta.url));
     const coreSource = ["estimating", "billing", "field"]
@@ -103,7 +103,7 @@ describe("command coverage of lib/actions", () => {
       if (command.mode !== "DIRECT" || !command.core) continue;
       const liftedCore = coreSource.includes(`export async function ${command.core}`);
       const returningAction = actionSources.some((source) =>
-        new RegExp(`export async function ${command.core}\\([^)]*\\)[^{]*Promise<ActionResult>`).test(source),
+        new RegExp(`export async function ${command.core}\\([^)]*\\)[^{]*Promise<ActionResult(?:>|With<)`).test(source),
       );
       expect(
         liftedCore || returningAction,

@@ -11,18 +11,34 @@ import type { TaggedFeet } from "./wallTags";
  *
  * ── WHY THE TAG AND NOT THE THICKNESS ──
  *
- * The obvious design is to match a detected thickness against the wall type's
- * thickness. It is not available and should not be invented: `WallType` has
- * `code`, `name`, `defaultHeightFt`, `sides` and `studSpacingIn` — NO thickness
- * — and deriving one from its components means parsing "⅝″ Type X" out of a
- * description, which is a guess wearing a measurement's clothes. Two types also
- * routinely share a thickness and differ in rating and layers, so thickness
- * cannot identify a type even in principle.
- *
  * The drawing already says which wall is which. `WallType.code` is the same
  * designation the drafter printed beside the wall. So this is an IDENTITY
  * match, not a similarity score, and that is the whole reason it can be trusted
  * enough to price from.
+ *
+ * **HALF OF WHAT THIS PARAGRAPH USED TO SAY IS NOW FALSE, AND IT WAS TRUE WHEN
+ * IT WAS WRITTEN.** It read: *"The obvious design is to match a detected
+ * thickness against the wall type's thickness. It is not available and should
+ * not be invented: `WallType` has `code`, `name`, `defaultHeightFt`, `sides`
+ * and `studSpacingIn` — NO thickness — and deriving one from its components
+ * means parsing '⅝″ Type X' out of a description, which is a guess wearing a
+ * measurement's clothes."*
+ *
+ * Every word of that was accurate until #731, which added
+ * `WallType.thicknessIn` and fills it by reading the sheet's own partition
+ * schedule — so the thickness is neither absent nor inferred from a
+ * description. It is what the architect wrote in a table.
+ *
+ * **The other half of the paragraph survives intact and is the load-bearing
+ * half:** *"Two types also routinely share a thickness and differ in rating and
+ * layers, so thickness cannot identify a type even in principle."* Still true,
+ * and School-01 proves it — A1 and A2 are both 4-7/8" there, differing by fire
+ * rating, which a floor plan cannot show.
+ *
+ * So thickness is a SHORTLIST and never an identity. `wallGroups.ts` uses it
+ * that way: tag first, thickness only where the drawing was silent, and a
+ * question rather than a guess where two types share one. This module is
+ * unchanged in what it does — it still matches by tag alone.
  *
  * ── IT REFUSES MORE THAN IT MATCHES, AND THAT IS THE DESIGN ──
  *
@@ -44,17 +60,58 @@ import type { TaggedFeet } from "./wallTags";
  * posture as the scale prefill and the sheet index.
  */
 
-/** A wall type this company can actually post against: it has layers, so it
- *  produces line items. `postableWallTypes` on the takeoff page is already
- *  filtered to these. */
-export type PostableWallType = {
+/**
+ * A wall type this matcher may NAME a group with.
+ *
+ * ── IT USED TO MEAN "POSTABLE", AND THAT COST THE SCHEDULE IMPORT ──
+ *
+ * This was `PostableWallType`, and the takeoff page handed the matcher a list
+ * filtered to `components: { some: {} }` — types with layers. The reasoning was
+ * sound about POSTING: a layerless type produces no line items, so posting a
+ * group as one adds nothing to the estimate and loses the quantities it
+ * replaced. It was wrong about NAMING, which is a different question.
+ *
+ * Measured on School-01, 2026-10-11. The partition schedule was read off A-501
+ * and ten wall types were created from it — A1, A2, B1, C1, D1, F1, EXT-1,
+ * EXT-2, CMU, SF — each with the thickness the drawing prints. Then **Find the
+ * walls** on A-101 found 63 runs, tagged them A1 and A2 off the drawing, and
+ * reported "no wall type you have is 4-7/8 inch thick" beside a row the app had
+ * just tagged A1. Both sentences were true of the list it was given, and the
+ * import's own button promises the opposite: "Each one arrives with its
+ * thickness, so a wall measured on the drawing can find it."
+ *
+ * So the gate moved to where the constraint actually is. The matcher sees every
+ * type and may name any of them; `hasParts` is what the viewer reads to decide
+ * whether a group can be POSTED PRICED, and `postMeasuredWallRun` refuses a
+ * layerless type server-side regardless — a form can send anything.
+ */
+export type MatchableWallType = {
   id: string;
   code: string;
   name: string;
+  /**
+   * Whether this type has layers, and therefore produces line items.
+   *
+   * NOT A FILTER ANY MORE, A FACT ON THE ROW. A type without parts can still
+   * tell an estimator what the drawing's "A1" means — which is most of the
+   * value of reading the schedule — and the screen says what is missing rather
+   * than the group going unnamed for a reason nothing states.
+   */
+  hasParts: boolean;
+  /**
+   * Finish to finish, in inches, where the company has recorded one — #731.
+   *
+   * NULLABLE AND IT STAYS NULLABLE. A type typed in by hand before that column
+   * existed has none, and backfilling one by inference would be the guess the
+   * header above describes. Null means "cannot be matched by thickness", which
+   * is what `typesAtThickness` reads it as, so an old library quietly keeps the
+   * behaviour it had rather than acquiring a wrong answer.
+   */
+  thicknessIn: number | null;
 };
 
 export type WallTypeMatch =
-  | { state: "MATCH"; type: PostableWallType; tag: string; feet: number; share: number }
+  | { state: "MATCH"; type: MatchableWallType; tag: string; feet: number; share: number }
   | { state: "NO_TAG" }
   | { state: "NO_SUCH_TYPE"; tag: string }
   | { state: "MIXED"; tags: string[] };
@@ -90,7 +147,7 @@ export function sameDesignation(a: string, b: string): boolean {
 
 export function matchClusterToWallType(
   tagged: readonly TaggedFeet[],
-  wallTypes: readonly PostableWallType[],
+  wallTypes: readonly MatchableWallType[],
 ): WallTypeMatch {
   // `one.feet > 0` is REDUNDANT against the total guard below, and kept:
   // mutation confirms removing it changes no answer, because a set of

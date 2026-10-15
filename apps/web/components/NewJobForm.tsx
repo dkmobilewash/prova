@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { createJob } from "@/lib/actions";
+import { ActionForm } from "@/components/ActionForm";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export interface GcOption {
   id: string;
@@ -37,14 +39,10 @@ const field =
  */
 export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
   const [isNewContact, setIsNewContact] = useState(contacts.length === 0);
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
 
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        const formData = new FormData(event.currentTarget);
+    <ActionForm
+      action={(formData) => {
         // Whichever half of the picker is not in use contributes nothing,
         // so the server never has to guess which one the person meant.
         if (isNewContact) {
@@ -53,13 +51,8 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
           formData.delete("contactName");
           formData.delete("contactEmail");
         }
-        setError(null);
-        startTransition(async () => {
-          const result = await createJob(formData);
-          if (!result.ok) setError(result.error);
-        });
+        return createJob(formData);
       }}
-      onInput={() => setError(null)}
       className="flex flex-col gap-4"
     >
       <label className="flex flex-col gap-1 text-sm text-ink-label" data-tour="new-job-name">
@@ -76,7 +69,18 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
         />
       </label>
 
-      <div className="flex flex-col gap-2 rounded-lg border border-line-card bg-surface/60 p-4" data-tour="new-job-client">
+      {/* Enter in the GC picker or the add-a-GC boxes picks or types — it
+          never submits the whole form (UX test 2026-10-11: Enter to choose
+          the GC started the job). Buttons are left alone so Enter still
+          presses "+ Add a new GC". Enter in Job name still submits. */}
+      <div
+        className="flex flex-col gap-2 rounded-lg border border-line-card bg-surface/60 p-4"
+        data-tour="new-job-client"
+        onKeyDown={(event) => {
+          const tag = (event.target as HTMLElement).tagName;
+          if (event.key === "Enter" && (tag === "SELECT" || tag === "INPUT")) event.preventDefault();
+        }}
+      >
         <p className="text-sm font-medium text-ink-label">General contractor</p>
 
         {contacts.length === 0 ? (
@@ -86,10 +90,7 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
         ) : isNewContact ? (
           <button
             type="button"
-            onClick={() => {
-              setIsNewContact(false);
-              setError(null);
-            }}
+            onClick={() => setIsNewContact(false)}
             className="self-start text-sm text-link hover:underline"
           >
             ← Pick one you already work with
@@ -97,10 +98,7 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
         ) : (
           <button
             type="button"
-            onClick={() => {
-              setIsNewContact(true);
-              setError(null);
-            }}
+            onClick={() => setIsNewContact(true)}
             className="self-start text-sm text-link hover:underline"
           >
             + Add a new GC
@@ -145,25 +143,20 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
         )}
       </div>
 
-      <button
+      <SubmitButton
         type="submit"
-        disabled={isPending}
         data-tour="new-job-create"
-        className="mt-2 inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60"
+        // Sticky above the phone tabs (--shell-tabs, 0 on desktop): opening
+        // "+ Add a new GC" pushed it below the fold (UX test 2026-10-11).
+        className="sticky bottom-[calc(var(--shell-tabs,0px)+0.75rem)] z-10 mt-2 inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 shadow-md hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-60 mouse:min-h-9"
       >
         {/* "Continue →" said nothing about what pressing it does. It starts
             the job — a real row, in the jobs list, from this moment — and
             moves to the screen for putting work on it. A label that names
             the destination is the difference between a button somebody
             presses and one somebody hesitates over. */}
-        {isPending ? "Starting it…" : "Start the job — add the work next →"}
-      </button>
-
-      {error && (
-        <p role="alert" className="text-sm text-tag-rose-ink">
-          {error}
-        </p>
-      )}
-    </form>
+        Start the job — add the work next →
+      </SubmitButton>
+    </ActionForm>
   );
 }

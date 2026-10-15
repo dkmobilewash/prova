@@ -1,0 +1,20 @@
+{
+  "id": "S18",
+  "title": null,
+  "page": 1,
+  "sheetNumber": null,
+  "raster": true,
+  "scale": null,
+  "scalesPrinted": [],
+  "widthPt": 1728,
+  "heightPt": 1296,
+  "scaleAuthority": "none",
+  "rooms": [],
+  "dimensions": [],
+  "wallLfTotal": null,
+  "doorCount": null,
+  "windowCount": null,
+  "notes": [
+    "No text layer and no vector strokes: this is a scan. Everything is null until the raster path exists."
+  ]
+}

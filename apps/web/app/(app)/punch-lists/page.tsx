@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
@@ -9,6 +10,8 @@ import { PunchListRow } from "@/components/PunchListRow";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { can } from "@/lib/permissions";
 import type { PunchListPeople } from "@/components/PunchItemFields";
+
+export const metadata = { title: "Punch lists" };
 
 export default async function PunchListsPage({
   searchParams,
@@ -141,7 +144,7 @@ export default async function PunchListsPage({
   // on the page.
   const chip = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
-      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-rail-hover"
     }`;
 
   return (
@@ -157,12 +160,7 @@ export default async function PunchListsPage({
       asideLabel="Add an item and filter by job"
       header={
         <>
-          <h1 className="mb-2 text-xl font-semibold text-ink">Punch lists</h1>
-          <p className="mb-6 text-sm text-ink-body">
-            What still has to be fixed before a job closes out. Jobs currently go straight from
-            in-progress to complete with nothing tracking the walkthrough, so this is the list that
-            used to live on someone&apos;s memory.
-          </p>
+          <PageHeader route="/punch-lists" subtitle="What still has to be fixed before a job closes out." />
         </>
       }
       aside={

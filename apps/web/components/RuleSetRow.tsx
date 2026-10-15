@@ -19,7 +19,7 @@ export type RuleSetRowData = RuleSetDefaults & {
 };
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 export function RuleSetRow({
   ruleSet,
@@ -69,7 +69,7 @@ export function RuleSetRow({
         >
           <p className="text-sm font-semibold text-ink-label">{ruleSet.name}</p>
           <RuleSetFields defaults={ruleSet} />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
@@ -101,13 +101,13 @@ export function RuleSetRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-ink">{ruleSet.name}</span>
-          <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
+          <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-body">
             {ruleSet.jurisdiction} · {authorityLabel(ruleSet.authority)}
           </span>
           {current ? (
             <span className="rounded bg-tag-green px-1.5 py-0.5 text-xs text-tag-green-ink">In force</span>
           ) : (
-            <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-muted">
+            <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-muted">
               {ruleSet.effectiveTo && ruleSet.effectiveTo < today ? "Superseded" : "Not yet in force"}
             </span>
           )}
@@ -151,7 +151,7 @@ export function RuleSetRow({
         </p>
 
         {ruleSet.note && <p className="mt-1 text-sm text-ink-body">{ruleSet.note}</p>}
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {error && <p className="mt-1 text-sm text-danger">{error}</p>}
       </div>
 
       {/* Arming "Delete" empties this cluster, so "Edit" cannot be clicked
@@ -177,7 +177,7 @@ export function RuleSetRow({
               onConfirm={() => run(() => deletePrevailingWageRuleSet(ruleSet.id))}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-danger hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }

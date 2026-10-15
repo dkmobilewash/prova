@@ -135,6 +135,18 @@ export function wallRunsFromStrokes(
   heightUnits: number,
   options: WallFinderOptions & { gridCap?: number; closeOpenings?: boolean },
 ): WallCandidate[] {
+  // ── CURVES BELONG TO THE PAIRER, NOT TO THIS ENGINE ──
+  //
+  // Both engines are handed the same segments and make different-sized runs
+  // out of a flattened arc, which is a DOUBLE COUNT and not a disagreement:
+  // on School-01's lobby wall the pairer returned 9 pieces totalling 22.8 ft
+  // at 4-7/8" and this engine returned 4 pieces totalling 22.4 ft at 3-3/4" —
+  // one wall of about 23 ft, billed at 45. Neither `mergeWalls` nor
+  // `oneWallPerPlace` can collapse them, because both ask whether two findings
+  // are parallel within about 3 degrees and consecutive pieces of an arc are
+  // not. See `StrokeSegment.curved` for why the pairer is the one that keeps
+  // them, and what it costs.
+  segments = segments.filter((one) => one.curved !== true);
   if (options.closeOpenings === false) {
     return runsFromStrokes(segments, widthUnits, heightUnits, options);
   }

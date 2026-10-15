@@ -56,9 +56,9 @@ const LABELLED_PICKERS: Record<string, number> = {
   "components/BackchargeFields.tsx": 1,
   "components/CloseoutJobCard.tsx": 1,
   "components/ComplianceUploadForm.tsx": 1,
-  // Which job somebody is being put ON for a day. Added with the per-day
-  // crew schedule.
-  "components/CrewScheduleBoard.tsx": 1,
+  // Two: which job somebody is being put ON for a day (added with the per-day
+  // crew schedule), and which job a planned day is MOVED to (2026-10-12).
+  "components/CrewScheduleBoard.tsx": 2,
   "components/DrawingSetFields.tsx": 1,
   // Two: deploy a piece of equipment, and move an existing stay to another job.
   "components/EquipmentDeploymentControls.tsx": 2,
@@ -103,6 +103,28 @@ const BARE_NAME_EXCEPTIONS: Record<string, { count: number; why: string }> = {
       "own distinguishing detail (the crew names, the start/end dates), and " +
       "every job on this page is CONTRACTED or IN_PROGRESS, so a status " +
       "suffix would repeat itself down the whole page.",
+  },
+  "app/(app)/hours/page.tsx": {
+    count: 1,
+    why:
+      "The week's by-job totals. Read-only, no form and no filter: each row " +
+      "is a link to that job's Crew & time tab and its hours figure, and " +
+      "nothing is filed from it.",
+  },
+  "components/home/HomeParts.tsx": {
+    count: 1,
+    why:
+      "The home page's job cards (Concept G). Read-only: each card links to " +
+      "its own job, nothing is filed from it, and the GC, trade and stage " +
+      "strip on the same card tell two similarly named jobs apart.",
+  },
+  "components/CrewWeekGrid.tsx": {
+    count: 1,
+    why:
+      "The week board's row headers. Read-only: each links to its own job and " +
+      "nothing is filed from the grid — the add form beside it uses " +
+      "jobPickerLabel. A GC suffix on every row would eat the column the " +
+      "names of the people are in.",
   },
 };
 
@@ -219,7 +241,10 @@ describe("the job-picker census", () => {
     // picker. It is the one picker in the app whose wrong answer is not a
     // misfiled record but a WRONG LESSON — the bid is judged against another
     // job's costs, and the estimator is taught from it.
-    expect(expected).toEqual(31);
+    //
+    // 31 -> 32 on 2026-10-12: the schedule's inline "Move" on a planned day
+    // picks the job the day moves to.
+    expect(expected).toEqual(32);
     expect(actual).toEqual(expected);
   });
 

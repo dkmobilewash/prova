@@ -66,7 +66,7 @@ export function JobMediaGallery({ media }: { media: JobMediaCardData[] }) {
   const target = bulkReportTarget(selected, media);
 
   const btn =
-    "min-h-11 inline-flex items-center rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-neutral-800";
+    "min-h-11 inline-flex items-center rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-rail-hover";
 
   return (
     <>
@@ -102,7 +102,7 @@ export function JobMediaGallery({ media }: { media: JobMediaCardData[] }) {
                that job and its contact. Saying which jobs are in the way,
                and where the fix is, is the whole of the remedy — the job
                chips are directly above this bar on `/photos`. */
-            <p className="text-sm text-amber-400">
+            <p className="text-sm text-warn">
               A photo report is one job&apos;s document, and these {target.ids.length} are on{" "}
               {target.jobIds.length} jobs. Pick a job above first.
             </p>

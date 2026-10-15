@@ -6,8 +6,15 @@ import { outboundConfig, runOutboundPush } from "@/lib/smartlead/run";
  * THE NIGHTLY PUSH: the operator company's NEW, emailable, unsuppressed leads
  * go to the Smartlead campaign, at most `OUTBOUND_DAILY_CAP` a day.
  *
- * Scheduled at 14:00 UTC (vercel.json) — 7am Pacific in summer, 6am in winter
- * — so the sequencer's first sends of the day land in business hours.
+ * NOT YET SCHEDULED. It was `0 14 * * *` in vercel.json (7am Pacific in
+ * summer, so the sequencer's first sends land in business hours), but Hobby
+ * allows TWO cron entries on `prova-web` and a deploy declaring a third is
+ * refused outright — both were taken (digest, plan ingest) and #748 already
+ * folded the bid watcher into the digest for the same reason
+ * (lib/agents/cron.ts, pinned by lib/agents/cron.test.ts). Until it has a
+ * home — riding the digest like the watcher, or a plan change — this route
+ * runs when a scheduler or a `curl` with the CRON_SECRET calls it, and the
+ * owner's button on /sales does the same work by hand.
  *
  * NOT protected by Clerk — see the note in middleware.ts. Authenticates the
  * scheduler itself with the same timing-safe `Authorization: Bearer

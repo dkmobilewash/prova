@@ -159,3 +159,33 @@ export function duplicateWallsCaution(suitability: SheetSuitability, sheetNumber
     `it is the same wall the architectural plan already carries. Adding it would bid those walls twice.`
   );
 }
+
+/**
+ * Which of the two cautions a sheet shows — and there is only ever one slot.
+ *
+ * ── THE SERVER'S ANSWER WINS, AND THAT IS THE WHOLE RULE ──
+ *
+ * Two readings of the same question reach the viewer. One comes from a
+ * `PlanSheetProposal`: a model read the title block and an estimator may have
+ * corrected it on the sheet review, so it carries a human's judgement. The
+ * other is read off the drawing in the browser by `sheetNumberFrom`, which is
+ * deterministic, free, and available on sets the model stage never reached —
+ * but it is still a heuristic over a corner of a page.
+ *
+ * So the read one FILLS A SILENCE rather than competing: where the server has
+ * something, that is what an estimator already agreed to, and showing a second
+ * sentence that says the same thing in different words is how a caution starts
+ * being skipped.
+ *
+ * ── A FUNCTION, AND NOT AN `||` IN THE JSX ──
+ *
+ * It was an `||` in the JSX and three mutations survived it: never rendering
+ * the element, dropping the read half, and INVERTING the precedence. All three
+ * were invisible because the same two names appear twice over in that markup —
+ * once in the guard and once in the value — so a source census could not tell
+ * which it was looking at. A named function makes the precedence a thing a test
+ * can hold still, and leaves the markup with one name in it.
+ */
+export function cautionToShow(fromServer: string | undefined, fromDrawing: string | undefined): string {
+  return (fromServer ?? "").trim() || (fromDrawing ?? "").trim() || "";
+}

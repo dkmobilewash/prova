@@ -4,13 +4,19 @@
 The two halves of cold email the schema was waiting for: something that SENDS leads to the
 sequencer, and the link that lets anyone stop it with one click.
 
-**The push.** `/api/cron/outbound-push` runs at 14:00 UTC (7am Pacific) and the owner's
-**Push leads now** button on `/sales` does the same thing on demand — one runner
+**The push.** `/api/cron/outbound-push` is the runner a scheduler calls with the `CRON_SECRET`,
+and the owner's **Push leads now** button on `/sales` does the same thing on demand — one runner
 (`lib/smartlead/run.ts`), so the two cannot disagree. A lead goes only when it is NEW, has an
 email, and is not marked do-not-contact; the button says how many did not go and why. The cap
 (`OUTBOUND_DAILY_CAP`, default 50) is a rolling 24 hours counted from the PUSHED events across
 both callers, so pressing the button after the cron ran does not double the day — sending past
-the warm-up is how a domain gets burned. A pushed batch turns QUEUED in the same transaction
+the warm-up is how a domain gets burned.
+
+**The schedule is NOT in `vercel.json`, deliberately.** It was `0 14 * * *` on this branch until
+the merge with main: Hobby allows two cron entries on `prova-web`, both are taken (digest, plan
+ingest), and a deploy declaring a third is refused outright — `lib/agents/cron.test.ts` pins the
+count at two, which is how #748 came to run the bid watcher inside the digest instead. The push
+needs the same decision (ride the digest, or a plan change); until then the button is the push. A pushed batch turns QUEUED in the same transaction
 that records it, so a re-run picks up nothing it already sent; the event ids are
 `push:<lead>:<campaign>` and written ON CONFLICT DO NOTHING rather than caught, because a
 caught P2002 rolls back the whole batch's status writes, which is the one way to double-push.

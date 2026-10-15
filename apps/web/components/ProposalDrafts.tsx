@@ -102,7 +102,7 @@ export function ProposalDrafts({
         <ActionForm action={() => draftProposalGapClauses(jobId)} className="mt-3">
           <SubmitButton
             type="submit"
-            className="min-h-[48px] rounded-md bg-neutral-800 px-4 text-sm font-medium text-ink hover:bg-neutral-700"
+            className="min-h-[48px] rounded-md bg-rail-hover px-4 text-sm font-medium text-ink hover:bg-lift"
           >
             {/* The count before the press, which is the house rule for anything
                 that spends an allowance. */}
@@ -151,14 +151,14 @@ export function ProposalDrafts({
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <SubmitButton
                     type="submit"
-                    className="min-h-[48px] rounded-md bg-neutral-800 px-3 text-sm font-medium text-ink hover:bg-neutral-700"
+                    className="min-h-[48px] rounded-md bg-rail-hover px-3 text-sm font-medium text-ink hover:bg-lift"
                   >
                     Put it on the proposal
                   </SubmitButton>
                   <button
                     type="button"
                     onClick={() => setEditing(editing === draft.id ? null : draft.id)}
-                    className="min-h-[48px] rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-neutral-800"
+                    className="min-h-[48px] rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-rail-hover"
                   >
                     {editing === draft.id ? "Keep as written" : "Edit the wording"}
                   </button>
@@ -168,7 +168,7 @@ export function ProposalDrafts({
               <ActionForm action={() => dismissProposalDraft(draft.id)} className="mt-2">
                 <SubmitButton
                   type="submit"
-                  className="min-h-[48px] rounded-md border border-line-card px-3 text-sm text-ink-muted hover:bg-neutral-800"
+                  className="min-h-[48px] rounded-md border border-line-card px-3 text-sm text-ink-muted hover:bg-rail-hover"
                 >
                   Not on this letter
                 </SubmitButton>
@@ -200,7 +200,7 @@ export function ProposalDrafts({
                   <ActionForm action={() => saveClauseToLibrary(draft.id)}>
                     <SubmitButton
                       type="submit"
-                      className="min-h-[48px] rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-neutral-800"
+                      className="min-h-[48px] rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-rail-hover"
                     >
                       Add to my standard set
                     </SubmitButton>

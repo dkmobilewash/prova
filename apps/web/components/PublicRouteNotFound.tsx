@@ -9,7 +9,7 @@
  * `PublicRouteError` (issue #106 finding 8), one route segment over.
  *
  * WHY IT IS NOT A COPY OF `(app)/not-found.tsx`. The audience has no account
- * here. The app's version offers "Back to jobs" and "Line item catalog",
+ * here. The app's version offers "Back to jobs" and "Price book",
  * which for a GC are two links into a product they cannot sign into — worse
  * than no link, because it turns a dead link into a dead end with a login
  * wall behind it. There is deliberately no link on this page at all. The way

@@ -83,7 +83,7 @@ export function RowActions({
     <ArmContext.Provider
       value={{ armed, arm: () => setArmed(true), disarm: () => setArmed(false) }}
     >
-      <Tag className={className}>
+      <Tag className={className} data-row-actions="">
         {armed ? null : children}
         {destructive}
       </Tag>
@@ -91,12 +91,15 @@ export function RowActions({
   );
 }
 
+/* `data-row-actions` is how globals.css finds every button in the cluster to
+   give it 44x44px on a touch screen, whatever classes the caller passed. An
+   attribute rather than a class so `className` stays exactly the caller's. */
 const defaultDeleteClass =
-  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-danger disabled:opacity-50";
 const defaultCancelClass =
-  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50";
 const defaultConfirmClass =
-  "rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-tag-rose disabled:opacity-50";
+  "rounded-md border border-red-500 px-3 py-1.5 text-xs text-danger hover:bg-tag-rose disabled:opacity-50";
 
 /**
  * THE PHONE HALF OF RULE 2 (issue #184). `pinned` is the desktop half.

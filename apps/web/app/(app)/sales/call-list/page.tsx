@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
 import {
@@ -42,7 +43,7 @@ export default async function CallListPage({
   if (!company.isProvaOperator) {
     return (
       <PageShell width="reading">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Not part of your access</h1>
+        <PageHeader route="/sales" parent={{ href: "/sales", label: "Sales CRM" }} title="Not part of your access" />
         <p className="text-sm text-ink-body">Nothing here for this account.</p>
       </PageShell>
     );
@@ -50,7 +51,7 @@ export default async function CallListPage({
   if (currentUser.role !== "OWNER") {
     return (
       <PageShell width="reading">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Owner only</h1>
+        <PageHeader route="/sales" parent={{ href: "/sales", label: "Sales CRM" }} title="Owner only" />
         <p className="text-sm text-ink-body">The sales CRM is restricted to the account owner.</p>
       </PageShell>
     );
@@ -90,16 +91,19 @@ export default async function CallListPage({
     // A list of firms to dial, each a name, a person, a phone and a place:
     // `working`, because the question is how many you can see at once.
     <PageShell width="working">
-      <p className="mb-2 text-xs text-ink-muted">
-        <Link href="/sales" className="hover:underline">← Sales CRM</Link>
-      </p>
-      <h1 className="mb-1 text-lg font-semibold text-ink">Call list</h1>
-      <p className="mb-4 text-sm text-ink-body">
-        Every California firm licensed in our four trades, in good standing, with a phone on file —
-        and the person to ask for, where CSLB names one. Built from CSLB&rsquo;s public licence and
-        personnel files; refreshed once a day (this copy{" "}
-        {new Date(list.builtAtMs).toLocaleString("en-US", { timeZone: "America/Los_Angeles" })} PT).
-      </p>
+      <PageHeader
+        route="/sales"
+        parent={{ href: "/sales", label: "Sales CRM" }}
+        title="Call list"
+        subtitle={
+          <>
+            Every California firm licensed in our four trades, in good standing, with a phone on file
+            — and the person to ask for, where CSLB names one. Built from CSLB&rsquo;s public licence
+            and personnel files; refreshed once a day (this copy{" "}
+            {new Date(list.builtAtMs).toLocaleString("en-US", { timeZone: "America/Los_Angeles" })} PT).
+          </>
+        }
+      />
 
       <dl className="mb-6 grid grid-cols-2 gap-3 rounded-lg border border-line-card bg-surface p-4 text-sm sm:grid-cols-4">
         <div>

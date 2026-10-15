@@ -99,7 +99,7 @@ export type JobMediaCardData = {
 };
 
 const btn =
-  "min-h-11 inline-flex items-center rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "min-h-11 inline-flex items-center rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 /** The tick box on one card, handed down from the gallery that owns the
  *  selection. Optional so the card renders unchanged anywhere a selection
@@ -401,7 +401,7 @@ export function JobMediaCard({
                 className="min-h-11 rounded-md border border-line-card bg-canvas px-3 text-base text-ink focus:border-link focus:outline-none"
               />
             </label>
-            {error && <p className="text-sm text-red-400">{error}</p>}
+            {error && <p className="text-sm text-danger">{error}</p>}
             <div className="flex flex-wrap gap-2">
               <button
                 type="submit"
@@ -475,7 +475,7 @@ export function JobMediaCard({
             <p className="text-sm text-ink-body">
               Separate several with commas. {media.tags.length} of {JOB_MEDIA_TAGS_PER_PHOTO_MAX} used.
             </p>
-            {error && <p className="text-sm text-red-400">{error}</p>}
+            {error && <p className="text-sm text-danger">{error}</p>}
             <div className="flex flex-wrap gap-2">
               <button
                 type="submit"
@@ -528,12 +528,12 @@ export function JobMediaCard({
                 is a blank box, and finding that out from the GC is worse
                 than finding it out from this sentence. */}
             {media.playbackWarning && (
-              <p className="text-sm text-amber-400">{media.playbackWarning}</p>
+              <p className="text-sm text-warn">{media.playbackWarning}</p>
             )}
             {annotationSummary(media.marks.length) && (
               <p className="text-sm text-ink-body">{annotationSummary(media.marks.length)}</p>
             )}
-            {error && <p className="text-sm text-red-400">{error}</p>}
+            {error && <p className="text-sm text-danger">{error}</p>}
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -610,7 +610,7 @@ export function JobMediaCard({
                           }
                         });
                       }}
-                      className="ml-1 inline-flex min-h-11 min-w-11 items-center justify-center text-ink-body hover:text-red-400 disabled:opacity-50"
+                      className="ml-1 inline-flex min-h-11 min-w-11 items-center justify-center text-ink-body hover:text-danger disabled:opacity-50"
                     >
                       <span aria-hidden="true">×</span>
                     </button>
@@ -640,7 +640,7 @@ export function JobMediaCard({
                   : ""}{" "}
               · {media.sizeLabel}
             </p>
-            {media.clockWarning && <p className="text-sm text-amber-400">{media.clockWarning}</p>}
+            {media.clockWarning && <p className="text-sm text-warn">{media.clockWarning}</p>}
             {/* WHERE, on the line under WHEN and WHO, because that is the
                 order somebody reads a caption in and because a photo
                 without one must not leave a hole. Nothing at all is
@@ -660,7 +660,7 @@ export function JobMediaCard({
                 slate-400 rather than slate-500, per #89 — slate-500 on
                 slate-900 measures 3.83:1, under the 4.5 floor. */}
             {media.location && (
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-ink-muted">
                 <span aria-hidden="true">📍 </span>
                 {media.location.coordinateLabel}
                 {media.location.accuracyLabel ? ` · ${media.location.accuracyLabel}` : ""}{" "}
@@ -680,13 +680,13 @@ export function JobMediaCard({
                 it a 2 km network fix and an 8 m GPS fix are the same
                 five-decimal number on the same line. */}
             {media.location?.coarseNote && (
-              <p className="text-sm text-amber-400">{media.location.coarseNote}</p>
+              <p className="text-sm text-warn">{media.location.coarseNote}</p>
             )}
             {/* Amber like the clock warning and for the same reason: it is
                 a caveat about the file rather than a failure, and the
                 person who needs it is the one about to show this to a GC. */}
             {media.playbackWarning && (
-              <p className="text-sm text-amber-400">{media.playbackWarning}</p>
+              <p className="text-sm text-warn">{media.playbackWarning}</p>
             )}
             {/* The photo IS its own link (the whole image opens the file).
                 A video and a voice note are not — wrapping a player in an
@@ -720,7 +720,7 @@ export function JobMediaCard({
                 Shared by link, {media.sharedWithClientLabel}
               </p>
             )}
-            {error && <p className="text-sm text-red-400">{error}</p>}
+            {error && <p className="text-sm text-danger">{error}</p>}
 
             {/* Left-aligned cluster, so the default pinned="start" is
                 correct here: Cancel takes the first slot, which is the one
@@ -752,7 +752,7 @@ export function JobMediaCard({
                   hint="The file is removed from storage too."
                   deleteClassName={btn}
                   cancelClassName={btn}
-                  confirmClassName="min-h-11 inline-flex items-center rounded-md border border-red-500 px-3 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+                  confirmClassName="min-h-11 inline-flex items-center rounded-md border border-red-500 px-3 text-sm text-danger hover:bg-tag-rose disabled:opacity-50"
                 />
               }
             >

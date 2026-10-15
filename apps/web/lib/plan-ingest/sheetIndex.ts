@@ -70,6 +70,40 @@ export function effectiveTitle(row: SheetRow): string | null {
   return row.proposal.acceptedTitle ?? row.proposal.title;
 }
 
+/** How much of a sheet's own title a jump list carries before it stops being
+ *  scannable. Picked as the longest real title measured on a bid set
+ *  ("FIRST FLOOR DEMOLITION PLAN", 27) rounded up, so no title on that set is
+ *  cut at all and a pathological one still cannot push the number off screen. */
+export const PICKER_TITLE_LIMIT = 30;
+
+/**
+ * What one option in the sheet picker reads, or null for a page with nothing to
+ * say.
+ *
+ * ── THE NUMBER CARRIES THE TITLE, NEVER THE REVERSE ──
+ *
+ * `A-101 · First floor plan`, because the number is what an estimator is given
+ * ("price the walls on A-101") and the title is how they confirm they landed on
+ * the right one. A title alone is NOT a usable option and returns null even
+ * when it exists: six sheets reading "ENLARGED PLAN" are six options a person
+ * cannot choose between, which is worse than the page number they already have.
+ *
+ * Returning null is therefore a real answer and not a failure — the caller
+ * falls back to "Sheet 23", which is exactly what the pager says today. A page
+ * with no reading stays reachable; it just is not labelled.
+ */
+export function sheetPickerLabel(
+  sheetNumber: string | null,
+  title: string | null,
+): string | null {
+  const number = sheetNumber?.trim();
+  if (!number) return null;
+  const name = title?.trim();
+  if (!name) return number;
+  const short = name.length > PICKER_TITLE_LIMIT ? `${name.slice(0, PICKER_TITLE_LIMIT - 1)}…` : name;
+  return `${number} · ${short}`;
+}
+
 /**
  * Where a row sorts. LOWER RANKS FIRST.
  *

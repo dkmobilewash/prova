@@ -65,7 +65,28 @@ export const MIN_SHEETS = 3;
  *
  * Not 1.0: a cover sheet or a detail sheet legitimately carries a different
  * frame, and requiring every sample would find nothing the moment one odd sheet
- * is drawn. 0.7 of six samples is four.
+ * is drawn.
+ *
+ * ── THIS COMMENT SAID "0.7 OF SIX SAMPLES IS FOUR" AND THE CODE REQUIRES FIVE ──
+ *
+ * Corrected 2026-10-13 by running the arithmetic rather than reading it.
+ * `6 * 0.7` is `4.199999999999999` in floating point, so `Math.ceil` gives
+ * **5**, not 4 — the filter is one sheet stricter than its own documentation
+ * claimed, and strictness is the direction that lets furniture through.
+ *
+ * The sample count was wrong too: `pagesToSample` returns six BAND midpoints
+ * plus the current page, so a real run usually has SEVEN samples and needs five
+ * of them. It tolerates two odd sheets, not three.
+ *
+ * ── AND THE NUMBER IS NOT MOVED, WHICH IS DELIBERATE ──
+ *
+ * 0.7 stays until a real sheet says what it should be. Both bench sets were
+ * measured and neither can answer: their page furniture recurs on EVERY sampled
+ * sheet (mesa-ridge 26 segments on 6 of 6, desert-willow 18 on 7 of 7), so the
+ * threshold is nowhere near the margin and lowering it would change nothing
+ * there while silently deleting real wall on a tower of identical floors.
+ * `realplan/sheetTemplate.eval.ts` prints the recurrence histogram for a real
+ * set, which is what a defensible value would be set from.
  */
 export const ON_MOST_SHEETS = 0.7;
 

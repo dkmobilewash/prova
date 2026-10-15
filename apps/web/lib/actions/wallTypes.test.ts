@@ -67,6 +67,14 @@ function model(name: string) {
       }
       return found;
     },
+    // Added when the wall schedule started reading the company's own answer
+    // about openings (`loadWallSchedule`). Same semantics as `findFirst` here:
+    // this fake has no uniqueness to enforce, and the real behaviour of that
+    // read is covered by `openingDeduction.test.ts` plus the db suite.
+    findUnique: async ({ where }: { where: Record<string, unknown> }) => {
+      reads += 1;
+      return rows().find((r) => matches(r, where)) ?? null;
+    },
     count: async ({ where }: { where?: Record<string, unknown> } = {}) => rows().filter((r) => matches(r, where)).length,
     create: async ({ data }: { data: Record<string, unknown> }) => {
       const { components, ...rest } = data as Record<string, unknown> & { components?: { create: Record<string, unknown>[] } };
@@ -103,7 +111,7 @@ vi.mock("@prova/db", () => {
   // measurements posted into a run before deleting it. The real behaviour is
   // proved in `takeoff-wall-run.dbtest.ts` against a real Postgres — a fake
   // client cannot enforce ON DELETE SET NULL, which is half of that fix.
-  for (const name of ["job", "wallType", "wallTypeComponent", "wallRun", "jobLineItem", "lineItemCatalogEntry", "craftClassification", "takeoffMeasurement"]) {
+  for (const name of ["job", "company", "wallType", "wallTypeComponent", "wallRun", "jobLineItem", "lineItemCatalogEntry", "craftClassification", "takeoffMeasurement"]) {
     client[name] = new Proxy({}, { get: (_t, prop) => (model(name) as Record<string, unknown>)[prop as string] });
   }
   client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => fn(client);
@@ -150,6 +158,10 @@ beforeEach(() => {
     wallRun: [],
     jobLineItem: [],
     takeoffMeasurement: [],
+    // `openingDeduction: null` is the unanswered company, which is what every
+    // assertion in this file was written against — so the quantities here are
+    // unchanged by the openings question existing.
+    company: [{ id: "co_1", openingDeduction: null }],
   };
 });
 

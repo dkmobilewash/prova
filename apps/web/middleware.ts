@@ -3,6 +3,7 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 const isProtectedRoute = createRouteMatcher([
   "/dashboard(.*)",
   "/ask(.*)",
+  "/ai(.*)",
   "/jobs(.*)",
   "/contacts(.*)",
   "/compliance(.*)",
@@ -34,6 +35,8 @@ const isProtectedRoute = createRouteMatcher([
   "/intake(.*)",
   "/sales(.*)",
   "/certifications(.*)",
+  // The six area pages behind the home page's boxes (lib/areas.ts).
+  "/areas(.*)",
   // The full-page onboarding gate. Authenticated like every other route in
   // this list — a signed-out visitor is sent to /sign-in first, same as
   // anywhere else — even though the only thing that ever LINKS here is a
@@ -45,6 +48,13 @@ const isProtectedRoute = createRouteMatcher([
   // list is the allowlist a reader checks, and a data route missing from
   // it looks public whether or not it is.
   "/api/ask(.*)",
+  // The command palette's search. The handler answers 401 itself; listed
+  // here because this is the allowlist a reader checks.
+  "/api/search(.*)",
+  // The top bar's Tasks list (agent runs). Answers 401/403 itself; listed
+  // for the same reason. NOT /api/agents(.*): /api/agents/run is the
+  // CRON_SECRET-gated agent run, which has no session — see the note below.
+  "/api/agents/tasks(.*)",
   "/messages(.*)",
   // The data export returns a file rather than a page, for the same reason
   // and with the same consequence: it is the single widest read in the app,
@@ -163,6 +173,14 @@ const isProtectedRoute = createRouteMatcher([
 // /portal are not: it is the opt-out link in every cold email, and CAN-SPAM
 // requires that it work with nothing but a click. The token in the path is an
 // HMAC of the lead id (lib/outbound-token.ts); a bad one opens nothing.
+// /api/agents/run is deliberately NOT protected here either, by the same
+// mechanism as the two above: it is the AI-agent run (the bid watcher), for
+// a scheduler or a one-off curl with no Clerk session. It checks
+// `Authorization: Bearer $CRON_SECRET` itself, timing-safe, failing closed
+// with 503 when no secret is set, and it starts only the watcher or
+// recommendations — never an agent a URL should be able to trigger across
+// every company. The SCHEDULE that runs the watcher daily is the digest's
+// (lib/agents/cron.ts): Hobby allows two cron jobs and both were taken.
 // /api/quickbooks/callback is deliberately NOT protected here — see
 // QuickBooksOAuthCookiePayload in lib/quickbooks-constants.ts. Intuit's
 // redirect back to that route is a third-party-initiated navigation;

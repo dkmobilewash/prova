@@ -1,0 +1,100 @@
+{
+  "id": "S04",
+  "title": "THREE-BEDROOM HOUSE",
+  "page": 1,
+  "sheetNumber": "A-101",
+  "raster": false,
+  "scale": "1/4\" = 1'-0\"",
+  "scalesPrinted": [
+    "1/4\" = 1'-0\""
+  ],
+  "widthPt": 1728,
+  "heightPt": 1296,
+  "scaleAuthority": "printed",
+  "rooms": [
+    {
+      "name": "LIVING",
+      "number": "101",
+      "area": {
+        "value": 335,
+        "unit": "sf"
+      }
+    },
+    {
+      "name": "DINING",
+      "number": "102",
+      "area": {
+        "value": 272,
+        "unit": "sf"
+      }
+    },
+    {
+      "name": "KITCHEN",
+      "number": "103",
+      "area": {
+        "value": 227,
+        "unit": "sf"
+      }
+    },
+    {
+      "name": "ENTRY",
+      "number": "104",
+      "area": {
+        "value": 54,
+        "unit": "sf"
+      }
+    },
+    {
+      "name": "HALL",
+      "number": "105",
+      "area": null
+    },
+    {
+      "name": "MASTER BEDROOM",
+      "number": "106",
+      "area": {
+        "value": 292,
+        "unit": "sf"
+      }
+    },
+    {
+      "name": "MASTER BATH",
+      "number": "107",
+      "area": null
+    },
+    {
+      "name": "BATH",
+      "number": "108",
+      "area": null
+    },
+    {
+      "name": "BEDROOM",
+      "number": "109",
+      "area": {
+        "value": 144,
+        "unit": "sf"
+      }
+    },
+    {
+      "name": "BEDROOM",
+      "number": "110",
+      "area": {
+        "value": 143,
+        "unit": "sf"
+      }
+    }
+  ],
+  "dimensions": [
+    "22'-3 1/4\"",
+    "6'-0\"",
+    "22'-3 1/4\"",
+    "50'-6 1/2\"",
+    "16'-3 1/4\"",
+    "24'-3 1/4\"",
+    "40'-6 1/2\""
+  ],
+  "wallLfTotal": null,
+  "doorCount": null,
+  "windowCount": null,
+  "notes": []
+}

@@ -62,7 +62,7 @@ export function InviteTeamMemberForm() {
       >
         {isPending ? "Inviting…" : "Invite"}
       </button>
-      {error && <p className="w-full text-sm text-red-400">{error}</p>}
+      {error && <p className="w-full text-sm text-danger">{error}</p>}
     </form>
   );
 }

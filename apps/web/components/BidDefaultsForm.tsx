@@ -109,7 +109,7 @@ export function BidDefaultsForm({
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-700 disabled:opacity-50"
+          className="rounded-md bg-rail-hover px-4 py-2 text-sm font-medium text-ink hover:bg-lift disabled:opacity-50"
         >
           {isPending ? (
             <span className="inline-flex items-center gap-1.5">
