@@ -80,7 +80,7 @@ vi.mock("@/lib/jobs/requireJob", () => ({
     job: { id: jobRow.id, companyId: company.id, name: jobRow.name },
   })),
 }));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), unstable_cache: (fn: unknown) => fn }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
   usePathname: () => "/jobs/job-1",

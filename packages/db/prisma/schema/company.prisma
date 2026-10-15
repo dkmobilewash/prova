@@ -188,6 +188,9 @@ model Company {
   salesOpportunities        SalesOpportunity[]
   salesActivities           SalesActivity[]
   salesStageChanges         SalesStageChange[]
+  salesLeadSignals          SalesLeadSignal[]
+  outboundEvents            OutboundEvent[]
+  consentRecords            ConsentRecord[]
   equipmentAssignments      EquipmentAssignment[]
   crewMembers               CrewMember[]
   payrollRegisterEntries    PayrollRegisterEntry[]
@@ -360,6 +363,7 @@ model User {
   assignedContactFollowUps             ContactInteraction[]          @relation("ContactInteractionFollowUp")
   loggedSalesActivities                SalesActivity[]               @relation("SalesActivityLogger")
   recordedSalesStageChanges            SalesStageChange[]            @relation("SalesStageChangeRecorder")
+  reviewedSalesLeadSignals             SalesLeadSignal[]             @relation("SalesLeadSignalReviewer")
   recordedEquipmentAssignments         EquipmentAssignment[]
   certifications                       WorkerCertification[]         @relation("WorkerCertificationHolder")
   recordedCertifications               WorkerCertification[]         @relation("WorkerCertificationRecorder")
