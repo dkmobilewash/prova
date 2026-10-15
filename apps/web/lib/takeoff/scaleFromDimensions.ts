@@ -210,6 +210,16 @@ export type ScaleCandidate = {
   declaredFeet: number;
   /** The label it came from, for the evidence sentence. */
   text: string;
+  /**
+   * WHICH label, not merely what it said.
+   *
+   * Two `24'-6 1/2"` strings lettered at opposite ends of a plan are two
+   * independent readings of the scale. The SAME string paired with five
+   * different lines is one reading and four guesses about which line it
+   * measures. Only the first deserves two votes, and text alone cannot tell
+   * them apart — which is the whole of the bug this field exists to fix.
+   */
+  labelKey: string;
   /** Feet of building per inch of paper this pair implies. */
   feetPerInch: number;
 };
@@ -366,6 +376,7 @@ export function scaleCandidates(
         y2: segment.y2,
         declaredFeet: label.feet,
         text: label.text,
+        labelKey: `${label.text}@${label.x.toFixed(1)},${label.y.toFixed(1)}`,
         // Feet per inch of paper: the pair's own reading, 72 points to the inch.
         feetPerInch: label.feet / (lenPt / 72),
       });
@@ -550,15 +561,39 @@ export function scaleFromDimensions(
     };
   }
 
-  // Votes per scale name, counting distinct labels.
+  // ── VOTES ARE DISTINCT LABELS, WHICH IS NOT THE SAME AS DISTINCT TEXT ──
+  //
+  // This counted distinct TEXT, and the bench has carried the resulting defect
+  // as a failing probe since it was written. P13: eight `30'-0"` bay dimensions,
+  // each lettered on its own 270pt line, each independently confirming 1/8" —
+  // and the sheet declined with "Only 1 printed dimension on this sheet agree
+  // on a scale". Eight witnesses counted as one because they said the same
+  // thing.
+  //
+  // Found again on a real drawing: fixture S01 letters `24'-6 1/2"` twice and
+  // `16'-7 1/4"` twice, four readings in four places, and declined for want of
+  // a third.
+  //
+  // The guard the old rule was reaching for is still needed and still here: one
+  // label paired with five candidate lines is ONE reading and four guesses
+  // about which line it measures, and `labelKey` collapses those to a single
+  // vote exactly as before. What changes is only that two labels in two places
+  // now count as two.
+  //
+  // `agreed` stays TEXT, because it is the sentence an estimator reads as
+  // evidence and `24'-6 1/2"@131.0,512.0` is not evidence to a person.
   const supporters = new Map<string, Set<string>>();
+  const agreedText = new Map<string, Set<string>>();
   const bestPerScale = new Map<string, ScaleCandidate>();
   for (const candidate of candidates) {
     const scale = snap(candidate.feetPerInch, options.scales);
     if (scale === null) continue;
     const set = supporters.get(scale.name) ?? new Set<string>();
-    set.add(candidate.text);
+    set.add(candidate.labelKey);
     supporters.set(scale.name, set);
+    const texts = agreedText.get(scale.name) ?? new Set<string>();
+    texts.add(candidate.text);
+    agreedText.set(scale.name, texts);
     // THE PAIR TO PROPOSE: THE LONGEST ACCURATE ONE, not the most accurate.
     //
     // The stored line is what every later measurement inherits, and `takeoff-plan.ts`
@@ -599,7 +634,7 @@ export function scaleFromDimensions(
   }
 
   const ranked = [...supporters.entries()]
-    .map(([name, set]) => ({ name, votes: set.size, agreed: [...set] }))
+    .map(([name, set]) => ({ name, votes: set.size, agreed: [...(agreedText.get(name) ?? new Set<string>())] }))
     .sort((a, b) => b.votes - a.votes);
   const winner = ranked[0];
   const runnerUp = ranked[1];

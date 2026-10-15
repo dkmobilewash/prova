@@ -214,3 +214,36 @@ each was a real gap:
   and not wired" is this codebase's most expensive recurring shape. The stage
   test now drives the real stage over the real S16 and asserts it records
   `1:100`.
+
+### A scale vote counts WITNESSES, not strings — and the bench already knew
+
+S01 prints `1/4" = 1'-0"`, letters `24'-6 1/2"` twice and `16'-7 1/4"` twice —
+four readings in four places — and declined for want of a third.
+
+The vote counted **distinct TEXT**, so two labels saying the same thing counted
+as one. **The bench has carried this as a failing probe since it was written:**
+P13, *"eight `30'-0"` bay dimensions, each exactly 270pt"*, expected `1/8"` and
+got *"Only 1 printed dimension on this sheet agree on a scale"*. Eight witnesses
+counted as one because they agreed.
+
+A vote is now a distinct **label** — its text AND where it is lettered. The
+guard the old rule was reaching for is kept exactly: one label paired with
+several candidate lines is one reading and several guesses about which line it
+measures, and those still collapse to a single vote.
+
+| | |
+| --- | --- |
+| fixture scale | 13 of 14 → **14 of 14 scored** |
+| bench probe P13 | ❌ → **✅** |
+| every other bench bar | **unchanged**, holdout unchanged |
+
+The only line that moved in the whole scorecard is P13's.
+
+**4 of 4 mutations red**, and the one that matters is M2: counting CANDIDATES
+instead of labels passes both of the new cases and silently destroys the guard.
+Its test carries a control proving the label really does pair with more than one
+line, so the case is about the counting rule rather than about pairing.
+
+`agreed` still reports the TEXTS an estimator reads, deduped — a label's
+identity carries coordinates, and `24'-6 1/2"@131.0,512.0` is not evidence to a
+person.

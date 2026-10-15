@@ -38,7 +38,7 @@ homework. Unknown fields are `null` and the scorer skips them —
 ## Latest run — `fixtures/score.eval.ts`, 2026-10-15
 
 ```
-SCALE: 13 correct of 14 scored; 3 correctly declined (the raster sheets);
+SCALE: 14 correct of 14 scored; 3 correctly declined (the raster sheets);
        1 sheet contradicts its own title block and the dimensions were followed
 WALL FOOTAGE: reported, NOT SCORED — no sheet in this set prints one
 ROOMS: 122 tagged in the key; the pipeline does not yet report a room list here
@@ -48,7 +48,7 @@ ROOMS: 122 tagged in the key; the pipeline does not yet report a room list here
 
 | sheet | printed | read | |
 | --- | --- | --- | --- |
-| S01 | `1/4" = 1'-0"` | declined | small sheet, 1 room, 4 dimensions — likely below the agreement floor |
+| ~~S01~~ | `1/4" = 1'-0"` | **`1/4" = 1'-0"`** | fixed 2026-10-15 — votes are labels, not strings |
 | ~~S16~~ | `1:100` | **`1:100`** | fixed 2026-10-15 — metric dimensions |
 | ~~S17~~ | `1:50` | **`1:50`** | fixed |
 
@@ -147,11 +147,9 @@ stale one is worse than none. Regenerate before looking.
 
 1. **A floor plan under ten wall runs returns nothing.** 3 of 15 vector
    fixtures. Needs an enclosure test, not a lower constant — see above.
-2. **S01 declines a scale it prints.** One sheet, one room, four dimensions —
-   probably under the three-agreeing floor. Not yet diagnosed.
-3. **No raster path at all.** 3 of 20 fixtures, and a real share of real sets.
-4. **Rooms are not scored here.** The pipeline does not surface a room list from
+2. **No raster path at all.** 3 of 20 fixtures, and a real share of real sets.
+3. **Rooms are not scored here.** The pipeline does not surface a room list from
    the entry point the scorer uses, so 122 tagged rooms sit unused.
-5. **The wall classifier must not run unasked** — graded 2026-10-15: it drops
+4. **The wall classifier must not run unasked** — graded 2026-10-15: it drops
    3 real walls per sheet to catch 1 phantom, and caught 3 of 12 on a sheet
    where every candidate was a phantom. It stays a button a person presses.
