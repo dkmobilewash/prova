@@ -61,9 +61,32 @@ describe("what the wall classifier is asked", () => {
   });
 
   it("GIVES THE SHAPE RULE, which covers what the list does not", () => {
-    expect(prompt).toMatch(/two straight parallel lines/i);
-    expect(prompt, "nothing says a curved or closed outline is an object").toMatch(
-      /curv\w*|closes on itself/i,
+    expect(prompt).toMatch(/two parallel lines/i);
+    expect(prompt, "nothing says a closed or tapering outline is an object").toMatch(
+      /closes on itself|tapers/i,
+    );
+  });
+
+  it("DOES NOT DISQUALIFY A WALL FOR BENDING, which cost ten walls on one sheet", () => {
+    // ── A REGRESSION GUARD WITH A MEASUREMENT BEHIND IT ──
+    //
+    // Prompt `.2` read "a wall is TWO STRAIGHT PARALLEL LINES" and "an outline
+    // that curves ... is an OBJECT". That was written to catch a car's
+    // bodywork and it was catching radius walls: graded on A-101 by
+    // `bench/wallClassify.eval.ts`, NINE of the thirteen real walls it dropped
+    // were consecutive chords of one 22ft-radius reception wall, each rejected
+    // in as many words for being "part of a continuous curve, not a straight
+    // run". `.3` moved the test from how it bends to what its outline does,
+    // and the same sheet went from 13 walls lost to 3.
+    //
+    // So: the word STRAIGHT must not come back as the thing that defines a
+    // wall, and the prompt must say outright that a curve is not by itself an
+    // object.
+    expect(prompt, "`straight` is defining a wall again — see wall-classify.3").not.toMatch(
+      /two straight parallel lines/i,
+    );
+    expect(prompt, "nothing tells the model a radius wall is still a wall").toMatch(
+      /curve is not by itself an object|concentric/i,
     );
   });
 
