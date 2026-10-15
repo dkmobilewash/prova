@@ -124,8 +124,18 @@ test.describe("Prova's own sales CRM, behind the operator flag", () => {
     // when `isProvaOperator && role === "OWNER"`. Not a security boundary and
     // not asserted as one; it is the cheapest proof that the layout agrees with
     // the page about who this viewer is.
+    //
+    // THE LANDMARK IS "Pages", NOT "Main", AND THIS ASSERTION NAMED "Main" UNTIL
+    // 2026-10-15. Both were right in their turn: the rail used to carry that
+    // name, and main's shell refactor moved it. `nav[aria-label="Main"]` is now
+    // the AREA TABS (`components/shell/TopBar.tsx`, and BottomTabs on a phone),
+    // whose contents come from `primaryTabs()` — Home, Jobs, Money, Schedule,
+    // AI and nothing else. So /sales could never appear under that name again,
+    // and `components/shell/sidebar.test.tsx` asserts the rail has no "Main"
+    // landmark at all. Only the ACTIVE group is expanded, which on /sales is
+    // "Internal" — so this link is in the DOM here and is not on /dashboard.
     await expect(
-      page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Sales CRM" }),
+      page.getByRole("navigation", { name: "Pages" }).getByRole("link", { name: "Sales CRM" }),
     ).toBeVisible();
   });
 
@@ -614,9 +624,19 @@ test("a tenant company is refused /sales, which is what makes the operator flag 
 
   // The rail does not advertise a door that will not open. Not a boundary — the
   // page above is — but a tenant finding the link would be its own defect.
-  await expect(
-    page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Sales CRM" }),
-  ).toHaveCount(0);
+  //
+  // SIZED, because the bare count-0 below is vacuous on its own and was: the
+  // rail expands only the group holding the current page, and a tenant has no
+  // group holding /sales, so every group here is collapsed and NO page link is
+  // in the DOM for anybody. That count would hold even if a tenant could reach
+  // the link. The fact worth asserting is stronger and survives the collapse:
+  // `navGroupsFor` drops the whole "Internal" SECTION for a tenant, and a
+  // group's heading renders whether or not it is open.
+  const rail = page.getByRole("navigation", { name: "Pages" });
+  await expect(rail).toBeVisible();
+  await expect(rail.locator("[data-nav-group]")).not.toHaveCount(0);
+  await expect(rail.locator('[data-nav-group="Internal"]')).toHaveCount(0);
+  await expect(rail.getByRole("link", { name: "Sales CRM" })).toHaveCount(0);
 
   // The refusal must be a refusal, not a boundary wearing one's clothes.
   const bodyText = await page.locator("body").innerText();
