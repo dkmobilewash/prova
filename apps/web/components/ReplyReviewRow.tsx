@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import { Button } from "@prova/ui";
 import { approveReply, dismissReply, markReplyStop } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { FilesReceivedButton } from "@/components/FilesReceivedButton";
 import { Spinner } from "@/components/Spinner";
+import type { Door } from "@/lib/outbound-scoreboard";
 
 /**
  * One reply waiting for a person: their words, the model's reading, the
@@ -25,7 +27,7 @@ export type ReplyForReview = {
   bodyText: string;
   receivedAt: string;
   classification: string;
-  door: string;
+  door: Door;
   confidence: number;
   draft: string | null;
   draftRationale: string | null;
@@ -114,6 +116,7 @@ export function ReplyReviewRow({ reply }: { reply: ReplyForReview }) {
         <Button type="button" variant="secondary" disabled={pending} onClick={() => run(() => dismissReply(reply.id))}>
           Dismiss
         </Button>
+        <FilesReceivedButton leadId={reply.leadId} door={reply.door} />
       </RowActions>
     </li>
   );

@@ -26,6 +26,8 @@ const replyRow = {
 const activities = [
   { type: "CALL", leadId: "L1", occurredOn: new Date("2026-09-12T00:00:00Z"), summary: "[CONVERSATION] asked for Thursday" },
   { type: "CALL", leadId: "L1", occurredOn: new Date("2026-09-12T00:00:00Z"), summary: "[NO_ANSWER]" },
+  { type: "CALL", leadId: "L1", occurredOn: new Date("2026-09-12T00:00:00Z"), summary: "[WANTS_REPORT] send the sample" },
+  { type: "NOTE", leadId: "L1", occurredOn: new Date("2026-09-12T00:00:00Z"), summary: "[FILES RECEIVED · PAY_APP]" },
 ];
 
 vi.mock("@prova/db", () => ({
@@ -58,8 +60,9 @@ describe("/sales/scoreboard", () => {
     expect(html).toContain("Baker Drywall");
     expect(html).toContain('href="/sales/L1"');
     expect(html).toContain("1 waiting for you");
-    expect(html).toContain("Calls: 2 dials, 1 connects, 1 conversations, 0 meetings booked");
-    expect(html).toContain("Email: 1 sent, 0 bounced, 1 replies, 1 positive");
+    expect(html).toContain("Calls: 3 dials, 2 connects, 2 conversations, 1 yeses, 0 meetings booked");
+    expect(html).toContain("Email: 1 sent, 0 bounced, 1 replies, 1 positive, 1 files received");
+    expect(html).not.toContain("n/a");
     expect(html).toContain("Letters: lands with cyrus/letters");
     expect(html).toContain("not decided yet");
   });

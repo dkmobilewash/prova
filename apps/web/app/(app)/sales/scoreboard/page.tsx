@@ -11,6 +11,7 @@ import {
   coldIsDead,
   DOOR_LABEL,
   DOORS,
+  FILES_RECEIVED_PREFIX,
   KILL_LINE,
   per100,
   POSITIVE_CLASSES,
@@ -42,6 +43,7 @@ const COLUMNS: { key: keyof Counts | "delivered" | "rate"; label: string }[] = [
   { key: "rate", label: "Positive / 100" },
   { key: "suppressed", label: "Suppressed" },
   { key: "meetings", label: "Meetings" },
+  { key: "files", label: "Files" },
 ];
 
 function cellValue(c: Counts, key: (typeof COLUMNS)[number]["key"]): string {
@@ -154,7 +156,11 @@ export default async function ScoreboardPage({ searchParams }: { searchParams: P
       },
     }),
     prisma.salesActivity.findMany({
-      where: { companyId: company.id, type: { in: ["CALL", "MEETING", "DEMO"] }, occurredOn: { gte: since } },
+      where: {
+        companyId: company.id,
+        occurredOn: { gte: since },
+        OR: [{ type: { in: ["CALL", "MEETING", "DEMO"] } }, { type: "NOTE", summary: { startsWith: FILES_RECEIVED_PREFIX } }],
+      },
       select: { type: true, leadId: true, occurredOn: true, summary: true },
     }),
     prisma.outboundReply.count({ where: { companyId: company.id, status: "PENDING_REVIEW" } }),
@@ -180,7 +186,10 @@ export default async function ScoreboardPage({ searchParams }: { searchParams: P
   const board = todayBoard({ cells, calls: activities, repliesWaiting }, today);
   const windowSent = DOORS.reduce((n, d) => n + doorCounts[d].sent, 0);
   const windowPositive = DOORS.reduce((n, d) => n + doorCounts[d].positive, 0);
-  const dead = coldIsDead(windowSent, windowPositive);
+  const windowFiles = DOORS.reduce((n, d) => n + doorCounts[d].files, 0);
+  // Files are the line's own signal; positive replies stand in only until the first file is logged.
+  const lineOn = windowFiles > 0 ? { n: windowFiles, what: "files" } : { n: windowPositive, what: "positive (no files logged yet; positive replies stand in)" };
+  const dead = coldIsDead(windowSent, lineOn.n);
 
   return (
     <PageShell width="working">
@@ -197,12 +206,12 @@ export default async function ScoreboardPage({ searchParams }: { searchParams: P
           <Stat label="Dials" value={board.calls.dials} />
           <Stat label="Answered" value={board.calls.connects} note="any human, gatekeeper included" />
           <Stat label="Conversations" value={board.calls.conversations} />
-          <Stat label="Want-me-to yeses" value="n/a" note="no disposition tag; logged by hand" />
+          <Stat label="Want-me-to yeses" value={board.calls.wantsReport} note="Yes to the free one, on a call" />
           <Stat label="Meetings booked" value={board.calls.meetings + board.email.meetings} note="call tag + MEETING/DEMO logged" />
           <Stat label="Emails sent" value={board.email.sent} />
           <Stat label="Replies" value={board.email.replies} />
           <Stat label="Positive replies" value={board.email.positive} note="INTERESTED + SEND_INFO" />
-          <Stat label="Files received" value="n/a" note="logged by hand" />
+          <Stat label="Files received" value={board.email.files} note="Files received button on a lead or a reply" />
           <Stat label="Suppressed" value={board.email.suppressed} note="STOP + unsubscribe" />
         </div>
       </section>
@@ -233,9 +242,7 @@ export default async function ScoreboardPage({ searchParams }: { searchParams: P
           for cold.{" "}
           {dead === null
             ? `${windowSent} of ${KILL_LINE.afterSent} sent in this window — not decided yet.`
-            : dead
-              ? `${windowPositive} positive on ${windowSent} sent — UNDER the line (files are not recorded; positive replies stand in).`
-              : `${windowPositive} positive on ${windowSent} sent — above the line (files are not recorded; positive replies stand in).`}
+            : `${lineOn.n} ${lineOn.what} on ${windowSent} sent — ${dead ? "UNDER" : "above"} the line.`}
         </p>
       </section>
 

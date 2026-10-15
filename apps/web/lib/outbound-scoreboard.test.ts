@@ -6,6 +6,8 @@ import {
   dayOf,
   doorFromSubject,
   eventSubject,
+  filesReceivedDoor,
+  filesReceivedSummary,
   per100,
   slackSummary,
   tally,
@@ -91,42 +93,59 @@ describe("tally", () => {
     { type: "MEETING", leadId: "L1", occurredOn: new Date("2026-10-15T00:00:00Z"), summary: "demo" },
     { type: "DEMO", leadId: "L9", occurredOn: new Date("2026-10-14T00:00:00Z"), summary: "demo" },
     { type: "CALL", leadId: "L1", occurredOn: new Date("2026-10-15T00:00:00Z"), summary: "[CONVERSATION] x" },
+    { type: "CALL", leadId: "L1", occurredOn: new Date("2026-10-15T00:00:00Z"), summary: "[WANTS_REPORT] send it" },
+    // Files go to the door their tag names, not the lead's reply door (PAY_APP).
+    { type: "NOTE", leadId: "L1", occurredOn: new Date("2026-10-15T00:00:00Z"), summary: filesReceivedSummary("CERTIFIED_PAYROLL") },
+    { type: "NOTE", leadId: "L1", occurredOn: new Date("2026-10-14T00:00:00Z"), summary: "plain note, not files" },
   ];
   const cells = tally({ events, replies, activities }, "UTC");
 
   it("counts per door for the window, replies without an agent reading included", () => {
     const d = byDoor(cells, new Set(["2026-10-15", "2026-10-14"]));
-    expect(d.PAY_APP).toEqual({ sent: 1, bounced: 1, replies: 2, positive: 1, suppressed: 0, meetings: 1 });
-    expect(d.TAKEOFF).toEqual({ sent: 1, bounced: 0, replies: 0, positive: 0, suppressed: 0, meetings: 0 });
-    expect(d.CERTIFIED_PAYROLL).toEqual({ sent: 0, bounced: 0, replies: 0, positive: 0, suppressed: 0, meetings: 0 });
-    expect(d.UNKNOWN).toEqual({ sent: 1, bounced: 0, replies: 1, positive: 0, suppressed: 2, meetings: 1 });
+    expect(d.PAY_APP).toEqual({ sent: 1, bounced: 1, replies: 2, positive: 1, suppressed: 0, meetings: 1, files: 0 });
+    expect(d.TAKEOFF).toEqual({ sent: 1, bounced: 0, replies: 0, positive: 0, suppressed: 0, meetings: 0, files: 0 });
+    expect(d.CERTIFIED_PAYROLL).toEqual({ sent: 0, bounced: 0, replies: 0, positive: 0, suppressed: 0, meetings: 0, files: 1 });
+    expect(d.UNKNOWN).toEqual({ sent: 1, bounced: 0, replies: 1, positive: 0, suppressed: 2, meetings: 1, files: 0 });
   });
 
   it("drops an event outside the window and an event type it does not count", () => {
     const d = byDoor(cells, new Set(["2026-10-15"]));
     expect(d.UNKNOWN.sent).toBe(0);
     expect(cells.find((c) => c.day === "2000-01-01")?.counts.sent).toBe(1);
-    expect(cells.length).toBe(11); // 9 counted events + 2 meetings; x1 is not a cell
+    expect(cells.length).toBe(12); // 9 counted events + 2 meetings + 1 files; x1 and the plain note are not cells
   });
 
   it("gives one row per day, newest first, zeros for a quiet day", () => {
     const rows = byDay(cells, windowDays("2026-10-15", 3));
     expect(rows.map((r) => r.day)).toEqual(["2026-10-15", "2026-10-14", "2026-10-13"]);
-    expect(rows[0].counts).toEqual({ sent: 2, bounced: 1, replies: 3, positive: 1, suppressed: 2, meetings: 1 });
-    expect(rows[1].counts).toEqual({ sent: 1, bounced: 0, replies: 0, positive: 0, suppressed: 0, meetings: 1 });
-    expect(rows[2].counts).toEqual({ sent: 0, bounced: 0, replies: 0, positive: 0, suppressed: 0, meetings: 0 });
+    expect(rows[0].counts).toEqual({ sent: 2, bounced: 1, replies: 3, positive: 1, suppressed: 2, meetings: 1, files: 1 });
+    expect(rows[1].counts).toEqual({ sent: 1, bounced: 0, replies: 0, positive: 0, suppressed: 0, meetings: 1, files: 0 });
+    expect(rows[2].counts).toEqual({ sent: 0, bounced: 0, replies: 0, positive: 0, suppressed: 0, meetings: 0, files: 0 });
   });
 
   it("builds today's board off the viewer's day and the Slack block from it", () => {
     const board = todayBoard({ cells, calls: activities, repliesWaiting: 4 }, "2026-10-15");
-    expect(board.calls.dials).toBe(1);
-    expect(board.calls.conversations).toBe(1);
+    expect(board.calls.dials).toBe(2);
+    expect(board.calls.conversations).toBe(2);
+    expect(board.calls.wantsReport).toBe(1);
     expect(board.email.sent).toBe(2);
+    expect(board.email.files).toBe(1);
     const text = slackSummary(board, "2026-10-15");
     expect(text.split("\n")).toHaveLength(5);
-    expect(text).toContain("Email: 2 sent, 1 bounced, 3 replies, 1 positive");
+    expect(text).toContain("Calls: 2 dials, 2 connects, 2 conversations, 1 yeses, 0 meetings booked");
+    expect(text).toContain("Email: 2 sent, 1 bounced, 3 replies, 1 positive, 1 files received");
     expect(text).toContain("Replies waiting: 4");
     expect(todayBoard({ cells, calls: activities, repliesWaiting: 0 }, "2026-10-13").calls.dials).toBe(0);
+  });
+});
+
+describe("filesReceivedDoor", () => {
+  it("round-trips every door, reads an unknown door as UNKNOWN, and ignores other notes", () => {
+    expect(filesReceivedDoor(filesReceivedSummary("PAY_APP"))).toBe("PAY_APP");
+    expect(filesReceivedDoor(filesReceivedSummary("TAKEOFF"))).toBe("TAKEOFF");
+    expect(filesReceivedDoor("[FILES RECEIVED · LETTER]")).toBe("UNKNOWN");
+    expect(filesReceivedDoor("[REPLY SENT · assistant] thanks")).toBeNull();
+    expect(filesReceivedDoor("files received by fax")).toBeNull();
   });
 });
 

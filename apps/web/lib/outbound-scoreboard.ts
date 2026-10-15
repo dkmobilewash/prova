@@ -85,6 +85,28 @@ export type ReplyRecord = {
 
 export type ActivityRecord = { type: string; leadId: string; occurredOn: Date; summary: string };
 
+/**
+ * FILES RECEIVED is a NOTE whose summary begins with this tag — the same
+ * trick as a call's disposition (`call-dispositions.ts`) and the agent's
+ * `[REPLY SENT · assistant]`: the prefix is the record, the row is a row
+ * the schema already has, and the board derives the count. The door is in
+ * the tag because the files are what the door asked for, and a person
+ * picks it at the moment they press the button.
+ */
+export const FILES_RECEIVED_PREFIX = "[FILES RECEIVED";
+const FILES_TAG = /^\[FILES RECEIVED · ([A-Z_]+)\]/;
+
+export function filesReceivedSummary(door: Door): string {
+  return `[FILES RECEIVED · ${door}]`;
+}
+
+/** The door a files-received note names, UNKNOWN for a door it does not know, null for any other note. */
+export function filesReceivedDoor(summary: string): Door | null {
+  const match = FILES_TAG.exec(summary);
+  if (!match) return null;
+  return (DOORS as readonly string[]).includes(match[1]) ? (match[1] as Door) : "UNKNOWN";
+}
+
 export type Counts = {
   sent: number;
   bounced: number;
@@ -92,13 +114,15 @@ export type Counts = {
   positive: number;
   suppressed: number;
   meetings: number;
+  /** Files a prospect sent, from the FILES RECEIVED notes. */
+  files: number;
 };
 
 export const POSITIVE_CLASSES = new Set(["INTERESTED", "SEND_INFO"]);
 const isReplyType = (t: string) => /^(EMAIL_REPLY|EMAIL_REPLIED|UNTRACKED_REPLIES)$/.test(t);
 const isUnsubType = (t: string) => /^(LEAD_UNSUBSCRIBED|EMAIL_UNSUBSCRIBED)$/.test(t);
 
-const zero = (): Counts => ({ sent: 0, bounced: 0, replies: 0, positive: 0, suppressed: 0, meetings: 0 });
+const zero = (): Counts => ({ sent: 0, bounced: 0, replies: 0, positive: 0, suppressed: 0, meetings: 0, files: 0 });
 
 /** The viewer's calendar day for an instant. */
 export function dayOf(instant: Date, zone: string): string {
@@ -125,7 +149,7 @@ type Cell = { day: string; door: Door; counts: Counts };
  * EVENT so a reply the agent has not read yet (no `OutboundReply` row) still
  * counts as a reply; the reply row, when present, supplies door and class.
  * A meeting is attributed to the door of the lead's latest reply, since a
- * meeting is not itself about a door.
+ * meeting is not itself about a door. Files go to the door their tag names.
  */
 export function tally(
   input: { events: EventRecord[]; replies: ReplyRecord[]; activities: ActivityRecord[] },
@@ -153,10 +177,15 @@ export function tally(
     cells.push({ day, door, counts: c });
   }
   for (const a of input.activities) {
-    if (a.type !== "MEETING" && a.type !== "DEMO") continue;
     const c = zero();
-    c.meetings = 1;
-    cells.push({ day: dayOfDate(a.occurredOn), door: leadDoor.get(a.leadId) ?? "UNKNOWN", counts: c });
+    const filesDoor = filesReceivedDoor(a.summary);
+    if (filesDoor) {
+      c.files = 1;
+      cells.push({ day: dayOfDate(a.occurredOn), door: filesDoor, counts: c });
+    } else if (a.type === "MEETING" || a.type === "DEMO") {
+      c.meetings = 1;
+      cells.push({ day: dayOfDate(a.occurredOn), door: leadDoor.get(a.leadId) ?? "UNKNOWN", counts: c });
+    }
   }
   return cells;
 }
@@ -188,8 +217,8 @@ export function per100(numerator: number, sent: number): number | null {
 
 /**
  * The test's own kill line: "under 1 file per 100 after 200 firms = dead for
- * cold". Files are not a signal the app records, so the page feeds it the
- * nearest one it has and says which. Undecided (null) until 200 are out.
+ * cold". The page feeds it files when any are recorded and positive replies
+ * when none are, and says which. Undecided (null) until 200 are out.
  */
 export const KILL_LINE = { afterSent: 200, per100: 1 } as const;
 export function coldIsDead(sent: number, files: number): boolean | null {
@@ -219,8 +248,8 @@ export function slackSummary(board: TodayBoard, today: string): string {
   const { calls, email } = board;
   return [
     `Outbound ${today}`,
-    `Calls: ${calls.dials} dials, ${calls.connects} connects, ${calls.conversations} conversations, ${calls.meetings} meetings booked`,
-    `Email: ${email.sent} sent, ${email.bounced} bounced, ${email.replies} replies, ${email.positive} positive`,
+    `Calls: ${calls.dials} dials, ${calls.connects} connects, ${calls.conversations} conversations, ${calls.wantsReport} yeses, ${calls.meetings} meetings booked`,
+    `Email: ${email.sent} sent, ${email.bounced} bounced, ${email.replies} replies, ${email.positive} positive, ${email.files} files received`,
     `Suppressed: ${email.suppressed} · Meetings logged: ${email.meetings}`,
     `Replies waiting: ${board.repliesWaiting}`,
   ].join("\n");

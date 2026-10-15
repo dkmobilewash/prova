@@ -5,6 +5,8 @@ import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { DISCLOSURE } from "@/lib/replies/draft";
 import { deliver, suppressLead } from "@/lib/replies/handle";
+import { DOORS, filesReceivedSummary, type Door } from "@/lib/outbound-scoreboard";
+import { viewerToday } from "@/lib/viewerToday";
 import { actionOk, ownerRefusal, type ActionResult } from "./shared";
 
 /**
@@ -79,5 +81,36 @@ export async function markReplyStop(id: string): Promise<ActionResult> {
   });
   revalidatePath("/sales/replies");
   revalidatePath("/sales");
+  return actionOk;
+}
+
+/**
+ * A prospect sent the files the door asked for (a pay app, a payroll run,
+ * plans). Recorded as a NOTE tagged `[FILES RECEIVED · door]` on today's
+ * date, so the scoreboard can count it and say which door earned it —
+ * nothing new in the schema. The door is the person's call at the moment
+ * they press the button, which is why it is an argument and not a lookup.
+ */
+export async function markFilesReceived(leadId: string, door: Door): Promise<ActionResult> {
+  const { company, ...user } = await requireCompanyContext();
+  if (!company.isProvaOperator) return { ok: false, error: "Not found" };
+  const refusal = ownerRefusal(user, "Only the account owner can record files received");
+  if (refusal) return refusal;
+  if (!DOORS.includes(door)) return { ok: false, error: "That is not a door this test runs." };
+  const lead = await prisma.salesLead.findFirst({ where: { id: leadId, companyId: company.id }, select: { id: true } });
+  if (!lead) return { ok: false, error: "Lead not found" };
+  await prisma.salesActivity.create({
+    data: {
+      companyId: company.id,
+      leadId,
+      type: "NOTE",
+      occurredOn: new Date(`${await viewerToday()}T00:00:00.000Z`),
+      summary: filesReceivedSummary(door),
+      loggedByUserId: user.id,
+    },
+  });
+  revalidatePath(`/sales/${leadId}`);
+  revalidatePath("/sales/replies");
+  revalidatePath("/sales/scoreboard");
   return actionOk;
 }

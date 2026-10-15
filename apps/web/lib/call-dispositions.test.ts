@@ -41,14 +41,16 @@ describe("the day's scoreboard", () => {
       callSummary("VOICEMAIL", ""),
       callSummary("GATEKEEPER", "office manager, call back at 7"),
       callSummary("CONVERSATION", "does payroll in-house"),
+      callSummary("WANTS_REPORT", "send the sample pay app"),
       callSummary("MEETING_BOOKED", "Thu 10"),
       callSummary("NOT_NOW", "after the Kaiser job"),
       callSummary("WRONG_NUMBER", ""),
       "typed by hand",
     ]);
-    expect(board.dials).toBe(9);
-    expect(board.connects).toBe(5);
-    expect(board.conversations).toBe(3);
+    expect(board.dials).toBe(10);
+    expect(board.connects).toBe(6);
+    expect(board.conversations).toBe(4);
+    expect(board.wantsReport).toBe(1);
     expect(board.meetings).toBe(1);
     expect(board.untagged).toBe(1);
     expect(board.byDisposition.NO_ANSWER).toBe(2);
@@ -56,7 +58,7 @@ describe("the day's scoreboard", () => {
 
   it("is all zeros on an empty day, not NaN", () => {
     const board = callScoreboard([]);
-    expect(board).toMatchObject({ dials: 0, connects: 0, conversations: 0, meetings: 0, untagged: 0 });
+    expect(board).toMatchObject({ dials: 0, connects: 0, conversations: 0, wantsReport: 0, meetings: 0, untagged: 0 });
   });
 });
 
