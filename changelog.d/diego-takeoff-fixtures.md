@@ -108,3 +108,60 @@ arithmetic in a key is arithmetic nobody can check against the drawing.
 - `./scripts/preflight.sh` green, 11,183 tests. No schema change, no migration.
 - The three new evals are registered as keyless exemptions with a reason each,
   and each carries the skip and the non-zero assertion that exemption requires.
+
+### Two things the first scorecard got wrong about its own results
+
+The harness was built, it reported four scale failures and three sheets finding
+no walls, and **two of those conclusions were wrong.** Both were corrected by
+measuring rather than by arguing, and both corrections are worth more than the
+original findings.
+
+**S11 was not a pipeline failure. The key was wrong.** It was reported as
+"wrong-but-confident" — the worst class this repo recognises — because the
+sheet prints `1/8" = 1'-0"` and the app read `1/4"`. The sheet's own `31'-0"`
+dimension is **7.75 inches long on a 17-inch page**: 31 feet in 7.75 inches is a
+quarter inch to the foot, and all six of its dimensions agree. **The title block
+is wrong and the app is right** — it reads dimensions first by design, and
+`calibrationNotices` already warns when a printed note and a calibration
+disagree. The fixture is a planted trap and the app walks past it.
+
+The key now carries `scaleAuthority` and does not score scale on a sheet that
+contradicts itself, because adjudicating would mean re-measuring the drawing
+with the code under test. **A key that assumes a title block tells the truth
+sends somebody to fix a pipeline that is right.**
+
+**The three zero-wall sheets are not poché.** The overlay shows S06's walls
+drawn as filled poché, which is a convincing explanation and is not the cause.
+`stages.eval.ts` counts what survives each filter:
+
+| sheet | pairs found | after `wallsInTheBuilding` |
+| --- | ---: | ---: |
+| S02 (works) | 10 | **10** |
+| S06 | 9 | **0** |
+| S10 | 8 | **0** |
+| S15 | 12 | **0** |
+
+The pairer finds them. **`NOT_A_BOX = 10` throws them away.** These are small
+residential plans whose whole building is 8 or 9 runs; S02 scraped through by
+one. `wallsInTheBuilding` argues for ten from six real plans that "returned 38,
+58, 68, 230, 295 and 453" — all large commercial floors. The number was measured
+honestly on a sample containing no small buildings.
+
+**Lowering it is not the fix, and the bench refused two attempts:**
+
+| | zero-wall cases producing walls |
+| --- | --- |
+| `= 10` (today) | 11 of 36 |
+| `= 8` | 17 of 36 |
+| `= 5` | 31 of 36 — the COVER SHEET invents 581 ft, its vicinity map pairing as walls |
+
+Footage does not separate them either: that cover sheet's 581 ft exceeds any of
+the three houses. What does is that a plan's runs **enclose rooms** and a street
+network does not — and `wallRuns.ts` already traces enclosed regions without
+being wired to this decision. That is the fix, and it is real work rather than a
+constant, so **nothing was changed here**: the bench is byte-identical and the
+limitation is now documented with its measurements instead of being unknown.
+
+`stages.eval.ts` is kept for this reason. "Which filter ate it" is the question
+that comes up every time, and reasoning about it from a picture was wrong once
+already today.

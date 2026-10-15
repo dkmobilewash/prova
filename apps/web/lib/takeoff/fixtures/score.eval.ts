@@ -34,7 +34,7 @@ const DIR = import.meta.dirname;
 type Row = {
   id: string;
   /** Did the scale come out right, and from where. */
-  scale: "✓" | "✗" | "declined" | "—";
+  scale: "✓" | "✗" | "declined" | "conflict" | "—";
   scaleHow: string;
   expectedScale: string | null;
   rooms: string;
@@ -127,8 +127,23 @@ describe.skipIf(!existsSync(join(DIR, "plans")))("the shipped pipeline on twenty
           row.scaleHow = "dimensions";
           const got = verdict.scaleName;
           const want = key.scalesPrinted.length > 0 ? key.scalesPrinted : null;
-          row.scale = want === null ? "—" : want.some((w) => w === got) ? "✓" : "✗";
-          if (row.scale === "✗") row.notes = `read ${got}`;
+          if (key.scaleAuthority === "dimensions-disagree") {
+            // ── THE SHEET CONTRADICTS ITSELF, SO THE NOTE IS NOT THE ANSWER ──
+            //
+            // Reading something OTHER than the printed note is the correct
+            // behaviour here, and the first version of this scorer marked it
+            // the worst failure on the board — "wrong-but-confident" — because
+            // the key assumed a title block tells the truth. It sent me to fix
+            // a pipeline that was right.
+            row.scale = want !== null && want.includes(got) ? "✗" : "conflict";
+            row.notes =
+              row.scale === "conflict"
+                ? `read ${got}; title block says ${key.scale} — the sheet disagrees with itself`
+                : `followed the title block over its own dimensions`;
+          } else {
+            row.scale = want === null ? "—" : want.some((w) => w === got) ? "✓" : "✗";
+            if (row.scale === "✗") row.notes = `read ${got}`;
+          }
           const feetPerInch = feetPerInchOf(got) ?? verdict.feetPerInch;
           const feetPerUnit = (text.widthPt / 72) * feetPerInch;
 
@@ -176,6 +191,7 @@ describe.skipIf(!existsSync(join(DIR, "plans")))("the shipped pipeline on twenty
     const scored = rows.filter((r) => r.scale === "✓" || r.scale === "✗");
     const right = rows.filter((r) => r.scale === "✓").length;
     const declinedRight = rows.filter((r) => r.scale === "declined").length;
+    const conflicts = rows.filter((r) => r.scale === "conflict").length;
 
     console.log(
       [
@@ -184,7 +200,7 @@ describe.skipIf(!existsSync(join(DIR, "plans")))("the shipped pipeline on twenty
         "-".repeat(104),
         ...rows.map(line),
         "",
-        `SCALE: ${right} correct of ${scored.length} scored; ${declinedRight} correctly declined`,
+        `SCALE: ${right} correct of ${scored.length} scored; ${declinedRight} correctly declined; ${conflicts} sheet(s) contradict their own title block and the dimensions were followed (correct)`,
         `WALL FOOTAGE: reported, NOT SCORED — no sheet in this set prints one.`,
         `ROOMS: key has ${rows.reduce((n, r) => n + Number(r.rooms.split("/")[1] ?? 0), 0)} tagged rooms; the pipeline does not yet report a room list here.`,
         "",
