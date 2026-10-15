@@ -32,6 +32,45 @@ import { proposalRowsFor } from "./wallProposal";
  * care about.
  */
 
+/**
+ * How long detection may work before stopping itself.
+ *
+ * ── IT WAS BEING KILLED, AND A KILL LEAVES NOTHING BEHIND ──
+ *
+ * Measured on production, 2026-10-15, on a 52-sheet bid set: the save connected
+ * at 02:11:38.758 and pdf.js was still LOADING at 02:11:46.464 — 7.7 seconds in,
+ * almost all of it `readPlanBytes` pulling the whole plan set out of blob
+ * storage. The invocation ended there. No proposals, no log line, and a 503 on a
+ * save that had in fact stored the calibration correctly.
+ *
+ * The invisibility is the defect. Nothing distinguished "this sheet has no
+ * walls" — which writes nothing BY DESIGN, see below — from "this was cut off
+ * before it looked". So the route's budget went to 60s and this one expires
+ * first, by the margin `plan-ingest/runner.ts` uses and for the reason it
+ * states: *stopping ourselves beats being stopped*.
+ *
+ * `runner.ts` also establishes the shape: a budget reading `Date.now()` can only
+ * be tested by waiting for it, so the clock is INJECTED and the deadline becomes
+ * a test that runs in a millisecond.
+ */
+export const DETECTION_BUDGET_MS = 45_000;
+
+/** Injected so the deadline is testable without waiting for it. */
+export type DetectClock = { now?: () => number; budgetMs?: number };
+
+/**
+ * What a run did, so a caller — or a test — can tell the outcomes apart without
+ * reading the log. Every one of these writes nothing except `written`.
+ */
+export type DetectOutcome =
+  | "written"
+  | "nothing-found"
+  | "out-of-time"
+  | "unreadable"
+  | "no-such-page"
+  | "too-dense"
+  | "failed";
+
 export type DetectTarget = {
   pageId: string;
   calibrationId: string;
@@ -44,11 +83,33 @@ export type DetectTarget = {
   wallTypes: MatchableWallType[];
 };
 
-export async function detectWallsForCalibration(target: DetectTarget): Promise<void> {
+export async function detectWallsForCalibration(
+  target: DetectTarget,
+  clock: DetectClock = {},
+): Promise<DetectOutcome> {
+  const now = clock.now ?? (() => Date.now());
+  const budgetMs = clock.budgetMs ?? DETECTION_BUDGET_MS;
+  const startedAt = now();
+  const spent = () => now() - startedAt;
+  const outOfTime = () => spent() >= budgetMs;
+
   // SCOPED BY COMPANY in the read itself, not by a check afterwards — this runs
   // detached from the request, so there is no context left to trust.
   const read = await readPlanBytes(target.planId, target.companyId);
-  if (!read.ok) return;
+  if (!read.ok) return "unreadable";
+
+  // THE DOWNLOAD IS THE EXPENSIVE PART and it has already happened, so this is
+  // the first honest place to ask. Giving up here is the only hard stop: past
+  // it there is always a smaller job worth finishing.
+  if (outOfTime()) {
+    console.info("[takeoff] detection ran out of time", {
+      planId: target.planId,
+      pageNumber: target.pageNumber,
+      afterMs: spent(),
+      reading: "the plan file",
+    });
+    return "out-of-time";
+  }
 
   // ONE DOCUMENT FOR BOTH LAYERS. `openPlanPdf` hands the bytes to pdfjs as a
   // VIEW and pdfjs DETACHES the buffer behind it, so a second open on the same
@@ -56,7 +117,7 @@ export async function detectWallsForCalibration(target: DetectTarget): Promise<v
   // trap `PlanPdf.pageStrokes` documents.
   const doc = await openPlanPdf(read.bytes);
   try {
-    if (target.pageNumber < 1 || target.pageNumber > doc.pageCount) return;
+    if (target.pageNumber < 1 || target.pageNumber > doc.pageCount) return "no-such-page";
 
     const strokes = await doc.pageStrokes(target.pageNumber);
     const text = await doc.pageText(target.pageNumber);
@@ -80,6 +141,25 @@ export async function detectWallsForCalibration(target: DetectTarget): Promise<v
     const sampledSheets: StrokeSegment[][] = [];
     let sampleFailed = false;
     for (const pageNumber of pagesToSample(doc.pageCount, target.pageNumber)) {
+      // ── RUNNING OUT HERE COSTS THE TEMPLATE FILTER, NOT THE WALLS ──
+      //
+      // Sampling is the long tail: six more pages parsed to learn where the
+      // frame and the title block sit. The sheet in front of somebody is
+      // already read by this point, so the right answer to a deadline is the
+      // same one a failed page gets three lines below — drop the template pass
+      // and detect anyway. The fail-safe direction this file and
+      // `sheetTemplate.ts` both state is "no template filter", never "no walls".
+      if (outOfTime()) {
+        console.info("[takeoff] detection ran out of time", {
+          planId: target.planId,
+          pageNumber: target.pageNumber,
+          afterMs: spent(),
+          reading: "other sheets for the template",
+          sampled: sampledSheets.length,
+        });
+        sampleFailed = true;
+        break;
+      }
       try {
         const other = await doc.pageStrokes(pageNumber);
         sampledSheets.push(other.segments.map(inPageWidthUnits(other.widthPt)));
@@ -106,7 +186,7 @@ export async function detectWallsForCalibration(target: DetectTarget): Promise<v
     // on it — a schedule, a detail page, a site plan — is a fact about the
     // drawing, and a row saying "no walls" would be indistinguishable from
     // never having looked.
-    if (found.groups.length === 0) return;
+    if (found.groups.length === 0) return "nothing-found";
 
     // APPEND-ONLY, so there is nothing to delete first. A second run under the
     // same calibration writes a second set; the reader takes the newest
@@ -117,6 +197,7 @@ export async function detectWallsForCalibration(target: DetectTarget): Promise<v
         calibrationId: target.calibrationId,
       }),
     });
+    return "written";
   } catch (error) {
     // `SheetTooDenseError` IS A FACT ABOUT THE DRAWING rather than a failure: a
     // sheet with more geometry than the pairing budget allows is refused by
@@ -127,13 +208,14 @@ export async function detectWallsForCalibration(target: DetectTarget): Promise<v
         planId: target.planId,
         pageNumber: target.pageNumber,
       });
-      return;
+      return "too-dense";
     }
     console.error(
       "[takeoff] wall detection after calibration failed",
       { planId: target.planId, pageNumber: target.pageNumber },
       error,
     );
+    return "failed";
   } finally {
     // pdfjs holds per-document state, which `PlanPdf.close` exists for.
     await doc.close().catch(() => {});

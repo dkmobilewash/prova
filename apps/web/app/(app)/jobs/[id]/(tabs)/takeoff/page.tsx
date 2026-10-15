@@ -33,6 +33,37 @@ import type { WallGroup } from "@/lib/takeoff/wallGroups";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
 
 /**
+ * ── THIS ROUTE NEEDS LONGER THAN A PAGE DOES, AND IT IS THE SAVE THAT NEEDS IT ──
+ *
+ * A Server Action posts to the route of the page it was rendered from, so this
+ * number governs `saveTakeoffCalibration` as well as this render — and that
+ * action starts wall detection in an `after()` callback, which runs inside the
+ * same invocation.
+ *
+ * MEASURED IN PRODUCTION rather than feared. On a 52-sheet bid set, runtime
+ * logs for one save (request `7lj2t-…`, 2026-10-15) read:
+ *
+ *   02:11:38.758  [db] connected                     — the action begins
+ *   02:11:46.464  Cannot polyfill Path2D / DOMMatrix — pdf.js loading, 7.7s later
+ *   —             nothing further from that request
+ *
+ * Those pdf.js lines are detection starting. It never got to a `pageStrokes`
+ * call, nothing was written, and the browser got a 503 — the platform ended the
+ * invocation. Most of the 7.7 seconds is `readPlanBytes` pulling the whole plan
+ * set out of blob storage before a single wall can be looked at.
+ *
+ * So the budget is raised here and detection is given a DEADLINE of its own
+ * (`DETECTION_BUDGET_MS`) that expires first, because the failure this fixes was
+ * silent: being killed leaves no log line, and stopping ourselves writes one.
+ * `plan-ingest/runner.ts` and `agents/cron.ts` both take that trade already.
+ *
+ * NO TEST IN THIS REPO CAN SEE THIS NUMBER. A platform limit is not observable
+ * from vitest, so the proof is the production log after a save: proposals on the
+ * sheet, or detection's own ran-out-of-time line. Silence is now a bug.
+ */
+export const maxDuration = 60;
+
+/**
  * TAKEOFF — measure a drawing on screen and turn what you traced into
  * estimate quantities.
  *
