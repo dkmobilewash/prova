@@ -1507,7 +1507,55 @@ export function inchLabel(inches: number): string {
  */
 export const SAME_BUILDING_FEET = 20;
 
-/** Fewer runs than this is not a floor plan — see `wallsInTheBuilding`. */
+/**
+ * Fewer runs than this is not a floor plan — see `wallsInTheBuilding`.
+ *
+ * ── TEN EXCLUDES SMALL BUILDINGS, AND LOWERING IT IS NOT THE FIX ──
+ *
+ * `wallsInTheBuilding`'s comment argues for ten from six real plans that
+ * "returned 38, 58, 68, 230, 295 and 453", concluding the gap between a box and
+ * a plan "is an order of magnitude, not a margin". Every one of those six is a
+ * large commercial floor, and a small residential plan does not behave like
+ * them.
+ *
+ * Measured 2026-10-15 on twenty sheets drawn outside this repo
+ * (`lib/takeoff/fixtures`), reading the biggest connected group on each:
+ *
+ *   GUEST HOUSE            8 runs   50% x 38% of the sheet   175 ft
+ *   HOUSE WITH ANGLED WING 9 runs   43% x 35%                145 ft
+ *   BUNGALOW               9 runs   25% x 19%                172 ft
+ *   TWO-BEDROOM COTTAGE   10 runs   42% x 29%                223 ft   (scraped through)
+ *
+ * The first three return NOTHING — a correct scale, a correct pairing, then an
+ * empty panel saying "No walls found on this sheet. That is a fact about the
+ * drawing, not a failure." It is not a fact about the drawing. The cottage
+ * passed by a single run.
+ *
+ * ── TWO LOWER VALUES WERE TRIED AND THE BENCH REFUSED BOTH ──
+ *
+ * Against its twenty-nine zero-wall cases — the population of sheets that
+ * SHOULD yield nothing:
+ *
+ *   NOT_A_BOX = 10   11 of 36 zero-wall cases produce walls   (today)
+ *   NOT_A_BOX =  8   17 of 36
+ *   NOT_A_BOX =  5   31 of 36, and the COVER SHEET invents 581 ft on every
+ *                    variant — its vicinity map's streets pair as walls
+ *
+ * So the run count is load-bearing and the number is not the problem. Footage
+ * does not separate them either: the cover sheet's 581 ft is larger than any of
+ * the three houses above.
+ *
+ * ── WHAT WOULD ACTUALLY FIX IT ──
+ *
+ * The difference between a guest house and a vicinity map is not how many runs
+ * or how long they are. It is that a plan's runs ENCLOSE rooms and a street
+ * network does not. `wallRuns.ts` already traces enclosed regions, so the
+ * discriminator exists and is not wired to this decision. That is a real piece
+ * of work rather than a constant, and it is deliberately not smuggled in here.
+ *
+ * Until then: **a floor plan with fewer than ten wall runs returns nothing**,
+ * and that is a known, measured limitation rather than an accident.
+ */
 export const NOT_A_BOX = 10;
 
 /** Closest approach between two centrelines, point to segment. */

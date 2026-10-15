@@ -22467,8 +22467,8 @@
    "heuristic": "scale vote counts DISTINCT label text",
    "input": "eight 30'-0\" bay dimensions, each exactly 270pt (1/8\")",
    "expected": "1/8\" = 1'-0\" (eight independent agreeing dimensions)",
-   "observed": "declines: Only 1 printed dimension on this sheet agree on a scale — too few to set one from.",
-   "holds": false
+   "observed": "1/8\" = 1'-0\"",
+   "holds": true
   },
   {
    "id": "P14",

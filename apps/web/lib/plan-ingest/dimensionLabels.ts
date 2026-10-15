@@ -131,3 +131,67 @@ export function dimensionLabels(page: PlanPageText): DimensionLabel[] {
   }
   return out;
 }
+
+/**
+ * ── A METRIC SHEET DIMENSIONS IN BARE MILLIMETRES ──
+ *
+ * `7150`, `12300`. No unit, no punctuation, nothing that marks it as a
+ * dimension at all — which is exactly why this is a SEPARATE reader that only
+ * runs when the imperial pass has already declined. See `readSheetScale`.
+ *
+ * Measured on two sheets drawn outside this repo (`lib/takeoff/fixtures` S16 at
+ * `1:100` and S17 at `1:50`): both print their scale, both are covered in
+ * dimensions, and both declined with "No printed dimensions were found on this
+ * sheet" — because every dimension on them is a bare integer and the imperial
+ * pattern requires feet.
+ *
+ * ── WHY A BARE NUMBER CAN BE TRUSTED HERE AT ALL ──
+ *
+ * It cannot, on its own, and nothing here pretends otherwise. A four-digit
+ * figure on a drawing is as likely to be a year, a job number or a room area.
+ * Three things make the reading safe, and none of them is this pattern:
+ *
+ *   1. It runs ONLY after the imperial pass declined, so a sheet that already
+ *      reads a scale never sees it.
+ *   2. The figure still has to sit beside a LINE whose length divided by it
+ *      lands on a standard metric scale — `scaleCandidates` does that, and a
+ *      job number beside no dimension line produces no candidate.
+ *   3. Three DISTINCT figures must agree on the same scale. A stray year does
+ *      not find two friends.
+ *
+ * So the pattern's job is only to avoid obvious nonsense: a plausible building
+ * dimension in millimetres, which is a metre at the low end — below that and it
+ * is a room number (`101`), an area, or a door width too short to set a scale
+ * from anyway — and a hundred metres at the top.
+ */
+const MIN_MM = 1_000;
+const MAX_MM = 100_000;
+/**
+ * Digits and nothing else. The BOUNDS are stated once, in `MIN_MM`/`MAX_MM`
+ * below — this was `\d{4,6}`, which enforced the lower bound a second time by
+ * accident and made `MIN_MM` dead code. A mutation dropping `MIN_MM` to 1 left
+ * every test green, because the digit count was quietly doing its job.
+ */
+const BARE_DIGITS = /^\d{3,6}$/;
+/** Millimetres in a foot. */
+const MM_PER_FOOT = 304.8;
+
+export function metricDimensionLabels(page: PlanPageText): DimensionLabel[] {
+  const titleFromX = page.widthPt * TITLE_BLOCK_RIGHT_FRACTION;
+  const titleFromY = page.heightPt * TITLE_BLOCK_BOTTOM_FRACTION;
+
+  const out: DimensionLabel[] = [];
+  for (const item of page.items) {
+    const text = item.str.trim();
+    if (!BARE_DIGITS.test(text)) continue;
+    if (item.x >= titleFromX && item.y >= titleFromY) continue;
+    const mm = Number(text);
+    if (!(mm >= MIN_MM && mm <= MAX_MM)) continue;
+    // CONVERTED TO FEET HERE, ONCE. Everything downstream — the candidate
+    // pairing, the vote, the stored calibration — is in feet, and a second unit
+    // travelling through it is the kind of difference that shows up as a
+    // quantity 3.28 times out.
+    out.push({ text, feet: mm / MM_PER_FOOT, x: item.x + item.width / 2, y: item.y });
+  }
+  return out;
+}

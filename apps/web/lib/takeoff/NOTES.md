@@ -38,39 +38,82 @@ homework. Unknown fields are `null` and the scorer skips them —
 ## Latest run — `fixtures/score.eval.ts`, 2026-10-15
 
 ```
-SCALE: 11 correct of 15 scored; 3 correctly declined (the raster sheets)
+SCALE: 14 correct of 14 scored; 3 correctly declined (the raster sheets);
+       1 sheet contradicts its own title block and the dimensions were followed
 WALL FOOTAGE: reported, NOT SCORED — no sheet in this set prints one
 ROOMS: 122 tagged in the key; the pipeline does not yet report a room list here
 ```
 
-### The four scale failures
+### The scale failures
 
 | sheet | printed | read | |
 | --- | --- | --- | --- |
-| S01 | `1/4" = 1'-0"` | declined | small sheet, 1 room, 4 dimensions — likely below the agreement floor |
-| **S11** | `1/8" = 1'-0"` | **`1/4" = 1'-0"`** | **wrong-but-confident. Every quantity 2× out** |
-| S16 | `1:100` | declined | **metric** — dimensions are bare millimetres |
-| S17 | `1:50` | declined | **metric** |
+| ~~S01~~ | `1/4" = 1'-0"` | **`1/4" = 1'-0"`** | fixed 2026-10-15 — votes are labels, not strings |
+| ~~S16~~ | `1:100` | **`1:100`** | fixed 2026-10-15 — metric dimensions |
+| ~~S17~~ | `1:50` | **`1:50`** | fixed |
 
-S11 is the worst class of failure this repo recognises and it is the one to fix
-first. S16/S17 are a capability gap rather than a bug: nothing in the dimension
-reader understands millimetres.
+**S11 was reported here as the worst failure on the board and it was the KEY
+that was wrong, not the pipeline.** The sheet prints `1/8" = 1'-0"` and its own
+`31'-0"` dimension is 7.75 inches long on a 17-inch page — 31 feet in 7.75
+inches is a quarter inch to the foot, and all six of its dimensions agree. The
+title block is wrong, the app reads the dimensions, and `calibrationNotices`
+already warns when a printed note and a calibration disagree. The fixture is a
+planted trap and the app walks past it correctly.
 
-### Three sheets find a correct scale and ZERO walls
+The key now marks it `scaleAuthority: "dimensions-disagree"` and does not score
+scale on it, because adjudicating would mean re-measuring the drawing with the
+code under test. **A key that assumes a title block tells the truth will send
+somebody to fix a pipeline that is right.**
 
-**S06, S10, S15 — because their walls are drawn as filled poché, not as two
-parallel stroked lines.** Confirmed by looking at the overlays rather than by
-reasoning: S06's partitions are solid grey polygons, and S02's — which the
-pipeline reads perfectly, 10 runs over every partition — are thin line pairs.
+**S16/S17 are fixed.** A metric sheet dimensions in bare millimetres and the
+imperial pattern requires feet, so both read nothing at all. The fix is a
+second reader and a second scale table, tried ONLY when the imperial pass
+declines — so no sheet that already reads a scale can change, and the bench is
+byte-identical. Both now find walls as well (10 runs each).
 
-This is a limitation the code already admits. `wallVectors.ts` states the cost
-in its own words: *"a curved wall that ONLY the room engine could find — drawn
-as fill with no two faces — stays missed, exactly as a straight poché wall does
-today."* It had never been quantified. It is **3 of 15 vector sheets**, and it
-is the single biggest gap in the vector path.
+The bug that made it take two attempts is worth keeping: the vote was taught
+the metric table and the line-proposing `snap` below it was not, so a sheet
+agreed unanimously on `1:100` and was then refused because that name is not in
+the imperial list — "the best line to set it from is **Infinity%** out". Two
+call sites, one updated.
 
-The fix is a centreline derived from the polygon, and it is a real piece of
-work rather than a threshold change.
+### Three sheets find a correct scale and ZERO walls — and it is NOT poché
+
+S06, S10 and S15. The overlay shows S06's walls drawn as filled poché, which is
+a convincing explanation and **is not the cause**. `stages.eval.ts` counts what
+survives each filter:
+
+| sheet | pairs found | after `wallsInTheBuilding` |
+| --- | ---: | ---: |
+| S02 (works) | 10 | **10** |
+| S06 | 9 | **0** |
+| S10 | 8 | **0** |
+| S15 | 12 | **0** (biggest group 9) |
+
+The pairer finds the walls. **`NOT_A_BOX = 10` throws them away** — these are
+small residential plans whose entire building is 8 or 9 runs, and S02 scraped
+through by one.
+
+`wallsInTheBuilding` argues for ten from six real plans that "returned 38, 58,
+68, 230, 295 and 453". All six are large commercial floors. The number was
+measured honestly on a sample that contained no small buildings.
+
+**Lowering it is not the fix, and the bench refused two attempts:**
+
+| | zero-wall cases producing walls |
+| --- | --- |
+| `NOT_A_BOX = 10` (today) | 11 of 36 |
+| `= 8` | 17 of 36 |
+| `= 5` | 31 of 36 — the COVER SHEET invents 581 ft, its vicinity map's streets pairing as walls |
+
+Footage does not separate them either: that cover sheet's 581 ft is more than
+any of the three houses. What separates a guest house from a street map is that
+a plan's runs **enclose rooms**. `wallRuns.ts` already traces enclosed regions
+and is not wired to this decision. That is the fix, and it is real work rather
+than a constant.
+
+Until then: **a floor plan with fewer than ten wall runs returns nothing**, and
+it is a measured limitation rather than an accident.
 
 ### The raster sheets
 
@@ -102,12 +145,11 @@ stale one is worse than none. Regenerate before looking.
 
 ## Known limitations, in the order they cost the most
 
-1. **Filled-poché walls produce nothing.** 3 of 15 vector fixtures.
-2. **A wrong-but-confident scale** on S11. Everything downstream is 2× out.
-3. **No metric dimension reading.** 2 of 15 fixtures decline a scale they print.
-4. **No raster path at all.** 3 of 20 fixtures, and a real share of real sets.
-5. **Rooms are not scored here.** The pipeline does not surface a room list from
+1. **A floor plan under ten wall runs returns nothing.** 3 of 15 vector
+   fixtures. Needs an enclosure test, not a lower constant — see above.
+2. **No raster path at all.** 3 of 20 fixtures, and a real share of real sets.
+3. **Rooms are not scored here.** The pipeline does not surface a room list from
    the entry point the scorer uses, so 122 tagged rooms sit unused.
-6. **The wall classifier must not run unasked** — graded 2026-10-15: it drops
+4. **The wall classifier must not run unasked** — graded 2026-10-15: it drops
    3 real walls per sheet to catch 1 phantom, and caught 3 of 12 on a sheet
    where every candidate was a phantom. It stays a button a person presses.

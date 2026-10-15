@@ -64,6 +64,10 @@ describe.skipIf(!existsSync(PLANS))("extract the printed answers", () => {
           scalesPrinted: unique,
           widthPt: Math.round(text.widthPt),
           heightPt: Math.round(text.heightPt),
+          // Defaults to the ordinary case. The one sheet that contradicts
+          // itself is marked by hand below, because establishing it took
+          // arithmetic a person checked rather than a rule a script applied.
+          scaleAuthority: raster ? "none" : unique.length > 0 ? "printed" : "none",
           rooms: roomsFromWords(words),
           dimensions: dimensionsFromWords(words, unique[0] ?? null),
           // NOT PRINTED ANYWHERE ON THIS SET. See `expected.ts` — the number
@@ -77,6 +81,21 @@ describe.skipIf(!existsSync(PLANS))("extract the printed answers", () => {
         };
         if (!raster && unique.length === 0) {
           sheet.notes.push("No scale printed on this sheet. The app must DECLINE rather than guess.");
+        }
+        // ── HAND-MARKED, WITH THE ARITHMETIC THAT ESTABLISHED IT ──
+        //
+        // Not a rule, because the only way to DERIVE this is to measure the
+        // drawing — and measuring it with the reader under test is how a key
+        // stops being evidence. Verified once, by division, on a number any
+        // reader can check against the sheet.
+        if (id === "S11") {
+          sheet.scaleAuthority = "dimensions-disagree";
+          sheet.notes.push(
+            "The title block prints 1/8\" = 1'-0\" and the sheet's own 31'-0\" dimension is 7.75 inches " +
+              "long on a 17-inch page. 31 feet in 7.75 inches is 1/4\" to the foot, and all six dimensions " +
+              "agree on it. The printed note is wrong, which is a common defect on a real set. Scale is " +
+              "NOT scored here; what is scored is that the app reads the dimensions and says the two disagree.",
+          );
         }
         if (unique.length > 1) {
           sheet.notes.push(`More than one view scale printed (${unique.join(", ")}); either is accepted.`);

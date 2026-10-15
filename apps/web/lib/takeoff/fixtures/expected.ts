@@ -88,6 +88,31 @@ export type ExpectedSheet = {
   rooms: ExpectedRoom[];
   /** Printed dimension strings, for the scale cross-check. */
   dimensions: string[];
+  /**
+   * Which reading of the scale this sheet's own content supports.
+   *
+   * ── A SHEET CAN CONTRADICT ITSELF, AND ONE OF THESE DOES ──
+   *
+   * `printed` is the ordinary case: the title block's note and the geometry
+   * agree, so the note is a fair thing to score against.
+   *
+   * `dimensions-disagree` means the sheet's DIMENSION STRINGS measure something
+   * the title block does not claim. On S11 the printed note says `1/8" = 1'-0"`
+   * and the drawing's own `31'-0"` dimension is **7.75 inches long on a
+   * 17-inch sheet** — 31 feet in 7.75 inches is a quarter-inch to the foot, and
+   * all six of its dimensions agree on that. The title block is wrong.
+   *
+   * That is not an exotic case. A copied title block with a stale scale is one
+   * of the commonest defects on a real bid set, and it is why the app reads
+   * dimensions FIRST and treats the printed note as a fallback — and why
+   * `calibrationNotices` warns when the two disagree rather than silently
+   * picking one.
+   *
+   * **A sheet marked this way is not scored on scale.** The key would have to
+   * re-measure the drawing to adjudicate, and re-measuring with the code under
+   * test is not an answer key. What IS scored is that the app notices.
+   */
+  scaleAuthority: "printed" | "dimensions-disagree" | "none";
   /** NOT PRINTED on this set. Kept so the shape matches the day a fixture has
    *  them, and so the scorer's skip is explicit rather than an omission. */
   wallLfTotal: number | null;
