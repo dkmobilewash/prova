@@ -49,6 +49,50 @@ describe("reading a CAD layer name", () => {
     expect(layerVerdict("A-FURN-EXST")).toBe("out-of-scope");
   });
 
+  describe("the NCS status letter, which is how a real set actually says it", () => {
+    // Measured on West Herr's A-101 — 47 layers, every stroke on one, and the
+    // out-of-scope bucket came back ZERO while the drawing carried `A-Wall-E`
+    // with 281 path operators on it. The spelled-out words above are a house
+    // style; a single trailing letter is the published standard.
+    it("reads a trailing E, D or X as not-new-work", () => {
+      expect(layerVerdict("A-WALL-E")).toBe("out-of-scope");
+      expect(layerVerdict("A-WALL-D")).toBe("out-of-scope");
+      expect(layerVerdict("A-WALL-X")).toBe("out-of-scope");
+      // Spelled as the xref-prefixed names actually arrive on the real file.
+      expect(layerVerdict("07231.14 - Base|A-Wall-E")).toBe("out-of-scope");
+      expect(layerVerdict("07231.14 - Base|A-Wall-Blow-E")).toBe("out-of-scope");
+    });
+
+    it("does NOT read a LEADING E as existing — that is the electrical discipline", () => {
+      // The mistake this rule is shaped to avoid. `E-Lite` is lighting, not
+      // something existing, and reading it as a scope judgement would be wrong
+      // about what the layer even is.
+      expect(layerVerdict("E-LITE")).toBe("not-wall");
+      expect(layerVerdict("E-POWR")).toBe("not-wall");
+      // A layer called just `E` has no last field to judge.
+      expect(layerVerdict("E")).toBe("unknown");
+    });
+
+    it("leaves N, R, T and F alone, because each of those is work", () => {
+      // `N` is new and is the whole point of the bid. `R` relocated and `T`
+      // temporary are things somebody is paid to do. `F` future is genuinely
+      // out of contract and is STILL left in scope, because a lone F is also
+      // how more than one office abbreviates FURRING — and dropping furring
+      // drops a wall.
+      expect(layerVerdict("A-WALL-N")).toBe("wall");
+      expect(layerVerdict("A-WALL-R")).toBe("wall");
+      expect(layerVerdict("A-WALL-T")).toBe("wall");
+      expect(layerVerdict("A-WALL-F")).toBe("wall");
+    });
+
+    it("does not fire on a multi-letter last field", () => {
+      // `A-WALL-EXT` is an EXTERIOR wall, not an existing one. Only a single
+      // character is a status code, and the difference is a whole envelope.
+      expect(layerVerdict("A-WALL-EXT")).toBe("wall");
+      expect(layerVerdict("A-WALL-FULL")).toBe("wall");
+    });
+  });
+
   it("says UNKNOWN for anything it cannot place, which is what keeps it safe", () => {
     // These are the real names that defeat any vocabulary: AutoCAD's default
     // layer, a drafter's scratch layer, a house style nobody standardised.
