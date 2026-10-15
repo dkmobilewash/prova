@@ -78,6 +78,30 @@ export type StrokeSegment = {
    * poché wall does today.
    */
   curved?: boolean;
+  /**
+   * The CAD layer this stroke was drawn on, when the export carries one.
+   *
+   * ── THE DRAWING HAS BEEN SAYING WHICH LINES ARE WALLS THE WHOLE TIME ──
+   *
+   * Every filter in this module is GEOMETRY, and geometry cannot tell a wall
+   * from the two parallel strokes of a letter in the architect's logo, or from
+   * the sides of a car on a parking plan. Both were reported from a real
+   * dealership bid set, and both are the pairer answering its own question
+   * correctly: those really are parallel lines a wall thickness apart.
+   *
+   * An AutoCAD or Revit export made WITH LAYER INFORMATION wraps each stroke in
+   * an optional-content group named after the layer the drafter put it on —
+   * `A-WALL`, `S-GRID`, `A-FURN`, `G-ANNO-TTLB`. That is a different KIND of
+   * signal from everything else here: not a measurement of the line, but what
+   * the person who drew it called it. `layerNames.ts` judges the name;
+   * `sheetStrokes.ts` reads it.
+   *
+   * OPTIONAL, AND THAT IS THE WHOLE SAFETY OF IT. A flattened plot carries no
+   * layers at all, so `undefined` has to mean "say nothing" rather than
+   * "suspicious" — see `layerVerdict`, which returns `unknown` for anything it
+   * cannot place and `withoutNonWallLayers`, which keeps every `unknown`.
+   */
+  layer?: string;
 };
 
 /** A wall this module is willing to claim: the centreline, in page points. */
