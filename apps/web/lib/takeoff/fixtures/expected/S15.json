@@ -1,0 +1,55 @@
+{
+  "id": "S15",
+  "title": "BUNGALOW - PLAN AND ENLARGED",
+  "page": 1,
+  "sheetNumber": "A-101",
+  "raster": false,
+  "scale": "1/4\" = 1'-0\"",
+  "scalesPrinted": [
+    "1/4\" = 1'-0\"",
+    "1/2\" = 1'-0\""
+  ],
+  "widthPt": 2592,
+  "heightPt": 1728,
+  "rooms": [
+    {
+      "name": "LIVING",
+      "number": "101",
+      "area": null
+    },
+    {
+      "name": "KITCHEN",
+      "number": "102",
+      "area": null
+    },
+    {
+      "name": "BEDROOM",
+      "number": "103",
+      "area": null
+    },
+    {
+      "name": "BEDROOM",
+      "number": "104",
+      "area": null
+    },
+    {
+      "name": "BATH",
+      "number": "105",
+      "area": null
+    }
+  ],
+  "dimensions": [
+    "18'-3 1/4\"",
+    "18'-3 1/4\"",
+    "36'-6 1/2\"",
+    "14'-3 1/4\"",
+    "14'-3 1/4\"",
+    "28'-6 1/2\""
+  ],
+  "wallLfTotal": null,
+  "doorCount": null,
+  "windowCount": null,
+  "notes": [
+    "More than one view scale printed (1/4\" = 1'-0\", 1/2\" = 1'-0\"); either is accepted."
+  ]
+}

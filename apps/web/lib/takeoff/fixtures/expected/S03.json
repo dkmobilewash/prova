@@ -1,0 +1,57 @@
+{
+  "id": "S03",
+  "title": "TWO-BEDROOM COTTAGE",
+  "page": 1,
+  "sheetNumber": "A-101",
+  "raster": false,
+  "scale": "1/8\" = 1'-0\"",
+  "scalesPrinted": [
+    "1/8\" = 1'-0\""
+  ],
+  "widthPt": 1224,
+  "heightPt": 792,
+  "rooms": [
+    {
+      "name": "LIVING",
+      "number": "101",
+      "area": null
+    },
+    {
+      "name": "KITCHEN",
+      "number": "102",
+      "area": null
+    },
+    {
+      "name": "HALL",
+      "number": "103",
+      "area": null
+    },
+    {
+      "name": "BEDROOM",
+      "number": "104",
+      "area": null
+    },
+    {
+      "name": "BATH",
+      "number": "105",
+      "area": null
+    },
+    {
+      "name": "BEDROOM",
+      "number": "106",
+      "area": null
+    }
+  ],
+  "dimensions": [
+    "16'-3 1/4\"",
+    "24'-3 1/4\"",
+    "40'-6 1/2\"",
+    "16'-3 1/4\"",
+    "12'-3 1/4\"",
+    "28'-6 1/2\""
+  ],
+  "wallLfTotal": null,
+  "doorCount": null,
+  "windowCount": null,
+  "notes": []
+}

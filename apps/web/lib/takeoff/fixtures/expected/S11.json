@@ -1,0 +1,52 @@
+{
+  "id": "S11",
+  "title": "GUEST HOUSE",
+  "page": 1,
+  "sheetNumber": "A-101",
+  "raster": false,
+  "scale": "1/8\" = 1'-0\"",
+  "scalesPrinted": [
+    "1/8\" = 1'-0\""
+  ],
+  "widthPt": 1224,
+  "heightPt": 792,
+  "rooms": [
+    {
+      "name": "KITCHEN",
+      "number": "101",
+      "area": null
+    },
+    {
+      "name": "LIVING",
+      "number": "102",
+      "area": null
+    },
+    {
+      "name": "BEDROOM",
+      "number": "103",
+      "area": null
+    },
+    {
+      "name": "BATH",
+      "number": "104",
+      "area": null
+    },
+    {
+      "name": "CLOSET",
+      "number": "105",
+      "area": null
+    }
+  ],
+  "dimensions": [
+    "16'-6\"",
+    "14'-6\"",
+    "31'-0\"",
+    "10'-6\"",
+    "12'-6\"",
+    "23'-0\""
+  ],
+  "wallLfTotal": null,
+  "doorCount": null,
+  "windowCount": null,
+  "notes": []
+}

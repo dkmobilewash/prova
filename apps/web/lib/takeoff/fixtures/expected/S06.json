@@ -1,0 +1,58 @@
+{
+  "id": "S06",
+  "title": "HOUSE WITH ANGLED WING",
+  "page": 1,
+  "sheetNumber": "A-101",
+  "raster": false,
+  "scale": "1/4\" = 1'-0\"",
+  "scalesPrinted": [
+    "1/4\" = 1'-0\""
+  ],
+  "widthPt": 1728,
+  "heightPt": 1296,
+  "rooms": [
+    {
+      "name": "LIVING",
+      "number": "101",
+      "area": {
+        "value": 361,
+        "unit": "sf"
+      }
+    },
+    {
+      "name": "KITCHEN / DINING",
+      "number": "102",
+      "area": {
+        "value": 292,
+        "unit": "sf"
+      }
+    },
+    {
+      "name": "BEDROOM",
+      "number": "103",
+      "area": {
+        "value": 109,
+        "unit": "sf"
+      }
+    },
+    {
+      "name": "BATH",
+      "number": "104",
+      "area": {
+        "value": 109,
+        "unit": "sf"
+      }
+    }
+  ],
+  "dimensions": [
+    "16'-3 1/4\"",
+    "26'-3 3/8\"",
+    "42'-6 5/8\"",
+    "34'-9 3/8\"",
+    "34'-9 3/8\""
+  ],
+  "wallLfTotal": null,
+  "doorCount": null,
+  "windowCount": null,
+  "notes": []
+}

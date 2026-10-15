@@ -1,0 +1,83 @@
+{
+  "id": "S16",
+  "title": "APARTMENT 4B",
+  "page": 1,
+  "sheetNumber": "A-101",
+  "raster": false,
+  "scale": "1:100",
+  "scalesPrinted": [
+    "1:100"
+  ],
+  "widthPt": 1224,
+  "heightPt": 792,
+  "rooms": [
+    {
+      "name": "LIVING",
+      "number": "01",
+      "area": {
+        "value": 32.6,
+        "unit": "m2"
+      }
+    },
+    {
+      "name": "KITCHEN",
+      "number": "02",
+      "area": {
+        "value": 23,
+        "unit": "m2"
+      }
+    },
+    {
+      "name": "BEDROOM",
+      "number": "03",
+      "area": {
+        "value": 16.3,
+        "unit": "m2"
+      }
+    },
+    {
+      "name": "HALL",
+      "number": "04",
+      "area": {
+        "value": 5.3,
+        "unit": "m2"
+      }
+    },
+    {
+      "name": "BATH",
+      "number": "05",
+      "area": {
+        "value": 5.6,
+        "unit": "m2"
+      }
+    },
+    {
+      "name": "STORE",
+      "number": "06",
+      "area": {
+        "value": 3,
+        "unit": "m2"
+      }
+    },
+    {
+      "name": "BEDROOM",
+      "number": "07",
+      "area": {
+        "value": 12.3,
+        "unit": "m2"
+      }
+    }
+  ],
+  "dimensions": [
+    "7150",
+    "5150",
+    "12300",
+    "5150",
+    "4150",
+    "9300"
+  ],
+  "wallLfTotal": null,
+  "doorCount": null,
+  "windowCount": null,
+  "notes": []
+}

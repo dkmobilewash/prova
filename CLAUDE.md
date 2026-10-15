@@ -2615,6 +2615,16 @@ anything about SIZE.
   needs real rows to say anything, grow the fixture rather than reaching for
   production.**
 
+- **Takeoff geometry is computed by code in `apps/web/lib/takeoff/`, never by
+  the LLM.** Every length, thickness, area and coordinate comes from the PDF's
+  own vector geometry; the model is used for interpretation only — what kind of
+  sheet this is, what a run IS, what a label means — and no model reply in this
+  repo carries a coordinate, a length or an area. Two fixture sets grade it and
+  they are not interchangeable: `reports/takeoff-bench` is the only one with
+  wall-footage ground truth, and `lib/takeoff/fixtures` is twenty sheets drawn
+  by a different generator, where **only what a drawing PRINTS may be ground
+  truth**. See `apps/web/lib/takeoff/NOTES.md` for the latest numbers and the
+  known limitations in the order they cost the most.
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.
 - `CHANGELOG.md`: newest first; says why decisions were made and the

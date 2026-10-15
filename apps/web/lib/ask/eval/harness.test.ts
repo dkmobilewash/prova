@@ -98,6 +98,12 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: a REAL plan set from outside the repo through the same deterministic path, guarded by a skip on REAL_PLAN_PDF plus a non-zero segment assertion — a scanned sheet returns none and must not read as a clean run",
     "layers.eval.ts":
       "calls no model: reads optional-content group names straight off a REAL plan set to answer whether architects' exports name their layers at all, guarded by a skip on REAL_PLAN_PDF plus a non-zero page assertion — a mistyped path must not read as 'no set has layers', which is the one finding that would abandon the approach",
+    "extract.eval.ts":
+      "calls no model: reads the TEXT LAYER of twenty committed fixtures and writes the answer key from what each drawing prints, guarded by a skip when the fixtures are absent plus a non-zero file assertion — a key built from no files would be an empty key that scores everything as unknown",
+    "score.eval.ts":
+      "calls no model: runs the deterministic pipeline over those fixtures and scores it against the printed answers, guarded by the same skip plus a non-zero key assertion and a non-zero stroke assertion — a clean table from a run that read no geometry is the vacuous green this directory exists to end",
+    "overlay.eval.ts":
+      "calls no model: renders the detections over each fixture as a PNG so a failure can be looked at rather than reasoned about, guarded by the same skip plus an assertion that one image was written per fixture",
     "sheetTemplate.eval.ts":
       "calls no model: the template filter's recurrence histogram over a REAL set, guarded by a skip on REAL_PLAN_PDF plus a non-zero segment assertion — a sheet that parsed to nothing must not read as a sheet with no furniture on it",
   };
