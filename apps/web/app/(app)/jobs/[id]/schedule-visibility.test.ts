@@ -141,6 +141,10 @@ vi.mock("@/lib/viewerToday", () => ({ viewerTimeZone: vi.fn(async () => "UTC"), 
 vi.mock("@/lib/docusign/views", () => ({ loadJobDocuSign: vi.fn(async () => null) }));
 vi.mock("@/lib/jobs/job-paperwork", () => ({ jobPaperworkLinks: vi.fn(() => []), loadJobPaperworkCounts: vi.fn(async () => ({})) }));
 vi.mock("@/lib/push", () => ({ pushToUser: vi.fn() }));
+// The "what this job needs from you" list, which this file does not test. One
+// line, the way `loadJobDocuSign` and `loadJobPaperworkCounts` above are mocked
+// — which is the reason that list is a loader rather than three queries inline.
+vi.mock("@/lib/jobs/job-needs-query", () => ({ loadJobNeeds: vi.fn(async () => []) }));
 
 /** The page binds these; it never calls them during a render. Mocking the
  * BARREL leaves `@/lib/actions/jobs` itself real, which is what the last
