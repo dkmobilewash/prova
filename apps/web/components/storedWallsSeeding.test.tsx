@@ -90,6 +90,8 @@ function paint(sheets: PlanSheet[], storedWallsByPage: Record<number, WallGroup[
         planId: "plan_1",
         sheets,
         printedScaleByPage: {},
+        // No page here is a scan; these cases are not about the scan reader.
+        scannedPages: [],
         scalePrefillByPage: {},
         storedWallsByPage,
       } as never),

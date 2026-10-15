@@ -57,6 +57,8 @@ function paint(levelByPage?: Record<number, string>) {
         planId: "plan_1",
         sheets: [sheet(1)],
         printedScaleByPage: {},
+        // No page here is a scan; these cases are not about the scan reader.
+        scannedPages: [],
         scalePrefillByPage: {},
         levelByPage,
       } as never),

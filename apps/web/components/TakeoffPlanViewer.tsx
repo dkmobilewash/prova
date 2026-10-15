@@ -160,6 +160,11 @@ export function TakeoffPlanViewer({
   planId,
   sheets,
   printedScaleByPage,
+  // Defaulted for the test renders that build partial props through
+  // `as never`. The TYPE still requires it, so a real caller that forgets it
+  // is a build error rather than a button that silently never appears —
+  // which is the failure this prop exists to fix.
+  scannedPages = [],
   storedWallsByPage,
   levelByPage,
   wallTypes,
@@ -184,6 +189,28 @@ export function TakeoffPlanViewer({
    * `takeoff-plan-view.ts`.
    */
   printedScaleByPage: PrintedScaleByPage;
+  /**
+   * Page numbers whose page carries NO TEXT LAYER — that is, scans.
+   *
+   * ── WHY THIS IS A PROP AND NOT SOMETHING THE VIEWER WORKS OUT ──
+   *
+   * Read this sheet first appeared only once Find the walls had run and come
+   * back with no lines, which reads as the careful choice and is a DEADLOCK.
+   * Find the walls is disabled until a sheet has a scale (`!calibration`); a
+   * scan's scale is printed on the drawing and can only be got at by reading
+   * the picture; and reading the picture was the thing behind the button. So
+   * the one control that could break the cycle was inside it, and the feature
+   * was unreachable on exactly the sheets it exists for.
+   *
+   * Found by a person clicking, after a census asserted the control existed
+   * and was rendered from a page — which it was. The same shape as #764:
+   * PRESENT IS NOT USABLE, and a sibling condition is what makes it so.
+   *
+   * Being a scan is a fact about the FILE, settled at ingest and independent
+   * of scale, of Find the walls and of anything the viewer has done. So the
+   * gate is that fact, and nothing else.
+   */
+  scannedPages: number[];
   /**
    * THE WALLS ALREADY FOUND ON EACH SHEET, from `TakeoffWallProposal`, keyed by
    * page number.
@@ -1260,12 +1287,14 @@ export function TakeoffPlanViewer({
             {checking ? "Checking the runs…" : "Check these are walls"}
           </button>
         )}
-        {/* ── A SHEET THAT TURNED OUT TO BE A SCAN ──
-            Shown only once Find the walls has run and found NO lines, which is
-            exactly what a scan looks like from here: a picture has no strokes
-            to read and no words either. Offering it before then would put a
-            control for a rare case on every sheet's toolbar. */}
-        {found !== null && strokesSeen === 0 && (
+        {/* ── A SHEET THAT IS A SCAN ──
+            Gated on the page having no TEXT LAYER, a fact settled at ingest.
+            It deliberately does not wait for Find the walls: that button is
+            disabled until the sheet has a scale, a scan's scale can only be
+            had by reading the picture, and this is the thing that reads it —
+            so gating on it made the feature unreachable on every sheet it was
+            built for. See `scannedPages`. */}
+        {scannedPages.includes(pageNumber) && (
           <button
             type="button"
             onClick={onReadSheet}

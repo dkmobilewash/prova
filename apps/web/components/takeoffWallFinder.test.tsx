@@ -73,6 +73,10 @@ function paint(sheets: PlanSheet[]) {
         planId: "plan_1",
         sheets,
         printedScaleByPage: {},
+        // No page here is a scan, which is what these cases are about: they
+        // exercise the WALL FINDER's control, whose posture (shown, disabled,
+        // enabled) is a question about calibration rather than about scans.
+        scannedPages: [],
         scalePrefillByPage: {},
       } as never),
     );
