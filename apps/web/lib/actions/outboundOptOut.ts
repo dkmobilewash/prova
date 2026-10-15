@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { leadIdFromToken } from "@/lib/outbound-token";
-import { SMARTLEAD_API } from "@/lib/smartlead/push";
+import { blockInSmartlead } from "@/lib/smartlead/block";
 
 /**
  * THE UNSUBSCRIBE LINK'S ONE BUTTON. Public — no session, by design (CAN-SPAM:
@@ -16,12 +16,9 @@ import { SMARTLEAD_API } from "@/lib/smartlead/push";
  * value — derived, never a flag passed along. A bad token does nothing; the
  * page already says the link is not valid.
  *
- * ALSO TELLS SMARTLEAD, because our flag does not stop a sequence that is
- * already running there. Best effort, five seconds, and the opt-out never
- * waits on its answer to stick: `POST /leads/add-domain-block-list` with
- * `{ email }`, as the help centre documents it (the API reference has no page
- * for it — read 2026-10-10). Whatever it answered is stored on the event, so
- * a failed block is visible rather than assumed.
+ * ALSO TELLS SMARTLEAD (`lib/smartlead/block.ts`), because our flag does not
+ * stop a sequence that is already running there. Whatever it answered is
+ * stored on the event, so a failed block is visible rather than assumed.
  */
 export async function unsubscribeByToken(token: string): Promise<void> {
   const leadId = leadIdFromToken(token);
@@ -61,22 +58,4 @@ export async function unsubscribeByToken(token: string): Promise<void> {
     });
   });
   revalidatePath(`/unsubscribe/${token}`);
-}
-
-async function blockInSmartlead(email: string | null): Promise<string> {
-  const apiKey = process.env.SMARTLEAD_API_KEY?.trim();
-  if (!email?.trim()) return "no email on the lead";
-  if (!apiKey) return "SMARTLEAD_API_KEY not set";
-  try {
-    const response = await fetch(`${SMARTLEAD_API}/leads/add-domain-block-list?api_key=${encodeURIComponent(apiKey)}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: email.trim() }),
-      cache: "no-store",
-      signal: AbortSignal.timeout(5000),
-    });
-    return `smartlead answered ${response.status}`;
-  } catch {
-    return "smartlead unreachable";
-  }
 }

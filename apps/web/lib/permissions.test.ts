@@ -367,6 +367,8 @@ const OPEN_ROUTES: Record<string, string> = {
   "/sales/[id]": "Same page, same two checks — isProvaOperator, then OWNER — with notFound() for a non-operator company.",
   "/sales/call-list":
     "The CSLB call list behind /sales — same two checks, isProvaOperator then OWNER, in-page, for the same reason /sales gives: a capability would loosen it. Nothing on it is tenant data; it is a public government file joined and filtered.",
+  "/sales/replies":
+    "The reply agent's inbox behind /sales — same two checks, isProvaOperator then OWNER, in-page, for the same reason /sales gives: a capability would loosen it. Prospects' replies to Prova's own outbound, not tenant data.",
   "/sales/[id]/sample-wh347":
     "A sample WH-347 with a prospect's name on it, reached only from /sales/[id] — same two checks, isProvaOperator then OWNER, with notFound() for a non-operator company.",
   "/sales/public-works":

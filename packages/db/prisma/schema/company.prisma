@@ -191,6 +191,7 @@ model Company {
   salesLeadSignals          SalesLeadSignal[]
   outboundEvents            OutboundEvent[]
   consentRecords            ConsentRecord[]
+  outboundReplies           OutboundReply[]
   equipmentAssignments      EquipmentAssignment[]
   crewMembers               CrewMember[]
   payrollRegisterEntries    PayrollRegisterEntry[]
