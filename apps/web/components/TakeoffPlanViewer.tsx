@@ -371,6 +371,7 @@ export function TakeoffPlanViewer({
   const [readError, setReadError] = useState<string | null>(null);
   const [wordsRead, setWordsRead] = useState<number | null>(null);
   const [readProgress, setReadProgress] = useState<string | null>(null);
+  const [readReported, setReadReported] = useState(0);
   const scannedWordsRef = useRef<{ str: string; x: number; y: number; width: number; height: number }[] | null>(null);
   const [finding, setFinding] = useState(false);
   const [findError, setFindError] = useState<string | null>(null);
@@ -645,6 +646,21 @@ export function TakeoffPlanViewer({
         getViewport: (o: { scale: number }) => { width: number; height: number };
         render: (o: unknown) => { promise: Promise<void> };
       };
+      // ── THE VIEWER'S OWN RENDER HAS TO GET OUT OF THE WAY FIRST ──
+      //
+      // pdf.js serialises renders per PAGE, and `doc.getPage` hands back the
+      // same cached page object the viewer is drawing with. So a tile render
+      // started while the sheet is still drawing simply queues behind it —
+      // and a browser tester watched exactly that: "Drawing…" on the canvas,
+      // the counter stuck on "0 of 15" for five minutes, and NOT ONE request
+      // ever sent, because the loop never reached its first call.
+      //
+      // Cancelling is the same discipline this component already uses on
+      // itself before each of its own renders; it just was not applied to
+      // these. The sheet redraws afterwards on the next pass.
+      renderTaskRef.current?.cancel();
+      renderTaskRef.current = null;
+
       const full = page.getViewport({ scale: 1 });
       const across = Math.ceil(full.width / TILE_PT);
       const down = Math.ceil(full.height / TILE_PT);
@@ -653,6 +669,9 @@ export function TakeoffPlanViewer({
       const words: { str: string; x: number; y: number; width: number; height: number }[] = [];
       const total = across * down;
       let done = 0;
+      // What the model CLAIMED across every tile, which is the only thing that
+      // tells a zero apart from a zero. See the message below.
+      let reported = 0;
       setReadProgress(`Reading the sheet — 0 of ${total} parts…`);
       for (let ty = 0; ty < down; ty += 1) {
         for (let tx = 0; tx < across; tx += 1) {
@@ -709,6 +728,7 @@ export function TakeoffPlanViewer({
             return;
           }
           words.push(...result.value.items);
+          reported += result.value.reported;
           done += 1;
           // WHAT IT IS DOING, not merely that it is doing something. Nine
           // requests take a while, and a button that only says "Reading…" is
@@ -719,6 +739,7 @@ export function TakeoffPlanViewer({
       }
       scannedWordsRef.current = words;
       setWordsRead(words.length);
+      setReadReported(reported);
     } finally {
       setReading(false);
       setReadProgress(null);
@@ -1349,8 +1370,27 @@ export function TakeoffPlanViewer({
         )}
         {wordsRead !== null && readError === null && (
           <p data-takeoff="read-done" className="text-xs text-ink-muted">
-            Read {wordsRead} {wordsRead === 1 ? "word" : "words"} off this sheet. Press Find the walls again to
-            use them.
+            {wordsRead > 0 ? (
+              <>
+                Read {wordsRead} {wordsRead === 1 ? "word" : "words"} off this sheet. Press Find the walls again
+                to use them.
+              </>
+            ) : readReported > 0 ? (
+              /* ── TWO ZEROES THAT NEED DIFFERENT HELP ──
+                 Something was read and none of it could be placed on the
+                 sheet, which is a coordinate problem and ours to fix. */
+              <>
+                Read nothing usable off this sheet — {readReported} pieces of writing were found but none could
+                be placed on the drawing. This is a fault on our side; the sheet is unchanged.
+              </>
+            ) : (
+              /* Nothing was found at all, which is what an genuinely blank or
+                 unreadable scan looks like and is not the same failure. */
+              <>
+                No writing could be made out on this sheet. If it is a faint or low-resolution scan, the scale
+                still has to be set by hand.
+              </>
+            )}
           </p>
         )}
         {checkError !== null && (

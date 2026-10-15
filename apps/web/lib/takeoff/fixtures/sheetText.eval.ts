@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { readSheetTextTile, type TextBox } from "@prova/integrations";
+import { readSheetTextTile } from "@prova/integrations";
 import { describe, expect, it } from "vitest";
 import { requireEvalApiKey } from "@/lib/ai/evalApiKey";
 import { standardFontDir } from "../bench/run";
@@ -150,7 +150,7 @@ describe.skipIf(!existsSync(DIR))("reading the words off a scan", () => {
           await spage.render({ canvasContext: context, viewport: spage.getViewport({ scale }) }).promise;
           context.restore();
 
-          const boxes: TextBox[] = await readSheetTextTile({
+          const { boxes } = await readSheetTextTile({
             imageBase64: canvas.toBuffer("image/jpeg", { quality: 0.9 }).toString("base64"),
             mediaType: "image/jpeg",
             model: MODEL,
@@ -276,7 +276,7 @@ describe.skipIf(!existsSync(DIR))("reading the words off a scan", () => {
             // format production does not use would be measuring a page
             // nobody renders — and the format is not cosmetic here, since a
             // speckled PNG tile was over the body limit that made this fail.
-            const boxes = await readSheetTextTile({
+            const { boxes } = await readSheetTextTile({
               imageBase64: canvas.toBuffer("image/jpeg", { quality: 0.9 }).toString("base64"),
               mediaType: "image/jpeg",
               model: MODEL,
