@@ -47,7 +47,19 @@ how this was reported.
 stated limit, the guard being BELOW it, the route budget exceeding the
 client's timeout, the catch, and the progress line.
 
-**What is NOT verified**: whether JPEG costs any accuracy. The run to check it
-stopped on *"Your credit balance is too low to access the Anthropic API"*.
-The previous measurement — every printed string read exactly, 98% placed —
-was taken on PNG, and nothing yet says JPEG matches it.
+**JPEG costs nothing, and that was measured rather than hoped.** The obvious
+worry about compressing a drawing is that it softens the lettering the model
+has to read, so the eval was re-run sending exactly what the page now sends:
+
+| | PNG | JPEG q90 |
+| --- | --- | --- |
+| printed strings read exactly | 101 of 101 | **101 of 101** |
+| placed within the 30pt the pairing allows | 99 (98%) | **99 (98%)** |
+
+Identical, per sheet as well as in total — S18 28/28/26 and S20 73/73/73 both
+ways. So the payload halves for free.
+
+The first attempt at this run stopped on *"Your credit balance is too low to
+access the Anthropic API"*, which is worth recording for the next person
+reading a red eval: that is an account state, not a defect in the thing being
+measured, and the sentence says so plainly.
