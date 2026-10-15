@@ -151,7 +151,8 @@ describe.skipIf(!existsSync(DIR))("reading the words off a scan", () => {
           context.restore();
 
           const boxes: TextBox[] = await readSheetTextTile({
-            imageBase64: canvas.toBuffer("image/png").toString("base64"),
+            imageBase64: canvas.toBuffer("image/jpeg", { quality: 0.9 }).toString("base64"),
+            mediaType: "image/jpeg",
             model: MODEL,
           });
           tiles += 1;
@@ -271,8 +272,13 @@ describe.skipIf(!existsSync(DIR))("reading the words off a scan", () => {
             context.translate(-tx * TILE_PT * scale, -ty * TILE_PT * scale);
             await spage.render({ canvasContext: context, viewport: spage.getViewport({ scale }) }).promise;
             context.restore();
+            // JPEG, matching what the viewer sends. An eval that measured a
+            // format production does not use would be measuring a page
+            // nobody renders — and the format is not cosmetic here, since a
+            // speckled PNG tile was over the body limit that made this fail.
             const boxes = await readSheetTextTile({
-              imageBase64: canvas.toBuffer("image/png").toString("base64"),
+              imageBase64: canvas.toBuffer("image/jpeg", { quality: 0.9 }).toString("base64"),
+              mediaType: "image/jpeg",
               model: MODEL,
             });
             tiles += 1;

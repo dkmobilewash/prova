@@ -61,7 +61,28 @@ import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
  * from vitest, so the proof is the production log after a save: proposals on the
  * sheet, or detection's own ran-out-of-time line. Silence is now a bug.
  */
-export const maxDuration = 60;
+/**
+ * ── RAISED FROM 60 TO 300 ON 2026-10-15, FOR THE SAME FAILURE AGAIN ──
+ *
+ * Read this sheet hit exactly what the paragraph above describes: a browser
+ * tester pressed it, one request sat pending and came back 503, and the page
+ * showed nothing at all. Being killed leaves no log line, which is why the
+ * symptom was a button that span for three minutes.
+ *
+ * The ordering was inverted and that is the real defect. `AI_CLIENT_OPTIONS`
+ * gives the model call 120 seconds, and the platform was ending the whole
+ * invocation at 60 — so the budget that was supposed to expire FIRST, and
+ * write a line saying so, could never run. 300 puts the route's ceiling above
+ * the SDK's own timeout, so a slow tile now fails as a readable sentence
+ * instead of a dead socket.
+ *
+ * It does not loosen wall detection, which still stops itself at
+ * `DETECTION_BUDGET_MS` well inside the old 60.
+ *
+ * NO TEST IN THIS REPO CAN SEE THIS NUMBER, as above. The proof is a
+ * production press that either reports words or reports why not.
+ */
+export const maxDuration = 300;
 
 /**
  * TAKEOFF — measure a drawing on screen and turn what you traced into

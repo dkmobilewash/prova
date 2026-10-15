@@ -5,6 +5,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+    /**
+     * ── A SCANNED TILE DOES NOT FIT IN THE DEFAULT ──
+     *
+     * Server Actions cap a request body at 1 MB unless this says otherwise,
+     * and nothing in the app said otherwise — so the limit was a default
+     * nobody had chosen. Read this sheet sends a rendered tile of a drawing,
+     * and a SCAN is the worst case for it: measured on the fixtures, a
+     * speckled tile is 1.20 MB as PNG and would be refused, while a clean one
+     * is 0.08 MB and sails through. That is why it worked everywhere except
+     * on the sheets the feature exists for.
+     *
+     * The tiles are JPEG now, which halves the worst case to 0.54 MB, so this
+     * is headroom rather than the fix — stated explicitly so the next person
+     * sending an image knows what the ceiling is and that it was chosen.
+     */
+    serverActions: { bodySizeLimit: "4mb" },
+  },
   transpilePackages: ["@prova/ui", "@prova/db"],
   // `@napi-rs/canvas` ships a NATIVE `.node` binary. webpack follows the
   // import -- a dynamic `import()` does not stop it -- tries to PARSE the
