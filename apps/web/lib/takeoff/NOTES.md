@@ -147,7 +147,30 @@ stale one is worse than none. Regenerate before looking.
 
 1. **A floor plan under ten wall runs returns nothing.** 3 of 15 vector
    fixtures. Needs an enclosure test, not a lower constant — see above.
-2. **No raster path at all.** 3 of 20 fixtures, and a real share of real sets.
+2. **A scan's lines are found; its WORDS are not.** `rasterStrokes.ts` renders
+   a scanned page and returns ordinary `StrokeSegment`s, so everything
+   downstream works on it unchanged. Graded against the vector drawings the
+   scans were made from — S18 of S02, S19 of S08, S20 of S13, each named in its
+   own title block, so the answer key is free and is not an opinion:
+
+   | | wall footage, raster vs the same drawing's vectors |
+   | --- | --- |
+   | S19 / S08 | 347 ft of 406 — **85%** |
+   | S20 / S13 | 505 ft of 555 — **91%** |
+   | S18 / S02 | not graded: the vector original declines a scale under the eval's own call |
+
+   What is NOT built: a scan has no text layer, so nothing reads its printed
+   scale or its room names, and the eval borrows the vector original's scale to
+   isolate the line question from that one. Reading the words is the next
+   piece — Claude for interpretation, per the rule above that geometry stays in
+   code.
+
+   Two bounds worth knowing. The detector is **axis-aligned only**, and reports
+   `diagonalInk` so a sheet whose walls it cannot see is distinguishable from a
+   sheet with no walls. And the three scanned fixtures are CLEAN rasterisations
+   — light speckle on S19, no skew — so none of this is evidence about a
+   photocopied fax. A real image-only page from a real permit set was rendered
+   and compared while writing it, and is clean in the same way.
 3. **Rooms are not scored here.** The pipeline does not surface a room list from
    the entry point the scorer uses, so 122 tagged rooms sit unused.
 4. **The wall classifier must not run unasked** — graded 2026-10-15: it drops
