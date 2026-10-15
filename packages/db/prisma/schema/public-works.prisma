@@ -47,6 +47,7 @@ model PublicWorksFirm {
   refreshedAt    DateTime
 
   signals PublicWorksSignal[]
+  letters PublicWorksLetter[]
 
   @@index([county])
 }

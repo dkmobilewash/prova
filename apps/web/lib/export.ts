@@ -1093,6 +1093,7 @@ export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
   PublicWorksFirm: "the state's own licence list of OTHER firms (C Stream's market), read for outbound by the operating company; not this company's data",
   PublicWorksSignal: "what DIR publishes about those other firms' public-works filings; not this company's data",
   PublicWorksSyncSlice: "sync bookmark — when each slice of the public record was last pulled",
+  PublicWorksLetter: "C Stream's own outbound letters to those other firms, mailed through Lob; not this company's data",
   AskUsage: "AI usage metering",
   AskAllowancePeriod:
     "AI usage metering — how much of this month's included allowance has been claimed. Our bookkeeping about what we owe them, not a record of their work, and it is meaningless outside this app.",
