@@ -73,6 +73,10 @@ vi.mock("./api", () => ({
     if (failNext) failNext();
     return {};
   },
+  deletePunchListItem: async (_jobId: string, itemId: string) => {
+    sent.push(`delete:${itemId}`);
+    if (failNext) failNext();
+  },
 }));
 
 const { enqueue, flushQueue, pendingCount, listRefused, listQueued, removeQueued, sendNow, MAX_ATTEMPTS } =
@@ -274,5 +278,121 @@ describe("one write the server keeps refusing", () => {
     const [queued] = await listQueued();
     await removeQueued(queued.opId);
     expect(await pendingCount()).toBe(0);
+  });
+});
+
+/**
+ * REMOVING an item (#592). The phone could add a punch item and had no way
+ * to take one off, so a typo was permanent — the row's only action cycled
+ * it between three states forever.
+ *
+ * A delete is the first op in this queue whose correctness depends on what
+ * ELSE is queued, which is why these tests are about pairs rather than
+ * about one write going up.
+ */
+describe("a punch item removed", () => {
+  it("goes up once, and the queue is empty afterwards", async () => {
+    await enqueue({ type: "punch-list:delete", jobId: "job_1", itemId: "item_9" });
+
+    await flushQueue("token");
+
+    expect(sent).toEqual(["delete:item_9"]);
+    expect(await pendingCount()).toBe(0);
+    expect(await listRefused()).toEqual([]);
+  });
+
+  it("cancels the create it undoes, and NEITHER is ever sent", async () => {
+    // Typed wrong, removed two taps later, both with no signal — the whole
+    // of #592's story. The create is still sitting in the queue, so the row
+    // has no server id and the only id the screen can be holding is the
+    // create's own clientOperationId.
+    await enqueue({ type: "punch-list:create", jobId: "job_1", clientOperationId: "op_typo", description: "Girdx" });
+    await enqueue({ type: "punch-list:delete", jobId: "job_1", itemId: "op_typo" });
+
+    await flushQueue("token");
+
+    // Sending the create and then the delete would also end up correct.
+    // Sending only the delete would not: it names a record that has never
+    // existed, the server answers 404, that reads as "already gone" — and
+    // the create in front of it then makes the row for real.
+    expect(sent, "a write went up for an item that never left this phone").toEqual([]);
+    expect(await pendingCount()).toBe(0);
+    expect(await listRefused()).toEqual([]);
+  });
+
+  it("drops a status change queued for the item it removes", async () => {
+    // Ticked, then removed. Without this the tick survives the delete, and
+    // because the drain SKIPS a write that is backing off it can arrive
+    // after the row is gone — "needs attention", about an item the person
+    // deliberately deleted.
+    await enqueue({ type: "punch-list:status", jobId: "job_1", itemId: "item_9", status: "READY_FOR_REVIEW" });
+    await enqueue({ type: "punch-list:delete", jobId: "job_1", itemId: "item_9" });
+
+    await flushQueue("token");
+
+    expect(sent).toEqual(["delete:item_9"]);
+    expect(await pendingCount()).toBe(0);
+    expect(await listRefused()).toEqual([]);
+  });
+
+  it("leaves another item's writes alone", async () => {
+    // The pairing is by id, and the cheapest way for it to be wrong is to
+    // be too eager: a delete must not swallow the queue around it.
+    await enqueue({ type: "punch-list:create", jobId: "job_1", clientOperationId: "op_other", description: "Grid" });
+    await enqueue({ type: "punch-list:status", jobId: "job_1", itemId: "item_8", status: "READY_FOR_REVIEW" });
+    await enqueue({ type: "punch-list:delete", jobId: "job_1", itemId: "item_9" });
+
+    await flushQueue("token");
+
+    expect(sent).toEqual(["create:Grid", "status:item_8:READY_FOR_REVIEW", "delete:item_9"]);
+    expect(await pendingCount()).toBe(0);
+  });
+
+  it("treats an item already gone as DONE rather than as a refusal", async () => {
+    // The ordinary replay: the delete went up, the answer never came back,
+    // the phone asks again. A 404 is a final refusal by status
+    // (`isFinalRefusal`), so without the queue reading it as success this
+    // write lands in "needs attention" telling somebody their deletion was
+    // not saved — about the one request whose goal has demonstrably been
+    // met.
+    await enqueue({ type: "punch-list:delete", jobId: "job_1", itemId: "item_9" });
+    failNext = () => {
+      throw new FakeApiError("Punch list item not found", 404);
+    };
+
+    await flushQueue("token");
+
+    expect(await pendingCount()).toBe(0);
+    expect(await listRefused(), "a delete whose row is already gone was set aside").toEqual([]);
+  });
+
+  it("still sets aside the refusal that matters: not the owner", async () => {
+    // The other half of the 404 rule. Removing an item is owner-only on the
+    // server, in parity with the web, so a crew member's queued delete comes
+    // back 403 — and that one has to be SHOWN, with the server's own
+    // sentence, because it is the only way they learn to ask the owner.
+    await enqueue({ type: "punch-list:delete", jobId: "job_1", itemId: "item_9" });
+    failNext = () => {
+      throw new FakeApiError("Only the account owner can remove a punch list item", 403);
+    };
+
+    await flushQueue("token");
+
+    expect(await pendingCount()).toBe(0);
+    const [refused] = await listRefused();
+    expect(refused.error).toBe("Only the account owner can remove a punch list item");
+    expect(refused.status).toBe(403);
+  });
+
+  it("keeps a delete the network never carried", async () => {
+    await enqueue({ type: "punch-list:delete", jobId: "job_1", itemId: "item_9" });
+    failNext = () => {
+      throw new TypeError("Network request failed");
+    };
+
+    await flushQueue("token");
+
+    expect(await pendingCount()).toBe(1);
+    expect(await listRefused()).toEqual([]);
   });
 });
