@@ -176,6 +176,7 @@ export const notYetRegistered: Exclusion[] = [
   { action: "sales.*", reason: "Prova-operator-only CRM, unreachable for any contractor tenant; excluded from the agent surface entirely." },
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
   { action: "notifications.*", reason: "Sends the person their own digest; not a task anyone asks the box for." },
+  { action: "letters.*", reason: "Queues and mails C Stream's own physical letters (Lob) to firms on the public-works list — buttons on /sales/public-works, operator-owner only. A letter costs money and cannot be unsent; not work a tenant asks the box for. Never a command." },
   { action: "publicWorks.*", reason: "Pulls one slice of the state's public-works record (CSLB, DIR) into the operator's market list — a button on /sales/public-works, operator-owner only. Not work a tenant asks the box for. Never a command." },
   { action: "gettingStarted.*", reason: "Hides the dashboard's getting-started card on this browser — a cookie about one card, not work anyone asks the box for. Never a command." },
   { action: "prevailingWage.*", reason: "Rule sets are compliance configuration edited on their own page; needs a File for determinations." },

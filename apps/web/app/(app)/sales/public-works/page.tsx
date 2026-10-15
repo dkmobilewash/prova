@@ -2,8 +2,11 @@ import Link from "next/link";
 import { Button, PageShell } from "@prova/ui";
 import { prisma } from "@prova/db";
 import { PageHeader } from "@/components/PageHeader";
+import { PreviewLetterDisclosure, PublicWorksLettersStrip } from "@/components/PublicWorksLetters";
 import { PublicWorksSyncButton } from "@/components/PublicWorksSyncButton";
 import { requireCompanyContext } from "@/lib/auth";
+import { keyMode } from "@/lib/letters/lob";
+import { configFromEnv, missingConfig } from "@/lib/letters/template";
 import { COUNTIES, factFor, tierFor, type Signal, type Tier } from "@/lib/public-works/signals";
 import { viewerToday } from "@/lib/viewerToday";
 
@@ -32,16 +35,26 @@ export default async function PublicWorksPage({ searchParams }: { searchParams: 
   const tierFilter: Tier | null = params.tier === "1" ? 1 : params.tier === "2" ? 2 : params.tier === "3" ? 3 : null;
   const today = new Date(`${await viewerToday()}T00:00:00Z`);
 
-  const [firms, slices] = await Promise.all([
+  const [firms, slices, letterCounts] = await Promise.all([
     prisma.publicWorksFirm.findMany({
       where: county ? { county } : undefined,
       select: {
         licence: true, name: true, phone: true, city: true, county: true, classes: true, hasEmployees: true, owners: true,
         signals: { select: { kind: true, project: true, awardingBody: true, primeContractor: true, occurredOn: true } },
+        letters: { select: { status: true, signalFact: true }, orderBy: { queuedAt: "desc" }, take: 1 },
       },
     }),
     prisma.publicWorksSyncSlice.findMany({ orderBy: { syncedAt: "desc" } }),
+    prisma.publicWorksLetter.groupBy({ by: ["status"], _count: { _all: true } }),
   ]);
+  const letters = { queued: 0, sent: 0, failed: 0 };
+  for (const g of letterCounts) {
+    if (g.status === "QUEUED") letters.queued = g._count._all;
+    if (g.status === "SENT") letters.sent = g._count._all;
+    if (g.status === "FAILED") letters.failed = g._count._all;
+  }
+  const missing = missingConfig(configFromEnv());
+  const configProblem = missing.length ? `No return address: set OUTBOUND_FROM_NAME, OUTBOUND_FROM_LINE1, OUTBOUND_FROM_CITY, OUTBOUND_FROM_ZIP, OUTBOUND_MOBILE and OUTBOUND_REPLY_EMAIL before queueing (${missing.length} unset).` : null;
 
   const rows = firms
     .map((f) => {
@@ -76,6 +89,8 @@ export default async function PublicWorksPage({ searchParams }: { searchParams: 
         </div>
         <PublicWorksSyncButton />
       </section>
+
+      <PublicWorksLettersStrip counts={letters} keyMode={keyMode(process.env.LOB_API_KEY)} configProblem={configProblem} />
 
       <form className="mb-4 flex flex-wrap items-end gap-3" method="get">
         <label className="text-xs text-ink-muted">
@@ -130,7 +145,10 @@ export default async function PublicWorksPage({ searchParams }: { searchParams: 
                   <td className="px-3 py-2 text-ink-body">{r.phone ? <a href={`tel:${r.phone.replace(/[^\d+]/g, "")}`} className="hover:underline">{r.phone}</a> : "—"}</td>
                   <td className="px-3 py-2 text-ink-body">{r.city ? r.city.replace(/\w\S*/g, (w) => w[0] + w.slice(1).toLowerCase()) : "—"}</td>
                   <td className="px-3 py-2 text-ink-body">{r.classes.join("/")}</td>
-                  <td className="px-3 py-2 text-ink-body">{r.fact || "—"}</td>
+                  <td className="px-3 py-2 text-ink-body">
+                    {r.fact || "—"}
+                    {r.fact && <PreviewLetterDisclosure licence={r.licence} letterStatus={r.letters[0]?.signalFact === r.fact ? r.letters[0].status : null} />}
+                  </td>
                 </tr>
               ))}
             </tbody>
