@@ -460,7 +460,17 @@ export function WaiverTool({
             <span />
           )}
           {done ? null : (
-            <button type="submit" form={STEP_FORM} disabled={busy} aria-busy={busy} className={PRIMARY}>
+            // Disabled until this component has mounted, and that is a fix, not a
+            // nicety (2026-10-15). The page is server-rendered, so on a slow
+            // phone it is on screen before its JavaScript runs -- and a submit
+            // button tapped in that window makes the BROWSER submit the step
+            // form itself, as a plain GET to this page with only the two radio
+            // answers in the query string. That threw away every pre-fill
+            // parameter and the ref (company=, gc=, ref= ... gone) and is what
+            // a real test of an outreach link hit. A disabled default button
+            // also stops implicit submission by Enter. `loaded` is set by the
+            // mount effect, which is also where a link's values are applied.
+            <button type="submit" form={STEP_FORM} disabled={busy || !loaded} aria-busy={busy} className={PRIMARY}>
               {current.kind === "send" ? (busy ? "Sending..." : "Email me the PDF") : current.kind === "review" ? "Looks right" : "Next"}
             </button>
           )}
