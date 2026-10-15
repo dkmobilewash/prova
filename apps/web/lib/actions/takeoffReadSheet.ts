@@ -48,6 +48,13 @@ export type SheetTextRead = {
   items: SheetTextItem[];
   /** What the model ran on, for the panel to show beside the result. */
   model: string;
+  /**
+   * How many items the model reported for this tile, before the coordinate
+   * checks. Carried so a page that reads nothing can say WHY: a model that
+   * saw nothing and a model whose boxes were all unusable are different
+   * failures with different fixes.
+   */
+  reported: number;
 };
 
 export async function readScannedSheetTile(params: {
@@ -98,9 +105,9 @@ export async function readScannedSheetTile(params: {
   const spend = await claimAskAllowance(company.id, { questions: 0, pages: 1 });
   if (!spend.ok) return fail(spend.error);
 
-  let boxes: TextBox[];
+  let read: { boxes: TextBox[]; reported: number };
   try {
-    boxes = await readSheetTextTile({
+    read = await readSheetTextTile({
       imageBase64: params.imageBase64,
       mediaType: params.mediaType,
       model: gate.model,
@@ -127,8 +134,9 @@ export async function readScannedSheetTile(params: {
   return {
     ok: true,
     value: {
-      items: boxes.map((b) => tileBoxToSheetItem(b, params.tileX, params.tileY, params.tilePt)),
+      items: read.boxes.map((b) => tileBoxToSheetItem(b, params.tileX, params.tileY, params.tilePt)),
       model: gate.model,
+      reported: read.reported,
     },
   };
 }

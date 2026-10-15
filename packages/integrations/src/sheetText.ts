@@ -75,7 +75,7 @@ export async function readSheetTextTile(params: {
    * what the call costs.
    */
   mediaType?: "image/jpeg" | "image/png";
-}): Promise<TextBox[]> {
+}): Promise<{ boxes: TextBox[]; reported: number }> {
   const client = new Anthropic(AI_CLIENT_OPTIONS);
   const response = await client.messages.create({
     model: params.model ?? modelFor("SHEET_TEXT").model,
@@ -124,7 +124,16 @@ export async function readSheetTextTile(params: {
 
   await reportUsage(params.onUsage, response.usage);
 
-  return readTextBoxes(response.content.find((c) => c.type === "tool_use")?.input);
+  // ── WHAT THE MODEL SAID, BESIDE WHAT SURVIVED THE CHECKS ──
+  //
+  // "Read 0 words off this sheet" has two completely different causes and one
+  // sentence: the model found nothing on a blank or unreadable tile, or it
+  // found plenty and every box was thrown away for being outside the crop.
+  // One is a rendering problem, the other a coordinate problem, and a caller
+  // that cannot tell them apart has to guess. Reported separately so it never
+  // has to.
+  const raw = response.content.find((c) => c.type === "tool_use")?.input;
+  return { boxes: readTextBoxes(raw), reported: countReportedBoxes(raw) };
 }
 
 /**
@@ -136,6 +145,19 @@ export async function readSheetTextTile(params: {
  * at an edge would pair with whatever line happens to be there, and a quietly
  * wrong pairing is worse than a missing one.
  */
+/**
+ * How many items the model CLAIMED, before any of them were checked.
+ *
+ * Deliberately almost no validation: this is the denominator for "and how many
+ * of those were usable", so anything stricter would hide the very gap it
+ * exists to show.
+ */
+export function countReportedBoxes(raw: unknown): number {
+  if (raw === null || typeof raw !== "object") return 0;
+  const items = (raw as { items?: unknown }).items;
+  return Array.isArray(items) ? items.length : 0;
+}
+
 export function readTextBoxes(raw: unknown): TextBox[] {
   if (raw === null || typeof raw !== "object") return [];
   const items = (raw as { items?: unknown }).items;
