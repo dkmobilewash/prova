@@ -96,6 +96,8 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: generated drawings through the real scale/wall/schedule pipeline, guarded by a skip plus non-zero case and path-operator assertions",
     "realPlan.eval.ts":
       "calls no model: a REAL plan set from outside the repo through the same deterministic path, guarded by a skip on REAL_PLAN_PDF plus a non-zero segment assertion — a scanned sheet returns none and must not read as a clean run",
+    "layers.eval.ts":
+      "calls no model: reads optional-content group names straight off a REAL plan set to answer whether architects' exports name their layers at all, guarded by a skip on REAL_PLAN_PDF plus a non-zero page assertion — a mistyped path must not read as 'no set has layers', which is the one finding that would abandon the approach",
     "sheetTemplate.eval.ts":
       "calls no model: the template filter's recurrence histogram over a REAL set, guarded by a skip on REAL_PLAN_PDF plus a non-zero segment assertion — a sheet that parsed to nothing must not read as a sheet with no furniture on it",
   };

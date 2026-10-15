@@ -1,5 +1,5 @@
 import type { Buffer } from "node:buffer";
-import { segmentsFromOpenPage, type SheetStrokes } from "../takeoff/sheetStrokes";
+import { layersOf, segmentsFromOpenPage, type SheetStrokes } from "../takeoff/sheetStrokes";
 
 /**
  * READING A PLAN PDF ON THE SERVER — which six comments in this repo said was
@@ -252,6 +252,18 @@ export async function openPlanPdf(bytes: Buffer): Promise<PlanPdf> {
     verbosity: 0,
   }).promise;
 
+  // ── THE LAYER TABLE, READ ONCE FOR THE DOCUMENT ──
+  //
+  // `getOptionalContentConfig()` is a DOCUMENT call and the names it holds are
+  // the same on every page, so resolving it per page would re-read the same
+  // table for every sheet of a 300-page set. `null` for a file with no optional
+  // content, which is the ordinary flattened plot and must stay distinguishable
+  // from a group with no name.
+  //
+  // Lazily, and ONCE: a caller that never asks for strokes never pays for it,
+  // and `pageText` is a whole stage that never does.
+  let layers: Awaited<ReturnType<typeof layersOf>> | undefined;
+
   return {
     pageCount: doc.numPages,
     pageText: async (pageNumber: number) => {
@@ -284,9 +296,10 @@ export async function openPlanPdf(bytes: Buffer): Promise<PlanPdf> {
       }
     },
     pageStrokes: async (pageNumber: number) => {
+      if (layers === undefined) layers = await layersOf(doc);
       const page = await doc.getPage(pageNumber);
       try {
-        return await segmentsFromOpenPage(page, pdfjs, pageNumber);
+        return await segmentsFromOpenPage(page, pdfjs, pageNumber, layers);
       } finally {
         page.cleanup();
       }

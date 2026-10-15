@@ -21,28 +21,15 @@ const PAGES = (process.env.REAL_PLAN_PAGES ?? "1")
   .map((n) => Number(n.trim()))
   .filter((n) => Number.isFinite(n) && n >= 1);
 
-describe("what a real plan set says about its own layers", () => {
-  if (!PDF) {
-    it("needs REAL_PLAN_PDF to say anything", () => {
-      console.log(
-        [
-          "",
-          "No REAL_PLAN_PDF set, so there is nothing to read.",
-          "",
-          '  REAL_PLAN_PDF="/path/to/set.pdf" REAL_PLAN_PAGES=1,21 \\',
-          "    pnpm --filter @prova/web exec vitest run \\",
-          "    --config vitest.eval.config.mts lib/takeoff/realplan/layers.eval.ts",
-          "",
-        ].join("\n"),
-      );
-      expect(PDF).toBe("");
-    });
-    return;
-  }
-
-  it(`reads the layers off ${basename(PDF)}`, async () => {
+describe.skipIf(PDF === "")("what a real plan set says about its own layers", () => {
+  // SKIPPED RATHER THAN PASSING ON NOTHING, which `harness.test.ts` holds every
+  // keyless eval to: a run with no `REAL_PLAN_PDF` must not score a clean zero
+  // and read as "no plan set has layers".
+  it(`reads the layers off ${PDF === "" ? "nothing" : basename(PDF)}`, async () => {
     const bytes = readFileSync(PDF);
     const pages = await readLayers(bytes, PAGES);
+    // THE INPUT RESOLVED TO SOMETHING. A mistyped path or a page number past
+    // the end would otherwise print an empty report that looks like a finding.
     expect(pages.length).toBeGreaterThan(0);
 
     const lines: string[] = ["", `${basename(PDF)} — ${pages.length} page(s) read`, ""];

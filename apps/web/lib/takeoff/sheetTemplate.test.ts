@@ -328,7 +328,17 @@ describe("the call site, because no test here can open a PDF", () => {
     // against the file that contains it.
     const caller = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
     expect(caller, "the sampler is not called").toContain("pagesToSample(doc.numPages, pageNumber)");
-    expect(text, "the template is never built").toContain("templateFromSheets(input.sampledSheets)");
+    // A PATTERN RATHER THAN THE EXACT CALL, and the change is deliberate.
+    // This read `templateFromSheets(input.sampledSheets)` as a literal and went
+    // red the first time the samples were legitimately transformed on the way
+    // in — the layer filter is applied to them so the template compares like
+    // with like. The FACT worth pinning is that the template is built from the
+    // caller's own samples and not from something re-derived here; the
+    // spelling is not. Same lesson as the migration census that a single line
+    // break disarmed: do not let formatting be load-bearing.
+    expect(text, "the template is never built from the caller's samples").toMatch(
+      /templateFromSheets\(\s*input\.sampledSheets/,
+    );
     expect(text, "the strokes are never filtered").toContain("withoutTemplate(allInUnits, template)");
 
     // ORDER. Filtering after detection would leave the title block in the

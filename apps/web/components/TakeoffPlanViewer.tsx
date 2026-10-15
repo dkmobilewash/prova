@@ -45,7 +45,8 @@ import type { WallClassifyLabel } from "@prova/integrations";
 import { pagesToSample } from "@/lib/takeoff/sheetTemplate";
 import { findWallsOnSheet, inPageWidthUnits } from "@/lib/takeoff/findWallsOnSheet";
 import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
-import { segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
+import { layersOf, segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
+import { droppedLayersSentence, type LayerDrop } from "@/lib/takeoff/layerNames";
 import { tagSentence } from "@/lib/takeoff/wallTags";
 import {
   verdictFor,
@@ -206,6 +207,9 @@ export function TakeoffPlanViewer({
   /** How many strokes the set's own template accounted for, so the panel can
    *  SAY it rather than quietly returning a smaller number. */
   const [templateStrokes, setTemplateStrokes] = useState(0);
+  /** What the LAYER filter left out, so the panel can say it. Empty on a
+   *  flattened plot, which carries no layer names at all. */
+  const [layerDropped, setLayerDropped] = useState<LayerDrop[]>([]);
   // FIT by default. A sheet opens showing all of itself, which is what
   // somebody opening a drawing wants to see first; they zoom IN to measure.
   const [zoom, setZoom] = useState<Zoom>(FIT);
@@ -686,8 +690,15 @@ export function TakeoffPlanViewer({
     setShowingAll(false);
     try {
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      // ── WHAT THE DRAFTER CALLED EACH LINE, WHERE THE EXPORT SAYS SO ──
+      //
+      // Read ONCE for the document, because the names are the same on every
+      // sheet and the sampling loop below opens six more of them. `null` on a
+      // flattened plot, which is the ordinary case and means every filter
+      // downstream behaves exactly as it did before layers existed.
+      const layers = await layersOf(doc);
       const page = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(pageNumber);
-      const { segments } = await segmentsFromOpenPage(page, pdfjs, pageNumber);
+      const { segments } = await segmentsFromOpenPage(page, pdfjs, pageNumber, layers);
       setStrokesSeen(segments.length);
 
       // ── WHERE THE WORDS ARE ──
@@ -733,7 +744,7 @@ export function TakeoffPlanViewer({
             continue;
           }
           const other = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(n);
-          const read = await segmentsFromOpenPage(other, pdfjs, n);
+          const read = await segmentsFromOpenPage(other, pdfjs, n, layers);
           // ITS OWN width, not this sheet's. A set with a mixed page size would
           // otherwise compare one sheet's coordinates against another's scale.
           sampled.push(read.segments.map(inPageWidthUnits(read.widthPt || pageSize.widthPt)));
@@ -761,6 +772,7 @@ export function TakeoffPlanViewer({
       const walls = found.walls;
       const regroup = found.regroup;
       setTemplateStrokes(found.templateDropped);
+      setLayerDropped(found.layerDropped);
 
       runsRef.current = walls;
       feetAcrossRef.current = feetPerUnit;
@@ -1238,6 +1250,23 @@ export function TakeoffPlanViewer({
                   empty panel on a sheet that was plainly not a scan. A message
                   may state what was measured; it may not name a cause nobody
                   checked. */}
+              {/* ── WHAT THE DRAWING'S OWN LAYER NAMES REMOVED ──
+
+                  Said for the reason the template count above is said: a filter
+                  that quietly returns a smaller number is how somebody stops
+                  believing the number. This one can remove a whole discipline's
+                  line work, so an estimator looking for the ducts they can see
+                  on the sheet has to be able to find out where they went.
+
+                  It names the LAYERS rather than a total, because the layer name
+                  is the only part a person can check against the drawing. */}
+              {layerDropped.length > 0 && (
+                <p className="mb-2 text-xs text-ink-muted">
+                  {droppedLayersSentence(layerDropped)} The drawing puts those lines on layers that are not
+                  walls, so they were never measured. If something below is missing, that is the first place
+                  to look.
+                </p>
+              )}
               {templateStrokes > 0 && (
                 <p className="mb-2 text-xs text-ink-muted">
                   {templateStrokes.toLocaleString()} line{templateStrokes === 1 ? "" : "s"} on this sheet

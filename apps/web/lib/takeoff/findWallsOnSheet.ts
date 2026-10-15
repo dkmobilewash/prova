@@ -13,6 +13,7 @@ import { wallTypeTags, tagByRun } from "./wallTags";
 import { defaultWallTypeFromNotes } from "./wallNotes";
 import { scaleBarLabels, wallsNotTheScaleBar } from "./scaleBar";
 import { wallGroups, type WallGroup } from "./wallGroups";
+import { withoutNonWallLayers, type LayerDrop } from "./layerNames";
 import type { MatchableWallType } from "./wallTypeMatch";
 
 /**
@@ -127,6 +128,17 @@ export type FoundOnSheet = {
   /** How many strokes the set's own template accounted for, so a panel can SAY
    *  it rather than quietly returning a smaller number. */
   templateDropped: number;
+  /**
+   * What the LAYER filter removed, per layer, biggest first — empty on a sheet
+   * with no layer information, which is every flattened plot.
+   *
+   * Reported for the same reason `templateDropped` is: a filter that silently
+   * shrinks a number is how somebody stops believing the number. This one needs
+   * it more, because it can remove a whole discipline's worth of line work and
+   * an estimator looking for the ducts they drew has to be able to find out
+   * where they went.
+   */
+  layerDropped: LayerDrop[];
   /** Re-groups a filtered run list the same way. The viewer calls it again
    *  after labelling: a second call site building groups a slightly different
    *  way is how the list somebody accepts stops matching the list they looked
@@ -153,6 +165,15 @@ export function inPageWidthUnits(over: number) {
     // lobby wall would be billed twice: 1,957 ft against a key of 1,894. The
     // bench's own copy dropped it, which is half of why this file exists.
     curved: one.curved,
+    // CARRIED FOR THE SAME REASON, AND THIS IS THE SECOND TIME. A field added
+    // to `StrokeSegment` and forgotten here vanishes with nothing thrown — the
+    // `curved` bug exactly, which survived every test in the repo. Dropped,
+    // the layer filter would see `undefined` on every segment, call every one
+    // of them `unknown`, keep the lot, and report a change that does nothing.
+    //
+    // `strokeFieldsCensus.test.ts` now fails the build on the THIRD occurrence
+    // rather than waiting for somebody to notice it.
+    layer: one.layer,
   });
 }
 
@@ -195,7 +216,28 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
     height: item.height / pageSize.widthPt,
   }));
 
-  const allInUnits = input.segments.map(inPageWidthUnits(pageSize.widthPt));
+  // ── WHAT THE DRAWING CALLS EACH LINE, BEFORE ANY GEOMETRY IS MEASURED ──
+  //
+  // First, because it is the cheapest filter and the only one that is not a
+  // measurement. Everything below asks a question about a stroke's shape; this
+  // asks what the person who drew it named it, and a stroke on `A-FURN` is not
+  // a wall however wall-shaped it is.
+  //
+  // A SECOND EFFECT IS HOPED FOR HERE AND IS NOT YET PROVEN, said plainly
+  // because the comment claiming it outright was written before it was tested.
+  // `inAHatchSeries` scans EVERY segment for a third parallel line beside a
+  // candidate pair and rejects the pair when it finds one, and the holdout's
+  // own diagnosis names `S-GRID` — a column gridline — as the most common
+  // cause of missed footage across its 20 plans. A gridline dropped here is a
+  // gridline that test never sees, so the mechanism is real.
+  //
+  // What is NOT established is that it recovers footage. Probe P16 tried two
+  // constructions, including a line at exactly the whole-number pitch the
+  // series test requires, and both arms returned the same number: on inputs
+  // that simple the geometric filters already cope. P16 therefore asserts only
+  // what it can see — the line never reaches the pairer — and says so.
+  const onWallLayers = withoutNonWallLayers(input.segments);
+  const allInUnits = onWallLayers.kept.map(inPageWidthUnits(pageSize.widthPt));
 
   // ── THE SET'S OWN TEMPLATE, READ FROM OTHER SHEETS ──
   //
@@ -206,7 +248,16 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   let inUnits = allInUnits;
   let templateDropped = 0;
   if (input.sampledSheets !== null) {
-    const template = templateFromSheets(input.sampledSheets);
+    // THE SAMPLES GET THE SAME FILTER, or the comparison is between two
+    // different populations: the title block would be absent from this sheet
+    // (dropped as `G-ANNO-TTLB`) and present in every sample, so the template
+    // would still "find" it and then have nothing here to remove. Harmless in
+    // that direction, and the reverse — a layer kept here and dropped there —
+    // would quietly weaken the frame filter. Filtering both keeps the pass
+    // asking the question it was written to ask.
+    const template = templateFromSheets(
+      input.sampledSheets.map((sheet) => withoutNonWallLayers(sheet).kept),
+    );
     if (template.size > 0) {
       const kept = withoutTemplate(allInUnits, template);
       templateDropped = allInUnits.length - kept.length;
@@ -274,6 +325,7 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
     clusters: clusterByThickness(walls),
     groups: regroup(walls),
     templateDropped,
+    layerDropped: onWallLayers.dropped,
     regroup,
   };
 }
