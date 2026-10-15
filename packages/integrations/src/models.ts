@@ -65,6 +65,8 @@ export const AI_FEATURES = {
    *  feature census rather than four. */
   AI_AGENTS: "ai-agents",
   WALL_CLASSIFY: "wall-classify",
+  /** Reading the lettering off a SCANNED sheet, which has no text layer. */
+  SHEET_TEXT: "sheet-text",
 } as const;
 
 export type AiFeatureKey = keyof typeof AI_FEATURES;
@@ -92,6 +94,34 @@ const FEATURE_MODEL: Record<AiFeatureKey, string> = {
   // The one cheap default, at Diego's direction, subject to the eval. Three
   // hundred calls per plan set is where a fifth of the price is worth having.
   PLAN_INGESTION: HAIKU_4_5,
+  // ── OPUS, AND THE REASON FIRST GIVEN HERE WAS THE WRONG ONE ──
+  //
+  // This said Haiku was refused because a misread dimension sets the sheet's
+  // scale and the scale multiplies every quantity. That argument is weak, and
+  // was weak when it was written: the scale vote needs THREE labels to agree,
+  // so a single misread character is outvoted rather than believed.
+  //
+  // Measured 2026-10-15 against the same two scanned fixtures, same prompt,
+  // same JPEG tiles:
+  //
+  //                                     Opus 5      Haiku 4.5
+  //   printed strings read exactly      101/101     89/101  (88%)
+  //   PLACED within the 30 points the
+  //   dimension pairing allows          99 (98%)    16 (16%)
+  //
+  // Haiku can mostly READ the lettering. What collapses is WHERE it says the
+  // lettering is — and that is the half that decides anything, because a
+  // label more than 30 points from its line pairs with no line at all and so
+  // votes on nothing. A sheet whose labels land at 16% does not get a scale.
+  //
+  // The conclusion stands and the reasoning behind it is now the measured
+  // one: this is bought for COORDINATES, not for characters.
+  //
+  // One honest bound: the prompt was written for, and only ever tuned
+  // against, Opus. A version written for a smaller model might place better
+  // and nobody has tried. `SHEET_TEXT_MODEL` on the eval is how that would be
+  // shown rather than argued.
+  SHEET_TEXT: OPUS_5,
   // Opus, and the volume argument that bought Haiku above does not reach here.
   // This runs on the sheets that HAVE walls, a handful per plan set and a few
   // crops each, not on three hundred pages — and what it decides is whether a

@@ -132,6 +132,11 @@ type Reached =
  * every listed parent is checked.
  */
 const REACHED_FROM: Record<string, Reached> = {
+  "/sales/public-works": {
+    reason: "The public-works market list, linked from the sales CRM's header strip.",
+    parents: ["apps/web/app/(app)/sales/page.tsx"],
+    needle: 'href="/sales/public-works"',
+  },
   "/ai/activity": {
     reason: "The AI tasks menu's footer link, in the top bar on every page.",
     parents: ["apps/web/components/shell/TasksMenu.tsx"],

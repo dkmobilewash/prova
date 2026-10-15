@@ -41,6 +41,8 @@ import {
   type StrokeSegment,
 } from "@/lib/takeoff/wallVectors";
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
+import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
+import { TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
 import type { WallClassifyLabel } from "@prova/integrations";
 import { pagesToSample } from "@/lib/takeoff/sheetTemplate";
 import { findWallsOnSheet, inPageWidthUnits } from "@/lib/takeoff/findWallsOnSheet";
@@ -158,6 +160,11 @@ export function TakeoffPlanViewer({
   planId,
   sheets,
   printedScaleByPage,
+  // Defaulted for the test renders that build partial props through
+  // `as never`. The TYPE still requires it, so a real caller that forgets it
+  // is a build error rather than a button that silently never appears —
+  // which is the failure this prop exists to fix.
+  scannedPages = [],
   storedWallsByPage,
   levelByPage,
   wallTypes,
@@ -182,6 +189,28 @@ export function TakeoffPlanViewer({
    * `takeoff-plan-view.ts`.
    */
   printedScaleByPage: PrintedScaleByPage;
+  /**
+   * Page numbers whose page carries NO TEXT LAYER — that is, scans.
+   *
+   * ── WHY THIS IS A PROP AND NOT SOMETHING THE VIEWER WORKS OUT ──
+   *
+   * Read this sheet first appeared only once Find the walls had run and come
+   * back with no lines, which reads as the careful choice and is a DEADLOCK.
+   * Find the walls is disabled until a sheet has a scale (`!calibration`); a
+   * scan's scale is printed on the drawing and can only be got at by reading
+   * the picture; and reading the picture was the thing behind the button. So
+   * the one control that could break the cycle was inside it, and the feature
+   * was unreachable on exactly the sheets it exists for.
+   *
+   * Found by a person clicking, after a census asserted the control existed
+   * and was rendered from a page — which it was. The same shape as #764:
+   * PRESENT IS NOT USABLE, and a sibling condition is what makes it so.
+   *
+   * Being a scan is a fact about the FILE, settled at ingest and independent
+   * of scale, of Find the walls and of anything the viewer has done. So the
+   * gate is that fact, and nothing else.
+   */
+  scannedPages: number[];
   /**
    * THE WALLS ALREADY FOUND ON EACH SHEET, from `TakeoffWallProposal`, keyed by
    * page number.
@@ -333,6 +362,17 @@ export function TakeoffPlanViewer({
   /** How many strokes the sheet held when it was last read, so an empty result
    *  can say which kind of empty it is. See the message below. */
   const [strokesSeen, setStrokesSeen] = useState(0);
+  // ── READING A SCANNED SHEET ──
+  // `reading` drives the button; `readError` and `wordsRead` are what the
+  // estimator is told. The WORDS themselves go in a ref rather than state
+  // because nothing renders them — `onFindWalls` reads them on its next pass,
+  // and putting them in state would re-render the canvas for no pixels.
+  const [reading, setReading] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [wordsRead, setWordsRead] = useState<number | null>(null);
+  const [readProgress, setReadProgress] = useState<string | null>(null);
+  const [readReported, setReadReported] = useState(0);
+  const scannedWordsRef = useRef<{ str: string; x: number; y: number; width: number; height: number }[] | null>(null);
   const [finding, setFinding] = useState(false);
   const [findError, setFindError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
@@ -578,6 +618,134 @@ export function TakeoffPlanViewer({
    * care about, and at a readable zoom it is a readable image — the room tags
    * and fixture outlines are what separate a kitchen from a corridor.
    */
+  /**
+   * Read a scanned sheet's lettering, one tile at a time.
+   *
+   * Tiled because a whole ARCH D sheet in one image is a thumbnail by the time
+   * the model sees it — nobody reads a dimension string at 44 dpi. Each tile
+   * is rendered at `TILE_PX` across `TILE_PT` of paper, about 190 dpi, and the
+   * tile's own offset is applied on the server so page coordinates cannot
+   * drift between the two sides.
+   *
+   * Tiles go ONE AT A TIME rather than in parallel: each is a separate charge
+   * against the company's allowance, and a refusal part way through should
+   * stop the rest rather than race a dozen requests that have already been
+   * sent.
+   */
+  const onReadSheet = useCallback(async () => {
+    setReading(true);
+    setReadError(null);
+    try {
+      const doc = docRef.current;
+      if (!doc) {
+        setReadError("The sheet isn't open yet.");
+        return;
+      }
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const page = (await doc.getPage(pageNumber)) as {
+        getViewport: (o: { scale: number }) => { width: number; height: number };
+        render: (o: unknown) => { promise: Promise<void> };
+      };
+      // ── THE VIEWER'S OWN RENDER HAS TO GET OUT OF THE WAY FIRST ──
+      //
+      // pdf.js serialises renders per PAGE, and `doc.getPage` hands back the
+      // same cached page object the viewer is drawing with. So a tile render
+      // started while the sheet is still drawing simply queues behind it —
+      // and a browser tester watched exactly that: "Drawing…" on the canvas,
+      // the counter stuck on "0 of 15" for five minutes, and NOT ONE request
+      // ever sent, because the loop never reached its first call.
+      //
+      // Cancelling is the same discipline this component already uses on
+      // itself before each of its own renders; it just was not applied to
+      // these. The sheet redraws afterwards on the next pass.
+      renderTaskRef.current?.cancel();
+      renderTaskRef.current = null;
+
+      const full = page.getViewport({ scale: 1 });
+      const across = Math.ceil(full.width / TILE_PT);
+      const down = Math.ceil(full.height / TILE_PT);
+      const scale = TILE_PX / TILE_PT;
+
+      const words: { str: string; x: number; y: number; width: number; height: number }[] = [];
+      const total = across * down;
+      let done = 0;
+      // What the model CLAIMED across every tile, which is the only thing that
+      // tells a zero apart from a zero. See the message below.
+      let reported = 0;
+      setReadProgress(`Reading the sheet — 0 of ${total} parts…`);
+      for (let ty = 0; ty < down; ty += 1) {
+        for (let tx = 0; tx < across; tx += 1) {
+          const tile = document.createElement("canvas");
+          tile.width = TILE_PX;
+          tile.height = TILE_PX;
+          const ctx = tile.getContext("2d");
+          if (!ctx) {
+            setReadError("This browser couldn't prepare the image. Nothing was sent.");
+            return;
+          }
+          // Paper first: a PDF page is transparent where nothing is drawn, and
+          // a transparent pixel reads as black once alpha is dropped.
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(0, 0, TILE_PX, TILE_PX);
+          ctx.save();
+          ctx.translate(-tx * TILE_PT * scale, -ty * TILE_PT * scale);
+          await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale }) }).promise;
+          ctx.restore();
+
+          // ── JPEG, BECAUSE THIS READS SCANS ──
+          //
+          // PNG is the wrong format for speckled paper: the same tile measured
+          // 1.20 MB as PNG against 0.54 MB as JPEG, and the PNG was over a
+          // Server Action's body limit — so the feature failed on exactly the
+          // sheets it exists for and worked on the clean ones.
+          const base64 = tile.toDataURL("image/jpeg", 0.9).split(",")[1] ?? "";
+
+          // ── A FAILED TILE MUST NOT LEAVE THE BUTTON SPINNING ──
+          //
+          // A browser tester watched this sit on "Reading the sheet…" for
+          // three minutes after a 503 and never say anything. The action
+          // returns a readable refusal for every case it can see, but a
+          // request the PLATFORM ends never reaches it — so the throw has to
+          // be caught here, or the page stops having an opinion at all.
+          let result;
+          try {
+            result = await readScannedSheetTile({
+              imageBase64: base64,
+              tileX: tx,
+              tileY: ty,
+              tilePt: TILE_PT,
+              mediaType: "image/jpeg",
+            });
+          } catch {
+            setReadError(
+              `The sheet stopped being read part way through (${done} of ${total} parts done). ` +
+                "Nothing was changed. Press Read this sheet to try again.",
+            );
+            return;
+          }
+          if (!result.ok) {
+            setReadError(result.error);
+            return;
+          }
+          words.push(...result.value.items);
+          reported += result.value.reported;
+          done += 1;
+          // WHAT IT IS DOING, not merely that it is doing something. Nine
+          // requests take a while, and a button that only says "Reading…" is
+          // indistinguishable from one that has died — which is precisely how
+          // the failure above was reported.
+          setReadProgress(`Reading the sheet — ${done} of ${total} parts…`);
+        }
+      }
+      scannedWordsRef.current = words;
+      setWordsRead(words.length);
+      setReadReported(reported);
+    } finally {
+      setReading(false);
+      setReadProgress(null);
+    }
+  }, [pageNumber]);
+
   const onCheckRuns = useCallback(async () => {
     const canvas = canvasRef.current;
     const regroup = regroupRef.current;
@@ -821,7 +989,20 @@ export function TakeoffPlanViewer({
       // itself, once, so the browser and the server cannot disagree about where
       // a word is — which they would, because `planPdf.pageText` stores the
       // baseline and this used to subtract before passing anything on.
-      const textItems = await pageTextItems(page, pdfjs);
+      const vectorWords = await pageTextItems(page, pdfjs);
+      // ── A SCAN'S WORDS ENTER EXACTLY HERE ──
+      //
+      // A scanned sheet has no text layer, so `pageTextItems` returns nothing
+      // and every reader downstream — the printed scale, the dimension
+      // labels, the lettering filter — has nothing to work with. Read this
+      // sheet puts the model's reading in `scannedWordsRef`, in the SAME
+      // baseline-y page coordinates this function returns, so nothing below
+      // can tell the difference.
+      //
+      // The vector text wins whenever there is any: a sheet that carries its
+      // own words must never be served a model's reading of a picture of
+      // them.
+      const textItems = vectorWords.length > 0 ? vectorWords : (scannedWordsRef.current ?? []);
 
       // ── THE SET'S OWN TEMPLATE, READ FROM OTHER SHEETS ──
       //
@@ -1162,6 +1343,55 @@ export function TakeoffPlanViewer({
           >
             {checking ? "Checking the runs…" : "Check these are walls"}
           </button>
+        )}
+        {/* ── A SHEET THAT IS A SCAN ──
+            Gated on the page having no TEXT LAYER, a fact settled at ingest.
+            It deliberately does not wait for Find the walls: that button is
+            disabled until the sheet has a scale, a scan's scale can only be
+            had by reading the picture, and this is the thing that reads it —
+            so gating on it made the feature unreachable on every sheet it was
+            built for. See `scannedPages`. */}
+        {scannedPages.includes(pageNumber) && (
+          <button
+            type="button"
+            onClick={onReadSheet}
+            disabled={reading}
+            data-takeoff="read-sheet"
+            title="This sheet has no writing in the file, which means it was scanned rather than exported. Reads the room names, dimensions and scale note off the picture so the sheet can be scaled. Lengths are still measured from the drawing."
+            className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
+          >
+            {reading ? (readProgress ?? "Reading the sheet…") : "Read this sheet"}
+          </button>
+        )}
+        {readError !== null && (
+          <p data-takeoff="read-error" className="text-xs text-ink-muted">
+            {readError}
+          </p>
+        )}
+        {wordsRead !== null && readError === null && (
+          <p data-takeoff="read-done" className="text-xs text-ink-muted">
+            {wordsRead > 0 ? (
+              <>
+                Read {wordsRead} {wordsRead === 1 ? "word" : "words"} off this sheet. Press Find the walls again
+                to use them.
+              </>
+            ) : readReported > 0 ? (
+              /* ── TWO ZEROES THAT NEED DIFFERENT HELP ──
+                 Something was read and none of it could be placed on the
+                 sheet, which is a coordinate problem and ours to fix. */
+              <>
+                Read nothing usable off this sheet — {readReported} pieces of writing were found but none could
+                be placed on the drawing. This is a fault on our side; the sheet is unchanged.
+              </>
+            ) : (
+              /* Nothing was found at all, which is what an genuinely blank or
+                 unreadable scan looks like and is not the same failure. */
+              <>
+                No writing could be made out on this sheet. If it is a faint or low-resolution scan, the scale
+                still has to be set by hand.
+              </>
+            )}
+          </p>
         )}
         {checkError !== null && (
           <p data-takeoff="check-error" className="text-xs text-ink-muted">

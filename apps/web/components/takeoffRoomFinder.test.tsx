@@ -77,6 +77,8 @@ function paint(sheets: PlanSheet[]) {
         planId: "plan_1",
         sheets,
         printedScaleByPage: {},
+        // No page here is a scan; these cases are not about the scan reader.
+        scannedPages: [],
         scalePrefillByPage: {},
       } as never),
     );

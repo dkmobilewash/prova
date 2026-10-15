@@ -856,7 +856,7 @@ Read from `main` at #681. The wall finder runs in the browser (`TakeoffPlanViewe
 | A label must match `^\d{1,3}'\s*-?\s*(\d{1,2}( \d/\d)?\s*"?)?$` and parse with `parseFeetInches`; ≤ 400 ft; not in the title-block corner (x ≥ 60% AND y ≥ 75%) | — | overridden-dims (`EQ`, `VERIFY`, `+/-`), shx (no text at all) |
 | A label pairs with a segment ≥ 8pt when it is ≤ 30pt off the line and within 30% of its midpoint | 30pt, 0.3 | vertical (rotated) dimension text, autocad (geometry in the wrong place) |
 | Each pair votes for the architectural scale within 2% | `SCALE_TOLERANCE` 0.02 | half-11x17 (0.472× print lands 6% off 1/16") |
-| Votes are DISTINCT LABEL TEXT, not pairs | — | eight identical `30'-0"` bays count as one vote (probe P13) |
+| Votes are DISTINCT LABELS — the same string lettered in two places is two votes; one label paired with several lines is still one | — | eight identical `30'-0"` bays now count as eight (probe P13, fixed 2026-10-15) |
 | ≥ 3 distinct labels must agree, and the winner needs 2× the runner-up | `minAgreeing` 3, `minMargin` 2 | A-401 (1/4" restroom view with ~3× the 1/2" stair view's dimensions) |
 | Engineering-scale readings decline | — | — |
 | The proposed line must be ≥ 5% of the page width (`MIN_CALIBRATION_SPAN`) and ≤ 0.5% off the named scale | 0.05, 0.005 | A-401, small sheets |

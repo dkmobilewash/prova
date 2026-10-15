@@ -25,3 +25,4 @@ export * from "./procore";
 export * from "./acc";
 export * from "./companycam";
 export * from "./bluebeam";
+export * from "./sheetText";

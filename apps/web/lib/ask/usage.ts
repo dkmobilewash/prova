@@ -210,11 +210,21 @@ export type AskUsageFeature =
    *  takeoffClassify.ts): which of the candidates the wall finder MEASURED are
    *  walls, and which are countertops, fixtures or reference lines. Its own row
    *  rather than folded into `plan-ingestion`, though both are plan work: this
-   *  is the only feature in this app that sends an IMAGE of a customer's
+   *  is one of the TWO features in this app that send an IMAGE of a customer's
    *  drawing, it is switched separately for exactly that reason, and it spends
    *  the document-page ledger rather than the plan-sheet one. A bill that could
-   *  not tell them apart could not answer what the thing we turned off cost. */
+   *  not tell them apart could not answer what the thing we turned off cost.
+   *  (It was the only such feature until `sheet-text` below.) */
   | "wall-classify"
+  /** Reading the lettering off a SCANNED sheet, one tile at a time
+   *  (lib/actions/takeoffReadSheet.ts). The second of the two features that
+   *  send an image of a drawing, and its own row rather than folded into
+   *  `wall-classify` for that one's own reason: they are switched separately,
+   *  and they ask different questions of the same picture — one what a run IS,
+   *  this one what the writing SAYS. It is also the only feature here billed
+   *  per TILE rather than per request, so one sheet costs nine of these, and a
+   *  bill that could not see that would under-report a scanned set badly. */
+  | "sheet-text"
   /** Reading a bid addendum (lib/actions/addendumRead.ts). Its own row rather
    *  than folded into `quote-extract`, though both are one whole file into one
    *  request: they are switched separately and they spend DIFFERENT ledgers — a

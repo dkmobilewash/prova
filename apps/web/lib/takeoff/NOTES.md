@@ -147,7 +147,55 @@ stale one is worse than none. Regenerate before looking.
 
 1. **A floor plan under ten wall runs returns nothing.** 3 of 15 vector
    fixtures. Needs an enclosure test, not a lower constant — see above.
-2. **No raster path at all.** 3 of 20 fixtures, and a real share of real sets.
+2. **A scan's lines are found; its WORDS are not.** `rasterStrokes.ts` renders
+   a scanned page and returns ordinary `StrokeSegment`s, so everything
+   downstream works on it unchanged. Graded against the vector drawings the
+   scans were made from — S18 of S02, S19 of S08, S20 of S13, each named in its
+   own title block, so the answer key is free and is not an opinion:
+
+   | | wall footage, raster vs the same drawing's vectors |
+   | --- | --- |
+   | S19 / S08 | 347 ft of 406 — **85%** |
+   | S20 / S13 | 505 ft of 555 — **91%** |
+   | S18 / S02 | not graded: the vector original declines a scale under the eval's own call |
+
+   **Its WORDS are read now too** (`rasterText.ts`, `sheetText.eval.ts`). A
+   model reads one rendered TILE at a time and returns the lettering and where
+   it sits; every length and quantity is still measured from geometry, so no
+   number anybody is billed from comes out of a model. Measured against the
+   same vector originals: **101 of 101 printed strings read exactly, 98%
+   placed within the 30 points the dimension pairing allows.** Both scans then
+   read their OWN printed scale correctly, and one came out at 91% of the
+   drawing's footage end to end with nothing borrowed.
+
+   **It has to be Opus, and the measured reason is not the one first written
+   down.** The argument for it was that a misread dimension sets the scale —
+   weak, because the vote needs three labels to agree and outvotes a misread.
+   Priced against the same bar:
+
+   | | Opus 5 | Haiku 4.5 |
+   | --- | --- | --- |
+   | strings read exactly | 101/101 | 89/101 (88%) |
+   | **placed within 30pt** | **99 (98%)** | **16 (16%)** |
+
+   Haiku can mostly READ the lettering and cannot say WHERE it is, and
+   placement is the half that decides anything: a label 30 points from its
+   line pairs with nothing. So this is bought for COORDINATES, not characters.
+   The prompt was only ever tuned against Opus, which is the honest bound on
+   that comparison.
+
+   **Tiles are JPEG, not PNG**, and that is not cosmetic: a speckled tile is
+   1.20 MB as PNG against 0.54 MB as JPEG, and the PNG was over a Server
+   Action's body limit — so the feature worked on clean sheets and failed on
+   real scans until #803. Re-measured on JPEG, the figures above are
+   unchanged.
+
+   Two bounds worth knowing. The detector is **axis-aligned only**, and reports
+   `diagonalInk` so a sheet whose walls it cannot see is distinguishable from a
+   sheet with no walls. And the three scanned fixtures are CLEAN rasterisations
+   — light speckle on S19, no skew — so none of this is evidence about a
+   photocopied fax. A real image-only page from a real permit set was rendered
+   and compared while writing it, and is clean in the same way.
 3. **Rooms are not scored here.** The pipeline does not surface a room list from
    the entry point the scorer uses, so 122 tagged rooms sit unused.
 4. **The wall classifier must not run unasked** — graded 2026-10-15: it drops

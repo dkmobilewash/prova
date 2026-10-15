@@ -312,6 +312,11 @@ export const EXCLUSIONS: Exclusion[] = [
       "Says which of the runs on a sheet are walls and which are countertops or reference lines. It takes an IMAGE of the part of the drawing on screen, with the runs drawn and numbered on it, and there is no sentence a person could say that produces one — the whole input is the picture. Ask can describe a takeoff; it cannot look at a sheet.",
   },
   {
+    action: "takeoffReadSheet.*",
+    reason:
+      "Reads the writing off a sheet that was SCANNED. Its input is one rendered TILE of the page as an image, and the whole point is that the words exist only as pixels — so there is no sentence a person could say that produces the picture, and nothing for Ask to pass. The same reason as takeoffClassify above, and the same answer: Ask can describe what a sheet says once it has been read; it cannot do the reading.",
+  },
+  {
     action: "sheetPins.*",
     reason:
       "Marks on a drawing sheet are placed by TAPPING THE DRAWING — the whole value is the x/y, and there is no sentence a person could say that puts a pin in the right spot. Ask can describe what is pinned; it cannot pin.",
