@@ -169,6 +169,37 @@ describe("a curved wall is measured along its centreline", () => {
     expect(curvedWalls(pieces, OPTS), "two legs of a corner became one curved wall").toEqual([]);
   });
 
+  it("REFUSES A CLOSED LOOP, WHICH HAS NO LENGTH LIMIT AT ALL", () => {
+    // The worst defect this module has had, found on a real permit set:
+    // FLOOR PLAN LEVEL 1 reported 2,324,222 ft of wall, and the run
+    // responsible had its two endpoints at the SAME POINT —
+    //
+    //     2.321e+6 ft  8.01in  (0.25,0.37) -> (0.25,0.37)  CURVED
+    //
+    // A chain that closes has a chord of zero and a path that wanders without
+    // bound, and `lengthFeet` is the path. 8.01in is a plausible wall, so
+    // nothing downstream had grounds to doubt it.
+    //
+    // Two concentric full circles are the smallest shape that reproduces it:
+    // the thickness window accepts them, both clear the length floor, and both
+    // turn 360 degrees so the turn requirement is no help.
+    const ring = (radius: number) => arc(0, 0, radius, 0, 360, 120);
+    const circles = [...ring(5 - half), ...ring(5 + half)];
+    expect(circles.length).toBe(240);
+    expect(curvedWalls(circles, OPTS), "a closed loop was sold as wall").toEqual([]);
+  });
+
+  it("still accepts a long arc that merely curls a long way", () => {
+    // The other side of that bound: 270 degrees is a real shape — a curved
+    // stair enclosure, a drum — and its chord is 30% of its path, well clear
+    // of the quarter required. Without this the fix above could be "refuse
+    // anything that curves much" and look just as green.
+    const sweep = (radius: number) => arc(0, 0, radius, 0, 270, 90);
+    const walls = curvedWalls([...sweep(8 - half), ...sweep(8 + half)], OPTS);
+    expect(walls, "a 270 degree arc was refused").toHaveLength(1);
+    expect(walls[0].lengthFeet).toBeCloseTo((270 * Math.PI * 8) / 180, 0);
+  });
+
   it("returns nothing for an empty or trivial sheet", () => {
     expect(curvedWalls([], OPTS)).toEqual([]);
     expect(curvedWalls([{ x1: 0, y1: 0, x2: 1, y2: 0 }], OPTS)).toEqual([]);

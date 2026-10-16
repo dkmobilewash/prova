@@ -113,7 +113,8 @@ export function curvedWalls(
   const arcs = chains.filter(
     (chain) =>
       chain.lengthUnits * options.feetPerUnit >= MIN_CHAIN_FEET &&
-      totalTurn(chain) >= MIN_TOTAL_TURN,
+      totalTurn(chain) >= MIN_TOTAL_TURN &&
+      opensOut(chain),
   );
   return pairChains(arcs, options);
 }
@@ -144,6 +145,49 @@ const MAX_PIECE_FEET = 1.5;
  * `CURVE_FLATNESS_POINTS`, which is half a point.
  */
 const MIN_TOTAL_TURN = 0.26;
+
+/**
+ * How far apart a chain's two ends must be, as a fraction of the path between
+ * them, for it to be a WALL rather than a loop.
+ *
+ * ── A CLOSED CHAIN IS NOT A WALL, AND IT HAS NO LENGTH LIMIT ──
+ *
+ * Found on a real drawing, and it is the worst defect this module has had.
+ * `FLOOR PLAN LEVEL 1` of a real permit set reported **2,324,222 ft** of wall —
+ * 440 miles — and the run responsible was this:
+ *
+ *     2.321e+6 ft   8.01in   (0.25,0.37) -> (0.25,0.37)   CURVED
+ *
+ * Its two endpoints are the SAME POINT. The chain closed on itself, so its
+ * chord is zero while its path wanders without bound, and `lengthFeet` is the
+ * path. Two more runs on the same sheet did the same thing at 552 and 436 ft.
+ * The thickness came out at 8.01in, which is a plausible wall, so nothing
+ * downstream had any reason to doubt it.
+ *
+ * NEITHER FIXTURE SET CAN PRODUCE THIS. The twenty draw one bay arc and a few
+ * door swings; the bench's arcs are flattened coarsely enough to be excluded by
+ * `MAX_PIECE_FEET`. A real sheet has thousands of short pieces — hatching,
+ * poché, stipple, insulation batting — and a greedy chain walks straight
+ * through them and comes back where it started.
+ *
+ * The bound is on the CHORD against the PATH, which is scale-free and says
+ * exactly what a wall is: a semicircle scores 0.64, a 270-degree arc 0.30, a
+ * 350-degree arc 0.028, and a closed loop 0. A quarter admits any arc up to
+ * about 280 degrees — more than any wall is built to — and refuses everything
+ * that curls back on itself.
+ *
+ * It is NOT a cap on length, deliberately. A cap would have to guess how long
+ * a wall may be; this asks whether the thing is a wall at all.
+ */
+const OPENS_OUT = 0.25;
+
+/** True when the chain's ends are far enough apart to be a wall's two ends. */
+function opensOut(chain: Chain): boolean {
+  const head = chain.points[0];
+  const tail = chain.points[chain.points.length - 1];
+  if (chain.lengthUnits <= 0) return false;
+  return Math.hypot(tail.x - head.x, tail.y - head.y) / chain.lengthUnits >= OPENS_OUT;
+}
 
 /** The sum of the absolute turns at every interior vertex of a chain. */
 function totalTurn(chain: Chain): number {

@@ -136,9 +136,26 @@ export function joinAtCorners(
       y1,
       x2,
       y2,
-      // The length is the centreline's, so it follows the ends rather than
-      // being recomputed from the faces that no longer bound it.
-      lengthFeet: (wall.lengthFeet * after) / before,
+      // ── THE EXTENSION IS ADDED, NOT MULTIPLIED IN ──
+      //
+      // This read `(wall.lengthFeet * after) / before`, scaling the length by
+      // how much the ends moved. For a straight run the two are the same
+      // number, because its length IS its span. For a run whose length is not
+      // its span they are not, and the ratio is unbounded.
+      //
+      // FOUND ON A REAL PERMIT SET, and it is the worst number this engine has
+      // produced: `FLOOR PLAN LEVEL 1` reported **2,324,222 ft** of wall — 440
+      // miles — from one run whose two endpoints were the same point. A curved
+      // run carries its ARC in `lengthFeet` and its CHORD in its endpoints
+      // (see `curvedWalls.ts`), so a nearly-closed arc has a chord near zero,
+      // and `after / before` on a near-zero `before` is a millionfold.
+      //
+      // Adding the extension is identical for a straight run — where
+      // `lengthFeet` equals `before * feetPerUnit`, the two expressions agree
+      // to the bit — and bounded for every run, because the move itself is
+      // bounded by `REACH_THICKNESSES`. A corner adds inches of wall; it
+      // cannot add miles.
+      lengthFeet: wall.lengthFeet + (after - before) * feetPerUnit,
     };
   });
 }
