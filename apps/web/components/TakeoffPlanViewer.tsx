@@ -42,7 +42,7 @@ import {
 } from "@/lib/takeoff/wallVectors";
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
 import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
-import { TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
+import { BLANK_TILE_INK, TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
 import type { WallClassifyLabel } from "@prova/integrations";
 import { pagesToSample } from "@/lib/takeoff/sheetTemplate";
 import { findWallsOnSheet, inPageWidthUnits } from "@/lib/takeoff/findWallsOnSheet";
@@ -372,6 +372,7 @@ export function TakeoffPlanViewer({
   const [wordsRead, setWordsRead] = useState<number | null>(null);
   const [readProgress, setReadProgress] = useState<string | null>(null);
   const [readReported, setReadReported] = useState(0);
+  const [readBlank, setReadBlank] = useState(false);
   const scannedWordsRef = useRef<{ str: string; x: number; y: number; width: number; height: number }[] | null>(null);
   const [finding, setFinding] = useState(false);
   const [findError, setFindError] = useState<string | null>(null);
@@ -669,6 +670,9 @@ export function TakeoffPlanViewer({
       const words: { str: string; x: number; y: number; width: number; height: number }[] = [];
       const total = across * down;
       let done = 0;
+      // Tiles skipped for carrying no ink at all. If EVERY tile is blank the
+      // render is broken, not the drawing, and the message below says which.
+      let blankTiles = 0;
       // What the model CLAIMED across every tile, which is the only thing that
       // tells a zero apart from a zero. See the message below.
       let reported = 0;
@@ -687,10 +691,24 @@ export function TakeoffPlanViewer({
           // a transparent pixel reads as black once alpha is dropped.
           ctx.fillStyle = "#fff";
           ctx.fillRect(0, 0, TILE_PX, TILE_PX);
-          ctx.save();
-          ctx.translate(-tx * TILE_PT * scale, -ty * TILE_PT * scale);
-          await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale }) }).promise;
-          ctx.restore();
+          // ── THE OFFSET GOES TO pdf.js, NOT ON THE CONTEXT ──
+          //
+          // This pre-applied `ctx.translate(...)` and let render draw through
+          // it. That works in the Node build — the eval reads 101 of 101
+          // printed strings that way — and it does NOT work here: a browser
+          // tester ran the whole sheet, fifteen requests, every one a 200, and
+          // got back "No writing could be made out on this sheet." The model
+          // was right. It was handed fifteen blank tiles.
+          //
+          // `transform` is pdf.js's own parameter for exactly this, and it is
+          // applied inside `beginDrawing` where the viewport transform is
+          // composed. Nothing about a canvas context's prior state is part of
+          // that contract.
+          await page.render({
+            canvasContext: ctx,
+            viewport: page.getViewport({ scale }),
+            transform: [1, 0, 0, 1, -tx * TILE_PT * scale, -ty * TILE_PT * scale],
+          }).promise;
 
           // ── JPEG, BECAUSE THIS READS SCANS ──
           //
@@ -698,6 +716,32 @@ export function TakeoffPlanViewer({
           // 1.20 MB as PNG against 0.54 MB as JPEG, and the PNG was over a
           // Server Action's body limit — so the feature failed on exactly the
           // sheets it exists for and worked on the clean ones.
+          // ── A BLANK TILE IS NEVER WORTH SENDING ──
+          //
+          // Fifteen model calls were spent on fifteen empty images, and the
+          // only thing that came back was the app's own "nothing was legible"
+          // sentence — which is indistinguishable from a genuinely blank sheet.
+          // Counting the ink first is free, it refuses to spend on an empty
+          // picture, and it tells the two apart: a RENDER that produced
+          // nothing is our bug, and this says so rather than blaming the scan.
+          //
+          // Sampled rather than exhaustive: every 16th pixel over 2.56M is
+          // 160,000 samples, which is far more than enough to tell ink from
+          // paper and costs no perceptible time on the page.
+          const probe = ctx.getImageData(0, 0, TILE_PX, TILE_PX).data;
+          let dark = 0;
+          let seen = 0;
+          for (let i = 0; i < probe.length; i += 4 * 16) {
+            seen += 1;
+            if ((probe[i] * 299 + probe[i + 1] * 587 + probe[i + 2] * 114) / 1000 <= 160) dark += 1;
+          }
+          if (seen > 0 && dark / seen < BLANK_TILE_INK) {
+            blankTiles += 1;
+            done += 1;
+            setReadProgress(`Reading the sheet — ${done} of ${total} parts…`);
+            continue;
+          }
+
           const base64 = tile.toDataURL("image/jpeg", 0.9).split(",")[1] ?? "";
 
           // ── A FAILED TILE MUST NOT LEAVE THE BUTTON SPINNING ──
@@ -740,6 +784,7 @@ export function TakeoffPlanViewer({
       scannedWordsRef.current = words;
       setWordsRead(words.length);
       setReadReported(reported);
+      setReadBlank(blankTiles === total);
     } finally {
       setReading(false);
       setReadProgress(null);
@@ -1383,9 +1428,20 @@ export function TakeoffPlanViewer({
                 Read nothing usable off this sheet — {readReported} pieces of writing were found but none could
                 be placed on the drawing. This is a fault on our side; the sheet is unchanged.
               </>
+            ) : readBlank ? (
+              /* ── EVERY TILE CAME OUT EMPTY ──
+                 A drawing is never blank everywhere. This is the page failing
+                 to render the sheet, which is ours, and it must not be
+                 reported as a faint scan — that sentence sends somebody to
+                 find a better copy of a drawing that was fine. */
+              <>
+                This sheet could not be prepared for reading — every part of it came out blank, which is a
+                fault on our side rather than anything wrong with the drawing. Nothing was sent and nothing
+                was charged.
+              </>
             ) : (
-              /* Nothing was found at all, which is what an genuinely blank or
-                 unreadable scan looks like and is not the same failure. */
+              /* Something was rendered and none of it was legible, which is
+                 what a genuinely faint scan looks like. */
               <>
                 No writing could be made out on this sheet. If it is a faint or low-resolution scan, the scale
                 still has to be set by hand.

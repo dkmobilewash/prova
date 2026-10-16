@@ -45,6 +45,18 @@ export const TILE_PT = 600;
 export const TILE_PX = 1600;
 
 /**
+ * The least ink a tile must carry to be worth sending, as a fraction.
+ *
+ * Measured on the committed fixtures: the EMPTIEST tile that still holds
+ * words carries 0.184% ink, and a tile with nothing on it carries 0. This sits
+ * an order of magnitude below the former, so it refuses only tiles that are
+ * genuinely empty — it is a guard against sending a blank picture, not an
+ * attempt to skip quiet parts of a drawing, which `tileSkip.eval.ts` measured
+ * and found cannot be done safely.
+ */
+export const BLANK_TILE_INK = 0.0002;
+
+/**
  * One tile-relative box, as a page-space `SheetTextItem`.
  *
  * SEPARATE AND EXPORTED so the arithmetic can be tested without a model —
