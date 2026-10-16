@@ -100,6 +100,8 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: reads optional-content group names straight off a REAL plan set to answer whether architects' exports name their layers at all, guarded by a skip on REAL_PLAN_PDF plus a non-zero page assertion — a mistyped path must not read as 'no set has layers', which is the one finding that would abandon the approach",
     "extract.eval.ts":
       "calls no model: reads the TEXT LAYER of twenty committed fixtures and writes the answer key from what each drawing prints, guarded by a skip when the fixtures are absent plus a non-zero file assertion — a key built from no files would be an empty key that scores everything as unknown",
+    "tesseract.eval.ts":
+      "calls no model: prices a free OCR engine (tesseract.js, Apache-2.0) against the SAME bar the model was measured on — same scans, same tiles, same 30pt tolerance, same answer key from the vector originals. Guarded by a skip when the fixtures are absent plus a non-zero text assertion on each vector original, because a key built from no words would score any engine, including one that reads nothing, at a clean 100%",
     "tileSkip.eval.ts":
       "calls no model: measures whether a near-blank tile of a SCANNED sheet could be skipped to save a model call, by counting ink off the render and locating the real words in the vector drawing the scan was made from. Guarded by a skip when the fixtures are absent plus a non-zero text assertion on each vector original — a key built from no words would report every tile as skippable, which is the expensive direction to be wrong in",
     "raster.eval.ts":
