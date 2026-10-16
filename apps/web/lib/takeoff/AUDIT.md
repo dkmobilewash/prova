@@ -545,6 +545,13 @@ so the numbers exist today without the scorecard claiming to grade them.
 ## Step 6 — the real-plan check, 2026-10-16
 
 ### THERE ARE NO REAL PLANS IN THIS REPO, AND THAT BOUNDS EVERYTHING ABOVE
+### — SUPERSEDED THE SAME DAY BY STEP 7, WHICH RAN ON FIVE OF THEM —
+
+Kept because the sentence was true when written and because its last paragraph
+asked what a real set would test that neither fixture set does. Step 7 answers
+that, and the answer was worse than this section guessed: a real sheet reported
+2,324,222 ft of wall. Read step 7 for the measurements; read this for what was
+believed before anybody had any.
 
 Asked for directly, so it is answered directly. Every PDF in the repo is in
 one of four places and none of them is a real drawing:
@@ -620,6 +627,128 @@ imports `primaryView`, `wallsPerView`, `excludedViews` and the cautions), and
 scale verdict on A-401 understates what an estimator is shown — and the two
 instruments disagreeing is itself worth fixing, because the bench is what
 anybody will read first.
+
+
+---
+
+## Step 7 — FIVE REAL PLAN SETS, 2026-10-16
+
+The first time this engine has been run on drawings nobody here generated.
+`realplan/realSheets.eval.ts` produced all of it; re-run that rather than
+trusting this. The sets are a client's confidential documents, live outside the
+repository, and nothing was copied in.
+
+### The sets, and which sheets were taken
+
+| set | pages | what it is | floor plans taken |
+| --- | ---: | --- | --- |
+| Camp Bow Wow 100% CD_ARCH | 29 | a complete architectural CD set | A101 FLOOR PLAN, A102 DIMENSIONAL FLOOR PLAN, A120 RESTROOM PLANS |
+| ELEVEN03 PERMIT SET_ARCH | 175 | a permit set, 342 MB | A4.A-Y2 FORMING PLAN, A4.B-Y2/.1/.2/.3 FLOOR PLAN LEVELS |
+| 10-Alden-Green Bid Package | 38 | mostly civil and structural | A103, A103a — EQUIPMENT AND FURNITURE plans |
+| Approved_Eleven03_SP | 29 | a SITE PLAN permit set | C1.01 LEVEL 7 BUILDING FLOOR PLAN |
+| HPL Lighthouse Bulletin 2 | 12 | a bulletin: 3 plan sheets, 4 elevations, 3 schedules | PF-4, PF-16 keynote plans |
+
+**342 MB is not slow.** It read in 0.1s and inventoried all 175 pages in 2.5s,
+because pdf.js parses lazily — page by page was never needed.
+
+**Two sets have no partition plan at all, as expected.** Alden Green's only
+architectural sheets are EQUIPMENT AND FURNITURE plans, which
+`sheetSuitability` classifies as a furniture plan — correctly. Approved_Eleven03
+is civil C0.x-C8.x plus landscape with one architectural site plan.
+
+### THE RESULT: 6 OF 13 SHEETS PRODUCED A NUMBER
+
+| set | sheet | outcome |
+| --- | --- | --- |
+| Camp Bow Wow | A102 DIMENSIONAL FLOOR PLAN | **2,356 ft** over 174 runs |
+| ELEVEN03 | A4.B-Y2 FLOOR PLAN LL2 | **1,458 ft** over 94 runs |
+| ELEVEN03 | A4.B.1 FLOOR PLAN LEVEL 1 | **2,648 ft** over 283 runs |
+| ELEVEN03 | A4.B.2 | **2,793 ft** over 364 runs |
+| ELEVEN03 | A4.B.3 | **2,602 ft** over 355 runs |
+| Alden Green | A103 furniture plan @ 1/16" | 29 ft over 2 runs |
+| Camp Bow Wow | **A101 FLOOR PLAN** | REFUSED — 12,179 wall-length lines of 425,057 strokes |
+| ELEVEN03 | A4.A-Y2 FORMING PLAN | REFUSED — 11,784 wall-length lines |
+| Camp Bow Wow | A120 RESTROOM PLANS | DECLINED — two scales, 1/2" and 3/8" |
+| Approved_Eleven03 | C1.01 LEVEL 7 FLOOR PLAN | DECLINED — two scales, 1/32" and 3/32" |
+| HPL | PF-4 keynote plan | DECLINED — 2 of 4 printed dimensions agree |
+| HPL | PF-16 keynote plan | DECLINED — 2 of 4 agree |
+| Alden Green | A103a | DECLINED — no readable printed dimensions |
+
+### RANKED CAUSES — by what they cost
+
+**1. A length that was scaled rather than added: 2,332,000 ft of phantom,
+three sheets. FIXED.** `joinCorners` recomputed length as
+`lengthFeet * after / before`. `FLOOR PLAN LEVEL 1` reported **2,324,222 ft** —
+440 miles — from one run whose endpoints were the same point, and A4.B.2 and
+A4.B.3 were inflated to 7,714 and 6,044 ft. Now 2,648, 2,793 and 2,602. See
+that file's note; two causes compounded and the other was `curvedWalls`
+chaining hatching into closed loops.
+
+**2. The sheet is refused outright: 2 of 13 sheets, and one is the job's
+primary plan.** `MAX_PAIR_TESTS` caps the pairer at about 8,944 wall-length
+lines; these sheets carry 11,784 and 12,179. Camp Bow Wow's A101 has **425,057
+strokes**. Its sibling A102 measures 2,356 ft, so the sheet an estimator would
+actually price delivers nothing while the dimensioned version of the same
+building delivers a number. OPEN — the cap exists so the quadratic pairer
+cannot hang, and raising it is not the fix.
+
+**3. Scale declined: 5 of 13, and two of those are the view split being locked
+out.** A120 prints 1/2" and 3/8"; C1.01 prints 1/32" and 3/32". `sheetViews`
+handles exactly this and measures each view at its own scale — but
+`readSheetScale` runs FIRST and refuses the page, so there is no `feetPerUnit`
+to start the split from and it never runs. An ordering problem, not a missing
+capability. OPEN, and the cheapest of the three.
+
+The other three declines look correct: two HPL keynote plans print four
+dimensions between them, and Alden Green's A103a prints none.
+
+### WHAT IS NOT IN THIS REPORT, AND WHY
+
+**Missed feet and phantom feet per sheet.** There is no ground truth for these
+sheets and there will not be unless somebody traces one by hand. The overlays
+are written for exactly this — the drawing's strokes in grey under the claimed
+runs in red, so a missed wall reads as a grey line with nothing on it — but
+reading them is an eye's job, not this file's.
+
+What CAN be said from the numbers: on every real sheet the thickness clusters
+are a SMEAR rather than bands. A4.B.2 returns 4.25, 4.88, 6.60, 11.92, 2.58,
+3.26, 8.75 and 12.69 inches; the synthetic sheets return two or three clean
+bands because they are drawn with two or three wall types and nothing else.
+A smear is what furniture, fixtures, detail linework and section marks pairing
+with each other looks like. It is evidence of phantoms without being a count
+of them.
+
+### NO LAYER NAMES ANYWHERE — ALL FIVE SETS
+
+Every measured sheet reports `layers NONE`. The bench's A-401 names its
+phantoms by layer (`A-DETL` 65 ft, `A-FLOR-STRS` 34 ft, `A-ANNO-DIMS` 18 ft)
+and that is a property of a GENERATED fixture, not of real exports. So the
+detail-and-stair-linework problem — the largest phantom source the bench can
+see — has to be solved on geometry alone. `layerNames` remains worth having
+where a drawing carries them, and cannot be the answer.
+
+### THE SELECTION ITSELF WAS WRONG TWICE, AND BOTH ARE RECORDED
+
+The first run measured a NYSDOT pavement-item table, a lap-splice schedule and
+a wall-type detail sheet, because `titleBlockText` returns the block's words in
+reading order and on a real set that yields "DRAWN BY: MC CHECKED BY: BBL
+PROJECT #: 23-2637". Nothing matched a title rule, `sheetSuitability` returned
+its DEFAULT of "floor plan" — right in the product, where an unplaceable sheet
+is offered without a caution — and everything was selected.
+
+A title block is laid out by SIZE: the number is the biggest lettering and the
+name the next biggest. Read that way, with boilerplate filtered, all five sets
+named correctly.
+
+The second run then picked the wrong five of the Eleven03 set, because
+"biggest by stroke count" prefers its LIFE SAFETY & OCCUPANCY plans to its
+FLOOR PLAN LEVEL sheets. And the life-safety sheets decline a scale CORRECTLY:
+the numbers printed on them are travel distances and occupant loads, so
+`dimensionLabels` reads 103.7, 109.9, 136.6, 250.0 ft and 197 of 199 votes land
+off-grid.
+
+So `REAL_PLAN_SHEETS` names pages explicitly, and the automatic pick stays for
+whoever has not looked at the set.
 
 ---
 
