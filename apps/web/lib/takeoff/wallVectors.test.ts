@@ -826,8 +826,9 @@ describe("what the dedup must NOT collapse", () => {
 /**
  * ── A CORRIDOR'S TWO SIDES ARE NOT THE SAME LENGTH ──
  *
- * `MAX_FACE_LENGTH_RATIO` was 3, and its own comment named the case it then
- * rejected: "a wall whose far end is interrupted by a doorway is drawn as a
+ * `MAX_FACE_LENGTH_RATIO` was 3 — the gate is gone entirely as of 2026-10-16,
+ * and this case is why it kept being loosened rather than removed. Its own
+ * comment named the case it then rejected: "a wall whose far end is interrupted by a doorway is drawn as a
  * long face and a short one". A corridor is that shape at its worst — one side
  * runs continuously, the other is cut into pieces by every door off it.
  *
@@ -879,12 +880,31 @@ describe("two faces of very different lengths", () => {
     expect(wallFromPair(border, titleBlock, opts), "the border paired with the title block").toBeNull();
   });
 
-  it("refuses a ratio just past the limit, so the bound is real and not decorative", () => {
-    const a = face(0, 10, 0);
-    const beyond = face(0, 10 * 5 + 1, 0.406);
-    expect(wallFromPair(beyond, a, opts)).toBeNull();
-    const within = face(0, 10 * 5 - 1, 0.406);
-    expect(wallFromPair(within, a, opts)).not.toBeNull();
+  it("STILL REFUSES THE PAIR RULE 5 WAS WRITTEN FOR, now on rule 6", () => {
+    // The sheet border against the title-block box: the 20 ft of phantom on
+    // every clean sheet that rule 5 was added for, and the thing that had to
+    // keep working when it was removed for not being scale-free.
+    //
+    // 2592pt of border and 180pt of box, 10pt apart. Their raw ratio is 14.4,
+    // which is what rule 5 read. What rule 6 reads is that the border
+    // overhangs the box by 134 ft at EACH end against a 20 ft face — and
+    // overhanging at BOTH ends is the thing no wall does, because the only
+    // legitimate reason a face outruns its partner is a corner and a corner
+    // overruns by a wall thickness.
+    const border = face(0, 2592 / 9, 0);
+    const titleBlock = face(1206 / 9, 180 / 9, 0.406);
+    expect(wallFromPair(border, titleBlock, opts), "the border phantom is back").toBeNull();
+    expect(wallFromPair(titleBlock, border, opts), "and in the other order").toBeNull();
+  });
+
+  it("and accepts a corner, where a face outruns its partner by ONE THICKNESS", () => {
+    // The other half, without which the test above is satisfied by refusing
+    // everything. This is the case a raw-length gate kept confusing with the
+    // border: an outer face is longer than its inner face at every corner in
+    // every building, by the thickness of the wall it turns into.
+    const inner = face(0, 20, 0);
+    const outer = face(-0.406, 20 + 0.406 * 2, 0.406);
+    expect(wallFromPair(outer, inner, opts), "a corner was refused").not.toBeNull();
   });
 
   it("keeps pairing two faces of the same length, which is most walls", () => {

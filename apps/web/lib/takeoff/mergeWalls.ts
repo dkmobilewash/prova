@@ -109,6 +109,36 @@ const SAME_LINE_FEET = 0.5;
  */
 export const MAX_OPENING_FEET = 8;
 
+/**
+ * The hair of slack on that cap, in feet.
+ *
+ * ── AN EXCLUSIVE CAP REFUSES ITS OWN WIDEST LEGITIMATE OPENING ──
+ *
+ * S02 and S03 are the same building drawn at 1/4" and 1/8", and each has a
+ * 16 ft partition containing a single 8 ft opening — exactly
+ * `MAX_OPENING_FEET`. Neither bridged it, so a 16 ft wall was reported as 4 ft
+ * on both sheets, and the whole 40 ft line it belongs to read 32 ft.
+ *
+ * MEASURED by sweeping the cap: the boundary sits between 8.0 and 8.02, and
+ * 8.02 is enough. So the gap is 8 ft, as drawn, and the comparison loses to
+ * floating point — the gap is measured in page units from two stroke endpoints
+ * while the cap arrives through a division by `feetPerUnit`, and the two
+ * roundings do not agree at the last bit.
+ *
+ * The reason this is worth a named constant rather than an epsilon: a standard
+ * opening lands exactly ON the cap far more often than just inside it. 8 ft is
+ * a double door, 6 ft a slider, 3 ft a doorway — openings come in whole feet,
+ * and the cap is a whole number too. The limit case is the common case here,
+ * so an exclusive comparison fails at precisely the width that matters most.
+ *
+ * A quarter of an inch, which is smaller than any feature on any of these
+ * drawings and far smaller than the cap's own uncertainty. In feet rather than
+ * points so it means the same thing at every scale — S02 and S03 are the pair
+ * that proves it has to, since their walls differ twofold on paper and not at
+ * all in the building.
+ */
+export const CAP_SLACK_FEET = 1 / 48;
+
 /** How far from a gap's end a perpendicular wall counts as bounding it, in
  *  feet. About a wall's own thickness plus drafting slack: the partition's
  *  centreline ends at the corridor wall's centreline, not at its face. */
@@ -329,7 +359,7 @@ export function mergeWalls(
         // grouping is not free of consequence, since a group is rebuilt on its
         // leader's line. Noted so the next reader does not spend a mutation on
         // it, as I did.
-        if (-overlap > maxOpeningFeet / feetPerUnit) continue;
+        if (-overlap > (maxOpeningFeet + CAP_SLACK_FEET) / feetPerUnit) continue;
         // ── A GAP-JOIN NEEDS TIGHTER COLLINEARITY THAN AN OVERLAP-MERGE ──
         //
         // Kept because the test that used to forbid all gap-joins was right
@@ -446,7 +476,7 @@ export function mergeWalls(
       });
       run = [];
     };
-    const gapAllowance = maxOpeningFeet / feetPerUnit;
+    const gapAllowance = (maxOpeningFeet + CAP_SLACK_FEET) / feetPerUnit;
     for (const span of spans) {
       const last = run[run.length - 1];
       // `+ gapAllowance` is the whole change: a doorway-sized gap keeps the

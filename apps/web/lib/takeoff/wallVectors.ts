@@ -679,50 +679,11 @@ const DEFAULTS = {
 const PARALLEL_TOLERANCE_RAD = (2 * Math.PI) / 180;
 
 /**
- * How unequal two faces of one wall may be.
- *
- * ── 3 WAS NOT GENEROUS ENOUGH, AND THE COMMENT SAID SO WITHOUT MEASURING IT ──
- *
- * It read "3 is generous — a wall whose far end is interrupted by a doorway is
- * drawn as a long face and a short one". That sentence names the exact case it
- * then rejected. A corridor is the shape that breaks it: one side runs
- * continuously, the other is cut into pieces by every door off it, so the
- * pieces pair against a face many times their length.
- *
- * Found on School-01's A-101 by tracing one 12 ft face that the pairer refused.
- * Its partner is a 53 ft face 4.87in away — A1's thickness — overlapping it
- * along its whole length. Parallel, thickness, overlap and minimum length all
- * pass; the pair died here at 53.25 / 12.21 = 4.36.
- *
- * ── SWEPT ON THE BENCH, BOTH SETS, WATCHING BOTH NUMBERS ──
- *
- * `reports/takeoff-bench`, graded per wall against the key's CENTRELINE, with
- * footage that is not on any in-scope wall reported separately — because a
- * total can land while a miss and a phantom cancel.
- *
- * | ratio | Mesa found | Mesa not-on-wall | holdout found | holdout not-on-wall |
- * | --- | --- | --- | --- | --- |
- * | 3 | 51,558 (66.1%) | 4,096 | 23,491 (71.1%) | 531 |
- * | **5** | **52,109 (66.8%)** | **3,928** | **24,057 (72.8%)** | **534** |
- * | 8 | 52,094 | 3,949 | 24,086 | 534 |
- * | 13 | 52,125 | 3,941 | 24,092 | 534 |
- *
- * 5 is the knee: 8 and 13 buy nothing and only widen what can pair. The gain is
- * +551 ft on Mesa and +566 ft on the holdout, and Mesa's not-on-a-wall footage
- * FELL by 168 ft — pairing the right faces stops a wrong pairing winning them.
- * The holdout's rose by 3 ft against 566 ft gained, which is noise at 0.6% and
- * is recorded rather than rounded away.
- *
- * The 13-fold sheet-border-against-title-block case this was first measured on
- * is still rejected, with margin.
- */
-const MAX_FACE_LENGTH_RATIO = 5;
-
-/**
  * How unequal two faces may be and still be PREFERRED as a wall, when several
  * partners are valid.
  *
- * `MAX_FACE_LENGTH_RATIO` above is the hard gate — past 3 a pair is not a wall
+ * Rule 6 ("they end together") is the hard gate — a pair loose at both ends
+ * is not a wall
  * at all. This is a softer question that only arises once more than one partner
  * passes it: which of them is the wall?
  *
@@ -1070,26 +1031,64 @@ export function wallFromPair(
   const lengthFeet = overlap * options.feetPerPoint;
   if (lengthFeet < minLength) return null;
 
-  // 5. THE TWO FACES ARE COMPARABLE IN LENGTH, because one wall's two faces are
-  // drawn the same length.
+  // 5. REMOVED 2026-10-16 — IT WAS THE ONLY SCALE-DEPENDENT GATE IN HERE.
   //
-  // MEASURED, not anticipated: on the first run every clean sheet reported one
-  // phantom and 120ft of wall where 100ft was drawn. The extra 20ft was the
-  // SHEET BORDER paired with the TITLE-BLOCK box — two parallel lines 10pt
-  // apart, which at 1/8" scale is 1.1ft and sits squarely inside the partition
-  // window. Nothing about thickness, parallelism or overlap can separate them.
-  // Their LENGTHS can: the border runs the width of a 36" sheet and the title
-  // block is 180pt, a 13-fold difference no wall has.
-  if (Math.max(aLen, bLen) / Math.min(aLen, bLen) > MAX_FACE_LENGTH_RATIO) return null;
+  // It read: the two faces are comparable in length, and past a ratio of 5 a
+  // pair is not a wall. The scar was real. On the first run every clean sheet
+  // reported one phantom and 120 ft of wall where 100 ft was drawn, the extra
+  // 20 ft being the SHEET BORDER paired with the TITLE-BLOCK box — two
+  // parallel lines 10pt apart, which at 1/8" is 1.1 ft and sits squarely in
+  // the partition window. Nothing about thickness, parallelism or overlap
+  // could separate those two. Their raw lengths could: 2592pt against 180pt.
+  //
+  // WHY A RATIO OF RAW LENGTHS CANNOT BE SCALE-FREE: what a face's length
+  // INCLUDES is not scale-free. A dimension extension line is a fixed length
+  // on PAPER, so it is twice as many FEET at 1/8" as at 1/4", and
+  // `oneFacePerLine` merges it into the wall face it is collinear with.
+  //
+  // S02 and S03 are the same building at those two scales, and this is the
+  // whole of their disagreement:
+  //
+  //     S02   outer face of W1   x -3.89 -> 2.00   5.89 ft   ratio 3.40  kept
+  //     S03   outer face of W1   x -7.52 -> 2.00   9.52 ft   ratio 5.50  cut
+  //
+  // Same wall, same 1.73 ft inner face, same building. The southwest corner of
+  // a 40 ft wall was refused at one scale and accepted at the other, for 2 ft.
+  // All nine other runs on those two sheets already agreed to the foot.
+  //
+  // RULE 6 COVERS THE SCAR AND IS SCALE-FREE. The border overhangs the title
+  // block by 1,206pt at EACH end against a 180pt face — loose at both ends by
+  // six times over, where a corner is loose by a wall thickness. The border
+  // also no longer reaches here at all: `wallsNotTheSheetBorder` removes it.
+  // `wallVectors.test.ts` pins the border pair against rule 6 directly.
+  //
+  // THE SWEEP THAT TUNED IT IS WHY IT SURVIVED THIS LONG, and it is kept here
+  // because it is still true and still the reason nobody looked. Against the
+  // 60-page key, with not-on-a-wall footage reported separately:
+  //
+  //     | ratio | Mesa found | Mesa not-on-wall | holdout found | not-on-wall |
+  //     | 3     | 51,558     | 4,096            | 23,491        | 531         |
+  //     | 5     | 52,109     | 3,928            | 24,057        | 534         |
+  //     | 8     | 52,094     | 3,949            | 24,086        | 534         |
+  //     | 13    | 52,125     | 3,941            | 24,092        | 534         |
+  //
+  // "8 and 13 buy nothing" was the conclusion, and on THAT key it is correct —
+  // every sheet in it is 1/8". A constant can only be tuned against the
+  // variation its fixtures contain, and a one-scale key cannot price a
+  // scale-dependent gate. Re-measured 2026-10-16: removing it leaves every
+  // bench bar identical, the zero-wall bar included, and takes the twenty from
+  // 10 of 17 to 12 with S02 and S03 going from 0.84% apart to 0.00%.
 
   // 6. THEY END TOGETHER. Two faces of one wall stop at the same places; a line
   // that merely PASSES the wall overhangs it at both ends.
   //
-  // This is what rule 3 cannot see and rule 5 cannot catch. A 115 ft column
-  // grid line CONTAINS a 40 ft wall face, so the overlap is 100% of the shorter
-  // — rule 3's best possible score — and the length ratio is 2.87, inside
-  // `MAX_FACE_LENGTH_RATIO`'s 5. Every existing test passes and the grid pairs
-  // with the wall's outer finish at 12.48in.
+  // This is what rule 3 cannot see, and what the removed rule 5 could not catch
+  // either. A 115 ft column grid line CONTAINS a 40 ft wall face, so the
+  // overlap is 100% of the shorter — rule 3's best possible score — and their
+  // raw length ratio is 2.87, which was inside rule 5's gate of 5. Every
+  // existing test passed and the grid paired with the wall's outer finish at
+  // 12.48in. This rule is now the only thing standing between the two, which
+  // is also why rule 5 could be removed: it was never the one doing this job.
   //
   // A corner is the only legitimate reason a face outruns its partner, and it
   // outruns it by a WALL THICKNESS — inches. The grid overruns by 22 ft at one
