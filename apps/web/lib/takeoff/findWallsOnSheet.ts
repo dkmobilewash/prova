@@ -15,6 +15,8 @@ import { wallTypeTags, tagByRun } from "./wallTags";
 import { defaultWallTypeFromNotes } from "./wallNotes";
 import { scaleBarLabels, wallsNotTheScaleBar } from "./scaleBar";
 import { wallsNotDuplicateCoverage } from "./duplicateCoverage";
+import { curvedWalls } from "./curvedWalls";
+import { DEFAULTS } from "./wallVectors";
 import { wallGroups, type WallGroup } from "./wallGroups";
 import { withoutNonWallLayers, type LayerDrop } from "./layerNames";
 import type { MatchableWallType } from "./wallTypeMatch";
@@ -353,7 +355,25 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   // Measured on the fixtures: the biggest group spans 25-52% of the sheet
   // width on all seventeen vector sheets, the five that used to return
   // nothing included. There was never a size that separated them.
-  const notLettering = wallsNotLettering(everywhere, textBoxes, feetPerUnit);
+  // ── AND THE CURVES, WHICH THE PAIRER CANNOT ASSEMBLE ──
+  //
+  // The pairer owns curved strokes (see `StrokeSegment.curved`) and does pair
+  // them face to face, but it pairs each 8-inch chord with the chord opposite
+  // and `mergeWalls` cannot join the results: consecutive pieces of an arc
+  // turn 3.2 degrees at every joint against a 2.9 degree tolerance. S07's bay
+  // contributed nothing at all because of it.
+  //
+  // Added to the same candidate list so every filter below applies to them
+  // too — a curved stroke can be lettering or a scale bar's arc as easily as
+  // a straight one can. `curvedWalls.ts` has the geometry and why the mean of
+  // two faces' path lengths IS the centreline arc.
+  const curves = curvedWalls(inUnits, {
+    feetPerUnit,
+    minThicknessFeet: DEFAULTS.minThicknessFeet,
+    maxThicknessFeet: DEFAULTS.maxThicknessFeet,
+  });
+
+  const notLettering = wallsNotLettering([...everywhere, ...curves], textBoxes, feetPerUnit);
   const notBorder = wallsNotTheSheetBorder(notLettering, 1, aspect);
   // THE GRAPHIC SCALE BAR is two parallel lines a wall-thickness apart and
   // 32 ft long — a textbook wall by every measurement, and the one thing on

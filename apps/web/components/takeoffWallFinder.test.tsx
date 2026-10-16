@@ -480,7 +480,16 @@ describe("the ghost lines over the sheet", () => {
     // the answer is not.
     const viewer = readFileSync(resolve(process.cwd(), "lib/takeoff/findWallsOnSheet.ts"), "utf8");
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code).toMatch(/wallsNotLettering\(\s*everywhere\s*,\s*textBoxes\s*,\s*feetPerUnit\s*\)/);
+    // THE INPUT WIDENED, 2026-10-16: assembled curves are candidates too, and
+    // a curved stroke can be lettering as easily as a straight one — S07's bay
+    // is 202 straight pieces that no filter had ever seen. The assertion that
+    // matters is unchanged and is the one below: what gets grouped is the
+    // FILTERED set. This one only has to see that the lettering filter is
+    // still on the path, with `everywhere` reaching it.
+    expect(code).toMatch(
+      /wallsNotLettering\(\s*\[\s*\.\.\.everywhere\s*,\s*\.\.\.curves\s*\]\s*,\s*textBoxes\s*,\s*feetPerUnit\s*\)/,
+    );
+    expect(code, "curves must not bypass the filters").toMatch(/const curves = curvedWalls\(/);
     expect(code).toMatch(/clusterByThickness\(walls\)/);
     expect(code).not.toMatch(/clusterByThickness\(inBuilding\)/);
     // And that Fit is computed by the tested function rather than inline again.

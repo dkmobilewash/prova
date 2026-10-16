@@ -117,6 +117,16 @@ export type WallCandidate = {
    *  the app computes its own from the geometry and the live calibration. */
   lengthFeet: number;
   /**
+   * True when this run was assembled from a flattened arc by `curvedWalls`.
+   *
+   * It matters to anything that recomputes a length from the endpoints,
+   * because on a curved run `lengthFeet` is the CENTRELINE ARC and the two
+   * endpoints are only its chord — 14.17 ft against 12.0 on S07's bay. A
+   * consumer that re-derives from x1,y1,x2,y2 will under-measure by 15% and
+   * nothing will throw.
+   */
+  curved?: boolean;
+  /**
    * Gaps INSIDE this run that are narrow enough to be openings, with their
    * measured widths. Present only when `mergeWalls` joined across one.
    *
@@ -563,7 +573,7 @@ function isAKnownType(thicknessFeet: number, knownIn: readonly number[]): boolea
   return knownIn.some((known) => Math.abs(known - inches) <= KNOWN_SLACK_IN);
 }
 
-const DEFAULTS = {
+export const DEFAULTS = {
   minThicknessFeet: 0.2,
   /**
    * ── 12 INCHES, AND THE NUMBER WAS SWEPT RATHER THAN REASONED ──
