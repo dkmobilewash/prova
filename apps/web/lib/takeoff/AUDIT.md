@@ -631,6 +631,90 @@ anybody will read first.
 
 ---
 
+## The full-screen takeoff workspace, 2026-10-16
+
+`/takeoff/[id]`, outside the `(app)` route group so there is no shell to take
+pixels off the drawing. `components/TakeoffWorkspace.tsx` is the shell;
+`TakeoffPlanViewer` is unchanged except for four props it grew for this host
+(`fill`, `panelOpen`, `readOnly`, `initialPage`), and `loadTakeoffWorkspace`
+loads once for both this page and the takeoff tab.
+
+### A KNOWN SHORTCUT: THE MULTI-TAB NOTICE HAS NO `updatedAt` TO READ
+
+Two tabs on one takeoff is not a corner case — it is how somebody compares two
+levels. The later save already wins, because every write is a server action
+against the same rows. What was missing is that the OTHER tab goes on showing
+numbers that are no longer current with nothing to say so.
+
+**`TakeoffPlan` has no `updatedAt`.** Only `createdAt`, set when the drawing
+was uploaded, so no column moves when a measurement is saved. Rather than add
+one, the signature is DERIVED in `takeoffSavedSignature`: counts and the newest
+`createdAt` across the three tables a save writes — calibrations, measurements
+and wall proposals. A new row moves the date, a delete moves the count, and the
+other tab asks for it on focus rather than polling.
+
+**Why that is a shortcut and not a design.** It is three aggregates where one
+column read would do; it cannot see an UPDATE that changes a row without
+changing a count or a timestamp; and it has no bearing on who wins, so two
+people editing the same sheet still silently overwrite each other — the notice
+only tells the loser afterwards.
+
+**The proper fix is `updatedAt` on `TakeoffPlan`**, touched by every takeoff
+write, and then the notice is one indexed read. It was not done here because a
+migration has to be announced in Slack before the push and reaches production
+on merge, and nothing else wants the column yet — so it would have been a
+schema change carried by a reload notice. Worth doing with the next takeoff
+migration rather than on its own.
+
+### What the layout is measured against, and why it is measured at all
+
+The first build of this screen passed every structural test it had and rendered
+the plan at **18% in a 384px box with half the viewport empty under it**. No
+assertion about a class name can see that. So `takeoff-workspace.spec.ts`
+measures boxes:
+
+  - at Fit the sheet fills >= 90% of the canvas in one dimension and sits
+    fully inside it in the other;
+  - the canvas is >= 85% of viewport height at 1440 AND 1280, with the
+    quantities rail OPEN as well as closed — the open case is the one that
+    broke, and the closed-only version of this test passed while a screenshot
+    showed the drawing at 5%;
+  - at 834 nothing is layered over the canvas with the drawers closed, and the
+    document does not scroll sideways;
+  - zoom in and out change the zoom, the sheet grows, the port scrolls, and
+    the overlay's box still matches the sheet's to within 2px after zooming —
+    an overlay that drifts draws a wall where no wall is, which looks exactly
+    like a correct takeoff.
+
+### What a REAL sheet costs, measured
+
+`takeoff-workspace-real.spec.ts`, which skips unless the sheets are present —
+they are a client's drawings and live outside the repository, as do its
+screenshots.
+
+| | Camp Bow Wow A102 | Eleven03 A4.B.1 |
+| --- | ---: | ---: |
+| first render | 501 ms | 386 ms |
+| full resolution | 517 ms | 1,677 ms |
+| **Find the walls** | **102,134 ms** | **14,973 ms** |
+| zoom step, slowest of four | 229 ms | 246 ms |
+| pan | 156 ms | 160 ms |
+| sheet fills at Fit | 97% | 97% |
+
+**Rendering and navigation are not the problem on a real sheet.** First paint
+is half a second, a zoom step is a fifth of one, panning is immediate.
+
+**Detection is.** A hundred and two seconds, in the browser, on the main
+thread, for one sheet — and that sheet is the one an estimator would actually
+price. It is not a layout problem and no part of this workspace fixes it; it is
+recorded here because this is the first time it has been measured on a drawing
+nobody here generated. The wall finder's own `MAX_PAIR_TESTS` ceiling is the
+same quantity seen from the other side: Camp Bow Wow's A101 is refused outright
+at 12,179 wall-length lines, and A102 is just under the bar and takes a minute
+and a half.
+
+---
+
 ## Step 7 — FIVE REAL PLAN SETS, 2026-10-16
 
 The first time this engine has been run on drawings nobody here generated.

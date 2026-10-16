@@ -30,6 +30,7 @@ import {
   errorBandText,
   evidenceOrder,
   fitZoom,
+  fitWidthZoom,
   stepZoom,
   TOOLS,
   ZOOM_STEPS,
@@ -141,7 +142,9 @@ const BASE_SCALE = 1.5;
  * uselessness on a laptop.
  */
 const FIT = "fit" as const;
-type Zoom = number | typeof FIT;
+/** Fill the width and let the height scroll — see `fitWidthZoom`. */
+const FIT_WIDTH = "fit-width" as const;
+type Zoom = number | typeof FIT | typeof FIT_WIDTH;
 
 /**
  * ── THE WORDS ON A PAGE, IN `planPdf`'s CONVENTION, READ ONCE ──
@@ -190,6 +193,9 @@ export function TakeoffPlanViewer({
   duplicateWallsByPage = {},
   sheetLabelByPage = {},
   initialPage = 1,
+  fill = false,
+  panelOpen = true,
+  readOnly = false,
 }: {
   jobId: string;
   planId: string;
@@ -208,6 +214,42 @@ export function TakeoffPlanViewer({
    */
   /** The sheet to open on. 1 unless a caller knows better — see the state. */
   initialPage?: number;
+  /**
+   * ── FILL THE HOST, RATHER THAN BE AS TALL AS THE CONTENT ──
+   *
+   * False for the takeoff tab, which is every caller that existed before the
+   * full-screen workspace: inside the app shell this component is one section
+   * of a scrolling page, so its height has to come from its content.
+   *
+   * True for a host that has already decided the height — the workspace, where
+   * the whole point is that the drawing gets the viewport. Without it the
+   * frame's height is circular: the box sizes to the canvas and the canvas is
+   * sized from the box, so it settles on the `min-h-[24rem]` floor. That is the
+   * failure the comment above the frame already describes from the other
+   * direction — "a short frame makes a small sheet, so the width beside it went
+   * empty" — measured here at 1440px as a plan at 18% with half the viewport
+   * empty under it.
+   *
+   * It changes three class strings and nothing else. FIT already fits BOTH
+   * dimensions (`fitZoom`), so a frame with a real height is all it needs.
+   */
+  fill?: boolean;
+  /**
+   * Whether the found-walls panel is shown. True for every caller that is not
+   * the workspace, where it is a rail the reviewer opens and closes and the
+   * canvas takes the space it gives up.
+   */
+  panelOpen?: boolean;
+  /**
+   * No tools and no actions — a phone, where the screen is for LOOKING at a
+   * takeoff somebody else made.
+   *
+   * The toolbar's controls all place something on the drawing by clicking it,
+   * and a 390px screen cannot be clicked accurately enough to trace a wall. An
+   * estimator on a phone is checking a number, not measuring; offering the
+   * tools there is offering a way to put a wrong line on a real takeoff.
+   */
+  readOnly?: boolean;
   printedScaleByPage: PrintedScaleByPage;
   /**
    * Page numbers whose page carries NO TEXT LAYER — that is, scans.
@@ -527,8 +569,9 @@ export function TakeoffPlanViewer({
    *  Falls back to the old default until the frame has been measured, so the
    *  first paint is never a divide by zero. */
   const zoomFactor = useMemo(() => {
-    if (zoom !== FIT) return zoom;
+    if (zoom !== FIT && zoom !== FIT_WIDTH) return zoom;
     if (!pageSize || frameWidth === 0) return 1;
+    if (zoom === FIT_WIDTH) return fitWidthZoom({ width: frameWidth }, pageSize, BASE_SCALE);
     // Decided in `fitZoom`, which is pure and tested — see its header for why
     // this fits BOTH dimensions and why that took a second attempt.
     return fitZoom({ width: frameWidth, height: frameHeight }, pageSize, BASE_SCALE);
@@ -1377,8 +1420,16 @@ export function TakeoffPlanViewer({
   const scaleReading = calibration ? readScale(calibration, sheet?.pageWidthPt ?? null) : null;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className={`flex flex-col gap-3${fill ? " h-full min-h-0" : ""}`}>
       {/* ── Toolbar ───────────────────────────────────────────────── */}
+      {/* NOT RENDERED in read-only, rather than each control disabled. A row of
+          greyed tools is an invitation that does not work; on a phone the row
+          is also most of the screen, and the screen is the point.
+          NOT `hidden={readOnly}` either, which is how this was written first:
+          the attribute's `display: none` comes from the UA stylesheet and
+          Tailwind's own `flex` class beats it, so the row stayed on screen and
+          the phone test caught it. */}
+      {!readOnly && (
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line-card bg-surface-card p-2">
         <div className="flex items-center gap-1">
           {TOOLS.map((entry) => {
@@ -1443,6 +1494,23 @@ export function TakeoffPlanViewer({
             }`}
           >
             Fit
+          </button>
+          {/* ── AND THE WIDTH-ONLY FIT ──
+              `Fit` shows the whole sheet; this fills the width and lets the
+              height scroll, which is what a tall sheet wants. Two buttons
+              rather than one that cycles: a control that changes meaning when
+              you press it cannot be aimed at. */}
+          <button
+            type="button"
+            onClick={() => setZoom(FIT_WIDTH)}
+            className={
+              zoom === FIT_WIDTH
+                ? "rounded-md border border-brand px-2 py-1 text-xs text-brand"
+                : "rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-surface"
+            }
+            data-takeoff="fit-width"
+          >
+            Fit width
           </button>
         </div>
 
@@ -1651,6 +1719,7 @@ export function TakeoffPlanViewer({
           )}
         </span>
       </div>
+      )}
 
       {findError && (
         <p className="mt-2 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-tag-amber-ink">
@@ -1691,8 +1760,23 @@ export function TakeoffPlanViewer({
           the only thing that can check it. So on a wide screen they sit side by
           side and the drawing takes what is left, which is most of it. Narrow
           screens keep the stack, where a column each would make both unusable. */}
-      <div className="flex flex-col gap-3 xl:flex-row-reverse xl:items-start">
-      {found !== null && (
+      <div
+        className={`flex gap-3 xl:flex-row-reverse${
+          fill
+            ? // CANVAS FIRST AT EVERY WIDTH, which is the host's whole promise.
+              // Below xl this is a COLUMN and the panel is first in the DOM, so
+              // without the reverse the quantities sit above the drawing and
+              // take the top half of a tablet — measured, and the reason the
+              // spec asserts the canvas's box rather than its classes.
+              // `xl:flex-row-reverse` is on the base string; this must NOT
+              // restate a flex-direction for xl or it wins and the panel
+              // stacks under a 5%-tall drawing — measured at 1440px, and the
+              // reason test 11 now runs with the panel OPEN as well as closed.
+              " min-h-0 flex-1 flex-col-reverse xl:items-stretch"
+            : " flex-col xl:items-start"
+        }`}
+      >
+      {found !== null && panelOpen && (
         <div
           className="rounded-md border border-line-card bg-surface p-3 xl:w-[23rem] xl:shrink-0 xl:overflow-auto xl:max-h-[calc(var(--shell-port)-11rem)]"
           data-takeoff="found-walls"
@@ -1966,12 +2050,28 @@ export function TakeoffPlanViewer({
           code shaped like a safeguard is worse than none. */}
       <div
         ref={frameRef}
-        className="relative max-h-[calc(var(--shell-port)-22rem)] min-h-[24rem] overflow-auto rounded-lg border border-line-card bg-rail xl:flex-1 xl:max-h-[calc(var(--shell-port)-11rem)]"
+        className={
+          fill
+            ? // The host has decided the height; take all of it. No max-h and
+              // no min-h, because both would reintroduce the short frame.
+              "relative min-h-0 flex-1 overflow-auto rounded-lg border border-line-card bg-rail"
+            : "relative max-h-[calc(var(--shell-port)-22rem)] min-h-[24rem] overflow-auto rounded-lg border border-line-card bg-rail xl:flex-1 xl:max-h-[calc(var(--shell-port)-11rem)]"
+        }
         data-testid="takeoff-plan-port"
       >
         {loadError ? (
           <p className="p-6 text-sm text-tag-rose-ink">{loadError}</p>
         ) : (
+          // ── CENTRED IN THE CANVAS, AND STILL SCROLLABLE WHEN ZOOMED ──
+          //
+          // `min-h-full min-w-full` with centring, rather than `place-content-
+          // center` on the scroll container itself: that centres too, and then
+          // clips the top-left of anything bigger than the box, so a sheet
+          // zoomed in to measure a corner loses the corner. Here the wrapper is
+          // at least the size of the frame — so a small sheet sits in the
+          // middle — and grows past it when the sheet does, which scrolls
+          // normally in both directions.
+          <div className={fill ? "flex min-h-full min-w-full items-center justify-center" : ""}>
           <div className="relative w-fit">
             <canvas ref={canvasRef} className="block" />
             <svg
@@ -2029,6 +2129,7 @@ export function TakeoffPlanViewer({
                 />
               )}
             </svg>
+          </div>
           </div>
         )}
         {isRendering && !loadError && (

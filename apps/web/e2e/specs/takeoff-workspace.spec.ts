@@ -30,6 +30,8 @@ const FIXTURES = path.resolve(__dirname, "../../lib/takeoff/fixtures/plans");
 /** Desktop first, then the tablet width where the rails become drawers. */
 const DESKTOP = { width: 1440, height: 900 };
 const TABLET = { width: 834, height: 1112 };
+const NARROW = { width: 1280, height: 900 };
+const PHONE = { width: 390, height: 844 };
 
 test.describe("the full-screen takeoff workspace", () => {
   const GC_NAME = "ZZ-E2E Workspace GC";
@@ -93,6 +95,44 @@ test.describe("the full-screen takeoff workspace", () => {
     await form.locator('input[name="pageLabel"]').fill("sheet 1");
     await form.getByRole("button", { name: "Set the scale" }).click();
     await expect(page.getByText(/^Scale set/)).toBeVisible({ timeout: 30_000 });
+  }
+
+  /** The scrolling box the sheet sits in, and the sheet's own rendered box. */
+  const canvasBox = async () => {
+    const box = await port().boundingBox();
+    if (box === null) throw new Error("the canvas port has no box");
+    return box;
+  };
+  const sheetBox = async () => {
+    const box = await port().locator("canvas").boundingBox();
+    if (box === null) throw new Error("the sheet has no box");
+    return box;
+  };
+
+  /**
+   * Back on the WORKSPACE, with its sheet rendered.
+   *
+   * Written after the layout assertions below measured the takeoff TAB for a
+   * whole run and reported 384px — the tab's own `min-h-[24rem]` — as though
+   * the workspace were broken. The chain of ancestors gave it away: a SECTION
+   * and a grid, neither of which the workspace has. A layout assertion has to
+   * say WHICH layout it is asserting.
+   */
+  async function onWorkspace(jobId: string): Promise<void> {
+    await page.goto(`/takeoff/${jobId}`);
+    await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
+    await expect
+      .poll(async () => port().locator("canvas").evaluate((n) => (n as HTMLCanvasElement).width), {
+        timeout: 60_000,
+        message: "the workspace should render the sheet to a canvas",
+      })
+      .toBeGreaterThan(0);
+  }
+
+  /** Click Fit and wait for the sheet to stop resizing under it. */
+  async function fitAndSettle(): Promise<void> {
+    await page.locator('[data-takeoff="fit"]').click();
+    await settledOverlayBox();
   }
 
   async function findTheWalls(label: string): Promise<void> {
@@ -229,6 +269,192 @@ test.describe("the full-screen takeoff workspace", () => {
     await expectHealthy(page, "takeoff tab after the workspace", { monitor });
     // The scale the workspace's job was given is on the tab, off the same row.
     await expect(page.getByText(/Scale set|1\/4" = 1'-0"|ft across/).first()).toBeVisible({ timeout: 60_000 });
+  });
+
+  test("10. AT FIT THE SHEET FILLS THE CANVAS — the whole point, measured", async () => {
+    // ── WHY THIS IS A MEASUREMENT AND NOT A CLASS CHECK ──
+    //
+    // The first build of this workspace passed every structural test it had
+    // and rendered the plan at 18% in a 384px box with half the viewport
+    // empty under it. No assertion about a class name can see that; only the
+    // boxes can. `fitZoom` fits BOTH dimensions, so at Fit the sheet should
+    // touch the canvas on its long axis and sit fully inside it on the other.
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobTwo);
+    await fitAndSettle();
+    const canvas = await canvasBox();
+    const sheet = await sheetBox();
+
+    const widthFill = sheet.width / canvas.width;
+    const heightFill = sheet.height / canvas.height;
+    expect(
+      Math.max(widthFill, heightFill),
+      `at Fit the sheet fills ${(widthFill * 100).toFixed(0)}% of the canvas across and ` +
+        `${(heightFill * 100).toFixed(0)}% down — it should touch one of them`,
+    ).toBeGreaterThan(0.9);
+    // And fully visible in the other: inside the canvas with no overflow.
+    expect(widthFill, "the sheet is wider than the canvas at Fit").toBeLessThanOrEqual(1.02);
+    expect(heightFill, "the sheet is taller than the canvas at Fit").toBeLessThanOrEqual(1.02);
+    expect(sheet.x).toBeGreaterThanOrEqual(canvas.x - 2);
+    expect(sheet.y).toBeGreaterThanOrEqual(canvas.y - 2);
+  });
+
+  test("11. the canvas owns the height at 1440 AND at 1280", async () => {
+    // ── WITH THE QUANTITIES RAIL OPEN *AND* CLOSED ──
+    //
+    // Closed only is not enough, and this test passed for a run while the
+    // 1440px screenshot showed the drawing at 5% with the panel stacked under
+    // it. The rail changes the direction of the row it sits in, so it changes
+    // which dimension the canvas gives up — the open case is the one that
+    // breaks.
+    for (const size of [DESKTOP, NARROW]) {
+      for (const railOpen of [false, true]) {
+        await page.setViewportSize(size);
+        await onWorkspace(jobTwo);
+        const rail = page.locator('[data-takeoff="toggle-panel"]');
+        if ((await rail.getAttribute("aria-expanded")) !== String(railOpen)) {
+          await rail.click();
+          await page.waitForTimeout(250);
+        }
+        await fitAndSettle();
+        const canvas = await canvasBox();
+        expect(
+          canvas.height / size.height,
+          `at ${size.width}px with the rail ${railOpen ? "OPEN" : "closed"} the canvas is ` +
+            `${canvas.height.toFixed(0)}px of a ${size.height}px viewport`,
+        ).toBeGreaterThan(0.85);
+      }
+    }
+    await page.setViewportSize(DESKTOP);
+  });
+
+  test("12. at 834 nothing overlaps the canvas and nothing is clipped", async () => {
+    await page.setViewportSize(TABLET);
+    await onWorkspace(jobTwo);
+    // Drawers CLOSED is the state being asserted: a rail that reserves width
+    // or sits over the drawing is the defect this test exists for. The first
+    // build used `absolute` inside the row, which still took its space, and
+    // the canvas was pushed off its own page and clipped at both edges.
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(250);
+    const canvas = await canvasBox();
+
+    // NOTHING OVER IT. Every fixed/absolute element is checked for an
+    // intersection with the canvas rather than for a class name.
+    const overlapping = await page.evaluate(() => {
+      const port = document.querySelector('[data-testid="takeoff-plan-port"]');
+      if (port === null) return ["no port"];
+      const box = port.getBoundingClientRect();
+      const hits: string[] = [];
+      for (const node of Array.from(document.body.querySelectorAll("*"))) {
+        if (node === port || port.contains(node) || node.contains(port)) continue;
+        const style = window.getComputedStyle(node);
+        if (style.position !== "fixed" && style.position !== "absolute") continue;
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") continue;
+        const rect = node.getBoundingClientRect();
+        if (rect.width < 4 || rect.height < 4) continue;
+        const overlap =
+          Math.max(0, Math.min(rect.right, box.right) - Math.max(rect.left, box.left)) *
+          Math.max(0, Math.min(rect.bottom, box.bottom) - Math.max(rect.top, box.top));
+        if (overlap > 400) hits.push(`${node.tagName}.${(node as HTMLElement).dataset.takeoff ?? node.className}`);
+      }
+      return hits;
+    });
+    expect(overlapping, "something is layered over the canvas with the drawers closed").toEqual([]);
+
+    // AND NOTHING CLIPPED SIDEWAYS. A horizontal scrollbar on the document is
+    // how the broken version showed itself.
+    const clipped = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(
+      clipped.scrollWidth,
+      `the page scrolls sideways: ${clipped.scrollWidth}px of content in ${clipped.clientWidth}px`,
+    ).toBeLessThanOrEqual(clipped.clientWidth + 1);
+    await page.setViewportSize(DESKTOP);
+  });
+
+  test("13. zoom and pan work, and the overlay stays on the drawing", async () => {
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobTwo);
+    await fitAndSettle();
+
+    // THE OVERLAY IS CHECKED AGAINST THE SHEET, not against itself. If the
+    // two drift apart a wall is drawn where no wall is, which is the worst
+    // thing this screen can do — it looks exactly like a correct takeoff.
+    const before = { sheet: await sheetBox(), overlay: await overlay().boundingBox() };
+    expect(before.overlay).not.toBeNull();
+    expect(Math.abs((before.overlay?.x ?? 0) - before.sheet.x), "overlay is not on the sheet").toBeLessThan(2);
+    expect(Math.abs((before.overlay?.y ?? 0) - before.sheet.y), "overlay is not on the sheet").toBeLessThan(2);
+
+    const zoomText = () => page.locator('[data-takeoff="zoom"]').innerText();
+    const atFit = await zoomText();
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    await settledOverlayBox();
+    expect(await zoomText(), "zooming in did not change the zoom").not.toBe(atFit);
+
+    const after = { sheet: await sheetBox(), overlay: await overlay().boundingBox() };
+    expect(after.sheet.width, "the sheet did not get bigger").toBeGreaterThan(before.sheet.width);
+    // STILL on the drawing, at the new size.
+    expect(Math.abs((after.overlay?.x ?? 0) - after.sheet.x), "the overlay drifted off after zooming").toBeLessThan(2);
+    expect(Math.abs((after.overlay?.y ?? 0) - after.sheet.y), "the overlay drifted off after zooming").toBeLessThan(2);
+    expect(
+      Math.abs((after.overlay?.width ?? 0) - after.sheet.width),
+      "the overlay did not grow with the sheet",
+    ).toBeLessThan(2);
+
+    // PAN: the port scrolls once the sheet is bigger than it.
+    const scrolled = await port().evaluate((node) => {
+      node.scrollLeft = 80;
+      node.scrollTop = 60;
+      return { left: node.scrollLeft, top: node.scrollTop };
+    });
+    expect(scrolled.left + scrolled.top, "the canvas does not pan when the sheet overflows it").toBeGreaterThan(0);
+
+    const zoomedIn = await zoomText();
+    await page.getByRole("button", { name: "Zoom out" }).click();
+    await settledOverlayBox();
+    expect(await zoomText(), "zooming out did not change the zoom").not.toBe(zoomedIn);
+  });
+
+  test("13b. the four widths, captured", async () => {
+    // The screenshots the brief asks for, taken AFTER the layout assertions
+    // above rather than before: a picture of a layout nobody measured is how
+    // the first build of this screen looked fine and was 18%.
+    await page.setViewportSize(NARROW);
+    await onWorkspace(jobTwo);
+    await fitAndSettle();
+    await page.screenshot({ path: path.join(SHOTS, "workspace-1280-s15.png") });
+
+    await page.setViewportSize(TABLET);
+    await onWorkspace(jobTwo);
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(250);
+    await fitAndSettle();
+    await page.screenshot({ path: path.join(SHOTS, "workspace-834-drawers-closed.png") });
+
+    // And with the sheet drawer OPEN, over the backdrop, reserving no width.
+    await page.locator('[data-takeoff="toggle-sheets"]').click();
+    await expect(page.locator('[data-takeoff="sheet-drawer"]')).toBeVisible();
+    await expect(page.locator('[data-takeoff="drawer-backdrop"]')).toBeVisible();
+    await page.screenshot({ path: path.join(SHOTS, "workspace-834-sheet-drawer.png") });
+
+    // Escape closes it, which is the drawer's own promise.
+    await page.keyboard.press("Escape");
+    await expect(page.locator('[data-takeoff="sheet-drawer"]')).toHaveCount(0);
+    await page.setViewportSize(DESKTOP);
+  });
+
+  test("14. the phone gets a read-only canvas", async () => {
+    await page.setViewportSize(PHONE);
+    await onWorkspace(jobTwo);
+    await expect(page.locator('[data-takeoff="read-only"]'), "no read-only badge on a phone").toBeVisible();
+    // The tools place things on the drawing by clicking it; 390px cannot be
+    // clicked accurately enough to trace a wall.
+    await expect(page.getByRole("button", { name: "Set scale", exact: true })).toBeHidden();
+    await page.screenshot({ path: path.join(SHOTS, "workspace-390-phone.png"), fullPage: false });
+    await page.setViewportSize(DESKTOP);
   });
 
   test("9. nothing crashed anywhere in the workspace", async () => {

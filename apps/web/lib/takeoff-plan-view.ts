@@ -460,6 +460,28 @@ export function fitZoom(
   return Math.max(0.05, Math.min(forWidth, forHeight));
 }
 
+/**
+ * ── THE SAME FIT, ACROSS THE WIDTH ONLY ──
+ *
+ * `fitZoom` above fits BOTH dimensions, which is what somebody opening a sheet
+ * wants: the whole drawing, centred, whatever its orientation. This one fills
+ * the width and lets the height overflow, which is what somebody READING a
+ * tall sheet wants — a schedule, a set of sections, anything where the detail
+ * is wide and the scroll is natural.
+ *
+ * A separate function rather than a mode flag on `fitZoom`, because its tests
+ * pin the min() that makes it a box fit and a flag would make them conditional.
+ */
+export function fitWidthZoom(
+  frame: { width: number },
+  page: { widthPt: number },
+  baseScale: number,
+  inset = 24,
+): number {
+  if (page.widthPt <= 0 || baseScale <= 0 || frame.width <= 0) return 1;
+  return Math.max(0.05, (frame.width - inset) / (page.widthPt * baseScale));
+}
+
 /** What a sheet says about why it has no scale, keyed by page number. */
 export type ScaleDeclineByPage = Record<number, string>;
 
