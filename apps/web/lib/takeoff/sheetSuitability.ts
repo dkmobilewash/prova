@@ -230,17 +230,31 @@ export function multiScaleCaution(printedScales: readonly string[], usedScaleNam
 export function viewsMeasuredCaution(
   primary: { name: string; scaleName: string | null } | null,
   others: readonly { name: string; scaleName: string | null; lengthFeet: number }[],
+  excluded: readonly { name: string; reason: string }[] = [],
 ): string {
-  if (primary === null || others.length === 0) return "";
-  const list = others
+  // AN EXCLUDED DRAWING IS ENOUGH ON ITS OWN to need a sentence. A sheet with
+  // one plan and one NTS detail has no second MEASURED view, and the detail
+  // still has to be named — which is the case the first version silently
+  // skipped, because it returned early on `others.length === 0`.
+  if (primary === null || (others.length === 0 && excluded.length === 0)) return "";
+  const measured = others
     .map((one) => `${one.name} at ${one.scaleName ?? "an unstated scale"} measures ${Math.round(one.lengthFeet)} ft`)
     .join("; ");
-  return (
+  const left = excluded.map((one) => `${one.name} — ${one.reason}`).join("; ");
+
+  const head =
     `This sheet carries more than one drawing. The quantities here are ${primary.name} at ` +
-    `${primary.scaleName ?? "an unstated scale"}. Also on the sheet: ${list} — measured at its own scale and NOT included, ` +
-    `because an enlarged view is usually the same construction drawn larger. Add it only if it is a ` +
-    `different part of the building.`
-  );
+    `${primary.scaleName ?? "an unstated scale"}.`;
+  const alsoMeasured =
+    measured === ""
+      ? ""
+      : ` Also on the sheet: ${measured} — measured at its own scale and NOT included, because an ` +
+        `enlarged view is usually the same construction drawn larger. Add it only if it is a different ` +
+        `part of the building.`;
+  // NAMED EVEN THOUGH THERE IS NO FIGURE, which is the point of it: a drawing
+  // with no scale has nothing to report EXCEPT that it was left out.
+  const alsoLeft = left === "" ? "" : ` Left out of the quantities: ${left}.`;
+  return head + alsoMeasured + alsoLeft;
 }
 
 /**

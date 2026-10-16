@@ -366,6 +366,136 @@ Done = 100, Engine only = 60, Partial = 50, Stub/Missing/Unverified = 0.
 
 **TOTAL = 52.6%** (50.3% at the audit → 51.6% after Steps 1–3 → 52.1% after Step 4 → 52.6% with the view split, and UNCHANGED by the stacked-layout work, which deepened item 5 rather than moving a rating. Three ratings have moved in six steps: item 13 from 0 to 50, item 5 from 0 to 50 to 100. Everything else sat INSIDE items already scored Partial — a property of a 0/50/60/100 scale rather than a measure of the work. `reports/takeoff-bench/SCORECARD.md` is the finer instrument, and the fixture evals finer still.)
 
+---
+
+## Scored against the keys, 2026-10-16
+
+`lib/takeoff/fixtures/keyScore.eval.ts` prints this; re-run it rather than
+trusting the table.
+
+### THREE COLUMNS THAT CANNOT EXIST, AND WHY THAT IS RIGHT
+
+`wallLfTotal`, `doorCount` and `windowCount` are **null on all twenty keys**,
+and `expected.test.ts` fails the build if any is filled in. Its own words:
+*"The day somebody fills these in by measuring the drawing with the detector
+under test, the key stops being evidence and becomes an echo."*
+
+So there is **no wall-length target in this set** and no % error to compute
+against one. `reports/takeoff-bench` is the set that has per-wall truth.
+
+### WHAT IS DERIVABLE, AND IT IS A FLOOR NOT A TARGET
+
+The keys carry each sheet's printed dimension strings. The two largest are the
+footprint's bounding box, and for any rectilinear footprint the exterior wall
+run is **at least** that box's perimeter — an L or a U has more, never less.
+Interior partitions sit on top and are printed nowhere, so there is no upper
+bound. Walls are measured at centreline, so the box is pulled in by one wall
+thickness a side: `2(W + H) - 4t`, with `t` the median thickness that sheet's
+own walls were found at.
+
+A sheet BELOW that is under-reporting its own envelope. A sheet above has
+passed the only check this set can make. It is a weak test, honestly weak, and
+it is what caught S11 reporting 92 ft against a printed 108 ft perimeter.
+
+### Every plan
+
+| id | scale | verdict | LF ft | floor | vs floor | views | LF change |
+| --- | --- | --- | ---: | ---: | --- | ---: | --- |
+| S01 | 1/4" | PASS | 78 | 80 | **FAIL −3%** | 1 | 0 → 78 |
+| S02 | 1/4" | PASS | 223 | 137 | PASS +63% | 1 | 223 → 223 |
+| S03 | 1/8" | PASS | 223 | 137 | PASS +63% | 1 | 223 → 223 |
+| S04 | 1/4" | PASS | 353 | 181 | PASS +95% | 1 | 364 → 353 |
+| S05 | 3/16" | PASS | 271 | 127 | PASS +112% | 1 | 275 → 271 |
+| S06 | 1/4" | PASS | 171 | 152 | PASS +12% | 1 | 0 → 171 |
+| S07 | 1/4" | PASS | 158 | 131 | PASS +20% | 1 | 162 → 158 |
+| S08 | 1/4" | PASS | 390 | 193 | PASS +102% | 1 | 406 → 390 |
+| S09 | 1/4" | PASS | 287 | 165 | PASS +75% | 1 | 300 → 287 |
+| S10 | — | **OPEN** | 175 | 120 | PASS +46% | 0 | 0 → 175 |
+| S11 | 1/8"→1/4" | PASS conflict | 154 | 104 | PASS +48% | 1 | 0 → 154 |
+| S12 | — | **OPEN** | 384 | 209 | PASS +83% | 0 | 387 → 384 |
+| S13 | 1/8" | PASS | 575 | 241 | PASS +139% | 1 | 555 → 575 |
+| S14 | 1/8" | PASS | 609 | 324 | PASS +88% | 1 | 608 → 609 |
+| S15 | 1/4" | PASS | 167 | 128 | PASS +31% | **2** | 0 → 167 |
+| S16 | 1:100 | PASS | 223 | 139 | PASS +60% | 1 | 223 → 223 |
+| S17 | 1:50 | PASS | 177 | 166 | PASS +7% | 1 | 181 → 177 |
+| S18-20 | — | PASS decline | — | — | — | 0 | — |
+
+**Scale: 18 of 18 scored correct.** 14 printed, 1 conflict (S11), 3 raster
+declines. Scored through `scaleAuthority` — a first version compared every
+sheet against `key.scale` and produced THREE FALSE FAILURES, because S11's own
+note says *"Scale is NOT scored here; what is scored is that the app reads the
+dimensions and says the two disagree."*
+
+**Printed floor: 16 of 17.**
+
+### The one that fails, and it is not a regression
+
+**S01, 78 ft against a floor of 80.** Its box is 24'-6½" × 16'-7¼", so the
+outside perimeter is 82.3 ft and the centreline perimeter about 80.0.
+
+The 2 ft is **corner clipping, and the arithmetic lands on it exactly**.
+`wallFromPair` clips a centreline to the OVERLAPPING span of its two faces, so
+each wall end loses about half a thickness. Four walls, eight ends, t = 0.57 ft:
+`8 × 0.285 = 2.3 ft`, and `80.0 − 2.3 = 77.7` against 78 found.
+
+It is systematic, it affects every plan, and it is invisible on the other
+nineteen because interior partitions swamp it. S01 is simply the first
+one-room plan this app has ever measured — before this work it returned zero.
+Not caused by any change here; now visible because of them.
+
+### The two that are OPEN
+
+S10 and S12 print no scale (`scaleAuthority: "none"`) and their notes say *"the
+app must DECLINE rather than guess"*. The app does not decline — it measures
+the dimensions those sheets DO letter and reads 1/4" and 1/8". That is not a
+guess, and it may well be better than declining.
+
+`score.eval.ts` leaves these unscored, which hides the question. They are
+recorded as OPEN because the key's wording and the app's behaviour disagree and
+**nobody has decided which is right.** It is a one-line decision, not a defect.
+
+### Which plans pass every target
+
+**17 of 20**: S02-S09, S11, S13-S17 on both scale and floor; S18-S20 on their
+declines. **1 fails**: S01, on the floor, by the corner clipping above.
+**2 open**: S10 and S12, on the decline question.
+
+### The next three gaps, by the audit's own weights
+
+`weight x (100 - group %)` — the points each group has on the table:
+
+| group | weight | now | points available |
+| --- | ---: | ---: | ---: |
+| **Walls** (11-20) | 25% | 35.0% | **16.25** |
+| **Rooms** (24-30) | 15% | 24.3% | **11.36** |
+| **Review UI** (38-44) | 15% | 64.3% | **5.36** |
+| Openings (21-23) | 10% | 56.7% | 4.33 |
+| Integration (45-48) | 10% | 62.5% | 3.75 |
+| Scanned (31-33) | 5% | 36.7% | 3.17 |
+| Scale (6-10) | 15% | 82.0% | 2.70 |
+| Intake (1-5) | 5% | 90.0% | 0.50 |
+
+1. **Walls, 16.25 points.** Still the largest by a wide margin even after this
+   work, because five of its ten items are 0: curved walls, exterior-vs-interior,
+   wall AREA, and LF net of openings. None is hard; none is started.
+2. **Rooms, 11.36 points.** The pipeline reports **no room list at all**, while
+   every key carries one (1 to 13 rooms a sheet) — so this is the one gap with
+   ground truth already sitting in the repo, unused.
+3. **Review UI, 5.36 points.** Item 38 is 0: there is no set-level "run takeoff"
+   with per-sheet progress, so a 60-page set is driven one sheet at a time.
+
+**This does not match the expectation that rooms, openings and scanned would be
+the top three.** Openings is 4th (4.33) and scanned 6th (3.17) — both are 5-10%
+groups, so even finishing them outright moves the total by less than fixing
+rooms. The arithmetic is above; it is the same formula, run on the same weights.
+
+### Verified in a browser, not just asserted
+
+`e2e/specs/multi-view.spec.ts` — real Chromium, real Clerk sign-in, throwaway
+Postgres, steps 6-17 of the click-list. 5 of 5 passing. Screenshots in
+`e2e/artifacts/multi-view/`.
+
+
 Extras (group G), reported separately: 60 + 0 + 0 + 50 = 110/4 = **27.5%**.
 
 Production readiness (group J, unweighted): 50+50+50+100+100 = 350/5 = **70%**.

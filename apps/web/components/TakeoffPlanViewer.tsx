@@ -59,11 +59,13 @@ import {
 } from "@/lib/takeoff/sheetSuitability";
 import { printedScalesOnPage } from "@/lib/takeoff/printedScales";
 import {
+  excludedViews,
   primaryView,
   sheetViews,
   viewRegions,
   viewsInRegions,
   wallsPerView,
+  type ExcludedView,
   type ViewWalls,
 } from "@/lib/takeoff/sheetViews";
 import { tagSentence } from "@/lib/takeoff/wallTags";
@@ -349,6 +351,9 @@ export function TakeoffPlanViewer({
   /** The views NOT quoted, per page — measured, each at its own scale, and
    *  reported rather than added. See `primaryView`. */
   const [otherViewsByPage, setOtherViewsByPage] = useState<Record<number, ViewWalls[]>>({});
+  /** The views that could not be measured at all, per page, with the reason.
+   *  Named in the caution rather than dropped — nothing is excluded silently. */
+  const [excludedByPage, setExcludedByPage] = useState<Record<number, ExcludedView[]>>({});
   /** The view the quantities on screen ARE, so the sentence can name it. */
   const [primaryViewShown, setPrimaryViewShown] = useState<{ name: string; scaleName: string | null } | null>(null);
   const [checkError, setCheckError] = useState<string | null>(null);
@@ -365,14 +370,20 @@ export function TakeoffPlanViewer({
   // `multiScaleCaution` is what shows until `onFindWalls` has run, and
   // `viewsMeasuredCaution` replaces it once there is a result to report.
   const measuredViews = otherViewsByPage[pageNumber];
+  const leftOutViews = excludedByPage[pageNumber];
   const viewsSentence =
-    measuredViews === undefined || measuredViews.length === 0
+    (measuredViews === undefined || measuredViews.length === 0) &&
+    (leftOutViews === undefined || leftOutViews.length === 0)
       ? undefined
-      : viewsMeasuredCaution(primaryViewShown, measuredViews.map((one) => ({
-          name: one.view.name,
-          scaleName: one.view.scaleName,
-          lengthFeet: one.lengthFeet,
-        })));
+      : viewsMeasuredCaution(
+          primaryViewShown,
+          (measuredViews ?? []).map((one) => ({
+            name: one.view.name,
+            scaleName: one.view.scaleName,
+            lengthFeet: one.lengthFeet,
+          })),
+          leftOutViews ?? [],
+        );
   const sheetCaution = cautionToShow(
     duplicateWallsByPage[pageNumber],
     readCaution[pageNumber],
@@ -1161,6 +1172,7 @@ export function TakeoffPlanViewer({
       );
       let found: FoundOnSheet;
       let otherViews: ViewWalls[] = [];
+      let leftOut: ExcludedView[] = [];
       let primaryShown: { name: string; scaleName: string | null } | null = null;
       if (views.length >= 2) {
         const measured = wallsPerView({
@@ -1174,6 +1186,7 @@ export function TakeoffPlanViewer({
         });
         const picked = primaryView(measured);
         otherViews = picked.others;
+        leftOut = excludedViews(views);
         primaryShown = picked.primary
           ? { name: picked.primary.view.name, scaleName: picked.primary.view.scaleName }
           : null;
@@ -1191,6 +1204,7 @@ export function TakeoffPlanViewer({
         });
       }
       setOtherViewsByPage((prev) => ({ ...prev, [pageNumber]: otherViews }));
+      setExcludedByPage((prev) => ({ ...prev, [pageNumber]: leftOut }));
       setPrimaryViewShown(primaryShown);
       const walls = found.walls;
       const regroup = found.regroup;

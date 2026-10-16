@@ -521,6 +521,34 @@ export function wallsPerView(input: {
   });
 }
 
+/** A drawing that was NOT measured, and the reason in words. */
+export type ExcludedView = { name: string; reason: string };
+
+/**
+ * The drawings left out of the quantities, each with why.
+ *
+ * ── NOTHING IS EXCLUDED SILENTLY. DIEGO'S RULE, 2026-10-16 ──
+ *
+ * `wallsPerView` drops a view with no readable scale, which is right — there
+ * is no honest way to measure NTS. It used to drop it INVISIBLY, so a sheet
+ * with three drawings reported two and said nothing about the third. An
+ * estimator cannot check an omission nobody mentioned, and "the app quietly
+ * decided for me" is the failure `sheetSuitability.ts` opens by refusing.
+ *
+ * So every excluded view comes back named, with the reason, for the caution to
+ * print. The reason is specific — "not to scale" rather than "skipped" —
+ * because an estimator can act on the first and can only worry about the
+ * second.
+ */
+export function excludedViews(views: readonly SheetView[]): ExcludedView[] {
+  return views
+    .filter((view) => view.feetPerInch === null)
+    .map((view) => ({
+      name: view.name,
+      reason: "not to scale, not measured",
+    }));
+}
+
 /**
  * The view a takeoff should QUOTE, and the ones it should only mention.
  *

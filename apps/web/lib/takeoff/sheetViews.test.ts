@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  excludedViews,
   wallsPerView,
   sheetViews,
   withDimensionScale,
@@ -327,5 +328,36 @@ describe("what gets measured", () => {
     });
     expect(measured).toHaveLength(1);
     expect(measured[0].lengthFeet).toBeGreaterThan(0);
+  });
+});
+
+describe("which drawings were left out", () => {
+  const view = (name: string, feetPerInch: number | null): SheetView => ({
+    name,
+    scaleName: feetPerInch === null ? null : '1/4" = 1\'-0"',
+    feetPerInch,
+    captionX: 0.1,
+    captionY: 0.5,
+    from: 0,
+    to: 1,
+    fromY: 0,
+    toY: 1,
+  });
+
+  it("names the ones with no readable scale, and only those", () => {
+    const left = excludedViews([view("FLOOR PLAN", 4), view("HEAD OF WALL DETAIL", null)]);
+    expect(left.map((o) => o.name)).toEqual(["HEAD OF WALL DETAIL"]);
+  });
+
+  it("GIVES A REASON AN ESTIMATOR CAN ACT ON, not just a flag", () => {
+    // "skipped" tells somebody to worry; "not to scale" tells them why and
+    // lets them decide whether it matters.
+    const left = excludedViews([view("HEAD OF WALL DETAIL", null)]);
+    expect(left[0].reason).toMatch(/not to scale/i);
+    expect(left[0].reason).toMatch(/not measured/i);
+  });
+
+  it("is empty when every drawing could be measured", () => {
+    expect(excludedViews([view("FLOOR PLAN", 4), view("ENLARGED BATH PLAN", 2)])).toEqual([]);
   });
 });

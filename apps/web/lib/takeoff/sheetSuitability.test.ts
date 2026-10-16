@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { cautionToShow, multiScaleCaution, sheetSuitability, duplicateWallsCaution } from "./sheetSuitability";
+import {
+  cautionToShow,
+  multiScaleCaution,
+  sheetSuitability,
+  duplicateWallsCaution,
+  viewsMeasuredCaution,
+} from "./sheetSuitability";
 
 /**
  * THE DEFECT THIS EXISTS FOR, IN NUMBERS.
@@ -230,5 +236,49 @@ describe("more than one scale on a sheet", () => {
     expect(cautionToShow("from the proposal", "from the drawing", "")).toBe("from the proposal");
     expect(cautionToShow(undefined, "from the drawing", undefined)).toBe("from the drawing");
     expect(cautionToShow(undefined, undefined, undefined)).toBe("");
+  });
+});
+
+describe("nothing is excluded silently", () => {
+  const plan = { name: "ENLARGED RESTROOM PLAN", scaleName: '1/4" = 1\'-0"' };
+  const stair = { name: "ENLARGED STAIR PLAN", scaleName: '1/2" = 1\'-0"', lengthFeet: 352 };
+  const detail = { name: "HEAD OF WALL DETAIL", reason: "not to scale, not measured" };
+
+  it("NAMES AN EXCLUDED DRAWING AND SAYS WHY", () => {
+    // Diego's rule, 2026-10-16. A sheet with three drawings reported two and
+    // said nothing about the third, and an estimator cannot check an omission
+    // nobody mentioned.
+    const said = viewsMeasuredCaution(plan, [stair], [detail]);
+    expect(said).toContain("HEAD OF WALL DETAIL");
+    expect(said).toContain("not to scale, not measured");
+    expect(said).toContain("Left out of the quantities");
+  });
+
+  it("SPEAKS UP EVEN WHEN THE EXCLUDED ONE IS THE ONLY OTHER DRAWING", () => {
+    // The case the first version skipped: it returned early when there was no
+    // second MEASURED view, so a plan beside a single NTS detail said nothing
+    // at all. That is exactly the sheet the rule is for.
+    const said = viewsMeasuredCaution(plan, [], [detail]);
+    expect(said).not.toBe("");
+    expect(said).toContain("HEAD OF WALL DETAIL");
+    expect(said).toContain("not to scale");
+  });
+
+  it("still reports a measured view with its own figure", () => {
+    const said = viewsMeasuredCaution(plan, [stair], []);
+    expect(said).toContain("352 ft");
+    expect(said).toContain("NOT included");
+    expect(said).not.toContain("Left out of the quantities");
+  });
+
+  it("says nothing at all when there is one drawing and nothing left out", () => {
+    expect(viewsMeasuredCaution(plan, [], [])).toBe("");
+    expect(viewsMeasuredCaution(null, [stair], [detail])).toBe("");
+  });
+
+  it("lists EVERY excluded drawing, not just the first", () => {
+    const said = viewsMeasuredCaution(plan, [], [detail, { name: "JAMB DETAIL", reason: "not to scale, not measured" }]);
+    expect(said).toContain("HEAD OF WALL DETAIL");
+    expect(said).toContain("JAMB DETAIL");
   });
 });
