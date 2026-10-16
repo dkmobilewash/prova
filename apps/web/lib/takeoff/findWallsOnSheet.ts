@@ -14,6 +14,7 @@ import { templateFromSheets, withoutTemplate } from "./sheetTemplate";
 import { wallTypeTags, tagByRun } from "./wallTags";
 import { defaultWallTypeFromNotes } from "./wallNotes";
 import { scaleBarLabels, wallsNotTheScaleBar } from "./scaleBar";
+import { wallsNotDuplicateCoverage } from "./duplicateCoverage";
 import { wallGroups, type WallGroup } from "./wallGroups";
 import { withoutNonWallLayers, type LayerDrop } from "./layerNames";
 import type { MatchableWallType } from "./wallTypeMatch";
@@ -123,6 +124,11 @@ export type FoundOnSheet = {
    *  Reported rather than silent: a sheet whose grid was mistaken for walls
    *  and a sheet with no grid both drop zero, and only this tells them apart. */
   gridDropped: number;
+  /** Candidates removed for claiming footage another candidate already
+   *  claimed. Reported for the same reason as `gridDropped`: a sheet whose
+   *  dimension strings were sold as walls and a sheet with none both drop
+   *  zero, and only this tells them apart. */
+  duplicateDropped: number;
   everywhere: WallCandidate[];
   inBuilding: WallCandidate[];
   notLettering: WallCandidate[];
@@ -368,7 +374,19 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   // stub would drag an end somewhere no building is. See `joinCorners.ts` for
   // the half-thickness this recovers at every corner, and the generator's own
   // rule that it implements.
-  const walls = joinAtCorners(inBuilding, feetPerUnit);
+  // ── TWO WALLS CANNOT OCCUPY THE SAME FOOTAGE ──
+  //
+  // Last of the candidate filters, and after `wallsInTheBuilding` on purpose:
+  // the thing it removes is a SECOND claim on footage another candidate has
+  // already made, so every candidate that is going to survive must be present
+  // for the comparison to be right. Before the corner join, because that
+  // extends ends and would move the centrelines being compared.
+  //
+  // `duplicateCoverage.ts` has the measurements and the three discriminators
+  // that do NOT work, including two that were built and reverted.
+  const noDuplicates = wallsNotDuplicateCoverage(inBuilding, scheduleIn);
+
+  const walls = joinAtCorners(noDuplicates.kept, feetPerUnit);
 
   // ── WHAT THE DRAWING CALLS THESE, where it says so ──
   //
@@ -389,6 +407,7 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   return {
     inUnits,
     gridDropped,
+    duplicateDropped: noDuplicates.dropped,
     everywhere,
     inBuilding,
     notLettering,
