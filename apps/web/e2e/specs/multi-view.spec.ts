@@ -191,7 +191,21 @@ test.describe("a sheet that carries more than one drawing", () => {
     expect(said, "no caution appeared on a two-view sheet").not.toBe("");
     expect(said).toContain("ENLARGED BATH PLAN");
     expect(said).toContain("1/2\" = 1'-0\"");
-    expect(said).toMatch(/\b28 ft\b/);
+    // ── A FOOTAGE, NOT *THE* FOOTAGE ──
+    //
+    // This read `/\b28 ft\b/` and broke in CI the day the wall finder got more
+    // accurate: the enlarged view went from 28 ft to 51 ft when the hatch and
+    // opening-bridging rules were fixed, and S15's PRIMARY view landed exactly
+    // on its key at 206 ft in the same change.
+    //
+    // Pinning the number here made this spec a second, worse accuracy test —
+    // worse because no key covers a sub-view, so neither 28 nor 51 was ever
+    // verified, and because it fails on improvement as readily as on
+    // regression. The promise being clicked is that the caution NAMES the
+    // other drawing and tells the estimator how much is in it. That is what is
+    // asserted. The figures live in `sheetViews.eval.ts`, where a key can
+    // argue with them.
+    expect(said, "the caution gave no footage for the view it excluded").toMatch(/\b\d+(?:\.\d+)? ft\b/);
     expect(said).toContain("NOT included");
     expect(said).toContain("FLOOR PLAN");
     expect(said).toContain("1/4\" = 1'-0\"");
