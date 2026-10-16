@@ -1,0 +1,418 @@
+{
+  "id": "S16",
+  "file": "plan.pdf",
+  "page": 1,
+  "kind": "vector",
+  "units": "metric",
+  "scale_text": "1:100",
+  "scale_ratio": 100,
+  "sheet_type": "floor_plan",
+  "ceiling_height_ft": 8.86,
+  "totals": {
+    "wall_lf_gross": 241.14,
+    "wall_lf_net": 199.15,
+    "wall_lf_exterior_gross": 137.8,
+    "wall_lf_interior_gross": 103.35,
+    "wall_sf_exterior_net": 1008.47,
+    "wall_sf_interior_net": 755.63,
+    "gross_building_area_sf": 1231.28,
+    "room_count": 7,
+    "door_count": 7,
+    "window_count": 4
+  },
+  "walls": [
+    {
+      "id": "W1",
+      "start_ft": [
+        0.0,
+        0.0
+      ],
+      "end_ft": [
+        39.3701,
+        0.0
+      ],
+      "length_ft": 39.37,
+      "net_length_ft": 25.26,
+      "thickness_in": 11.811,
+      "type": "EXT-300mm",
+      "exterior": true,
+      "height_ft": 8.86,
+      "wall_sf_net": 223.78,
+      "length_m": 12.0
+    },
+    {
+      "id": "W2",
+      "start_ft": [
+        39.3701,
+        0.0
+      ],
+      "end_ft": [
+        39.3701,
+        29.5276
+      ],
+      "length_ft": 29.53,
+      "net_length_ft": 29.53,
+      "thickness_in": 11.811,
+      "type": "EXT-300mm",
+      "exterior": true,
+      "height_ft": 8.86,
+      "wall_sf_net": 261.56,
+      "length_m": 9.001
+    },
+    {
+      "id": "W3",
+      "start_ft": [
+        39.3701,
+        29.5276
+      ],
+      "end_ft": [
+        0.0,
+        29.5276
+      ],
+      "length_ft": 39.37,
+      "net_length_ft": 29.53,
+      "thickness_in": 11.811,
+      "type": "EXT-300mm",
+      "exterior": true,
+      "height_ft": 8.86,
+      "wall_sf_net": 261.56,
+      "length_m": 12.0
+    },
+    {
+      "id": "W4",
+      "start_ft": [
+        0.0,
+        29.5276
+      ],
+      "end_ft": [
+        0.0,
+        0.0
+      ],
+      "length_ft": 29.53,
+      "net_length_ft": 29.53,
+      "thickness_in": 11.811,
+      "type": "EXT-300mm",
+      "exterior": true,
+      "height_ft": 8.86,
+      "wall_sf_net": 261.56,
+      "length_m": 9.001
+    },
+    {
+      "id": "W5",
+      "start_ft": [
+        0.0,
+        16.4042
+      ],
+      "end_ft": [
+        39.3701,
+        16.4042
+      ],
+      "length_ft": 39.37,
+      "net_length_ft": 36.42,
+      "thickness_in": 4.5276,
+      "type": "INT-115mm",
+      "exterior": false,
+      "height_ft": 8.86,
+      "wall_sf_net": 322.59,
+      "length_m": 12.0
+    },
+    {
+      "id": "W6",
+      "start_ft": [
+        22.9659,
+        0.0
+      ],
+      "end_ft": [
+        22.9659,
+        16.4042
+      ],
+      "length_ft": 16.4,
+      "net_length_ft": 12.47,
+      "thickness_in": 4.5276,
+      "type": "INT-115mm",
+      "exterior": false,
+      "height_ft": 8.86,
+      "wall_sf_net": 110.44,
+      "length_m": 4.999
+    },
+    {
+      "id": "W7",
+      "start_ft": [
+        14.7638,
+        16.4042
+      ],
+      "end_ft": [
+        14.7638,
+        29.5276
+      ],
+      "length_ft": 13.12,
+      "net_length_ft": 10.17,
+      "thickness_in": 4.5276,
+      "type": "INT-115mm",
+      "exterior": false,
+      "height_ft": 8.86,
+      "wall_sf_net": 90.09,
+      "length_m": 3.999
+    },
+    {
+      "id": "W8",
+      "start_ft": [
+        19.685,
+        16.4042
+      ],
+      "end_ft": [
+        19.685,
+        29.5276
+      ],
+      "length_ft": 13.12,
+      "net_length_ft": 7.87,
+      "thickness_in": 4.5276,
+      "type": "INT-115mm",
+      "exterior": false,
+      "height_ft": 8.86,
+      "wall_sf_net": 69.75,
+      "length_m": 3.999
+    },
+    {
+      "id": "W9",
+      "start_ft": [
+        27.8871,
+        16.4042
+      ],
+      "end_ft": [
+        27.8871,
+        29.5276
+      ],
+      "length_ft": 13.12,
+      "net_length_ft": 10.17,
+      "thickness_in": 7.874,
+      "type": "BLOCK-200mm",
+      "exterior": false,
+      "height_ft": 8.86,
+      "wall_sf_net": 90.09,
+      "length_m": 3.999
+    },
+    {
+      "id": "W10",
+      "start_ft": [
+        19.685,
+        24.6063
+      ],
+      "end_ft": [
+        27.8871,
+        24.6063
+      ],
+      "length_ft": 8.2,
+      "net_length_ft": 8.2,
+      "thickness_in": 4.5276,
+      "type": "INT-115mm",
+      "exterior": false,
+      "height_ft": 8.86,
+      "wall_sf_net": 72.66,
+      "length_m": 2.499
+    }
+  ],
+  "openings": [
+    {
+      "id": "D1",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W1",
+      "width_ft": 3.28,
+      "center_ft": [
+        11.48,
+        0.0
+      ]
+    },
+    {
+      "id": "D2",
+      "kind": "door",
+      "subtype": "cased",
+      "wall": "W6",
+      "width_ft": 3.94,
+      "center_ft": [
+        22.97,
+        8.2
+      ]
+    },
+    {
+      "id": "D3",
+      "kind": "door",
+      "subtype": "cased",
+      "wall": "W5",
+      "width_ft": 2.95,
+      "center_ft": [
+        17.22,
+        16.4
+      ]
+    },
+    {
+      "id": "D4",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W7",
+      "width_ft": 2.95,
+      "center_ft": [
+        14.76,
+        19.69
+      ]
+    },
+    {
+      "id": "D5",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W8",
+      "width_ft": 2.62,
+      "center_ft": [
+        19.69,
+        20.51
+      ]
+    },
+    {
+      "id": "D6",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W8",
+      "width_ft": 2.62,
+      "center_ft": [
+        19.69,
+        26.25
+      ]
+    },
+    {
+      "id": "D7",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W9",
+      "width_ft": 2.95,
+      "center_ft": [
+        27.89,
+        22.97
+      ]
+    },
+    {
+      "id": "WN1",
+      "kind": "window",
+      "subtype": "fixed",
+      "wall": "W1",
+      "width_ft": 5.91,
+      "center_ft": [
+        4.92,
+        0.0
+      ]
+    },
+    {
+      "id": "WN2",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W1",
+      "width_ft": 4.92,
+      "center_ft": [
+        31.17,
+        0.0
+      ]
+    },
+    {
+      "id": "WN3",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W3",
+      "width_ft": 4.92,
+      "center_ft": [
+        33.63,
+        29.53
+      ]
+    },
+    {
+      "id": "WN4",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W3",
+      "width_ft": 4.92,
+      "center_ft": [
+        5.74,
+        29.53
+      ]
+    }
+  ],
+  "rooms": [
+    {
+      "id": "R1",
+      "label": "LIVING 01",
+      "type": "living",
+      "area_sf": 350.4,
+      "perimeter_lf": 76.02,
+      "centroid_ft": [
+        11.63,
+        8.35
+      ]
+    },
+    {
+      "id": "R2",
+      "label": "KITCHEN 02",
+      "type": "kitchen",
+      "area_sf": 247.23,
+      "perimeter_lf": 62.89,
+      "centroid_ft": [
+        31.02,
+        8.35
+      ]
+    },
+    {
+      "id": "R3",
+      "label": "BEDROOM 03",
+      "type": "bedroom",
+      "area_sf": 175.23,
+      "perimeter_lf": 53.05,
+      "centroid_ft": [
+        7.53,
+        22.81
+      ]
+    },
+    {
+      "id": "R4",
+      "label": "HALL 04",
+      "type": "hallway",
+      "area_sf": 56.54,
+      "perimeter_lf": 33.97,
+      "centroid_ft": [
+        17.22,
+        22.81
+      ]
+    },
+    {
+      "id": "R5",
+      "label": "BATH 05",
+      "type": "bathroom",
+      "area_sf": 60.14,
+      "perimeter_lf": 31.02,
+      "centroid_ft": [
+        23.72,
+        20.51
+      ]
+    },
+    {
+      "id": "R6",
+      "label": "STORE 06",
+      "type": "storage",
+      "area_sf": 32.59,
+      "perimeter_lf": 23.85,
+      "centroid_ft": [
+        23.72,
+        26.92
+      ]
+    },
+    {
+      "id": "R7",
+      "label": "BEDROOM 07",
+      "type": "bedroom",
+      "area_sf": 132.67,
+      "perimeter_lf": 46.21,
+      "centroid_ft": [
+        33.55,
+        22.81
+      ]
+    }
+  ],
+  "notes": "Metric apartment at 1:100, dimensions in millimetres, 300 mm exterior and 115 mm interior walls. Lengths are reported in feet (converted) and metres."
+}

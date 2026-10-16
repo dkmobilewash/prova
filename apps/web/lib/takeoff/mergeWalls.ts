@@ -143,6 +143,66 @@ const ROUGHLY_PERPENDICULAR = 0.25;
  * bounds the gap and the join goes ahead — the same answer as before this
  * existed, rather than a refusal of everything.
  */
+/** The least a line must be, in feet, to count as CROSSING a gap rather than
+ *  closing it. A door's jamb is one wall thickness long and sits square across
+ *  both ends of the opening — exactly the shape a corridor's walls make, at a
+ *  twentieth of the size. Without a floor on length the jambs of every door
+ *  would read as a crossing, which is the opposite of the answer.
+ *
+ *  Zero for walls, because a `WallCandidate` is already past the finder's own
+ *  minimum length and no jamb ever becomes one. */
+const CROSSES_MIN_FEET = 3;
+
+/** Anything with two ends. A `WallCandidate`'s centreline and a raw
+ *  `StrokeSegment` are the same shape to this test, which is the point: the
+ *  rule for "is this gap a hole or a junction" must be ONE rule. */
+export type Spanning = { x1: number; y1: number; x2: number; y2: number };
+
+/**
+ * ── IS SOMETHING RUNNING ACROSS BOTH ENDS OF THIS GAP? ──
+ *
+ * The shared core of `gapIsCrossing`, lifted out so `oneFacePerLine` can ask
+ * the same question about raw face segments that `mergeWalls` asks about
+ * finished runs. Two copies of this rule would drift, and the drift would be
+ * invisible: each would still answer plausibly, about different geometry.
+ *
+ * `minLengthUnits` is the only thing the two callers disagree about, and the
+ * disagreement is real rather than a tuning knob — see `CROSSES_MIN_FEET`.
+ */
+export function gapIsBounded(
+  lines: readonly Spanning[],
+  unit: readonly { ux: number; uy: number }[],
+  skip: (index: number) => boolean,
+  along: { ux: number; uy: number },
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  nearUnits: number,
+  minLengthUnits: number,
+): boolean {
+  let atFrom = -1;
+  let atTo = -1;
+  for (let k = 0; k < lines.length; k += 1) {
+    if (skip(k)) continue;
+    const v = unit[k];
+    // Perpendicular to the run being joined, within slack.
+    if (Math.abs(v.ux * along.ux + v.uy * along.uy) > ROUGHLY_PERPENDICULAR) continue;
+    const line = lines[k];
+    if (minLengthUnits > 0) {
+      if (Math.hypot(line.x2 - line.x1, line.y2 - line.y1) < minLengthUnits) continue;
+    }
+    if (atFrom < 0 && distanceToLine(fromX, fromY, line) <= nearUnits) atFrom = k;
+    if (atTo < 0 && distanceToLine(toX, toY, line) <= nearUnits) atTo = k;
+    // TWO DIFFERENT LINES. One long wall running past both ends is a wall
+    // alongside the gap, not the two sides of a corridor.
+    if (atFrom >= 0 && atTo >= 0 && atFrom !== atTo) return true;
+  }
+  return false;
+}
+
+export { CROSSES_MIN_FEET };
+
 function gapIsCrossing(
   walls: readonly WallCandidate[],
   unit: readonly { ux: number; uy: number }[],
@@ -154,32 +214,26 @@ function gapIsCrossing(
   toY: number,
   feetPerUnit: number,
 ): boolean {
-  const near = BOUNDS_THE_GAP_FEET / feetPerUnit;
-  const u = unit[i];
-  let atFrom = -1;
-  let atTo = -1;
-  for (let k = 0; k < walls.length; k += 1) {
-    // `k === j` is REDUNDANT against the perpendicularity test below — j is
-    // collinear with i by the time this runs, so it can never be perpendicular
-    // to it — and mutation confirms removing it changes no answer. Kept because
-    // "the two walls being joined do not get to bound their own gap" is the
-    // intent, and reading it here is cheaper than deducing it from a filter
-    // three lines down.
-    if (k === i || k === j) continue;
-    const v = unit[k];
-    // Perpendicular to the run being joined, within slack.
-    if (Math.abs(v.ux * u.ux + v.uy * u.uy) > ROUGHLY_PERPENDICULAR) continue;
-    if (atFrom < 0 && distanceToSegment(fromX, fromY, walls[k]) <= near) atFrom = k;
-    if (atTo < 0 && distanceToSegment(toX, toY, walls[k]) <= near) atTo = k;
-    // TWO DIFFERENT WALLS. One long wall running past both ends is a wall
-    // alongside the gap, not the two sides of a corridor.
-    if (atFrom >= 0 && atTo >= 0 && atFrom !== atTo) return true;
-  }
-  return false;
+  // Delegates, so the rule lives in ONE place. Walls pass no length floor: a
+  // `WallCandidate` is already past the finder's own minimum and no door jamb
+  // ever becomes one, so there is nothing here for `CROSSES_MIN_FEET` to
+  // exclude.
+  return gapIsBounded(
+    walls,
+    unit,
+    (k) => k === i || k === j,
+    unit[i],
+    fromX,
+    fromY,
+    toX,
+    toY,
+    BOUNDS_THE_GAP_FEET / feetPerUnit,
+    0,
+  );
 }
 
-/** Distance from a point to a wall's centreline segment. */
-function distanceToSegment(px: number, py: number, wall: WallCandidate): number {
+/** Distance from a point to a line's own span. */
+function distanceToLine(px: number, py: number, wall: Spanning): number {
   const dx = wall.x2 - wall.x1;
   const dy = wall.y2 - wall.y1;
   const len2 = dx * dx + dy * dy;

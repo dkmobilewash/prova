@@ -1,0 +1,492 @@
+{
+ "id": "S15",
+ "title": "BUNGALOW - PLAN AND ENLARGED BATH",
+ "units": "imperial",
+ "scale_ratio": 48,
+ "scale_text": "1/4\" = 1'-0\"",
+ "scale_text_printed": "1/4\" = 1'-0\"",
+ "page": "ARCH_D",
+ "wall_style": "pairs",
+ "clutter": "medium",
+ "ceiling_height_ft": 9.0,
+ "walls": [
+  {
+   "id": "W1",
+   "a": [
+    0.0,
+    0.0
+   ],
+   "b": [
+    36.0,
+    0.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W2",
+   "a": [
+    36.0,
+    0.0
+   ],
+   "b": [
+    36.0,
+    28.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W3",
+   "a": [
+    36.0,
+    28.0
+   ],
+   "b": [
+    0.0,
+    28.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W4",
+   "a": [
+    0.0,
+    28.0
+   ],
+   "b": [
+    0.0,
+    0.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W5",
+   "a": [
+    18.0,
+    0.0
+   ],
+   "b": [
+    18.0,
+    28.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W6",
+   "a": [
+    0.0,
+    14.0
+   ],
+   "b": [
+    18.0,
+    14.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W7",
+   "a": [
+    18.0,
+    14.0
+   ],
+   "b": [
+    36.0,
+    14.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W8",
+   "a": [
+    27.0,
+    14.0
+   ],
+   "b": [
+    27.0,
+    28.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  }
+ ],
+ "openings": [
+  {
+   "id": "D1",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W1",
+   "at_ft": 9.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D2",
+   "kind": "door",
+   "subtype": "cased",
+   "wall": "W5",
+   "at_ft": 7.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D3",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W6",
+   "at_ft": 9.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D4",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W7",
+   "at_ft": 4.5,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D5",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W7",
+   "at_ft": 13.5,
+   "width_ft": 2.5,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN1",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W1",
+   "at_ft": 27.0,
+   "width_ft": 5.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN2",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W3",
+   "at_ft": 27.0,
+   "width_ft": 5.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN3",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W3",
+   "at_ft": 4.5,
+   "width_ft": 2.5,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN4",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W2",
+   "at_ft": 7.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  }
+ ],
+ "rooms": [
+  {
+   "id": "R101",
+   "label": "LIVING 101",
+   "name": "LIVING",
+   "number": "101",
+   "type": "living",
+   "label_at": [
+    9.0,
+    7.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R102",
+   "label": "KITCHEN 102",
+   "name": "KITCHEN",
+   "number": "102",
+   "type": "kitchen",
+   "label_at": [
+    27.0,
+    7.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R103",
+   "label": "BEDROOM 103",
+   "name": "BEDROOM",
+   "number": "103",
+   "type": "bedroom",
+   "label_at": [
+    9.0,
+    21.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R104",
+   "label": "BEDROOM 104",
+   "name": "BEDROOM",
+   "number": "104",
+   "type": "bedroom",
+   "label_at": [
+    22.5,
+    21.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R105",
+   "label": "BATH 105",
+   "name": "BATH",
+   "number": "105",
+   "type": "bathroom",
+   "label_at": [
+    31.5,
+    21.0
+   ],
+   "show_area": false
+  }
+ ],
+ "notes": "Two views on one sheet: the floor plan at 1/4\" = 1'-0\" and an enlarged bath plan at 1/2\" = 1'-0\". The answer sheet counts the building once (from the plan view).",
+ "scale_bar": false,
+ "grid": null,
+ "views": [
+  {
+   "name": "ENLARGED BATH PLAN",
+   "scale_ratio": 24,
+   "scale_text": "1/2\" = 1'-0\"",
+   "box_ft": [
+    25.5,
+    12.5,
+    37.5,
+    29.5
+   ]
+  }
+ ],
+ "placement": {
+  "page_size_pt": [
+   2592,
+   1728
+  ],
+  "views": [
+   {
+    "name": "FLOOR PLAN",
+    "origin_pt": [
+     384.75,
+     631.0
+    ],
+    "pt_per_ft": 18.0,
+    "scale_ratio": 48,
+    "box_ft": [
+     -0.2708333333333333,
+     -0.2708333333333333,
+     36.270833333333336,
+     28.270833333333332
+    ]
+   },
+   {
+    "name": "ENLARGED BATH PLAN",
+    "origin_pt": [
+     717.75,
+     127.0
+    ],
+    "pt_per_ft": 36.0,
+    "scale_ratio": 24,
+    "box_ft": [
+     25.5,
+     12.5,
+     37.5,
+     29.5
+    ]
+   }
+  ],
+  "dims": [
+   {
+    "p1_ft": [
+     -0.270833,
+     -0.2708333333333333
+    ],
+    "p2_ft": [
+     18.0,
+     -0.2708333333333333
+    ],
+    "text": "18'-3 1/4\"",
+    "distance_ft": 18.270833,
+    "line_pt": [
+     [
+      379.875006,
+      593.725
+     ],
+     [
+      708.75,
+      593.725
+     ]
+    ],
+    "text_pt": [
+     544.312503,
+     596.225
+    ]
+   },
+   {
+    "p1_ft": [
+     18.0,
+     -0.2708333333333333
+    ],
+    "p2_ft": [
+     36.270833,
+     -0.2708333333333333
+    ],
+    "text": "18'-3 1/4\"",
+    "distance_ft": 18.270833000000003,
+    "line_pt": [
+     [
+      708.75,
+      593.725
+     ],
+     [
+      1037.624994,
+      593.725
+     ]
+    ],
+    "text_pt": [
+     873.187497,
+     596.225
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     -0.2708333333333333
+    ],
+    "p2_ft": [
+     36.270833333333336,
+     -0.2708333333333333
+    ],
+    "text": "36'-6 1/2\"",
+    "distance_ft": 36.54166666666667,
+    "line_pt": [
+     [
+      379.875,
+      564.925
+     ],
+     [
+      1037.625,
+      564.925
+     ]
+    ],
+    "text_pt": [
+     708.75,
+     567.425
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     -0.270833
+    ],
+    "p2_ft": [
+     -0.2708333333333333,
+     14.0
+    ],
+    "text": "14'-3 1/4\"",
+    "distance_ft": 14.270833,
+    "line_pt": [
+     [
+      347.475,
+      626.125006
+     ],
+     [
+      347.475,
+      883.0
+     ]
+    ],
+    "text_pt": [
+     344.975,
+     754.562503
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     14.0
+    ],
+    "p2_ft": [
+     -0.2708333333333333,
+     28.270833
+    ],
+    "text": "14'-3 1/4\"",
+    "distance_ft": 14.270833,
+    "line_pt": [
+     [
+      347.475,
+      883.0
+     ],
+     [
+      347.475,
+      1139.874994
+     ]
+    ],
+    "text_pt": [
+     344.975,
+     1011.437497
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     -0.2708333333333333
+    ],
+    "p2_ft": [
+     -0.2708333333333333,
+     28.270833333333332
+    ],
+    "text": "28'-6 1/2\"",
+    "distance_ft": 28.541666666666664,
+    "line_pt": [
+     [
+      318.675,
+      626.125
+     ],
+     [
+      318.675,
+      1139.875
+     ]
+    ],
+    "text_pt": [
+     316.175,
+     883.0
+    ]
+   }
+  ]
+ }
+}

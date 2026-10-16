@@ -102,6 +102,8 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: reads the TEXT LAYER of twenty committed fixtures and writes the answer key from what each drawing prints, guarded by a skip when the fixtures are absent plus a non-zero file assertion — a key built from no files would be an empty key that scores everything as unknown",
     "benchMultiView.eval.ts":
       "calls no model: splits the bench's A-401 — two drawings at two scales plus one at NTS — and prints each view's scale and footage beside the single-scale baseline, so the split can be read against per-wall ground truth. Guarded by a skip when the bench PDFs are absent, plus an assertion that at least one A-401 PDF was found",
+    "truthScore.eval.ts":
+      "calls no model: scores all 20 fixtures' wall footage against the GENERATOR'S OWN geometry in lib/takeoff/fixtures/truth — gross, net, the exterior/interior split, and per-wall misses and extras. The keys are the generator's export, not a measurement, and truthWall.test.ts keeps the engine from reading them. Guarded by a skip when the fixtures or the keys are absent, plus an assertion that a fixture was opened",
     "keyScore.eval.ts":
       "calls no model: scores all 20 fixtures against what their keys actually hold — scale (honouring scaleAuthority), room counts, and a floor derived from each sheet's own printed dimensions. Wall LF, doors and windows have NO key by design (expected.test.ts forbids one), so they are reported as absent rather than invented. Guarded by a skip when the fixture PDFs are absent, plus assertions that a fixture was opened and that at least one sheet could be checked against its printed dimensions",
     "sheetViews.eval.ts":

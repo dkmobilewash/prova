@@ -8,6 +8,7 @@ import {
   wallsNotTheSheetBorder,
 } from "./wallVectors";
 import { gridBubbles, linesIntoBubbles } from "./gridBubbles";
+import { joinAtCorners } from "./joinCorners";
 import { wallsFromBothEngines } from "./wallRuns";
 import { templateFromSheets, withoutTemplate } from "./sheetTemplate";
 import { wallTypeTags, tagByRun } from "./wallTags";
@@ -360,7 +361,14 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   // thing; whatever is left over after the filters above is either part of it
   // or is somewhere else on the sheet.
   const inBuilding = wallsInTheBuilding(notScaleBar, feetPerUnit);
-  const walls = inBuilding;
+  // ── AND THEIR ENDS PUT BACK ON THE CORNERS ──
+  //
+  // Last, because it needs the final set: a wall can only be joined to one
+  // that survived every filter, and joining to a sheet-border line or a grid
+  // stub would drag an end somewhere no building is. See `joinCorners.ts` for
+  // the half-thickness this recovers at every corner, and the generator's own
+  // rule that it implements.
+  const walls = joinAtCorners(inBuilding, feetPerUnit);
 
   // ── WHAT THE DRAWING CALLS THESE, where it says so ──
   //

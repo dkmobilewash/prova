@@ -1,0 +1,511 @@
+{
+ "id": "S02",
+ "title": "TWO-BEDROOM COTTAGE",
+ "units": "imperial",
+ "scale_ratio": 48,
+ "scale_text": "1/4\" = 1'-0\"",
+ "scale_text_printed": "1/4\" = 1'-0\"",
+ "page": "ARCH_C",
+ "wall_style": "pairs",
+ "clutter": "easy",
+ "ceiling_height_ft": 8.0,
+ "walls": [
+  {
+   "id": "W1",
+   "a": [
+    0.0,
+    0.0
+   ],
+   "b": [
+    40.0,
+    0.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W2",
+   "a": [
+    40.0,
+    0.0
+   ],
+   "b": [
+    40.0,
+    28.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W3",
+   "a": [
+    40.0,
+    28.0
+   ],
+   "b": [
+    0.0,
+    28.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W4",
+   "a": [
+    0.0,
+    28.0
+   ],
+   "b": [
+    0.0,
+    0.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W5",
+   "a": [
+    16.0,
+    0.0
+   ],
+   "b": [
+    16.0,
+    28.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W6",
+   "a": [
+    0.0,
+    16.0
+   ],
+   "b": [
+    16.0,
+    16.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W7",
+   "a": [
+    16.0,
+    12.0
+   ],
+   "b": [
+    40.0,
+    12.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W8",
+   "a": [
+    16.0,
+    16.0
+   ],
+   "b": [
+    40.0,
+    16.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W9",
+   "a": [
+    26.0,
+    16.0
+   ],
+   "b": [
+    26.0,
+    28.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  }
+ ],
+ "openings": [
+  {
+   "id": "D1",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W1",
+   "at_ft": 8.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D2",
+   "kind": "door",
+   "subtype": "cased",
+   "wall": "W5",
+   "at_ft": 14.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D3",
+   "kind": "door",
+   "subtype": "cased",
+   "wall": "W6",
+   "at_ft": 8.0,
+   "width_ft": 8.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D4",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W7",
+   "at_ft": 6.0,
+   "width_ft": 3.0,
+   "side": -1,
+   "hinge": 0
+  },
+  {
+   "id": "D5",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W8",
+   "at_ft": 4.0,
+   "width_ft": 2.5,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D6",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W8",
+   "at_ft": 15.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN1",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W1",
+   "at_ft": 4.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN2",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W1",
+   "at_ft": 28.0,
+   "width_ft": 5.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN3",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W3",
+   "at_ft": 7.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN4",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W3",
+   "at_ft": 32.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN5",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W4",
+   "at_ft": 6.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  }
+ ],
+ "rooms": [
+  {
+   "id": "R101",
+   "label": "LIVING 101",
+   "name": "LIVING",
+   "number": "101",
+   "type": "living",
+   "label_at": [
+    8.0,
+    8.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R102",
+   "label": "KITCHEN 102",
+   "name": "KITCHEN",
+   "number": "102",
+   "type": "kitchen",
+   "label_at": [
+    8.0,
+    22.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R103",
+   "label": "HALL 103",
+   "name": "HALL",
+   "number": "103",
+   "type": "hallway",
+   "label_at": [
+    28.0,
+    14.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R104",
+   "label": "BEDROOM 104",
+   "name": "BEDROOM",
+   "number": "104",
+   "type": "bedroom",
+   "label_at": [
+    28.0,
+    6.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R105",
+   "label": "BATH 105",
+   "name": "BATH",
+   "number": "105",
+   "type": "bathroom",
+   "label_at": [
+    21.0,
+    22.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R106",
+   "label": "BEDROOM 106",
+   "name": "BEDROOM",
+   "number": "106",
+   "type": "bedroom",
+   "label_at": [
+    33.0,
+    22.0
+   ],
+   "show_area": false
+  }
+ ],
+ "notes": "Basic residential: six rooms, 2x6 exterior and 2x4 interior, T junctions on both sides of a hall.",
+ "scale_bar": false,
+ "grid": null,
+ "views": [],
+ "placement": {
+  "page_size_pt": [
+   1728,
+   1296
+  ],
+  "views": [
+   {
+    "name": "FLOOR PLAN",
+    "origin_pt": [
+     423.0,
+     415.0
+    ],
+    "pt_per_ft": 18.0,
+    "scale_ratio": 48,
+    "box_ft": [
+     -0.2708333333333333,
+     -0.2708333333333333,
+     40.270833333333336,
+     28.270833333333332
+    ]
+   }
+  ],
+  "dims": [
+   {
+    "p1_ft": [
+     -0.270833,
+     -0.2708333333333333
+    ],
+    "p2_ft": [
+     16.0,
+     -0.2708333333333333
+    ],
+    "text": "16'-3 1/4\"",
+    "distance_ft": 16.270833,
+    "line_pt": [
+     [
+      418.125006,
+      377.725
+     ],
+     [
+      711.0,
+      377.725
+     ]
+    ],
+    "text_pt": [
+     564.562503,
+     380.225
+    ]
+   },
+   {
+    "p1_ft": [
+     16.0,
+     -0.2708333333333333
+    ],
+    "p2_ft": [
+     40.270833,
+     -0.2708333333333333
+    ],
+    "text": "24'-3 1/4\"",
+    "distance_ft": 24.270833000000003,
+    "line_pt": [
+     [
+      711.0,
+      377.725
+     ],
+     [
+      1147.874994,
+      377.725
+     ]
+    ],
+    "text_pt": [
+     929.437497,
+     380.225
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     -0.2708333333333333
+    ],
+    "p2_ft": [
+     40.270833333333336,
+     -0.2708333333333333
+    ],
+    "text": "40'-6 1/2\"",
+    "distance_ft": 40.54166666666667,
+    "line_pt": [
+     [
+      418.125,
+      348.925
+     ],
+     [
+      1147.875,
+      348.925
+     ]
+    ],
+    "text_pt": [
+     783.0,
+     351.425
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     -0.270833
+    ],
+    "p2_ft": [
+     -0.2708333333333333,
+     16.0
+    ],
+    "text": "16'-3 1/4\"",
+    "distance_ft": 16.270833,
+    "line_pt": [
+     [
+      385.725,
+      410.125006
+     ],
+     [
+      385.725,
+      703.0
+     ]
+    ],
+    "text_pt": [
+     383.225,
+     556.562503
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     16.0
+    ],
+    "p2_ft": [
+     -0.2708333333333333,
+     28.270833
+    ],
+    "text": "12'-3 1/4\"",
+    "distance_ft": 12.270833,
+    "line_pt": [
+     [
+      385.725,
+      703.0
+     ],
+     [
+      385.725,
+      923.874994
+     ]
+    ],
+    "text_pt": [
+     383.225,
+     813.437497
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     -0.2708333333333333
+    ],
+    "p2_ft": [
+     -0.2708333333333333,
+     28.270833333333332
+    ],
+    "text": "28'-6 1/2\"",
+    "distance_ft": 28.541666666666664,
+    "line_pt": [
+     [
+      356.925,
+      410.125
+     ],
+     [
+      356.925,
+      923.875
+     ]
+    ],
+    "text_pt": [
+     354.425,
+     667.0
+    ]
+   }
+  ]
+ }
+}

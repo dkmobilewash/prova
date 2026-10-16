@@ -1,0 +1,8 @@
+{
+ "id": "S20",
+ "raster_of": "S13",
+ "dpi": 300,
+ "rotate_deg": -0.8,
+ "noise": 0.004,
+ "notes": "Raster copy of S13 at 300 DPI, rotated -0.8 degrees, light noise. Image only."
+}
