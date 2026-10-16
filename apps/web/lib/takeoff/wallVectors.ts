@@ -853,6 +853,47 @@ const SERIES_PITCH_TOLERANCE = 0.2;
  * overlap the pair by half of the SHORTER of the two, so a 2.5 ft fixture
  * sitting entirely inside a 17.5 ft wall overlaps it 100% and passes.
  */
+/**
+ * How many strokes BEYOND the pair a fill must have before the pair is read as
+ * part of it.
+ *
+ * ── A PATTERN REPEATS; TWO LINES AND ONE NEIGHBOUR DO NOT ──
+ *
+ * One stroke at a whole multiple of the pair's spacing used to be enough, and
+ * that is the shape of every wall this rule has eaten:
+ *
+ *   S09  a 2.5 ft fixture at 1.84 steps took a 48 ft partition
+ *   S17  a 50 ft dimension string at 1.918 steps took a 49 ft exterior wall
+ *   S15  a 5.0 ft fixture at 2.05 steps took one fragment of an 18 ft wall
+ *
+ * In each case there is exactly ONE other stroke. Hatching is machine-
+ * generated and does not come in ones: the fill that this rule was written
+ * for puts a stroke every 6 points across a whole region, so a genuine series
+ * has strokes on both sides of the pair and several of them.
+ *
+ * Two is the smallest number that is a pattern rather than a coincidence, and
+ * it is what separates "a wall with something beside it" from "a wall-shaped
+ * gap between two strokes of a fill".
+ *
+ * The length bounds below stay, and are not made redundant by this: they
+ * refuse a member that is the wrong KIND of thing, where this refuses a
+ * series that is the wrong SIZE. A fill of three strokes beside a wall would
+ * pass this and still has to look like a fill.
+ */
+const SERIES_NEEDS_MEMBERS = 2;
+
+/**
+ * And how many HALF-step strokes stand in for them, when the pair spans two
+ * pitches of a fill rather than one.
+ *
+ * THREE rather than two, and the number is measured. A real wall carries
+ * neighbours near a half step — the exterior envelope this rule must never
+ * refuse has a column grid line at 1.51 steps — so two is reachable by
+ * ordinary drawing furniture, and requiring two cost 6 walls on the bench
+ * (111 missed to 117) for no gain on the twenty.
+ */
+const SERIES_NEEDS_HALVES = 3;
+
 const SERIES_MEMBER_RATIO = 0.75;
 
 /**
@@ -1065,6 +1106,49 @@ export function wallFromPair(
   const [headGap, tailGap] = overhangsAlong(a, b);
   const loose = shorter * BOTH_ENDS_OVERHANG;
   if (headGap > loose && tailGap > loose) return null;
+
+  // ── A DIMENSION STRING REACHES HERE AND PASSES, AND NO RULE BELOW STOPS IT.
+  //    DO NOT SPEND THE AFTERNOON ON A DISTANCE THRESHOLD; IT IS ELIMINATED. ──
+  //
+  // S08 reports 509 ft against a 464 ft key, and 31 of the 45 extra feet are
+  // one phantom: two runs at 8.40in — a thickness no wall on that sheet has —
+  // pairing the hall partition's south face with the sheet's own dimension
+  // string, which the generator spec puts at y = 22.87 in five segments from
+  // -0.5 to 56.27 ft. The partition itself is still found correctly at 56.0 ft.
+  //
+  // Every rule above is a near miss, which is why it is worth naming them:
+  //
+  //   rule 5  the string runs -0.5 to 56.27 and the face, merged across its
+  //           five doorways by `oneFacePerLine`, runs 0.5 to 55.7 — ratio 1.03
+  //   rule 6  it overhangs 1.0 ft at one end and 0.6 ft at the other, and this
+  //           rule deliberately needs BOTH loose, one loose end being a corner
+  //   the rest thickness, parallelism and overlap are perfect, because a
+  //           dimension string is drawn parallel to the wall it measures for
+  //           the whole length of it
+  //
+  // BUILT AND REVERTED, 2026-10-16. A filter was written on the strength of
+  // what the drawing WRITES on one of the two lines: a string carries its
+  // figures, measured at 0.14 ft from its own line on S08 against 0.82 ft to
+  // the nearest wall face. It worked — S08 fell from +9.6% to +2.9% and S14
+  // from +4.7% to +3.0%.
+  //
+  // IT ALSO DELETED 40 FT OF REAL WALL ON S13, and that is the part to read
+  // before trying again. S13's interior dimension row is at y = 21.87 with a
+  // real 4-1/2in wall centred on y = 22.0, so its faces are 21.81 and 22.19:
+  //
+  //     S08   figures to the string 0.14 ft,  to the nearest wall face 0.82 ft
+  //     S13   figures to the string 0.14 ft,  to the nearest wall face 0.06 ft
+  //
+  // The quantity a threshold would have to split is the SAME on both sheets.
+  // Swept at bands of 0.35, 0.25 and 0.20 ft and at 3, 4 and 5 figures: S13
+  // loses its wall in all six, and S08 is fixed in all six. The band is not
+  // too wide — distance from the figures cannot answer this question at all.
+  //
+  // Both sheets are `clutter: "hard"` in their spec, so this is the fixture
+  // set doing its job rather than an unlucky coincidence. Whatever separates
+  // them is not distance: a string is one line where a wall is a pair, but on
+  // S13 the string sits 0.32 ft from the far face, which is itself a plausible
+  // partition. That is where the next attempt starts.
 
   // The centreline, over the OVERLAPPING span only — the part that is actually
   // two-sided. A face that runs past its partner is a different wall's face or
@@ -1548,6 +1632,8 @@ function inAHatchSeries(
 
   const step = offsetOf(b);
   if (step === 0) return false;
+  let members = 0;
+  let halves = 0;
   const reach = Math.abs(step) * SERIES_REACH;
 
   for (let k = 0; k < segments.length; k += 1) {
@@ -1613,7 +1699,25 @@ function inAHatchSeries(
     // `b`, which is the same span `SERIES_REACH` already allowed.
     const continuesTheSeries =
       offPitch <= SERIES_PITCH_TOLERANCE && (nearest === -1 || nearest === -2 || nearest === 2 || nearest === 3);
-    if (continuesTheSeries && Math.abs(where) <= Math.abs(step) + reach + Math.abs(step)) return true;
+    const inReach = Math.abs(where) <= Math.abs(step) + reach + Math.abs(step);
+    if (continuesTheSeries && inReach) {
+      members += 1;
+      if (members >= SERIES_NEEDS_MEMBERS) return true;
+    }
+    // ── THE FILL'S OWN PITCH MAY BE HALF THIS PAIR'S STEP ──
+    //
+    // The pairer does not only pair NEIGHBOURING strokes. In a fill it also
+    // pairs every other one, because two pitches is as plausible a wall
+    // thickness as one: this repo's own poche is 4.24pt perpendicular, so one
+    // pitch reads as a 4-7/8in partition and two as an 11in wall.
+    //
+    // Such a pair has only ONE neighbour at a whole number of its own steps,
+    // so the count above lets it through and sells a slice of fill as a wall.
+    // The strokes BETWEEN are the tell: they sit at a half step.
+    if (inReach && Math.abs(offPitch - 0.5) <= SERIES_PITCH_TOLERANCE) {
+      halves += 1;
+      if (halves >= SERIES_NEEDS_HALVES) return true;
+    }
   }
 
   return false;

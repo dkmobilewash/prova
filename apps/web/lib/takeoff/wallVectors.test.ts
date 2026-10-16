@@ -1443,21 +1443,23 @@ describe("a series is strokes that look alike, not merely strokes nearby", () =>
     expect(walls[0].lengthFeet).toBeCloseTo(17.6, 1);
   });
 
-  it("A FIVE-STROKE FILL STILL LEAKS ONE WALL, and that is OLDER than this rule", () => {
-    // Recorded rather than asserted away. Six strokes are refused outright;
-    // five leave one pair standing, and the control says why that is not this
-    // rule's doing: with `SERIES_MEMBER_RATIO` set to 0 — the rule disabled
-    // entirely — this case fails in exactly the same way, while the fixture
-    // case above fails too.
+  it("A FIVE-STROKE FILL STILL LEAKS ONE WALL, and that is OLDER than these rules", () => {
+    // Six strokes are refused outright; five leave one pair standing. The
+    // cause is the pairer taking every OTHER stroke: such a pair has one
+    // neighbour at a whole number of its own steps and, in a five-stroke
+    // fill, only TWO at a half step — one short of what this file requires
+    // before calling a half-pitch pattern a fill.
     //
-    // So the length rule neither causes this nor fixes it. It is a separate
-    // defect at the END of a short series, where the outermost pair has a
-    // neighbour on one side only, and it is worth its own investigation rather
-    // than being folded into this one.
-    const fill = Array.from({ length: 5 }, (_, i) => h(100, 500 + i * STEP, LONG));
-    const leaked = wallsFromStrokes(fill, EIGHTH);
-    expect(leaked.length, "a five-stroke fill now behaves differently — re-read this case").toBe(1);
-    // Six is the length at which it is caught, which bounds the defect.
-    expect(wallsFromStrokes(Array.from({ length: 6 }, (_, i) => h(100, 500 + i * STEP, LONG)), EIGHTH)).toEqual([]);
+    // MEASURED, not assumed: requiring two instead of three closes this and
+    // costs six walls on the bench, 111 missed to 117, for no gain on the
+    // twenty. So the leak is left where it was found and recorded here.
+    //
+    // This case is UNCHANGED by the member-count and length rules around it —
+    // proved by setting each of their constants to its disabling value, where
+    // this stayed at one wall throughout.
+    const five = Array.from({ length: 5 }, (_, i) => h(100, 500 + i * STEP, LONG));
+    expect(wallsFromStrokes(five, EIGHTH), "a five-stroke fill now behaves differently").toHaveLength(1);
+    const six = Array.from({ length: 6 }, (_, i) => h(100, 500 + i * STEP, LONG));
+    expect(wallsFromStrokes(six, EIGHTH), "a six-stroke fill leaked a wall").toEqual([]);
   });
 });
