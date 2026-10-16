@@ -1370,3 +1370,65 @@ describe("joining the pieces of a face", () => {
     expect(thicknesses).not.toContain(6.63);
   });
 });
+
+/**
+ * ── THE SERIES RULE HAD NO TEST, AND THAT IS HOW IT COST 22 FEET ──
+ *
+ * `inAHatchSeries` is the discriminator between "two faces of a wall" and
+ * "three strokes of a fill", and the whole suite exercised it only through a
+ * thickness case ("two lines a HATCH apart"), which asks a different question.
+ * So a change to the series rule could be made with every test green.
+ *
+ * At 1/8" = 1'-0" with `feetPerPoint` 1/9: a 4.5in partition is 3.375pt
+ * between faces, and a foot of building is 9pt.
+ */
+describe("a series is strokes that look alike, not merely strokes nearby", () => {
+  const STEP = 3.375; // 4.5in between the faces of a partition
+  const LONG = 17.5 * 9; // a 17.5 ft wall
+
+  it("STILL REFUSES GENUINE HATCHING — the thing this rule is for", () => {
+    // Machine-generated fill: a constant pitch, and every stroke the same
+    // length as its neighbours. Nothing here is a wall and nothing may be
+    // reported as one.
+    const fill = Array.from({ length: 6 }, (_, i) => h(100, 500 + i * STEP, LONG));
+    expect(wallsFromStrokes(fill, EIGHTH), "hatching was sold as wall").toEqual([]);
+  });
+
+  it("KEEPS A WALL WITH A SHORT FIXTURE LINE BESIDE IT — S09's 22 ft", () => {
+    // The hall's south partition, and a 2.5 ft fixture in the room above it.
+    // The fixture sits 0.70 ft away against a 0.375 ft step — 1.84 of them,
+    // which rounds to 2 inside `SERIES_PITCH_TOLERANCE`, so the pitch test
+    // alone reads three strokes at a constant pitch and throws the wall away.
+    const faces = [h(100, 500, LONG), h(100, 500 + STEP, LONG)];
+    const fixture = h(140, 500 - 1.84 * STEP, 2.5 * 9);
+    const walls = wallsFromStrokes([...faces, fixture], EIGHTH);
+    expect(walls, "a 2.5 ft fixture suppressed a 17.5 ft wall").toHaveLength(1);
+    expect(walls[0].thicknessFeet * 12).toBeCloseTo(4.5, 1);
+  });
+
+  it("and finds that wall identically when the fixture is not there", () => {
+    // The control. Without it the case above proves only that SOMETHING was
+    // found, not that the fixture stopped mattering.
+    const walls = wallsFromStrokes([h(100, 500, LONG), h(100, 500 + STEP, LONG)], EIGHTH);
+    expect(walls).toHaveLength(1);
+    expect(walls[0].lengthFeet).toBeCloseTo(17.5, 1);
+  });
+
+  it("A FIVE-STROKE FILL STILL LEAKS ONE WALL, and that is OLDER than this rule", () => {
+    // Recorded rather than asserted away. Six strokes are refused outright;
+    // five leave one pair standing, and the control says why that is not this
+    // rule's doing: with `SERIES_MEMBER_RATIO` set to 0 — the rule disabled
+    // entirely — this case fails in exactly the same way, while the fixture
+    // case above fails too.
+    //
+    // So the length rule neither causes this nor fixes it. It is a separate
+    // defect at the END of a short series, where the outermost pair has a
+    // neighbour on one side only, and it is worth its own investigation rather
+    // than being folded into this one.
+    const fill = Array.from({ length: 5 }, (_, i) => h(100, 500 + i * STEP, LONG));
+    const leaked = wallsFromStrokes(fill, EIGHTH);
+    expect(leaked.length, "a five-stroke fill now behaves differently — re-read this case").toBe(1);
+    // Six is the length at which it is caught, which bounds the defect.
+    expect(wallsFromStrokes(Array.from({ length: 6 }, (_, i) => h(100, 500 + i * STEP, LONG)), EIGHTH)).toEqual([]);
+  });
+});

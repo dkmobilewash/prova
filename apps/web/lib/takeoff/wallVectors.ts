@@ -801,6 +801,49 @@ const SERIES_REACH = 2.5;
  */
 const SERIES_PITCH_TOLERANCE = 0.2;
 
+/**
+ * How long a third stroke must be to count as continuing a series, as a
+ * fraction of the pair's own shorter face.
+ *
+ * ── HATCHING IS A PATTERN OF STROKES THAT LOOK ALIKE ──
+ *
+ * The pitch test above asks WHERE a third stroke sits. It cannot ask whether
+ * the stroke is the same KIND of thing, and on a real plan that is the half
+ * that matters: a machine filling a region emits strokes of comparable length,
+ * while a counter, an appliance or a fixture drawn in the next room is a short
+ * line that happens to be parallel.
+ *
+ * ── MEASURED ON S09, WHERE IT COST 22 FEET OF PARTITION ──
+ *
+ * The hall's south wall is a 4.5in partition — faces at 15.81 and 16.19 ft, so
+ * a step of 0.38. A FIXTURE in the room above sits at 15.11, which is 0.70 ft
+ * away:
+ *
+ *     0.70 / 0.38 = 1.84 steps,  and  |1.84 - 2| = 0.16  <=  0.2
+ *
+ * So two wall faces and one unrelated 2.5 ft line read as a three-member
+ * series at pitch 0.38, and the wall was discarded. Proved by isolation: the
+ * two faces alone pair correctly at 21.7 ft, and adding that ONE line takes
+ * the pairer to zero.
+ *
+ * The pitch tolerance cannot simply be tightened — its own note records that
+ * it already has 0.07 of headroom against a gypsum line at 1.07 steps. Length
+ * is a different question and leaves that margin alone.
+ *
+ * ── WHY A THIN WALL IS THE ONE THAT SUFFERS ──
+ *
+ * The step IS the wall's thickness, so a 4.5in partition has a small step and
+ * a correspondingly tight band in which a stray line looks like a series
+ * member. A 6.5in exterior wall is far more forgiving. That is exactly the
+ * pattern in the twenty-sheet table: S01, all exterior, is exact, and the
+ * interior-heavy sheets are the worst.
+ *
+ * The existing overlap test cannot catch this: it requires the member to
+ * overlap the pair by half of the SHORTER of the two, so a 2.5 ft fixture
+ * sitting entirely inside a 17.5 ft wall overlaps it 100% and passes.
+ */
+const SERIES_MEMBER_RATIO = 0.75;
+
 /** Direction of a segment, normalised to [0, π) so a line and its reverse are
  *  the same direction — which they are, for a wall face. */
 function angleOf(segment: StrokeSegment): number {
@@ -1471,6 +1514,11 @@ function inAHatchSeries(
     if (angleGap(angleOf(other), direction) > PARALLEL_TOLERANCE_RAD) continue;
     // It has to be alongside the pair, not somewhere else on the sheet.
     if (overlapAlong(a, other) < Math.min(aLen, lengthOf(other)) * 0.5) continue;
+    // AND IT HAS TO LOOK LIKE THE PAIR. A fixture drawn in the next room is a
+    // short parallel line, and the overlap test above cannot refuse it: it is
+    // measured against the SHORTER of the two, so a 2.5 ft line inside a
+    // 17.5 ft wall overlaps 100%. See `SERIES_MEMBER_RATIO`.
+    if (lengthOf(other) < Math.min(aLen, lengthOf(b)) * SERIES_MEMBER_RATIO) continue;
 
     const where = offsetOf(other);
     // ── IT MUST CONTINUE THE SPACING, NOT MERELY BE NEARBY ──
