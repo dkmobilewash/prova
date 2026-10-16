@@ -161,7 +161,90 @@ export function duplicateWallsCaution(suitability: SheetSuitability, sheetNumber
 }
 
 /**
- * Which of the two cautions a sheet shows — and there is only ever one slot.
+ * ── MORE THAN ONE DRAWING, AT MORE THAN ONE SCALE, ON ONE SHEET ──
+ *
+ * A plan with an enlarged detail beside it prints TWO scales and both are
+ * correct. Every length this app reports comes from ONE of them, because a
+ * sheet has one calibration — so a quantity taken off the other drawing is out
+ * by the ratio between them, silently, and a 1/4in plan beside a 1/2in detail
+ * puts that at DOUBLE.
+ *
+ * Nothing here protects against that today and one thing accidentally does:
+ * `wallsInTheBuilding` keeps only the biggest connected group, so on S15 the
+ * enlarged bath is dropped because it is SMALLER, not because anybody noticed
+ * it was drawn at a different scale. That is the right answer for the wrong
+ * reason, and it inverts the moment the detail is the bigger drawing.
+ *
+ * So this says it rather than fixing it, for the reason this whole file says
+ * things rather than fixing them: the measurement is not wrong — it is right
+ * about one drawing — and an estimator who is TOLD which one can act on it in
+ * a second, where an app that silently measured the other cannot be caught at
+ * all.
+ *
+ * `printedScalesOnPage` is what finds them, and it already refuses metric
+ * (`1:100`), `AS NOTED` and `NTS`, so this fires on a genuine second
+ * ARCHITECTURAL scale and nothing else. Measured across the 20-sheet fixture
+ * set: exactly one sheet — S15, the one that has two — and no other sheet
+ * produces more than one.
+ */
+export function multiScaleCaution(printedScales: readonly string[], usedScaleName: string | null): string {
+  const distinct = [...new Set(printedScales.map((one) => one.trim()).filter(Boolean))];
+  if (distinct.length < 2) return "";
+  const used = usedScaleName?.trim() ?? "";
+  // THE ONE IN USE NAMED SEPARATELY, and the others listed — an estimator
+  // checks "which drawing did this come off" against a caption on the sheet,
+  // so the sentence has to carry the caption's own words.
+  const others = distinct.filter((one) => one !== used);
+  const list = distinct.join(" and ");
+  if (used === "" || others.length === distinct.length) {
+    return (
+      `This sheet prints more than one scale — ${list}. Every length here was measured at a single ` +
+      `scale, so anything taken off the other drawing is out by the ratio between them. Check which ` +
+      `drawing a quantity came from before you bid it.`
+    );
+  }
+  return (
+    `This sheet prints more than one scale — ${list}. Every length here was measured at ${used}, which ` +
+    `is the one captioned under the main drawing. A quantity read off ${others.join(" or ")} would be out ` +
+    `by the ratio between them. Check which drawing a quantity came from before you bid it.`
+  );
+}
+
+/**
+ * The sentence for a sheet that was SPLIT into views and measured per view.
+ *
+ * It replaces `multiScaleCaution`'s warning with a RESULT. That one says "this
+ * sheet prints two scales, check which drawing a quantity came from", which is
+ * the best that can be said before the sheet has been split. Once each view has
+ * been measured at its own scale there is something better to say: here is the
+ * other drawing, here is its scale, here is what it measures, and it is NOT in
+ * your total.
+ *
+ * Why the footage rather than just the name: "there is an enlarged bath plan"
+ * invites a person to go and check whether it was counted. "28 ft, not added"
+ * answers that, and an estimator who disagrees can act on the number.
+ *
+ * Not added, because an ENLARGED view is the same construction drawn larger —
+ * see `primaryView`. Summing them would bid that bathroom twice.
+ */
+export function viewsMeasuredCaution(
+  primary: { name: string; scaleName: string | null } | null,
+  others: readonly { name: string; scaleName: string | null; lengthFeet: number }[],
+): string {
+  if (primary === null || others.length === 0) return "";
+  const list = others
+    .map((one) => `${one.name} at ${one.scaleName ?? "an unstated scale"} measures ${Math.round(one.lengthFeet)} ft`)
+    .join("; ");
+  return (
+    `This sheet carries more than one drawing. The quantities here are ${primary.name} at ` +
+    `${primary.scaleName ?? "an unstated scale"}. Also on the sheet: ${list} — measured at its own scale and NOT included, ` +
+    `because an enlarged view is usually the same construction drawn larger. Add it only if it is a ` +
+    `different part of the building.`
+  );
+}
+
+/**
+ * Which of the three cautions a sheet shows — and there is only ever one slot.
  *
  * ── THE SERVER'S ANSWER WINS, AND THAT IS THE WHOLE RULE ──
  *
@@ -186,6 +269,23 @@ export function duplicateWallsCaution(suitability: SheetSuitability, sheetNumber
  * which it was looking at. A named function makes the precedence a thing a test
  * can hold still, and leaves the markup with one name in it.
  */
-export function cautionToShow(fromServer: string | undefined, fromDrawing: string | undefined): string {
-  return (fromServer ?? "").trim() || (fromDrawing ?? "").trim() || "";
+export function cautionToShow(
+  fromServer: string | undefined,
+  fromDrawing: string | undefined,
+  fromScales: string | undefined = undefined,
+): string {
+  // ── AND THE SCALE ONE OUTRANKS BOTH, WHICH IS A DIFFERENT RULE FROM THE ONE
+  // ABOVE AND NEEDS ITS OWN REASON ──
+  //
+  // The two readings above answer the same question (what kind of sheet is
+  // this), so the better-sourced one wins and the other is redundant. The scale
+  // caution answers a DIFFERENT question, and it is the more expensive one to
+  // get wrong: a duplicate-walls caution is about a correct quantity in the
+  // wrong place, which an estimator can still recognise on screen, while a
+  // wrong scale makes every number here meaningless by a factor of two and
+  // looks exactly like a right one.
+  //
+  // It is first rather than additional because the slot is still one slot —
+  // stacking sentences above a drawing is how both of them stop being read.
+  return (fromScales ?? "").trim() || (fromServer ?? "").trim() || (fromDrawing ?? "").trim() || "";
 }

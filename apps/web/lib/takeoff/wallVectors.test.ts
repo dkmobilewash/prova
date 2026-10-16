@@ -372,21 +372,44 @@ describe("keeping only the walls in the building", () => {
     expect(wallsInTheBuilding([], FOOT)).toEqual([]);
   });
 
-  it("REFUSES A SHEET WHOSE BIGGEST GROUP IS A BOX, rather than offering it", () => {
-    // Found by looking at a real roof/equipment sheet: the plan yielded almost
-    // no wall, so the biggest group was the TITLE BLOCK — four runs, 64ft, a
-    // rectangle in the corner offered to an estimator as the walls of a
-    // building. The numbers looked unremarkable; only the picture showed it.
-    const titleBlock = [at(300, 0, 340, 0), at(340, 0, 340, 20), at(300, 20, 340, 20), at(300, 0, 300, 20)];
-    expect(wallsInTheBuilding(titleBlock, FOOT)).toEqual([]);
+  it("KEEPS A FOUR-RUN GROUP, because a one-room building is four runs", () => {
+    // ── THIS TEST USED TO ASSERT THE OPPOSITE, AND IT WAS RIGHT TO ──
+    //
+    // It read: "REFUSES A SHEET WHOSE BIGGEST GROUP IS A BOX". The reason was
+    // real — on a roof/equipment sheet the biggest group was the TITLE BLOCK,
+    // four runs, 64 ft, a rectangle in the corner offered to an estimator as
+    // the walls of a building, and only the picture showed it.
+    //
+    // The rule it bought was `best.length < NOT_A_BOX ? [] : best`, and that
+    // count could not tell a title block from a BUILDING WITH ONE ROOM,
+    // because both are four runs. It discarded S01 (a studio office), S10 (a
+    // cottage) and S11 (a guest house) — ordinary plans, thin double-line
+    // walls, perfectly axis-aligned — and returned zero feet on all three.
+    //
+    // The title block is now removed before this function is reached:
+    // `findWallsOnSheet` runs `wallsNotLettering`, `wallsNotTheSheetBorder`
+    // and `wallsNotTheScaleBar` FIRST. That asks what the geometry IS instead
+    // of how much of it there is, and it costs no buildings. The ordering is
+    // pinned in `findWallsOnSheet`'s own tests; what belongs here is that no
+    // size is refused.
+    const oneRoom = [at(300, 0, 340, 0), at(340, 0, 340, 20), at(300, 20, 340, 20), at(300, 0, 300, 20)];
+    expect(wallsInTheBuilding(oneRoom, FOOT)).toHaveLength(4);
   });
 
-  it("still returns a real plan, which is an order of magnitude bigger", () => {
-    // Real floor plans measured here returned 38, 58, 68, 230, 295 and 453
-    // runs. The gap between a box and a plan is not a margin, so this does not
-    // have to be a finely judged number to sit inside it.
+  it("still returns a large plan unchanged", () => {
     const plan = Array.from({ length: NOT_A_BOX + 2 }, (_, i) => at(0, i * 10, 40, i * 10));
     expect(wallsInTheBuilding(plan, FOOT)).toHaveLength(NOT_A_BOX + 2);
+  });
+
+  it("KEEPS THE BIGGEST GROUP AND ONLY THAT, which is the job it does have", () => {
+    // Two separate clusters far apart: the bigger by footage wins. This is the
+    // part of the function that was never in question and must survive the
+    // threshold being removed.
+    const near = [at(0, 0, 40, 0), at(0, 10, 40, 10)];
+    const far = [at(5000, 0, 5010, 0)];
+    const kept = wallsInTheBuilding([...near, ...far], FOOT);
+    expect(kept).toHaveLength(2);
+    expect(kept.every((w) => w.x1 < 1000)).toBe(true);
   });
 
   it("uses a distance wide enough for a corridor and far short of a title block", () => {

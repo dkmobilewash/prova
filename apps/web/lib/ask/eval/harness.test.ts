@@ -100,6 +100,12 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: reads optional-content group names straight off a REAL plan set to answer whether architects' exports name their layers at all, guarded by a skip on REAL_PLAN_PDF plus a non-zero page assertion — a mistyped path must not read as 'no set has layers', which is the one finding that would abandon the approach",
     "extract.eval.ts":
       "calls no model: reads the TEXT LAYER of twenty committed fixtures and writes the answer key from what each drawing prints, guarded by a skip when the fixtures are absent plus a non-zero file assertion — a key built from no files would be an empty key that scores everything as unknown",
+    "benchMultiView.eval.ts":
+      "calls no model: splits the bench's A-401 — two drawings at two scales plus one at NTS — and prints each view's scale and footage beside the single-scale baseline, so the split can be read against per-wall ground truth. Guarded by a skip when the bench PDFs are absent, plus an assertion that at least one A-401 PDF was found",
+    "sheetViews.eval.ts":
+      "calls no model: splits each fixture sheet into its captioned views and measures each at its own scale, printing name/scale/band/footage per view. Guarded by a skip when the fixture PDFs are absent, plus assertions that a sheet was actually opened and that at least one sheet read as multi-view",
+    "groups.eval.ts":
+      "calls no model: prints the biggest connected candidate group per fixture with NO threshold applied, so a replacement for the run-count rule can be chosen from measurements. Guarded by a skip when the fixtures are absent plus a non-zero fixture assertion",
     "tesseract.eval.ts":
       "calls no model: prices a free OCR engine (tesseract.js, Apache-2.0) against the SAME bar the model was measured on — same scans, same tiles, same 30pt tolerance, same answer key from the vector originals. Guarded by a skip when the fixtures are absent plus a non-zero text assertion on each vector original, because a key built from no words would score any engine, including one that reads nothing, at a clean 100%",
     "tileSkip.eval.ts":

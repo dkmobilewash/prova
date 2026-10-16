@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { dimensionLabels, metricDimensionLabels } from "../../plan-ingest/dimensionLabels";
 import { readSheetScale } from "../scaleFromDimensions";
-import { findWallsOnSheet, type SheetTextItem } from "../findWallsOnSheet";
+import { findWallsOnSheet, inPageWidthUnits, type SheetTextItem } from "../findWallsOnSheet";
 import type { StrokeSegment } from "../wallVectors";
 
 /**
@@ -64,6 +64,52 @@ describe.skipIf(!existsSync(join(import.meta.dirname, "plans")))("where the wall
             ` ${String(f.notBorder.length).padStart(10)} ${String(f.walls.length).padStart(6)} ${String(f.groups.length).padStart(7)}` +
             `   bbox ${(bw * 100).toFixed(0)}%x${(bh * 100).toFixed(0)}%  ${ft.toFixed(0)}ft`,
         );
+        // WITH ONE SHEET ASKED FOR, SAY WHAT IT KEPT, not just how many.
+        // A count tells you a stage dropped nothing; it cannot tell you the
+        // pairer never offered the wall in the first place, which is the
+        // other way a wall goes missing and looks identical here.
+        if (IDS.length === 1) {
+          const pct = (n: number) => (n * 100).toFixed(1).padStart(5);
+          rows.push("", "      x1     y1      x2     y2    feet  in  angle");
+          for (const w of [...g].sort((a, b) => b.lengthFeet - a.lengthFeet)) {
+            const deg = (Math.atan2(w.y2 - w.y1, w.x2 - w.x1) * 180) / Math.PI;
+            rows.push(
+              `   ${pct(w.x1)}  ${pct(w.y1)}   ${pct(w.x2)}  ${pct(w.y2)}  ` +
+                `${w.lengthFeet.toFixed(1).padStart(6)}  ${(w.thicknessFeet * 12).toFixed(1).padStart(4)}  ` +
+                `${(((deg % 180) + 180) % 180).toFixed(0).padStart(5)}`,
+            );
+          }
+          // AND THE RAW SEGMENTS BY ANGLE, so a wall the pairer never saw is
+          // distinguishable from one it saw and rejected.
+          // Horizontal segments in the band the verticals END at: if the
+          // bottom wall is there as geometry, the pairer saw it and declined.
+          const ys = g.flatMap((w) => [w.y1, w.y2]);
+          const lo = Math.max(...ys) - 0.02;
+          const hi = Math.max(...ys) + 0.02;
+          // IN PAGE-WIDTH UNITS, like the candidates. The raw segments are in
+          // PDF points; comparing those against 0-1 finds nothing and reads
+          // as "the geometry is not there", which is the wrong answer.
+          const band = (strokes.segments as StrokeSegment[])
+            .map(inPageWidthUnits(strokes.widthPt))
+            .filter((q) => Math.abs(q.y2 - q.y1) < 0.002 && q.y1 > lo && q.y1 < hi)
+            .sort((a, b) => a.y1 - b.y1 || Math.min(a.x1, a.x2) - Math.min(b.x1, b.x2));
+          rows.push("", `   horizontal segments between y ${(lo * 100).toFixed(1)}% and ${(hi * 100).toFixed(1)}%:`);
+          for (const q of band) {
+            rows.push(
+              `     y ${(q.y1 * 100).toFixed(2)}  x ${(Math.min(q.x1, q.x2) * 100).toFixed(1)} -> ${(Math.max(q.x1, q.x2) * 100).toFixed(1)}`,
+            );
+          }
+          const byAngle = new Map<number, number>();
+          for (const seg of strokes.segments as StrokeSegment[]) {
+            const d = (Math.atan2(seg.y2 - seg.y1, seg.x2 - seg.x1) * 180) / Math.PI;
+            const k = Math.round((((d % 180) + 180) % 180) / 5) * 5;
+            byAngle.set(k % 180, (byAngle.get(k % 180) ?? 0) + 1);
+          }
+          rows.push(
+            "",
+            `   segments by angle: ${[...byAngle.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k}deg x${n}`).join("  ")}`,
+          );
+        }
       } finally {
         await doc.close();
       }

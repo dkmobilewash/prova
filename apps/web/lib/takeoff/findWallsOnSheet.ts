@@ -7,6 +7,7 @@ import {
   wallsNotLettering,
   wallsNotTheSheetBorder,
 } from "./wallVectors";
+import { gridBubbles, linesIntoBubbles } from "./gridBubbles";
 import { wallsFromBothEngines } from "./wallRuns";
 import { templateFromSheets, withoutTemplate } from "./sheetTemplate";
 import { wallTypeTags, tagByRun } from "./wallTags";
@@ -117,6 +118,10 @@ export type FindWallsInput = {
 export type FoundOnSheet = {
   /** In page-width units, after the template pass. */
   inUnits: StrokeSegment[];
+  /** Segments removed for being column-grid lines running into a bubble.
+   *  Reported rather than silent: a sheet whose grid was mistaken for walls
+   *  and a sheet with no grid both drop zero, and only this tells them apart. */
+  gridDropped: number;
   everywhere: WallCandidate[];
   inBuilding: WallCandidate[];
   notLettering: WallCandidate[];
@@ -265,6 +270,42 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
     }
   }
 
+  // ── THE COLUMN GRID, REMOVED BEFORE THE PAIRER EVER SEES IT ──
+  //
+  // A grid line is two things at once: a line a wall-thickness from a real
+  // wall face, and the one thing on a floor plan that ENDS IN A BUBBLE.
+  // `gridBubbles.ts` was written for this — measured against a 60-page key,
+  // where 1,849 ft came back in a 12.4in band matching no assembly, and the
+  // offender was a 115 ft line running past the building at both ends — and
+  // then nothing ever called it.
+  //
+  // It belongs HERE, on raw segments, rather than after pairing: a grid line
+  // that has already been paired with a real wall face has corrupted that
+  // wall's thickness, and no later filter can tell which of the two faces was
+  // the wrong one.
+  //
+  // A bubble is a PAPER size (3/8in to 5/8in) because it has to hold a
+  // readable character at any drawing scale. These coordinates are page-WIDTH
+  // units, so one paper inch is 72 points over the sheet's own width.
+  const unitsPerPaperInch = 72 / pageSize.widthPt;
+  //
+  // ── AND ONLY THE LINES THAT ACTUALLY TOUCH A BUBBLE ──
+  //
+  // `gridLineSegments` was tried here first and it is too strong for this
+  // position: it extends from a bubble to every COLLINEAR segment, and
+  // architects draw column grids ON WALL CENTRELINES, so a wall sharing a
+  // grid's line goes with it. Measured on the bench — missed walls went from
+  // 115 to 263, the holdout total from -2.3% to -6.4%, and one whole wall
+  // type on A-101__revit read -100%: every D1 wall gone.
+  //
+  // `linesIntoBubbles` is the seed set alone — a segment with an END inside a
+  // bubble. That is the property a grid line has and a wall does not, and it
+  // cannot take a wall that merely lies along the same line.
+  const bubbles = gridBubbles(inUnits, unitsPerPaperInch);
+  const gridIndices = linesIntoBubbles(inUnits, bubbles);
+  const gridDropped = gridIndices.size;
+  if (gridDropped > 0) inUnits = inUnits.filter((_, i) => !gridIndices.has(i));
+
   // BOTH ENGINES, MERGED. Pairing asks "are these two lines a wall" and needs no
   // room to close; the room engine asks which enclosed regions are thin AND
   // separate two different spaces. Opposite blind spots, so neither wins alone.
@@ -281,23 +322,45 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
     feetPerPoint: feetPerUnit,
     knownThicknessesIn: scheduleIn,
   });
-  // ONLY THE ONES IN THE BUILDING — without this the title block, the notes
-  // column, the sheet border and any detail drawn above the plan all come back.
-  const inBuilding = wallsInTheBuilding(everywhere, feetPerUnit);
-  // AND NOT THE LETTERING. A stroked glyph is two parallel lines and the pairer
-  // takes it.
-  const notLettering = wallsNotLettering(inBuilding, textBoxes, feetPerUnit);
-  // AND NOT THE SHEET'S OWN BORDER, which a real set offered as a 114ft wall.
+  // ── THE NOISE COMES OUT BEFORE THE BUILDING IS LOOKED FOR ──
+  //
+  // These four filters used to run AFTER `wallsInTheBuilding`, and that order
+  // is what made a run COUNT necessary. Grouping first means the title block,
+  // the lettering and the sheet border are all still candidates when the
+  // groups are formed — so on a sheet with no plan on it the title block can
+  // be the biggest group, and the only thing standing between an estimator
+  // and "the walls of this building are the title block" was `NOT_A_BOX`:
+  // reject any group under ten runs.
+  //
+  // That count could not tell a title block from a ONE-ROOM BUILDING, because
+  // both are four runs. It discarded S01 (one room), S10 and S11 (ordinary
+  // small houses, thin double-line walls, perfectly axis-aligned) — the easy
+  // case — while never actually asking the question it stood in for.
+  //
+  // Filtering first asks it directly. Lettering, the sheet border and the
+  // scale bar are recognised by what they ARE, each by a rule that already
+  // existed and was already justified; a title block is mostly lettering
+  // against the sheet edge, so it leaves on its own. What remains is the
+  // drawing, and the biggest connected group of THAT needs no minimum size.
+  //
+  // Measured on the fixtures: the biggest group spans 25-52% of the sheet
+  // width on all seventeen vector sheets, the five that used to return
+  // nothing included. There was never a size that separated them.
+  const notLettering = wallsNotLettering(everywhere, textBoxes, feetPerUnit);
   const notBorder = wallsNotTheSheetBorder(notLettering, 1, aspect);
-  // AND NOT THE GRAPHIC SCALE BAR, which is two parallel lines a wall-thickness
-  // apart and 32 ft long — a textbook wall by every measurement, and the one
-  // thing on the sheet that is literally a ruler. The bench's copy had no such
-  // filter, which is the other half of why this file exists.
-  const walls = wallsNotTheScaleBar(
+  // THE GRAPHIC SCALE BAR is two parallel lines a wall-thickness apart and
+  // 32 ft long — a textbook wall by every measurement, and the one thing on
+  // the sheet that is literally a ruler.
+  const notScaleBar = wallsNotTheScaleBar(
     notBorder,
     scaleBarLabels(textItems, pageSize.widthPt),
     feetPerUnit,
   );
+  // AND ONLY THEN, WHERE THE BUILDING IS. A floor plan is one connected
+  // thing; whatever is left over after the filters above is either part of it
+  // or is somewhere else on the sheet.
+  const inBuilding = wallsInTheBuilding(notScaleBar, feetPerUnit);
+  const walls = inBuilding;
 
   // ── WHAT THE DRAWING CALLS THESE, where it says so ──
   //
@@ -317,6 +380,7 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
 
   return {
     inUnits,
+    gridDropped,
     everywhere,
     inBuilding,
     notLettering,

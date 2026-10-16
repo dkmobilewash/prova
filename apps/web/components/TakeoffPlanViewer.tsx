@@ -45,12 +45,27 @@ import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
 import { BLANK_TILE_INK, TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
 import type { WallClassifyLabel } from "@prova/integrations";
 import { pagesToSample } from "@/lib/takeoff/sheetTemplate";
-import { findWallsOnSheet, inPageWidthUnits } from "@/lib/takeoff/findWallsOnSheet";
+import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "@/lib/takeoff/findWallsOnSheet";
 import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
 import { layersOf, segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 import { droppedLayersSentence, type LayerDrop } from "@/lib/takeoff/layerNames";
 import { sheetNumberFrom } from "@/lib/plan-ingest/sheetNumber";
-import { cautionToShow, duplicateWallsCaution, sheetSuitability } from "@/lib/takeoff/sheetSuitability";
+import {
+  cautionToShow,
+  duplicateWallsCaution,
+  multiScaleCaution,
+  sheetSuitability,
+  viewsMeasuredCaution,
+} from "@/lib/takeoff/sheetSuitability";
+import { printedScalesOnPage } from "@/lib/takeoff/printedScales";
+import {
+  primaryView,
+  sheetViews,
+  viewRegions,
+  viewsInRegions,
+  wallsPerView,
+  type ViewWalls,
+} from "@/lib/takeoff/sheetViews";
 import { tagSentence } from "@/lib/takeoff/wallTags";
 import {
   verdictFor,
@@ -329,14 +344,40 @@ export function TakeoffPlanViewer({
    *  estimator traces each one with the measuring tools. */
   const [missed, setMissed] = useState<{ where: string; why: string }[]>([]);
   const [checking, setChecking] = useState(false);
+  /** The multi-scale caution per page, read off the drawing's own captions. */
+  const [scaleCautionByPage, setScaleCautionByPage] = useState<Record<number, string>>({});
+  /** The views NOT quoted, per page — measured, each at its own scale, and
+   *  reported rather than added. See `primaryView`. */
+  const [otherViewsByPage, setOtherViewsByPage] = useState<Record<number, ViewWalls[]>>({});
+  /** The view the quantities on screen ARE, so the sentence can name it. */
+  const [primaryViewShown, setPrimaryViewShown] = useState<{ name: string; scaleName: string | null } | null>(null);
   const [checkError, setCheckError] = useState<string | null>(null);
   /**
    * What this sheet has to show. Every render site reads THIS and not the raw
    * state, which is why the name it kept is the one they were already using.
    */
   const found = wallsOnThisSheet(foundRaw, foundOnPage, pageNumber);
-  // ONE SLOT, and `cautionToShow` owns which of the two fills it.
-  const sheetCaution = cautionToShow(duplicateWallsByPage[pageNumber], readCaution[pageNumber]);
+  // ONE SLOT, and `cautionToShow` owns which of the three fills it.
+  //
+  // THE MEASURED SENTENCE BEATS THE WARNING, and it is the same slot. Before
+  // the walls are found, all that can be said is "this sheet prints two
+  // scales". After, the other drawing has a name, a scale and a figure — so
+  // `multiScaleCaution` is what shows until `onFindWalls` has run, and
+  // `viewsMeasuredCaution` replaces it once there is a result to report.
+  const measuredViews = otherViewsByPage[pageNumber];
+  const viewsSentence =
+    measuredViews === undefined || measuredViews.length === 0
+      ? undefined
+      : viewsMeasuredCaution(primaryViewShown, measuredViews.map((one) => ({
+          name: one.view.name,
+          scaleName: one.view.scaleName,
+          lengthFeet: one.lengthFeet,
+        })));
+  const sheetCaution = cautionToShow(
+    duplicateWallsByPage[pageNumber],
+    readCaution[pageNumber],
+    viewsSentence ?? scaleCautionByPage[pageNumber],
+  );
   /**
    * WHICH TYPE A PERSON PICKED for a group that could be more than one, by
    * group index.
@@ -997,6 +1038,20 @@ export function TakeoffPlanViewer({
           reading.sheetNumber,
         );
         if (!cancelled && caution) setReadCaution((prev) => ({ ...prev, [pageNumber]: caution }));
+        // ── AND WHETHER THIS SHEET CARRIES MORE THAN ONE DRAWING ──
+        //
+        // The same `items` the sheet number was read from, so this costs one
+        // more pass over text already in hand and no extra PDF work. It is read
+        // in the BROWSER for the same reason the sheet number is: it is
+        // available on sets the ingest stage never reached, and it needs no
+        // model.
+        const scaleCaution = multiScaleCaution(
+          printedScalesOnPage(items),
+          scalePrefillByPage[pageNumber]?.scaleName ?? null,
+        );
+        if (!cancelled && scaleCaution) {
+          setScaleCautionByPage((prev) => ({ ...prev, [pageNumber]: scaleCaution }));
+        }
       } catch {
         // Nothing: the sheet keeps the takeoff it already had.
       }
@@ -1004,7 +1059,7 @@ export function TakeoffPlanViewer({
     return () => {
       cancelled = true;
     };
-  }, [found, pageNumber, duplicateWallsByPage, pageSize]);
+  }, [found, pageNumber, duplicateWallsByPage, pageSize, scalePrefillByPage]);
 
   async function onFindWalls() {
     const doc = docRef.current;
@@ -1089,14 +1144,54 @@ export function TakeoffPlanViewer({
       // inline here, and the bench's copy of it had silently drifted — no
       // scale-bar filter and a dropped `curved` flag, both of which invent
       // walls. See that file's header.
-      const found = findWallsOnSheet({
-        segments,
-        textItems,
-        pageSize,
-        feetPerUnit,
-        wallTypes,
-        sampledSheets,
-      });
+      // ── ONE SHEET CAN CARRY MORE THAN ONE DRAWING, AT MORE THAN ONE SCALE ──
+      //
+      // Gated on TWO OR MORE views, deliberately. On a single-view sheet this
+      // path would clip to the band starting at that view's own caption, and a
+      // caption sits at the left margin — so anything drawn to the LEFT of it
+      // would be dropped for no gain. 19 of the 20 fixtures are single-view and
+      // take exactly the route they took before this existed.
+      //
+      // `sheetViews.ts` carries why a view must be clipped before it is
+      // re-scaled, and why the captions are used as a RATIO against the
+      // calibration rather than as absolute scales.
+      const views = viewsInRegions(
+        sheetViews(textItems, pageSize.widthPt),
+        viewRegions(segments, pageSize),
+      );
+      let found: FoundOnSheet;
+      let otherViews: ViewWalls[] = [];
+      let primaryShown: { name: string; scaleName: string | null } | null = null;
+      if (views.length >= 2) {
+        const measured = wallsPerView({
+          segments,
+          textItems,
+          pageSize,
+          views,
+          wallTypes,
+          feetPerUnit,
+          sampledSheets,
+        });
+        const picked = primaryView(measured);
+        otherViews = picked.others;
+        primaryShown = picked.primary
+          ? { name: picked.primary.view.name, scaleName: picked.primary.view.scaleName }
+          : null;
+        found =
+          picked.primary?.found ??
+          findWallsOnSheet({ segments, textItems, pageSize, feetPerUnit, wallTypes, sampledSheets });
+      } else {
+        found = findWallsOnSheet({
+          segments,
+          textItems,
+          pageSize,
+          feetPerUnit,
+          wallTypes,
+          sampledSheets,
+        });
+      }
+      setOtherViewsByPage((prev) => ({ ...prev, [pageNumber]: otherViews }));
+      setPrimaryViewShown(primaryShown);
       const walls = found.walls;
       const regroup = found.regroup;
       setTemplateStrokes(found.templateDropped);

@@ -610,8 +610,60 @@ const DEFAULTS = {
    * would settle it properly is a second key with a shaft wall in it, which is
    * also what would say whether the 0.8 points of recall this costs were real
    * wall or more over-measured envelope. Nobody knows yet.
+   *
+   * ── 13, FROM 2026-10-15, AND THE SWEEP ABOVE NO LONGER ARGUES FOR 12 ──
+   *
+   * Everything above was true when it was written and the table is still the
+   * table that was measured. What changed is underneath it: the 12.4in band
+   * the cap was swept to kill WAS THE COLUMN GRID, which `gridBubbles.ts`
+   * says in its own header — "one more line at +12.48in which is 115 ft long
+   * and runs past the building at both ends". That module was written as the
+   * direct fix for it and was never called by anything. It is wired into
+   * `findWallsOnSheet` now, so the grid is gone BEFORE the pairer sees it and
+   * the cap is no longer the thing holding that 1,849 ft back.
+   *
+   * Re-swept with the grid filter in place, on the same bench:
+   *
+   * | cap | LF outside 2% | cases missing a wall | walls | holdout |
+   * | --- | --- | --- | --- | --- |
+   * | 12 | 26/60 | 27 | 113 | -1.9% |
+   * | **13** | **26/60** | **27** | **113** | **-1.9%** |
+   * | 14.4 | 26/60 | 27 | 113 | -1.8% |
+   * | 16 | 26/60 | **33** | **119** | -1.6% |
+   * | 18 | 26/60 | **33** | **119** | -1.6% |
+   *
+   * 13 is bench-IDENTICAL to 12 — not better, identical — and it buys 26 ft of
+   * real exterior wall on a one-storey house whose envelope reads 12.1in. The
+   * knee is at 16, where a pair grows wide enough to swallow the wall beside
+   * it and BOTH are then scored missing, which is why 18 reads worse here than
+   * the old table's 18 did: that failure mode is about neighbours, not phantom.
+   *
+   * ── AND IT IS STILL 12, BECAUSE A UNIT GUARD SAYS THE PAIRER NEEDS IT ──
+   *
+   * The table above is why 13 looked free, and it was measured, not argued.
+   * It is also not sufficient, and the thing that said so was a test in this
+   * file's own suite: "KEEPS THE WALL AND NOT THE COLUMN GRID LINE'S PAIRING".
+   * At 13 the 12.48in grid pairing is admitted and BEATS the real 8.88in wall
+   * — 7.32 where 8.88 was expected.
+   *
+   * The distinction the bench could not draw: that test calls the PAIRER
+   * directly, and `gridBubbles` runs in `findWallsOnSheet`, one level up. So
+   * the filter protects the PIPELINE and the cap protects the PAIRER, and
+   * every caller of the pairer that is not the pipeline still needs the cap.
+   * The bench only ever exercises the pipeline, which is why five bench runs
+   * said "free" about a change that is not.
+   *
+   * So the cost is recorded rather than paid: S06, a one-storey house whose
+   * envelope reads 12.1in, loses 26 ft of real exterior wall to this cap. That
+   * is a genuine false negative and it is the price of the guard, not a bug in
+   * it. Raising the default is Diego's call, not a tuning decision, and the
+   * thing that would make it safe is giving the PAIRER its own grid defence —
+   * at which point re-run the table above rather than trusting it.
+   *
+   * What has NOT changed: 18in is still opt-in, for the reason above. And this
+   * is still one answer key plus one synthetic set.
    */
-  maxThicknessFeet: 1,
+  maxThicknessFeet: 1.0833,
   minLengthFeet: 2,
 };
 
@@ -690,6 +742,25 @@ const MAX_FACE_LENGTH_RATIO = 5;
  * valid one is still taken, so nothing that used to be found stops being found.
  */
 const BALANCED_FACE_RATIO = 2;
+
+/**
+ * How far a face may run past its partner AT BOTH ENDS and still be that wall's
+ * other face, as a fraction of the shorter face.
+ *
+ * A gate rather than a preference, which `BALANCED_FACE_RATIO` deliberately is
+ * not — and the difference is the whole reason this exists. That one asks which
+ * of several valid partners is the wall, and falls back to the widest when none
+ * is balanced. A column grid line has no balanced partner either, so the
+ * fallback hands it one: at a 13in cap it claims the outer finish at 12.48in
+ * and the real faces are left to pair at 7.32in. A preference cannot refuse,
+ * and this has to refuse.
+ *
+ * 0.1 is not finely judged and must not be tuned as though it were. The two
+ * populations are two orders of magnitude apart — a corner overhangs by a wall
+ * thickness (under 2% of the face), a grid line by tens of feet (56% and 132%
+ * on the case this was measured from).
+ */
+const BOTH_ENDS_OVERHANG = 0.1;
 
 /**
  * HATCHING IS A SERIES; A WALL IS A PAIR. This is the whole discriminator, and
@@ -779,6 +850,34 @@ function overlapAlong(a: StrokeSegment, b: StrokeSegment): number {
 }
 
 /**
+ * How far the longer of two parallel segments runs PAST the shorter, at each
+ * end, in points. `[0, 0]` when they begin and end together.
+ *
+ * The companion to `overlapAlong`, which answers how much of them is side by
+ * side and cannot tell a wall from a line passing it: a 115 ft grid line
+ * CONTAINS a 40 ft wall face, so the overlap is 100% of the shorter and every
+ * overlap rule is satisfied. What separates them is what is left over at the
+ * ends.
+ */
+function overhangsAlong(a: StrokeSegment, b: StrokeSegment): [number, number] {
+  const dx = a.x2 - a.x1;
+  const dy = a.y2 - a.y1;
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return [0, 0];
+  const ux = dx / len;
+  const uy = dy / len;
+  const project = (px: number, py: number) => (px - a.x1) * ux + (py - a.y1) * uy;
+  const bOne = project(b.x1, b.y1);
+  const bTwo = project(b.x2, b.y2);
+  const lo = Math.min(bOne, bTwo);
+  const hi = Math.max(bOne, bTwo);
+  // The gap at each end, whichever segment is the longer one there. Two faces
+  // of one wall end together, so both are near zero; a line running past the
+  // wall leaves a large one at each end.
+  return [Math.abs(lo), Math.abs(hi - len)];
+}
+
+/**
  * The walls two faces make, if they make one.
  *
  * Returns null rather than a maybe. A pair either satisfies all four tests or it
@@ -855,6 +954,31 @@ export function wallFromPair(
   // Their LENGTHS can: the border runs the width of a 36" sheet and the title
   // block is 180pt, a 13-fold difference no wall has.
   if (Math.max(aLen, bLen) / Math.min(aLen, bLen) > MAX_FACE_LENGTH_RATIO) return null;
+
+  // 6. THEY END TOGETHER. Two faces of one wall stop at the same places; a line
+  // that merely PASSES the wall overhangs it at both ends.
+  //
+  // This is what rule 3 cannot see and rule 5 cannot catch. A 115 ft column
+  // grid line CONTAINS a 40 ft wall face, so the overlap is 100% of the shorter
+  // — rule 3's best possible score — and the length ratio is 2.87, inside
+  // `MAX_FACE_LENGTH_RATIO`'s 5. Every existing test passes and the grid pairs
+  // with the wall's outer finish at 12.48in.
+  //
+  // A corner is the only legitimate reason a face outruns its partner, and it
+  // outruns it by a WALL THICKNESS — inches. The grid overruns by 22 ft at one
+  // end and 53 ft at the other, against a 40 ft wall. Measured as a fraction of
+  // the shorter face so the rule is scale-free: 56% and 132% there, under 2% for
+  // a corner on the same wall. `BOTH_ENDS_OVERHANG` sits between with two orders
+  // of magnitude of margin, which is why it does not need to be a judged number.
+  //
+  // BOTH ends, deliberately. One end is a corner and is ordinary; a face that
+  // is loose at both ends is not bounded by this wall at all. And faces are
+  // merged per LINE before this (`oneFacePerLine`), so an inner face broken by
+  // partitions arrives as one face co-extensive with its outer, not as a
+  // fragment floating inside it — that case cannot reach this rule.
+  const [headGap, tailGap] = overhangsAlong(a, b);
+  const loose = shorter * BOTH_ENDS_OVERHANG;
+  if (headGap > loose && tailGap > loose) return null;
 
   // The centreline, over the OVERLAPPING span only — the part that is actually
   // two-sided. A face that runs past its partner is a different wall's face or
@@ -1614,6 +1738,46 @@ function gapBetween(a: WallCandidate, b: WallCandidate): number {
  * there is the drawing itself: the bay is visibly empty, the lines are visibly
  * not walls, and they are drawn on screen before anything is accepted.
  */
+/**
+ * The candidates grouped into connected clusters, biggest footage first.
+ *
+ * SPLIT OUT OF `wallsInTheBuilding` so the grouping can be INSPECTED without
+ * the accept/reject decision on top of it. The decision is the part that has
+ * been wrong; the grouping has not been, and a diagnostic that can only see
+ * the survivors cannot say what was thrown away or why.
+ */
+export function buildingGroups(
+  walls: readonly WallCandidate[],
+  feetPerPoint: number,
+  sameBuildingFeet = SAME_BUILDING_FEET,
+): WallCandidate[][] {
+  if (walls.length === 0) return [];
+  const joinPoints = sameBuildingFeet / feetPerPoint;
+
+  const parent = walls.map((_, index) => index);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (let i = 0; i < walls.length; i += 1) {
+    for (let j = i + 1; j < walls.length; j += 1) {
+      if (gapBetween(walls[i], walls[j]) <= joinPoints) {
+        const a = find(i);
+        const b = find(j);
+        if (a !== b) parent[a] = b;
+      }
+    }
+  }
+
+  const groups = new Map<number, WallCandidate[]>();
+  walls.forEach((wall, index) => {
+    const root = find(index);
+    const list = groups.get(root) ?? [];
+    list.push(wall);
+    groups.set(root, list);
+  });
+
+  const feetOf = (group: WallCandidate[]) => group.reduce((total, w) => total + w.lengthFeet, 0);
+  return [...groups.values()].sort((a, b) => feetOf(b) - feetOf(a));
+}
+
 export function wallsInTheBuilding(
   walls: readonly WallCandidate[],
   feetPerPoint: number,
@@ -1670,7 +1834,22 @@ export function wallsInTheBuilding(
   // already says "No walls found on this sheet. That is a fact about the
   // drawing, not a failure", which is true of a roof plan and is far better
   // than four lines somebody has to recognise as a title block.
-  return best.length < NOT_A_BOX ? [] : best;
+  // ── NO MINIMUM SIZE, DELIBERATELY ──
+  //
+  // This returned nothing when the best group had fewer than `NOT_A_BOX`
+  // runs, to stop a TITLE BLOCK (four runs, 64 ft, a rectangle in the corner)
+  // being offered as a building. The count was standing in for a question it
+  // could not ask, and it answered wrongly in the direction that costs most:
+  // a one-room building is also four runs, and S01, S10 and S11 — a studio,
+  // a cottage and a guest house, all drawn with ordinary thin double-line
+  // walls — returned zero.
+  //
+  // The title block is now gone before this function is reached:
+  // `findWallsOnSheet` runs `wallsNotLettering`, `wallsNotTheSheetBorder` and
+  // `wallsNotTheScaleBar` FIRST, so what arrives here is drawing rather than
+  // furniture of the sheet. A building can be any size and any shape,
+  // including one room.
+  return best;
 }
 
 /**

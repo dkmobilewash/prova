@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { openPlanPdf, titleBlockText } from "../plan-ingest/planPdf";
 import { dimensionLabels, metricDimensionLabels } from "../plan-ingest/dimensionLabels";
 import { standardScaleFromText } from "../takeoff-plan";
+import { printedScalesOnPage } from "./printedScales";
 import { readSheetScale } from "./scaleFromDimensions";
 import { scaleFromPrinted } from "./scaleFromPrinted";
 import { scaleFromBar } from "./scaleFromBar";
@@ -201,59 +202,8 @@ export type AuditPage = {
   heightPt: number;
 };
 
-/**
- * EVERY STANDARD SCALE PRINTED ANYWHERE ON THE PAGE, distinct, in reading order.
- *
- * ── THIS LOOKED IN THE TITLE BLOCK ONLY, AND A REAL SHEET PROVED THAT WRONG ──
- *
- * The second export this was pointed at reported `NO_TITLE_SCALE` while printing
- * `1/4" = 1'-0"` in plain text — at x=958 on a 3,024pt page, under the drawing
- * rather than in the title-block corner. Its title block says **`SCALE: AS
- * NOTED`**, which is not a missing answer but the ordinary convention: each view
- * is captioned with its own scale beneath it, and the block defers to them.
- *
- * So the answer key was on the sheet and this function was looking past it,
- * which would have read as an unverifiable derivation forever. Whole page now.
- *
- * ── AND WHY IT RETURNS ALL OF THEM RATHER THAN THE FIRST ──
- *
- * A sheet carrying a plan and an enlarged detail prints TWO scales, both
- * correct. Taking the first would silently cherry-pick, and taking whichever
- * matched would turn an unverifiable page into a false `AGREES` — the one
- * outcome an audit must not manufacture. Several distinct scales is a fact about
- * the sheet, reported as such, and it is the same multi-scale sheet `#640`
- * already warns about.
- *
- * `standardScaleFromText` is what decides whether a candidate IS a scale, so
- * `AS NOTED`, `NTS` and a metric `1:100` all yield nothing — and that is reused
- * rather than re-decided here.
- */
-export function printedScalesOnPage(items: readonly { str: string }[]): string[] {
-  // The quote class must carry the TRUE PRIME MARKS as well as the ASCII and
-  // curly ones — `′` and `″`, which is what a CAD title block actually
-  // letters a scale with. `standardScaleFromText` normalises them, but it never
-  // sees a candidate this pattern did not find first, and a first version of
-  // this omitted them: `1/4″ = 1′-0″` came back null.
-  const QUOTES = "\"'’“”′″";
-  const pattern = new RegExp(`[0-9][0-9/\\-\\s]*[${QUOTES}]?\\s*=\\s*[0-9][0-9\\s${QUOTES}-]*`, "g");
+export { printedScalesOnPage } from "./printedScales";
 
-  const found: string[] = [];
-  for (const item of items) {
-    // A PARAGRAPH IS NOT A CAPTION. One real sheet carries a disclaimer reading
-    // "Do not scale dimensions from prints… not always drawn to scale" — which
-    // this filter is not needed for, since it holds no `X = Y` figure. What it
-    // IS needed for is the general note that does: "DETAILS ARE DRAWN AT
-    // 1/2\" = 1'-0\" UNLESS NOTED OTHERWISE" is an ordinary sentence on an
-    // ordinary sheet, and without this it becomes a second printed scale and
-    // turns a checkable page into `MANY_PRINTED`.
-    if (item.str.length > 60) continue;
-    for (const candidate of item.str.match(pattern) ?? []) {
-      const match = standardScaleFromText(candidate.trim());
-      if (match !== null && !found.includes(match.name)) found.push(match.name);
-    }
-  }
-  return found;
-}
 
 /**
  * Audits every page of one PDF.

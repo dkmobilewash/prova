@@ -186,7 +186,11 @@ describe("the call site, because no test here can open a PDF", () => {
     // Calling it and discarding the answer is the same defect wearing a call.
     // `walls` is what `clusterByThickness` is handed, so this pins the filter's
     // output to that name rather than merely to an expression somewhere.
-    expect(viewer).toMatch(/const walls = wallsNotTheScaleBar\(/);
+    // The scale bar filter now feeds the BUILDING step rather than being the
+    // last thing before clustering — see `findWallsOnSheet`. What matters to
+    // this file is unchanged: its result is what carries on down the chain.
+    expect(viewer).toMatch(/const notScaleBar = wallsNotTheScaleBar\(/);
+    expect(viewer).toMatch(/wallsInTheBuilding\(\s*notScaleBar\s*,/);
     expect(viewer).toContain("clusterByThickness(walls)");
   });
 
