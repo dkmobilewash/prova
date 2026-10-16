@@ -424,6 +424,124 @@ phantom run AND leaves the real wall's pieces unbridged. Not attempted here.
 
 ---
 
+## Two attempts that were built, measured and reverted, 2026-10-16
+
+Both are recorded because each one cost a day's worth of measurement and each
+one is the obvious next thing to try. Neither is in the tree.
+
+### The glazing lever — it works, and it costs 21 bench walls
+
+**What a window is, measured rather than assumed.** S02's 6-1/2in exterior wall
+with a 4 ft and a 5 ft window in it:
+
+    y -49.22   wall face    19.6-25.5   33.0-49.0   54.0-63.8
+    y -49.10   glazing                  25.5-29.5   49.0-54.0
+    y -48.94   glazing                  25.5-29.5   49.0-54.0
+    y -48.78   glazing                  25.5-29.5   49.0-54.0
+    y -48.68   wall face    23.8-25.5   33.0-49.0   54.0-63.2
+
+The outer two glazing lines are 0.32 ft apart — 3.84in, squarely inside the
+partition window — so they PAIR, and their centre lands 0.01 ft from the real
+wall's centre, so `mergeWalls` reads the phantom as the same line and FILLS the
+window instead of bridging it. Gross comes out about right, which is why it
+hid; no opening is recorded, which is the half a bid prices.
+
+**"Two or three thin lines" is NOT the test**, and that was the first thing
+tried. S11's 12in wall carries a 5 ft window drawn with ONE line:
+
+    y -10.44   wall face    15.0-20.0   25.0-44.0
+    y -10.24   glazing                  20.0-25.0
+
+What holds on both, and counts nothing: the glass lies STRICTLY BETWEEN the
+two faces, and it is CONFINED TO THE GAP. The second is what separates it from
+a wall CENTRELINE, which also sits between the faces and also covers the gap —
+but runs the whole wall.
+
+**THREE BUGS WORTH KEEPING, because any future attempt hits all three.**
+
+1. **Confinement is per SPAN, not per LINE.** Asking whether the glazing line
+   has coverage outside this gap is wrong: one glazing line serves EVERY window
+   on its wall. S08's spans four, so each window disqualified the other three
+   and the sheet with 28 openings reported ZERO windows.
+2. **The window cap must BE `MAX_OPENING_FEET`, not a number of its own.** The
+   point of removing the glass is to leave a gap `mergeWalls` will bridge, and
+   it refuses anything wider than that cap — so above it the glass goes and the
+   wall still does not bridge. At 12 ft this called a 9.8 ft span on S17 a
+   window and took the sheet from +0.0% to -3.9%.
+3. **The two line families must actually BE one wall.** Any two parallel lines
+   a partition apart satisfy the search, and a dense sheet has many — a
+   detail's hatching against a section line, two walls across a thin closet.
+   The "gap" between such a pair is not an opening, and a real face between
+   them was deleted as its glass.
+
+**WHAT IT BOUGHT, and it is a lot.** Openings bridged across the seventeen:
+
+    | | openings | by width |
+    | baseline | 130 of 218 | 417 of 862 ft |
+    | with glazing removed | **205 of 218** | **795 of 862 ft** |
+    | …plus the lineweight test | 182 of 218 | 656 of 862 ft |
+
+S08 alone went from 16 of 28 openings (53 ft) to 27 of 28 (103 ft). Gross did
+not move: 13 of 17 throughout.
+
+**WHAT IT COST, and why it is not in the tree.** The 60-page bench:
+
+    | | type-totals outside 2% | walls missed |
+    | baseline | 17 of 60 | 111 |
+    | with glazing removed | 21 of 60 | 132 |
+    | …plus the lineweight test | 19 of 60 | 125 |
+
+Twenty-one real walls on the adversarial set, fourteen with lineweight added.
+That fails the standing rule — a fix must improve or hold both sets — so it was
+reverted whole rather than argued down. Trading gross accuracy, which is what a
+quantity rests on, for net accuracy is the wrong direction even at this ratio.
+
+**LINEWEIGHT IS CONFIRMED AS A REAL SIGNAL THAT IS NOT SUFFICIENT.** Measured:
+S08 draws wall faces at 0.80pt and glazing at 0.25-0.35pt, a 2.3-3.2x gap. As a
+second requirement it recovered 7 of the 21 lost walls. It cannot be the
+discriminator, because S13 draws some wall faces at 0.35pt — the same pen as
+S08's glass. `StrokeSegment.width`'s own comment says whether it discriminates
+was being measured rather than assumed; this is the measurement, and the answer
+is "partly".
+
+**WHAT THE NEXT ATTEMPT NEEDS:** which bench lines are being eaten. That was
+not established — the bench attributes missed walls by cause, but no cause
+names this path, so identifying them means instrumenting the 21 and reading
+them one at a time.
+
+### Wiring the view split into the bench — the key is whole-sheet
+
+The scorecard reports A-401 as `SCALE WRONG_CONFIDENT` and says its ENLARGED
+STAIR PLAN would be measured at 2.00x the truth, while the app splits that
+sheet correctly. So the bench grades a worse pipeline than the one that ships —
+the same drift `harness.ts`'s own header was written about.
+
+Wiring `wallsPerView`/`primaryView` into `findWalls`, gated at two or more
+views exactly as `TakeoffPlanViewer.tsx` gates it, made the grading WORSE:
+
+    | | A-401__clean walls | A-401 LF | bench walls missed |
+    | whole sheet | 11 found / 1 missed of 12 | 367 of 370, -1.0% | 111 |
+    | split | 5 found / 2 partial / 5 missed | 538 of 370, **+45.5%** | 139 |
+
+**The cause is structural, not a bug in the wiring: the bench's A-401 key is
+WHOLE-SHEET.** Scoring a primary-view measurement against a key that covers
+every in-scope wall on the page compares two different quantities, and no
+amount of care in the split fixes that.
+
+So the choice is between two things, and it is not mine to make:
+
+  - **report** the split alongside the whole-sheet score, so the scale verdict
+    stops reading as a flat WRONG when the app reads both views — cheap, and
+    leaves the LF column measuring what it measures today;
+  - **build per-view keys** for A-401, which makes the split scoreable and is
+    the only version that answers "is the stair measured correctly".
+
+Reverted meanwhile. `benchMultiView.eval.ts` already prints the per-view
+figures (RESTROOM 1/4" 647 ft, STAIR 1/2" 386 ft, all six variants identical),
+so the numbers exist today without the scorecard claiming to grade them.
+
+---
+
 ## Step 6 — the real-plan check, 2026-10-16
 
 ### THERE ARE NO REAL PLANS IN THIS REPO, AND THAT BOUNDS EVERYTHING ABOVE
