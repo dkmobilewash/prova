@@ -250,7 +250,7 @@ Status key: **Done** = works end to end, reachable, verified by a run ·
 | 2 | Vector vs scanned detection | **Done** | `hasTextLayer` in `sheetIndexQuery`; drives the "Read this sheet" button | — | — |
 | 3 | Classify sheets | **Partial** | `planSheets.ts` (AI, from title text); `sheetSuitability.ts` wired | not graded; no eval | M |
 | 4 | Sheet number/title from title block | **Done** | `titleBlock.ts`; School 01 shows 60/60 sheets, 5 unreadable (scans) | — | — |
-| 5 | Split multi-view sheets, per-view scale | **Done** | `sheetViews.ts` — finds each drawing by its CAPTION NAME, reads the scale on the line below, and cuts the page on its GUTTERS (empty paper no geometry crosses) on BOTH axes, so stacked and side-by-side separate by the same rule. Each view is measured at its own scale; a view captioned NTS owns its region and is never measured. Wired in `onFindWalls`, gated to >= 2 views. S15 → FLOOR PLAN 1/4" 167 ft + ENLARGED BATH 1/2" 28 ft; the bench's A-401 → RESTROOM 1/4", STAIR 1/2", HEAD OF WALL DETAIL excluded. `sheetViews.eval.ts` + `benchMultiView.eval.ts`; 8 mutations red | per-view ACCURACY is the wall finder's, not this: A-401 reads 679 ft where the key says 266, and the single-scale baseline reads 678 — the same error | M |
+| 5 | Split multi-view sheets, per-view scale | **Done** | `sheetViews.ts` — finds each drawing by its CAPTION NAME, reads the scale on the line below, and cuts the page on its GUTTERS (empty paper no geometry crosses) on BOTH axes, so stacked and side-by-side separate by the same rule. Each view is measured at its own scale; a view captioned NTS owns its region and is never measured. Wired in `onFindWalls`, gated to >= 2 views. S15 → FLOOR PLAN 1/4" 167 ft + ENLARGED BATH 1/2" 28 ft; the bench's A-401 → RESTROOM 1/4", STAIR 1/2", HEAD OF WALL DETAIL excluded. `sheetViews.eval.ts` + `benchMultiView.eval.ts`; 8 mutations red | per-view ACCURACY is the wall finder's, not this. Re-measured 2026-10-16: A-401 splits into RESTROOM 1/4" (16 runs, 647 ft) and STAIR 1/2" (10 runs, 386 ft) against a whole-sheet baseline of 20 runs at 716 ft. **And the BENCH does not use this path** — `harness.ts` calls `readSheetScale` per page, so the scorecard still reports A-401 as `SCALE WRONG_CONFIDENT` and scores the stair at 2.00× the truth. The app does split it (`TakeoffPlanViewer.tsx`); the bench understates what an estimator sees | M |
 
 ### B. Scale
 
@@ -266,16 +266,16 @@ Status key: **Done** = works end to end, reachable, verified by a run ·
 
 | # | capability | status | evidence | missing | effort |
 | --- | --- | --- | --- | --- | --- |
-| 11 | Parallel line pairs | **Partial** | bench P1–P5 pass; **26/60 type totals outside 2%** (was 28/60) | accuracy | L |
+| 11 | Parallel line pairs | **Partial** | bench P1–P5 pass; **17/60 type totals outside 2%** (28 → 26 → 20 → 17); the twenty score 13 of 17 within ±2% of the generator's own geometry (was 1) | accuracy | L |
 | 12 | Filled/hatched walls | **Partial** | raster path emits faces (85–91% of the drawing's own footage). **The "vector poché is unread" line was NOT verified and is wrong about S06**: its solid bottom wall has BOTH faces stroked (53.47% and 54.52% of page width) and the reader returns them. What blocked it was the 12in thickness cap, measured. True filled-polygon poché remains untested — no fixture has one | a fixture with real filled poché | M |
 | 13 | Angled walls | **Partial** | **RE-RATED 2026-10-15, and the Missing was my own error.** It read *"the S06 overlay shows a 45° wing returning nothing"* — true, and the wing returned nothing because `NOT_A_BOX` was discarding the WHOLE SHEET (item 11's lane), not because 45° fails. With that removed the wing returns 5 of 9 runs at 45°/135°, thicknesses 4.5–6.5in. A symptom of another defect, read as a capability gap | accuracy ungraded — no fixture prints a wall length | M |
-| 14 | Curved walls | **Missing** | `flattenCubic` flattens Béziers; no curved-wall probe or handling | everything | L |
+| 14 | Curved walls | **Partial** | **RE-RATED 2026-10-16, 0 → 50.** `curvedWalls.ts` assembles a polygonised arc into a chain and measures the CENTRELINE ARC — the mean of the two faces' path lengths, which is an identity for concentric faces, so no arc is fitted. S07's bay (chord 12.0 ft, arc 14.17) went from contributing NOTHING to the sheet scoring −1.8%. The discriminator is SHAPE, not the `curved` flag: that flag records a Bézier THIS renderer flattened, and S07's bay is 202 straight 0.15 ft pieces with the flag on none of them — filtering on it found every arc on the page except the wall. 12 tests, 8 mutations, 7 red and the eighth noted as unproven | **not Done:** `MAX_PIECE_FEET` (1.5 ft) excludes coarsely-flattened arcs — the bench's lobby arc is 2.5 ft pieces and still goes through the pairer at 22.8 ft. Filled curved poché is untested; no fixture has one | M |
 | 15 | Corners / T-junctions | **Partial** | bench P5 passes (one-face-one-use) | **P15 fails** — a group collapses to ONE run, so stud counts are wrong | M |
 | 16 | Exterior vs interior | **Missing** | no module, no field | everything | M |
 | 17 | Type/thickness grouping | **Partial** | `clusterByThickness`, `wallTypeMatch` wired | **P14 fails** — 4-7/8" and 4-3/4" merge into one group | S |
 | 18 | LF gross and net of openings | **Partial** | gross only; `openings.ts` is **engine only** | net | M |
 | 19 | Wall area (LF × height) | **Missing** | no height source, no area field | everything | M |
-| 20 | Ignore clutter | **Partial** | filters exist; the S08 sofa and the S13 grid stubs are GONE (`gridBubbles` wired in, 2026-10-15) and both overlays are clean; still Partial because no fixture scores footage, so completeness is unproven. Originally: S13 traces washroom fixtures and runs past the building at two gridlines | **11/36 zero-wall sheets produce up to 2,406 phantom ft** | L |
+| 20 | Ignore clutter | **Partial** | filters exist; the S08 sofa and the S13 grid stubs are GONE (`gridBubbles` wired in, 2026-10-15) and both overlays are clean; still Partial because no fixture scores footage, so completeness is unproven. Originally: S13 traces washroom fixtures and runs past the building at two gridlines | **0 of 36 zero-wall sheets produce walls UNFLAGGED** now (was 11/36 at up to 2,406 ft); 31 more produce walls on sheets `sheetSuitability` cautions about, which is the bar being met rather than cleared | L |
 
 ### D. Openings
 
@@ -356,7 +356,7 @@ Done = 100, Engine only = 60, Partial = 50, Stub/Missing/Unverified = 0.
 | group | weight | items | sum | group % | contribution |
 | --- | ---: | --- | ---: | ---: | ---: |
 | **Scale** (6–10) | 15% | 100 + 60 + 100 + 50 + 100 | 410/5 | **82.0%** | 12.30 |
-| **Walls** (11–20) | 25% | 50+50+**50**+0+50+0+50+50+0+50 | 350/10 | **35.0%** | 8.75 |
+| **Walls** (11–20) | 25% | 50+50+50+**50**+50+0+50+50+0+50 | 400/10 | **40.0%** | 10.00 |
 | **Openings** (21–23) | 10% | 60 + 60 + 50 | 170/3 | **56.7%** | 5.67 |
 | **Rooms** (24–30) | 15% | 60+60+50+0+0+0+0 | 170/7 | **24.3%** | 3.64 |
 | **Review UI** (38–44) | 15% | 0+100+50+50+100+100+50 | 450/7 | **64.3%** | 9.64 |
@@ -364,7 +364,144 @@ Done = 100, Engine only = 60, Partial = 50, Stub/Missing/Unverified = 0.
 | **Intake** (1–5) | 5% | 100+100+50+100+**100** | 450/5 | **90.0%** | 4.50 |
 | **Scanned** (31–33) | 5% | 0 + 50 + 60 | 110/3 | **36.7%** | 1.83 |
 
-**TOTAL = 52.6%** (50.3% at the audit → 51.6% after Steps 1–3 → 52.1% after Step 4 → 52.6% with the view split, and UNCHANGED by the stacked-layout work, which deepened item 5 rather than moving a rating. Three ratings have moved in six steps: item 13 from 0 to 50, item 5 from 0 to 50 to 100. Everything else sat INSIDE items already scored Partial — a property of a 0/50/60/100 scale rather than a measure of the work. `reports/takeoff-bench/SCORECARD.md` is the finer instrument, and the fixture evals finer still.)
+**TOTAL = 53.8%** (50.3% at the audit → 51.6% after Steps 1–3 → 52.1% after Step 4 → 52.6% with the view split → **53.8%** with curved walls, 2026-10-16. FOUR ratings have moved in seven steps: item 13 from 0 to 50, item 5 from 0 to 50 to 100, item 14 from 0 to 50. Everything else sat INSIDE items already scored Partial, which is a property of a 0/50/60/100 scale rather than a measure of the work: the twenty went from 1 of 17 within ±2% to 13 of 17 and the bench's type-totals from 28/60 outside to 17/60, and neither moved a single rating. `reports/takeoff-bench/SCORECARD.md` is the finer instrument, and the fixture evals finer still.)
+
+---
+
+## Five general fixes, 2026-10-16
+
+Measured on BOTH sets after each one, because a fix that helps one and hurts
+the other is not a fix. Re-run `truthScore.eval.ts` and `pnpm takeoff:bench`
+rather than trusting this table.
+
+| | the twenty, within ±2% | bench type-totals outside ±2% | bench walls missed | holdout |
+| --- | ---: | ---: | ---: | ---: |
+| start of the day | 1 of 17 | 26 of 60 | 113 | −2.1% |
+| hatch series needs two members | 9 of 17 | 17 of 60 | 111 | −0.5% |
+| inclusive opening cap | 10 of 17 | 17 of 60 | 111 | −0.5% |
+| rule 5 removed (scale) | 12 of 17 | 17 of 60 | 111 | −0.5% |
+| duplicate coverage | 12 of 17 | 17 of 60 | 111 | −0.5% |
+| curved walls | **13 of 17** | **17 of 60** | **111** | **−0.5%** |
+
+### Where the twenty stand
+
+| id | found | key | err | | id | found | key | err |
+| --- | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: |
+| S01 | 80 | 80 | +0.0 ✅ | | S10 | 188 | 188 | +0.0 ✅ |
+| S02 | 237 | 240 | −1.2 ✅ | | S11 | 161 | 166 | −3.0 |
+| S03 | 237 | 240 | −1.3 ✅ | | S12 | 457 | 468 | −2.3 |
+| S04 | 396 | 396 | +0.0 ✅ | | S13 | 576 | 576 | +0.0 ✅ |
+| S05 | 307 | 310 | −0.9 ✅ | | S14 | 611 | 584 | +4.7 |
+| S06 | 188 | 188 | +0.0 ✅ | | S15 | 206 | 206 | +0.0 ✅ |
+| S07 | 196 | 200 | −1.8 ✅ | | S16 | 238 | 241 | −1.2 ✅ |
+| S08 | 475 | 464 | +2.3 | | S17 | 251 | 251 | +0.0 ✅ |
+| S09 | 356 | 356 | +0.0 ✅ | | S18–20 | — | — | NOT SUPPORTED |
+
+S18–20 are scans and count as NOT SUPPORTED, never as a pass — group J's
+scanned items carry that, and `truthScore.eval.ts` prints them that way.
+
+### The four that still fail, diagnosed
+
+All four are the SAME remaining defect plus one outlier, and the numbers come
+from the eval's own opening tally rather than from reading overlays:
+
+- **S08 +2.3%** — bridges 16 of 28 openings, 53 of 106 ft. Its 8.40in phantom
+  is gone; two orphan clusters remain (3.60in over 6 ft, 2.40in over 2 ft),
+  which are window GLAZING lines pairing with each other inside an opening.
+- **S11 −3.0%** — bridges 4 of 8 openings. W7 is a 14 ft wall with a 2.5 ft
+  and a 4.0 ft door, read as 9.0 ft.
+- **S12 −2.3%** — bridges 10 of 16. W13 is the outlier: a 16 ft wall with NO
+  openings, read as 8.7 ft, so it is not an opening problem.
+- **S14 +4.7%** — bridges 9 of 14, and its orphan clusters (3.38in over 112 ft,
+  16.88in over 27 ft) are REAL wall measured at the wrong thickness. See
+  `duplicateCoverage.ts`: 160 + 112 is exactly the 272 ft of 4.5in its key
+  declares, which is why dropping an orphan thickness costs 19%.
+
+**Window glazing is the next lever and it is worth about 50 ft on S08 alone.**
+A window is drawn with three lines across its opening; two of them are 0.32 ft
+apart, which is 3.8in and inside the partition window, so each window yields a
+phantom run AND leaves the real wall's pieces unbridged. Not attempted here.
+
+---
+
+## Step 6 — the real-plan check, 2026-10-16
+
+### THERE ARE NO REAL PLANS IN THIS REPO, AND THAT BOUNDS EVERYTHING ABOVE
+
+Asked for directly, so it is answered directly. Every PDF in the repo is in
+one of four places and none of them is a real drawing:
+
+| where | what | provenance |
+| --- | --- | --- |
+| `lib/takeoff/fixtures/plans` | the twenty, S01–S20 | generated by `fixtures/generator/generate.py` |
+| `reports/takeoff-bench/fixtures/pdf` | 90 files, A-101 … S-101 | generated by `bench/writers.ts` |
+| `apps/web/e2e/fixtures` | `wide-sheet.pdf` and friends | written by the e2e harness |
+| `apps/lien-waiver/statutes/raw` | statutes | not drawings |
+
+The real-plan evals (`realplan/layers.eval.ts`, `realplan/sheetTemplate.eval.ts`)
+read `REAL_PLAN_PDF`, which points OUTSIDE the repo and is unset here. So every
+figure in this file is measured on drawings a program wrote, and the one honest
+sentence about carry-over is that nobody has checked it.
+
+Two things make that less bad than it sounds, and neither makes it good. The
+bench's 90 files come from a DIFFERENT generator than the twenty, through four
+writers (clean, AutoCAD, Revit, Skia) with clip paths, dash patterns, optional
+content, SHX text, rotation and half-size reductions — so a fix that holds on
+both sets has survived two independent idea of what a drawing looks like. And
+the fixture keys are the generator's own geometry rather than a measurement,
+so they cannot flatter the detector.
+
+What a real set would test that neither does: line weights that mean something,
+hand-added revision clouds, xref'd backgrounds, text as outlines, arcs
+polygonised by someone else's tolerance, and the pure volume of annotation a
+60-page issue carries.
+
+### A-401, the nearest thing to a real sheet
+
+The bench's multi-view sheet, read through the same pipeline. Wall footage is
+good and the phantoms are the story — and because this fixture carries CAD
+layer names, the bench can say exactly what each phantom is:
+
+| | A-401__clean |
+| --- | --- |
+| in-scope LF | **367 of 370 centreline = −1.0%** |
+| walls | 11 found, 0 partial, 1 missed of 12 |
+| phantom | **7 runs, 120 ft** — detail (`A-DETL`) 65 ft, stair (`A-FLOR-STRS`) 34 ft, dimension (`A-ANNO-DIMS`) 18 ft |
+| missed | 49 ft over 2 walls to `inAHatchSeries`; 2 ft under the run floor |
+| scale | names 1/4" for the page; ENLARGED STAIR is 1/2", so that view reads 2.00× |
+
+Three findings, in the order they cost the most:
+
+1. **Detail and stair linework is 99 of the 120 phantom feet.** Neither is a
+   wall and both are wall-shaped. The layer names would settle it outright,
+   and `layerNames` already does on `A-401__layers` — which is why that
+   variant finds 15 runs where `clean` finds 16.
+2. **`inAHatchSeries` is still the largest single cause of missed wall on the
+   bench**, 49 ft on this sheet alone, after two commits spent on it today.
+   The rule is better and it is still the top of this list.
+3. **Dimension lines still become walls, 18 ft here.** `duplicateCoverage`
+   removes a dimension string that DUPLICATES a wall, which is what S08 had.
+   It does nothing about one standing on its own in open paper, and this
+   sheet has 18 ft of exactly that.
+
+### What the split gives on it, and the gap that matters
+
+`benchMultiView.eval.ts`, run today: A-401 splits into three regions and names
+two measurable views —
+
+    ENLARGED RESTROOM PLAN   1/4" = 1'-0"   16 runs   647 ft   (primary)
+    ENLARGED STAIR PLAN      1/2" = 1'-0"   10 runs   386 ft
+
+against a whole-sheet baseline of 20 runs and 716 ft at one scale. All six
+A-401 variants split identically, including the half-size reduction.
+
+**The bench harness does not use that path**, so the scorecard above still
+reports the stair at 2.00× the truth. The app does (`TakeoffPlanViewer.tsx`
+imports `primaryView`, `wallsPerView`, `excludedViews` and the cautions), and
+`e2e/specs/multi-view.spec.ts` clicks it in a real browser. So the bench's
+scale verdict on A-401 understates what an estimator is shown — and the two
+instruments disagreeing is itself worth fixing, because the bench is what
+anybody will read first.
 
 ---
 
