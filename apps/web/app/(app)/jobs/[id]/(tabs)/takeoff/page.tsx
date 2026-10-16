@@ -172,13 +172,72 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   } = loaded;
 
 
+  /**
+   * How many sheets the index would have somebody look at: a number nobody has
+   * confirmed, or one that two sheets both claim.
+   *
+   * A DUPLICATE IS THE SHARPER OF THE TWO and is why this is in the summary
+   * rather than only inside. A set where A5.11 appears twice is a set nobody
+   * can navigate by number, and on a folded panel that fact would otherwise be
+   * invisible until somebody opened it.
+   */
+  const seenNumbers = new Map<string, number>();
+  for (const row of sheetRows) {
+    const number = effectiveSheetNumber(row);
+    if (number) seenNumbers.set(number, (seenNumbers.get(number) ?? 0) + 1);
+  }
+  const indexNeedsAttention = sheetRows.filter((row) => {
+    const number = effectiveSheetNumber(row);
+    if (!number) return true;
+    if ((seenNumbers.get(number) ?? 0) > 1) return true;
+    return row.proposal?.status === "PROPOSED";
+  }).length;
+
   return (
     <section className="flex flex-col gap-4">
-      <Header jobId={job.id} />
+      <Header jobId={job.id} hasPlan />
       {/* ABOVE the measurements, for the reason the levelling caution sits
           above the quotes: it decides whether the numbers below mean
           anything. */}
       <TakeoffCurrencyBanner jobId={job.id} currency={currency} />
+
+      {/* ── THE DRAWING FIRST, 2026-10-16 ──
+          It used to be LAST, under the revision form, the ingest panel, the
+          sheet index and the schedule proposals. On a 55-sheet set that is the
+          whole index between somebody and the thing they came to look at, and
+          it was reported as exactly that: "way too much scrolling to get down
+          to the actual plan sheet display".
+          Everything below it is about the SET — which sheets there are, what
+          they are called, what has been read. Useful, and not what this tab is
+          for. */}
+      <TakeoffPlanViewer
+        duplicateWallsByPage={duplicateWallsByPage}
+        sheetLabelByPage={sheetLabelByPage}
+        jobId={job.id}
+        planId={plan.id}
+        sheets={sheets}
+        printedScaleByPage={printedScaleByPage}
+        scannedPages={scannedPages}
+        storedWallsByPage={storedWallsByPage}
+        scalePrefillByPage={scalePrefillByPage}
+        scaleDeclineByPage={scaleDeclineByPage}
+        levelByPage={levelByPage}
+        // MATCHING ONLY. The viewer never picks a wall type — it reports which
+        // of these the DRAWING named beside a detected group. Already filtered
+        // to types with layers, so a match always produces line items.
+        // AND THE THICKNESS, which is what reaches the UNTAGGED walls: an
+        // architect tags representative walls, not every wall — 25-43% of the
+        // footage on a real sheet — so without it the majority of every
+        // drawing stays unpriced. Null where the company never recorded one,
+        // which the matcher reads as "cannot be matched by thickness".
+        wallTypes={allWallTypes.map((type) => ({
+          id: type.id,
+          code: type.code,
+          name: type.name,
+          hasParts: type._count.components > 0,
+          thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
+        }))}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-ink-body">
@@ -238,7 +297,28 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           all times rather than behind a condition: an empty index says so in one
           sentence, which is more useful than a section that appears from nowhere
           the first time a run finishes. */}
-      {isEstimateStage && <PlanSheetReview rows={sheetRows} planId={plan.id} />}
+      {/* ── THE INDEX, FOLDED AWAY ──
+          Fifty-five rows every time the tab opens, above the drawing, is a
+          wall. It is a <details> so it costs one line until somebody wants it,
+          and the summary carries the two numbers that would make them want it:
+          how many sheets there are and how many have something to check.
+          Native <details> rather than state: it works before hydration, it is
+          keyboard-operable for free, and the browser's own disclosure is what
+          a screen reader already announces. */}
+      {isEstimateStage && (
+        <details className="rounded-lg border border-line-card bg-surface" data-takeoff="sheet-index">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-ink-label">
+            Sheet index
+            <span className="ml-2 font-normal text-ink-muted">
+              {sheetRows.length} sheet{sheetRows.length === 1 ? "" : "s"}
+              {indexNeedsAttention > 0 ? ` · ${indexNeedsAttention} to check` : ""}
+            </span>
+          </summary>
+          <div className="px-4 pb-4">
+            <PlanSheetReview rows={sheetRows} planId={plan.id} />
+          </div>
+        </details>
+      )}
 
       {/* BELOW the sheet review, because the page types it shows are what decide
           which sheets have schedules at all. Silent until something has been
@@ -256,34 +336,6 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         />
       )}
 
-      <TakeoffPlanViewer
-        duplicateWallsByPage={duplicateWallsByPage}
-        sheetLabelByPage={sheetLabelByPage}
-        jobId={job.id}
-        planId={plan.id}
-        sheets={sheets}
-        printedScaleByPage={printedScaleByPage}
-        scannedPages={scannedPages}
-        storedWallsByPage={storedWallsByPage}
-        scalePrefillByPage={scalePrefillByPage}
-        scaleDeclineByPage={scaleDeclineByPage}
-        levelByPage={levelByPage}
-        // MATCHING ONLY. The viewer never picks a wall type — it reports which
-        // of these the DRAWING named beside a detected group. Already filtered
-        // to types with layers, so a match always produces line items.
-        // AND THE THICKNESS, which is what reaches the UNTAGGED walls: an
-        // architect tags representative walls, not every wall — 25-43% of the
-        // footage on a real sheet — so without it the majority of every
-        // drawing stays unpriced. Null where the company never recorded one,
-        // which the matcher reads as "cannot be matched by thickness".
-        wallTypes={allWallTypes.map((type) => ({
-          id: type.id,
-          code: type.code,
-          name: type.name,
-          hasParts: type._count.components > 0,
-          thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
-        }))}
-      />
 
       {/* ── WHOSE SHEET IS THIS, AND WHY THERE IS A HEADING ABOVE THE LIST ──
           A browser run reported "Measured on sheet 21" as a stale caption,
@@ -331,10 +383,28 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   );
 }
 
-function Header({ jobId }: { jobId: string }) {
+function Header({ jobId, hasPlan = false }: { jobId: string; hasPlan?: boolean }) {
   return (
     <div className="flex flex-col gap-1">
-      <h2 className="text-lg font-semibold text-ink-strong">Takeoff</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold text-ink-strong">Takeoff</h2>
+        {/* ── THE WAY INTO THE FULL-SCREEN WORKSPACE ──
+            Added 2026-10-16, after it was reported missing — and it was: the
+            workspace shipped reachable only from the ESTIMATE tab, which is
+            not where anybody stands when they want the drawing bigger. They
+            stand here, on a 55-sheet set, scrolling.
+            A real link, so Cmd-click and right-click open it in a tab of its
+            own; an estimator comparing a bid against a drawing wants both. */}
+        {hasPlan && (
+          <Link
+            href={`/takeoff/${jobId}`}
+            className="rounded-md border border-line-card px-3 py-1.5 text-sm text-link hover:text-link-hover"
+            data-takeoff="open-workspace"
+          >
+            Open full screen
+          </Link>
+        )}
+      </div>
       <p className="max-w-prose text-sm text-ink-body">
         Measure a drawing on screen. Set the scale on each sheet against a dimension printed on it, trace what
         you&rsquo;re taking off, and add it to the estimate.{" "}

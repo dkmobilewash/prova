@@ -165,6 +165,42 @@ test.describe("the full-screen takeoff workspace", () => {
     await expectHealthy(page, "takeoff tab, S02 scaled", { monitor });
   });
 
+  test("0b. THE TAKEOFF TAB LEADS WITH THE DRAWING, and offers full screen", async () => {
+    // ── BOTH HALVES WERE REPORTED, NOT GUESSED ──
+    //
+    // The workspace shipped reachable only from the ESTIMATE tab, and the
+    // drawing sat LAST on the takeoff tab under the revision form, the ingest
+    // panel, a 55-row sheet index and the schedule proposals. On a real set
+    // that is the whole index between somebody and the thing they opened the
+    // tab for.
+    await page.goto(`/jobs/${jobOne}/takeoff`);
+    await expectHealthy(page, "takeoff tab ordering", { monitor });
+
+    const workspaceLink = page.locator('[data-takeoff="open-workspace"]');
+    await expect(workspaceLink, "no way into the workspace from the takeoff tab").toBeVisible();
+    await expect(workspaceLink).toHaveAttribute("href", `/takeoff/${jobOne}`);
+    expect(await workspaceLink.evaluate((node) => node.tagName)).toBe("A");
+
+    // THE DRAWING IS ABOVE THE INDEX, measured by document position rather
+    // than by reading the JSX — the order on screen is the claim.
+    const order = await page.evaluate(() => {
+      const canvas = document.querySelector('[data-testid="takeoff-plan-port"]');
+      const index = document.querySelector('[data-takeoff="sheet-index"]');
+      if (canvas === null) return "no canvas";
+      if (index === null) return "no index";
+      // Node.DOCUMENT_POSITION_FOLLOWING === 4: the index comes after.
+      return (canvas.compareDocumentPosition(index) & 4) !== 0 ? "canvas first" : "index first";
+    });
+    expect(order, "the sheet index is above the drawing again").toBe("canvas first");
+
+    // AND THE INDEX IS FOLDED, so 55 sheets cost one line until asked for.
+    const open = await page.locator('[data-takeoff="sheet-index"]').evaluate(
+      (node) => (node as HTMLDetailsElement).open,
+    );
+    expect(open, "the sheet index is expanded on arrival").toBe(false);
+    await page.screenshot({ path: path.join(SHOTS, "takeoff-tab-drawing-first.png") });
+  });
+
   test("2. the ESTIMATE links to the workspace, and it is a real link", async () => {
     await page.goto(`/jobs/${jobOne}/estimate`);
     await expectHealthy(page, "estimate page", { monitor });
