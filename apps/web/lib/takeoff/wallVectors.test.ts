@@ -1414,6 +1414,35 @@ describe("a series is strokes that look alike, not merely strokes nearby", () =>
     expect(walls[0].lengthFeet).toBeCloseTo(17.5, 1);
   });
 
+  it("KEEPS A WALL WITH A DIMENSION STRING BELOW IT — S17's whole south side", () => {
+    // The long end of the same defect. A dimension string runs the full side
+    // of a building, parallel to the wall it measures, at a round offset — and
+    // a round offset lands on a whole number of steps often enough to matter.
+    //
+    // S17's south wall is 300mm, so its faces are 0.98 ft apart, and its
+    // dimension line sits 1.88 ft below the outer face: 1.918 steps, which is
+    // 0.08 from a whole number and well inside the pitch tolerance. The wall
+    // was discarded, and the GLAZING LINES of its two windows then paired with
+    // each other — the sheet reported the windows as the wall, 16.4 ft of 49.2
+    // at the wrong thickness.
+    const WALL = 0.98 * 9; // a 300mm wall's two faces, in points at 1/8"
+    const faces = [h(100, 500, 17.6 * 9), h(100, 500 + WALL, 17.6 * 9)];
+    const dimension = h(60, 500 - 1.918 * WALL, 50 * 9);
+    const walls = wallsFromStrokes([...faces, dimension], EIGHTH);
+    expect(walls, "a dimension string suppressed the wall it measures").toHaveLength(1);
+    expect(walls[0].thicknessFeet * 12).toBeCloseTo(11.8, 0);
+  });
+
+  it("a dimension string is not a series member, however close its pitch", () => {
+    // The control for the case above: without the dimension line the wall is
+    // found identically, so the assertion is about the line and not about the
+    // faces happening to pair.
+    const WALL = 0.98 * 9;
+    const walls = wallsFromStrokes([h(100, 500, 17.6 * 9), h(100, 500 + WALL, 17.6 * 9)], EIGHTH);
+    expect(walls).toHaveLength(1);
+    expect(walls[0].lengthFeet).toBeCloseTo(17.6, 1);
+  });
+
   it("A FIVE-STROKE FILL STILL LEAKS ONE WALL, and that is OLDER than this rule", () => {
     // Recorded rather than asserted away. Six strokes are refused outright;
     // five leave one pair standing, and the control says why that is not this

@@ -830,6 +830,17 @@ const SERIES_PITCH_TOLERANCE = 0.2;
  * it already has 0.07 of headroom against a gypsum line at 1.07 steps. Length
  * is a different question and leaves that margin alone.
  *
+ * ── AND THE SAME RATIO BOUNDS IT FROM ABOVE ──
+ *
+ * A dimension string is the long version of the same mistake: it runs the
+ * whole side of a building, parallel to the wall it measures, at a round
+ * offset that lands on a whole number of steps often enough to matter. S17's
+ * does, at 1.918 — and it took the sheet's entire 49 ft south wall with it.
+ *
+ * So the test is two-sided. A member may be neither much shorter nor much
+ * longer than the pair it claims to continue, because a fill is strokes that
+ * resemble each other.
+ *
  * ── WHY A THIN WALL IS THE ONE THAT SUFFERS ──
  *
  * The step IS the wall's thickness, so a 4.5in partition has a small step and
@@ -843,6 +854,38 @@ const SERIES_PITCH_TOLERANCE = 0.2;
  * sitting entirely inside a 17.5 ft wall overlaps it 100% and passes.
  */
 const SERIES_MEMBER_RATIO = 0.75;
+
+/**
+ * And how much LONGER a member may be than the pair's longer face.
+ *
+ * Its own constant rather than `1 / SERIES_MEMBER_RATIO`, because the two
+ * bounds are answering about different things and the measurements say so. The
+ * lower bound keeps a short fixture from suppressing a wall; this one keeps a
+ * DIMENSION STRING from doing it — S17's runs the whole 50 ft side of the
+ * building against a 17.6 ft stretch of wall, 2.7 times its length.
+ *
+ * MEASURED at 1.333 and at 2. The looser value is strictly worse: it costs
+ * S05 and S09 their passes and does NOT recover S08, whose over-count is
+ * present at both and is therefore about something else. So this sits at
+ * 1.333 — the reciprocal of the lower bound, which is where it started — and
+ * S08 is recorded as an open regression rather than tuned around.
+ *
+ * ── ONE MUTATION OF THIS LINE SURVIVES, AND SAYING SO IS THE POINT ──
+ *
+ * Measuring against `Math.min` instead of `Math.max` changes no test in this
+ * suite and no figure on either fixture set. Both faces of a wall are usually
+ * the same length, so the two agree; where they do not — S17's 18.5 against
+ * 17.6 — the member is a 50 ft dimension string and lands outside either
+ * bound.
+ *
+ * Two attempts at a case that would decide it both ran into the OLDER
+ * end-of-series defect recorded in the test below, where the outermost pair
+ * of a short fill has a neighbour on one side only. So `max` is reasoned
+ * rather than measured: a member must resemble the pair, and the pair is as
+ * long as its longer face. If that reasoning is wrong, nothing here will say
+ * so.
+ */
+const SERIES_MEMBER_LONGEST = 1.333;
 
 /** Direction of a segment, normalised to [0, π) so a line and its reverse are
  *  the same direction — which they are, for a wall face. */
@@ -1514,11 +1557,32 @@ function inAHatchSeries(
     if (angleGap(angleOf(other), direction) > PARALLEL_TOLERANCE_RAD) continue;
     // It has to be alongside the pair, not somewhere else on the sheet.
     if (overlapAlong(a, other) < Math.min(aLen, lengthOf(other)) * 0.5) continue;
-    // AND IT HAS TO LOOK LIKE THE PAIR. A fixture drawn in the next room is a
-    // short parallel line, and the overlap test above cannot refuse it: it is
-    // measured against the SHORTER of the two, so a 2.5 ft line inside a
-    // 17.5 ft wall overlaps 100%. See `SERIES_MEMBER_RATIO`.
-    if (lengthOf(other) < Math.min(aLen, lengthOf(b)) * SERIES_MEMBER_RATIO) continue;
+    // AND IT HAS TO LOOK LIKE THE PAIR — IN BOTH DIRECTIONS.
+    //
+    // Too SHORT: a fixture drawn in the next room is a short parallel line,
+    // and the overlap test above cannot refuse it, because it is measured
+    // against the SHORTER of the two — a 2.5 ft line inside a 17.5 ft wall
+    // overlaps it 100%.
+    //
+    // Too LONG: a DIMENSION STRING runs the whole side of the building,
+    // parallel to the wall it measures and offset from it by a round
+    // distance. S17's south wall is 300mm, so its faces are 0.98 ft apart,
+    // and its dimension line sits 1.88 ft below the outer face:
+    //
+    //     1.88 / 0.98 = 1.918 steps,  |1.918 - 2| = 0.08  <=  0.2
+    //
+    // — so a 50 ft dimension line and two wall faces read as a three-member
+    // series, and the whole 49 ft wall was thrown away. The glazing lines of
+    // its two windows then paired with each other, and the sheet reported
+    // 16.4 ft of wall at 7.09in: the WINDOWS measured as the wall.
+    //
+    // This is the same defect as the fixture case, from the other end of the
+    // scale, which is why one rule covers both: hatching is a fill whose
+    // strokes resemble each other, and a member 2.7 times the pair's own face
+    // is not one of them.
+    const otherLen = lengthOf(other);
+    if (otherLen < Math.min(aLen, lengthOf(b)) * SERIES_MEMBER_RATIO) continue;
+    if (otherLen > Math.max(aLen, lengthOf(b)) * SERIES_MEMBER_LONGEST) continue;
 
     const where = offsetOf(other);
     // ── IT MUST CONTINUE THE SPACING, NOT MERELY BE NEARBY ──
