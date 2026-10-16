@@ -1,0 +1,8 @@
+### A pre-fill link lost its values when Next was tapped before the page finished loading (Diego)
+`claude/jolly-brahmagupta-bjy7e0`
+
+Diego opened the CA example link on a phone and the company never filled in. The cause, reproduced: the page is server-rendered, so it is on screen before its JavaScript runs, and the Next button was already live. Tapped in that window, the BROWSER submitted the step form itself, as a plain GET with only the two radio answers -- `/california?stage=PROGRESS&cleared=no` -- so `company`, `gc` and `ref` were gone before the page could read them. Anything else on screen afterwards came from that browser's own saved answers, which is why a value could look half-filled.
+
+Next is now disabled until the page has mounted, which also stops a premature Enter from submitting. The mapping table and the memory handling were not at fault: a matrix of five saved-memory states in a real browser filled the company every time.
+
+The check: `apps/web/e2e/lien-waiver/prefill-states.spec.ts`. Holding every script back and tapping Next fails without the fix (the URL becomes `?stage=PROGRESS&cleared=no`) and passes with it. The same file now walks CA, AZ, NV and TX with every parameter -- company in the claimant blank and on the send step, gc, owner, project, address where the form has them, license nowhere, `type=cp` pre-selected, the ref posted and never on screen -- and the link's company winning over a different saved company and over an empty one. Those passed before the fix too, and are there so the next report of a missing value can be answered by a test instead of a guess.
