@@ -125,8 +125,16 @@ describe("the call site", () => {
       resolve(process.cwd(), "app/(app)/jobs/[id]/(tabs)/takeoff/page.tsx"),
       "utf8",
     );
-    expect(source).toContain("levelByPage={levelByPage}");
-    // And it is actually computed, not an empty object somebody left behind.
-    expect(source).toContain("levelsByPage(");
+    expect(source, "the tab stopped passing levelByPage").toContain("levelByPage={levelByPage}");
+    // AND THE WORKSPACE PASSES IT TOO, because the viewer is rendered from two
+    // places now and a label missing on one of them is a label missing.
+    const workspace = readFileSync(resolve(process.cwd(), "components/TakeoffWorkspace.tsx"), "utf8");
+    expect(workspace, "the full-screen workspace stopped passing levelByPage").toContain(
+      "levelByPage={data.levelByPage}",
+    );
+    // And it is actually computed, not an empty object somebody left behind —
+    // in the loader both pages share, which is where the query went.
+    const loader = readFileSync(resolve(process.cwd(), "lib/takeoff/workspaceLoad.ts"), "utf8");
+    expect(loader, "levelsByPage is no longer called anywhere").toContain("levelsByPage(");
   });
 });

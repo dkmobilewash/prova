@@ -189,6 +189,7 @@ export function TakeoffPlanViewer({
   scaleDeclineByPage,
   duplicateWallsByPage = {},
   sheetLabelByPage = {},
+  initialPage = 1,
 }: {
   jobId: string;
   planId: string;
@@ -205,6 +206,8 @@ export function TakeoffPlanViewer({
    * — the only time it has anything to say. See the note in
    * `takeoff-plan-view.ts`.
    */
+  /** The sheet to open on. 1 unless a caller knows better — see the state. */
+  initialPage?: number;
   printedScaleByPage: PrintedScaleByPage;
   /**
    * Page numbers whose page carries NO TEXT LAYER — that is, scans.
@@ -279,7 +282,14 @@ export function TakeoffPlanViewer({
    */
   sheetLabelByPage?: Record<number, string>;
 }) {
-  const [pageNumber, setPageNumber] = useState(1);
+  // ── WHICH SHEET IS OPEN IS PART OF WHERE YOU ARE ──
+  //
+  // Defaulted to 1, which is every caller that existed before the full-screen
+  // workspace. The workspace passes the page out of its own URL, so its sheet
+  // rail can be a list of REAL LINKS: a reviewer can send somebody "look at
+  // A-102" and have them land on it, and Cmd-click opens a second sheet beside
+  // the first. A click handler could not do either.
+  const [pageNumber, setPageNumber] = useState(initialPage);
   const [pageCount, setPageCount] = useState<number | null>(null);
   /** How many strokes the set's own template accounted for, so the panel can
    *  SAY it rather than quietly returning a smaller number. */

@@ -125,6 +125,28 @@ const hits = files.flatMap((f) => findHits(f.code, f.path));
  * per-file EXPECTED count is checked below, not just membership.
  */
 const KNOWN: Record<string, { count: number; because: string }> = {
+  "apps/web/app/takeoff/[id]/page.tsx": {
+    count: 1,
+    because:
+      "OUTSIDE the (app) route group, deliberately — see the file's own " +
+      "header. `--shell-port` is the app shell's scroll port, and this page " +
+      "has no shell above it to be a port of: it IS the viewport. The one " +
+      "occurrence is the no-drawing state, which centres in the window.",
+  },
+  "apps/web/components/TakeoffWorkspace.tsx": {
+    count: 2,
+    because:
+      "The full-screen takeoff workspace, rendered only by the route above " +
+      "and so also outside the (app) shell. `h-[100dvh]` on its root is what " +
+      "makes the drawing as large as the screen allows, which is the whole " +
+      "reason the route exists. The SECOND is the one that matters: this page " +
+      "is outside the shell, so it DEFINES `--shell-port` rather than reading " +
+      "it — `calc(100dvh-2.75rem)`, the viewport less its own identity row. " +
+      "Without it the viewer's own `max-h-[calc(var(--shell-port)-11rem)]` has " +
+      "no value, the max-height is dropped, and the plan renders at 18% in a " +
+      "384px box. Same role as `(app)/layout.tsx`'s entry above: a definer, " +
+      "not a consumer.",
+  },
   "apps/web/app/(app)/layout.tsx": {
     count: 2,
     because:
