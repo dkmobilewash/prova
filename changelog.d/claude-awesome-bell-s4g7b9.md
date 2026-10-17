@@ -1,4 +1,4 @@
-### A subcontractor can see what a GC's subcontract commits them to before they sign (Diego)
+### A subcontractor can see what a GC's subcontract commits them to — and how it differs from their bid — before they sign (Diego)
 
 `claude/awesome-bell-s4g7b9`
 
@@ -11,6 +11,8 @@ Why it is built the way it is:
 - **Decisions are keyed on the job and the clause, never the run**, so they survive a re-run and carry to the next contract version wherever the wording is unchanged; a later version shows what is new, changed and gone.
 - **Its own switch (`SUBCONTRACT_REVIEW`) and its own monthly unit** (`contractPagesUsed`, 600 pages), so one contract package cannot spend a month of quote and COI reading. Each readable page is charged once even though chunks overlap by a page.
 
-Two migrations, both additive: `20261017180000_add_subcontract_review_ai_feature` (enum member + three integer columns with defaults) and `20261017180100_add_subcontract_review` (four tables, every foreign key CASCADE, so the cleanup scripts gain no RESTRICT child of `Job`).
+**Phase 2, same PR — what it commits you to against what you bid.** The review now compares the contract with the job's own side of the deal: the contract sum against the won bid's base plus ACCEPTED alternates (undecided ones named, allowances never added), retainage against the job's rate and the GC's usual one, the addenda the contract incorporates against those logged and acknowledged on the bid, and contract passages that put on you work your proposal excluded. Exclusions the contract never carries are listed once the whole contract has been read — the one kind of finding that cannot quote the contract, so it quotes YOUR clause and says how many pages were searched. Every number is compared by code; the model only finds the passages, and a clause ref it was not given is dropped. A one-page summary — top risks, money terms, deadlines, insurance asks, scope gaps, questions for the GC — prints from `/jobs/[id]/subcontract-review/[reviewId]/summary`, built by code from the findings and decisions with no second model call.
 
-The paid eval (`pnpm eval:subcontract-review` — 100% citation validity, no HIGH finding on a sub-friendly control, planted-clause recall) is written and has NOT been run: the container that wrote it had no API key. Phases 2 (scope check against the won bid, one-page summary, print export) and 3 (rider, notice alerts, insurance checklist) are next. Design: `docs/ai/SUBCONTRACT-REVIEW.md`.
+Three migrations, all additive: `20261017180000_add_subcontract_review_ai_feature` (enum member + three integer columns with defaults) `20261017180100_add_subcontract_review` (four tables, every foreign key CASCADE, so the cleanup scripts gain no RESTRICT child of `Job`), and `20261017200000_add_subcontract_scope_checks` (one table, the clause it compared against snapshotted).
+
+The paid eval (`pnpm eval:subcontract-review` — 100% citation validity, no HIGH finding on a sub-friendly control, planted-clause recall) is written and has NOT been run: the container that wrote it had no API key. Phase 3 (rider, notice alerts, insurance checklist) is next. Design: `docs/ai/SUBCONTRACT-REVIEW.md`.

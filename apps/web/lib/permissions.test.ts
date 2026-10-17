@@ -323,6 +323,7 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   // AI subcontract review: the GC's contract terms and sum. VIEW_JOB_COSTS,
   // the same capability `uploadContractDocument` asserts for the file it reads.
   "/jobs/[id]/subcontract-review": "VIEW_JOB_COSTS",
+  "/jobs/[id]/subcontract-review/[reviewId]/summary": "VIEW_JOB_COSTS",
 
   // The job page's rebuild into tabs, 2026-09-20 — see
   // `app/(app)/jobs/[id]/(tabs)/layout.tsx`'s doc comment. Photos is the

@@ -4,7 +4,7 @@ import { modelFor, reviewSubcontractChunk, SUBCONTRACT_REVIEW_PROMPT_VERSION } f
 import { requireEvalApiKey } from "@/lib/ai/evalApiKey";
 import { whyNot } from "@/lib/specs/quoteMatch";
 import { planChunks } from "./chunks";
-import { validateFindings } from "./citations";
+import { validateFindings, validateScopeChecks } from "./citations";
 import { findingRows } from "./run";
 import { extractPdfPages, unreadPageNumbers } from "./pageText";
 import { contractPdf, SUBCONTRACT_CASES, type SubcontractCase } from "./subcontractFixtures";
@@ -57,33 +57,42 @@ type Verdict = {
   wrongFigure: string[];
   highOnClean: string[];
   unreadOk: boolean;
+  scopeMissed: string[];
+  scopeInvented: string[];
   chunks: number;
   msPerChunk: number[];
 };
 
 const verdicts: Verdict[] = [];
 
-async function reviewPdf(pdf: Buffer, label: string) {
+async function reviewPdf(pdf: Buffer, label: string, ourSide?: SubcontractCase["ourSide"]) {
   const pages = await extractPdfPages(pdf);
   const plan = planChunks(pages);
+  const clauseByRef = new Map((ourSide?.clauses ?? []).map((clause) => [clause.ref, { id: clause.ref, kind: clause.kind, text: clause.text }]));
   const returned: { quote: string; lines: string[] }[] = [];
   const kept: ReturnType<typeof findingRows> = [];
+  const scope: { relation: string; clauseRef: string | null; quote: string }[] = [];
   const msPerChunk: number[] = [];
   for (const pageNumbers of plan) {
     const chunk = pageNumbers.map((page) => ({ page, lines: pages[page - 1] ?? [] }));
     const started = Date.now();
-    const extraction = await reviewSubcontractChunk({ documentLabel: label, roleLabel: "the agreement", pages: chunk, model });
+    const extraction = await reviewSubcontractChunk({ documentLabel: label, roleLabel: "the agreement", pages: chunk, ourSide, model });
     msPerChunk.push(Date.now() - started);
     for (const finding of extraction.findings) {
       returned.push({ quote: finding.quote, lines: chunk.flatMap((page) => page.lines) });
     }
     kept.push(...findingRows(validateFindings(extraction.findings, chunk).kept));
+    // Scope-check quotes count toward citation validity exactly as findings do.
+    for (const check of extraction.scopeChecks) returned.push({ quote: check.quote, lines: chunk.flatMap((page) => page.lines) });
+    for (const check of validateScopeChecks(extraction.scopeChecks, chunk, clauseByRef).kept) {
+      scope.push({ relation: check.extraction.relation, clauseRef: check.clause?.id ?? null, quote: check.extraction.quote });
+    }
   }
-  return { pages, plan, returned, kept, msPerChunk };
+  return { pages, plan, returned, kept, scope, msPerChunk };
 }
 
 async function runCase(kase: SubcontractCase) {
-  const { pages, plan, returned, kept, msPerChunk } = await reviewPdf(await contractPdf(kase.pages), kase.name);
+  const { pages, plan, returned, kept, scope, msPerChunk } = await reviewPdf(await contractPdf(kase.pages), kase.name, kase.ourSide);
 
   const quoteFailures = returned.filter((r) => whyNot(r.quote, r.lines) !== null).map((r) => r.quote.slice(0, 80));
   const missed: string[] = [];
@@ -104,6 +113,13 @@ async function runCase(kase: SubcontractCase) {
     }
   }
 
+  const scopeMissed = (kase.expectContradicts ?? [])
+    .filter((e) => !scope.some((c) => c.relation === "CONTRADICTS_OUR_CLAUSE" && c.clauseRef === e.ref && c.quote.includes(e.phrase)))
+    .map((e) => `contradicts ${e.ref}`);
+  const scopeInvented = scope
+    .filter((c) => c.relation === "CARRIES_OUR_CLAUSE" && c.clauseRef !== null && (kase.notCarried ?? []).includes(c.clauseRef))
+    .map((c) => `carries ${c.clauseRef}: ${c.quote.slice(0, 60)}`);
+
   const verdict: Verdict = {
     name: kase.name,
     quotesReturned: returned.length,
@@ -119,6 +135,8 @@ async function runCase(kase: SubcontractCase) {
     wrongFigure,
     highOnClean: kase.noHighFindings ? kept.filter((row) => row.severity === "HIGH").map((row) => row.title) : [],
     unreadOk: JSON.stringify(unreadPageNumbers(pages)) === JSON.stringify(kase.unread ?? []),
+    scopeMissed,
+    scopeInvented,
     chunks: plan.length,
     msPerChunk,
   };
@@ -127,6 +145,10 @@ async function runCase(kase: SubcontractCase) {
   expect(quoteFailures, `${kase.name}: quotes not found verbatim in the text the model was given`).toEqual([]);
   expect(verdict.highOnClean, `${kase.name}: HIGH findings on the sub-friendly control`).toEqual([]);
   expect(verdict.unreadOk, `${kase.name}: unread pages`).toBe(true);
+  // FATAL: a contract that carries none of our clauses read as carrying one
+  // is the scope check's invented finding — it hides a real gap.
+  expect(scopeInvented, `${kase.name}: CARRIES_OUR_CLAUSE on a clause the contract does not carry`).toEqual([]);
+  expect(scopeMissed, `${kase.name}: planted contradiction with our clauses`).toEqual([]);
   if (kase.name === "planted-gc-form") {
     expect(kase.planted.length - missed.length, `${kase.name}: planted clauses found`).toBeGreaterThanOrEqual(kase.planted.length - 1);
   }
@@ -176,6 +198,8 @@ afterAll(() => {
     `RECALL             ${plantedTotal - total((v) => v.missed.length)}/${plantedTotal} planted clauses`,
     `wrong page         ${total((v) => v.wrongPage.length)}`,
     `wrong figure       ${total((v) => v.wrongFigure.length)}`,
+    `SCOPE INVENTED     ${total((v) => v.scopeInvented.length)}   <- fatal: a clause read as carried that is not`,
+    `scope missed       ${total((v) => v.scopeMissed.length)}`,
     `chunk time         max ${allChunkMs.length ? Math.max(...allChunkMs) : 0} ms (the action's deadline is 50,000)`,
     "",
   );
@@ -187,6 +211,8 @@ afterAll(() => {
     if (v.missed.length) lines.push(`    missed: ${v.missed.join(", ")}`);
     if (v.wrongPage.length) lines.push(`    wrong page: ${v.wrongPage.join(", ")}`);
     if (v.wrongFigure.length) lines.push(`    wrong figure: ${v.wrongFigure.join(", ")}`);
+    if (v.scopeInvented.length) lines.push(`    SCOPE INVENTED: ${v.scopeInvented.join(" | ")}`);
+    if (v.scopeMissed.length) lines.push(`    scope missed: ${v.scopeMissed.join(", ")}`);
   }
   lines.push(
     "",

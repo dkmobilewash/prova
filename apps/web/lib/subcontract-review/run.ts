@@ -1,8 +1,8 @@
 import type { SubcontractFindingExtraction, SubcontractTerms } from "@prova/integrations/src/subcontractReview";
 import { planChunks, newPagesInChunk } from "./chunks";
-import type { ChunkPage, ValidatedFinding } from "./citations";
+import type { ChunkPage, ValidatedFinding, ValidatedScopeCheck } from "./citations";
 import { uniqueByKey } from "./findings";
-import { findingKey } from "./keys";
+import { findingKey, scopeCheckKey } from "./keys";
 import { EXHIBIT_ROLES, SOURCE_ROLE_LABEL, type SourceRole } from "./roles";
 
 export { SOURCE_ROLES, EXHIBIT_ROLES, SOURCE_ROLE_LABEL, type SourceRole } from "./roles";
@@ -120,4 +120,33 @@ export function findingRows(validated: readonly ValidatedFinding[]): FindingRow[
 /** "Subcontract agreement v2" — what the model is told it is reading. */
 export function documentLabel(role: SourceRole, fileName: string, versionNumber: number): string {
   return role === "AGREEMENT" ? `Subcontract agreement v${versionNumber}` : `${SOURCE_ROLE_LABEL[role]} (${fileName})`;
+}
+
+export type ScopeCheckRow = {
+  key: string;
+  relation: ValidatedScopeCheck["extraction"]["relation"];
+  clauseId: string | null;
+  clauseKind: string | null;
+  clauseText: string | null;
+  quote: string;
+  pageStart: number;
+  pageEnd: number;
+  explanation: string;
+};
+
+/** Validated scope checks → rows, the clause SNAPSHOTTED (see the schema). */
+export function scopeCheckRows(validated: readonly ValidatedScopeCheck[]): ScopeCheckRow[] {
+  return uniqueByKey(
+    validated.map(({ extraction, location, clause }) => ({
+      key: scopeCheckKey(extraction.relation, clause?.id ?? null, extraction.quote),
+      relation: extraction.relation,
+      clauseId: clause?.id ?? null,
+      clauseKind: clause?.kind ?? null,
+      clauseText: clause?.text ?? null,
+      quote: extraction.quote.trim(),
+      pageStart: location.pageStart,
+      pageEnd: location.pageEnd,
+      explanation: extraction.explanation.trim(),
+    })),
+  );
 }

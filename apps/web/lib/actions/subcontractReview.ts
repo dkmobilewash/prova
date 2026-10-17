@@ -11,12 +11,15 @@ import { claimContractPages, markContractFailure } from "@/lib/ask/contractSpend
 import { documentUrlProblem, isAllowedDocumentType, uploadMaxBytesFor } from "@/lib/document-uploads";
 import { looksLikePdf } from "@/lib/pdf-bytes";
 import { planChunks } from "@/lib/subcontract-review/chunks";
-import { validateFindings } from "@/lib/subcontract-review/citations";
+import { validateFindings, validateScopeChecks } from "@/lib/subcontract-review/citations";
+import { notCarriedKey } from "@/lib/subcontract-review/keys";
+import { loadOurSide } from "@/lib/subcontract-review/ourSideQuery";
 import { extractPdfPages, pageTextsFromJson, unreadPageNumbers, type PageTexts } from "@/lib/subcontract-review/pageText";
 import {
   documentLabel,
   findingRows,
   nextChunk,
+  scopeCheckRows,
   parseExhibits,
   SOURCE_ROLE_LABEL,
   type SourceRole,
@@ -214,6 +217,9 @@ export async function advanceSubcontractReview(reviewId: string): Promise<Action
     }
 
     const pageRange = `${next.pages[0]!.page}–${next.pages[next.pages.length - 1]!.page}`;
+    // Our side is re-read every chunk rather than frozen at start: a clause
+    // the estimator adds mid-review is compared from the next chunk on.
+    const ourSide = await loadOurSide(review.jobId, company.id);
     let extraction;
     try {
       extraction = await withDeadline(
@@ -221,6 +227,7 @@ export async function advanceSubcontractReview(reviewId: string): Promise<Action
           documentLabel: documentLabel(next.source.role, next.source.fileName, review.contractDocument.versionNumber),
           roleLabel: SOURCE_ROLE_LABEL[next.source.role].toLowerCase(),
           pages: next.pages,
+          ourSide: ourSide.ourSide,
           model: gate.model,
           onUsage: (usage) =>
             recordAskUsage({
@@ -256,6 +263,8 @@ export async function advanceSubcontractReview(reviewId: string): Promise<Action
 
     const { kept, dropped } = validateFindings(extraction.findings, next.pages);
     const rows = findingRows(kept);
+    const scope = validateScopeChecks(extraction.scopeChecks, next.pages, ourSide.clauseByRef);
+    const scopeRows = scopeCheckRows(scope.kept);
     const created = await prisma.$transaction(async (tx) => {
       const inserted = await tx.subcontractFinding.createMany({
         data: rows.map((row) => ({
@@ -268,6 +277,15 @@ export async function advanceSubcontractReview(reviewId: string): Promise<Action
         // key collapses it onto the first.
         skipDuplicates: true,
       });
+      await tx.subcontractScopeCheck.createMany({
+        data: scopeRows.map((row) => ({
+          ...row,
+          clauseKind: (row.clauseKind as "INCLUSION" | "EXCLUSION" | "CLARIFICATION" | "ALTERNATE" | null) ?? undefined,
+          reviewId: review.id,
+          sourceId: next.source.id,
+        })),
+        skipDuplicates: true,
+      });
       await tx.subcontractReviewSource.update({
         where: { id: next.source.id },
         data: { chunksDone: { increment: 1 } },
@@ -276,7 +294,7 @@ export async function advanceSubcontractReview(reviewId: string): Promise<Action
         where: { id: review.id },
         data: {
           pagesCharged: { increment: spend.pages },
-          findingsDropped: { increment: dropped.length },
+          findingsDropped: { increment: dropped.length + scope.dropped },
         },
       });
       return inserted.count;
@@ -331,12 +349,10 @@ export async function decideSubcontractFinding(jobId: string, formData: FormData
   const decision = String(formData.get("decision") ?? "");
   if (!(DECISIONS as readonly string[]).includes(decision)) return actionFail("Choose accept, dismiss or negotiating.");
 
-  // The key must name a finding on THIS job — never a free-floating string.
-  const finding = await prisma.subcontractFinding.findFirst({
-    where: { key, review: { jobId, job: { companyId: company.id } } },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, severity: true, explanation: true, suggestedPosition: true },
-  });
+  // The key must name something on THIS job's review — a finding, a scope
+  // check, or a "not carried" gap for one of the job's own clauses — never a
+  // free-floating string.
+  const finding = await decidableItem(jobId, company.id, key);
   if (!finding) return actionFail("That finding is no longer on this job's review.");
 
   const text = (name: string) => {
@@ -386,6 +402,35 @@ export async function clearSubcontractFindingDecision(jobId: string, key: string
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+
+/** What a decision can hang on, with the text an "edit" is compared against. */
+async function decidableItem(
+  jobId: string,
+  companyId: string,
+  key: string,
+): Promise<{ severity: string | null; explanation: string; suggestedPosition: string } | null> {
+  const finding = await prisma.subcontractFinding.findFirst({
+    where: { key, review: { jobId, job: { companyId } } },
+    orderBy: { createdAt: "desc" },
+    select: { severity: true, explanation: true, suggestedPosition: true },
+  });
+  if (finding) return finding;
+  const check = await prisma.subcontractScopeCheck.findFirst({
+    where: { key, review: { jobId, job: { companyId } } },
+    orderBy: { createdAt: "desc" },
+    select: { explanation: true },
+  });
+  if (check) return { severity: null, explanation: check.explanation, suggestedPosition: "" };
+  const clauseId = key.startsWith("NOT_CARRIED:") ? key.slice("NOT_CARRIED:".length) : null;
+  if (clauseId && key === notCarriedKey(clauseId)) {
+    const clause = await prisma.jobProposalClause.findFirst({
+      where: { id: clauseId, jobId, job: { companyId } },
+      select: { id: true },
+    });
+    if (clause) return { severity: null, explanation: "", suggestedPosition: "" };
+  }
+  return null;
+}
 
 function differs(value: string | null, original: string): string | null {
   return value !== null && value !== original.trim() ? value : null;

@@ -337,3 +337,34 @@ Decisions §11 1–5 were taken as recommended. #6 is open until Phase 3.
 - The paid eval has never run: there was no `ANTHROPIC_API_KEY` in the container.
 - Chunk duration on Opus against the 50-second deadline is unmeasured. That is the eval's `chunk time` line.
 - No human has clicked the page.
+
+---
+
+## Status: Phase 2 built (2026-10-17)
+
+**Built:**
+
+- **Section B, the scope check.** `lib/subcontract-review/scopeCheck.ts`, pure and derived on read.
+- **Section C, the one-page summary.** `summary.ts`, printed from `/jobs/[id]/subcontract-review/[reviewId]/summary`.
+
+**Changed from §4 while building it:**
+
+- **One model call per chunk, not two.** The scope comparison rides in the same call as the clause review (prompt `.2`), with the job's clauses as refs `C1…` and its priced lines alongside. A second pass would have charged every page twice.
+  - The comparisons land in `SubcontractScopeCheck`, one additive table. The clause each check compared against is snapshotted.
+  - A ref the model was not given, or a quote not on the page, is dropped and counted.
+- **"Not carried" is derived, never returned by the model.** It is an EXCLUSION or CLARIFICATION with no CARRIES check across the whole contract, and only once every chunk has been read. A half-read contract has only not carried it *yet*.
+  - A clause the contract *contradicts* is listed once, as the contradiction, never also as "not carried". The seed probe caught it listed twice.
+- **Addendum numbers are read by code** from the ADDENDA_LIST finding's quote (`addendaList.ts`), dates removed first, so the model never supplies one.
+- **"Never priced" is a prompt to check, not a gap** (`NOT_IN_OUR_PRICED_SCOPE`, LOW). It is shown on the review and left off the printed summary, because the model has not seen the estimate and must not appear to judge it.
+
+**Proved:**
+
+- Unit tests for `scopeCheck`, `addendaList`, `ourSide`, `summary` and the scope-check gate. Three rules were deliberately broken, and each break failed the tests.
+- The db test, extended:
+  - the contradiction stored with its clause snapshotted;
+  - the invented `C99` ref dropped;
+  - the not-carried gap derived and decidable;
+  - a forged key refused.
+- The e2e spec gained steps 5 and 6: the scope section, and the summary page.
+
+**Not proved:** the paid eval has never run. It now also fails on a clause read as carried that is not, and reports whether the planted contradiction is found.

@@ -760,13 +760,13 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     title: "AI reviews of a subcontract before signing, and your decision on each finding",
     detail:
       "When a subcontract version is reviewed, the text read off each file, the clauses found (each " +
-      "with its exact quote and page) and your call on each one — accepted, dismissed, negotiating, " +
+      "with its exact quote and page), how passages compared with your proposal clauses, and your call on each one — accepted, dismissed, negotiating, " +
       "with any note or edit. Not exported yet, and the two halves differ the way the addendum pair " +
       "does. The REVIEW is a record of what a model said about a contract this file already carries " +
       "(the contract version itself IS exported), and re-running it is what produces a current one. " +
       "The DECISIONS are your own judgement about your contract, which is the half worth exporting one " +
       "day; it is omitted because no dataset has been written, not because it would be meaningless.",
-    models: ["SubcontractReview", "SubcontractReviewSource", "SubcontractFinding", "SubcontractFindingDecision"],
+    models: ["SubcontractReview", "SubcontractReviewSource", "SubcontractFinding", "SubcontractScopeCheck", "SubcontractFindingDecision"],
   },
   {
     key: "bid-spec-readings",

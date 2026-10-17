@@ -212,6 +212,11 @@ const REACHED_FROM: Record<string, Reached> = {
     parents: ["apps/web/app/(app)/jobs/[id]/(tabs)/page.tsx"],
     needle: "/subcontract-review?version=",
   },
+  "/jobs/[id]/subcontract-review/[reviewId]/summary": {
+    reason: "The one-page summary link on the subcontract review.",
+    parents: ["apps/web/app/(app)/jobs/[id]/subcontract-review/page.tsx"],
+    needle: "/summary`",
+  },
   "/jobs/[id]/proposal": {
     reason: "The proposal link on the job's Estimate tab.",
     parents: ["apps/web/app/(app)/jobs/[id]/(tabs)/estimate/page.tsx"],

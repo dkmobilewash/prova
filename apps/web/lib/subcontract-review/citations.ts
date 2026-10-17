@@ -1,6 +1,7 @@
 import {
   SUBCONTRACT_TERM_NUMBER_KEYS,
   type SubcontractFindingExtraction,
+  type SubcontractScopeCheckExtraction,
   type SubcontractTerms,
 } from "@prova/integrations/src/subcontractReview";
 import { normaliseForQuoteMatch, whyNot } from "@/lib/specs/quoteMatch";
@@ -199,6 +200,46 @@ export function validateFindings(
       sectionRef: verifiedSectionRef(extraction.sectionRef, located.location, pages),
       terms: figuresStatedIn(extraction.terms, extraction.quote),
     });
+  }
+  return { kept, dropped };
+}
+
+// ── Scope checks (Phase 2) ───────────────────────────────────────────────────
+
+export type ValidatedScopeCheck = {
+  extraction: SubcontractScopeCheckExtraction;
+  location: PageLocation;
+  clause: { id: string; kind: string; text: string } | null;
+};
+
+/**
+ * The same gate for comparisons against our side: the CONTRACT's words must be
+ * on the page, and a check that names one of our clauses must name a ref we
+ * actually handed over — a model that invents "C9" when we gave it six clauses
+ * has its check dropped, not attached to a clause it never saw. A relation that
+ * is about a clause (contradicts / carries) without a valid ref is dropped too;
+ * NOT_IN_OUR_PRICED_SCOPE needs none.
+ */
+export function validateScopeChecks(
+  checks: readonly SubcontractScopeCheckExtraction[],
+  pages: readonly ChunkPage[],
+  clauseByRef: ReadonlyMap<string, { id: string; kind: string; text: string }>,
+): { kept: ValidatedScopeCheck[]; dropped: number } {
+  const kept: ValidatedScopeCheck[] = [];
+  let dropped = 0;
+  for (const extraction of checks) {
+    const needsClause = extraction.relation !== "NOT_IN_OUR_PRICED_SCOPE";
+    const clause = extraction.clauseRef ? (clauseByRef.get(extraction.clauseRef.trim().toUpperCase()) ?? null) : null;
+    if ((needsClause && !clause) || extraction.explanation.trim() === "") {
+      dropped++;
+      continue;
+    }
+    const located = locateQuote(extraction.quote, pages);
+    if (!located.ok) {
+      dropped++;
+      continue;
+    }
+    kept.push({ extraction, location: located.location, clause: needsClause ? clause : null });
   }
   return { kept, dropped };
 }

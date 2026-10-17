@@ -110,8 +110,9 @@ model SubcontractReview {
   /// a reader that is failing its citations should look like one.
   findingsDropped Int @default(0)
 
-  sources  SubcontractReviewSource[]
-  findings SubcontractFinding[]
+  sources     SubcontractReviewSource[]
+  findings    SubcontractFinding[]
+  scopeChecks SubcontractScopeCheck[]
 
   @@index([jobId, startedAt])
   @@index([contractDocumentId])
@@ -148,7 +149,8 @@ model SubcontractReviewSource {
   chunksTotal Int
   chunksDone  Int @default(0)
 
-  findings SubcontractFinding[]
+  findings    SubcontractFinding[]
+  scopeChecks SubcontractScopeCheck[]
 
   @@index([reviewId])
 }
@@ -220,4 +222,53 @@ model SubcontractFindingDecision {
 
   @@unique([jobId, key])
   @@index([jobId])
+}
+
+/// How a passage of the contract stands against OUR side of the deal — the
+/// job's proposal clauses and the scope we priced. Phase 2.
+enum SubcontractScopeRelation {
+  /// The contract puts on us work one of our EXCLUSION or CLARIFICATION
+  /// clauses excluded.
+  CONTRADICTS_OUR_CLAUSE
+  /// The contract carries one of our clauses (it is in an exhibit, a rider,
+  /// a scope list). What makes a clause NOT carried is the absence of this.
+  CARRIES_OUR_CLAUSE
+  /// Work the contract assigns that nothing on our priced list obviously
+  /// covers. A prompt to check, never a verdict about the estimate.
+  NOT_IN_OUR_PRICED_SCOPE
+}
+
+/// One comparison the model made between a contract passage and our side,
+/// kept only if its quote is found verbatim and any clause it names is one we
+/// gave it. Immutable once written, like a finding.
+///
+/// THE CLAUSE IS SNAPSHOTTED, not foreign-keyed: a proposal clause can be
+/// removed from the job later, and what the review compared against must still
+/// read as it did — the evidence-record rule. `clauseId` is kept so the screen
+/// can tell whether the clause is still on the job.
+model SubcontractScopeCheck {
+  id       String                  @id @default(cuid())
+  reviewId String
+  review   SubcontractReview       @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  sourceId String
+  source   SubcontractReviewSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  /// `scopeCheckKey()` — relation + clause + quote hash. A decision hangs on it
+  /// exactly as on a finding's key.
+  key      String
+  relation SubcontractScopeRelation
+
+  clauseId   String?
+  clauseKind ProposalClauseKind?
+  clauseText String?
+
+  quote       String
+  pageStart   Int
+  pageEnd     Int
+  explanation String
+
+  createdAt DateTime @default(now())
+
+  @@unique([reviewId, key])
+  @@index([sourceId])
 }

@@ -43,11 +43,15 @@ export function SubcontractFindingCard({
   jobId,
   finding,
   change,
+  evidenceIsOurClause = false,
 }: {
   jobId: string;
   finding: ReviewedFinding;
   /** Set when a previous version was reviewed — what this version changed. */
   change?: "NEW" | "CHANGED" | "UNCHANGED" | null;
+  /** A scope gap whose evidence is OUR proposal clause rather than the
+   *  contract — absence has no contract text to quote. */
+  evidenceIsOurClause?: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -117,7 +121,9 @@ export function SubcontractFindingCard({
 
       <blockquote className="border-l-2 border-line-card pl-3 text-sm italic text-ink-body">“{finding.quote}”</blockquote>
       <p className="text-xs text-ink-muted">
-        {finding.sourceLabel} · {citationLabel(finding)}
+        {evidenceIsOurClause
+          ? "Your proposal's words — not found anywhere in the subcontract's readable pages"
+          : `${finding.sourceLabel} · ${citationLabel(finding)}`}
       </p>
 
       <p className="text-sm text-ink-body">

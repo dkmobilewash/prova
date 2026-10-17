@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@prova/db";
-import type { SubcontractChunkPage, SubcontractFindingExtraction } from "@prova/integrations";
+import type { SubcontractChunkPage, SubcontractFindingExtraction, SubcontractOurSide, SubcontractScopeCheckExtraction } from "@prova/integrations";
 import { contractPdf, INSURANCE_EXHIBIT_CASE, PLANTED_CASE, PLANTED_V2_CASE } from "@/lib/subcontract-review/subcontractFixtures";
 
 /**
@@ -63,17 +63,32 @@ function fakeFindings(pages: readonly SubcontractChunkPage[]): SubcontractFindin
   return found;
 }
 
+let lastOurSide: SubcontractOurSide | undefined;
+
+/** A careful comparer with one planted flaw: it also cites a clause ref we never gave it. */
+function fakeScopeChecks(pages: readonly SubcontractChunkPage[], ourSide: SubcontractOurSide | undefined): SubcontractScopeCheckExtraction[] {
+  const text = pages.map((page) => page.lines.join(" ")).join(" ");
+  const fire = ourSide?.clauses.find((clause) => clause.text.includes("fire caulking"));
+  if (!fire || !text.includes("fire caulking")) return [];
+  const quote = "Subcontractor shall furnish and install firestopping and fire caulking";
+  return [
+    { relation: "CONTRADICTS_OUR_CLAUSE", clauseRef: fire.ref, quote, explanation: "The contract puts on you work your exclusion left out." },
+    { relation: "CARRIES_OUR_CLAUSE", clauseRef: "C99", quote, explanation: "A ref nobody gave it." },
+  ];
+}
+
 vi.mock("@prova/integrations", async (importOriginal) => {
   const original = await importOriginal<typeof import("@prova/integrations")>();
   return {
     ...original,
-    reviewSubcontractChunk: async (params: { pages: readonly SubcontractChunkPage[] }) => {
+    reviewSubcontractChunk: async (params: { pages: readonly SubcontractChunkPage[]; ourSide?: SubcontractOurSide }) => {
       modelCalls++;
+      lastOurSide = params.ourSide;
       if (failNextCall) {
         failNextCall = false;
         throw new Error("the model call died halfway");
       }
-      return { readingReason: "fake", findings: fakeFindings(params.pages) };
+      return { readingReason: "fake", findings: fakeFindings(params.pages), scopeChecks: fakeScopeChecks(params.pages, params.ourSide) };
     },
   };
 });
@@ -126,6 +141,13 @@ describe("subcontract review against a real database", () => {
     const job = await prisma.job.create({ data: { companyId: company.id, contactId: contact.id, name: "Review Job" } });
     ctx.jobId = job.id;
     ctx.v1 = (await addVersion(job.id, 1, PLANTED_CASE.pages)).id;
+    // Our side: two exclusions; the contract contradicts one and is silent on the other.
+    await prisma.jobProposalClause.createMany({
+      data: [
+        { companyId: company.id, jobId: job.id, kind: "EXCLUSION", text: "Firestopping and fire caulking are excluded.", sortOrder: 1 },
+        { companyId: company.id, jobId: job.id, kind: "EXCLUSION", text: "Final cleaning is excluded.", sortOrder: 2 },
+      ],
+    });
     ctx.exhibitUrl = blobUrl("subcontract-review", job.id, "insurance");
     // The exhibit has a scanned second page.
     served.set(ctx.exhibitUrl, await contractPdf([...INSURANCE_EXHIBIT_CASE.pages, null]));
@@ -139,6 +161,7 @@ describe("subcontract review against a real database", () => {
   afterAll(async () => {
     await prisma.contractDocument.deleteMany({ where: { jobId: ctx.jobId } });
     await prisma.subcontractFindingDecision.deleteMany({ where: { jobId: ctx.jobId } });
+    await prisma.jobProposalClause.deleteMany({ where: { jobId: ctx.jobId } });
     await prisma.job.deleteMany({ where: { companyId: ctx.companyId } });
     await prisma.contact.deleteMany({ where: { companyId: ctx.companyId } });
     await prisma.askUsage.deleteMany({ where: { companyId: ctx.companyId } });
@@ -166,7 +189,9 @@ describe("subcontract review against a real database", () => {
       include: { findings: true, sources: true },
     });
     expect(review.completedAt).not.toBeNull();
-    expect(review.findingsDropped).toBe(modelCalls); // the fabricated one, once per chunk
+    // The fabricated quote, once per chunk — plus the scope check citing "C99",
+    // a clause ref nobody gave the reader, on the one chunk mentioning fire caulking.
+    expect(review.findingsDropped).toBe(modelCalls + 1);
     expect(review.findings.some((f) => f.title === "Invented")).toBe(false);
 
     const byCategory = Object.fromEntries(review.findings.map((f) => [f.category, f]));
@@ -182,6 +207,48 @@ describe("subcontract review against a real database", () => {
     const period = await prisma.askAllowancePeriod.findFirstOrThrow({ where: { companyId: ctx.companyId } });
     expect(period.contractPagesUsed).toBe(5);
     expect(review.pagesCharged).toBe(5);
+  });
+
+  it("compares against our side: stores the contradiction with the clause snapshotted, drops the invented ref, and derives the exclusion the contract never carries", async () => {
+    const latest = await prisma.subcontractReview.findFirstOrThrow({
+      where: { contractDocumentId: ctx.v1 },
+      orderBy: { startedAt: "desc" },
+      include: { scopeChecks: true },
+    });
+    // The model was handed both clauses, refs C1/C2.
+    expect(lastOurSide?.clauses.map((clause) => clause.ref)).toEqual(["C1", "C2"]);
+    expect(latest.scopeChecks).toHaveLength(1);
+    expect(latest.scopeChecks[0]).toMatchObject({
+      relation: "CONTRADICTS_OUR_CLAUSE",
+      clauseKind: "EXCLUSION",
+      clauseText: "Firestopping and fire caulking are excluded.",
+      pageStart: 1,
+    });
+
+    const page = await loadReviewPage(ctx.jobId, ctx.companyId, ctx.v1);
+    const gaps = page!.scope!.gaps;
+    // Fire caulking appears once, as contradicted — never also as "not carried".
+    expect(gaps.map((gap) => gap.kind).sort()).toEqual(["CONTRADICTS_OUR_CLAUSE", "NOT_CARRIED"]);
+    const cleaning = gaps.find((gap) => gap.kind === "NOT_CARRIED" && gap.evidence.startsWith("Final cleaning"))!;
+    expect(cleaning.explanation).toMatch(/Searched 5 readable pages; 1 unread page was not searched/);
+
+    // A decision hangs on a derived gap's key like any finding's.
+    const form = new FormData();
+    form.set("key", cleaning.key);
+    form.set("decision", "NEGOTIATED");
+    form.set("note", "Asked for the exclusions exhibit.");
+    expect(await decideSubcontractFinding(ctx.jobId, form)).toEqual({ ok: true });
+    const after = await loadReviewPage(ctx.jobId, ctx.companyId, ctx.v1);
+    expect(after!.decisions.find((d) => d.key === cleaning.key)?.decision).toBe("NEGOTIATED");
+
+    // A made-up NOT_CARRIED key for a clause on ANOTHER job is refused.
+    const forged = new FormData();
+    forged.set("key", "NOT_CARRIED:not-a-clause-on-this-job");
+    forged.set("decision", "ACCEPTED");
+    expect((await decideSubcontractFinding(ctx.jobId, forged)).ok).toBe(false);
+
+    // The summary carries the gap and its question, built from the same rows.
+    expect(after!.summary!.scopeGaps.some((line) => line.text.includes("Final cleaning is excluded."))).toBe(true);
   });
 
   it("charges a page two chunks share ONCE — a 10-page contract is two chunks overlapping on page 8, and 10 pages", async () => {

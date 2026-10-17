@@ -68,6 +68,12 @@ export type SubcontractCase = {
   noHighFindings?: boolean;
   /** Pages that must be reported unread. */
   unread?: number[];
+  /** OUR side, handed to the reader beside every chunk (Phase 2). */
+  ourSide?: { clauses: { ref: string; kind: string; text: string }[]; priced: string[] };
+  /** A contradiction the scope check must find: which of our clauses, and a phrase of the contract passage. */
+  expectContradicts?: { ref: string; phrase: string }[];
+  /** Clause refs the contract does NOT carry — a CARRIES_OUR_CLAUSE on any of them is invented. */
+  notCarried?: string[];
 };
 
 const HEADER = (title: string) => [title, "Project: ZZ Synthetic Medical Office Building, 100 Example Way", ""];
@@ -142,7 +148,18 @@ export const PLANTED_CASE: SubcontractCase = {
     { name: "48-hour-notice", category: "NOTICE", phrase: "within forty-eight", pages: [4], atLeast: "MEDIUM", term: { key: "noticeHours", value: 48 } },
     { name: "no-damages-for-delay", category: "DELAY_AND_SCHEDULE", phrase: "damages for delay", pages: [4], atLeast: "HIGH" },
     { name: "fire-caulking-scope", category: "SCOPE", phrase: "fire caulking", pages: [1], atLeast: "LOW" },
+    { name: "contract-sum", category: "SCOPE", phrase: "($412,000.00)", pages: [1], atLeast: "LOW", term: { key: "contractSum", value: 412000 } },
   ],
+  ourSide: {
+    clauses: [
+      { ref: "C1", kind: "EXCLUSION", text: "Firestopping, fire caulking and fire-rated sealants are excluded." },
+      { ref: "C2", kind: "EXCLUSION", text: "Final cleaning is excluded; we remove our own debris to the GC's dumpster." },
+      { ref: "C3", kind: "CLARIFICATION", text: "Price is based on a single mobilization." },
+    ],
+    priced: ["5/8 Type X gypsum board, walls", "3-5/8 metal studs at 16 in. o.c.", "Acoustical ceiling, 2x2 tile"],
+  },
+  expectContradicts: [{ ref: "C1", phrase: "fire caulking" }],
+  notCarried: ["C1", "C2", "C3"],
 };
 
 /** The insurance exhibit read beside the planted agreement. */

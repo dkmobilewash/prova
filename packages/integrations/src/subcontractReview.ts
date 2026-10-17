@@ -27,7 +27,7 @@ import { reportUsage, type ModelUsageReporter } from "./anthropic";
 
 /** Bump on any change to the prompt or the tool, so a review row records what
  *  produced it. `promptVersionCensus.test.ts` requires every reader to export one. */
-export const SUBCONTRACT_REVIEW_PROMPT_VERSION = "subcontract-review.1";
+export const SUBCONTRACT_REVIEW_PROMPT_VERSION = "subcontract-review.2";
 
 export {
   SUBCONTRACT_FINDING_CATEGORIES,
@@ -154,8 +154,35 @@ export type SubcontractFindingExtraction = {
   terms: SubcontractTerms;
 };
 
+export const SUBCONTRACT_SCOPE_RELATIONS = [
+  "CONTRADICTS_OUR_CLAUSE",
+  "CARRIES_OUR_CLAUSE",
+  "NOT_IN_OUR_PRICED_SCOPE",
+] as const;
+export type SubcontractScopeRelation = (typeof SUBCONTRACT_SCOPE_RELATIONS)[number];
+
+/** One comparison between a contract passage and OUR side of the deal. */
+export type SubcontractScopeCheckExtraction = {
+  relation: SubcontractScopeRelation;
+  /** "C3" — one of the clause refs we handed over; null for NOT_IN_OUR_PRICED_SCOPE. */
+  clauseRef: string | null;
+  quote: string;
+  explanation: string;
+};
+
+/**
+ * OUR side of the deal, as the caller hands it over: the job's proposal
+ * clauses with a short ref each, and a list of the scope we priced. Optional —
+ * a job with no clauses and no lines is reviewed for risk alone.
+ */
+export type SubcontractOurSide = {
+  clauses: readonly { ref: string; kind: string; text: string }[];
+  priced: readonly string[];
+};
+
 export type SubcontractChunkExtraction = {
   findings: SubcontractFindingExtraction[];
+  scopeChecks: SubcontractScopeCheckExtraction[];
   readingReason: string;
 };
 
@@ -238,9 +265,26 @@ const TOOL: Anthropic.Tool = {
           ],
         },
       },
+      scopeChecks: {
+        type: "array",
+        description: "Comparisons between these pages and OUR SIDE (only when it was given). Empty is a valid answer.",
+        items: {
+          type: "object",
+          properties: {
+            relation: { type: "string", enum: [...SUBCONTRACT_SCOPE_RELATIONS] },
+            clauseRef: {
+              type: ["string", "null"],
+              description: "The ref of OUR clause (C1, C2…) for CONTRADICTS_OUR_CLAUSE and CARRIES_OUR_CLAUSE; null for NOT_IN_OUR_PRICED_SCOPE.",
+            },
+            quote: { type: "string", description: "The contract's own words, copied exactly, as for a finding." },
+            explanation: { type: "string", description: "One sentence: how the passage stands against our side." },
+          },
+          required: ["relation", "clauseRef", "quote", "explanation"],
+        },
+      },
       readingReason: { type: "string", description: "What these pages are and how you read them, in one or two sentences." },
     },
-    required: ["findings", "readingReason"],
+    required: ["findings", "scopeChecks", "readingReason"],
   },
 };
 
@@ -286,7 +330,15 @@ Rules, in the order they matter.
 
 9. The pages are marked "=== <document> · page N ===". claimedPage is that N. A clause that runs across a page break may be quoted across it; quote only the text, never the marker line.
 
-10. An empty findings list is a real answer — signature pages, a table of contents, a drawings index with nothing else. Say what the pages are in readingReason.`;
+10. An empty findings list is a real answer — signature pages, a table of contents, a drawings index with nothing else. Say what the pages are in readingReason.
+
+11. THE CONTRACT SUM AND ANY LIST OF ADDENDA ARE ALWAYS FINDINGS. Report the subcontract sum as category SCOPE, subtype CONTRACT_SUM, with contractSum in terms. Report any clause listing the addenda (or drawings and specifications) the subcontract incorporates as SCOPE, subtype ADDENDA_LIST, quoting the list itself.
+
+12. OUR SIDE, WHEN IT IS GIVEN. After the pages you may be shown "OUR SIDE": the subcontractor's own proposal clauses, each with a ref (C1, C2…) and a kind (EXCLUSION, CLARIFICATION, INCLUSION, ALTERNATE), and a list of the scope they priced. Use it only for scopeChecks, never to change a finding:
+   CONTRADICTS_OUR_CLAUSE — these pages put on the subcontractor work that one of their EXCLUSION or CLARIFICATION clauses excluded or limited. Name the clause by ref.
+   CARRIES_OUR_CLAUSE — these pages state one of their clauses, in substance (an exhibit listing their exclusions, a rider, a scope list that leaves the work out). Name the clause by ref.
+   NOT_IN_OUR_PRICED_SCOPE — these pages assign specific work that nothing in the priced list plausibly covers. Use sparingly: only for a concrete item of work, never for general obligations, and never when a priced line could reasonably include it. It is a prompt for a person to check, not a verdict.
+   Every scopeCheck quotes the CONTRACT's words exactly, as rule 1 requires — never our clause's words. A clause these pages say nothing about gets NO scopeCheck: absence is worked out by code across the whole contract, not by you from one chunk.`;
 
 export async function reviewSubcontractChunk(params: {
   /** Shown to the model as the document name, e.g. "Subcontract Agreement v2". */
@@ -294,12 +346,13 @@ export async function reviewSubcontractChunk(params: {
   /** What the person said this file is — "the agreement", "the insurance exhibit". */
   roleLabel: string;
   pages: readonly SubcontractChunkPage[];
+  ourSide?: SubcontractOurSide;
   onUsage?: ModelUsageReporter;
   model?: string;
 }): Promise<SubcontractChunkExtraction> {
   const client = new Anthropic(AI_CLIENT_OPTIONS);
 
-  const text = renderChunkText(params.documentLabel, params.pages);
+  const text = renderChunkText(params.documentLabel, params.pages) + renderOurSide(params.ourSide);
 
   const response = await client.messages.create({
     model: params.model ?? modelFor("SUBCONTRACT_REVIEW").model,
@@ -337,12 +390,38 @@ export function renderChunkText(documentLabel: string, pages: readonly Subcontra
   return pages.map((page) => `=== ${documentLabel} · page ${page.page} ===\n${page.lines.join("\n")}`).join("\n\n");
 }
 
+/** OUR SIDE as the model sees it, or nothing when there is none. */
+export function renderOurSide(ourSide: SubcontractOurSide | undefined): string {
+  if (!ourSide || (ourSide.clauses.length === 0 && ourSide.priced.length === 0)) return "";
+  const clauses = ourSide.clauses.map((clause) => `${clause.ref} [${clause.kind}] ${clause.text}`).join("\n");
+  const priced = ourSide.priced.map((line) => `- ${line}`).join("\n");
+  return (
+    "\n\n=== OUR SIDE (the subcontractor's own bid — compare only, never quote) ===\n" +
+    `Proposal clauses:\n${clauses || "(none)"}\n\nScope we priced:\n${priced || "(none)"}`
+  );
+}
+
 /** Narrow an untrusted tool input. Exported for the unit tests. */
 export function narrowSubcontractChunk(input: unknown): SubcontractChunkExtraction {
-  const raw = (input ?? {}) as { findings?: unknown; readingReason?: unknown };
+  const raw = (input ?? {}) as { findings?: unknown; scopeChecks?: unknown; readingReason?: unknown };
   const findings = Array.isArray(raw.findings) ? raw.findings : [];
+  const scopeChecks = Array.isArray(raw.scopeChecks) ? raw.scopeChecks : [];
   return {
     readingReason: typeof raw.readingReason === "string" ? raw.readingReason : "",
+    // An unknown relation is DROPPED rather than defaulted: unlike a category,
+    // there is no neutral member to fall back on — each one asserts something.
+    scopeChecks: scopeChecks.flatMap((value) => {
+      const check = (value ?? {}) as Record<string, unknown>;
+      if (!(SUBCONTRACT_SCOPE_RELATIONS as readonly unknown[]).includes(check.relation)) return [];
+      return [
+        {
+          relation: check.relation as SubcontractScopeRelation,
+          clauseRef: stringOrNull(check.clauseRef),
+          quote: typeof check.quote === "string" ? check.quote : "",
+          explanation: typeof check.explanation === "string" ? check.explanation : "",
+        },
+      ];
+    }),
     findings: findings.map((value, index) => {
       const finding = (value ?? {}) as Record<string, unknown>;
       return {

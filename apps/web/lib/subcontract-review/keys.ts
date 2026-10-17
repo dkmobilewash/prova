@@ -16,3 +16,14 @@ export function findingKey(category: SubcontractFindingCategory, quote: string):
   const digest = createHash("sha1").update(normaliseForQuoteMatch(quote)).digest("hex").slice(0, 16);
   return `${category}:${digest}`;
 }
+
+/** A scope check's key: relation + the clause it names (or "-") + the quote. */
+export function scopeCheckKey(relation: string, clauseId: string | null, quote: string): string {
+  const digest = createHash("sha1").update(normaliseForQuoteMatch(quote)).digest("hex").slice(0, 16);
+  return `${relation}:${clauseId ?? "-"}:${digest}`;
+}
+
+/** The key a "not carried" gap hangs on: derived, never stored, one per clause. */
+export function notCarriedKey(clauseId: string): string {
+  return `NOT_CARRIED:${clauseId}`;
+}

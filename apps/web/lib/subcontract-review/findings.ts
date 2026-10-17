@@ -67,6 +67,8 @@ export type FindingView = {
   explanation: string;
   suggestedPosition: string;
   questionForGc: string | null;
+  /** Figures verified to be in the quote (`figuresStatedIn`), or null. */
+  terms?: { contractSum?: number | null; retainagePercent?: number | null; [key: string]: unknown } | null;
 };
 
 export type DecisionView = {

@@ -3,7 +3,7 @@ import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { landOnDashboard, settleAction } from "../lib/journey";
-import { SEEDED_FINDINGS, SUBCONTRACT_REVIEW_JOB } from "../lib/subcontractReviewFixture";
+import { SEEDED_CLAUSES, SEEDED_FINDINGS, SUBCONTRACT_REVIEW_JOB } from "../lib/subcontractReviewFixture";
 
 /**
  * AI SUBCONTRACT REVIEW — the person's half, in a real browser.
@@ -91,8 +91,8 @@ test.describe("AI subcontract review", () => {
     await expect(status(lds.key)).toHaveText("Accepted as written");
     await expect(status(payIfPaid.key)).toHaveText("Negotiating");
     await expect(status(notice.key)).toHaveText("Dismissed");
-    // A dismissed MEDIUM no longer counts.
-    await expect(page.locator('[data-subcontract-review="summary-line"]')).toContainText("2 high risk, 0 medium risk, 0 low risk");
+    // A dismissed MEDIUM no longer counts: 2 high, retainage the only medium, the two scope facts low.
+    await expect(page.locator('[data-subcontract-review="summary-line"]')).toContainText("2 high risk, 1 medium risk, 2 low risk");
   });
 
   test("4. undo takes two steps and puts the finding back to undecided", async () => {
@@ -103,7 +103,40 @@ test.describe("AI subcontract review", () => {
     await expect(status(notice.key)).toHaveText("Not reviewed yet");
   });
 
-  test("5. starting a review on a file outside our store is refused with a sentence, and nothing changes", async () => {
+  test("5. against the bid: the sum matches, the retainage and addenda differences are named, and both scope gaps are shown", async () => {
+    const scope = page.locator('[data-subcontract-review="scope-check"]');
+    await expect(scope.locator('[data-subcontract-review="money"]')).toContainText("$412,000.00");
+    await expect(scope.locator('[data-subcontract-review="money"]')).toContainText("Matches your awarded bid.");
+    await expect(scope.locator('[data-subcontract-review="retainage"]')).toContainText("withholds 10%; this job is set to 5%");
+    await expect(scope.locator('[data-subcontract-review="addenda"]')).toContainText("Not logged on your bid: 3");
+    await expect(scope.locator('[data-subcontract-review="addenda"]')).toContainText("Never acknowledged on your bid: Addendum 2");
+
+    // The contradiction quotes the CONTRACT; the not-carried gap quotes OUR proposal and says so.
+    await expect(scope).toContainText("furnish and install firestopping and fire caulking");
+    const notCarried = scope.locator("article", { hasText: SEEDED_CLAUSES.cleaning });
+    await expect(notCarried).toContainText("Your proposal's words — not found anywhere in the subcontract's readable pages");
+    await expect(notCarried.locator('[data-subcontract-review="status"]')).toHaveText("Not reviewed yet");
+    await settleAction(page, () => notCarried.getByRole("button", { name: "Negotiate" }).click());
+    await expect(notCarried.locator('[data-subcontract-review="status"]')).toHaveText("Negotiating");
+  });
+
+  test("6. the one-page summary prints from the same decisions, with the disclaimer", async () => {
+    await page.locator('[data-subcontract-review="summary-link"]').click();
+    await expect(page).toHaveURL(/\/subcontract-review\/[^/]+\/summary$/);
+    await expectHealthy(page, "/jobs/[id]/subcontract-review/[reviewId]/summary", { monitor });
+    await expect(page.locator('[data-subcontract-review="not-legal-advice"]')).toHaveText(
+      "This is not legal advice. Have an attorney review high-risk terms.",
+    );
+    await expect(page.locator('[data-subcontract-summary="top-risks"]')).toContainText("Pay-if-paid");
+    await expect(page.locator('[data-subcontract-summary="money"]')).toContainText("matches your awarded bid of $412,000.00");
+    await expect(page.locator('[data-subcontract-summary="scope"]')).toContainText(SEEDED_CLAUSES.cleaning);
+    await expect(page.locator('[data-subcontract-summary="questions"]')).toContainText("Will you accept pay-when-paid with a 60-day outside date?");
+    await expect(page.locator('[data-subcontract-summary="unread"]')).toContainText("pages 5");
+    await expect(page.getByRole("button", { name: /print/i })).toBeVisible();
+    await page.goto(reviewUrl);
+  });
+
+  test("7. starting a review on a file outside our store is refused with a sentence, and nothing changes", async () => {
     await page.getByRole("button", { name: "Run the review again on this version" }).click();
     await page.locator('[data-subcontract-review="start"]').click();
     await expect(page.locator('[data-subcontract-review="error"]')).toBeVisible();

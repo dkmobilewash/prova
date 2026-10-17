@@ -67,7 +67,58 @@ export const SEEDED_FINDINGS = [
     suggestedPosition: "Ask for 7 days, and for notice by email to the PM to count.",
     questionForGc: null,
   },
+  // Phase 2: the figures the scope check compares, each verified to be in its quote.
+  {
+    key: "RETAINAGE:0e2e0000000000a4",
+    category: "RETAINAGE",
+    subtype: "RETAINAGE_RATE",
+    severity: "MEDIUM",
+    title: "10% retainage to final completion",
+    quote: "Contractor shall retain ten percent (10%) of each progress payment.",
+    pageStart: 2,
+    pageEnd: 2,
+    sectionRef: "3.3",
+    explanation: "A tenth of every payment is held until the whole project is finished.",
+    suggestedPosition: "Ask for 5%, released at substantial completion of your work.",
+    questionForGc: null,
+    terms: { retainagePercent: 10 },
+  },
+  {
+    key: "SCOPE:0e2e0000000000a5",
+    category: "SCOPE",
+    subtype: "CONTRACT_SUM",
+    severity: "LOW",
+    title: "Subcontract sum",
+    quote: "the Subcontract Sum of Four Hundred Twelve Thousand Dollars ($412,000.00)",
+    pageStart: 1,
+    pageEnd: 1,
+    sectionRef: "2.1",
+    explanation: "The price you are agreeing to.",
+    suggestedPosition: "Confirm it matches your bid and any accepted alternates.",
+    questionForGc: null,
+    terms: { contractSum: 412000 },
+  },
+  {
+    key: "SCOPE:0e2e0000000000a6",
+    category: "SCOPE",
+    subtype: "ADDENDA_LIST",
+    severity: "LOW",
+    title: "Addenda incorporated",
+    quote: "The Contract Documents include Addenda Nos. 1, 2 and 3.",
+    pageStart: 1,
+    pageEnd: 1,
+    sectionRef: "1.3",
+    explanation: "These addenda are part of what you are agreeing to build.",
+    suggestedPosition: "Confirm you priced every addendum listed.",
+    questionForGc: null,
+  },
 ] as const;
+
+/** The two proposal clauses the scope check compares against. */
+export const SEEDED_CLAUSES = {
+  fireCaulking: "Firestopping and fire caulking are excluded.",
+  cleaning: "Final cleaning is excluded.",
+} as const;
 
 export async function seedSubcontractReview(persona: { id: string; email: string }): Promise<void> {
   const user = await prisma.user.upsert({
@@ -97,6 +148,33 @@ export async function seedSubcontractReview(persona: { id: string; email: string
       select: { id: true },
     });
   }
+  const jobRow = await prisma.job.update({ where: { id: job.id }, data: { retainagePercent: 5 }, select: { contactId: true } });
+
+  // OUR side: the won bid ($400,000 + an accepted $12,000 alternate = the
+  // contract's $412,000), two addenda (one never acknowledged), two exclusions.
+  await prisma.bidInvitation.deleteMany({ where: { wonJobId: job.id } });
+  await prisma.jobProposalClause.deleteMany({ where: { jobId: job.id } });
+  await prisma.bidInvitation.create({
+    data: {
+      companyId: user.companyId,
+      contactId: jobRow.contactId,
+      projectName: `${E2E_TAG} Review Project`,
+      status: "WON",
+      bidAmount: 400000,
+      wonJobId: job.id,
+      lines: { create: [{ companyId: user.companyId, kind: "ALTERNATE", label: "Alt 1 - Level 5 lobby", amount: 12000, accepted: true }] },
+      addenda: {
+        create: [
+          { companyId: user.companyId, reference: "Addendum 1", acknowledgedOn: new Date("2026-09-01T00:00:00Z") },
+          { companyId: user.companyId, reference: "Addendum 2" },
+        ],
+      },
+    },
+  });
+  const [fireClause] = await prisma.$transaction([
+    prisma.jobProposalClause.create({ data: { companyId: user.companyId, jobId: job.id, kind: "EXCLUSION", text: SEEDED_CLAUSES.fireCaulking, sortOrder: 1 } }),
+    prisma.jobProposalClause.create({ data: { companyId: user.companyId, jobId: job.id, kind: "EXCLUSION", text: SEEDED_CLAUSES.cleaning, sortOrder: 2 } }),
+  ]);
 
   // Replace, never reuse: the spec mutates decisions.
   await prisma.subcontractFindingDecision.deleteMany({ where: { jobId: job.id } });
@@ -130,7 +208,8 @@ export async function seedSubcontractReview(persona: { id: string; email: string
       jobId: job.id,
       contractDocumentId: doc.id,
       model: "seeded",
-      promptVersion: "seeded",
+      // A scope-checked generation, so the page derives "not carried" gaps.
+      promptVersion: "subcontract-review.2",
       startedByUserId: user.id,
       completedAt: new Date(),
       pagesCharged: 4,
@@ -158,5 +237,20 @@ export async function seedSubcontractReview(persona: { id: string; email: string
   });
   await prisma.subcontractFinding.createMany({
     data: SEEDED_FINDINGS.map((finding) => ({ ...finding, reviewId: review.id, sourceId: review.sources[0]!.id })),
+  });
+  await prisma.subcontractScopeCheck.create({
+    data: {
+      reviewId: review.id,
+      sourceId: review.sources[0]!.id,
+      key: `CONTRADICTS_OUR_CLAUSE:${fireClause.id}:0e2e0000000000b1`,
+      relation: "CONTRADICTS_OUR_CLAUSE",
+      clauseId: fireClause.id,
+      clauseKind: "EXCLUSION",
+      clauseText: SEEDED_CLAUSES.fireCaulking,
+      quote: "Subcontractor shall furnish and install firestopping and fire caulking at all rated wall and ceiling assemblies.",
+      pageStart: 1,
+      pageEnd: 1,
+      explanation: "The contract puts firestopping on you, which your proposal excluded.",
+    },
   });
 }

@@ -6,6 +6,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { NotLegalAdvice } from "@/components/NotLegalAdvice";
 import { SubcontractReviewPanel } from "@/components/SubcontractReviewPanel";
 import { SubcontractFindingCard } from "@/components/SubcontractFindingCard";
+import { SubcontractScopeCheck } from "@/components/SubcontractScopeCheck";
 import { citationLabel, groupByCategory, SEVERITY_WORD, severityCounts } from "@/lib/subcontract-review/findings";
 import { describePageRuns } from "@/lib/subcontract-review/pageText";
 import { loadReviewPage } from "@/lib/subcontract-review/query";
@@ -39,7 +40,7 @@ export default async function SubcontractReviewPage({
 
   const data = await loadReviewPage(id, context.company.id, version);
   if (!data) notFound();
-  const { job, versions, selected, review, previous } = data;
+  const { job, versions, selected, review, previous, scope, decisions } = data;
 
   const changeByKey = new Map<string, "NEW" | "CHANGED" | "UNCHANGED">();
   if (previous) {
@@ -155,6 +156,20 @@ export default async function SubcontractReviewPage({
                   </p>
                 )}
               </section>
+
+              {review.state !== "RUNNING" && (
+                <p className="mb-6 print:hidden">
+                  <Link
+                    href={`/jobs/${job.id}/subcontract-review/${review.id}/summary`}
+                    className="text-sm font-medium text-link hover:underline"
+                    data-subcontract-review="summary-link"
+                  >
+                    One-page summary to print or save as PDF →
+                  </Link>
+                </p>
+              )}
+
+              {scope && <SubcontractScopeCheck jobId={job.id} scope={scope} decisions={decisions} />}
 
               {review.findings.length === 0 && review.state === "COMPLETE" && (
                 <p className="mb-6 rounded-lg border border-line-card bg-surface p-4 text-sm text-ink-body">
