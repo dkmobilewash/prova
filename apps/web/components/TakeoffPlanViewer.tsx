@@ -687,6 +687,17 @@ export function TakeoffPlanViewer({
     feetPerUnit: number;
     widthPt: number;
     walls: WallCandidate[];
+    /**
+     * The parts of the page the measured PLAN views own, or null on a sheet
+     * that was measured whole.
+     *
+     * Answer-key mode offers the unclaimed long lines as possible walls, and
+     * on a mixed sheet most of them are not on a plan at all: A120 carries
+     * eight interior elevations and a schedule, and every long line in those
+     * was offered to the reviewer. Null means "the whole sheet", which is what
+     * a single-view sheet is.
+     */
+    planBoxes: { from: number; to: number; fromY: number; toY: number }[] | null;
   } | null>(null);
 
   /**
@@ -719,14 +730,26 @@ export function TakeoffPlanViewer({
       });
     };
     const pairOptions = { feetPerPoint: last.feetPerUnit };
+    /** Is this the part of the sheet that was measured? */
+    const onAPlan = (x1: number, y1: number, x2: number, y2: number) => {
+      if (last.planBoxes === null) return true;
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      return last.planBoxes.some(
+        (box) => mx >= box.from && mx < box.to && my >= box.fromY && my < box.toY,
+      );
+    };
     const unclaimed = faces.filter(
       (f) =>
         Math.hypot(f.x2 - f.x1, f.y2 - f.y1) * last.feetPerUnit >= 12 &&
+        onAPlan(f.x1, f.y1, f.x2, f.y2) &&
         !covered(f) &&
         !faces.some((other) => other !== f && wallFromPair(f, other, pairOptions) !== null),
     );
     return candidatesFromSheet({
-      walls: last.walls.map((w) => ({
+      walls: last.walls
+        .filter((w) => onAPlan(w.x1, w.y1, w.x2, w.y2))
+        .map((w) => ({
         x1: w.x1,
         y1: w.y1,
         x2: w.x2,
@@ -1748,6 +1771,8 @@ export function TakeoffPlanViewer({
       let otherViews: ViewWalls[] = [];
       let leftOut: ExcludedView[] = [];
       let primaryShown: { name: string; scaleName: string | null } | null = null;
+      /** The parts of the page the measured PLAN views own — see `lastDetect`. */
+      let planBoxes: { from: number; to: number; fromY: number; toY: number }[] | null = null;
       if (views.length >= 2) {
         const measured = wallsPerView({
           segments,
@@ -1761,12 +1786,45 @@ export function TakeoffPlanViewer({
         const picked = primaryView(measured);
         otherViews = picked.others;
         leftOut = excludedViews(views);
+        // Every view that was actually measured, which after the view-kind
+        // filter is every PLAN on the sheet. `wallsPerView` has already
+        // refused the elevations, the sections and the schedules.
+        planBoxes = measured.flatMap(
+          (one) =>
+            one.view.boxes ?? [
+              {
+                from: one.view.from,
+                to: one.view.to,
+                fromY: one.view.fromY,
+                toY: one.view.toY,
+              },
+            ],
+        );
         primaryShown = picked.primary
           ? { name: picked.primary.view.name, scaleName: picked.primary.view.scaleName }
           : null;
+        // ── A SHEET WITH NO PLAN ON IT MEASURES NOTHING ──
+        //
+        // This used to fall back to measuring the WHOLE SHEET when no view
+        // produced a primary, which is the worst possible answer for the sheet
+        // that most needs a good one: a page of eight interior elevations has
+        // every one of them measured as wall, at an elevation's own scale,
+        // with the caution saying they were left out. `excludedViews` names
+        // what happened and the quantities stay empty, which is the honest
+        // pair.
         found =
           picked.primary?.found ??
-          findWallsOnSheet({ segments, textItems, pageSize, feetPerUnit, wallTypes, sampledSheets });
+          // The real pipeline on NO geometry, rather than a hand-built empty
+          // result: every field of `FoundOnSheet` comes out consistent, and
+          // nothing here has to be kept in step with that type.
+          findWallsOnSheet({
+            segments: [],
+            textItems,
+            pageSize,
+            feetPerUnit,
+            wallTypes,
+            sampledSheets: null,
+          });
       } else {
         found = findWallsOnSheet({
           segments,
@@ -1815,6 +1873,7 @@ export function TakeoffPlanViewer({
         feetPerUnit,
         widthPt: pageSize.widthPt,
         walls: [...found.walls],
+        planBoxes,
       };
       if (answerKey?.onCandidates) {
         const candidates = candidatesFromLastDetect();
@@ -2780,8 +2839,17 @@ export function TakeoffPlanViewer({
                 />
               )}
               {/* The calibration line, redrawn over the sheet so the scale is
-                  something a reviewer can SEE rather than take on faith. */}
-              {calibration && (
+                  something a reviewer can SEE rather than take on faith.
+
+                  ── EXCEPT IN ANSWER-KEY MODE ──
+
+                  There it is the one mark on the sheet that is NOT a candidate,
+                  and it looks exactly like one: a straight amber line over the
+                  drawing, inside the plan, at a wall-ish length. A reviewer
+                  building a key has to decide about every mark they can see,
+                  and this one is not theirs to decide about. The scale is
+                  already stated in words in the panel. */}
+              {calibration && answerKey === undefined && (
                 <line
                   x1={calibration.x1}
                   y1={calibration.y1}

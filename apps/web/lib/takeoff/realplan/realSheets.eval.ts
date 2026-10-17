@@ -17,6 +17,7 @@ import {
   sheetViews,
   viewRegions,
   viewsInRegions,
+  insideView,
   viewsWithOwnScale,
   wallsPerView,
 } from "../sheetViews";
@@ -598,7 +599,10 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
               const inView = segments.filter((one) => {
                 const mx = (one.x1 + one.x2) / 2 / pageSize.widthPt;
                 const my = (one.y1 + one.y2) / 2 / pageSize.widthPt;
-                return mx >= view.from && mx < view.to && my >= view.fromY && my < view.toY;
+                // `insideView` and not the view's RANGE — see its header. The
+                // range is a bounding box, and testing it here measured A120
+                // at 217 ft where the app measured 121.
+                return insideView(view, mx, my);
               });
               if (inView.length === 0) continue;
               try {

@@ -988,12 +988,12 @@ const SERIES_MEMBER_LONGEST = 1.333;
 
 /** Direction of a segment, normalised to [0, π) so a line and its reverse are
  *  the same direction — which they are, for a wall face. */
-function angleOf(segment: StrokeSegment): number {
+export function angleOf(segment: StrokeSegment): number {
   const angle = Math.atan2(segment.y2 - segment.y1, segment.x2 - segment.x1);
   return ((angle % Math.PI) + Math.PI) % Math.PI;
 }
 
-function lengthOf(segment: StrokeSegment): number {
+export function lengthOf(segment: StrokeSegment): number {
   return Math.hypot(segment.x2 - segment.x1, segment.y2 - segment.y1);
 }
 

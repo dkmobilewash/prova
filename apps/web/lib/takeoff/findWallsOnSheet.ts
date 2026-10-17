@@ -17,6 +17,7 @@ import { scaleBarLabels, wallsNotTheScaleBar } from "./scaleBar";
 import { wallsNotDuplicateCoverage } from "./duplicateCoverage";
 import { curvedWalls } from "./curvedWalls";
 import { wallsNotIsolatedStubs } from "./isolatedStubs";
+import { wallsActuallyDrawn } from "./drawnCoverage";
 import { DEFAULTS } from "./wallVectors";
 import { wallGroups, type WallGroup } from "./wallGroups";
 import { withoutNonWallLayers, type LayerDrop } from "./layerNames";
@@ -139,6 +140,8 @@ export type FoundOnSheet = {
    *  Reported rather than silent: a sheet whose grid was mistaken for walls
    *  and a sheet with no grid both drop zero, and only this tells them apart. */
   gridDropped: number;
+  /** Runs refused because nothing is drawn along them — see `drawnCoverage.ts`. */
+  hatchDropped: number;
   /** Candidates removed for claiming footage another candidate already
    *  claimed. Reported for the same reason as `gridDropped`: a sheet whose
    *  dimension strings were sold as walls and a sheet with none both drop
@@ -427,7 +430,22 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   // This asks the tighter question first: does this short run touch anything
   // at all? See `isolatedStubs.ts` for the measurement on two real sheets.
   const notStubs = wallsNotIsolatedStubs(notScaleBar, feetPerUnit);
-  const inBuilding = wallsInTheBuilding(notStubs, feetPerUnit);
+  // ── AND THE RUNS WITH NOTHING ACTUALLY DRAWN ALONG THEM ──
+  //
+  // Hatching, including diagonal hatching, whose ticks `oneFacePerLine` has
+  // assembled into two long "faces" a plausible thickness apart. On Camp Bow
+  // Wow A120 that was 29 runs and 176 ft of ±60° X patterns across an enlarged
+  // restroom plan, every one of them a textbook partition by thickness.
+  //
+  // BEFORE `wallsInTheBuilding`, with the other noise filters, and for the
+  // reason this block already gives: the X's cover the middle of the plan, so
+  // they are comfortably part of the biggest connected group and grouping
+  // cannot refuse them. `drawnCoverage.ts` carries the measurement, why
+  // counting the lines BETWEEN the faces does not work, and why the rule is
+  // deliberately blind to a run's angle.
+  const notHatch = wallsActuallyDrawn(notStubs, inUnits, feetPerUnit);
+  const hatchDropped = notStubs.length - notHatch.length;
+  const inBuilding = wallsInTheBuilding(notHatch, feetPerUnit);
   // ── AND THEIR ENDS PUT BACK ON THE CORNERS ──
   //
   // Last, because it needs the final set: a wall can only be joined to one
@@ -471,6 +489,7 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   return {
     inUnits,
     gridDropped,
+    hatchDropped,
     duplicateDropped: noDuplicates.dropped,
     everywhere,
     inBuilding,

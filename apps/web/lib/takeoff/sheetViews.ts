@@ -1,5 +1,6 @@
 import { findWallsOnSheet, type FoundOnSheet, type SheetTextItem } from "./findWallsOnSheet";
 import { printedScalesAt } from "./printedScales";
+import { isPlanView, viewKind } from "./viewKind";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 import type { MatchableWallType } from "./wallTypeMatch";
 
@@ -62,6 +63,14 @@ export type SheetView = {
    *  separated here and not by `from`/`to`. */
   fromY: number;
   toY: number;
+  /**
+   * The parts of the page this view actually owns, where `viewsInRegions` has
+   * run. `from`/`to`/`fromY`/`toY` are their bounding box, which is NOT the
+   * same thing: a view owning a dimension strip down the left of the sheet and
+   * a slice at the top has a bounding box covering what is stacked beneath it.
+   * Anything deciding which geometry to MEASURE must use this.
+   */
+  boxes?: { from: number; to: number; fromY: number; toY: number }[];
 };
 
 /**
@@ -96,6 +105,17 @@ const FRAME_SPAN = 0.8;
  * larger of those and still far short of anything else on the page.
  */
 const NAME_ABOVE = 0.02;
+
+/**
+ * How close two captions must be, in page-width units, to be on the same row
+ * or in the same column when a region is shared out between them.
+ *
+ * The same 0.02 as `NAME_ABOVE`, and for the same reason: it is one line of
+ * lettering on a sheet. Two captions in A120's right-hand column sit at 0.323
+ * and 0.325, which is one column to any drafter, and cutting between them
+ * makes a 0.002-wide slice that belongs to nobody.
+ */
+const CAPTION_SAME_LINE = 0.02;
 
 /**
  * How far a name may sit to the side of its scale and still belong to it.
@@ -156,7 +176,29 @@ const NAME_BESIDE = 0.04;
  * "BUNGALOW - PLAN AND ENLARGED", which does contain PLAN. It sits 56% of the
  * page away from any scale, so `NAME_ABOVE` excludes it by a factor of 28.
  */
-const VIEW_NAME = /\b(PLAN|ELEVATION|SECTION|DETAIL|SCHEDULE|DIAGRAM|VIEW|LAYOUT)\b/i;
+/*
+ * ── AND THE ABBREVIATIONS, WHICH COST A WHOLE SHEET ──
+ *
+ * Added 2026-10-17. This pattern knew `ELEVATION` and not `ELEV.`, and Camp Bow
+ * Wow A120 captions all eight of its interior elevations `RR 105 - EAST ELEV.`.
+ * So the sheet produced ONE view — the enlarged plan — and `TakeoffPlanViewer`
+ * only splits a sheet with two or more, which means the plan's region grew to
+ * the whole page and the elevations, the accessories schedule and the floor
+ * hatching were all measured as wall.
+ *
+ * The abbreviation is not a quirk of one drafter: a caption has a drawing's
+ * width to fit in and a title block has a whole line, so a caption is where
+ * shortening happens. `ELEV` cannot match ELEVATOR (no word boundary before the
+ * R), so an elevator lobby plan still reads as a plan.
+ *
+ * FINDING a view and deciding WHAT KIND it is are deliberately two steps. This
+ * pattern is deliberately greedy — a view that is found and then named as an
+ * elevation owns its region and is excluded by name, which is what stops its
+ * geometry being adopted by the plan beside it. A view that is never found owns
+ * nothing, and that is the failure above.
+ */
+const VIEW_NAME =
+  /\b(PLAN|ELEVATION|ELEV\.?|SECTION|SECT\.?|DETAIL|DET\.?|SCHEDULE|SCHED\.?|DIAGRAM|VIEW|LAYOUT|RCP)\b/i;
 
 /**
  * The drawings on a sheet, left to right, each with the scale captioned under
@@ -370,8 +412,78 @@ export function viewsInRegions(
   if (captions.length === 0) return [];
   if (regions.length === 0) return [...captions];
 
-  const mine = captions.map(() => [] as typeof regions[number][]);
+  // ── A REGION HOLDING SEVERAL CAPTIONS IS SHARED OUT, NOT AWARDED ──
+  //
+  // Added 2026-10-17, and it is the other half of the A120 failure. A gutter is
+  // half a paper inch of empty paper across the full height of the sheet, and a
+  // sheet that STACKS its drawings in packed rows has none between the rows:
+  // A120's nine views produced four regions, every one of them spanning the
+  // whole page height. One of those regions held the enlarged plan and two
+  // interior elevations, and whichever caption happened to be first in the
+  // array took all three drawings.
+  //
+  // So where a region contains more than one caption, it is cut between them —
+  // on the axis in which they are most spread out, at the midpoints between
+  // neighbours. That is the same reasoning `viewRegions` uses (cut where the
+  // drawings are separated) applied where there is no empty paper to find it
+  // by, and it needs no new constant.
+  //
+  // THE ORPHAN RULE IS UNTOUCHED, because it is a scar: a region with NO
+  // caption of its own still joins the nearest one. A plan's dimension column
+  // sits in its own gutter-separated strip with no caption, and S05 and S07
+  // went to ZERO FEET when such a strip was left out. Only a region that
+  // genuinely holds two or more captions is divided.
+  const shared: typeof regions[number][] = [];
   for (const region of regions) {
+    const inside = captions.filter(
+      (c) =>
+        c.captionX >= region.from &&
+        c.captionX < region.to &&
+        c.captionY >= region.fromY &&
+        c.captionY < region.toY,
+    );
+    if (inside.length < 2) {
+      shared.push(region);
+      continue;
+    }
+    // BOTH AXES, as a grid, for the same reason `viewRegions` cuts both: a
+    // sheet lays its drawings out in rows AND columns, and A120's own region
+    // holds five captions in three rows and two columns. Cutting only the axis
+    // they are most spread on was tried first and leaves a drawing with no
+    // region at all — three of A120's elevations came back with an empty box,
+    // because both captions in a row-slice were equidistant from it and the
+    // first one took the slice.
+    const cutsAlong = (values: readonly number[], lo: number, hi: number) => {
+      // NEAR-EQUAL COORDINATES ARE ONE LINE. Two captions in the same column
+      // sit at 0.323 and 0.325 — the same column to any drafter, and a cut
+      // between them would be a 0.002-wide slice belonging to nobody.
+      const sorted = [...values].sort((a, b) => a - b);
+      const columns: number[] = [];
+      for (const value of sorted) {
+        if (columns.length === 0 || value - columns[columns.length - 1] > CAPTION_SAME_LINE) {
+          columns.push(value);
+        }
+      }
+      const cuts: number[] = [];
+      for (let i = 0; i < columns.length - 1; i += 1) cuts.push((columns[i] + columns[i + 1]) / 2);
+      return [lo, ...cuts, hi];
+    };
+    const xEdges = cutsAlong(inside.map((c) => c.captionX), region.from, region.to);
+    const yEdges = cutsAlong(inside.map((c) => c.captionY), region.fromY, region.toY);
+    for (let i = 0; i < xEdges.length - 1; i += 1) {
+      for (let j = 0; j < yEdges.length - 1; j += 1) {
+        shared.push({
+          from: xEdges[i],
+          to: xEdges[i + 1],
+          fromY: yEdges[j],
+          toY: yEdges[j + 1],
+        });
+      }
+    }
+  }
+
+  const mine = captions.map(() => [] as typeof regions[number][]);
+  for (const region of shared) {
     let at = 0;
     let bestD = Number.POSITIVE_INFINITY;
     for (let i = 0; i < captions.length; i += 1) {
@@ -391,9 +503,33 @@ export function viewsInRegions(
 
   return captions.map((caption, i) => {
     const got = mine[i];
-    if (got.length === 0) return caption;
+    // ── A CAPTION THAT WON NOTHING MEASURES NOTHING ──
+    //
+    // It used to keep the `from: 0, to: 1, fromY: 0, toY: Infinity` it arrives
+    // with, which is THE WHOLE SHEET — so on a sheet where two captions sat in
+    // one region, the loser was handed every stroke on the page and measured
+    // it at its own caption's scale. An empty box is the honest answer: this
+    // drawing was found, it owns no geometry, and `excludedViews` names it.
+    if (got.length === 0) {
+      return { ...caption, from: 0, to: 0, fromY: 0, toY: 0, boxes: [] };
+    }
     return {
       ...caption,
+      // ── THE BOXES ARE THE TRUTH; THE RANGE IS THEIR BOUNDING BOX ──
+      //
+      // This function used to return the bounding box alone, and the docstring
+      // defended it: two regions assigned to one caption "also claim what lies
+      // between them — which is empty paper, or it would not have been a
+      // gutter". That was sound while every region came FROM a gutter. It
+      // stopped being true the moment a region could be split between captions
+      // without one: on A120 the enlarged plan owns a full-height dimension
+      // strip down the left AND its own slice at the top, and the bounding box
+      // of those two swallows the two interior elevations stacked below it.
+      //
+      // So the regions are kept as a list and `wallsPerView` tests them
+      // individually. The range stays for every consumer that draws a view's
+      // extent, where a bounding box is what it wants anyway.
+      boxes: got.map((r) => ({ from: r.from, to: r.to, fromY: r.fromY, toY: r.toY })),
       from: Math.min(...got.map((r) => r.from)),
       to: Math.max(...got.map((r) => r.to)),
       fromY: Math.min(...got.map((r) => r.fromY)),
@@ -442,6 +578,36 @@ export function withDimensionScale(
       ? { ...view, feetPerInch: measured.feetPerInch, scaleName: measured.scaleName }
       : view;
   });
+}
+
+/**
+ * The parts of the page a view owns, as boxes.
+ *
+ * ── ONE DEFINITION, BECAUSE TWO COST 96 FEET ──
+ *
+ * A view's `from`/`to`/`fromY`/`toY` are the BOUNDING BOX of what it owns, and
+ * on a sheet whose drawings are packed without gutters that is not the same
+ * thing: A120's enlarged plan owns a dimension strip down the left of the page
+ * and a slice across the top, and the box around those two covers the two
+ * interior elevations stacked underneath.
+ *
+ * `wallsPerView` was taught to test the boxes; `realSheets.eval.ts` has its own
+ * per-view loop and was still testing the range, so the same sheet measured
+ * 121 ft in the app and 217 ft in the measurement meant to grade the app. One
+ * rule in two places is one rule and a copy that drifted — which is the
+ * failure CLAUDE.md records this repo paying for twice.
+ *
+ * So both ask this.
+ */
+export function viewBoxes(view: SheetView): { from: number; to: number; fromY: number; toY: number }[] {
+  return view.boxes ?? [{ from: view.from, to: view.to, fromY: view.fromY, toY: view.toY }];
+}
+
+/** Is a point, in page-width units, inside what this view owns? */
+export function insideView(view: SheetView, mx: number, my: number): boolean {
+  return viewBoxes(view).some(
+    (box) => mx >= box.from && mx < box.to && my >= box.fromY && my < box.toY,
+  );
 }
 
 /** One view's walls, measured at that view's own scale. */
@@ -503,14 +669,35 @@ export function wallsPerView(input: {
       segments: input.segments.filter((one) => {
         const mx = (one.x1 + one.x2) / 2 / input.pageSize.widthPt;
         const my = (one.y1 + one.y2) / 2 / input.pageSize.widthPt;
-        return mx >= view.from && mx < view.to && my >= view.fromY && my < view.toY;
+        // EACH OWNED BOX, not their bounding box — see `insideView`.
+        return insideView(view, mx, my);
       }),
     }))
     // A VIEW WITH NO READABLE SCALE IS DROPPED HERE AND NOT EARLIER. By this
     // point `viewsInRegions` has already given it its region, so the geometry
     // inside it belongs to nobody and is measured by nobody — which is the
     // only honest answer for a drawing captioned NTS.
-    .filter((band) => band.segments.length > 0 && band.view.feetPerInch !== null);
+    //
+    // ── AND ONLY A PLAN IS MEASURED AT ALL ──
+    //
+    // Added 2026-10-17. An interior elevation of a wall is two parallel lines a
+    // wall-thickness apart running the height of that wall, which is a textbook
+    // wall by every geometric test in this repo — so nothing downstream can
+    // refuse it, and on A120 eight of them went into the quantities. The only
+    // thing that separates a plan from an elevation OF THE SAME WALL is the
+    // caption, so the caption decides.
+    //
+    // A caption nobody recognises is NOT measured either, and that is the part
+    // worth defending: `viewKind` returns `check` for it and `excludedViews`
+    // puts it in the caution by name. Measuring an unrecognised drawing is how
+    // this defect happened; dropping it without a word would be the same
+    // failure with better manners.
+    .filter(
+      (band) =>
+        band.segments.length > 0 &&
+        band.view.feetPerInch !== null &&
+        isPlanView(band.view.name),
+    );
   if (bands.length === 0) return [];
 
   const measure = (band: (typeof bands)[number], feetPerUnit: number): ViewWalls => {
@@ -592,6 +779,20 @@ export function viewsWithOwnScale(
     // NTS and AS NOTED arrive here as null, and stay unmeasured. A drawing
     // whose own caption refuses to name a scale is not one to guess at.
     if (view.feetPerInch === null || !(view.feetPerInch > 0)) continue;
+    // ── AND ONLY A PLAN, WHICH IS THE SAME RULE `wallsPerView` APPLIES ──
+    //
+    // Added 2026-10-17 and it belongs HERE rather than in each caller, which
+    // is the whole point. `realSheets.eval.ts` has its own per-view loop over
+    // this function's output, and on A120 it measured all nine views —
+    // 567 ft including eight interior elevations — while the app's own
+    // `wallsPerView` measured only the plan. One rule in two places is one
+    // rule in one place and a copy that drifted, which CLAUDE.md records this
+    // repo paying for twice.
+    //
+    // It also improves the SCALE this feeds: `sheetScale.ts` asks this
+    // question to prefill a calibration, and A120's answer should be the
+    // enlarged plan's 1/2" rather than an elevation's 3/8".
+    if (!isPlanView(view.name)) continue;
     out.push({ view, feetPerUnit: (widthPt / 72) * view.feetPerInch });
   }
   return out;
@@ -617,12 +818,40 @@ export type ExcludedView = { name: string; reason: string };
  * second.
  */
 export function excludedViews(views: readonly SheetView[]): ExcludedView[] {
-  return views
-    .filter((view) => view.feetPerInch === null)
-    .map((view) => ({
-      name: view.name,
-      reason: "not to scale, not measured",
-    }));
+  const out: ExcludedView[] = [];
+  for (const view of views) {
+    // ── WHAT KIND IT IS COMES FIRST, BECAUSE IT IS THE MORE USEFUL SENTENCE ──
+    //
+    // An elevation captioned `3/8" = 1'-0"` has a perfectly readable scale, so
+    // the older test here passed it over in silence and it was measured. Both
+    // reasons can be true of one drawing; "an elevation" is the one an
+    // estimator can check against the sheet, and "not to scale" is only
+    // interesting for a drawing they would otherwise expect to see measured.
+    const kind = viewKind(view.name);
+    if (kind.kind === "not-a-plan") {
+      // ── BOTH FACTS, WHERE BOTH ARE TRUE ──
+      //
+      // A wall detail captioned NTS is a detail AND unscaled, and the older
+      // test here asserts the second — for the right reason, which it states:
+      // "skipped" tells somebody to worry and a specific reason lets them
+      // decide whether it matters. What it is comes first because it is the
+      // more useful half and the more stable one, and the scale follows
+      // instead of being dropped.
+      out.push({
+        name: view.name,
+        reason: view.feetPerInch === null ? `${kind.why}, not to scale, not measured` : kind.why,
+      });
+      continue;
+    }
+    if (kind.kind === "check") {
+      out.push({ name: view.name, reason: `${kind.why} — check it` });
+      continue;
+    }
+    if (view.feetPerInch === null) {
+      out.push({ name: view.name, reason: "not to scale, not measured" });
+    }
+  }
+  return out;
 }
 
 /**

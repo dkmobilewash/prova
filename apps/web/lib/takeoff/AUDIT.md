@@ -1437,3 +1437,79 @@ layer naming (2 of 5 sets) and scanned pages (5 of 11 sets).
   will under-report and nothing currently says so.
 - **Performance for a 300-sheet set is unmeasured.** Wall finding runs in the
   browser, in the foreground, one sheet at a time.
+
+## A120 is a MIXED sheet, and that is a kind of sheet, not a quirk — 2026-10-17
+
+Every line about A120 above this one treats it as a floor plan that happens to
+be hard to scale ("DECLINED — two scales, 1/2" and 3/8""). That is the wrong
+description and it is why the sheet kept coming back. **A120 is one enlarged
+restroom PLAN, eight interior ELEVATIONS and an accessories SCHEDULE on one
+page.** The two scales are not a defect in the sheet; they are what a mixed
+sheet IS.
+
+Opened in the workspace it reported **542 ft over 76 runs**, and the overlay
+marked the elevations, the schedule's ruled lines, and two big diagonal X
+patterns across the enlarged plan. Not one of those is a wall.
+
+### Three separate mechanisms, each measured rather than reasoned
+
+| | what | measured |
+| --- | --- | --- |
+| 1 | `VIEW_NAME` knew `ELEVATION` and not `ELEV.` | all eight elevations are captioned `RR 105 - EAST ELEV.`, so the sheet produced **one** view, and `TakeoffPlanViewer` only splits a sheet with two or more |
+| 2 | a region holding several captions went whole to one of them | `viewRegions` cut A120 into four regions, every one spanning the full page height — a gutter is half an inch of empty paper and the elevation rows are packed — and the plan's caption took all four |
+| 3 | hatch ticks assembled into long diagonal "walls" | the ±60° family is 41 strokes, longest 1.29 ft, median 0.08 ft; `oneFacePerLine` joins them collinearly and the pairer returns a 12 ft wall at 7-11/16in |
+
+### The rule that separates hatching from a wall, and the one that does not
+
+The obvious rule — "a hatch has many parallel lines between the faces" — is
+**false here, in the dangerous direction**. Counted on A120, the phantom
+diagonals have a median of 2 lines between their faces and the real orthogonal
+walls a median of 6: a restroom plan is full of fixtures and tile. A threshold
+there removes the walls and keeps the hatch.
+
+What separates them is how much of the run has ink along it:
+
+| | coverage |
+| --- | --- |
+| the 29 diagonal X runs | 0.00 .. 0.15, median 0.09 |
+| the 11 orthogonal runs | 0.16 .. 1.00, median 0.86 |
+
+`drawnCoverage.ts` carries it. It is blind to ANGLE by construction, which is
+the point — a 45° wall drawn as two continuous lines reads 1.0 exactly as a
+horizontal one does, and its test pins that with the two side by side. The
+mutation that matters is making the rule angle-aware: the hatch case stays
+green and the diagonal wall goes red.
+
+### Where it lands
+
+| | before | after |
+| --- | --- | --- |
+| A120 | 542 ft, 76 runs, all three kinds of drawing | **121 ft, 11 runs, the enlarged plan only**, 0 diagonal |
+| A102 (single-plan control) | 2,099 ft, 122 runs | 2,080 ft, 115 runs |
+| A4.B.1 (single-plan control) | 2,453 ft, 230 runs | 2,422 ft, 224 runs |
+| 20 fixtures | 15 of 17 within 2% | unchanged |
+| bench | 111 walls >10ft missed, 17 of 60 type-totals outside 2% | unchanged, with phantoms down on ~20 cases |
+
+The eight elevations are now NAMED in the caution — "Left out: 8 elevations" —
+rather than silently measured or silently dropped.
+
+### What is NOT done, and the measurement that says why
+
+**A ruled SCHEDULE inside a plan's own region is still measured.** A120's own
+schedule is handled, because the view split puts it outside the enlarged plan,
+but a door schedule printed inside a floor plan is not.
+
+A rule for it was built and **thrown away**, which is worth more than the rule
+would have been. Grouping a table's rules by identical span looked right and is
+wrong: a real schedule's outer frame rows are wider than its inner rows, so
+A120's own table splits into fragments, and the largest fragment fails three
+separate gates — 1 crossing rule where 2 are needed, 5 words where 6 are
+needed, and a purity of 0.55. Meanwhile the loose version of the same rule
+matched **22 "tables"** on that sheet, each a 1%-wide vertical sliver, and
+dropped 20,404 of 27,825 strokes — taking the enlarged plan to 15 ft while its
+own seven unit tests stayed green, because the fixture written for it gave the
+"floor plan" diagonal door swings and a real plan is almost all right angles.
+
+So the next attempt should cluster rules into a table by PROXIMITY and
+alignment rather than by identical span, and should validate against a real
+sheet before its own fixture.

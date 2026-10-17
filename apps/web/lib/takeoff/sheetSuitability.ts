@@ -370,10 +370,32 @@ const NOT_WHAT_YOU_PRICE: ReadonlyArray<readonly [RegExp, number, string]> = [
   [/\bFURNITURE\b/i, -200, "a furniture plan"],
   [/\bEQUIPMENT\b/i, -150, "an equipment plan"],
   [/\bREFLECTED\s+CEILING\b/i, -200, "a reflected ceiling plan"],
+  [/\bRCP\b/i, -200, "a reflected ceiling plan"],
   [/\bFINISH(ES)?\b/i, -150, "a finish plan"],
+  // ── THE ABBREVIATIONS, WHICH A VIEW CAPTION USES AND A SHEET TITLE DOES NOT ──
+  //
+  // A title block has room for "INTERIOR ELEVATIONS". The caption under a
+  // drawing does not, and a drafter writes `RR 105 - EAST ELEV.` — which is
+  // what all eight of Camp Bow Wow A120's interior elevations are captioned,
+  // and why not one of them was recognised as a view. The sheet was then one
+  // view, captioned as a plan, and the plan's region grew to cover the whole
+  // page including the elevations and the accessories schedule.
+  //
+  // `\bELEV\b` cannot match ELEVATOR — there is no word boundary before the
+  // R — so an elevator lobby plan is still a plan.
   [/\bDETAIL(S)?\b/i, -150, "a details sheet"],
+  [/\bDET\.?\b/i, -150, "a detail"],
   [/\bSECTION(S)?\b/i, -200, "a sections sheet"],
+  [/\bSECT\.?\b/i, -200, "a section"],
   [/\bELEVATION(S)?\b/i, -200, "an elevations sheet"],
+  [/\bELEV\.?\b/i, -200, "an elevation"],
+  // A SCHEDULE AND A DIAGRAM ARE NOT DRAWINGS YOU MEASURE, and both appear as
+  // captioned views on a mixed sheet: A120 carries a TOILET ACCESSORIES
+  // SCHEDULE, which is a ruled table of text. Demoted for sheet ranking too,
+  // which is right — a door schedule sheet is not the sheet to price.
+  [/\bSCHEDULE(S)?\b/i, -200, "a schedule"],
+  [/\bSCHED\.?\b/i, -200, "a schedule"],
+  [/\bDIAGRAM(S)?\b/i, -200, "a diagram"],
   [/\bSITE\b/i, -200, "a site plan"],
   [/\bROOF\b/i, -200, "a roof plan"],
 ];

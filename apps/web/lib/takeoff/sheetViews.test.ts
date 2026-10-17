@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   excludedViews,
-  wallsPerView,
-  sheetViews,
-  withDimensionScale,
+  insideView,
   primaryView,
-  viewRegions,
-  viewsInRegions,
+  sheetViews,
   type SheetView,
   type ViewWalls,
+  viewBoxes,
+  viewRegions,
+  viewsInRegions,
+  wallsPerView,
+  withDimensionScale,
 } from "./sheetViews";
 
 /**
@@ -40,6 +42,48 @@ describe("splitting a sheet into its views", () => {
     const views = sheetViews(S15, W);
     expect(views.map((v) => v.name)).toEqual(["FLOOR PLAN", "ENLARGED BATH PLAN"]);
     expect(views.map((v) => v.scaleName)).toEqual(['1/4" = 1\'-0"', '1/2" = 1\'-0"']);
+  });
+
+  it("FINDS A CAPTION WRITTEN IN THE SHORT FORM — `ELEV.`, not `ELEVATION`", () => {
+    // ── THE ONE WORD THAT COST A WHOLE SHEET ──
+    //
+    // Camp Bow Wow A120 captions all eight of its interior elevations
+    // `RR 105 - EAST ELEV.`, and this pattern knew only the full word. So nine
+    // drawings read as ONE view, the viewer only splits a sheet with two or
+    // more, and the enlarged plan's region grew to cover the whole page — the
+    // elevations, the accessories schedule and the floor hatching all measured
+    // as wall, 542 ft of it.
+    //
+    // FINDING a view and deciding what KIND it is are two steps, and this is
+    // the first: a drawing that is never found owns no part of the page, so
+    // its geometry is adopted by whatever caption is nearest. It has to be
+    // found in order to be excluded.
+    const captions = [
+      { str: "RR 105 - EAST ELEV.", x: 0.14 * W, y: 0.425 * W },
+      { str: '3/8" = 1\'-0"', x: 0.16 * W, y: 0.431 * W },
+      { str: "RESTROOM - ENLARGED PLAN", x: 0.14 * W, y: 0.216 * W },
+      { str: '1/2" = 1\'-0"', x: 0.16 * W, y: 0.222 * W },
+    ];
+    const views = sheetViews(captions, W);
+    expect(views.map((v) => v.name).sort()).toEqual([
+      "RESTROOM - ENLARGED PLAN",
+      "RR 105 - EAST ELEV.",
+    ]);
+    const elevation = views.find((v) => v.name.includes("ELEV."));
+    expect(elevation?.scaleName, "the short-form caption got no scale").toBe('3/8" = 1\'-0"');
+  });
+
+  it("does not read ELEVATOR as an elevation", () => {
+    // `\bELEV\b` cannot match ELEVATOR — there is no word boundary before the
+    // R — so an elevator lobby plan is still a plan. Written down because the
+    // abbreviation above is the kind of pattern that eats a real word.
+    const captions = [
+      { str: "ELEVATOR LOBBY PLAN", x: 0.14 * W, y: 0.425 * W },
+      { str: '1/4" = 1\'-0"', x: 0.16 * W, y: 0.431 * W },
+    ];
+    const views = sheetViews(captions, W);
+    expect(views).toHaveLength(1);
+    expect(excludedViews(views), "an elevator lobby plan was left out").toEqual([]);
   });
 
   it("LEAVES THE TITLE BLOCK OUT, which is the trap that beat the first rule", () => {
@@ -275,6 +319,87 @@ describe("which region each view gets", () => {
     expect(got[0].from).toBe(0);
     expect(got[0].to).toBe(1);
   });
+
+  /**
+   * ── A SHEET THAT STACKS ITS DRAWINGS WITH NO GUTTER BETWEEN THEM ──
+   *
+   * Camp Bow Wow A120's shape, which is why these exist. Nine drawings, and
+   * `viewRegions` found four regions every one of which spanned the whole page
+   * height, because a gutter is half an inch of empty paper across the other
+   * axis and the elevation rows are packed. A region then held three captions,
+   * the first took all three drawings, and the other two were handed
+   * `from: 0, to: 1` — the whole sheet.
+   */
+  const stacked = (name: string, x: number, y: number): SheetView => ({
+    name, scaleName: '1/4" = 1\'-0"', feetPerInch: 4, captionX: x, captionY: y,
+    from: 0, to: 1, fromY: 0, toY: Number.POSITIVE_INFINITY,
+  });
+
+  it("SHARES ONE REGION OUT between the captions inside it", () => {
+    const got = viewsInRegions(
+      [stacked("FLOOR PLAN", 0.2, 0.2), stacked("EAST ELEV.", 0.2, 0.6)],
+      [{ from: 0, to: 1, fromY: 0, toY: 1 }],
+    );
+    // Cut at the midpoint between the two captions, each keeping its own side.
+    expect(got[0].toY).toBeCloseTo(0.4, 5);
+    expect(got[1].fromY).toBeCloseTo(0.4, 5);
+    expect(got[0].fromY).toBe(0);
+    expect(got[1].toY).toBe(1);
+  });
+
+  it("cuts BOTH axes, so a drawing in a second column still gets a region", () => {
+    // Cutting only the axis the captions were most spread on left three of
+    // A120's elevations with an EMPTY box: both captions in a row-slice were
+    // equidistant from it, so the first took it.
+    const got = viewsInRegions(
+      [
+        stacked("FLOOR PLAN", 0.2, 0.2),
+        stacked("EAST ELEV.", 0.2, 0.6),
+        stacked("SOUTH ELEV.", 0.7, 0.6),
+      ],
+      [{ from: 0, to: 1, fromY: 0, toY: 1 }],
+    );
+    for (const one of got) {
+      expect(one.to - one.from, `${one.name} got no width`).toBeGreaterThan(0);
+      expect(one.toY - one.fromY, `${one.name} got no height`).toBeGreaterThan(0);
+    }
+    expect(got[2].from).toBeCloseTo(0.45, 5);
+  });
+
+  it("gives a caption that won nothing an EMPTY box, never the sheet", () => {
+    // Two captions at the same point: one must lose. Losing used to mean
+    // keeping `from: 0, to: 1` — every stroke on the page, measured at this
+    // caption's own scale.
+    const got = viewsInRegions(
+      [stacked("FLOOR PLAN", 0.2, 0.2), stacked("ALSO HERE PLAN", 0.2, 0.2)],
+      [{ from: 0, to: 1, fromY: 0, toY: 1 }],
+    );
+    const loser = got[1];
+    expect(loser.to - loser.from).toBe(0);
+    expect(loser.toY - loser.fromY).toBe(0);
+  });
+
+  it("owns its boxes rather than the box AROUND them", () => {
+    // The plan owns a full-height strip down the left AND a slice at the top.
+    // The bounding box of those two covers what is stacked below it, which is
+    // another drawing — so `insideView` asks the boxes, not the range.
+    const got = viewsInRegions(
+      [stacked("FLOOR PLAN", 0.3, 0.2), stacked("EAST ELEV.", 0.3, 0.8)],
+      [
+        { from: 0, to: 0.1, fromY: 0, toY: 1 },
+        { from: 0.1, to: 1, fromY: 0, toY: 1 },
+      ],
+    );
+    const plan = got[0];
+    expect(viewBoxes(plan).length).toBeGreaterThan(1);
+    // Inside the bounding box, but down in the elevation's half of the sheet.
+    expect(plan.fromY).toBe(0);
+    expect(plan.toY).toBe(1);
+    expect(insideView(plan, 0.5, 0.9)).toBe(false);
+    expect(insideView(plan, 0.5, 0.1)).toBe(true);
+    // The strip with no caption of its own still belongs to the plan.
+    expect(insideView(plan, 0.05, 0.9)).toBe(true);
+  });
 });
 
 describe("what gets measured", () => {
@@ -300,6 +425,44 @@ describe("what gets measured", () => {
     to,
     fromY: 0,
     toY: 1,
+  });
+
+  it("AN ELEVATION IS NOT MEASURED, however readable its scale is", () => {
+    // ── A120: ONE PLAN, EIGHT INTERIOR ELEVATIONS, ALL NINE MEASURED ──
+    //
+    // An interior elevation of a wall is two parallel lines a wall-thickness
+    // apart running the height of that wall — a textbook wall by every
+    // geometric test in this repo, and this fixture is deliberately the SAME
+    // geometry in both views to say so. Nothing downstream can tell them
+    // apart. The caption is the only thing that can, so the caption decides.
+    const measured = wallsPerView({
+      segments: [...wallAt(100), ...wallAt(600)],
+      textItems: [],
+      pageSize: page,
+      views: [view("ENLARGED PLAN", 4, 0, 0.5), view("RR 105 - EAST ELEV.", 4, 0.5, 1)],
+      wallTypes: [],
+      feetPerUnit: 40,
+    });
+    expect(measured.map((m) => m.view.name), "the elevation was measured").toEqual([
+      "ENLARGED PLAN",
+    ]);
+  });
+
+  it("a caption nobody recognises is not measured EITHER, and is named instead", () => {
+    // "check" is its own answer: measuring an unrecognised drawing is how
+    // eight elevations reached a bid, and dropping it in silence loses an
+    // estimator a drawing without telling them.
+    const odd = view("BLDG SECT A-A THRU LOBBY WALL", 4, 0.5, 1);
+    const measured = wallsPerView({
+      segments: [...wallAt(100), ...wallAt(600)],
+      textItems: [],
+      pageSize: page,
+      views: [view("ENLARGED PLAN", 4, 0, 0.5), odd],
+      wallTypes: [],
+      feetPerUnit: 40,
+    });
+    expect(measured.map((m) => m.view.name)).toEqual(["ENLARGED PLAN"]);
+    expect(excludedViews([odd])[0].reason).toMatch(/section/i);
   });
 
   it("A VIEW WITH NO READABLE SCALE IS NOT MEASURED, and does not borrow a neighbour's", () => {
