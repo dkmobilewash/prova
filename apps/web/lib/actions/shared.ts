@@ -387,7 +387,26 @@ export type ActionResult =
 
 export const actionOk: ActionResult = { ok: true };
 
-export function actionFail(error: string, fieldErrors?: Record<string, string>): ActionResult {
+/**
+ * RETURNS THE FAILURE BRANCH, NOT THE WHOLE UNION, and that is load-bearing
+ * rather than fussy.
+ *
+ * Typed as `ActionResult` this is unusable inside an action that promises
+ * `ActionResultWith<T>`: the union it returns includes `{ ok: true }`, which
+ * has no `value`, so every `return actionFail(...)` in such an action is a
+ * TS2322. The workaround that grew was a cast at each site —
+ * `actionFail(NOT_YOURS) as ActionResultWith<AddendumReadResult>` — which is
+ * a cast per failure path, on exactly the paths that matter most, each one
+ * silencing the checker rather than satisfying it.
+ *
+ * The failure branch alone is assignable to BOTH contracts, so neither needs
+ * a cast. Narrowed 2026-10-16 while widening `saveTakeoffMeasurement`, which
+ * has eight failure returns and would otherwise have added eight casts.
+ */
+export function actionFail(
+  error: string,
+  fieldErrors?: Record<string, string>,
+): { ok: false; error: string; fieldErrors?: Record<string, string> } {
   return fieldErrors ? { ok: false, error, fieldErrors } : { ok: false, error };
 }
 

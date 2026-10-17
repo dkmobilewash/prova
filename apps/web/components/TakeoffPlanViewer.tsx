@@ -196,6 +196,7 @@ export function TakeoffPlanViewer({
   fill = false,
   panelOpen = true,
   readOnly = false,
+  onMeasurementSaved,
 }: {
   jobId: string;
   planId: string;
@@ -250,6 +251,14 @@ export function TakeoffPlanViewer({
    * tools there is offering a way to put a wrong line on a real takeoff.
    */
   readOnly?: boolean;
+  /**
+   * Told when a measurement has been saved, so a HOST can offer to undo it.
+   *
+   * Optional, and the takeoff tab does not pass it — undo belongs to whoever
+   * owns the keyboard, and on the tab that is the browser. The viewer holds no
+   * stack of its own precisely so there cannot be two.
+   */
+  onMeasurementSaved?: (saved: { id: string; kind: MeasurementKind }) => void;
   printedScaleByPage: PrintedScaleByPage;
   /**
    * Page numbers whose page carries NO TEXT LAYER — that is, scans.
@@ -349,6 +358,46 @@ export function TakeoffPlanViewer({
   // somebody opening a drawing wants to see first; they zoom IN to measure.
   const [zoom, setZoom] = useState<Zoom>(FIT);
   const [tool, setTool] = useState<ToolId>("pan");
+
+  /**
+   * ── THE HOST'S KEYBOARD REACHES THE CANVAS HERE ──
+   *
+   * The full-screen workspace owns the keyboard — it is the thing with focus
+   * — but zoom and paging belong to this component, so the shell forwards
+   * them as DOM events rather than reaching into state it does not own.
+   *
+   * **WIRED 2026-10-16, AND IT WAS A REAL BUG THAT IT WAS NOT.** The shell
+   * had been dispatching `takeoff-shortcut` since the workspace shipped and
+   * NOTHING listened: `f`, `j` and `k` did nothing at all while the shortcut
+   * cheat sheet told everybody they worked. The "written, documented and
+   * never called" shape that CLAUDE.md records three instances of — and the
+   * reason the e2e spec now presses these keys and asserts the result rather
+   * than asserting that the cheat sheet lists them.
+   */
+  useEffect(() => {
+    const onShortcut = (event: Event) => {
+      const key = (event as CustomEvent<{ key?: string }>).detail?.key;
+      if (key === "f") setZoom(FIT);
+      // BOUNDED BY THE PDF'S PAGE COUNT, NOT BY `sheets.length`.
+      // `sheets` is the TakeoffPlanPage rows, and a page only gets one once
+      // somebody has saved a calibration on it — so on a fresh set that array
+      // is one entry long while the file has 175 pages. The first version of
+      // this bounded by it and `j` simply refused to move, which is exactly
+      // what the spec caught: the pager was visible and the key did nothing.
+      else if (key === "j") setPageNumber((at) => (pageCount === null ? at : Math.min(pageCount, at + 1)));
+      else if (key === "k") setPageNumber((at) => Math.max(1, at - 1));
+    };
+    const onGoto = (event: Event) => {
+      const page = (event as CustomEvent<{ page?: number }>).detail?.page;
+      if (typeof page === "number" && page >= 1) setPageNumber(page);
+    };
+    document.addEventListener("takeoff-shortcut", onShortcut);
+    document.addEventListener("takeoff-goto", onGoto);
+    return () => {
+      document.removeEventListener("takeoff-shortcut", onShortcut);
+      document.removeEventListener("takeoff-goto", onGoto);
+    };
+  }, [pageCount]);
 
   // ── FOUND WALLS ──
   //
@@ -2203,7 +2252,14 @@ export function TakeoffPlanViewer({
               kind={kindOf(tool) ?? "LINEAR"}
               draft={draft}
               reading={draftReading}
-              onSaved={() => setDraft(EMPTY)}
+              onSaved={(saved) => {
+                setDraft(EMPTY);
+                // THE HOST'S UNDO, when there is a host and an id. The viewer
+                // keeps no stack of its own: the workspace owns undo because
+                // it owns the keyboard, and the takeoff TAB passes nothing,
+                // so this is simply inert there.
+                if (saved) onMeasurementSaved?.({ id: saved.id, kind: kindOf(tool) ?? "LINEAR" });
+              }}
             />
           )}
 
@@ -2892,13 +2948,28 @@ function MeasurementForm({
   kind: MeasurementKind;
   draft: Draft;
   reading: string | null;
-  onSaved: () => void;
+  /** Carries the new row's id, which is what an undo needs to delete it. */
+  onSaved: (saved: { id: string } | null) => void;
 }) {
   const problem = verticesProblem(kind, draft.xs, draft.ys);
   const crosses = kind === "AREA" && !problem && ringSelfIntersects(draft.xs, draft.ys);
 
   return (
-    <ActionForm action={saveTakeoffMeasurement.bind(null, jobId)} className="mt-3 flex flex-col gap-2" onSuccess={onSaved}>
+    <ActionForm
+      action={saveTakeoffMeasurement.bind(null, jobId)}
+      className="mt-3 flex flex-col gap-2"
+      onSuccess={(result) => {
+        // `saveTakeoffMeasurement` returns `ActionResultWith<{ id }>`. Read it
+        // defensively rather than cast: `onSuccess` is typed `unknown` for the
+        // sixty forms whose actions return nothing, and an undo that cannot
+        // find an id must degrade to no undo rather than throw.
+        const value =
+          typeof result === "object" && result !== null && "value" in result
+            ? (result as { value?: { id?: unknown } }).value
+            : null;
+        onSaved(typeof value?.id === "string" ? { id: value.id } : null);
+      }}
+    >
       <input type="hidden" name="pageId" value={pageId} />
       <input type="hidden" name="kind" value={kind} />
       <input type="hidden" name="points" value={JSON.stringify(draft)} />

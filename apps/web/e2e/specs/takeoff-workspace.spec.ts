@@ -1,5 +1,5 @@
 import path from "node:path";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
@@ -492,6 +492,131 @@ test.describe("the full-screen takeoff workspace", () => {
     await page.screenshot({ path: path.join(SHOTS, "workspace-390-phone.png"), fullPage: false });
     await page.setViewportSize(DESKTOP);
   });
+
+  test("15. the sheet tree groups, searches and bookmarks", async () => {
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobTwo);
+    if ((await page.locator('[data-takeoff="sheet-rail"]').count()) === 0) {
+      await page.locator('[data-takeoff="toggle-sheets"]').click();
+    }
+    const tree = page.locator('[data-takeoff="sheet-tree"]');
+    await expect(tree).toBeVisible();
+
+    // GROUPED BY DISCIPLINE, with the group's own count beside it. The
+    // grouping rules are unit-tested in lib/takeoff/sheetTree.test.ts; what
+    // this asserts is that the rules reached the screen.
+    const groups = tree.locator('[data-takeoff="tree-group"]');
+    await expect(groups.first()).toBeVisible();
+    const sheetsBefore = await tree.locator('[data-takeoff="tree-sheet"]').count();
+    expect(sheetsBefore, "the tree listed no sheets at all").toBeGreaterThan(0);
+
+    // SEARCH NARROWS IT. A string nothing can match must empty the tree
+    // rather than silently leave it whole — a filter that does nothing looks
+    // exactly like a filter with nothing to do.
+    await tree.locator('[data-takeoff="sheet-search"]').fill("zzzz-no-such-sheet");
+    await expect(tree.locator('[data-takeoff="tree-empty"]')).toBeVisible();
+    expect(await tree.locator('[data-takeoff="tree-sheet"]').count()).toBe(0);
+    await tree.locator('[data-takeoff="sheet-search"]').fill("");
+    expect(await tree.locator('[data-takeoff="tree-sheet"]').count()).toBe(sheetsBefore);
+
+    // A BOOKMARK SURVIVES A RELOAD, which is the whole claim localStorage is
+    // making here. Asserted by aria-pressed rather than by the glyph.
+    const star = tree.locator('[data-takeoff="bookmark"]').first();
+    await star.click();
+    await expect(star).toHaveAttribute("aria-pressed", "true");
+    await page.reload();
+    await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
+    await expect(
+      page.locator('[data-takeoff="bookmark"]').first(),
+      "the bookmark did not survive a reload",
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("16. THE KEYBOARD SHORTCUTS ACTUALLY DO SOMETHING", async () => {
+    // ── THIS TEST EXISTS BECAUSE THEY DID NOT ──
+    //
+    // The shell dispatched `takeoff-shortcut` for f/j/k from the day the
+    // workspace shipped and NOTHING listened for it. The keys did nothing at
+    // all while the cheat sheet told everybody they worked — the "written,
+    // documented, and never called" shape CLAUDE.md records three other
+    // instances of. A test that asserted the cheat sheet LISTS a key would
+    // have stayed green through all of it, so this one presses the key and
+    // reads the result.
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobTwo);
+    await fitAndSettle();
+
+    const zoom = page.locator('[data-takeoff="zoom"]');
+    const atFit = (await zoom.textContent())?.trim() ?? "";
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    await expect(zoom).not.toHaveText(atFit);
+
+    await page.locator('[data-takeoff="workspace"]').click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press("f");
+    await expect(zoom, "pressing f did not fit the sheet").toHaveText(atFit);
+
+    // ── j AND k MOVE THROUGH THE SET ──
+    //
+    //    ON A SET THAT HAS A SECOND SHEET, built here rather than borrowed.
+    //    Every committed fixture is ONE page — S15 carries two drawings on a
+    //    single sheet — and the viewer renders no pager at all below two
+    //    pages, so the obvious `if (picker exists)` guard would skip this
+    //    half silently forever. A guarded assertion that can never run is the
+    //    vacuous shape this file exists to avoid, so the fixture is made to
+    //    fit the question instead.
+    const twoPage = path.join(SHOTS, "two-page.pdf");
+    const { PDFDocument } = await import("pdf-lib");
+    const source = await PDFDocument.load(readFileSync(path.join(FIXTURES, "S15.pdf")));
+    const doubled = await PDFDocument.create();
+    for (const copied of await doubled.copyPages(source, [0, 0])) doubled.addPage(copied);
+    writeFileSync(twoPage, await doubled.save());
+
+    const pagedJob = await jobWithSheet("ZZ-E2E Workspace — two sheets", twoPage, 72);
+    await onWorkspace(pagedJob);
+
+    const picker = page.locator('[data-takeoff="sheet-picker"]');
+    await expect(picker, "a two-page set rendered no pager").toBeVisible();
+    const startedOn = await picker.inputValue();
+    await page.locator('[data-takeoff="workspace"]').click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press("j");
+    await expect(picker, "pressing j did not move to the next sheet").not.toHaveValue(startedOn);
+    await page.keyboard.press("k");
+    await expect(picker, "pressing k did not come back").toHaveValue(startedOn);
+  });
+
+  test("17. overview, sheet facts and undo are present and honest", async () => {
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobTwo);
+
+    // UNDO STARTS DISABLED. A control that looks available and does nothing
+    // is worse than one that says it has nothing to do.
+    await expect(page.locator('[data-takeoff="undo"]')).toBeDisabled();
+    await expect(page.locator('[data-takeoff="redo"]')).toBeDisabled();
+
+    await page.locator('[data-takeoff="toggle-overview"]').click();
+    const overview = page.locator('[data-takeoff="overview"]');
+    await expect(overview).toBeVisible();
+    await expect(overview.locator('[data-takeoff="overview-progress"]')).toContainText("sheets have a scale");
+    await page.screenshot({ path: path.join(SHOTS, "workspace-1440-overview.png") });
+    // Escape closes it, like every other layer in this shell.
+    await page.keyboard.press("Escape");
+    await expect(overview).toHaveCount(0);
+
+    // SHEET FACTS RESERVE HEIGHT RATHER THAN OVERLAY THE DRAWING, which is
+    // why the canvas gets smaller rather than the sheet getting covered.
+    const before = await canvasBox();
+    await page.locator('[data-takeoff="toggle-facts"]').click();
+    await expect(page.locator('[data-takeoff="sheet-facts"]')).toBeVisible();
+    const after = await canvasBox();
+    expect(after.height, "the facts strip covered the canvas instead of shrinking it").toBeLessThan(
+      before.height,
+    );
+    await page.screenshot({ path: path.join(SHOTS, "workspace-1440-facts.png") });
+    await page.locator('[data-takeoff="toggle-facts"]').click();
+    await expect(page.locator('[data-takeoff="sheet-facts"]')).toHaveCount(0);
+    await page.screenshot({ path: path.join(SHOTS, "workspace-1440-phase1.png") });
+  });
+
 
   test("9. nothing crashed anywhere in the workspace", async () => {
     expect(monitor.crashes, "a page crashed while driving the workspace").toEqual([]);

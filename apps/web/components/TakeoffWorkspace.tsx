@@ -1,9 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { Spinner } from "@/components/Spinner";
 import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
+import { TakeoffSheetTree } from "@/components/TakeoffSheetTree";
+import { deleteTakeoffMeasurement } from "@/lib/actions";
+import {
+  EMPTY as EMPTY_UNDO,
+  type UndoState,
+  canRedo,
+  canUndo,
+  nextRedoLabel,
+  nextUndoLabel,
+  pushed,
+  redoOnce,
+  undoOnce,
+} from "@/lib/takeoff/undoStack";
 import type { TakeoffWorkspaceData } from "@/lib/takeoff/workspaceLoad";
 
 /**
@@ -11,14 +25,13 @@ import type { TakeoffWorkspaceData } from "@/lib/takeoff/workspaceLoad";
  *
  * The takeoff tab puts the drawing inside the app chrome, beside the uploader,
  * the schedule proposals and the measurement list. That is the right page for
- * setting a job up and the wrong one for REVIEWING a takeoff, which is done at
- * arm's length with a GC on the phone — the sheet wants every pixel there is.
+ * setting a job up and the wrong one for WORKING a takeoff, which wants every
+ * pixel there is.
  *
  * So this is a shell and not a second takeoff. `TakeoffPlanViewer` still owns
  * the tool row, the scale controls, Find the walls, the detected groups and
- * every caution; it grew four props for this host — `fill`, `panelOpen`,
- * `readOnly`, `initialPage` — and nothing else changed. The identity row here
- * holds only what the viewer cannot know: which job, and the way back.
+ * every caution. The shell owns what the viewer cannot know: which job, which
+ * sheets exist, the way back, and the keyboard.
  *
  * ── CANVAS FIRST, AT EVERY WIDTH ──
  *
@@ -51,22 +64,38 @@ type Props = {
 const KEYS: { keys: string; does: string }[] = [
   { keys: "[", does: "sheets" },
   { keys: "]", does: "quantities" },
+  { keys: "\\", does: "sheet facts" },
   { keys: "f", does: "fit" },
   { keys: "j / k", does: "next / previous sheet" },
+  { keys: "b", does: "bookmark this sheet" },
+  { keys: "g", does: "overview" },
+  { keys: "⌘Z / ⌘⇧Z", does: "undo / redo" },
   { keys: "Esc", does: "close a drawer" },
   { keys: "?", does: "shortcuts" },
 ];
 
 /**
- * Where the quantities rail's open/closed state is remembered.
+ * Where the workspace's furniture is remembered.
  *
  * `localStorage`, not the database: CLAUDE.md's rule is that browser storage
  * is for a per-viewer convenience — a remembered tab, a collapsed section —
- * and never for state anybody else reads back. Which rail somebody likes open
- * is exactly that, and the alternative is a column on `User` and a migration
- * for a preference.
+ * and never for state anybody else reads back. Which rail somebody likes open,
+ * and how wide, is exactly that; the alternative is columns on `User` and a
+ * migration for a preference.
+ *
+ * **BOOKMARKS ARE HERE TOO, and that is a decision rather than an oversight.**
+ * They are one person's "come back to these four sheets", not a property of
+ * the plan set — two estimators on one job want different ones. If they ever
+ * need to be shared, that is a model and a migration, and the Phase 0 design
+ * says how such a thing is announced.
  */
-const PANEL_KEY = "prova.takeoff.panel";
+const KEY = {
+  panel: "prova.takeoff.panel",
+  sheets: "prova.takeoff.sheets",
+  facts: "prova.takeoff.facts",
+  railWidth: "prova.takeoff.railWidth",
+  bookmarks: (jobId: string) => `prova.takeoff.bookmarks.${jobId}`,
+};
 
 /** Below this the rails are drawers rather than part of the flow. */
 const RAIL_WIDTH = 1280;
@@ -74,6 +103,31 @@ const RAIL_WIDTH = 1280;
 const WIDE = 1440;
 /** Below this the workspace is read-only. */
 const PHONE = 768;
+
+const RAIL_MIN = 180;
+const RAIL_MAX = 420;
+const RAIL_DEFAULT = 232;
+
+/** Height of the sheet-facts strip, in rem, when it is open. */
+const FACTS_REM = 6.5;
+
+function readStored(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    // Private windows and blocked site data both throw. A preference that
+    // cannot be read is not a reason to render nothing.
+    return null;
+  }
+}
+
+function writeStored(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // The preference still applies to this visit; it just will not survive.
+  }
+}
 
 export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Props) {
   // Width is STATE, not only a media query: a drawer needs to know it is a
@@ -93,35 +147,93 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
 
   const [sheetsOpen, setSheetsOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [factsOpen, setFactsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [overview, setOverview] = useState(false);
   const [changedElsewhere, setChangedElsewhere] = useState(false);
+  const [railWidth, setRailWidth] = useState(RAIL_DEFAULT);
+  const [bookmarks, setBookmarks] = useState<ReadonlySet<number>>(new Set());
+  const [page, setPage] = useState(openPage);
 
-  // The remembered rail, once, on mount — and defaulted by WIDTH when nothing
-  // is remembered. Not in the initialiser: `localStorage` is not there during
-  // the server render, and a first render that disagrees with the second is a
-  // hydration mismatch, which this repo has an entire CLAUDE.md entry about.
+  // ── THE REMEMBERED FURNITURE, once, on mount ──
+  //
+  // Not in the initialisers: `localStorage` is not there during the server
+  // render, and a first render that disagrees with the second is a hydration
+  // mismatch, which this repo has an entire CLAUDE.md entry about.
   useEffect(() => {
-    let remembered: string | null = null;
-    try {
-      remembered = window.localStorage.getItem(PANEL_KEY);
-    } catch {
-      // Private windows and blocked site data both throw. A preference that
-      // cannot be read is not a reason to render nothing.
-    }
-    if (remembered === "open") setPanelOpen(true);
-    else if (remembered === "closed") setPanelOpen(false);
+    const panel = readStored(KEY.panel);
+    if (panel === "open") setPanelOpen(true);
+    else if (panel === "closed") setPanelOpen(false);
     else setPanelOpen(window.innerWidth >= WIDE);
-    setSheetsOpen(window.innerWidth >= RAIL_WIDTH);
-  }, []);
+
+    const sheets = readStored(KEY.sheets);
+    setSheetsOpen(sheets === null ? window.innerWidth >= RAIL_WIDTH : sheets === "open");
+    setFactsOpen(readStored(KEY.facts) === "open");
+
+    const stored = Number(readStored(KEY.railWidth));
+    if (Number.isFinite(stored) && stored >= RAIL_MIN && stored <= RAIL_MAX) setRailWidth(stored);
+
+    const marks = readStored(KEY.bookmarks(jobId));
+    if (marks) {
+      try {
+        const parsed: unknown = JSON.parse(marks);
+        if (Array.isArray(parsed)) setBookmarks(new Set(parsed.filter((n) => typeof n === "number")));
+      } catch {
+        // A corrupt preference is a missing preference.
+      }
+    }
+  }, [jobId]);
 
   const rememberPanel = useCallback((open: boolean) => {
     setPanelOpen(open);
-    try {
-      window.localStorage.setItem(PANEL_KEY, open ? "open" : "closed");
-    } catch {
-      // The preference still applies to this visit; it just will not survive.
-    }
+    writeStored(KEY.panel, open ? "open" : "closed");
   }, []);
+  const rememberSheets = useCallback((open: boolean) => {
+    setSheetsOpen(open);
+    writeStored(KEY.sheets, open ? "open" : "closed");
+  }, []);
+  const rememberFacts = useCallback((open: boolean) => {
+    setFactsOpen(open);
+    writeStored(KEY.facts, open ? "open" : "closed");
+  }, []);
+
+  const toggleBookmark = useCallback(
+    (pageNumber: number) => {
+      setBookmarks((was) => {
+        const next = new Set(was);
+        if (next.has(pageNumber)) next.delete(pageNumber);
+        else next.add(pageNumber);
+        writeStored(KEY.bookmarks(jobId), JSON.stringify([...next].sort((a, b) => a - b)));
+        return next;
+      });
+    },
+    [jobId],
+  );
+
+  // ── RESIZING THE SHEET RAIL ──
+  //
+  // Pointer events rather than mouse: the same handler then works for a stylus
+  // on a tablet, which is the width where a rail matters most. Captured, so a
+  // fast drag that leaves the 4px handle does not drop the resize.
+  const dragging = useRef(false);
+  const onRailDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    dragging.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }, []);
+  const onRailMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging.current) return;
+    const next = Math.min(RAIL_MAX, Math.max(RAIL_MIN, event.clientX));
+    setRailWidth(next);
+  }, []);
+  const onRailDrop = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!dragging.current) return;
+      dragging.current = false;
+      event.currentTarget.releasePointerCapture(event.pointerId);
+      writeStored(KEY.railWidth, String(railWidth));
+    },
+    [railWidth],
+  );
 
   // ── A SECOND TAB'S SAVE WINS, AND THIS ONE HAS TO SAY SO ──
   //
@@ -151,6 +263,67 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
     };
   }, [jobId, savedAt]);
 
+  // ── UNDO ──
+  //
+  // The stack itself is `lib/takeoff/undoStack.ts`, which says why it is a
+  // command stack rather than a server journal. This holds it, runs it, and
+  // serialises it: `busy` is why two ⌘Z presses cannot race two inverse
+  // actions onto one row.
+  const [undoState, setUndoState] = useState<UndoState>(EMPTY_UNDO);
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const onMeasurementSaved = useCallback(
+    (saved: { id: string; kind: string }) => {
+      const what = saved.kind === "AREA" ? "area" : saved.kind === "COUNT" ? "count" : "line";
+      setUndoState((was) =>
+        pushed(was, {
+          label: `Add ${what}`,
+          undo: () => deleteTakeoffMeasurement(jobId, saved.id),
+          // REDO IS NOT RE-CREATE, and saying so is better than pretending.
+          // The row is gone and a new one would have a new id, which every
+          // later entry in the stack would still be pointing past. Phase 2
+          // gives the draw tools a real inverse pair; until then a redo
+          // refuses in words rather than silently doing nothing.
+          redo: async () => ({
+            ok: false as const,
+            error: "Redrawing is not available yet — draw it again.",
+          }),
+        }),
+      );
+    },
+    [jobId],
+  );
+
+  const runUndo = useCallback(
+    async (direction: "undo" | "redo") => {
+      if (busy) return;
+      setBusy(true);
+      try {
+        const outcome = direction === "undo" ? await undoOnce(undoState) : await redoOnce(undoState);
+        if (!outcome) return;
+        setUndoState(outcome.state);
+        setToast(
+          outcome.result.ok
+            ? `${direction === "undo" ? "Undid" : "Redid"}: ${outcome.label}`
+            : outcome.result.error,
+        );
+        // The numbers on screen came from the server; after an undo they are
+        // one measurement out of date.
+        if (outcome.result.ok) window.location.reload();
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, undoState],
+  );
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
   const onKey = useCallback(
     (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -158,29 +331,34 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
       // NEVER while typing: a shortcut that fires inside a scale field eats
       // somebody's dimension.
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable) return;
+
+      // ⌘Z / ⌘⇧Z are the only modified keys this shell claims.
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        void runUndo(event.shiftKey ? "redo" : "undo");
+        return;
+      }
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
       if (event.key === "Escape") {
         // Escape closes a drawer and nothing else, so it cannot surprise
         // somebody mid-measurement on a desktop, where there are none.
+        if (overview) {
+          setOverview(false);
+          return;
+        }
         if (drawers && (sheetsOpen || panelOpen)) {
-          setSheetsOpen(false);
+          rememberSheets(false);
           rememberPanel(false);
         }
         return;
       }
-      if (event.key === "[") {
-        setSheetsOpen((open) => !open);
-        return;
-      }
-      if (event.key === "]") {
-        rememberPanel(!panelOpen);
-        return;
-      }
-      if (event.key === "?") {
-        setHelpOpen((open) => !open);
-        return;
-      }
+      if (event.key === "[") return rememberSheets(!sheetsOpen);
+      if (event.key === "]") return rememberPanel(!panelOpen);
+      if (event.key === "\\") return rememberFacts(!factsOpen);
+      if (event.key === "?") return setHelpOpen((open) => !open);
+      if (event.key === "g") return setOverview((open) => !open);
+      if (event.key === "b") return toggleBookmark(page);
       // The rest belong to the viewer, which owns the canvas. Forwarded as an
       // event rather than reached into: this shell has no business holding the
       // viewer's zoom.
@@ -188,7 +366,19 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
         document.dispatchEvent(new CustomEvent("takeoff-shortcut", { detail: { key: event.key } }));
       }
     },
-    [drawers, panelOpen, rememberPanel, sheetsOpen],
+    [
+      drawers,
+      factsOpen,
+      overview,
+      page,
+      panelOpen,
+      rememberFacts,
+      rememberPanel,
+      rememberSheets,
+      runUndo,
+      sheetsOpen,
+      toggleBookmark,
+    ],
   );
 
   useEffect(() => {
@@ -197,65 +387,87 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
   }, [onKey]);
 
   const sheets = data.sheets;
+  const calibratedPages = useMemo(
+    () => new Set(sheets.filter((sheet) => sheet.calibration !== null).map((sheet) => sheet.pageNumber)),
+    [sheets],
+  );
+  const measurementCountByPage = useMemo(() => {
+    const counts: Record<number, number> = {};
+    for (const sheet of sheets) counts[sheet.pageNumber] = sheet.measurements.length;
+    return counts;
+  }, [sheets]);
+
+  /**
+   * ── EVERY PAGE OF THE PDF IS A ROW IN THE TREE, read or not ──
+   *
+   * `sheetRows` comes from `PlanSheetText` + `PlanSheetProposal`, which exist
+   * only once INGEST has read a page's title block. The PAGES exist from the
+   * moment the file is uploaded.
+   *
+   * Driving the tree from `sheetRows` alone therefore shows NOTHING on a set
+   * whose ingest has not run, has not finished, or failed — while the drawing
+   * itself opens perfectly well beside it. Found by the e2e spec, whose blob
+   * store is stubbed so ingest cannot run, and confirmed against a real plan:
+   * the first screenshot of this workspace on Camp Bow Wow's A102 read
+   * "SHEETS (0)" with the sheet plainly on the canvas.
+   *
+   * So pages lead and rows enrich. A page with no proposal files under "Not
+   * filed" and says `Page 9`, which is what somebody can act on; a page whose
+   * title block HAS been read gets its number, title and discipline.
+   */
+  const treeRows = useMemo(() => {
+    const byPage = new Map(data.sheetRows.map((row) => [row.pageNumber, row]));
+    // THE UNION OF BOTH SOURCES, because NEITHER is complete on its own and
+    // they are incomplete in opposite directions.
+    //
+    // `TakeoffPlanPage` rows are created LAZILY — `saveTakeoffCalibration`
+    // upserts one — so a 175-page set nobody has scaled yet has none at all.
+    // `sheetRows` covers every page ingest has read, which on a finished
+    // ingest is all of them and during one is a growing prefix.
+    //
+    // Iterating either alone loses sheets: pages-only hides everything
+    // unscaled, rows-only hides a page somebody scaled before ingest reached
+    // it. The union shows each sheet once, the moment EITHER source knows it
+    // exists.
+    const pages = new Set<number>([
+      ...data.sheetRows.map((row) => row.pageNumber),
+      ...sheets.map((sheet) => sheet.pageNumber),
+    ]);
+    return [...pages]
+      .sort((a, b) => a - b)
+      .map(
+        (pageNumber) => byPage.get(pageNumber) ?? { pageNumber, hasTextLayer: true, proposal: null },
+      );
+  }, [data.sheetRows, sheets]);
+
+  const currentSheet = sheets.find((sheet) => sheet.pageNumber === page) ?? null;
+  const currentRow = data.sheetRows.find((row) => row.pageNumber === page) ?? null;
+
   const excluded = data.sheetRows.filter((row) => {
     const caution = data.duplicateWallsByPage[row.pageNumber];
     return typeof caution === "string" && caution.length > 0;
   });
 
-  const sheetList = (
-    <>
-      <h2 className="px-1 pb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
-        Sheets ({sheets.length})
-      </h2>
-      <ul className="flex flex-col gap-1">
-        {sheets.map((sheet) => (
-          <li key={sheet.id}>
-            {/* A LINK PER SHEET, not a click handler: which sheet is open is
-                part of where you are, so it belongs in the URL. A reviewer can
-                send "look at A-102", and Cmd-click opens a second one. */}
-            <Link
-              href={`/takeoff/${jobId}?page=${sheet.pageNumber}`}
-              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-surface ${
-                sheet.pageNumber === openPage ? "bg-surface text-ink-label" : "text-ink-body"
-              }`}
-              data-takeoff="sheet-link"
-            >
-              <span className="inline-flex h-8 w-6 shrink-0 items-center justify-center rounded border border-line-card bg-surface text-[10px] text-ink-muted">
-                {sheet.pageNumber}
-              </span>
-              <span className="truncate">
-                {data.sheetLabelByPage[sheet.pageNumber] ?? `Sheet ${sheet.pageNumber}`}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-
-      {/* ── AND THE SHEETS LEFT OUT, WITH THE REASON ──
-          Nothing is excluded silently. A reviewer who cannot see why a sheet
-          was skipped assumes the tool missed it. */}
-      {excluded.length > 0 && (
-        <div className="mt-3 border-t border-line-card pt-2" data-takeoff="excluded-sheets">
-          <h2 className="px-1 pb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
-            Not counted ({excluded.length})
-          </h2>
-          <ul className="flex flex-col gap-1 px-1">
-            {excluded.map((row) => (
-              <li key={row.pageNumber} className="text-[11px] leading-snug text-ink-muted">
-                <span className="font-medium text-ink-body">
-                  {data.sheetLabelByPage[row.pageNumber] ?? `Sheet ${row.pageNumber}`}
-                </span>{" "}
-                — {data.duplicateWallsByPage[row.pageNumber]}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </>
+  const tree = (
+    <TakeoffSheetTree
+      planId={data.plan.id}
+      rows={treeRows}
+      calibratedPages={calibratedPages}
+      printedScaleByPage={data.printedScaleByPage}
+      measurementCountByPage={measurementCountByPage}
+      currentPage={page}
+      onPick={(pageNumber) => {
+        setPage(pageNumber);
+        document.dispatchEvent(new CustomEvent("takeoff-goto", { detail: { page: pageNumber } }));
+        if (drawers) rememberSheets(false);
+      }}
+      bookmarks={bookmarks}
+      onToggleBookmark={toggleBookmark}
+    />
   );
 
   const closeDrawers = () => {
-    setSheetsOpen(false);
+    rememberSheets(false);
     rememberPanel(false);
   };
 
@@ -263,26 +475,39 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
     // `--shell-port` IS WHY THE DRAWING IS BIG. The viewer sizes its canvas
     // against it, and the variable is defined on the app shell's <main>; this
     // page is deliberately outside that shell, so it defines its own — the
-    // viewport less the identity row. `fill` below does the rest.
+    // viewport less the identity row and whatever the sheet-facts strip takes.
+    // `fill` below does the rest.
     <div
-      className="flex h-[100dvh] flex-col overflow-hidden bg-canvas [--shell-port:calc(100dvh-2.75rem)]"
+      className="flex h-[100dvh] flex-col overflow-hidden bg-canvas"
+      style={
+        {
+          "--shell-port": `calc(100dvh - 2.75rem${factsOpen && !phone ? ` - ${FACTS_REM}rem` : ""})`,
+        } as React.CSSProperties
+      }
       data-takeoff="workspace"
     >
-      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-line-card bg-surface px-3">
+      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line-card bg-surface px-3">
         {!phone && (
           <button
             type="button"
-            onClick={() => setSheetsOpen((open) => !open)}
+            onClick={() => rememberSheets(!sheetsOpen)}
             aria-expanded={sheetsOpen}
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-surface"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail"
             data-takeoff="toggle-sheets"
           >
             Sheets
           </button>
         )}
-        <h1 className="truncate text-sm font-semibold text-ink-label" data-takeoff="workspace-job">
-          {jobName}
-        </h1>
+        <div className="flex min-w-0 items-baseline gap-2">
+          <h1 className="truncate text-sm font-semibold text-ink-label" data-takeoff="workspace-job">
+            {jobName}
+          </h1>
+          {/* WHICH PLAN SET, because a job can have several revisions and a
+              measurement taken off the wrong one is wrong quietly. */}
+          <span className="hidden truncate text-xs text-ink-muted sm:inline" data-takeoff="plan-set">
+            {data.plan.revisionLabel ?? data.plan.fileName ?? "Plan set"}
+          </span>
+        </div>
         {phone && (
           <span
             className="rounded border border-line-card px-1.5 py-0.5 text-[10px] text-ink-muted"
@@ -291,22 +516,92 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
             read-only
           </span>
         )}
+
         <div className="ml-auto flex items-center gap-2">
+          {/* SAVE STATUS. Every edit here is a server action that has already
+              returned before the screen changes, so there is no "saving…"
+              state to show and inventing one would be a lie. What an estimator
+              actually needs to know is that nothing is held locally. */}
+          {!phone && (
+            <span className="hidden text-[11px] text-ink-muted lg:inline" data-takeoff="save-status">
+              {busy ? (
+                // KEEP THE WORD — the spinner is aria-hidden, so the word is
+                // all a screen reader gets. A label that simply stops changing
+                // reads as a crash rather than as work in progress.
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Working…
+                </span>
+              ) : (
+                "Saved as you go"
+              )}
+            </span>
+          )}
           {!phone && (
             <>
+              <div className="flex items-center" data-takeoff="undo-group">
+                <button
+                  type="button"
+                  onClick={() => void runUndo("undo")}
+                  disabled={!canUndo(undoState) || busy}
+                  title={nextUndoLabel(undoState) ? `Undo: ${nextUndoLabel(undoState)}` : "Nothing to undo"}
+                  aria-label="Undo"
+                  data-takeoff="undo"
+                  className="rounded-l-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail disabled:opacity-40"
+                >
+                  ↺
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void runUndo("redo")}
+                  disabled={!canRedo(undoState) || busy}
+                  title={nextRedoLabel(undoState) ? `Redo: ${nextRedoLabel(undoState)}` : "Nothing to redo"}
+                  aria-label="Redo"
+                  data-takeoff="redo"
+                  className="-ml-px rounded-r-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail disabled:opacity-40"
+                >
+                  ↻
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOverview((open) => !open)}
+                aria-expanded={overview}
+                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail"
+                data-takeoff="toggle-overview"
+              >
+                Overview
+              </button>
               <button
                 type="button"
                 onClick={() => setHelpOpen((open) => !open)}
-                className="hidden rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-surface sm:inline-block"
+                className="hidden rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail sm:inline-block"
                 aria-expanded={helpOpen}
+                data-takeoff="toggle-shortcuts"
               >
                 Shortcuts
+              </button>
+              {/* ── EVERY PANEL TOGGLE LIVES HERE ──
+                  The sheet-facts one had its own strip along the bottom of
+                  the window for about an hour, and the layout assertion
+                  caught what that cost: a permanent 22px bar took the canvas
+                  from 86% of the viewport to 83.7%, under the floor. A
+                  control for a panel that is usually closed must not charge
+                  rent on the drawing. */}
+              <button
+                type="button"
+                onClick={() => rememberFacts(!factsOpen)}
+                aria-expanded={factsOpen}
+                className="hidden rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail lg:inline-block"
+                data-takeoff="toggle-facts"
+              >
+                Sheet facts
               </button>
               <button
                 type="button"
                 onClick={() => rememberPanel(!panelOpen)}
                 aria-expanded={panelOpen}
-                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-surface"
+                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail"
                 data-takeoff="toggle-panel"
               >
                 Quantities
@@ -318,7 +613,7 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
             className="rounded-md border border-line-card px-2 py-1 text-xs text-link hover:text-link-hover"
             data-takeoff="back-to-estimate"
           >
-            Back to estimate
+            Back to C&nbsp;Stream
           </Link>
         </div>
       </header>
@@ -342,7 +637,7 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
           <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-body">
             {KEYS.map((entry) => (
               <li key={entry.keys}>
-                <kbd className="rounded border border-line-card bg-surface px-1 font-mono">{entry.keys}</kbd>{" "}
+                <kbd className="rounded border border-line-card bg-rail px-1 font-mono">{entry.keys}</kbd>{" "}
                 {entry.does}
               </li>
             ))}
@@ -353,12 +648,28 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
       <div className="flex min-h-0 flex-1">
         {/* ── The sheet rail, IN THE FLOW only when it is a rail ────────── */}
         {sheetsOpen && !drawers && !phone && (
-          <aside
-            className="w-56 shrink-0 overflow-y-auto border-r border-line-card bg-surface p-2"
-            data-takeoff="sheet-rail"
-          >
-            {sheetList}
-          </aside>
+          <>
+            <aside
+              className="shrink-0 overflow-hidden border-r border-line-card bg-surface"
+              style={{ width: railWidth }}
+              data-takeoff="sheet-rail"
+            >
+              {tree}
+            </aside>
+            {/* The resize handle. `col-resize` and a real pointer target of
+                6px — a 1px border is a hairline nobody can grab. */}
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize the sheet list"
+              onPointerDown={onRailDrag}
+              onPointerMove={onRailMove}
+              onPointerUp={onRailDrop}
+              onPointerCancel={onRailDrop}
+              data-takeoff="rail-resize"
+              className="w-1.5 shrink-0 cursor-col-resize bg-transparent hover:bg-brand/40"
+            />
+          </>
         )}
 
         {/* ── THE CANVAS, FIRST AND ALWAYS ──
@@ -400,9 +711,139 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
             fill
             panelOpen={panelOpen && !phone}
             readOnly={phone}
+            onMeasurementSaved={onMeasurementSaved}
           />
         </main>
       </div>
+
+      {/* ── SHEET FACTS, the strip the item properties will live in ──
+          Phase 1 fills it with what is true about the sheet you are on, which
+          is the same question Phase 2's properties answer one level down. It
+          reserves height from `--shell-port` above rather than overlaying the
+          canvas, so the drawing never sits underneath it. */}
+      {factsOpen && !phone && (
+        <section
+          className="shrink-0 overflow-y-auto border-t border-line-card bg-surface px-3 py-2"
+          style={{ height: `${FACTS_REM}rem` }}
+          data-takeoff="sheet-facts"
+        >
+          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-xs">
+            <span className="font-semibold text-ink">
+              {data.sheetLabelByPage[page] ?? `Sheet ${page}`}
+            </span>
+            <Fact label="Page">{page}</Fact>
+            <Fact label="Scale">
+              {currentSheet?.calibration
+                ? "set on this sheet"
+                : (data.printedScaleByPage[page] ?? "not set")}
+            </Fact>
+            <Fact label="Measurements">{currentSheet?.measurements.length ?? 0}</Fact>
+            <Fact label="Revision">{currentRow?.proposal?.revision ?? "—"}</Fact>
+            <Fact label="Issued">{currentRow?.proposal?.issueDate ?? "—"}</Fact>
+            <Fact label="Bookmarked">{bookmarks.has(page) ? "yes" : "no"}</Fact>
+          </div>
+          {data.duplicateWallsByPage[page] && (
+            <p className="mt-1 text-[11px] text-tag-amber-ink">{data.duplicateWallsByPage[page]}</p>
+          )}
+        </section>
+      )}
+
+      {/* ── THE WORKSPACE'S OWN HOME ──
+          Over the canvas rather than a route of its own: it is a place to
+          stand for a moment, not a page to link to, and leaving the viewer
+          mounted means coming back costs no re-render of the drawing. */}
+      {overview && !phone && (
+        <div className="fixed inset-0 top-11 z-40 overflow-y-auto bg-canvas p-6" data-takeoff="overview">
+          <div className="mx-auto max-w-3xl">
+            <div className="flex items-baseline justify-between">
+              <h2 className="text-lg font-semibold text-ink">{jobName}</h2>
+              <button
+                type="button"
+                onClick={() => setOverview(false)}
+                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body"
+                data-takeoff="close-overview"
+              >
+                Close
+              </button>
+            </div>
+
+            <h3 className="mt-5 text-xs font-semibold uppercase tracking-wide text-ink-muted">Plan set</h3>
+            <p className="mt-1 text-sm text-ink-body">
+              {data.plan.revisionLabel ?? data.plan.fileName ?? "Plan set"} · {sheets.length} sheet
+              {sheets.length === 1 ? "" : "s"}
+              {data.plan.sheetIssuedOn
+                ? ` · issued ${new Date(data.plan.sheetIssuedOn).toISOString().slice(0, 10)}`
+                : " · no issue date"}
+            </p>
+
+            <h3 className="mt-5 text-xs font-semibold uppercase tracking-wide text-ink-muted">Progress</h3>
+            <p className="mt-1 text-sm text-ink-body" data-takeoff="overview-progress">
+              {calibratedPages.size} of {sheets.length} sheets have a scale ·{" "}
+              {Object.values(measurementCountByPage).filter((count) => count > 0).length} have measurements
+            </p>
+
+            {bookmarks.size > 0 && (
+              <>
+                <h3 className="mt-5 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                  Bookmarked
+                </h3>
+                <ul className="mt-1 flex flex-wrap gap-2" data-takeoff="overview-bookmarks">
+                  {[...bookmarks]
+                    .sort((a, b) => a - b)
+                    .map((pageNumber) => (
+                      <li key={pageNumber}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPage(pageNumber);
+                            document.dispatchEvent(
+                              new CustomEvent("takeoff-goto", { detail: { page: pageNumber } }),
+                            );
+                            setOverview(false);
+                          }}
+                          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail"
+                        >
+                          {data.sheetLabelByPage[pageNumber] ?? `Sheet ${pageNumber}`}
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              </>
+            )}
+
+            {/* ── AND THE SHEETS LEFT OUT, WITH THE REASON ──
+                Nothing is excluded silently. A reviewer who cannot see why a
+                sheet was skipped assumes the tool missed it. */}
+            {excluded.length > 0 && (
+              <>
+                <h3 className="mt-5 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                  Not counted ({excluded.length})
+                </h3>
+                <ul className="mt-1 flex flex-col gap-1" data-takeoff="excluded-sheets">
+                  {excluded.map((row) => (
+                    <li key={row.pageNumber} className="text-xs leading-snug text-ink-muted">
+                      <span className="font-medium text-ink-body">
+                        {data.sheetLabelByPage[row.pageNumber] ?? `Sheet ${row.pageNumber}`}
+                      </span>{" "}
+                      — {data.duplicateWallsByPage[row.pageNumber]}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div
+          role="status"
+          data-takeoff="toast"
+          className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md border border-line-card bg-surface px-3 py-1.5 text-xs text-ink-body shadow-lg"
+        >
+          {toast}
+        </div>
+      )}
 
       {/* ── DRAWERS: fixed, over a backdrop, reserving no width ──────────
           Outside the row on purpose. Inside it, even `absolute` still took its
@@ -419,21 +860,21 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
           />
           {sheetsOpen && (
             <aside
-              className="fixed inset-y-0 left-0 z-40 w-72 overflow-y-auto border-r border-line-card bg-surface p-2"
+              className="fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-line-card bg-surface"
               data-takeoff="sheet-drawer"
             >
-              <div className="flex items-center justify-between pb-1">
+              <div className="flex shrink-0 items-center justify-between px-2 pt-2">
                 <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Sheets</span>
                 <button
                   type="button"
-                  onClick={() => setSheetsOpen(false)}
+                  onClick={() => rememberSheets(false)}
                   className="rounded-md border border-line-card px-2 py-0.5 text-xs text-ink-body"
                   data-takeoff="close-sheet-drawer"
                 >
                   Close
                 </button>
               </div>
-              {sheetList}
+              <div className="min-h-0 flex-1">{tree}</div>
             </aside>
           )}
           {/* The quantities drawer IS the viewer's panel, lifted by the
@@ -453,5 +894,13 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
         </>
       )}
     </div>
+  );
+}
+
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <span className="text-ink-muted">
+      {label}: <span className="text-ink-body">{children}</span>
+    </span>
   );
 }
