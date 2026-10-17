@@ -8,6 +8,7 @@ import { parseNumericInput } from "@/lib/numeric-input";
 import { ringArea, ringSelfIntersects } from "@/lib/sheet-geometry";
 import { cutoutInside } from "@/lib/takeoff/drawTools";
 import { cutoutsFromJson } from "@/lib/takeoff/itemQuantities";
+import { syncTakeoffItemLines, type ItemLineSummary } from "@/lib/estimating/takeoff-item-lines";
 import { can } from "@/lib/permissions";
 import { colorProblem, nextItemColor } from "@/lib/takeoff/itemColors";
 import {
@@ -520,6 +521,68 @@ export async function updateMeasurementGeometry(
   }
 
   await prisma.takeoffMeasurement.update({ where: { id: measurementId }, data: { xs, ys } });
+  revalidatePath(`/takeoff/${jobId}`);
+  return actionOk;
+}
+
+
+/**
+ * ── SEND THE TAKEOFF TO THE ESTIMATE ──
+ *
+ * Every item with an assembly becomes estimate lines, one per part, priced
+ * from the company catalog. Re-running it UPDATES what is there rather than
+ * adding more — `syncTakeoffItemLines` owns that, and the three rules it
+ * follows are the ones `wall-schedule.ts` has followed since it was written.
+ *
+ * ── IT IS A SYNC, NOT A POST, AND THAT IS THE WHOLE DIFFERENCE ──
+ *
+ * `postTakeoffMeasurements` stamps `postedAt` and refuses a second press,
+ * because it CREATES wall runs and no create in this app is idempotent. This
+ * is the other shape: the lines are derived from the items, so pressing it
+ * again after re-measuring is exactly what somebody should do, and the button
+ * says so.
+ */
+export async function sendTakeoffItemsToEstimate(jobId: string): Promise<ActionResultWith<ItemLineSummary>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableDirectly(job);
+
+  const summary = await prisma.$transaction((tx) => syncTakeoffItemLines(tx, company.id, jobId));
+
+  revalidatePath(`/jobs/${jobId}/estimate`);
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/takeoff/${jobId}`);
+  return { ok: true, value: summary };
+}
+
+/**
+ * Freeze this job's assemblies, or let it follow the library again.
+ *
+ * The design doc's answer to "copy the library into the project". A part added
+ * to a company assembly after the pin is not this job's; with no pin the job
+ * follows the library, which is the right default — most of the time a
+ * corrected assembly should correct the open bids too.
+ */
+export async function setAssemblyLibraryPin(jobId: string, pinned: boolean): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail(
+      "Freezing a job's assemblies isn't part of your job function. The account owner sets who sees what, on the Team page.",
+    );
+  }
+  const { company } = context;
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableDirectly(job);
+
+  await prisma.job.update({
+    where: { id: jobId },
+    // `new Date()` and not a stored "pinned" boolean: the question the
+    // expander asks is "was this part here when the job froze", which needs
+    // the moment rather than the fact.
+    data: { assemblyLibraryPinnedAt: pinned ? new Date() : null },
+  });
   revalidatePath(`/takeoff/${jobId}`);
   return actionOk;
 }

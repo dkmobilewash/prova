@@ -138,8 +138,18 @@ export async function syncWallScheduleLines(tx: Tx, companyId: string, jobId: st
   //
   // A person who wants the line back adds it by hand, or changes the wall type,
   // which is where a derived line's existence is actually decided.
+  // ── AND NOT A TAKEOFF ITEM'S LINES, WHICH ALSO CARRY A COMPONENT ──
+  //
+  // `syncTakeoffItemLines` writes `wallTypeComponentId` too — the part is the
+  // same part — and the sweep below retires any line whose component is not in
+  // the WALL SCHEDULE. A takeoff item's component usually is not, so without
+  // this filter every save to any wall run would delete every line the takeoff
+  // had written, silently and in the same transaction.
+  //
+  // `takeoffItemId` is what separates them, and the separation is mutual: that
+  // function reads only lines that HAVE one, this one only lines that do not.
   const existing = await tx.jobLineItem.findMany({
-    where: { jobId, wallTypeComponentId: { not: null } },
+    where: { jobId, wallTypeComponentId: { not: null }, takeoffItemId: null },
     select: { id: true, wallTypeComponentId: true, isDeleted: true },
   });
   const liveByComponent = new Map(

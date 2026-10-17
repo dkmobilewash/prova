@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Spinner } from "@/components/Spinner";
 import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
+import { TakeoffAssemblyPanel } from "@/components/TakeoffAssemblyPanel";
 import { TakeoffItemProperties } from "@/components/TakeoffItemProperties";
 import { TakeoffItemsPanel } from "@/components/TakeoffItemsPanel";
 import { TakeoffSheetTree } from "@/components/TakeoffSheetTree";
@@ -547,6 +548,15 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
     // eslint-disable-next-line react-hooks/exhaustive-deps -- on selection only; including factsOpen would reopen it the moment it is closed.
   }, [activeItemId]);
 
+  /**
+   * ── THE ITEMS RAIL CARRIES THE ASSEMBLY BENEATH THE LIST ──
+   *
+   * Not a fourth rail. The question "what is this item priced as" is about
+   * the item that is selected in the list two inches above, and putting it
+   * behind its own toggle would mean opening two panels to answer one
+   * question. It takes a third of the rail and only when something is
+   * selected.
+   */
   const itemsPanel = (
     <TakeoffItemsPanel
       jobId={jobId}
@@ -560,6 +570,23 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
       unassignedCount={unassignedCount}
       readOnly={phone}
     />
+  );
+
+  const railContents = (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className={activeItem ? "min-h-0 flex-[2]" : "min-h-0 flex-1"}>{itemsPanel}</div>
+      {activeItem && (
+        <div className="min-h-0 flex-1 border-t border-line-card">
+          <TakeoffAssemblyPanel
+            jobId={jobId}
+            assemblies={data.assemblies}
+            item={activeItem}
+            pinnedAt={data.assemblyLibraryPinnedAt}
+            readOnly={phone}
+          />
+        </div>
+      )}
+    </div>
   );
 
   const closeDrawers = () => {
@@ -847,7 +874,7 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
             className="w-72 shrink-0 overflow-hidden border-l border-line-card bg-surface"
             data-takeoff="items-rail"
           >
-            {itemsPanel}
+            {railContents}
           </aside>
         )}
       </div>
@@ -1036,7 +1063,7 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
                   Close
                 </button>
               </div>
-              <div className="min-h-0 flex-1">{itemsPanel}</div>
+              <div className="min-h-0 flex-1">{railContents}</div>
             </aside>
           )}
           {/* The quantities drawer IS the viewer's panel, lifted by the

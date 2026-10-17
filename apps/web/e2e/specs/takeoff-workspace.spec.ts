@@ -335,6 +335,25 @@ test.describe("the full-screen takeoff workspace", () => {
     expect(sheet.y).toBeGreaterThanOrEqual(canvas.y - 2);
   });
 
+  /**
+   * Save the measurement currently drafted.
+   *
+   * ── MATCHED ON `Save`, NOT ON `Save measurement` ──
+   *
+   * The button reads "Save measurement" with no scale and "Save (12.5 ft)"
+   * with one, because it shows what it is about to store. A walk written
+   * against the first spelling silently did nothing on a scaled sheet — and
+   * because it was written as `if (button exists) click it`, it passed that
+   * step and failed four assertions later on a total that had never moved.
+   *
+   * Asserted rather than guarded, for exactly that reason.
+   */
+  async function saveMeasurement(): Promise<void> {
+    const save = page.getByRole("button", { name: /^Save\b/ }).last();
+    await expect(save, "the measurement form has no Save button").toBeVisible();
+    await save.click();
+  }
+
   /** Put a top-bar panel toggle into a known state. */
   async function setRail(handle: string, open: boolean): Promise<void> {
     const toggle = page.locator(`[data-takeoff="${handle}"]`);
@@ -713,16 +732,7 @@ test.describe("the full-screen takeoff workspace", () => {
     await overlay.click({ position: { x: width * 0.2, y: width * 0.25 } });
     await overlay.click({ position: { x: width * 0.6, y: width * 0.25 } });
 
-    const measurementForm = page
-      .locator("form")
-      .filter({ has: page.getByRole("button", { name: /^(Save|Add) /i }) })
-      .last();
-    const save = page.getByRole("button", { name: /save (this )?(line|measurement)/i }).first();
-    if ((await save.count()) > 0) {
-      await save.click();
-    } else {
-      await measurementForm.getByRole("button").last().click();
-    }
+    await saveMeasurement();
 
     // ── AND THE FOOTAGE ARRIVES ON THE ITEM ──
     //
@@ -879,6 +889,125 @@ test.describe("the full-screen takeoff workspace", () => {
 
     await page.screenshot({ path: path.join(SHOTS, "workspace-1440-tools.png") });
     await expectHealthy(page, "drawing tools", { monitor, signedIn: false });
+  });
+
+
+  test("20. AN ASSEMBLY PRICES AN ITEM, AND THE ESTIMATE GETS THE LINES", async () => {
+    // ── THE WHOLE OF PHASE 3 IN ONE WALK ──
+    //
+    // The arithmetic has unit tests and the expander's three rules are
+    // inherited from a function that has had them since it was written.
+    // What none of that can tell is whether the CHAIN is connected: whether
+    // the assembly the panel shows is the one the server prices, and whether
+    // what it prints as a quantity is what lands on the estimate.
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobOne);
+    await setRail("toggle-items", true);
+
+    // ── AN ITEM WITH SOME FOOTAGE ON IT ──
+    const panel = page.locator('[data-takeoff="items-panel"]');
+    await panel.locator('[data-takeoff="add-item"]').click();
+    const form = panel.locator('[data-takeoff="item-form"]');
+    await form.locator('input[name="name"]').fill("ZZ Priced partition");
+    await form.locator('select[name="type"]').selectOption("LINEAR");
+    await form.getByRole("button", { name: "Add" }).click();
+    const row = panel.locator('[data-takeoff="item-row"]').first();
+    await expect(row).toContainText("ZZ Priced partition", { timeout: 30_000 });
+
+    await page.getByRole("button", { name: "Line", exact: true }).click();
+    const overlay = page.locator('[data-testid="takeoff-plan-port"] svg').first();
+    const click = async (fx: number, fy: number) => {
+      const at = await overlay.boundingBox();
+      expect(at, "no overlay").not.toBeNull();
+      await overlay.click({ position: { x: fx * (at?.width ?? 0), y: fy * (at?.width ?? 0) } });
+    };
+    await click(0.2, 0.3);
+    await click(0.6, 0.3);
+    await saveMeasurement();
+    await expect
+      .poll(async () => (await row.locator('[data-takeoff="item-total"]').textContent())?.trim() ?? "", {
+        timeout: 60_000,
+      })
+      .not.toMatch(/^0 ft/);
+
+    // Height and sides, so a drywall assembly has a boarded area to price.
+    const properties = page.locator('[data-takeoff="item-properties"]');
+    await properties.locator('[data-takeoff="prop-heightFt"]').fill("9");
+    await properties.locator('[data-takeoff="prop-sides"]').fill("2");
+    await expect(properties.locator('[data-takeoff="item-face"]')).toBeVisible();
+
+    // ── AN ASSEMBLY, FROM THE LIBRARY ──
+    const assemblyPanel = page.locator('[data-takeoff="assembly-panel"]');
+    await expect(assemblyPanel).toBeVisible();
+
+    // ── THE LIBRARY IS SEEDED HERE, NOT SKIPPED AROUND ──
+    //
+    // The first version of this walk returned early when the company had no
+    // assemblies, asserting only that the panel said so. That passed — and
+    // proved nothing about Phase 3, which is the chain from an assembly to
+    // an estimate line. The missing screenshot is what gave it away.
+    //
+    // So the library is created through the real button on the real page.
+    const picker = assemblyPanel.locator('[data-takeoff="pick-assembly"]');
+    if ((await picker.locator("option").count()) <= 1) {
+      await page.goto("/wall-types");
+      await page.getByRole("button", { name: /Start from the common trade assemblies/ }).click();
+      await expect(page.getByText(/^Added /)).toBeVisible({ timeout: 60_000 });
+      await onWorkspace(jobOne);
+      await setRail("toggle-items", true);
+      await page.locator('[data-takeoff="item-row"]').first().locator('[data-takeoff="pick-item"]').click();
+      await expect(assemblyPanel).toBeVisible();
+    }
+    expect(
+      await picker.locator("option").count(),
+      "the starter library did not reach the assembly picker",
+    ).toBeGreaterThan(1);
+
+    // W1 — the stud-and-board partition, which is what a traced LINEAR item
+    // with a height and two sides actually is.
+    // Selected by VALUE from the option whose text starts W1, because
+    // `selectOption` takes a string label and the option reads "W1 — …".
+    const w1 = await picker
+      .locator("option")
+      .evaluateAll((nodes) => nodes.find((n) => n.textContent?.trim().startsWith("W1"))?.getAttribute("value") ?? "");
+    expect(w1, "the starter library has no W1").not.toBe("");
+    await picker.selectOption(w1);
+
+    // ── AND THE PARTS ARRIVE WITH QUANTITIES ──
+    const parts = assemblyPanel.locator('[data-takeoff="assembly-part"]');
+    await expect(parts.first()).toBeVisible({ timeout: 30_000 });
+    const partCount = await parts.count();
+    expect(partCount, "the assembly priced no parts").toBeGreaterThan(0);
+    // Every part shows a quantity that is not zero — a table of zeros is what
+    // a wrong basis looks like, and it is the failure this walk exists for.
+    const quantities = await parts.evaluateAll((rows) =>
+      rows.map((node) => node.querySelectorAll("td")[1]?.textContent?.trim() ?? ""),
+    );
+    expect(quantities.some((text) => /[1-9]/.test(text)), `no part had a quantity: ${quantities.join(" | ")}`).toBe(
+      true,
+    );
+
+    // ── SEND IT, AND SEND IT AGAIN ──
+    //
+    // The second press is the assertion. Every other "add to the estimate" in
+    // this app refuses one; this one must UPDATE rather than double the bid,
+    // which is the difference between a sync and a post.
+    await assemblyPanel.locator('[data-takeoff="send-to-estimate"]').click();
+    const result = assemblyPanel.locator('[data-takeoff="send-result"]');
+    await expect(result).toBeVisible({ timeout: 60_000 });
+    await expect(result).toContainText(/\d+ added/);
+
+    await assemblyPanel.locator('[data-takeoff="send-to-estimate"]').click();
+    await expect(result).toContainText("0 added", { timeout: 60_000 });
+    await expect(result).toContainText(/[1-9]\d* updated/);
+
+    await page.screenshot({ path: path.join(SHOTS, "workspace-1440-assembly.png") });
+
+    // ── AND THE LINES ARE ON THE ESTIMATE ──
+    await page.goto(`/jobs/${jobOne}/estimate`);
+    await expectHealthy(page, "estimate after sending the takeoff", { monitor });
+    await expect(page.getByText("ZZ Priced partition —").first()).toBeVisible({ timeout: 30_000 });
+    await page.screenshot({ path: path.join(SHOTS, "estimate-from-takeoff.png") });
   });
 
 });

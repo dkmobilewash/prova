@@ -59,7 +59,32 @@ export async function loadTakeoffWorkspace(
       defaultHeightFt: true,
       sides: true,
       thicknessIn: true,
+      studSpacingIn: true,
       _count: { select: { components: true } },
+      /**
+       * THE PARTS, because the assembly panel prices the selected item from
+       * them in the browser — with `componentRunQuantity`, the same function
+       * the server expander uses, so the figure on screen is the figure that
+       * gets written.
+       *
+       * `defaultUnitPrice` comes off the catalog entry rather than the part:
+       * the part says HOW MUCH of a thing, the catalog says what the thing
+       * costs, and that split is what lets an estimator reprice a whole
+       * library from one place.
+       */
+      components: {
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        select: {
+          id: true,
+          description: true,
+          unit: true,
+          basis: true,
+          factor: true,
+          wastePercent: true,
+          roundUp: true,
+          catalogEntry: { select: { defaultUnitPrice: true } },
+        },
+      },
     },
   });
   // POSTING IS STILL GATED ON LAYERS, and this is the gate — unchanged in
@@ -282,6 +307,19 @@ export async function loadTakeoffWorkspace(
     })),
   }));
 
+  /**
+   * Whether this job has frozen its assembly library, and when.
+   *
+   * Read here rather than in the panel because the panel is a client
+   * component and this is one field of the job it is already loading.
+   */
+  const assemblyLibraryPinnedAt = (
+    await prisma.job.findUniqueOrThrow({
+      where: { id: job.id },
+      select: { assemblyLibraryPinnedAt: true },
+    })
+  ).assemblyLibraryPinnedAt;
+
   const sheetRows = isEstimateStage ? await sheetIndexFor(plan.id, company.id) : [];
   /**
    * WHICH PAGES ARE SCANS, straight off the ingest record.
@@ -475,6 +513,35 @@ export async function loadTakeoffWorkspace(
      * thickness is what reaches the untagged walls, which on a real sheet is
      * most of the footage.
      */
+    /**
+     * The library as the ASSEMBLY PANEL takes it: numbers rather than
+     * Decimals, because a Decimal does not cross into a client component —
+     * the same reason `viewerWallTypes` below is mapped here rather than at
+     * the call site.
+     */
+    assemblyLibraryPinnedAt:
+      assemblyLibraryPinnedAt === null ? null : assemblyLibraryPinnedAt.toISOString(),
+    assemblies: allWallTypes.map((type) => ({
+      id: type.id,
+      code: type.code,
+      name: type.name,
+      defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt),
+      sides: type.sides,
+      studSpacingIn: Number(type.studSpacingIn),
+      components: type.components.map((component) => ({
+        id: component.id,
+        description: component.description,
+        unit: component.unit,
+        basis: component.basis,
+        factor: Number(component.factor),
+        wastePercent: Number(component.wastePercent),
+        roundUp: component.roundUp,
+        unitPrice:
+          component.catalogEntry?.defaultUnitPrice == null
+            ? null
+            : Number(component.catalogEntry.defaultUnitPrice),
+      })),
+    })),
     viewerWallTypes: allWallTypes.map((type) => ({
       id: type.id,
       code: type.code,

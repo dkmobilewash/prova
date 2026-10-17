@@ -28,6 +28,29 @@ enum WallComponentBasis {
   STUDS
   /// A fixed count per run — end studs at a corner, a head-of-wall detail.
   PER_RUN
+
+  /// ── THE FOUR BELOW ARE NOT WALL-SHAPED ──
+  ///
+  /// Added 2026-10-16 with takeoff items, which measure ceilings, flooring,
+  /// painting and slabs as well as partitions. A `WallRun` cannot produce any
+  /// of them and reports zero, which is honest: a run of wall has no area of
+  /// its own, only a face.
+  ///
+  /// THIS ENUM IS THE FORMULA LANGUAGE. A part's quantity is
+  /// `basis × factor × (1 + waste)`, and every value names a tested function
+  /// of the geometry — so a part cannot ask for a quantity nobody has defined
+  /// and a formula cannot be misspelt. See
+  /// `docs/TAKEOFF-WORKSPACE-DESIGN.md` §4 for why that beats a parsed
+  /// string, and for what would change its mind.
+
+  /// The traced area, cutouts deducted — ceilings, flooring, paint.
+  AREA_SQFT
+  /// The traced outline's perimeter — wall angle, base, edge trim.
+  PERIMETER_FT
+  /// How many things were counted — fixtures, doors.
+  COUNT_EACH
+  /// Area × depth ÷ 27 — slabs and footings.
+  VOLUME_CY
 }
 
 /// One row of a company's partition schedule — "W2", as the architect's

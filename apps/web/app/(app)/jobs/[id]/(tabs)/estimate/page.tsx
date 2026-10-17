@@ -784,12 +784,24 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                   <ActionForm action={updateLineItemWithId(item.id)} resetOnSuccess={false} className="flex flex-col gap-2">
                     <div className="flex flex-wrap items-center gap-2">
                       {item.aiDrafted && <PriceBasisBadge basis={item.priceBasis} />}
+                      {/* ── WHICH DERIVATION WROTE THIS LINE ──
+                          Both expanders set `wallTypeComponentId`, so that
+                          alone cannot tell them apart — and for one run this
+                          badge told somebody a line came "from the wall
+                          schedule" when it had come off a drawing they traced
+                          on the takeoff screen. `takeoffItemId` separates
+                          them, and it is the same field that stops the two
+                          expanders retiring each other's lines. */}
                       {item.wallTypeComponentId && (
                         <span
                           className="inline-flex items-center rounded-full bg-rail-hover px-2 py-0.5 text-xs font-medium text-ink-label"
-                          title="Worked out from the wall schedule above. Its quantity follows the runs; the price is yours to change."
+                          title={
+                            item.takeoffItemId
+                              ? "Worked out from what you traced on the plan. Its quantity follows the takeoff; the price is yours to change."
+                              : "Worked out from the wall schedule above. Its quantity follows the runs; the price is yours to change."
+                          }
                         >
-                          From wall schedule
+                          {item.takeoffItemId ? "From the takeoff" : "From wall schedule"}
                         </span>
                       )}
                       <input

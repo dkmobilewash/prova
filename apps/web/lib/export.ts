@@ -1060,6 +1060,19 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
  * nobody asks for.
  */
 export const EXPORT_COLUMN_OMISSIONS: Record<string, string> = {
+  assemblyLibraryPinnedAt:
+    "when this job stopped following the company assembly library, or null for most jobs. " +
+    "Plumbing for the expander that turns a takeoff into estimate lines: it decides whether a " +
+    "part added to an assembly LAST WEEK belongs on a bid priced LAST MONTH. The lines it " +
+    "produces are ordinary estimate line items and ARE exported, with their quantities and " +
+    "prices; this is the switch behind them, and a date in a spreadsheet column nobody can act " +
+    "on is not the answer to any question a customer has",
+  takeoffItemId:
+    "which takeoff CONDITION produced this estimate line — a join key, not a fact. The line " +
+    "itself carries the description, quantity, unit and price, which is everything the row " +
+    "means; the item's own name is already in the description. It is exported nowhere because " +
+    "`TakeoffItem` is not exported at all, for the reason the plan-takeoff omission gives: its " +
+    "quantity is computed from coordinates on a PDF this file does not contain",
   companyId:
     "every file is already one company's rows — the scope of the export IS this column, " +
     "so a column repeating it on every line carries no information",
