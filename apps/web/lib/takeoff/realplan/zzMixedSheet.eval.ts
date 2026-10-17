@@ -2,17 +2,23 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
-import { findWallsOnSheet, type SheetTextItem } from "../findWallsOnSheet";
+import { findWallsOnSheet, inPageWidthUnits, type SheetTextItem } from "../findWallsOnSheet";
 import {
   excludedViews,
   primaryView,
   sheetViews,
   viewRegions,
+  viewBoxes,
   viewsInRegions,
   wallsPerView,
 } from "../sheetViews";
 import { leftOutSummary } from "../viewKind";
-import type { StrokeSegment, WallCandidate } from "../wallVectors";
+import {
+  oneFacePerLine,
+  wallFromPair,
+  type StrokeSegment,
+  type WallCandidate,
+} from "../wallVectors";
 
 /**
  * ── WHAT IS ON A MIXED SHEET, AND WHICH VIEW EACH FOUND WALL CAME FROM ──
@@ -143,7 +149,18 @@ describe.skipIf(DIR === "")("a mixed sheet, as the product reads it", () => {
       }
 
       // ── F: THE PRODUCT PATH — THE SPLIT, EXACTLY AS TakeoffPlanViewer RUNS IT ──
-      const feetPerUnit = (size.widthPt / 72) * 2; // 1/2in = 1ft, A120's caption
+      // ── THE SHEET'S OWN SCALE, NOT A GUESS ──
+      //
+      // This was hardcoded to A120's 1/2" caption, which is wrong on every
+      // other sheet and wrong in a way that does not look wrong: the "long
+      // line" floor is in FEET, so an eight-times error changes which lines
+      // are candidates at all. A102 reported 200 candidates at A120's scale.
+      const captioned = views
+        .map((one) => one.feetPerInch)
+        .filter((n): n is number => n !== null && n > 0);
+      const feetPerInch = captioned.length > 0 ? Math.min(...captioned) : 2;
+      const feetPerUnit = (size.widthPt / 72) * feetPerInch;
+      console.log(`\n   measuring at ${feetPerInch} ft per paper inch`);
       const wholeSheet = findWallsOnSheet({
         segments,
         textItems,
@@ -262,6 +279,57 @@ describe.skipIf(DIR === "")("a mixed sheet, as the product reads it", () => {
       };
       console.log(`\n  diagonals (${rows.filter((r) => r.diagonal).length}): ${stat(rows.filter((r) => r.diagonal))}`);
       console.log(`  orthogonal (${rows.filter((r) => !r.diagonal).length}): ${stat(rows.filter((r) => !r.diagonal))}`);
+
+      // ── HOW MUCH A REVIEWER IS BEING ASKED TO DECIDE ──
+      //
+      // The same two populations `candidatesFromLastDetect` builds in the
+      // viewer: every run the detector reported, plus the long faces it could
+      // not pair at all. Counted here so a review can be SIZED before somebody
+      // sits down to it, and so the effect of a detection change on that
+      // workload is a number rather than an impression.
+      const planBoxes = measured.flatMap((one) => viewBoxes(one.view));
+      const onAPlan = (ax1: number, ay1: number, ax2: number, ay2: number) => {
+        if (planBoxes.length === 0) return true;
+        const cx = (ax1 + ax2) / 2;
+        const cy = (ay1 + ay2) / 2;
+        return planBoxes.some(
+          (box) => cx >= box.from && cx < box.to && cy >= box.fromY && cy < box.toY,
+        );
+      };
+      const detected = picked.primary?.walls ?? [];
+      // The scale the PRIMARY view was actually measured at, which is what
+      // its candidates must be judged in.
+      const sheetFeetPerUnit = picked.primary?.view.feetPerInch
+        ? (size.widthPt / 72) * picked.primary.view.feetPerInch
+        : feetPerUnit;
+      const allFaces: StrokeSegment[] = oneFacePerLine(
+        segments,
+        sheetFeetPerUnit / size.widthPt,
+      ).map(inPageWidthUnits(size.widthPt));
+      const coveredByWall = (f: { x1: number; y1: number; x2: number; y2: number }) => {
+        const cx = (f.x1 + f.x2) / 2;
+        const cy = (f.y1 + f.y2) / 2;
+        return detected.some((w) => {
+          const dx = w.x2 - w.x1;
+          const dy = w.y2 - w.y1;
+          const len2 = dx * dx + dy * dy;
+          const t =
+            len2 === 0 ? 0 : Math.max(0, Math.min(1, ((cx - w.x1) * dx + (cy - w.y1) * dy) / len2));
+          return Math.hypot(cx - (w.x1 + t * dx), cy - (w.y1 + t * dy)) * sheetFeetPerUnit <= 1.5;
+        });
+      };
+      const pairOpts = { feetPerPoint: sheetFeetPerUnit };
+      const unclaimed = allFaces.filter(
+        (f) =>
+          Math.hypot(f.x2 - f.x1, f.y2 - f.y1) * sheetFeetPerUnit >= 12 &&
+          onAPlan(f.x1, f.y1, f.x2, f.y2) &&
+          !coveredByWall(f) &&
+          !allFaces.some((other) => other !== f && wallFromPair(f, other, pairOpts) !== null),
+      );
+      console.log(
+        `\nCANDIDATES a reviewer would see: ${detected.length + unclaimed.length}` +
+          `  (${detected.length} detected runs + ${unclaimed.length} unclaimed long lines)`,
+      );
 
       await pdf.close();
     },

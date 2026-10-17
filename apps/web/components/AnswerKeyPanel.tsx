@@ -140,14 +140,31 @@ export function AnswerKeyPanel({
     // whatever folder `REAL_PLAN_KEYS` points at. A server write would have to
     // be given a path, and a web request that writes a path is a worse idea
     // than a file somebody saves deliberately.
+    // ── THE NAME IS SHOWN, BECAUSE IT IS NOT THE ONE ANYBODY EXPECTS ──
+    //
+    // `sheet.number` is the sheet number where the set has been through the
+    // title-block stage, and `p15` where it has not — that stage calls a
+    // model, so a locally-ingested set has no sheet numbers at all. A
+    // reviewer who has spent an hour on A120 then goes looking for
+    // `A120.key.json` and there is no such file. Saying the name here costs a
+    // line and removes the whole question.
+    const filename = `${sheet.number.replace(/[^A-Za-z0-9_.-]+/g, "_")}.key.json`;
     const blob = new Blob([JSON.stringify(key, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${sheet.number.replace(/[^A-Za-z0-9_.-]+/g, "_")}.key.json`;
+    a.download = filename;
+    // ATTACHED BEFORE THE CLICK, and the object URL released on a timer
+    // rather than on the next line. A detached anchor works in Chromium and
+    // is not portable, and revoking synchronously races the browser's own
+    // read of the blob. Measured in real Chromium: the shipped form does
+    // produce the file, so this is insurance rather than a fix — which is
+    // exactly why it is written down and not quietly changed.
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
-    setSaved(`${key.walls.length} walls, ${progress.feet.toFixed(0)} ft`);
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    setSaved(`${filename} — ${key.walls.length} walls, ${progress.feet.toFixed(0)} ft`);
   }
 
   return (
