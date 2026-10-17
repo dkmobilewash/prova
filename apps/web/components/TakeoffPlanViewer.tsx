@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   SNAP_RADIUS,
   closesRing,
@@ -100,6 +100,7 @@ import {
   type WallGroup,
   type GroupVerdict,
 } from "@/lib/takeoff/wallGroups";
+import { proposalSections, showsHeadings } from "@/lib/takeoff/proposalSections";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 
 /**
@@ -223,6 +224,7 @@ export function TakeoffPlanViewer({
   // which is the failure this prop exists to fix.
   scannedPages = [],
   storedWallsByPage,
+  takeoffItems = [],
   levelByPage,
   wallTypes,
   scalePrefillByPage,
@@ -346,6 +348,15 @@ export function TakeoffPlanViewer({
    * calibration, which is the same thing from the reader's side.
    */
   storedWallsByPage?: Record<number, WallGroup[]>;
+  /**
+   * The job's takeoff items, so detected groups can read under the condition
+   * they propose into rather than as a flat list of thicknesses.
+   *
+   * Names only — the quantities and prices are the items panel's business. An
+   * empty list is the ordinary state of a job nobody has named conditions on,
+   * and the panel then draws no headings at all.
+   */
+  takeoffItems?: readonly { id: string; name: string }[];
   /** Which floor each sheet draws, read off its own title — see
    *  `sheetLevel.ts`. Absent for a sheet whose title names no floor, which is
    *  most of them on a single-storey job. */
@@ -558,6 +569,31 @@ export function TakeoffPlanViewer({
    *  overlay all key off the same number, and a slice that reordered would
    *  silently hover one group and add another. */
   const shownGroups = showingAll ? (found ?? []) : (found ?? []).slice(0, SHOWN_AT_FIRST);
+  /**
+   * The same groups, read under the condition each proposes into.
+   *
+   * A READING ORDER, NOT A RE-SORT — every entry carries the index it had in
+   * `shownGroups`, because that index is what addresses the group everywhere
+   * else: `ClusterMark index=` picks its colour and dash on the drawing,
+   * `chosen[index]` holds its wall type, and `hovered` lights its runs.
+   * Renumber and the panel's third row highlights the drawing's first.
+   *
+   * `heading` is set on the first entry of each section, so the headings ride
+   * inside the one list rather than needing a list per section — the rows stay
+   * siblings and the gap between them stays even.
+   */
+  const ordered = useMemo(() => {
+    const sections = proposalSections(shownGroups, takeoffItems);
+    const withHeadings = showsHeadings(sections);
+    return sections.flatMap((section) =>
+      section.entries.map((entry, within) => ({
+        ...entry,
+        heading: withHeadings && within === 0 ? section : null,
+        /** How many are under this heading, for the heading's own count. */
+        inSection: section.entries.length,
+      })),
+    );
+  }, [shownGroups, takeoffItems]);
   /** How many strokes the sheet held when it was last read, so an empty result
    *  can say which kind of empty it is. See the message below. */
   const [strokesSeen, setStrokesSeen] = useState(0);
@@ -2203,7 +2239,7 @@ export function TakeoffPlanViewer({
                 </p>
               )}
               <ul className="flex flex-col gap-1">
-                {shownGroups.map((group, index) => {
+                {ordered.map(({ group, index, heading, inSection }) => {
                   const verdict = verdictFor(group);
                   const priced = pricedTypeFor(group, chosen[index]);
                   // NAMED BUT NOT PRICEABLE: the drawing's tag matched a type
@@ -2213,8 +2249,33 @@ export function TakeoffPlanViewer({
                   // sent somebody to the wall-types page to find nothing wrong.
                   const namedOnly = priced === null ? namedTypeFor(group, chosen[index]) : null;
                   return (
+                  <Fragment key={`${group.inches}-${index}`}>
+                  {heading !== null && (
+                    /* ── THE CONDITION, OR THE PILE ──
+                       Detection matched this group to a takeoff item, so the
+                       estimator reads "3⅝ interior — 4 groups" instead of four
+                       thicknesses they have to map back to their own conditions
+                       by eye. An unmatched group sits under "Unassigned walls",
+                       which is the recoverable state: `proposalMatch` REFUSES a
+                       tie rather than picking one of two 3⅝" walls, and this is
+                       where that refusal becomes somebody's minute of work. */
+                    <li className="mt-2 flex items-baseline gap-2 px-2 pt-1 first:mt-0 first:pt-0">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                        {heading.name ?? "Unassigned walls"}
+                      </span>
+                      <span className="text-xs text-ink-muted">
+                        {inSection} {inSection === 1 ? "group" : "groups"}
+                      </span>
+                    </li>
+                  )}
                   <li
-                    key={`${group.inches}-${index}`}
+                    /* Machine-readable, so a browser walk can read a group's
+                       thickness instead of parsing "3⅝″" out of the label. The
+                       e2e step that proves these headings appear creates a
+                       condition at a thickness it reads from right here. */
+                    data-takeoff="found-group"
+                    data-inches={group.inches}
+                    data-item={group.itemId ?? ""}
                     className="flex flex-wrap items-center gap-3 rounded-md px-2 py-1 hover:bg-rail-hover"
                     onMouseEnter={() => setHovered(index)}
                     onMouseLeave={() => setHovered(null)}
@@ -2321,6 +2382,7 @@ export function TakeoffPlanViewer({
                       <p className="w-full text-xs text-ink-muted">{groupSentence(group, verdict)}</p>
                     )}
                   </li>
+                  </Fragment>
                   );
                 })}
               </ul>

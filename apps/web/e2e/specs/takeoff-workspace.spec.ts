@@ -893,6 +893,14 @@ test.describe("the full-screen takeoff workspace", () => {
 
 
   test("20. AN ASSEMBLY PRICES AN ITEM, AND THE ESTIMATE GETS THE LINES", async () => {
+    // ── THIS STEP SEEDS A LIBRARY, AND SEEDING TAKES LONGER THAN A STEP ──
+    //
+    // It waits up to 60s for the trade assemblies to be written, inside a test
+    // whose own budget was 30 — so the inner wait could never finish, and the
+    // step passed only when the branch was skipped or the write happened to be
+    // fast. It failed that way three times while step 21 was being written,
+    // each time looking like a different bug.
+    test.setTimeout(120_000);
     // ── THE WHOLE OF PHASE 3 IN ONE WALK ──
     //
     // The arithmetic has unit tests and the expander's three rules are
@@ -1008,6 +1016,110 @@ test.describe("the full-screen takeoff workspace", () => {
     await expectHealthy(page, "estimate after sending the takeoff", { monitor });
     await expect(page.getByText("ZZ Priced partition —").first()).toBeVisible({ timeout: 30_000 });
     await page.screenshot({ path: path.join(SHOTS, "estimate-from-takeoff.png") });
+  });
+
+  test("21. DETECTED GROUPS READ UNDER THE CONDITION THEY BELONG TO", async () => {
+    // ── THE ONLY INSTRUMENT THAT CAN SEE THIS ──
+    //
+    // The grouping has sixteen unit tests and the wiring has a census, and
+    // with the heading FORCED TO NULL — the feature removed, every group back
+    // in one flat list — the whole suite passed: 2,542 tests, green.
+    // `TakeoffPlanViewer` is a pdf.js client component that nothing in this
+    // repo renders, so a real browser is the only thing that can tell whether
+    // an estimator SEES a heading. Same shape as the `expo-router` entry in
+    // CLAUDE.md, where three fixes shipped green and none of them rendered.
+    //
+    // The walk is the real order of work: find the walls, see an undivided
+    // list, name a condition for what you are counting, and watch the groups
+    // sort themselves under it.
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobOne);
+    await findTheWalls("S02 before any condition exists");
+    // The quantities panel is a RAIL here, not always-on furniture — step 5
+    // saw it open because nothing had opened Items over it yet. Opening it
+    // explicitly is what makes this step independent of the twenty before it.
+    await setRail("toggle-panel", true);
+
+    const panel = page.locator('[data-takeoff="found-walls"]');
+    await expect(panel, "no quantities panel on S02").toBeVisible({ timeout: 20_000 });
+    const groups = panel.locator('[data-takeoff="found-group"]');
+    const before = await groups.count();
+    expect(before, "S02 detected no walls, so this step can prove nothing").toBeGreaterThan(0);
+
+    const itemIds = () =>
+      groups.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-item") ?? ""));
+
+    // ── WHAT IS THERE BEFORE, which is what makes the end mean something ──
+    //
+    // Both halves matter. No group is assigned, so nothing below can be
+    // passing on a match that was already made; and a lone unassigned pile
+    // draws NO heading, because "Unassigned walls" over the whole list tells
+    // an estimator nothing they do not already know. Asserting the starting
+    // state is the #61 watcher lesson — a needle already on the page cannot
+    // fail.
+    expect(
+      (await itemIds()).filter((id) => id !== "").length,
+      "a group was already assigned before any condition existed",
+    ).toBe(0);
+    await expect(
+      panel.getByText("Unassigned walls"),
+      "a lone unassigned pile should draw no heading",
+    ).toHaveCount(0);
+
+    // ── A THICKNESS THE SHEET ACTUALLY HAS, read off the panel ──
+    //
+    // Read rather than hardcoded: the fixture's wall thicknesses are the
+    // generator's business, and a number copied in here would rot the first
+    // time S02 is regenerated.
+    const inches = await groups.first().getAttribute("data-inches");
+    const thickness = Number(inches);
+    expect(Number.isFinite(thickness) && thickness > 0, `unusable thickness ${inches}`).toBe(true);
+
+    // ── NAME THE CONDITION ──
+    await setRail("toggle-items", true);
+    const items = page.locator('[data-takeoff="items-panel"]');
+    await items.locator('[data-takeoff="add-item"]').click();
+    const form = items.locator('[data-takeoff="item-form"]');
+    await form.locator('input[name="name"]').fill("ZZ Detected partition");
+    await form.locator('select[name="type"]').selectOption("LINEAR");
+    await form.getByRole("button", { name: "Add" }).click();
+    await expect(
+      items.locator('[data-takeoff="item-row"]').filter({ hasText: "ZZ Detected partition" }),
+    ).toBeVisible({ timeout: 30_000 });
+
+    // Its thickness is what the match runs on. The properties strip opens
+    // itself on create — see step 18.
+    const thicknessField = page.locator('[data-takeoff="prop-thicknessIn"]');
+    await expect(thicknessField, "no thickness field on a LINEAR condition").toBeVisible();
+    await thicknessField.fill(String(thickness));
+    await thicknessField.blur();
+    // The save is what puts the thickness where the matcher can see it, and
+    // `ActionForm` closes onto fresh data rather than on the action resolving
+    // — the 2.25-second gap CLAUDE.md records. Waiting for the item row to
+    // show the thickness is waiting for that, without a sleep.
+    await expect(items.locator('[data-takeoff="item-row"]').first()).toBeVisible();
+
+    // ── AND THE GROUPS SORT THEMSELVES UNDER IT ──
+    await findTheWalls("S02 with a condition named");
+    await setRail("toggle-panel", true);
+    await expect(panel).toBeVisible({ timeout: 20_000 });
+    await expect(
+      panel.getByText("ZZ Detected partition"),
+      "the condition never appeared as a heading over the detected groups",
+    ).toBeVisible({ timeout: 30_000 });
+
+    // THE GROUP MOVED UNDER IT, not merely a heading drawn. `data-item`
+    // carries the id the panel grouped by, so a heading with nothing beneath
+    // it — the failure that looks identical on a screenshot — fails here.
+    expect(
+      (await itemIds()).filter((id) => id !== "").length,
+      "the heading drew but no group moved under it",
+    ).toBeGreaterThan(0);
+    // Nothing was lost on the way.
+    expect(await groups.count(), "a group disappeared when the sections were drawn").toBe(before);
+
+    await expectHealthy(page, "workspace with sectioned proposals", { monitor, signedIn: false });
+    await page.screenshot({ path: path.join(SHOTS, "workspace-proposal-sections.png") });
   });
 
 });

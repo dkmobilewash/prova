@@ -851,6 +851,7 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
               printedScaleByPage={data.printedScaleByPage}
               scannedPages={data.scannedPages}
               storedWallsByPage={data.storedWallsByPage}
+              takeoffItems={data.matchableItems}
               levelByPage={data.levelByPage}
               scalePrefillByPage={data.scalePrefillByPage}
               scaleDeclineByPage={data.scaleDeclineByPage}

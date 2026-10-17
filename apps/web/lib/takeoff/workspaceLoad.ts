@@ -21,6 +21,7 @@ import type {
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import type { WallGroup } from "@/lib/takeoff/wallGroups";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
+import type { SectionItem } from "@/lib/takeoff/proposalSections";
 import { measurementScaleLabel, zoneNotices, zoneScales } from "@/lib/takeoff-zones";
 
 /**
@@ -447,6 +448,29 @@ export async function loadTakeoffWorkspace(
    * groups looks exactly like a page that has three, and the estimator has no
    * way to tell. Falling back to the Find the walls button is slow and honest.
    */
+  /**
+   * ── WHAT A LIVE MATCH NEEDS, JOINED ONCE ──
+   *
+   * Detection stores the item it matched each group to, and a group matched
+   * before any condition existed stored a null — which is the ORDINARY case,
+   * because detection fires the instant a scale is accepted and you scale a
+   * sheet to look at the drawing before you decide what you are counting.
+   * Those nulls are matched again at render time, so naming a condition sorts
+   * the groups under it without a re-run.
+   *
+   * The join happens here because this is the only place that holds both: an
+   * item stores the wall-type ID it points at, and the drawing prints that
+   * type's CODE. The matching itself is the viewer's, so the one path through
+   * a stored load and the one through a just-pressed Find the walls cannot
+   * drift apart — see `proposalSections`.
+   */
+  const codeByWallTypeId = new Map(allWallTypes.map((type) => [type.id, type.code]));
+  const matchableItems: SectionItem[] = items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    thicknessIn: item.thicknessIn,
+    assemblyCode: item.wallTypeId === null ? null : (codeByWallTypeId.get(item.wallTypeId) ?? null),
+  }));
   const storedWallsByPage: Record<number, WallGroup[]> = {};
   for (const page of plan.pages) {
     const current = page.calibrations[0] ?? null;
@@ -473,6 +497,7 @@ export async function loadTakeoffWorkspace(
           source: row.source,
           sourceLabel: row.sourceLabel,
           namedCode: row.namedCode,
+          itemId: row.itemId,
           runs: row.runs,
         })),
       allWallTypes.map((type) => ({
@@ -495,6 +520,7 @@ export async function loadTakeoffWorkspace(
     printedScaleByPage,
     scannedPages,
     storedWallsByPage,
+    matchableItems,
     levelByPage,
     scalePrefillByPage,
     scaleDeclineByPage,
@@ -601,3 +627,4 @@ export async function takeoffSavedSignature(companyId: string, jobId: string): P
     `${group._count._all}@${group._max.createdAt?.toISOString() ?? "-"}`;
   return [plan.id, part(calibrations), part(measurements), part(proposals)].join("|");
 }
+

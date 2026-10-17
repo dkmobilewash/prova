@@ -222,6 +222,8 @@ export type ProposalRow = {
   sourceLabel: string | null;
   /** The designation the evidence names — see the column's own comment. */
   namedCode: string | null;
+  /** The item detection matched, or null for a group nobody has placed. */
+  itemId?: string | null;
   runs: unknown;
 };
 
@@ -283,6 +285,7 @@ export function groupsFromProposals(
         inches: row.thicknessInches,
         runs: candidates,
         feet,
+        itemId: row.itemId ?? null,
         source: { kind: "TAG", tag },
         candidates: wallTypes.filter((type) => sameDesignation(type.code, code)),
       });
@@ -302,6 +305,7 @@ export function groupsFromProposals(
         inches: row.thicknessInches,
         runs: candidates,
         feet,
+        itemId: row.itemId ?? null,
         source: { kind: "GENERAL_NOTE", note },
         candidates: wallTypes.filter((type) => sameDesignation(type.code, code)),
       });
@@ -312,6 +316,7 @@ export function groupsFromProposals(
       inches: row.thicknessInches,
       runs: candidates,
       feet,
+      itemId: row.itemId ?? null,
       source: { kind: "REMAINDER" },
       candidates: typesAtThickness(row.thicknessInches, wallTypes),
     });
