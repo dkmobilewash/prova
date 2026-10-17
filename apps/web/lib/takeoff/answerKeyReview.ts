@@ -68,6 +68,42 @@ export function setVerdict(state: ReviewState, ids: readonly string[], verdict: 
 }
 
 /** A wall the reviewer drew because the detector missed it entirely. */
+/**
+ * A wall somebody drew by hand, as a candidate the key can hold.
+ *
+ * ── TRACED IS ACCEPTED BY DEFINITION, AND THAT IS THE WHOLE POINT ──
+ *
+ * Every other candidate starts `unreviewed` because the app proposed it. This
+ * one was drawn by the person whose judgement the key records, so there is
+ * nobody left to ask. `keyFromReview` takes the traced list without consulting
+ * a verdict for exactly that reason.
+ *
+ * ── NO THICKNESS, HONESTLY ──
+ *
+ * Two clicks give a centreline and say nothing about how thick the wall is.
+ * `thicknessIn` is null rather than a default, for the reason `candidatesFrom
+ * Sheet` gives for an unpaired line: a guess would be in the key for ever, and
+ * a key is graded against.
+ */
+export function tracedWall(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  feetPerUnit: number,
+  at: number,
+): Candidate {
+  return {
+    id: `t${at}`,
+    x1: from.x,
+    y1: from.y,
+    x2: to.x,
+    y2: to.y,
+    lengthFeet: Math.hypot(to.x - from.x, to.y - from.y) * feetPerUnit,
+    thicknessIn: null,
+    from: "single",
+    note: "traced by hand",
+  };
+}
+
 export function addTraced(state: ReviewState, wall: Candidate): ReviewState {
   return { ...state, traced: [...state.traced, wall] };
 }

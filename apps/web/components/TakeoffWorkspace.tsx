@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Spinner } from "@/components/Spinner";
 import { AnswerKeyPanel } from "@/components/AnswerKeyPanel";
 import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
-import { startReview, type ReviewState } from "@/lib/takeoff/answerKeyReview";
+import { addTraced, startReview, tracedWall, type ReviewState } from "@/lib/takeoff/answerKeyReview";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
 import { TakeoffAssemblyPanel } from "@/components/TakeoffAssemblyPanel";
@@ -604,6 +604,10 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
     Record<number, { kind: string; why: string; n: number }[]>
   >({});
   const [offerAllByPage, setOfferAllByPage] = useState<Record<number, true>>({});
+  /** Tracing armed, and whether both ends are down — per sheet, like the rest
+   *  of this mode's state. */
+  const [tracingByPage, setTracingByPage] = useState<Record<number, true>>({});
+  const [traceReady, setTraceReady] = useState(false);
   const [keyStateByPage, setKeyStateByPage] = useState<Record<number, ReviewState>>({});
   const keyState = onThisSheet(keyStateByPage, page);
   const setKeyState = useCallback(
@@ -966,6 +970,34 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
                       onFocus: setKeyFocus,
                       overlaysOn: keyOverlays,
                       offerAll: onThisSheet(offerAllByPage, page) ?? false,
+                      tracing: onThisSheet(tracingByPage, page) ?? false,
+                      onTraceReady: setTraceReady,
+                      // ── THE TRACED WALL GOES IN ACCEPTED ──
+                      //
+                      // `addTraced` has existed since this mode shipped and
+                      // nothing called it: the "written, documented and never
+                      // called" shape. A key that cannot hold a wall the
+                      // finder missed grades the detector against its own
+                      // output, which is the one thing a key must not do.
+                      onTraced: (from, to) =>
+                        setKeyStateByPage((prev) => {
+                          const current = onThisSheet(prev, page) ?? startReview([]);
+                          return setOnThisSheet(
+                            prev,
+                            page,
+                            addTraced(
+                              current,
+                              tracedWall(
+                                from,
+                                to,
+                                currentSheet?.calibration != null
+                                  ? (feetPerPageWidth(currentSheet.calibration) ?? 0)
+                                  : 0,
+                                current.traced.length,
+                              ),
+                            ),
+                          );
+                        }),
                       onSetAside: (counts) =>
                         setSetAsideByPage((prev) => setOnThisSheet(prev, page, counts)),
                       onCandidates: (candidates) => setKeyState(startReview(candidates)),
@@ -1018,6 +1050,11 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
               </div>
             ) : (
               <AnswerKeyPanel
+                tracing={onThisSheet(tracingByPage, page) ?? false}
+                onTracing={(next) =>
+                  setTracingByPage((prev) => setOnThisSheet(prev, page, next ? true : null))
+                }
+                traceReady={traceReady}
                 setAside={onThisSheet(setAsideByPage, page) ?? undefined}
                 offerAll={onThisSheet(offerAllByPage, page) ?? false}
                 onOfferAll={(next) =>

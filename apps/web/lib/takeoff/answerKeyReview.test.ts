@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addTraced,
+  tracedWall,
   candidatesInBox,
   keyFromReview,
   nextUnreviewed,
@@ -154,5 +155,69 @@ describe("the key it produces", () => {
     expect(key.reviewedAt).toBe("2026-10-17T12:00:00.000Z");
     expect(key.sheet).toEqual({ set: "Camp Bow Wow", page: 9, number: "A102" });
     expect(key.feetPerUnit).toBe(288);
+  });
+});
+
+/**
+ * ── A WALL THE FINDER MISSED, AND A LINE IT ALREADY EXPLAINED ──
+ *
+ * Two questions asked together because they are the two ends of the same
+ * promise: what a reviewer draws goes in, and what the app decided for them
+ * does not.
+ */
+describe("what can and cannot reach the key", () => {
+  const about = {
+    set: "Camp Bow Wow",
+    page: 9,
+    number: "A102",
+    reviewedBy: "diego",
+    reviewedAt: "2026-10-17T12:00:00.000Z",
+    feetPerUnit: 288,
+  };
+
+  it("A TRACED WALL IS IN THE KEY, ACCEPTED, WITH NO VERDICT NEEDED", () => {
+    // It was drawn by the person whose judgement the key records, so there is
+    // nobody left to ask.
+    const state = addTraced(
+      startReview([]),
+      tracedWall({ x: 0.1, y: 0.2 }, { x: 0.3, y: 0.2 }, 288, 0),
+    );
+    const key = keyFromReview(state, about);
+    expect(key.walls).toHaveLength(1);
+    expect(key.walls[0].lengthFeet).toBeCloseTo(0.2 * 288, 5);
+  });
+
+  it("records a traced wall's thickness as unknown rather than guessing one", () => {
+    // Two clicks give a centreline and say nothing about thickness. A default
+    // would be in the key for ever, and a key is what everything is graded
+    // against.
+    const wall = tracedWall({ x: 0, y: 0 }, { x: 0.1, y: 0 }, 288, 0);
+    expect(wall.thicknessIn).toBeNull();
+  });
+
+  it("gives each traced wall its own id, so two of them are two walls", () => {
+    let state = addTraced(startReview([]), tracedWall({ x: 0, y: 0 }, { x: 0.1, y: 0 }, 288, 0));
+    state = addTraced(state, tracedWall({ x: 0, y: 0.5 }, { x: 0.1, y: 0.5 }, 288, 1));
+    expect(new Set(state.traced.map((one) => one.id)).size).toBe(2);
+    expect(keyFromReview(state, about).walls).toHaveLength(2);
+  });
+
+  it("A LINE THAT WAS NEVER OFFERED CANNOT BE IN THE KEY", () => {
+    // The 136 lines A102 sets aside are not candidates at all: they have no
+    // verdict to be `wall`, so there is no path from a hatch line to a key
+    // except being offered and then accepted by hand.
+    const offered = [candidate("c1", 20)];
+    const state = startReview(offered);
+    expect(keyFromReview(state, about).walls).toHaveLength(0);
+    const accepted = setVerdict(state, ["c1"], "wall");
+    expect(keyFromReview(accepted, about).walls).toHaveLength(1);
+  });
+
+  it("an offered line still starts unreviewed, so offering is not accepting", () => {
+    // "Offer these too" puts the set-aside lines back on the list. It does not
+    // decide about them — that is the whole shape of this mode.
+    const state = startReview([candidate("c1", 20), candidate("c2", 30, "single")]);
+    expect(progressOf(state).reviewed).toBe(0);
+    expect(keyFromReview(state, about).walls).toHaveLength(0);
   });
 });

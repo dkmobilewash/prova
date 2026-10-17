@@ -440,6 +440,18 @@ export function TakeoffPlanViewer({
     /** Offer every unpaired line, including the ones the classifier named.
      *  The reviewer's own override for the filter above. */
     offerAll?: boolean;
+    /**
+     * Tracing is armed: the next two clicks on the sheet are the ends of a
+     * wall the drawing has no candidate for.
+     *
+     * The panel owns the arming and the shortcut, because that is where the
+     * reviewer's hands are and where every other key in this mode lives.
+     */
+    tracing?: boolean;
+    /** A wall the reviewer drew, ready to go into the key as accepted. */
+    onTraced?: (from: { x: number; y: number }, to: { x: number; y: number }) => void;
+    /** Both ends are down and Enter will commit — for the panel's prompt. */
+    onTraceReady?: (ready: boolean) => void;
   };
   scaleDeclineByPage?: ScaleDeclineByPage;
   /**
@@ -902,6 +914,53 @@ export function TakeoffPlanViewer({
     }
   }, [answerKey, candidatesFromLastDetect]);
 
+  /** The ends of the wall being traced in answer-key mode, in page-width
+   *  units. `traceTo` set means both ends are down and Enter will commit. */
+  const [traceFrom, setTraceFrom] = useState<{ x: number; y: number } | null>(null);
+  const [traceTo, setTraceTo] = useState<{ x: number; y: number } | null>(null);
+
+  /**
+   * ── ENTER COMMITS THE TRACED WALL, ESCAPE ABANDONS IT ──
+   *
+   * Here and not in the panel, although every other key in this mode is the
+   * panel's: these two are about the two points held in THIS component's
+   * state, and routing them through a prop would mean the panel deciding
+   * something it cannot see.
+   *
+   * Only while tracing is armed and both ends are down, so Escape still means
+   * what it means everywhere else in this viewer the rest of the time.
+   */
+  useEffect(() => {
+    if (answerKey?.tracing !== true) return;
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (
+        target !== null &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+      ) {
+        return;
+      }
+      if (event.key === "Enter" && traceFrom !== null && traceTo !== null) {
+        event.preventDefault();
+        answerKey?.onTraced?.(traceFrom, traceTo);
+        setTraceFrom(null);
+        setTraceTo(null);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        setTraceFrom(null);
+        setTraceTo(null);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  // The panel's prompt follows the points, so it says "press Enter" only when
+  // Enter would do something.
+  useEffect(() => {
+    answerKey?.onTraceReady?.(traceFrom !== null && traceTo !== null);
+  }, [traceFrom, traceTo, answerKey]);
+
   /** The box being dragged in answer-key mode, in page-width units. */
   const [keyBox, setKeyBox] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(
     null,
@@ -1174,6 +1233,26 @@ export function TakeoffPlanViewer({
     //
     // Before the `drawing` guard, because review mode is not a drawing tool
     // and must work with no tool selected.
+    // ── TRACING TAKES THE CLICK BEFORE THE SELECTION BOX DOES ──
+    //
+    // A drag in review mode selects; a click while tracing is armed is one end
+    // of a wall. Tracing is checked first because it is an explicit mode the
+    // reviewer turned on, and a selection box is the default.
+    if (answerKey?.tracing === true && !drawing) {
+      const raw = pointAt(event);
+      if (!raw) return;
+      event.preventDefault();
+      // SNAPPED like every other point this viewer places, so a wall traced
+      // along a drawn one lands on it rather than near it.
+      const point = placePoint(raw, traceFrom, event.shiftKey);
+      if (traceFrom === null) {
+        setTraceFrom(point);
+        setTraceTo(null);
+      } else {
+        setTraceTo(point);
+      }
+      return;
+    }
     if (answerKey !== undefined && !drawing) {
       const raw = pointAt(event);
       if (!raw) return;
@@ -3043,6 +3122,32 @@ export function TakeoffPlanViewer({
                       />
                     );
                   })}
+                  {/* ── THE ONE BEING TRACED, BEFORE IT IS COMMITTED ──
+                      Dashed, because it is not in the key yet; in the accepted
+                      colour, because that is what Enter will make it. */}
+                  {traceFrom !== null && (
+                    <>
+                      <line
+                        data-takeoff="key-trace-preview"
+                        x1={traceFrom.x}
+                        y1={traceFrom.y}
+                        x2={(traceTo ?? traceFrom).x}
+                        y2={(traceTo ?? traceFrom).y}
+                        stroke={VERDICT_COLOURS.wall}
+                        strokeWidth={STROKE_PX * 2}
+                        strokeDasharray="6 4"
+                        strokeLinecap="round"
+                        vectorEffect="non-scaling-stroke"
+                      />
+                      <circle
+                        cx={traceFrom.x}
+                        cy={traceFrom.y}
+                        r={STROKE_PX * 2}
+                        fill={VERDICT_COLOURS.wall}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    </>
+                  )}
                   {answerKey.state.traced.map((one) => (
                     <line
                       key={one.id}

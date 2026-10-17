@@ -44,6 +44,12 @@ export type AnswerKeyPanelProps = {
   /** Whether every unpaired line is being offered, and how to change it. */
   offerAll?: boolean;
   onOfferAll?: (next: boolean) => void;
+  /** Tracing armed, and how to arm it. A wall the drawing has no candidate
+   *  for is drawn on the sheet itself — see `tracing` on the viewer. */
+  tracing?: boolean;
+  onTracing?: (next: boolean) => void;
+  /** Both ends are down, so Enter will commit. */
+  traceReady?: boolean;
 };
 
 // The colours live in `answerKeyReview.ts` — a plain module — so that
@@ -56,6 +62,9 @@ export function AnswerKeyPanel({
   setAside,
   offerAll,
   onOfferAll,
+  tracing,
+  onTracing,
+  traceReady,
   state,
   onState,
   focusedId,
@@ -122,6 +131,15 @@ export function AnswerKeyPanel({
       } else if (key === "h") {
         event.preventDefault();
         onOverlays(!overlaysOn);
+      } else if (key === "t") {
+        // ── T ARMS TRACING ──
+        //
+        // The one thing a reviewer cannot do by deciding about candidates: a
+        // wall the drawing shows and the finder never proposed has nothing to
+        // accept. Two clicks on the sheet and Enter adds it, already accepted
+        // — see `tracedWall`.
+        event.preventDefault();
+        onTracing?.(!tracing);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -178,6 +196,35 @@ export function AnswerKeyPanel({
         <p className="mt-1 text-[11px] text-ink-muted">
           Nothing counts until you say so. Everything below is a candidate.
         </p>
+      </div>
+
+      {/* ── TRACING: THE WALL WITH NO CANDIDATE ON IT ──
+
+          Every other control here decides about something the app proposed.
+          This is for the wall it missed, which is the one thing a reviewer
+          cannot otherwise record — and a key that cannot hold a missed wall
+          grades the detector against its own output. */}
+      <div className="rounded-md border border-line-card bg-surface p-2">
+        <button
+          type="button"
+          onClick={() => onTracing?.(!tracing)}
+          data-takeoff="key-trace"
+          className={
+            tracing
+              ? "text-[11px] font-medium text-ink"
+              : "text-[11px] text-link hover:text-link-hover"
+          }
+        >
+          {tracing ? "Tracing — click both ends" : "Trace a missed wall"}
+          <span className="ml-1 text-ink-muted">(t)</span>
+        </button>
+        {tracing && (
+          <p className="mt-1 text-[11px] text-ink-muted" data-takeoff="key-trace-hint">
+            {traceReady
+              ? "Press Enter to add it as an accepted wall. Escape to start over."
+              : "Click the start of the wall, then its end."}
+          </p>
+        )}
       </div>
 
       {/* ── WHAT WAS SET ASIDE, AND HOW TO SEE IT ANYWAY ──
