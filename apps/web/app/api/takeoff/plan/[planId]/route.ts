@@ -1,3 +1,6 @@
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { isLocalPlanUrl, localPlanPath } from "@/lib/plan-ingest/localPlanFile";
 import { NextResponse } from "next/server";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
@@ -52,6 +55,47 @@ export async function GET(request: Request, { params }: { params: Promise<{ plan
   // Range is forwarded so pdf.js can fetch a page at a time out of a large
   // set instead of pulling the whole file before it draws anything.
   const range = request.headers.get("range");
+
+  // ── A PLAN HELD ON THIS MACHINE ──
+  //
+  // For reviewing a client's confidential drawings without putting them in
+  // shared storage — see `localPlanFile.ts` for the gate, which refuses in
+  // production whatever is configured.
+  //
+  // RANGE IS HONOURED HERE TOO, and it is not a nicety: one of these sets is
+  // 342 MB. Reading it whole on every request is the difference between a
+  // viewer that pages and one that stalls, which is the same reason the blob
+  // path forwards the header.
+  if (isLocalPlanUrl(plan.fileUrl)) {
+    const path = localPlanPath(plan.fileUrl, process.env);
+    if (path === null) {
+      return NextResponse.json({ error: "That drawing could not be read." }, { status: 404 });
+    }
+    let size: number;
+    try {
+      size = (await stat(path)).size;
+    } catch {
+      return NextResponse.json({ error: "That drawing could not be read." }, { status: 404 });
+    }
+    const asked = range === null ? null : /bytes=(\d*)-(\d*)/.exec(range);
+    const start = asked && asked[1] !== "" ? Number(asked[1]) : 0;
+    const end = asked && asked[2] !== "" ? Math.min(Number(asked[2]), size - 1) : size - 1;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= size) {
+      return new NextResponse(null, { status: 416, headers: { "content-range": `bytes */${size}` } });
+    }
+    const stream = createReadStream(path, { start, end }) as unknown as ReadableStream<Uint8Array>;
+    return new NextResponse(stream, {
+      status: asked ? 206 : 200,
+      headers: {
+        "content-type": "application/pdf",
+        "content-length": String(end - start + 1),
+        "accept-ranges": "bytes",
+        ...(asked ? { "content-range": `bytes ${start}-${end}/${size}` } : {}),
+        "cache-control": "no-store",
+      },
+    });
+  }
+
   const upstream = await fetch(plan.fileUrl, {
     headers: range ? { range } : undefined,
     cache: "no-store",

@@ -66,6 +66,8 @@ type Props = {
   data: TakeoffWorkspaceData & object;
   savedAt: string;
   openPage: number;
+  /** Open straight into answer-key review, from `?key=1`. */
+  openAnswerKey?: boolean;
 };
 
 const KEYS: { keys: string; does: string }[] = [
@@ -139,7 +141,7 @@ function writeStored(key: string, value: string): void {
   }
 }
 
-export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Props) {
+export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, openAnswerKey }: Props) {
   // Width is STATE, not only a media query: a drawer needs to know it is a
   // drawer, and a backdrop that exists only in CSS cannot be closed by Escape.
   const [width, setWidth] = useState<number>(() =>
@@ -566,7 +568,7 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
   // finding becomes a question — so it must never be the state a workspace
   // opens in. The candidates arrive from the VIEWER, which is the only place
   // holding the raw geometry the unpaired lines are found in.
-  const [keyMode, setKeyMode] = useState(false);
+  const [keyMode, setKeyMode] = useState(openAnswerKey ?? false);
   const [keyState, setKeyState] = useState<ReviewState | null>(null);
   const [keyFocus, setKeyFocus] = useState<string | null>(null);
   const [keyOverlays, setKeyOverlays] = useState(true);

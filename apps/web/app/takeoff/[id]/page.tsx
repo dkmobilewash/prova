@@ -31,10 +31,10 @@ export default async function TakeoffWorkspacePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; key?: string }>;
 }) {
   const { id } = await params;
-  const { page } = await searchParams;
+  const { page, key } = await searchParams;
   const { context, allowed } = await requireCapability("VIEW_JOB_COSTS");
   if (!allowed) return <NoAccess capability="VIEW_JOB_COSTS" />;
   const { company, job } = await requireJobGivenContext(id, context);
@@ -76,6 +76,11 @@ export default async function TakeoffWorkspacePage({
       // an empty canvas: a stale link in somebody's notes should still show a
       // drawing.
       openPage={sheetPages.has(openPage) ? openPage : (data.sheets[0]?.pageNumber ?? 1)}
+      /* ── ANSWER-KEY MODE FROM THE URL ──
+         So a review session can be opened on the right sheet in one link,
+         rather than remembering to press a toggle that changes what every
+         colour on the overlay MEANS. It is off unless the link says so. */
+      openAnswerKey={key === "1"}
     />
   );
 }
