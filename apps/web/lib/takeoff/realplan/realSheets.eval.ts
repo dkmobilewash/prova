@@ -16,7 +16,7 @@ import {
   viewsWithOwnScale,
   wallsPerView,
 } from "../sheetViews";
-import { clusterByThickness, type StrokeSegment } from "../wallVectors";
+import { clusterByThickness, type StrokeSegment, type WallCandidate } from "../wallVectors";
 
 /**
  * ── THE WHOLE SET, NOT ONE SHEET: WHICH SHEETS ARE FLOOR PLANS, AND WHAT THE
@@ -144,6 +144,8 @@ type SheetReport = {
   refused: string;
   /** How many strokes it carried, which is why it was refused. */
   segmentCount: number;
+  /** How long the whole sheet took, read end to end. */
+  ms: number;
   /** The overlay's file name under REAL_PLAN_OUT, when one was written. */
   overlay: string;
 };
@@ -356,9 +358,11 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
             duplicateDropped: 0,
             refused: "",
             segmentCount: 0,
+            ms: 0,
             overlay: "",
           };
 
+          const sheetStarted = Date.now();
           if (verdict.ok) {
             const feetPerUnit = (text.widthPt / 72) * verdict.feetPerInch;
             report.feetPerUnit = feetPerUnit;
@@ -379,7 +383,8 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
             } catch (err) {
               report.refused = err instanceof Error ? err.message.slice(0, 120) : String(err).slice(0, 120);
               report.segmentCount = segments.length;
-              reports.push(report);
+              report.ms = Date.now() - sheetStarted;
+          reports.push(report);
               continue;
             }
             if (views.length >= 2) {
@@ -459,6 +464,7 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
             // depend on any view being trusted first.
             const scaled = viewsWithOwnScale(allViews, pageSize.widthPt);
             const measured: { name: string; scale: string | null; feet: number; runs: number }[] = [];
+            const allWalls: WallCandidate[] = [];
             let totalFeet = 0;
             let totalRuns = 0;
             for (const { view, feetPerUnit } of scaled) {
@@ -478,6 +484,7 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
                   sampledSheets: null,
                 });
                 const feet = found.walls.reduce((n, w) => n + w.lengthFeet, 0);
+                allWalls.push(...found.walls);
                 measured.push({ name: view.name, scale: view.scaleName, feet, runs: found.walls.length });
                 totalFeet += feet;
                 totalRuns += found.walls.length;
@@ -486,6 +493,16 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
               }
             }
             if (measured.length > 0) {
+              // AN OVERLAY FOR THIS PATH TOO. A sheet measured from its view
+              // captions is the one most worth LOOKING at — it is the weaker
+              // evidence — and it was the only path that produced no picture.
+              const svg = `${label.replace(/[^A-Za-z0-9_-]+/g, "_")}-p${sheet.page}.svg`;
+              writeFileSync(
+                join(OUT, svg),
+                overlaySvg(segments, allWalls, pageSize, pageSize.widthPt),
+                "utf8",
+              );
+              report.overlay = svg;
               report.views = measured;
               report.totalFeet = totalFeet;
               report.runs = totalRuns;
@@ -496,6 +513,7 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
               report.scaleHow = `${measured.length} view${measured.length === 1 ? "" : "s"} measured at their own captioned scale`;
             }
           }
+          report.ms = Date.now() - sheetStarted;
           reports.push(report);
         }
       } finally {
@@ -531,7 +549,7 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
         say("");
         continue;
       }
-      say(`   walls        ${r.totalFeet.toFixed(0)} ft over ${r.runs} runs`);
+      say(`   walls        ${r.totalFeet.toFixed(0)} ft over ${r.runs} runs   (${r.ms} ms)`);
       if (r.views.length > 0) {
         for (const v of r.views) {
           say(`     view       ${v.name} @ ${v.scale ?? "?"} — ${v.feet.toFixed(0)} ft, ${v.runs} runs`);
