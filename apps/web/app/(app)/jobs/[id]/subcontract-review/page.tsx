@@ -7,6 +7,8 @@ import { NotLegalAdvice } from "@/components/NotLegalAdvice";
 import { SubcontractReviewPanel } from "@/components/SubcontractReviewPanel";
 import { SubcontractFindingCard } from "@/components/SubcontractFindingCard";
 import { SubcontractScopeCheck } from "@/components/SubcontractScopeCheck";
+import { SubcontractRiderPanel } from "@/components/SubcontractRiderPanel";
+import { SubcontractDeadlines } from "@/components/SubcontractDeadlines";
 import { citationLabel, groupByCategory, SEVERITY_WORD, severityCounts } from "@/lib/subcontract-review/findings";
 import { describePageRuns } from "@/lib/subcontract-review/pageText";
 import { loadReviewPage } from "@/lib/subcontract-review/query";
@@ -40,7 +42,7 @@ export default async function SubcontractReviewPage({
 
   const data = await loadReviewPage(id, context.company.id, version);
   if (!data) notFound();
-  const { job, versions, selected, review, previous, scope, decisions } = data;
+  const { job, versions, selected, review, previous, scope, decisions, followThrough } = data;
 
   const changeByKey = new Map<string, "NEW" | "CHANGED" | "UNCHANGED">();
   if (previous) {
@@ -93,6 +95,7 @@ export default async function SubcontractReviewPage({
                   }`}
                 >
                   v{option.versionNumber}
+                  {option.isRider ? " · our rider" : ""}
                   {option.executed ? " · executed" : ""}
                 </Link>
               ))}
@@ -170,6 +173,13 @@ export default async function SubcontractReviewPage({
               )}
 
               {scope && <SubcontractScopeCheck jobId={job.id} scope={scope} decisions={decisions} />}
+
+              {review.state !== "RUNNING" && (
+                <>
+                  <SubcontractDeadlines jobId={job.id} followThrough={followThrough} />
+                  <SubcontractRiderPanel jobId={job.id} riders={followThrough.riders} />
+                </>
+              )}
 
               {review.findings.length === 0 && review.state === "COMPLETE" && (
                 <p className="mb-6 rounded-lg border border-line-card bg-surface p-4 text-sm text-ink-body">

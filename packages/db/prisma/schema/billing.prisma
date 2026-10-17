@@ -131,6 +131,8 @@ model ContractDocument {
   docuSignEnvelopeSigned  DocuSignEnvelope?  @relation("DocuSignEnvelopeSigned")
   /// AI reviews of this version before signing — subcontract-review.prisma.
   subcontractReviews      SubcontractReview[]
+  /// Set when this version IS a subcontract rider we attached.
+  subcontractRider        SubcontractRider?
 
   @@unique([jobId, versionNumber])
   @@index([jobId])

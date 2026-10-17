@@ -48,6 +48,10 @@ const appDir = fileURLToPath(new URL("..", import.meta.url));
 const KNOWN_EXCEPTIONS: Record<string, string> = {
   "components/RowActions.tsx":
     "the shared component itself — this is where the arming state is supposed to live",
+  "components/SubcontractRiderPanel.tsx":
+    "`confirmAttach` arms ATTACHING a rider as a contract version, not a delete — nothing is removed, and the " +
+    "rider's real delete IS a <ConfirmDelete> inside <RowActions> in the same file. The ordinary actions beside the " +
+    "attach confirm (Save, Print preview) staying live is harmless: neither files or removes anything.",
   /* The three sales rows (SalesActivityRow, SalesLeadRow,
      SalesOpportunityRow) sat here from #176 until they became <RowActions>.
      Removing them was tried once before that, when #183 landed, and the

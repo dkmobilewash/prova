@@ -4,6 +4,8 @@ import { SOURCE_ROLE_LABEL, type SourceRole } from "./run";
 import { describePageRuns } from "./pageText";
 import { scopeReport, type ScopeReport } from "./scopeCheck";
 import { buildSummary, type ReviewSummary } from "./summary";
+import { proposeObligation, type ObligationProposal } from "./obligations";
+import { proposeInsurance, type InsuranceProposal } from "./insurance";
 
 /**
  * Everything the review page shows for one contract version, read once.
@@ -55,7 +57,53 @@ export type ScopeCheckView = {
   sourceLabel: string;
 };
 
-export type VersionOption = { id: string; versionNumber: number; fileName: string; executed: boolean };
+export type VersionOption = { id: string; versionNumber: number; fileName: string; executed: boolean; isRider: boolean };
+
+export type RiderView = {
+  id: string;
+  status: "DRAFT" | "ATTACHED";
+  title: string;
+  body: string;
+  attachedVersionNumber: number | null;
+  attachedAt: Date | null;
+  createdAt: Date;
+};
+
+export type ObligationView = {
+  id: string;
+  kind: "NOTICE_WINDOW" | "MONTHLY_DAY" | "DATED";
+  label: string;
+  windowHours: number | null;
+  windowDays: number | null;
+  dayOfMonth: number | null;
+  dueOn: string | null;
+  recipient: string | null;
+  form: string | null;
+  quote: string | null;
+  pageStart: number | null;
+};
+
+export type InsuranceView = {
+  id: string;
+  coverage: string;
+  coverageLabel: string | null;
+  limitPerOccurrence: number | null;
+  limitAggregate: number | null;
+  endorsements: string[];
+  completedOpsYears: number | null;
+  notes: string | null;
+  quote: string | null;
+  pageStart: number | null;
+};
+
+/** What Phase 3 shows: the person's own records, and what the findings propose. */
+export type FollowThrough = {
+  riders: RiderView[];
+  obligations: ObligationView[];
+  insurance: InsuranceView[];
+  proposedObligations: { findingKey: string; quote: string; pageStart: number; proposal: ObligationProposal }[];
+  proposedInsurance: { findingKey: string; quote: string; pageStart: number; proposal: InsuranceProposal }[];
+};
 
 export type ReviewPageData = {
   job: { id: string; name: string };
@@ -70,6 +118,7 @@ export type ReviewPageData = {
   summary: ReviewSummary | null;
   /** Decisions on scope gaps, by key (gaps are not findings). */
   decisions: DecisionView[];
+  followThrough: FollowThrough;
 };
 
 const REVIEW_SELECT = {
@@ -189,7 +238,13 @@ export async function loadReviewPage(
       name: true,
       contractDocuments: {
         orderBy: { versionNumber: "desc" },
-        select: { id: true, versionNumber: true, fileName: true, executedSignedDate: true },
+        select: {
+          id: true,
+          versionNumber: true,
+          fileName: true,
+          executedSignedDate: true,
+          subcontractRider: { select: { id: true } },
+        },
       },
     },
   });
@@ -200,10 +255,25 @@ export async function loadReviewPage(
     versionNumber: doc.versionNumber,
     fileName: doc.fileName,
     executed: doc.executedSignedDate !== null,
+    isRider: doc.subcontractRider !== null,
   }));
-  const selected = versions.find((version) => version.id === versionId) ?? versions[0] ?? null;
+  // Default to the newest version that is not one of OUR riders: attaching a
+  // rider makes it the newest version, and the review a person came back for
+  // is of the GC's contract, not of our own rider.
+  const selected =
+    versions.find((version) => version.id === versionId) ?? versions.find((version) => !version.isRider) ?? versions[0] ?? null;
   if (!selected) {
-    return { job: { id: job.id, name: job.name }, versions, selected: null, review: null, previous: null, scope: null, summary: null, decisions: [] };
+    return {
+      job: { id: job.id, name: job.name },
+      versions,
+      selected: null,
+      review: null,
+      previous: null,
+      scope: null,
+      summary: null,
+      decisions: [],
+      followThrough: await loadFollowThrough(job.id, null),
+    };
   }
 
   const [row, decisionRows] = await Promise.all([
@@ -259,7 +329,85 @@ export async function loadReviewPage(
     );
   }
 
-  return { job: { id: job.id, name: job.name }, versions, selected, review, previous, scope, summary, decisions };
+  return {
+    job: { id: job.id, name: job.name },
+    versions,
+    selected,
+    review,
+    previous,
+    scope,
+    summary,
+    decisions,
+    followThrough: await loadFollowThrough(job.id, review),
+  };
+}
+
+/** Phase 3's rows, plus what the current review's findings propose that the
+ *  person has not already confirmed (or dismissed). */
+async function loadFollowThrough(jobId: string, review: ReviewView | null): Promise<FollowThrough> {
+  const [riders, obligations, insurance] = await Promise.all([
+    prisma.subcontractRider.findMany({
+      where: { jobId },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        status: true,
+        title: true,
+        body: true,
+        attachedAt: true,
+        createdAt: true,
+        attachedContractDocument: { select: { versionNumber: true } },
+      },
+    }),
+    prisma.subcontractObligation.findMany({ where: { jobId }, orderBy: { confirmedAt: "asc" } }),
+    prisma.subcontractInsuranceRequirement.findMany({ where: { jobId }, orderBy: { confirmedAt: "asc" } }),
+  ]);
+  const confirmedKeys = new Set([...obligations, ...insurance].map((row) => row.findingKey).filter(Boolean));
+  const live = (review?.findings ?? []).filter((f) => f.status !== "DISMISSED" && !confirmedKeys.has(f.key));
+  return {
+    riders: riders.map((rider) => ({
+      id: rider.id,
+      status: rider.status,
+      title: rider.title,
+      body: rider.body,
+      attachedVersionNumber: rider.attachedContractDocument?.versionNumber ?? null,
+      attachedAt: rider.attachedAt,
+      createdAt: rider.createdAt,
+    })),
+    obligations: obligations.map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      label: row.label,
+      windowHours: row.windowHours,
+      windowDays: row.windowDays,
+      dayOfMonth: row.dayOfMonth,
+      dueOn: row.dueOn ? row.dueOn.toISOString().slice(0, 10) : null,
+      recipient: row.recipient,
+      form: row.form,
+      quote: row.quote,
+      pageStart: row.pageStart,
+    })),
+    insurance: insurance.map((row) => ({
+      id: row.id,
+      coverage: row.coverage,
+      coverageLabel: row.coverageLabel,
+      limitPerOccurrence: row.limitPerOccurrence?.toNumber() ?? null,
+      limitAggregate: row.limitAggregate?.toNumber() ?? null,
+      endorsements: row.endorsements,
+      completedOpsYears: row.completedOpsYears,
+      notes: row.notes,
+      quote: row.quote,
+      pageStart: row.pageStart,
+    })),
+    proposedObligations: live.flatMap((f) => {
+      const proposal = proposeObligation(f);
+      return proposal ? [{ findingKey: f.key, quote: f.quote, pageStart: f.pageStart, proposal }] : [];
+    }),
+    proposedInsurance: live.flatMap((f) => {
+      const proposal = proposeInsurance(f);
+      return proposal ? [{ findingKey: f.key, quote: f.quote, pageStart: f.pageStart, proposal }] : [];
+    }),
+  };
 }
 
 /** The bid and job facts the scope check compares against. Reads only. */

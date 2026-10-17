@@ -769,6 +769,16 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     models: ["SubcontractReview", "SubcontractReviewSource", "SubcontractFinding", "SubcontractScopeCheck", "SubcontractFindingDecision"],
   },
   {
+    key: "subcontract-follow-through",
+    title: "Subcontract riders, and the deadlines and insurance asks you confirmed from a review",
+    detail:
+      "Rider drafts (an attached rider is ALSO a contract version, and that file IS exported), the notice " +
+      "windows and deadlines you confirmed — which drive this job's alerts — and the insurance requirements you " +
+      "confirmed. All three are your own records rather than a model's, and they are the half of the subcontract " +
+      "review worth exporting first; omitted only because no dataset has been written for them yet.",
+    models: ["SubcontractRider", "SubcontractObligation", "SubcontractInsuranceRequirement"],
+  },
+  {
     key: "bid-spec-readings",
     title: "The spec sections logged on each bid, and what was read off them",
     detail:

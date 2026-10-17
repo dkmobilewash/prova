@@ -136,7 +136,48 @@ test.describe("AI subcontract review", () => {
     await page.goto(reviewUrl);
   });
 
-  test("7. starting a review on a file outside our store is refused with a sentence, and nothing changes", async () => {
+  test("7. the 48-hour notice is proposed as a deadline, and once confirmed it is on the alerts page", async () => {
+    const proposed = page.locator(`[data-subcontract-proposed-obligation="${notice.key}"]`);
+    await expect(proposed).toBeVisible();
+    await expect(proposed.locator('input[name="label"]')).toHaveValue("48-hour delay notice");
+    await expect(proposed.locator('input[name="windowHours"]')).toHaveValue("48");
+    await settleAction(page, () => proposed.getByRole("button", { name: "Confirm" }).click());
+    const deadlines = page.locator('[data-subcontract-review="deadlines"]');
+    await expect(deadlines).toContainText("48-hour delay notice — in writing, to the Project Manager.");
+    await expect(proposed).toHaveCount(0);
+
+    await page.goto("/alerts");
+    await expectHealthy(page, "/alerts with a subcontract deadline", { monitor });
+    await expect(page.getByText(`48-hour delay notice applies on ${SUBCONTRACT_REVIEW_JOB}`).first()).toBeVisible();
+    await page.goto(reviewUrl);
+  });
+
+  test("8. a rider drafts from our exclusions and the negotiated term, saves an edit, and previews for print", async () => {
+    const rider = page.locator('[data-subcontract-review="rider"]');
+    await settleAction(page, () => rider.locator('[data-subcontract-review="rider-create"]').click());
+    const body = rider.locator('[data-subcontract-review="rider-body"]');
+    await expect(body).toHaveValue(new RegExp(SEEDED_CLAUSES.fireCaulking.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    // Pay-if-paid was marked Negotiating in step 3, so its position is carried.
+    await expect(body).toHaveValue(/Section 3\.2: Ask for pay-when-paid with an outside date of 60 days\./);
+
+    await body.fill(`${await body.inputValue()}\n- ZZ-E2E hand-added line.`);
+    await settleAction(page, () => rider.getByRole("button", { name: "Save" }).click());
+    await expect(rider.getByText("Saved.")).toBeVisible();
+
+    // Attaching is confirmed in two steps and says it sends nothing. Pressed in
+    // the db suite, not here: CI's e2e job has no blob store to write the PDF to.
+    await rider.locator('[data-subcontract-review="rider-attach"]').click();
+    await expect(rider).toContainText("It is not sent to anyone.");
+    await rider.getByRole("button", { name: "Cancel" }).click();
+
+    await rider.locator('[data-subcontract-review="rider-print"]').click();
+    await expectHealthy(page, "/jobs/[id]/subcontract-review/rider/[riderId]", { monitor });
+    await expect(page.locator('[data-subcontract-review="rider-document"]')).toContainText("ZZ-E2E hand-added line.");
+    await expect(page.locator('[data-subcontract-review="not-legal-advice"]')).toBeVisible();
+    await page.goto(reviewUrl);
+  });
+
+  test("9. starting a review on a file outside our store is refused with a sentence, and nothing changes", async () => {
     await page.getByRole("button", { name: "Run the review again on this version" }).click();
     await page.locator('[data-subcontract-review="start"]').click();
     await expect(page.locator('[data-subcontract-review="error"]')).toBeVisible();

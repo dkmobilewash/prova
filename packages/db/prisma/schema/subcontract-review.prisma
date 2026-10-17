@@ -272,3 +272,148 @@ model SubcontractScopeCheck {
   @@unique([reviewId, key])
   @@index([sourceId])
 }
+
+// ── Phase 3: what a person does with the findings ───────────────────────────
+//
+// Three tables, and every row in them is written by a PERSON pressing a
+// button — never by the model, never by a review run. A finding PROPOSES an
+// obligation or an insurance requirement; nothing exists until it is
+// confirmed. All keyed on Job with CASCADE, the same argument as the review.
+
+enum SubcontractRiderStatus {
+  /// Editable. Not a contract document yet.
+  DRAFT
+  /// Rendered to a PDF and filed as a ContractDocument version. Frozen: a
+  /// change after this is a new rider, because the attached file is what the
+  /// GC may sign.
+  ATTACHED
+}
+
+/// A draft "Subcontract Rider" carrying our exclusions, clarifications and
+/// negotiated positions back to the GC. Assembled by code from the job's
+/// proposal clauses and the findings a person marked NEGOTIATED, then edited
+/// freely. Attaching it files it as a NEW ContractDocument version (decided
+/// 2026-10-17), which is what puts it in reach of the existing e-sign and
+/// DocuSign paths — sending stays a person's press, there as everywhere.
+model SubcontractRider {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  /// The review it was drafted from — plain id, so deleting a review never
+  /// takes a rider (possibly already signed) with it.
+  sourceReviewId String?
+
+  status SubcontractRiderStatus @default(DRAFT)
+  title  String
+  /// Plain text, one paragraph per line; a line starting "## " is a heading.
+  /// The person's own words once edited — the draft is only a starting point.
+  body   String
+  /// Clause ids and finding keys the draft was assembled from, for "where did
+  /// this line come from".
+  sourceKeys String[]
+
+  /// Set when attached. SET NULL rather than cascade: deleting the version
+  /// must not delete the rider's text.
+  attachedContractDocumentId String?           @unique
+  attachedContractDocument   ContractDocument? @relation(fields: [attachedContractDocumentId], references: [id], onDelete: SetNull)
+  attachedAt                 DateTime?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([jobId])
+}
+
+enum SubcontractObligationKind {
+  /// "Written notice of delay within 48 hours" — a RULE with no date of its
+  /// own. Surfaces as a STANDING alert on the job for as long as it exists.
+  NOTICE_WINDOW
+  /// A recurring day of the month — "applications by the 20th".
+  MONTHLY_DAY
+  /// One date a person entered — "certificates before mobilization, 11/3".
+  DATED
+}
+
+/// A deadline the subcontract imposes, confirmed by a person from a finding.
+/// The alerts system reads these (`subcontractObligationAlerts`); alerts
+/// themselves are never stored.
+model SubcontractObligation {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  /// The finding it was confirmed from, and its words, SNAPSHOTTED: the
+  /// obligation must still say where it came from after a re-run.
+  findingKey String?
+  quote      String?
+  pageStart  Int?
+
+  kind  SubcontractObligationKind
+  label String
+
+  windowHours Int?
+  windowDays  Int?
+  /// 1-31; a month shorter than this uses its last day.
+  dayOfMonth  Int?
+  /// UTC midnight, ENTERED by the person (CLAUDE.md, Dates).
+  dueOn       DateTime?
+
+  recipient String?
+  form      String?
+
+  confirmedByUserId String?
+  confirmedAt       DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([jobId])
+}
+
+/// The coverages this subcontract asks for, in the vocabulary
+/// `CompanyInsurancePolicy.policyType` already uses plus the ones a
+/// subcontract asks for that a sub's own policy list does not name.
+enum SubcontractCoverage {
+  GENERAL_LIABILITY
+  WORKERS_COMP
+  AUTO
+  UMBRELLA_EXCESS
+  PROFESSIONAL
+  POLLUTION
+  BUILDERS_RISK
+  OTHER
+}
+
+enum SubcontractEndorsement {
+  ADDITIONAL_INSURED
+  PRIMARY_NONCONTRIBUTORY
+  WAIVER_OF_SUBROGATION
+}
+
+/// One insurance ask, confirmed by a person from a finding — a clean list the
+/// COI work can match against later. Nothing reads it yet, deliberately: no
+/// broker workflow, no certificate check (Phase 3 brief).
+model SubcontractInsuranceRequirement {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  findingKey String?
+  quote      String?
+  pageStart  Int?
+
+  coverage           SubcontractCoverage
+  /// The person's words when `coverage` is OTHER, or a qualifier.
+  coverageLabel      String?
+  limitPerOccurrence Decimal?                 @db.Decimal(14, 2)
+  limitAggregate     Decimal?                 @db.Decimal(14, 2)
+  endorsements       SubcontractEndorsement[]
+  completedOpsYears  Int?
+  notes              String?
+
+  confirmedByUserId String?
+  confirmedAt       DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([jobId])
+}

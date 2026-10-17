@@ -66,6 +66,7 @@ export const SEEDED_FINDINGS = [
     explanation: "Miss the 48-hour window and you lose the right to more time or money for that delay.",
     suggestedPosition: "Ask for 7 days, and for notice by email to the PM to count.",
     questionForGc: null,
+    terms: { noticeHours: 48, noticeRecipient: "the Project Manager", noticeForm: "in writing" },
   },
   // Phase 2: the figures the scope check compares, each verified to be in its quote.
   {
@@ -178,6 +179,9 @@ export async function seedSubcontractReview(persona: { id: string; email: string
 
   // Replace, never reuse: the spec mutates decisions.
   await prisma.subcontractFindingDecision.deleteMany({ where: { jobId: job.id } });
+  await prisma.subcontractObligation.deleteMany({ where: { jobId: job.id } });
+  await prisma.subcontractInsuranceRequirement.deleteMany({ where: { jobId: job.id } });
+  await prisma.subcontractRider.deleteMany({ where: { jobId: job.id } });
   await prisma.subcontractReview.deleteMany({ where: { jobId: job.id } });
   await prisma.contractDocument.deleteMany({ where: { jobId: job.id } });
   await prisma.contractDocumentVersionCounter.deleteMany({ where: { jobId: job.id } });

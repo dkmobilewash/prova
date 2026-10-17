@@ -85,6 +85,8 @@ const APPROVED = ["formatHoursOrNull", "formatHours", "formatLoggedHours", "hour
  * below and forces the decision to be made again.
  */
 const NOT_AN_HOURS_NUMBER: Record<string, string> = {
+  "lib/subcontract-review/obligations.ts\t{hours}":
+    "A contract's NOTICE WINDOW in whole hours ('48-hour delay notice'), read off the clause and verified to be in its quote — an integer the person can edit, never a sum of worked hours.",
   // -- a COUNT that happens to have "hours" in its name --
   "app/(app)/catalog/page.tsx\t{actuals.linesExcludedUnpricedHours}":
     "A count of catalog LINES excluded for having unpriced hours, not a quantity of hours. lib/catalog-actuals.ts: finished.length - priced.length.",

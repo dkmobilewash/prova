@@ -368,3 +368,45 @@ Decisions §11 1–5 were taken as recommended. #6 is open until Phase 3.
 - The e2e spec gained steps 5 and 6: the scope section, and the summary page.
 
 **Not proved:** the paid eval has never run. It now also fails on a clause read as carried that is not, and reports whether the planted contradiction is found.
+
+---
+
+## Status: Phase 3 built (2026-10-17)
+
+Decision §11 #6 was taken as recommended: the rider is filed as a normal ContractDocument version.
+
+**Built:**
+
+- **The rider.** It is drafted by code (`rider.ts`) from:
+  - the job's EXCLUSION and CLARIFICATION clauses;
+  - every finding marked NEGOTIATED, in its effective (edited) position.
+
+  The person edits it as plain text and previews it at `/jobs/[id]/subcontract-review/rider/[riderId]`. Attaching writes a PDF server-side (`riderPdf.ts`, pdf-lib) to `contracts/<jobId>/`, which is exactly where `documentUrlProblem("contract-document")` and the DocuSign path expect a version's file. It is numbered by `issueContractDocumentVersion` inside the same transaction.
+  - If the database half fails, the blob is deleted.
+  - An attached rider is frozen.
+  - The review page defaults to the newest version that is *not* our rider.
+  - The disclaimer is shown on the rider's screen and hidden on paper. That paper is the GC's document, so the sentence would be addressed to the wrong reader.
+- **Obligations → alerts.** `SubcontractObligation` rows are confirmed by a person, with every field editable. Proposals come from NOTICE findings with a verified window and BILLING findings whose quote names a day of the month.
+  - The builder lives in `obligationAlerts.ts`. The shared alerts files gained only a kind, a capability, a horizon, a label and one fetch block before `visibleToPrincipal`. That change was announced in `#prova-build` before the push.
+  - A notice window is **STANDING**, never dated. The event that starts its clock (a delay) is the existing `DELAY_GC_NOT_TOLD` alert's business, and this does not duplicate it.
+- **Insurance asks.** `SubcontractInsuranceRequirement` rows are confirmed by a person.
+  - Coverage and endorsements are read by code from the quote's words; limits come from verified figures.
+  - Nothing reads these rows yet, per the brief: no broker workflow, no COI matching.
+
+**Proved:**
+
+- `followThrough.test.ts`: the rider draft, a PDF round trip, obligation proposals, next-occurrence dates, alert severities, insurance proposals, and the enum parity with Prisma.
+- `subcontractFollowThrough.dbtest.ts`, on a real Postgres:
+  - the rider issued as v2 by the counter, with its file valid as a contract document;
+  - the saved text in the PDF;
+  - a frozen rider refusing edits, a second attach and deletion;
+  - a store failure filing nothing;
+  - both alert severities from `loadAlerts`;
+  - another company's row refused.
+- e2e steps 7–8: the deadline confirmed and visible on `/alerts`; the rider drafted, edited and previewed. **Attach is not pressed in CI:** the e2e job has no blob store, so the db suite proves it instead.
+
+**Not proved:**
+
+- The paid eval has never run.
+- No person has clicked any of the three phases.
+- A real DocuSign send of an attached rider is untested. It is the existing `CONTRACT_DOCUMENT` path, unchanged.

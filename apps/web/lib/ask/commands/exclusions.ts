@@ -80,6 +80,11 @@ export const notYetRegistered: Exclusion[] = [
       "Reading a sub's quote. It spends the company's paid document allowance on a file, and what it returns is a SUGGESTION a person corrects in the form before saving — so a command would either spend money on a prompt's say-so or hand the model's own reading straight to `saveBidQuote`, which is the one thing this feature is built not to do. The estimator uploads the quote where they log it. Never a command.",
   },
   {
+    action: "subcontractFollowThrough.*",
+    reason:
+      "Drafting, editing and attaching a subcontract rider, and confirming the deadlines and insurance asks a subcontract review found. Excluded for `subcontractReview.*`'s reason and a sharper one of its own: attaching a rider FILES A NEW CONTRACT VERSION — the document a GC may sign — and confirming an obligation decides what the alerts system will chase. Both are a person's reading of their own contract, pressed beside the clause's words on the review page; a prompt that could file a contract version on a sentence a model composed is the exact shortcut this feature exists to refuse. Never a command.",
+  },
+  {
     action: "subcontractReview.*",
     reason:
       "Reviewing a GC's subcontract before signing, and deciding about each finding. Excluded for `specRead.*`'s reasons and one sharper than either. Starting and advancing a review spends the paid subcontract-page allowance on a contract that can run past a hundred pages, so a command would spend real money on a prompt's say-so. And the decisions — accepted as written, dismissed, negotiating — are a person's judgement about what they are about to SIGN: the feature exists so that every finding is read beside the contract's own words before anybody marks it, and an Ask card that could accept a pay-if-paid clause on a sentence a model composed is the exact shortcut the review screen is built to refuse. The person runs and decides the review on the job's subcontract-review page. Never a command.",

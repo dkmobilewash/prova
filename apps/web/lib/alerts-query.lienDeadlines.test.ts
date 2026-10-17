@@ -73,6 +73,7 @@ vi.mock("@prova/db", () => ({
     // let a new query into the alert engine with nothing exercising it.
     das140Notice: { findMany: empty },
     das142Request: { findMany: empty },
+    subcontractObligation: { findMany: empty },
     lienDeadline: {
       findMany: async ({ where }: { where: Record<string, unknown> }) => {
         lienWheres.push(where);

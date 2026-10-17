@@ -221,6 +221,8 @@ const SHELL_WITHOUT_PAGE_HEADER: Record<string, string> = {
     "A job's subcontract review, headed by the job it belongs to with a back link — the proposal page's shape.",
   "apps/web/app/(app)/jobs/[id]/subcontract-review/[reviewId]/summary/page.tsx":
     "A printable one-page summary of a subcontract review.",
+  "apps/web/app/(app)/jobs/[id]/subcontract-review/rider/[riderId]/page.tsx":
+    "A printable subcontract rider — the document the GC receives.",
 };
 
 describe("page width census", () => {
