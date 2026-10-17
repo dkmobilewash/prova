@@ -30,6 +30,92 @@ hand-rolled copies, and Ask reporting a bid $1,732.50 under the estimate).
 
 ---
 
+## ONE PAGE: the whole design, and what needs confirming
+
+Added 2026-10-16 at Diego's request. Everything below this section is the
+evidence; this is the decision.
+
+### The models
+
+```
+TakeoffItem ──< TakeoffMeasurement          geometry, per sheet
+  (NEW)             (3 new columns)
+     │
+     └─ wallType ──< WallTypeComponent      the assembly and its parts
+        (EXISTS)         (EXISTS)                 ↑ both already shipped
+                              │
+                              └─ JobLineItem.wallTypeComponentId
+                                    (EXISTS — the estimate line)
+```
+
+| model | status | what it is |
+| --- | --- | --- |
+| **TakeoffItem** | **NEW — the only new table** | a named, coloured condition: `name`, `type` (linear/area/count/segment/area-with-perimeter), `colorHex`, `lineStyle`, properties (`heightFt`, `sides`, `thicknessIn`, `wastePercent`, `spacingIn`, `depthIn`), and the assembly it uses |
+| **TakeoffMeasurement** | +3 columns | `itemId`, `source` (MANUAL/DETECTED/IMPORTED), `confidence`, `cutouts` |
+| **Assembly** | exists as `WallType` | company-level: `code`, `name`, default height/sides/thickness/spacing |
+| **Part** | exists as `WallTypeComponent` | `description`, `unit`, `basis`, `factor`, `wastePercent`, `roundUp`, `costCategory`, `catalogEntryId`, `productionRate`, `craftClassificationId` |
+| **Price book** | exists as `LineItemCatalogEntry` | company-level unit price, budgeted cost, labour hours, craft, cost code |
+| **Estimate line** | exists as `JobLineItem` | carries `wallTypeComponentId` — already the two-way link |
+
+### The formula
+
+A part's quantity is **`basis × factor × (1 + waste)`**, optionally rounded up.
+`basis` is an enum of tested geometry functions — not a string anybody parses.
+
+| want | write |
+| --- | --- |
+| studs at 16" o.c. | basis `STUDS`, factor 1 — spacing comes from the item |
+| track, top and bottom | basis `LINEAR_FT`, factor 2 |
+| drywall both sides, 10% waste | basis `BOARDED_SQFT`, factor 1, waste 10 |
+| insulation, one face | basis `FACE_SQFT`, factor 1 |
+| one bead per run | basis `PER_RUN`, factor 1 |
+| *(to add)* ceiling tile | basis `AREA_SQFT` |
+| *(to add)* wall angle | basis `PERIMETER_FT` |
+| *(to add)* slab concrete | basis `VOLUME_CY` — area × depth ÷ 27 |
+
+**Both of the brief's own examples already work**: `studs = LF × 0.75 + corners`
+is `STUDS`, and `drywall SF = LF × height × sides × (1 + waste)` is
+`BOARDED_SQFT`. No parser is being built. §4 says what would make that change.
+
+### How an item becomes estimate lines
+
+1. Somebody draws with an item → `TakeoffMeasurement` rows.
+2. The item's quantities are computed from those plus the sheet's calibration
+   — **never stored**.
+3. For each part of the item's assembly: `basis × factor × (1 + waste)`.
+4. `lib/estimating/wall-schedule.ts` writes that to `JobLineItem`, in the same
+   transaction, under three rules it already follows today:
+   - **update in place** by `wallTypeComponentId` — only quantity and labour
+     hours move, so **a price the estimator typed is never overwritten**;
+   - **create from the catalog** — price, cost, craft and trade come from
+     `LineItemCatalogEntry`, marked `priceBasis: COMPANY_CATALOG`;
+   - **soft-delete** what is gone, so history keeps it and totals drop it.
+5. Edit the measurement → the quantity moves. Edit the price → it stays.
+
+### Detection
+
+A detected wall group is matched to an item by, in order: the drawing's wall
+tag equals the assembly `code`; the tag equals the item `name`; thickness
+within 1/8". No match → `itemId` null → **"Unassigned walls"**, which is one
+click from becoming an item.
+
+### DECISIONS TO CONFIRM — these are mine, not the brief's
+
+| # | I decided | the brief implied | why |
+| --- | --- | --- | --- |
+| 1 | **No formula language.** Four more enum values instead. | a safe parsed formula language | both your examples already work; a parser is a lexer, validator, error reporter and security review for what an enum does. §4 names what would reverse this |
+| 2 | **No project-level copy of the library.** One nullable `Job.assemblyLibraryPinnedAt` instead. | assemblies copied into a project on use | a line's price is already written once and frozen by `EstimateVersion`; a copy would be a third place a price lives |
+| 3 | **Keep the tables named `WallType`/`WallTypeComponent`** through Phases 1–2; rename the Prisma model to `Assembly` with `@@map` at the start of Phase 3. | assemblies as a new thing | the rename moves no data, and a wide mechanical diff under new UI work is how a merge conflict eats a day |
+| 4 | **No `isVisible` column** on the item — localStorage. | a visible toggle on the item | per-viewer convenience; a stored one is a fourth thing two tabs can disagree about |
+| 5 | **Bookmarks in localStorage too** (shipped in Phase 1). | not specified | two estimators on one job want different ones; sharing them is a model and a migration |
+| 6 | **Add `TakeoffPlan.updatedAt`** in this project's migration. | not mentioned | AUDIT.md already records its absence as a shortcut, and this is the takeoff migration it was waiting for |
+| 7 | **`colorHex` is a raw hex string**, not a design token. | "color + line style" | it marks user data on a drawing the user chose the colour for; the palette offered is tokens |
+
+If you disagree with any of 1–3 it changes Phase 3's shape, so those are the
+ones worth an answer before Phase 2 finishes. 4–7 are cheap to reverse.
+
+---
+
 ## 1. Audit of the current models
 
 Every field below was read out of `packages/db/prisma/schema/` on 2026-10-16.

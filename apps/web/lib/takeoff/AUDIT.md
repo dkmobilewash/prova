@@ -631,6 +631,56 @@ anybody will read first.
 
 ---
 
+## BLOCKER FOR PHASE 4: detection takes 102 seconds on a real sheet
+
+Status check asked for and answered 2026-10-16. **Not fixed, and nothing has
+touched it.** `git diff` over `wallVectors.ts`, `findWallsOnSheet.ts`,
+`curvedWalls.ts`, `mergeWalls.ts` and `joinCorners.ts` since the measurement
+is EMPTY — Phase 1 of the workspace was user interface only, as its brief
+required.
+
+| | Camp Bow Wow A102 | Eleven03 A4.B.1 |
+| --- | ---: | ---: |
+| first render | 501 ms | 386 ms |
+| full resolution | 517 ms | 1,677 ms |
+| **Find the walls** | **102,134 ms** | **14,973 ms** |
+| slowest zoom step | 229 ms | 246 ms |
+| pan | 156 ms | 160 ms |
+
+**And the same quantity from the other side: A101 is REFUSED outright.**
+`MAX_PAIR_TESTS` is 40,000,000 and `SheetTooDenseError` is thrown above it;
+Camp Bow Wow's A101 carries 12,179 wall-length lines and does not get a
+number at all. A102 is just under the bar and takes a minute and a half.
+
+**Why this is a Phase 4 blocker rather than a Phase 2 one.** Phases 2 and 3
+are items, tools and assemblies — a person drawing, and arithmetic over what
+they drew. Neither waits on the wall finder. Phase 4 is where detection
+proposes INTO items, and a feature whose first step is a ninety-second pause
+on the sheet an estimator actually prices is not shippable, however correct
+its output.
+
+**What is NOT yet known, and should be measured before anyone optimises.**
+Nobody has profiled it. The 102 seconds is wall-clock from the button to the
+result, in the browser, on the main thread — it is not known how much is
+pairing, how much is the curve assembly, how much is the duplicate-coverage
+pass, or how much is `clusterByThickness`. The quadratic pair test is the
+obvious suspect precisely because `MAX_PAIR_TESTS` exists, which is a reason
+to measure it rather than a reason to assume it.
+
+Three directions, cheapest first, none of them started:
+
+  1. **Profile it.** One run under the profiler names the stage. Everything
+     below is speculation until that exists.
+  2. **Get it off the main thread.** A worker would not make it faster but
+     would stop it freezing the canvas, which is most of what makes 102
+     seconds feel broken rather than slow.
+  3. **Make the pairing sub-quadratic** — a spatial index over the segments,
+     so a line is only tested against neighbours. That is what would also
+     lift the A101 refusal, since the refusal and the slowness are one
+     problem measured two ways.
+
+---
+
 ## The full-screen takeoff workspace, 2026-10-16
 
 `/takeoff/[id]`, outside the `(app)` route group so there is no shell to take

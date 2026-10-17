@@ -1,15 +1,12 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  openPlanPdf,
-  TITLE_BLOCK_BOTTOM_FRACTION,
-  TITLE_BLOCK_RIGHT_FRACTION,
-} from "../../plan-ingest/planPdf";
+import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { dimensionLabels, metricDimensionLabels } from "../../plan-ingest/dimensionLabels";
 import { readSheetScale } from "../scaleFromDimensions";
 import { findWallsOnSheet, type SheetTextItem } from "../findWallsOnSheet";
 import { sheetSuitability } from "../sheetSuitability";
+import { nameSheet } from "./nameSheet";
 import { primaryView, sheetViews, viewRegions, viewsInRegions, wallsPerView } from "../sheetViews";
 import { clusterByThickness, type StrokeSegment } from "../wallVectors";
 
@@ -118,49 +115,6 @@ type SheetReport = {
   overlay: string;
 };
 
-const SHEET_NO = /^[A-Z]{1,3}[-.]?\d{1,3}(?:[.-]\d{1,2})?[A-Z]?$/;
-
-/**
- * Title-block BOILERPLATE. Every office prints a different set of it and all of
- * it crowds out the one line that names the drawing.
- */
-const BOILER =
-  /^(issued for|date|drawn by|checked|designed|job no|project\s*(#|no|number)|sheet\s*(title|number|name|no)|scale|revision|rev|no\.|by|description|approved|©|copyright|all rights|exp|issue|of)\b/i;
-
-/**
- * ── THE SHEET'S OWN NAME, READ BY GLYPH HEIGHT ──
- *
- * `titleBlockText` returns the region's words in reading order, and on a real
- * set that is the wrong thing: this eval first fed it to `sheetSuitability` and
- * got titles like "ITEM DESCRIPTION NYSDOT REF. DEPTH" and "DRAWN BY: MC
- * CHECKED BY: BBL PROJECT #: 23-2637". Nothing matched a title rule, so every
- * sheet defaulted to "floor plan" and the run measured a pavement-item table, a
- * lap-splice schedule and a wall-type detail sheet.
- *
- * A title block is laid out by SIZE: the sheet number is the biggest lettering
- * in it and the drawing's name is the next biggest. Reading it that way, with
- * the boilerplate filtered, named all five sets correctly — which is how the
- * floor plans in this folder were identified in the first place.
- *
- * Recorded here rather than fixed in `titleBlockText`, because that function
- * feeds the ingest pipeline and changing what it returns is a separate change
- * with its own blast radius.
- */
-function nameSheet(items: readonly { str: string; x: number; y: number; height: number }[], page: { widthPt: number; heightPt: number }): { number: string; title: string } {
-  const inBlock = items.filter(
-    (i) => i.x >= page.widthPt * TITLE_BLOCK_RIGHT_FRACTION && i.y >= page.heightPt * TITLE_BLOCK_BOTTOM_FRACTION,
-  );
-  const bySize = [...inBlock].sort((a, b) => b.height - a.height);
-  const numbered = bySize.filter((i) => SHEET_NO.test(i.str.trim().replace(/\s+/g, "")));
-  const number = (numbered[0]?.str ?? "").trim().replace(/\s+/g, "");
-  const title = bySize
-    .slice(0, 24)
-    .map((i) => i.str.trim())
-    .filter((w) => w.length > 2 && !/^[\d.\-/'" ]+$/.test(w) && !BOILER.test(w) && !SHEET_NO.test(w.replace(/\s+/g, "")))
-    .slice(0, 6)
-    .join(" ");
-  return { number, title };
-}
 
 /**
  * An SVG overlay: the drawing's own strokes in grey, the runs the finder
