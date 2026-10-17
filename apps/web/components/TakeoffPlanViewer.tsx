@@ -448,6 +448,9 @@ export function TakeoffPlanViewer({
      * reviewer's hands are and where every other key in this mode lives.
      */
     tracing?: boolean;
+    /** Arm or disarm tracing — the `t` shortcut lives in the viewer, because
+     *  the panel it used to live in is not mounted until candidates exist. */
+    onTracing?: (next: boolean) => void;
     /** A wall the reviewer drew, ready to go into the key as accepted. */
     onTraced?: (from: { x: number; y: number }, to: { x: number; y: number }) => void;
     /** Both ends are down and Enter will commit — for the panel's prompt. */
@@ -918,6 +921,16 @@ export function TakeoffPlanViewer({
    *  units. `traceTo` set means both ends are down and Enter will commit. */
   const [traceFrom, setTraceFrom] = useState<{ x: number; y: number } | null>(null);
   const [traceTo, setTraceTo] = useState<{ x: number; y: number } | null>(null);
+  /**
+   * Where the next click would land, snapped — redrawn as the pointer moves.
+   *
+   * Without it the first click is blind: a reviewer could not see WHICH line
+   * their click was about to grab, and snapping that cannot be seen reads as a
+   * click that landed in the wrong place.
+   */
+  const [traceHover, setTraceHover] = useState<{ x: number; y: number } | null>(null);
+  /** The wall just added, for a confirmation that says what it measured. */
+  const [traceAdded, setTraceAdded] = useState<string | null>(null);
 
   /**
    * ── ENTER COMMITS THE TRACED WALL, ESCAPE ABANDONS IT ──
@@ -930,6 +943,40 @@ export function TakeoffPlanViewer({
    * Only while tracing is armed and both ends are down, so Escape still means
    * what it means everywhere else in this viewer the rest of the time.
    */
+  /**
+   * ── T ARMS TRACING, AND IT HAS TO LIVE HERE ──
+   *
+   * It was in `AnswerKeyPanel`, with the other shortcuts, and that panel is
+   * only rendered once there are candidates — so before Find the walls had
+   * run, the key did nothing at all and nothing said why. Reported from the
+   * workspace as "I press t and there is no visual change".
+   *
+   * The viewer is mounted whenever answer-key mode is on, so the shortcut is
+   * too. The panel keeps its button, which is the visible half of the same
+   * affordance.
+   */
+  useEffect(() => {
+    if (answerKey === undefined) return;
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (
+        target !== null &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+      ) {
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key.toLowerCase() !== "t") return;
+      event.preventDefault();
+      answerKey?.onTracing?.(answerKey?.tracing !== true);
+      setTraceFrom(null);
+      setTraceTo(null);
+      setTraceHover(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   useEffect(() => {
     if (answerKey?.tracing !== true) return;
     function onKey(event: KeyboardEvent) {
@@ -940,15 +987,24 @@ export function TakeoffPlanViewer({
       ) {
         return;
       }
+      if (event.key !== "Enter" && event.key !== "Escape") return;
       if (event.key === "Enter" && traceFrom !== null && traceTo !== null) {
         event.preventDefault();
         answerKey?.onTraced?.(traceFrom, traceTo);
+        // SAYS WHAT IT MEASURED, not just that something happened: a wall
+        // added at the wrong length is the failure worth catching in the
+        // second it takes to read, rather than in the key a week later.
+        const feet =
+          Math.hypot(traceTo.x - traceFrom.x, traceTo.y - traceFrom.y) * (feetPerUnit ?? 0);
+        setTraceAdded(feet > 0 ? formatFeetInches(feet) : null);
         setTraceFrom(null);
         setTraceTo(null);
+        setTraceHover(null);
       } else if (event.key === "Escape") {
         event.preventDefault();
         setTraceFrom(null);
         setTraceTo(null);
+        setTraceHover(null);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -3017,6 +3073,37 @@ export function TakeoffPlanViewer({
         }
         data-testid="takeoff-plan-port"
       >
+        {/* ── THE BANNER THAT SAYS TRACING IS ON, AND WHAT TO DO NEXT ──
+
+            Over the plan rather than in the rail, because that is where the
+            eyes are while clicking — and because the whole defect being fixed
+            was a mode with no visible state. It says the NEXT action rather
+            than the current one: a prompt that reads "tracing" leaves somebody
+            wondering what to do with it.
+
+            `pointer-events-none` so it can never swallow a click meant for the
+            drawing underneath it. */}
+        {answerKey?.tracing === true && traceAdded === null && (
+          <div
+            data-takeoff="key-trace-banner"
+            className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-md border border-line-card bg-ink px-3 py-1.5 text-xs font-medium text-canvas shadow-lg"
+          >
+            {traceFrom === null
+              ? "Tracing wall: click the start (Esc to cancel)"
+              : traceTo === null
+                ? "Click the end of the wall (Esc to cancel)"
+                : "Press Enter to add, Esc to cancel"}
+          </div>
+        )}
+        {/* And what the last Enter did, which fades on the next action. */}
+        {answerKey !== undefined && traceAdded !== null && (
+          <div
+            data-takeoff="key-trace-added"
+            className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-md border border-line-card bg-tag-green px-3 py-1.5 text-xs font-medium text-tag-green-ink shadow-lg"
+          >
+            Wall added, {traceAdded}
+          </div>
+        )}
         {loadError ? (
           <p className="p-6 text-sm text-tag-rose-ink">{loadError}</p>
         ) : (
@@ -3041,8 +3128,21 @@ export function TakeoffPlanViewer({
                   ? "cursor-crosshair touch-none"
                   : "pointer-events-none"
               }`}
+              data-takeoff={answerKey?.tracing === true ? "tracing-surface" : undefined}
               onPointerDown={onPointerDown}
               onPointerMove={(event) => {
+                // ── WHERE THE NEXT CLICK WOULD GO ──
+                //
+                // Before the first click this is the only thing on screen, and
+                // it is what makes the snap visible: a reviewer can see the
+                // point jump onto the line it will grab rather than discover
+                // it afterwards.
+                if (answerKey?.tracing === true) {
+                  const raw = pointAt(event);
+                  if (raw) setTraceHover(placePoint(raw, traceFrom, event.shiftKey));
+                  if (traceAdded !== null) setTraceAdded(null);
+                  if (traceTo !== null) return;
+                }
                 if (keyBox !== null) {
                   const raw = pointAt(event);
                   if (raw) setKeyBox({ ...keyBox, x2: raw.x, y2: raw.y });
@@ -3091,6 +3191,101 @@ export function TakeoffPlanViewer({
                   line nobody has ruled on. Clicking one focuses it; the panel
                   does the deciding. Hidden entirely when the reviewer presses
                   H, which is the only way to read the drawing underneath. */}
+              {/* ── TRACING IS AN ACTION, NOT AN OVERLAY OF RESULTS ──
+
+                  Deliberately outside the `overlaysOn` gate below. The old
+                  preview was inside it, so a reviewer who had pressed `h` to
+                  clear the sheet and then started tracing saw nothing at all —
+                  and "nothing at all" is exactly what was reported.
+
+                  EVERY SIZE HERE IS IN SCREEN PIXELS, converted through
+                  `cssWidth`, so a dot stays a dot at 500% zoom. The viewBox is
+                  one unit wide, so one screen pixel is `1 / cssWidth` of it.
+                  Strokes use `vectorEffect` for the same reason. */}
+              {answerKey?.tracing === true &&
+                (() => {
+                  const px = (n: number) => n / Math.max(cssWidth, 1);
+                  const end = traceTo ?? traceHover;
+                  const live =
+                    traceFrom !== null && end !== null
+                      ? Math.hypot(end.x - traceFrom.x, end.y - traceFrom.y) * (feetPerUnit ?? 0)
+                      : null;
+                  return (
+                    <g data-takeoff="key-trace-layer">
+                      {/* Where the next click lands, snapped. */}
+                      {traceFrom === null && traceHover !== null && (
+                        <circle
+                          data-takeoff="key-trace-snap"
+                          cx={traceHover.x}
+                          cy={traceHover.y}
+                          r={px(6)}
+                          fill="none"
+                          stroke={VERDICT_COLOURS.wall}
+                          strokeWidth={STROKE_PX}
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      )}
+                      {/* The rubber band: solid while it follows the pointer,
+                          dashed once both ends are down and Enter is next. */}
+                      {traceFrom !== null && end !== null && (
+                        <line
+                          data-takeoff="key-trace-preview"
+                          x1={traceFrom.x}
+                          y1={traceFrom.y}
+                          x2={end.x}
+                          y2={end.y}
+                          stroke={VERDICT_COLOURS.wall}
+                          strokeWidth={STROKE_PX * 2}
+                          strokeDasharray={traceTo !== null ? "6 4" : undefined}
+                          strokeLinecap="round"
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      )}
+                      {traceFrom !== null && (
+                        <circle
+                          data-takeoff="key-trace-start"
+                          cx={traceFrom.x}
+                          cy={traceFrom.y}
+                          r={px(4)}
+                          fill={VERDICT_COLOURS.wall}
+                        />
+                      )}
+                      {traceTo !== null && (
+                        <circle
+                          cx={traceTo.x}
+                          cy={traceTo.y}
+                          r={px(4)}
+                          fill={VERDICT_COLOURS.wall}
+                        />
+                      )}
+                      {/* The length as it is drawn, in feet and inches —
+                          the number an estimator is actually deciding about. */}
+                      {live !== null && live > 0 && end !== null && (
+                        <>
+                          <rect
+                            x={(traceFrom!.x + end.x) / 2 + px(10)}
+                            y={(traceFrom!.y + end.y) / 2 - px(17)}
+                            width={px(74)}
+                            height={px(19)}
+                            rx={px(3)}
+                            fill="#0f0f0f"
+                            opacity={0.85}
+                          />
+                          <text
+                            data-takeoff="key-trace-length"
+                            x={(traceFrom!.x + end.x) / 2 + px(16)}
+                            y={(traceFrom!.y + end.y) / 2 - px(4)}
+                            fill="#ffffff"
+                            fontSize={px(13)}
+                            fontFamily="ui-sans-serif, system-ui, sans-serif"
+                          >
+                            {formatFeetInches(live)}
+                          </text>
+                        </>
+                      )}
+                    </g>
+                  );
+                })()}
               {answerKey !== undefined && answerKey.overlaysOn && (
                 <g data-takeoff="key-overlay">
                   {answerKey.state.candidates.map((one) => {
@@ -3122,32 +3317,6 @@ export function TakeoffPlanViewer({
                       />
                     );
                   })}
-                  {/* ── THE ONE BEING TRACED, BEFORE IT IS COMMITTED ──
-                      Dashed, because it is not in the key yet; in the accepted
-                      colour, because that is what Enter will make it. */}
-                  {traceFrom !== null && (
-                    <>
-                      <line
-                        data-takeoff="key-trace-preview"
-                        x1={traceFrom.x}
-                        y1={traceFrom.y}
-                        x2={(traceTo ?? traceFrom).x}
-                        y2={(traceTo ?? traceFrom).y}
-                        stroke={VERDICT_COLOURS.wall}
-                        strokeWidth={STROKE_PX * 2}
-                        strokeDasharray="6 4"
-                        strokeLinecap="round"
-                        vectorEffect="non-scaling-stroke"
-                      />
-                      <circle
-                        cx={traceFrom.x}
-                        cy={traceFrom.y}
-                        r={STROKE_PX * 2}
-                        fill={VERDICT_COLOURS.wall}
-                        vectorEffect="non-scaling-stroke"
-                      />
-                    </>
-                  )}
                   {answerKey.state.traced.map((one) => (
                     <line
                       key={one.id}

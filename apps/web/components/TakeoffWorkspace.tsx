@@ -971,6 +971,11 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
                       overlaysOn: keyOverlays,
                       offerAll: onThisSheet(offerAllByPage, page) ?? false,
                       tracing: onThisSheet(tracingByPage, page) ?? false,
+                      // `t` is handled in the viewer, because the panel that
+                      // used to own it is not mounted until candidates exist —
+                      // so before a find, the key did nothing and said nothing.
+                      onTracing: (next) =>
+                        setTracingByPage((prev) => setOnThisSheet(prev, page, next ? true : null)),
                       onTraceReady: setTraceReady,
                       // ── THE TRACED WALL GOES IN ACCEPTED ──
                       //
