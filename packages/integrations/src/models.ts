@@ -67,6 +67,8 @@ export const AI_FEATURES = {
   WALL_CLASSIFY: "wall-classify",
   /** Reading the lettering off a SCANNED sheet, which has no text layer. */
   SHEET_TEXT: "sheet-text",
+  /** Reading a GC subcontract and its exhibits before the sub signs. */
+  SUBCONTRACT_REVIEW: "subcontract-review",
 } as const;
 
 export type AiFeatureKey = keyof typeof AI_FEATURES;
@@ -122,6 +124,10 @@ const FEATURE_MODEL: Record<AiFeatureKey, string> = {
   // and nobody has tried. `SHEET_TEXT_MODEL` on the eval is how that would be
   // shown rather than argued.
   SHEET_TEXT: OPUS_5,
+  // Opus, for QUOTE_EXTRACT's reason: a few contracts a month, not three hundred
+  // sheets, so the cheap model saves little — and what it would risk is a
+  // misread pay-when-paid clause on a document somebody is about to sign.
+  SUBCONTRACT_REVIEW: OPUS_5,
   // Opus, and the volume argument that bought Haiku above does not reach here.
   // This runs on the sheets that HAVE walls, a handful per plan set and a few
   // crops each, not on three hundred pages — and what it decides is whether a

@@ -45,7 +45,10 @@ import { can, canReach, JOB_FUNCTIONS, type Principal } from "./permissions";
  *
  * Adding a third source of alert hrefs means adding it here, and the size
  * assertion below fails by name until you do. */
-const SOURCES = ["./alerts.ts", "./renewals.ts"] as const;
+// The third source: SUBCONTRACT_OBLIGATION's builder lives with its feature
+// (lib/subcontract-review/obligationAlerts.ts) so the shared alerts module
+// gained a kind and nothing else.
+const SOURCES = ["./alerts.ts", "./renewals.ts", "./subcontract-review/obligationAlerts.ts"] as const;
 
 const sources = SOURCES.map((rel) => ({
   name: rel.replace("./", ""),

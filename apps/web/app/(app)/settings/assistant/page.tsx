@@ -195,6 +195,23 @@ export default async function AssistantAuditPage() {
               of each other — so reading a drawing set, a GC&apos;s addendum or a spec section cannot
               spend the allowance the same job&apos;s paperwork needs.
             </p>
+            <p className="mb-3 text-sm text-ink-body" data-ask="allowance-contract-pages">
+              Subcontract reviews have their own:{" "}
+              <span className="text-ink-label">
+                {allowance.contractPagesLeft} of {allowance.contractPageCeiling} subcontract pages
+              </span>{" "}
+              left, {allowance.contractPagesUsed}{" "}
+              {allowance.contractPagesUsed === 1 ? "page" : "pages"} used. Only pages with text on them are
+              read and counted — a scanned page is listed as unread and costs nothing.
+              {allowance.failedContractPages > 0 && (
+                <>
+                  {" "}
+                  {allowance.failedContractPages}{" "}
+                  {allowance.failedContractPages === 1 ? "page was" : "pages were"} claimed for a read that then
+                  failed — counted rather than given back; contact C Stream and a person will credit it.
+                </>
+              )}
+            </p>
             <p className="mb-3 text-sm text-ink-body">
               A question costs one question. A file costs its real page count on top — a PDF is counted
               page by page, a photo is one page, and a PDF whose page count can&apos;t be read is charged

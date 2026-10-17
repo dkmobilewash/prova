@@ -207,6 +207,21 @@ const REACHED_FROM: Record<string, Reached> = {
     parents: ["apps/web/components/BidWizardSteps.tsx"],
     needle: "/items`",
   },
+  "/jobs/[id]/subcontract-review": {
+    reason: "Review before signing, on each version in the Overview tab's Subcontract agreement section.",
+    parents: ["apps/web/app/(app)/jobs/[id]/(tabs)/page.tsx"],
+    needle: "/subcontract-review?version=",
+  },
+  "/jobs/[id]/subcontract-review/[reviewId]/summary": {
+    reason: "The one-page summary link on the subcontract review.",
+    parents: ["apps/web/app/(app)/jobs/[id]/subcontract-review/page.tsx"],
+    needle: "/summary`",
+  },
+  "/jobs/[id]/subcontract-review/rider/[riderId]": {
+    reason: "Print preview on the rider panel of the subcontract review.",
+    parents: ["apps/web/components/SubcontractRiderPanel.tsx"],
+    needle: "/subcontract-review/rider/${",
+  },
   "/jobs/[id]/proposal": {
     reason: "The proposal link on the job's Estimate tab.",
     parents: ["apps/web/app/(app)/jobs/[id]/(tabs)/estimate/page.tsx"],

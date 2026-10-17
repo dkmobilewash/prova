@@ -39,6 +39,7 @@ export const ALERT_KIND_LABELS: Record<AlertKind, string> = {
   // where the difference is which form has to go out.
   DAS140_NOTICE: "DAS 140",
   DAS142_DISPATCH: "DAS 142",
+  SUBCONTRACT_OBLIGATION: "Subcontract deadline",
 };
 
 export function kindLabel(kind: AlertKind) {

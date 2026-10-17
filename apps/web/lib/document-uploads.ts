@@ -166,6 +166,7 @@ export const DOCUMENT_UPLOAD_PURPOSES = [
   "bid-addendum",
   "bid-spec-section",
   "bid-package",
+  "subcontract-review-source",
 ] as const;
 
 export type DocumentUploadPurpose = (typeof DOCUMENT_UPLOAD_PURPOSES)[number];
@@ -269,6 +270,23 @@ export const DOCUMENT_UPLOAD_TARGETS: Record<DocumentUploadPurpose, DocumentUplo
     // key of this table.
     capability: "MANAGE_JOBS",
     refusal: "Managing jobs isn't part of your job function.",
+    maxBytes: DOCUMENT_UPLOAD_MAX_BYTES,
+  },
+  "subcontract-review-source": {
+    // An EXHIBIT read beside a contract version — scope of work, insurance
+    // requirements, general conditions. Its own folder rather than
+    // `contracts/`: these are not contract versions, and a later
+    // contract-document record must never be able to pick one up as one.
+    root: "subcontract-review",
+    scope: "job",
+    // Gated for `bid-quote`'s reason: the action this token feeds sends the
+    // file's text to a model against the paid monthly allowance.
+    // `startSubcontractReview` asserts the same capability, so a person who
+    // cannot run a review never moves the bytes either.
+    capability: "VIEW_JOB_COSTS",
+    refusal: "Contract documents aren't part of your job function.",
+    // The same ceiling as the contract version it is read beside: an exhibit
+    // larger than the agreement itself is not a case anybody has met.
     maxBytes: DOCUMENT_UPLOAD_MAX_BYTES,
   },
   "bid-quote": {

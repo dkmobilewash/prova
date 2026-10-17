@@ -151,6 +151,16 @@ model AskAllowancePeriod {
   /// Of those, pages whose model call then failed — marked, never released.
   failedSpecPages Int @default(0)
 
+  /// SUBCONTRACT pages claimed this period, metered separately from every unit
+  /// above by the same claim-before-the-call rule. A subcontract package runs
+  /// 40-120 pages and arrives after award, so sharing any other unit would let
+  /// one contract spend a month of bid or compliance reading. Counted in pages
+  /// that carry text — the review only sends those. See
+  /// `CompanyAiSettings.contractPagesPerMonth`.
+  contractPagesUsed   Int @default(0)
+  /// Of those, pages whose model call then failed — marked, never released.
+  failedContractPages Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

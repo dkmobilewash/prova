@@ -1,3 +1,4 @@
+import { subcontractObligationAlerts } from "@/lib/subcontract-review/obligationAlerts";
 import { prisma } from "@prova/db";
 import {
   apprenticeRatioAlerts,
@@ -838,6 +839,40 @@ export async function loadAlerts(
         neededFrom: isoDate(request.neededFrom) ?? todayIso,
         requestedOn: isoDate(request.requestedOn),
         outcome: request.outcome,
+      })),
+      todayIso,
+    ),
+  );
+
+  // Deadlines a subcontract imposes, confirmed by a person from an AI
+  // subcontract review. Its own read, after the batch above, so that batch's
+  // destructuring is untouched; the builder lives with the feature.
+  const obligations = await prisma.subcontractObligation.findMany({
+    where: { job: { companyId } },
+    select: {
+      id: true,
+      jobId: true,
+      kind: true,
+      label: true,
+      dayOfMonth: true,
+      dueOn: true,
+      recipient: true,
+      form: true,
+      job: { select: { name: true } },
+    },
+  });
+  alerts.push(
+    ...subcontractObligationAlerts(
+      obligations.map((row) => ({
+        id: row.id,
+        jobId: row.jobId,
+        jobName: row.job.name,
+        kind: row.kind,
+        label: row.label,
+        dayOfMonth: row.dayOfMonth,
+        dueOn: isoDate(row.dueOn),
+        recipient: row.recipient,
+        form: row.form,
       })),
       todayIso,
     ),
