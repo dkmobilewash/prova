@@ -1951,6 +1951,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // walk derives its assertion and executes it as a principal without it,
   // same as the jobs/estimating modules above.
   takeoff: () => import("./actions/takeoff"),
+  takeoffItems: () => import("./actions/takeoffItems"),
   takeoffClassify: () => import("./actions/takeoffClassify"),
   takeoffReadSheet: () => import("./actions/takeoffReadSheet"),
   // Crew & time. Five of the seven actions here are decided per SECTION

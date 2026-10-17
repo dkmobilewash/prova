@@ -314,7 +314,7 @@ export function printedScalesFromProposals(
   return byPage;
 }
 
-export type ToolId = "pan" | "calibrate" | "linear" | "area" | "count";
+export type ToolId = "pan" | "calibrate" | "linear" | "area" | "rect" | "count" | "cutout" | "edit";
 
 /**
  * The measuring vocabulary, and it is deliberately the same three primitives
@@ -334,8 +334,30 @@ export const TOOLS: { id: ToolId; label: string; hint: string }[] = [
     hint: "Click each end of a dimension printed on the drawing, then type what it says.",
   },
   { id: "linear", label: "Line", hint: "Click along a run. Every click adds a point; the length adds up as you go." },
-  { id: "area", label: "Area", hint: "Click around the outline. It closes back to the first point." },
+  {
+    id: "area",
+    label: "Area",
+    hint:
+      "Click around the outline. Click the first point again to close it. Hold Shift to keep an edge straight.",
+  },
+  {
+    id: "rect",
+    label: "Rectangle",
+    hint: "Click two opposite corners. For a room that is square, which most of them are.",
+  },
   { id: "count", label: "Count", hint: "Click each one. The name you give it becomes the line item." },
+  {
+    id: "edit",
+    label: "Edit",
+    hint:
+      "Click a shape you have already drawn to move its corners, or to delete it. Hold Shift while dragging to keep an edge straight.",
+  },
+  {
+    id: "cutout",
+    label: "Cut out",
+    hint:
+      "Click round an opening INSIDE an area you have already saved, to take it off that area. Pick the area first.",
+  },
 ];
 
 /**

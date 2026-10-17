@@ -18,10 +18,21 @@ import { type TakeoffItemRow, formatQuantity, itemQuantityOnPage } from "@/lib/t
  *
  * ── IT FLOATS, SO IT COVERS PART OF THE DRAWING ──
  *
- * Which is why it is dismissable, remembers being dismissed, and sits in the
- * TOP-LEFT: a title block is bottom-right on every sheet in this repo's
- * fixtures and on all five real sets, so the corner it covers is the one
- * carrying the least drawing.
+ * Which is why it is dismissable and remembers being dismissed.
+ *
+ * ── BOTTOM-LEFT, AND THE TOP-LEFT VERSION WAS A REAL BUG ──
+ *
+ * It sat top-left first, reasoning that a title block is bottom-right on
+ * every sheet in this repo's fixtures and on all five real sets, so the
+ * top-left corner carries the least drawing. True about the SHEET and wrong
+ * about the SCREEN: its positioning context spans the viewer's toolbar as
+ * well as the canvas, so `top-3` put it straight over the tool buttons and
+ * it swallowed every click on Line, Area and Count. The e2e walk caught it
+ * by failing to press a button that was plainly visible.
+ *
+ * Bottom-left is clear of the toolbar above and of the title block's own
+ * corner diagonally opposite, which is the property the first version was
+ * actually reaching for.
  */
 
 type Props = {
@@ -42,7 +53,7 @@ export function TakeoffSheetSummary({ items, pageNumber, hidden, onClose }: Prop
 
   return (
     <div
-      className="pointer-events-auto absolute left-3 top-3 z-10 max-w-[18rem] rounded-md border border-line-card bg-surface/95 p-2 shadow-lg backdrop-blur-sm"
+      className="pointer-events-auto absolute bottom-3 left-3 z-10 max-w-[18rem] rounded-md border border-line-card bg-surface/95 p-2 shadow-lg backdrop-blur-sm"
       data-takeoff="sheet-summary"
     >
       <div className="flex items-center gap-2">

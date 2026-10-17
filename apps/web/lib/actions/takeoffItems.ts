@@ -5,6 +5,9 @@ import { prisma } from "@prova/db";
 
 import { requireCompanyContext } from "@/lib/auth";
 import { parseNumericInput } from "@/lib/numeric-input";
+import { ringArea, ringSelfIntersects } from "@/lib/sheet-geometry";
+import { cutoutInside } from "@/lib/takeoff/drawTools";
+import { cutoutsFromJson } from "@/lib/takeoff/itemQuantities";
 import { can } from "@/lib/permissions";
 import { colorProblem, nextItemColor } from "@/lib/takeoff/itemColors";
 import {
@@ -39,7 +42,18 @@ import {
  * but not say what it drew.
  */
 
-const JOB_COSTS_ONLY = "You do not have access to job costs on this company.";
+/**
+ * THE SAME SENTENCE `takeoff.ts` USES, word for word, and not a paraphrase.
+ *
+ * `action-capability-guards.test.ts` recognises a capability refusal by the
+ * phrase "part of your job function" — so a message that says the same thing
+ * in different words reads to that suite as an action with NO GUARD, which is
+ * what it caught here. More to the point, a person refused twice in one
+ * session should be told the same thing twice; two wordings for one rule
+ * reads as two different rules.
+ */
+const JOB_COSTS_ONLY =
+  "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
 const GONE = "That item is no longer on this job. Reload the page.";
 
 const TYPES = ["LINEAR", "AREA", "COUNT", "SEGMENT", "AREA_WITH_PERIMETER"] as const;
@@ -396,3 +410,116 @@ export async function assignMeasurementsToItem(
 // functions — Next rejects anything else at BUILD, not at typecheck, which is
 // the trap CLAUDE.md records for `export *` in the actions barrel. Importers
 // take `ITEM_COLORS` from `@/lib/takeoff/itemColors` directly.
+
+
+/**
+ * ── AN OPENING TAKEN OFF AN AREA ──
+ *
+ * A door or window drawn INSIDE a room that has already been measured. The
+ * hole is stored on the measurement it belongs to and `netArea` deducts it.
+ *
+ * ── NOBODY PICKS THE ROOM; THE HOLE FINDS IT ──
+ *
+ * The outline it sits inside is the one it belongs to, which `cutoutInside`
+ * decides. A picker would ask somebody to name the shape they are looking
+ * straight at, and would be wrong as often as it was right on a sheet where
+ * two rooms touch.
+ *
+ * When two outlines both contain it — a room inside a floor plate, say — the
+ * SMALLEST wins. A door belongs to the room, not to the building.
+ */
+export async function addMeasurementCutout(
+  jobId: string,
+  pageId: string,
+  hole: { xs: number[]; ys: number[] },
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableDirectly(job);
+
+  if (hole.xs.length < 3 || hole.xs.length !== hole.ys.length) {
+    return actionFail("An opening needs at least three points.");
+  }
+  if (ringSelfIntersects(hole.xs, hole.ys)) {
+    return actionFail("That opening crosses itself, so it has no area. Draw it again.");
+  }
+
+  const areas = await prisma.takeoffMeasurement.findMany({
+    where: { pageId, kind: "AREA", page: { plan: { jobId, companyId: company.id } } },
+    select: { id: true, xs: true, ys: true, cutouts: true },
+  });
+  if (areas.length === 0) {
+    return actionFail("There is no area on this sheet to take an opening out of. Draw the room first.");
+  }
+
+  const holding = areas
+    .filter((area) => cutoutInside(hole, { xs: area.xs, ys: area.ys }))
+    .map((area) => ({ area, size: ringArea(area.xs, area.ys) ?? Number.POSITIVE_INFINITY }))
+    .sort((a, b) => a.size - b.size);
+
+  if (holding.length === 0) {
+    // NAMED rather than silent: a hole that lands partly outside its room
+    // deducts area the outline never had, and `netArea` clamps at zero — so
+    // the symptom would be a room measuring NOTHING, which reads as a broken
+    // tool rather than as a badly drawn opening.
+    return actionFail("That opening is not inside any area on this sheet. Draw it within the outline.");
+  }
+
+  const target = holding[0].area;
+  const existing = cutoutsFromJson(target.cutouts);
+  await prisma.takeoffMeasurement.update({
+    where: { id: target.id },
+    data: { cutouts: [...existing, { xs: hole.xs, ys: hole.ys }] },
+  });
+
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/takeoff/${jobId}`);
+  return actionOk;
+}
+
+/**
+ * Move one vertex of a measurement that is already saved.
+ *
+ * ── THE GEOMETRY IS REPLACED WHOLE, AND VALIDATED LIKE A NEW ONE ──
+ *
+ * An edit can turn a good ring into a bowtie just as a first draw can, and
+ * `ringArea` refuses one — so a shape edited into crossing itself would
+ * silently measure nothing. Checked here, with the same sentence the drawing
+ * tools use.
+ */
+export async function updateMeasurementGeometry(
+  jobId: string,
+  measurementId: string,
+  xs: number[],
+  ys: number[],
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableDirectly(job);
+
+  const row = await prisma.takeoffMeasurement.findFirst({
+    where: { id: measurementId, page: { plan: { jobId, companyId: company.id } } },
+    select: { id: true, kind: true, postedAt: true },
+  });
+  if (!row) return actionFail("That measurement is no longer on this job. Reload the page.");
+  if (row.postedAt !== null) {
+    // A posted measurement has already become priced line items. Moving its
+    // geometry would change a quantity somebody has quoted, silently.
+    return actionFail("That measurement is already on the estimate. Remove it from the estimate first.");
+  }
+  if (xs.length !== ys.length || xs.length < 2) return actionFail("A measurement needs at least two points.");
+  if (!xs.every(Number.isFinite) || !ys.every(Number.isFinite)) {
+    return actionFail("Those coordinates are not on the sheet.");
+  }
+  if (row.kind === "AREA" && ringSelfIntersects(xs, ys)) {
+    return actionFail("That outline crosses itself, so it has no area. Move the point somewhere else.");
+  }
+
+  await prisma.takeoffMeasurement.update({ where: { id: measurementId }, data: { xs, ys } });
+  revalidatePath(`/takeoff/${jobId}`);
+  return actionOk;
+}

@@ -345,27 +345,34 @@ test.describe("the full-screen takeoff workspace", () => {
     }
   }
 
-  test("11. the canvas owns the height at 1440 AND at 1280", async () => {
-    // ── WITH THE QUANTITIES RAIL OPEN *AND* CLOSED ──
-    //
-    // Closed only is not enough, and this test passed for a run while the
-    // 1440px screenshot showed the drawing at 5% with the panel stacked under
-    // it. The rail changes the direction of the row it sits in, so it changes
-    // which dimension the canvas gives up — the open case is the one that
-    // breaks.
-    //
-    // ── AND THE ITEMS RAIL IS SET EXPLICITLY, NOT LEFT WHEREVER IT WAS ──
-    //
-    // It did not exist when this test was written, and it defaults OPEN at
-    // these widths — so "with the rail closed" quietly stopped being true and
-    // the measurement dropped to 83.3%. The canvas was not being cheated:
-    // a narrower viewer WRAPS its own toolbar onto a second line, and that
-    // line is the missing height.
-    //
-    // Which is a real cost worth asserting rather than hiding, so both states
-    // are measured. The floor is lower with it open because the wrap is a
-    // consequence of the width, not a layout fault — and a floor at all is
-    // what stops the next rail eating the drawing.
+  /**
+   * ── THE CHROME'S BUDGET, AND THE CANVAS TAKING EVERYTHING ELSE ──
+   *
+   * This was a ratio — "the canvas is at least 85% of the viewport" — and it
+   * had to be lowered twice in two days: once when the items rail narrowed
+   * the viewer and once when three more tools were added. Both times the
+   * canvas was not being CHEATED; the viewer's own toolbar wrapped onto
+   * another line, which is correct responsive behaviour and real lost height.
+   *
+   * A floor that gets lowered whenever it fires is not a floor. So the claim
+   * is split into the two things actually worth asserting:
+   *
+   *   1. the CHROME above the canvas stays within a budget — the top bar plus
+   *      the viewer's toolbar, however many rows it takes;
+   *   2. the canvas takes EVERYTHING below it, which is what "canvas first"
+   *      means and the thing that broke when `--shell-port` was undefined and
+   *      the frame fell to a 384px floor.
+   *
+   * The second is the assertion with the history. The first is what stops the
+   * next rail or ribbon eating the drawing without anybody noticing.
+   */
+  const CHROME_BUDGET = 170;
+
+  test("11. the canvas owns everything the chrome does not, at 1440 AND 1280", async () => {
+    // Both rails, open AND closed. Closed only is not enough: this passed for
+    // a run while the 1440px screenshot showed the drawing at 5% with the
+    // panel stacked under it, because a rail changes the DIRECTION of the row
+    // it sits in and so which dimension the canvas gives up.
     for (const size of [DESKTOP, NARROW]) {
       for (const railOpen of [false, true]) {
         for (const itemsOpen of [false, true]) {
@@ -374,14 +381,26 @@ test.describe("the full-screen takeoff workspace", () => {
           await setRail("toggle-panel", railOpen);
           await setRail("toggle-items", itemsOpen);
           await fitAndSettle();
+
           const canvas = await canvasBox();
-          const floor = itemsOpen ? 0.82 : 0.85;
+          const where = `at ${size.width}px with quantities ${railOpen ? "OPEN" : "closed"} and items ${
+            itemsOpen ? "OPEN" : "closed"
+          }`;
+
+          // 1. The chrome above the canvas.
           expect(
-            canvas.height / size.height,
-            `at ${size.width}px with quantities ${railOpen ? "OPEN" : "closed"} and items ` +
-              `${itemsOpen ? "OPEN" : "closed"} the canvas is ${canvas.height.toFixed(0)}px ` +
-              `of a ${size.height}px viewport`,
-          ).toBeGreaterThan(floor);
+            canvas.y,
+            `${where} the chrome above the canvas is ${canvas.y.toFixed(0)}px, over the ${CHROME_BUDGET}px budget`,
+          ).toBeLessThanOrEqual(CHROME_BUDGET);
+
+          // 2. And the canvas takes the rest of the window. 16px of slack for
+          //    the region's own padding — not a tolerance for a panel.
+          const available = size.height - canvas.y;
+          expect(
+            canvas.height,
+            `${where} the canvas is ${canvas.height.toFixed(0)}px of the ${available.toFixed(0)}px ` +
+              `left below the chrome — something else is taking the height`,
+          ).toBeGreaterThan(available - 16);
         }
       }
     }
@@ -735,6 +754,131 @@ test.describe("the full-screen takeoff workspace", () => {
 
     await page.screenshot({ path: path.join(SHOTS, "workspace-1440-items.png") });
     await expectHealthy(page, "items and properties", { monitor, signedIn: false });
+  });
+
+
+  test("19. THE DRAWING TOOLS: rectangle, shift-lock, typed length, edit, delete", async () => {
+    // ── EVERY ONE OF THESE HAS UNIT TESTS FOR ITS MATHS ──
+    //
+    // `lib/takeoff/drawTools.test.ts` proves the geometry: the axis lock
+    // keeps its length, a rectangle winds consistently, a typed length goes
+    // the typed distance. None of that can tell whether the tool is WIRED —
+    // whether shift reaches the handler, whether the second click of a
+    // rectangle replaces the draft or extends it. That is what this walks.
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobTwo);
+    await setRail("toggle-items", false);
+    await fitAndSettle();
+
+    const overlay = page.locator('[data-testid="takeoff-plan-port"] svg').first();
+
+    /**
+     * ── THE BOX IS RE-READ ON EVERY CLICK, NEVER CAPTURED ONCE ──
+     *
+     * A probe caught this. The overlay was 930px when the test started and
+     * 849px by the time it clicked, because changing tools changes the hint
+     * line's height, which resizes the canvas, which re-fits the sheet. Every
+     * coordinate computed from the stale width was ~10% out, which put a
+     * click aimed at a line 0.028 of the page width away from it — past any
+     * sane pick radius, and SILENTLY, because a miss just selects nothing.
+     */
+    const click = async (fx: number, fy: number) => {
+      const at = await overlay.boundingBox();
+      expect(at, "no overlay to draw on").not.toBeNull();
+      await overlay.click({ position: { x: fx * (at?.width ?? 0), y: fy * (at?.width ?? 0) } });
+    };
+    const shapesBefore = await overlay.locator("polyline, polygon").count();
+
+    // ── A RECTANGLE IS TWO CLICKS AND FOUR CORNERS ──
+    await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+    await click(0.25, 0.3);
+    await click(0.45, 0.42);
+    // The draft reports four points, not two — the second click builds the
+    // corners rather than storing the drag.
+    await expect(page.getByText(/4 points/)).toBeVisible();
+
+    // A THIRD click RE-DRAGS the far corner. It must never make a pentagon:
+    // the shape is rebuilt from the first click every time, so four points
+    // is four points however many times somebody clicks.
+    await click(0.5, 0.5);
+    await expect(page.getByText(/4 points/)).toBeVisible();
+    await page.getByRole("button", { name: "Clear" }).click();
+
+    // ── SHIFT LOCKS A LINE STRAIGHT ──
+    //
+    // Drawn deliberately OFF axis: without the lock the second point lands
+    // where it was clicked, so the reading differs. With it the segment is
+    // horizontal, and a horizontal segment on this sheet reads as a round
+    // number of feet that a sloped one does not.
+    await page.getByRole("button", { name: "Line", exact: true }).click();
+    await click(0.2, 0.35);
+    await page.keyboard.down("Shift");
+    await click(0.6, 0.37);
+    await page.keyboard.up("Shift");
+    const locked = await overlay.locator("polyline").last().getAttribute("points");
+    expect(locked, "no polyline drawn").not.toBeNull();
+    const [first, second] = (locked ?? "").trim().split(/\s+/).slice(0, 2);
+    const y1 = Number(first?.split(",")[1]);
+    const y2 = Number(second?.split(",")[1]);
+    expect(Math.abs(y1 - y2), "Shift did not hold the line straight").toBeLessThan(0.0005);
+
+    // ── A TYPED LENGTH MOVES THE LAST POINT ──
+    const typed = page.locator('[data-takeoff="typed-length"]');
+    await expect(typed).toBeVisible();
+    await typed.fill("40");
+    await page.locator('[data-takeoff="apply-length"]').click();
+    await expect
+      .poll(async () => (await overlay.locator("polyline").last().getAttribute("points")) ?? "", {
+        timeout: 15_000,
+        message: "the typed length did not move the point",
+      })
+      .not.toBe(locked);
+    // 40 ft on a sheet that reads 144 ft across is 40/144 of the page width.
+    const after = (await overlay.locator("polyline").last().getAttribute("points")) ?? "";
+    const [a, b] = after.trim().split(/\s+/).slice(0, 2);
+    const span = Math.abs(Number(b?.split(",")[0]) - Number(a?.split(",")[0]));
+    expect(span, `the segment spans ${span} of the page width, not 40/144`).toBeCloseTo(40 / 144, 3);
+
+    await page.getByRole("button", { name: "Clear" }).click();
+
+    // ── EDIT SELECTS A SAVED SHAPE, AND DELETE REMOVES IT ──
+    //
+    // jobTwo already carries the measurement test 18 drew, so there is
+    // something to select — asserted rather than assumed, because an edit
+    // walk over an empty sheet would pass by doing nothing.
+    expect(shapesBefore, "nothing saved to edit").toBeGreaterThan(0);
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    // ── AIMED FROM THE RENDERED GEOMETRY, not from a remembered click ──
+    //
+    // A saved, unposted measurement is drawn in #38bdf8 — the calibration
+    // line is amber and a live draft is its own colour — so this is the one
+    // polyline that IS the shape. Two earlier attempts aimed at
+    // `polyline.first()` and at test 18's own click coordinates; both missed,
+    // the first because the calibration line is also a polyline and the
+    // second because the overlay is a different width once a rail closes.
+    //
+    // The midpoint of its first segment is a point guaranteed to be ON it.
+    const target = overlay.locator('polyline[stroke="#38bdf8"]').first();
+    await expect(target, "test 18's measurement is not on the sheet").toBeVisible();
+    const pts = (await target.getAttribute("points")) ?? "";
+    const [p1, p2] = pts.trim().split(/\s+/);
+    const mx = (Number(p1.split(",")[0]) + Number(p2.split(",")[0])) / 2;
+    const my = (Number(p1.split(",")[1]) + Number(p2.split(",")[1])) / 2;
+    await click(mx, my);
+    const after2 = await page.evaluate(() => ({
+      bar: document.querySelector('[data-takeoff="edit-bar"]') !== null,
+    }));
+    console.log("[probe] after click:", JSON.stringify(after2));
+    await expect(page.locator('[data-takeoff="edit-bar"]')).toBeVisible();
+    await expect(page.locator('[data-takeoff="vertex-handle"]').first()).toBeVisible();
+
+    // Two steps to delete, and the row's ordinary action goes while armed.
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    await page.getByRole("button", { name: /confirm/i }).click();
+    await expect(page.locator('[data-takeoff="edit-bar"]')).toHaveCount(0, { timeout: 30_000 });
+
+    await page.screenshot({ path: path.join(SHOTS, "workspace-1440-tools.png") });
+    await expectHealthy(page, "drawing tools", { monitor, signedIn: false });
   });
 
 });

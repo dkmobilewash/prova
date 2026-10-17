@@ -1,8 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  SNAP_RADIUS,
+  closesRing,
+  moveVertex,
+  nearestOnSegment,
+  pointInRing,
+  vertexAt,
+  extendByLength,
+  lockToAxis,
+  rectanglePoints,
+  snapToGeometry,
+  type SnapTarget,
+} from "@/lib/takeoff/drawTools";
 
 import { ActionForm } from "@/components/ActionForm";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DISTINCT_MARKS, SHOWN_AT_FIRST, markFor } from "@/lib/takeoff/clusterMarks";
 import { formatFeetInches, parseFeetInches } from "@/lib/feet-inches";
@@ -18,7 +33,14 @@ import {
   type MeasurementKind,
   type StoredCalibration,
 } from "@/lib/takeoff-plan";
-import { saveTakeoffCalibration, saveTakeoffMeasurement, saveTakeoffMeasurements } from "@/lib/actions";
+import {
+  addMeasurementCutout,
+  deleteTakeoffMeasurement,
+  saveTakeoffCalibration,
+  saveTakeoffMeasurement,
+  saveTakeoffMeasurements,
+  updateMeasurementGeometry,
+} from "@/lib/actions";
 import type {
   PlanSheet,
   PrintedScaleByPage,
@@ -144,6 +166,21 @@ const BASE_SCALE = 1.5;
 const FIT = "fit" as const;
 /** Fill the width and let the height scroll — see `fitWidthZoom`. */
 const FIT_WIDTH = "fit-width" as const;
+
+/**
+ * How many of a sheet's strokes are kept as snap targets.
+ *
+ * `snapToGeometry` is linear in them and runs on every click, and a real
+ * architectural sheet carries well over a hundred thousand segments — Camp
+ * Bow Wow's A101 has 12,179 wall-length lines alone, and that is after
+ * filtering. The LONGEST are kept, because the long ones are the walls and
+ * grid lines somebody is aiming at; hatching, text outlines and furniture are
+ * short and are exactly what should not pull a click off target.
+ */
+const SNAP_SEGMENT_CAP = 4_000;
+
+/** How close a click has to be to SELECT a shape. See the edit branch. */
+const PICK_RADIUS = 0.016;
 type Zoom = number | typeof FIT | typeof FIT_WIDTH;
 
 /**
@@ -712,22 +749,258 @@ export function TakeoffPlanViewer({
   );
 
   const drawing = tool !== "pan";
+
+  /**
+   * ── WHAT A CLICK CAN SNAP TO ──
+   *
+   * The sheet's own strokes, plus the vertices of everything already measured
+   * on it. Two things make this cheap enough to be worth having:
+   *
+   *  1. IT IS LAZY. Nothing is parsed until somebody picks a drawing tool, so
+   *     opening a sheet to look at it costs nothing. `snapPage` is what
+   *     remembers which page the targets belong to, so switching sheets
+   *     re-reads and switching back does not.
+   *  2. IT IS CAPPED. A real sheet carries hundreds of thousands of segments
+   *     and `snapToGeometry` is linear in them — at 150k a click would take
+   *     long enough to feel. The cap keeps the longest ones, which are the
+   *     walls and grid lines people aim at; hatching and text outlines are
+   *     short and are what gets dropped.
+   *
+   * A sheet that will not parse yields NO targets, which is not an error: the
+   * tools work exactly as they did before snapping existed.
+   */
+  const [snapTargets, setSnapTargets] = useState<readonly SnapTarget[]>([]);
+  const snapPage = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!drawing) return;
+    if (snapPage.current === pageNumber) return;
+    snapPage.current = pageNumber;
+    setSnapTargets([]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const doc = docRef.current;
+        if (!doc || !pageSize) return;
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        const page = await doc.getPage(pageNumber);
+        // `layers: null` — optional-content names do not matter for snapping.
+        // A snap target is a place on the paper; which layer drew it is the
+        // wall finder's question, not this one's.
+        const { segments } = await segmentsFromOpenPage(page, pdfjs, pageNumber, null);
+        if (cancelled) return;
+        const raw = segments.map(inPageWidthUnits(pageSize.widthPt));
+        const longest = [...raw]
+          .sort(
+            (a, b) =>
+              Math.hypot(b.x2 - b.x1, b.y2 - b.y1) - Math.hypot(a.x2 - a.x1, a.y2 - a.y1),
+          )
+          .slice(0, SNAP_SEGMENT_CAP);
+        const targets: SnapTarget[] = [];
+        for (const segment of longest) {
+          targets.push({ kind: "segment", ...segment });
+          targets.push({ kind: "vertex", x: segment.x1, y: segment.y1 });
+          targets.push({ kind: "vertex", x: segment.x2, y: segment.y2 });
+        }
+        setSnapTargets(targets);
+      } catch {
+        // No targets. The tools behave exactly as they did before snapping.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [drawing, pageNumber]);
+  /**
+   * A tool's measurement KIND, which is not the same as the tool.
+   *
+   * `rect` stores AREA geometry — it is a faster way to draw the same four
+   * points, not a different thing to measure, so nothing downstream has to
+   * learn about it. `cutout` has no kind at all: it edits an area that is
+   * already saved rather than creating anything.
+   */
   const kindOf = (id: ToolId): MeasurementKind | null =>
-    id === "linear" ? "LINEAR" : id === "area" ? "AREA" : id === "count" ? "COUNT" : null;
+    id === "linear"
+      ? "LINEAR"
+      : id === "area" || id === "rect"
+        ? "AREA"
+        : id === "count"
+          ? "COUNT"
+          : null;
+
+  /**
+   * ── WHERE A CLICK ACTUALLY LANDS ──
+   *
+   * Three corrections, in the order they have to happen:
+   *
+   *  1. SNAP to the drawing's own geometry, so a wall traced over a wall
+   *     starts at the wall rather than near it.
+   *  2. AXIS LOCK while Shift is held, measured from the PREVIOUS point.
+   *  3. …and the lock wins, because somebody holding Shift has said what
+   *     they want more loudly than a corner 3px away has.
+   *
+   * The snap radius is divided by the zoom. A radius that grows as you zoom
+   * in is a snap that fights you exactly when you are being careful.
+   */
+  const placePoint = (
+    raw: { x: number; y: number },
+    from: { x: number; y: number } | null,
+    shift: boolean,
+  ): { x: number; y: number } => {
+    if (shift && from) return lockToAxis(from, raw);
+    const radius = SNAP_RADIUS / Math.max(1, zoomFactor);
+    return snapToGeometry(raw, snapTargets, radius);
+  };
 
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
     if (!drawing) return;
-    const point = pointAt(event);
-    if (!point) return;
+    const raw = pointAt(event);
+    if (!raw) return;
     event.preventDefault();
+
+    // ── EDIT MODE SELECTS RATHER THAN DRAWS ──
+    //
+    // A click picks the nearest shape whose outline the click is on; a click
+    // on nothing clears the selection, which is how somebody gets out without
+    // hunting for a Cancel. The handles themselves stop propagation, so
+    // grabbing one never re-selects and never clears.
+    if (tool === "edit") {
+      // ── SELECTING IS DELIBERATELY MORE FORGIVING THAN SNAPPING ──
+      //
+      // `SNAP_RADIUS` is about 3px, which is right for deciding WHERE a new
+      // point lands — a snap that reaches further would move points nobody
+      // asked to move. Picking an existing shape is the opposite problem: the
+      // thing being aimed at is a one-pixel line, and a 3px target makes
+      // selecting it a game. `PICK_RADIUS` is about four times that, which is
+      // roughly a fingertip and close to what every drawing tool uses.
+      //
+      // It does not scale with zoom: at 400% a shape is already easy to hit,
+      // and a pick radius that grew would start claiming the shape next to it.
+      const hit = (sheet?.measurements ?? []).find((m) => {
+        if (vertexAt(raw, m.xs, m.ys, PICK_RADIUS) !== null) return true;
+        for (let i = 1; i < m.xs.length; i += 1) {
+          const near = nearestOnSegment(raw, m.xs[i - 1], m.ys[i - 1], m.xs[i], m.ys[i]);
+          if (Math.hypot(near.x - raw.x, near.y - raw.y) <= PICK_RADIUS) return true;
+        }
+        // An AREA is pickable by its INSIDE as well as its edge: a room is a
+        // big obvious target and making somebody find its outline would be
+        // the same game one step harder.
+        if (m.kind === "AREA" && pointInRing(raw.x, raw.y, m.xs, m.ys)) return true;
+        return false;
+      });
+      setEditError(null);
+      setEditingId(hit?.id ?? null);
+      setEditDraft(hit ? { xs: [...hit.xs], ys: [...hit.ys] } : null);
+      return;
+    }
+
     setDraft((current) => {
+      const last =
+        current.xs.length > 0
+          ? { x: current.xs[current.xs.length - 1], y: current.ys[current.ys.length - 1] }
+          : null;
+      const point = placePoint(raw, last, event.shiftKey);
+
       // A calibration is exactly two points: the second click replaces the
       // end rather than extending a polyline.
       if (tool === "calibrate" && current.xs.length >= 2) {
         return { xs: [current.xs[0], point.x], ys: [current.ys[0], point.y] };
       }
+
+      // ── A RECTANGLE IS TWO CLICKS, AND EVERY LATER ONE RE-DRAGS ──
+      //
+      // The opposite corner is always rebuilt from the FIRST click, so the
+      // shape never grows a fifth point however many times somebody clicks.
+      // A third click moves the far corner rather than starting again, which
+      // is the forgiving reading: the Save form is on screen by then, so the
+      // likely intent is "not quite" rather than "start over" — and Clear is
+      // there for the other one.
+      //
+      // (This comment said the opposite for an hour — "a third click starts a
+      // new rectangle" — and the e2e walk written from it failed against the
+      // code. The code was the better behaviour; the sentence was wrong.)
+      if (tool === "rect") {
+        if (current.xs.length === 0) return { xs: [point.x], ys: [point.y] };
+        return rectanglePoints({ x: current.xs[0], y: current.ys[0] }, point);
+      }
+
+      // ── CLICKING THE FIRST POINT CLOSES A RING ──
+      //
+      // Areas and cutouts only. A LINEAR run that ends where it started is a
+      // legitimate loop of wall, and treating that click as "close" would
+      // refuse to measure the last few feet of a room's perimeter.
+      //
+      // Closing is a no-op on the geometry — `ringArea` already treats the
+      // list as closed — so this just stops the click adding a duplicate of
+      // the first vertex, which would read as a zero-length final edge.
+      if ((tool === "area" || tool === "cutout") && closesRing(point, current.xs, current.ys, SNAP_RADIUS / Math.max(1, zoomFactor))) {
+        return current;
+      }
+
       return { xs: [...current.xs, point.x], ys: [...current.ys, point.y] };
     });
+  };
+
+  /**
+   * ── A TYPED LENGTH, which is how a plan's PRINTED dimension gets used ──
+   *
+   * A corridor marked 42'-6" often scales at 42'-2", and the estimator trusts
+   * the figure on the paper. So the direction comes from the last two points
+   * and the distance comes from the keyboard.
+   */
+  const [typedFeet, setTypedFeet] = useState("");
+  /**
+   * ── NO `router.refresh()` AFTER THESE SAVES, AND THAT IS NOT AN OMISSION ──
+   *
+   * CLAUDE.md's #61 entry establishes it from the installed Next source: a
+   * Server Action that calls `revalidatePath` and RETURNS a value has flight
+   * data appended to its own POST response, and the client re-renders from
+   * it. `TakeoffForm` is the control that proves it — no refresh, and it
+   * works.
+   *
+   * The first version of this called `useRouter().refresh()`, which also
+   * broke every unit test that renders this component: `useRouter` throws
+   * "invariant expected app router to be mounted" outside one.
+   */
+
+  /**
+   * ── EDITING A SAVED SHAPE ──
+   *
+   * `editDraft` is the geometry being dragged; the stored row is untouched
+   * until Save. Local-first on purpose: a vertex drag at 60fps against a
+   * server action would be a request per frame, and the thing being moved
+   * would lag the pointer by a round trip.
+   */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<Draft | null>(null);
+  const [draggingVertex, setDraggingVertex] = useState<number | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // A different sheet is a different set of shapes.
+  useEffect(() => {
+    setEditingId(null);
+    setEditDraft(null);
+    setDraggingVertex(null);
+  }, [pageNumber]);
+  const [cuttingOut, setCuttingOut] = useState(false);
+  const [cutoutError, setCutoutError] = useState<string | null>(null);
+  const applyTypedLength = () => {
+    const feet = Number(typedFeet.replace(/,/g, ""));
+    setDraft((current) => {
+      if (current.xs.length < 2) return current;
+      const n = current.xs.length;
+      const from = { x: current.xs[n - 2], y: current.ys[n - 2] };
+      const toward = { x: current.xs[n - 1], y: current.ys[n - 1] };
+      const moved = extendByLength(from, toward, feet, feetPerUnit);
+      if (!moved) return current;
+      const xs = [...current.xs];
+      const ys = [...current.ys];
+      xs[n - 1] = moved.x;
+      ys[n - 1] = moved.y;
+      return { xs, ys };
+    });
+    setTypedFeet("");
   };
 
   const undoPoint = () =>
@@ -2138,6 +2411,22 @@ export function TakeoffPlanViewer({
               style={{ width: cssWidth ? `${cssWidth}px` : "100%", height: cssWidth ? `${cssWidth * aspect}px` : "100%" }}
               className={`absolute left-0 top-0 ${drawing ? "cursor-crosshair touch-none" : "pointer-events-none"}`}
               onPointerDown={onPointerDown}
+              onPointerMove={(event) => {
+                if (draggingVertex === null || !editDraft) return;
+                const raw = pointAt(event);
+                if (!raw) return;
+                // Snapped like a new point, so an edited corner lands on
+                // the drawing as readily as a drawn one — and Shift locks
+                // it against the vertex BEFORE it in the shape.
+                const from =
+                  draggingVertex > 0
+                    ? { x: editDraft.xs[draggingVertex - 1], y: editDraft.ys[draggingVertex - 1] }
+                    : null;
+                const point = placePoint(raw, from, event.shiftKey);
+                setEditDraft(moveVertex(editDraft.xs, editDraft.ys, draggingVertex, point));
+              }}
+              onPointerUp={() => setDraggingVertex(null)}
+              onPointerLeave={() => setDraggingVertex(null)}
             >
               {/* The calibration line, redrawn over the sheet so the scale is
                   something a reviewer can SEE rather than take on faith. */}
@@ -2154,9 +2443,62 @@ export function TakeoffPlanViewer({
                 />
               )}
 
-              {(sheet?.measurements ?? []).map((m) => (
-                <Shape key={m.id} kind={m.kind} xs={m.xs} ys={m.ys} colour={m.postedAt ? "#6b7280" : "#38bdf8"} />
-              ))}
+              {(sheet?.measurements ?? []).map((m) => {
+                const editing = editingId === m.id;
+                const xs = editing && editDraft ? editDraft.xs : m.xs;
+                const ys = editing && editDraft ? editDraft.ys : m.ys;
+                return (
+                  <g key={m.id}>
+                    <Shape
+                      kind={m.kind}
+                      xs={xs}
+                      ys={ys}
+                      colour={editing ? "#f59e0b" : m.postedAt ? "#6b7280" : "#38bdf8"}
+                    />
+                    {/* ── OPENINGS TAKEN OFF THIS AREA ──
+                        Drawn as their own outlines rather than as a hole in
+                        the fill: an estimator has to be able to SEE what was
+                        deducted, and a gap in a translucent shape reads as a
+                        shape that was drawn wrong. */}
+                    {(m.cutouts ?? []).map((hole, index) => (
+                      <polygon
+                        key={index}
+                        points={hole.xs.map((x, i) => `${x},${hole.ys[i]}`).join(" ")}
+                        fill="#0f172a"
+                        fillOpacity={0.25}
+                        stroke="#0ea5e9"
+                        strokeWidth={STROKE_PX}
+                        strokeDasharray={`${STROKE_PX * 3} ${STROKE_PX * 2}`}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    ))}
+                    {/* ── VERTEX HANDLES, only on the shape being edited ──
+                        Drawing them on every saved shape would cover a busy
+                        sheet in dots and make the drawing unreadable, which is
+                        the thing this whole screen is for. */}
+                    {editing &&
+                      xs.map((x, i) => (
+                        <circle
+                          key={i}
+                          cx={x}
+                          cy={ys[i]}
+                          r={0.007}
+                          fill="#f59e0b"
+                          stroke="#0f172a"
+                          strokeWidth={STROKE_PX / 2}
+                          vectorEffect="non-scaling-stroke"
+                          style={{ cursor: "grab" }}
+                          data-takeoff="vertex-handle"
+                          onPointerDown={(event) => {
+                            event.stopPropagation();
+                            event.preventDefault();
+                            setDraggingVertex(i);
+                          }}
+                        />
+                      ))}
+                  </g>
+                );
+              })}
 
               {/* ── WHAT THE PANEL LISTS, AND NOTHING ELSE ──
                   This was `clusters={found}` and the panel lists `shownGroups`,
@@ -2224,6 +2566,58 @@ export function TakeoffPlanViewer({
                 Clear
               </button>
             )}
+
+            {/* ── TYPE THE LENGTH THE PLAN PRINTS ──
+                A corridor marked 42'-6" often scales at 42'-2", and the
+                estimator trusts the paper. Aim the last segment, type the
+                figure, and the point moves to that distance along the line
+                already aimed. Needs two points, because one has no direction.
+                Disabled rather than hidden with no scale, and the title says
+                why: a typed length against no scale is a number with no
+                length, and a control that vanishes teaches nothing. */}
+            {draft.xs.length >= 2 && tool !== "count" && (
+              <span className="inline-flex items-center gap-1">
+                <input
+                  inputMode="decimal"
+                  value={typedFeet}
+                  onChange={(event) => setTypedFeet(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      applyTypedLength();
+                    }
+                  }}
+                  disabled={feetPerUnit === null}
+                  placeholder="ft"
+                  aria-label="Set the last segment's length in feet"
+                  title={
+                    feetPerUnit === null
+                      ? "Set the scale on this sheet before typing a length."
+                      : "Type what the plan prints, in feet."
+                  }
+                  data-takeoff="typed-length"
+                  className="w-16 rounded-md border border-line-card bg-surface px-1.5 py-1 text-xs text-ink placeholder:text-ink-muted disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={applyTypedLength}
+                  disabled={feetPerUnit === null || typedFeet.trim() === ""}
+                  data-takeoff="apply-length"
+                  className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50"
+                >
+                  Set length
+                </button>
+              </span>
+            )}
+
+            {/* Shift is not discoverable, so the hint says it where the
+                drawing is happening rather than only in a cheat sheet. */}
+            {draft.xs.length > 0 && tool !== "count" && (
+              <span className="text-[11px] text-ink-muted" data-takeoff="shift-hint">
+                Hold Shift to keep it straight
+                {snapTargets.length > 0 ? " · snapping to the drawing" : ""}
+              </span>
+            )}
           </div>
 
           {tool === "calibrate" && (
@@ -2254,7 +2648,7 @@ export function TakeoffPlanViewer({
             />
           )}
 
-          {tool !== "calibrate" && sheet && draft.xs.length > 0 && (
+          {tool !== "calibrate" && tool !== "cutout" && tool !== "edit" && sheet && draft.xs.length > 0 && (
             <MeasurementForm
               jobId={jobId}
               pageId={sheet.id}
@@ -2273,7 +2667,125 @@ export function TakeoffPlanViewer({
             />
           )}
 
-          {tool !== "calibrate" && !sheet && (
+          {/* ── SAVING AN OPENING ──
+              Not a MeasurementForm: a cutout creates nothing, it edits an
+              area that already exists. The room it belongs to is worked out
+              server-side from the geometry — see `addMeasurementCutout` — so
+              there is nothing here to pick and nothing to name. */}
+          {/* ── THE EDIT BAR ──
+              Only while something is selected. Deleting is two steps and the
+              confirm does not land on the delete's pixel — `ConfirmDelete`
+              owns that geometry, including the column it becomes below `sm`. */}
+          {tool === "edit" && editingId && editDraft && (
+            <div className="mt-3 flex flex-wrap items-center gap-2" data-takeoff="edit-bar">
+              <p className="text-xs text-ink-body">
+                Drag a corner. {editDraft.xs.length} point{editDraft.xs.length === 1 ? "" : "s"}.
+              </p>
+              <button
+                type="button"
+                disabled={savingEdit}
+                data-takeoff="save-edit"
+                onClick={() => {
+                  setEditError(null);
+                  setSavingEdit(true);
+                  void updateMeasurementGeometry(jobId, editingId, [...editDraft.xs], [...editDraft.ys])
+                    .then((result) => {
+                      if (result.ok) {
+                        setEditingId(null);
+                        setEditDraft(null);
+                      } else {
+                        setEditError(result.error);
+                      }
+                    })
+                    .finally(() => setSavingEdit(false));
+                }}
+                className="rounded-md border border-line-card bg-brand px-2 py-1 text-xs font-medium text-neutral-900 disabled:opacity-50"
+              >
+                {savingEdit ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Spinner />
+                    Saving…
+                  </span>
+                ) : (
+                  "Save shape"
+                )}
+              </button>
+              <RowActions
+                destructive={
+                  <ConfirmDelete
+                    label="Delete"
+                    describe="Delete this measurement"
+                    onConfirm={() => {
+                      setEditError(null);
+                      void deleteTakeoffMeasurement(jobId, editingId).then((result) => {
+                        if (result.ok) {
+                          setEditingId(null);
+                          setEditDraft(null);
+                        } else {
+                          setEditError(result.error);
+                        }
+                      });
+                    }}
+                  />
+                }
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(null);
+                    setEditDraft(null);
+                  }}
+                  className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
+                >
+                  Cancel
+                </button>
+              </RowActions>
+              {editError && (
+                <p className="text-xs text-tag-rose-ink" role="alert" data-takeoff="edit-error">
+                  {editError}
+                </p>
+              )}
+            </div>
+          )}
+
+          {tool === "cutout" && sheet && draft.xs.length >= 3 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2" data-takeoff="cutout-save">
+              <button
+                type="button"
+                disabled={cuttingOut}
+                onClick={() => {
+                  setCutoutError(null);
+                  setCuttingOut(true);
+                  void addMeasurementCutout(jobId, sheet.id, { xs: [...draft.xs], ys: [...draft.ys] })
+                    .then((result) => {
+                      if (result.ok) {
+                        setDraft(EMPTY);
+                      } else {
+                        setCutoutError(result.error);
+                      }
+                    })
+                    .finally(() => setCuttingOut(false));
+                }}
+                className="rounded-md border border-line-card bg-brand px-2 py-1 text-xs font-medium text-neutral-900 disabled:opacity-50"
+              >
+                {cuttingOut ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Spinner />
+                    Taking it off…
+                  </span>
+                ) : (
+                  "Take this opening off the area"
+                )}
+              </button>
+              {cutoutError && (
+                <p className="text-xs text-tag-rose-ink" role="alert" data-takeoff="cutout-error">
+                  {cutoutError}
+                </p>
+              )}
+            </div>
+          )}
+
+          {tool !== "calibrate" && tool !== "cutout" && tool !== "edit" && !sheet && (
             <p className="mt-2 text-xs text-tag-amber-ink">Set the scale on this sheet before measuring it.</p>
           )}
         </div>
