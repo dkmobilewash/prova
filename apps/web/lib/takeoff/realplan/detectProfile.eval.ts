@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { findWallsOnSheet } from "../findWallsOnSheet";
-import { inPageWidthUnits } from "../findWallsOnSheet";
 
 /**
  * ── WHERE THE 102 SECONDS GO ──
@@ -65,7 +64,22 @@ describe.skipIf(DIR === "")("where detection spends its time on a real sheet", (
 
           const text = await doc.pageText(pageNumber);
           const pageSize = { widthPt: text.widthPt, heightPt: text.heightPt };
-          const inUnits = segments.map(inPageWidthUnits(pageSize.widthPt));
+          // ── POINTS, BECAUSE THAT IS WHAT THE FUNCTION TAKES ──
+          //
+          // This file used to pre-divide by `widthPt`, and so does
+          // `findWallsOnSheet` itself (`allInUnits`, and the same for every
+          // text item). So every coordinate arrived divided TWICE, 2592 times
+          // too small on a 36" sheet, and nothing threw: lengths are still
+          // lengths, they were just all tiny.
+          //
+          // That is how this profiler reported 126,943 of 143,438 segments as
+          // "short pieces" on A102. At 1/2592 scale, everything is short. The
+          // whole Phase 4 diagnosis was taken through it — see the correction
+          // in AUDIT.md.
+          //
+          // `FindWallsInput` says it in its own first line: "Every stroked
+          // segment on this sheet, in POINTS". The type could not catch this
+          // because both forms are the same shape.
 
           const stages: string[] = [];
           const tFind = Date.now();
@@ -73,13 +87,13 @@ describe.skipIf(DIR === "")("where detection spends its time on a real sheet", (
           let refused: string | null = null;
           try {
             found = findWallsOnSheet({
-              segments: inUnits,
+              segments,
               textItems: text.items.map((i) => ({
                 str: i.str,
-                x: i.x / pageSize.widthPt,
-                y: i.y / pageSize.widthPt,
-                width: i.width / pageSize.widthPt,
-                height: i.height / pageSize.widthPt,
+                x: i.x,
+                y: i.y,
+                width: i.width,
+                height: i.height,
               })),
               pageSize,
               wallTypes: [],
@@ -102,7 +116,7 @@ describe.skipIf(DIR === "")("where detection spends its time on a real sheet", (
           // eslint-disable-next-line no-console -- this eval's output IS its report.
           console.log(
             `[profile] ${basename(file, ".pdf").slice(0, 24)} p${pageNumber}: ` +
-              `${inUnits.length} segments · ${text.items.length} text · ` +
+              `${segments.length} segments · ${text.items.length} text · ` +
               `read ${readMs}ms · find ${findMs}ms` +
               (refused ? ` · REFUSED: ${refused}` : ` · ${found?.clusters.length ?? 0} groups`) +
               (stages.length > 0 ? `\n           stages: ${stages.join(" · ")}` : ""),

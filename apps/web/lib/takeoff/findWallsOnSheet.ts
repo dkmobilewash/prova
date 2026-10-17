@@ -393,6 +393,7 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   stage("both-engines");
   let curvesRefused: number | null = null;
   const curves = curvedWalls(inUnits, {
+    onCount: (pieces) => input.onStage?.(`curve-pieces=${pieces}`, 0),
     onRefused: (pieces) => {
       curvesRefused = pieces;
       input.onStage?.(`curves-refused=${pieces}`, 0);

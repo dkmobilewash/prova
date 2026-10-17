@@ -100,6 +100,9 @@ export type CurvedOptions = {
    * silently did not run is the vacuous green this repo keeps paying for.
    */
   onRefused?: (pieces: number) => void;
+  /** How many short pieces the engine was handed, reported whether or not the
+   *  cap fires. It is what says whether the cap is a live guard or dead code. */
+  onCount?: (pieces: number) => void;
 };
 
 export function curvedWalls(
@@ -156,6 +159,7 @@ export function curvedWalls(
   // The cap is where the quadratic stops being affordable rather than a round
   // number: 8,000 pieces is about 1.5 seconds of assembly, and no fixture in
   // this repo's twenty-plan set comes near it — the densest is under 900.
+  options.onCount?.(pieces.length);
   if (pieces.length > MAX_CURVE_PIECES) {
     options.onRefused?.(pieces.length);
     return [];

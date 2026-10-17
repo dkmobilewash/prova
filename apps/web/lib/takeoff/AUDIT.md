@@ -631,6 +631,128 @@ anybody will read first.
 
 ---
 
+## THE PHASE 4 PROFILE WAS TAKEN THROUGH A BROKEN HARNESS, AND THE REAL COST WAS SOMEWHERE ELSE
+
+2026-10-17. The entry below — "the 102 seconds were the curve engine" — reached
+the right FIX for the wrong reason, on numbers that were all wrong. Corrected
+here rather than edited there, because the way it went wrong is worth more than
+the numbers.
+
+### The harness bug
+
+`detectProfile.eval.ts` pre-divided every coordinate by `widthPt` before
+calling `findWallsOnSheet`. So does `findWallsOnSheet`, at `allInUnits`. Every
+segment therefore arrived divided TWICE — **2,592 times too small on a 36-inch
+sheet** — and nothing threw, because lengths are still lengths. They were just
+all tiny.
+
+`FindWallsInput` says it in its first line: *"Every stroked segment on this
+sheet, in POINTS"*. The type could not catch it, because both forms are the
+same shape. `realSheets.eval.ts` had it right the whole time, which is why the
+two reports disagreed about A101 — one said 17.5s and 0 groups, the other said
+REFUSED, and that contradiction is what exposed this.
+
+### What the numbers actually are
+
+| | the Phase 4 entry says | measured on points |
+| --- | --- | --- |
+| A102, whole of findWallsOnSheet | 61,330 ms | **6,026 ms** |
+| …of which the pair engines | 479 ms | **5,960 ms** |
+| …of which curve assembly | 58,901 ms (96%) | under 50 ms |
+| curve pieces on A102 | 126,943 of 143,438 (88%) | **92,237** |
+
+**So the pair engines were never exonerated.** At 1/2592 scale everything is
+short, which is why 88% of the sheet looked like arc pieces; and the curve
+engine looked like 96% because the cap was doing its work in both cases. The
+entry's headline — "everybody guessed wrong about the pair test" — is itself
+wrong. AUDIT's original suspicion was right.
+
+### What survives, and it is the fix
+
+`MAX_CURVE_PIECES` is **load-bearing, not inert**. A102 hands the curve engine
+92,237 pieces against a cap of 8,000, so the cap fires — and with it lifted
+that sheet does not finish in **fifteen minutes**. The Phase 4 change was
+necessary and its reasoning was sound; only its evidence was corrupt.
+
+The lesson is narrower than "measure": it is that a profiler is CODE, and a
+profiler that disagrees with another instrument about the same sheet is
+reporting its own bug. Two instruments disagreed for three weeks and the
+disagreement was the finding.
+
+---
+
+## ONE LINEAR SCAN WAS SIXTY SECONDS OF A REAL SHEET
+
+Same day, and the reason A101 could not be measured.
+
+`oneFacePerLine` decides which drawn segments are pieces of the same line. It
+did it with `lines.find(...)` — a scan over every line found so far, once per
+segment. On A101 that is 425,057 segments against a list that grows to
+299,616: about **6e10 comparisons and 60.0 seconds**, which was the whole of
+that sheet's time before it refused.
+
+| sheet | before | after | faces out |
+| --- | --- | --- | --- |
+| A101 | 60,023 ms | **515 ms** | 299,616 -> identical |
+| A102 | 4,998 ms | **155 ms** | 62,954 -> identical |
+
+Indexed on the two things the predicate tests — direction and perpendicular
+offset — with the original predicate still applied to every candidate, so the
+index only decides what is worth testing. Insertion order is preserved by
+taking the lowest INDEX among candidates, because `find` returned the first
+match and which line a piece joins decides what gets merged.
+
+**Nothing is allocated per segment**, and that is deliberate: the spatial index
+written for `curvedWalls` in Phase 4 was TEN TIMES SLOWER than the scan it
+replaced, because it built a Set and sorted an array on every step. Nine bucket
+lookups and a running minimum here.
+
+### The direction wrap, and a test that proved nothing
+
+Directions are folded into a half turn, which puts VERTICAL at both ends of the
+bucket range, so the lookup wraps. The first test written for that was
+**vacuous and passed with the wrap deleted**: one vertical face drawn up and
+one drawn down normalise `ux` to exactly 0, land in the SAME bucket, and never
+reach the wrap.
+
+What reaches it is a pair STRADDLING vertical — 89.5 and 90.5 degrees, one
+degree apart, which the predicate calls parallel and the fold sends to buckets
+31 and -32. And they must share an offset: the fold flips the sign of `uy`, so
+two straddling lines away from the origin get offsets of opposite sign (+499
+and -503, measured) and could never have matched anyway. Through the origin
+both are 0.
+
+It is not a corner case. With the wrap removed, A101 produces **317,924 faces
+instead of 299,616** and A102 70,835 instead of 62,954 — six per cent of them,
+each one a line that failed to meet the rest of itself.
+
+### A101 still refuses, and raising the budget is NOT the fix
+
+With the scan fixed, A101 goes from 47.9s to **2.3s** and then refuses:
+12,179 lines long enough to be walls, against a `MAX_PAIR_TESTS` of 40M.
+
+Raising the budget was tried and **timed out at twenty minutes**. The file's
+own note says why, and it is right: *"This pairer is O(n^2) with
+`inAHatchSeries` scanning inside the inner loop"* — O(n^3), about 1e12 at this
+size. The budget is not a limitation to raise; it is the only thing stopping a
+hang.
+
+What would fix it is the same shape as the fix above: index `order` on
+direction and offset, and use that index BOTH for the partner search and
+inside `inAHatchSeries`, which looks for parallel lines at multiples of one
+offset step. Not attempted here — it is the most delicate function in the
+product, where a subtle change silently reprices walls, and it deserves its
+own pass with the twenty and the bench run at every step.
+
+### Guards
+
+Unchanged across all of it: the twenty fixtures 13 of 17 within 2%; the bench
+63/70 scales, 17/60 type-totals outside 2%, 0 unflagged phantoms, 111 walls
+over 10 ft missed; every real-sheet footage identical. The whole real-plan run
+dropped from 87s to 43s.
+
+---
+
 ## SIX REAL VIEWS HAD THEIR SCALE PRINTED BESIDE THEM AND MISSED THE WINDOW BY 0.0002
 
 2026-10-17, step 2. The real-sheet measure went from **2 of 9 floor plans

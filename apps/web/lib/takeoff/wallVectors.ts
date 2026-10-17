@@ -431,6 +431,26 @@ const SAME_FACE_ANGLE = 0.05;
 const SAME_FACE_OFFSET_FEET = 0.004;
 
 /**
+ * How wide one direction bucket is, for the index in `oneFacePerLine`.
+ *
+ * The match test is `|sin(angle between)| < SAME_FACE_ANGLE`, so the widest
+ * angle that can still match is `asin(SAME_FACE_ANGLE)`. A bucket that wide
+ * means a match is always in this bucket or one of its neighbours, which is
+ * what makes checking three of them exhaustive rather than approximate.
+ */
+const ANGLE_BUCKET = Math.asin(SAME_FACE_ANGLE);
+
+/**
+ * How many of those cover the direction range.
+ *
+ * `ux >= 0` folds every direction into a half turn, so atan2 lands in
+ * [-PI/2, PI/2] and the range is PI wide. The count is what lets the two END
+ * buckets be treated as neighbours: a vertical face can be drawn upward or
+ * downward and the normalisation sends those to opposite ends.
+ */
+const ANGLE_BUCKETS = Math.max(3, Math.ceil(Math.PI / ANGLE_BUCKET));
+
+/**
  * Join the pieces of one face back into one face.
  *
  * ── WHY THIS EXISTS, AND IT IS NOT ABOUT RECALL ──
@@ -473,6 +493,8 @@ export function oneFacePerLine(
   const gapLimit = SAME_FACE_GAP_FEET / feetPerPoint;
   type Line = { ux: number; uy: number; offset: number; pieces: StrokeSegment[] };
   const lines: Line[] = [];
+  /** Line indices by `${angleBucket},${offsetBucket}`, in insertion order. */
+  const byBucket = new Map<string, number[]>();
 
   for (const segment of segments) {
     const dx = segment.x2 - segment.x1;
@@ -490,13 +512,67 @@ export function oneFacePerLine(
     }
     // Perpendicular distance from the origin to this segment's line.
     const offset = segment.x1 * uy - segment.y1 * ux;
-    const found = lines.find(
-      (line) =>
-        Math.abs(line.ux * uy - line.uy * ux) < SAME_FACE_ANGLE &&
-        Math.abs(line.offset - offset) < offsetTolerance,
-    );
-    if (found) found.pieces.push(segment);
-    else lines.push({ ux, uy, offset, pieces: [segment] });
+
+    // ── THE SAME SEARCH, WITHOUT SCANNING EVERY LINE FOUND SO FAR ──
+    //
+    // This was `lines.find(...)`: a linear scan over every line accumulated,
+    // once per segment. On Camp Bow Wow A101 that is 425,057 segments against
+    // a list that grows to 299,616 — about 6e10 comparisons, and **60.0
+    // seconds** of the sheet's 47.9-second refusal. Measured, on the sheet,
+    // before anything was changed.
+    //
+    // The predicate is unchanged and is still applied to every candidate, so
+    // this cannot match anything the scan would not have. The index only
+    // decides which candidates are worth testing: a line can only match if it
+    // is within `SAME_FACE_ANGLE` in direction AND `offsetTolerance` in
+    // perpendicular offset, so bucketing on exactly those two and checking the
+    // neighbouring buckets covers every line the scan would have found.
+    //
+    // ── INSERTION ORDER IS LOAD-BEARING ──
+    //
+    // `find` returns the FIRST match, and which line a piece joins decides
+    // what gets merged with what. So this takes the lowest INDEX among the
+    // candidates rather than the first one the buckets happen to yield. With
+    // that, the output is identical to the scan's — which is what the twenty
+    // fixtures and the bench check, and they are unchanged.
+    //
+    // ── AND IT ALLOCATES NOTHING PER SEGMENT ──
+    //
+    // Said because the obvious version does. A spatial index written for
+    // `curvedWalls` was TEN TIMES SLOWER than the scan it replaced, because it
+    // built a Set and sorted an array on every step; see AUDIT.md. There is no
+    // Set and no sort here: nine bucket lookups and a running minimum.
+    const angleBucket = Math.floor(Math.atan2(uy, ux) / ANGLE_BUCKET);
+    const offsetBucket = Math.floor(offset / offsetTolerance);
+    let bestIndex = -1;
+    for (let da = -1; da <= 1; da += 1) {
+      for (let db = -1; db <= 1; db += 1) {
+        // Vertical lines sit at both ends of the half-open direction range —
+        // `ux >= 0` puts atan2 in [-PI/2, PI/2] — so the two end buckets are
+        // neighbours and the wrap has to be followed or a vertical face finds
+        // nobody. `% BUCKET_COUNT` with the + keeps it positive.
+        const a = (((angleBucket + da) % ANGLE_BUCKETS) + ANGLE_BUCKETS) % ANGLE_BUCKETS;
+        const bucket = byBucket.get(`${a},${offsetBucket + db}`);
+        if (bucket === undefined) continue;
+        for (const index of bucket) {
+          if (bestIndex !== -1 && index >= bestIndex) continue;
+          const line = lines[index];
+          if (Math.abs(line.ux * uy - line.uy * ux) >= SAME_FACE_ANGLE) continue;
+          if (Math.abs(line.offset - offset) >= offsetTolerance) continue;
+          bestIndex = index;
+        }
+      }
+    }
+    if (bestIndex !== -1) lines[bestIndex].pieces.push(segment);
+    else {
+      const index = lines.length;
+      lines.push({ ux, uy, offset, pieces: [segment] });
+      const a = (((angleBucket % ANGLE_BUCKETS) + ANGLE_BUCKETS) % ANGLE_BUCKETS);
+      const key = `${a},${offsetBucket}`;
+      const bucket = byBucket.get(key);
+      if (bucket) bucket.push(index);
+      else byBucket.set(key, [index]);
+    }
   }
 
   const joined: StrokeSegment[] = [];
