@@ -551,7 +551,7 @@ describe("the verdict", () => {
     // Listed here rather than exempted, because the point of this test is that
     // every clock read in the app is one somebody chose.
     expect(other).toEqual([
-      "apps/web/components/AnswerKeyPanel.tsx:129",
+      "apps/web/components/AnswerKeyPanel.tsx:137",
       "apps/web/components/QuickBooksReconcile.tsx:59",
     ]);
   });

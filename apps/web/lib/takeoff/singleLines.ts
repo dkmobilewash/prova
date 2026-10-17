@@ -203,3 +203,30 @@ export function classifySingleLines(input: ClassifyInput): ClassifiedLine[] {
   }
   return out;
 }
+
+/**
+ * ── WHICH OF THESE A REVIEWER SHOULD BE ASKED ABOUT ──
+ *
+ * Every class above is a thing this file has already decided is not a wall
+ * face, with a reason — and nothing acted on it, so an answer-key reviewer was
+ * offered all of them. On Camp Bow Wow A102 that is 168 lines, of which 162
+ * are `in-a-hatch` and 2 are `past-the-building`: an hour of pressing reject on
+ * lines the app had already named.
+ *
+ * So only `unclassified` is offered. It is the honest set: the ones this file
+ * looked at and could say nothing about, which is exactly the question a
+ * reviewer is for.
+ *
+ * ── NOTHING IS HIDDEN SILENTLY, WHICH IS THE OTHER HALF ──
+ *
+ * The panel reports what was set aside and by which class, and can bring them
+ * back. A key is a judgement about a drawing, and a reviewer who cannot see
+ * what the app decided for them is reviewing the app's opinion rather than the
+ * drawing. `AnswerKeyPanel` carries the control.
+ */
+export const OFFERED_CLASSES: readonly SingleLineClass[] = ["unclassified"];
+
+/** Is this one a reviewer should be asked about by default? */
+export function worthOffering(kind: SingleLineClass): boolean {
+  return OFFERED_CLASSES.includes(kind);
+}

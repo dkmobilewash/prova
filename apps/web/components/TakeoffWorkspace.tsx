@@ -598,6 +598,12 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
       setReadNumberByPage((prev) => (prev[forPage] === number ? prev : { ...prev, [forPage]: number })),
     [],
   );
+  /** What the classifier set aside on each sheet, and whether the reviewer
+   *  has asked to be offered it anyway. Per page like everything else here. */
+  const [setAsideByPage, setSetAsideByPage] = useState<
+    Record<number, { kind: string; why: string; n: number }[]>
+  >({});
+  const [offerAllByPage, setOfferAllByPage] = useState<Record<number, true>>({});
   const [keyStateByPage, setKeyStateByPage] = useState<Record<number, ReviewState>>({});
   const keyState = onThisSheet(keyStateByPage, page);
   const setKeyState = useCallback(
@@ -959,6 +965,9 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
                       focusedId: keyFocus,
                       onFocus: setKeyFocus,
                       overlaysOn: keyOverlays,
+                      offerAll: onThisSheet(offerAllByPage, page) ?? false,
+                      onSetAside: (counts) =>
+                        setSetAsideByPage((prev) => setOnThisSheet(prev, page, counts)),
                       onCandidates: (candidates) => setKeyState(startReview(candidates)),
                     }
                   : undefined
@@ -1009,6 +1018,11 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
               </div>
             ) : (
               <AnswerKeyPanel
+                setAside={onThisSheet(setAsideByPage, page) ?? undefined}
+                offerAll={onThisSheet(offerAllByPage, page) ?? false}
+                onOfferAll={(next) =>
+                  setOfferAllByPage((prev) => setOnThisSheet(prev, page, next ? true : null))
+                }
                 state={keyState}
                 onState={setKeyState}
                 focusedId={keyFocus}

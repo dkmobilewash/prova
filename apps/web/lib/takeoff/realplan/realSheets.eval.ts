@@ -22,6 +22,7 @@ import {
   wallsPerView,
 } from "../sheetViews";
 import { clusterByThickness, type StrokeSegment, type WallCandidate } from "../wallVectors";
+import { drawingRegions, segmentsInRegions } from "../planRegion";
 
 /**
  * ── THE WHOLE SET, NOT ONE SHEET: WHICH SHEETS ARE FLOOR PLANS, AND WHAT THE
@@ -474,7 +475,27 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
             const feetPerUnit = feetPerUnitFrom(sheetWide, text.widthPt);
             report.feetPerUnit = feetPerUnit;
             const textItems = textItemsAll;
-            const input = { segments, textItems, pageSize, feetPerUnit, wallTypes: [], sampledSheets: null };
+            // ── THE SAME CLIP THE VIEWER APPLIES ON A ONE-DRAWING SHEET ──
+            //
+            // Added with `planRegion.ts`. Without it this file measures the
+            // whole sheet while the app measures the drawing, and the number
+            // meant to GRADE the product is about something the product does
+            // not do — which is the parity gap this eval already closed once
+            // for the multi-view path.
+            const drawing = drawingRegions(
+              viewRegions(segments, pageSize),
+              segments,
+              pageSize.widthPt,
+            );
+            const onTheDrawing = segmentsInRegions(segments, drawing, pageSize.widthPt);
+            const input = {
+              segments: onTheDrawing as StrokeSegment[],
+              textItems,
+              pageSize,
+              feetPerUnit,
+              wallTypes: [],
+              sampledSheets: null,
+            };
             const views = allViews;
             // ── A REAL SHEET CAN BE REFUSED OUTRIGHT, AND THAT IS A RESULT ──
             //

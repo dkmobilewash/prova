@@ -39,6 +39,11 @@ export type AnswerKeyPanelProps = {
   overlaysOn: boolean;
   onOverlays: (on: boolean) => void;
   sheet: { set: string; page: number; number: string; feetPerUnit: number };
+  /** What the classifier set aside, by its own reason — see `onSetAside`. */
+  setAside?: { kind: string; why: string; n: number }[];
+  /** Whether every unpaired line is being offered, and how to change it. */
+  offerAll?: boolean;
+  onOfferAll?: (next: boolean) => void;
 };
 
 // The colours live in `answerKeyReview.ts` — a plain module — so that
@@ -48,6 +53,9 @@ import { SINGLE_LINE_COLOUR, VERDICT_COLOURS } from "@/lib/takeoff/answerKeyRevi
 export { SINGLE_LINE_COLOUR, VERDICT_COLOURS };
 
 export function AnswerKeyPanel({
+  setAside,
+  offerAll,
+  onOfferAll,
   state,
   onState,
   focusedId,
@@ -171,6 +179,37 @@ export function AnswerKeyPanel({
           Nothing counts until you say so. Everything below is a candidate.
         </p>
       </div>
+
+      {/* ── WHAT WAS SET ASIDE, AND HOW TO SEE IT ANYWAY ──
+
+          Only the lines the classifier could say nothing about are offered,
+          which took A102 from 168 possible walls to 2. The rest are not gone
+          and must not look gone: a reviewer who cannot tell that the app
+          decided for them is reviewing the app's opinion rather than the
+          drawing, and a key made that way grades the detector against itself.
+
+          So the count is on screen with its reasons, and the override is
+          beside it. */}
+      {(setAside?.length ?? 0) > 0 && (
+        <div
+          className="rounded-md border border-line-card bg-surface p-2"
+          data-takeoff="key-set-aside"
+        >
+          <p className="text-[11px] text-ink-body">
+            {setAside!.reduce((n, one) => n + one.n, 0)} line
+            {setAside!.reduce((n, one) => n + one.n, 0) === 1 ? "" : "s"} set aside:{" "}
+            {setAside!.map((one) => `${one.n} ${one.kind.replace(/-/g, " ")}`).join(", ")}.
+          </p>
+          <button
+            type="button"
+            onClick={() => onOfferAll?.(!offerAll)}
+            data-takeoff="key-offer-all"
+            className="mt-1 text-[11px] text-link hover:text-link-hover"
+          >
+            {offerAll ? "Offer only the unexplained ones" : "Offer these too"}
+          </button>
+        </div>
+      )}
 
       {/* ── WHAT COUNTS, IN THE REVIEWER'S OWN TERMS ──
           On screen rather than in a document, because a key made under one

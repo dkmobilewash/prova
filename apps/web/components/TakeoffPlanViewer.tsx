@@ -104,6 +104,7 @@ import { proposalSections, showsHeadings } from "@/lib/takeoff/proposalSections"
 import { calibrationForView, type ViewScale } from "@/lib/takeoff/sheetScale";
 import { SINGLE_LINE_COLOUR, VERDICT_COLOURS } from "@/components/AnswerKeyPanel";
 import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
+import { drawingRegions, segmentsInRegions } from "@/lib/takeoff/planRegion";
 import { takeoffSheetVerdict, type TakeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
 import {
   candidatesFromSheet,
@@ -112,7 +113,7 @@ import {
   type Candidate,
   type ReviewState,
 } from "@/lib/takeoff/answerKeyReview";
-import { classifySingleLines } from "@/lib/takeoff/singleLines";
+import { classifySingleLines, worthOffering } from "@/lib/takeoff/singleLines";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 
 /**
@@ -423,6 +424,22 @@ export function TakeoffPlanViewer({
      * component, and the unpaired lines cannot be found without it.
      */
     onCandidates?: (candidates: Candidate[]) => void;
+    /**
+     * What the classifier set aside, counted by its own reason.
+     *
+     * ── NOTHING IS EXCLUDED SILENTLY, AND THIS IS THE HALF THAT KEEPS IT
+     *    TRUE ──
+     *
+     * Only `unclassified` lines are offered, which took A102 from 168 blue
+     * candidates to 2. The other 166 are not gone: they are a hatch, a grid
+     * line past the building or a symbol, each already named as such, and a
+     * reviewer who cannot see that the app decided for them is reviewing the
+     * app's opinion rather than the drawing.
+     */
+    onSetAside?: (counts: { kind: string; why: string; n: number }[]) => void;
+    /** Offer every unpaired line, including the ones the classifier named.
+     *  The reviewer's own override for the filter above. */
+    offerAll?: boolean;
   };
   scaleDeclineByPage?: ScaleDeclineByPage;
   /**
@@ -753,6 +770,8 @@ export function TakeoffPlanViewer({
    * pressed — found by walking it in a browser, which is the only instrument
    * that could have.
    */
+  /** What the classifier set aside on the last find, counted by reason. */
+  const setAsideRef = useRef<{ kind: string; why: string; n: number }[]>([]);
   const lastDetect = useRef<{
     page: number;
     segments: StrokeSegment[];
@@ -783,6 +802,7 @@ export function TakeoffPlanViewer({
    * Null when nothing has been detected on this page, which is what the rail's
    * empty state is for.
    */
+  const offerAll = answerKey?.offerAll ?? false;
   const candidatesFromLastDetect = useCallback((): Candidate[] | null => {
     const last = lastDetect.current;
     if (last === null || last.page !== pageNumber) return null;
@@ -818,6 +838,24 @@ export function TakeoffPlanViewer({
         !covered(f) &&
         !faces.some((other) => other !== f && wallFromPair(f, other, pairOptions) !== null),
     );
+    const classified = classifySingleLines({
+      unclaimed,
+      faces,
+      segments: last.segments.map(inPageWidthUnits(last.widthPt)),
+      walls: last.walls,
+      feetPerUnit: last.feetPerUnit,
+    });
+    // Counted by reason, for the panel to report. Computed even when
+    // `offerAll` is on, so the sentence is about the drawing rather than
+    // about the filter's current setting.
+    const aside = new Map<string, { kind: string; why: string; n: number }>();
+    for (const one of classified) {
+      if (worthOffering(one.kind)) continue;
+      const at = aside.get(one.kind) ?? { kind: one.kind, why: one.why, n: 0 };
+      at.n += 1;
+      aside.set(one.kind, at);
+    }
+    setAsideRef.current = [...aside.values()].sort((a, b) => b.n - a.n);
     return candidatesFromSheet({
       walls: last.walls
         .filter((w) => onAPlan(w.x1, w.y1, w.x2, w.y2))
@@ -829,20 +867,23 @@ export function TakeoffPlanViewer({
         lengthFeet: w.lengthFeet,
         thicknessFeet: w.thicknessFeet,
       })),
-      singles: classifySingleLines({
-        unclaimed,
-        faces,
-        segments: last.segments.map(inPageWidthUnits(last.widthPt)),
-        walls: last.walls,
-        feetPerUnit: last.feetPerUnit,
-      }).map((one) => ({
-        line: one.line,
-        lengthFeet: one.lengthFeet,
-        kind: one.kind,
-        why: one.why,
-      })),
+      // ── ONLY THE ONES THE CLASSIFIER COULD NOT RULE OUT ──
+      //
+      // `classifySingleLines` has already named each of these a hatch, a grid
+      // line past the building, a dashed line or a symbol — and every one was
+      // offered anyway. On A102 that is 162 hatch lines out of 168. See
+      // `OFFERED_CLASSES`; what is set aside is reported, never dropped in
+      // silence.
+      singles: classified
+        .filter((one) => offerAll || worthOffering(one.kind))
+        .map((one) => ({
+          line: one.line,
+          lengthFeet: one.lengthFeet,
+          kind: one.kind,
+          why: one.why,
+        })),
     });
-  }, [pageNumber]);
+  }, [pageNumber, offerAll]);
 
   // ── AND THE MODE CAN BE TURNED ON AFTER A DETECTION ──
   //
@@ -855,7 +896,10 @@ export function TakeoffPlanViewer({
     if (!answerKey?.onCandidates) return;
     if (answerKey.state.candidates.length > 0) return;
     const candidates = candidatesFromLastDetect();
-    if (candidates !== null && candidates.length > 0) answerKey.onCandidates(candidates);
+    if (candidates !== null && candidates.length > 0) {
+      answerKey.onCandidates(candidates);
+      answerKey.onSetAside?.(setAsideRef.current);
+    }
   }, [answerKey, candidatesFromLastDetect]);
 
   /** The box being dragged in answer-key mode, in page-width units. */
@@ -1959,8 +2003,27 @@ export function TakeoffPlanViewer({
             sampledSheets: null,
           });
       } else {
-        found = findWallsOnSheet({
+        // ── ONE DRAWING ON THE SHEET STILL IS NOT THE WHOLE SHEET ──
+        //
+        // `viewRegions` has already separated the title block, the notes and
+        // the legend boxes from the drawing; with one caption they were all
+        // handed to it, because a region with no caption joins the nearest.
+        // That rule is right and stays — it is what keeps a plan's dimension
+        // column with its plan — but it meant a one-drawing sheet measured its
+        // own title block, and offered its ruled lines as possible walls.
+        //
+        // `planRegion.ts` carries why this cannot reintroduce the S05/S07
+        // scar: it keeps the BUSIEST region and whatever is comparable to it,
+        // which is where a building is.
+        const drawing = drawingRegions(
+          viewRegions(segments, pageSize),
           segments,
+          pageSize.widthPt,
+        );
+        const onTheDrawing = segmentsInRegions(segments, drawing, pageSize.widthPt);
+        planBoxes = drawing.length > 0 ? [...drawing] : null;
+        found = findWallsOnSheet({
+          segments: onTheDrawing,
           textItems,
           pageSize,
           feetPerUnit,
@@ -2002,7 +2065,16 @@ export function TakeoffPlanViewer({
       // grading.
       lastDetect.current = {
         page: pageNumber,
-        segments,
+        // THE STROKES THE MEASUREMENT USED, not the page's. A candidate built
+        // from the raw page is a candidate from the title block as readily as
+        // from the plan — see `planRegion.ts`.
+        segments: found.inUnits.map((one) => ({
+          ...one,
+          x1: one.x1 * pageSize.widthPt,
+          y1: one.y1 * pageSize.widthPt,
+          x2: one.x2 * pageSize.widthPt,
+          y2: one.y2 * pageSize.widthPt,
+        })),
         feetPerUnit,
         widthPt: pageSize.widthPt,
         walls: [...found.walls],
@@ -2010,7 +2082,10 @@ export function TakeoffPlanViewer({
       };
       if (answerKey?.onCandidates) {
         const candidates = candidatesFromLastDetect();
-        if (candidates !== null) answerKey.onCandidates(candidates);
+        if (candidates !== null) {
+          answerKey.onCandidates(candidates);
+          answerKey.onSetAside?.(setAsideRef.current);
+        }
       }
 
       // The sheet this answer is about, recorded WITH the answer. `pageNumber`
