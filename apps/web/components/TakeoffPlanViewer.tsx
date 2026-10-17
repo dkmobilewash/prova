@@ -69,7 +69,7 @@ import { BLANK_TILE_INK, TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
 import type { WallClassifyLabel } from "@prova/integrations";
 import { pagesToSample } from "@/lib/takeoff/sheetTemplate";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "@/lib/takeoff/findWallsOnSheet";
-import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
+import { SheetTooDenseError, oneFacePerLine, wallFromPair } from "@/lib/takeoff/wallVectors";
 import { layersOf, segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 import { droppedLayersSentence, type LayerDrop } from "@/lib/takeoff/layerNames";
 import { sheetNumberFrom } from "@/lib/plan-ingest/sheetNumber";
@@ -102,6 +102,15 @@ import {
 } from "@/lib/takeoff/wallGroups";
 import { proposalSections, showsHeadings } from "@/lib/takeoff/proposalSections";
 import { calibrationForView, type ViewScale } from "@/lib/takeoff/sheetScale";
+import { SINGLE_LINE_COLOUR, VERDICT_COLOURS } from "@/components/AnswerKeyPanel";
+import {
+  candidatesFromSheet,
+  candidatesInBox,
+  setVerdict,
+  type Candidate,
+  type ReviewState,
+} from "@/lib/takeoff/answerKeyReview";
+import { classifySingleLines } from "@/lib/takeoff/singleLines";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 
 /**
@@ -230,6 +239,7 @@ export function TakeoffPlanViewer({
   wallTypes,
   scalePrefillByPage,
   viewScalesByPage,
+  answerKey,
   scaleDeclineByPage,
   duplicateWallsByPage = {},
   sheetLabelByPage = {},
@@ -373,6 +383,27 @@ export function TakeoffPlanViewer({
    * for these.
    */
   viewScalesByPage?: Record<number, ViewScale[]>;
+  /**
+   * ── ANSWER-KEY REVIEW ──
+   *
+   * When set, the overlay stops being a list of findings and becomes a list of
+   * QUESTIONS: every candidate is drawn in the colour of its verdict, clicking
+   * one focuses it, and dragging a box decides many at once. See
+   * `AnswerKeyPanel` for why nothing is accepted until it is accepted.
+   */
+  answerKey?: {
+    state: ReviewState;
+    onState: (next: ReviewState) => void;
+    focusedId: string | null;
+    onFocus: (id: string | null) => void;
+    overlaysOn: boolean;
+    /**
+     * Called with everything a reviewer has to decide about, once detection
+     * has run. Derived in here because the raw geometry never leaves this
+     * component, and the unpaired lines cannot be found without it.
+     */
+    onCandidates?: (candidates: Candidate[]) => void;
+  };
   scaleDeclineByPage?: ScaleDeclineByPage;
   /**
    * Per page, why a wall takeoff here would probably be a DOUBLE COUNT.
@@ -640,6 +671,104 @@ export function TakeoffPlanViewer({
 
   const sheet = sheets.find((s) => s.pageNumber === pageNumber) ?? null;
   const calibration = sheet?.calibration ?? null;
+  /**
+   * What the last detection on this page was computed FROM.
+   *
+   * Answer-key mode needs the raw geometry to find the lines the detector
+   * could not pair, and that geometry is read inside `onFindWalls` and
+   * discarded. Without this, turning the mode on after a detection showed an
+   * empty rail telling the reviewer to press a button they had already
+   * pressed — found by walking it in a browser, which is the only instrument
+   * that could have.
+   */
+  const lastDetect = useRef<{
+    page: number;
+    segments: StrokeSegment[];
+    feetPerUnit: number;
+    widthPt: number;
+    walls: WallCandidate[];
+  } | null>(null);
+
+  /**
+   * Everything a reviewer has to decide about on the last-detected page.
+   *
+   * Two populations: what the detector REPORTED, and the long lines it could
+   * not pair at all — 7,694 ft of those on one real sheet, 93% of which
+   * classify as hatching. A key made from the first alone would be a key about
+   * the detector's own output, which is the thing it exists to grade.
+   *
+   * Null when nothing has been detected on this page, which is what the rail's
+   * empty state is for.
+   */
+  const candidatesFromLastDetect = useCallback((): Candidate[] | null => {
+    const last = lastDetect.current;
+    if (last === null || last.page !== pageNumber) return null;
+    const faces = oneFacePerLine(last.segments, last.feetPerUnit / last.widthPt).map(
+      inPageWidthUnits(last.widthPt),
+    );
+    const covered = (f: StrokeSegment) => {
+      const mx = (f.x1 + f.x2) / 2;
+      const my = (f.y1 + f.y2) / 2;
+      return last.walls.some((w) => {
+        const dx = w.x2 - w.x1;
+        const dy = w.y2 - w.y1;
+        const len2 = dx * dx + dy * dy;
+        const t =
+          len2 === 0 ? 0 : Math.max(0, Math.min(1, ((mx - w.x1) * dx + (my - w.y1) * dy) / len2));
+        return Math.hypot(mx - (w.x1 + t * dx), my - (w.y1 + t * dy)) * last.feetPerUnit <= 1.5;
+      });
+    };
+    const pairOptions = { feetPerPoint: last.feetPerUnit };
+    const unclaimed = faces.filter(
+      (f) =>
+        Math.hypot(f.x2 - f.x1, f.y2 - f.y1) * last.feetPerUnit >= 12 &&
+        !covered(f) &&
+        !faces.some((other) => other !== f && wallFromPair(f, other, pairOptions) !== null),
+    );
+    return candidatesFromSheet({
+      walls: last.walls.map((w) => ({
+        x1: w.x1,
+        y1: w.y1,
+        x2: w.x2,
+        y2: w.y2,
+        lengthFeet: w.lengthFeet,
+        thicknessFeet: w.thicknessFeet,
+      })),
+      singles: classifySingleLines({
+        unclaimed,
+        faces,
+        segments: last.segments.map(inPageWidthUnits(last.widthPt)),
+        walls: last.walls,
+        feetPerUnit: last.feetPerUnit,
+      }).map((one) => ({
+        line: one.line,
+        lengthFeet: one.lengthFeet,
+        kind: one.kind,
+        why: one.why,
+      })),
+    });
+  }, [pageNumber]);
+
+  // ── AND THE MODE CAN BE TURNED ON AFTER A DETECTION ──
+  //
+  // Without this, a reviewer who had already pressed Find the walls opened the
+  // rail onto an empty state telling them to press it again. Found by walking
+  // it in a browser, which is the only instrument that could have: every unit
+  // test here passed, because each one calls the mode the way the mode wants
+  // to be called.
+  useEffect(() => {
+    if (!answerKey?.onCandidates) return;
+    if (answerKey.state.candidates.length > 0) return;
+    const candidates = candidatesFromLastDetect();
+    if (candidates !== null && candidates.length > 0) answerKey.onCandidates(candidates);
+  }, [answerKey, candidatesFromLastDetect]);
+
+  /** The box being dragged in answer-key mode, in page-width units. */
+  const [keyBox, setKeyBox] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(
+    null,
+  );
+  /** Whether Shift was held during the box drag — Shift rejects, plain accepts. */
+  const [keyShift, setKeyShift] = useState(false);
 
   // ── Load the document once ────────────────────────────────────────────
   useEffect(() => {
@@ -898,6 +1027,22 @@ export function TakeoffPlanViewer({
   };
 
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    // ── A DRAG IN REVIEW MODE IS A SELECTION, NOT A DRAWING ──
+    //
+    // Deciding a hundred hatch lines one at a time is the thing that makes a
+    // key cost an afternoon instead of twenty minutes, and hatching arrives in
+    // a block. So a drag takes everything whose midpoint lands inside it.
+    //
+    // Before the `drawing` guard, because review mode is not a drawing tool
+    // and must work with no tool selected.
+    if (answerKey !== undefined && !drawing) {
+      const raw = pointAt(event);
+      if (!raw) return;
+      event.preventDefault();
+      setKeyShift(event.shiftKey);
+      setKeyBox({ x1: raw.x, y1: raw.y, x2: raw.x, y2: raw.y });
+      return;
+    }
     if (!drawing) return;
     const raw = pointAt(event);
     if (!raw) return;
@@ -1652,6 +1797,30 @@ export function TakeoffPlanViewer({
       // then deliberately discarded, because the real clustering happens inside
       // `regroup`. The pipeline still returns it for the bench.
       setFound(found.groups);
+
+      // ── AND, FOR A REVIEWER, EVERYTHING THE DETECTOR COULD NOT REACH ──
+      //
+      // Derived HERE because this is the only place that holds both the
+      // detection and the raw geometry it came from. The workspace cannot do
+      // it: the segments never leave this component.
+      //
+      // The unpaired long lines are the half of the question the detector has
+      // no opinion about — 7,694 ft of them on one real sheet, 93% of which
+      // classify as hatching. A key made without them would be a key about the
+      // detector's own output, which is the thing it is supposed to be
+      // grading.
+      lastDetect.current = {
+        page: pageNumber,
+        segments,
+        feetPerUnit,
+        widthPt: pageSize.widthPt,
+        walls: [...found.walls],
+      };
+      if (answerKey?.onCandidates) {
+        const candidates = candidatesFromLastDetect();
+        if (candidates !== null) answerKey.onCandidates(candidates);
+      }
+
       // The sheet this answer is about, recorded WITH the answer. `pageNumber`
       // is read here rather than at render, so a result can never be relabelled
       // by paging — see `wallsOnThisSheet`.
@@ -2494,9 +2663,18 @@ export function TakeoffPlanViewer({
               viewBox={`0 0 1 ${aspect}`}
               preserveAspectRatio="none"
               style={{ width: cssWidth ? `${cssWidth}px` : "100%", height: cssWidth ? `${cssWidth * aspect}px` : "100%" }}
-              className={`absolute left-0 top-0 ${drawing ? "cursor-crosshair touch-none" : "pointer-events-none"}`}
+              className={`absolute left-0 top-0 ${
+                drawing || answerKey !== undefined
+                  ? "cursor-crosshair touch-none"
+                  : "pointer-events-none"
+              }`}
               onPointerDown={onPointerDown}
               onPointerMove={(event) => {
+                if (keyBox !== null) {
+                  const raw = pointAt(event);
+                  if (raw) setKeyBox({ ...keyBox, x2: raw.x, y2: raw.y });
+                  return;
+                }
                 if (draggingVertex === null || !editDraft) return;
                 const raw = pointAt(event);
                 if (!raw) return;
@@ -2510,9 +2688,97 @@ export function TakeoffPlanViewer({
                 const point = placePoint(raw, from, event.shiftKey);
                 setEditDraft(moveVertex(editDraft.xs, editDraft.ys, draggingVertex, point));
               }}
-              onPointerUp={() => setDraggingVertex(null)}
+              onPointerUp={() => {
+                if (keyBox !== null && answerKey !== undefined) {
+                  const ids = candidatesInBox(answerKey.state, keyBox);
+                  // A box that caught nothing is a CLICK ON NOTHING, which
+                  // clears the focus rather than deciding anything — the same
+                  // way edit mode treats a click on empty paper.
+                  if (ids.length > 0) {
+                    // Shift rejects, plain accepts. Two gestures rather than a
+                    // mode, because a reviewer sweeping hatching wants the
+                    // rejecting one and must not have to remember which mode
+                    // they left it in.
+                    answerKey.onState(
+                      setVerdict(answerKey.state, ids, keyShift ? "not-a-wall" : "wall"),
+                    );
+                  } else {
+                    answerKey.onFocus(null);
+                  }
+                  setKeyBox(null);
+                  return;
+                }
+                setDraggingVertex(null);
+              }}
               onPointerLeave={() => setDraggingVertex(null)}
             >
+              {/* ── ANSWER-KEY REVIEW, DRAWN AS QUESTIONS ──
+                  Every candidate in the colour of its verdict: amber for
+                  undecided, green accepted, grey rejected, blue for a single
+                  line nobody has ruled on. Clicking one focuses it; the panel
+                  does the deciding. Hidden entirely when the reviewer presses
+                  H, which is the only way to read the drawing underneath. */}
+              {answerKey !== undefined && answerKey.overlaysOn && (
+                <g data-takeoff="key-overlay">
+                  {answerKey.state.candidates.map((one) => {
+                    const verdict = answerKey.state.verdicts[one.id] ?? "unreviewed";
+                    const colour =
+                      one.from === "single" && verdict === "unreviewed"
+                        ? SINGLE_LINE_COLOUR
+                        : VERDICT_COLOURS[verdict];
+                    const focused = answerKey.focusedId === one.id;
+                    return (
+                      <line
+                        key={one.id}
+                        data-takeoff="key-line"
+                        data-id={one.id}
+                        x1={one.x1}
+                        y1={one.y1}
+                        x2={one.x2}
+                        y2={one.y2}
+                        stroke={colour}
+                        strokeWidth={focused ? STROKE_PX * 3 : STROKE_PX * 1.5}
+                        strokeLinecap="round"
+                        opacity={verdict === "not-a-wall" ? 0.35 : 1}
+                        vectorEffect="non-scaling-stroke"
+                        style={{ cursor: "pointer" }}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          answerKey.onFocus(one.id);
+                        }}
+                      />
+                    );
+                  })}
+                  {answerKey.state.traced.map((one) => (
+                    <line
+                      key={one.id}
+                      x1={one.x1}
+                      y1={one.y1}
+                      x2={one.x2}
+                      y2={one.y2}
+                      stroke={VERDICT_COLOURS.wall}
+                      strokeWidth={STROKE_PX * 2}
+                      strokeDasharray={`${STROKE_PX * 2} ${STROKE_PX}`}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ))}
+                </g>
+              )}
+              {/* The box being dragged to decide many at once. */}
+              {keyBox !== null && (
+                <rect
+                  data-takeoff="key-box"
+                  x={Math.min(keyBox.x1, keyBox.x2)}
+                  y={Math.min(keyBox.y1, keyBox.y2)}
+                  width={Math.abs(keyBox.x2 - keyBox.x1)}
+                  height={Math.abs(keyBox.y2 - keyBox.y1)}
+                  fill="#2563eb"
+                  fillOpacity={0.08}
+                  stroke="#2563eb"
+                  strokeWidth={STROKE_PX}
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
               {/* The calibration line, redrawn over the sheet so the scale is
                   something a reviewer can SEE rather than take on faith. */}
               {calibration && (

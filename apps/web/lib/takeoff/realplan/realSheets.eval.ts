@@ -10,6 +10,7 @@ import { feetPerUnitFrom, sheetScale } from "../sheetScale";
 import { findWallsOnSheet, type SheetTextItem } from "../findWallsOnSheet";
 import { sheetSuitability } from "../sheetSuitability";
 import { nameSheet } from "./nameSheet";
+import { answerKeyFromJson, scoreAgainstKey, type AnswerKey, type KeyScore } from "../answerKey";
 import { takeoffRank, type SheetRank } from "../sheetSuitability";
 import {
   primaryView,
@@ -105,6 +106,52 @@ function sameSheetNumber(a: string, b: string): boolean {
   return a.replace(/[\s.]+/g, "").toUpperCase() === b.replace(/[\s.]+/g, "").toUpperCase();
 }
 
+/**
+ * Reviewed answer keys, read from OUTSIDE the repository.
+ *
+ * The sheets are a client's drawings and a key is derived from one, so it is
+ * treated the same way: read from `REAL_PLAN_KEYS`, never committed. With no
+ * folder set, every sheet reports exactly as it did before — a missing key is
+ * not a failure, it is a sheet nobody has reviewed yet.
+ */
+const KEYS_DIR = process.env.REAL_PLAN_KEYS ?? "";
+
+function loadKeys(): Map<string, AnswerKey> {
+  const out = new Map<string, AnswerKey>();
+  if (KEYS_DIR === "") return out;
+  let names: string[];
+  try {
+    names = readdirSync(KEYS_DIR).filter((f) => f.toLowerCase().endsWith(".json"));
+  } catch {
+    return out;
+  }
+  for (const name of names) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(join(KEYS_DIR, name), "utf8"));
+    } catch {
+      continue;
+    }
+    const key = answerKeyFromJson(parsed);
+    // A key that does not parse is SKIPPED LOUDLY rather than ignored: half a
+    // key would grade a run against the wrong numbers and nothing downstream
+    // could tell.
+    if (key === null) {
+      // eslint-disable-next-line no-console -- this eval's output IS its report.
+      console.log(`  !! ${name} is not a readable answer key and was skipped`);
+      continue;
+    }
+    out.set(key.sheet.number.replace(/[\s.]+/g, "").toUpperCase(), key);
+  }
+  return out;
+}
+
+const KEYS = loadKeys();
+
+function keyFor(sheetNumber: string): AnswerKey | null {
+  return KEYS.get(sheetNumber.replace(/[\s.]+/g, "").toUpperCase()) ?? null;
+}
+
 const SHEETS = (process.env.REAL_PLAN_SHEETS ?? "")
   .split(";")
   .map((part) => part.trim())
@@ -149,6 +196,9 @@ type SheetReport = {
   segmentCount: number;
   /** How long the whole sheet took, read end to end. */
   ms: number;
+  /** Graded against a reviewed key, when one exists for this sheet. */
+  score: KeyScore | null;
+  keyBy: string;
   /** The overlay's file name under REAL_PLAN_OUT, when one was written. */
   overlay: string;
 };
@@ -396,6 +446,8 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
             refused: "",
             segmentCount: 0,
             ms: 0,
+            score: null,
+            keyBy: "",
             overlay: "",
           };
           // A PRINTED scale is the app's own fallback and the report used to
@@ -408,6 +460,10 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
           }
 
           const sheetStarted = Date.now();
+          // What this sheet ends up reporting, from whichever branch ran — the
+          // sheet-wide scale or the per-view one. Collected so a key can grade
+          // either without the grading code knowing which happened.
+          let reportedWalls: readonly WallCandidate[] = [];
           // DIMENSIONS or PRINTED both give the sheet ONE scale, and from here
           // the two are measured identically — `report.scale` above is what
           // records which it was.
@@ -434,6 +490,26 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
               report.refused = err instanceof Error ? err.message.slice(0, 120) : String(err).slice(0, 120);
               report.segmentCount = segments.length;
               report.ms = Date.now() - sheetStarted;
+          // ── AND GRADED, IF SOMEBODY HAS REVIEWED THIS SHEET ──
+          //
+          // Keyed on the sheet NUMBER rather than the page, so a re-exported
+          // set does not orphan the work. A sheet with no key is reported
+          // exactly as before — the key adds an error bar where one exists and
+          // claims nothing where one does not.
+          const key = keyFor(sheet.number);
+          if (key !== null && report.totalFeet > 0) {
+            report.score = scoreAgainstKey(
+              reportedWalls.map((w) => ({
+                x1: w.x1,
+                y1: w.y1,
+                x2: w.x2,
+                y2: w.y2,
+                lengthFeet: w.lengthFeet,
+              })),
+              key,
+            );
+            report.keyBy = `${key.reviewedBy}, ${key.reviewedAt.slice(0, 10)}`;
+          }
           reports.push(report);
               continue;
             }
@@ -466,6 +542,7 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
                 })),
               ];
             }
+            reportedWalls = found.walls;
             report.totalFeet = found.walls.reduce((n, w) => n + w.lengthFeet, 0);
             report.runs = found.walls.length;
             report.gridDropped = found.gridDropped;
@@ -542,6 +619,7 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
                 report.refused = `per-view: ${err instanceof Error ? err.message.slice(0, 100) : String(err)}`;
               }
             }
+            reportedWalls = allWalls;
             if (measured.length > 0) {
               // AN OVERLAY FOR THIS PATH TOO. A sheet measured from its view
               // captions is the one most worth LOOKING at — it is the weaker
@@ -564,6 +642,26 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
             }
           }
           report.ms = Date.now() - sheetStarted;
+          // ── GRADED, IF SOMEBODY HAS REVIEWED THIS SHEET ──
+          //
+          // Keyed on the sheet NUMBER rather than the page, so a re-exported
+          // set does not orphan the work. A sheet with no key reports exactly
+          // as before: the key adds an error bar where one exists and claims
+          // nothing where one does not.
+          const key = keyFor(sheet.number);
+          if (key !== null) {
+            report.score = scoreAgainstKey(
+              reportedWalls.map((w) => ({
+                x1: w.x1,
+                y1: w.y1,
+                x2: w.x2,
+                y2: w.y2,
+                lengthFeet: w.lengthFeet,
+              })),
+              key,
+            );
+            report.keyBy = `${key.reviewedBy}, ${key.reviewedAt.slice(0, 10)}`;
+          }
           reports.push(report);
         }
       } finally {
@@ -600,6 +698,33 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
         continue;
       }
       say(`   walls        ${r.totalFeet.toFixed(0)} ft over ${r.runs} runs   (${r.ms} ms)`);
+      if (r.score !== null) {
+        const s = r.score;
+        // ── THE ONLY LINE IN THIS REPORT WITH AN ERROR BAR ──
+        //
+        // Everything else here is what the detector said. This is what a
+        // person said, and the difference between them.
+        say(
+          `   KEY          ${s.keyFeet.toFixed(0)} ft reviewed by ${r.keyBy}` +
+            `   found ${s.foundFeet.toFixed(0)} ft   ${s.errorPercent >= 0 ? "+" : ""}${s.errorPercent.toFixed(1)}%`,
+        );
+        const missedBig = s.missed.slice(0, 5).map((w) => `${w.lengthFeet.toFixed(0)}ft(${w.from})`);
+        const extraBig = s.extra.slice(0, 5).map((w) => `${w.lengthFeet.toFixed(0)}ft`);
+        say(
+          `     missed     ${String(s.missed.length).padStart(3)} walls / ${s.missedFeet.toFixed(0).padStart(5)} ft` +
+            (missedBig.length > 0 ? `   biggest: ${missedBig.join(" ")}` : ""),
+        );
+        say(
+          `     extra      ${String(s.extra.length).padStart(3)} walls / ${s.extraFeet.toFixed(0).padStart(5)} ft` +
+            (extraBig.length > 0 ? `   biggest: ${extraBig.join(" ")}` : ""),
+        );
+        // How the DRAWING showed the walls somebody confirmed — the question
+        // the single-line measurement could not answer without a key.
+        say(
+          `     key walls  ${s.keyFromPairs} drawn as a pair, ${s.keyFromSingles} as a single line` +
+            ` (${s.keyFeetFromSingles.toFixed(0)} ft)`,
+        );
+      }
       if (r.views.length > 0) {
         for (const v of r.views) {
           say(`     view       ${v.name} @ ${v.scale ?? "?"} — ${v.feet.toFixed(0)} ft, ${v.runs} runs`);

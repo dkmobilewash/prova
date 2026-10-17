@@ -1122,4 +1122,71 @@ test.describe("the full-screen takeoff workspace", () => {
     await page.screenshot({ path: path.join(SHOTS, "workspace-proposal-sections.png") });
   });
 
+  test("22. ANSWER-KEY MODE: candidates, not answers", async () => {
+    // ── THE ONE THING THIS MODE MUST NOT DO ──
+    //
+    // Pre-accept the detection. A key that agrees with the detector by
+    // construction is not a key, and the way it would happen is exactly this:
+    // load the findings, mark them accepted, let the reviewer delete what is
+    // wrong. Nobody deletes a hundred rows one at a time.
+    //
+    // `answerKeyReview.ts` holds that rule and is tested at every transition.
+    // What no unit test can see is whether the SCREEN honours it — this repo
+    // has shipped three fixes that were green and never rendered — so this
+    // walks it in a real browser.
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobOne);
+    await findTheWalls("S02 for the answer key");
+
+    await page.locator('[data-takeoff="toggle-answer-key"]').click();
+    const rail = page.locator('[data-takeoff="answer-key-rail"]');
+    await expect(rail, "the answer-key rail never opened").toBeVisible({ timeout: 20_000 });
+
+    // The rules are ON SCREEN, because a key made under one definition and
+    // graded under another is worse than no key.
+    await expect(rail).toContainText(/CENTRELINE/i);
+    await expect(rail).toContainText(/furniture/i);
+
+    // ── NOTHING IS ACCEPTED YET ──
+    const progress = rail.locator('[data-takeoff="key-progress"]');
+    await expect(progress).toContainText(/\b0 of \d+\b/);
+    const candidates = rail.locator('[data-takeoff="key-candidate"]');
+    const total = await candidates.count();
+    expect(total, "no candidates loaded, so this step proves nothing").toBeGreaterThan(0);
+    // Every one of them is undecided. A single accepted row here would mean
+    // the mode had pre-answered the question it exists to ask.
+    const verdicts = await candidates.evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute("data-verdict")),
+    );
+    expect(new Set(verdicts), "something was already decided").toEqual(new Set(["unreviewed"]));
+
+    // ── AND SAVING IS REFUSED UNTIL IT IS SOMEBODY'S JUDGEMENT ──
+    await expect(rail.locator('[data-takeoff="key-save"]')).toBeDisabled();
+
+    // ── ONE DECISION, BY KEYBOARD ──
+    await candidates.first().click();
+    await page.keyboard.press("a");
+    await expect(progress, "accepting a candidate did not move the count").toContainText(
+      /\b1 of \d+\b/,
+    );
+
+    // …and the focus moved on by itself, which is what makes a hundred
+    // decisions bearable.
+    await page.keyboard.press("r");
+    await expect(progress).toContainText(/\b2 of \d+\b/);
+
+    // ── THE RAW DRAWING, WITH EVERYTHING OFF ──
+    await page.locator('[data-takeoff="key-overlays"]').click();
+    await expect(page.locator('[data-takeoff="key-overlay"]')).toHaveCount(0);
+    await page.locator('[data-takeoff="key-overlays"]').click();
+    await expect(page.locator('[data-takeoff="key-overlay"]')).toHaveCount(1);
+
+    // ── AND WITH A NAME, IT CAN BE SAVED ──
+    await rail.locator('[data-takeoff="key-reviewer"]').fill("e2e");
+    await expect(rail.locator('[data-takeoff="key-save"]')).toBeEnabled();
+
+    await expectHealthy(page, "answer-key mode", { monitor, signedIn: false });
+    await page.screenshot({ path: path.join(SHOTS, "workspace-answer-key.png") });
+  });
+
 });

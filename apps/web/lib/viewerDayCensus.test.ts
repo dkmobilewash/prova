@@ -541,6 +541,18 @@ describe("the verdict", () => {
       .filter((f) => !isTestFile(f.path))
       .flatMap((f) => f.sites.filter((s) => !isCalendarDay(s)).map((s) => `${f.path}:${s.line}`))
       .sort();
-    expect(other).toEqual(["apps/web/components/QuickBooksReconcile.tsx:59"]);
+    //
+    // `AnswerKeyPanel` is the second, and it is CORRECT rather than tolerated.
+    // An answer key records when somebody reviewed a sheet, and that is an
+    // INSTANT: the file is read on another machine, in another timezone,
+    // months later, to decide whether a key predates a change to the detector.
+    // A calendar day would lose exactly the ordering that question needs.
+    //
+    // Listed here rather than exempted, because the point of this test is that
+    // every clock read in the app is one somebody chose.
+    expect(other).toEqual([
+      "apps/web/components/AnswerKeyPanel.tsx:133",
+      "apps/web/components/QuickBooksReconcile.tsx:59",
+    ]);
   });
 });

@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Spinner } from "@/components/Spinner";
+import { AnswerKeyPanel } from "@/components/AnswerKeyPanel";
+import { startReview, type ReviewState } from "@/lib/takeoff/answerKeyReview";
+import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
 import { TakeoffAssemblyPanel } from "@/components/TakeoffAssemblyPanel";
 import { TakeoffItemProperties } from "@/components/TakeoffItemProperties";
@@ -557,6 +560,17 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
    * question. It takes a third of the rail and only when something is
    * selected.
    */
+  // ── ANSWER-KEY REVIEW ──
+  //
+  // Off unless somebody turns it on. It changes what the overlay MEANS — every
+  // finding becomes a question — so it must never be the state a workspace
+  // opens in. The candidates arrive from the VIEWER, which is the only place
+  // holding the raw geometry the unpaired lines are found in.
+  const [keyMode, setKeyMode] = useState(false);
+  const [keyState, setKeyState] = useState<ReviewState | null>(null);
+  const [keyFocus, setKeyFocus] = useState<string | null>(null);
+  const [keyOverlays, setKeyOverlays] = useState(true);
+
   const itemsPanel = (
     <TakeoffItemsPanel
       jobId={jobId}
@@ -739,6 +753,42 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
               >
                 Quantities
               </button>
+              {/* A deliberate, slow mode, so it says what it is rather than
+                  wearing an icon. Turning it ON clears any previous review,
+                  because a key half-made on one sheet must not leak into
+                  another. */}
+              <button
+                type="button"
+                onClick={() => {
+                  const on = !keyMode;
+                  setKeyFocus(null);
+                  setKeyState(null);
+                  setKeyMode(on);
+                  // ── THE OTHER RAILS GET OUT OF THE WAY ──
+                  //
+                  // Three rails open at once squeezed the canvas to 5% zoom —
+                  // a reviewer deciding what IS a wall, unable to see the
+                  // drawing. Seen in a screenshot of the browser walk; nothing
+                  // in the DOM says a canvas is too narrow to work in.
+                  //
+                  // And the quantities rail in particular must not be beside
+                  // this one: a total that already assumes the answer is the
+                  // last thing somebody should read while deciding it.
+                  if (on) {
+                    rememberPanel(false);
+                    rememberItems(false);
+                  }
+                }}
+                aria-expanded={keyMode}
+                className={`rounded-md border px-2 py-1 text-xs ${
+                  keyMode
+                    ? "border-brand bg-brand text-neutral-900"
+                    : "border-line-card text-ink-body hover:bg-rail"
+                }`}
+                data-takeoff="toggle-answer-key"
+              >
+                Answer key
+              </button>
             </>
           )}
           <Link
@@ -855,6 +905,18 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
               levelByPage={data.levelByPage}
               scalePrefillByPage={data.scalePrefillByPage}
               viewScalesByPage={data.viewScalesByPage}
+              answerKey={
+                keyMode
+                  ? {
+                      state: keyState ?? startReview([]),
+                      onState: setKeyState,
+                      focusedId: keyFocus,
+                      onFocus: setKeyFocus,
+                      overlaysOn: keyOverlays,
+                      onCandidates: (candidates) => setKeyState(startReview(candidates)),
+                    }
+                  : undefined
+              }
               scaleDeclineByPage={data.scaleDeclineByPage}
               duplicateWallsByPage={data.duplicateWallsByPage}
               sheetLabelByPage={data.sheetLabelByPage}
@@ -877,6 +939,62 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
             data-takeoff="items-rail"
           >
             {railContents}
+          </aside>
+        )}
+
+        {/* ── THE REVIEW RAIL ──
+            Wider than the others because the decisions are the work here, not
+            a readout beside it. It takes the place of the quantities rail
+            rather than sitting alongside: a reviewer deciding what IS a wall
+            must not be reading a total that assumes the answer. */}
+        {keyMode && !phone && (
+          <aside
+            className="w-96 shrink-0 overflow-hidden border-l border-line-card bg-surface"
+            data-takeoff="answer-key-rail"
+          >
+            {keyState === null ? (
+              <div className="flex h-full flex-col justify-center gap-2 p-4 text-center">
+                <p className="text-sm font-semibold text-ink">Answer key</p>
+                <p className="text-xs text-ink-body">
+                  Press <span className="font-semibold">Find the walls</span> to load this sheet.
+                  Everything it finds — and every long line it could not pair — becomes a candidate
+                  for you to confirm or reject.
+                </p>
+              </div>
+            ) : (
+              <AnswerKeyPanel
+                state={keyState}
+                onState={setKeyState}
+                focusedId={keyFocus}
+                onFocus={setKeyFocus}
+                overlaysOn={keyOverlays}
+                onOverlays={setKeyOverlays}
+                sheet={{
+                  // The set as the file calls itself, so a key can be matched
+                  // back to the drawing it was made from.
+                  set: data.plan.fileName ?? data.plan.revisionLabel ?? "",
+                  page,
+                  // The sheet NUMBER, because a re-exported set renumbers its
+                  // pages and would otherwise orphan the work.
+                  number: data.sheetLabelByPage[page] ?? `p${page}`,
+                  // ── THE SCALE SOMEBODY ACCEPTED, NOT THE ONE PROPOSED ──
+                  //
+                  // The first version read `scalePrefillByPage`, which is what
+                  // the reader SUGGESTS. A sheet whose scale has been set has
+                  // a calibration instead and often no prefill at all, so the
+                  // save button stayed disabled on exactly the sheets that
+                  // were ready to review. Caught by the browser walk; every
+                  // unit test passed, because each one hands the panel a scale.
+                  //
+                  // Zero when nothing is set, and the panel refuses to save on
+                  // zero: a key with no scale is a list of lengths in nothing.
+                  feetPerUnit:
+                    currentSheet?.calibration != null
+                      ? (feetPerPageWidth(currentSheet.calibration) ?? 0)
+                      : 0,
+                }}
+              />
+            )}
           </aside>
         )}
       </div>
