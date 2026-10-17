@@ -303,3 +303,142 @@ export function cautionToShow(
   // stacking sentences above a drawing is how both of them stop being read.
   return (fromScales ?? "").trim() || (fromServer ?? "").trim() || (fromDrawing ?? "").trim() || "";
 }
+
+
+/**
+ * ── WHICH SHEETS TO TAKE OFF FIRST, AND WHY STROKE COUNT IS THE WRONG ANSWER ──
+ *
+ * `sheetSuitability` answers "is this sheet a double count" — a yes or no about
+ * ONE sheet. This answers a different question: given a set, which sheets would
+ * an estimator actually price?
+ *
+ * It exists because the real-plan report was ranking by STROKE COUNT, and on
+ * the ELEVEN03 set that picked four LIFE SAFETY plans and dropped every
+ * architectural floor plan. It is not a close call either: a life-safety plan
+ * is DENSER than the plan it is drawn over, because it carries the egress
+ * paths, the occupancy tags and the rated-wall hatching ON TOP of the same
+ * walls. Ranking by how much is drawn therefore prefers exactly the sheets that
+ * repeat the plan, which is the opposite of what is wanted.
+ *
+ * ── THE RULES ARE ABOUT WORDS, NOT ABOUT ONE SET'S SHEET NUMBERS ──
+ *
+ * A drafter writes what a drawing IS across the bottom of it. That caption is
+ * the most reliable thing on the sheet — more reliable than the number, which
+ * is an office convention, and more than anything a model infers. So the rules
+ * read the title, and the discipline letter only breaks ties.
+ *
+ * Scores are coarse on purpose. The point is to separate "price this" from
+ * "do not price this", not to put two floor plans in a defensible order.
+ */
+export type SheetRank = {
+  /** Higher is more worth taking off. Negative means do not. */
+  score: number;
+  /** The rule that decided it, in the estimator's own words. */
+  why: string;
+};
+
+/**
+ * Titles that name the drawing an estimator prices.
+ *
+ * `PARTITION` is here with the floor plans rather than above them: a partition
+ * plan IS the wall drawing, and some offices call it that instead.
+ */
+const WORTH_PRICING: ReadonlyArray<readonly [RegExp, number, string]> = [
+  [/\bDIMENSION(AL|ED)?\b[^.]*\bFLOOR\s+PLAN\b/i, 100, "a dimensioned floor plan"],
+  [/\bFLOOR\s+PLAN\b/i, 90, "a floor plan"],
+  [/\bPARTITION\b[^.]*\bPLAN\b/i, 90, "a partition plan"],
+  [/\bENLARGED\b[^.]*\bPLAN\b/i, 70, "an enlarged plan"],
+  [/\bPLAN\b/i, 40, "a plan of some kind"],
+];
+
+/**
+ * Titles that say the drawing is ABOUT something else, even where it shows the
+ * same walls.
+ *
+ * Every one of these was seen on a real set being preferred over the plan it is
+ * drawn over, or is the same shape as one that was. The weights are large
+ * enough to sink a sheet that also says PLAN, because all of these do: "LIFE
+ * SAFETY & OCCUPANCY PLAN", "UNIT NUMBERING PLAN", "REFLECTED CEILING PLAN".
+ * That is the whole difficulty — the word PLAN does not separate them.
+ */
+const NOT_WHAT_YOU_PRICE: ReadonlyArray<readonly [RegExp, number, string]> = [
+  [/\bLIFE\s+SAFETY\b/i, -200, "a life-safety plan"],
+  [/\bOCCUPANC(Y|IES)\b/i, -200, "an occupancy plan"],
+  [/\bEGRESS\b/i, -200, "an egress plan"],
+  [/\bUNIT\s+NUMBERING\b/i, -200, "a unit-numbering plan"],
+  [/\bKEY\s+PLAN\b/i, -150, "a key plan"],
+  [/\bFURNITURE\b/i, -200, "a furniture plan"],
+  [/\bEQUIPMENT\b/i, -150, "an equipment plan"],
+  [/\bREFLECTED\s+CEILING\b/i, -200, "a reflected ceiling plan"],
+  [/\bFINISH(ES)?\b/i, -150, "a finish plan"],
+  [/\bDETAIL(S)?\b/i, -150, "a details sheet"],
+  [/\bSECTION(S)?\b/i, -200, "a sections sheet"],
+  [/\bELEVATION(S)?\b/i, -200, "an elevations sheet"],
+  [/\bSITE\b/i, -200, "a site plan"],
+  [/\bROOF\b/i, -200, "a roof plan"],
+];
+
+/** The architectural discipline, which is where partitions are drawn. */
+const ARCHITECTURAL = /^A[-\s.]?\d/i;
+
+export function takeoffRank(
+  sheetNumber: string | null | undefined,
+  title: string | null | undefined,
+): SheetRank {
+  const number = (sheetNumber ?? "").trim();
+  const name = (title ?? "").trim();
+
+  // ── A DEMOTION WINS OVER A PROMOTION, BECAUSE ALL OF THEM SAY "PLAN" ──
+  //
+  // "LIFE SAFETY & OCCUPANCY PLAN LEVEL 3" matches both lists. Taking the
+  // worst match rather than the best is what stops a sheet arguing its way up
+  // on a word it shares with the drawing it is covering.
+  let worst: readonly [RegExp, number, string] | null = null;
+  for (const rule of NOT_WHAT_YOU_PRICE) {
+    if (rule[0].test(name) && (worst === null || rule[1] < worst[1])) worst = rule;
+  }
+
+  let best: readonly [RegExp, number, string] | null = null;
+  for (const rule of WORTH_PRICING) {
+    if (rule[0].test(name) && (best === null || rule[1] > best[1])) best = rule;
+  }
+
+  // The discipline letter BREAKS TIES and never decides. An office that numbers
+  // its ceiling plans in the A series is common; one that writes FLOOR PLAN on
+  // an elevation is not.
+  const discipline = ARCHITECTURAL.test(number) ? 5 : 0;
+
+  // And the duplicate judgement this file already makes, folded in: a sheet
+  // that repeats the architectural plan under its own work is not the one to
+  // price, whatever its title says.
+  const repeats = sheetSuitability(number, name, null);
+
+  if (worst !== null) {
+    return { score: worst[1] + discipline, why: worst[2] };
+  }
+  if (repeats.likelyDuplicate) {
+    return { score: -100 + discipline, why: repeats.kind };
+  }
+  if (best !== null) {
+    return { score: best[1] + discipline, why: best[2] };
+  }
+  // No opinion. Below every plan and above everything named as something else,
+  // because a title nobody recognises is a weaker signal than a title that
+  // names itself as a section.
+  return { score: discipline, why: "nothing in the title says what it is" };
+}
+
+/**
+ * The sheets of a set, best first.
+ *
+ * Ties keep the input order, which is page order — so a set that numbers its
+ * plans in sequence reads in sequence.
+ */
+export function rankSheetsForTakeoff<T extends { number: string | null; title: string | null }>(
+  sheets: readonly T[],
+): { sheet: T; rank: SheetRank }[] {
+  return sheets
+    .map((sheet, at) => ({ sheet, rank: takeoffRank(sheet.number, sheet.title), at }))
+    .sort((a, b) => b.rank.score - a.rank.score || a.at - b.at)
+    .map(({ sheet, rank }) => ({ sheet, rank }));
+}

@@ -7,6 +7,7 @@ import { readSheetScale } from "../scaleFromDimensions";
 import { findWallsOnSheet, type SheetTextItem } from "../findWallsOnSheet";
 import { sheetSuitability } from "../sheetSuitability";
 import { nameSheet } from "./nameSheet";
+import { takeoffRank, type SheetRank } from "../sheetSuitability";
 import {
   primaryView,
   sheetViews,
@@ -76,6 +77,31 @@ const PER_SET = Number(process.env.REAL_PLAN_PER_SET ?? "4");
  * So a reader who has eyes on the set can name the sheets, and the automatic
  * pick stays for the case where nobody has.
  */
+/**
+ * ── THE FIXED LIST, SO THE DENOMINATOR CANNOT DRIFT ──
+ *
+ * This report used to choose its own sheets — the biggest PLAN-titled ones by
+ * stroke count, four per set — and the choice moved whenever the title reader
+ * improved. One run measured six sheets, a later one two, and neither number
+ * was wrong about the pipeline: they were about different sheets.
+ *
+ * So the sheets are named, by what the drawing calls itself rather than by
+ * page number, which survives a set being re-exported. "Measured X of N" means
+ * something only against a fixed N.
+ *
+ * Keyed on a substring of the file name. A sheet named here is taken as given:
+ * somebody has looked at it and decided it is a floor plan.
+ */
+const FIXED_SHEETS: ReadonlyArray<{ key: string; numbers: readonly string[] }> = [
+  { key: "Camp Bow Wow", numbers: ["A101", "A102", "A120"] },
+  { key: "ELEVEN03 PERMIT SET", numbers: ["A4.B-Y2", "A4.B.1", "A4.B.2", "A4.B.3"] },
+];
+
+/** Sheet numbers compare as the drawing prints them, ignoring spacing and case. */
+function sameSheetNumber(a: string, b: string): boolean {
+  return a.replace(/[\s.]+/g, "").toUpperCase() === b.replace(/[\s.]+/g, "").toUpperCase();
+}
+
 const SHEETS = (process.env.REAL_PLAN_SHEETS ?? "")
   .split(";")
   .map((part) => part.trim())
@@ -178,6 +204,8 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
 
     const reports: SheetReport[] = [];
     const skipped: { set: string; page: number; number: string; kind: string }[] = [];
+  /** Every page the reader saw, with what the PRODUCT thinks of it. */
+  const ranked: { set: string; page: number; number: string; title: string; rank: SheetRank }[] = [];
 
     for (const file of files.sort()) {
       const bytes = readFileSync(join(DIR, file));
@@ -187,6 +215,7 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
       try {
         const pages = doc.pageCount;
         const candidates: Picked[] = [];
+        const fixedFor = FIXED_SHEETS.find((entry) => file.includes(entry.key));
 
         // ── PASS ONE: what each sheet calls itself ──
         for (let page = 1; page <= pages; page += 1) {
@@ -210,6 +239,30 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
           // selected every sheet whose title did not parse, which on a real set
           // is most of them. So this asks for the word as well.
           const saysPlan = /\bPLAN\b/i.test(title);
+          // ── EVERY PAGE IS RANKED, WHETHER OR NOT IT IS TAKEN ──
+          //
+          // The comparison this report exists to show: which sheets the
+          // PRODUCT would choose on its own, against the fixed list below. A
+          // page skipped here is still ranked, because a ranking that only
+          // sees the sheets somebody already picked proves nothing.
+          ranked.push({ set: label, page, number, title, rank: takeoffRank(number, title) });
+
+          // ── THE FIXED LIST WINS OVER EVERY RULE ──
+          //
+          // A sheet named in `FIXED_SHEETS` is taken whatever its title reads
+          // like, because the point of a fixed denominator is that it does not
+          // move when the title reader does.
+          const onTheList =
+            fixedFor !== undefined && fixedFor.numbers.some((want) => sameSheetNumber(want, number));
+          if (onTheList) {
+            candidates.push({ page, number, title, segments: 0 });
+            continue;
+          }
+          if (fixedFor !== undefined) {
+            skipped.push({ set: label, page, number, kind: "not on the fixed list" });
+            continue;
+          }
+
           // A named page is taken as given: somebody has looked at it.
           if (named === undefined && (verdict.kind !== "floor plan" || !saysPlan)) {
             skipped.push({
@@ -232,7 +285,12 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
             candidate.segments = 0;
           }
         }
+        // A set with a fixed list takes all of it and no more — `PER_SET` is
+        // about choosing, and there is nothing left to choose.
         const taken =
+          fixedFor !== undefined
+            ? candidates
+            :
           named === undefined
             ? candidates
                 .filter((c) => c.segments >= MIN_SEGMENTS)
@@ -491,6 +549,41 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
         say(`   layers       ${r.layers.map((l) => `${l.layer} ${l.feet.toFixed(0)}ft`).join(" | ")}`);
       } else {
         say(`   layers       NONE — the export names no layers, so nothing can lean on them`);
+      }
+      say("");
+    }
+
+    // ── WHAT THE PRODUCT WOULD CHOOSE ON ITS OWN ──
+    //
+    // The fixed list is the denominator; this is the check on whether the
+    // app's own ranking finds those sheets without being told. It is the
+    // question the stroke-count ranking got wrong — it preferred the LIFE
+    // SAFETY plans, which are denser than the floor plans they are drawn over.
+    say("# what `takeoffRank` would pick, per set — the product's own choice");
+    const bySet = new Map<string, typeof ranked>();
+    for (const one of ranked) {
+      const list = bySet.get(one.set);
+      if (list) list.push(one);
+      else bySet.set(one.set, [one]);
+    }
+    for (const [set, pages] of bySet) {
+      const best = [...pages].sort((a, b) => b.rank.score - a.rank.score || a.page - b.page);
+      const wanted = FIXED_SHEETS.find((entry) => set.includes(entry.key));
+      say(`  ${set}`);
+      for (const one of best.slice(0, 8)) {
+        const onList =
+          wanted !== undefined && wanted.numbers.some((want) => sameSheetNumber(want, one.number));
+        say(
+          `    ${String(one.rank.score).padStart(4)}  ${onList ? "ON LIST " : "        "}` +
+            `[${one.number}] p${one.page}  ${one.title.replace(/\s+/g, " ").slice(0, 46)}` +
+            `   (${one.rank.why})`,
+        );
+      }
+      if (wanted !== undefined) {
+        const missing = wanted.numbers.filter(
+          (want) => !pages.some((one) => sameSheetNumber(want, one.number)),
+        );
+        if (missing.length > 0) say(`    NOT FOUND IN THIS FILE: ${missing.join(", ")}`);
       }
       say("");
     }
