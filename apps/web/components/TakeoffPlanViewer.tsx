@@ -2513,8 +2513,29 @@ export function TakeoffPlanViewer({
                   x2={calibration.x2}
                   y2={calibration.y2}
                   stroke="#f0b429"
-                  strokeWidth={STROKE_PX}
-                  strokeDasharray={`${STROKE_PX * 4} ${STROKE_PX * 2.5}`}
+                  strokeWidth={STROKE_PX * 1.5}
+                  /* ── A DASH-DOT, BECAUSE AN EVEN DASH IS WHAT A WALL RUN IS ──
+                     This line was `8 5` amber dashes, and the cluster palette's
+                     fifth colour is `#fbbf24` — rgb(251,191,36) against this
+                     line's rgb(240,180,41), which is no difference at all — drawn
+                     as even dashes too. So on any sheet with five or more
+                     thickness groups the scale line and one group's runs were the
+                     same mark, and the only way to tell them apart was to know
+                     which one you had drawn.
+
+                     It was reported as a bug: an orange dashed run crossing the
+                     whole drawing on two unrelated real sheets at about the same
+                     height. It was the scale line both times, crossing the
+                     drawing because a long calibration is an ACCURATE one.
+
+                     Fixed by shape rather than by colour, because the palette is
+                     tuned and tested and because this line is a different KIND of
+                     thing from a wall run. A cluster dash is always two numbers
+                     (`markFor`: `${on} ${2}`); this is four, which no cluster can
+                     produce — and a dash-dot is what a drafter draws for a
+                     reference line, so it reads correctly to the people who use
+                     this. Pinned by `calibrationMark.test.ts`. */
+                  strokeDasharray={CALIBRATION_DASH}
                   vectorEffect="non-scaling-stroke"
                 />
               )}
@@ -3315,6 +3336,16 @@ export function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: (
  * happy-dom, which does no layout.
  */
 const STROKE_PX = 2;
+
+/**
+ * The scale line's dash: long, short, dot — the drafting convention for a
+ * reference line, and a shape no cluster mark can take.
+ *
+ * `markFor` builds every cluster dash as exactly TWO lengths. This is four, so
+ * the scale line cannot be mistaken for a wall run however the palette moves.
+ * `calibrationMark.test.ts` asserts that across every index.
+ */
+export const CALIBRATION_DASH = `${STROKE_PX * 7} ${STROKE_PX * 3} ${STROKE_PX} ${STROKE_PX * 3}`;
 
 function CalibrationForm({
   jobId,

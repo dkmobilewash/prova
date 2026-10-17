@@ -631,6 +631,59 @@ anybody will read first.
 
 ---
 
+## THE ORANGE DASHED LINE ACROSS THE DRAWING IS THE SCALE, AND IT LOOKED LIKE A WALL BECAUSE OF US
+
+Answered 2026-10-17, from a report of an orange dashed run crossing the whole
+drawing on **two unrelated real sheets** — Camp Bow Wow A102 and Eleven03
+A4.B.1 — at about the same height on each.
+
+**It is neither a detected run nor an overlay fault.** It is the scale
+CALIBRATION: the two points somebody dragged to set the scale, drawn so a
+reviewer can see what the scale was measured from. It crosses the whole drawing
+because a long calibration line is an accurate one, and it sits at about the
+same height on both sheets because that is where a person draws when they are
+measuring the widest thing on the page.
+
+**The confusion was real and it was ours.** Read out of the source rather than
+guessed at:
+
+| | colour | dash |
+| --- | --- | --- |
+| the scale line | `#f0b429` = rgb(240,180,41) | even, `8 5` |
+| `CLUSTER_COLOURS[4]` | `#fbbf24` = rgb(251,191,36) | even, `6 4` |
+
+Those colours are 16 apart in a space whose diagonal is 441 — no difference at
+all — and both were drawn as even dashes. So **on any sheet with five or more
+thickness groups, one group's runs and the scale line were the same mark**, and
+the only way to tell them apart was to remember which one you had drawn. A102
+carries more than five.
+
+**Fixed by shape, not by colour.** The palette is tuned, its own collision
+history is written into `clusterMarks.ts`, and swapping a colour there risks a
+new collision inside it. The scale line is a different KIND of thing from a
+wall run, so it now draws as a **dash-dot** — the drafting convention for a
+reference line, and a shape `markFor` cannot produce at any index, because a
+cluster dash is always exactly two lengths and this is four.
+
+`calibrationMark.test.ts` pins the structural property rather than the colours:
+no cluster dash equals the calibration's, at any index past the point where
+marks repeat, and every cluster dash has two parts. A colour assertion would go
+stale the moment somebody retunes the palette; this will not. Mutation-tested
+by restoring the old even dash — two assertions red, each by name.
+
+**The three measures are unmoved, which is the point for a rendering change:**
+real sheets 2 of 9 measured (A103 29 ft, A102 2255 ft over 163 runs), the
+twenty fixtures 13 of 17 within 2%, the bench 17/60 type-totals outside 2% with
+0 unflagged phantoms and 111 walls over 10 ft missed.
+
+**One thing the before/after screenshots will mislead you about.** The earlier
+shot of A102 says "Found 172 runs" and the new one says 161. That is not this
+change and not a regression — it is the curve-piece cap from the entry below,
+which refuses the curve pass on a sheet this hatched. The shots were taken
+either side of it.
+
+---
+
 ## THE 102 SECONDS WERE THE CURVE ENGINE, AND EVERYBODY GUESSED WRONG
 
 Resolved 2026-10-17. The entry below is kept in full because the thing it got
