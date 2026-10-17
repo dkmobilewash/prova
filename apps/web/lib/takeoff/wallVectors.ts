@@ -170,6 +170,17 @@ export type WallFinderOptions = {
    */
   knownThicknessesIn?: readonly number[];
   maxThicknessFeet?: number;
+  /**
+   * The most candidate pairs this sheet may test before being refused.
+   *
+   * Defaults to `MAX_PAIR_TESTS`. Here so the hang guard can be TESTED: with
+   * the bounding-box prefilter in front of it, the default is effectively
+   * unreachable on real geometry — `oneFacePerLine` collapses coincident
+   * lines, so the lines that remain close enough to be candidates are bounded
+   * by the drawing itself. A guard nobody can reach is a guard nobody can
+   * check, and this is how it stays checkable.
+   */
+  maxPairTests?: number;
   /** The shortest wall worth reporting, in feet. Below this a pair is as likely
    *  to be a jamb detail, a hatch stroke or a leader as a wall. */
   minLengthFeet?: number;
@@ -1317,8 +1328,54 @@ export function wallsFromStrokes(
   // the input alone, so a sheet that cannot be paired says so immediately
   // rather than after two seconds of spinning — and the estimator gets the same
   // sentence either way. See `MAX_PAIR_TESTS`.
-  const pairTests = (order.length * (order.length - 1)) / 2;
-  if (pairTests > MAX_PAIR_TESTS) throw new SheetTooDenseError(order.length);
+  // ── THE BUDGET COUNTS WORK DONE, IT NO LONGER PREDICTS IT FROM n^2 ──
+  //
+  // This was `n*(n-1)/2 > MAX_PAIR_TESTS`, decided before any work happened.
+  // On Camp Bow Wow A101 — 16,538 lines, the sheet an estimator would price —
+  // that estimate is 136.7 MILLION and the sheet was refused outright. The
+  // work it was predicting is 286,783 pair tests and the whole of
+  // `findWallsOnSheet` takes about nine seconds.
+  //
+  // The estimate was not wrong about n^2; the LOOP really is quadratic. It was
+  // wrong that every iteration costs a pair test, because almost none of them
+  // reaches one now — see `couldPair` below.
+  //
+  // So the guard counts what it actually spends and refuses mid-flight. It is
+  // still a hang guard and it still fires on a genuinely pathological sheet;
+  // it just no longer refuses sheets on the strength of arithmetic about work
+  // it has not attempted.
+  let pairTests = 0;
+
+  // ── WHICH PAIRS CANNOT POSSIBLY BE A WALL, IN FOUR COMPARISONS ──
+  //
+  // A pair is a wall only if it is within `maxThicknessFeet` PERPENDICULAR and
+  // the two faces OVERLAP along their length. Both together mean the nearest
+  // points of the two segments are within a wall thickness — so if their
+  // bounding boxes are further apart than that in x or in y, no pair of points
+  // on them is close enough and `wallFromPair` cannot return anything.
+  //
+  // It is a superset filter and the loop order is untouched: every surviving
+  // candidate is tested by the same predicate in the same ascending order, so
+  // the widest-partner choice and its first-wins tie-breaking are unchanged.
+  // Measured on A101: 136,744,453 candidate pairs fall to 286,783 and the
+  // number that SUCCEED is identical at 6,938. A102: 51,770,400 to 157,084,
+  // succeeding 3,672 either way.
+  //
+  // The margin is 1.5x the thickness because the thickness is measured to a
+  // midpoint rather than to the nearest point, and a filter that is slightly
+  // too generous costs a few comparisons while one that is slightly too tight
+  // silently loses walls.
+  const reach =
+    ((options.maxThicknessFeet ?? DEFAULTS.maxThicknessFeet) / options.feetPerPoint) * 1.5;
+  const boxMinX = order.map((one) => Math.min(one.x1, one.x2));
+  const boxMaxX = order.map((one) => Math.max(one.x1, one.x2));
+  const boxMinY = order.map((one) => Math.min(one.y1, one.y2));
+  const boxMaxY = order.map((one) => Math.max(one.y1, one.y2));
+  const tooFarApart = (a: number, b: number): boolean =>
+    boxMinX[b] - boxMaxX[a] > reach ||
+    boxMinX[a] - boxMaxX[b] > reach ||
+    boxMinY[b] - boxMaxY[a] > reach ||
+    boxMinY[a] - boxMaxY[b] > reach;
 
   for (let i = 0; i < order.length; i += 1) {
     if (used.has(i)) continue;
@@ -1376,6 +1433,11 @@ export function wallsFromStrokes(
     const iLength = lengthOf(order[i]);
     for (let j = i + 1; j < order.length; j += 1) {
       if (used.has(j)) continue;
+      if (tooFarApart(i, j)) continue;
+      pairTests += 1;
+      if (pairTests > (options.maxPairTests ?? MAX_PAIR_TESTS)) {
+        throw new SheetTooDenseError(order.length);
+      }
       const wall = wallFromPair(order[i], order[j], options);
       if (wall === null) continue;
       if (inAHatchSeries(order, i, j, options)) continue;
