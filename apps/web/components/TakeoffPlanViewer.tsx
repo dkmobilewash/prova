@@ -103,6 +103,8 @@ import {
 import { proposalSections, showsHeadings } from "@/lib/takeoff/proposalSections";
 import { calibrationForView, type ViewScale } from "@/lib/takeoff/sheetScale";
 import { SINGLE_LINE_COLOUR, VERDICT_COLOURS } from "@/components/AnswerKeyPanel";
+import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
+import { takeoffSheetVerdict, type TakeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
 import {
   candidatesFromSheet,
   candidatesInBox,
@@ -242,6 +244,7 @@ export function TakeoffPlanViewer({
   answerKey,
   scaleDeclineByPage,
   duplicateWallsByPage = {},
+  onSheetNumber,
   sheetLabelByPage = {},
   initialPage = 1,
   fill = false,
@@ -391,6 +394,23 @@ export function TakeoffPlanViewer({
    * one focuses it, and dragging a box decides many at once. See
    * `AnswerKeyPanel` for why nothing is accepted until it is accepted.
    */
+  /**
+   * The sheet NUMBER this viewer read off the title block, reported as it is
+   * read.
+   *
+   * ── WHY THE VIEWER IS THE ONE THAT KNOWS ──
+   *
+   * The number on screen comes from a `PlanSheetProposal`, which the ingest's
+   * TITLE_BLOCK stage writes — and that stage calls a model, so a set ingested
+   * without one has no sheet numbers at all. The viewer has the PDF open and
+   * reads the title block itself, with no model, for the duplicate-walls
+   * caution; this hands that reading to the workspace so an answer key is
+   * named `A120.key.json` rather than `p15.key.json`.
+   *
+   * Somebody spent an hour reviewing A120 and then could not find the file,
+   * because nothing had told them it was called p15.
+   */
+  onSheetNumber?: (page: number, sheetNumber: string) => void;
   answerKey?: {
     state: ReviewState;
     onState: (next: ReviewState) => void;
@@ -539,10 +559,41 @@ export function TakeoffPlanViewer({
   /** Feet across the page width, as the find that produced these runs read it. */
   const feetAcrossRef = useRef<number>(0);
   const regroupRef = useRef<((runs: WallCandidate[]) => WallGroup[]) | null>(null);
-  const [labels, setLabels] = useState<Map<number, WallClassifyLabel> | null>(null);
+  /**
+   * ── EVERYTHING A FIND PRODUCES IS KEPT PER PAGE, WITHOUT EXCEPTION ──
+   *
+   * `wallsOnThisSheet` above fixed the groups by keeping the page beside the
+   * result, and these three were left as plain state — so a check run on A120
+   * put its labels, its missed-wall list and its view name on A130 and A140 as
+   * well. The groups were right and the sentences around them were another
+   * sheet's.
+   *
+   * The lesson is the one that file already states and this did not follow:
+   * the rule has to be in ONE place that every render site reads. A record
+   * keyed by page is that place, it is the idiom the three states below it
+   * already use, and paging away and back keeps the work rather than throwing
+   * it away.
+   */
+  const [labelsByPage, setLabelsByPage] = useState<
+    Record<number, Map<number, WallClassifyLabel>>
+  >({});
+  const labels = onThisSheet(labelsByPage, pageNumber);
+  const setLabels = useCallback(
+    (next: Map<number, WallClassifyLabel> | null) =>
+      setLabelsByPage((prev) => setOnThisSheet(prev, pageNumber, next)),
+    [pageNumber],
+  );
   /** Walls the check says the finder missed. Words, never a quantity — the
    *  estimator traces each one with the measuring tools. */
-  const [missed, setMissed] = useState<{ where: string; why: string }[]>([]);
+  const [missedByPage, setMissedByPage] = useState<
+    Record<number, { where: string; why: string }[]>
+  >({});
+  const missed = onThisSheet(missedByPage, pageNumber) ?? EMPTY_MISSED;
+  const setMissed = useCallback(
+    (next: { where: string; why: string }[]) =>
+      setMissedByPage((prev) => setOnThisSheet(prev, pageNumber, next)),
+    [pageNumber],
+  );
   const [checking, setChecking] = useState(false);
   /** The multi-scale caution per page, read off the drawing's own captions. */
   const [scaleCautionByPage, setScaleCautionByPage] = useState<Record<number, string>>({});
@@ -552,9 +603,30 @@ export function TakeoffPlanViewer({
   /** The views that could not be measured at all, per page, with the reason.
    *  Named in the caution rather than dropped — nothing is excluded silently. */
   const [excludedByPage, setExcludedByPage] = useState<Record<number, ExcludedView[]>>({});
-  /** The view the quantities on screen ARE, so the sentence can name it. */
-  const [primaryViewShown, setPrimaryViewShown] = useState<{ name: string; scaleName: string | null } | null>(null);
+  /** The view the quantities on screen ARE, so the sentence can name it.
+   *  Per page for the reason `labelsByPage` is: it names the drawing a FIND
+   *  was about, and on any other sheet it names the wrong one. */
+  const [primaryViewByPage, setPrimaryViewByPage] = useState<
+    Record<number, { name: string; scaleName: string | null }>
+  >({});
+  const primaryViewShown = onThisSheet(primaryViewByPage, pageNumber);
+  const setPrimaryViewShown = useCallback(
+    (next: { name: string; scaleName: string | null } | null) =>
+      setPrimaryViewByPage((prev) => setOnThisSheet(prev, pageNumber, next)),
+    [pageNumber],
+  );
   const [checkError, setCheckError] = useState<string | null>(null);
+  /**
+   * Whether each sheet is one with a floor plan on it — read from the title
+   * block and the drawings' own captions. See `takeoffSheet.ts`.
+   */
+  const [takeoffVerdictByPage, setTakeoffVerdictByPage] = useState<
+    Record<number, TakeoffSheetVerdict>
+  >({});
+  /** Sheets where somebody pressed "Run anyway". Per page, because an override
+   *  is a judgement about ONE drawing. */
+  const [overriddenByPage, setOverriddenByPage] = useState<Record<number, true>>({});
+  const askedVerdict = useRef<Set<number>>(new Set());
   /**
    * What this sheet has to show. Every render site reads THIS and not the raw
    * state, which is why the name it kept is the one they were already using.
@@ -1669,6 +1741,67 @@ export function TakeoffPlanViewer({
     };
   }, [found, pageNumber, duplicateWallsByPage, pageSize, scalePrefillByPage]);
 
+  /**
+   * ── IS THERE A FLOOR PLAN ON THIS SHEET AT ALL? ──
+   *
+   * Read when the sheet opens rather than after a find, which is the whole
+   * point: the caution effect above runs only once walls exist, and the
+   * question here is whether to invite the press in the first place.
+   *
+   * It costs ONE text pass per sheet, over text this file already knows how to
+   * read, and no model. The two sources are the title block — which is what
+   * names A130 PARTITION TYPES — and the captions under the drawings, which
+   * are what name a sheet whose title block says nothing useful.
+   *
+   * IT NEVER THROWS, like the caution beside it: a sheet whose text will not
+   * parse is offered exactly as it was before this existed.
+   */
+  useEffect(() => {
+    if (askedVerdict.current.has(pageNumber)) return;
+    const doc = docRef.current;
+    if (!doc || !pageSize) return;
+    askedVerdict.current.add(pageNumber);
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        const page = await doc.getPage(pageNumber);
+        const items = await pageTextItems(page, pdfjs);
+        const reading = sheetNumberFrom({
+          pageNumber,
+          widthPt: pageSize.widthPt,
+          heightPt: pageSize.heightPt,
+          rotation: 0,
+          items,
+        });
+        if (!cancelled && reading.sheetNumber) {
+          onSheetNumber?.(pageNumber, reading.sheetNumber);
+        }
+        const verdict = takeoffSheetVerdict({
+          sheetNumber: reading.sheetNumber,
+          title: reading.regionText,
+          viewNames: sheetViews(items, pageSize.widthPt).map((view) => view.name),
+        });
+        if (!cancelled) {
+          setTakeoffVerdictByPage((prev) => setOnThisSheet(prev, pageNumber, verdict));
+        }
+      } catch {
+        // The sheet is offered as it always was.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pageNumber, pageSize, onSheetNumber]);
+
+  /** What this sheet is, and whether somebody has overruled it. */
+  const takeoffVerdict = onThisSheet(takeoffVerdictByPage, pageNumber);
+  const notATakeoffSheet =
+    takeoffVerdict !== null &&
+    !takeoffVerdict.worthMeasuring &&
+    onThisSheet(overriddenByPage, pageNumber) === null;
+
   async function onFindWalls() {
     const doc = docRef.current;
     if (!doc || !pageSize || feetPerUnit === null) return;
@@ -2155,13 +2288,40 @@ export function TakeoffPlanViewer({
         <button
           type="button"
           onClick={onFindWalls}
-          disabled={finding || !calibration}
+          disabled={finding || !calibration || notATakeoffSheet}
           data-takeoff="find-walls"
-          title={calibration ? undefined : "Set the scale on this sheet first — wall thickness is measured in feet of building."}
+          title={
+            notATakeoffSheet
+              ? (takeoffVerdict?.why ?? undefined)
+              : calibration
+                ? undefined
+                : "Set the scale on this sheet first — wall thickness is measured in feet of building."
+          }
           className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
         >
           {finding ? "Reading the lines…" : "Find the walls"}
         </button>
+        {/* ── WHY IT IS GREY, AND A WAY PAST IT ──
+            The reason is on the toolbar and not only in a tooltip, because a
+            disabled control with a hover explanation is a control that looks
+            broken on a touch screen. And the override is beside it, because a
+            set can caption a floor plan anything at all and the person looking
+            at the drawing knows better than its title block does. */}
+        {notATakeoffSheet && (
+          <>
+            <span className="text-[11px] text-ink-muted" data-takeoff="not-a-takeoff-sheet">
+              {takeoffVerdict?.why}
+            </span>
+            <button
+              type="button"
+              onClick={() => setOverriddenByPage((prev) => ({ ...prev, [pageNumber]: true }))}
+              data-takeoff="run-anyway"
+              className="min-h-[36px] rounded-md border border-line-card bg-surface px-2 text-[11px] text-link hover:text-link-hover"
+            >
+              Run anyway
+            </button>
+          </>
+        )}
 
         {/* ── AND THEN: ARE THEY WALLS? ──
             Only once there is something to check, because a control that can
@@ -3737,6 +3897,10 @@ export function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: (
  * Nothing in this repo could have caught it: the screen suite renders in
  * happy-dom, which does no layout.
  */
+/** One empty list, so a page with no missed walls does not hand every
+ *  consumer a new array on each render. */
+const EMPTY_MISSED: { where: string; why: string }[] = [];
+
 const STROKE_PX = 2;
 
 /**

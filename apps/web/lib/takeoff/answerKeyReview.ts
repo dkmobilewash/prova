@@ -247,3 +247,26 @@ export function candidatesFromSheet(input: {
   });
   return out;
 }
+
+/**
+ * ── THE COLOUR EACH STATE DRAWS IN, HERE RATHER THAN IN THE PANEL ──
+ *
+ * They were exported from `AnswerKeyPanel.tsx`, which is a `"use client"`
+ * module, and `clientBoundary` refuses a server module importing a non-
+ * component value from one. That rule caught an eval reading these to draw an
+ * overlay — the right catch: a colour is not a component, and a palette that
+ * can only be read by the browser cannot be used by the thing that grades it.
+ *
+ * Both the panel and the viewer draw from this, so the mark beside a candidate
+ * in the rail is the mark on the sheet by construction rather than by two
+ * literals agreeing.
+ */
+export const VERDICT_COLOURS: Record<Verdict, string> = {
+  unreviewed: "#f59e0b",
+  wall: "#16a34a",
+  "not-a-wall": "#9ca3af",
+};
+
+/** A single line is offered in its own colour, because it is a different
+ *  question: not "is this wall right" but "is this a wall at all". */
+export const SINGLE_LINE_COLOUR = "#2563eb";

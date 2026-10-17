@@ -1,6 +1,7 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { SINGLE_LINE_COLOUR, VERDICT_COLOURS } from "../answerKeyReview";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { findWallsOnSheet, inPageWidthUnits, type SheetTextItem } from "../findWallsOnSheet";
 import {
@@ -330,6 +331,42 @@ describe.skipIf(DIR === "")("a mixed sheet, as the product reads it", () => {
         `\nCANDIDATES a reviewer would see: ${detected.length + unclaimed.length}` +
           `  (${detected.length} detected runs + ${unclaimed.length} unclaimed long lines)`,
       );
+
+      // ── AND A PICTURE OF THEM, IN THE PANEL'S OWN COLOURS ──
+      //
+      // Written to REAL_PLAN_OUT, outside the repository, because these are a
+      // client's drawings. The colours are `AnswerKeyPanel`'s exports and not
+      // a second palette: amber is an unreviewed PAIR and blue an unreviewed
+      // single line, which is what a reviewer opens the sheet to.
+      //
+      // It exists to answer one question before an hour is spent — is this
+      // sheet worth reviewing as it stands, or does detection need another
+      // pass first — and a count cannot answer it.
+      const out = process.env.REAL_PLAN_OUT ?? "";
+      if (out !== "") {
+        mkdirSync(out, { recursive: true });
+        const w = size.widthPt;
+        const h = size.heightPt;
+        const line = (
+          a: { x1: number; y1: number; x2: number; y2: number },
+          scaleBy: number,
+        ) =>
+          `<line x1="${(a.x1 * scaleBy).toFixed(1)}" y1="${(a.y1 * scaleBy).toFixed(1)}" ` +
+          `x2="${(a.x2 * scaleBy).toFixed(1)}" y2="${(a.y2 * scaleBy).toFixed(1)}"/>`;
+        const sheetInk = segments.map((g) => line(g, 1)).join("");
+        const pairs = detected.map((one) => line(one, w)).join("");
+        const singles = unclaimed.map((one) => line(one, w)).join("");
+        const svg =
+          `<svg xmlns="http://www.w3.org/2000/svg" width="${w.toFixed(0)}" height="${h.toFixed(0)}" ` +
+          `viewBox="0 0 ${w.toFixed(0)} ${h.toFixed(0)}">\n` +
+          `<rect width="100%" height="100%" fill="#fff"/>\n` +
+          `<g stroke="#c9ced6" stroke-width="0.5" fill="none">${sheetInk}</g>\n` +
+          `<g stroke="${SINGLE_LINE_COLOUR}" stroke-width="2" fill="none" stroke-opacity="0.9">${singles}</g>\n` +
+          `<g stroke="${VERDICT_COLOURS.unreviewed}" stroke-width="3" fill="none">${pairs}</g>\n</svg>\n`;
+        const name = `candidates-${fragment.replace(/[^A-Za-z0-9]+/g, "_")}-p${page}.svg`;
+        writeFileSync(join(out, name), svg, "utf8");
+        console.log(`   overlay written: ${name}`);
+      }
 
       await pdf.close();
     },

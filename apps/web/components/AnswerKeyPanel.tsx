@@ -41,15 +41,11 @@ export type AnswerKeyPanelProps = {
   sheet: { set: string; page: number; number: string; feetPerUnit: number };
 };
 
-/** The colour each state draws in, here and on the sheet. */
-export const VERDICT_COLOURS: Record<Verdict, string> = {
-  unreviewed: "#f59e0b",
-  wall: "#16a34a",
-  "not-a-wall": "#9ca3af",
-};
-
-/** A single line is offered in its own colour, because it is a different question. */
-export const SINGLE_LINE_COLOUR = "#2563eb";
+// The colours live in `answerKeyReview.ts` — a plain module — so that
+// anything which is not a browser can read them too. Re-exported here because
+// this is where every caller already looks for them.
+import { SINGLE_LINE_COLOUR, VERDICT_COLOURS } from "@/lib/takeoff/answerKeyReview";
+export { SINGLE_LINE_COLOUR, VERDICT_COLOURS };
 
 export function AnswerKeyPanel({
   state,

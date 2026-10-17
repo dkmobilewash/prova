@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Spinner } from "@/components/Spinner";
 import { AnswerKeyPanel } from "@/components/AnswerKeyPanel";
+import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
 import { startReview, type ReviewState } from "@/lib/takeoff/answerKeyReview";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
@@ -569,8 +570,50 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
   // opens in. The candidates arrive from the VIEWER, which is the only place
   // holding the raw geometry the unpaired lines are found in.
   const [keyMode, setKeyMode] = useState(openAnswerKey ?? false);
-  const [keyState, setKeyState] = useState<ReviewState | null>(null);
-  const [keyFocus, setKeyFocus] = useState<string | null>(null);
+  /**
+   * ── THE REVIEW BELONGS TO ONE SHEET, AND THIS HELD IT FOR THE WHOLE JOB ──
+   *
+   * A single `ReviewState` for the workspace meant the candidates found on one
+   * sheet were drawn on every sheet after it: a find on A120 put its orange
+   * unreviewed runs across A130 (PARTITION TYPES) and A140 (PLAN DETAILS), at
+   * A120's own coordinates, on drawings they had nothing to do with.
+   *
+   * `TakeoffPlanViewer` had already been through exactly this with the wall
+   * groups and fixed it by keeping the page beside the result — its own note
+   * says the rule must live in ONE place that every render site reads. This
+   * did not follow it. A record keyed by page is that place.
+   *
+   * KEYED RATHER THAN CLEARED, deliberately. An answer-key review is an hour
+   * of somebody's judgement; paging to check a detail and losing it would be a
+   * worse bug than the one being fixed. Paging back restores it.
+   */
+  /**
+   * Sheet numbers the VIEWER read off each title block, which is the only
+   * source on a set whose ingest never ran the model-backed TITLE_BLOCK
+   * stage — see `onSheetNumber` on `TakeoffPlanViewer`.
+   */
+  const [readNumberByPage, setReadNumberByPage] = useState<Record<number, string>>({});
+  const onSheetNumber = useCallback(
+    (forPage: number, number: string) =>
+      setReadNumberByPage((prev) => (prev[forPage] === number ? prev : { ...prev, [forPage]: number })),
+    [],
+  );
+  const [keyStateByPage, setKeyStateByPage] = useState<Record<number, ReviewState>>({});
+  const keyState = onThisSheet(keyStateByPage, page);
+  const setKeyState = useCallback(
+    // Null clears THIS sheet's review, which is what turning the mode off
+    // means. It cannot reach another sheet's.
+    (next: ReviewState | null) => setKeyStateByPage((prev) => setOnThisSheet(prev, page, next)),
+    [page],
+  );
+  /** The focused candidate, per page for the same reason: an id from another
+   *  sheet's review names nothing on this one. */
+  const [keyFocusByPage, setKeyFocusByPage] = useState<Record<number, string>>({});
+  const keyFocus = onThisSheet(keyFocusByPage, page);
+  const setKeyFocus = useCallback(
+    (next: string | null) => setKeyFocusByPage((prev) => setOnThisSheet(prev, page, next)),
+    [page],
+  );
   const [keyOverlays, setKeyOverlays] = useState(true);
 
   const itemsPanel = (
@@ -899,6 +942,7 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
             <TakeoffPlanViewer
               jobId={jobId}
               planId={data.plan.id}
+              onSheetNumber={onSheetNumber}
               sheets={sheets}
               printedScaleByPage={data.printedScaleByPage}
               scannedPages={data.scannedPages}
@@ -978,7 +1022,15 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
                   page,
                   // The sheet NUMBER, because a re-exported set renumbers its
                   // pages and would otherwise orphan the work.
-                  number: data.sheetLabelByPage[page] ?? `p${page}`,
+                  // ── THE SERVER'S LABEL FIRST, THEN WHAT THE VIEWER READ ──
+                  //
+                  // `sheetLabelByPage` comes from a `PlanSheetProposal`, which
+                  // a model wrote and a person may have corrected — better
+                  // evidence than a heuristic, so it wins where it exists. It
+                  // does not exist at all on a set ingested without that
+                  // stage, and `p15` is what an answer key was then named
+                  // after an hour of reviewing A120.
+                  number: data.sheetLabelByPage[page] ?? readNumberByPage[page] ?? `p${page}`,
                   // ── THE SCALE SOMEBODY ACCEPTED, NOT THE ONE PROPOSED ──
                   //
                   // The first version read `scalePrefillByPage`, which is what
