@@ -631,6 +631,109 @@ anybody will read first.
 
 ---
 
+## SIX REAL VIEWS HAD THEIR SCALE PRINTED BESIDE THEM AND MISSED THE WINDOW BY 0.0002
+
+2026-10-17, step 2. The real-sheet measure went from **2 of 9 floor plans
+measured to 7 of 9**, and the whole of the second half came from one constant.
+
+### What the count was actually made of
+
+Before anything, the measure was understating the PRODUCT, and that is worth
+separating from the capability change:
+
+| | sheets | measured |
+| --- | --- | --- |
+| the eval as it stood | 9 | 2 |
+| after the per-view fallback | 9 | 6 |
+| after `NAME_BESIDE` | 9 | **7** |
+
+**Four of those five were the harness catching up, not new capability.** The
+four ELEVEN03 life-safety sheets each carry exactly ONE printed scale
+(`3/32" = 1'-0"`), so the product's own `scaleFromPrinted` fallback already
+read them — `pageInventory` runs it when the dimensions decline, and the eval
+never did. Measured directly rather than assumed: `printedScalesOnPage` returns
+one name on each of p18-p21 and `scaleFromPrinted` returns it.
+
+The SEVENTH — Camp Bow Wow A140 — is the real one, and the rest of this entry
+is about it.
+
+### The measurement
+
+`sheetViews` found **six views on A140 and gave not one of them a scale**,
+while a scale was plainly printed on the page. Probed rather than reasoned
+about: for every real view on A140 and on A120, the caption sits at the same
+offset from its name.
+
+    dx = +0.0202    dy = +0.0060        (page-width units)
+
+`NAME_ABOVE` is 0.02 and covers the dy with room to spare. **`NAME_BESIDE` was
+0.02, so every one of them cleared it by two ten-thousandths.**
+
+It is a LAYOUT, not a tolerance:
+
+    1   PLAN DETAIL AT PEMB FRAME
+        SCALE: 1" = 1'-0"
+
+The scale line is indented past the bubble number — 52.4pt on a 2592pt sheet,
+where the window allowed 52.0. `NAME_BESIDE` is 0.04 now: the indent a caption
+block can plausibly carry, rather than the 0.0203 that would fit this one
+template and break on the next. A140's views sit about 0.19 apart, so 0.04 is
+a fifth of the gap and a caption still cannot be stolen by the view beside it —
+asserted, with the neighbour case in `viewCaptionScale.test.ts`.
+
+Mutation-tested: at 0.02 four of that file's six tests go red.
+
+### The ordering change, which is what the step was for
+
+`readSheetScale` ran first and the view split only ran `if (verdict.ok)`. That
+is backwards for exactly the sheet the split exists for: a sheet carrying
+several drawings at several scales is a sheet whose printed dimensions do not
+agree with each other, so it declines, so it was never split.
+
+The split runs first now, and `viewsWithOwnScale` measures each captioned view
+at its own ratio — absolutely, because a caption is feet per paper inch and
+needs no anchor. It is still the WEAKER evidence and still runs second: a
+dimension can be checked against the drawing and a caption cannot.
+
+### What this does NOT yet do, said plainly
+
+- **It is the eval, not the app.** `pageInventory` still produces one prefill
+  scale per page, so a user on a multi-scale sheet gets the printed fallback
+  or nothing. Giving the app per-view scales is a data-shape change nobody has
+  made. The `NAME_BESIDE` fix IS product code and does reach the app.
+- **A120, the sheet the brief named, is still not measured by the report** —
+  it is skipped by the harness's own sampling (`PER_SET`, below), not by the
+  pipeline. Its `RESTROOM - ENLARGED PLAN` now reads its `1/2" = 1'-0"`.
+- **A140's 475 ft over 114 runs is a DETAILS sheet** and is very likely mostly
+  phantom — a wall detail is a cross-section, which is parallel lines a
+  wall-thickness apart for its whole height. Counting it as measured is honest
+  about the scale reading and says nothing good about the footage. That is
+  step 3's territory.
+
+### The harness samples four sheets per set, and it is not sampling the right four
+
+`PER_SET = 4` keeps each set's four biggest PLAN-titled sheets by stroke count.
+On ELEVEN03 that selects four LIFE SAFETY plans and drops `A4.B.1`-`A4.B.7`,
+the architectural floor plans — because a life-safety plan is DENSER (egress
+paths, occupancy tags, rated-wall hatching) than the plan it is drawn over.
+
+So stroke count is a bad proxy for "the sheet an estimator would take off".
+Proved by lifting the cap: at `REAL_PLAN_PER_SET=16` the report measures
+`A4.B.2` at 2722 ft and `A4.B.3` at 2538 ft, which are real floor plans and
+were never being looked at.
+
+This explains an earlier report that showed six sheets measured including
+`A4.B.1`-`A4.B.3`: **a selection change, not a regression.** Where those
+sheets are looked at, they measure.
+
+### Guards
+
+Both held across the change: the twenty fixtures 13 of 17 within 2%, the bench
+63/70 scales, 17/60 type-totals outside 2%, 0 unflagged phantoms, 111 walls
+over 10 ft missed.
+
+---
+
 ## THE ORANGE DASHED LINE ACROSS THE DRAWING IS THE SCALE, AND IT LOOKED LIKE A WALL BECAUSE OF US
 
 Answered 2026-10-17, from a report of an orange dashed run crossing the whole

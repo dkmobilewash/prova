@@ -97,8 +97,40 @@ const FRAME_SPAN = 0.8;
  */
 const NAME_ABOVE = 0.02;
 
-/** How far a name may sit to the side of its scale and still belong to it. */
-const NAME_BESIDE = 0.02;
+/**
+ * How far a name may sit to the side of its scale and still belong to it.
+ *
+ * ── IT WAS 0.02, AND EVERY REAL VIEW MISSED BY 0.0002 ──
+ *
+ * Measured on two Camp Bow Wow sheets, because the finder reported SIX views
+ * on A140 and gave not one of them a scale while a scale was plainly printed
+ * on the page. For every real view on both sheets, the caption sits at the
+ * same offset from its name:
+ *
+ *     dx = +0.0202   dy = +0.0060       (page-width units)
+ *
+ * `NAME_ABOVE` of 0.02 covers the dy with room to spare. The dx cleared the
+ * old window by two ten-thousandths, on all six views of A140 and on A120's
+ * `RESTROOM - ENLARGED PLAN`, so every one of them was dropped.
+ *
+ * It is not noise and not a tolerance question — it is a LAYOUT. A drafter
+ * writes the caption as a block:
+ *
+ *     1   PLAN DETAIL AT PEMB FRAME
+ *         SCALE: 1" = 1'-0"
+ *
+ * The scale line is INDENTED under the name, past the bubble number: 52.4pt
+ * on a 2592pt sheet. The old window allowed 52.0. Tuning it to 0.0203 would
+ * fit this one template and break on the next, so the number here is the
+ * indent a caption block can plausibly carry rather than the one measured.
+ *
+ * ── AND WHY IT IS STILL SMALL ──
+ *
+ * On A140 the views sit at x = 0.161, 0.355, 0.565, 0.699 — about 0.19 apart.
+ * A window of 0.04 is a fifth of that, so a caption still cannot be stolen by
+ * the view beside it, which is the failure this constant exists to prevent.
+ */
+const NAME_BESIDE = 0.04;
 
 /**
  * ── WHAT MAKES A CAPTION A VIEW'S AND NOT THE TITLE BLOCK'S ──
@@ -519,6 +551,50 @@ export function wallsPerView(input: {
     if (ratio === 1) return already;
     return measure(bands[i], input.feetPerUnit * ratio);
   });
+}
+
+/**
+ * ── EVERY VIEW THAT CAN BE MEASURED FROM ITS OWN CAPTION, AND AT WHAT ──
+ *
+ * `wallsPerView` measures views RELATIVE to a scale the sheet already has: it
+ * anchors on the view the calibration is about and takes everyone else at
+ * their captioned ratio to it. That is the right shape when a sheet HAS a
+ * trusted scale, because a measured dimension is better evidence than a
+ * printed caption and the anchor keeps it in charge.
+ *
+ * It is the wrong shape when the sheet has no scale at all, and that is the
+ * common case on a real set. `readSheetScale` declines a sheet whose printed
+ * dimensions do not agree — and a sheet carrying several drawings at several
+ * scales is exactly a sheet whose dimensions do not agree, because they are
+ * dimensions of different drawings. The sheet was then reported as "no scale"
+ * and nothing on it was measured, although every drawing on it was captioned.
+ *
+ * A caption is an absolute ratio — `1/8" = 1'-0"` is feet per paper inch and
+ * needs nothing else to become feet per page unit. So a view with a caption
+ * can always be measured on its own, and this is what says so.
+ *
+ * ── IT IS STILL THE WEAKER EVIDENCE, AND THE CALLER MUST KEEP IT SECOND ──
+ *
+ * A dimension printed on the drawing can be checked AGAINST the drawing; a
+ * caption cannot, and a caption is wrong whenever somebody rescales a detail
+ * and does not retype it. The same reason `scaleFromPrinted` runs only after
+ * the dimensions decline. This exists to turn "nothing measured" into
+ * "measured, from the caption, and labelled as such" — never to overrule a
+ * dimension.
+ */
+export function viewsWithOwnScale(
+  views: readonly SheetView[],
+  widthPt: number,
+): { view: SheetView; feetPerUnit: number }[] {
+  if (!(widthPt > 0)) return [];
+  const out: { view: SheetView; feetPerUnit: number }[] = [];
+  for (const view of views) {
+    // NTS and AS NOTED arrive here as null, and stay unmeasured. A drawing
+    // whose own caption refuses to name a scale is not one to guess at.
+    if (view.feetPerInch === null || !(view.feetPerInch > 0)) continue;
+    out.push({ view, feetPerUnit: (widthPt / 72) * view.feetPerInch });
+  }
+  return out;
 }
 
 /** A drawing that was NOT measured, and the reason in words. */

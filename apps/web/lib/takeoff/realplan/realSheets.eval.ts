@@ -7,7 +7,14 @@ import { readSheetScale } from "../scaleFromDimensions";
 import { findWallsOnSheet, type SheetTextItem } from "../findWallsOnSheet";
 import { sheetSuitability } from "../sheetSuitability";
 import { nameSheet } from "./nameSheet";
-import { primaryView, sheetViews, viewRegions, viewsInRegions, wallsPerView } from "../sheetViews";
+import {
+  primaryView,
+  sheetViews,
+  viewRegions,
+  viewsInRegions,
+  viewsWithOwnScale,
+  wallsPerView,
+} from "../sheetViews";
 import { clusterByThickness, type StrokeSegment } from "../wallVectors";
 
 /**
@@ -249,6 +256,28 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
           const pageSize = { widthPt: strokes.widthPt, heightPt: strokes.heightPt };
           const labels = dimensionLabels(text);
           const verdict = readSheetScale(text, segments, labels, {}, metricDimensionLabels(text));
+          // ── THE SPLIT RUNS BEFORE THE VERDICT CAN END THE PAGE ──
+          //
+          // `sheetViews` reads the scale CAPTIONS and `viewRegions` reads the
+          // sheet's own gutters, so neither needs a scale to run. They used to
+          // sit inside `if (verdict.ok)`, which meant a sheet carrying several
+          // drawings at several scales was reported as "no scale" and nothing
+          // on it was measured — although every drawing on it was captioned.
+          //
+          // And that sheet is the one most likely to decline: `readSheetScale`
+          // wants printed dimensions that AGREE, and dimensions of two
+          // drawings at two scales do not agree with each other.
+          const textItemsAll: SheetTextItem[] = text.items.map((i) => ({
+            str: i.str,
+            x: i.x,
+            y: i.y,
+            width: i.width,
+            height: i.height,
+          }));
+          const allViews = viewsInRegions(
+            sheetViews(textItemsAll, pageSize.widthPt),
+            viewRegions(segments, pageSize),
+          );
           const report: SheetReport = {
             set: label,
             page: sheet.page,
@@ -275,15 +304,9 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
           if (verdict.ok) {
             const feetPerUnit = (text.widthPt / 72) * verdict.feetPerInch;
             report.feetPerUnit = feetPerUnit;
-            const textItems: SheetTextItem[] = text.items.map((i) => ({
-              str: i.str,
-              x: i.x,
-              y: i.y,
-              width: i.width,
-              height: i.height,
-            }));
+            const textItems = textItemsAll;
             const input = { segments, textItems, pageSize, feetPerUnit, wallTypes: [], sampledSheets: null };
-            const views = viewsInRegions(sheetViews(textItems, pageSize.widthPt), viewRegions(segments, pageSize));
+            const views = allViews;
             // ── A REAL SHEET CAN BE REFUSED OUTRIGHT, AND THAT IS A RESULT ──
             //
             // `wallsFromStrokes` throws `SheetTooDenseError` past
@@ -363,6 +386,57 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
               "utf8",
             );
             report.overlay = svg;
+          } else {
+            // ── THE SHEET HAS NO SCALE; ITS DRAWINGS STILL MIGHT ──
+            //
+            // Reached only when the printed dimensions have already declined,
+            // because a dimension can be checked against the drawing and a
+            // caption cannot. What it recovers is the sheet that declined
+            // BECAUSE it carries several drawings: dimensions of two drawings
+            // at two scales do not agree with each other, so the better the
+            // sheet is laid out, the more certainly it was refused.
+            //
+            // Each view is measured at its OWN caption, absolutely — a caption
+            // is feet per paper inch and needs no anchor — so this does not
+            // depend on any view being trusted first.
+            const scaled = viewsWithOwnScale(allViews, pageSize.widthPt);
+            const measured: { name: string; scale: string | null; feet: number; runs: number }[] = [];
+            let totalFeet = 0;
+            let totalRuns = 0;
+            for (const { view, feetPerUnit } of scaled) {
+              const inView = segments.filter((one) => {
+                const mx = (one.x1 + one.x2) / 2 / pageSize.widthPt;
+                const my = (one.y1 + one.y2) / 2 / pageSize.widthPt;
+                return mx >= view.from && mx < view.to && my >= view.fromY && my < view.toY;
+              });
+              if (inView.length === 0) continue;
+              try {
+                const found = findWallsOnSheet({
+                  segments: inView as StrokeSegment[],
+                  textItems: textItemsAll,
+                  pageSize,
+                  feetPerUnit,
+                  wallTypes: [],
+                  sampledSheets: null,
+                });
+                const feet = found.walls.reduce((n, w) => n + w.lengthFeet, 0);
+                measured.push({ name: view.name, scale: view.scaleName, feet, runs: found.walls.length });
+                totalFeet += feet;
+                totalRuns += found.walls.length;
+              } catch (err) {
+                report.refused = `per-view: ${err instanceof Error ? err.message.slice(0, 100) : String(err)}`;
+              }
+            }
+            if (measured.length > 0) {
+              report.views = measured;
+              report.totalFeet = totalFeet;
+              report.runs = totalRuns;
+              // SAID OUT LOUD, because a number read off a caption is weaker
+              // evidence than one read off a dimension and a report that hides
+              // which it used is a report nobody can weigh.
+              report.scale = "FROM VIEW CAPTIONS";
+              report.scaleHow = `${measured.length} view${measured.length === 1 ? "" : "s"} measured at their own captioned scale`;
+            }
           }
           reports.push(report);
         }
@@ -391,7 +465,10 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
         say("");
         continue;
       }
-      if (r.feetPerUnit === null) {
+      // A SHEET MEASURED FROM ITS VIEWS HAS NO SINGLE `feetPerUnit`, and that
+      // is the point of it — each drawing was measured at its own caption. So
+      // "was anything measured" is the view list, not the sheet's scale.
+      if (r.feetPerUnit === null && r.views.length === 0) {
         say(`   walls        NOT MEASURED — no scale`);
         say("");
         continue;
