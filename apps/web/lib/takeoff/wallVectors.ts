@@ -2163,6 +2163,22 @@ export function buildingGroups(
   return [...groups.values()].sort((a, b) => feetOf(b) - feetOf(a));
 }
 
+/**
+ * How big another piece must be, against the biggest, to be part of the same
+ * building. A share rather than a footage — see `wallsInTheBuilding`.
+ */
+export const OTHER_PIECE_SHARE = 0.1;
+
+/**
+ * How many runs a second piece must EXCEED to be a drawing rather than a box.
+ *
+ * Four is a rectangle — a title block, a detail bubble's frame, a north arrow's
+ * surround. This is deliberately NOT applied to the main group, where a
+ * one-room building is also four runs and a count standing in for a question
+ * it could not ask returned nothing on three real plans.
+ */
+export const OTHER_PIECE_MIN_RUNS = 4;
+
 export function wallsInTheBuilding(
   walls: readonly WallCandidate[],
   feetPerPoint: number,
@@ -2234,7 +2250,51 @@ export function wallsInTheBuilding(
   // `wallsNotTheScaleBar` FIRST, so what arrives here is drawing rather than
   // furniture of the sheet. A building can be any size and any shape,
   // including one room.
-  return best;
+
+  // ── AND A BUILDING CAN BE IN MORE THAN ONE PIECE ──
+  //
+  // "The biggest group" loses a detached wing, a plan split by a courtyard or
+  // an atrium, and the far side of anything separated by more than
+  // `SAME_BUILDING_FEET`. Measured on ELEVEN03 A4.B.1, where this step took
+  // 200 ft — one 32 ft run at 6-1/8in and four 18 ft runs at 12in, which are
+  // the proportions of real walls rather than of furniture.
+  //
+  // A SHARE OF THE BIGGEST, not a fixed size, because the thing being
+  // separated is scale-free: a second wing is comparable to the first, while
+  // the strays this function exists to reject — a detail bubble, a north
+  // arrow, a leftover rectangle — are an order of magnitude below. A fixed
+  // footage would have to be right for a studio and a hospital at once.
+  //
+  // A tenth is deliberately generous in the direction of keeping walls: the
+  // cost of dropping a real wing is a bid that misses a wing, and the cost of
+  // keeping a stray is a run an estimator can see and delete. Those are not
+  // symmetric.
+  // ── AND IT HAS TO LOOK LIKE A PLAN, NOT LIKE A BOX ──
+  //
+  // A share alone is not enough, and the test that caught it is this file's
+  // own: a title block of two runs at 80 ft against a 560 ft plan is 14%, and
+  // a tenth would have kept it. Footage says how BIG a thing is; it cannot
+  // say whether it is a drawing.
+  //
+  // A secondary piece must also carry more runs than a rectangle has sides.
+  // That floor is wrong for the MAIN group — a one-room building is four runs,
+  // and `NOT_A_BOX` was removed from here for exactly that reason after S01,
+  // S10 and S11 returned nothing — but it is right for a SECOND piece on a
+  // sheet that already has a plan on it. A detached wing with four walls and
+  // nothing inside is an outbuilding, and reaching it is not worth admitting
+  // every rectangle on the page.
+  const keep = best.length > 0 ? bestFeet * OTHER_PIECE_SHARE : Infinity;
+  const pieces: WallCandidate[] = [];
+  for (const group of groups.values()) {
+    if (group === best) continue;
+    if (group.length <= OTHER_PIECE_MIN_RUNS) continue;
+    if (group.reduce((total, wall) => total + wall.lengthFeet, 0) >= keep) pieces.push(...group);
+  }
+  // Original order, because the overlay and every later filter read the array
+  // positionally — see `wallsNotIsolatedStubs` for the same reason.
+  if (pieces.length === 0) return best;
+  const surviving = new Set([...best, ...pieces]);
+  return walls.filter((wall) => surviving.has(wall));
 }
 
 /**
