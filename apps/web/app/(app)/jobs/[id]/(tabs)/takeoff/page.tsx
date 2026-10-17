@@ -164,6 +164,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
     storedWallsByPage,
     levelByPage,
     scalePrefillByPage,
+    viewScalesByPage,
     scaleDeclineByPage,
     duplicateWallsByPage,
     sheetLabelByPage,
@@ -220,6 +221,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         scannedPages={scannedPages}
         storedWallsByPage={storedWallsByPage}
         scalePrefillByPage={scalePrefillByPage}
+        viewScalesByPage={viewScalesByPage}
         scaleDeclineByPage={scaleDeclineByPage}
         levelByPage={levelByPage}
         // MATCHING ONLY. The viewer never picks a wall type — it reports which

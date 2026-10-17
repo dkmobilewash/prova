@@ -101,6 +101,7 @@ import {
   type GroupVerdict,
 } from "@/lib/takeoff/wallGroups";
 import { proposalSections, showsHeadings } from "@/lib/takeoff/proposalSections";
+import { calibrationForView, type ViewScale } from "@/lib/takeoff/sheetScale";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 
 /**
@@ -228,6 +229,7 @@ export function TakeoffPlanViewer({
   levelByPage,
   wallTypes,
   scalePrefillByPage,
+  viewScalesByPage,
   scaleDeclineByPage,
   duplicateWallsByPage = {},
   sheetLabelByPage = {},
@@ -364,6 +366,13 @@ export function TakeoffPlanViewer({
   /** What each sheet said about its own scale, read off the dimensions
    *  printed on it. A PREFILL and never a calibration — see `ScalePrefill`. */
   scalePrefillByPage: ScalePrefillByPage;
+  /**
+   * The drawings on each multi-scale sheet, with the scale captioned under
+   * each. Absent for every page that read a scale of its own, which is most of
+   * them — see `sheetScale.ts` for why a page-wide prefill must NOT be invented
+   * for these.
+   */
+  viewScalesByPage?: Record<number, ViewScale[]>;
   scaleDeclineByPage?: ScaleDeclineByPage;
   /**
    * Per page, why a wall takeoff here would probably be a DOUBLE COUNT.
@@ -2723,6 +2732,7 @@ export function TakeoffPlanViewer({
               planId={planId}
               pageNumber={pageNumber}
               pageWidthPt={pageSize?.widthPt ?? null}
+              viewScales={viewScalesByPage?.[pageNumber] ?? []}
               printedScale={printedScaleByPage[pageNumber] ?? null}
               prefill={scalePrefillByPage[pageNumber] ?? null}
               declineReason={scaleDeclineByPage?.[pageNumber] ?? null}
@@ -3190,6 +3200,64 @@ function Shape({
  * branch and its wording, and it deliberately does NOT claim the panel is
  * navigable — see that file's own note on what it is and is not evidence for.
  */
+/**
+ * ── A SHEET WITH SEVERAL DRAWINGS ON IT, EACH AT ITS OWN SCALE ──
+ *
+ * There is no prefill for these and there must not be: one scale would be
+ * wrong for every drawing but one, and a calibration the estimator accepts is
+ * a calibration they are taken to have checked.
+ *
+ * `scaleFromPrinted` refuses exactly this page — more than one printed scale,
+ * and no way to tell which drawing each belongs to. Reading them per VIEW is
+ * how it can be told, because a caption is read against the region its drawing
+ * occupies. So this offers the drawings themselves and asks which one is being
+ * measured, which is a question the estimator can answer by looking at the
+ * sheet and the app cannot answer at all.
+ *
+ * The scale is still UNCONFIRMED in the sense `ScaleOffer` uses: nothing on the
+ * sheet checks a caption. The line it proposes spans the drawing's own region,
+ * which is at least something to look at — see `calibrationForView`.
+ */
+export function ViewScaleOffer({
+  views,
+  onUse,
+}: {
+  views: readonly ViewScale[];
+  onUse: (view: ViewScale) => void;
+}) {
+  return (
+    <div className="rounded-md border border-line-card bg-surface p-2" data-takeoff="view-scales">
+      <p className="mb-2 text-xs text-ink-body">
+        This sheet carries{" "}
+        <span className="font-semibold text-ink">{views.length} drawings at their own scales</span>, so
+        there is no one scale for the page. Pick the drawing you are measuring.
+      </p>
+      <ul className="flex flex-col gap-1">
+        {views.map((view, index) => (
+          <li key={`${view.name}-${index}`}>
+            <button
+              type="button"
+              data-takeoff="use-view-scale"
+              onClick={() => onUse(view)}
+              className="flex w-full items-baseline justify-between gap-3 rounded-md border border-line-card px-2 py-1.5 text-left text-xs text-ink-label hover:bg-rail-hover"
+            >
+              <span className="font-medium text-ink">{view.name}</span>
+              <span className="shrink-0 text-ink-muted">{view.scaleName}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {/* The same sentence `ScaleOffer` shows for a printed scale, for the same
+          reason: a caption is what somebody typed, and nothing on the drawing
+          confirms it. An estimator accepting this has to know that. */}
+      <p className="mt-2 text-[11px] text-ink-muted">
+        These come from the captions under each drawing. Nothing measurable on the sheet confirms
+        them — check one against a dimension you can read before relying on it.
+      </p>
+    </div>
+  );
+}
+
 export function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => void }) {
   // Both of these are PURE and live in `takeoff-plan-view.ts`, where they are
   // tested — the wording of a measured error and the order of the evidence are
@@ -3357,6 +3425,7 @@ function CalibrationForm({
   existingNote,
   draft,
   prefill,
+  viewScales,
   declineReason,
   onUsePrefill,
   onSaved,
@@ -3370,6 +3439,9 @@ function CalibrationForm({
   existingNote: string;
   draft: StoredCalibration | null;
   prefill: ScalePrefill | null;
+  /** The drawings on a multi-scale sheet, each with its own captioned scale.
+   *  Empty on every ordinary sheet. */
+  viewScales: readonly ViewScale[];
   declineReason: string | null;
   onUsePrefill: (xs: readonly [number, number], ys: readonly [number, number]) => void;
   onSaved: () => void;
@@ -3455,6 +3527,27 @@ function CalibrationForm({
           <p className="rounded-md border border-line-card bg-surface px-2 py-1.5 text-[11px] text-ink-muted">
             <span className="text-ink-body">How this sheet&apos;s scale was set:</span> {existingNote}
           </p>
+        )}
+        {/* ── THE PER-VIEW OFFER, WHERE A PAGE-WIDE ONE CANNOT EXIST ──
+            Only when there is no prefill: a sheet that read a scale of its own
+            has one answer and does not need to be asked which drawing. */}
+        {!prefill && pageWidthPt !== null && viewScales.length > 0 && (
+          <ViewScaleOffer
+            views={viewScales}
+            onUse={(view) => {
+              // A page whose width never arrived cannot have a line placed on
+              // it — the ratio has nothing to be a ratio OF. The offer is not
+              // shown in that state; this is the type-level echo of that.
+              if (pageWidthPt === null) return;
+              const line = calibrationForView(view, pageWidthPt);
+              onUsePrefill([line.x1, line.x2], [line.y1, line.y2]);
+              setNote(
+                `From the ${view.scaleName} captioned under ${view.name} on this sheet. ` +
+                  `Nothing measurable on the sheet confirmed it.`,
+              );
+              setTyped(formatFeetInches(line.declaredDistanceFeet));
+            }}
+          />
         )}
         {prefill && (
           <ScaleOffer

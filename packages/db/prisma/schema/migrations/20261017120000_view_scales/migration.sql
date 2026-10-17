@@ -1,0 +1,12 @@
+-- The scales captioned under each drawing, for a sheet carrying more than one.
+--
+-- ADDITIVE AND NULLABLE ON PURPOSE. The obvious shape for per-view scales is
+-- one reading row per view, which means relaxing the unique on
+-- (planId, pageNumber). `saveScaleReading` upserts THROUGH that constraint, so
+-- between this migration landing — seconds after merge — and the new build
+-- going live minutes later, the running build would be upserting through an
+-- index that no longer exists. A nullable column is invisible to that build.
+--
+-- NULL means "not a multi-scale sheet", which is the ordinary case: a sheet
+-- whose dimensions or printed scale answered has nothing to put here.
+ALTER TABLE "PlanSheetScaleReading" ADD COLUMN     "viewScales" JSONB;

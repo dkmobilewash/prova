@@ -22,6 +22,7 @@ import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import type { WallGroup } from "@/lib/takeoff/wallGroups";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
 import type { SectionItem } from "@/lib/takeoff/proposalSections";
+import { viewScalesFromJson, type ViewScale } from "@/lib/takeoff/sheetScale";
 import { measurementScaleLabel, zoneNotices, zoneScales } from "@/lib/takeoff-zones";
 
 /**
@@ -190,6 +191,7 @@ export async function loadTakeoffWorkspace(
           inheritedError: true,
           source: true,
           declineReason: true,
+          viewScales: true,
         },
       })
     : [];
@@ -215,6 +217,20 @@ export async function loadTakeoffWorkspace(
     }
   }
   const scalePrefillByPage: ScalePrefillByPage = scalePrefillsFromReadings(scaleReadingRows, sheetWidthByPage);
+  // ── THE SHEETS THAT CARRY SEVERAL DRAWINGS AT SEVERAL SCALES ──
+  //
+  // A page-wide prefill is deliberately absent on these — one scale would be
+  // wrong for every drawing but one — so this is the only thing the workspace
+  // has to offer on them. Read through `viewScalesFromJson`, which refuses a
+  // blob it does not recognise rather than half-understanding one: a view with
+  // a missing region would be measured across the WHOLE sheet at a detail's
+  // scale, which is the "hundreds of feet that are not a building" failure
+  // `sheetViews` exists to prevent.
+  const viewScalesByPage: Record<number, ViewScale[]> = {};
+  for (const row of scaleReadingRows) {
+    const views = viewScalesFromJson(row.viewScales);
+    if (views.length > 0) viewScalesByPage[row.pageNumber] = views;
+  }
   // THE SAME ROWS, ASKED THE OTHER QUESTION: why a sheet offered nothing. One
   // query, two derivations — the reason is already on the row, and re-querying
   // for it would be a second trip for data we are holding.
@@ -523,6 +539,7 @@ export async function loadTakeoffWorkspace(
     matchableItems,
     levelByPage,
     scalePrefillByPage,
+    viewScalesByPage,
     scaleDeclineByPage,
     duplicateWallsByPage,
     sheetLabelByPage,

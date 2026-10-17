@@ -4,6 +4,9 @@ import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { dimensionLabels, metricDimensionLabels } from "../../plan-ingest/dimensionLabels";
 import { readSheetScale } from "../scaleFromDimensions";
+import { scaleFromPrinted } from "../scaleFromPrinted";
+import { printedScalesOnPage } from "../printedScales";
+import { feetPerUnitFrom, sheetScale } from "../sheetScale";
 import { findWallsOnSheet, type SheetTextItem } from "../findWallsOnSheet";
 import { sheetSuitability } from "../sheetSuitability";
 import { nameSheet } from "./nameSheet";
@@ -338,6 +341,40 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
             sheetViews(textItemsAll, pageSize.widthPt),
             viewRegions(segments, pageSize),
           );
+
+          // ── THE SAME DECISION THE APP MAKES, FROM THE SAME FUNCTION ──
+          //
+          // This file used to run `readSheetScale` and stop. The app runs it
+          // and then falls back to the PRINTED scale, so four real sheets were
+          // reported here as "no scale" that the app reads perfectly — the
+          // measure understating the product it exists to measure.
+          //
+          // `scaleFromPrinted` gives a line and a distance rather than a
+          // ratio, so the ratio is recovered from them: the line IS the
+          // sheet's own width, and the distance is what the printed scale says
+          // that width spans. Dividing by the page's paper inches gives feet
+          // per inch, which is what `sheetScale` compares.
+          const printed = scaleFromPrinted(
+            printedScalesOnPage(text.items),
+            text.widthPt,
+            text.heightPt,
+          );
+          const decided = sheetScale({
+            textItems: textItemsAll,
+            segments,
+            pageSize,
+            fromDimensions: verdict.ok
+              ? { ok: true, scaleName: verdict.scaleName, feetPerInch: verdict.feetPerInch }
+              : { ok: false, reason: verdict.reason },
+            fromPrinted:
+              printed === null
+                ? null
+                : {
+                    scaleName: printed.scaleName,
+                    feetPerInch: printed.declaredDistanceFeet / (text.widthPt / 72),
+                  },
+          });
+
           const report: SheetReport = {
             set: label,
             page: sheet.page,
@@ -361,10 +398,23 @@ describe.skipIf(DIR === "")("a folder of real plan sets", () => {
             ms: 0,
             overlay: "",
           };
+          // A PRINTED scale is the app's own fallback and the report used to
+          // lack it — four real sheets were called "no scale" here that the app
+          // reads perfectly. Recorded as its own source, never dressed as a
+          // dimension-derived one.
+          if (!verdict.ok && decided.kind === "PRINTED") {
+            report.scale = `${decided.feetPerInch.toFixed(2)} ft/in`;
+            report.scaleHow = `${decided.scaleName} printed on the sheet — nothing confirms it`;
+          }
 
           const sheetStarted = Date.now();
-          if (verdict.ok) {
-            const feetPerUnit = (text.widthPt / 72) * verdict.feetPerInch;
+          // DIMENSIONS or PRINTED both give the sheet ONE scale, and from here
+          // the two are measured identically — `report.scale` above is what
+          // records which it was.
+          const sheetWide =
+            decided.kind === "DIMENSIONS" || decided.kind === "PRINTED" ? decided.feetPerInch : null;
+          if (sheetWide !== null) {
+            const feetPerUnit = feetPerUnitFrom(sheetWide, text.widthPt);
             report.feetPerUnit = feetPerUnit;
             const textItems = textItemsAll;
             const input = { segments, textItems, pageSize, feetPerUnit, wallTypes: [], sampledSheets: null };

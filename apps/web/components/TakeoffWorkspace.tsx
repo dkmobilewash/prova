@@ -854,6 +854,7 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
               takeoffItems={data.matchableItems}
               levelByPage={data.levelByPage}
               scalePrefillByPage={data.scalePrefillByPage}
+              viewScalesByPage={data.viewScalesByPage}
               scaleDeclineByPage={data.scaleDeclineByPage}
               duplicateWallsByPage={data.duplicateWallsByPage}
               sheetLabelByPage={data.sheetLabelByPage}
