@@ -462,7 +462,23 @@ describe("the ghost lines over the sheet", () => {
     //
     // Now the noise comes out first and the building is looked for in what is
     // left, with no minimum size.
-    expect(code).toMatch(/wallsInTheBuilding\(\s*notScaleBar\s*,\s*feetPerUnit\s*\)/);
+    //
+    // ── PINNED ON THE ORDER, NOT ON WHICH FILTER COMES LAST ──
+    //
+    // This named `notScaleBar` as the argument and broke the day another
+    // filter was inserted ahead of the building step — `wallsNotIsolatedStubs`,
+    // which drops furniture. The order it exists to protect was intact; only
+    // the name of the last filter had moved, and the next filter would have
+    // moved it again.
+    //
+    // What matters is that the building is found in the FILTERED set rather
+    // than the raw one, so that is what this asks: `everywhere` is the raw
+    // candidates, and it must not be what the building step is handed.
+    expect(code).toMatch(/wallsInTheBuilding\(/);
+    expect(
+      code,
+      "the building is grouped from the RAW candidates, so the title block can win",
+    ).not.toMatch(/wallsInTheBuilding\(\s*everywhere\s*,/);
     // And that what gets grouped is the FILTERED set, not the raw one.
     expect(code).toMatch(/clusterByThickness\(walls\)/);
     expect(code).not.toMatch(/clusterByThickness\(everywhere\)/);

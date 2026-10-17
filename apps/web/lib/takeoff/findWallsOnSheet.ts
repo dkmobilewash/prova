@@ -16,6 +16,7 @@ import { defaultWallTypeFromNotes } from "./wallNotes";
 import { scaleBarLabels, wallsNotTheScaleBar } from "./scaleBar";
 import { wallsNotDuplicateCoverage } from "./duplicateCoverage";
 import { curvedWalls } from "./curvedWalls";
+import { wallsNotIsolatedStubs } from "./isolatedStubs";
 import { DEFAULTS } from "./wallVectors";
 import { wallGroups, type WallGroup } from "./wallGroups";
 import { withoutNonWallLayers, type LayerDrop } from "./layerNames";
@@ -418,7 +419,15 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   // thing; whatever is left over after the filters above is either part of it
   // or is somewhere else on the sheet.
   stage("noise-filters");
-  const inBuilding = wallsInTheBuilding(notScaleBar, feetPerUnit);
+  // ── AND THE THINGS STANDING INSIDE THE BUILDING THAT ARE NOT IT ──
+  //
+  // Before `wallsInTheBuilding` and not after, because that one joins at
+  // TWENTY feet to keep a plan together across its gaps — so a bench in a
+  // lobby is comfortably part of the building by its measure and survives.
+  // This asks the tighter question first: does this short run touch anything
+  // at all? See `isolatedStubs.ts` for the measurement on two real sheets.
+  const notStubs = wallsNotIsolatedStubs(notScaleBar, feetPerUnit);
+  const inBuilding = wallsInTheBuilding(notStubs, feetPerUnit);
   // ── AND THEIR ENDS PUT BACK ON THE CORNERS ──
   //
   // Last, because it needs the final set: a wall can only be joined to one
