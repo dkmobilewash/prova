@@ -631,7 +631,64 @@ anybody will read first.
 
 ---
 
-## BLOCKER FOR PHASE 4: detection takes 102 seconds on a real sheet
+## THE 102 SECONDS WERE THE CURVE ENGINE, AND EVERYBODY GUESSED WRONG
+
+Resolved 2026-10-17. The entry below is kept in full because the thing it got
+wrong is the lesson: it named the quadratic pair test as "the obvious suspect
+precisely because `MAX_PAIR_TESTS` exists", and said to profile first because
+"everything below is speculation until that exists". Both halves were right —
+the advice, and the need for it.
+
+**The pair test takes 479 ms.** The curve assembly takes 96%.
+
+    Camp Bow Wow A102, 143,438 segments
+      whole of findWallsOnSheet    61,330 ms
+      …grid bubbles                 1,947 ms
+      …both wall engines              479 ms   ← the suspect
+      …curvedWalls                 58,901 ms   ← 96%
+
+**Why.** `curvedWalls` keeps every stroke under 1.5 ft as a possible arc
+piece, and on a real architectural sheet that is **126,943 of 143,438
+segments — 88%** — because hatching is drawn in tiny strokes. `assemble` then
+scans every piece on every growth step, which is quadratic in that number.
+
+**The fix is a cap, not an index.** `MAX_CURVE_PIECES = 8,000`: above it the
+curve pass is REFUSED and the caller told, while the straight-wall engines
+still run. Measured:
+
+    | sheet | segments | before | after |
+    | A102  | 143,438  |  61,330 ms |  2,470 ms |
+    | A101  | 425,057  | 494,050 ms | 17,540 ms |
+
+A101 did not complete at all before — eight and a quarter minutes. The
+twenty-fixture score held at 13 of 17 within 2% across the change, and no
+fixture comes within an order of magnitude of the cap.
+
+**TWO ATTEMPTS AT AN INDEX MADE IT WORSE, AND THAT IS THE SECOND LESSON.**
+A uniform grid over the endpoints — the textbook fix, and the one the old
+entry's direction 3 recommended — turned 58,901 ms into **624,808 ms**.
+Allocation-free, it was still **196,659 ms**. Both were reverted. The cost was
+not the scan's asymptotics on this data; it was the per-step work, and a
+measurement would have said so before the second attempt as readily as after
+it. Profiling twice is cheaper than optimising twice.
+
+**What is still open.** A sheet over the cap gets no curved walls at all, which
+is a real loss on a hatched sheet that has one. The honest fix is a cheaper
+way to tell a hatch stroke from an arc piece — they are parallel and evenly
+spaced, and they do not join end to end — which is a filter rather than an
+index. Not attempted here. And `grid bubbles` is now the largest remaining
+stage on A101 at 16.7 s, which nobody has looked at.
+
+---
+
+## THE OLD BLOCKER ENTRY, KEPT FOR THE GUESS IT GOT WRONG
+
+*Superseded by the section above, 2026-10-17. Left whole rather than
+corrected in place: it is a good record of what the evidence looked like
+before anybody measured, and its instruction — profile before optimising —
+is what produced the correction.*
+
+### Detection takes 102 seconds on a real sheet
 
 Status check asked for and answered 2026-10-16. **Not fixed, and nothing has
 touched it.** `git diff` over `wallVectors.ts`, `findWallsOnSheet.ts`,

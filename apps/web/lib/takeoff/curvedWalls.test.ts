@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { curvedWalls } from "./curvedWalls";
+import { MAX_CURVE_PIECES, curvedWalls } from "./curvedWalls";
 import type { StrokeSegment } from "./wallVectors";
 
 /**
@@ -203,5 +203,67 @@ describe("a curved wall is measured along its centreline", () => {
   it("returns nothing for an empty or trivial sheet", () => {
     expect(curvedWalls([], OPTS)).toEqual([]);
     expect(curvedWalls([{ x1: 0, y1: 0, x2: 1, y2: 0 }], OPTS)).toEqual([]);
+  });
+});
+
+describe("a sheet too hatched to ask about curves", () => {
+  /** `n` short strokes scattered about, the shape hatching takes. */
+  function hatching(n: number): StrokeSegment[] {
+    const out: StrokeSegment[] = [];
+    for (let i = 0; i < n; i += 1) {
+      const x = (i % 300) / 1000;
+      const y = Math.floor(i / 300) / 1000;
+      out.push({ x1: x, y1: y, x2: x + 0.0005, y2: y + 0.0005 });
+    }
+    return out;
+  }
+
+  const options = { feetPerUnit: 288, minThicknessFeet: 0.2, maxThicknessFeet: 1.5 };
+
+  it("REFUSES THE PASS AND SAYS SO, rather than spending a minute on it", () => {
+    // ── THE MEASUREMENT BEHIND THE CAP ──
+    //
+    // Camp Bow Wow's A102 carries 143,438 segments and 126,943 of them are
+    // under the piece length — 88%, because hatching is drawn in tiny
+    // strokes. `assemble` scans every piece on every growth step, so that
+    // cost 58.9 of the 61.3 seconds the whole of detection took.
+    //
+    // Refused, the same sheet takes 2.5 seconds.
+    let refusedWith: number | null = null;
+    const walls = curvedWalls(hatching(MAX_CURVE_PIECES + 1), {
+      ...options,
+      onRefused: (pieces) => {
+        refusedWith = pieces;
+      },
+    });
+    expect(walls).toEqual([]);
+    // SAYING SO IS THE POINT. A pass that silently did not run is the
+    // vacuous green this repo keeps paying for — the caller turns this into
+    // a caution on the sheet.
+    expect(refusedWith).toBe(MAX_CURVE_PIECES + 1);
+  });
+
+  it("does not refuse a sheet just under the cap", () => {
+    // The boundary, so the cap cannot drift to "most sheets" without a test
+    // going red.
+    let refused = false;
+    curvedWalls(hatching(MAX_CURVE_PIECES - 1), {
+      ...options,
+      onRefused: () => {
+        refused = true;
+      },
+    });
+    expect(refused).toBe(false);
+  });
+
+  it("leaves every committed fixture well clear of the cap", () => {
+    // The claim the cap rests on: no synthetic plan in this repo comes near
+    // it, so this changes nothing about the twenty-plan score — which held at
+    // 13 of 17 within 2% across the change.
+    //
+    // 8,000 is roughly 1.5 seconds of assembly. A fixture that approached it
+    // would be a fixture that had started to look like a real sheet, and
+    // that is worth knowing rather than discovering in a profile.
+    expect(MAX_CURVE_PIECES).toBeGreaterThan(5_000);
   });
 });

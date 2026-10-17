@@ -569,9 +569,23 @@ model TakeoffWallProposal {
 
   createdAt DateTime @default(now())
 
+  /// ── WHICH TAKEOFF ITEM THIS GROUP PROPOSES INTO, or null ──
+  ///
+  /// Detection ADDS to a condition somebody named, rather than landing in a
+  /// pile called "Add these". `lib/takeoff/proposalMatch.ts` decides it, by
+  /// the drawing's own wall tag first and the measured thickness last, and
+  /// REFUSES a tie — two items of the same thickness leave the group here
+  /// with a null, which the screen shows as "Unassigned walls".
+  ///
+  /// `SetNull`, like every other item link: deleting a condition must not
+  /// destroy a detection run somebody is part-way through reviewing.
+  itemId String?
+  item   TakeoffItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
   /// The read this table exists for: the newest proposals for a page at the
   /// scale it is currently calibrated to.
   @@index([pageId, calibrationId, createdAt])
+  @@index([itemId])
 }
 
 /// What KIND of thing an item measures, which decides which properties apply
@@ -671,8 +685,9 @@ model TakeoffItem {
 
   sortOrder Int @default(0)
 
-  measurements TakeoffMeasurement[]
-  lineItems    JobLineItem[]
+  measurements  TakeoffMeasurement[]
+  lineItems     JobLineItem[]
+  wallProposals TakeoffWallProposal[]
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
 

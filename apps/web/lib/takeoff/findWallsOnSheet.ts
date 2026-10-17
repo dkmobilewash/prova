@@ -99,6 +99,18 @@ export type FindWallsInput = {
   /** The company's wall types. Used three ways — see below. */
   wallTypes: readonly MatchableWallType[];
   /**
+   * Called with each stage's name and how long it took, when a caller wants
+   * to know. Optional and unset everywhere in the product.
+   *
+   * ── IT EXISTS BECAUSE GUESSING WAS COSTING MORE THAN MEASURING ──
+   *
+   * `AUDIT.md` recorded this function at 102 seconds on a real sheet and said
+   * the first thing to do was profile it, in as many words: "Everything below
+   * is speculation until that exists." A hook is how the profile names a
+   * stage without this file importing a timer or a logger.
+   */
+  onStage?: (stage: string, ms: number) => void;
+  /**
    * Other sheets of the same set, each already in ITS OWN page-width units, for
    * the template pass. Null when the caller could not read them, which is not
    * an error: the geometric filters still run and the sheet gets exactly what
@@ -220,6 +232,15 @@ export function fromBaseline(item: SheetTextItem): SheetTextItem {
 export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   const { pageSize, feetPerUnit, wallTypes } = input;
 
+  // Reports nothing and costs one comparison per stage when nobody is asking.
+  let stageStart = Date.now();
+  const stage = (name: string) => {
+    if (!input.onStage) return;
+    const now = Date.now();
+    input.onStage(name, now - stageStart);
+    stageStart = now;
+  };
+
   // THE SHIFT, ONCE — see `fromBaseline`, which is a named function precisely
   // so this can be tested rather than trusted.
   const textItems = input.textItems.map(fromBaseline);
@@ -250,6 +271,7 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   // series test requires, and both arms returned the same number: on inputs
   // that simple the geometric filters already cope. P16 therefore asserts only
   // what it can see — the line never reaches the pairer — and says so.
+  stage("layers");
   const onWallLayers = withoutNonWallLayers(input.segments);
   const allInUnits = onWallLayers.kept.map(inPageWidthUnits(pageSize.widthPt));
 
@@ -311,6 +333,7 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   // bubble. That is the property a grid line has and a wall does not, and it
   // cannot take a wall that merely lies along the same line.
   const bubbles = gridBubbles(inUnits, unitsPerPaperInch);
+  stage("grid");
   const gridIndices = linesIntoBubbles(inUnits, bubbles);
   const gridDropped = gridIndices.size;
   if (gridDropped > 0) inUnits = inUnits.filter((_, i) => !gridIndices.has(i));
@@ -367,12 +390,19 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   // too — a curved stroke can be lettering or a scale bar's arc as easily as
   // a straight one can. `curvedWalls.ts` has the geometry and why the mean of
   // two faces' path lengths IS the centreline arc.
+  stage("both-engines");
+  let curvesRefused: number | null = null;
   const curves = curvedWalls(inUnits, {
+    onRefused: (pieces) => {
+      curvesRefused = pieces;
+      input.onStage?.(`curves-refused=${pieces}`, 0);
+    },
     feetPerUnit,
     minThicknessFeet: DEFAULTS.minThicknessFeet,
     maxThicknessFeet: DEFAULTS.maxThicknessFeet,
   });
 
+  stage("curves");
   const notLettering = wallsNotLettering([...everywhere, ...curves], textBoxes, feetPerUnit);
   const notBorder = wallsNotTheSheetBorder(notLettering, 1, aspect);
   // THE GRAPHIC SCALE BAR is two parallel lines a wall-thickness apart and
@@ -386,6 +416,7 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   // AND ONLY THEN, WHERE THE BUILDING IS. A floor plan is one connected
   // thing; whatever is left over after the filters above is either part of it
   // or is somewhere else on the sheet.
+  stage("noise-filters");
   const inBuilding = wallsInTheBuilding(notScaleBar, feetPerUnit);
   // ── AND THEIR ENDS PUT BACK ON THE CORNERS ──
   //
@@ -404,14 +435,17 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   //
   // `duplicateCoverage.ts` has the measurements and the three discriminators
   // that do NOT work, including two that were built and reverted.
+  stage("in-building");
   const noDuplicates = wallsNotDuplicateCoverage(inBuilding, scheduleIn);
 
+  stage("duplicates");
   const walls = joinAtCorners(noDuplicates.kept, feetPerUnit);
 
   // ── WHAT THE DRAWING CALLS THESE, where it says so ──
   //
   // ONE PASS OVER THE TEXT for the tags, the scale bar and the general note:
   // the items are read once above and every reader works from them.
+  stage("join-corners");
   const tags = wallTypeTags(textItems, pageSize.widthPt);
   const fromNote = defaultWallTypeFromNotes(textItems, wallTypes);
 

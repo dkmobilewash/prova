@@ -143,15 +143,25 @@ describe("everything under a takeoff plan is collected by deleting the plan", ()
     ).toEqual([]);
   });
 
-  it("the new proposal table cascades from BOTH of its parents", () => {
-    // Named explicitly because it has two, and only one of them is the page.
-    // Deleting a page cascades to its calibrations AND to this, and Postgres
-    // fires those triggers in creation order — so a RESTRICT on the
-    // calibration side would see rows that are about to be deleted anyway and
-    // block the whole delete. That is the #227 shape exactly.
+  it("the proposal table cascades from both plan parents, and holds its item link", () => {
+    // Named explicitly because it has two plan parents, and only one of them
+    // is the page. Deleting a page cascades to its calibrations AND to this,
+    // and Postgres fires those triggers in creation order — so a RESTRICT on
+    // the calibration side would see rows that are about to be deleted anyway
+    // and block the whole delete. That is the #227 shape exactly.
+    //
+    // ── AND A THIRD PARENT THAT MUST *NOT* CASCADE ──
+    //
+    // `itemId` is SET NULL on purpose, added 2026-10-17 when detection began
+    // proposing into takeoff items. A CASCADE there would mean deleting a
+    // condition threw away a detection run somebody was part-way through
+    // reviewing; a RESTRICT would mean a condition could not be deleted while
+    // any detected group pointed at it. SET NULL drops the group back into
+    // "Unassigned walls", which is the recoverable state.
     const mine = keys.filter((key) => key.table === "TakeoffWallProposal");
     expect(mine.map((key) => `${key.column}:${key.onDelete}`).sort()).toEqual([
       "calibrationId:CASCADE",
+      "itemId:SET NULL",
       "pageId:CASCADE",
     ]);
   });

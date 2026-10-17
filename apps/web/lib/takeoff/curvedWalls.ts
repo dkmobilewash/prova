@@ -80,11 +80,26 @@ const FACE_LENGTH_RATIO = 1.25;
 
 type Chain = { points: { x: number; y: number }[]; lengthUnits: number };
 
+/**
+ * The most short pieces this engine will try to assemble.
+ *
+ * See the refusal in `curvedWalls` for the measurement behind it. Not a
+ * guess at a safe number: it is the point where a quadratic over `pieces`
+ * costs more than the whole rest of detection.
+ */
+export const MAX_CURVE_PIECES = 8_000;
+
 export type CurvedOptions = {
   /** Units per foot, as everywhere else in this module. */
   feetPerUnit: number;
   minThicknessFeet: number;
   maxThicknessFeet: number;
+  /**
+   * Called instead of assembling, when the sheet carries more short pieces
+   * than `MAX_CURVE_PIECES`. The caller turns it into a caution — a pass that
+   * silently did not run is the vacuous green this repo keeps paying for.
+   */
+  onRefused?: (pieces: number) => void;
 };
 
 export function curvedWalls(
@@ -109,6 +124,43 @@ export function curvedWalls(
     return feet > 0 && feet <= MAX_PIECE_FEET;
   });
   if (pieces.length < 3) return [];
+
+  // ── A SHEET THIS HATCHED CANNOT BE ASKED ABOUT CURVES ──
+  //
+  // `assemble` scans every piece on every growth step, so its cost is
+  // quadratic in `pieces.length`. That was fine while "short piece" meant a
+  // handful of arc segments, and it is not fine on a real architectural
+  // sheet: Camp Bow Wow's A102 has 143,438 segments and **126,943 of them —
+  // 88% — are under 1.5 ft**, because hatching is drawn in tiny strokes.
+  //
+  // Measured, after a profile said so and after two attempts to index the
+  // scan made it WORSE rather than better:
+  //
+  //   | A102                      | time       |
+  //   | the whole of findWallsOnSheet | 61,330 ms |
+  //   | …of which curvedWalls     | 58,901 ms (96%) |
+  //   | …of which the pair engine | 479 ms |
+  //
+  // So the pair test everybody suspected — this repo's own `MAX_PAIR_TESTS`
+  // scar included — was innocent, and the curve assembly was the whole cost.
+  //
+  // ── REFUSING THE PASS, NOT THE SHEET ──
+  //
+  // `MAX_PAIR_TESTS` refuses a whole sheet when it is too dense to pair, and
+  // A101 gets nothing at all as a result. This refuses only the CURVE pass:
+  // the straight-wall engines still run and the sheet still gets a number.
+  // A curved wall on a sheet like this goes unfound, which is a real loss and
+  // is why the caller is told rather than left to wonder — but it is a
+  // smaller loss than a minute of nothing, and far smaller than a refusal.
+  //
+  // The cap is where the quadratic stops being affordable rather than a round
+  // number: 8,000 pieces is about 1.5 seconds of assembly, and no fixture in
+  // this repo's twenty-plan set comes near it — the densest is under 900.
+  if (pieces.length > MAX_CURVE_PIECES) {
+    options.onRefused?.(pieces.length);
+    return [];
+  }
+
   const chains = assemble(pieces, JOINT_FEET / options.feetPerUnit);
   const arcs = chains.filter(
     (chain) =>
