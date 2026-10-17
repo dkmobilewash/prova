@@ -5,7 +5,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Spinner } from "@/components/Spinner";
 import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
+import { TakeoffItemProperties } from "@/components/TakeoffItemProperties";
+import { TakeoffItemsPanel } from "@/components/TakeoffItemsPanel";
 import { TakeoffSheetTree } from "@/components/TakeoffSheetTree";
+import { TakeoffSheetSummary } from "@/components/TakeoffSheetSummary";
 import { deleteTakeoffMeasurement } from "@/lib/actions";
 import {
   EMPTY as EMPTY_UNDO,
@@ -94,6 +97,9 @@ const KEY = {
   sheets: "prova.takeoff.sheets",
   facts: "prova.takeoff.facts",
   railWidth: "prova.takeoff.railWidth",
+  summary: "prova.takeoff.summary",
+  items: "prova.takeoff.items",
+  hidden: (jobId: string) => `prova.takeoff.hidden.${jobId}`,
   bookmarks: (jobId: string) => `prova.takeoff.bookmarks.${jobId}`,
 };
 
@@ -155,6 +161,21 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
   const [bookmarks, setBookmarks] = useState<ReadonlySet<number>>(new Set());
   const [page, setPage] = useState(openPage);
 
+  /**
+   * ── WHICH ITEM IS BEING DRAWN WITH ──
+   *
+   * Not remembered across visits, deliberately. An item selected yesterday is
+   * a condition somebody has stopped thinking about, and arriving with one
+   * armed means the first thing they trace lands somewhere they did not
+   * choose. Null is Unassigned, which is recoverable; a wrong item is not
+   * obviously wrong.
+   */
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  /** Items hidden on the drawing. Per-viewer, so localStorage — see KEY. */
+  const [hiddenItems, setHiddenItems] = useState<ReadonlySet<string>>(new Set());
+  const [summaryOpen, setSummaryOpen] = useState(true);
+  const [itemsOpen, setItemsOpen] = useState(false);
+
   // ── THE REMEMBERED FURNITURE, once, on mount ──
   //
   // Not in the initialisers: `localStorage` is not there during the server
@@ -172,6 +193,21 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
 
     const stored = Number(readStored(KEY.railWidth));
     if (Number.isFinite(stored) && stored >= RAIL_MIN && stored <= RAIL_MAX) setRailWidth(stored);
+
+    setSummaryOpen(readStored(KEY.summary) !== "closed");
+    // Open by default at rail widths: the items list is what this workspace is
+    // FOR, and arriving with it closed hides the feature behind a button.
+    const itemsPref = readStored(KEY.items);
+    setItemsOpen(itemsPref === null ? window.innerWidth >= RAIL_WIDTH : itemsPref === "open");
+    const hide = readStored(KEY.hidden(jobId));
+    if (hide) {
+      try {
+        const parsed: unknown = JSON.parse(hide);
+        if (Array.isArray(parsed)) setHiddenItems(new Set(parsed.filter((v) => typeof v === "string")));
+      } catch {
+        // A corrupt preference is a missing preference.
+      }
+    }
 
     const marks = readStored(KEY.bookmarks(jobId));
     if (marks) {
@@ -192,10 +228,27 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
     setSheetsOpen(open);
     writeStored(KEY.sheets, open ? "open" : "closed");
   }, []);
+  const rememberItems = useCallback((open: boolean) => {
+    setItemsOpen(open);
+    writeStored(KEY.items, open ? "open" : "closed");
+  }, []);
   const rememberFacts = useCallback((open: boolean) => {
     setFactsOpen(open);
     writeStored(KEY.facts, open ? "open" : "closed");
   }, []);
+
+  const toggleHiddenItem = useCallback(
+    (itemId: string) => {
+      setHiddenItems((was) => {
+        const next = new Set(was);
+        if (next.has(itemId)) next.delete(itemId);
+        else next.add(itemId);
+        writeStored(KEY.hidden(jobId), JSON.stringify([...next]));
+        return next;
+      });
+    },
+    [jobId],
+  );
 
   const toggleBookmark = useCallback(
     (pageNumber: number) => {
@@ -347,9 +400,8 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
           setOverview(false);
           return;
         }
-        if (drawers && (sheetsOpen || panelOpen)) {
-          rememberSheets(false);
-          rememberPanel(false);
+        if (drawers && (sheetsOpen || panelOpen || itemsOpen)) {
+          closeDrawers();
         }
         return;
       }
@@ -440,6 +492,27 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
       );
   }, [data.sheetRows, sheets]);
 
+  const items = data.items;
+  const activeItem = items.find((item) => item.id === activeItemId) ?? null;
+  /**
+   * Measurements with no item, counted from the SHEETS rather than from the
+   * items: an unassigned measurement is by definition in no item's list, so
+   * asking the items would always answer zero.
+   */
+  const unassignedCount = useMemo(
+    () => sheets.reduce((n, sheet) => n + sheet.measurements.filter((m) => m.itemId === null).length, 0),
+    [sheets],
+  );
+
+  /** Loose geometry on the sheet in front of somebody — see the rail's offer. */
+  const unassignedHere = useMemo(
+    () =>
+      (sheets.find((sheet) => sheet.pageNumber === page)?.measurements ?? [])
+        .filter((m) => m.itemId === null || m.itemId === undefined)
+        .map((m) => m.id),
+    [sheets, page],
+  );
+
   const currentSheet = sheets.find((sheet) => sheet.pageNumber === page) ?? null;
   const currentRow = data.sheetRows.find((row) => row.pageNumber === page) ?? null;
 
@@ -466,9 +539,33 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
     />
   );
 
+  // Picking an item opens the properties strip, because the properties are the
+  // reason to look at it. Closing the strip by hand still sticks: this only
+  // fires on a CHANGE of selection, so it cannot fight somebody who shut it.
+  useEffect(() => {
+    if (activeItemId !== null && !factsOpen) rememberFacts(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- on selection only; including factsOpen would reopen it the moment it is closed.
+  }, [activeItemId]);
+
+  const itemsPanel = (
+    <TakeoffItemsPanel
+      jobId={jobId}
+      items={items}
+      activeItemId={activeItemId}
+      onPick={setActiveItemId}
+      currentPage={page}
+      hidden={hiddenItems}
+      onToggleHidden={toggleHiddenItem}
+      unassignedHere={unassignedHere}
+      unassignedCount={unassignedCount}
+      readOnly={phone}
+    />
+  );
+
   const closeDrawers = () => {
     rememberSheets(false);
     rememberPanel(false);
+    rememberItems(false);
   };
 
   return (
@@ -590,6 +687,15 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
                   rent on the drawing. */}
               <button
                 type="button"
+                onClick={() => rememberItems(!itemsOpen)}
+                aria-expanded={itemsOpen}
+                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail"
+                data-takeoff="toggle-items"
+              >
+                Items
+              </button>
+              <button
+                type="button"
                 onClick={() => rememberFacts(!factsOpen)}
                 aria-expanded={factsOpen}
                 className="hidden rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail lg:inline-block"
@@ -683,6 +789,11 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
             So the panel is lifted out of the flow by CSS instead: fixed to the
             right, over the backdrop, reserving no width. One surface in two
             positions, and `found-walls` is the viewer's own handle on it. */}
+        {/* ── THE ITEMS RAIL ──
+            On the right in the flow at >= 1280, and a DRAWER below that, the
+            same rule the sheet tree follows. It is the workspace's own panel
+            rather than the viewer's: the viewer owns the quantities it
+            detected, this owns what a person decided to take off. */}
         <main
           className={`flex min-h-0 min-w-0 flex-1 flex-col p-2${
             drawers && panelOpen
@@ -694,26 +805,51 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
           }`}
           data-takeoff="canvas-region"
         >
-          <TakeoffPlanViewer
-            jobId={jobId}
-            planId={data.plan.id}
-            sheets={sheets}
-            printedScaleByPage={data.printedScaleByPage}
-            scannedPages={data.scannedPages}
-            storedWallsByPage={data.storedWallsByPage}
-            levelByPage={data.levelByPage}
-            scalePrefillByPage={data.scalePrefillByPage}
-            scaleDeclineByPage={data.scaleDeclineByPage}
-            duplicateWallsByPage={data.duplicateWallsByPage}
-            sheetLabelByPage={data.sheetLabelByPage}
-            wallTypes={data.viewerWallTypes}
-            initialPage={openPage}
-            fill
-            panelOpen={panelOpen && !phone}
-            readOnly={phone}
-            onMeasurementSaved={onMeasurementSaved}
-          />
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            {summaryOpen && !phone && (
+              <TakeoffSheetSummary
+                items={items}
+                pageNumber={page}
+                hidden={hiddenItems}
+                onClose={() => {
+                  setSummaryOpen(false);
+                  writeStored(KEY.summary, "closed");
+                }}
+              />
+            )}
+            <TakeoffPlanViewer
+              jobId={jobId}
+              planId={data.plan.id}
+              sheets={sheets}
+              printedScaleByPage={data.printedScaleByPage}
+              scannedPages={data.scannedPages}
+              storedWallsByPage={data.storedWallsByPage}
+              levelByPage={data.levelByPage}
+              scalePrefillByPage={data.scalePrefillByPage}
+              scaleDeclineByPage={data.scaleDeclineByPage}
+              duplicateWallsByPage={data.duplicateWallsByPage}
+              sheetLabelByPage={data.sheetLabelByPage}
+              wallTypes={data.viewerWallTypes}
+              initialPage={openPage}
+              fill
+              panelOpen={panelOpen && !phone}
+              readOnly={phone}
+              onMeasurementSaved={onMeasurementSaved}
+              activeItemId={activeItemId}
+            />
+          </div>
         </main>
+
+        {/* The items rail, after the canvas in the DOM as well as on screen:
+            canvas-first is an ordering claim, not only a flex-direction. */}
+        {itemsOpen && !drawers && !phone && (
+          <aside
+            className="w-72 shrink-0 overflow-hidden border-l border-line-card bg-surface"
+            data-takeoff="items-rail"
+          >
+            {itemsPanel}
+          </aside>
+        )}
       </div>
 
       {/* ── SHEET FACTS, the strip the item properties will live in ──
@@ -727,7 +863,10 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
           style={{ height: `${FACTS_REM}rem` }}
           data-takeoff="sheet-facts"
         >
-          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-xs">
+          {activeItem ? (
+            <TakeoffItemProperties jobId={jobId} item={activeItem} readOnly={phone} />
+          ) : (
+            <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-xs">
             <span className="font-semibold text-ink">
               {data.sheetLabelByPage[page] ?? `Sheet ${page}`}
             </span>
@@ -740,8 +879,12 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
             <Fact label="Measurements">{currentSheet?.measurements.length ?? 0}</Fact>
             <Fact label="Revision">{currentRow?.proposal?.revision ?? "—"}</Fact>
             <Fact label="Issued">{currentRow?.proposal?.issueDate ?? "—"}</Fact>
-            <Fact label="Bookmarked">{bookmarks.has(page) ? "yes" : "no"}</Fact>
-          </div>
+              <Fact label="Bookmarked">{bookmarks.has(page) ? "yes" : "no"}</Fact>
+              <span className="text-ink-muted">
+                Pick an item to see and edit its properties here.
+              </span>
+            </div>
+          )}
           {data.duplicateWallsByPage[page] && (
             <p className="mt-1 text-[11px] text-tag-amber-ink">{data.duplicateWallsByPage[page]}</p>
           )}
@@ -849,7 +992,7 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
           Outside the row on purpose. Inside it, even `absolute` still took its
           place in the flow on the first attempt and pushed the canvas off the
           page. `fixed` to the viewport cannot. */}
-      {drawers && !phone && (sheetsOpen || panelOpen) && (
+      {drawers && !phone && (sheetsOpen || panelOpen || itemsOpen) && (
         <>
           <button
             type="button"
@@ -875,6 +1018,25 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage }: Pr
                 </button>
               </div>
               <div className="min-h-0 flex-1">{tree}</div>
+            </aside>
+          )}
+          {itemsOpen && (
+            <aside
+              className="fixed inset-y-0 right-0 z-40 flex w-80 flex-col border-l border-line-card bg-surface"
+              data-takeoff="items-drawer"
+            >
+              <div className="flex shrink-0 items-center justify-between px-2 pt-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Items</span>
+                <button
+                  type="button"
+                  onClick={() => rememberItems(false)}
+                  className="rounded-md border border-line-card px-2 py-0.5 text-xs text-ink-body"
+                  data-takeoff="close-items-drawer"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="min-h-0 flex-1">{itemsPanel}</div>
             </aside>
           )}
           {/* The quantities drawer IS the viewer's panel, lifted by the

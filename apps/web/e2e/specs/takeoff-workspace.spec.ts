@@ -335,6 +335,16 @@ test.describe("the full-screen takeoff workspace", () => {
     expect(sheet.y).toBeGreaterThanOrEqual(canvas.y - 2);
   });
 
+  /** Put a top-bar panel toggle into a known state. */
+  async function setRail(handle: string, open: boolean): Promise<void> {
+    const toggle = page.locator(`[data-takeoff="${handle}"]`);
+    if ((await toggle.count()) === 0) return;
+    if ((await toggle.getAttribute("aria-expanded")) !== String(open)) {
+      await toggle.click();
+      await page.waitForTimeout(250);
+    }
+  }
+
   test("11. the canvas owns the height at 1440 AND at 1280", async () => {
     // ── WITH THE QUANTITIES RAIL OPEN *AND* CLOSED ──
     //
@@ -343,22 +353,36 @@ test.describe("the full-screen takeoff workspace", () => {
     // it. The rail changes the direction of the row it sits in, so it changes
     // which dimension the canvas gives up — the open case is the one that
     // breaks.
+    //
+    // ── AND THE ITEMS RAIL IS SET EXPLICITLY, NOT LEFT WHEREVER IT WAS ──
+    //
+    // It did not exist when this test was written, and it defaults OPEN at
+    // these widths — so "with the rail closed" quietly stopped being true and
+    // the measurement dropped to 83.3%. The canvas was not being cheated:
+    // a narrower viewer WRAPS its own toolbar onto a second line, and that
+    // line is the missing height.
+    //
+    // Which is a real cost worth asserting rather than hiding, so both states
+    // are measured. The floor is lower with it open because the wrap is a
+    // consequence of the width, not a layout fault — and a floor at all is
+    // what stops the next rail eating the drawing.
     for (const size of [DESKTOP, NARROW]) {
       for (const railOpen of [false, true]) {
-        await page.setViewportSize(size);
-        await onWorkspace(jobTwo);
-        const rail = page.locator('[data-takeoff="toggle-panel"]');
-        if ((await rail.getAttribute("aria-expanded")) !== String(railOpen)) {
-          await rail.click();
-          await page.waitForTimeout(250);
+        for (const itemsOpen of [false, true]) {
+          await page.setViewportSize(size);
+          await onWorkspace(jobTwo);
+          await setRail("toggle-panel", railOpen);
+          await setRail("toggle-items", itemsOpen);
+          await fitAndSettle();
+          const canvas = await canvasBox();
+          const floor = itemsOpen ? 0.82 : 0.85;
+          expect(
+            canvas.height / size.height,
+            `at ${size.width}px with quantities ${railOpen ? "OPEN" : "closed"} and items ` +
+              `${itemsOpen ? "OPEN" : "closed"} the canvas is ${canvas.height.toFixed(0)}px ` +
+              `of a ${size.height}px viewport`,
+          ).toBeGreaterThan(floor);
         }
-        await fitAndSettle();
-        const canvas = await canvasBox();
-        expect(
-          canvas.height / size.height,
-          `at ${size.width}px with the rail ${railOpen ? "OPEN" : "closed"} the canvas is ` +
-            `${canvas.height.toFixed(0)}px of a ${size.height}px viewport`,
-        ).toBeGreaterThan(0.85);
       }
     }
     await page.setViewportSize(DESKTOP);
@@ -621,4 +645,96 @@ test.describe("the full-screen takeoff workspace", () => {
   test("9. nothing crashed anywhere in the workspace", async () => {
     expect(monitor.crashes, "a page crashed while driving the workspace").toEqual([]);
   });
+
+  test("18. AN ITEM, DRAWN WITH, AND THE QUANTITY IT PRODUCES", async () => {
+    // ── THE WHOLE OF PHASE 2 IN ONE WALK ──
+    //
+    // Create a condition, select it, trace a wall with it selected, and read
+    // the footage back. Every step of that chain has its own unit tests — the
+    // colour rotation, the arithmetic, the action's validation — and none of
+    // them can tell whether the chain is CONNECTED. This can: if the item's
+    // id does not reach the save, the measurement lands in Unassigned and the
+    // item's total stays at zero with everything still green.
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobTwo);
+    await setRail("toggle-items", true);
+
+    const panel = page.locator('[data-takeoff="items-panel"]');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('[data-takeoff="items-empty"]')).toBeVisible();
+
+    // ── CREATE ──
+    await panel.locator('[data-takeoff="add-item"]').click();
+    const form = panel.locator('[data-takeoff="item-form"]');
+    await form.locator('input[name="name"]').fill("ZZ 6in partition");
+    await form.locator('select[name="type"]').selectOption("LINEAR");
+    await form.getByRole("button", { name: "Add" }).click();
+
+    const row = panel.locator('[data-takeoff="item-row"]').first();
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await expect(row).toContainText("ZZ 6in partition");
+    // Created items are SELECTED, so the next thing drawn belongs to them —
+    // the alternative is making somebody click the thing they just made.
+    await expect(row.locator('[data-takeoff="pick-item"]')).toHaveAttribute("aria-pressed", "true");
+    // And it starts at nothing, which is what makes the number below mean
+    // something rather than being whatever was already there.
+    await expect(row.locator('[data-takeoff="item-total"]')).toContainText("0 ft");
+
+    // ── THE PROPERTIES STRIP OPENS ITSELF, because that is why you look ──
+    const properties = page.locator('[data-takeoff="item-properties"]');
+    await expect(properties).toBeVisible();
+    await expect(page.locator('[data-takeoff="item-name"]')).toHaveValue("ZZ 6in partition");
+
+    // ── DRAW WITH IT ──
+    await page.getByRole("button", { name: "Line", exact: true }).click();
+    const overlay = page.locator('[data-testid="takeoff-plan-port"] svg').first();
+    const box = await overlay.boundingBox();
+    expect(box, "no overlay to draw on").not.toBeNull();
+    const width = box?.width ?? 0;
+    await overlay.click({ position: { x: width * 0.2, y: width * 0.25 } });
+    await overlay.click({ position: { x: width * 0.6, y: width * 0.25 } });
+
+    const measurementForm = page
+      .locator("form")
+      .filter({ has: page.getByRole("button", { name: /^(Save|Add) /i }) })
+      .last();
+    const save = page.getByRole("button", { name: /save (this )?(line|measurement)/i }).first();
+    if ((await save.count()) > 0) {
+      await save.click();
+    } else {
+      await measurementForm.getByRole("button").last().click();
+    }
+
+    // ── AND THE FOOTAGE ARRIVES ON THE ITEM ──
+    //
+    // THE ASSERTION THAT MATTERS. Not "a measurement exists" — that would
+    // pass with the geometry in Unassigned. The ITEM's own total has to move
+    // off zero, which only happens if `itemId` travelled with the save.
+    await expect
+      .poll(
+        async () => (await row.locator('[data-takeoff="item-total"]').textContent())?.trim() ?? "",
+        { timeout: 60_000, message: "the item's total never left zero — did itemId reach the save?" },
+      )
+      .not.toMatch(/^0 ft/);
+
+    // The on-canvas summary is the same number, for this sheet.
+    const summary = page.locator('[data-takeoff="sheet-summary"]');
+    await expect(summary).toBeVisible();
+    await expect(summary).toContainText("ZZ 6in partition");
+
+    // ── PROPERTIES RECALCULATE LIVE, BEFORE A SAVE ──
+    //
+    // The brief's own example: wall SF = LF x height x sides. Typing them
+    // must move the face figure on screen, which is the panel's reason to
+    // exist — a number that only appears after a round trip is a number
+    // nobody trusts enough to type into.
+    await properties.locator('[data-takeoff="prop-heightFt"]').fill("9");
+    await properties.locator('[data-takeoff="prop-sides"]').fill("2");
+    await expect(properties.locator('[data-takeoff="item-face"]')).toBeVisible();
+    await expect(properties.locator('[data-takeoff="item-face"]')).toContainText("sq ft of face");
+
+    await page.screenshot({ path: path.join(SHOTS, "workspace-1440-items.png") });
+    await expectHealthy(page, "items and properties", { monitor, signedIn: false });
+  });
+
 });

@@ -177,6 +177,7 @@ model Job {
   dailyFieldReports              DailyFieldReport[]
   media                          JobMedia[]
   takeoffPlans                   TakeoffPlan[]
+  takeoffItems                   TakeoffItem[]
   /// The bid this job came from, when one was linked. See estimating.prisma.
   wonFromBid                     BidInvitation? @relation("BidInvitationWonJob")
   /// Documents dropped into `/intake` and filed against this job. Optional

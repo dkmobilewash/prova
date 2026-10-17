@@ -1,6 +1,7 @@
 import { prisma } from "@prova/db";
 
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
+import { cutoutsFromJson, type ItemMeasurement, type TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
 import { scheduleSheetCountFor } from "@/lib/plan-ingest/scheduleProposalsQuery";
 import { effectiveSheetNumber, effectiveTitle, sheetPickerLabel } from "@/lib/plan-ingest/sheetIndex";
 import { sheetSuitability, duplicateWallsCaution } from "@/lib/takeoff/sheetSuitability";
@@ -219,6 +220,68 @@ export async function loadTakeoffWorkspace(
    * Read from the SAME rows the sheet review below uses, rather than queried
    * again — one answer, one round trip.
    */
+  /**
+   * ── THE TAKEOFF ITEMS, AND THEIR GEOMETRY ──
+   *
+   * One query for the items and their measurements, rather than reading them
+   * off `plan.pages` above: an item's measurements span SHEETS, and several
+   * of them may sit on a sheet this plan no longer has after a revision. The
+   * rail must still add those up — they are quantities somebody measured —
+   * so the item owns the read.
+   *
+   * `feetPerPageWidth` is computed HERE rather than sent to the client as a
+   * calibration, because `itemQuantities.ts` takes a number and the Decimal
+   * cannot cross into a client component anyway.
+   */
+  const itemRows = await prisma.takeoffItem.findMany({
+    where: { jobId: job.id, companyId: company.id },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    include: {
+      measurements: {
+        select: {
+          id: true,
+          kind: true,
+          xs: true,
+          ys: true,
+          cutouts: true,
+          page: { select: { pageNumber: true } },
+          calibration: { select: { x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } },
+        },
+      },
+    },
+  });
+
+  const items: TakeoffItemRow[] = itemRows.map((item) => ({
+    id: item.id,
+    name: item.name,
+    type: item.type,
+    colorHex: item.colorHex,
+    lineStyle: item.lineStyle,
+    heightFt: item.heightFt === null ? null : Number(item.heightFt),
+    sides: item.sides,
+    thicknessIn: item.thicknessIn === null ? null : Number(item.thicknessIn),
+    wastePercent: item.wastePercent === null ? null : Number(item.wastePercent),
+    spacingIn: item.spacingIn === null ? null : Number(item.spacingIn),
+    depthIn: item.depthIn === null ? null : Number(item.depthIn),
+    wallTypeId: item.wallTypeId,
+    sortOrder: item.sortOrder,
+    measurements: item.measurements.map((m) => ({
+      id: m.id,
+      pageNumber: m.page.pageNumber,
+      kind: m.kind,
+      xs: m.xs,
+      ys: m.ys,
+      cutouts: cutoutsFromJson(m.cutouts),
+      feetPerPageWidth: feetPerPageWidth({
+        x1: m.calibration.x1,
+        y1: m.calibration.y1,
+        x2: m.calibration.x2,
+        y2: m.calibration.y2,
+        declaredDistanceFeet: m.calibration.declaredDistanceFeet.toNumber(),
+      }),
+    })),
+  }));
+
   const sheetRows = isEstimateStage ? await sheetIndexFor(plan.id, company.id) : [];
   /**
    * WHICH PAGES ARE SCANS, straight off the ingest record.
@@ -301,6 +364,8 @@ export async function loadTakeoffWorkspace(
         y2: m.calibration.y2,
         declaredDistanceFeet: m.calibration.declaredDistanceFeet.toNumber(),
       },
+      itemId: m.itemId,
+      cutouts: cutoutsFromJson(m.cutouts),
       outOfDate: current !== null && m.calibrationId !== current.id,
       scaleLabel: measurementScaleLabel(m.calibrationId, zones, notices),
     }));
@@ -398,6 +463,7 @@ export async function loadTakeoffWorkspace(
     duplicateWallsByPage,
     sheetLabelByPage,
     sheetRows,
+    items,
     isEstimateStage,
     scheduleSheetCount,
     /**

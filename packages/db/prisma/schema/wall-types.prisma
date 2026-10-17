@@ -69,6 +69,7 @@ model WallType {
 
   components WallTypeComponent[]
   runs       WallRun[]
+  takeoffItems TakeoffItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

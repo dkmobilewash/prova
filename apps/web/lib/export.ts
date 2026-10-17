@@ -673,8 +673,18 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "The uploaded drawing, the scale somebody calibrated each sheet to, and the shapes " +
       "they traced on it. Deliberately not exported: these rows are coordinates on a PDF " +
       "this file does not contain, so on their own they measure nothing. The quantities " +
-      "they produced are ordinary estimate line items and ARE in the line items dataset.",
-    models: ["TakeoffPlan", "TakeoffPlanPage", "TakeoffScaleCalibration", "TakeoffMeasurement"],
+      "they produced are ordinary estimate line items and ARE in the line items dataset.\n\n" +
+      "`TakeoffItem` joins them for the same reason and one of its own: it is a NAME and a " +
+      "COLOUR for a group of those coordinates. Its quantity is computed from them on every " +
+      "read and stored nowhere, so a column of item names in a spreadsheet would carry no " +
+      "number at all — and the numbers it does produce reach the export as estimate lines.",
+    models: [
+      "TakeoffPlan",
+      "TakeoffPlanPage",
+      "TakeoffScaleCalibration",
+      "TakeoffMeasurement",
+      "TakeoffItem",
+    ],
   },
   {
     key: "plan-sheet-index",

@@ -197,6 +197,7 @@ export function TakeoffPlanViewer({
   panelOpen = true,
   readOnly = false,
   onMeasurementSaved,
+  activeItemId = null,
 }: {
   jobId: string;
   planId: string;
@@ -259,6 +260,14 @@ export function TakeoffPlanViewer({
    * stack of its own precisely so there cannot be two.
    */
   onMeasurementSaved?: (saved: { id: string; kind: MeasurementKind }) => void;
+  /**
+   * The takeoff item new measurements belong to, when a host has one selected.
+   *
+   * The viewer does not OWN this — the items rail does — and does not render
+   * the list. It only needs to stamp what it saves, which is the one thing the
+   * rail cannot do from outside the form.
+   */
+  activeItemId?: string | null;
   printedScaleByPage: PrintedScaleByPage;
   /**
    * Page numbers whose page carries NO TEXT LAYER — that is, scans.
@@ -2252,6 +2261,7 @@ export function TakeoffPlanViewer({
               kind={kindOf(tool) ?? "LINEAR"}
               draft={draft}
               reading={draftReading}
+              activeItemId={activeItemId}
               onSaved={(saved) => {
                 setDraft(EMPTY);
                 // THE HOST'S UNDO, when there is a host and an id. The viewer
@@ -2941,6 +2951,7 @@ function MeasurementForm({
   kind,
   draft,
   reading,
+  activeItemId,
   onSaved,
 }: {
   jobId: string;
@@ -2948,6 +2959,7 @@ function MeasurementForm({
   kind: MeasurementKind;
   draft: Draft;
   reading: string | null;
+  activeItemId: string | null;
   /** Carries the new row's id, which is what an undo needs to delete it. */
   onSaved: (saved: { id: string } | null) => void;
 }) {
@@ -2971,6 +2983,9 @@ function MeasurementForm({
       }}
     >
       <input type="hidden" name="pageId" value={pageId} />
+      {/* Blank when nothing is selected, which the action reads as
+          Unassigned rather than as an error. */}
+      <input type="hidden" name="itemId" value={activeItemId ?? ""} />
       <input type="hidden" name="kind" value={kind} />
       <input type="hidden" name="points" value={JSON.stringify(draft)} />
       <div className="flex flex-wrap items-end gap-3">

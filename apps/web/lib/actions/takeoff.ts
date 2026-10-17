@@ -612,9 +612,27 @@ export async function saveTakeoffMeasurement(
     return actionFail("That outline crosses itself, so it has no area. Draw it again without the crossing.");
   }
 
+  /**
+   * WHICH ITEM THIS BELONGS TO, when the workspace has one selected.
+   *
+   * Scoped to the job rather than trusted: an id arriving in a form is a
+   * claim, and one that is not this job's would attach a measurement to
+   * another company's condition. A blank is legitimate and means Unassigned —
+   * the tools work with nothing selected and the geometry is recoverable.
+   */
+  const itemId = String(formData.get("itemId") ?? "").trim();
+  if (itemId !== "") {
+    const item = await prisma.takeoffItem.findFirst({
+      where: { id: itemId, jobId, companyId: company.id },
+      select: { id: true },
+    });
+    if (!item) return actionFail("That takeoff item is no longer on this job. Reload the page.");
+  }
+
   const created = await prisma.takeoffMeasurement.create({
     select: { id: true },
     data: {
+      itemId: itemId === "" ? null : itemId,
       pageId: page.id,
       calibrationId: calibration.id,
       kind,

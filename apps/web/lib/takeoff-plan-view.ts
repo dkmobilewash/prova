@@ -35,6 +35,10 @@ export type PlanMeasurementRow = {
   xs: number[];
   ys: number[];
   label: string | null;
+  /** The takeoff item this belongs to, or null for Unassigned. */
+  itemId?: string | null;
+  /** Openings deducted from an AREA. Empty for the other kinds. */
+  cutouts?: { xs: number[]; ys: number[] }[];
   /**
    * Which pricing package this quantity is in — null is the BASE BID.
    *
