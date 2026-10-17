@@ -1,0 +1,223 @@
+// AI subcontract review: reading the GC's subcontract and its exhibits BEFORE
+// the sub signs, and listing what it commits them to. Diego's lane (contracts
+// sit in billing.prisma; AI is shared from 2026-10-12).
+//
+// Part of the multi-file Prisma schema in this folder. Design:
+// docs/ai/SUBCONTRACT-REVIEW.md.
+//
+// THE SHAPE, in one paragraph. A review is one run against one ContractDocument
+// version, append-only. It reads one or more SOURCES (the agreement itself, plus
+// exhibits), each split into per-page text by code. The model reads that text a
+// chunk at a time and proposes FINDINGS; each finding is kept only if its quote
+// is found, verbatim, on a page CODE located — the model's own page number is
+// never stored. What a person decides about a finding lives on a DECISION row
+// keyed on the job and the finding's stable key, never on the review, so it
+// survives a re-run and carries to the next contract version when the clause is
+// unchanged. "Open" is the absence of a decision and is never stored.
+//
+// WHAT NOTHING HERE DOES: change the job's retainage, its status, a
+// ContractDocument, a signature request or an alert. Every row below is either
+// what a document said or what a person decided about it.
+//
+// EVERY RELATION TO Job AND ContractDocument CASCADES, deliberately. This is
+// per-job review data with no meaning once its job or its contract version is
+// gone, and CASCADE means neither cleanup script has a new RESTRICT child to
+// order — the `InvoiceCounter` scar (#224/#227) is avoided by construction
+// rather than by remembering three edits.
+
+/// What a source file is, as the person uploading it said. Changes the label on
+/// screen and the heading the model sees; never how the text is checked.
+enum SubcontractReviewSourceRole {
+  AGREEMENT
+  SCOPE_EXHIBIT
+  INSURANCE_EXHIBIT
+  GENERAL_CONDITIONS
+  DRAWINGS_LIST
+  OTHER_EXHIBIT
+}
+
+/// What a finding is about. The canonical list is
+/// `SUBCONTRACT_FINDING_CATEGORIES` in packages/integrations/src/subcontractReview.ts,
+/// and `subcontractCategoryCensus.test.ts` requires this block to equal it.
+enum SubcontractFindingCategory {
+  PAYMENT
+  RETAINAGE
+  BILLING
+  LIQUIDATED_DAMAGES
+  INDEMNITY
+  DELAY_AND_SCHEDULE
+  NOTICE
+  TERMINATION
+  BACKCHARGE
+  WARRANTY
+  INSURANCE
+  BONDING
+  LIEN_WAIVER
+  FLOW_DOWN
+  DISPUTE
+  SAFETY_SITE_ADMIN
+  SCOPE
+  OTHER
+}
+
+enum SubcontractFindingSeverity {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+/// A person's call on a finding. There is no OPEN member: open is the absence of
+/// a decision row, which is derived rather than stored.
+enum SubcontractFindingDecisionKind {
+  ACCEPTED
+  DISMISSED
+  NEGOTIATED
+}
+
+/// One run against one contract version. Append-only: a re-run is a new row.
+model SubcontractReview {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  contractDocumentId String
+  contractDocument   ContractDocument @relation(fields: [contractDocumentId], references: [id], onDelete: Cascade)
+
+  model         String
+  promptVersion String
+
+  /// Plain ids, no relation — `ContractDocument.uploadedByUserId`'s shape, so a
+  /// review adds no back-relation to User.
+  startedByUserId String?
+
+  startedAt     DateTime  @default(now())
+  /// Set when every chunk of every source has been read. Null while running.
+  completedAt   DateTime?
+  /// Set when the run stopped and will not continue — the allowance ran out, or a
+  /// chunk failed twice. The reason is a sentence for the person.
+  failedAt      DateTime?
+  failureReason String?
+
+  /// A lease, `BidSpecSection.readInFlightAt`'s shape: set while a chunk is being
+  /// read so two tabs advancing the same review cannot both pay for it.
+  chunkInFlightAt DateTime?
+
+  /// Text pages charged against `contractPagesUsed`, summed over chunks.
+  pagesCharged Int @default(0)
+
+  /// Findings the model returned whose quote was NOT found verbatim in the text
+  /// it was given. Dropped and never shown, but counted, and the count IS shown:
+  /// a reader that is failing its citations should look like one.
+  findingsDropped Int @default(0)
+
+  sources  SubcontractReviewSource[]
+  findings SubcontractFinding[]
+
+  @@index([jobId, startedAt])
+  @@index([contractDocumentId])
+}
+
+/// One file a review read: the agreement (the ContractDocument's own file) or an
+/// exhibit uploaded beside it.
+model SubcontractReviewSource {
+  id       String            @id @default(cuid())
+  reviewId String
+  review   SubcontractReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  role     SubcontractReviewSourceRole
+  /// 1-based order the sources are read and listed in.
+  ordinal  Int
+  fileUrl  String
+  fileName String
+
+  pageCount Int
+
+  /// `(string[] | null)[]` — the lines of each page as code extracted them, or
+  /// null for a page with no text layer. STORED DELIBERATELY: it is the evidence
+  /// every citation was checked against, and it is what lets a re-check or a
+  /// version diff run without re-fetching and re-parsing the file.
+  pageText Json
+
+  /// 1-based page numbers with no text layer — listed on the review as unread.
+  /// Derivable from `pageText`, kept as a column so the review page need not
+  /// load every page's text to say which were not read.
+  unreadPages Int[]
+
+  /// Chunks planned for this source, and how many have been read. A chunk is a
+  /// run of consecutive text pages (`planChunks`).
+  chunksTotal Int
+  chunksDone  Int @default(0)
+
+  findings SubcontractFinding[]
+
+  @@index([reviewId])
+}
+
+/// One validated finding. Immutable once written.
+model SubcontractFinding {
+  id       String                  @id @default(cuid())
+  reviewId String
+  review   SubcontractReview       @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  sourceId String
+  source   SubcontractReviewSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  /// `category:hash(normalised quote)` — `findingKey()`. Stable across re-runs and
+  /// across contract versions while the clause's wording is unchanged.
+  key String
+
+  category SubcontractFindingCategory
+  /// A narrower label inside the category, e.g. PAY_IF_PAID, BROAD_FORM. Free
+  /// text from a fixed list in the prompt; the diff pairs CHANGED clauses on it.
+  subtype  String?
+  severity SubcontractFindingSeverity
+
+  title      String
+  /// Copied from the document, and found there verbatim by `quoteMatch.ts`.
+  quote      String
+  /// Located BY CODE: the page (or two adjacent pages) the quote was found on.
+  pageStart  Int
+  pageEnd    Int
+  /// The section as printed — "§4.3", "Article 9" — kept only if that string
+  /// appears on the located page.
+  sectionRef String?
+
+  explanation       String
+  suggestedPosition String
+  questionForGc     String?
+
+  /// Figures the clause states (LD per day, notice hours, retainage percent…),
+  /// each kept only if its digits appear inside `quote`. Read off the document,
+  /// never computed.
+  terms Json?
+
+  createdAt DateTime @default(now())
+
+  @@unique([reviewId, key])
+  @@index([sourceId])
+}
+
+/// A person's call on a finding, keyed on JOB + finding key so it survives a
+/// re-run and carries across contract versions — `BidAddendumItemDecision`'s
+/// shape. Upserted, never appended.
+model SubcontractFindingDecision {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  key      String
+  decision SubcontractFindingDecisionKind
+
+  /// The person's own words: a note, and edits to what the model wrote. Null
+  /// means "as read". The original finding is never overwritten.
+  note              String?
+  editedSeverity    SubcontractFindingSeverity?
+  editedExplanation String?
+  editedPosition    String?
+
+  decidedByUserId String?
+  decidedAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([jobId, key])
+  @@index([jobId])
+}

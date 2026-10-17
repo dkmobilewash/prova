@@ -151,6 +151,11 @@ const CONTROLS: Record<AiFeatureKey, Control> = {
     file: "components/SpecFindings.tsx",
     why: "Attach a spec section on /bids and list what in it costs money — finish level, ratings, mock-ups, testing, named products — each with the sentence it was read from and a page to check it against.",
   },
+  SUBCONTRACT_REVIEW: {
+    kind: "component",
+    file: "components/SubcontractReviewPanel.tsx",
+    why: "Review before signing, on a job's subcontract agreement versions: run the review on a contract version and its exhibits, and see each clause that puts money, risk or a deadline on the sub, with its exact quote and the page code found it on, to accept, dismiss, negotiate or annotate.",
+  },
   SHEET_TEXT: {
     kind: "component",
     file: "components/TakeoffPlanViewer.tsx",

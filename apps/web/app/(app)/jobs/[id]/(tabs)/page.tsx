@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { headers } from "next/headers";
 import { prisma } from "@prova/db";
 import { PrintButton } from "@/components/PrintButton";
@@ -522,6 +523,13 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
                       >
                         {doc.fileName}
                       </a>
+                      {/* AI subcontract review — what this version commits the sub to. */}
+                      <Link
+                        href={`/jobs/${job.id}/subcontract-review?version=${doc.id}`}
+                        className="mt-1 ml-3 inline-block text-xs text-link hover:underline"
+                      >
+                        {doc.executedSignedDate ? "Review this version" : "Review before signing"}
+                      </Link>
                       {docuSign && (
                         <DocuSignPanel
                           state={docuSign.state}

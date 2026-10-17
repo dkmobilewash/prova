@@ -103,6 +103,7 @@ const LEDGER_TO_PANEL: Record<string, string> = {
   planSheets: "planSheets",
   addendumPages: "addendumPages",
   specPages: "specPages",
+  contractPages: "contractPages",
 };
 
 group("the cost panel meters every unit the ledger counts", () => {

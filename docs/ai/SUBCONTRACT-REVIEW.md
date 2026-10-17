@@ -304,3 +304,36 @@ No second model call goes into the summary, so nothing new can be invented there
 4. Scanned pages listed as unread in v1 rather than OCR'd: OK?
 5. e2e fixture: a seed in `seedDatabase.ts` (recommended), or a dev-only stub flag?
 6. (Phase 3, can wait) Rider as a normal ContractDocument version, or kept out of the version list?
+
+---
+
+## Status: Phase 1 built (2026-10-17)
+
+Decisions §11 1–5 were taken as recommended. #6 is open until Phase 3.
+
+**Built:** clause extraction, the review screen, decisions, and the version diff.
+
+**Changed from the design while building it:**
+
+- **Page breaks.** A clause crossing a page break failed the citation check whenever a footer sat between its halves, which is every real contract. The cross-page search now sets aside running headers and footers: only the first or last two lines of a page, only a page-number line or a line that repeats at another page's edge, and only at the boundary being joined (`citations.ts`, tested both ways).
+- **Category list moved to a dependency-free file.** It now lives in `packages/integrations/src/subcontractCategories.ts`, so the review page's client components do not pull the Anthropic SDK into the browser bundle.
+- **Warranty figures.** `warrantyYears` and `warrantyMonths` are separate figures, because "two (2) years" must never become a 24 the quote does not contain.
+
+**Proved, and how:**
+
+- Unit tests: pageText, chunks, citations, findings, run, censuses. Each gate was checked by deliberately breaking it and watching the tests fail.
+- `subcontractReview.dbtest.ts`, against real Postgres 16 with a fake reader that always reports the wrong page and invents one quote per chunk. It covers:
+  - page located by code;
+  - the invented quote dropped and counted;
+  - a 10-page contract charged 10 pages, not 11;
+  - a decision surviving a re-run;
+  - the v1 → v2 diff;
+  - the allowance stop;
+  - a failed chunk marked on the ledger, then resumed.
+- e2e spec `subcontract-review.spec.ts`, run against a seeded review. It has not run locally because Clerk is unreachable from an agent container; CI's `e2e` job is its first run.
+
+**Not proved:**
+
+- The paid eval has never run: there was no `ANTHROPIC_API_KEY` in the container.
+- Chunk duration on Opus against the 50-second deadline is unmeasured. That is the eval's `chunk time` line.
+- No human has clicked the page.

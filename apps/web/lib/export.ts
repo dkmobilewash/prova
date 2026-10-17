@@ -432,7 +432,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "Whether the assistant is on for your company, any features you switched off, " +
       "and your monthly plan-sheet allowance. Absent means every default was in use.",
     columns: [
-      "id", "aiEnabled", "disabledFeatures", "planSheetsPerMonth", "addendumPagesPerMonth", "specPagesPerMonth", "modelOverride",
+      "id", "aiEnabled", "disabledFeatures", "planSheetsPerMonth", "addendumPagesPerMonth", "specPagesPerMonth", "contractPagesPerMonth", "modelOverride",
       "updatedByUserId", "createdAt", "updatedAt",
     ],
     scope: byCompany,
@@ -754,6 +754,19 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "Nothing here is an assertion about the bid: whether an addendum changed work already " +
       "priced is the estimator's own tick on the addendum itself, which IS exported.",
     models: ["BidAddendumReading", "BidAddendumItemDecision"],
+  },
+  {
+    key: "subcontract-reviews",
+    title: "AI reviews of a subcontract before signing, and your decision on each finding",
+    detail:
+      "When a subcontract version is reviewed, the text read off each file, the clauses found (each " +
+      "with its exact quote and page) and your call on each one — accepted, dismissed, negotiating, " +
+      "with any note or edit. Not exported yet, and the two halves differ the way the addendum pair " +
+      "does. The REVIEW is a record of what a model said about a contract this file already carries " +
+      "(the contract version itself IS exported), and re-running it is what produces a current one. " +
+      "The DECISIONS are your own judgement about your contract, which is the half worth exporting one " +
+      "day; it is omitted because no dataset has been written, not because it would be meaningless.",
+    models: ["SubcontractReview", "SubcontractReviewSource", "SubcontractFinding", "SubcontractFindingDecision"],
   },
   {
     key: "bid-spec-readings",

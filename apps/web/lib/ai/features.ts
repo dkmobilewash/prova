@@ -32,6 +32,7 @@ export type AiSettings = {
   planSheetsPerMonth: number;
   addendumPagesPerMonth: number;
   specPagesPerMonth: number;
+  contractPagesPerMonth: number;
   modelOverride: string | null;
 };
 
@@ -57,6 +58,9 @@ export const AI_SETTINGS_DEFAULTS: AiSettings = {
   // pages, not ten, so 600 was three bids a month rather than fifteen.
   // `ask-allowance.prisma` carries the arithmetic.
   specPagesPerMonth: 1800,
+  // Subcontract pages — a sixth unit, decided 2026-10-17. A figure, not a
+  // measurement: about six 100-page contract packages a month.
+  contractPagesPerMonth: 600,
   modelOverride: null,
 };
 
@@ -90,6 +94,7 @@ export const AI_FEATURE_LABEL: Record<AiFeatureKey, string> = {
   AI_AGENTS: "Background agents",
   WALL_CLASSIFY: "Checking which runs on a plan are walls",
   SHEET_TEXT: "Reading the writing on a scanned sheet",
+  SUBCONTRACT_REVIEW: "Reviewing a subcontract before you sign",
 };
 
 /**
@@ -170,6 +175,8 @@ export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
     "Looking at a part of a floor plan and saying which of the runs the wall finder measured are walls, and which are countertops, fixtures, cabinets or reference lines \u2014 the one thing measuring cannot tell you, since a countertop is also two parallel lines. ONE OF TWO FEATURES HERE THAT SEND A PICTURE OF YOUR DRAWING, the other being reading a scanned sheet; every other one sends text the file already contains. It never changes a length or a thickness; those are measured from the drawing's own geometry either way, and you can accept or reject any run yourself. With this off the runs are still found and still measured \u2014 you just sort them by hand.",
   SHEET_TEXT:
     "Reading the room names, dimensions and scale note off a sheet that was SCANNED rather than exported \u2014 a scan is a picture, so there is no writing in the file to read and nothing else in this app can get at it. ONE OF TWO FEATURES HERE THAT SEND A PICTURE OF YOUR DRAWING, the other being checking which runs are walls. It reads the writing only: the lines are found by measuring the picture, in code, and every length and quantity is still worked out from that geometry rather than from anything the model says. With this off, a scanned sheet behaves as it does today \u2014 it is recognised as a scan and set aside, and you take it off by hand.",
+  SUBCONTRACT_REVIEW:
+    "Reading a GC's subcontract and its exhibits before you sign, and listing the clauses that put money, risk or a deadline on you \u2014 pay-if-paid, liquidated damages, indemnity, notice windows, insurance asks \u2014 each with the exact words it came from and the page they are on. A finding whose words are not found on the page is thrown away rather than shown. It never changes the job, the contract, its retainage or a signature request; you accept, dismiss or edit every finding. Pages are read as text, so a scanned page is listed as unread. With this off you read the contract yourself, as you do today.",
 };
 
 /**
