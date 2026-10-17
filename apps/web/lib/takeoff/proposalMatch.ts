@@ -10,6 +10,8 @@
  * is why they are here rather than inside a query.
  */
 
+import { toEighth } from "./wallVectors";
+
 export type MatchableItem = {
   id: string;
   name: string;
@@ -25,18 +27,25 @@ export type ProposalGroup = {
 };
 
 /**
- * How far apart two thicknesses may be and still be the same wall, in inches.
+ * ── THERE IS NO TOLERANCE HERE ANY MORE, AND THAT IS THE POINT ──
  *
- * ── AN EIGHTH, WHICH IS TIGHTER THAN THE SCHEDULE TEST ──
+ * This was `THICKNESS_INCHES = 0.125`, a band either side of the measured
+ * value. It was replaced by rounding both numbers to the nearest eighth — see
+ * `toEighth` in `wallVectors.ts` — and the constant is gone rather than left
+ * unused, because a named tolerance sitting in this file is an invitation to
+ * reintroduce one.
  *
- * `duplicateCoverage.ts` uses a half-inch band, but that is a COVERAGE test:
- * it asks whether two measurements describe the same piece of building, where
- * the two numbers come from different engines and are expected to disagree a
- * little. This is a direct comparison between a measured thickness and a
- * number somebody typed into an item, and 3⅝" and 4" are different walls that
- * a half-inch band would merge.
+ * The band was not wrong about walls. It was wrong about the SCREEN: the panel
+ * rounds to the eighth to draw its label, so a tolerance around the raw
+ * measurement could match a condition whose label disagreed with the row the
+ * estimator was looking at. Rounding first makes the comparison the one they
+ * can see.
+ *
+ * `duplicateCoverage.ts` still uses a half-inch band and should: that asks
+ * whether two measurements describe the same piece of building, where the
+ * numbers come from different engines and are expected to disagree a little.
+ * This asks whether a measured wall is the condition somebody typed in.
  */
-export const THICKNESS_INCHES = 0.125;
 
 const normalise = (value: string): string => value.trim().toLowerCase().replace(/\s+/g, " ");
 
@@ -80,9 +89,21 @@ export function matchGroupToItem(
     }
   }
 
+  // ── THE SAME NUMBER THE PANEL SHOWS, NOT ONE NEAR IT ──
+  //
+  // This was `Math.abs(item.thicknessIn - group.thicknessInches) <= 1/8`, and
+  // the band is not the problem — a measured 4.33333277" IS a 4-3/8" wall and
+  // has to meet a condition typed as 4.375. The problem is that the panel
+  // ROUNDS to the nearest eighth to draw its label, so a tolerance of an
+  // eighth either side of the raw value can match a condition the label
+  // disagrees with: the screen says 4-3/8", the match ran on 4.333, and
+  // nothing on it explains why a 4-1/4" condition took the group.
+  //
+  // Rounding both to the eighth first makes the comparison the one an
+  // estimator can see and check. It is not a looser test or a tighter one; it
+  // is the same test performed on the numbers that are on the screen.
   const byThickness = items.filter(
-    (item) =>
-      item.thicknessIn !== null && Math.abs(item.thicknessIn - group.thicknessInches) <= THICKNESS_INCHES,
+    (item) => item.thicknessIn !== null && toEighth(item.thicknessIn) === toEighth(group.thicknessInches),
   );
   if (byThickness.length === 1) return { itemId: byThickness[0].id, by: "thickness" };
 

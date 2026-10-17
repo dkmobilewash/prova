@@ -1,4 +1,4 @@
-## Detected walls read under the condition they belong to
+### Detected walls read under the condition they belong to
 
 The takeoff panel listed detected wall groups as a flat run of thicknesses —
 `3"`, `4-3/8"`, `6"` — and left an estimator to map each one back to their own

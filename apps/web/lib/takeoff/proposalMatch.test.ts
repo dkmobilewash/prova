@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { THICKNESS_INCHES, matchGroupToItem, matchGroups, type MatchableItem } from "./proposalMatch";
+import { matchGroupToItem, matchGroups, type MatchableItem } from "./proposalMatch";
+import { inchLabel } from "./wallVectors";
 
 const items: MatchableItem[] = [
+  { id: "i_eighths", name: "Eighths partition", thicknessIn: 4.375, assemblyCode: null },
   { id: "i_w1", name: "6in partition", thicknessIn: 6, assemblyCode: "W1" },
   { id: "i_w2", name: "Shaft wall", thicknessIn: 8, assemblyCode: "W2" },
   { id: "i_none", name: "Ceiling", thicknessIn: null, assemblyCode: null },
@@ -33,13 +35,54 @@ describe("matchGroupToItem", () => {
     expect(hit).toEqual({ itemId: "i_w1", by: "thickness" });
   });
 
-  it("allows an eighth of an inch and no more", () => {
-    expect(matchGroupToItem({ namedCode: null, thicknessInches: 6 + THICKNESS_INCHES }, items)?.itemId).toBe(
-      "i_w1",
+  it("MATCHES ON THE NUMBER THE PANEL SHOWS, which is the nearest eighth", () => {
+    // ── THIS REPLACED A TOLERANCE, AND THE DIFFERENCE IS VISIBLE TO A PERSON ──
+    //
+    // It used to be `|item − group| <= 1/8`. The band was not wrong about
+    // walls; it was wrong about the SCREEN. The panel rounds to the eighth to
+    // draw its label, so a tolerance either side of the raw measurement could
+    // match a condition the label disagreed with — the row reading 4-3/8"
+    // while a 4-1/4" condition took the group, and nothing on screen to say
+    // why.
+    //
+    // A measurement off real geometry, where the drafter drew 4-3/8":
+    expect(matchGroupToItem({ namedCode: null, thicknessInches: 4.33333277 }, items)?.itemId).toBe(
+      "i_eighths",
     );
-    // 3⅝" and 4" are different walls. A half-inch band — which the COVERAGE
-    // test next door uses, for a different question — would merge them.
+    // And the refusal that the old band allowed: 6-1/8" is drawn, shown and
+    // typed as a different wall from 6".
+    expect(matchGroupToItem({ namedCode: null, thicknessInches: 6.125 }, items)).toBeNull();
+    // 3⅝" and 4" stay different walls, as they were under the band.
     expect(matchGroupToItem({ namedCode: null, thicknessInches: 6.3 }, items)).toBeNull();
+  });
+
+  it("CANNOT MATCH A CONDITION THE LABEL DISAGREES WITH — the whole point", () => {
+    // The property, rather than three examples of it. Swept across a range of
+    // measured thicknesses: every match that happens is one where the group's
+    // label and the item's own label are the same string, so an estimator can
+    // check the panel's decision by reading it.
+    const sized: MatchableItem[] = [
+      { id: "a", name: "a", thicknessIn: 3.625, assemblyCode: null },
+      { id: "b", name: "b", thicknessIn: 4.375, assemblyCode: null },
+      { id: "c", name: "c", thicknessIn: 6, assemblyCode: null },
+      { id: "d", name: "d", thicknessIn: 6.125, assemblyCode: null },
+    ];
+    let matches = 0;
+    for (let raw = 3; raw <= 7; raw += 0.01) {
+      const hit = matchGroupToItem({ namedCode: null, thicknessInches: raw }, sized);
+      if (hit === null) continue;
+      matches += 1;
+      const item = sized.find((one) => one.id === hit.itemId);
+      expect(item, `matched an item that is not in the list: ${hit.itemId}`).toBeDefined();
+      expect(
+        inchLabel(raw),
+        `group measured ${raw.toFixed(3)} shows as ${inchLabel(raw)} and matched ${item?.thicknessIn}`,
+      ).toBe(inchLabel(item?.thicknessIn ?? -1));
+    }
+    // The sweep has to MATCH something, or it asserts nothing — the vacuous
+    // case this repo keeps paying for. Four conditions an eighth-band wide
+    // across a four-inch sweep at 0.01 steps is about fifty hits.
+    expect(matches, "the sweep matched nothing, so it proved nothing").toBeGreaterThan(20);
   });
 
   it("REFUSES A TIE rather than picking whichever came first", () => {

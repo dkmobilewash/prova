@@ -1829,6 +1829,28 @@ export function clusterByThickness(
  * not plain values. It is pure and it is about walls, so it belongs beside the
  * finder that produces the number.
  */
+/**
+ * ── THE ONE ROUNDING, AND EVERYTHING THAT SHOWS OR COMPARES A THICKNESS USES
+ *    IT ──
+ *
+ * A measured thickness is a float: the detector reads 4.33333277" off the
+ * geometry where the drafter drew a 4-3/8" wall. Both numbers are correct and
+ * they are not interchangeable, so the rule is which one is used WHERE.
+ *
+ * The precise value is what gets STORED, because it is the measurement and
+ * nothing should quietly discard it. The rounded value is what gets SHOWN and
+ * what gets COMPARED, because an estimator reading "4-3/8"" on screen and a
+ * condition they typed as 4.375 must be able to meet — and because a panel
+ * that matched on one number while displaying another is a screen telling two
+ * stories about the same wall.
+ *
+ * Nearest eighth, which is how partitions are drawn and how every wall type in
+ * this product is typed in.
+ */
+export function toEighth(inches: number): number {
+  return Math.round(inches * 8) / 8;
+}
+
 export function inchLabel(inches: number): string {
   const eighths = Math.round(inches * 8);
   const whole = Math.floor(eighths / 8);

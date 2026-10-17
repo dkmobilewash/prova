@@ -81,6 +81,33 @@ describe("the found-walls panel reads its sections", () => {
     expect(code()).toContain('heading.name ?? "Unassigned walls"');
   });
 
+  it("SHOWS, MATCHES AND POSTS ONE THICKNESS — the three that must agree", () => {
+    // ── THE THIRD LEG, WHICH IS A SOURCE FACT RATHER THAN A BEHAVIOUR ──
+    //
+    // `proposalMatch.test.ts` sweeps the first two: every match that happens
+    // is one where the group's label and the condition's label are the same
+    // string, because both are rounded to the eighth before comparing.
+    //
+    // This is the third. When a group is accepted, the measurement posted to
+    // the estimate carries a LABEL, and that label has to be built by the same
+    // rounding — otherwise an estimator could see 4-3/8" in the panel, watch
+    // it match a 4-3/8" condition, and find 4.33333277 written on the line.
+    // Nothing else in this repo looks at that string.
+    const source = code();
+    // The posted label comes from `inchLabel`, not from a local format.
+    expect(source).toMatch(/body\.set\(\s*"label",[\s\S]{0,200}inchLabel\(group\.inches\)/);
+    // And the panel's own row shows the same function's output.
+    expect(source).toContain("{inchLabel(group.inches)}");
+    // The PRECISE value is still reachable, so rounding is a presentation
+    // choice an estimator can see past rather than a loss.
+    expect(source).toContain("group.inches.toFixed(3)");
+    // Nothing rounds thickness by hand nearby: a second rounding is a second
+    // answer, and this is the file where one would be written.
+    expect(source, "a hand-rolled eighths rounding — use `toEighth`").not.toMatch(
+      /Math\.round\([^)]*inches[^)]*\*\s*8/,
+    );
+  });
+
   it("passes the items in from the workspace, or the panel has nothing to group by", () => {
     // The prop exists on the viewer AND is handed over. Either half alone is
     // the "written, documented, and never called" shape from CLAUDE.md.

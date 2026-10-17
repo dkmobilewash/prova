@@ -2289,7 +2289,21 @@ export function TakeoffPlanViewer({
                         exists to end, so the swatch draws what the overlay
                         draws: same colour, same dash, same function. */}
                     <ClusterMark index={index} />
-                    <span className="text-sm font-medium text-ink">{inchLabel(group.inches)}</span>
+                    {/* ── THE LABEL IS ROUNDED; THE MEASUREMENT IS NOT ──
+                        What is shown is the nearest eighth, because that is
+                        how partitions are drawn and how a wall type is typed
+                        in — and it is the same number the match ran on, so a
+                        condition taking this group is a decision somebody can
+                        check by reading the screen. The measurement itself is
+                        on hover, because an estimator who wants to know why a
+                        group landed on 4-3/8" should be able to find out
+                        without opening a database. */}
+                    <span
+                      className="text-sm font-medium text-ink"
+                      title={`Measured ${group.inches.toFixed(3)} in`}
+                    >
+                      {inchLabel(group.inches)}
+                    </span>
                     {/* THE TAG IS THE GROUP'S NAME NOW, not a list of every name
                         in a bucket. A group either carries one tag or carries
                         none, because the tags are what split it. */}
