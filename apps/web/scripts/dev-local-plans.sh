@@ -16,6 +16,13 @@ cd "$(dirname "$0")/.."
 
 PLANS="${TAKEOFF_LOCAL_PLAN_DIR:-$HOME/Claude Folder/takeoff/real-plans}"
 LABELS="${TAKEOFF_LABEL_DIR:-$HOME/Claude Folder/takeoff/labels}"
+# ── THE PORT IS NAMED, BECAUSE AN UNNAMED ONE IS A WRONG LINK ──
+#
+# This had no -p, so it took Next's default 3000 while the instructions around
+# it said 3001. The server was up the whole time and every check against 3001
+# reported it dead — three separate "it keeps dying" diagnoses, a rebuilt
+# .next, and an afternoon, for a port nobody had written down.
+PORT="${PORT:-3000}"
 LOCAL_DB="${LOCAL_DATABASE_URL:-postgresql://postgres@127.0.0.1:5432/prova_dev}"
 
 # ── The two refusals, before anything starts ──
@@ -49,6 +56,7 @@ mkdir -p "$LABELS"
 
 echo "plans from : $PLANS"
 echo "labels to  : $LABELS"
+echo "port       : $PORT"
 echo "database   : $HOST"
 echo "sheets stay on this machine; nothing is uploaded"
 echo
@@ -57,4 +65,4 @@ DATABASE_URL="$LOCAL_DB" \
 DIRECT_URL="$LOCAL_DB" \
 TAKEOFF_LOCAL_PLAN_DIR="$PLANS" \
 TAKEOFF_LABEL_DIR="$LABELS" \
-  exec npx next dev
+  exec npx next dev -p "$PORT"
