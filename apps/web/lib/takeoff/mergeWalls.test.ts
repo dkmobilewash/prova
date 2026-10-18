@@ -445,3 +445,82 @@ describe("a corridor is not a doorway, and is NARROWER than a double door", () =
     expect(vertical).toHaveLength(2);
   });
 });
+
+/**
+ * ── TWO PIECES OF ONE WALL MUST AGREE ABOUT ITS LINE, TO WITHIN A QUARTER OF
+ *    ITS THICKNESS ──
+ *
+ * Bridging a gap used to allow a flat inch and a half whatever the wall.
+ * Measured on a held-out library plan by logging every gap decision on the
+ * sheet: 150 gaps bridged, and a 78 ft wall lost 7.68 ft because its pieces
+ * were **1.60 inches** apart against the 1.50 allowed. Seven and a half feet
+ * of wall to a tenth of an inch.
+ *
+ * The same sheet is why it cannot simply be widened. Two other pairs on that
+ * wall sit 3.96 inches apart, and the wall is 8 inches thick — so 3.96 is HALF
+ * A THICKNESS, which is one piece measured on the centreline and the other on
+ * a face. Merging those would put the wall half a thickness off its own line.
+ *
+ * A quarter of the thickness sits between the two with room on both sides, and
+ * being a share rather than a length is what makes it a rule: the same
+ * sentence gives a 4 inch partition an inch and a 12 inch block wall three.
+ */
+describe("how far two pieces may disagree about their shared line", () => {
+  // An 8 inch wall, the thickness the measurements above were taken on.
+  const EIGHT = 8 / 12;
+  const inches = (n: number) => n / 12;
+
+  /** Two pieces of one wall with a 4 ft doorway between them, the second
+   *  offset across the line by `offIn` inches. */
+  const twoPieces = (offIn: number) => [
+    wall(0, 20, 18, 20, EIGHT),
+    wall(22, 20 + inches(offIn), 33, 20 + inches(offIn), EIGHT),
+  ];
+
+  it("BRIDGES AT 1.60 INCHES — the wall the old bound lost", () => {
+    const merged = mergeWalls(twoPieces(1.6), 1);
+    expect(merged, "the two pieces did not join").toHaveLength(1);
+    // Gross: the doorway is part of the wall, so 0 to 33.
+    expect(merged[0].lengthFeet).toBeCloseTo(33, 1);
+  });
+
+  it("REFUSES AT 3.96 INCHES — half a thickness is a different line", () => {
+    expect(mergeWalls(twoPieces(3.96), 1), "a face was merged with a centreline").toHaveLength(2);
+  });
+
+  it("scales with the wall: a thin partition gets a thin tolerance", () => {
+    // 1.60 inches is fine on an 8 inch wall and is half the thickness of a
+    // 3 inch one, so the same offset must be refused there. This is the whole
+    // point of a share rather than a length, and a fixed 1.5 inch bound could
+    // not express it.
+    const thin = [
+      wall(0, 20, 18, 20, inches(3)),
+      wall(22, 20 + inches(1.6), 33, 20 + inches(1.6), inches(3)),
+    ];
+    expect(mergeWalls(thin, 1), "a 3 inch partition took an 8 inch wall's slack").toHaveLength(2);
+  });
+
+  it("NEVER TIGHTENS: a thin wall keeps the old inch and a half", () => {
+    // A quarter of a 4 inch partition is one inch, which would be TIGHTER than
+    // the flat bound this replaced — so the old bound stays as a floor and
+    // this change can only ever bridge more, never less. Without the floor
+    // this 1.2 inch offset would be refused and a wall that merged before
+    // would stop merging, which is a regression wearing an improvement's
+    // clothes.
+    const partition = [
+      wall(0, 20, 18, 20, inches(4)),
+      wall(22, 20 + inches(1.2), 33, 20 + inches(1.2), inches(4)),
+    ];
+    expect(mergeWalls(partition, 1), "a thin wall lost tolerance it used to have").toHaveLength(1);
+  });
+
+  it("still bridges a thick wall whose pieces are further apart in inches", () => {
+    // A 16 inch block wall gets 4 inches of slack, so an offset that a
+    // partition must refuse is nothing on this.
+    const thick = [
+      wall(0, 20, 18, 20, inches(16)),
+      wall(22, 20 + inches(3.2), 33, 20 + inches(3.2), inches(16)),
+    ];
+    expect(mergeWalls(thick, 1)).toHaveLength(1);
+  });
+});

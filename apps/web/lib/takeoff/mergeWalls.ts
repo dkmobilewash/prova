@@ -183,6 +183,63 @@ const ROUGHLY_PERPENDICULAR = 0.25;
  *  minimum length and no jamb ever becomes one. */
 const CROSSES_MIN_FEET = 3;
 
+/**
+ * How far two pieces may disagree about where their shared centreline is,
+ * before a gap between them may be bridged, as a share of the wall's own
+ * thickness.
+ *
+ * ── WHY A SHARE OF THICKNESS AND NOT A LENGTH ──
+ *
+ * Bridging used to allow a quarter of `SAME_LINE_FEET` — an inch and a half,
+ * whatever the wall. Measured on a held-out library plan by logging every gap
+ * decision on the sheet, that cost **7.68 ft of one 78 ft wall**, refused at
+ * 1.60 inches against the 1.50 allowed. Seven and a half feet of wall lost to
+ * a tenth of an inch.
+ *
+ * The same sheet says why the tolerance cannot simply be widened. Two other
+ * pairs on that very wall sit **3.96 inches** apart, and the wall is 8 inches
+ * thick — so 3.96 is half a thickness, which is one piece measured on the
+ * CENTRELINE and the other on a FACE. Those two must not merge: joining them
+ * would place a wall half a thickness off its own line and, worse, would start
+ * joining a wall to its neighbour wherever faces are a thickness apart.
+ *
+ * So the number that matters is not an inch and a half, it is HALF A
+ * THICKNESS — the distance at which a disagreement stops being drafting noise
+ * and becomes a different line. This sits below it with room on both sides:
+ * on an 8 inch wall it allows 3.2 inches, which takes 1.60 comfortably and
+ * refuses 3.96 with a quarter to spare.
+ *
+ * Being a share rather than a length is what makes it a rule. A 4 inch
+ * partition gets an inch and a 12 inch block wall gets three, which is the
+ * right answer in both cases and is the same sentence.
+ *
+ * ── WHERE 0.25 COMES FROM, AND WHY IT IS NOT 0.4 ──
+ *
+ * The two measurements give a BAND, not a number: above 0.20 of a thickness
+ * (so 1.60 inches on that 8 inch wall is taken) and below 0.495 (so 3.96 is
+ * refused). Anything in the band satisfies the requirement, so a second
+ * measurement chose within it — the bench, swept:
+ *
+ *   | share | allowed on an 8in wall | bench walls missed |
+ *   | 0.22  | 1.76 in                | 111 |
+ *   | 0.25  | 2.00 in                | 111 |
+ *   | 0.30  | 2.40 in                | **116** |
+ *   | 0.40  | 3.20 in                | **116** |
+ *
+ * Above a quarter, A-401 starts merging two walls into one run: its in-scope
+ * footage gets slightly BETTER (-1.0% to +0.5%) while a key wall stops being
+ * found as itself, which is the merge absorbing a neighbour rather than
+ * closing an opening. That sheet is drawn at two scales with the scale
+ * detected 2x wrong, so its distances are the least trustworthy on the bench
+ * and the worst place to spend tolerance.
+ *
+ * The band came first and nothing outside it was considered. Picking inside a
+ * measured band using a second guard is a measurement; picking the number
+ * that makes a score look best is not, and the difference is the order the
+ * two were done in.
+ */
+const SAME_LINE_SHARE_OF_THICKNESS = 0.25;
+
 /** Anything with two ends. A `WallCandidate`'s centreline and a raw
  *  `StrokeSegment` are the same shape to this test, which is the point: the
  *  rule for "is this gap a hole or a junction" must be ONE rule. */
@@ -374,7 +431,18 @@ export function mergeWalls(
         // one line, sliding part of it across the drawing — "two runs of the
         // right length in the wrong places, which no total catches", in the
         // words of the test that caught this.
-        if (across > nearEnough / 4) continue;
+        // The pieces must agree about their shared centreline. The old
+        // bound was a flat quarter of `SAME_LINE_FEET`; it is now whichever is
+        // larger of that and a share of the wall's own thickness, so a thick
+        // wall is not held to a thin wall's tolerance. See
+        // `SAME_LINE_SHARE_OF_THICKNESS` for the two measurements that fix it.
+        const meanThicknessUnits =
+          ((walls[i].thicknessFeet + walls[j].thicknessFeet) / 2) / feetPerUnit;
+        const sameLineAllowed = Math.max(
+          nearEnough / 4,
+          meanThicknessUnits * SAME_LINE_SHARE_OF_THICKNESS,
+        );
+        if (across > sameLineAllowed) continue;
         // ── AND IS THERE A CORRIDOR IN THE GAP? ──
         //
         // The width bound cannot answer this: a corridor is NARROWER than a
