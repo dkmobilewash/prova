@@ -179,6 +179,72 @@ TAKEOFF_BENCH=1 pnpm takeoff:bench
 Overlays are **not committed** — they are an output, they are large, and a
 stale one is worse than none. Regenerate before looking.
 
+## Known and NOT being fixed — 2026-10-17
+
+Three things measured on Cedar Hollow and left alone on purpose. Written down
+so the next person does not re-derive them, and so nobody "fixes" the first one
+without reading why it is conservative.
+
+### Openings on straight walls that nothing bridges — 11.2 ft of 11.9
+
+The whole of Cedar Hollow's remaining shortfall, bar end-trimming:
+
+| wall | short by | what is uncovered |
+| --- | --- | --- |
+| W6 | 7.68 ft | two gaps (3.7 and 4.0 ft) plus 1.3 ft at one end |
+| W4 | 3.50 ft | one 3.5 ft gap |
+| W1, W3, W14, W16 | 0.80 ft total | ends stopping 0.2-0.3 ft short of a corner |
+
+`mergeWalls` bridges a gap only when `gapIsCrossing` says something bounds it,
+because bridging on width alone once drew wall straight across a 5'-7"
+corridor — 39 ft of wall nobody can build, in one region of one sheet. That
+guard is doing exactly what it was written to do here. Loosening it to recover
+11 ft on this plan is the trade that scar refuses, and it is refused again.
+
+### A straight run on top of a curved one — 7.8 ft counted twice
+
+**W7 reads +7.78 ft, and it is not a scoring artefact.** This was first written
+up as the scorer handing W7 a piece of W6, on the strength of a 7.80 ft run
+lying 53 degrees off W7's chord. It is not: the two runs OVERLAP.
+
+      7.80 ft         spans 0.1-4.7 of 46.0 ft
+     55.13 ft curved  spans 0.1-46.0 of 46.0 ft
+     OVERLAP 4.7 ft
+
+The 53 degrees is what a short chord across the START of a 117-degree arc
+looks like against that arc's overall chord — so the angle that made it look
+like somebody else's wall is exactly what a piece of this one would show.
+`notDuplicateCoverage` does not catch it because one run is curved and the
+other straight.
+
+Not fixed because it is a new finding rather than the job in hand, and because
+it partly CANCELS the shortfall above: the sheet reads -0.6% from -11.98 ft of
+missing wall and +7.78 ft of double count. Fixing one without the other moves
+the headline number the wrong way, which is worth knowing before anyone starts.
+
+### The 8,000-piece cap on the curve pass
+
+`MAX_CURVE_PIECES` switches the curve pass off above 8,000 short pieces, so
+Camp Bow Wow's A102 — about 127,000 — gets no curved walls at all. Measured
+cost of lifting it, on hatch-shaped input:
+
+| pieces | time |
+| --- | --- |
+| 1,000 | 41 ms |
+| 2,000 | 128 ms |
+| 4,000 | 345 ms |
+| 8,000 | 1,392 ms |
+
+Quadratic, so A102 extrapolates to minutes. A uniform grid over piece
+endpoints would make it roughly linear — but this file already records that
+**two attempts to index that scan made it slower**, so a third needs to beat
+the current code at 8,000 before going further.
+
+The blocker is not speed. Lifting the cap means running the curve pass over
+127,000 hatch strokes on a sheet with no answer key, and the phantoms this very
+session put on hatched fill are what that would be risking. **Waiting on an
+A102 key**, which is the only instrument that would make the result readable.
+
 ## Known limitations, in the order they cost the most
 
 1. **A floor plan under ten wall runs returns nothing.** 3 of 15 vector

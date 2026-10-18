@@ -344,6 +344,67 @@ function assemble(pieces: readonly StrokeSegment[], jointUnits: number): Chain[]
 }
 
 /**
+ * How much a chain must bend, on its own, before an opening may extend it.
+ *
+ * ── WHAT THIS STOPS, MEASURED ──
+ *
+ * Joining across openings shipped without this and put 19 curved runs — 176 ft
+ * — onto a real forming plan that had none before. Looking at them on the
+ * drawing: they sit on HATCHED fill, where the short parallel strokes line up
+ * end to end and chain into something that looks like a long wall, and on a
+ * stair's diagonal break line.
+ *
+ * That is the corridor failure `mergeWalls` records, arriving in the curve
+ * path. Its answer is `gapIsCrossing` — bridge only when something bounds the
+ * gap — and this file's own note said to borrow it if a phantom ever appeared.
+ * This is the cheaper discriminator that the evidence actually points at: a
+ * hatch stroke and a break line are STRAIGHT, and an opening in a curved wall
+ * joins two pieces of an ARC. So the test is not what is at the gap's ends, it
+ * is whether the things being joined were ever arcs.
+ *
+ * ── WHY IT IS THIS LOW, AND NOT `MIN_TOTAL_TURN` ──
+ *
+ * It cannot be 15 degrees. The whole reason joining happens BEFORE the arc
+ * filter is that a fragment of a gentle arc does not reach that bar: 7 ft of a
+ * 26.9 ft-radius wall turns 14.9. But it does not turn ZERO, and a straight
+ * stroke does. Three degrees is comfortably under every real fragment measured
+ * here and above the drafting jitter of a line that is meant to be straight.
+ *
+ * Paired with a point count, because a two-point chain has no interior vertex
+ * and therefore no turn to measure at all — which is exactly what a hatch
+ * stroke is.
+ */
+const ARC_EVIDENCE = (3 * Math.PI) / 180;
+
+/**
+ * How far two pieces may disagree about where their centre is, as a share of
+ * the radius, and still be read as one arc interrupted by an opening.
+ *
+ * ── THE TEST IS THE DEFINITION, WHICH IS WHY IT IS THIS ONE ──
+ *
+ * "A window in a curved wall" means the wall continues on the same CIRCLE on
+ * the other side of the hole. So the question is not how long the pieces are,
+ * how far apart, how much they bend or which way — all of which were tried and
+ * each of which admitted hatching, because a dense enough field of short
+ * strokes satisfies any one of them somewhere.
+ *
+ * Each piece is given the circle through its first, middle and last point.
+ * Two pieces of one drawn arc agree on that circle closely; a chain of hatch
+ * strokes and the next chain along do not, because nothing was ever drawn
+ * round a common centre.
+ *
+ * Loose on purpose. A flattened arc's end chord is slightly off the true
+ * circle, drafting is not exact, and a piece between two openings can be short
+ * enough that its circumcircle is poorly conditioned. The gap between a real
+ * pair and a hatch pair is far wider than this, so the tolerance buys safety
+ * without buying phantoms.
+ */
+const SAME_CIRCLE_CENTRE = 0.25;
+
+/** The same, for the radii: two pieces of one wall are the same distance out. */
+const SAME_CIRCLE_RADIUS = 0.3;
+
+/**
  * ── A CURVED WALL WITH A WINDOW IN IT IS STILL ONE WALL ──
  *
  * `assemble` chains pieces that touch, within a joint's slack. An opening does
@@ -424,6 +485,7 @@ function joinAcrossOpenings(chains: readonly Chain[], feetPerUnit: number): Chai
       let growing = true;
       while (growing) {
         growing = false;
+        if (!looksLikeArc(points)) break;
         const tip = atEnd ? points[points.length - 1] : points[0];
         const before = atEnd ? points[points.length - 2] : points[1];
         if (before === undefined) break;
@@ -433,6 +495,14 @@ function joinAcrossOpenings(chains: readonly Chain[], feetPerUnit: number): Chai
           const other = chains[j];
           if (other.points.length < 2) continue;
 
+          // A STRAIGHT PIECE IS NOT PART OF AN ARC, so an opening cannot
+          // extend it. Checked on both chains: joining is symmetric, and a real
+          // arc fragment bends at both ends of the gap.
+          if (!looksLikeArc(other.points)) continue;
+          // AND THEY MUST BE THE SAME ARC. This is the test that holds: a
+          // window leaves the wall on its own circle, and hatching never was
+          // on one.
+          if (!sameCircle(points, other.points)) continue;
           for (const fromHead of [true, false]) {
             const otherTip = fromHead ? other.points[0] : other.points[other.points.length - 1];
             const otherNext = fromHead ? other.points[1] : other.points[other.points.length - 2];
@@ -460,6 +530,60 @@ function joinAcrossOpenings(chains: readonly Chain[], feetPerUnit: number): Chai
     out.push({ points, lengthUnits });
   }
   return out;
+}
+
+/**
+ * Whether a chain bends enough, by itself, to be part of a drawn arc.
+ *
+ * Two points cannot: there is no interior vertex, so there is no turn to
+ * measure. That is the shape of a hatch stroke and of a stair's break line,
+ * and both were being joined into long phantom walls.
+ */
+function looksLikeArc(points: readonly { x: number; y: number }[]): boolean {
+  if (points.length < 3) return false;
+  let signed = 0;
+  let total = 0;
+  for (let k = 1; k < points.length - 1; k += 1) {
+    const turn = signedTurnAt(points[k - 1], points[k], points[k + 1]);
+    signed += turn;
+    total += Math.abs(turn);
+  }
+  void total;
+  return Math.abs(signed) >= ARC_EVIDENCE;
+}
+
+/** The circle through a chain's first, middle and last point, or null when
+ *  those three are too nearly collinear for one to be meaningful. */
+function circleOf(
+  points: readonly { x: number; y: number }[],
+): { x: number; y: number; r: number } | null {
+  if (points.length < 3) return null;
+  const a = points[0];
+  const b = points[Math.floor(points.length / 2)];
+  const c = points[points.length - 1];
+  const d = 2 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
+  if (Math.abs(d) < 1e-12) return null;
+  const a2 = a.x * a.x + a.y * a.y;
+  const b2 = b.x * b.x + b.y * b.y;
+  const c2 = c.x * c.x + c.y * c.y;
+  const x = (a2 * (b.y - c.y) + b2 * (c.y - a.y) + c2 * (a.y - b.y)) / d;
+  const y = (a2 * (c.x - b.x) + b2 * (a.x - c.x) + c2 * (b.x - a.x)) / d;
+  const r = Math.hypot(a.x - x, a.y - y);
+  return r > 0 && Number.isFinite(r) ? { x, y, r } : null;
+}
+
+/** Whether two chains were drawn around the same centre, at the same radius. */
+function sameCircle(
+  one: readonly { x: number; y: number }[],
+  two: readonly { x: number; y: number }[],
+): boolean {
+  const p = circleOf(one);
+  const q = circleOf(two);
+  if (p === null || q === null) return false;
+  const scale = Math.min(p.r, q.r);
+  if (!(scale > 0)) return false;
+  if (Math.hypot(p.x - q.x, p.y - q.y) / scale > SAME_CIRCLE_CENTRE) return false;
+  return Math.abs(p.r - q.r) / scale <= SAME_CIRCLE_RADIUS;
 }
 
 function turnAt(

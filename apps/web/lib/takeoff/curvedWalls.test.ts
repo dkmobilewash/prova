@@ -361,3 +361,105 @@ describe("an opening does not end a curved wall", () => {
     expect(curvedWalls(pieces, OPTS), "a straight line was read as a curve").toEqual([]);
   });
 });
+
+/**
+ * ── AN OPENING JOINS TWO PIECES OF ONE ARC, AND NOTHING ELSE ──
+ *
+ * Joining across openings shipped without this and put 19 curved runs — 176 ft
+ * — onto a real forming plan that had none before. On the drawing they sat on
+ * HATCHED FILL carrying evenly spaced stud symbols, and on a stair's diagonal
+ * break line. Hatching is short parallel strokes; chain a few of them, find
+ * the next chain along, and the gap between is a door's width.
+ *
+ * Three rules were tried against that sheet, and the two that failed are the
+ * reason the third is written as it is:
+ *
+ *   | rule                                   | phantoms left |
+ *   | a chain must bend at all (3 degrees)   | 5 runs, 27.7 ft |
+ *   | …and bend mostly one way (60%)         | 3 runs, 33.1 ft |
+ *   | …and both pieces on the SAME CIRCLE    | **0** |
+ *
+ * The middle row matters more than the last: making the join STRICTER made the
+ * output WORSE. Refusing one chain frees its neighbours to pair with something
+ * else, so this is not monotonic, and a rule here cannot be tuned by watching
+ * one number fall.
+ *
+ * ── HOW THIS FIXTURE WAS ARRIVED AT, BECAUSE THREE EARLIER ONES PROVED
+ *    NOTHING ──
+ *
+ * A hatch field at 13.2 in spacing, two arcs placed near each other, and a
+ * tangent-continuous S were all written first, and EVERY mutation of the new
+ * rule left all three green. Each was being refused by something else before
+ * the rule was ever consulted: the first fell outside the thickness window,
+ * the second's ends were too far apart to join, and at an inflection the two
+ * faces swap sides so an S never reaches the join at all.
+ *
+ * The case below was found by sweeping spacing and bend and watching which
+ * one the rule actually changes. It is kept at exactly that setting:
+ * **6.4 ft with the rule, 16.3 ft without.**
+ */
+describe("only two pieces of the same arc are joined", () => {
+  const half = 6.5 / 12 / 2;
+
+  /**
+   * Two bands of short strokes, each drifting gently, a wall's width apart,
+   * with an opening-sized hole in the middle of both.
+   *
+   * `bend` is why this is a fixture and not a constant: at bend 2 and above
+   * the two halves really are close to one circle, and joining them is the
+   * right answer. Bend 1 is the drift of a hatch line that was drawn straight.
+   */
+  const hatchBands = (bend: number): StrokeSegment[] => {
+    const out: StrokeSegment[] = [];
+    for (let band = 0; band < 2; band += 1) {
+      let x = 0;
+      let y = band * 0.5;
+      for (const run of [0, 1]) {
+        for (let i = 0; i < 14; i += 1) {
+          const dy = bend * (i + run * 14) * 0.01;
+          out.push({ x1: x, y1: y, x2: x + 0.45, y2: y + dy, width: 0.6 });
+          x += 0.45;
+          y += dy;
+        }
+        x += 3; // the hole a door would leave
+      }
+    }
+    return out;
+  };
+
+  it("DOES NOT JOIN TWO HATCH BANDS ACROSS THE GAP BETWEEN THEM", () => {
+    const longest = curvedWalls(hatchBands(1), OPTS).reduce(
+      (n, w) => Math.max(n, w.lengthFeet),
+      0,
+    );
+    // Either half alone is about 6.3 ft. Joined, it is over 16.
+    expect(longest, "hatching was joined into a wall").toBeLessThan(10);
+  });
+
+  it("still joins a real arc through an opening of the same width", () => {
+    // The control. If this goes red the rule has stopped doing its job rather
+    // than started doing it too well.
+    const mid = (FROM + TO) / 2;
+    const bay: StrokeSegment[] = [];
+    for (const radius of [RADIUS - half, RADIUS + half]) {
+      const step = (TO - FROM) / 40;
+      for (let i = 0; i < 40; i += 1) {
+        const a = FROM + i * step;
+        const b = FROM + (i + 1) * step;
+        if (b > mid - 12 && a < mid + 12) continue;
+        const ar = (a * Math.PI) / 180;
+        const br = (b * Math.PI) / 180;
+        bay.push({
+          x1: CENTRE.x + radius * Math.cos(ar),
+          y1: CENTRE.y + radius * Math.sin(ar),
+          x2: CENTRE.x + radius * Math.cos(br),
+          y2: CENTRE.y + radius * Math.sin(br),
+          width: 0.8,
+        });
+      }
+    }
+    const walls = curvedWalls(bay, OPTS);
+    expect(walls, "the arc did not survive its own opening").toHaveLength(1);
+    expect(walls[0].lengthFeet).toBeGreaterThan(arcLength(RADIUS) * 0.93);
+  });
+});
