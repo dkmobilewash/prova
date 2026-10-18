@@ -7,12 +7,13 @@ import {
   EMPTY_DRAFT,
   EMPTY_LINE,
   formatCents,
+  freshDraft,
   LINE_KINDS,
   LINE_LABELS,
   lineAmount,
   liveTotals,
   PCO_STATUSES,
-  restoreDraft,
+  startDraft,
   STEPS,
   stepErrors,
   type ChangeOrderDraft,
@@ -20,6 +21,7 @@ import {
   type LineKind,
 } from "@/lib/change-order";
 import { isEmail } from "@/lib/email";
+import { localToday } from "@/lib/fills";
 import { BASE_PATH } from "@/lib/site";
 import { Card, INPUT, PRIMARY, SendFields, StepShell } from "./StepShell";
 
@@ -58,11 +60,8 @@ export function ChangeOrderTool() {
   // This browser's memory, after mount only: the server has no localStorage.
   useEffect(() => {
     const known = loadContact();
-    const restored = restoreDraft(loadChangeOrder());
     // A sub who made a waiver here already told us their company.
-    if (!restored.companyName) restored.companyName = known?.company || loadFields().companyName || "";
-    if (!restored.date) restored.date = today();
-    setDraft(restored);
+    setDraft(startDraft(loadChangeOrder(), localToday(), known?.company || loadFields().companyName || ""));
     setContact(known);
     if (known) {
       setName(known.name);
@@ -125,6 +124,12 @@ export function ChangeOrderTool() {
       const saved = { email: email.trim(), name: name.trim(), company: company.trim() };
       saveContact(saved);
       setContact(saved);
+      // Sent: the request is finished, so it is no longer a draft to restore.
+      // Saved here as well as by the effect, so closing the tab right now
+      // cannot leave the sent request behind.
+      const fresh = freshDraft(draft.companyName, localToday());
+      saveChangeOrder(fresh);
+      setDraft(fresh);
       setSentTo({ to: body.sentTo, notConfigured: body.notConfigured === true });
     } catch {
       setSendError("Could not reach the server. Check your signal and try again.");
@@ -194,8 +199,8 @@ export function ChangeOrderTool() {
           <button
             type="button"
             onClick={() => {
-              // Same company and job, a new change: the scope, lines and backup start empty.
-              setDraft((existing) => ({ ...EMPTY_DRAFT, companyName: existing.companyName, project: existing.project, projectAddress: existing.projectAddress, gc: existing.gc, date: today() }));
+              // Exactly what coming back fresh gives: your company and today.
+              setDraft((existing) => freshDraft(existing.companyName, localToday()));
               setSentTo(null);
               go(0);
             }}
@@ -204,12 +209,12 @@ export function ChangeOrderTool() {
             Make another change order request
           </button>
           <p className="text-sm text-quiet">
-            This browser remembers your company, job and email for next time.{" "}
+            This browser remembers your company, name and email for next time.{" "}
             <button
               type="button"
               onClick={() => {
                 forgetEverything();
-                setDraft({ ...EMPTY_DRAFT, date: today() });
+                setDraft(freshDraft("", localToday()));
                 setContact(null);
                 setName("");
                 setEmail("");
@@ -352,13 +357,6 @@ export function ChangeOrderTool() {
       )}
     </StepShell>
   );
-}
-
-/** The user's own calendar date, as a date input wants it. Called only in
- * effects and click handlers, never during render (hydration). */
-function today(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function Lines({

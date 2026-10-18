@@ -1,13 +1,18 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { localToday } from "./fills";
 import {
   checkChangeOrder,
   EMPTY_DRAFT,
   formatCents,
+  freshDraft,
   lineCents,
   liveTotals,
   markupCents,
   parseHundredths,
   restoreDraft,
+  startDraft,
   STEPS,
   stepErrors,
   type ChangeOrderDraft,
@@ -211,5 +216,53 @@ describe("the step-by-step screens", () => {
     for (const step of ["labor", "material", "equipment", "markup", "backup", "review", "send"] as const) {
       expect(stepErrors(step, errors)).toEqual([]);
     }
+  });
+});
+
+/**
+ * FOUND BY CLICKING (2026-10-18): after a send, coming back started with the
+ * WHOLE last request filled in -- job, every line, markup, days and
+ * yesterday's date -- and typing appended to it. A sent request is not a
+ * draft; only the sub's own company survives it.
+ */
+describe("a new request starts clean", () => {
+  const TODAY = "2026-10-18";
+
+  it("after a send (and on Make another) only the company and today are kept", () => {
+    expect(freshDraft(SAMPLE.companyName, TODAY)).toEqual({ ...EMPTY_DRAFT, companyName: "Desert Drywall LLC", date: TODAY });
+  });
+
+  it("a sent request, stored as its fresh draft, comes back empty but for the company", () => {
+    const stored = JSON.parse(JSON.stringify(freshDraft(SAMPLE.companyName, "2026-10-17"))) as Record<string, unknown>;
+    expect(startDraft(stored, TODAY, "")).toEqual({ ...EMPTY_DRAFT, companyName: "Desert Drywall LLC", date: TODAY });
+  });
+
+  it("an UNFINISHED draft is restored, but a past date moves up to today", () => {
+    const draft = startDraft({ ...SAMPLE, date: "2026-10-17" }, TODAY, "Other Co");
+    expect(draft.date).toBe(TODAY);
+    expect(draft.title).toBe(SAMPLE.title);
+    expect(draft.labor).toEqual(SAMPLE.labor);
+    expect(draft.companyName).toBe("Desert Drywall LLC");
+  });
+
+  it("keeps a date picked for later, and dates an empty one today", () => {
+    expect(startDraft({ ...SAMPLE, date: "2026-10-20" }, TODAY, "").date).toBe("2026-10-20");
+    expect(startDraft(null, TODAY, "Known Co")).toEqual({ ...EMPTY_DRAFT, companyName: "Known Co", date: TODAY });
+  });
+
+  it("today is the USER'S calendar date, not UTC's", () => {
+    // 23:30 local on the 18th; in UTC west of Greenwich it is already the 19th.
+    expect(localToday(new Date(2026, 9, 18, 23, 30))).toBe(TODAY);
+    expect(localToday(new Date(2026, 0, 5, 0, 1))).toBe("2026-01-05");
+  });
+
+  // "Written and never called" is this repo's recurring shape: the send,
+  // Make another and Forget must all go through freshDraft, and nothing may
+  // build a new request by hand out of the old one.
+  it("the tool uses them on every path that starts a new request", () => {
+    const source = readFileSync(join(__dirname, "..", "components", "ChangeOrderTool.tsx"), "utf8");
+    expect(source.match(/freshDraft\(/g)).toHaveLength(3);
+    expect(source).toContain("startDraft(loadChangeOrder(), localToday()");
+    expect(source).not.toMatch(/\.\.\.EMPTY_DRAFT/);
   });
 });

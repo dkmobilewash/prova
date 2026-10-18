@@ -167,6 +167,32 @@ export function restoreDraft(raw: Record<string, unknown> | null): ChangeOrderDr
   return draft;
 }
 
+/**
+ * A NEW request: the sub's own company and today's date, nothing else. Used
+ * after a successful send and by "Make another change order request", so
+ * the two cannot drift -- the last request's job, lines, markup and date
+ * must never sit in the boxes waiting to be appended to and re-sent.
+ */
+export function freshDraft(companyName: string, today: string): ChangeOrderDraft {
+  return { ...EMPTY_DRAFT, companyName, date: today };
+}
+
+/**
+ * The draft a visit starts from. An UNFINISHED draft (never sent; a sent one
+ * was replaced by freshDraft) is restored, so a reload on site loses
+ * nothing -- but its date is moved up to today when it is in the past. A
+ * request is dated the day it goes out, and yesterday's date kept silently
+ * is how a stale date reaches a GC. A date later than today was picked on
+ * purpose and is kept. `today` and the dates are both "YYYY-MM-DD", which
+ * compare correctly as strings.
+ */
+export function startDraft(stored: Record<string, unknown> | null, today: string, knownCompany: string): ChangeOrderDraft {
+  const draft = restoreDraft(stored);
+  if (!draft.companyName) draft.companyName = knownCompany;
+  if (!draft.date || draft.date < today) draft.date = today;
+  return draft;
+}
+
 /* ------------------------------------------------------------------ *
  * Checking: shared by the screens and the API, so they cannot disagree.
  * ------------------------------------------------------------------ */
