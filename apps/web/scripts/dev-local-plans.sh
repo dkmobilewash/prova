@@ -15,6 +15,7 @@ set -o pipefail
 cd "$(dirname "$0")/.."
 
 PLANS="${TAKEOFF_LOCAL_PLAN_DIR:-$HOME/Claude Folder/takeoff/real-plans}"
+LABELS="${TAKEOFF_LABEL_DIR:-$HOME/Claude Folder/takeoff/labels}"
 LOCAL_DB="${LOCAL_DATABASE_URL:-postgresql://postgres@127.0.0.1:5432/prova_dev}"
 
 # ── The two refusals, before anything starts ──
@@ -36,7 +37,18 @@ if [ "$HOST" != "127.0.0.1" ] && [ "$HOST" != "localhost" ]; then
   exit 1
 fi
 
+# ── THE LABEL FOLDER IS MADE, NOT DEMANDED ──
+#
+# `labelStore` refuses to write when TAKEOFF_LABEL_DIR is unset — correctly,
+# because that is what keeps this inert in every deployment. But an estimator
+# who gets that refusal is four hours into a sheet with nothing saved, and the
+# cause is a variable this script could have set. Making the folder costs
+# nothing and cannot be the wrong thing to do on a machine already holding the
+# client's PDFs.
+mkdir -p "$LABELS"
+
 echo "plans from : $PLANS"
+echo "labels to  : $LABELS"
 echo "database   : $HOST"
 echo "sheets stay on this machine; nothing is uploaded"
 echo
@@ -44,4 +56,5 @@ echo
 DATABASE_URL="$LOCAL_DB" \
 DIRECT_URL="$LOCAL_DB" \
 TAKEOFF_LOCAL_PLAN_DIR="$PLANS" \
+TAKEOFF_LABEL_DIR="$LABELS" \
   exec npx next dev
