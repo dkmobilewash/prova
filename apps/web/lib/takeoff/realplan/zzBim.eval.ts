@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { findWallsOnSheet } from "../findWallsOnSheet";
 import { sheetStrokes } from "../sheetStrokes";
+import { openPlanPdf } from "../../plan-ingest/planPdf";
 import type { WallCandidate } from "../wallVectors";
 
 /**
@@ -207,7 +208,24 @@ describe.skipIf(DIR === "")("the BIM held-out sheets", () => {
       for (const jsonName of sheets) {
         const key = JSON.parse(readFileSync(join(here, jsonName), "utf8")) as BimKey;
         const pdf = join(here, jsonName.replace(/\.json$/, ".pdf"));
-        const read = await sheetStrokes(Buffer.from(readFileSync(pdf)), 1);
+        const bytes = Buffer.from(readFileSync(pdf));
+        const read = await sheetStrokes(bytes, 1);
+        // ── THE SHEET'S OWN TEXT, BECAUSE SEVERAL RULES NEED IT ──
+        //
+        // This passed `textItems: []` and the scale-bar rule needs three bare
+        // numbers printed along the run to recognise a ruler. With no text it
+        // can never fire, so 64 ft of scale bar was blamed on the rule missing
+        // it when the rule had not been given anything to read. The same
+        // starvation silences the wall-type tags and the view split.
+        const doc = await openPlanPdf(bytes);
+        const pageText = await doc.pageText(1);
+        const textItems = pageText.items.map((i) => ({
+          str: i.str,
+          x: i.x,
+          y: i.y,
+          width: i.width,
+          height: i.height,
+        }));
         if (read === null) {
           console.log(`${key.id}: could not be read`);
           continue;
@@ -240,7 +258,7 @@ describe.skipIf(DIR === "")("the BIM held-out sheets", () => {
 
         const found = findWallsOnSheet({
           segments: read.segments,
-          textItems: [],
+          textItems,
           pageSize: { widthPt, heightPt },
           feetPerUnit,
           wallTypes: [],

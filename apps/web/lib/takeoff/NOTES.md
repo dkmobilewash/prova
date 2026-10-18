@@ -463,6 +463,113 @@ comparison. No model is committed: this one is worse than the rules on every
 real guard, and a model file in the tree that nobody should load is a thing the
 next person has to work out the status of.
 
+## FIVE FIXES ATTEMPTED ON BIM-DEV, NONE SHIPPED — 2026-10-18
+
+The engine is unchanged by this round. What changed is the measuring, and
+that was worth more than any of the fixes would have been.
+
+### (b) THE SCALE BAR WAS NEVER MISSING — THE HARNESS STARVED IT
+
+`zzBim.eval.ts` passed `textItems: []`. `wallsNotTheScaleBar` needs three bare
+numbers printed along the run to recognise a ruler, so with no text it could
+not fire on any sheet, and 64 ft of scale bar was booked against the rule
+missing it. Feeding the eval the sheet's own text — which the app's reader
+returns, and which the other evals already use — removes it entirely and takes
+stairs from 377 ft to 249. No engine change. **BIM-DEV extra 5.3% → 4.9%.**
+
+The lesson is the one about starved instruments rather than about scale bars:
+a rule reported as missing something should be asked whether it was given
+anything to read.
+
+### (a) WINDOW BRIDGING — built, measured, REVERTED
+
+Bridge a gap when glazing spans it and both sides are the same line and
+thickness: two lines of glazing minimum, 60% of the gap covered, inside the
+wall band; doors excluded, since a swing is an arc and a leaf is one line.
+
+| | baseline | with it |
+| --- | --- | --- |
+| BIM-DEV missing | 16.3% | **14.8%** |
+| BIM-DEV extra | 5.3% | **6.1%** |
+| bench type-totals outside ±2% | 17 of 60 | **21 of 60** |
+| bench walls over 10 ft missed | 111 | **200** |
+| bench zero-wall | PASS | PASS |
+
+671 ft of real wall on BIM-DEV is not worth 89 more missed walls on the bench.
+The direction is the surprise: bridging only ever JOINS, and a longer merged
+run then falls foul of filters the two short ones passed, so a rule that adds
+nothing ended up losing wall.
+
+### (c) DIMENSION STRINGS — built, measured, REVERTED
+
+A dimension line carries its measurement printed along it — `6'-8 3/8"`,
+`72'-5 7/8"`, 278 of them on one clinic sheet — and a wall's centreline never
+does. Geometrically the two are identical, so the text is the only
+discriminator available.
+
+It does not work on these sheets. At a band of 1.5× thickness it dropped a
+144 ft facade and 12 other real runs on one sheet, 547 ft; tightened to 0.75×
+capped at six inches, with three measurements required, it still cost **795 ft
+of real wall to save 96 ft of phantom**. Interior dimension chains on a dense
+plan genuinely run within six inches of real partition centrelines, so
+position cannot separate them here.
+
+Kept at `~/.claude/jobs/.../dimensionStrings.rejected.ts` rather than in the
+repository: a rule that removes 8 ft of wall per foot of phantom should not be
+one import away from being switched on.
+
+### (d) FURRING BELOW THE FLOOR — built, measured, REVERTED, and the reason
+    kills the whole approach
+
+Furring is 1.5–2.1 in and the floor is 2.4, so it is refused: 1,326 ft on
+BIM-DEV. The plan was a second pairing pass below the floor, keeping only thin
+runs lying against a thicker wall for most of their length — with hatch
+excluded by side (inside the wall's body) and dimension rows by distance.
+
+The rule works on fixtures and finds **nothing** on the sheets. Measured on
+duplex level 1: the second pass produces 25 thin pairs and the filter keeps 0,
+because those pairs sit **22 to 35 inches from the nearest parallel wall**.
+They are not furring.
+
+**Real furring shares a face with the wall it finishes**, so it is not drawn as
+a separate thin pair at all — the face between them is one line, and what the
+pairer sees is one wall of the combined thickness. No rule about thin pairs
+beside thick walls can find a thing that is not a thin pair. That is a fact
+about how walls are drawn rather than about these renderings, so the approach
+is closed, not merely unsuccessful here.
+
+### (e) STAIRS — the rule already exists and is already applied
+
+Stair treads on the clinic sheet are 264 segments, median 3.4 ft, at a
+constant pitch of about 11 in — which is a plausible wall thickness, so
+adjacent treads pair as textbook walls. The discriminator for that is
+"evenly spaced parallel strokes continuing a pitch", and `wallVectors.ts`
+already implements it as the SERIES rule (`SERIES_REACH`,
+`SERIES_PITCH_TOLERANCE`), which exists because a hatched fixture once
+produced 230 phantom walls and 11,584 ft where 100 ft was drawn.
+
+So the 249 ft of stair-blamed extra on BIM-DEV is the RESIDUE after that rule,
+and loosening it to catch the rest is loosening the thing holding back the
+hatch fixture. Logged and skipped, which is what the brief asked for in this
+case.
+
+### BIM-HELD-OUT, scored once — the honest number
+
+kit-office, kit-fzk-haus, duplex-apartment. 8,660 key ft over 14 sheets.
+Identical before and after, because no fix shipped.
+
+| | missing | extra | net |
+| --- | --- | --- | --- |
+| with furring | 780 (9.0%) | 373 (4.3%) | −406 |
+| without furring | 770 (9.0%) | 380 (4.5%) | −390 |
+
+**The held-out set is EASIER than the dev set** — 9.0% missing against 16.3% —
+and that is a property of the buildings, not of any tuning: the dev set holds
+the two biggest and most glazed models (esplanades and the clinic, 36,683 of
+its 47,316 ft), and the held-out set is three small, simple, mostly
+unfenestrated ones. A fix measured on BIM-DEV and checked here would look
+better than it is. Worth remembering before the split is read as a safety net.
+
 ## THE BIM SCORER COULD NOT SEE PARTIAL COVERAGE — 2026-10-18
 
 Every BIM number published yesterday was too kind, and the amount is large.
