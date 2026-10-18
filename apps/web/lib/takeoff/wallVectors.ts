@@ -38,7 +38,7 @@
  * calibration the app already has, and every bound here is in FEET of building.
  */
 
-import { featuresFor } from "./wallFeatures";
+import { featuresFor, normaliseAcrossSheet, penPercentileFor } from "./wallFeatures";
 
 /** One stroked segment, in page points as the PDF drew it. */
 export type StrokeSegment = {
@@ -205,6 +205,30 @@ export type WallFinderOptions = {
    * Absent, which is the default and the shipped behaviour, nothing changes.
    */
   decide?: (features: number[], wall: WallCandidate) => number;
+  /**
+   * Allowed to REMOVE a wall the rules already chose, and nothing else.
+   *
+   * ── WHY THIS EXISTS ALONGSIDE `decide` ──
+   *
+   * `decide` replaces the selection: the model picks the walls, and a model
+   * that has learned one office's conventions then refuses walls drawn by
+   * anybody else. Measured — a classifier trained on three drafting styles cut
+   * phantom footage by three quarters on styles it had seen and QUINTUPLED
+   * missing footage on the two it had not, taking 36% off a real sheet
+   * including every interior partition.
+   *
+   * A veto cannot do that. The rules propose exactly what they propose today,
+   * and the model is only ever subtracting. Its worst case is the rules' own
+   * missing footage plus whatever it wrongly removes, where `decide`'s worst
+   * case is a sheet of nothing.
+   *
+   * It is also the shape the measurements argue for: the rules' trouble on
+   * every sheet measured is EXTRA, not missing — 13.6% against 2.9% across
+   * fifty messy sheets — and extra is precisely what a veto removes.
+   *
+   * Returns true to drop the wall. Absent, nothing changes.
+   */
+  veto?: (features: number[], wall: WallCandidate) => boolean;
   /** Feet of building per page point, from the sheet's calibration. */
   feetPerPoint: number;
   /**
@@ -1376,6 +1400,16 @@ export function wallsFromStrokes(
     claimedSides.set(face, sides);
   };
   const walls: WallCandidate[] = [];
+  /**
+   * Which pairing produced each wall in `walls`.
+   *
+   * The veto needs this because every push SPREADS the candidate into a new
+   * object (`{ ...chosen, fromBalancedFaces }`), so object identity does not
+   * survive — the first version of the veto compared identities, matched
+   * nothing, and reported itself as doing no harm on all fifty sheets, which
+   * is indistinguishable from a veto that is simply never right.
+   */
+  const pairingOf = new Map<WallCandidate, { i: number; j: number }>();
 
   // REFUSED BEFORE ANY WORK, not part-way through. The pair count is known from
   // the input alone, so a sheet that cannot be paired says so immediately
@@ -1435,9 +1469,16 @@ export function wallsFromStrokes(
   // With neither hook set this is the loop it always was. With either, the
   // pass collects before it awards, because both the extractor and the model
   // need to see a face's alternatives before any of them is spent.
-  const collecting = options.onCandidate !== undefined || options.decide !== undefined;
-  const scored: { i: number; j: number; wall: WallCandidate; balanced: boolean; score: number }[] =
+  const collecting =
+    options.onCandidate !== undefined ||
+    options.decide !== undefined ||
+    options.veto !== undefined;
+  // Raw vectors first; the sheet-relative columns cannot be filled until every
+  // candidate is known. Nothing is scored or reported until `normaliseAcrossSheet`
+  // has run over the lot.
+  const collected: { i: number; j: number; wall: WallCandidate; balanced: boolean; features: number[] }[] =
     [];
+  const penPercentile = collecting ? penPercentileFor(order) : () => 0;
   const sheetSpan = Math.max(
     ...order.map((one) => Math.max(Math.abs(one.x1), Math.abs(one.x2))),
     1e-9,
@@ -1517,20 +1558,12 @@ export function wallsFromStrokes(
           scheduledIn: options.knownThicknessesIn ?? [],
           inHatchSeries: hatchSeries,
           sheetSpan,
+          penPercentile,
         });
-        options.onCandidate?.(features, wall, i, j);
-        if (options.decide !== undefined) {
-          const iLen = lengthOf(order[i]);
-          const jLen = lengthOf(order[j]);
-          const ratio = Math.max(iLen, jLen) / Math.max(Math.min(iLen, jLen), 1e-9);
-          scored.push({
-            i,
-            j,
-            wall,
-            balanced: ratio <= BALANCED_FACE_RATIO,
-            score: options.decide(features, wall),
-          });
-        }
+        const iLen = lengthOf(order[i]);
+        const jLen = lengthOf(order[j]);
+        const ratio = Math.max(iLen, jLen) / Math.max(Math.min(iLen, jLen), 1e-9);
+        collected.push({ i, j, wall, balanced: ratio <= BALANCED_FACE_RATIO, features });
       }
       if (hatchSeries) continue;
       // A PAIR INSIDE A WALL YOU BUILD IS THAT WALL'S LAYER, whatever it
@@ -1615,15 +1648,31 @@ export function wallsFromStrokes(
       used.add(chosenJ);
       claimSide(i, chosenJ);
       claimSide(chosenJ, i);
-      walls.push({ ...chosen, fromBalancedFaces: balanced });
+      const made = { ...chosen, fromBalancedFaces: balanced };
+      pairingOf.set(made, { i, j: chosenJ });
+      walls.push(made);
     }
+  }
+
+  if (collecting) {
+    // ── THE SHEET IS NOW KNOWN, SO THE RELATIVE COLUMNS CAN BE FILLED ──
+    //
+    // Before this line the vectors carry raw thicknesses, lengths and counts,
+    // which is exactly what an office's conventions set. After it they carry
+    // where each candidate stands on its own sheet. Nothing may read a vector
+    // in between — which is why reporting and scoring both happen here rather
+    // than inside the loop above.
+    normaliseAcrossSheet(collected.map((c) => c.features));
+    for (const c of collected) options.onCandidate?.(c.features, c.wall, c.i, c.j);
   }
 
   if (options.decide !== undefined) {
     // Best first, one face to one wall. Awarding greedily in score order is an
     // approximation to a maximum weight matching; the graph is sparse and the
     // scores are far apart, so the two agree on all but a handful of faces.
-    scored.sort((a, b) => b.score - a.score || b.wall.lengthFeet - a.wall.lengthFeet);
+    const scored = collected
+      .map((c) => ({ ...c, score: options.decide!(c.features, c.wall) }))
+      .sort((a, b) => b.score - a.score || b.wall.lengthFeet - a.wall.lengthFeet);
     for (const c of scored) {
       // A NON-POSITIVE SCORE IS A REFUSAL, not merely a low ranking. Without
       // this the decider could only reorder claims and every candidate would
@@ -1636,11 +1685,36 @@ export function wallsFromStrokes(
       used.add(c.j);
       claimSide(c.i, c.j);
       claimSide(c.j, c.i);
-      walls.push({ ...c.wall, fromBalancedFaces: c.balanced });
+      const made = { ...c.wall, fromBalancedFaces: c.balanced };
+      pairingOf.set(made, { i: c.i, j: c.j });
+      walls.push(made);
     }
   }
 
   walls.push(...secondAssemblyPass(order, walls, used, claimedSides, options));
+
+  if (options.veto !== undefined) {
+    // ── SUBTRACTION ONLY, AND AFTER EVERYTHING ELSE ──
+    //
+    // Run on the walls the rules settled on, including the second pass, so
+    // what the veto sees is what the sheet would otherwise report. A wall with
+    // no feature vector — one the second pass assembled rather than paired —
+    // is KEPT: the model was never asked about it, and silence is not a
+    // refusal.
+    const refused = new Set<string>();
+    for (const c of collected) {
+      if (options.veto(c.features, c.wall)) refused.add(`${c.i}:${c.j}`);
+    }
+    const kept = walls.filter((w) => {
+      const from = pairingOf.get(w);
+      // No pairing recorded means the second pass assembled it and the model
+      // was never asked. Silence is not a refusal.
+      if (from === undefined) return true;
+      return !refused.has(`${from.i}:${from.j}`);
+    });
+    walls.length = 0;
+    walls.push(...kept);
+  }
 
   return oneWallPerPlace(walls, options.feetPerPoint);
 }

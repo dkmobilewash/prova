@@ -463,6 +463,103 @@ comparison. No model is committed: this one is worse than the rules on every
 real guard, and a model file in the tree that nobody should load is a thing the
 next person has to work out the status of.
 
+## Sheet-relative features and a veto: style transfer SOLVED, reality not — 2026-10-18
+
+The previous model put 0.721 of its importance on absolute pen width and
+refused walls drawn by any office it had not seen. Two changes followed.
+
+### 1. Nothing an office can set is a feature any more
+
+| was | is |
+| --- | --- |
+| `penMean` (points) | `penPercentile` among the sheet's own strokes |
+| `thicknessFt`, `thicknessInches` | `thicknessVsCommon`, `thicknessPercentile` |
+| `lengthFt` | `lengthPercentile` among candidates |
+| `localDensity` (count) | `densityPercentile` among candidates |
+| `nearestScheduledDeltaIn` | `scheduledDeltaShare`, as a share of thickness |
+
+Still 24 columns. `wallFeatures.test.ts` pins the property they exist for: the
+same drawing at a **three times heavier pen** or **twice the scale** gives
+byte-identical vectors, no raw pen width survives into them, and a thicker wall
+still ranks above a thinner one on its own sheet — relative must not mean blind.
+
+The sheet-relative columns are filled by `normaliseAcrossSheet` after every
+candidate is known, because a percentile cannot be computed while the list is
+still being built. Nothing may read a vector in between.
+
+### 2. A veto-only mode, which can subtract and never add
+
+`WallFinderOptions.veto` removes a wall the rules already chose and does
+nothing else. Its worst case is the rules' own missing footage plus whatever it
+wrongly removes; `decide`'s worst case is a sheet of nothing.
+
+**Its first version compared wall objects by IDENTITY**, and every push spreads
+the candidate into a new object — so it matched nothing, changed nothing, and
+reported itself as harmless on all fifty sheets. A veto that never fires is
+indistinguishable from a veto that is never right. It matches by pairing now,
+and `wallVectors.veto.test.ts` pins that it both fires and cannot add.
+
+### Leave one style out, five times: the transfer problem is FIXED
+
+| mode | missing | extra | net |
+| --- | --- | --- | --- |
+| rules | 2,473 ft (2.9%) | 11,418 ft (13.6%) | +8,945 |
+| veto @0.35 | **2,695 ft (3.2%)** | **5,165 ft (6.2%)** | +2,470 |
+| veto @0.50 | 2,822 ft (3.4%) | 4,029 ft (4.8%) | +1,207 |
+| veto @0.65 | 3,045 ft (3.6%) | 2,624 ft (3.1%) | −421 |
+| veto @0.80 | 3,887 ft (4.6%) | 1,787 ft (2.1%) | −2,100 |
+
+Against the previous model's **16.6% missing** on held-out styles, 3.2% is the
+whole of the fix. **0.35 is the chosen threshold**: +0.3 percentage points of
+missing against the rule's 0.5 limit, with margin rather than sitting on it.
+
+### And on real drawings it is a disaster
+
+| | rules | veto @0.35 |
+| --- | --- | --- |
+| Cedar Hollow missing | 5.07 ft | **176.83 ft (26.3%)** |
+| 20 fixtures within 2% | 15 of 17 | **0 of 17** |
+| bench walls missed | 111 | 179 |
+| bench phantom footage | 3,497 ft | 1,669 ft |
+| bench zero-wall bar | PASS | **PASS** |
+| ELEVEN03 A4.B.3 | 2,356 ft | **1,348 ft (−43%)** |
+| ELEVEN03 A4.B-Y2 | 1,571 ft | 969 ft (−38%) |
+| Camp Bow Wow A102 | 2,082 ft | 1,721 ft (−17%) |
+
+On the A4.B.3 overlay whole apartment units have lost their partitions.
+
+**The zero-wall bar held, and that is the veto guarantee working** — it cannot
+add a phantom, so the one bar the previous `decide` model broke is now safe by
+construction. Everything it costs, it costs in missing wall.
+
+### What one feature is really encoding
+
+`penPercentile` takes **0.616 of the importance**, over the 0.4 line. It is no
+longer an absolute, and the rotation proves it transfers BETWEEN SYNTHETIC
+STYLES. What it encodes is "this pair is drawn heavier than most of this
+sheet", and on the generator that is nearly a definition of a wall.
+
+On a real sheet it is not. A real drawing carries dimension lines, leaders,
+hatching, schedules and title-block rules at a spread of weights, and a wall
+face is not reliably in the upper percentiles of that distribution. The model
+learned a property of the GENERATOR rather than of walls — one level up from
+the last mistake, and the same mistake.
+
+### So the honest state
+
+**Relative features fixed style-to-style transfer and did not fix
+generator-to-reality transfer.** Fifty synthetic sheets in five styles share
+more with each other than any of them shares with ELEVEN03, and no amount of
+rotation inside that set can show it.
+
+Nothing further is worth training until real labelled sheets exist. The next
+model should be trained on real sheets with synthetic ones mixed in as
+NEGATIVES only — the desk rows, poché and tables the generator does produce
+faithfully — rather than as a source of positives.
+
+No model is committed. `wall-model.json` is absent by design; `deciderFor`
+refuses a model whose columns do not match, so a stale one cannot load.
+
 ## Where accuracy stands — 2026-10-17
 
 Every number here is from the runs on that date. Re-run before quoting any of

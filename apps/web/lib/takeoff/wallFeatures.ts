@@ -20,6 +20,35 @@ import type { StrokeSegment, WallCandidate } from "./wallVectors";
  * Features are therefore extracted for every pair `wallFromPair` accepts, and
  * the existing filters are recorded as FEATURES rather than applied.
  *
+ * ── NOTHING AN OFFICE CAN SET IS A FEATURE ──
+ *
+ * The first model trained on messy synthetic sheets put **0.721 of its
+ * importance and 125 of its splits on `penMean`** — the absolute pen width the
+ * two faces were drawn with. It was strictly better than the rules on the three
+ * drafting styles it had seen and refused walls everywhere else, because pen
+ * weight is a house convention: it had learned "a wall is drawn at 0.5 points"
+ * rather than anything about walls. On ELEVEN03 it dropped the interior
+ * partitions and 36% of the footage.
+ *
+ * So every absolute quantity an office could set differently is gone, replaced
+ * by where that candidate STANDS ON ITS OWN SHEET:
+ *
+ *   | was                     | is                                        |
+ *   | `penMean` (points)      | `penPercentile` among the sheet's strokes  |
+ *   | `thicknessFt`, `..Inches` | `thicknessVsCommon`, `thicknessPercentile` |
+ *   | `lengthFt`              | `lengthPercentile` among candidates         |
+ *   | `localDensity` (count)  | `densityPercentile` among candidates        |
+ *   | `nearestScheduledDeltaIn` | `scheduledDeltaShare`, as a share of thickness |
+ *
+ * A sheet drawn at a heavier pen, at a different scale, by a practice that
+ * calls a partition 4 5/8 rather than 4 1/2, now produces the SAME numbers.
+ * That is the whole point: the model should learn that a wall is drawn heavier
+ * than the furniture around it, not that a wall is drawn at a particular
+ * weight.
+ *
+ * `penDelta`, `faceRatio` and `overlapShare` were already ratios and are
+ * unchanged. `offOrthogonalDeg` is an angle and no office owns it.
+ *
  * ── A MISSING VALUE GETS ITS OWN COLUMN, NEVER A SENTINEL ──
  *
  * The first model trained on these put **196 of its 300 tree splits and 0.52
@@ -45,10 +74,11 @@ import type { StrokeSegment, WallCandidate } from "./wallVectors";
  * pins the names and the length; add at the END and retrain.
  */
 export const FEATURE_NAMES = [
-  "thicknessFt",
-  "lengthFt",
-  "thicknessInches",
-  "nearestScheduledDeltaIn",
+  "thicknessVsCommon",
+  "thicknessPercentile",
+  "lengthPercentile",
+  "lengthToSheetSpan",
+  "scheduledDeltaShare",
   "hasSchedule",
   "isScheduled",
   "faceRatio",
@@ -56,7 +86,7 @@ export const FEATURE_NAMES = [
   "isCurved",
   "offOrthogonalDeg",
   "penDelta",
-  "penMean",
+  "penPercentile",
   "hasPenWidths",
   "layerSaysWall",
   "layerSaysNotWall",
@@ -66,15 +96,44 @@ export const FEATURE_NAMES = [
   "hasNeighbourSpacing",
   "nearestNeighbourThicknessRatio",
   "hasNearestNeighbour",
-  "localDensity",
+  "densityPercentile",
   "inHatchSeries",
-  "lengthToSheetSpan",
 ] as const;
+
+/**
+ * The columns that mean nothing until the whole sheet has been seen.
+ *
+ * `featuresFor` writes a RAW value into each of these — a thickness in feet, a
+ * length in feet, a neighbour count — and `normaliseAcrossSheet` replaces it
+ * with that value's standing among the sheet's own candidates. They are named
+ * here rather than hard-coded as indices so that reordering the list above
+ * cannot silently normalise the wrong column.
+ */
+const SHEET_RELATIVE = [
+  "thicknessVsCommon",
+  "thicknessPercentile",
+  "lengthPercentile",
+  "densityPercentile",
+] as const;
+
+const INDEX_OF = Object.fromEntries(FEATURE_NAMES.map((name, at) => [name, at])) as Record<
+  FeatureName,
+  number
+>;
 
 export type FeatureName = (typeof FEATURE_NAMES)[number];
 
 /** Everything the extractor needs that is not the pair itself. */
 export type FeatureContext = {
+  /**
+   * Where a pen width stands among every stroke on this sheet, 0 to 1.
+   *
+   * Computed once from the face pool before any pairing, because the sheet's
+   * pens are known before its walls are. A wall is drawn heavier than the
+   * furniture beside it on every drawing; it is drawn at 0.5 points on only
+   * some of them.
+   */
+  penPercentile: (width: number) => number;
   /** The face pool the pairing loop is working through, in its own order. */
   faces: readonly StrokeSegment[];
   /** Wall thicknesses the sheet's own schedule names, in inches. */
@@ -111,6 +170,81 @@ const offsetOf = (a: StrokeSegment, b: StrokeSegment) => {
   const my = (b.y1 + b.y2) / 2;
   return -(mx - a.x1) * uy + (my - a.y1) * ux;
 };
+
+/**
+ * Where each value stands among a sorted list, 0 to 1.
+ *
+ * Ties take the midpoint of their run rather than the first or last position,
+ * so a sheet where every stroke is the same weight gives 0.5 everywhere
+ * instead of 0 or 1 — which matters, because "all the same" is a real and
+ * common state and neither extreme describes it.
+ */
+function percentileIn(sorted: readonly number[], value: number): number {
+  if (sorted.length === 0) return 0;
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sorted[mid] < value) lo = mid + 1;
+    else hi = mid;
+  }
+  let end = lo;
+  while (end < sorted.length && sorted[end] === value) end += 1;
+  return (lo + end) / 2 / sorted.length;
+}
+
+/**
+ * A pen-percentile function for one sheet, from its own strokes.
+ *
+ * Built once before any pairing: the sheet's pens are known before its walls
+ * are, and this is what makes "heavier than the furniture around it" sayable
+ * without naming a weight.
+ */
+export function penPercentileFor(
+  faces: readonly { width?: number }[],
+): (width: number) => number {
+  const widths = faces
+    .map((f) => f.width ?? 0)
+    .filter((w) => w > 0)
+    .sort((a, b) => a - b);
+  return (width) => percentileIn(widths, width);
+}
+
+/**
+ * Replaces the sheet-relative columns with the standing of their raw value
+ * among every candidate on the sheet.
+ *
+ * Done in place and after collection, because a percentile cannot be known
+ * while the list is still being built. `rows` is every candidate's vector from
+ * `featuresFor`, in any order.
+ */
+export function normaliseAcrossSheet(rows: number[][]): void {
+  if (rows.length === 0) return;
+  const thickAt = INDEX_OF.thicknessVsCommon;
+  const thickPctAt = INDEX_OF.thicknessPercentile;
+  const lengthAt = INDEX_OF.lengthPercentile;
+  const denseAt = INDEX_OF.densityPercentile;
+
+  const thicknesses = rows.map((r) => r[thickAt]).sort((a, b) => a - b);
+  const lengths = rows.map((r) => r[lengthAt]).sort((a, b) => a - b);
+  const densities = rows.map((r) => r[denseAt]).sort((a, b) => a - b);
+  // The sheet's commonest wall thickness, as the median of what was proposed.
+  // Not the mode: on a sheet with two partition types the mode picks one of
+  // them arbitrarily, and the median sits between, which is the better
+  // reference for "thicker or thinner than usual here".
+  const common = thicknesses[Math.floor(thicknesses.length / 2)] || 1;
+
+  for (const row of rows) {
+    const rawThick = row[thickAt];
+    row[thickPctAt] = percentileIn(thicknesses, rawThick);
+    row[lengthAt] = percentileIn(lengths, row[lengthAt]);
+    row[denseAt] = percentileIn(densities, row[denseAt]);
+    row[thickAt] = rawThick / common;
+  }
+}
+
+/** Named so a caller can assert it ran. Nothing else uses it. */
+export const SHEET_RELATIVE_NAMES: readonly string[] = SHEET_RELATIVE;
 
 /**
  * The feature vector for one candidate pairing.
@@ -203,11 +337,17 @@ export function featuresFor(
     ? Math.abs(nearestOther) / Math.max(Math.abs(offsetOf(a, b)), 1e-9)
     : 0;
 
+  // The four sheet-relative columns carry RAW values here and are replaced by
+  // `normaliseAcrossSheet` once every candidate on the sheet is known. A model
+  // must never be scored on this vector as it stands.
   return [
     wall.thicknessFeet,
+    wall.thicknessFeet,
     wall.lengthFeet,
-    thicknessIn,
-    nearestDelta,
+    sheetSpan > 0 ? lengthOf(a) / sheetSpan : 0,
+    // As a SHARE of the wall's own thickness: half an inch out on a 4 inch
+    // partition is a different statement from half an inch on a 12 inch wall.
+    hasSchedule && thicknessIn > 0 ? nearestDelta / thicknessIn : 0,
     hasSchedule ? 1 : 0,
     scheduledIn.some((named) => Math.abs(named - thicknessIn) <= 0.5) ? 1 : 0,
     longer / shorter,
@@ -215,7 +355,7 @@ export function featuresFor(
     wall.curved === true ? 1 : 0,
     offOrthogonal,
     penDelta,
-    penMean,
+    hasPens ? context.penPercentile(penMean) : 0,
     hasPens ? 1 : 0,
     verdict === "wall" ? 1 : 0,
     verdict === "not-wall" ? 1 : 0,
@@ -227,6 +367,5 @@ export function featuresFor(
     hasNearest ? 1 : 0,
     dense,
     context.inHatchSeries ? 1 : 0,
-    sheetSpan > 0 ? lengthOf(a) / sheetSpan : 0,
   ];
 }

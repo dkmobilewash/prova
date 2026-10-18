@@ -111,7 +111,11 @@ export async function findWalls(
   feetPerUnit: number,
   /** Passed through to the finder: extraction and the trained classifier both
    *  arrive this way, and with neither set nothing about the run changes. */
-  hooks: { onCandidate?: FindWallsInput["onCandidate"]; decide?: FindWallsInput["decide"] } = {},
+  hooks: {
+    onCandidate?: FindWallsInput["onCandidate"];
+    decide?: FindWallsInput["decide"];
+    veto?: FindWallsInput["veto"];
+  } = {},
 ): Promise<FoundWalls> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   // @ts-expect-error pdfjs ships no types for the worker build; imported for its side effect.
@@ -163,6 +167,7 @@ export async function findWalls(
       sampledSheets: null,
       onCandidate: hooks.onCandidate,
       decide: hooks.decide,
+      veto: hooks.veto,
     });
     page.cleanup();
     return {

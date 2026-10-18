@@ -108,6 +108,8 @@ export type FindWallsInput = {
    */
   onCandidate?: WallFinderOptions["onCandidate"];
   decide?: WallFinderOptions["decide"];
+  /** Removes a wall the rules chose, and nothing else — see `WallFinderOptions.veto`. */
+  veto?: WallFinderOptions["veto"];
   /**
    * Called with each stage's name and how long it took, when a caller wants
    * to know. Optional and unset everywhere in the product.
@@ -367,6 +369,7 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
     knownThicknessesIn: scheduleIn,
     onCandidate: input.onCandidate,
     decide: input.decide,
+    veto: input.veto,
   });
   // ── THE NOISE COMES OUT BEFORE THE BUILDING IS LOOKED FOR ──
   //

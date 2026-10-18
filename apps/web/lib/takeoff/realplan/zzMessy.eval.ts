@@ -33,6 +33,9 @@ const ONLY = process.env.MESSY_ONLY ?? "";
 const MODEL = process.env.MESSY_MODEL ?? "";
 /** Where the model's probability becomes a yes. */
 const CUT = Number(process.env.MESSY_CUT ?? "0.5");
+/** `veto` lets the model only REMOVE what the rules chose; anything else
+ *  replaces the selection outright. */
+const MODE = process.env.MESSY_MODE ?? "decide";
 
 type KeySegment = [number, number, number, number, number, number];
 
@@ -90,6 +93,7 @@ describe.skipIf(DIR === "")("the messy synthetic sheets", () => {
     expect(files.length, `no M*.pdf under ${DIR}`).toBeGreaterThan(0);
     if (OUT) mkdirSync(OUT, { recursive: true });
     let decide: ((f: number[], w: WallCandidate) => number) | undefined;
+    let veto: ((f: number[], w: WallCandidate) => boolean) | undefined;
     if (MODEL !== "") {
       const loaded = JSON.parse(readFileSync(MODEL, "utf8")) as WallModel;
       const scorer = deciderFor(loaded, FEATURE_NAMES);
@@ -97,11 +101,17 @@ describe.skipIf(DIR === "")("the messy synthetic sheets", () => {
       // to the rules would be reported as the model's own result.
       expect(scorer, `the model's columns do not match this build's features`).not.toBeNull();
       // Positive is a yes and ranks; -1 is a refusal. See `decide`.
-      decide = (f, w) => {
-        const p = scorer!(f, w);
-        return p >= CUT ? p : -1;
-      };
-      console.log(`deciding with ${MODEL} at ${CUT}`);
+      if (MODE === "veto") {
+        // Only ever subtracting: the rules choose, and a confident "not a
+        // wall" removes one.
+        veto = (f, w) => scorer!(f, w) < CUT;
+      } else {
+        decide = (f, w) => {
+          const p = scorer!(f, w);
+          return p >= CUT ? p : -1;
+        };
+      }
+      console.log(`${MODE} with ${MODEL} at ${CUT}`);
     }
     if (LABELS) mkdirSync(LABELS, { recursive: true });
 
@@ -163,6 +173,7 @@ describe.skipIf(DIR === "")("the messy synthetic sheets", () => {
         onCandidate: (features: number[], wall: WallCandidate) =>
           candidates.push({ features, wall }),
         decide,
+        veto,
       });
 
       // CONTROLS: a zero further down is only readable if these are not zero.
