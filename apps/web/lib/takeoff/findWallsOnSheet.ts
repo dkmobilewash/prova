@@ -2,6 +2,7 @@ import {
   type WallCandidate,
   type WallCluster,
   type StrokeSegment,
+  type WallFinderOptions,
   clusterByThickness,
   wallsInTheBuilding,
   wallsNotLettering,
@@ -100,6 +101,13 @@ export type FindWallsInput = {
   feetPerUnit: number;
   /** The company's wall types. Used three ways — see below. */
   wallTypes: readonly MatchableWallType[];
+  /**
+   * Told about every candidate pairing with its feature vector, and optionally
+   * asked to score one — see `WallFinderOptions`. Extraction and the trained
+   * classifier both arrive through here; with neither set nothing changes.
+   */
+  onCandidate?: WallFinderOptions["onCandidate"];
+  decide?: WallFinderOptions["decide"];
   /**
    * Called with each stage's name and how long it took, when a caller wants
    * to know. Optional and unset everywhere in the product.
@@ -357,6 +365,8 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   const everywhere = wallsFromBothEngines(inUnits, 1, aspect, {
     feetPerPoint: feetPerUnit,
     knownThicknessesIn: scheduleIn,
+    onCandidate: input.onCandidate,
+    decide: input.decide,
   });
   // ── THE NOISE COMES OUT BEFORE THE BUILDING IS LOOKED FOR ──
   //

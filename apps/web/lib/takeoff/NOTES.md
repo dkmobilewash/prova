@@ -288,6 +288,89 @@ sheet.
 
 Measured by `realplan/zzLayers.eval.ts`; re-run it with `REAL_PLAN_DIR` set.
 
+## The classifier experiment: synthetic-only training LOST — 2026-10-17
+
+The cheap experiment the classifier plan called for, run before buying any
+labelled sheets. Train on bench candidates alone, score against the rules on
+everything the bench has never seen.
+
+**Switch is OFF and stays off.** `WallFinderOptions.decide` is undefined by
+default and nothing wires it up; the model file ships beside it unused.
+
+### What was built
+
+`wallFeatures.ts` turns one candidate pairing into 20 numbers.
+`wallVectors.ts` grew a seam that collects EVERY pair the geometry accepts —
+including the ones the greedy pass would never award — because the
+alternatives are most of what there is to learn from. `zzExtract.eval.ts`
+labels them from the bench's own key by geometry. scikit-learn (BSD-3, CPU,
+offline) trains 120 gradient-boosted trees; `wallClassifier.ts` evaluates the
+exported JSON in about twenty lines, so the product carries no runtime
+dependency and nothing leaves the machine.
+
+20,734 candidates from 7 sheet families, 10.0% positive. Leave-one-family-out
+mean **AUC 0.991**.
+
+### And it lost on every number that is defined
+
+| | rules | classifier |
+| --- | --- | --- |
+| bench walls missed | 111 | 111 |
+| **bench phantom footage** | 3,497 ft | **7,930 ft** |
+| **bench zero-wall bar** | **PASS**, 0 of 41 | **FAIL, 5 of 41** |
+| bench LF outside 2% | 17 of 60 | 18 of 60 |
+| 20 fixtures within 2% | 15 of 17 | **13 of 17** |
+| Cedar Hollow missing | 5.07 ft | **8.87 ft** |
+| Cedar Hollow net | −0.7% | **−1.3%** |
+| ELEVEN03 A4.B-Y2 | 1,571 ft | **2,307 ft (+47%)** |
+| Camp Bow Wow A120 | 129 ft | **200 ft (+55%)** |
+| runtime | 75s | 79s |
+
+**AUC 0.991 and it doubles the phantom footage.** That gap is the lesson: a
+per-candidate score says nothing about a sheet, because the errors are
+concentrated in the long runs and a sheet is judged in feet.
+
+### Why, exactly — two faults, both visible in the model file
+
+**1. The dominant feature does not exist on real sheets.**
+`nearestScheduledDeltaIn` — how close a pairing's thickness is to one the
+sheet's wall-type schedule names — takes **196 of the tree splits and 0.52 of
+the importance**. In training it ranges 0 to 2.81 inches and is **never −1**,
+because every bench sheet carries a schedule. A sheet without one gives −1 for
+every candidate: a value the model has never seen, below every threshold it
+learned, so each tree sends it down the "this thickness is exactly a scheduled
+type" branch. The out-of-distribution sentinel fails toward YES.
+
+That is the +47% on ELEVEN03 in one sentence, and it is a design mistake
+rather than a data shortage: a missing value must not be encoded as a number
+on the same axis as the real ones.
+
+**2. The one feature that encodes the real failure was never used.**
+`inHatchSeries` is 1 on **23% of training rows** and the trees split on it
+**zero times** — on the bench, thickness alone separates the classes, so the
+model had no reason to learn hatching. On ELEVEN03 the poché is drawn at
+wall-like spacing and the overlay shows the result plainly: every hatched
+block filled with red. The three layer features are also unused, necessarily
+— the bench carries no layers, which the measurement above had already shown.
+
+### What this says about the plan
+
+Not that the hybrid is wrong. It says the **bench cannot be the training set**:
+it has no sheets without a schedule, no realistic poché, and no layer names,
+so it cannot teach the three things that actually go wrong. The estimate of
+40–60 real labelled sheets stands, and this experiment was the cheap way of
+finding out that there is no shortcut round it.
+
+Three things to change before spending that:
+  - encode a missing feature as its own column, never as a sentinel number;
+  - judge by sheet footage during training, not by per-candidate accuracy;
+  - keep `inHatchSeries` and the layer verdicts, but get them from sheets
+    where they vary.
+
+`zzExtract.eval.ts` writes the rows and `scripts/train-wall-model.py` trains
+them; both are kept because the pipeline is sound and only the training set
+was wrong.
+
 ## Where accuracy stands — 2026-10-17
 
 Every number here is from the runs on that date. Re-run before quoting any of
