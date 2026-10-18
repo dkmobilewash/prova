@@ -197,6 +197,11 @@ export type WallFinderOptions = {
    * pairs that have already passed every geometric test, so it decides between
    * walls rather than deciding what a wall is.
    *
+   * A score of zero or less REFUSES the pairing outright; a positive score
+   * ranks it, higher being more wall-like. So a decider both filters and
+   * orders, which is what makes it able to remove a phantom rather than only
+   * move it down the queue.
+   *
    * Absent, which is the default and the shipped behaviour, nothing changes.
    */
   decide?: (features: number[], wall: WallCandidate) => number;
@@ -1620,6 +1625,12 @@ export function wallsFromStrokes(
     // scores are far apart, so the two agree on all but a handful of faces.
     scored.sort((a, b) => b.score - a.score || b.wall.lengthFeet - a.wall.lengthFeet);
     for (const c of scored) {
+      // A NON-POSITIVE SCORE IS A REFUSAL, not merely a low ranking. Without
+      // this the decider could only reorder claims and every candidate would
+      // still become a wall, which is the opposite of what a classifier is
+      // for — the errors left on a real sheet are things that should not have
+      // been accepted at all.
+      if (!(c.score > 0)) continue;
       if (used.has(c.i) || used.has(c.j)) continue;
       used.add(c.i);
       used.add(c.j);

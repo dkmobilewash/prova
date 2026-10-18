@@ -371,6 +371,98 @@ Three things to change before spending that:
 them; both are kept because the pipeline is sound and only the training set
 was wrong.
 
+## The messy synthetic sheets, and a second classifier that lost — 2026-10-18
+
+Fifty generated sheets in `~/Claude Folder/takeoff/synthetic-messy`, five
+drafting styles of ten, carrying what the bench could not: hatching at
+wall-like spacing, filled walls, stairs, grid lines, tables, counters,
+furniture. Their keys attribute **every stroke to a feature with a type**,
+which is what makes them trainable rather than only scoreable.
+
+### The rules on them, before any training
+
+| | missing | extra | net |
+| --- | --- | --- | --- |
+| all 50, 83,913 ft of key wall | 2,473 ft (2.9%) | **11,418 ft (13.6%)** | +8,945 |
+
+Consistent across styles — extra runs 11.9% to 16.9% on every one. **The rules
+find nearly all the wall and add an eighth again of phantom**, which is the
+ideal shape for a classifier: plenty to cut, little to protect.
+
+Looked at on the overlays, the phantom has a shape the bench never produced:
+on M005 the long red verticals run **down the middle of rows of desks**, the
+engine pairing the edges of two adjacent desk rows into a wall.
+
+### A classifier trained on three styles, tested on two
+
+ironbark and northline held out entirely — between them the worst extra (16.9%)
+and the worst missing (4.9%), so the held-out half is the hard one.
+
+| | missing | extra |
+| --- | --- | --- |
+| **trained-on styles** — rules | 1,444 ft (2.7%) | 6,752 ft (12.6%) |
+| **trained-on styles** — model | **1,318 ft (2.5%)** | **1,689 ft (3.2%)** |
+| **held-out styles** — rules | 1,029 ft (3.4%) | 4,666 ft (15.3%) |
+| **held-out styles** — model | **5,061 ft (16.6%)** | 1,054 ft (3.5%) |
+
+**On styles it has seen the model is strictly better on both numbers.** On
+styles it has not, it cuts extra by three quarters and **quintuples missing**.
+No threshold fixes it: at 0.2 the held-out numbers are 1,716 missing against
+2,439 extra, still worse on missing than the rules.
+
+### And on everything real, it is worse
+
+| | rules | model |
+| --- | --- | --- |
+| bench walls missed | 111 | **190** |
+| bench phantom footage | 3,497 ft | 2,664 ft |
+| bench zero-wall bar | **PASS** | **FAIL**, 1 of 41 |
+| 20 fixtures within 2% | 15 of 17 | **8 of 17** |
+| Cedar Hollow missing | 5.07 ft | **9.68 ft** |
+| ELEVEN03 A4.B-Y2 | 1,571 ft | **1,012 ft (−36%)** |
+| Camp Bow Wow A102 | 2,082 ft | **1,664 ft (−20%)** |
+| Camp Bow Wow A120 | 129 ft | **203 ft (+57%)** |
+
+On the A4.B-Y2 overlay the envelope and the stair cores survive and **the
+interior partitions are gone** — the unit demising stubs along the west edge
+and most of the east column. It is rejecting the wall a drywaller would build.
+
+### Why, and it is one word: pen
+
+`penMean` takes **0.721 of the importance and 125 splits**. Pen weight is a
+per-office convention, so a model that has learned "a wall is drawn at this
+weight" transfers to the three styles it saw and refuses walls everywhere else.
+The same mechanism as the bench model's `nearestScheduledDeltaIn`, in a new
+costume: the strongest feature in training was the one that does not survive
+contact with another drafter.
+
+**The pipeline fixes did work, and that is the good news.** `inHatchSeries` is
+used this time (12 splits), `hasNeighbourSpacing` is used (13), and
+`nearestScheduledDeltaIn` — the feature that failed catastrophically on the
+bench model — is **never split on**, because most messy sheets have no
+schedule and the `has…` flag let the trees ignore it rather than fail toward
+yes. The missing-value fix is doing exactly what it was built for.
+
+### What this says about the plan
+
+Synthetic sheets can now produce the right ERRORS — desk rows, poché, tables —
+which the bench never did. They cannot yet produce the right VARIETY: five
+generated styles share more with each other than any of them shares with
+ELEVEN03. Real labelled sheets remain the bottleneck, and the estimate of
+40-60 is unchanged.
+
+Two things to do before the next training run, both cheap:
+  - **drop or cap `penMean`**, or force the model to work without it, and see
+    what it finds instead. A feature that strong and that office-specific is
+    worth testing the absence of.
+  - **mix real sheets in.** Even five labelled real sheets in the training set
+    would tell us whether the gap is variety or something deeper.
+
+Measured by `realplan/zzMessy.eval.ts`; `MESSY_MODEL` points it at a model for
+comparison. No model is committed: this one is worse than the rules on every
+real guard, and a model file in the tree that nobody should load is a thing the
+next person has to work out the status of.
+
 ## Where accuracy stands — 2026-10-17
 
 Every number here is from the runs on that date. Re-run before quoting any of
