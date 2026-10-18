@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { StatusLine } from "@/components/StatusLine";
 import { safetyStatus } from "@/lib/status-sentences";
 import { toJobOption } from "@/components/jobLabels";
+import { SeeAll, seeAllWindow } from "@/components/SeeAll";
 
 export const metadata = { title: "Safety" };
 
@@ -26,12 +27,12 @@ function isoDate(date: Date) {
 export default async function SafetyPage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string }>;
+  searchParams: Promise<{ year?: string; all?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_FIELD");
   if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
   const { company, ...currentUser } = context;
-  const { year: yearParam } = await searchParams;
+  const { year: yearParam, all } = await searchParams;
 
   const today = isoDate(new Date());
   const thisYear = Number(today.slice(0, 4));
@@ -72,12 +73,24 @@ export default async function SafetyPage({
     include: { job: { select: { name: true } }, reportedBy: { select: { name: true } } },
   });
 
-  const talks = await prisma.toolboxTalk.findMany({
-    where: { companyId: company.id },
-    orderBy: { heldOn: "desc" },
-    take: 50,
-    include: { job: { select: { name: true } }, recordedBy: { select: { name: true } } },
-  });
+  // The latest 10 talks, See all for the rest (density audit #31). This
+  // was a silent take: 50 with no way past it.
+  const talkWindow = seeAllWindow(all, 10);
+  const [talks, talkCount] = await Promise.all([
+    prisma.toolboxTalk.findMany({
+      where: { companyId: company.id },
+      orderBy: { heldOn: "desc" },
+      take: talkWindow.take,
+      include: { job: { select: { name: true } }, recordedBy: { select: { name: true } } },
+    }),
+    prisma.toolboxTalk.count({ where: { companyId: company.id } }),
+  ]);
+  // The incident list renders its latest 10 too, but the QUERY stays whole:
+  // the status line's case, recordable and days-away counts are read off
+  // every incident this year, so only the rendered rows are sliced.
+  const incidentWindow = seeAllWindow(all, 10);
+  const shownIncidents = incidents.slice(0, incidentWindow.take);
+  const keepYear = yearParam ? `year=${encodeURIComponent(yearParam)}&` : "";
 
   const recordableCount = incidents.filter((i) => isRecordable(i.outcome)).length;
   const nearMissCount = incidents.filter((i) => isNearMiss(i.outcome)).length;
@@ -105,7 +118,7 @@ export default async function SafetyPage({
         </div>
       </section>
 
-      <section className="mb-10" data-tour="safety-incident-log">
+      <section id="incidents" className="mb-10" data-tour="safety-incident-log">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink-label">Incident log — {activeYear}</h2>
           <div className="flex flex-wrap gap-2" data-tour="safety-years">
@@ -169,8 +182,9 @@ export default async function SafetyPage({
             happened.
           </p>
         ) : (
+          <>
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
-            {incidents.map((incident) => (
+            {shownIncidents.map((incident) => (
               <SafetyIncidentRow
                 key={incident.id}
                 jobs={jobs}
@@ -194,10 +208,19 @@ export default async function SafetyPage({
               />
             ))}
           </ul>
+          <SeeAll
+            total={incidents.length}
+            limit={incidentWindow.limit}
+            showingAll={incidentWindow.showingAll}
+            noun={`cases logged for ${activeYear}`}
+            href={`?${keepYear}all=1#incidents`}
+            fewerHref={`?${keepYear}#incidents`.replace("&#", "#")}
+          />
+          </>
         )}
       </section>
 
-      <section data-tour="safety-talks">
+      <section id="talks" data-tour="safety-talks">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Toolbox talks</h2>
         {talks.length === 0 ? (
           <EmptyState
@@ -239,6 +262,14 @@ export default async function SafetyPage({
             ))}
           </ul>
         )}
+        <SeeAll
+          total={talkCount}
+          limit={talkWindow.limit}
+          showingAll={talkWindow.showingAll}
+          noun="toolbox talks"
+          href={`?${keepYear}all=1#talks`}
+          fewerHref={`?${keepYear}#talks`.replace("&#", "#")}
+        />
       </section>
     </PageShell>
   );

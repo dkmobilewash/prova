@@ -26,7 +26,10 @@ vi.mock("next/link", () => ({
 import { ActivityTimeline, agentFilterFrom } from "@/components/ai-activity/ActivityTimeline";
 import { AgentSettingsForm } from "@/components/ai-activity/AgentSettingsForm";
 import { readSettingsForm } from "@/components/ai-activity/settingsForm";
-import { groupByDay, mergeActivity } from "@/components/ai-activity/activity";
+import { groupByDay, groupConsecutive, mergeActivity } from "@/components/ai-activity/activity";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -180,5 +183,40 @@ describe("the settings form", () => {
     });
     expect(save).toHaveBeenCalledOnce();
     expect(host.querySelector('[role="alert"]')?.textContent).toBe("Only the account owner can change agent settings.");
+  });
+});
+
+describe("declutter (density audit #18)", () => {
+  const inv = (id: string, min: number) => ({
+    id, at: new Date(`2026-10-14T21:${String(min).padStart(2, "0")}:00Z`), kind: "finding", agent: "BID_WATCHER",
+    title: `New invitation: Job ${id}`, detail: null, href: `/ai/bids/${id}`, severity: "info" as const,
+  });
+
+  it("folds consecutive same-kind lines into one row that opens to every line", () => {
+    const rows = mergeActivity(
+      [inv("a", 9), inv("b", 8), inv("c", 7), { id: "r", at: new Date("2026-10-14T21:06:00Z"), kind: "run", agent: "BID_WATCHER", title: "Checked 3 invitations", detail: null, href: null }],
+      [],
+    );
+    expect(groupConsecutive(rows).map((e) => ("items" in e ? e.label : e.title))).toEqual(["New invitation × 3", "Checked 3 invitations"]);
+    mount(<ActivityTimeline days={groupByDay(rows, ZONE, "2026-10-14")} agent={null} zone={ZONE} />);
+    const group = host.querySelector("[data-activity-group] details");
+    expect(group?.querySelector("summary")?.textContent).toContain("New invitation × 3");
+    expect(group?.hasAttribute("open")).toBe(false);
+    expect([...(group?.querySelectorAll("a") ?? [])].map((a) => a.getAttribute("href"))).toEqual(["/ai/bids/a", "/ai/bids/b", "/ai/bids/c"]);
+  });
+
+  it("never folds a dismissed finding (it carries Restore)", () => {
+    const rows = mergeActivity([inv("a", 9), inv("b", 8)], [], new Set(["a"]));
+    expect(groupConsecutive(rows).every((e) => !("items" in e))).toBe(true);
+  });
+
+  it("puts settings on a ?tab=settings tab and caps the timeline at 50 with See all", () => {
+    const page = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../app/(app)/ai/activity/page.tsx"), "utf8");
+    expect(page).toContain('{ href: "/ai/activity?tab=settings", label: "Settings" }');
+    expect(page.indexOf("<AgentSettingsForm")).toBeLessThan(page.indexOf("<ActivityTimeline"));
+    expect(page).toMatch(/onSettings \? \(/);
+    expect(page).toContain("const TIMELINE_SHOWN = 50;");
+    expect(page).toContain("groupByDay(filtered.slice(0, take)");
+    expect(page).toContain("<SeeAll");
   });
 });

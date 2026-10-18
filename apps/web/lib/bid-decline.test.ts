@@ -131,9 +131,10 @@ describe("the sentence beside the list", () => {
     expect(summary.headline).toContain("1 had no reason recorded");
   });
 
-  it("says so plainly when NOTHING was recorded", () => {
-    expect(summariseDeclines([bid({ declineReason: null })]).headline).toBe(
-      "1 bid declined, with no reason recorded on any of them.",
+  it("says so plainly when NOTHING was recorded — singular and plural", () => {
+    expect(summariseDeclines([bid({ declineReason: null })]).headline).toBe("1 bid declined, with no reason recorded.");
+    expect(summariseDeclines([bid({ id: "a", declineReason: null }), bid({ id: "b", declineReason: null })]).headline).toBe(
+      "2 bids declined, with no reason recorded on any of them.",
     );
   });
 

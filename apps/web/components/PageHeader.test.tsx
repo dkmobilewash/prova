@@ -44,6 +44,19 @@ describe("PageHeader", () => {
     expect(source).not.toMatch(/<h1/);
   });
 
+  // The live /settings/integrations page passes no title, and its route is in
+  // no area — so the H1 and the crumb printed "/settings/integrations". The
+  // test below this one passed a title and could never see it.
+  it("names an off-area nav route by its nav label, never its raw path", () => {
+    const html = renderToStaticMarkup(
+      <PageHeader route="/settings/integrations" parent={{ href: "/settings", label: "Settings" }} />,
+    );
+    expect(html).toMatch(/<h1[^>]*>Integrations<\/h1>/);
+    expect(html).toMatch(/aria-current="page"[^>]*>Integrations</);
+    const text = html.replace(/<[^>]*>/g, " ");
+    expect(text).not.toContain("/settings/integrations");
+  });
+
   it("adds the parent page to the trail for a page that hangs off another", () => {
     const html = renderToStaticMarkup(
       <PageHeader route="/settings/integrations" parent={{ href: "/settings", label: "Settings" }} title="Integrations" />,

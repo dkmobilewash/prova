@@ -49,7 +49,7 @@ export function AlertRow({ alert, silenced }: { alert: Alert; silenced: boolean 
   }
 
   return (
-    <li className="flex flex-col gap-2 p-4 sm:flex-row sm:items-start">
+    <li className="group flex flex-col gap-2 p-4 sm:flex-row sm:items-start">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className={`rounded px-1.5 py-0.5 text-xs ${severityBadgeClass(alert.severity)}`}>
@@ -131,7 +131,14 @@ export function AlertRow({ alert, silenced }: { alert: Alert; silenced: boolean 
             Put it back
           </button>
         ) : (
-          <>
+          // Snooze / Seen it wait for a hover under a mouse on a wide screen
+          // (density audit #17: 49 buttons down the list). Opacity, not
+          // `hidden`: still in the tab order, shown on keyboard focus, and
+          // always shown on touch and below md, where nothing can hover.
+          <span
+            data-alert-actions="secondary"
+            className={`flex gap-2 ${isSnoozing ? "" : "md:mouse:opacity-0 md:mouse:group-hover:opacity-100 md:mouse:group-focus-within:opacity-100"}`}
+          >
             <button
               type="button"
               disabled={isPending}
@@ -151,7 +158,7 @@ export function AlertRow({ alert, silenced }: { alert: Alert; silenced: boolean 
             >
               Seen it
             </button>
-          </>
+          </span>
         )}
       </div>
     </li>

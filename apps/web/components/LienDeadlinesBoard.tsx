@@ -435,12 +435,10 @@ export function LienDeadlinesBoard({
         {open.length === 0 ? (
           <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="lien-empty">
             <p className="text-ink-label">No lien deadlines waiting on you.</p>
+            {/* The rest of this paragraph repeated the page's explainer
+                word for word (density audit #26); only this sentence was its own. */}
             <p className="mt-2 max-w-xl text-sm text-ink-body">
-              This app never works out a lien deadline for you — the dates depend on the state,
-              public or private work, and your tier, and a wrong one can cost you lien rights. Get
-              the date from your attorney or the statute and add it here. Until it is marked served,
-              it stays on this list, and from 14 days out it is on the alerts list too. An empty list
-              means nothing has been entered, not that no deadline is running.
+              An empty list means nothing has been entered, not that no deadline is running.
             </p>
             {jobs.length === 0 && (
               <p className="mt-2 text-sm text-ink-body">

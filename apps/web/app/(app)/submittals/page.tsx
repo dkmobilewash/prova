@@ -160,8 +160,15 @@ export default async function SubmittalsPage({
             All jobs
           </Link>
           {jobs.map((j) => (
-            <Link key={j.id} href={filterHref({ job: j.id })} className={chip(activeJob === j.id)}>
-              {jobPickerLabel(j)}
+            <Link
+              key={j.id}
+              href={filterHref({ job: j.id })}
+              className={chip(activeJob === j.id)}
+              // The chip says the job's name only (density audit #32: GC +
+              // status wrapped the chips to two rows); the full label stays here.
+              title={jobPickerLabel(j)}
+            >
+              {j.name}
             </Link>
           ))}
         </div>

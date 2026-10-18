@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { ensureCalendarFeedToken, regenerateCalendarFeedToken } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Disclosure } from "@/components/Disclosure";
 
 /**
  * "Subscribe in your calendar" on /schedule: the one place a person's
@@ -51,25 +52,22 @@ export function CalendarSubscribe({ token: initialToken }: { token: string | nul
   }
 
   return (
-    <section className="mb-10 rounded-lg border border-line-card bg-surface p-4" data-tour="schedule-subscribe">
+    // A button, with what it does one click away (density audit #16): the
+    // paragraph and the per-app steps sat open on every visit.
+    <section className="mb-10" data-tour="schedule-subscribe">
       <h2 className="text-sm font-semibold text-ink-label">Subscribe in your calendar</h2>
-      <p className="mt-1 max-w-2xl text-sm text-ink-body">
-        Put the crew schedule on your phone&rsquo;s calendar. It updates by itself — each planned day
-        shows as an all-day event with the job, who&rsquo;s on it, and the site address. The link is
-        yours alone; anyone holding it can read the schedule, so treat it like a key.
-      </p>
 
       {!token ? (
         <button
           type="button"
           onClick={create}
           disabled={isPending}
-          className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md border border-line-card bg-surface px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover disabled:opacity-60"
+          className="mt-2 inline-flex min-h-11 items-center justify-center rounded-md border border-line-card bg-surface px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover disabled:opacity-60"
         >
           {isPending ? "Creating…" : "Create my calendar link"}
         </button>
       ) : (
-        <div className="mt-3 flex flex-col gap-3">
+        <div className="mt-2 flex flex-col gap-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <code
               data-testid="calendar-feed-url"
@@ -86,12 +84,6 @@ export function CalendarSubscribe({ token: initialToken }: { token: string | nul
               {copied ? "Copied" : "Copy link"}
             </button>
           </div>
-          <p className="text-xs text-ink-muted">
-            iPhone: Settings → Apps → Calendar → Calendar Accounts → Add Account → Other → Add
-            Subscribed Calendar, paste the link. Google Calendar: Other calendars → + → From URL.
-            Outlook: Add calendar → Subscribe from web. Calendar apps refresh on their own schedule —
-            usually within a few hours.
-          </p>
           <RowActions
             className="flex items-center gap-2"
             destructive={
@@ -121,6 +113,20 @@ export function CalendarSubscribe({ token: initialToken }: { token: string | nul
           />
         </div>
       )}
+
+      <Disclosure variant="plain" summary="How the calendar link works" className="mt-3">
+        <p className="max-w-2xl text-sm text-ink-body">
+          Put the crew schedule on your phone&rsquo;s calendar. It updates by itself — each planned day
+          shows as an all-day event with the job, who&rsquo;s on it, and the site address. The link is
+          yours alone; anyone holding it can read the schedule, so treat it like a key.
+        </p>
+        <p className="mt-2 text-xs text-ink-muted">
+          iPhone: Settings → Apps → Calendar → Calendar Accounts → Add Account → Other → Add
+          Subscribed Calendar, paste the link. Google Calendar: Other calendars → + → From URL.
+          Outlook: Add calendar → Subscribe from web. Calendar apps refresh on their own schedule —
+          usually within a few hours.
+        </p>
+      </Disclosure>
 
       {error && (
         <p role="alert" className="mt-2 text-xs text-danger">

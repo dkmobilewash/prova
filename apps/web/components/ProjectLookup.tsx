@@ -92,7 +92,7 @@ export function ProjectLookup() {
 
   return (
     <section
-      className="mb-6 rounded-lg border border-line-card bg-surface p-4"
+      className="rounded-lg border border-line-card bg-surface p-4"
       data-pipeline="project-lookup"
     >
       <h2 className="text-sm font-semibold text-ink">Look up a project</h2>

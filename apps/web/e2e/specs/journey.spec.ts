@@ -14,6 +14,7 @@ import {
   markContracted,
   openJobTab,
   recordExecutedSubcontract,
+  openRetainageTerms,
   retainageForm,
   startJob,
   submitInvoice,
@@ -125,6 +126,8 @@ test.describe("the pilot contractor's journey", () => {
     await page.waitForURL(new RegExp(`/jobs/${jobId}/retainage$`));
     await expectHealthy(page, "retainage tab", { monitor });
 
+    // Behind "Edit" since declutter round 3 (lib/journey.ts openRetainageTerms).
+    await openRetainageTerms(page);
     const form = retainageForm(page);
     const percent = form.locator('input[name="retainagePercent"]');
     await percent.fill("10");
@@ -135,6 +138,7 @@ test.describe("the pilot contractor's journey", () => {
     // Read it back from the server, not from the input we just typed in.
     await page.reload();
     await expectHealthy(page, "retainage tab after saving 10%", { monitor });
+    await openRetainageTerms(page);
     await expect(retainageForm(page).locator('input[name="retainagePercent"]')).toHaveValue("10");
   });
 

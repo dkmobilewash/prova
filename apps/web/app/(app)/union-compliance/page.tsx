@@ -23,8 +23,23 @@ import { WorkerCraftsPanel } from "@/components/WorkerCraftsPanel";
 import { viewerToday } from "@/lib/viewerToday";
 import { ApprenticeshipCommitteePanel } from "@/components/ApprenticeshipCommitteePanel";
 import { loadApprenticeshipCommittees } from "@/lib/das-query";
+import { Disclosure } from "@/components/Disclosure";
+import { PageTabs } from "@/components/PageTabs";
+import { activeTab } from "@/components/pageTabsActive";
 
 export const metadata = { title: "Fringe & apprentices" };
+
+/**
+ * Three tabs on this one page (density audit #5: six jobs, 50 live inputs
+ * and 4.7 screens stacked). This month is the bare URL, so `?month=` links,
+ * the remittance sheet's breadcrumb and every alert still land on it.
+ * Apprenticeships ignore the month; Setup is what both read from.
+ */
+const UC_TABS = [
+  { key: "month", href: "/union-compliance", label: "This month" },
+  { key: "apprenticeships", href: "/union-compliance?tab=apprenticeships", label: "Apprenticeships" },
+  { key: "setup", href: "/union-compliance?tab=setup", label: "Setup" },
+] as const;
 
 const STATUS_TONE: Record<string, string> = {
   WITHIN: "text-tag-green-ink",
@@ -45,13 +60,17 @@ const STATUS_LABEL: Record<string, string> = {
 export default async function UnionCompliancePage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string }>;
+  searchParams: Promise<{ month?: string; tab?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
   if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;
   const { company, ...currentUser } = context;
 
-  const { month: monthParam } = await searchParams;
+  const { month: monthParam, tab: tabParam } = await searchParams;
+  // The same rule PageTabs lights the row by.
+  const tab =
+    activeTab(UC_TABS, "/union-compliance", new URLSearchParams(tabParam ? { tab: tabParam } : {}))?.key ??
+    "month";
   // One day, read once, used for the default month, the apprenticeship
   // period and the rate-schedule cut below. On the server's UTC day all
   // three were a day ahead of the reader every evening — and on the last
@@ -101,358 +120,388 @@ export default async function UnionCompliancePage({
     <PageShell width="working">
       <PageHeader
         route="/union-compliance"
-        subtitle="What is owed to the trust funds this month, and whether the crews ran within their apprentice-to-journeyman ratio."
+        subtitle="What is owed to the trust funds, and whether crews ran within their apprentice ratio."
       />
-      <p className="mb-2 text-sm text-ink-body">
-        Both computed from the hours actually logged — nothing here is stored, and nothing here
-        files anything for you.
-      </p>
-      <p className="mb-6 text-xs text-ink-muted">
-        Ratios are checked <span className="text-ink-body">per day</span>, because that is how the
-        rule is written: a crew that runs two apprentices to one journeyman on Monday is out of ratio
-        on Monday, and a monthly average would hide the exact day an inspector asks about. Hours on a
-        craft with no tier recorded are never counted as journeyman hours — the day reads{" "}
-        <span className="text-ink-body">can&apos;t be judged</span> instead, so a half-configured
-        company never gets a clean bill of health.
-      </p>
 
-      <div className="mb-6 flex items-center gap-3" data-tour="uc-month">
-        <Link href={`/union-compliance?month=${previousMonth}`} className="inline-flex min-h-11 items-center text-sm text-link mouse:min-h-0">
-          ← {previousMonth}
-        </Link>
-        <span className="text-sm text-ink-label">
-          {start} to {end}
-        </span>
-        <Link href={`/union-compliance?month=${nextMonth}`} className="inline-flex min-h-11 items-center text-sm text-link mouse:min-h-0">
-          {nextMonth} →
-        </Link>
-      </div>
+      <PageTabs tabs={UC_TABS} label="Fringe and apprentice sections" />
 
-      {/* Setup is the LAST section and everything above reads from it, so a
-          new company scrolled past four sections all saying "nothing" before
+      {/* Setup is the LAST tab and everything else reads from it, so a new
+          company would open on two sections both saying "nothing" before
           reaching the one thing it could do. A pointer rather than a move:
-          once a local exists, the order below is the right one for a month
-          being reviewed. */}
-      {crafts.length === 0 && (
+          once a local exists, This month is the right first view. */}
+      {crafts.length === 0 && tab !== "setup" && (
         <div className="mb-8 rounded-xl border border-brand bg-surface p-4" data-testid="uc-start-here">
           <p className="text-sm font-semibold text-ink">
             {setup.length === 0 ? "Start here: add your local" : "Start here: add your craft classifications"}
           </p>
           <p className="mt-1 text-sm text-ink-body">
             {setup.length === 0
-              ? "Nothing on this page can be worked out until the union local you work under is recorded, with its craft classifications and rates. Every section below reads from it."
+              ? "Nothing on this page can be worked out until the union local you work under is recorded, with its craft classifications and rates. Every section reads from it."
               : "Your local has no craft classifications yet. Hours need a classification before they can be priced for fringe or counted toward a ratio."}
           </p>
-          <a href="#setup" className="mt-2 inline-block text-sm font-medium text-link hover:underline">
-            Go to locals, classifications and rates ↓
+          <a href="/union-compliance?tab=setup#setup" className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-link hover:underline mouse:min-h-0">
+            Go to locals, classifications and rates →
           </a>
         </div>
       )}
 
-      {/* ------------------------------------------------ remittance --- */}
-      <section className="mb-10" data-tour="uc-remittance">
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-ink-label">Fringe remittance</h2>
-          <span className={`text-xs ${remittance.filed ? "text-tag-green-ink" : "text-tag-amber-ink"}`}>
-            {remittance.filed
-              ? "A filing covering this whole month is on record"
-              : "No filing covering this whole month on record"}
-          </span>
-        </div>
-        {/* The only way in to the printable remittance sheet. Like the
-            WH-347 it was built and linked from nowhere but an Ask citation;
-            routeInboundLinks.test.ts now fails the build for that. */}
-        <p className="mb-3 text-sm">
-          <Link href={`/union-compliance/remittance?month=${month}`} className="font-medium text-link hover:underline">
-            Fringe remittance sheet for this month →
-          </Link>
-        </p>
-
-        <p className="mb-3 text-xs text-ink-muted">
-          A rate hangs off the <span className="text-ink-body">classification</span>, not its tier,
-          so hours can be priced here on a day the ratio below can&apos;t judge. The two answer
-          different questions — what is owed to the funds, and whether the crew was within ratio —
-          and one being unanswerable doesn&apos;t make the other so.
-        </p>
-
-        {remittance.locals.length === 0 ? (
-          <p className="text-sm text-ink-body">
-            No hours logged this month against a craft classification, so there is nothing to remit.
-            Hours go on the job, under{" "}
-            <Link href="/jobs" className="text-link hover:underline">
-              Crew &amp; time
+      {tab === "month" && (
+        <>
+          <div className="mb-4 flex items-center gap-3" data-tour="uc-month">
+            <Link href={`/union-compliance?month=${previousMonth}`} className="inline-flex min-h-11 items-center text-sm text-link mouse:min-h-0">
+              ← {previousMonth}
             </Link>
-            , and each one has to name a craft before it can be priced here.
-          </p>
-        ) : (
-          <div className="space-y-4">
-            {remittance.locals.map((local) => {
-              // #104 finding 2: isWhollyUnpriced already guarded every
-              // craft ROW below (that guard is why a row never prints
-              // $0.00 for hours nobody could price) but not this header —
-              // so a local whose every craft was unpriced still showed a
-              // confident "$0.00" total above a table of dashes, the exact
-              // false "nothing owed" statement the row-level guard exists
-              // to prevent. Same check, applied one level up.
-              const localBlank = isWhollyUnpriced(local);
-              return (
-              <div key={local.unionLocalId} className="rounded-xl border border-line-card bg-surface p-4">
-                <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-                  <p className="text-ink">{local.unionLocalLabel}</p>
-                  <p className="font-mono text-ink">
-                    {localBlank ? <span className="text-ink-muted">— not yet priced</span> : money(local.total)}
-                  </p>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[34rem] text-sm">
-                    <thead className="text-xs uppercase tracking-wide text-ink-muted">
-                      <tr>
-                        <th className="py-1 text-left font-medium">Classification</th>
-                        <th className="py-1 text-right font-medium">Hours</th>
-                        <th className="py-1 text-right font-medium">Pension</th>
-                        <th className="py-1 text-right font-medium">Vacation</th>
-                        <th className="py-1 text-right font-medium">H&amp;W</th>
-                        <th className="py-1 text-right font-medium">Training</th>
-                        <th className="py-1 text-right font-medium">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-ink-label">
-                      {local.crafts.map((craft) => {
-                        // Nothing on this row could be priced. Printing
-                        // $0.00 five times reads as "nothing owed", which
-                        // is the opposite of what is known — see
-                        // isWhollyUnpriced.
-                        const blank = isWhollyUnpriced(craft);
-                        const cell = (value: number) =>
-                          blank ? <span className="text-ink-muted">—</span> : money(value);
-                        return (
-                        <tr key={craft.craftClassificationId} className="border-t border-line-row">
-                          <td className="py-1.5">
-                            {craft.craftLabel}
-                            {craft.uncomputedHours > 0 && (
-                              <span className="ml-2 text-xs text-tag-amber-ink">
-                                {formatHours(craft.uncomputedHours)} hrs unpriced
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-1.5 text-right tabular-nums">{formatHours(craft.hours)}</td>
-                          <td className="py-1.5 text-right tabular-nums">{cell(craft.components.pension)}</td>
-                          <td className="py-1.5 text-right tabular-nums">{cell(craft.components.vacation)}</td>
-                          <td className="py-1.5 text-right tabular-nums">
-                            {cell(craft.components.healthWelfare)}
-                          </td>
-                          <td className="py-1.5 text-right tabular-nums">{cell(craft.components.training)}</td>
-                          <td className="py-1.5 text-right font-medium tabular-nums">{cell(craft.total)}</td>
-                        </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              );
-            })}
-
-            <p className="text-sm text-ink-body">
-              <span className="font-mono text-ink-label">{money(remittance.total)}</span> across{" "}
-              {formatHours(remittance.totalHours)} hours.
-              {remittance.uncomputedHours > 0 && (
-                <span className="text-tag-amber-ink">
-                  {" "}
-                  {formatHours(remittance.uncomputedHours)} of those hours could not be priced — no craft tag, or no
-                  rate schedule in force on the day — so this total is short by whatever they are
-                  worth. {remittance.uncomputedNames.join(", ")}.
-                </span>
-              )}
-            </p>
+            <span className="text-sm text-ink-label">
+              {start} to {end}
+            </span>
+            <Link href={`/union-compliance?month=${nextMonth}`} className="inline-flex min-h-11 items-center text-sm text-link mouse:min-h-0">
+              {nextMonth} →
+            </Link>
           </div>
-        )}
-      </section>
 
-      {/* ----------------------------------------------------- ratio --- */}
-      <section className="mb-10" data-tour="uc-ratio">
-        <h2 className="mb-3 text-sm font-semibold text-ink-label">Apprentice ratio</h2>
-
-        {ratioReviews.length === 0 ? (
-          <p className="text-sm text-ink-body">
-            No hours logged this month, so there is no ratio to judge. Log them on the job, under{" "}
-            <Link href="/jobs" className="text-link hover:underline">
-              Crew &amp; time
-            </Link>
-            .
-          </p>
-        ) : (
-          <div className="space-y-4">
-            {(flagged.length > 0 || incomplete.length > 0) && (
-              <p className="text-sm text-ink-body">
-                {flagged.length > 0 && (
-                  <span className="text-tag-rose-ink">
-                    {flagged.length} {flagged.length === 1 ? "job" : "jobs"} went over the ratio.{" "}
-                  </span>
-                )}
-                {incomplete.length > 0 && (
-                  <span className="text-tag-amber-ink">
-                    {incomplete.length} {incomplete.length === 1 ? "job has" : "jobs have"} days that
-                    can&apos;t be judged.
-                  </span>
-                )}
+          <Disclosure summary="How this works" className="mb-8">
+            <div className="flex flex-col gap-3 text-sm text-ink-body">
+              <p>
+                Both are computed from the hours actually logged — nothing here is stored, and nothing
+                here files anything for you.
               </p>
-            )}
+              <p>
+                Ratios are checked <span className="text-ink-label">per day</span>, because that is how
+                the rule is written: a crew that runs two apprentices to one journeyman on Monday is out of
+                ratio on Monday, and a monthly average would hide the exact day an inspector asks about.
+                Hours on a craft with no tier recorded are never counted as journeyman hours — the day
+                reads <span className="text-ink-label">can&apos;t be judged</span> instead, so a
+                half-configured company never gets a clean bill of health.
+              </p>
+              <p>
+                A fringe rate hangs off the <span className="text-ink-label">classification</span>, not
+                its tier, so hours can be priced on a day the ratio can&apos;t judge. The two answer
+                different questions — what is owed to the funds, and whether the crew was within ratio —
+                and one being unanswerable doesn&apos;t make the other so.
+              </p>
+            </div>
+          </Disclosure>
 
-            {ratioReviews.map((review) => (
-              <div
-                key={`${review.jobId}-${review.unionLocalId}`}
-                className="rounded-xl border border-line-card bg-surface p-4"
-              >
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <Link href={`/jobs/${review.jobId}`} className="text-ink">
-                    {review.jobName}
-                  </Link>
-                  <span className="text-xs text-ink-muted">{review.unionLocalLabel}</span>
-                </div>
-                <p className="mt-1 text-xs text-ink-muted">
-                  {review.rule ? (
-                    <>
-                      {ratioLabel(review.rule)}
-                      {review.rule.programStandardReference && ` · ${review.rule.programStandardReference}`}
-                    </>
-                  ) : (
+          {/* ------------------------------------------------ remittance --- */}
+          <section className="mb-10" data-tour="uc-remittance">
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-sm font-semibold text-ink-label">Fringe remittance</h2>
+              <span className={`text-xs ${remittance.filed ? "text-tag-green-ink" : "text-tag-amber-ink"}`}>
+                {remittance.filed
+                  ? "A filing covering this whole month is on record"
+                  : "No filing covering this whole month on record"}
+              </span>
+            </div>
+            {/* The only way in to the printable remittance sheet. Like the
+                WH-347 it was built and linked from nowhere but an Ask citation;
+                routeInboundLinks.test.ts now fails the build for that. */}
+            <p className="mb-3 text-sm">
+              <Link href={`/union-compliance/remittance?month=${month}`} className="font-medium text-link hover:underline">
+                Fringe remittance sheet for this month →
+              </Link>
+            </p>
+
+            {remittance.locals.length === 0 ? (
+              <p className="text-sm text-ink-body">
+                No hours logged this month against a craft classification, so there is nothing to remit.
+                Hours go on the job, under{" "}
+                <Link href="/jobs" className="text-link hover:underline">
+                  Crew &amp; time
+                </Link>
+                , and each one has to name a craft before it can be priced here.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {remittance.locals.map((local) => {
+                  // #104 finding 2: isWhollyUnpriced already guarded every
+                  // craft ROW below (that guard is why a row never prints
+                  // $0.00 for hours nobody could price) but not this header —
+                  // so a local whose every craft was unpriced still showed a
+                  // confident "$0.00" total above a table of dashes, the exact
+                  // false "nothing owed" statement the row-level guard exists
+                  // to prevent. Same check, applied one level up.
+                  const localBlank = isWhollyUnpriced(local);
+                  return (
+                  <div key={local.unionLocalId} className="rounded-xl border border-line-card bg-surface p-4">
+                    <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+                      <p className="text-ink">{local.unionLocalLabel}</p>
+                      <p className="font-mono text-ink">
+                        {localBlank ? <span className="text-ink-muted">— not yet priced</span> : money(local.total)}
+                      </p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[34rem] text-sm">
+                        <thead className="text-xs uppercase tracking-wide text-ink-muted">
+                          <tr>
+                            <th className="py-1 text-left font-medium">Classification</th>
+                            <th className="py-1 text-right font-medium">Hours</th>
+                            <th className="py-1 text-right font-medium">Pension</th>
+                            <th className="py-1 text-right font-medium">Vacation</th>
+                            <th className="py-1 text-right font-medium">H&amp;W</th>
+                            <th className="py-1 text-right font-medium">Training</th>
+                            <th className="py-1 text-right font-medium">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-ink-label">
+                          {local.crafts.map((craft) => {
+                            // Nothing on this row could be priced. Printing
+                            // $0.00 five times reads as "nothing owed", which
+                            // is the opposite of what is known — see
+                            // isWhollyUnpriced.
+                            const blank = isWhollyUnpriced(craft);
+                            const cell = (value: number) =>
+                              blank ? <span className="text-ink-muted">—</span> : money(value);
+                            return (
+                            <tr key={craft.craftClassificationId} className="border-t border-line-row">
+                              <td className="py-1.5">
+                                {craft.craftLabel}
+                                {craft.uncomputedHours > 0 && (
+                                  <span className="ml-2 text-xs text-tag-amber-ink">
+                                    {formatHours(craft.uncomputedHours)} hrs unpriced
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-1.5 text-right tabular-nums">{formatHours(craft.hours)}</td>
+                              <td className="py-1.5 text-right tabular-nums">{cell(craft.components.pension)}</td>
+                              <td className="py-1.5 text-right tabular-nums">{cell(craft.components.vacation)}</td>
+                              <td className="py-1.5 text-right tabular-nums">
+                                {cell(craft.components.healthWelfare)}
+                              </td>
+                              <td className="py-1.5 text-right tabular-nums">{cell(craft.components.training)}</td>
+                              <td className="py-1.5 text-right font-medium tabular-nums">{cell(craft.total)}</td>
+                            </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  );
+                })}
+
+                <p className="text-sm text-ink-body">
+                  <span className="font-mono text-ink-label">{money(remittance.total)}</span> across{" "}
+                  {formatHours(remittance.totalHours)} hours.
+                  {remittance.uncomputedHours > 0 && (
                     <span className="text-tag-amber-ink">
-                      No ratio rule recorded for this local — nothing to measure against
+                      {" "}
+                      {formatHours(remittance.uncomputedHours)} of those hours could not be priced — no craft tag, or no
+                      rate schedule in force on the day — so this total is short by whatever they are
+                      worth. {remittance.uncomputedNames.join(", ")}.
                     </span>
                   )}
                 </p>
-
-                <ul className="mt-2 flex flex-col gap-1">
-                  {review.days
-                    .filter((day) => day.status !== "NOT_APPLICABLE")
-                    .map((day) => (
-                      <li key={day.date} className="text-sm">
-                        <span className="font-mono text-xs text-ink-muted">{day.date}</span>{" "}
-                        <span className={STATUS_TONE[day.status]}>{STATUS_LABEL[day.status]}</span>
-                        <span className="text-ink-muted">
-                          {" "}
-                          · {formatHours(day.journeymanHours)} jrny / {formatHours(day.apprenticeHours)} appr
-                          {day.allowedApprenticeHours !== null && ` (allows ${formatHours(day.allowedApprenticeHours)})`}
-                          {day.unclassifiedHours > 0 &&
-                            ` · ${formatHours(day.unclassifiedHours)} hrs unclassified: ${day.unclassifiedNames.join(", ")}`}
-                        </span>
-                      </li>
-                    ))}
-                  {review.days.every((day) => day.status === "NOT_APPLICABLE") && (
-                    <li className="text-sm text-ink-muted">No apprentice hours this month.</li>
-                  )}
-                </ul>
               </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* --------------------------------------- apprenticeship --- */}
-      <section className="mb-10" data-tour="uc-apprenticeships">
-        <h2 className="mb-1 text-sm font-semibold text-ink-label">Apprenticeship programs</h2>
-        <p className="mb-3 text-xs text-ink-muted">
-          The registration itself — sponsor, program number, classroom hours and the sign-offs
-          that close a period. On-the-job hours are read from the timesheets and stored nowhere
-          here; a period is closed by a signature, never by an hour count reaching a line.
-        </p>
-        <p className="mb-3 text-xs text-tag-amber-ink/80">
-          {/* Browser testing found this section reading "30 hrs" inches from
-              "No hours logged this month" for the same person. Both were true
-              under different windows, and nothing said so. */}
-          Ignores the month selected above. An indenture runs for years, so these hours are
-          counted from the current period&apos;s start — not from the month the rest of this page
-          is showing.
-        </p>
-        <div className="mb-3">
-          <ApprenticeshipForm
-            team={team}
-            crafts={crafts.map((c) => ({ id: c.id, label: c.name }))}
-          />
-        </div>
-        <ApprenticeshipPanel rows={apprenticeships} canDelete={currentUser.role === "OWNER"} />
-      </section>
-
-      {/* ------------------------------------------ DAS committees --- */}
-      <section className="mb-10" data-tour="uc-committees">
-        <h2 className="mb-1 text-sm font-semibold text-ink-label">Apprenticeship committees</h2>
-        <p className="mb-3 text-xs text-ink-muted">
-          Who the DAS 140 and DAS 142 notices on a California public works job are sent to — one
-          committee per craft, per geographic area. C Stream holds no directory of them and will not
-          invent one: look yours up on DIR&rsquo;s own list, record it once here, and every job can
-          address its notices from it. The notices themselves live on each job&rsquo;s Compliance tab,
-          where the deadline is.
-        </p>
-        <ApprenticeshipCommitteePanel
-          committees={committees}
-          crafts={crafts.map((c) => ({ id: c.id, label: c.name }))}
-          canDelete={currentUser.role === "OWNER"}
-        />
-      </section>
-
-      {/* ------------------------------------------ who works as what --- */}
-      <section className="mb-8" data-tour="uc-worker-crafts">
-        <h2 className="mb-1 text-sm font-semibold text-ink-label">Who works under each craft</h2>
-        <p className="mb-3 text-xs text-ink-muted">
-          The phone&apos;s craft picker shows each person only the crafts ticked for them — one
-          ticked craft is picked for them automatically. Nobody ticked for a person means they are
-          shown every craft, so this never stops anyone logging hours.
-        </p>
-        <WorkerCraftsPanel
-          people={workerCrafts}
-          crafts={crafts.map((c) => ({ id: c.id, label: c.name }))}
-        />
-      </section>
-
-      {/* ----------------------------------------------------- setup --- */}
-      <section id="setup" className="scroll-mt-6" data-tour="uc-setup">
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-ink-label">Locals, classifications and rates</h2>
-          <span className="text-xs text-ink-muted">
-            {untiered.length > 0 && (
-              <span className="text-tag-amber-ink">
-                {untiered.length} classification{untiered.length === 1 ? "" : "s"} not tiered
-              </span>
             )}
-            {untiered.length > 0 && unpriced.length > 0 && " · "}
-            {unpriced.length > 0 && (
-              <span className="text-tag-amber-ink">
-                {unpriced.length} with no rate
-              </span>
+          </section>
+
+          {/* ----------------------------------------------------- ratio --- */}
+          <section className="mb-10" data-tour="uc-ratio">
+            <h2 className="mb-3 text-sm font-semibold text-ink-label">Apprentice ratio</h2>
+
+            {ratioReviews.length === 0 ? (
+              <p className="text-sm text-ink-body">
+                No hours logged this month, so there is no ratio to judge. Log them on the job, under{" "}
+                <Link href="/jobs" className="text-link hover:underline">
+                  Crew &amp; time
+                </Link>
+                .
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {(flagged.length > 0 || incomplete.length > 0) && (
+                  <p className="text-sm text-ink-body">
+                    {flagged.length > 0 && (
+                      <span className="text-tag-rose-ink">
+                        {flagged.length} {flagged.length === 1 ? "job" : "jobs"} went over the ratio.{" "}
+                      </span>
+                    )}
+                    {incomplete.length > 0 && (
+                      <span className="text-tag-amber-ink">
+                        {incomplete.length} {incomplete.length === 1 ? "job has" : "jobs have"} days that
+                        can&apos;t be judged.
+                      </span>
+                    )}
+                  </p>
+                )}
+
+                {ratioReviews.map((review) => (
+                  <div
+                    key={`${review.jobId}-${review.unionLocalId}`}
+                    className="rounded-xl border border-line-card bg-surface p-4"
+                  >
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <Link href={`/jobs/${review.jobId}`} className="text-ink">
+                        {review.jobName}
+                      </Link>
+                      <span className="text-xs text-ink-muted">{review.unionLocalLabel}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-ink-muted">
+                      {review.rule ? (
+                        <>
+                          {ratioLabel(review.rule)}
+                          {review.rule.programStandardReference && ` · ${review.rule.programStandardReference}`}
+                        </>
+                      ) : (
+                        <span className="text-tag-amber-ink">
+                          No ratio rule recorded for this local — nothing to measure against
+                        </span>
+                      )}
+                    </p>
+
+                    <ul className="mt-2 flex flex-col gap-1">
+                      {review.days
+                        .filter((day) => day.status !== "NOT_APPLICABLE")
+                        .map((day) => (
+                          <li key={day.date} className="text-sm">
+                            <span className="font-mono text-xs text-ink-muted">{day.date}</span>{" "}
+                            <span className={STATUS_TONE[day.status]}>{STATUS_LABEL[day.status]}</span>
+                            <span className="text-ink-muted">
+                              {" "}
+                              · {formatHours(day.journeymanHours)} jrny / {formatHours(day.apprenticeHours)} appr
+                              {day.allowedApprenticeHours !== null && ` (allows ${formatHours(day.allowedApprenticeHours)})`}
+                              {day.unclassifiedHours > 0 &&
+                                ` · ${formatHours(day.unclassifiedHours)} hrs unclassified: ${day.unclassifiedNames.join(", ")}`}
+                            </span>
+                          </li>
+                        ))}
+                      {review.days.every((day) => day.status === "NOT_APPLICABLE") && (
+                        <li className="text-sm text-ink-muted">No apprentice hours this month.</li>
+                      )}
+                    </ul>
+                  </div>
+                ))}
+              </div>
             )}
-          </span>
-        </div>
+          </section>
 
-        <p className="mb-3 text-xs text-ink-muted">
-          Everything above reads from here. A classification with no tier can&apos;t be counted on
-          either side of a ratio, and one with no rate in force on a date can&apos;t be priced — both
-          are reported as such rather than guessed.
-        </p>
+        </>
+      )}
 
-        <div className="mb-4">
-          <UnionLocalForm />
-        </div>
+      {tab === "apprenticeships" && (
+        <>
+          <Disclosure summary="How this works" className="mb-8">
+            <div className="flex flex-col gap-3 text-sm text-ink-body">
+              <p>
+                <span className="font-medium text-ink-label">Apprenticeship programs</span> hold the
+                registration itself — sponsor, program number, classroom hours and the sign-offs that
+                close a period. On-the-job hours are read from the timesheets and stored nowhere here; a
+                period is closed by a signature, never by an hour count reaching a line.
+              </p>
+              <p>
+                <span className="font-medium text-ink-label">Apprenticeship committees</span> are who
+                the DAS 140 and DAS 142 notices on a California public works job are sent to — one
+                committee per craft, per geographic area. C Stream holds no directory of them and will not
+                invent one: look yours up on DIR&rsquo;s own list, record it once here, and every job can
+                address its notices from it. The notices themselves live on each job&rsquo;s Compliance
+                tab, where the deadline is.
+              </p>
+            </div>
+          </Disclosure>
 
-        {setup.length === 0 ? (
-          <p className="text-ink-body">
-            No locals recorded. Add the one you work under and its classifications — nothing here is
-            seeded, because there is no verified source for real local numbers and a wrong entry would
-            attribute your CBA to the wrong hall.
-          </p>
-        ) : (
-          <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface">
-            {setup.map((local) => (
-              <UnionLocalCard
-                key={local.agreementId}
-                local={local}
-                today={today}
-                canDelete={currentUser.role === "OWNER"}
+          {/* --------------------------------------- apprenticeship --- */}
+          <section className="mb-10" data-tour="uc-apprenticeships">
+            <h2 className="mb-1 text-sm font-semibold text-ink-label">Apprenticeship programs</h2>
+            <p className="mb-3 text-xs text-tag-amber-ink/80">
+              {/* Browser testing found this section reading "30 hrs" inches from
+                  "No hours logged this month" for the same person. Both were true
+                  under different windows, and nothing said so. Still true across
+                  tabs: This month is a calendar month, this is not. */}
+              Hours count from each apprentice&apos;s current period start, not a calendar month.
+            </p>
+            <div className="mb-3">
+              <ApprenticeshipForm
+                team={team}
+                crafts={crafts.map((c) => ({ id: c.id, label: c.name }))}
               />
-            ))}
-          </ul>
-        )}
-      </section>
+            </div>
+            <ApprenticeshipPanel rows={apprenticeships} canDelete={currentUser.role === "OWNER"} />
+          </section>
+
+          {/* ------------------------------------------ DAS committees --- */}
+          <section className="mb-10" data-tour="uc-committees">
+            <h2 className="mb-3 text-sm font-semibold text-ink-label">Apprenticeship committees</h2>
+            <ApprenticeshipCommitteePanel
+              committees={committees}
+              crafts={crafts.map((c) => ({ id: c.id, label: c.name }))}
+              canDelete={currentUser.role === "OWNER"}
+            />
+          </section>
+        </>
+      )}
+
+      {tab === "setup" && (
+        <>
+          <Disclosure summary="How this works" className="mb-8">
+            <div className="flex flex-col gap-3 text-sm text-ink-body">
+              <p>
+                <span className="font-medium text-ink-label">Locals, classifications and rates</span>{" "}
+                are what the other two tabs read from. A classification with no tier can&apos;t be
+                counted on either side of a ratio, and one with no rate in force on a date can&apos;t be
+                priced — both are reported as such rather than guessed.
+              </p>
+              <p>
+                <span className="font-medium text-ink-label">Who works under each craft:</span> the
+                phone&apos;s craft picker shows each person only the crafts ticked for them — one ticked
+                craft is picked for them automatically. Nobody ticked for a person means they are shown
+                every craft, so this never stops anyone logging hours.
+              </p>
+            </div>
+          </Disclosure>
+
+          {/* ------------------------------------------ who works as what --- */}
+          <section className="mb-8" data-tour="uc-worker-crafts">
+            <h2 className="mb-3 text-sm font-semibold text-ink-label">Who works under each craft</h2>
+            <WorkerCraftsPanel
+              people={workerCrafts}
+              crafts={crafts.map((c) => ({ id: c.id, label: c.name }))}
+            />
+          </section>
+
+          {/* ----------------------------------------------------- setup --- */}
+          <section id="setup" className="scroll-mt-6" data-tour="uc-setup">
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-sm font-semibold text-ink-label">Locals, classifications and rates</h2>
+              <span className="text-xs text-ink-muted">
+                {untiered.length > 0 && (
+                  <span className="text-tag-amber-ink">
+                    {untiered.length} classification{untiered.length === 1 ? "" : "s"} not tiered
+                  </span>
+                )}
+                {untiered.length > 0 && unpriced.length > 0 && " · "}
+                {unpriced.length > 0 && (
+                  <span className="text-tag-amber-ink">
+                    {unpriced.length} with no rate
+                  </span>
+                )}
+              </span>
+            </div>
+
+            <div className="mb-4">
+              <UnionLocalForm />
+            </div>
+
+            {setup.length === 0 ? (
+              <p className="text-ink-body">
+                No locals recorded. Add the one you work under and its classifications — nothing here is
+                seeded, because there is no verified source for real local numbers and a wrong entry would
+                attribute your CBA to the wrong hall.
+              </p>
+            ) : (
+              <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface">
+                {setup.map((local) => (
+                  <UnionLocalCard
+                    key={local.agreementId}
+                    local={local}
+                    today={today}
+                    canDelete={currentUser.role === "OWNER"}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
+      )}
     </PageShell>
   );
 }

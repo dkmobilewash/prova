@@ -115,9 +115,11 @@ export function fieldReportJobWhere(activeJob: string | null): { jobId?: string 
 /** The chip hrefs. One parameter today; built with URLSearchParams anyway so
  * that adding a second one cannot accidentally drop the first, which is the
  * failure `/photos` documents at length. */
-export function fieldReportsFilterHref(job: string | null): string {
+export function fieldReportsFilterHref(job: string | null, all = false): string {
   const params = new URLSearchParams();
   if (job) params.set("job", job);
+  // SeeAll's "See all N": every report, on the same job filter.
+  if (all) params.set("all", "1");
   const query = params.toString();
   return query ? `/field-reports?${query}` : "/field-reports";
 }

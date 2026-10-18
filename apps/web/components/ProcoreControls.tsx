@@ -25,9 +25,9 @@ export function ProcoreControls({ state, startHref }: { state: FeedCardState; st
 
   if (state === "not-set-up") {
     return (
-      <p className="max-w-[16rem] text-right text-xs text-ink-muted" data-tour="procore-not-set-up">
-        Not set up on this install yet. Whoever runs C Stream for you has to add the Procore app keys
-        before this can connect.
+      <p className="text-right text-xs text-ink-muted" data-tour="procore-not-set-up">
+        {/* Said once, at the top of the page (declutter). */}
+        Needs app keys
       </p>
     );
   }

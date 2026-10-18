@@ -7,6 +7,8 @@ import { QUICKBOOKS_OAUTH_STATE_COOKIE, type QuickBooksOAuthCookiePayload } from
 
 function settingsRedirect(request: NextRequest, status: "connected" | "error", detail?: string) {
   const url = new URL("/settings", request.url);
+  // Lands on the QuickBooks tab, where the connection it reports on lives.
+  url.searchParams.set("tab", "quickbooks");
   url.searchParams.set("qb", status);
   if (detail) {
     url.searchParams.set("qb_detail", detail);

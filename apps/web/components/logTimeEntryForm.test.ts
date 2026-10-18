@@ -220,7 +220,9 @@ describe("where the crew tab puts it", () => {
     const { readFileSync } = await import("node:fs");
     const page = readFileSync(`${process.cwd()}/app/(app)/jobs/[id]/(tabs)/crew/page.tsx`, "utf8");
     const form = page.indexOf("<LogTimeEntryForm");
-    const history = page.indexOf("job.timeEntries.map((entry) => (");
+    // Declutter (2026-10-13): the entries are now this week's list under the
+    // weekly table, then a capped history; the form comes before both.
+    const history = page.indexOf("{thisWeekEntries.map(timeEntryRow)}");
     expect(form).toBeGreaterThan(-1);
     expect(history).toBeGreaterThan(-1);
     expect(form).toBeLessThan(history);

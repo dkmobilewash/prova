@@ -96,7 +96,7 @@ describe("the bid watcher", () => {
     expect(out).toMatchObject({ ran: true });
 
     expect(byKind("new_invitation")).toEqual([
-      expect.objectContaining({ severity: "info", bidInvitationId: "bNew", dedupeKey: "new_invitation:bNew", fixHref: "/bids#bNew" }),
+      expect.objectContaining({ severity: "info", bidInvitationId: "bNew", dedupeKey: "new_invitation:bNew", fixHref: "/ai/bids/bNew" }),
     ]);
     expect(byKind("due_soon")).toEqual([
       expect.objectContaining({ severity: "warn", dedupeKey: "due_soon:bSoon:2026-10-14", title: "Due in 2 days: Maple School" }),

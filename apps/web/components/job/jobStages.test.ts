@@ -98,12 +98,11 @@ describe("jobStages", () => {
   it("on a bid, the Contract step opens the Contract signature section first", () => {
     const bid = { ...base, status: "ESTIMATE", lifecycleStage: "awarded" as const, invoiceCount: 0, latestPayApp: null };
     const contract = jobStages(bid)[1];
-    expect(contract.links[0]).toEqual({ href: "/jobs/job-1#contract-signature", label: "Contract signature" });
-    // The step's own link is its first one, and the nav still knows the
-    // Overview page belongs to this step.
-    expect(selectedStageKey(jobStages(bid), "/jobs/job-1")).toBe("contract");
+    expect(contract.links[0]).toEqual({ href: "/jobs/job-1#contract-signature", label: "Contract signature", overview: true });
+    // Arriving by the step's own link outlines the step.
+    expect(selectedStageKey(jobStages(bid), "/jobs/job-1", "", "#contract-signature")).toBe("contract");
     // No section for a viewer not shown job money: plain Overview.
-    expect(jobStages({ ...bid, showsJobMoney: false })[1].links[0]).toEqual({ href: "/jobs/job-1", label: "Overview" });
+    expect(jobStages({ ...bid, showsJobMoney: false })[1].links[0]).toEqual({ href: "/jobs/job-1", label: "Overview", overview: true });
     // A contracted job keeps Overview first.
     expect(jobStages(base)[1].links[0].label).toBe("Overview");
   });
@@ -208,12 +207,35 @@ describe("jobStages", () => {
   it("selects the stage holding the open page", () => {
     const stages = jobStages(base);
     expect(selectedStageKey(stages, "/jobs/job-1/retainage")).toBe("billing");
-    expect(selectedStageKey(stages, "/jobs/job-1")).toBe("contract");
     // "Estimate" at every stage: on a contracted job the estimate route is
     // the Estimate step's, not filed under Contract as "Change orders".
     expect(selectedStageKey(stages, "/jobs/job-1/estimate")).toBe("estimate");
     expect(selectedStageKey(stages, "/jobs/job-1/photos")).toBe("crew");
     expect(selectedStageKey(stages, "/jobs/job-1/pay-applications/x")).toBeNull();
+  });
+
+  // Density audit 2026-10-13 named three highlights as wrong. Two are the
+  // stage that OWNS the tab (Retainage is a Billing page, Field reports a
+  // Crew one) and stay; the third was a real bug — a bid's Overview
+  // outlined Contract while the job's number sat on Estimate.
+  it("the audit's three cases: Retainage → Billing, Field reports → Crew, a bid's Overview → where the job is", () => {
+    const riverside = jobStages(base);
+    expect(selectedStageKey(riverside, "/jobs/job-1/retainage")).toBe("billing");
+    expect(selectedStageKey(riverside, "/jobs/job-1/field-reports")).toBe("crew");
+    const lakeshore = jobStages({ ...base, status: "ESTIMATE", lifecycleStage: "bidding", invoiceCount: 0, latestPayApp: null });
+    expect(selectedStageKey(lakeshore, "/jobs/job-1")).toBe("estimate");
+    expect(selectedStageKey(lakeshore, "/jobs/job-1/compliance")).toBe("contract");
+  });
+
+  it("the Overview outlines the job's CURRENT stage, whatever it is", () => {
+    expect(selectedStageKey(jobStages(base), "/jobs/job-1")).toBe("billing");
+    expect(selectedStageKey(jobStages({ ...base, invoiceCount: 0, latestPayApp: null }), "/jobs/job-1")).toBe("crew");
+    const awarded = jobStages({ ...base, status: "CONTRACTED", lifecycleStage: "awarded", invoiceCount: 0, latestPayApp: null });
+    expect(selectedStageKey(awarded, "/jobs/job-1")).toBe("contract");
+    // Every stage done: nothing is "current", so the last one.
+    expect(selectedStageKey(jobStages({ ...base, status: "COMPLETE", lifecycleStage: "closed" }), "/jobs/job-1")).toBe("closeout");
+    // A hash that is not the step's own section changes nothing.
+    expect(selectedStageKey(jobStages(base), "/jobs/job-1", "", "#schedule")).toBe("billing");
   });
 
   // Guidelines review 2026-10-10: `pathname === href` could never match a

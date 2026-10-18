@@ -15,19 +15,19 @@ export const wipWalkthrough: Walkthrough = {
       anchor: "wip-table",
       title: "Every job, side by side",
       body:
-        "One row per job: what it is worth, what it has cost so far, how much of it you have earned, and how much you have billed. The last row adds them all up. Slide the table sideways to see the rest of the columns — the job name stays put.",
+        "One row per job: what it is worth, how far along it is, how much of it you have earned, and how much you have billed. The last row adds them all up. Press Show the cost breakdown for the cost, profit and coverage columns — the job name stays put while the wider table slides sideways.",
     },
     {
       anchor: "wip-billing",
       title: "Ahead or behind on billing",
       body:
-        "Overbilled means you have billed more than you have earned, so some of that money is not yours yet. Underbilled is the opposite — you have done work you have not charged for. Both are normal; a big one is worth a look.",
+        "Point at a heading for what it means. Overbilled is billing more than you have earned, so some of that money is not yours yet; underbilled is work done you have not charged for. Both are normal, and a big one is worth a look.",
     },
     {
       anchor: "wip-coverage",
       title: "Why some cells have a dash",
       body:
-        "A dash is not a zero. It means too little of that job has been estimated for the figure to mean anything, so the page says nothing instead of guessing. The coverage columns on the right tell you how much of the job is covered.",
+        "A dash is not a zero. It means too little of that job has been estimated for the figure to mean anything, so the page says nothing instead of guessing. The coverage columns in the cost breakdown tell you how much of the job is covered.",
     },
     {
       anchor: "wip-download",

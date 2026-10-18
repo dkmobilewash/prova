@@ -10,6 +10,7 @@ import {
 } from "@/components/SafetyIncidentFields";
 import { classificationLabel, isNearMiss, isRecordable, outcomeLabel } from "@/components/safetyLabels";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Disclosure } from "@/components/Disclosure";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { Spinner } from "@/components/Spinner";
 
@@ -145,7 +146,11 @@ export function SafetyIncidentRow({
           </span>
         </div>
 
-        <p className="mt-1 text-sm text-ink-label">{incident.description}</p>
+        {/* What happened opens on click (density audit #31); the line
+            under it — date, classification, outcome — answers the log. */}
+        <Disclosure variant="plain" className="mt-1" summary="What happened">
+          <p className="-mt-3 text-sm text-ink-label">{incident.description}</p>
+        </Disclosure>
 
         {/* ink-body, not ink-muted: the muted level is under the 4.5 text floor. */}
         <p className="mt-1 text-xs text-ink-body">

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition, type ReactNode } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   addCloseoutItem,
@@ -32,10 +32,10 @@ import {
 } from "@/components/closeoutLabels";
 import { localToday } from "@/components/localToday";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
-import { closeoutChip } from "@/components/closeoutPackageLabels";
-import type { CloseoutBlocker, CloseoutStage } from "@/lib/closeout-readiness";
 import { jobPickerLabel } from "@/components/jobLabels";
 import { Spinner } from "@/components/Spinner";
+import { CloseoutPackagePanel, type CloseoutSubmissionData } from "@/components/CloseoutPackagePanel";
+import type { CloseoutReadiness } from "@/lib/closeout-readiness";
 
 export type CloseoutJobData = {
   id: string;
@@ -62,37 +62,17 @@ export function CloseoutJobCard({
   job,
   today,
   canDelete,
-  /** Rendered above the checklist. The closeout-package section lives in
-   * its own component (CloseoutPackagePanel) and is passed in rather than
-   * built here, so this card stays the checklist/warranty/callbacks card
-   * it already was. */
-  packageSlot,
-  /** The package stage from lib/closeout-readiness. The chip used to be
-   * derived from the CHECKLIST ALONE, so a job with every box ticked read
-   * "Closeout complete" directly above a panel reading "Not ready to
-   * submit — 1 punch item still open". Browser testing caught exactly
-   * that. Two computations of one concept is the bug; this chip now
-   * defers to the same derivation the panel uses, and says only what a
-   * checklist can actually tell you. */
-  packageStage,
-  /** The blockers from lib/closeout-readiness — the SAME array the package
-   * panel renders below, not a second reading of the checklist.
-   *
-   * The third time this chip disagreed with that panel: a checklist made
-   * up ENTIRELY OF OPTIONAL ITEMS has no required items, so
-   * isCloseoutComplete was false and outstandingRequired was empty, and
-   * the chip fell through to an amber "0 still outstanding" sitting
-   * directly above a panel saying no checklist exists. Both props are
-   * required rather than optional on purpose: the absent-prop default
-   * would be "nothing is blocking", which is the dangerous direction. */
-  packageBlockers,
+  /** The closeout-package section, rendered above the checklist by its own
+   * component (CloseoutPackagePanel). Passed as DATA, not as an element:
+   * /closeout builds one card per job inside a `.map`, and a client element
+   * made there and handed over as a prop arrives keyless inside this card's
+   * children — React's "Each child in a list should have a unique key". */
+  pkg,
 }: {
   job: CloseoutJobData;
   today: string;
   canDelete: boolean;
-  packageSlot?: ReactNode;
-  packageStage: CloseoutStage;
-  packageBlockers: CloseoutBlocker[];
+  pkg?: { readiness: CloseoutReadiness; submissions: CloseoutSubmissionData[] };
 }) {
   const [openForm, setOpenForm] = useState<"none" | "item" | "warranty" | "request">("none");
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -134,12 +114,9 @@ export function CloseoutJobCard({
 
   const wState = warrantyState(job.warranty, today);
   const daysLeft = daysOfWarrantyLeft(job.warranty, today);
-  const openRequests = job.requests.filter(isOpen);
-
-  // Read out of the blockers the panel below renders, never recomputed
-  // from job.items. The derivation itself lives in closeoutPackageLabels so
-  // it can be tested — see closeoutPackageLabels.test.ts.
-  const chip = closeoutChip(packageBlockers, packageStage, job.items.length);
+  // No checklist/blocker chip here any more (declutter, 2026-10-13): the
+  // card opens under a /closeout row that already states the stage and
+  // what is holding it up, from the one derivation in closeout-readiness.
 
   const warrantyChip =
     wState === "ACTIVE"
@@ -149,7 +126,7 @@ export function CloseoutJobCard({
         : "bg-rail-hover text-ink-body";
 
   return (
-    <li className="flex flex-col gap-4 p-5">
+    <div className="flex flex-col gap-4 py-2">
       <div className="flex flex-wrap items-center gap-2">
         {/* Closeout is the last thing you do TO a job, so the job is the
             obvious next click. It was plain text, which made this page a
@@ -160,19 +137,20 @@ export function CloseoutJobCard({
         >
           {jobPickerLabel(job)}
         </Link>
-        <span className={`rounded px-1.5 py-0.5 text-xs ${chip.className}`}>{chip.label}</span>
         <span className={`rounded px-1.5 py-0.5 text-xs ${warrantyChip}`}>
           {warrantyStateLabel(wState)}
           {daysLeft !== null && ` · ${daysLeft} day${daysLeft === 1 ? "" : "s"} left`}
         </span>
-        {openRequests.length > 0 && (
-          <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">
-            {openRequests.length} open callback{openRequests.length === 1 ? "" : "s"}
-          </span>
-        )}
       </div>
 
-      {packageSlot}
+      {pkg && (
+        <CloseoutPackagePanel
+          jobId={job.id}
+          readiness={pkg.readiness}
+          submissions={pkg.submissions}
+          canDelete={canDelete}
+        />
+      )}
 
       {/* ------------------------------------------------------ checklist */}
       <section data-tour="closeout-checklist">
@@ -673,6 +651,6 @@ export function CloseoutJobCard({
       {error && openForm === "none" && !editingItemId && !editingRequestId && (
         <p className="text-sm text-danger">{error}</p>
       )}
-    </li>
+    </div>
   );
 }

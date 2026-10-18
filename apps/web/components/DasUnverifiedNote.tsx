@@ -1,3 +1,4 @@
+import { Disclosure } from "@/components/Disclosure";
 import { DAS_UNVERIFIED_FOR_COUNSEL } from "@/lib/das-forms";
 
 /**
@@ -20,12 +21,16 @@ export function DasUnverifiedNote() {
   if (DAS_UNVERIFIED_FOR_COUNSEL.length === 0) return null;
 
   return (
-    <details className="mt-4 rounded-lg border border-line-card bg-surface p-3">
-      <summary className="cursor-pointer text-xs text-tag-amber-ink">
-        {DAS_UNVERIFIED_FOR_COUNSEL.length} rules behind these deadlines have NOT been confirmed
-        against DIR — read this before you rely on a date
-      </summary>
-      <p className="mt-2 text-xs text-ink-muted">
+    <Disclosure
+      className="mt-4"
+      summary={
+        <span className="text-xs font-normal text-tag-amber-ink">
+          {DAS_UNVERIFIED_FOR_COUNSEL.length} rules behind these deadlines have NOT been confirmed
+          against DIR — read this before you rely on a date
+        </span>
+      }
+    >
+      <p className="text-xs text-ink-muted">
         Every rule below was found by web search and read at one remove, from guidance that
         summarises the regulation rather than from the regulation. None of it has been clicked through
         to DIR&rsquo;s own pages by a person. The deadlines on this screen are worth having and are not
@@ -51,6 +56,6 @@ export function DasUnverifiedNote() {
           </li>
         ))}
       </ul>
-    </details>
+    </Disclosure>
   );
 }
