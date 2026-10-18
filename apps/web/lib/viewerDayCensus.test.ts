@@ -563,9 +563,16 @@ describe("the verdict", () => {
     //
     // Listed here rather than exempted, because the point of this test is that
     // every clock read in the app is one somebody chose.
+    //
+    // `labelRows` is the third, and correct for the same reason as the first:
+    // a label file records WHEN a sheet was reviewed, and a model trained in
+    // six months needs to know whether a label predates a change to the
+    // feature extractor. That ordering is an instant, and a calendar day
+    // would lose it.
     expect(other).toEqual([
       "apps/web/components/AnswerKeyPanel.tsx  new Date().toISOString()",
       "apps/web/components/QuickBooksReconcile.tsx  new Date().toISOString()",
+      "apps/web/lib/takeoff/labelRows.ts  new Date().toISOString()",
     ]);
   });
 });
