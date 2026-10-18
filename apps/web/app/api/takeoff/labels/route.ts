@@ -70,7 +70,7 @@ export async function POST(request: Request) {
     secondsSpent?: number;
     feetPerUnit?: number;
     reviewComplete?: boolean;
-    unsure?: number;
+    unreviewed?: number;
     candidates: LabelCandidate[];
     verdicts?: LabelVerdict[];
   };
@@ -84,7 +84,7 @@ export async function POST(request: Request) {
     reviewComplete: input.reviewComplete === true,
     candidates: input.candidates,
     verdicts: input.verdicts ?? [],
-    unreviewed: input.unsure ?? 0,
+    unreviewed: input.unreviewed ?? 0,
   });
   const written = await writeLabels(parsed.set, parsed.sheet, file);
   if (!written.ok) {

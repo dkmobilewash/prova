@@ -1,3 +1,4 @@
+import { duplicatePairs, type DuplicatePair } from "./duplicateCandidates";
 import { type AnswerKey, type KeyWall } from "@/lib/takeoff/answerKey";
 
 /**
@@ -62,14 +63,41 @@ export type Candidate = {
 export type ReviewState = {
   candidates: Candidate[];
   verdicts: Record<string, Verdict>;
+  /** One wall offered twice — see `duplicateCandidates.ts`. Empty when the
+   *  caller did not supply a scale to measure them in. */
+  duplicates: DuplicatePair[];
   /** What the reviewer has traced by hand, already accepted by definition. */
   traced: Candidate[];
 };
 
-export function startReview(candidates: readonly Candidate[]): ReviewState {
+export function startReview(
+  candidates: readonly Candidate[],
+  /** The sheet's scale, so duplicates can be measured in feet. Omit it and
+   *  no duplicate is looked for, which is what every existing caller gets. */
+  feetPerUnit?: number,
+): ReviewState {
   const verdicts: Record<string, Verdict> = {};
   for (const one of candidates) verdicts[one.id] = "unreviewed";
-  return { candidates: [...candidates], verdicts, traced: [] };
+
+  // ── THE SHORTER OF A DUPLICATE PAIR STARTS REJECTED ──
+  //
+  // Not hidden and not decided: it is a visible default the reviewer can flip
+  // in one keystroke, and both halves of the pair say so on screen. Starting
+  // it `unreviewed` would leave the reviewer to notice two near-identical
+  // runs among a hundred and forty, which is what happened on Camp Bow Wow
+  // A101 — one pair was caught by eye and one was not, and accepting both
+  // bills the wall twice.
+  //
+  // The longer one is left `unreviewed`, because whether it is a wall at all
+  // is still the reviewer's question. All this settles is which of the two
+  // offers to answer.
+  const duplicates =
+    feetPerUnit === undefined || !(feetPerUnit > 0)
+      ? []
+      : duplicatePairs(candidates, feetPerUnit);
+  for (const pair of duplicates) verdicts[pair.drop] = "not-a-wall";
+
+  return { candidates: [...candidates], verdicts, traced: [], duplicates };
 }
 
 export function setVerdict(state: ReviewState, ids: readonly string[], verdict: Verdict): ReviewState {

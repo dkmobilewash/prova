@@ -285,7 +285,13 @@ export function AnswerKeyPanel({
           // Only a sheet the reviewer finished can say that an unproposed
           // place is NOT a wall — see `labelRows`.
           reviewComplete: progress.reviewed >= progress.total,
-          unsure: progress.unsure,
+          // ── THE COUNT OF WHAT NOBODY LOOKED AT ──
+          //
+          // This sent `progress.unsure` under the name `unreviewed`, back
+          // when they were one number. They are not: unsure is reviewed and
+          // excluded, unreviewed is nobody looked. The file now carries both
+          // and the second has to be the real one.
+          unreviewed: Math.max(0, progress.total - progress.reviewed),
           candidates: pairings,
           verdicts,
         }),
@@ -472,6 +478,57 @@ export function AnswerKeyPanel({
         ) : null}
 
       </div>
+
+      {/*
+        * ── ONE WALL OFFERED TWICE, SAID OUT LOUD ──
+        *
+        * The shorter of each pair starts rejected and both halves say so, so
+        * a reviewer meets the decision rather than having to notice two
+        * near-identical runs among a hundred and forty. On Camp Bow Wow A101
+        * one such pair was caught by eye and one was not.
+        */}
+      {state.duplicates.length > 0 ? (
+        <div
+          className="rounded-md border border-line-card bg-surface p-2"
+          data-takeoff="key-duplicates"
+        >
+          <p className="text-xs font-semibold text-ink">
+            {state.duplicates.length} wall{state.duplicates.length === 1 ? "" : "s"} offered twice
+          </p>
+          <p className="mt-0.5 text-[11px] text-ink-muted">
+            The shorter of each pair is already marked <b>not a wall</b>. Accepting
+            both would bill the wall twice. Press <b>A</b> on either to change it.
+          </p>
+          <ul className="mt-1 flex flex-col gap-0.5">
+            {state.duplicates.map((pair) => {
+              const keep = state.candidates.find((c) => c.id === pair.keep);
+              const drop = state.candidates.find((c) => c.id === pair.drop);
+              if (keep === undefined || drop === undefined) return null;
+              return (
+                <li key={`${pair.keep}-${pair.drop}`} className="text-[11px] text-ink-body">
+                  <button
+                    type="button"
+                    onClick={() => onFocus(pair.keep)}
+                    className="text-link hover:text-link-hover"
+                  >
+                    {keep.lengthFeet.toFixed(1)} ft
+                  </button>{" "}
+                  kept ·{" "}
+                  <button
+                    type="button"
+                    onClick={() => onFocus(pair.drop)}
+                    className="text-link hover:text-link-hover"
+                  >
+                    {drop.lengthFeet.toFixed(1)} ft
+                  </button>{" "}
+                  dropped — {pair.apartFeet < 0.1 ? "on the same line" : `${(pair.apartFeet * 12).toFixed(0)} in apart`},{" "}
+                  {(pair.share * 100).toFixed(0)}% shared
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="rounded-md border border-line-card bg-surface p-2">
         <p className="text-xs text-ink" data-takeoff="key-progress">

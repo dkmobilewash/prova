@@ -1035,7 +1035,18 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
                         }),
                       onSetAside: (counts) =>
                         setSetAsideByPage((prev) => setOnThisSheet(prev, page, counts)),
-                      onCandidates: (candidates) => setKeyState(startReview(candidates)),
+                      // The scale, so `startReview` can measure duplicates in
+                      // FEET. Without it no duplicate is looked for and the
+                      // panel silently loses the check.
+                      onCandidates: (candidates) =>
+                        setKeyState(
+                          startReview(
+                            candidates,
+                            currentSheet?.calibration != null
+                              ? (feetPerPageWidth(currentSheet.calibration) ?? 0)
+                              : 0,
+                          ),
+                        ),
                       onPairings: (rows) =>
                         setPairingsByPage((prev) => setOnThisSheet(prev, page, rows)),
                     }
