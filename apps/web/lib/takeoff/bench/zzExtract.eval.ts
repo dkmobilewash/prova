@@ -105,7 +105,16 @@ describe.skipIf(OUT === "")("training rows from the bench", () => {
             const label = isAWall(wall) ? 1 : 0;
             if (label === 1) positives += 1;
             rows += 1;
-            batch.push(JSON.stringify({ case: key.caseId, family: base.id, features, label }));
+            batch.push(
+              JSON.stringify({
+                case: key.caseId,
+                family: base.id,
+                features,
+                label,
+                // The metric is in FEET, so the row carries its own.
+                lengthFt: wall.lengthFeet,
+              }),
+            );
           },
         });
         if (batch.length > 0) appendFileSync(OUT, `${batch.join("\n")}\n`, "utf8");

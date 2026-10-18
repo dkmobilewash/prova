@@ -20,6 +20,23 @@ import type { StrokeSegment, WallCandidate } from "./wallVectors";
  * Features are therefore extracted for every pair `wallFromPair` accepts, and
  * the existing filters are recorded as FEATURES rather than applied.
  *
+ * ── A MISSING VALUE GETS ITS OWN COLUMN, NEVER A SENTINEL ──
+ *
+ * The first model trained on these put **196 of its 300 tree splits and 0.52
+ * of its importance** on `nearestScheduledDeltaIn`, which was −1 whenever the
+ * sheet had no wall-type schedule. In training it never was: every bench sheet
+ * carries one, so the column ranged 0 to 2.81 inches and −1 sat below every
+ * threshold the model had learned. On a real sheet without a schedule, each
+ * tree therefore sent every candidate down the "this is exactly a scheduled
+ * thickness" branch. **The sentinel failed toward YES**, and ELEVEN03's
+ * A4.B-Y2 came back 47% over.
+ *
+ * So a value that may be absent is now TWO columns: the value, zero when
+ * absent, and a `has…` flag beside it. A tree can then split on the flag and
+ * ignore the value, which is the thing it could not do before. Zero is used
+ * rather than −1 for the absent case so that a model which ignores the flag
+ * is merely wrong rather than confidently wrong in the dangerous direction.
+ *
  * ── THE ORDER OF THIS LIST IS A FILE FORMAT ──
  *
  * `wall-model.json` is trained against these columns in this order. Inserting
@@ -32,6 +49,7 @@ export const FEATURE_NAMES = [
   "lengthFt",
   "thicknessInches",
   "nearestScheduledDeltaIn",
+  "hasSchedule",
   "isScheduled",
   "faceRatio",
   "overlapShare",
@@ -39,12 +57,15 @@ export const FEATURE_NAMES = [
   "offOrthogonalDeg",
   "penDelta",
   "penMean",
+  "hasPenWidths",
   "layerSaysWall",
   "layerSaysNotWall",
   "layerUnknown",
   "parallelNeighbours",
   "neighbourSpacingCv",
+  "hasNeighbourSpacing",
   "nearestNeighbourThicknessRatio",
+  "hasNearestNeighbour",
   "localDensity",
   "inHatchSeries",
   "lengthToSheetSpan",
@@ -116,7 +137,8 @@ export function featuresFor(
   // lines is not.
   let nearest = Number.POSITIVE_INFINITY;
   for (const named of scheduledIn) nearest = Math.min(nearest, Math.abs(named - thicknessIn));
-  const nearestDelta = Number.isFinite(nearest) ? nearest : -1;
+  const hasSchedule = scheduledIn.length > 0 && Number.isFinite(nearest);
+  const nearestDelta = hasSchedule ? nearest : 0;
 
   const { ux, uy } = unitOf(a);
   // 0 for a wall on the grid, 45 for a diagonal. Stair nosings and break lines
@@ -129,8 +151,9 @@ export function featuresFor(
 
   const aw = a.width ?? 0;
   const bw = b.width ?? 0;
-  const penDelta = aw > 0 && bw > 0 ? Math.abs(aw - bw) / Math.max(aw, bw) : -1;
-  const penMean = aw > 0 && bw > 0 ? (aw + bw) / 2 : -1;
+  const hasPens = aw > 0 && bw > 0;
+  const penDelta = hasPens ? Math.abs(aw - bw) / Math.max(aw, bw) : 0;
+  const penMean = hasPens ? (aw + bw) / 2 : 0;
 
   const verdict = (() => {
     const va = layerVerdict(a.layer);
@@ -170,20 +193,22 @@ export function featuresFor(
   const variance =
     gaps.length > 0 ? gaps.reduce((n, g) => n + (g - meanGap) ** 2, 0) / gaps.length : 0;
   // Coefficient of variation: 0 is perfectly regular (hatching), high is not.
-  const spacingCv = meanGap !== 0 ? Math.sqrt(variance) / Math.abs(meanGap) : -1;
+  const hasSpacing = gaps.length > 0 && meanGap !== 0;
+  const spacingCv = hasSpacing ? Math.sqrt(variance) / Math.abs(meanGap) : 0;
   const nearestOther = offsets
     .filter((o) => Math.abs(o) > 1e-9)
     .sort((x, y) => Math.abs(x) - Math.abs(y))[0];
-  const neighbourRatio =
-    nearestOther === undefined
-      ? -1
-      : Math.abs(nearestOther) / Math.max(Math.abs(offsetOf(a, b)), 1e-9);
+  const hasNearest = nearestOther !== undefined;
+  const neighbourRatio = hasNearest
+    ? Math.abs(nearestOther) / Math.max(Math.abs(offsetOf(a, b)), 1e-9)
+    : 0;
 
   return [
     wall.thicknessFeet,
     wall.lengthFeet,
     thicknessIn,
     nearestDelta,
+    hasSchedule ? 1 : 0,
     scheduledIn.some((named) => Math.abs(named - thicknessIn) <= 0.5) ? 1 : 0,
     longer / shorter,
     Math.min(1, overlapAlong(a, b) / shorter),
@@ -191,14 +216,17 @@ export function featuresFor(
     offOrthogonal,
     penDelta,
     penMean,
+    hasPens ? 1 : 0,
     verdict === "wall" ? 1 : 0,
     verdict === "not-wall" ? 1 : 0,
     verdict === "unknown" ? 1 : 0,
     offsets.length,
     spacingCv,
+    hasSpacing ? 1 : 0,
     neighbourRatio,
+    hasNearest ? 1 : 0,
     dense,
     context.inHatchSeries ? 1 : 0,
-    sheetSpan > 0 ? lengthOf(a) / sheetSpan : -1,
+    sheetSpan > 0 ? lengthOf(a) / sheetSpan : 0,
   ];
 }
