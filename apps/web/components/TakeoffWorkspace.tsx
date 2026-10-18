@@ -600,6 +600,27 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
   );
   /** What the classifier set aside on each sheet, and whether the reviewer
    *  has asked to be offered it anyway. Per page like everything else here. */
+  /**
+   * Every pairing the finder proposed on each page, with its feature vector.
+   *
+   * Per page for the same reason every other piece of review state is: a
+   * reviewer switching sheets and back must not be shown another sheet's
+   * candidates, and a save must not send them.
+   */
+  const [pairingsByPage, setPairingsByPage] = useState<
+    Record<
+      number,
+      {
+        x1: number;
+        y1: number;
+        x2: number;
+        y2: number;
+        lengthFeet: number;
+        thicknessFeet: number;
+        features: number[];
+      }[]
+    >
+  >({});
   const [setAsideByPage, setSetAsideByPage] = useState<
     Record<number, { kind: string; why: string; n: number }[]>
   >({});
@@ -1015,6 +1036,8 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
                       onSetAside: (counts) =>
                         setSetAsideByPage((prev) => setOnThisSheet(prev, page, counts)),
                       onCandidates: (candidates) => setKeyState(startReview(candidates)),
+                      onPairings: (rows) =>
+                        setPairingsByPage((prev) => setOnThisSheet(prev, page, rows)),
                     }
                   : undefined
               }
@@ -1074,6 +1097,7 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
                 onOfferAll={(next) =>
                   setOfferAllByPage((prev) => setOnThisSheet(prev, page, next ? true : null))
                 }
+                pairings={onThisSheet(pairingsByPage, page) ?? undefined}
                 state={keyState}
                 onState={setKeyState}
                 focusedId={keyFocus}

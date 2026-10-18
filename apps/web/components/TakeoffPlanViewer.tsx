@@ -445,6 +445,18 @@ export function TakeoffPlanViewer({
      */
     onCandidates?: (candidates: Candidate[]) => void;
     /**
+     * Every PAIRING the finder considered, with its feature vector.
+     *
+     * Not the same list as `onCandidates`: that one is the runs a reviewer
+     * judges, and this is what the geometry proposed before merging and
+     * filtering. A reviewed sheet is training data only if both are kept —
+     * `labelRows` carries each verdict from the run back to the pairings it
+     * was made of, and without these there is nothing to carry it to.
+     */
+    onPairings?: (
+      pairings: { x1: number; y1: number; x2: number; y2: number; lengthFeet: number; thicknessFeet: number; features: number[] }[],
+    ) => void;
+    /**
      * What the classifier set aside, counted by its own reason.
      *
      * ── NOTHING IS EXCLUDED SILENTLY, AND THIS IS THE HALF THAT KEEPS IT
@@ -608,6 +620,16 @@ export function TakeoffPlanViewer({
   // the tags, the schedule and the sheet's general note all live inside it, so
   // re-grouping cannot drift from the grouping that was shown first.
   const runsRef = useRef<WallCandidate[]>([]);
+  /**
+   * The answer-key props, readable from inside the detect without putting them
+   * in its dependencies.
+   *
+   * The detect is expensive and re-running it because a reviewer pressed a key
+   * would be a different bug; a ref keeps the reporting current without making
+   * the work depend on the review's state.
+   */
+  const answerKeyRef = useRef(answerKey);
+  answerKeyRef.current = answerKey;
   /** Feet across the page width, as the find that produced these runs read it. */
   const feetAcrossRef = useRef<number>(0);
   const regroupRef = useRef<((runs: WallCandidate[]) => WallGroup[]) | null>(null);
@@ -2212,6 +2234,19 @@ export function TakeoffPlanViewer({
         );
         const onTheDrawing = segmentsInRegions(segments, drawing, pageSize.widthPt);
         planBoxes = drawing.length > 0 ? [...drawing] : null;
+        // The pairings are collected only when somebody is listening, which
+        // is answer-key mode. `onCandidate` fires after the sheet-relative
+        // columns are filled, so what is reported here is what a model would
+        // be scored on.
+        const pairings: {
+          x1: number;
+          y1: number;
+          x2: number;
+          y2: number;
+          lengthFeet: number;
+          thicknessFeet: number;
+          features: number[];
+        }[] = [];
         found = findWallsOnSheet({
           segments: onTheDrawing,
           textItems,
@@ -2219,7 +2254,20 @@ export function TakeoffPlanViewer({
           feetPerUnit,
           wallTypes,
           sampledSheets,
+          onCandidate: answerKeyRef.current?.onPairings
+            ? (features, wall) =>
+                pairings.push({
+                  x1: wall.x1,
+                  y1: wall.y1,
+                  x2: wall.x2,
+                  y2: wall.y2,
+                  lengthFeet: wall.lengthFeet,
+                  thicknessFeet: wall.thicknessFeet,
+                  features: [...features],
+                })
+            : undefined,
         });
+        if (pairings.length > 0) answerKeyRef.current?.onPairings?.(pairings);
       }
       setOtherViewsByPage((prev) => ({ ...prev, [pageNumber]: otherViews }));
       setExcludedByPage((prev) => ({ ...prev, [pageNumber]: leftOut }));
@@ -3227,8 +3275,15 @@ export function TakeoffPlanViewer({
                     // mode, because a reviewer sweeping hatching wants the
                     // rejecting one and must not have to remember which mode
                     // they left it in.
+                    // ── DRAG REJECTS, SHIFT-DRAG ACCEPTS ──
+                    //
+                    // The common case is sweeping a schedule, a stair or a
+                    // field of hatching off the sheet, so the bare gesture is
+                    // the one that does that. Accepting in bulk is rarer and
+                    // riskier — a box of walls usually contains something that
+                    // is not one — so it asks for a modifier.
                     answerKey.onState(
-                      setVerdict(answerKey.state, ids, keyShift ? "not-a-wall" : "wall"),
+                      setVerdict(answerKey.state, ids, keyShift ? "wall" : "not-a-wall"),
                     );
                   } else {
                     answerKey.onFocus(null);

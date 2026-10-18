@@ -1,5 +1,6 @@
 import { requireCompanyContext } from "@/lib/auth";
 import { LABEL_DIR_VAR, writeLabels } from "@/lib/plan-ingest/labelStore";
+import { labelFile, type LabelCandidate, type LabelVerdict } from "@/lib/takeoff/labelRows";
 import { NextResponse } from "next/server";
 
 /**
@@ -55,7 +56,37 @@ export async function POST(request: Request) {
     );
   }
 
-  const written = await writeLabels(parsed.set, parsed.sheet, body);
+  // ── THE VERDICTS ARE CARRIED BACK TO THE PAIRINGS HERE ──
+  //
+  // A reviewer judges runs; a model decides pairings. `labelFile` does the
+  // carrying and is tested on its own, because a label attached to the wrong
+  // candidate trains the model to do the opposite of what the reviewer said
+  // and nothing about the file would look wrong.
+  const input = body as {
+    set: string;
+    sheet: string;
+    page?: number;
+    reviewedBy?: string;
+    secondsSpent?: number;
+    feetPerUnit?: number;
+    reviewComplete?: boolean;
+    unsure?: number;
+    candidates: LabelCandidate[];
+    verdicts?: LabelVerdict[];
+  };
+  const file = labelFile({
+    set: input.set,
+    sheet: input.sheet,
+    page: input.page ?? 1,
+    reviewedBy: input.reviewedBy ?? "",
+    secondsSpent: input.secondsSpent ?? 0,
+    feetPerUnit: input.feetPerUnit ?? 1,
+    reviewComplete: input.reviewComplete === true,
+    candidates: input.candidates,
+    verdicts: input.verdicts ?? [],
+    unreviewed: input.unsure ?? 0,
+  });
+  const written = await writeLabels(parsed.set, parsed.sheet, file);
   if (!written.ok) {
     return NextResponse.json({ ok: false, error: written.error }, { status: 400 });
   }
@@ -63,6 +94,7 @@ export async function POST(request: Request) {
     ok: true,
     path: written.path,
     candidates: parsed.candidates.length,
+    rows: file.rows.length,
     note: `Set ${LABEL_DIR_VAR} to change where these go.`,
   });
 }

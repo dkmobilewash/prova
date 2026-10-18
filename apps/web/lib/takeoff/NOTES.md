@@ -463,6 +463,122 @@ comparison. No model is committed: this one is worse than the rules on every
 real guard, and a model file in the tree that nobody should load is a thing the
 next person has to work out the status of.
 
+## The labelling screen, finished — 2026-10-18
+
+Real sheets are the bottleneck and this is what makes them labellable. The core
+(`labelStore`, `labelRows`, the route) shipped in `41407243`; this is the screen
+and the round trip.
+
+### What it does now
+
+- **Save to labels** writes the verdicts AND the feature vector of every
+  pairing, through `labelStore`'s gate. Inert unless `TAKEOFF_LABEL_DIR` is
+  set, which is every deployment.
+- **Not sure (U)** is a fourth verdict, saved and excluded. It is NOT the same
+  as unreviewed: unreviewed is the commonest negative on a finished sheet (the
+  hatch nobody glanced at), and unsure is a candidate somebody looked at and
+  could not call. Feeding either answer to a model teaches a confidence the
+  reviewer did not have.
+- **Time per sheet** is recorded from when the sheet was opened. Wall clock and
+  deliberately crude — it counts the reviewer making tea, and a figure that
+  flattered the work would be worse than none, because it is going to price a
+  job.
+- **Box-select polarity is now drag = reject, shift-drag = accept.** It was the
+  other way round. The common gesture is sweeping a schedule or a field of
+  hatching off the sheet; accepting in bulk is rarer and riskier, because a box
+  of walls usually contains something that is not one.
+- **An instructions panel** carries the rules as text and the keys. The PICTURE
+  guide is cropped from real plan sets, so it is client drawing content and
+  does not go in this repository under any filename — it lives beside the
+  labels folder and the panel says where.
+
+### The viewer reports pairings now, and that is the load-bearing part
+
+A reviewer judges RUNS; a model decides PAIRINGS. `onCandidate` fires after
+`normaliseAcrossSheet`, so the vectors saved are the ones a model would be
+scored on, and `labelRows` carries each verdict from the run back to the
+pairings it was made of. Without that a saved sheet is a score, not training
+data.
+
+### THE ROUND TRIP FOUND A DEFECT ON ITS FIRST RUN, IN THE SEAM
+
+`labelRoundTrip.test.ts` runs finder → vectors → verdicts → `labelFile` → the
+file → read back → are the verdicts still on the right candidates. Every piece
+of that path already had its own green test, and the pieces were written weeks
+apart.
+
+The panel spelled a rejection `not-a-wall`; `LabelVerdict` spells it
+`not-wall`. **The rows would still have been right** — `labelFile` tests for
+`"wall"` and treats everything else as a negative — so the training data would
+have been correct and only `counts.rejected` wrong, stuck at zero. Nobody reads
+those counts until the set is built, which is months later and too late to
+re-label anything. TypeScript caught it the moment the two modules met in one
+file, which is the whole argument for writing the seam test rather than
+trusting six green unit suites.
+
+Mutation-tested three ways, all red: the spelling, a label forced to 0, and an
+emptied `featureNames`. The third SURVIVED at first — the file could record no
+column names at all and nothing noticed, which later makes it uncheckable
+against a model's columns. That assertion is in the test now.
+
+### Decisions per sheet, measured
+
+Not a time estimate — a count of how many times a reviewer presses a key.
+
+| sheet | runs to judge | detect |
+| --- | --- | --- |
+| Alden A103 p19 | **2** | 2.2 s |
+| Camp Bow Wow A120 p15 | 12 | 0.2 s |
+| Camp Bow Wow A102 p9 | 114 | 3.4 s |
+| Camp Bow Wow A101 p8 | 133 | 10.4 s |
+| ELEVEN03 A4.B-Y2 p117 | 81 | 2.0 s |
+| ELEVEN03 A4.B.1 p119 | 224 | 2.6 s |
+| ELEVEN03 A4.B.3 p121 | 282 | 3.0 s |
+| ELEVEN03 A4.B.2 p120 | **288** | 3.8 s |
+
+**A103 is a bad sheet to time the work on**, which is worth knowing before
+anyone uses it as the yardstick: two decisions is under a minute including
+opening the sheet, and a dense one is 288. The spread is 140×, so a per-sheet
+average is close to meaningless and the unit to plan in is DECISIONS.
+
+No human rate is recorded here on purpose. One can only come from an estimator
+doing it, and the screen now records it on every save.
+
+### What the density filter promised and what the sheets are
+
+Thumbnails of every nominated page, rendered and looked at
+(`~/Claude Folder/takeoff/sheets-to-label-thumbs/`). Stroke density separates a
+drawing from a text page and **cannot tell a floor plan from an elevation**,
+which `sheets-to-label.md` said — and the size of the gap was not measured
+until now:
+
+| set | dense pages | actually floor plans | the plan wanted |
+| --- | --- | --- | --- |
+| ELEVEN03 | 59 | **~20** | 18 ✓ |
+| Camp Bow Wow | 19 | **~4** | 10 ✗ |
+| Alden Green | 20 | **~0** | 8 ✗ |
+| HPL Lighthouse | 6 | **3** | 6 ✗ |
+
+Alden Green's twenty dense pages are civil, structural and MEP — its only
+architectural plan in the list, A103, is not in a dense range at all. So the 48
+training sheets are nearer **27**, and ELEVEN03 would be about three quarters
+of them, which is precisely the one-office failure the split exists to avoid.
+
+Rendering them needed two fixes worth keeping: a 342 MB set cannot cross
+`page.evaluate` as base64 (the renderer dies reporting "Target page, context or
+browser has been closed", which names Playwright and not the memory), so the
+PDF is fetched from a tiny local server — and the host page has to come off
+that server too, or an `about:blank` origin makes pdf.js fail with a bare
+`UnknownErrorException`.
+
+### The guide's captions were written after looking, not before
+
+The first pass picked crop boxes to fit captions already written, and four of
+twelve showed something else — a crop captioned "grid lines" was a room plan.
+Nothing could have caught it: a crop always renders, and a wrong caption on a
+real drawing looks exactly like a right one. The order is fixed in the script
+now: render numbered candidates, look, then caption what is in each.
+
 ## Sheet-relative features and a veto: style transfer SOLVED, reality not — 2026-10-18
 
 The previous model put 0.721 of its importance on absolute pen width and

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { KEY_RULES } from "@/lib/takeoff/answerKey";
 import {
   candidatesInBox,
@@ -50,15 +50,33 @@ export type AnswerKeyPanelProps = {
   onTracing?: (next: boolean) => void;
   /** Both ends are down, so Enter will commit. */
   traceReady?: boolean;
+  /**
+   * Every pairing the finder considered, with its feature vector.
+   *
+   * Without these a saved sheet is a score and not training data: the verdicts
+   * are about RUNS and a model decides about PAIRINGS, and `labelRows` is what
+   * carries one to the other.
+   */
+  pairings?: {
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    lengthFeet: number;
+    thicknessFeet: number;
+    features: number[];
+  }[];
 };
 
 // The colours live in `answerKeyReview.ts` — a plain module — so that
 // anything which is not a browser can read them too. Re-exported here because
 // this is where every caller already looks for them.
+import { Spinner } from "@/components/Spinner";
 import { SINGLE_LINE_COLOUR, VERDICT_COLOURS } from "@/lib/takeoff/answerKeyReview";
 export { SINGLE_LINE_COLOUR, VERDICT_COLOURS };
 
 export function AnswerKeyPanel({
+  pairings,
   setAside,
   offerAll,
   onOfferAll,
@@ -75,6 +93,19 @@ export function AnswerKeyPanel({
 }: AnswerKeyPanelProps) {
   const [unreviewedOnly, setUnreviewedOnly] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
+  const [savingLabels, setSavingLabels] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  /**
+   * When this sheet was opened, so a save can record what labelling costs.
+   *
+   * Wall clock and deliberately crude: it counts the time the sheet was open,
+   * including the reviewer making tea. A figure that flatters the work would
+   * be worse than no figure, because it is going to be used to price a job.
+   */
+  const startedAt = useRef(Date.now());
+  useEffect(() => {
+    startedAt.current = Date.now();
+  }, [sheet.number, sheet.page]);
   /**
    * Who is reviewing, typed rather than assumed.
    *
@@ -125,6 +156,14 @@ export function AnswerKeyPanel({
       } else if (key === "r") {
         event.preventDefault();
         decide(focusedId, "not-a-wall");
+      } else if (key === "u") {
+        // ── NOT SURE IS A VERDICT, NOT AN ABSENCE ──
+        //
+        // It is saved and excluded. A reviewer who cannot call something has
+        // told us more than one who skipped it, and feeding either answer to a
+        // model teaches a confidence nobody had.
+        event.preventDefault();
+        decide(focusedId, "unsure");
       } else if (key === "n") {
         event.preventDefault();
         onFocus(nextUnreviewed(state, focusedId)?.id ?? null);
@@ -187,6 +226,80 @@ export function AnswerKeyPanel({
     a.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
     setSaved(`${filename} — ${key.walls.length} walls, ${progress.feet.toFixed(0)} ft`);
+  }
+
+  /**
+   * Writes this sheet's verdicts AND the feature vector of every pairing to
+   * the labels folder, through `labelStore`'s own gate.
+   *
+   * Separate from `save()`, which downloads an answer key — a key says what
+   * the walls are, and this says what the finder proposed and what a person
+   * made of each one. Only the second is training data.
+   */
+  async function saveLabels() {
+    if (pairings === undefined || pairings.length === 0) {
+      setSaved("No pairings were captured, so there is nothing to train on.");
+      return;
+    }
+    setSavingLabels(true);
+    try {
+      const verdicts = [
+        ...state.candidates
+          .map((c) => ({ c, v: state.verdicts[c.id] ?? "unreviewed" }))
+          .filter((x) => x.v === "wall" || x.v === "not-a-wall")
+          .map((x) => ({
+            x1: x.c.x1,
+            y1: x.c.y1,
+            x2: x.c.x2,
+            y2: x.c.y2,
+            lengthFeet: x.c.lengthFeet,
+            thicknessFeet: (x.c.thicknessIn ?? 0) / 12,
+            // "not-wall", not "not-a-wall": `LabelVerdict` spells it the
+            // short way and `labelFile` counts rejections by that literal.
+            // The rows would still have carried label 0 — it tests for
+            // "wall" — so this was wrong only in the summary, which is the
+            // kind of wrong nobody reads until the training set is built.
+            verdict: x.v === "wall" ? "wall" : "not-wall",
+          })),
+        ...state.traced.map((t) => ({
+          x1: t.x1,
+          y1: t.y1,
+          x2: t.x2,
+          y2: t.y2,
+          lengthFeet: t.lengthFeet,
+          thicknessFeet: 0,
+          verdict: "traced" as const,
+        })),
+      ];
+      const response = await fetch("/api/takeoff/labels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          set: sheet.set,
+          sheet: sheet.number,
+          page: sheet.page,
+          reviewedBy: reviewer.trim(),
+          feetPerUnit: sheet.feetPerUnit,
+          secondsSpent: (Date.now() - startedAt.current) / 1000,
+          // Only a sheet the reviewer finished can say that an unproposed
+          // place is NOT a wall — see `labelRows`.
+          reviewComplete: progress.reviewed >= progress.total,
+          unsure: progress.unsure,
+          candidates: pairings,
+          verdicts,
+        }),
+      });
+      const body = (await response.json()) as { ok: boolean; error?: string; path?: string; rows?: number };
+      setSaved(
+        body.ok
+          ? `Labels saved — ${body.path}`
+          : `Not saved: ${body.error ?? "the request failed"}`,
+      );
+    } catch (cause) {
+      setSaved(`Not saved: ${String(cause)}`);
+    } finally {
+      setSavingLabels(false);
+    }
   }
 
   return (
@@ -273,6 +386,65 @@ export function AnswerKeyPanel({
             </li>
           ))}
         </ul>
+        {/*
+          * ── THE EXAMPLES GO IN THIS CARD, NOT BESIDE IT ──
+          *
+          * They were a second card for one render and it was wrong in the way
+          * this repository keeps paying for: two lists of what a wall is, on
+          * one screen, with different rules in each. `KEY_RULES` is shared
+          * with the grader and is the DEFINITION; everything below is worked
+          * examples of it, and the moment they are two cards a reviewer has
+          * to decide which one governs.
+          */}
+        <button
+          type="button"
+          data-takeoff="key-help-toggle"
+          aria-expanded={showHelp}
+          onClick={() => setShowHelp(!showHelp)}
+          className="w-full text-left text-xs font-semibold text-ink-label"
+        >
+          {showHelp ? "▾" : "▸"} Examples, and what to press
+        </button>
+        {showHelp ? (
+          <div className="mt-2 space-y-2 text-[11px] leading-relaxed text-ink-muted">
+            <p>
+              Grey is the drawing. Red is what the software proposed. Say yes or no
+              to each red line.
+            </p>
+            <p className="font-semibold text-ink-label">Yes</p>
+            <ul className="list-disc space-y-0.5 pl-4">
+              <li>Two lines running together, a wall&apos;s thickness apart — one yes for the pair.</li>
+              <li>Partitions between rooms, including short returns.</li>
+              <li>A wall with a door or window in it. The opening is part of the wall.</li>
+              <li>Walls on an enlarged plan — but only mark a wall once across the sheet.</li>
+            </ul>
+            <p className="font-semibold text-ink-label">No</p>
+            <ul className="list-disc space-y-0.5 pl-4">
+              <li>Schedules, legends, title blocks — ruled lines inside a box of text.</li>
+              <li>Stairs: treads, handrails and the diagonal break. The walls around them are yes.</li>
+              <li>The fill inside a wall — stipple, dots, diagonal shading.</li>
+              <li>Desks, casework, fixtures. Drawn inside a room, not between two.</li>
+              <li>Grid lines and dimension lines.</li>
+            </ul>
+            <p>
+              If you cannot tell, press <b>U</b> for Not sure. That is a real answer
+              and better than guessing — a guess teaches the software something false.
+            </p>
+            <p className="text-ink-label">
+              Pictures of each case: open{" "}
+              <code className="rounded bg-rail-hover px-1">
+                ~/Claude Folder/takeoff/guide/what-counts-as-a-wall.html
+              </code>
+            </p>
+            <p className="font-semibold text-ink-label">Keys</p>
+            <p>
+              <b>A</b> wall · <b>R</b> not a wall · <b>U</b> not sure · <b>N</b> next ·{" "}
+              <b>H</b> hide overlays · <b>T</b> trace a missed wall · drag a box to
+              reject many · shift-drag to accept many
+            </p>
+          </div>
+        ) : null}
+
       </div>
 
       <div className="rounded-md border border-line-card bg-surface p-2">
@@ -281,6 +453,9 @@ export function AnswerKeyPanel({
             {progress.reviewed} of {progress.total}
           </span>{" "}
           reviewed · {progress.walls} walls · {progress.notWalls} rejected
+          {/* Unsure is REVIEWED, so without it the numbers do not add up on
+              screen and the reviewer cannot see how many they parked. */}
+          {progress.unsure > 0 ? ` · ${progress.unsure} not sure` : ""}
           {progress.traced > 0 ? ` · ${progress.traced} traced` : ""}
         </p>
         <p className="mt-0.5 text-[11px] text-ink-muted">
@@ -327,6 +502,53 @@ export function AnswerKeyPanel({
         >
           Reject all shown
         </button>
+        <button
+          type="button"
+          data-takeoff="key-unsure"
+          onClick={() => decide(focusedId, "unsure")}
+          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
+        >
+          Not sure (U)
+        </button>
+      </div>
+
+      {/*
+        * ── THE INSTRUCTIONS, IN WORDS HERE AND IN PICTURES OUTSIDE THE REPO ──
+        *
+        * The picture guide is cropped from real plan sets, so it is client
+        * drawing content and does not belong in this repository under any
+        * filename. It lives beside the labels folder on the machine doing the
+        * labelling; this panel carries the rules as text and says where the
+        * pictures are.
+        */}
+      <div className="rounded-md border border-line-card p-2" data-takeoff="key-labels">
+        <button
+          type="button"
+          data-takeoff="key-save-labels"
+          disabled={savingLabels || reviewer.trim() === ""}
+          onClick={() => void saveLabels()}
+          className="w-full rounded-md bg-brand px-2 py-1.5 text-xs font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
+        >
+          {savingLabels ? (
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            "Save to labels"
+          )}
+        </button>
+        <p className="mt-1.5 text-[11px] text-ink-muted">
+          {pairings === undefined || pairings.length === 0
+            ? "No pairings captured yet — run Find the walls first."
+            : `${pairings.length} pairings captured · ${progress.reviewed} of ${progress.total} reviewed` +
+              (progress.unsure > 0 ? ` · ${progress.unsure} not sure` : "")}
+        </p>
+        <p className="mt-1 text-[11px] text-ink-muted">
+          Saves what the finder proposed and what you made of each one. Finish the
+          sheet before saving: an unreviewed candidate cannot be counted as
+          &ldquo;not a wall&rdquo;.
+        </p>
       </div>
 
       <p className="text-[11px] text-ink-muted">

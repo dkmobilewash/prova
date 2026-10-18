@@ -26,7 +26,22 @@ import { type AnswerKey, type KeyWall } from "@/lib/takeoff/answerKey";
  * one to reject, and the key records which were which.
  */
 
-export type Verdict = "unreviewed" | "wall" | "not-a-wall";
+/**
+ * What a reviewer has said about one candidate.
+ *
+ * ── WHY "unsure" IS NOT JUST "unreviewed" ──
+ *
+ * They mean opposite things to a training set. `unreviewed` is a candidate
+ * nobody looked at, and on a finished sheet it is the commonest NEGATIVE there
+ * is — the hatch and grid that never got a glance. `unsure` is a candidate
+ * somebody looked at and could not call, and feeding that to a model as either
+ * answer teaches it a confidence the reviewer did not have.
+ *
+ * So an unsure row is SAVED and EXCLUDED: it is in the file, with its feature
+ * vector, marked as what it is. If a later model disagrees loudly with a
+ * reviewer's "not sure", that is worth reading rather than worth hiding.
+ */
+export type Verdict = "unreviewed" | "wall" | "not-a-wall" | "unsure";
 
 /** One thing a reviewer is deciding about. */
 export type Candidate = {
@@ -117,6 +132,7 @@ export type Progress = {
   reviewed: number;
   walls: number;
   notWalls: number;
+  unsure: number;
   traced: number;
   /** Feet the key would carry if saved now. */
   feet: number;
@@ -126,6 +142,7 @@ export function progressOf(state: ReviewState): Progress {
   let reviewed = 0;
   let walls = 0;
   let notWalls = 0;
+  let unsure = 0;
   let feet = 0;
   for (const one of state.candidates) {
     const verdict = state.verdicts[one.id] ?? "unreviewed";
@@ -134,6 +151,11 @@ export function progressOf(state: ReviewState): Progress {
     if (verdict === "wall") {
       walls += 1;
       feet += one.lengthFeet;
+    } else if (verdict === "unsure") {
+      // Counts as reviewed — the reviewer did look — and carries no footage,
+      // because an answer key states what IS a wall and this states that
+      // nobody could say.
+      unsure += 1;
     } else {
       notWalls += 1;
     }
@@ -144,6 +166,7 @@ export function progressOf(state: ReviewState): Progress {
     reviewed,
     walls,
     notWalls,
+    unsure,
     traced: state.traced.length,
     feet,
   };
@@ -301,6 +324,8 @@ export const VERDICT_COLOURS: Record<Verdict, string> = {
   unreviewed: "#f59e0b",
   wall: "#16a34a",
   "not-a-wall": "#9ca3af",
+  // Violet: not the amber of "nobody has looked", because somebody has.
+  unsure: "#a855f7",
 };
 
 /** A single line is offered in its own colour, because it is a different
