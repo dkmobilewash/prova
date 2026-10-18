@@ -41,7 +41,7 @@ test("a change order request, start to inbox, priced to the cent", async ({ page
   await page.locator("#field-companyName").fill("");
   await next(page);
   await expect(heading(page)).toHaveText("Your Company");
-  await expect(page.getByRole("alert")).toContainText("needs another look");
+  await expect(page.getByRole("alert").filter({ hasText: "needs another look" })).toBeVisible();
   await page.locator("#field-companyName").fill("Desert Drywall LLC");
   await next(page);
 
