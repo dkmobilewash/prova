@@ -152,6 +152,101 @@ export function wallsNotDuplicateCoverage(
 }
 
 /**
+ * How far off a curved run's own circle a point may sit and still be read as
+ * on that wall, as a share of the wall's thickness.
+ *
+ * The same 1.1 the straight test uses for its perpendicular gap, for the same
+ * reason: two runs whose centrelines are within about a thickness of each
+ * other are measuring one wall, not two. Kept as its own name because it is
+ * measured from a circle rather than from a line, and the next person to sweep
+ * one should not silently move the other.
+ */
+const ON_THE_SAME_ARC_THICKNESSES = 1.1;
+
+/**
+ * True when one run lies along the other's drawn arc.
+ *
+ * Both ends are tested, not the middle: a run spanning most of an arc is
+ * stored as that arc's chord, and the middle of a long chord is inside the
+ * circle by the sagitta — testing it would throw away the real wall and keep
+ * the impostor. The ends sit on the circle either way.
+ *
+ * The ANGULAR span is tested too, so a wall on the far side of the same circle
+ * — a round room's opposite wall — is not read as a duplicate of this one.
+ */
+function ownerFeetPerUnit(owner: WallCandidate, arc: { r: number }): number {
+  // A curved run's chord is shorter than its arc, so the chord cannot give the
+  // scale. The radius can: the arc subtends `lengthFeet / (r * feetPerUnit)`
+  // radians, and the chord subtends the same angle, so solving the chord
+  // relation gives the scale without a second source.
+  //
+  // chord = 2 r sin(sweep/2), and sweep = lengthFeet / (r * feetPerUnit).
+  // One bisection on feetPerUnit; the relation is monotonic over any arc under
+  // a full turn, which every drawn wall is.
+  const chord = Math.hypot(owner.x2 - owner.x1, owner.y2 - owner.y1);
+  if (!(chord > 0) || !(owner.lengthFeet > 0) || !(arc.r > 0)) return 0;
+  let lo = 1e-9;
+  let hi = owner.lengthFeet / chord; // the straight-line case, an upper bound
+  for (let i = 0; i < 40; i += 1) {
+    const mid = (lo + hi) / 2;
+    const sweep = owner.lengthFeet / (arc.r * mid);
+    const predicted = 2 * arc.r * Math.sin(Math.min(Math.PI, sweep) / 2);
+    if (predicted > chord) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+function coversTheSameArc(candidate: WallCandidate, other: WallCandidate): boolean {
+  // The arc belongs to whichever run is curved; when both are, the longer
+  // one's is used, which is the one `claimsTheSameFootage` is asking about.
+  const arc = other.arc;
+  if (arc === undefined || !(arc.r > 0)) return false;
+
+  const meanThickness = (candidate.thicknessFeet + other.thicknessFeet) / 2;
+  if (meanThickness <= 0) return false;
+  // Units per foot, from the run that owns the arc. On a curved run
+  // `lengthFeet` is the ARC and the chord is shorter, so the chord cannot be
+  // used for this — the radius and the arc length can, and they are both in
+  // the right spaces already.
+  const owner = other;
+  // The sweep in radians, from the owner's own arc length and radius — the
+  // two numbers that are each already in their own space, so no feet-per-unit
+  // is needed and none is guessed.
+  const sweep = owner.lengthFeet > 0 ? owner.lengthFeet / (arc.r * ownerFeetPerUnit(owner, arc)) : 0;
+  if (!(sweep > 0)) return false;
+  const band = (meanThickness * ON_THE_SAME_ARC_THICKNESSES) / ownerFeetPerUnit(owner, arc);
+
+  const offCircle = (x: number, y: number) => Math.abs(Math.hypot(x - arc.cx, y - arc.cy) - arc.r);
+  if (offCircle(candidate.x1, candidate.y1) > band) return false;
+  if (offCircle(candidate.x2, candidate.y2) > band) return false;
+
+  // ── AND ON THE SAME PART OF IT ──
+  //
+  // Without this, a circular room's far wall is on the same circle and would
+  // be swallowed. The owner's own ends give the span that is actually drawn.
+  const angleAt = (x: number, y: number) => Math.atan2(y - arc.cy, x - arc.cx);
+  const within = (a: number, lo: number, hi: number) => {
+    const norm = (v: number) => ((v % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    const span = norm(hi - lo);
+    const at = norm(a - lo);
+    return at <= span;
+  };
+  const o1 = angleAt(owner.x1, owner.y1);
+  const o2 = angleAt(owner.x2, owner.y2);
+  // The owner sweeps one way or the other; take the direction that matches the
+  // sweep its arc length implies rather than guessing.
+  const forward = ((o2 - o1 + 4 * Math.PI) % (2 * Math.PI)) <= sweep + 0.2;
+  const lo = forward ? o1 : o2;
+  const hi = forward ? o2 : o1;
+  const ends = [
+    angleAt(candidate.x1, candidate.y1),
+    angleAt(candidate.x2, candidate.y2),
+  ];
+  return ends.every((a) => within(a, lo, hi));
+}
+
+/**
  * True when `other` is at least as long and already covers `candidate`.
  *
  * `otherIsEarlier` breaks an exact tie. Without it two identical candidates
@@ -170,6 +265,34 @@ function claimsTheSameFootage(
     if (other.thicknessFeet < candidate.thicknessFeet) return false;
     // Equal on both: the one that arrived first is the keeper.
     if (other.thicknessFeet === candidate.thicknessFeet && !otherIsEarlier) return false;
+  }
+
+  // ── A CURVED RUN IS NOT ITS CHORD, AND EVERYTHING BELOW ASSUMES IT IS ──
+  //
+  // The test that follows projects `candidate` into `other`'s chord direction
+  // and refuses anything more than two degrees off it. That is right for two
+  // straight walls and meaningless for an arc: a 55 ft wall sweeping 117
+  // degrees has a chord that cuts through the building, and a 7.80 ft piece
+  // lying ON that wall reads as **53 degrees** off it. So it was not a
+  // duplicate, and 7.8 ft of one wall was reported twice on a GC-facing
+  // number.
+  //
+  // `WallCandidate.arc` carries the circle the run was drawn on, because the
+  // chord cannot answer this and `curved`'s own note says so. When either run
+  // has one, the question becomes the right one: does the shorter run lie
+  // along the longer one's path?
+  // ONLY when the longer run — the one doing the covering — owns the arc.
+  //
+  // Asking this the other way round answers nothing: if `candidate` is the
+  // curved wall, testing its own ends against its own circle is true by
+  // construction, and every longer run on the sheet becomes its duplicate.
+  // That is not hypothetical — it was the first version of this branch, and
+  // it removed EVERY curved wall from Cedar Hollow, taking the sheet from
+  // -0.6% to -17.7%. A straight run also cannot cover a curved wall in any
+  // case worth catching: the arc is longer than the chord, so the arc is
+  // never the shorter of the two.
+  if (other.arc !== undefined) {
+    return coversTheSameArc(candidate, other);
   }
 
   const dx = other.x2 - other.x1;

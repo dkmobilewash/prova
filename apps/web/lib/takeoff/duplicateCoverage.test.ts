@@ -161,3 +161,97 @@ describe("two walls cannot occupy the same footage", () => {
     expect(wallsNotDuplicateCoverage([lone]).kept).toEqual([lone]);
   });
 });
+
+/**
+ * ── A STRAIGHT RUN LYING ON A CURVED WALL IS THE SAME WALL ──
+ *
+ * Measured on a held-out library plan: W7 is a 55.14 ft wall sweeping 117
+ * degrees, and the engine reported 62.92 ft for it — the arc, plus a 7.80 ft
+ * straight run covering the first 4.7 ft of the very same wall. 7.8 ft of one
+ * wall, twice, on a number a GC is sent.
+ *
+ * It survived because the test it had to pass was asked in CHORD space: the
+ * straight run is projected into the curved run's end-to-end direction and
+ * refused if more than two degrees off it. The chord of a 117 degree arc cuts
+ * through the building, so a piece lying exactly ON that wall measured **53
+ * degrees** away from it and read as a different wall entirely.
+ *
+ * The run carries the circle it was drawn on now (`WallCandidate.arc`), and
+ * the question is asked of the path instead.
+ */
+describe("a curved wall is not its chord", () => {
+  /** A quarter of a circle of radius 20 centred at the origin, as the engine
+   *  stores one: the CHORD as endpoints, the ARC as lengthFeet. */
+  const bay = (): WallCandidate => ({
+    x1: 20,
+    y1: 0,
+    x2: 0,
+    y2: 20,
+    thicknessFeet: 0.5,
+    lengthFeet: (Math.PI / 2) * 20,
+    curved: true,
+    arc: { cx: 0, cy: 0, r: 20 },
+  });
+
+  /** A short straight piece lying ON that arc, between two angles. */
+  const chordOfBay = (fromDeg: number, toDeg: number): WallCandidate => {
+    const a = (fromDeg * Math.PI) / 180;
+    const b = (toDeg * Math.PI) / 180;
+    const x1 = 20 * Math.cos(a);
+    const y1 = 20 * Math.sin(a);
+    const x2 = 20 * Math.cos(b);
+    const y2 = 20 * Math.sin(b);
+    return { x1, y1, x2, y2, thicknessFeet: 0.5, lengthFeet: Math.hypot(x2 - x1, y2 - y1) };
+  };
+
+  it("DROPS A STRAIGHT RUN THAT LIES ALONG THE ARC", () => {
+    const { kept, dropped } = wallsNotDuplicateCoverage([bay(), chordOfBay(0, 22)]);
+    expect(dropped, "the same wall was counted twice").toBe(1);
+    expect(kept).toHaveLength(1);
+    expect(kept[0].curved).toBe(true);
+  });
+
+  it("keeps the curved wall itself", () => {
+    // The first version of this branch asked the question the other way round
+    // — the curved run's own ends against its own circle, which is true by
+    // construction — so every longer run became its duplicate and EVERY curved
+    // wall was dropped. Cedar Hollow went from -0.6% to -17.7%.
+    const far = wall(-60, -60, 40, -60, 6);
+    const { kept } = wallsNotDuplicateCoverage([bay(), far]);
+    expect(kept.some((w) => w.curved === true), "the curved wall was dropped").toBe(true);
+  });
+
+  it("keeps a wall on the far side of the same circle", () => {
+    // A round room: the opposite wall is on this very circle and is a
+    // different wall. Without the angular span test it would be swallowed.
+    const opposite = chordOfBay(200, 222);
+    const { kept } = wallsNotDuplicateCoverage([bay(), opposite]);
+    expect(kept, "a wall across the room was read as a duplicate").toHaveLength(2);
+  });
+
+  it("keeps a partition that MEETS the curved wall at one end", () => {
+    // A straight wall butting into a curved one: one end is on the arc, the
+    // other runs away into the room. It shares a point with the wall and is
+    // not the same wall, which is why BOTH ends have to be on the circle and
+    // not just one. This is the commonest shape on any plan with a curve in
+    // it, so getting it wrong would delete real partitions wholesale.
+    const meets: WallCandidate = {
+      x1: 20 * Math.cos(Math.PI / 6),
+      y1: 20 * Math.sin(Math.PI / 6),
+      x2: 6 * Math.cos(Math.PI / 6),
+      y2: 6 * Math.sin(Math.PI / 6),
+      thicknessFeet: 0.5,
+      lengthFeet: 14,
+    };
+    const { kept } = wallsNotDuplicateCoverage([bay(), meets]);
+    expect(kept, "a partition meeting the curve was eaten by it").toHaveLength(2);
+  });
+
+  it("keeps a straight wall that merely crosses the arc's chord", () => {
+    // The chord of this bay runs from (20,0) to (0,20). A wall sitting on that
+    // line is nowhere near the actual wall, which bulges out to radius 20.
+    const onTheChord = wall(14, 6, 6, 14, 6);
+    const { kept } = wallsNotDuplicateCoverage([bay(), onTheChord]);
+    expect(kept, "a wall on the chord was mistaken for the arc").toHaveLength(2);
+  });
+});

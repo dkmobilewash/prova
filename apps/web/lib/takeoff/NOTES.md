@@ -179,27 +179,70 @@ TAKEOFF_BENCH=1 pnpm takeoff:bench
 Overlays are **not committed** — they are an output, they are large, and a
 stale one is worse than none. Regenerate before looking.
 
+## Every score is THREE numbers, not one — the standard from 2026-10-17
+
+    missing — key wall nothing found, or found short
+    extra   — wall found that is not there: phantoms, and the same wall twice
+    net     — extra minus missing, the number everyone quotes
+
+**A net total hides its own composition, and this sheet proved it the
+expensive way.** Cedar Hollow read **-0.6%** while it was 12 ft short of real
+wall and 8 ft over on a double count — two defects pointing opposite ways,
+summing to something that looked nearly perfect. Fixing the double count moved
+the headline to **-1.7%** and the takeoff got BETTER. No net number can say
+that, and anyone optimising against one would have reverted the fix.
+
+For a subcontractor the two errors are not even the same KIND of wrong. Missing
+wall is a bid that loses money. Extra wall is a bid that loses the job. They
+net to zero on a scorecard and never in a business.
+
+So a report that quotes one number is incomplete, and the net is the least
+informative of the three. The scorer prints all three; the bench already keeps
+them apart (`missedOver10` and `walls.phantom.lf`) and should keep doing so.
+
 ## Known and NOT being fixed — 2026-10-17
 
 Three things measured on Cedar Hollow and left alone on purpose. Written down
 so the next person does not re-derive them, and so nobody "fixes" the first one
 without reading why it is conservative.
 
-### Openings on straight walls that nothing bridges — 11.2 ft of 11.9
+### Openings on straight walls that nothing bridges — 11.2 ft of 11.99
 
-The whole of Cedar Hollow's remaining shortfall, bar end-trimming:
-
-| wall | short by | what is uncovered |
+| wall | short by | refused by |
 | --- | --- | --- |
-| W6 | 7.68 ft | two gaps (3.7 and 4.0 ft) plus 1.3 ft at one end |
-| W4 | 3.50 ft | one 3.5 ft gap |
+| W6 | 7.68 ft | **the collinearity gate**, by a tenth of an inch |
+| W4 | 3.50 ft | the corridor guard |
 | W1, W3, W14, W16 | 0.80 ft total | ends stopping 0.2-0.3 ft short of a corner |
 
-`mergeWalls` bridges a gap only when `gapIsCrossing` says something bounds it,
-because bridging on width alone once drew wall straight across a 5'-7"
-corridor — 39 ft of wall nobody can build, in one region of one sheet. That
-guard is doing exactly what it was written to do here. Loosening it to recover
-11 ft on this plan is the trade that scar refuses, and it is refused again.
+**THIS ENTRY FIRST BLAMED THE CORRIDOR GUARD FOR ALL OF IT, AND THAT WAS WRONG
+FOR THE LARGER HALF.** It read: *"`mergeWalls` bridges a gap only when
+`gapIsCrossing` says something bounds it... That guard is doing exactly what it
+was written to do here."* Plausible, and never checked. Measured instead, by
+logging every gap decision on this sheet: **150 gaps bridged and exactly ONE
+refused by the corridor guard** — W4's, at (117.9, 43.6-47.1).
+
+W6's two gaps never reach that guard. They are stopped a gate earlier, by the
+collinearity test that a gap-bridge has to pass:
+
+    across 1.60 in   allowed 1.50 in   gap 4.00 ft   walls 18.2 + 11.0 ft
+    across 1.60 in   allowed 1.50 in   gap 3.76 ft   walls 18.2 + 10.0 ft
+
+`SAME_LINE_FEET` is 0.5 ft and a GAP bridge is allowed a QUARTER of it, so the
+two pieces of W6 must agree to within an inch and a half. They agree to within
+1.60 inches. **Seven and a half feet of wall is lost to a tenth of an inch.**
+
+Two other pairs on the same wall are 3.96 in apart, which is the same wall
+measured from a different face — so loosening the tolerance far enough to
+catch those would start merging a wall with its own neighbour.
+
+Not fixed here because it is a tolerance with a scar on each side and the sweep
+has not been run. What makes it tractable is that the number is now known: any
+proposal has to say what happens at 1.6 inches AND at 3.96, and the bench's
+zero-wall bar is what would catch a sweep that went too far.
+
+The corridor guard, for W4's 3.50 ft, is a different and harder problem — see
+the plan below. It bridges on width alone nowhere: that once drew wall straight
+across a 5'-7" corridor, 39 ft of wall nobody can build.
 
 ### A straight run on top of a curved one — 7.8 ft counted twice
 

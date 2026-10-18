@@ -552,6 +552,14 @@ function looksLikeArc(points: readonly { x: number; y: number }[]): boolean {
   return Math.abs(signed) >= ARC_EVIDENCE;
 }
 
+/** The circle a chain was drawn on, in the shape `WallCandidate.arc` wants. */
+function arcOf(
+  points: readonly { x: number; y: number }[],
+): { cx: number; cy: number; r: number } | undefined {
+  const c = circleOf(points);
+  return c === null ? undefined : { cx: c.x, cy: c.y, r: c.r };
+}
+
 /** The circle through a chain's first, middle and last point, or null when
  *  those three are too nearly collinear for one to be meaningful. */
 function circleOf(
@@ -654,6 +662,11 @@ function pairChains(chains: readonly Chain[], options: CurvedOptions): WallCandi
       thicknessFeet: best.thicknessUnits * options.feetPerUnit,
       lengthFeet,
       curved: true,
+      // The path, not the chord — see `WallCandidate.arc`. Taken from the
+      // longer face, which is the better-conditioned of the two, and from the
+      // same `circleOf` the join uses so there is one notion of "the circle
+      // this was drawn on" in this file rather than two.
+      arc: arcOf(a.points.length >= b.points.length ? a.points : b.points),
     });
   }
   return out;

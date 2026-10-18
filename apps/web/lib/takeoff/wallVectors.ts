@@ -127,6 +127,28 @@ export type WallCandidate = {
    */
   curved?: boolean;
   /**
+   * The circle a curved run was drawn on, in the same units as x1/y1.
+   *
+   * ── WHY THIS IS ON THE CANDIDATE AND NOT RE-DERIVED ──
+   *
+   * `curved`'s note above warns that the endpoints are only the CHORD and a
+   * consumer that re-derives from them under-measures. `duplicateCoverage`
+   * was one such consumer and the warning came true: it projects one run into
+   * the other's chord direction and requires the two within 2 degrees, so a
+   * 7.80 ft straight run lying ON a 55 ft arc read as 53 degrees off and was
+   * counted a second time. 7.8 ft of one wall, twice, on a GC-facing number.
+   *
+   * The chord cannot answer where the wall goes and no amount of care at the
+   * call site changes that, so the path travels with the run. Deriving it
+   * from chord and arc length is possible — solve theta/sin(theta) for the
+   * half sweep — but it leaves the centre ambiguous between two mirror
+   * positions, and the engine that drew it never had that ambiguity.
+   *
+   * Absent on straight runs, and absent on a curved run too flat for a circle
+   * to be meaningful, so every reader must handle it being undefined.
+   */
+  arc?: { cx: number; cy: number; r: number };
+  /**
    * Gaps INSIDE this run that are narrow enough to be openings, with their
    * measured widths. Present only when `mergeWalls` joined across one.
    *
