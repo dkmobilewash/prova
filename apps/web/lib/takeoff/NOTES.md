@@ -179,6 +179,62 @@ TAKEOFF_BENCH=1 pnpm takeoff:bench
 Overlays are **not committed** — they are an output, they are large, and a
 stale one is worse than none. Regenerate before looking.
 
+## The one-face-one-use loss: a scored pairing, built and measured and NOT taken — 2026-10-17
+
+55% of the bench's missed footage is attributed to "a neighbouring line
+claimed one of its faces first": the pass walks faces longest-first and lets
+each take the best partner still free, so a long line can reach a face before
+the wall that face belongs to does.
+
+The replacement built and measured: collect exactly the same candidate pairs
+through exactly the same tests, and award them BEST-FIRST — scheduled
+thickness and balanced faces first, then by how much of the shorter face runs
+alongside the longer one, how alike the two faces are in length, and whether
+they are drawn at the same pen weight. Deliberately NOT a maximiser: it cannot
+create a pairing the greedy pass rejects, only change who wins a contested
+face.
+
+| | longest | scored |
+| --- | --- | --- |
+| bench walls missed | 111 | **113** |
+| bench phantom footage | 3,497 ft | **3,862 ft** |
+| bench worst type total | A-101/D1 32.4% | **A-102__revit/D1 100.0%** |
+| 20 fixtures within 2% | 15 of 17 | **16 of 17** |
+| Cedar Hollow missing | 5.07 ft | **4.73 ft** |
+| Cedar Hollow net | −4.57 ft | **−4.20 ft** |
+| Camp Bow Wow A102 | 2,082 ft | **1,852 ft** (−11%) |
+| Camp Bow Wow A120 | 129 ft | **110 ft** (−15%) |
+| runtime | 75s | 75s |
+
+**It helps where there is a key and costs footage where there is not**, and it
+adds 365 ft of phantom across the bench — spread evenly, +18 to +41 ft on
+nearly every case, not one bad sheet. That is disqualifying and the criteria
+said so in advance.
+
+**THE REASON WAS MEASURABLE BEFORE THE BUILD AND IS THE PART WORTH KEEPING.**
+Instrumented from inside the pairing loop: after it finishes, ask of every face
+it left unused whether it would have made a wall with a face already spoken
+for. Across the bench that is **1,031 stranded pairings worth 44,012 ft**,
+against the **1,864 ft** actually attributed to this cause. So **96% of the
+pairings a reordering could take are pairings that must NOT be taken** — and
+the largest of them are 209 ft lines spanning the building at 6 inch spacing,
+which are grid lines. Greed's conservatism is load-bearing, and any scheme that
+frees contested faces inherits the whole of that 44,012 ft as its risk surface.
+
+**Reverted rather than carried behind an off switch.** Three tests were written
+for the scored mode and **every one of seven mutations survived them** — on
+scenes simple enough to write, both modes agree, so nothing pinned the
+behaviour. A mode that is off, measured worse, and pinned by nothing is the
+"written, documented, and never called" shape this file keeps paying for.
+
+**What a next attempt needs, in order.** Not a better score: a way to tell the
+209 ft grid line from the wall face it sits beside, BEFORE any reordering. Pen
+weight was in the score and was not enough. Layer name is the obvious
+candidate and the bench carries one (`A-WALL` against `A-GRID`), but the real
+plans' layers are the thing `findWallsOnSheet`'s layer filter already works on,
+so start by measuring what share of the 44,012 ft a layer test removes. If it
+does not take most of it, the reordering is not worth attempting again.
+
 ## Where accuracy stands — 2026-10-17
 
 Every number here is from the runs on that date. Re-run before quoting any of
