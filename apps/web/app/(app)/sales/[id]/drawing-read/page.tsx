@@ -5,6 +5,7 @@ import { prisma } from "@prova/db";
 import { PageShell } from "@prova/ui";
 
 import { DrawingSetReadSend } from "@/components/DrawingSetReadSend";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCompanyContext } from "@/lib/auth";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { deliveredReadFor, readCandidates } from "@/lib/drawing-set-read-query";
@@ -80,7 +81,7 @@ export default async function DrawingSetReadPage({
   if (currentUser.role !== "OWNER") {
     return (
       <PageShell width="reading">
-        <h1 className="mb-2 text-xl font-semibold text-ink">Owner only</h1>
+        <PageHeader route="/sales" parent={{ href: "/sales", label: "Sales CRM" }} title="Owner only" />
         <p className="text-sm text-ink-body">
           The sales CRM is restricted to the account owner, same as Team management and billing
           settings.
@@ -175,17 +176,23 @@ export default async function DrawingSetReadPage({
 
   return (
     <PageShell width="reading">
-      <h1 className="text-lg font-semibold text-ink">Send the drawing-set read</h1>
-      <p className="mt-1 text-sm leading-relaxed text-ink-body">
-        {lead.companyName}
-        {lead.contactName ? ` — ${lead.contactName}` : ""}
-        {lead.email ? ` — ${lead.email}` : " — no email address on file"}
-      </p>
-      <p className="mt-2 text-sm text-ink-muted">
-        <Link href={`/sales/${lead.id}`} className="text-link hover:text-link-hover">
-          Back to the lead
-        </Link>
-      </p>
+      {/* The shared header, as on its sibling /sales/[id]/sample-wh347: the
+          breadcrumb's last crumb is the way back to the lead. */}
+      <PageHeader
+        route="/sales"
+        parent={[
+          { href: "/sales", label: "Sales CRM" },
+          { href: `/sales/${lead.id}`, label: lead.companyName },
+        ]}
+        title="Send the drawing-set read"
+        subtitle={
+          <>
+            {lead.companyName}
+            {lead.contactName ? ` — ${lead.contactName}` : ""}
+            {lead.email ? ` — ${lead.email}` : " — no email address on file"}
+          </>
+        }
+      />
 
       <section className="mt-8">
         <h2 className="text-base font-semibold text-ink">What they asked for</h2>

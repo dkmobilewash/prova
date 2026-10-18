@@ -177,6 +177,11 @@ const REACHED_FROM: Record<string, Reached> = {
     parents: ["apps/web/app/(app)/sales/[id]/page.tsx"],
     needle: "`/sales/${lead.id}/sample-wh347`",
   },
+  "/sales/[id]/drawing-read": {
+    reason: "The free drawing-set read link on a lead's page (operator only).",
+    parents: ["apps/web/app/(app)/sales/[id]/page.tsx"],
+    needle: "`/sales/${lead.id}/drawing-read`",
+  },
   "/union-compliance/remittance": {
     reason: "Each month's remittance report link on /union-compliance.",
     parents: ["apps/web/app/(app)/union-compliance/page.tsx"],
