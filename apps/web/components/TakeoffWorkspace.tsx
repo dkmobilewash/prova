@@ -953,6 +953,15 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
               jobId={jobId}
               planId={data.plan.id}
               onSheetNumber={onSheetNumber}
+              // ── ONE CURRENT SHEET ──
+              //
+              // The viewer's own picker changes the sheet, and nothing used to
+              // tell this component — so everything keyed by `page` here
+              // (answer-key candidates, verdicts, traced walls, the scale, the
+              // sheet number a key is named after) belonged to whichever sheet
+              // was last picked from the TREE. A102's candidates were drawn on
+              // A103 because of it.
+              onPageChange={setPage}
               sheets={sheets}
               printedScaleByPage={data.printedScaleByPage}
               scannedPages={data.scannedPages}

@@ -248,6 +248,7 @@ export function TakeoffPlanViewer({
   onSheetNumber,
   sheetLabelByPage = {},
   initialPage = 1,
+  onPageChange,
   fill = false,
   panelOpen = true,
   readOnly = false,
@@ -271,6 +272,25 @@ export function TakeoffPlanViewer({
    */
   /** The sheet to open on. 1 unless a caller knows better — see the state. */
   initialPage?: number;
+  /**
+   * Which sheet is on screen, reported whenever it changes.
+   *
+   * ── THERE WERE TWO CURRENT PAGES, AND THEY DISAGREED ──
+   *
+   * This component owns `pageNumber` and its own picker changes it. The
+   * workspace owns `page`, and only the sheet TREE and the overview changed
+   * that — both of which tell this component through a `takeoff-goto` event.
+   * Nothing ever went the other way.
+   *
+   * So picking a sheet from the picker moved the drawing and left the
+   * workspace believing it was still on the old one. Everything the workspace
+   * keys by page then belonged to the wrong sheet: the answer-key candidates
+   * and verdicts, the traced walls, the scale a traced wall is measured at,
+   * and the sheet number a saved key is named after.
+   *
+   * One notion of the current sheet, reported from the component that owns it.
+   */
+  onPageChange?: (page: number) => void;
   /**
    * ── FILL THE HOST, RATHER THAN BE AS TALL AS THE CONTENT ──
    *
@@ -658,7 +678,7 @@ export function TakeoffPlanViewer({
   /** Sheets where somebody pressed "Run anyway". Per page, because an override
    *  is a judgement about ONE drawing. */
   const [overriddenByPage, setOverriddenByPage] = useState<Record<number, true>>({});
-  const askedVerdict = useRef<Set<number>>(new Set());
+  const askedVerdict = useRef<Set<string>>(new Set());
   /**
    * What this sheet has to show. Every render site reads THIS and not the raw
    * state, which is why the name it kept is the one they were already using.
@@ -1016,6 +1036,23 @@ export function TakeoffPlanViewer({
   useEffect(() => {
     answerKey?.onTraceReady?.(traceFrom !== null && traceTo !== null);
   }, [traceFrom, traceTo, answerKey]);
+
+  /**
+   * ── THE SHEET ON SCREEN, ANNOUNCED; AND A HALF-DRAWN TRACE ABANDONED ──
+   *
+   * The announcement is the fix for the two-page split above. The clearing is
+   * a smaller leak of the same kind: `traceFrom`/`traceTo` are this
+   * component's own state and were not keyed to a sheet at all, so a trace
+   * begun on one drawing and not finished followed the reviewer to the next
+   * one and could be committed there.
+   */
+  useEffect(() => {
+    onPageChange?.(pageNumber);
+    setTraceFrom(null);
+    setTraceTo(null);
+    setTraceHover(null);
+    setTraceAdded(null);
+  }, [pageNumber, onPageChange]);
 
   /** The box being dragged in answer-key mode, in page-width units. */
   const [keyBox, setKeyBox] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(
@@ -1936,11 +1973,26 @@ export function TakeoffPlanViewer({
    * parse is offered exactly as it was before this existed.
    */
   useEffect(() => {
-    if (askedVerdict.current.has(pageNumber)) return;
     const doc = docRef.current;
     if (!doc || !pageSize) return;
-    askedVerdict.current.add(pageNumber);
+    // ── ASKED FOR THIS PAGE *AT THIS SIZE*, AND ONLY WHILE IT SUCCEEDS ──
+    //
+    // This was keyed on the page alone and marked before the read, and the
+    // read never completed for any sheet somebody navigated to. Paging sets a
+    // NEW `pageSize` object once the sheet renders, so the effect re-ran, its
+    // cleanup cancelled the in-flight read, and the guard then refused to
+    // start another — the title block was never read, so an answer key saved
+    // on A102 was named `p9.key.json` and the not-a-takeoff-sheet verdict
+    // never arrived either.
+    //
+    // Keyed on the size as well, so the second run is a different question;
+    // and released on the way out, so a cancelled read is retried rather than
+    // remembered as done.
+    const asked = `${pageNumber}:${pageSize.widthPt}x${pageSize.heightPt}`;
+    if (askedVerdict.current.has(asked)) return;
+    askedVerdict.current.add(asked);
 
+    let done = false;
     let cancelled = false;
     void (async () => {
       try {
@@ -1964,6 +2016,7 @@ export function TakeoffPlanViewer({
         });
         if (!cancelled) {
           setTakeoffVerdictByPage((prev) => setOnThisSheet(prev, pageNumber, verdict));
+          done = true;
         }
       } catch {
         // The sheet is offered as it always was.
@@ -1971,6 +2024,8 @@ export function TakeoffPlanViewer({
     })();
     return () => {
       cancelled = true;
+      // Not finished means not asked: the next run does it properly.
+      if (!done) askedVerdict.current.delete(asked);
     };
   }, [pageNumber, pageSize, onSheetNumber]);
 
@@ -3320,6 +3375,7 @@ export function TakeoffPlanViewer({
                   {answerKey.state.traced.map((one) => (
                     <line
                       key={one.id}
+                      data-takeoff="key-traced"
                       x1={one.x1}
                       y1={one.y1}
                       x2={one.x2}
