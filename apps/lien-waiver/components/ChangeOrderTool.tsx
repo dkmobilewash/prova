@@ -1,7 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactElement, type ReactNode } from "react";
-import { forgetEverything, loadChangeOrder, loadContact, loadFields, saveChangeOrder, saveContact, type Contact } from "@/lib/browser-memory";
+import {
+  clearSentTickets,
+  forgetEverything,
+  loadChangeOrder,
+  loadContact,
+  loadFields,
+  loadSentTickets,
+  saveChangeOrder,
+  saveContact,
+  type Contact,
+} from "@/lib/browser-memory";
+import { addTicketsToChangeOrder } from "@/lib/tm-ticket";
 import {
   checkChangeOrder,
   EMPTY_DRAFT,
@@ -56,12 +67,28 @@ export function ChangeOrderTool() {
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<{ to: string; notConfigured: boolean } | null>(null);
+  const [handedOff, setHandedOff] = useState(0);
 
   // This browser's memory, after mount only: the server has no localStorage.
   useEffect(() => {
     const known = loadContact();
     // A sub who made a waiver here already told us their company.
-    setDraft(startDraft(loadChangeOrder(), localToday(), known?.company || loadFields().companyName || ""));
+    let start = startDraft(loadChangeOrder(), localToday(), known?.company || loadFields().companyName || "");
+    // "Turn these tickets into a change order" (TmTicketTool): the sent
+    // tickets' hours and quantities are ADDED as lines with no price, and
+    // handed over once. Only the flag is in the URL, never the data.
+    if (new URLSearchParams(window.location.search).get("from") === "tm-ticket") {
+      const tickets = loadSentTickets();
+      start = addTicketsToChangeOrder(start, tickets);
+      // Saved BEFORE the tickets are cleared, so the lines exist in exactly
+      // one place at every moment: an effect run twice (React's dev mode
+      // does) or a tab closed right now cannot lose them.
+      saveChangeOrder(start);
+      clearSentTickets();
+      setHandedOff(tickets.length);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    setDraft(start);
     setContact(known);
     if (known) {
       setName(known.name);
@@ -175,6 +202,14 @@ export function ChangeOrderTool() {
       total={STEPS.length}
       done={done}
       title={done ? "Check Your Inbox" : step.title}
+      notice={
+        handedOff && !done ? (
+          <p role="status" className="rounded-md bg-warn-ground p-3 font-semibold text-ink">
+            Added the hours and quantities from {handedOff === 1 ? "1 T&M ticket" : `${handedOff} T&M tickets`} as lines. Tickets carry no
+            prices: type a rate on each one.
+          </p>
+        ) : null
+      }
       onBack={index > 0 ? () => go(index - 1) : null}
       busy={busy}
       nextLabel={step.id === "send" ? (busy ? "Sending..." : "Email me the PDF") : step.id === "review" ? "Looks right" : "Next"}

@@ -42,8 +42,8 @@ export const CAPTION_PT = 7.5;
 export const FRAME_PT = 7.5;
 export const WATERMARK_PT = NOTICE_PT;
 
-const INK = rgb(0.07, 0.07, 0.07);
-const QUIET = rgb(0.38, 0.38, 0.38);
+export const INK = rgb(0.07, 0.07, 0.07);
+export const QUIET = rgb(0.38, 0.38, 0.38);
 const WATERMARK = rgb(0.85, 0.2, 0.2);
 
 const STYLE: Record<ParagraphRole, { size: number; bold: boolean; before: number; indent: number }> = {
@@ -242,5 +242,101 @@ function watermark(page: PDFPage, font: PDFFont) {
       opacity: 0.35,
       rotate: degrees(25),
     });
+  }
+}
+
+/**
+ * The free tools' OWN documents -- the change order request and the T&M
+ * ticket -- are not statutory forms, so they flow top to bottom: wrap, start
+ * a new page when the next line will not fit, and footer every page at the
+ * end. One writer for both, on this file's page, margins, type scale and
+ * pen-advance measuring, so the two cannot drift on any of it.
+ */
+export class Flow {
+  readonly pages: PDFPage[] = [];
+  page!: PDFPage;
+  /** The pen's baseline. Callers move it directly for table rows. */
+  y = 0;
+  readonly bottom = MARGIN.bottom + 18;
+
+  private constructor(
+    readonly doc: PDFDocument,
+    readonly regular: PDFFont,
+    readonly bold: PDFFont,
+  ) {
+    this.newPage();
+  }
+
+  static async create(title: string, creator: string): Promise<Flow> {
+    const doc = await PDFDocument.create();
+    const regular = await doc.embedFont(StandardFonts.Helvetica);
+    const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+    doc.setTitle(title);
+    doc.setCreator(creator);
+    doc.setProducer("C-Stream");
+    return new Flow(doc, regular, bold);
+  }
+
+  newPage() {
+    this.page = this.doc.addPage([PAGE.width, PAGE.height]);
+    this.pages.push(this.page);
+    this.y = PAGE.height - MARGIN.top;
+  }
+
+  ensure(height: number) {
+    if (this.y - height < this.bottom) this.newPage();
+  }
+
+  /** Wrap `text` to `width`, breaking only between words. */
+  wrap(text: string, font: PDFFont, size: number, width: number): string[] {
+    const out: string[] = [];
+    for (const paragraph of text.split("\n")) {
+      let line = "";
+      for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (line && advance(font, candidate, size) > width) {
+          out.push(line);
+          line = word;
+        } else line = candidate;
+      }
+      out.push(line);
+    }
+    return out;
+  }
+
+  write(text: string, opts: { size?: number; font?: PDFFont; x?: number; width?: number; before?: number; color?: typeof INK } = {}) {
+    const size = opts.size ?? BODY_PT;
+    const font = opts.font ?? this.regular;
+    const x = opts.x ?? MARGIN.x;
+    this.y -= opts.before ?? 0;
+    for (const line of this.wrap(text, font, size, opts.width ?? PAGE.width - MARGIN.x - x)) {
+      this.ensure(size * 1.35);
+      this.y -= size * 1.35;
+      if (line) this.page.drawText(line, { x, y: this.y, size, font, color: opts.color ?? INK });
+    }
+  }
+
+  /** Right-aligned at `edge`, on the current baseline. */
+  right(text: string, edge: number, font: PDFFont = this.regular, size = BODY_PT) {
+    this.page.drawText(text, { x: edge - advance(font, text, size), y: this.y, size, font, color: INK });
+  }
+
+  rule(thickness = 0.6) {
+    this.page.drawLine({ start: { x: MARGIN.x, y: this.y - 4 }, end: { x: PAGE.width - MARGIN.x, y: this.y - 4 }, thickness, color: INK });
+  }
+
+  /** The footer and "Page n of N" on every page, then the file. */
+  finish(footer: string): Promise<Uint8Array> {
+    this.pages.forEach((current, index) => {
+      current.drawText(footer, { x: MARGIN.x, y: MARGIN.bottom - 10, size: FRAME_PT, font: this.regular, color: QUIET });
+      current.drawText(`Page ${index + 1} of ${this.pages.length}`, {
+        x: MARGIN.x,
+        y: MARGIN.bottom - 10 - (FRAME_PT + 3),
+        size: FRAME_PT,
+        font: this.regular,
+        color: QUIET,
+      });
+    });
+    return this.doc.save();
   }
 }
