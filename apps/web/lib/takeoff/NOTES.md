@@ -200,6 +200,47 @@ So a report that quotes one number is incomplete, and the net is the least
 informative of the three. The scorer prints all three; the bench already keeps
 them apart (`missedOver10` and `walls.phantom.lf`) and should keep doing so.
 
+### Door evidence in a bounded gap — TRIED, REVERTED, and the numbers are the point — 2026-10-17
+
+The corridor guard refuses exactly one gap on Cedar Hollow and that gap is a
+DOORWAY with its swing drawn in it, costing 3.50 ft. The obvious fix is to ask
+a refused gap whether a door is drawn in it, and the obvious test is the one
+the shape suggests: a swing is hinged at a JAMB, on the wall's own line, and
+its radius is the LEAF, which is the width of the opening. Both are measurable
+against the gap itself rather than against a chosen tolerance.
+
+**It worked on Cedar Hollow and it was a disaster on the bench.**
+
+| | Cedar Hollow | bench walls missed |
+| --- | --- | --- |
+| before | missing 5.07 ft, net −0.7% | 111 |
+| with door evidence | **missing 1.57 ft, net −0.2%** — W4 exact at 36.00 | **271** |
+
+Instrumented rather than guessed at: of **1,087 bounded gaps on the bench, it
+bridged 651 — sixty per cent.** The commonest width it bridged was **6.4 ft,
+253 times**, which is the bench's own corridor. It was not a discriminator, it
+was a rubber stamp, and it drew wall across corridors at scale.
+
+**The flaw, stated so the next attempt does not repeat it:** the test took the
+MEDIAN distance from a jamb over every flattened-arc piece near the gap. On a
+drawing with doors everywhere — which is every drawing — a crowd of unrelated
+swings supplies whatever radius is asked for. Nothing required the pieces to
+be ONE arc: contiguous in angle about that hinge, sweeping the quarter-turn a
+door sweeps, and belonging to no other opening. "An arc at about the right
+distance" is satisfied by noise; "this arc, hinged here, sweeping this far" is
+not, and only the second is worth building.
+
+**And the unit tests passed throughout — 42 of 42, including the corridor
+case.** They call `mergeWalls(walls, feetPerUnit)` with no strokes, so the
+evidence path never ran in any of them. A corridor test that cannot reach the
+code deciding corridors is the vacuous green this directory exists to end, and
+the bench was the only instrument that saw anything. Any future attempt must
+first give those tests strokes, so the corridor case can fail.
+
+`openingEvidence.ts` is NOT committed. It is kept out of the tree rather than
+left unwired, because dead code that looks like a feature is worse than none —
+the reasoning above is what was worth keeping.
+
 ## Known and NOT being fixed — 2026-10-17
 
 Three things measured on Cedar Hollow and left alone on purpose. Written down
