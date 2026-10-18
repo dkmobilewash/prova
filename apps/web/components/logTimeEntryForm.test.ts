@@ -34,6 +34,7 @@ const fake = {
 vi.mock("@/lib/actions", () => ({ logTimeEntry: fake.logTimeEntry }));
 
 const { LogTimeEntryForm } = await import("@/components/LogTimeEntryForm");
+const { localToday } = await import("@/components/localToday");
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined;
@@ -192,5 +193,36 @@ describe("who the form offers", () => {
       "crew:luis",
     ]);
     expect(container.querySelector('[name="employeeUserId"]')).toBeNull();
+  });
+});
+
+/**
+ * ux round 4: "Log hours" landed on this form with the date blank. It now
+ * starts on the viewer's own calendar day — set after mount, since the form
+ * is server-rendered and localToday() in its markup would break hydration.
+ */
+describe("the date it starts on", () => {
+  it("is the viewer's today, and is the anchor Log hours lands on", () => {
+    renderForm();
+    expect(field("date").value).toBe(localToday());
+    expect(container.querySelector("form")?.id).toBe("log-time");
+  });
+});
+
+/**
+ * And the form sits ABOVE the history on the Crew & time tab — it was under
+ * ~45 past entries, six screens down. Read from the page source: the page is
+ * an async server component with a database behind it, which this suite
+ * cannot render.
+ */
+describe("where the crew tab puts it", () => {
+  it("comes before the list of past entries", async () => {
+    const { readFileSync } = await import("node:fs");
+    const page = readFileSync(`${process.cwd()}/app/(app)/jobs/[id]/(tabs)/crew/page.tsx`, "utf8");
+    const form = page.indexOf("<LogTimeEntryForm");
+    const history = page.indexOf("job.timeEntries.map((entry) => (");
+    expect(form).toBeGreaterThan(-1);
+    expect(history).toBeGreaterThan(-1);
+    expect(form).toBeLessThan(history);
   });
 });

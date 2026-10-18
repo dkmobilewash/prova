@@ -16,7 +16,7 @@ import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
 
 const btn =
-  "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 /** The effective-dated wage and fringe rates for one classification.
  *
@@ -145,7 +145,7 @@ export function FringeScheduleList({
                           onConfirm={() => run(() => deleteFringeRateSchedule(schedule.id))}
                           deleteClassName="text-ink-muted underline"
                           cancelClassName="text-ink-body underline"
-                          confirmClassName="text-red-400 underline"
+                          confirmClassName="text-danger underline"
                         />
                       ) : null
                     }
@@ -171,7 +171,7 @@ export function FringeScheduleList({
         </ul>
       )}
 
-      {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
+      {error && <p className="mt-1 text-xs text-danger">{error}</p>}
 
       {isAdding ? (
         <form
@@ -217,7 +217,7 @@ export function FringeScheduleList({
               <input type="date" name="effectiveTo" className={`${inputClass} py-1 text-xs`} />
             </label>
           </div>
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {error && <p className="text-xs text-danger">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={btn}>
               {isPending ? (

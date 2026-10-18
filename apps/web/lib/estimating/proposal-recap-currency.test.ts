@@ -83,7 +83,7 @@ group("whether the proposal's prices reflect the recap", () => {
       proposalPriceState(recap({ appliedAt: null, appliedTotal: null }), 1),
       proposalPriceState(recap(), 1),
     ]) {
-      expect(proposalPriceWarning(state)).toContain("estimate tab");
+      expect(proposalPriceWarning(state)).toContain("estimate page");
     }
   });
 });

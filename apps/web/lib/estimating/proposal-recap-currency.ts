@@ -126,7 +126,7 @@ export function proposalPriceWarning(state: ProposalPriceState): string | null {
     return (
       `These prices do not include your markup. This job's bid recap would add ` +
       `${state.addedTotal.toLocaleString("en-US", { style: "currency", currency: "USD" })}, and it has ` +
-      `never been written into the line prices. Open the estimate tab and press "Apply to line prices" ` +
+      `never been written into the line prices. Open the job's estimate page and press "Apply to line prices" ` +
       `before you send this.`
     );
   }
@@ -134,6 +134,6 @@ export function proposalPriceWarning(state: ProposalPriceState): string | null {
     `These prices are part marked-up and part not. The recap was applied at ` +
     `${state.appliedTotal.toLocaleString("en-US", { style: "currency", currency: "USD" })} and these lines now ` +
     `come to ${state.lineTotal.toLocaleString("en-US", { style: "currency", currency: "USD" })}, so a line has ` +
-    `changed since. Re-apply the recap on the estimate tab before you send this.`
+    `changed since. Re-apply the recap on the estimate page before you send this.`
   );
 }

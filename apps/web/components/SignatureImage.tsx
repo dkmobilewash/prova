@@ -12,7 +12,7 @@ export function SignatureImage({ path, label, className }: { path: string; label
       role="img"
       aria-label={label}
       viewBox={`0 0 ${SIGNATURE_WIDTH} ${SIGNATURE_HEIGHT}`}
-      className={className ?? "h-16 w-32 rounded border border-slate-700 bg-white"}
+      className={className ?? "h-16 w-32 rounded border border-line-card bg-white"}
     >
       <path d={path} fill="none" stroke="#111111" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
     </svg>

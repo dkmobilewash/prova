@@ -2,13 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { IncidentClassification, IncidentOutcome, prisma } from "@prova/db";
+import { isNearMiss } from "@/components/safetyLabels";
 
 export const dynamic = "force-dynamic";
 
 const FIELD_ONLY =
   "Field records aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
-const OUTCOMES = ["DEATH", "DAYS_AWAY", "RESTRICTED_OR_TRANSFER", "OTHER_RECORDABLE", "FIRST_AID_ONLY"];
+// NEAR_MISS is here so the phone can file one: kept on the log, never an OSHA
+// case, so it takes NO case number (the DB's CHECK constraint enforces
+// caseNumber IS NULL exactly when outcome is NEAR_MISS).
+const OUTCOMES = ["DEATH", "DAYS_AWAY", "RESTRICTED_OR_TRANSFER", "OTHER_RECORDABLE", "FIRST_AID_ONLY", "NEAR_MISS"];
 const CLASSIFICATIONS = ["INJURY", "SKIN_DISORDER", "RESPIRATORY_CONDITION", "POISONING", "HEARING_LOSS", "OTHER_ILLNESS"];
 
 function jsonError(error: string, status: number) {
@@ -17,7 +21,7 @@ function jsonError(error: string, status: number) {
 
 function toJson(i: {
   id: string;
-  caseNumber: number;
+  caseNumber: number | null;
   caseYear: number;
   occurredAt: Date;
   employeeName: string;
@@ -142,19 +146,24 @@ export async function POST(
     });
     if (already) return null;
 
-    const counter = await tx.safetyCaseCounter.upsert({
-      where: { companyId_caseYear: { companyId: context.companyId, caseYear } },
-      create: { companyId: context.companyId, caseYear, lastCaseNumber: 1 },
-      update: { lastCaseNumber: { increment: 1 } },
-      select: { lastCaseNumber: true },
-    });
+    // A near miss burns no number: the counter is only bumped for a case.
+    const caseNumber = isNearMiss(outcome)
+      ? null
+      : (
+          await tx.safetyCaseCounter.upsert({
+            where: { companyId_caseYear: { companyId: context.companyId, caseYear } },
+            create: { companyId: context.companyId, caseYear, lastCaseNumber: 1 },
+            update: { lastCaseNumber: { increment: 1 } },
+            select: { lastCaseNumber: true },
+          })
+        ).lastCaseNumber;
 
     return tx.safetyIncident.create({
       data: {
         companyId: context.companyId,
         jobId: job.id,
         caseYear,
-        caseNumber: counter.lastCaseNumber,
+        caseNumber,
         occurredAt,
         employeeName,
         jobTitle: String(input.jobTitle ?? "").trim() || null,

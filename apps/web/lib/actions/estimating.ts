@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { declineFieldsFor } from "@/lib/bid-decline";
 import { deleteDocument } from "@/lib/blob";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
@@ -14,7 +15,7 @@ import {
   laborQuestion,
   readingFromForm,
 } from "@/lib/catalog-import-labor";
-import { ActionResult, actionFail, actionOk, InputError, runAction, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, ownerRefusal, tradeScopeFromForm } from "./shared";
+import { ActionResult, actionFail, actionOk, InputError, runAction, BID_DECLINE_REASONS, BID_INVITATION_STATUSES, assertEditableDirectly, assertJobInCompany, craftClassificationIdFromForm, enumFromForm, nullableDecimalFromForm, ownerRefusal, tradeScopeFromForm } from "./shared";
 import { catalogActuals, catalogSourcedLine, repriceDecision } from "@/lib/catalog-actuals";
 import { quotePriceDecision } from "@/lib/catalog-quote-price";
 import { bidQuoteProblem } from "@/lib/bid-levelling";
@@ -33,6 +34,7 @@ import { addCatalogLine } from "@/lib/estimating/catalog-line";
 import { addIndirectLine } from "@/lib/estimating/add-indirect";
 import { isIndirectCostKind } from "@/lib/estimating/indirect-costs";
 import { createBidInvitationRecord } from "@/lib/estimating/bid-invitation";
+import { runAgentAfterResponse } from "@/lib/agents/onEvent";
 import { issueEstimateVersionNumber } from "@/lib/estimating/estimate-version";
 
 /** Logs a GC inviting this company to bid — tracked independent of Job,
@@ -84,7 +86,35 @@ export async function updateBidInvitationStatus(
       const status = enumFromForm(formData, "status", BID_INVITATION_STATUSES);
       const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
 
-      await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { status, bidAmount } });
+      // ── WHY, WHEN THE ANSWER IS DECLINED ──
+      //
+      // Optional on purpose. A required reason gets its first option picked to
+      // get past the screen, and data that looks complete and is fiction is
+      // worse than blank — `lib/bid-decline.ts` counts the unrecorded ones as
+      // their own number instead. So an empty select saves as null and the
+      // summary says how many it could not explain.
+      const declineReason = formData.get("declineReason")
+        ? enumFromForm(formData, "declineReason", BID_DECLINE_REASONS)
+        : null;
+      const declineNote = String(formData.get("declineNote") ?? "").trim() || null;
+      const declinedOnRaw = String(formData.get("declinedOn") ?? "").trim();
+
+      // MOVING OFF DECLINED CLEARS ALL THREE, and that rule is in
+      // `lib/bid-decline.ts` rather than here: it is a decision, and a decision
+      // written inline in an action is one no test can reach.
+      const declineFields = declineFieldsFor({
+        status,
+        reason: declineReason,
+        note: declineNote,
+        on: declinedOnRaw ? new Date(declinedOnRaw) : null,
+      });
+
+      await prisma.bidInvitation.update({
+        where: { id: bidInvitationId },
+        data: { status, bidAmount, ...declineFields },
+      });
+      // AI agents: check the estimate when the bid is marked submitted (lib/agents/onEvent.ts).
+      if (status === "SUBMITTED" && bid.status !== "SUBMITTED") runAgentAfterResponse({ companyId: company.id, agent: "ESTIMATE_CHECK", bidInvitationId });
 
       revalidatePath(`/contacts/${bid.contactId}`);
       revalidatePath("/bids");

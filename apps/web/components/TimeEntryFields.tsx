@@ -40,11 +40,11 @@ export type TimeEntryFieldDefaults = {
  * still see whose day it is. */
 export type TimeEntryLockedIdentity = { employeeLabel: string; dateLabel: string };
 
-const labelClass = "flex flex-col gap-1 text-xs text-slate-400";
+const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 const fieldClass =
-  "rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
+  "min-h-11 rounded-md border border-line-card bg-canvas px-3 py-2 text-base text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 const lockedClass =
-  "rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1 text-sm text-slate-300";
+  "min-h-11 rounded-md border border-line-row bg-surface px-3 py-2 text-base text-ink-body";
 
 /**
  * The fields of one field time entry, shared by logging a new one and
@@ -63,12 +63,11 @@ const lockedClass =
  * argued in lib/time-entry-correction.ts and enforced by a database trigger;
  * this component is only the half a user sees.
  *
- * NO DEFAULT DATE, deliberately. `localToday()` is the user's calendar date
- * and it may only be called in a component mounted by a user action —
- * server-rendered markup containing it breaks hydration (CLAUDE.md). The
- * create form is in the page's initial HTML, so the date field starts empty,
- * which is also the honest default: hours are usually entered for a day that
- * has finished, not for today.
+ * NO DEFAULT DATE IN THIS MARKUP. `localToday()` may only be called in a
+ * component mounted by a user action — server-rendered markup containing it
+ * breaks hydration (CLAUDE.md). The create form is in the page's initial
+ * HTML, so the field renders empty and `LogTimeEntryForm` fills in the
+ * viewer's today from an effect, after hydration.
  */
 export function TimeEntryFields({
   workers,

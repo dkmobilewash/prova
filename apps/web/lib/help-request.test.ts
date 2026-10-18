@@ -328,7 +328,7 @@ describe("the help control is mounted in the app shell", () => {
   }
 
   it("renders HelpButton from the topbar", () => {
-    expect(source("components/Topbar.tsx")).toContain("<HelpButton");
+    expect(source("components/shell/TopBar.tsx")).toContain("<HelpButton");
   });
 
   // Two hops since 2026-09-25, not one: the layout mounts <TopbarRegion> and
@@ -336,14 +336,14 @@ describe("the help control is mounted in the app shell", () => {
   // fix — see components/AppChrome.tsx — and the claim being guarded is
   // unchanged, so both hops are asserted rather than the chain being dropped.
   it("and the topbar is in the app shell, so every page has it", () => {
-    expect(source("components/AppChrome.tsx")).toContain("<Topbar");
-    expect(source("app/(app)/layout.tsx")).toContain("<TopbarRegion");
+    expect(source("components/AppChrome.tsx")).toContain("<TopBar");
+    expect(source("app/(app)/layout.tsx")).toContain("<TopBarRegion");
   });
 
   // The channel is resolved on the server and handed down, because Topbar is
   // a client component now and lib/help-config.ts reads process.env.
   it("the channel is still resolved server-side, in the layout", () => {
     expect(source("app/(app)/layout.tsx")).toContain("helpChannelFromEnv()");
-    expect(source("components/Topbar.tsx")).not.toContain('from "@/lib/help-config"');
+    expect(source("components/shell/TopBar.tsx")).not.toContain('from "@/lib/help-config"');
   });
 });

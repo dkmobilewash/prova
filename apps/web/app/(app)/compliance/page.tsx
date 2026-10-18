@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { ComplianceUploadForm } from "@/components/ComplianceUploadForm";
@@ -15,6 +17,8 @@ import { ExperienceModRates } from "@/components/ExperienceModRates";
 import { loadExperienceModRates } from "@/lib/emr-query";
 import { emrStanding } from "@/lib/emr";
 import { supersededCoiIds } from "@/lib/coi-standing";
+
+export const metadata = { title: "Compliance" };
 
 export default async function CompliancePage() {
   const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
@@ -57,13 +61,11 @@ export default async function CompliancePage() {
   const modRateStanding = emrStanding(modRates, await viewerToday());
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Compliance</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        Lien waivers, certificates of insurance, your experience modification rate, certified payroll, and union
-        fringe/benefit filings. Upload a
-        scanned document and Claude reads it into the fields below — review and fix anything before it&apos;s final.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/compliance"
+        subtitle="Upload a lien waiver, COI or payroll filing and Claude reads it in — check it before it's final."
+      />
 
       {/* Above the upload form deliberately: this is the only part of the
           page that is time-sensitive, and it covers licences, policies and
@@ -86,8 +88,7 @@ export default async function CompliancePage() {
           it — which is exactly the number this app refuses to produce. */}
       <ExperienceModRates standing={modRateStanding} canDelete={currentUser.role === "OWNER"} />
 
-      <section className="mb-8 rounded-lg border border-line-card bg-surface p-4" data-tour="compliance-upload">
-        <h2 className="mb-3 text-sm font-semibold text-ink-label">Upload a document</h2>
+      <section className="mb-8" data-tour="compliance-upload">
         <ComplianceUploadForm companyId={company.id} jobs={jobs.map(toJobOption)} />
         {currentUser.role === "OWNER" && (
           <p className="mt-3 text-xs text-ink-body" data-tour="compliance-mycoi">
@@ -162,6 +163,6 @@ export default async function CompliancePage() {
           </ul>
         )}
       </section>
-    </div>
+    </PageShell>
   );
 }

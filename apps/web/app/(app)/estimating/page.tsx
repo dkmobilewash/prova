@@ -9,5 +9,5 @@ import { redirect } from "next/navigation";
  * feature having been removed rather than moved.
  */
 export default function EstimatingRedirect() {
-  redirect("/dashboard?status=ESTIMATE");
+  redirect("/jobs?status=ESTIMATE");
 }

@@ -1,0 +1,86 @@
+### A free lien waiver tool that prints statutory wording, which C-Stream itself still never does (Diego)
+`claude/jolly-brahmagupta-bjy7e0`
+
+`apps/lien-waiver` is a new, separate app: a public, no-account page where a
+framing, drywall or EIFS sub picks Arizona, California, Nevada or Texas, answers
+two questions, fills in the blanks on a phone and downloads that state's
+statutory waiver as a PDF. It is a lead magnet. It has its own Vercel project and
+domain, no Clerk and no access to C-Stream's database, and imports nothing from
+`apps/web`. It lives in this repo only so CI tests it.
+
+**THE DECISION THIS RECORDS, because two files in this repo say the opposite and
+both are still right.** `apps/web/lib/lien-waiver.ts` says the app "does not
+generate statutory wording", and `lien-waivers.prisma` says "no
+state-rules table, and no generated statutory wording". `lien-deadlines.ts` says
+the app "never computes a legal deadline". This tool DOES print statutory
+wording, deliberately: Diego decided it on 2026-10-08. Neither C-Stream file
+changes, because both are about C-Stream, which still does neither. The
+deadline rule is untouched everywhere: this tool computes no date of any kind.
+
+What makes printing statutory text defensible is how the text gets there, and
+that is the whole build:
+
+- **Nobody writes it.** Each statute page is captured from the legislature's own
+  site, stored byte for byte with its SHA-256, and each form is *derived* from
+  that capture: a span of paragraphs plus an enumerated list of the characters
+  removed and the rule each removal falls under. Five rules, approved as a list
+  (`lib/statutes/normalization.ts`): whitespace, NFC, Texas's paragraph quote
+  marks, drafting punctuation, and drafting instructions. Nothing else may differ.
+- **A test fails on one character.** `generated.test.ts` re-derives raw → text →
+  forms → attorney packet on every run. `render.test.ts` takes every filled form
+  back to the statute. `pdf.test.ts` does the same to the text pdf.js reads OUT OF
+  THE PDF, with the header and footer cut away by position.
+- **No state ships unreviewed.** Production hides a state until a construction
+  attorney's review is recorded against a digest of its exact forms and our copy
+  (`lib/statutes/review.ts`). Change a character afterwards and the review stops
+  matching. `REVIEWS` is empty today, so production would show only New Mexico.
+- **New Mexico has no statutory form**, so the tool offers none. It explains why
+  and takes a "notify me" sign-up instead of inventing one.
+
+**Two things that would have shipped silently.** Node's
+`TextDecoder("windows-1252")` decodes as Latin-1 on a build without full ICU, so
+Nevada's byte `0x92` became an invisible control instead of `’`. "Undersigned’s
+Customer" read "Undersigneds Customer", and nothing on screen showed a character
+had gone. Extraction now decodes from the WHATWG table and refuses any control
+character. And pdf-lib measures text WITH kerning but draws it WITHOUT, so the
+word after a bold "PAYMENT." started 4pt early, on top of it. The PDF test caught
+it by reading "PAYMENT.A" back out of the file.
+
+Capture runs in a workflow (`capture-statutes.yml`) because an agent container
+cannot reach any legislature host. Texas (a JavaScript app) and California (403
+to GitHub's runners) are captured as headless-browser renders written straight
+to disk, and their `.meta.json` says so.
+
+The check: `pnpm --filter @prova/lien-waiver test`. Edit any character in
+`lib/statutes/generated/forms.json` or `statutes/text/*.txt` and it fails.
+
+**A lead could vanish with no trace, and Cyrus found it (issue #747).** The lead
+note to Diego and the Resend audience sign-up were fire-and-forget:
+`.catch(() => null)`, results ignored. The New Mexico "notify me" form is
+nothing BUT those two sends, so with Resend down or unconfigured it told the
+person they were on the list while their address went nowhere and nothing was
+logged. Now every send that does not land is logged by what failed and why,
+never the address. Production refuses with "try again" when no send recorded
+the address at all: for a download, the person's own waiver email counts,
+since Resend's log holds it. A preview with no Resend key still clicks through.
+The check: `lib/waiver-request.test.ts`. Disable either guard and its test fails.
+
+**The preview email allowlist is gone (Diego, 2026-10-12).** Previews used to email
+only `diego@cstream.ai`, from the 2026-10-08 build rules. That made a real test
+with any other address look like a broken tool, so previews now send exactly as
+production does. The honeypot and the rate limits are what keep a public
+preview URL from being used to send mail. `EMAIL_ALLOWLIST` is no longer read.
+
+**Live at cstream.ai/lien-waiver, with Arizona, California and Nevada reviewed (Diego,
+2026-10-12).** Patrick J. Monahan (AZ), Jeffrey D. Horowitz (CA) and M. Dason Coronado
+(NV) signed off on 2026-10-12, as Diego reported. Each review is recorded in
+`lib/statutes/review.ts` against a digest that matched the attorney packet, so
+production shows those three states. Texas has no review, so production still hides
+it. David N. Hernandez reviewed New Mexico, which has no statutory form and therefore
+no digest. The tool keeps its own Vercel project and gains `basePath: "/lien-waiver"`.
+`apps/web` owns `/lien-waiver` itself (Cyrus's landing page, #750) and rewrites
+`/lien-waiver/*` to the tool when `LIEN_WAIVER_TOOL_ORIGIN` is set. A bare `fetch()` is
+the one thing Next does not prefix, so `BASE_PATH` in `lib/site.ts` is checked against
+the config by `lib/site.test.ts`.
+
+**Going live needed one more line, in `turbo.json`.** After #750 merged, cstream.ai/lien-waiver still said "opening soon" and /lien-waiver/start 404'd, with both variables set on prova-web. The cause: Turbo 2 builds in strict env mode and passes a build ONLY the variables listed in `turbo.json`, so `LIEN_WAIVER_TOOL_URL` and `LIEN_WAIVER_TOOL_ORIGIN` were empty when the landing page and `rewrites()` were built. Both are listed now. The check: the landing page's button names /lien-waiver/start and www.cstream.ai/lien-waiver/start serves the state picker.

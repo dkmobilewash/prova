@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { MaterialOrderForm } from "@/components/MaterialOrderForm";
@@ -11,6 +13,8 @@ import { materialOrdersStatus } from "@/lib/status-sentences";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { viewerToday } from "@/lib/viewerToday";
 
+export const metadata = { title: "Material orders" };
+
 /** Stored at UTC midnight, rendered in UTC — same rule as RFIs,
  * submittals, the safety log and daily field reports. */
 function isoDate(date: Date | null) {
@@ -20,12 +24,12 @@ function isoDate(date: Date | null) {
 export default async function MaterialOrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; show?: string }>;
+  searchParams: Promise<{ job?: string; show?: string; new?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_FIELD");
   if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
   const { company, ...currentUser } = context;
-  const { job: jobFilter, show } = await searchParams;
+  const { job: jobFilter, show, new: startNew } = await searchParams;
   const showDelivered = show === "all";
 
   const today = await viewerToday();
@@ -129,19 +133,16 @@ export default async function MaterialOrdersPage({
   };
 
   const chip = (active: boolean) =>
-    `rounded-md border px-3 py-1.5 text-sm ${
-      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
+    `inline-flex min-h-11 items-center rounded-md border px-3 py-1.5 text-sm mouse:min-h-8 ${
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-rail-hover"
     }`;
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Material orders</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        What&apos;s on order, who owes it, and whether it actually showed up. Material that
-        doesn&apos;t arrive is a crew standing around, and &ldquo;the studs were three weeks
-        late&rdquo; is worth nothing in a delay conversation without the date you ordered them and
-        the date they promised.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/material-orders"
+        subtitle="What's on order, who owes it, and whether it actually showed up."
+      />
 
       <section className="mb-8" data-tour="material-orders-log">
         <MaterialOrderForm
@@ -149,6 +150,7 @@ export default async function MaterialOrdersPage({
           vendors={vendors}
           lineItems={lineItems}
           defaultJobId={activeJob ?? undefined}
+          startOpen={startNew === "1"}
         />
       </section>
 
@@ -179,7 +181,7 @@ export default async function MaterialOrdersPage({
           <h2 className="text-sm font-semibold text-ink-label">
             {rows.length} {showDelivered ? "total" : "outstanding"}
           </h2>
-          <Link href={filterHref({ show: showDelivered ? null : "all" })} className="text-sm text-link">
+          <Link href={filterHref({ show: showDelivered ? null : "all" })} className="inline-flex min-h-11 items-center text-sm text-link mouse:min-h-8">
             {showDelivered ? "Hide delivered" : "Show delivered"}
           </Link>
         </div>
@@ -232,6 +234,6 @@ export default async function MaterialOrdersPage({
           ))}
         </ul>
       )}
-    </div>
+    </PageShell>
   );
 }

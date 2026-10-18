@@ -281,7 +281,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     model: "wallType",
     label: "Wall types",
     note: "Your partition schedule — each wall type by its tag from the drawings.",
-    columns: ["id", "code", "name", "defaultHeightFt", "sides", "studSpacingIn", "notes", "sortOrder", "createdAt", "updatedAt"],
+    columns: ["id", "code", "name", "thicknessIn", "defaultHeightFt", "sides", "studSpacingIn", "notes", "sortOrder", "createdAt", "updatedAt"],
     scope: byCompany,
   },
   {
@@ -696,6 +696,23 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     models: ["PlanSheetText", "PlanSheetProposal", "PlanSheetScaleReading"],
   },
   {
+    key: "plan-wall-proposals",
+    title: "The walls found on each calibrated sheet",
+    detail:
+      "When a sheet is calibrated, the geometry is read for walls and what it finds is kept as " +
+      "one proposal per group — the centrelines, the thickness, and whether the drawing named " +
+      "the group with a printed tag or a general note. Not exported, and for the strongest of " +
+      "the three reasons this file gives: a proposal is not anybody's work. It is a reading of " +
+      "a PDF this file does not contain, re-derived from that PDF at no cost, and it is keyed " +
+      "to the calibration it was found under, so it is thrown away for free the moment somebody " +
+      "recalibrates the sheet. Nothing here is lost by leaving it out. What an estimator " +
+      "ACCEPTED from it is a different matter entirely, and it is already exported: accepting a " +
+      "group writes a `TakeoffMeasurement`, which is in the takeoff dataset with the " +
+      "calibration it was measured at. That is the line this table exists to keep — found is " +
+      "not chosen — and the export boundary is where it shows.",
+    models: ["TakeoffWallProposal"],
+  },
+  {
     key: "plan-schedule-readings",
     title: "The schedules read off each plan sheet",
     detail:
@@ -871,16 +888,32 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     title: "The sales pipeline and bidding",
     detail:
       "Leads, opportunities, bid invitations, the pre-bid chase list on the bid pipeline " +
-      "page (projects being pursued before any GC invited you), vendor price quotes, and " +
-      "the named people and call history behind a contact. The contact record itself is " +
-      "exported; the work of winning it is not.",
+      "page (projects being pursued before any GC invited you), vendor price quotes, the " +
+      "researched signals behind a prospect and their sources, and the named people and " +
+      "call history behind a contact. The contact record itself is exported; the work of " +
+      "winning it is not.",
     models: [
       "BidPursuit",
       "SalesLead",
       "SalesOpportunity",
       "SalesActivity",
       "SalesStageChange",
+      // Researched facts about a prospect, each with the page it came from.
+      // An omission rather than a dataset, for the same reason as the rest of
+      // this line: it is the work of winning the deal, not a record of the
+      // customer's own business. It is also operator-only data -- these
+      // models are populated only on the Company with isProvaOperator -- so a
+      // tenant's export would carry nothing from it even as a dataset.
+      "SalesLeadSignal",
+      // The cold-email sequencer's raw events and the consent proofs behind
+      // automated calls: operator-only like the line above, and the consent
+      // row is evidence about a PROSPECT, which a tenant export never holds.
+      "OutboundEvent",
+      "ConsentRecord",
       "BidInvitation",
+      // Why a bid was won or lost, entered by a person — the result itself
+      // is on the invitation. Lives with the bidding it explains.
+      "BidOutcome",
       "VendorPriceQuote",
       "ContactPerson",
       "ContactInteraction",
@@ -1041,6 +1074,8 @@ export const EXPORT_COLUMN_OMISSIONS: Record<string, string> = {
 };
 
 export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
+  Crew: "picking aid — a saved name for people the schedule form ticks together; the planned days themselves are exported",
+  CrewMembership: "picking aid — who a saved crew ticks; the planned days themselves are exported",
   BackchargeCounter: "sequence counter — the numbers it issued are on the rows themselves",
   ChangeOrderCounter: "sequence counter — the numbers it issued are on the exported change orders",
   CloseoutSubmissionCounter: "sequence counter — the numbers it issued are on the rows themselves",
@@ -1068,10 +1103,21 @@ export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
   NotificationDispatch: "notification record — which alert was sent to whom, not the thing it was about",
   AlertAcknowledgement: "notification record — who dismissed or snoozed an alert",
   DeviceToken: "notification record — a phone's push address, and a credential in its own right",
+  PublicWorksFirm: "the state's own licence list of OTHER firms (C Stream's market), read for outbound by the operating company; not this company's data",
+  PublicWorksSignal: "what DIR publishes about those other firms' public-works filings; not this company's data",
+  PublicWorksSyncSlice: "sync bookmark — when each slice of the public record was last pulled",
+  PublicWorksLetter: "C Stream's own outbound letters to those other firms, mailed through Lob; not this company's data",
   AskUsage: "AI usage metering",
   AskAllowancePeriod:
     "AI usage metering — how much of this month's included allowance has been claimed. Our bookkeeping about what we owe them, not a record of their work, and it is meaningless outside this app.",
   AskProposal: "AI usage — a change the assistant proposed and waited on; anything confirmed is in the real tables",
+  AskThread:
+    "AI conversation — a person's own chat with the assistant. What it changed is in the real tables; what it said is advice about them, not a record of the work.",
+  AskMessage: "AI conversation — one turn of an AskThread, same argument",
+  AgentRun: "AI bookkeeping — one run of a background agent, when it started and how it ended; what it found is advice, not a record of the work",
+  AgentFinding: "AI bookkeeping — what an agent run flagged, with its sources; every source it cites is a real record that exports on its own",
+  AiRecommendation: "AI bookkeeping — a ranked suggestion derived from the real tables, which export on their own",
+  CompanyAgentSettings: "AI settings — which agents are on and what they may spend, meaningless outside this app",
   PlanIngestJob:
     "processing bookkeeping — one run of plan-set ingestion, its stage and when it started and stopped. What the run PRODUCED is in the real tables and exports with them; this is the scaffolding, and it means nothing outside this app.",
   PlanIngestTask:

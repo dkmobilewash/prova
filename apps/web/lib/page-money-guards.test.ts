@@ -113,11 +113,14 @@ describe("the job page's tabs (rebuilt 2026-09-20 out of one monolith)", () => {
 });
 
 describe("the app layout's Money Rail figures", () => {
-  // The Sidebar is a client component: anything handed to it is serialized
-  // to the browser for every principal, whether or not it is painted. The
+  // The top bar (which draws them in its "All pages" panel since Concept G
+  // removed the Sidebar, 2026-10-10) is a client component: anything handed
+  // to it is serialized to the browser for every principal, whether or not
+  // it is painted. The
   // 2026-09-19 audit found the five company-wide dollar figures reaching a
   // FIELD user's rail; the layout now loads them only for a principal who
-  // holds VIEW_COMPANY_FINANCIALS, same as MetricBar ten lines below.
+  // holds VIEW_COMPANY_FINANCIALS — the same gate the company figures on
+  // /areas/money carry (next describe block).
   const source = read("app/(app)/layout.tsx");
 
   it("loads the stages only behind VIEW_COMPANY_FINANCIALS", () => {
@@ -125,12 +128,28 @@ describe("the app layout's Money Rail figures", () => {
     // throws costs the rail its figures, not the page — components/
     // ShellRegion.tsx) and nothing else: the gate is still the ternary.
     expect(source).toMatch(
-      /can\(principal, "VIEW_COMPANY_FINANCIALS"\)\s*\? getMoneyRailStages\(company\.id\)(?:\s*\.catch\(shellQueryFailed\("sidebar", \[\]\)\))?\s*: Promise\.resolve\(\[\]\)/,
+      /can\(principal, "VIEW_COMPANY_FINANCIALS"\)\s*\? getMoneyRailStages\(company\.id\)(?:\s*\.catch\(shellQueryFailed\("topbar", \[\]\)\))?\s*: Promise\.resolve\(\[\]\)/,
     );
   });
 
   it("never calls getMoneyRailStages ungated", () => {
     const calls = source.match(/getMoneyRailStages\(/g) ?? [];
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe("the company figures on /areas/money", () => {
+  // Moved from the bottom metric bar (in the layout, every page) on
+  // 2026-10-10. A gate that lived in the layout must move WITH the figures:
+  // company-wide backlog, margin, cash and retainage are
+  // VIEW_COMPANY_FINANCIALS, and a FIELD user can open the Money area.
+  const source = read("app/(app)/areas/[slug]/page.tsx");
+
+  it("loads them only on the Money area, behind VIEW_COMPANY_FINANCIALS", () => {
+    expect(source).toMatch(
+      /const showsFigures = area\.slug === "money" && can\(principal, "VIEW_COMPANY_FINANCIALS"\);/,
+    );
+    expect(source).toMatch(/showsFigures\s*\?\s*await loadCompanyFinancials\(company\.id\)/);
+    expect(source.match(/loadCompanyFinancials\(/g) ?? []).toHaveLength(1);
   });
 });

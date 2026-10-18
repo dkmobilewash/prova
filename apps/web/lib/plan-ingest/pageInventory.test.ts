@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { pageInventoryWork, type PageInventoryDeps, type SheetTextRow, type ScaleReadingRow } from "./pageInventory";
 import { planSetPdf, scannedSheet, sheetWithTitleBlock } from "./planFixtures";
 import { openPlanPdf } from "./planPdf";
@@ -339,5 +341,33 @@ describe("the scale printed on the sheet", () => {
     await work(task(1));
     expect(d.saved).toHaveLength(1);
     expect(d.saved[0]!.hasTextLayer).toBe(true);
+  });
+});
+
+describe("a metric sheet", () => {
+  /**
+   * ── THE STAGE MUST ACTUALLY READ METRIC, NOT MERELY BE ABLE TO ──
+   *
+   * `metricDimensionLabels` and the two-pass fallback can both be correct while
+   * the stage hands `readSheetScale` only the imperial labels — and a mutation
+   * doing exactly that left every other test in the repo green. "Built and not
+   * wired" is this codebase's most expensive recurring shape.
+   *
+   * So this drives the REAL stage over a REAL metric drawing: fixture S16,
+   * which prints `1:100`, dimensions in bare millimetres, and declined with
+   * "No printed dimensions were found on this sheet" until the fallback
+   * existed.
+   */
+  it("records the scale the sheet is drawn to", async () => {
+    const bytes = readFileSync(
+      join(import.meta.dirname, "..", "takeoff", "fixtures", "plans", "S16.pdf"),
+    );
+    const d = deps({ readPlanBytes: vi.fn(async () => ({ ok: true as const, bytes })) });
+    const work = pageInventoryWork(CTX, d.deps);
+    expect(await work(task(1))).toEqual({ ok: true });
+
+    const reading = d.scales.find((r) => r.pageNumber === 1);
+    expect(reading, "the stage recorded no scale reading at all").toBeDefined();
+    expect(reading?.scaleName).toBe("1:100");
   });
 });

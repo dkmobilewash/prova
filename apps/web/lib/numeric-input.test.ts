@@ -200,6 +200,20 @@ describe("bounds", () => {
     expect(parsed.ok ? "" : parsed.error).toBe("Retainage has to be between 0% and 100%.");
   });
 
+  it("writes a BOUND the way a person writes a number", () => {
+    // This module exists because a contractor types `2,800` and every parser
+    // refused it. Its own refusals were printing `10000` — the one notation it
+    // was built to stop insisting on. Caught by a click-through on the openings
+    // threshold: "slightly odd next to a field that now accepts 2,800".
+    //
+    // The retainage case above is the regression guard for the other half: a
+    // bound under 1,000 is unchanged, so no existing message moved.
+    const parsed = parseNumericInput("20000", { label: "The opening size", min: 1, max: 10000, unit: " sq ft" });
+    expect(parsed.ok ? "" : parsed.error).toBe(
+      "The opening size has to be between 1 sq ft and 10,000 sq ft.",
+    );
+  });
+
   it("refuses a third decimal place on a money field, rather than letting Postgres round it away", () => {
     const parsed = parseNumericInput("1.005", { label: "Amount", maxDecimals: 2 });
     expect(parsed.ok ? "" : parsed.error).toContain("2 decimal places");

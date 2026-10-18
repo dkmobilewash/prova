@@ -5,9 +5,10 @@ import { HealthMonitor, expectHealthy } from "../lib/health";
 import {
   estimateRow,
   finishWizard,
-  jobTab,
+  homeHeading,
   landOnDashboard,
   markContracted,
+  openJobTab,
   recordExecutedSubcontract,
   retainageForm,
   startJob,
@@ -271,14 +272,16 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     await landOnDashboard(page, monitor);
 
     // The run sheet's own pre-flight, in the order it gives it: the app
-    // shell, then the rail, then the Ask launcher beat 2 clicks into. Beat 1
+    // shell, then the rail, then the AI word (the way to the assistant) beat 2 clicks into. Beat 1
     // is filmed with the cursor still, so "it rendered" IS the whole beat —
     // which is why `expectHealthy` (no crash sentence, no uncaught
     // exception, real content, the shell's navigation) is the assertion and
     // not a warm-up for one.
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+    await expect(homeHeading(page)).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
-    await expect(page.locator("[data-ask-launcher]")).toBeVisible();
+    // Re-aimed 2026-10-11: for an owner the door to the assistant is the AI
+    // word now; the launcher is only drawn for someone without it.
+    await expect(page.locator('nav[aria-label="Main"] a[href="/ai"]:visible')).toBeVisible();
   });
 
   // ─────────────────────────────────────────────────────── beats 2 & 3
@@ -342,7 +345,7 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     // because the demo seed already carries 5% on Riverside. On a fresh job
     // it is a prerequisite, and getting it wrong shows up as a Retainage tab
     // reading $0.00 with no explanation.
-    await jobTab(page, "Retainage").click();
+    await openJobTab(page, "Retainage");
     await page.waitForURL(new RegExp(`/jobs/${jobId}/retainage$`));
     await expectHealthy(page, "retainage tab", { monitor });
 
@@ -815,7 +818,9 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     // ════════════════════════════════════════════════════════════════════
     await page.goto("/union-compliance");
     await expectHealthy(page, "/union-compliance", { monitor });
-    await expect(page.getByRole("heading", { name: "Union fringe & apprenticeship" })).toBeVisible();
+    // "Fringe & apprentices" since the page-title round (every page names
+    // itself); it was "Union fringe & apprenticeship".
+    await expect(page.getByRole("heading", { name: "Fringe & apprentices" })).toBeVisible();
 
     // The two sections beat B points at exist, and both say they have nothing.
     await expect(page.getByRole("heading", { name: "Fringe remittance" })).toBeVisible();
@@ -844,10 +849,12 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     await page.goto(`/jobs/${jobId}/billing`);
     await expectHealthy(page, "billing tab, before beat 6's click", { monitor });
 
-    await page.getByRole("link", { name: /go to the dashboard$/ }).click();
+    // The wordmark's name is "C Stream — <company> home" in the Concept G
+    // top bar (components/shell/TopBar.tsx); it was "… go to the dashboard".
+    await page.getByRole("link", { name: /^C Stream — .* home$/ }).click();
     await page.waitForURL(/\/dashboard(\?|$)/);
     await expectHealthy(page, "dashboard, after beat 6's click", { monitor });
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+    await expect(homeHeading(page)).toBeVisible();
 
     // 2026-09-21, as a sentence: an invoice existed and every authenticated
     // page rendered an error boundary. This shoot's beat 5 creates one, so
@@ -893,7 +900,17 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     await page.goto("/dashboard");
     await expectHealthy(page, "dashboard, reading the money rail", { monitor });
 
-    const railStage = page.locator(`nav[aria-label="Main"] [title=${JSON.stringify(GETTING_PAID_DETAIL)}]`);
+    // Concept G (2026-10-10): the left rail is gone and its five figures sit
+    // under the group headings of the avatar menu's "All pages" panel
+    // (AllPagesMenu.tsx's StageFigure, which still carries the stage's
+    // caption as its title). Open that panel and read the stage there; the
+    // old `nav[aria-label="Main"]` is now the top bar's five words and holds
+    // no figure (run 38327113148 found 0).
+    await page.getByRole("button", { name: /^Your menu/ }).click();
+    await page.getByRole("button", { name: "All pages" }).click();
+    const allPages = page.getByRole("dialog", { name: "All pages" });
+    await expect(allPages).toBeVisible();
+    const railStage = allPages.locator(`[title=${JSON.stringify(GETTING_PAID_DETAIL)}]`);
     await expect(
       railStage,
       "the rail's Getting paid stage is found by its own caption — if this caption has changed, the stage may no longer mean what this test measures",
@@ -974,7 +991,11 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     // contradicts the narration, and it is what makes this a documentation
     // defect rather than a product one.
     await page.goto("/dashboard");
-    await expect(page.locator(`nav[aria-label="Main"] [title=${JSON.stringify(GETTING_PAID_DETAIL)}]`)).toHaveCount(1);
+    await page.getByRole("button", { name: /^Your menu/ }).click();
+    await page.getByRole("button", { name: "All pages" }).click();
+    await expect(
+      page.getByRole("dialog", { name: "All pages" }).locator(`[title=${JSON.stringify(GETTING_PAID_DETAIL)}]`),
+    ).toHaveCount(1);
   });
 
   test("the browser threw nothing the run sheet would have to explain on camera", async () => {

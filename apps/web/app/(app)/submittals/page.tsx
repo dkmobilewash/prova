@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { SubmittalForm } from "@/components/SubmittalForm";
@@ -13,6 +15,8 @@ import { viewerToday } from "@/lib/viewerToday";
 import { ProcoreFeedSection, loadProcoreFeed } from "@/components/ProcoreFeedSection";
 import { ACCFeedSection, loadAccFeed } from "@/components/ACCFeedSection";
 
+export const metadata = { title: "Submittals" };
+
 /** Stored at UTC midnight, rendered in UTC — same rule as RFIs, the
  * safety log and daily field reports. */
 function isoDate(date: Date | null) {
@@ -22,12 +26,12 @@ function isoDate(date: Date | null) {
 export default async function SubmittalsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; show?: string }>;
+  searchParams: Promise<{ job?: string; show?: string; new?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_JOBS");
   if (!allowed) return <NoAccess capability="MANAGE_JOBS" />;
   const { company, ...currentUser } = context;
-  const { job: jobFilter, show } = await searchParams;
+  const { job: jobFilter, show, new: startNew } = await searchParams;
   const showApproved = show === "all";
 
   // The READER'S calendar day, not the server's UTC one — see /rfis for the
@@ -123,8 +127,8 @@ export default async function SubmittalsPage({
   };
 
   const chip = (active: boolean) =>
-    `rounded-md border px-3 py-1.5 text-sm ${
-      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
+    `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-rail-hover"
     }`;
 
   // The GC's records from Procore, if this company links any (see
@@ -134,17 +138,14 @@ export default async function SubmittalsPage({
   const accFeed = await loadAccFeed(company.id, "SUBMITTAL", activeJob);
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Submittals</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        Shop drawings and product data sent for approval, and what came back. The one question this
-        page answers is &ldquo;which revision is it legal to build from?&rdquo; — work built from a
-        superseded or unapproved drawing is rework, and &ldquo;the GC sat on it for five weeks&rdquo;
-        is worth nothing in a delay claim without the dates.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/submittals"
+        subtitle="Shop drawings and product data sent for approval, and which revision you can build from."
+      />
 
       <section className="mb-8" data-tour="submittals-log">
-        <SubmittalForm jobs={jobs} defaultJobId={activeJob ?? undefined} />
+        <SubmittalForm jobs={jobs} defaultJobId={activeJob ?? undefined} startOpen={startNew === "1"} />
       </section>
 
       {/* At zero-ever the EmptyState below is the whole answer. The status
@@ -174,7 +175,7 @@ export default async function SubmittalsPage({
           <Link
             href={filterHref({ show: showApproved ? null : "all" })}
             data-tour="submittals-show-approved"
-            className="text-sm text-link"
+            className="inline-flex min-h-11 items-center text-sm text-link"
           >
             {showApproved ? "Hide approved" : "Show approved"}
           </Link>
@@ -231,6 +232,6 @@ export default async function SubmittalsPage({
       <ProcoreFeedSection feed={procoreFeed} />
       {/* Same, from Autodesk Construction Cloud. */}
       <ACCFeedSection feed={accFeed} />
-    </div>
+    </PageShell>
   );
 }

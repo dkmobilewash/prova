@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
@@ -114,9 +116,9 @@ export default async function CashFlowPage() {
 
   if (!hasAnyInvoice) {
     return (
-      <div className="mx-auto max-w-4xl px-6 py-8">
-        <h1 className="mb-1 text-xl font-semibold text-ink">Cash flow forecast</h1>
-        <div className="mt-6 rounded-lg border border-line-card bg-surface p-6" data-tour="cash-flow-empty">
+      <PageShell width="working">
+        <PageHeader route="/cash-flow" title="Cash flow forecast" subtitle="Who owes you, how late, retainage held, and when the money should land." />
+        <div className="rounded-xl border border-line-card bg-surface p-6" data-tour="cash-flow-empty">
           <p className="text-ink-label">
             {jobs.length === 0
               ? "No jobs yet, and every figure on this page is worked out from an invoice against one."
@@ -140,30 +142,24 @@ export default async function CashFlowPage() {
           ) : (
             <p className="mt-4 text-sm text-ink-body">
               Invoices are raised on the job they bill, in its Invoices section.{" "}
-              <Link href="/jobs" className="text-link hover:text-brand">
+              <Link href="/jobs" className="text-link hover:text-link-hover">
                 Open a job
               </Link>
               .
             </p>
           )}
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-1 text-xl font-semibold text-ink">Cash flow forecast</h1>
-      <p className="mb-6 max-w-2xl text-sm text-ink-muted">
-        What each GC owes you by how long it has been owed (AR aging), retainage receivable, and a forward monthly projection built
-        strictly from due dates, payment terms, and substantial completion dates already on file — nothing here is a
-        statistical guess. Amounts with no such date land in an explicit unscheduled total rather than being assigned
-        one.
-      </p>
+    <PageShell width="working">
+      <PageHeader route="/cash-flow" title="Cash flow forecast" subtitle="Who owes you, how late, retainage held, and when the money should land." />
 
-      <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900 p-4" data-tour="cash-flow-wip">
-        <h2 className="mb-1 text-sm font-semibold text-slate-100">WIP schedule</h2>
-        <p className="mb-3 max-w-2xl text-sm text-slate-400">
+      <section className="mb-6 rounded-xl border border-line-card bg-surface p-4" data-tour="cash-flow-wip">
+        <h2 className="mb-1 font-headline text-xl text-ink">WIP schedule</h2>
+        <p className="mb-3 max-w-2xl text-sm text-ink-muted">
           Percentage of completion by the cost-to-cost method, one row per contracted or in-progress job, with
           over- and under-billings split into the two columns a surety or CPA reads them as. Opens in a
           spreadsheet. A figure whose estimates are mostly missing is left <strong>blank rather than guessed</strong>,
@@ -176,21 +172,21 @@ export default async function CashFlowPage() {
         <a
           href="/api/wip-schedule"
           download
-          className="inline-flex rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
+          className="inline-flex min-h-11 items-center rounded-md border border-line-card bg-surface px-3 text-sm font-medium text-ink hover:bg-rail-hover mouse:min-h-8"
         >
           Download WIP schedule (CSV)
         </a>
       </section>
 
-      <section className="mb-10" data-tour="cash-flow-aging">
-        <h2 className="mb-3 text-lg font-semibold text-ink">Accounts receivable aging</h2>
+      <section id="aging" className="mb-10 scroll-mt-4" data-tour="cash-flow-aging">
+        <h2 className="mb-3 font-headline text-xl text-ink">Accounts receivable aging</h2>
         {/* The grid and the total only appear when something is outstanding.
             An account that has been paid in full does not need five zeros
             and a "Total outstanding: $0.00" to say so — the sentence below
             says it, and says it as the good news it is. */}
         {sortedInvoices.length > 0 && (
           <>
-            <div className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-line-card bg-surface p-4 sm:grid-cols-5">
+            <div className="mb-4 grid grid-cols-2 gap-3 rounded-xl border border-line-card bg-surface p-4 sm:grid-cols-5">
               {(Object.keys(AGING_BUCKET_LABELS) as ArAgingBucket[]).map((bucket) => (
                 <div key={bucket}>
                   <p className="text-xs text-ink-muted">{AGING_BUCKET_LABELS[bucket]}</p>
@@ -201,7 +197,7 @@ export default async function CashFlowPage() {
                     className={
                       bucket === "CURRENT" || agingSummary.byBucket[bucket] === 0
                         ? "text-ink"
-                        : "text-amber-400"
+                        : "text-warn"
                     }
                   >
                     {money(agingSummary.byBucket[bucket])}
@@ -254,7 +250,7 @@ export default async function CashFlowPage() {
                       {row.effectiveDueDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
                     </td>
                     <td className="py-1 text-right">
-                      <span className={row.bucket === "CURRENT" ? "text-ink-body" : "text-amber-400"}>
+                      <span className={row.bucket === "CURRENT" ? "text-ink-body" : "text-warn"}>
                         {row.bucket === "CURRENT" ? "Current" : `${row.daysPastDue}d overdue`}
                       </span>
                     </td>
@@ -266,8 +262,8 @@ export default async function CashFlowPage() {
         )}
       </section>
 
-      <section className="mb-10" data-tour="cash-flow-retainage">
-        <h2 className="mb-3 text-lg font-semibold text-ink">Retainage receivable</h2>
+      <section id="retainage" className="mb-10 scroll-mt-4" data-tour="cash-flow-retainage">
+        <h2 className="mb-3 font-headline text-xl text-ink">Retainage receivable</h2>
         {/* Same rule as the aging total above: a zero total is stated once,
             by the sentence, instead of twice. */}
         {retainageWithBalance.length > 0 && (
@@ -308,7 +304,7 @@ export default async function CashFlowPage() {
       </section>
 
       <section data-tour="cash-flow-forecast">
-        <h2 className="mb-3 text-lg font-semibold text-ink">Forecast, next {FORECAST_MONTHS_AHEAD} months</h2>
+        <h2 className="mb-3 font-headline text-xl text-ink">Forecast, next {FORECAST_MONTHS_AHEAD} months</h2>
         {/* `calculateCashFlowForecast` seeds Overdue plus every month in the
             window whether or not anything lands in them — deliberately, so
             the table has a stable shape. That makes the length of
@@ -333,7 +329,7 @@ export default async function CashFlowPage() {
             <tbody>
               {forecast.months.map((month) => (
                 <tr key={month.key} className="border-t border-line-row">
-                  <td className={`py-1 pr-3 ${month.key === "OVERDUE" ? "text-amber-400" : "text-ink-label"}`}>
+                  <td className={`py-1 pr-3 ${month.key === "OVERDUE" ? "text-warn" : "text-ink-label"}`}>
                     {month.label}
                   </td>
                   <td className="py-1 pr-3 text-right text-ink-body">{money(month.arExpected)}</td>
@@ -348,6 +344,6 @@ export default async function CashFlowPage() {
         </div>
         )}
       </section>
-    </div>
+    </PageShell>
   );
 }

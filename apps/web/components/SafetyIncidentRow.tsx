@@ -8,7 +8,7 @@ import {
   type IncidentDefaults,
   type JobOption,
 } from "@/components/SafetyIncidentFields";
-import { classificationLabel, isRecordable, outcomeLabel } from "@/components/safetyLabels";
+import { classificationLabel, isNearMiss, isRecordable, outcomeLabel } from "@/components/safetyLabels";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { Spinner } from "@/components/Spinner";
@@ -17,15 +17,16 @@ import { Spinner } from "@/components/Spinner";
 // a time. `inline-flex` + `items-center` is what makes min-h centre the label
 // instead of pinning it to the top.
 const rowBtn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 const rowBtnDanger =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-danger disabled:opacity-50";
 const rowBtnConfirm =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-danger hover:bg-tag-rose disabled:opacity-50";
 
 export type IncidentRowData = IncidentDefaults & {
   id: string;
-  caseLabel: string;
+  /** Null for a near miss, which has no case number. */
+  caseLabel: string | null;
   jobName: string | null;
   reportedByName: string | null;
 };
@@ -83,12 +84,16 @@ export function SafetyIncidentRow({
           }}
           className="flex flex-col gap-3"
         >
-          <p className="text-sm font-semibold text-ink-label">Case {incident.caseLabel}</p>
+          <p className="text-sm font-semibold text-ink-label">
+            {incident.caseLabel ? `Case ${incident.caseLabel}` : "Near miss"}
+          </p>
           <FormDraftNotice draft={draft} />
 
-          <SafetyIncidentFields jobs={jobs} defaults={incident} lockDate />
+          {/* A numbered case cannot be turned into a near miss — its number is
+              on the log — so the edit form does not offer it. */}
+          <SafetyIncidentFields jobs={jobs} defaults={incident} lockDate allowNearMiss={!incident.caseLabel} />
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -112,7 +117,7 @@ export function SafetyIncidentRow({
                 setIsEditing(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
             >
               Cancel
             </button>
@@ -128,15 +133,15 @@ export function SafetyIncidentRow({
     <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-xs text-ink-body">{incident.caseLabel}</span>
+          {incident.caseLabel && <span className="font-mono text-xs text-ink-body">{incident.caseLabel}</span>}
           <span className="text-ink">{incident.employeeName}</span>
           {incident.jobTitle && <span className="text-xs text-ink-body">{incident.jobTitle}</span>}
           <span
             className={`rounded px-1.5 py-0.5 text-xs ${
-              recordable ? "bg-tag-amber text-tag-amber-ink" : "bg-neutral-800 text-ink-body"
+              recordable ? "bg-tag-amber text-tag-amber-ink" : "bg-rail-hover text-ink-body"
             }`}
           >
-            {recordable ? "Recordable" : "First aid"}
+            {recordable ? "Recordable" : isNearMiss(incident.outcome) ? "Near miss" : "First aid"}
           </span>
         </div>
 
@@ -159,7 +164,7 @@ export function SafetyIncidentRow({
           {incident.reportedByName && ` · logged by ${incident.reportedByName}`}
         </p>
 
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {error && <p className="mt-1 text-sm text-danger">{error}</p>}
       </div>
 
       {/* Arming "Remove" empties this cluster. A safety case is evidence,

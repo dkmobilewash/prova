@@ -64,6 +64,14 @@ export const PUBLIC_ROUTES: readonly PublicRoute[] = [
     pattern: "/pilot",
     mustShow: "Your whole job, in one place.",
   },
+  {
+    path: "/lien-waiver",
+    label: "lien waiver landing page",
+    pattern: "/lien-waiver",
+    // The hero headline, not "lien waiver" — that is in the <title> and
+    // the eyebrow, and would pass on a page whose body never rendered.
+    mustShow: "Make your lien waiver",
+  },
   // A section heading from the body of each, not the title in the header —
   // the shared PublicDocument chrome links to both pages by name from every
   // page, so "Privacy" and "Terms" are on screen whether or not the document
@@ -92,6 +100,16 @@ export const PUBLIC_ROUTES: readonly PublicRoute[] = [
     // The signing panel's own heading, not the word "Sign" — which is in
     // the header of half the app and would have made this check vacuous.
     mustShow: "Sign to accept",
+  },
+  {
+    // The opt-out link in every cold email, opened on a phone more often than
+    // not. Walked with a token that does not verify, which is a real render of
+    // the page (and needs no seeded lead or secret) — the confirm state is the
+    // same card with a button in it.
+    path: "/unsubscribe/not-a-real-token",
+    label: "email unsubscribe",
+    pattern: "/unsubscribe/[token]",
+    mustShow: "This link isn't valid",
   },
 ] as const;
 

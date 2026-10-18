@@ -22,7 +22,7 @@ import Link from "next/link";
  */
 
 export const metadata: Metadata = {
-  title: "Try C Stream — early tester program",
+  title: { absolute: "Try C Stream — early tester program" },
   description:
     "One place for a union specialty sub's whole job — estimate, contract, crew, certified payroll evidence, billing. Sign up and try it.",
 };
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
 const cta =
   "inline-flex items-center justify-center rounded-md bg-brand px-6 py-3 text-base font-semibold text-neutral-900 hover:bg-yellow-500";
 const ctaQuiet =
-  "inline-flex items-center justify-center rounded-md bg-neutral-800 px-5 py-3 text-sm font-medium text-ink hover:bg-neutral-700";
+  "inline-flex items-center justify-center rounded-md bg-rail-hover px-5 py-3 text-sm font-medium text-ink hover:bg-lift";
 
 /** The trade list — each line exists in the app today, with the receipt in
  * the comment beside it. Keep the receipts: they are what makes the next
@@ -121,7 +121,7 @@ export default function PilotPage() {
           alt="C Stream"
           width={240}
           height={48}
-          className="h-10 w-auto"
+          className="logo-on-theme h-10 w-auto"
           priority
         />
         <h1 className="text-3xl font-semibold leading-tight text-ink sm:text-4xl">

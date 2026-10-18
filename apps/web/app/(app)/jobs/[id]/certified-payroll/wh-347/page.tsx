@@ -17,6 +17,8 @@
 // it in. See lib/wh347.ts.
 
 import { jobFormLocation } from "@/lib/job-form-location";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import {
   WH347_STATEMENT_BLOCKING_REASON,
   buildWh347Statement,
@@ -24,7 +26,6 @@ import {
 } from "@/lib/wh347-statement";
 import { loadWh347Statement } from "@/lib/wh347-statement-query";
 import { StatementOfComplianceForm } from "./StatementOfComplianceForm";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { formatHours, formatHoursOrNull } from "@/lib/render-hours";
 import { prisma } from "@prova/db";
@@ -334,24 +335,29 @@ export default async function Wh347Page({
   const headings = form.days.map(dayHeading);
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8 print:px-0 print:py-0">
+    // Printed output is unchanged: the whole header is print:hidden, as it
+    // was, and the shell's gutters and measure are dropped for print exactly
+    // as this page's own container dropped its gutters.
+    <PageShell width="working" className="print:max-w-none print:px-0 print:py-0">
       <div className="print:hidden">
-        <Link
-          href={`/jobs/${job.id}/certified-payroll?weekStart=${isoDate(weekStart)}`}
-          className="text-sm text-link hover:underline"
-        >
-          ← Certified payroll for this week
-        </Link>
-        <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold text-ink">Form WH-347</h1>
-            <p className="mt-1 text-sm text-ink-body">
+        <PageHeader
+          route="/dashboard"
+          parent={[
+            { href: `/jobs/${job.id}`, label: job.name },
+            {
+              href: `/jobs/${job.id}/certified-payroll?weekStart=${isoDate(weekStart)}`,
+              label: "Certified payroll",
+            },
+          ]}
+          title="Form WH-347"
+          subtitle={
+            <>
               U.S. Department of Labor · Payroll · {job.name} · week ending{" "}
               {formatDate(form.header.weekEnding)}
-            </p>
-          </div>
-          <PrintButton />
-        </div>
+            </>
+          }
+          actions={<PrintButton />}
+        />
 
         {/* Refusing to look finished is the point. This banner is the
             first thing on the page and names every column that is not
@@ -798,6 +804,6 @@ export default async function Wh347Page({
           )}
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

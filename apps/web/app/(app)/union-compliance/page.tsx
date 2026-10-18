@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import {
@@ -21,6 +23,8 @@ import { WorkerCraftsPanel } from "@/components/WorkerCraftsPanel";
 import { viewerToday } from "@/lib/viewerToday";
 import { ApprenticeshipCommitteePanel } from "@/components/ApprenticeshipCommitteePanel";
 import { loadApprenticeshipCommittees } from "@/lib/das-query";
+
+export const metadata = { title: "Fringe & apprentices" };
 
 const STATUS_TONE: Record<string, string> = {
   WITHIN: "text-tag-green-ink",
@@ -94,12 +98,14 @@ export default async function UnionCompliancePage({
   })();
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Union fringe &amp; apprenticeship</h1>
+    <PageShell width="working">
+      <PageHeader
+        route="/union-compliance"
+        subtitle="What is owed to the trust funds this month, and whether the crews ran within their apprentice-to-journeyman ratio."
+      />
       <p className="mb-2 text-sm text-ink-body">
-        What is owed to the trust funds this month, and whether the crews ran within their
-        apprentice-to-journeyman ratio. Both computed from the hours actually logged — nothing here
-        is stored, and nothing here files anything for you.
+        Both computed from the hours actually logged — nothing here is stored, and nothing here
+        files anything for you.
       </p>
       <p className="mb-6 text-xs text-ink-muted">
         Ratios are checked <span className="text-ink-body">per day</span>, because that is how the
@@ -111,13 +117,13 @@ export default async function UnionCompliancePage({
       </p>
 
       <div className="mb-6 flex items-center gap-3" data-tour="uc-month">
-        <Link href={`/union-compliance?month=${previousMonth}`} className="text-sm text-link">
+        <Link href={`/union-compliance?month=${previousMonth}`} className="inline-flex min-h-11 items-center text-sm text-link mouse:min-h-0">
           ← {previousMonth}
         </Link>
         <span className="text-sm text-ink-label">
           {start} to {end}
         </span>
-        <Link href={`/union-compliance?month=${nextMonth}`} className="text-sm text-link">
+        <Link href={`/union-compliance?month=${nextMonth}`} className="inline-flex min-h-11 items-center text-sm text-link mouse:min-h-0">
           {nextMonth} →
         </Link>
       </div>
@@ -128,7 +134,7 @@ export default async function UnionCompliancePage({
           once a local exists, the order below is the right one for a month
           being reviewed. */}
       {crafts.length === 0 && (
-        <div className="mb-8 rounded-lg border border-brand bg-surface p-4" data-testid="uc-start-here">
+        <div className="mb-8 rounded-xl border border-brand bg-surface p-4" data-testid="uc-start-here">
           <p className="text-sm font-semibold text-ink">
             {setup.length === 0 ? "Start here: add your local" : "Start here: add your craft classifications"}
           </p>
@@ -190,7 +196,7 @@ export default async function UnionCompliancePage({
               // to prevent. Same check, applied one level up.
               const localBlank = isWhollyUnpriced(local);
               return (
-              <div key={local.unionLocalId} className="rounded-lg border border-line-card bg-surface p-4">
+              <div key={local.unionLocalId} className="rounded-xl border border-line-card bg-surface p-4">
                 <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
                   <p className="text-ink">{local.unionLocalLabel}</p>
                   <p className="font-mono text-ink">
@@ -296,7 +302,7 @@ export default async function UnionCompliancePage({
             {ratioReviews.map((review) => (
               <div
                 key={`${review.jobId}-${review.unionLocalId}`}
-                className="rounded-lg border border-line-card bg-surface p-4"
+                className="rounded-xl border border-line-card bg-surface p-4"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <Link href={`/jobs/${review.jobId}`} className="text-ink">
@@ -435,7 +441,7 @@ export default async function UnionCompliancePage({
             attribute your CBA to the wrong hall.
           </p>
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+          <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface">
             {setup.map((local) => (
               <UnionLocalCard
                 key={local.agreementId}
@@ -447,6 +453,6 @@ export default async function UnionCompliancePage({
           </ul>
         )}
       </section>
-    </div>
+    </PageShell>
   );
 }

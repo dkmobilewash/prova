@@ -1,4 +1,5 @@
 import { EXPORT_DATASETS, EXPORT_OMISSIONS, EXPORT_WITHHELD } from "@/lib/export";
+import { PageHeader } from "@/components/PageHeader";
 
 /**
  * The two bits of copy on `/settings/export` that make a claim about
@@ -26,7 +27,7 @@ export function ExportCoverageIntro({ companyName }: { companyName: string }) {
   const tables = EXPORT_DATASETS.length;
   return (
     <>
-      <h1 className="mb-2 text-xl font-semibold text-ink">Export core records</h1>
+      <PageHeader route="/settings/export" parent={{ href: "/settings", label: "Settings" }} title="Export core records" />
       <p className="mb-6 text-sm text-ink-body">
         The {tables} tables {companyName} works from day to day — jobs, money, hours and the
         correspondence that backs them — on demand, in a format you can open or load somewhere

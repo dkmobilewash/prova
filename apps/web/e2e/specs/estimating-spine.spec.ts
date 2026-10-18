@@ -3,7 +3,7 @@ import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { dataTour } from "../lib/dataTour";
-import { finishWizard, jobTab, landOnDashboard, settleAction, startJob, submitLineItem } from "../lib/journey";
+import { finishWizard, jobTab, landOnDashboard, openJobTab, settleAction, startJob, submitLineItem } from "../lib/journey";
 
 /**
  * THE ESTIMATING DESK, IN A REAL BROWSER, FOR THE FIRST TIME.
@@ -122,7 +122,7 @@ test.describe("the estimating desk", () => {
   });
 
   test("2. the Estimate tab loads and carries every panel the three days added", async () => {
-    await jobTab(page, "Estimate").click();
+    await openJobTab(page, "Estimate");
     await page.waitForURL(new RegExp(`/jobs/${jobId}/estimate$`));
     await expectHealthy(page, "estimate tab", { monitor });
 
@@ -141,7 +141,8 @@ test.describe("the estimating desk", () => {
     // where to go rather than showing an unusable form.
     await expect(section("job-wall-schedule").getByRole("link", { name: "Open wall types" })).toBeVisible();
 
-    // The Takeoff tab (#476) is reachable from here and from the rail.
+    // The Takeoff tab (#476) is reachable from here and from the Estimate
+    // stage's row, which is open while this page is.
     await expect(jobTab(page, "Takeoff")).toBeVisible();
     await expect(section("job-line-items").getByRole("link", { name: "Measure off a plan" })).toBeVisible();
   });
@@ -156,8 +157,29 @@ test.describe("the estimating desk", () => {
     await expect(page.getByRole("heading", { name: "No wall types yet", exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: "Start from two common wall types" }).click();
-    // The action returns what it added and the button's own message says so.
-    await expect(page.getByText("Added W1 and W2.")).toBeVisible();
+
+    // ── A COLD ROUTE'S FIRST SERVER ACTION NEEDS MORE THAN TEN SECONDS (#707) ──
+    //
+    // This spent its whole budget here on CI run 38002818860, on a commit that
+    // touched nothing near it, and passed on a re-run of the SAME SHA with no
+    // change: the expect timed out at 10s in a test that took 10.9s. It is the
+    // run's first hit of `/wall-types`, this describe sets `retries: 0`, and
+    // `playwright.config.ts:97` says retries exist for exactly "a cold Next
+    // compile" — so the one safety net for this was switched off above.
+    //
+    // ONLY THE TIMEOUT CHANGES, deliberately. Two wider fixes were considered
+    // and are wrong here. Accepting the action's refusal text as well
+    // ("You already have wall types tagged W1 and W2") covers a database that
+    // is not fresh — but `run.mjs` creates a throwaway one per run, and the
+    // one documented way round that, `E2E_DATABASE_URL`, already fails three
+    // lines above on "No wall types yet". So that tolerance would be
+    // unreachable, which is a line read and understood forever for nothing.
+    // And dropping the assertion for the outcome below would stop checking
+    // that the button says what it did.
+    //
+    // The 30s is the describe's own 180s budget, not a new allowance: it is
+    // room for one cold compile, on the one assertion that waits on one.
+    await expect(page.getByText("Added W1 and W2.")).toBeVisible({ timeout: 30_000 });
 
     await page.reload();
     await expectHealthy(page, "/wall-types after the starter types", { monitor });

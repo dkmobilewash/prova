@@ -5,6 +5,8 @@ import { money } from "@/lib/money";
 import { countSharedJobMediaByJob } from "@/lib/job-media-query";
 import { loadPortalContact } from "@/lib/portal-query";
 
+export const metadata = { title: "Your jobs" };
+
 export default async function PortalPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
 

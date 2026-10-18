@@ -30,7 +30,7 @@ export function stageBadgeClass(stage: CloseoutStage) {
     case "REJECTED":
       return "bg-tag-amber text-tag-amber-ink";
     case "AWAITING_GC":
-      return "bg-tag-blue text-tag-blue-ink";
+      return "bg-tag-brand text-tag-brand-ink";
     case "ACCEPTED":
       return "bg-tag-green text-tag-green-ink";
     default:

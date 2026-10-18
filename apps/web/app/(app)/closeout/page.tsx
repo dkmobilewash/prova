@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { CloseoutJobCard } from "@/components/CloseoutJobCard";
@@ -16,6 +18,8 @@ import { can } from "@/lib/permissions";
 import { StatusLine } from "@/components/StatusLine";
 import { closeoutStatus } from "@/lib/status-sentences";
 import { viewerToday } from "@/lib/viewerToday";
+
+export const metadata = { title: "Closeout & warranty" };
 
 export default async function CloseoutPage() {
   const { context, allowed } = await requireCapability("MANAGE_JOBS");
@@ -68,11 +72,13 @@ export default async function CloseoutPage() {
   });
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Closeout &amp; warranty</h1>
+    <PageShell width="working">
+      <PageHeader
+        route="/closeout"
+        subtitle="What is still owed before final payment, and what you are still on the hook for after it."
+      />
       <p className="mb-6 text-sm text-ink-body">
-        What&apos;s still owed before final payment, and what you&apos;re still on the hook for after
-        it. Retainage is usually released against a closeout package, so a missing lien waiver is
+        Retainage is usually released against a closeout package, so a missing lien waiver is
         money sitting with the GC — and a callback logged after the warranty ran out is the
         difference between a favour and work you should be paid for.
       </p>
@@ -80,7 +86,7 @@ export default async function CloseoutPage() {
       <StatusLine report={status} />
 
       {attention.length > 0 && (
-        <section className="mb-6 rounded-lg border border-line-card bg-surface p-4" data-tour="closeout-next">
+        <section className="mb-6 rounded-xl border border-line-card bg-surface p-4" data-tour="closeout-next">
           <h2 className="mb-1 text-sm font-semibold text-ink-label">What to do next</h2>
           <p className="mb-3 text-xs text-ink-muted">
             Most money first. A job is only off this list once the GC has accepted its package —
@@ -116,7 +122,7 @@ export default async function CloseoutPage() {
       )}
 
       {rows.length === 0 ? (
-        <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="closeout-empty">
+        <div className="rounded-xl border border-line-card bg-surface p-6" data-tour="closeout-empty">
           <p className="text-ink-label">
             No jobs yet. Closeout and warranty both hang off a job.
           </p>
@@ -128,13 +134,13 @@ export default async function CloseoutPage() {
           </p>
           <Link
             href="/jobs/new"
-            className="mt-4 inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-medium text-neutral-900 hover:bg-yellow-500"
+            className="mt-4 inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-medium text-neutral-900 hover:bg-brand-hover"
           >
             Create a job
           </Link>
         </div>
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="closeout-jobs">
+        <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-tour="closeout-jobs">
           {withReadiness.map((job) => (
             <CloseoutJobCard
               key={job.id}
@@ -163,6 +169,6 @@ export default async function CloseoutPage() {
           ))}
         </ul>
       )}
-    </div>
+    </PageShell>
   );
 }

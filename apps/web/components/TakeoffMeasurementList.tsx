@@ -143,7 +143,7 @@ export function TakeoffMeasurementList({
             <input type="hidden" name="pageId" value={sheet.id} />
             <SubmitButton
               type="submit"
-              className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+              className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
             >
               Move them to the current scale
             </SubmitButton>
@@ -164,7 +164,23 @@ export function TakeoffMeasurementList({
               />
               <span className="truncate">
                 <span className="text-ink-muted">{KIND_LABEL[row.kind]}</span>{" "}
-                {row.label ?? <span className="text-ink-muted">unnamed</span>} —{" "}
+                {row.label ?? <span className="text-ink-muted">unnamed</span>}
+                {/* ── THE PACKAGE, WHERE IT IS NOT THE BASE ──
+
+                    Shown only for an alternate. The base is most of every
+                    sheet, and a chip reading "Base bid" on four hundred rows
+                    is noise that makes the forty that matter harder to see —
+                    the same call `ClusterTag` makes for an untagged thickness
+                    group. */}
+                {row.packageLabel !== null && row.packageLabel.trim() !== "" && (
+                  <span
+                    data-takeoff="measurement-package"
+                    className="ml-1 shrink-0 rounded bg-tag-brand px-1.5 py-0.5 text-[11px] font-medium text-tag-brand-ink"
+                  >
+                    {row.packageLabel}
+                  </span>
+                )}{" "}
+                —{" "}
                 <span className="font-medium">{reads(row)}</span>
                 {/* On a multi-scale sheet the row says WHICH scale it was
                     traced against; on an ordinary one it says the scale is
@@ -395,7 +411,7 @@ function WallBridgeFields({ wallTypes }: { wallTypes: PostableWallType[] }) {
         <button
           type="button"
           onClick={() => setOpenings((current) => [...current, { w: "", h: "" }])}
-          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
         >
           Add an opening
         </button>
@@ -434,7 +450,7 @@ function WallBridgeFields({ wallTypes }: { wallTypes: PostableWallType[] }) {
           <button
             type="button"
             onClick={() => setOpenings((current) => current.filter((_, i) => i !== index))}
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
           >
             Remove
           </button>

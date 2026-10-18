@@ -33,6 +33,9 @@ function fakeTx(components: Row[]) {
   const created: Row[] = [];
   const updated: Row[] = [];
   const tx = {
+    // Unanswered, so `boardedArea` keeps the 32 sq ft default this file's
+    // expected quantities were written against.
+    company: { findUnique: async () => ({ openingDeduction: null }) },
     wallRun: {
       findMany: async () => [
         {

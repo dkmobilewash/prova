@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -15,6 +17,8 @@ import {
   type CertificationKindValue,
 } from "@/lib/certifications";
 import { viewerToday } from "@/lib/viewerToday";
+
+export const metadata = { title: "Certifications" };
 
 /** Stored at UTC midnight, rendered in UTC — the same rule as every other
  * dated record in this app. Rendering local would show yesterday's date to
@@ -112,7 +116,7 @@ export default async function CertificationsPage({
   const requirementsSection = (startHere: boolean) => (
     <section
       id="certifications-required"
-      className={startHere ? "mb-10 rounded-lg border border-brand bg-surface p-4" : undefined}
+      className={startHere ? "mb-10 rounded-xl border border-brand bg-surface p-4" : undefined}
       data-tour="certifications-required"
       {...(startHere ? { "data-start-here": "" } : {})}
     >
@@ -131,18 +135,20 @@ export default async function CertificationsPage({
   );
 
   const tile = (value: number, caption: string, tone: string) => (
-    <div className="rounded-lg border border-line-card bg-surface p-4">
+    <div className="rounded-xl border border-line-card bg-surface p-4">
       <p className={`text-2xl font-semibold ${value > 0 ? tone : "text-ink"}`}>{value}</p>
       <p className="text-xs text-ink-muted">{caption}</p>
     </div>
   );
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Certifications</h1>
+    <PageShell width="working">
+      <PageHeader
+        route="/certifications"
+        subtitle="The cards your crew has to produce at the gate — OSHA 10, scaffold, lift, silica, fit tests."
+      />
       <p className="mb-6 text-sm text-ink-body">
-        The cards your crew has to be able to produce at the gate — OSHA 10, scaffold, lift, silica,
-        fit tests. A man turned away on Monday morning doesn&apos;t stand there alone: the rest of
+        A man turned away on Monday morning doesn&apos;t stand there alone: the rest of
         the crew waits, the GC notices, and nobody pays you for the hour. This page answers the
         question before the gate does.
       </p>
@@ -173,7 +179,7 @@ export default async function CertificationsPage({
           </h2>
           <Link
             href={showEverything ? "/certifications" : "/certifications?show=all"}
-            className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800"
+            className="inline-flex min-h-11 items-center rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-rail-hover mouse:min-h-8"
           >
             {showEverything ? "Only what needs acting on" : "Show everyone, including current"}
           </Link>
@@ -207,7 +213,7 @@ export default async function CertificationsPage({
             )}
           </p>
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+          <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface">
             {visible.map((standing) => (
               <WorkerCertificationRow
                 key={standing.worker.id}
@@ -233,7 +239,7 @@ export default async function CertificationsPage({
             read.
           </p>
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+          <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface">
             {crews.map((crew) => (
               <li key={crew.job.id} className="p-4">
                 <div className="flex flex-wrap items-center gap-2">
@@ -270,6 +276,6 @@ export default async function CertificationsPage({
       </section>
 
       {!nothingSetUp && requirementsSection(false)}
-    </div>
+    </PageShell>
   );
 }

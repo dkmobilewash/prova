@@ -1,0 +1,90 @@
+/* Motion for the sections below the hero on /lien-waiver
+   (components/LienWaiverLanding.tsx). Kept out of globals.css because
+   globals.motion.test.ts counts the animation rules there.
+
+   KEYED ON REVEAL'S "visible" STATE, which Reveal.tsx only reaches after
+   its observer confirmed the section was OFF screen ("pending") and then
+   saw it arrive. So these play exactly once, on scroll-in, for a section
+   that was hidden anyway — never on content someone is already reading.
+   A section that is idle (on screen at load, no JS, reduced motion) has no
+   animation applied and renders finished. Reveal's JS never leaves idle
+   under reduced motion, and every rule below is also inside the
+   no-preference block: two locks, the same as the rest of the page.
+
+   `--i` is the item's place in its row and `--j` a meter segment's place
+   in its meter, set inline from the component. Transform and opacity only:
+   nothing here lays out, so nothing below a section can move. */
+
+.lw-seg {
+  transform-origin: left center;
+}
+.lw-wiggle {
+  display: inline-block;
+  transform-origin: 50% 85%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Cards rise into place one after another. */
+  [data-reveal="visible"] .lw-rise {
+    animation: lw-rise var(--speed-slow) var(--ease-landing) calc(var(--i, 0) * 90ms + 80ms) both;
+  }
+  /* Icons land with a small overshoot, just after their card. */
+  [data-reveal="visible"] .lw-pop {
+    animation: lw-pop 480ms cubic-bezier(0.3, 1.5, 0.5, 1) calc(var(--i, 0) * 90ms + 260ms) both;
+  }
+  /* Risk meters fill left to right, segment by segment. */
+  [data-reveal="visible"] .lw-seg {
+    animation: lw-fill 320ms var(--ease-landing) calc(var(--i, 0) * 90ms + var(--j, 0) * 110ms + 300ms) both;
+  }
+  /* The warning triangle shakes once to pull the eye. */
+  [data-reveal="visible"] .lw-wiggle {
+    animation: lw-wiggle 720ms ease-in-out 450ms both;
+  }
+
+  @keyframes lw-rise {
+    from {
+      opacity: 0;
+      transform: translateY(18px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes lw-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @keyframes lw-fill {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+  @keyframes lw-wiggle {
+    0%,
+    100% {
+      transform: rotate(0);
+    }
+    20% {
+      transform: rotate(-12deg);
+    }
+    40% {
+      transform: rotate(10deg);
+    }
+    60% {
+      transform: rotate(-6deg);
+    }
+    80% {
+      transform: rotate(3deg);
+    }
+  }
+}

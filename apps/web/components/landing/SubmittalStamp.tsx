@@ -185,7 +185,7 @@ export function SubmittalStamp({ className = "" }: { className?: string }) {
           {LATEST && (
             <span
               data-landing-stamp="build-from"
-              className="landing-stamp__settled rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body"
+              className="landing-stamp__settled rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-body"
             >
               Build from revision {LATEST.revisionNumber}
             </span>

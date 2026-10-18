@@ -1,0 +1,48 @@
+// The letter arm of C Stream's outbound: one physical letter to a firm the
+// state says is doing certified payroll this week, mailed through Lob to the
+// address on its CSLB licence.
+//
+// Not company-scoped, for the same reason as public-works.prisma: these rows
+// are about OTHER firms and are read only by the operating company's owner.
+//
+// WHY A ROW PER LETTER. A letter costs money and cannot be unsent, so the
+// question "did we already write to this firm about this filing?" has to be
+// answered by a record, not by memory. `signalFact` is the sentence the
+// letter opened with — the same `factFor()` output the page shows — and a
+// second letter is refused while a row with that fact exists. A NEW filing
+// produces a new fact, and may produce a new letter; that is a decision the
+// queue makes at read time from signals, never a stored flag.
+
+enum PublicWorksLetterStatus {
+  QUEUED
+  SENT
+  FAILED
+  /// USPS returned it: the CSLB mailing address is dead for this firm.
+  RETURNED
+}
+
+model PublicWorksLetter {
+  id      String          @id @default(cuid())
+  licence String
+  firm    PublicWorksFirm @relation(fields: [licence], references: [licence], onDelete: Cascade)
+  /// The public fact this letter opened with, verbatim. The dedupe key.
+  signalFact  String
+  templateKey String
+  status      PublicWorksLetterStatus @default(QUEUED)
+  /// Lob's `ltr_…` id. Unique: the same letter cannot be recorded as two
+  /// mailings, and Lob's idempotency key (our row id) cannot produce two ids.
+  lobId     String? @unique
+  /// The address exactly as it was handed to Lob, so a returned letter can
+  /// be read against what was printed rather than against a refreshed firm.
+  toAddress Json
+  /// The rendered letter, plain text, as the person received it.
+  body      String
+  queuedAt  DateTime  @default(now())
+  sentAt    DateTime?
+  /// Lob's estimate, ENTERED from its response — not computed here.
+  expectedDeliveryOn DateTime?
+  error              String?
+
+  @@index([licence])
+  @@index([status, queuedAt])
+}

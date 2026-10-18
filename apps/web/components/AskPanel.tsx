@@ -6,9 +6,13 @@ import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { Spinner } from "@/components/Spinner";
 import { usePathname } from "next/navigation";
 import { boundTurns, type AskTurn } from "@/lib/ask/turns";
+import { useRouter } from "next/navigation";
+import { deleteThread, loadAskThread, renameThread } from "@/lib/actions/askThreads";
 import {
   answeredAgo,
   boundTranscript,
+  entriesFromThread,
+  TITLE_CHARS,
   staleIndices,
   stalenessNote,
   summarizeQuestion,
@@ -172,6 +176,39 @@ function rememberedTurns(): AskTurn[] {
   }
 }
 
+/** The thread this tab is in, when the panel was not handed one. Lets the
+ * launcher and the dashboard continue the same stored conversation across a
+ * reload, and dies with the tab like everything else here — a tablet passed
+ * to the next person starts fresh. */
+const THREAD_KEY = "askThread";
+
+type ThreadRef = { id: string; title: string };
+
+function rememberThread(thread: ThreadRef | null) {
+  try {
+    if (thread) sessionStorage.setItem(THREAD_KEY, JSON.stringify(thread));
+    else sessionStorage.removeItem(THREAD_KEY);
+  } catch {
+    // No storage: the next question starts a new thread, nothing worse.
+  }
+}
+
+function rememberedThread(): ThreadRef | null {
+  try {
+    const raw = sessionStorage.getItem(THREAD_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Partial<ThreadRef>) : null;
+    return parsed && typeof parsed.id === "string" && typeof parsed.title === "string"
+      ? { id: parsed.id, title: parsed.title }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** What api/ask streams: the answer's events plus the one the thread layer
+ * adds first (lib/ask/threads.ts persistStream). */
+type PanelStreamEvent = AskStreamEvent | { type: "thread"; threadId: string; title: string };
+
 function rememberedCard(): string | null {
   try {
     return sessionStorage.getItem(PENDING_CARD_KEY);
@@ -226,13 +263,57 @@ function ItemLinks({ links }: { links: ItemLink[] }) {
   );
 }
 
-export function AskPanel() {
+/** `initialQuestion` seeds the box — the command palette opens `/ask?q=…` with
+ * what was typed there. It is only the starting text: nothing is asked until
+ * the person presses Ask. */
+/**
+ * THREADS. Every question now lands in a stored thread (lib/ask/threads.ts),
+ * so a conversation can be picked up days later from the Recent list.
+ *
+ * - `threadId` given: that thread's messages are loaded on mount and shown as
+ *   the scrollback, and new questions go to it. sessionStorage is not read or
+ *   written for the conversation in this mode — the server is the copy.
+ * - no `threadId`: the panel keeps the thread it starts in sessionStorage (so
+ *   a reload continues it), and the sessionStorage transcript and turns stay
+ *   as the FALLBACK — they are what the screen shows on reload, and what the
+ *   model gets if the database could not give it a thread.
+ *
+ * `subject` is where a new thread was started (a bid, a job), sent with each
+ * question and stored only when the server creates the thread.
+ * `onThreadChange` fires when a question starts a new thread.
+ */
+export function AskPanel({
+  initialQuestion = "",
+  threadId: initialThreadId,
+  subject,
+  onThreadChange,
+}: {
+  initialQuestion?: string;
+  threadId?: string;
+  subject?: { type: string; id: string };
+  onThreadChange?: (id: string) => void;
+} = {}) {
   // The route the person is looking at, sent with every question so the
   // assistant does not have to ask which job they mean when they are
   // standing on it. See lib/ask/page-context.ts — it is a hint the server
   // resolves through the session's own company, never an authority.
   const pathname = usePathname();
-  const [question, setQuestion] = useState("");
+  const router = useRouter();
+  // The conversation lives in sessionStorage only when no thread was handed in.
+  const local = !initialThreadId;
+  const [thread, setThread] = useState<ThreadRef | null>(null);
+  const threadRef = useRef<ThreadRef | null>(null);
+  const [threadNote, setThreadNote] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [threadError, setThreadError] = useState<string | null>(null);
+  const [isThreadSaving, startThreadSave] = useTransition();
+
+  function adoptThread(next: ThreadRef | null) {
+    threadRef.current = next;
+    setThread(next);
+    if (local) rememberThread(next);
+  }
+  const [question, setQuestion] = useState(initialQuestion);
   const [asked, setAsked] = useState("");
   const [answer, setAnswer] = useState("");
   const [citations, setCitations] = useState<Citation[]>([]);
@@ -331,6 +412,11 @@ export function AskPanel() {
   // disagree about — the same rule this repo applies to every other date.
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [now, setNow] = useState(0);
+  // Readable at "done", which runs inside a stream handler's closure.
+  const transcriptRef = useRef<TranscriptEntry[]>([]);
+  useEffect(() => {
+    transcriptRef.current = transcript;
+  }, [transcript]);
   // Which rows are open, by the moment they were asked. Everything starts
   // CLOSED: a scrollback whose rows are all open is the old full-height
   // list with extra chrome, and the point of collapsing is that a sitting's
@@ -352,12 +438,32 @@ export function AskPanel() {
   }, [transcript]);
 
   useEffect(() => {
-    setTranscript(rememberedTranscript());
+    if (initialThreadId) {
+      // The stored thread, read through a Server Action scoped to this
+      // person. Someone else's id gets the same sentence as a missing one.
+      void loadAskThread(initialThreadId).then((result) => {
+        if (result.ok) {
+          threadRef.current = { id: result.value.id, title: result.value.title };
+          setThread(threadRef.current);
+          setTranscript(entriesFromThread(result.value.messages));
+        } else {
+          setThreadNote(result.error);
+        }
+      });
+    } else {
+      setTranscript(rememberedTranscript());
+      const remembered = rememberedThread();
+      threadRef.current = remembered;
+      setThread(remembered);
+    }
     setNow(Date.now());
     // Ages are coarse ("3 hours ago"), so a minute is plenty — and without
     // it a panel left open all afternoon keeps claiming "just now".
     const tick = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(tick);
+    // Mount only: a different thread is a different panel — every mount
+    // point keys AskPanel by its thread, so the id never changes under it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [isConfirming, startConfirm] = useTransition();
 
@@ -450,6 +556,16 @@ export function AskPanel() {
     // Mount only: a reattach is a one-time read of what the tab remembered.
   }, []);
 
+  /** First line of every stream: which stored thread this question went to.
+   * A NEW one is announced, and the Recent list beside the panel on /ask and
+   * /ai is re-read so it shows up there. */
+  function applyThread(event: Extract<PanelStreamEvent, { type: "thread" }>) {
+    if (threadRef.current?.id === event.threadId) return;
+    adoptThread({ id: event.threadId, title: event.title });
+    onThreadChange?.(event.threadId);
+    if (pathname === "/ask" || pathname.startsWith("/ai")) router.refresh();
+  }
+
   function apply(event: AskStreamEvent) {
     switch (event.type) {
       case "tools":
@@ -499,19 +615,23 @@ export function AskPanel() {
         // answer TEXT only — no tool results, so nothing here can be quoted
         // as a fact later. See lib/ask/turns.ts.
         if (askedRef.current && answerRef.current.trim()) {
-          rememberTurns(
-            boundTurns([
-              ...rememberedTurns(),
-              { role: "user", content: askedRef.current },
-              { role: "assistant", content: answerRef.current.trim() },
-            ]),
-          );
+          if (local) {
+            rememberTurns(
+              boundTurns([
+                ...rememberedTurns(),
+                { role: "user", content: askedRef.current },
+                { role: "assistant", content: answerRef.current.trim() },
+              ]),
+            );
+          }
           // And the person's copy, which keeps what the model has no use
           // for: when it was asked, and the pages the figures came from.
           // The citations are the real remedy for a stale figure — not
           // hiding the number, but leaving the live one one tap away.
+          // Appended to what is on screen rather than to what was stored:
+          // a loaded thread was never in sessionStorage.
           const recorded = boundTranscript([
-            ...rememberedTranscript(),
+            ...transcriptRef.current,
             {
               question: askedRef.current,
               answer: answerRef.current.trim(),
@@ -521,7 +641,7 @@ export function AskPanel() {
               ...(sentAttachmentRef.current ? { attachmentName: sentAttachmentRef.current.name } : {}),
             },
           ]);
-          rememberTranscript(recorded);
+          if (local) rememberTranscript(recorded);
           setTranscript(recorded);
           setNow(Date.now());
         }
@@ -689,7 +809,16 @@ export function AskPanel() {
         // keep in sync, which is the property AskLauncher's own comment is
         // about. A HINT only: the server resolves it through the session's
         // company and ignores anything that is not this company's job.
-        body: JSON.stringify({ ...request, pagePath: pathname, priorTurns: rememberedTurns() }),
+        // The thread, when there is one, is the context: the server reads
+        // its stored messages and ignores priorTurns. priorTurns still go
+        // for the case the server could not open a thread at all.
+        body: JSON.stringify({
+          ...request,
+          pagePath: pathname,
+          priorTurns: local ? rememberedTurns() : [],
+          ...(threadRef.current ? { threadId: threadRef.current.id } : {}),
+          ...(subject ? { subject } : {}),
+        }),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
@@ -712,7 +841,9 @@ export function AskPanel() {
         for (const line of lines) {
           if (!line.trim()) continue;
           try {
-            apply(JSON.parse(line) as AskStreamEvent);
+            const event = JSON.parse(line) as PanelStreamEvent;
+            if (event.type === "thread") applyThread(event);
+            else apply(event);
           } catch {
             // A malformed line is a bug on our side; dropping it beats
             // killing an answer that is otherwise arriving fine.
@@ -823,6 +954,12 @@ export function AskPanel() {
     rememberTranscript([]);
     setTranscript([]);
     setOpenRows([]);
+    // And the thread: the next question starts a new one. The old one is
+    // NOT deleted — it is still in Recent, which is the point of keeping it.
+    adoptThread(null);
+    setThreadNote(null);
+    setRenaming(null);
+    setThreadError(null);
     // The file goes with the conversation: Clear all leaves no chip and no
     // name behind.
     clearAttachment();
@@ -833,6 +970,34 @@ export function AskPanel() {
     setAsked("");
     setQuestion("");
     inputRef.current?.focus();
+  }
+
+  function saveRename(current: ThreadRef, title: string) {
+    setThreadError(null);
+    startThreadSave(async () => {
+      const result = await renameThread(current.id, title);
+      if (result.ok) {
+        adoptThread({ id: current.id, title: title.replace(/\s+/g, " ").trim() });
+        setRenaming(null);
+        router.refresh();
+      } else {
+        setThreadError(result.error);
+      }
+    });
+  }
+
+  async function removeThread(current: ThreadRef) {
+    setThreadError(null);
+    const result = await deleteThread(current.id);
+    if (!result.ok) {
+      setThreadError(result.error);
+      return;
+    }
+    startOver();
+    // On /ask the URL may still name the deleted thread; drop it so a
+    // reload does not try to open it.
+    if (pathname === "/ask") router.replace("/ask");
+    else router.refresh();
   }
 
   function toggleRow(askedAt: number) {
@@ -860,7 +1025,105 @@ export function AskPanel() {
           Capped in height and scrolled on its own, because this panel sits
           above the rest of the dashboard and must not push it down the
           page as a conversation grows. */}
-      {priorExchanges.length > 0 && (
+      {threadNote && (
+        <p role="status" className="mb-2 text-sm text-ink-body" data-ask="thread-note">
+          {threadNote} Ask something below to start a new conversation.
+        </p>
+      )}
+
+      {/* THE STORED THREAD: its name, and the two things a person can do
+          to it. "Ask something else" below starts a new one and leaves this
+          one in Recent; Delete is the only way it goes. */}
+      {thread && (
+        <div className="mb-2" data-ask="thread-header">
+          {renaming !== null ? (
+            <form
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                saveRename(thread, renaming);
+              }}
+            >
+              <input
+                value={renaming}
+                onChange={(event) => setRenaming(event.target.value)}
+                name="title"
+                type="text"
+                aria-label="Conversation name"
+                // A named constant rather than a literal: speechInput.test
+                // reads the FIRST literal maxLength in this file as the Ask
+                // box's cap.
+                maxLength={TITLE_CHARS}
+                autoFocus
+                className="min-w-0 flex-1 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink focus:border-brand focus:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={isThreadSaving || renaming.trim() === ""}
+                className="min-h-11 rounded-md bg-brand px-3 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
+              >
+                {isThreadSaving ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Spinner />
+                    Saving…
+                  </span>
+                ) : (
+                  "Save"
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRenaming(null);
+                  setThreadError(null);
+                }}
+                className="min-h-11 px-2 text-sm text-ink-body underline hover:text-link"
+              >
+                Cancel
+              </button>
+            </form>
+          ) : (
+            <div className="flex items-start justify-between gap-2">
+              <h2 className="min-w-0 truncate pt-1 text-sm font-semibold text-ink" title={thread.title}>
+                {thread.title}
+              </h2>
+              <div className="flex shrink-0 items-start gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    startOver();
+                    // A thread named in the URL would come back on reload.
+                    if (pathname === "/ask" && initialThreadId) router.replace("/ask");
+                  }}
+                  className="min-h-8 px-1 text-xs text-ink-body underline hover:text-link"
+                >
+                  New
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRenaming(thread.title)}
+                  className="min-h-8 px-1 text-xs text-ink-body underline hover:text-link"
+                >
+                  Rename
+                </button>
+                <ConfirmDeleteButton
+                  action={() => removeThread(thread)}
+                  label="Delete"
+                  confirmLabel="Delete it"
+                  describe="Deletes this conversation for good. Nothing it changed in your records is undone."
+                />
+              </div>
+            </div>
+          )}
+          {threadError && (
+            <p role="alert" className="mt-1 text-xs text-tag-rose-ink">
+              {threadError}
+            </p>
+          )}
+        </div>
+      )}
+
+      {!thread && priorExchanges.length > 0 && (
         <div className="mb-1 flex justify-end" data-ask="transcript-clear">
           {/* The shared two-step delete, so the arming state and the
               Cancel-on-the-vacated-pixel rule are the ones every list
@@ -882,7 +1145,10 @@ export function AskPanel() {
         >
           <ol className="divide-y divide-line-row">
             {priorExchanges.map(({ entry, index }) => {
-              const stale = staleIndices(transcript).includes(index);
+              // With no live answer on screen, even the newest row was read
+              // at another moment — a thread reopened days later is the
+              // case that made this matter.
+              const stale = staleIndices(transcript).includes(index) || !hasResult;
               const open = openRows.includes(entry.askedAt);
               const rowId = `ask-entry-${entry.askedAt}-${index}`;
               return (
@@ -1131,7 +1397,7 @@ export function AskPanel() {
               onClick={startOver}
               className="mt-2 text-xs text-ink-body underline hover:text-link"
             >
-              Ask something else
+              {thread ? "New conversation" : "Ask something else"}
             </button>
           )}
         </div>
@@ -1205,7 +1471,11 @@ export function AskPanel() {
         // `items-end` so the button and the attach control stay on the last
         // line as the box grows, rather than floating at the middle of a
         // four-line question.
-        className="flex items-end gap-2"
+        // `flex-wrap` + the textarea's `basis-full` below `sm`: on a phone
+        // the box takes the whole row and the three controls drop under it,
+        // instead of squeezing the box to a third of a 390px screen (seen on
+        // the /ai phone screenshot, 2026-10-11).
+        className="flex flex-wrap items-end gap-2"
         data-tour="ask-box"
       >
         <textarea
@@ -1241,7 +1511,7 @@ export function AskPanel() {
             node.style.height = "auto";
             node.style.height = `${Math.min(node.scrollHeight, 144)}px`;
           }}
-          className="min-w-0 flex-1 resize-none overflow-y-auto rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
+          className="min-w-0 flex-1 basis-full resize-none overflow-y-auto rounded-md border border-line-card sm:basis-0 bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
         />
         {/* Attach a file. The input is hidden and the button opens it; the
             upload starts on pick, so sending is not held up by it. */}
@@ -1285,7 +1555,7 @@ export function AskPanel() {
             title={listening ? "Stop dictating" : "Dictate your question"}
             className={`shrink-0 rounded-md border px-3 py-2 ${
               listening
-                ? "border-brand bg-brand/10 text-brand"
+                ? "border-brand bg-brand/10 text-link-hover"
                 : "border-line-card bg-surface text-ink-body hover:text-ink"
             }`}
           >

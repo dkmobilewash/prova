@@ -15,9 +15,9 @@ import {
 } from "@/lib/certifications";
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50";
 const confirmBtn =
-  "rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-tag-rose disabled:opacity-50";
+  "rounded-md border border-red-500 px-3 py-1.5 text-xs text-danger hover:bg-tag-rose disabled:opacity-50";
 
 /**
  * What the company requires of everyone, and the only control that turns a
@@ -140,7 +140,7 @@ export function CertificationRequirements({
             />
           </label>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
 
           <div className="flex gap-2">
             <button
@@ -164,7 +164,7 @@ export function CertificationRequirements({
                 setIsOpen(false);
                 setError(null);
               }}
-              className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
             >
               Cancel
             </button>
@@ -175,7 +175,7 @@ export function CertificationRequirements({
           <button
             type="button"
             onClick={() => setIsOpen(true)}
-            className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover"
           >
             Require a certification
           </button>
@@ -249,7 +249,7 @@ export function CertificationRequirements({
         </ul>
       )}
 
-      {error && !isOpen && <p className="text-sm text-red-400">{error}</p>}
+      {error && !isOpen && <p className="text-sm text-danger">{error}</p>}
     </div>
   );
 }

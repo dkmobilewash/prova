@@ -246,3 +246,14 @@ describe("a submittal revision can point at the stamp it records", () => {
     expect(container.textContent).not.toContain("the stamped submittal");
   });
 });
+
+// ux round 4: RFI 3 had no due date, so ten days unanswered read like any
+// other sent RFI. The row now says how long ago it was asked, and flags it.
+describe("an open RFI with no due date", () => {
+  it("says how long ago it was asked, and flags a week+", () => {
+    const open = { ...answeredRfi, status: "SENT", sentOn: "2026-10-02", dueBy: null, answeredOn: null, answer: null };
+    render(createElement(RfiRow, { rfi: open, today: "2026-10-12", canDelete: false, showJob: false }));
+    expect(container.textContent).toContain("asked 10 days ago");
+    expect(container.textContent).toContain("Waiting a week+");
+  });
+});

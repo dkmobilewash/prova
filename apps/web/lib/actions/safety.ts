@@ -15,7 +15,7 @@ import {
 } from "./shared";
 // The one definition of what OSHA counts as recordable, shared with the log
 // and the form so a guard here can never disagree with what the row shows.
-import { isRecordable } from "@/components/safetyLabels";
+import { caseLabel, isNearMiss, isRecordable } from "@/components/safetyLabels";
 
 /** Every entry point to these records is a page guarded by MANAGE_FIELD,
  * so every write here answers to the same capability. A guarded page
@@ -55,6 +55,7 @@ const OUTCOMES = [
   "RESTRICTED_OR_TRANSFER",
   "OTHER_RECORDABLE",
   "FIRST_AID_ONLY",
+  "NEAR_MISS",
 ] as const;
 
 const CLASSIFICATIONS = [
@@ -232,7 +233,10 @@ export async function createSafetyIncident(formData: FormData): Promise<ActionRe
           companyId: company.id,
           jobId,
           caseYear,
-          caseNumber: await issueCaseNumber(tx, company.id, caseYear),
+          // A near miss takes NO number: it is not an OSHA case, and a
+          // number issued to it would be a gap in the filed log's sequence.
+          // The migration's CHECK refuses a near miss with a number.
+          caseNumber: isNearMiss(outcome) ? null : await issueCaseNumber(tx, company.id, caseYear),
           occurredAt,
           employeeName,
           jobTitle: jobTitle || null,
@@ -271,24 +275,43 @@ export async function updateSafetyIncident(
 
     const updatedOutcome = pick(formData, "outcome", OUTCOMES);
 
+    // A numbered case can never become a near miss: its number is on the
+    // filed log, and the counter never reissues one, so un-numbering it
+    // would leave the same unexplained gap a deletion does.
+    if (!isNearMiss(incident.outcome) && isNearMiss(updatedOutcome)) {
+      return actionFail(
+        `Case ${caseLabel(incident.caseYear, incident.caseNumber)} already has its number on the log, so it can't become a near miss. If nobody needed treatment, set the outcome to First aid only.`,
+      );
+    }
+    // The other way is real life — the back that hurt the next morning — and
+    // is when the case number is issued: the moment it became an OSHA case.
+    const becomesCase = isNearMiss(incident.outcome) && !isNearMiss(updatedOutcome);
+
     // caseNumber/caseYear are deliberately not editable: they identify the
-    // case on a filed log.
-    await prisma.safetyIncident.update({
-      where: { id: incidentId },
-      data: {
-        jobId: await optionalJobId(formData, company.id),
-        employeeName,
-        jobTitle: jobTitle || null,
-        location: location || null,
-        description,
-        classification: pick(formData, "classification", CLASSIFICATIONS),
-        outcome: updatedOutcome,
-        ...daysForOutcome(
-          updatedOutcome,
-          countFromForm(formData, "daysAway"),
-          countFromForm(formData, "daysRestricted"),
-        ),
-      },
+    // case on a filed log. The one write to caseNumber here is the issue
+    // above, inside the same transaction as the counter bump.
+    // Everything parsed BEFORE the transaction, so a bad field is refused
+    // without the counter ever being touched.
+    const data = {
+      jobId: await optionalJobId(formData, company.id),
+      employeeName,
+      jobTitle: jobTitle || null,
+      location: location || null,
+      description,
+      classification: pick(formData, "classification", CLASSIFICATIONS),
+      outcome: updatedOutcome,
+      ...daysForOutcome(
+        updatedOutcome,
+        countFromForm(formData, "daysAway"),
+        countFromForm(formData, "daysRestricted"),
+      ),
+    };
+    await prisma.$transaction(async (tx) => {
+      const caseNumber = becomesCase ? await issueCaseNumber(tx, company.id, incident.caseYear) : undefined;
+      await tx.safetyIncident.update({
+        where: { id: incidentId },
+        data: caseNumber === undefined ? data : { ...data, caseNumber },
+      });
     });
 
     revalidatePath("/safety");
