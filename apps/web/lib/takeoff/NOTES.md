@@ -27,6 +27,42 @@ pointing instruments at drawings this repo did not author:
   caught;
 - a classifier prompt rule that rejected every radius wall.
 
+### Cedar Hollow is a PRACTICE plan now, not a held-out test — 2026-10-17
+
+It was built as a held-out test: a plan and an answer key this repo had never
+seen, generated outside it, kept outside it, and read only by a scorer that is
+not the detector. It did exactly what it was for. On its first run it scored
+−7.9% and the per-wall table pointed straight at the arcs, which is how the
+curved-wall fix was found.
+
+**That first run is the only held-out measurement it will ever give**, and
+this entry exists so nobody quotes a later one as if it were. A plan used to
+FIND a fix has taught the engine its own answers; every score after the first
+is a practice score. The distinction is not bookkeeping — the whole value of
+the first number was that nothing had been tuned toward it.
+
+| | |
+| --- | --- |
+| first run, held out, before the fix | **−52.8 ft, −7.9%**, 0 phantoms |
+| after the curved-wall fix | −3.9 ft, −0.6%, 0 phantoms |
+| status from 2026-10-17 | practice — keep running it, stop quoting it as held out |
+
+It stays in the guards, and that is the point of keeping it: it is now a
+REGRESSION test, which is a job a seen plan does perfectly well. What it can no
+longer do is tell us how the engine performs on a drawing it has not met.
+
+The protection against reading the key still stands and should NOT be removed
+just because the plan is seen — `truthWall.test.ts` refuses any file under
+`lib/takeoff` that names the plan or its key, and `zzHeldout.eval.ts` reads the
+DRAWING only. That guard costs nothing and is what makes the next held-out
+plan a one-line setup instead of a rebuild.
+
+**The next held-out plan should be a different building**, not this one
+re-generated: the generator's conventions are now partly known, so a second
+plan from it is a weaker test than the first was. Keep its PDF and key outside
+the repository, the same way, and write down the first number before touching
+anything.
+
 ### The rule for an answer key
 
 **Only what a drawing PRINTS may be ground truth.** A room tag that says
