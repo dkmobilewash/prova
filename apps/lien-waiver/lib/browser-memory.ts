@@ -40,10 +40,17 @@ export const saveFields = (fields: Record<string, string>) => write(FIELDS, fiel
  * browser "returning" and ungated from then on. */
 export const loadContact = () => read<Contact>(CONTACT);
 export const saveContact = (contact: Contact) => write(CONTACT, contact);
+/** The change order request in progress (components/ChangeOrderTool.tsx),
+ * so a reload or a dropped signal on site does not lose a priced request. */
+const CHANGE_ORDER = "change-order:draft:v1";
+export const loadChangeOrder = () => read<Record<string, unknown>>(CHANGE_ORDER);
+export const saveChangeOrder = (draft: unknown) => write(CHANGE_ORDER, draft);
+
 export function forgetEverything() {
   try {
     window.localStorage.removeItem(FIELDS);
     window.localStorage.removeItem(CONTACT);
+    window.localStorage.removeItem(CHANGE_ORDER);
   } catch {
     // Nothing to forget.
   }

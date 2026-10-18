@@ -85,7 +85,24 @@ Settings (or through the API), which takes any path. Environment variables:
 | `NEXT_PUBLIC_CSTREAM_URL` | where "Get a free job breakdown" points (default `https://cstream.ai`) -- **set** |
 
 Optional extra layer, not configured by code: a Vercel Firewall rate-limit rule
-on `/api/waiver` and `/api/notify`.
+on `/api/waiver`, `/api/change-order` and `/api/notify`.
+
+## Change order request (2026-10-17)
+
+The second free tool, at `/lien-waiver/change-order` (`app/change-order`,
+`components/ChangeOrderTool.tsx`, `lib/change-order*.ts`). Not statutory, so no
+attorney gate; `lib/content.test.ts` fails the build on anything in it that
+reads as legal advice or a payment promise. Same frame (`components/StepShell.tsx`),
+same email-only delivery and the same rate-limit counters as the waiver
+(`deliverPdf` in `lib/waiver-request.ts`). Backup documents are listed by name
+on the PDF, not uploaded. No new environment variables.
+
+On cstream.ai it already works at `cstream.ai/lien-waiver/change-order` through
+the existing `/lien-waiver/:path+` rewrite. A bare `cstream.ai/change-order`
+needs its own rewrite on prova-web (`/change-order` ->
+`${LIEN_WAIVER_TOOL_ORIGIN}/lien-waiver/change-order`); the page's assets and
+API stay under `/lien-waiver/*`. Check it on a preview before linking it: the
+browser URL would then not start with this app's basePath.
 
 ## Pre-fill links (2026-10-14)
 
