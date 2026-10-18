@@ -223,6 +223,20 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
         </Link>
       </p>
 
+      {/* The ONLY way in to the drawing-set read page, and deliberately not a
+          nav entry: that screen is about one lead and one uploaded plan set, so
+          there is no useful version of it reached without a lead. Shown on every
+          lead rather than only the INBOUND ones — an operator can offer the free
+          read to somebody they met at a job walk, and hiding the door on a lead
+          we typed in ourselves would make it look broken. Beside the sample
+          WH-347 because both are things we send a prospect.
+          `lib/routeInboundLinks.test.ts` is what requires it to exist at all. */}
+      <p className="mt-1 text-sm">
+        <Link href={`/sales/${lead.id}/drawing-read`} className="text-ink-label hover:underline">
+          Send {lead.companyName} a free drawing-set read →
+        </Link>
+      </p>
+
       {/* Beside the sample, because the sample is what the first email sends. */}
       <FindEmailButton
         leadId={lead.id}

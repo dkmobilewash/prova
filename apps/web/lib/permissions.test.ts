@@ -365,6 +365,8 @@ const OPEN_ROUTES: Record<string, string> = {
   "/sales":
     "Prova's OWN sales pipeline, not a tenant's. Guarded HARDER than any capability, on two things a Capability cannot express: the page refuses unless Company.isProvaOperator AND the person's role is OWNER. Mapping it to a capability would loosen it, since every owner holds all seven and a non-operator company holds isProvaOperator on nothing.",
   "/sales/[id]": "Same page, same two checks — isProvaOperator, then OWNER — with notFound() for a non-operator company.",
+  "/sales/[id]/drawing-read":
+    "The operator-facing page that turns a finished drawing-set read into the email we send a prospect. Guarded the same two ways as /sales/[id] above it and for the same reason — isProvaOperator then OWNER, notFound() for a non-operator — and a capability would LOOSEN it. Both ids it reads from the URL are re-proved against the company by deliveredReadFor (lib/drawing-set-read-query.ts), which returns null rather than naming which of the two was not ours, and sendDrawingSetRead repeats the whole gate because the action is reachable without this page having rendered.",
   "/sales/call-list":
     "The CSLB call list behind /sales — same two checks, isProvaOperator then OWNER, in-page, for the same reason /sales gives: a capability would loosen it. Nothing on it is tenant data; it is a public government file joined and filtered.",
   "/sales/replies":
