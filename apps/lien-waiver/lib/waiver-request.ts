@@ -1,7 +1,7 @@
 import { FORM_NAMES, STATE_CONTENT } from "./content";
-import { addContact, isEmail, landed, reportUnlanded, sendEmail, settle } from "./email";
+import { addContact, isEmail, landed, reportUnlanded, sendEmail, settle, type Attachment } from "./email";
 import { sanitizeRef } from "./prefill";
-import { checkFills, type FillErrors } from "./fills";
+import { checkFills } from "./fills";
 import { renderWaiverPdf } from "./pdf";
 import { DAY, HOUR, LIMITS, rateKey, underLimit, type RateStore } from "./rate-limit";
 import { getForm } from "./statutes/forms";
@@ -64,10 +64,10 @@ export interface WaiverDeps {
 export type WaiverResponse =
   /** `notConfigured` only happens outside production: nothing was sent. */
   | { kind: "sent"; to: string; notConfigured: boolean }
-  | { kind: "error"; status: number; error: string; fieldErrors?: FillErrors };
+  | { kind: "error"; status: number; error: string; fieldErrors?: Partial<Record<string, string>> };
 
-const PAUSED = "Sending is paused for a moment. Please try again shortly.";
-const fail = (status: number, error: string, fieldErrors?: FillErrors): WaiverResponse => ({ kind: "error", status, error, fieldErrors });
+export const PAUSED = "Sending is paused for a moment. Please try again shortly.";
+export const fail = (status: number, error: string, fieldErrors?: Partial<Record<string, string>>): WaiverResponse => ({ kind: "error", status, error, fieldErrors });
 
 export async function handleWaiverRequest(body: WaiverRequestBody, deps: WaiverDeps): Promise<WaiverResponse> {
   // Settled, so a send that throws comes back as "failed" instead of being
@@ -102,16 +102,17 @@ export async function handleWaiverRequest(body: WaiverRequestBody, deps: WaiverD
   if (!isEmail(email)) return fail(400, "Enter a valid email address. The PDF is sent there.");
 
   const pdf = await renderWaiverPdf({ form, fills, reviewed: deps.reviewed(state) });
-  const filename = `${STATE_CONTENT[state].slug}-${formKey.toLowerCase().replace(/_/g, "-")}-waiver.pdf`;
-
-  if (!(await underLimit(deps.rate.store, rateKey("email", email, deps.rate.salt), LIMITS.emailsPerAddressPerDay, DAY))) {
-    return fail(429, "We have already sent that address several waivers today. Please try again tomorrow.");
-  }
-
   const formName = FORM_NAMES[formKey];
-  const sent = await send(
+  return deliverPdf(
     {
-      to: email,
+      email,
+      name,
+      company: (body.company ?? "").trim(),
+      marketingOptIn: body.marketingOptIn === true,
+      returning,
+      ref,
+      what: "waiver",
+      tooMany: "We have already sent that address several waivers today. Please try again tomorrow.",
       subject: `Your ${STATE_CONTENT[state].name} lien waiver: ${formName}`,
       text: [
         `Here is the ${formName.toLowerCase()} you filled in, as a PDF.`,
@@ -120,24 +121,82 @@ export async function handleWaiverRequest(body: WaiverRequestBody, deps: WaiverD
         "Read it before you sign it. C-Stream is not a law firm, and this email is not legal advice.",
         "",
         "Next pay period, come back to the same page in the same browser and your details will be filled in.",
+      ],
+      attachment: { filename: `${STATE_CONTENT[state].slug}-${formKey.toLowerCase().replace(/_/g, "-")}-waiver.pdf`, content: pdf },
+      leadSubject: `Lien waiver lead: ${name}${body.company ? `, ${body.company}` : ""} (${state})${ref ? ` [${ref}]` : ""}`,
+      leadDetails: [`State: ${STATE_CONTENT[state].name}`, `Form: ${formName}`],
+    },
+    { env: deps.env, now: deps.now, log: deps.log, rate: deps.rate, send, subscribe },
+  );
+}
+
+/**
+ * The half every free tool shares once its PDF exists: the per-address cap,
+ * the email to the person (which has to GO -- it is the only way they get
+ * the PDF), then the lead note to Diego and the audience sign-up, which are
+ * logged rather than refused when they fail. Used by the waiver and the
+ * change order request (lib/change-order-request.ts), so the two cannot
+ * drift on what a lead is or when a send counts.
+ *
+ * `send` and `subscribe` must already be settled (see handleWaiverRequest).
+ */
+export async function deliverPdf(
+  input: {
+    email: string;
+    name: string;
+    company: string;
+    marketingOptIn: boolean;
+    returning: boolean;
+    ref: string | null;
+    /** "waiver", "change order request": names the email in the log and the lead note. */
+    what: string;
+    /** The 429 when this address has had its day's PDFs. */
+    tooMany: string;
+    subject: string;
+    /** The person's email, above the why-you-got-this footer added here. */
+    text: string[];
+    attachment: Attachment;
+    leadSubject: string;
+    /** Tool-specific lines for the lead note, after Company. Never what was
+     * typed into the document -- only what kind of document it was. */
+    leadDetails: string[];
+  },
+  deps: Pick<WaiverDeps, "env" | "now" | "log"> & {
+    rate: { store: RateStore; salt: string };
+    send: typeof sendEmail;
+    subscribe: typeof addContact;
+  },
+): Promise<WaiverResponse> {
+  const { email, name, returning, ref } = input;
+  const { send, subscribe } = deps;
+  if (!(await underLimit(deps.rate.store, rateKey("email", email, deps.rate.salt), LIMITS.emailsPerAddressPerDay, DAY))) {
+    return fail(429, input.tooMany);
+  }
+
+  const sent = await send(
+    {
+      to: email,
+      subject: input.subject,
+      text: [
+        ...input.text,
         "",
         // C-Stream's email rule: every email ends with why it was sent, the
         // way out, and a mailing address. The address is Diego's to supply
         // (LIEN_TOOL_MAILING_ADDRESS); until then the line is left out
         // rather than printing a placeholder to a real person.
-        body.marketingOptIn
+        input.marketingOptIn
           ? "You asked for this PDF and for occasional email from C-Stream. Reply STOP and we will not email you again."
           : "You got this because you asked for this PDF. We will not email you again unless you sign up.",
         deps.env.LIEN_TOOL_MAILING_ADDRESS?.trim() ? `C-Stream, ${deps.env.LIEN_TOOL_MAILING_ADDRESS.trim()}` : null,
       ]
         .filter((line) => line !== null)
         .join("\n"),
-      attachments: [{ filename, content: pdf }],
+      attachments: [input.attachment],
     },
     deps.env,
   );
   if (sent.status === "rejected") return fail(400, "That email address was rejected. Check it and try again.");
-  reportUnlanded("the waiver email to the person", sent, deps.env, deps.log);
+  reportUnlanded(`the ${input.what} email to the person`, sent, deps.env, deps.log);
   // The email is the only way the person gets the PDF, so if it did not go
   // there is nothing to hand over: tell them to try again. Outside
   // production a missing key counts as landed so a preview can be clicked.
@@ -146,23 +205,22 @@ export async function handleWaiverRequest(body: WaiverRequestBody, deps: WaiverD
   // A returning browser is not a new lead -- UNLESS it came from an outreach
   // link, when the note is how Diego learns which link worked.
   if (!returning || ref) {
-    // The lead. Only who asked and what kind of form -- never the amounts,
-    // the owner or the GC typed into it.
+    // The lead. Only who asked and what kind of document -- never the
+    // amounts, the owner or the GC typed into it.
     const notifyTo = deps.env.LEAD_NOTIFY_EMAIL?.trim() || "diego@cstream.ai";
     const note = await send(
       {
         to: notifyTo,
-        subject: `Lien waiver lead: ${name}${body.company ? `, ${body.company}` : ""} (${state})${ref ? ` [${ref}]` : ""}`,
+        subject: input.leadSubject,
         text: [
           `Name: ${name}`,
           `Email: ${email}`,
-          `Company: ${(body.company ?? "").trim() || "(not given)"}`,
-          `State: ${STATE_CONTENT[state].name}`,
-          `Form: ${formName}`,
-          `Marketing email: ${body.marketingOptIn ? "opted in" : returning ? "(returning visitor, not asked)" : "not opted in"}`,
+          `Company: ${input.company || "(not given)"}`,
+          ...input.leadDetails,
+          `Marketing email: ${input.marketingOptIn ? "opted in" : returning ? "(returning visitor, not asked)" : "not opted in"}`,
           `Ref: ${ref ?? "(none -- not from a pre-fill link)"}`,
           ...(returning ? ["Returning: yes -- already a contact, not added again"] : []),
-          `Waiver emailed: ${sent.status}`,
+          `${input.what[0].toUpperCase()}${input.what.slice(1)} emailed: ${sent.status}`,
           `At: ${(deps.now?.() ?? new Date()).toISOString()}`,
         ].join("\n"),
         replyTo: email,
@@ -171,11 +229,11 @@ export async function handleWaiverRequest(body: WaiverRequestBody, deps: WaiverD
     );
     const contact = returning
       ? ({ status: "sent", id: "" } as const)
-      : await subscribe({ email, name, marketingOptIn: body.marketingOptIn === true, ref }, deps.env);
+      : await subscribe({ email, name, marketingOptIn: input.marketingOptIn, ref }, deps.env);
     if ("refDropped" in contact && contact.refDropped) {
       (deps.log ?? console.error)(`[lien-waiver] the contact was saved without its ref property: ${contact.refDropped}`);
     }
-    // The lead has already landed: the waiver email above went, and it sits
+    // The lead has already landed: the email above went, and it sits
     // in Resend's log with the address on it (issue #747's rule, now always
     // met). These two failing costs a convenience, so it is logged, not
     // refused.
