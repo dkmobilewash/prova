@@ -47,6 +47,21 @@ import { measurementScaleLabel, zoneNotices, zoneScales } from "@/lib/takeoff-zo
  */
 export type TakeoffWorkspaceData = Awaited<ReturnType<typeof loadTakeoffWorkspace>>;
 
+/**
+ * What a CLIENT component may be handed — the loader's result with `plan`
+ * narrowed by `workspaceForClient`.
+ *
+ * Separate from `TakeoffWorkspaceData` so the compiler enforces the boundary:
+ * a client component typed on this cannot be passed the raw loader result,
+ * which is how a Prisma Decimal reached React and 500'd the takeoff page.
+ * The runtime guard is `workspacePayloadPlain.dbtest.ts`; this is the half
+ * that fails at build time.
+ */
+export type TakeoffWorkspaceClientData = Omit<
+  NonNullable<TakeoffWorkspaceData>,
+  "plan"
+> & { plan: PlanForClient };
+
 export async function loadTakeoffWorkspace(
   company: { id: string },
   job: { id: string; status: string },
@@ -614,6 +629,65 @@ export async function loadTakeoffWorkspace(
  * It is not a lock and does not try to be. The later save wins, as it already
  * did; this only stops the loser showing numbers nobody is looking at.
  */
+/**
+ * ── WHAT THE CLIENT GETS, WHICH IS NOT WHAT THE LOADER RETURNS ──
+ *
+ * `loadTakeoffWorkspace` serves two callers. The job's takeoff TAB is a server
+ * component and reads `plan.pages`; the takeoff WORKSPACE hands its result to
+ * `<TakeoffWorkspace>`, a client component, so the whole payload crosses the
+ * RSC boundary and React serialises it.
+ *
+ * A Prisma `Decimal` is a class instance, not a plain object, and React
+ * refuses it: *"Only plain objects can be passed to Client Components from
+ * Server Components. Decimal objects are not supported."* The page 500s and
+ * nothing before it says why — the type is honest, typecheck is green, and
+ * this file already calls `.toNumber()` in five other places. The row that did
+ * it was `plan.pages[].calibrations[].declaredDistanceFeet`, reached because
+ * `plan` was returned exactly as Prisma handed it over.
+ *
+ * So the narrowing lives HERE, at the boundary, rather than in the loader
+ * where it would break the tab. The client reads four fields off `plan` —
+ * grep `plan.` in `TakeoffWorkspace` — so it gets four.
+ *
+ * Narrowing rather than a deep sanitiser on purpose: this payload carries
+ * thousands of walls, and walking all of it on every page load to repair a
+ * shape nobody needed is the wrong trade. `workspacePayloadPlain.dbtest.ts`
+ * walks it in the test instead, and fails on a Decimal or a Date anywhere.
+ */
+export function workspaceForClient<T extends { plan: PlanForClientInput }>(
+  data: T,
+): Omit<T, "plan"> & { plan: PlanForClient } {
+  const { plan, ...rest } = data;
+  return {
+    ...rest,
+    plan: {
+      id: plan.id,
+      fileName: plan.fileName,
+      revisionLabel: plan.revisionLabel,
+      // ISO rather than a Date: the client already does `new Date(...)` on it
+      // and `TakeoffPlanRevisionForm` has typed it `string | null` all along.
+      // A Date survives serialisation but lands on the client as a string
+      // while the types still claim Date, which is quieter than the crash and
+      // worse.
+      sheetIssuedOn: plan.sheetIssuedOn === null ? null : plan.sheetIssuedOn.toISOString(),
+    },
+  };
+}
+
+type PlanForClientInput = {
+  id: string;
+  fileName: string | null;
+  revisionLabel: string | null;
+  sheetIssuedOn: Date | null;
+};
+
+export type PlanForClient = {
+  id: string;
+  fileName: string | null;
+  revisionLabel: string | null;
+  sheetIssuedOn: string | null;
+};
+
 export async function takeoffSavedSignature(companyId: string, jobId: string): Promise<string> {
   const plan = await prisma.takeoffPlan.findFirst({
     where: { jobId, companyId },

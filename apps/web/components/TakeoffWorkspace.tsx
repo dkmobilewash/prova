@@ -26,7 +26,7 @@ import {
   redoOnce,
   undoOnce,
 } from "@/lib/takeoff/undoStack";
-import type { TakeoffWorkspaceData } from "@/lib/takeoff/workspaceLoad";
+import type { TakeoffWorkspaceClientData } from "@/lib/takeoff/workspaceLoad";
 
 /**
  * ── THE PLAN, AS LARGE AS THE SCREEN WILL ALLOW ──
@@ -64,7 +64,7 @@ import type { TakeoffWorkspaceData } from "@/lib/takeoff/workspaceLoad";
 type Props = {
   jobId: string;
   jobName: string;
-  data: TakeoffWorkspaceData & object;
+  data: TakeoffWorkspaceClientData & object;
   savedAt: string;
   openPage: number;
   /** Open straight into answer-key review, from `?key=1`. */

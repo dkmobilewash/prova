@@ -4,7 +4,7 @@ import { requireCapability } from "@/lib/authz";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
 import { NoAccess } from "@/components/NoAccess";
 import { TakeoffWorkspace } from "@/components/TakeoffWorkspace";
-import { loadTakeoffWorkspace, takeoffSavedSignature } from "@/lib/takeoff/workspaceLoad";
+import { loadTakeoffWorkspace, takeoffSavedSignature, workspaceForClient } from "@/lib/takeoff/workspaceLoad";
 
 /**
  * ── THE FULL-SCREEN TAKEOFF WORKSPACE ──
@@ -70,7 +70,13 @@ export default async function TakeoffWorkspacePage({
     <TakeoffWorkspace
       jobId={job.id}
       jobName={job.name}
-      data={data}
+      // ── EVERYTHING BELOW HERE IS SERIALISED BY REACT ──
+      //
+      // `<TakeoffWorkspace>` is a client component, so the payload crosses the
+      // RSC boundary. `workspaceForClient` narrows `plan`, whose `pages` carry
+      // calibrations, whose `declaredDistanceFeet` is a Prisma Decimal that
+      // React refuses outright. Its docstring has the rest.
+      data={workspaceForClient(data)}
       savedAt={savedAt}
       // A page number nobody has a sheet for opens the first sheet rather than
       // an empty canvas: a stale link in somebody's notes should still show a
