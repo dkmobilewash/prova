@@ -235,6 +235,59 @@ plans' layers are the thing `findWallsOnSheet`'s layer filter already works on,
 so start by measuring what share of the 44,012 ft a layer test removes. If it
 does not take most of it, the reordering is not worth attempting again.
 
+## Could a layer test tell a grid line from a wall? Measured: barely — 2026-10-17
+
+The entry above ends by saying a next attempt at the pairing needs a way to
+tell a 209 ft grid line from a wall face BEFORE reordering anything, and names
+the layer as the obvious candidate with an instruction to measure what share of
+the 44,012 ft of stranded pairings it removes. That measurement, run:
+
+### On the bench: nothing, and for a dull reason
+
+**0 ft of 44,012 — 0%.** Every one of the 1,031 stranded pairings came back
+`(none) + (none)`. Only two of the bench's sixty variants emit optional-content
+groups at all, so the question could not be put on the rest. The bench cannot
+answer this and should not be asked again.
+
+### On real plan sets: one in five carries layers
+
+| set | pages read | strokes | with a layer |
+| --- | --- | --- | --- |
+| 10-Alden-Green-House-Bid-Package | 4 | 211,062 | **208,420 (98.7%)** |
+| 2025-03-28_ELEVEN03 PERMIT SET_ARCH | 6 | 86,996 | 0 |
+| 20260424_HPL Lighthouse_Bulletin 2 | 3 | 109,341 | 0 |
+| Approved_Eleven03_SP-2025-0218C | 4 | 374,984 | 0 |
+| Camp Bow Wow - 100% CD_ARCH | 4 | 607,172 | 0 |
+
+**Four of the five sheets an estimator would actually price carry no layer
+information whatever.** A rule that depends on one is a rule that does not run
+on Camp Bow Wow or ELEVEN03, which are the two this file quotes numbers from
+all the way through.
+
+### And on the one that has them, the names are not ours
+
+`layerVerdict` over Alden Green's 208,420 layered strokes:
+**unknown 135,484, not-wall 72,936, wall ZERO.** The names are real and
+meaningful — `CDTEXT`, `CDNOTES`, `SNTEXT`, `CDHATC`, `CDSOIL`,
+`CNTEXT-EROSION`, `TITLE BLOCK 30x42|g-anno-ttlb-text` — they are simply that
+office's own civil-set vocabulary rather than the AIA layer names
+`layerNames.ts` knows. So even where layers exist, the test never says "this
+is a wall". It only ever says "this is not one", for about a third of the
+sheet.
+
+### What that settles
+
+- **The scored-pairing retry is not worth attempting on a layer test.** It was
+  conditional on the layer removing most of that 44,012 ft; it removes none of
+  it on the bench and cannot be asked on four of five real sets.
+- **Layer name is still worth having as ONE input among many.** A third of a
+  sheet correctly marked not-wall is real signal, and it costs nothing to pass
+  along. It is just not a discriminator on its own.
+- **Anything depending on layers needs a path for sheets without them**, which
+  is the common case, not the exception.
+
+Measured by `realplan/zzLayers.eval.ts`; re-run it with `REAL_PLAN_DIR` set.
+
 ## Where accuracy stands — 2026-10-17
 
 Every number here is from the runs on that date. Re-run before quoting any of
