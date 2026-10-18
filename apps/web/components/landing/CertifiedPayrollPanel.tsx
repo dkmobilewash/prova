@@ -1,7 +1,7 @@
 import { money } from "@/lib/money";
-import type { FringeRateScheduleInput, TimeEntryPayType } from "@/lib/labor-cost";
-import { buildWh347, type Wh347RegisterMoney, type Wh347TimeEntryInput, type Wh347WorkerLine } from "@/lib/wh347";
-import { DEMO_JOB, PanelFrame, calendarDate, hoursCell, utcDay } from "./panelChrome";
+import type { Wh347Form, Wh347WorkerLine } from "@/lib/wh347";
+import { buildSampleWh347 } from "@/lib/sample-wh347";
+import { DEMO_JOB, PanelFrame, calendarDate, hoursCell } from "./panelChrome";
 
 /**
  * One week's Form WH-347, as `app/(app)/jobs/[id]/certified-payroll/wh-347/page.tsx`
@@ -51,114 +51,18 @@ import { DEMO_JOB, PanelFrame, calendarDate, hoursCell, utcDay } from "./panelCh
  * data, same labels, different shape; nothing is dropped.
  */
 
-const WEEK_START = utcDay("2026-08-23"); // a Sunday; the form runs Sunday through Saturday
-const PAYROLL_NUMBER = 14;
-const EFFECTIVE_FROM = utcDay("2026-07-01");
-
-function schedule(baseWage: number, pension: number, vacation: number, hw: number, training: number): FringeRateScheduleInput[] {
-  return [
-    {
-      baseWage,
-      pensionRate: pension,
-      vacationRate: vacation,
-      healthWelfareRate: hw,
-      trainingRate: training,
-      effectiveFrom: EFFECTIVE_FROM,
-      effectiveTo: null,
-    },
-  ];
-}
-
-/** Craft classifications, labelled the way the page labels them:
- * `${parentInternational} ${localNumber} — ${name}`. The local is made up. */
-const CRAFTS = {
-  journeyman: { id: "jm", label: "Carpenters 1180 — Journeyman Carpenter", schedule: schedule(46.1, 9.85, 3.9, 11.2, 0.8) },
-  foreman: { id: "fm", label: "Carpenters 1180 — Carpenter Foreman", schedule: schedule(49.1, 9.85, 3.9, 11.2, 0.8) },
-  apprentice3: {
-    id: "ap3",
-    label: "Carpenters 1180 — Carpenter Apprentice, 3rd period",
-    schedule: schedule(27.66, 5.91, 2.34, 11.2, 0.8),
-  },
-} as const;
-
-type Craft = (typeof CRAFTS)[keyof typeof CRAFTS];
-
-/** [day index Sunday=0, hours, pay type] */
-type Shift = [number, number, TimeEntryPayType];
-
-type Worker = {
-  id: string;
-  name: string;
-  /** Column 1 prints "…" plus the recorded last four, per `printedIdentifyingNumber`. */
-  last4: string;
-  craft: Craft;
-  shifts: Shift[];
-  register: Wh347RegisterMoney;
-};
-
-const WEEKDAYS: Shift[] = [1, 2, 3, 4, 5].map((day) => [day, 8, "STRAIGHT"]);
-
-const WORKERS: Worker[] = [
-  {
-    id: "alvarez",
-    name: "Ramón Alvarez",
-    last4: "4417",
-    craft: CRAFTS.journeyman,
-    shifts: [...WEEKDAYS, [3, 2, "OVERTIME"], [5, 3, "OVERTIME"]],
-    register: { deductions: { fica: 167.52, withholdingTax: 444.88, other: null, total: 612.4 }, netWages: 1577.35 },
-  },
-  {
-    id: "okafor",
-    name: "Dana Okafor",
-    last4: "8130",
-    craft: CRAFTS.apprentice3,
-    shifts: WEEKDAYS,
-    register: { deductions: { fica: 84.64, withholdingTax: 174.26, other: null, total: 258.9 }, netWages: 847.5 },
-  },
-  {
-    id: "mendoza",
-    name: "Luis Mendoza",
-    last4: "2291",
-    craft: CRAFTS.foreman,
-    shifts: [...WEEKDAYS, [4, 2, "OVERTIME"]],
-    register: { deductions: { fica: 161.51, withholdingTax: 428.59, other: null, total: 590.1 }, netWages: 1521.2 },
-  },
-];
-
-function buildForm() {
-  const entries: Wh347TimeEntryInput[] = WORKERS.flatMap((worker) =>
-    worker.shifts.map(([day, hours, payType]) => {
-      const date = new Date(WEEK_START);
-      date.setUTCDate(date.getUTCDate() + day);
-      return {
-        employeeUserId: worker.id,
-        employee: { name: worker.name, email: "" },
-        craftClassificationId: worker.craft.id,
-        craftLabel: worker.craft.label,
-        date,
-        hours,
-        payType,
-      };
-    }),
-  );
-
-  return buildWh347({
-    company: {
-      name: DEMO_JOB.contractor,
-      dbaName: null,
-      hqAddressLine1: "2200 Commerce Dr",
-      hqAddressLine2: null,
-      hqCity: "Reno",
-      hqState: "NV",
-      hqZip: "89502",
-    },
-    job: { name: DEMO_JOB.name },
-    weekStart: WEEK_START,
-    entries,
-    fringeSchedulesByCraft: new Map(Object.values(CRAFTS).map((craft) => [craft.id, craft.schedule])),
-    payrollNumber: PAYROLL_NUMBER,
-    identifyingNumbers: new Map(WORKERS.map((worker) => [worker.id, `…${worker.last4}`])),
-    registerMoney: new Map(WORKERS.map((worker) => [worker.id, worker.register])),
+/** The marketing sheet is the shared sample crew under the demo contractor
+ * — see `lib/sample-wh347.ts`, which the sales team's per-prospect sample
+ * also uses, so one crew serves both and cannot drift. */
+function buildForm(): Wh347Form {
+  return buildSampleWh347({
+    contractorName: DEMO_JOB.contractor,
+    addressLine1: "2200 Commerce Dr",
+    city: "Reno",
+    state: "NV",
+    zip: "89502",
+    projectName: DEMO_JOB.name,
+    payrollNumber: 14,
   });
 }
 
@@ -198,7 +102,7 @@ function DeductionsCell({ worker }: { worker: Wh347WorkerLine }) {
 }
 
 /** The form as printed: fourteen columns, one paper. Shown from 40rem. */
-function FullSheet({ form }: { form: ReturnType<typeof buildWh347> }) {
+function FullSheet({ form }: { form: Wh347Form }) {
   const headings = form.days.map(dayHeading);
   return (
     <table className="hidden w-full border-collapse text-[11px] [@container(min-width:40rem)]:table">
@@ -294,7 +198,7 @@ function FullSheet({ form }: { form: ReturnType<typeof buildWh347> }) {
 /** The same form reflowed for a narrow panel: each worker's columns (1),
  * (3), (6), (7), (8) and (9) on one full-width row, their (4)/(5) grid
  * beneath. Hidden from 40rem, where the true layout takes over. */
-function NarrowSheet({ form }: { form: ReturnType<typeof buildWh347> }) {
+function NarrowSheet({ form }: { form: Wh347Form }) {
   const headings = form.days.map(dayHeading);
   return (
     <table className="w-full border-collapse text-[11px] [@container(min-width:40rem)]:hidden">
@@ -355,21 +259,24 @@ function NarrowSheet({ form }: { form: ReturnType<typeof buildWh347> }) {
   );
 }
 
-export function CertifiedPayrollPanel({ className }: { className?: string }) {
-  const form = buildForm();
-  const weekEnding = calendarDate(form.header.weekEnding);
 
+/**
+ * The sheet. White, black text, printed rules — a facsimile of a government
+ * document, as the product renders it. Not themed on purpose: paper is paper
+ * in both themes. Exported so the sales team's per-prospect sample
+ * (`app/(app)/sales/[id]/sample-wh347`) renders the identical sheet, with a
+ * `stamp` across the corner that the marketing panel does not need.
+ */
+export function Wh347SheetBody({ form, stamp }: { form: Wh347Form; stamp?: string }) {
+  const weekEnding = calendarDate(form.header.weekEnding);
   return (
-    <PanelFrame
-      title="Form WH-347"
-      meta={`U.S. Department of Labor · Payroll · ${DEMO_JOB.name} · week ending ${weekEnding}`}
-      caption="Page 1 of the form, built from logged hours and the imported payroll register: hours by day, rate and fringe, cash wages, deductions and net."
-      className={className}
-    >
-      {/* The sheet. White, black text, printed rules — a facsimile of a
-          government document, as the product renders it. Not themed on
-          purpose: paper is paper in both themes. */}
-      <div className="border border-slate-300 bg-white p-3 text-black [@container(min-width:40rem)]:p-4">
+    <>
+      <div className="relative border border-slate-300 bg-white p-3 text-black [@container(min-width:40rem)]:p-4">
+        {stamp ? (
+          <p className="absolute right-3 top-3 rotate-[-8deg] border-2 border-red-600 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-red-600">
+            {stamp}
+          </p>
+        ) : null}
         <div className="text-center">
           <p className="text-[10px] font-semibold uppercase tracking-wide">U.S. Department of Labor</p>
           <p className="text-base font-bold leading-tight">Payroll</p>
@@ -405,6 +312,22 @@ export function CertifiedPayrollPanel({ className }: { className?: string }) {
           <span className="tabular-nums">{hoursCell(form.totalHours)}</span>
         </p>
       </div>
+    </>
+  );
+}
+
+export function CertifiedPayrollPanel({ className }: { className?: string }) {
+  const form = buildForm();
+  const weekEnding = calendarDate(form.header.weekEnding);
+
+  return (
+    <PanelFrame
+      title="Form WH-347"
+      meta={`U.S. Department of Labor · Payroll · ${DEMO_JOB.name} · week ending ${weekEnding}`}
+      caption="Page 1 of the form, built from logged hours and the imported payroll register: hours by day, rate and fringe, cash wages, deductions and net."
+      className={className}
+    >
+      <Wh347SheetBody form={form} />
     </PanelFrame>
   );
 }

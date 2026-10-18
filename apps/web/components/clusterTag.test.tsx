@@ -136,6 +136,11 @@ describe("the panel's own use of it", () => {
     // Whitespace collapsed: the call lives in a named closure now — the viewer
     // builds the panel with it when the walls are found and again when some are
     // labelled casework, so both lists are grouped the same way.
-    expect(source.replace(/\s+/g, " ")).toMatch(/wallGroups\( clusterByThickness\(runs\), tagByRun\(/);
+    // IN THE PIPELINE'S FILE. The grouping left this component when
+    // `findWallsOnSheet` was lifted so the bench and the server could run the
+    // same filters; the panel above still reads the tag off the group it is
+    // handed, which is the end of the wire this file owns.
+    const pipeline = readFileSync(resolve(__dirname, "../lib/takeoff/findWallsOnSheet.ts"), "utf8");
+    expect(pipeline.replace(/\s+/g, " ")).toMatch(/wallGroups\( clusterByThickness\(runs\), tagByRun\(/);
   });
 });

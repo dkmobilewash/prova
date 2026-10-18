@@ -21,7 +21,7 @@ export default function Privacy() {
           All states
         </Link>
         <h1 className="mt-2 text-3xl font-bold text-ink">Privacy</h1>
-        <p className="mt-2 text-sm">Last updated October 13, 2026.</p>
+        <p className="mt-2 text-sm">Last updated October 14, 2026.</p>
 
         <h2 className="mt-8 text-xl font-bold text-ink">What we collect</h2>
         <ul className="mt-3 list-disc space-y-2 pl-6">
@@ -31,6 +31,12 @@ export default function Privacy() {
           </li>
           <li>
             <strong className="text-ink">When you ask to be told about a new state:</strong> the same, plus the state.
+          </li>
+          <li>
+            <strong className="text-ink">If you opened the tool from a link we sent you:</strong> the link&apos;s
+            reference code (something like SD-PL-0001) is kept with your request, so we know which message you came
+            from. It is a code, not anything about you, and it is never printed on your waiver. A link can also fill in
+            some blanks for you; you can change any of them before you send.
           </li>
           <li>
             <strong className="text-ink">What you type into the waiver</strong> (project, owner, GC, amounts, dates) is

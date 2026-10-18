@@ -99,7 +99,12 @@ export default async function BidsPage({
     prisma.vendor.findMany({
       where: { companyId: company.id },
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      // EMAIL AND CONTACT NAME, which nothing has ever selected. The column
+      // has been on the model with a form field behind it on /vendors the
+      // whole time, and a grep for a query reading it returned nothing — so
+      // every supplier address a company typed in was write-only. Sending an
+      // RFQ is the first thing that needs it.
+      select: { id: true, name: true, email: true, contactName: true },
     }),
     loadBidOutcomes(company.id),
     loadLinkableJobs(company.id),
@@ -665,6 +670,28 @@ export default async function BidsPage({
                 companyId={company.id}
                 bidInvitationId={bid.id}
                 vendors={vendors}
+                companyName={company.name}
+                projectName={bid.projectName}
+                /* ONLY WHAT HAS A FILE. A spec section or addendum logged
+                   without its PDF is the normal case, not an error, and
+                   offering one that cannot be attached would be a tick box
+                   that silently sends nothing. */
+                sendable={[
+                  ...bid.specSections
+                    .filter((section) => section.fileUrl)
+                    .map((section) => ({
+                      id: section.id,
+                      kind: "SPEC_SECTION" as const,
+                      label: section.sectionNumber,
+                    })),
+                  ...bid.addenda
+                    .filter((addendum) => addendum.fileUrl)
+                    .map((addendum) => ({
+                      id: addendum.id,
+                      kind: "ADDENDUM" as const,
+                      label: addendum.reference,
+                    })),
+                ]}
                 today={today}
                 bidDueDate={day(bid.dueDate)}
                 quotes={bid.quotes.map(

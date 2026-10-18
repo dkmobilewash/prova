@@ -11,6 +11,21 @@
 // and a contractor who hasn't set up sending yet still needs the rest of
 // the app to work.
 
+/** One file travelling with a message.
+ *
+ * A BUFFER AND A NAME, nothing else. No content type: the provider infers it
+ * from the filename, and a second place to state it is a second place for it
+ * to be wrong about the same bytes.
+ *
+ * The caller owns the size budget. Base64 inflates by a third and the provider
+ * caps the whole message, so a ceiling enforced here — on bytes that have
+ * already been read into memory — would be the wrong place and too late. The
+ * sender refuses first, with the real figure. */
+export type EmailAttachment = {
+  filename: string;
+  content: Buffer;
+};
+
 export type EmailSendRequest = {
   to: string;
   toName?: string | null;
@@ -20,6 +35,17 @@ export type EmailSendRequest = {
   text: string;
   /** Overrides the configured default. Recorded per message by the caller. */
   from?: string;
+  /**
+   * Files to send with it. Absent on every message this app sent before a bid
+   * package needed to reach a GC, and absent is not the same as empty — an
+   * empty array still serialises an `attachments` key, so it is normalised to
+   * undefined below rather than passed through.
+   *
+   * ATTACHMENTS DO NOT MAKE THIS HTML. The plain-text decision above is about
+   * filtering and it is unchanged: a bid goes out as a sentence with a PDF
+   * beside it, which is what an estimator sends by hand today.
+   */
+  attachments?: readonly EmailAttachment[];
 };
 
 export type EmailSendResult =
@@ -88,8 +114,24 @@ type ResendResponse = { id?: string; message?: string; name?: string };
 
 /** Sends one email. Never throws — every failure comes back as a result the
  * caller can record as a FAILED event with a reason. A thrown error here
- * would be redacted in production and the log would say nothing. */
-export async function sendEmail(request: EmailSendRequest): Promise<EmailSendResult> {
+ * would be redacted in production and the log would say nothing.
+ *
+ * ── `fetcher` IS A TEST SEAM AND IT IS WHY THIS FILE HAS TESTS AT ALL ──
+ *
+ * This module had none. Not a thin set — none: `find packages/integrations
+ * -name "*test*"` was empty, so the provider call, the non-OK branch, the
+ * missing-id branch and the attachment encoding were only ever reached by
+ * suites that MOCK this whole module away, which proves the callers and says
+ * nothing about what is actually sent. The twin in `apps/lien-waiver/lib/
+ * email.ts` takes the same parameter and is tested, so the shape is this
+ * repo's own rather than an import.
+ *
+ * It defaults to the real `fetch`, so no caller changes and nothing in
+ * production goes through a different path than the one under test. */
+export async function sendEmail(
+  request: EmailSendRequest,
+  fetcher: typeof fetch = fetch,
+): Promise<EmailSendResult> {
   const config = readEmailConfig();
   if (!config) {
     return {
@@ -106,15 +148,32 @@ export async function sendEmail(request: EmailSendRequest): Promise<EmailSendRes
   const from = request.from?.trim() || config.from;
   const to = request.toName ? `${request.toName} <${request.to}>` : request.to;
 
+  // NORMALISED TO UNDEFINED WHEN THERE ARE NONE, so a message with no files
+  // serialises exactly the body this app has always sent. An empty array would
+  // still emit an `attachments` key, which is a change to every RFI and digest
+  // for the sake of a feature they do not use.
+  const attachments = request.attachments?.length
+    ? request.attachments.map((attachment) => ({
+        filename: attachment.filename,
+        content: attachment.content.toString("base64"),
+      }))
+    : undefined;
+
   let response: Response;
   try {
-    response = await fetch("https://api.resend.com/emails", {
+    response = await fetcher("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ from, to: [to], subject: request.subject, text: request.text }),
+      body: JSON.stringify({
+        from,
+        to: [to],
+        subject: request.subject,
+        text: request.text,
+        attachments,
+      }),
     });
   } catch (err) {
     // Network-level failure. The message never reached the provider, so

@@ -173,7 +173,7 @@ describe("the call site, because no test here can open a PDF", () => {
    * navigator option that can be silently discarded. The half it can see is the
    * half that was missing.
    */
-  const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+  const viewer = readFileSync(resolve(process.cwd(), "lib/takeoff/findWallsOnSheet.ts"), "utf8");
 
   it("THE SHEET'S WALLS GO THROUGH IT", () => {
     expect(viewer, "the scale-bar filter is never called, so the bar is billed again").toContain(
@@ -194,7 +194,10 @@ describe("the call site, because no test here can open a PDF", () => {
     // The size assertion this repo asks of anything that greps: a path that
     // stops resolving must fail loudly rather than match nothing and pass
     // everything downstream.
-    expect(viewer).toContain("Find the walls");
-    expect(viewer.length).toBeGreaterThan(20000);
+    // The needle moved with the call site: the filter now lives in the shared
+    // pipeline rather than in the viewer, so the file this reads is the one
+    // that can contain the answer.
+    expect(viewer).toContain("export function findWallsOnSheet");
+    expect(viewer.length).toBeGreaterThan(5000);
   });
 });

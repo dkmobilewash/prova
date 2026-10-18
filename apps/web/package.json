@@ -9,6 +9,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "public-works:sync": "tsx scripts/public-works-sync.ts",
     "test:db": "vitest run --config vitest.db.config.mts",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "test:e2e:local": "node e2e/run.mjs",
@@ -30,6 +31,7 @@
     "@prova/ui": "workspace:*",
     "@vercel/blob": "^2.8.0",
     "next": "^15.1.3",
+    "pdf-lib": "1.17.1",
     "pdfjs-dist": "4.10.38",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -51,6 +53,8 @@
     "happy-dom": "^20.14.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
+    "tesseract.js": "7.0.0",
+    "tsx": "4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^3.2.7"
   }

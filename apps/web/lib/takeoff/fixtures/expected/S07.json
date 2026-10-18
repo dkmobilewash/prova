@@ -1,0 +1,52 @@
+{
+  "id": "S07",
+  "title": "COTTAGE WITH BAY",
+  "page": 1,
+  "sheetNumber": "A-101",
+  "raster": false,
+  "scale": "1/4\" = 1'-0\"",
+  "scalesPrinted": [
+    "1/4\" = 1'-0\""
+  ],
+  "widthPt": 1728,
+  "heightPt": 1296,
+  "scaleAuthority": "printed",
+  "rooms": [
+    {
+      "name": "LIVING",
+      "number": "101",
+      "area": null
+    },
+    {
+      "name": "KITCHEN",
+      "number": "102",
+      "area": null
+    },
+    {
+      "name": "BEDROOM",
+      "number": "103",
+      "area": null
+    },
+    {
+      "name": "BATH",
+      "number": "104",
+      "area": null
+    },
+    {
+      "name": "BEDROOM",
+      "number": "105",
+      "area": null
+    }
+  ],
+  "dimensions": [
+    "36'-6 1/2\"",
+    "36'-6 1/2\"",
+    "17'-5 13/16\"",
+    "12'-3 1/4\"",
+    "29'-9 1/16\""
+  ],
+  "wallLfTotal": null,
+  "doorCount": null,
+  "windowCount": null,
+  "notes": []
+}

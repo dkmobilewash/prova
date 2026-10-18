@@ -24,6 +24,8 @@ import { viewerTimeZone } from "@/lib/viewerToday";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
 import { formatSignedDate } from "@/lib/signed-date";
 import { SubmitButton } from "@/components/SubmitButton";
+import { NeedsBlock } from "@/components/home/HomeParts";
+import { loadJobNeeds } from "@/lib/jobs/job-needs-query";
 import {
   assignCrewMember,
   createSignatureRequest,
@@ -91,6 +93,19 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
   const assignedUserIds = new Set(job.assignments.map((a) => a.userId));
   const unassignedMembers = companyMembers.filter((m) => !assignedUserIds.has(m.id));
 
+  // ── WHAT THIS JOB NEEDS FROM A PERSON ──
+  //
+  // `estimate-stage.ts` answers "what happens next" for the jobs LIST, and its
+  // own header names four things it deliberately cannot consult there, ending:
+  // "Widening the function to take those inputs is a real option and a bigger
+  // change: it would make a jobs-list cell depend on three more queries per
+  // row." This is one job rather than a page of them, so those queries are
+  // affordable here, and `loadJobNeeds` is where they live.
+  //
+  // MONEY-GATED, like the rest of the estimate on this page: somebody who
+  // cannot see job costs must not be told the markup is missing.
+  const needs = showsJobMoney ? await loadJobNeeds(company.id, job) : [];
+
   const timeZone = await viewerTimeZone();
   const headerList = await headers();
   const origin = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}`;
@@ -121,6 +136,28 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
 
   return (
     <>
+      {/* ── WHAT THIS JOB NEEDS FROM YOU ──
+
+          FIRST, above the contract summary, because it is the only thing on
+          this page that is about what to DO. Everything below it is a record of
+          what the job IS, and a list of pending work under a printable summary
+          is a list nobody scrolls to.
+
+          PRINT-HIDDEN, deliberately: the summary below is what Print produces
+          ("Print prints this part only", per the walkthrough), and a contract
+          a client signs must not carry the estimator's own to-do list.
+
+          It renders only when there is something to say. `NeedsBlock` has a
+          perfectly good empty state and it belongs on the dashboard, where the
+          question is "is anything waiting anywhere"; here the question has
+          already been answered by the rest of the page, and an empty card on
+          every healthy job is how a reader learns to skip this one. */}
+      {needs.length > 0 && (
+        <div className="mb-10 print:hidden" data-tour="job-needs">
+          <NeedsBlock items={needs} />
+        </div>
+      )}
+
       {/* Contract-style summary — the same JobLineItem rows used as the
           estimate are rendered here as contract content, via the shared
           ContractSummary component also used by the public /esign/[token]

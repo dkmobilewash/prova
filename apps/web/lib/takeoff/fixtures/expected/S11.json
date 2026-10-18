@@ -1,0 +1,55 @@
+{
+  "id": "S11",
+  "title": "GUEST HOUSE",
+  "page": 1,
+  "sheetNumber": "A-101",
+  "raster": false,
+  "scale": "1/8\" = 1'-0\"",
+  "scalesPrinted": [
+    "1/8\" = 1'-0\""
+  ],
+  "widthPt": 1224,
+  "heightPt": 792,
+  "scaleAuthority": "dimensions-disagree",
+  "rooms": [
+    {
+      "name": "KITCHEN",
+      "number": "101",
+      "area": null
+    },
+    {
+      "name": "LIVING",
+      "number": "102",
+      "area": null
+    },
+    {
+      "name": "BEDROOM",
+      "number": "103",
+      "area": null
+    },
+    {
+      "name": "BATH",
+      "number": "104",
+      "area": null
+    },
+    {
+      "name": "CLOSET",
+      "number": "105",
+      "area": null
+    }
+  ],
+  "dimensions": [
+    "16'-6\"",
+    "14'-6\"",
+    "31'-0\"",
+    "10'-6\"",
+    "12'-6\"",
+    "23'-0\""
+  ],
+  "wallLfTotal": null,
+  "doorCount": null,
+  "windowCount": null,
+  "notes": [
+    "The title block prints 1/8\" = 1'-0\" and the sheet's own 31'-0\" dimension is 7.75 inches long on a 17-inch page. 31 feet in 7.75 inches is 1/4\" to the foot, and all six dimensions agree on it. The printed note is wrong, which is a common defect on a real set. Scale is NOT scored here; what is scored is that the app reads the dimensions and says the two disagree."
+  ]
+}

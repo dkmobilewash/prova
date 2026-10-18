@@ -1,0 +1,100 @@
+// The California wall-and-ceiling market, as the state itself publishes it.
+//
+// Not a tenant's data and not scoped to Company: these rows describe OTHER
+// firms — every CLEAR-licensed drywall, plaster, framing and insulation
+// contractor in California, and what the Department of Industrial Relations
+// says each one is doing on public works this week. Read only by the one
+// company with `isProvaOperator` (see company.prisma), for C Stream's own
+// outbound; never shown to, or exported for, a tenant. New domain, new file,
+// same reasoning as sales.prisma.
+//
+// WHY THESE ROWS EXIST AT ALL. CSLB publishes no email (B&P §27) and DIR
+// publishes no bulk file, but together they answer the one question cold
+// outreach lives on: "is this firm doing certified payroll RIGHT NOW, and on
+// which job?" A firm that filed an eCPR last week has the pain the product
+// removes, this Friday. That fact is the opener, and the whole personalisation.
+//
+// Nothing derived is stored. A firm's TIER (in market this week / registered /
+// nothing yet) is computed from its signals at read time
+// (lib/public-works/signals.ts), never written down, so it cannot disagree with
+// the signals it came from.
+
+/// One licensed firm in the trades C Stream sells to, copied from CSLB's free
+/// master and personnel files. The licence number is the identity: it is what
+/// every other public record (DIR, bid listings) carries, and it never changes.
+model PublicWorksFirm {
+  /// CSLB licence number, bare digits, leading zeros gone.
+  licence        String  @id
+  name           String
+  fullName       String?
+  phone          String?
+  mailingAddress String?
+  city           String?
+  county         String?
+  zip            String?
+  /// Classification codes in the bare form (`C9`, `C35`) — CSLB prints both
+  /// `C9` and `C-9` in the same column, so they are normalised on the way in.
+  classes        String[]
+  businessType   String?
+  /// Workers' compensation insurance on file. An `Exempt` licence has no
+  /// employees, so no payroll, so no certified payroll to build: it is a
+  /// one-person shop and not a prospect for this product.
+  hasEmployees   Boolean
+  issuedOn       DateTime?
+  /// `[{ name, title }]` from the personnel file — the owner, RMO or officers.
+  /// CSLB prints the name surname-first; it is stored as printed.
+  owners         Json
+  refreshedAt    DateTime
+
+  signals PublicWorksSignal[]
+  letters PublicWorksLetter[]
+
+  @@index([county])
+}
+
+enum PublicWorksSignalKind {
+  /// The firm submitted an electronic certified payroll report to DIR.
+  ECPR_FILING
+  /// The firm appears as a subcontractor on a DIR-registered public project.
+  PROJECT_LISTING
+}
+
+/// One public fact about a firm, with the state's own identifier for it so a
+/// re-pull inserts nothing twice. Append-only: a signal is a record of what
+/// DIR published on a date, and it stays true after the job ends.
+model PublicWorksSignal {
+  id      String          @id @default(cuid())
+  licence String
+  firm    PublicWorksFirm @relation(fields: [licence], references: [licence], onDelete: Cascade)
+  kind    PublicWorksSignalKind
+  /// DIR's own key for the event — the payroll transaction id, or the
+  /// project↔contractor link's sys_id. Unique, so idempotency is the
+  /// database's job rather than the sync's.
+  vendorKey       String  @unique
+  project         String
+  awardingBody    String?
+  primeContractor String?
+  /// The eCPR submission date, or the project's award date. ENTERED by DIR,
+  /// not stamped here — `fetchedAt` is when we saw it.
+  occurredOn DateTime
+  /// The row exactly as DIR returned it, for the day a field turns out to
+  /// matter that this schema did not name.
+  payload   Json
+  fetchedAt DateTime @default(now())
+
+  @@index([licence, occurredOn])
+  @@index([kind, occurredOn])
+}
+
+/// The sync's bookmark: when each slice of the public record was last pulled.
+/// The sync runs inside one serverless invocation with a 60-second ceiling,
+/// so it cannot refresh the whole state in one go — it does the stalest slice
+/// first and stops before the platform stops it. This table is how it knows
+/// which slice that is. One row per slice key (`cslb:master`,
+/// `ecpr:Ventura`, `links`).
+model PublicWorksSyncSlice {
+  key      String   @id
+  syncedAt DateTime
+  rows     Int
+  note     String?
+}

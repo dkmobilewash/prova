@@ -6,6 +6,7 @@ import { forgetEverything, loadContact, loadFields, saveContact, saveFields, typ
 import { FINAL_WARNING, FORM_MEANINGS, FORM_NAMES, UNCONDITIONAL_WARNING } from "@/lib/content";
 import { isEmail } from "@/lib/email";
 import { checkFills } from "@/lib/fills";
+import { hasPrefill, parsePrefill, prefillAnswers } from "@/lib/prefill";
 import { BASE_PATH } from "@/lib/site";
 import { fieldSteps, type FieldStep } from "@/lib/steps";
 import { getForm } from "@/lib/statutes/forms";
@@ -63,6 +64,13 @@ export function WaiverTool({
   const [website, setWebsite] = useState("");
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  // URL pre-fill (lib/prefill.ts). `ref` is a tracking code: it is carried to
+  // the server with the waiver and never rendered. `persist` is false while
+  // a link's values are on screen, so they reach this browser's memory only
+  // if the person actually sends -- a link must not overwrite what they had.
+  const [ref, setRef] = useState<string | null>(null);
+  const [persist, setPersist] = useState(true);
+  const prefillLogged = useRef(false);
 
   // Read this browser's memory after mount, never during render: the server
   // has no localStorage, so reading it in render would hydrate differently.
@@ -78,12 +86,44 @@ export function WaiverTool({
     } else if (fields.companyName) {
       setCompany(fields.companyName);
     }
+
+    // A pre-fill link. With no query string none of this runs, and the page
+    // is exactly what it was before links existed.
+    const prefill = parsePrefill(new URLSearchParams(window.location.search));
+    if (hasPrefill(prefill)) {
+      const answers = prefillAnswers(state, prefill.values);
+      if (Object.keys(answers).length) {
+        // The link wins over memory for this visit only.
+        setRaw({ ...fields, ...answers });
+        setPersist(false);
+      }
+      if (prefill.values.company) setCompany(prefill.values.company);
+      if (prefill.form) {
+        // Pre-SELECTS the two answers; the waiver-type screen and its
+        // warnings are still shown, and either answer can be changed.
+        setStage(prefill.form.endsWith("FINAL") ? "FINAL" : "PROGRESS");
+        setCleared(prefill.form.startsWith("UNCONDITIONAL"));
+      }
+      if (prefill.ref) {
+        setRef(prefill.ref);
+        if (!prefillLogged.current) {
+          prefillLogged.current = true;
+          // The code and nothing else: no name, no address, no values.
+          void fetch(`${BASE_PATH}/api/prefill-opened`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ref: prefill.ref, state }),
+            keepalive: true,
+          }).catch(() => undefined);
+        }
+      }
+    }
     setLoaded(true);
-  }, []);
+  }, [state]);
 
   useEffect(() => {
-    if (loaded) saveFields(raw);
-  }, [raw, loaded]);
+    if (loaded && persist) saveFields(raw);
+  }, [raw, loaded, persist]);
 
   const formKey: FormKey | null =
     stage && cleared !== null ? (`${cleared ? "UNCONDITIONAL" : "CONDITIONAL"}_${stage}` as FormKey) : null;
@@ -157,6 +197,8 @@ export function WaiverTool({
           company: company.trim(),
           marketingOptIn: returning ? undefined : marketing,
           website,
+          // Only present when the page was opened from a pre-fill link.
+          ref: ref ?? undefined,
         }),
       });
       const body = (await response.json().catch(() => ({}))) as { error?: string; sentTo?: string; notConfigured?: boolean };
@@ -166,6 +208,11 @@ export function WaiverTool({
       }
       const saved = { email: email.trim(), name: name.trim(), company: company.trim() };
       saveContact(saved);
+      // Sending is the moment a link's values become this person's own.
+      if (!persist) {
+        saveFields(raw);
+        setPersist(true);
+      }
       setContact(saved);
       setSentTo({ to: body.sentTo, notConfigured: body.notConfigured === true });
     } catch {

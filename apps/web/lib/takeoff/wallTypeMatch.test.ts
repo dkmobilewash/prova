@@ -153,6 +153,17 @@ describe("the call site, because no test here can open a PDF", () => {
   // when the other half needs pdf.js, a real document and a canvas.
 
   const viewer = () => readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+  /**
+   * The pipeline, which is where the grouping went.
+   *
+   * TWO READERS, because this block asks two different questions. Whether the
+   * SUBMIT sends the type it promised is a fact about the component; how the
+   * groups are built is a fact about the pipeline, and that moved out of the
+   * component when `findWallsOnSheet` was lifted so the bench and the server
+   * could run it too. Pointing both at one file would make half these cases
+   * assert against a file that cannot contain the answer.
+   */
+  const pipeline = () => readFileSync(resolve(process.cwd(), "lib/takeoff/findWallsOnSheet.ts"), "utf8");
 
   it("SENDS THE TYPE IT PROMISED, which is what makes the group arrive priced", () => {
     const text = viewer();
@@ -200,7 +211,7 @@ describe("the call site, because no test here can open a PDF", () => {
     // are found and again when some of them are labelled casework, so the two
     // lists cannot be grouped differently. Pinning the formatting rather than
     // the call made this census fail on a change that kept every argument.
-    const text = flat(viewer());
+    const text = flat(pipeline());
     expect(text).toContain(
       "wallGroups( clusterByThickness(runs), tagByRun(runs, tags, feetPerUnit, wallTypes), wallTypes, fromNote, )",
     );
@@ -211,7 +222,7 @@ describe("the call site, because no test here can open a PDF", () => {
     // compiles, passes every unit test of the note reader, and silently returns
     // the panel to asking which of A1, A2 or C1 the biggest group on the sheet
     // is — 556 ft of School-01's A-101. Mutation-tested; blind without this.
-    const text = viewer();
+    const text = pipeline();
     expect(text).toMatch(/defaultWallTypeFromNotes\(textItems, wallTypes\)/);
     expect(flat(text)).toMatch(/wallGroups\(\s*clusterByThickness\(runs\), tagByRun\(runs, tags, feetPerUnit, wallTypes\), wallTypes, fromNote,?\s*\)/);
   });
@@ -228,8 +239,8 @@ describe("the call site, because no test here can open a PDF", () => {
     // nearest-wins on the real sheet — mutation-tested, and blind until this
     // case existed. Measured on A-101: without it an EXT-1 tag takes a 4-7/8"
     // run 0.47 ft away over the 8-7/8" wall at 2.32 ft.
-    const text = viewer();
-    expect(text, "the viewer calls tagByRun without its wall types").not.toMatch(
+    const text = pipeline();
+    expect(text, "the pipeline calls tagByRun without its wall types").not.toMatch(
       /tagByRun\(runs, tags, feetPerUnit\)/,
     );
     expect(flat(text)).toMatch(/tagByRun\(runs, tags, feetPerUnit, wallTypes\)/);

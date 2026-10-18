@@ -73,6 +73,10 @@ function paint(sheets: PlanSheet[]) {
         planId: "plan_1",
         sheets,
         printedScaleByPage: {},
+        // No page here is a scan, which is what these cases are about: they
+        // exercise the WALL FINDER's control, whose posture (shown, disabled,
+        // enabled) is a question about calibration rather than about scans.
+        scannedPages: [],
         scalePrefillByPage: {},
       } as never),
     );
@@ -439,7 +443,12 @@ describe("the ghost lines over the sheet", () => {
     // Source text, because the detect path needs a real PDF to reach. It is the
     // weaker half of a pair: the function's own behaviour is tested above, this
     // asks only whether anything calls it.
-    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    // THE FILTERS MOVED. They were inline in this component until the pipeline
+    // was lifted into `lib/takeoff/findWallsOnSheet.ts` so the bench and the
+    // server could run the SAME ones — the bench's copy had drifted and was
+    // inventing walls. The assertion is unchanged; the file that can contain
+    // the answer is not.
+    const viewer = readFileSync(resolve(process.cwd(), "lib/takeoff/findWallsOnSheet.ts"), "utf8");
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     expect(code).toMatch(/wallsInTheBuilding\(\s*everywhere\s*,\s*feetPerUnit\s*\)/);
     // And that what gets grouped is the FILTERED set, not the raw one.
@@ -452,13 +461,22 @@ describe("the ghost lines over the sheet", () => {
     // and every test above stayed green, because they exercise the function
     // directly. Without it, dimension strings and room-number tags come back as
     // walls — 79 of 205 runs on a real sheet, in two whole groups.
-    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    // THE FILTERS MOVED. They were inline in this component until the pipeline
+    // was lifted into `lib/takeoff/findWallsOnSheet.ts` so the bench and the
+    // server could run the SAME ones — the bench's copy had drifted and was
+    // inventing walls. The assertion is unchanged; the file that can contain
+    // the answer is not.
+    const viewer = readFileSync(resolve(process.cwd(), "lib/takeoff/findWallsOnSheet.ts"), "utf8");
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     expect(code).toMatch(/wallsNotLettering\(\s*inBuilding\s*,\s*textBoxes\s*,\s*feetPerUnit\s*\)/);
     expect(code).toMatch(/clusterByThickness\(walls\)/);
     expect(code).not.toMatch(/clusterByThickness\(inBuilding\)/);
     // And that Fit is computed by the tested function rather than inline again.
-    expect(code).toMatch(/fitZoom\(/);
+    // THE VIEWER'S FILE, not the pipeline's: zoom is a thing the screen does,
+    // and it stayed behind when the filters moved.
+    expect(
+      readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8"),
+    ).toMatch(/fitZoom\(/);
   });
 
   it("the viewer SHOWS the decline reason, and only when it has nothing to offer", () => {
@@ -482,9 +500,19 @@ describe("the ghost lines over the sheet", () => {
     // than 1. Passing 1 would compare a vertical border against the width and
     // let it straight through, which is the one mistake this filter exists to
     // avoid.
-    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    // THE FILTERS MOVED. They were inline in this component until the pipeline
+    // was lifted into `lib/takeoff/findWallsOnSheet.ts` so the bench and the
+    // server could run the SAME ones — the bench's copy had drifted and was
+    // inventing walls. The assertion is unchanged; the file that can contain
+    // the answer is not.
+    const viewer = readFileSync(resolve(process.cwd(), "lib/takeoff/findWallsOnSheet.ts"), "utf8");
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code).toMatch(/wallsNotTheSheetBorder\(\s*notLettering\s*,\s*1\s*,\s*pageSize\.heightPt \/ pageSize\.widthPt\s*\)/);
+    // THE ASPECT IS NAMED NOW rather than spelled inline twice — the same
+    // value, computed once where the pipeline also hands it to the detector.
+    // The census still pins that the border is measured against the page's own
+    // height and not against 1, which is the thing that was wrong.
+    expect(code).toMatch(/const aspect = pageSize\.heightPt \/ pageSize\.widthPt;/);
+    expect(code).toMatch(/wallsNotTheSheetBorder\(\s*notLettering\s*,\s*1\s*,\s*aspect\s*\)/);
     expect(code).toMatch(/clusterByThickness\(walls\)/);
     expect(code).not.toMatch(/clusterByThickness\(notLettering\)/);
   });
@@ -498,7 +526,14 @@ describe("the ghost lines over the sheet", () => {
     expect(code).toMatch(/\{strokesSeen === 0/);
     expect(code).toMatch(/setStrokesSeen\(segments\.length\)/);
     // The branch for a sheet that DOES have line work must not claim a scan.
-    const branch = code.slice(code.indexOf("strokesSeen === 0"));
+    //
+    // Anchored on the BRACE, which is the empty state's own ternary. It used
+    // to slice from the first bare `strokesSeen === 0` anywhere in the file,
+    // and the Read this sheet button -- whose condition is `found !== null &&
+    // strokesSeen === 0` and which sits higher up -- moved that first
+    // occurrence into a piece of JSX this case is not about. The property
+    // being asserted has not changed; only which branch it is read from.
+    const branch = code.slice(code.indexOf("{strokesSeen === 0"));
     const elseArm = branch.slice(branch.indexOf(": `"), branch.indexOf("`}"));
     expect(elseArm).not.toMatch(/scan/i);
     expect(elseArm).toMatch(/does have line work/);
@@ -571,11 +606,48 @@ describe("found walls stay on their own sheet", () => {
     expect(code, "nothing records which sheet the result came from").toMatch(
       /setFoundOnPage\(pageNumber\)/,
     );
-    // The raw state must not reach a render site. If `foundRaw` appears outside
-    // its own declaration and the derivation, something is reading around the
-    // guard — which is exactly how this bug worked.
-    const rawUses = code.match(/foundRaw/g) ?? [];
-    expect(rawUses, "the raw found-walls state is read somewhere it should not be").toHaveLength(2);
+    // ── THE RAW STATE MUST NOT REACH A RENDER SITE ──
+    //
+    // THIS ASSERTION USED TO BE A COUNT — `foundRaw` exactly twice, its own
+    // declaration and the derivation — and the count was the wrong instrument.
+    // It broke the day a legitimate NON-render read was added (an effect that
+    // seeds the state from stored proposals reads it in a guard and in its
+    // dependency list), which took it to four and failed a viewer that was
+    // correct.
+    //
+    // The temptation then is to change the 2 to a 4, which turns the guard into
+    // "however many there happen to be" and is this repo's own lesson about a
+    // check that cannot say what it means. So it now asserts WHERE rather than
+    // HOW MANY, which is both stronger and stable: a render site is inside the
+    // component's returned JSX, and the raw state has no business there.
+    // ── LOCATED FROM THE COMPONENT, NOT FROM THE FIRST `return (` IN THE FILE ──
+    //
+    // This was `code.indexOf("\n  return (")` and a MODULE-SCOPE HELPER broke
+    // it: any top-level function whose body returns a parenthesised expression
+    // at two spaces of indent sits earlier in the file, so the split landed
+    // above it and every assertion below was then made about the wrong half.
+    // The failure message it printed — "the viewer never narrows the result to
+    // the sheet" — pointed at a line that was present and correct two hundred
+    // lines further down.
+    //
+    // Its own next line already said to fix this rather than trust it. Anchored
+    // on the component now, so a helper added above it cannot move the split.
+    const componentAt = code.indexOf("export function TakeoffPlanViewer(");
+    expect(componentAt, "the component's declaration could not be found").toBeGreaterThan(0);
+    const jsxAt = code.indexOf("\n  return (", componentAt);
+    expect(jsxAt, "the component's JSX could not be located — fix this before trusting it").toBeGreaterThan(0);
+
+    const render = code.slice(jsxAt);
+    // The derivation must be ABOVE the JSX, so this cannot pass by the whole
+    // file landing on the wrong side of the split.
+    expect(code.slice(0, jsxAt)).toContain("const found = wallsOnThisSheet(");
+    expect(
+      render.match(/foundRaw/g) ?? [],
+      "the raw found-walls state is read in the viewer's JSX, around the per-sheet guard",
+    ).toHaveLength(0);
+    // And `found` IS read there, so a render region that simply shows no walls
+    // at all cannot satisfy the line above.
+    expect(render).toMatch(/\bfound\b/);
   });
 });
 

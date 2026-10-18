@@ -132,6 +132,11 @@ type Reached =
  * every listed parent is checked.
  */
 const REACHED_FROM: Record<string, Reached> = {
+  "/sales/public-works": {
+    reason: "The public-works market list, linked from the sales CRM's header strip.",
+    parents: ["apps/web/app/(app)/sales/page.tsx"],
+    needle: 'href="/sales/public-works"',
+  },
   "/ai/activity": {
     reason: "The AI tasks menu's footer link, in the top bar on every page.",
     parents: ["apps/web/components/shell/TasksMenu.tsx"],
@@ -161,6 +166,16 @@ const REACHED_FROM: Record<string, Reached> = {
     reason: "Each lead row on /sales (operator only).",
     parents: ["apps/web/components/SalesLeadRow.tsx", "apps/web/app/(app)/sales/page.tsx"],
     needle: "`/sales/${",
+  },
+  "/sales/call-list": {
+    reason: "The call-list link beside today's calls on /sales (operator only).",
+    parents: ["apps/web/app/(app)/sales/page.tsx"],
+    needle: 'href="/sales/call-list"',
+  },
+  "/sales/[id]/sample-wh347": {
+    reason: "The sample WH-347 link on a lead's page (operator only).",
+    parents: ["apps/web/app/(app)/sales/[id]/page.tsx"],
+    needle: "`/sales/${lead.id}/sample-wh347`",
   },
   "/union-compliance/remittance": {
     reason: "Each month's remittance report link on /union-compliance.",

@@ -291,6 +291,54 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+      # THE FREE LIEN WAIVER TOOL (apps/lien-waiver), in the same browser.
+      # Its own config starts the TOOL's production build -- no Clerk, no
+      # database, no email key, so a full waiver is walked end to end and
+      # nothing leaves CI. It holds the no-parameter regression walk and the
+      # URL pre-fill specs (apps/web/e2e/lien-waiver/). Same count-then-verify
+      # shape as the public suite above, for the same reason. Runs whether
+      # the public pages passed or not: they are different apps.
+      - name: Build the lien waiver tool
+        id: lienwaiver-build
+        if: success() || failure()
+        run: pnpm --filter @prova/lien-waiver build
+
+      - name: Count the tests the lien waiver config collects
+        if: (success() || failure()) && steps.lienwaiver-build.outcome == 'success'
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/collected-lien-waiver.json
+        run: |
+          set -e
+          set -o pipefail
+          pnpm --filter @prova/web exec playwright test \
+            --config e2e/playwright.lien-waiver.config.ts --list --reporter=json
+          COUNT="$(node apps/web/e2e/collected.mjs "$PLAYWRIGHT_JSON_OUTPUT_NAME")"
+          echo "E2E_LIEN_WAIVER_COLLECTED=$COUNT" >> "$GITHUB_ENV"
+          echo "the lien waiver config collects $COUNT tests"
+
+      - name: Lien waiver tool at 375 and 1280
+        id: lienwaiver
+        if: (success() || failure()) && steps.lienwaiver-build.outcome == 'success'
+        run: pnpm --filter @prova/web exec playwright test --config e2e/playwright.lien-waiver.config.ts
+
+      - name: Count the lien waiver verdicts that came back
+        if: always() && steps.lienwaiver.conclusion != 'skipped'
+        run: |
+          set -e
+          node apps/web/e2e/verdicts.mjs \
+            apps/web/playwright-report-lien-waiver/results.json "$E2E_LIEN_WAIVER_COLLECTED"
+
+      - name: Upload the lien waiver Playwright report
+        if: always() && steps.lienwaiver.conclusion != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-lien-waiver
+          path: |
+            apps/web/playwright-report-lien-waiver
+            apps/web/test-results-lien-waiver
+          retention-days: 14
+          if-no-files-found: warn
+
   # --------------------------------------------------------------------------
   # THE PILOT JOURNEY, and every other signed-in screen: sign in → the welcome
   # questions → dashboard → a first job with a GC → an estimate line → the

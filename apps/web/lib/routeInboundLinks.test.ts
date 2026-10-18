@@ -59,6 +59,7 @@ const SCANNED_ROOTS = ["app", "components", "lib"] as const;
 /** Top-level directories holding source that are deliberately not scanned. */
 const NOT_SCANNED: Record<string, string> = {
   e2e: "browser tests navigate by typing a URL; a test visiting a page is not a way in for a person",
+  scripts: "command-line entry points run by a scheduler or a person at a terminal; they link to nothing and nobody browses them",
   test: "test-only helpers for the suite itself (an in-memory Web Storage); nothing here renders, so a route named in it would be a fixture rather than a way in",
 };
 
@@ -75,6 +76,7 @@ const REACHED_FROM_OUTSIDE: Record<string, string> = {
   "/quickbooks/disconnected": "Intuit's disconnect landing URL, registered in Intuit's developer dashboard",
   "/sign-in/[[...sign-in]]": "Clerk's sign-in route, reached by Clerk's own redirects and the middleware",
   "/sign-up/[[...sign-up]]": "Clerk's sign-up route, reached by Clerk's own redirects",
+  "/unsubscribe/[token]": "the opt-out link in every cold email, carried into Smartlead as the {{unsubscribe_url}} custom field",
 };
 
 /** Files whose literals name routes without linking to them. */

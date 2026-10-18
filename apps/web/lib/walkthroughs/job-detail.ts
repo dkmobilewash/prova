@@ -21,6 +21,16 @@ export const jobDetailWalkthrough: Walkthrough = {
   title: "A job — overview",
   steps: [
     {
+      // FIRST, because it is the first thing on the page and the only part of
+      // it that is about what to DO — everything below is a record of what the
+      // job IS. It shows only when something is waiting, so a tour on a healthy
+      // job skips straight to the summary.
+      anchor: "job-needs",
+      title: "What this job needs from you",
+      body:
+        "Anything waiting on you, worst first: a bid deadline, quantities measured off drawings that have since been superseded, a markup that never reached the prices, and walls C Stream found on a sheet nobody has checked yet. Each row has a link straight to it. The box is missing when nothing is waiting.",
+    },
+    {
       anchor: "job-summary",
       title: "The job at a glance",
       body:

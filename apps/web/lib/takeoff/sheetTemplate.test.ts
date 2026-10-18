@@ -318,12 +318,27 @@ describe("the call site, because no test here can open a PDF", () => {
   // shipped green because a census proved the code was present while a
   // framework threw it away. A census says "written", never "honoured".
 
-  const source = () => readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+  const source = () => readFileSync(resolve(process.cwd(), "lib/takeoff/findWallsOnSheet.ts"), "utf8");
 
   it("SAMPLES OTHER PAGES and filters before detection", () => {
     const text = source();
-    expect(text, "the sampler is not called").toContain("pagesToSample(doc.numPages, pageNumber)");
-    expect(text, "the template is never built").toContain("templateFromSheets(sampled)");
+    // THE SAMPLING AND THE FILTERING ARE NOW IN TWO PLACES, and the split is
+    // the point: only a caller can open another page, so the viewer reads the
+    // sheets and the pipeline decides what to drop. Each half is asserted
+    // against the file that contains it.
+    const caller = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    expect(caller, "the sampler is not called").toContain("pagesToSample(doc.numPages, pageNumber)");
+    // A PATTERN RATHER THAN THE EXACT CALL, and the change is deliberate.
+    // This read `templateFromSheets(input.sampledSheets)` as a literal and went
+    // red the first time the samples were legitimately transformed on the way
+    // in — the layer filter is applied to them so the template compares like
+    // with like. The FACT worth pinning is that the template is built from the
+    // caller's own samples and not from something re-derived here; the
+    // spelling is not. Same lesson as the migration census that a single line
+    // break disarmed: do not let formatting be load-bearing.
+    expect(text, "the template is never built from the caller's samples").toMatch(
+      /templateFromSheets\(\s*input\.sampledSheets/,
+    );
     expect(text, "the strokes are never filtered").toContain("withoutTemplate(allInUnits, template)");
 
     // ORDER. Filtering after detection would leave the title block in the
@@ -351,9 +366,17 @@ describe("the call site, because no test here can open a PDF", () => {
     const text = source();
     // NOT just that the setter is called: mutation showed `setTemplateStrokes(0)`
     // passes a looser check while reporting nothing.
-    expect(text).toContain("setTemplateStrokes(templateDropped)");
+    // THE ARITHMETIC IS THE PIPELINE'S; SAYING IT IS THE VIEWER'S. This used
+    // to be one assertion over one file because both lived in the component.
     expect(text).toContain("templateDropped = allInUnits.length - kept.length");
-    expect(text).toContain("in the same place on other sheets of the set");
+    expect(
+      readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8"),
+      "the count is computed and never shown",
+    ).toContain("setTemplateStrokes(found.templateDropped)");
+    // THE SENTENCE IS THE VIEWER'S, the arithmetic above is the pipeline's.
+    expect(
+      readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8"),
+    ).toContain("in the same place on other sheets of the set");
   });
 
   it("DOES NOT NAME WHAT IT REMOVED, because it does not know", () => {
@@ -394,8 +417,16 @@ describe("the call site, because no test here can open a PDF", () => {
     // A set with one bad page must still measure the sheet in front of
     // somebody. The fail-safe direction is "no template filter", never "no
     // walls".
+    // THE FALL-THROUGH MOVED WITH THE SPLIT. The caller hands `null` when a
+    // page will not parse; the pipeline then filters nothing and the sheet
+    // gets exactly the geometric filters it had before. The fail-safe
+    // direction is unchanged — "no template filter", never "no walls".
     const text = source();
-    const guarded = text.slice(text.indexOf("const sampled: StrokeSegment[][] = [];"));
-    expect(guarded.slice(0, 2000)).toContain("inUnits = allInUnits;");
+    expect(text).toContain("let inUnits = allInUnits;");
+    expect(text).toContain("if (input.sampledSheets !== null)");
+    expect(
+      readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8"),
+      "a page that will not parse is not handed over as an empty set",
+    ).toContain("sampledSheets = null;");
   });
 });
