@@ -151,7 +151,7 @@ describe("/cash-flow on an account with no invoices", () => {
   it("does not colour an empty account as though it were overdue", async () => {
     const html = await load();
     // The amber used for past-due money, and the bucket labels it was on.
-    expect(html).not.toContain("text-amber-400");
+    expect(html).not.toContain("text-warn"); // was text-amber-400 before the light-theme tokens
     expect(html).not.toContain("90+ days");
   });
 
@@ -188,7 +188,7 @@ describe("/bids with no bids and no filter applied", () => {
     expect(html).toContain("Bid history");
     expect(html).toContain("No bids match this filter");
     // And a way back out of it.
-    expect(html).toContain('href="/bids"');
+    expect(html).toContain('href="/bids?view=all"');
   });
 });
 
@@ -221,7 +221,7 @@ describe("/pipeline with no pursuits and no invitations", () => {
 describe("/schedule with no jobs", () => {
   const load = async () => {
     const { default: Page } = await import("@/app/(app)/schedule/page");
-    return renderToStaticMarkup(await Page());
+    return renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
   };
 
   it("renders, and names the missing thing as the job rather than the schedule", async () => {

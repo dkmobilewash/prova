@@ -87,6 +87,9 @@ export const AI_FEATURE_LABEL: Record<AiFeatureKey, string> = {
   SPEC_READ: "Reading spec sections",
   SCHEDULE_READ: "Reading schedules off a drawing",
   PROPOSAL_DRAFT: "Drafting proposal clauses",
+  AI_AGENTS: "Background agents",
+  WALL_CLASSIFY: "Checking which runs on a plan are walls",
+  SHEET_TEXT: "Reading the writing on a scanned sheet",
 };
 
 /**
@@ -142,7 +145,7 @@ export function askFeatureLabel(ledgerFeature: string): string {
 export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
   ASK: "The Ask box: questions about your own jobs, and the cards it puts in front of you.",
   WIP_NARRATIVE:
-    "The plain-language reading of a job's WIP figures on the Estimate tab. The figures themselves are computed in code and do not use AI.",
+    "The plain-language reading of a job's WIP figures on its estimate page. The figures themselves are computed in code and do not use AI.",
   COMPLIANCE_EXTRACT:
     "Reading an uploaded lien waiver, COI or certified payroll into its fields. Filing a compliance document needs this — with it off, uploads are refused rather than filed blank.",
   DRAFT_ESTIMATE_LINES: "Turning a pasted scope of work into draft line items for you to price and correct.",
@@ -161,6 +164,12 @@ export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
     "Reading a door, window, finish or partition schedule off a drawing into rows you accept or reject. The rows are proposed, never added to a takeoff on their own — and with this off you can still type a schedule in by hand.",
   PROPOSAL_DRAFT:
     "Writing the inclusions, exclusions and clarifications for a job's proposal \u2014 one per thing this app already knows about the bid: a spec requirement, an indirect nobody priced, a package carried from a sub. Every clause is proposed with the quote it came from, and nothing reaches the proposal until you accept it. With this off you can still write clauses by hand.",
+  AI_AGENTS:
+    "The bid watcher, bid research, the estimate check and recommendations: agents that read your bids and history, write down what they found with sources, and advise. They never submit, send or change a bid or estimate — every change still goes through a confirm card.",
+  WALL_CLASSIFY:
+    "Looking at a part of a floor plan and saying which of the runs the wall finder measured are walls, and which are countertops, fixtures, cabinets or reference lines \u2014 the one thing measuring cannot tell you, since a countertop is also two parallel lines. ONE OF TWO FEATURES HERE THAT SEND A PICTURE OF YOUR DRAWING, the other being reading a scanned sheet; every other one sends text the file already contains. It never changes a length or a thickness; those are measured from the drawing's own geometry either way, and you can accept or reject any run yourself. With this off the runs are still found and still measured \u2014 you just sort them by hand.",
+  SHEET_TEXT:
+    "Reading the room names, dimensions and scale note off a sheet that was SCANNED rather than exported \u2014 a scan is a picture, so there is no writing in the file to read and nothing else in this app can get at it. ONE OF TWO FEATURES HERE THAT SEND A PICTURE OF YOUR DRAWING, the other being checking which runs are walls. It reads the writing only: the lines are found by measuring the picture, in code, and every length and quantity is still worked out from that geometry rather than from anything the model says. With this off, a scanned sheet behaves as it does today \u2014 it is recognised as a scan and set aside, and you take it off by hand.",
 };
 
 /**

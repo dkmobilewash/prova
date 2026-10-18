@@ -5,6 +5,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+    /**
+     * ── A SCANNED TILE DOES NOT FIT IN THE DEFAULT ──
+     *
+     * Server Actions cap a request body at 1 MB unless this says otherwise,
+     * and nothing in the app said otherwise — so the limit was a default
+     * nobody had chosen. Read this sheet sends a rendered tile of a drawing,
+     * and a SCAN is the worst case for it: measured on the fixtures, a
+     * speckled tile is 1.20 MB as PNG and would be refused, while a clean one
+     * is 0.08 MB and sails through. That is why it worked everywhere except
+     * on the sheets the feature exists for.
+     *
+     * The tiles are JPEG now, which halves the worst case to 0.54 MB, so this
+     * is headroom rather than the fix — stated explicitly so the next person
+     * sending an image knows what the ceiling is and that it was chosen.
+     */
+    serverActions: { bodySizeLimit: "4mb" },
+  },
   transpilePackages: ["@prova/ui", "@prova/db"],
   // `@napi-rs/canvas` ships a NATIVE `.node` binary. webpack follows the
   // import -- a dynamic `import()` does not stop it -- tries to PARSE the
@@ -90,6 +108,21 @@ const nextConfig = {
   // which is the whole reason this entry exists (see the note above).
   outputFileTracingIncludes: {
     "/**": ["../../node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client/**"],
+  },
+  // The free lien waiver tool lives at cstream.ai/lien-waiver (Diego,
+  // 2026-10-12) but is a SEPARATE app: apps/lien-waiver, its own Vercel
+  // project, no Clerk, no access to this app's database. This app owns
+  // /lien-waiver itself (the landing page) and proxies everything BELOW it
+  // to the tool, which is built with basePath "/lien-waiver" so its pages,
+  // assets and API all sit under the same prefix.
+  //
+  // LIEN_WAIVER_TOOL_ORIGIN is the tool's production origin, read at build
+  // time. Unset (a laptop, CI, most previews) means no rewrite, and
+  // /lien-waiver/* 404s here exactly as it did before this existed.
+  async rewrites() {
+    const origin = process.env.LIEN_WAIVER_TOOL_ORIGIN?.trim().replace(/\/+$/, "");
+    if (!origin) return [];
+    return [{ source: "/lien-waiver/:path+", destination: `${origin}/lien-waiver/:path+` }];
   },
 };
 

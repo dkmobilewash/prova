@@ -30,11 +30,11 @@ const inputClass =
 // a button at a time. `inline-flex` + `items-center` is what makes min-h
 // actually centre the label instead of pinning it to the top.
 const rowBtn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 const rowBtnDanger =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-danger disabled:opacity-50";
 const rowBtnConfirm =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-danger hover:bg-tag-rose disabled:opacity-50";
 const primaryBtn =
   "inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50";
 
@@ -48,7 +48,7 @@ const primaryBtn =
 const STATUS_CHIP: Record<PunchItemStatus, string> = {
   OPEN: "border-line-card text-ink-label",
   READY_FOR_REVIEW: "border-brand text-link",
-  VERIFIED: "border-green-600 text-green-400",
+  VERIFIED: "border-green-600 text-ok",
 };
 
 export type PunchListRowItem = PunchItemFieldValues & {
@@ -143,7 +143,7 @@ export function PunchListRow({ canDelete, canVerify, jobs, people, item, showJob
           <PunchItemFields people={people} values={item} showBlame />
 
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}
@@ -166,7 +166,7 @@ export function PunchListRow({ canDelete, canVerify, jobs, people, item, showJob
                 setIsEditing(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
             >
               Cancel
             </button>
@@ -197,7 +197,7 @@ export function PunchListRow({ canDelete, canVerify, jobs, people, item, showJob
             </span>
           )}
           {overdue && (
-            <span className="inline-flex items-center rounded-md border border-red-500 px-2 py-0.5 text-xs text-red-400">
+            <span className="inline-flex items-center rounded-md border border-red-500 px-2 py-0.5 text-xs text-danger">
               Overdue
             </span>
           )}
@@ -298,7 +298,7 @@ export function PunchListRow({ canDelete, canVerify, jobs, people, item, showJob
         )}
 
         {error && (
-          <p role="alert" className="mt-1 text-sm text-red-400">
+          <p role="alert" className="mt-1 text-sm text-danger">
             {error}
           </p>
         )}

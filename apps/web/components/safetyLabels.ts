@@ -6,7 +6,21 @@ export const INCIDENT_OUTCOMES = [
   { value: "RESTRICTED_OR_TRANSFER", label: "Restricted duty or job transfer", recordable: true },
   { value: "OTHER_RECORDABLE", label: "Other recordable case", recordable: true },
   { value: "FIRST_AID_ONLY", label: "First aid only (not recordable)", recordable: false },
+  // Nobody hurt: kept on the log, but takes no OSHA case number.
+  { value: "NEAR_MISS", label: "Near miss — nobody hurt (no case number)", recordable: false },
 ] as const;
+
+/** A near miss is not an OSHA case: it gets no case number and is never on
+ * the 300 log. The one predicate the action, the page and Ask share. */
+export function isNearMiss(outcome: string) {
+  return outcome === "NEAR_MISS";
+}
+
+/** "2026-003", or null for a near miss — which has no number to show, and
+ * must never render as "2026-null". */
+export function caseLabel(caseYear: number, caseNumber: number | null) {
+  return caseNumber == null ? null : `${caseYear}-${String(caseNumber).padStart(3, "0")}`;
+}
 
 export const INCIDENT_CLASSIFICATIONS = [
   { value: "INJURY", label: "Injury" },

@@ -183,7 +183,7 @@ export function JobDetailsForm({
         {error && (
           // Rendered, never thrown: production redacts a thrown Server
           // Action message to a digest and this box would stay empty.
-          <p className="text-sm text-rose-300">{error}</p>
+          <p className="text-sm text-danger">{error}</p>
         )}
       </form>
 

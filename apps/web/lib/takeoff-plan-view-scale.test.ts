@@ -315,3 +315,114 @@ describe("why a sheet has no scale", () => {
     expect(scaleDeclinesFromReadings(rows)[1]).toBe("something worth saying");
   });
 });
+
+/**
+ * ── THE REDUCED PRINT, AND THE PAGE THAT PROVED IT ──
+ *
+ * A half-size print carries the FULL-SIZE scale name in its title block. On the
+ * 60-page answer key three pages are half-size prints of an ARCH D original,
+ * and they split exactly along whether the dimension path happened to work:
+ *
+ *   p11: 18in, 20 labels, dimensions 16.00 ft/in -> uses 16.00, measured, key 66%
+ *   p17: 18in, 32 labels, dimensions 16.00 ft/in -> uses 16.00, measured, key 66%
+ *   p50: 18in,  0 labels, dimensions DECLINED    -> used 8.00 FROM THE NAME,
+ *                                                   key 32% — worst of 60 pages
+ *
+ * So p50 measured every length at half, and its own sister pages prove what the
+ * scale should have been. These are p50's numbers.
+ */
+
+/** The set is ARCH D; the reduced pages are ARCH B, which is exactly half. */
+const SET_WIDTHS = { 1: 2592, 2: 2592, 3: 2592, 50: 1296 };
+/** 1/8" = 1'-0" across an 18in sheet is 144ft — what the title block implies. */
+const P50_PRINTED_FEET = 144;
+
+const printedRow = (over: Partial<ScaleReadingRowForView> = {}): ScaleReadingRowForView =>
+  row({
+    pageNumber: 50,
+    source: "PRINTED",
+    declaredDistanceFeet: String(P50_PRINTED_FEET),
+    agreedText: null,
+    consideredCount: 0,
+    inheritedError: null,
+    ...over,
+  });
+
+describe("a sheet that is a reduced print", () => {
+  it("CORRECTS THE SCALE TO WHAT ITS SISTER PAGES MEASURE", () => {
+    // The assertion the whole feature is for: p11 and p17 measure 1/16" = 1'-0"
+    // off their own dimensions, and this reaches the same answer on a page with
+    // no dimensions at all, from the set's sheet sizes.
+    const prefill = scalePrefillsFromReadings([printedRow()], SET_WIDTHS)[50]!;
+    expect(prefill.scaleName).toBe('1/16" = 1\'-0"');
+    expect(prefill.declaredFeet).toBe(P50_PRINTED_FEET * 2);
+    expect(prefill.reducedPrintCaution).toMatch(/half-size print/i);
+  });
+
+  it("SAYS SO ON THE ROW, naming both widths and the consequence", () => {
+    const prefill = scalePrefillsFromReadings([printedRow()], SET_WIDTHS)[50]!;
+    expect(prefill.reducedPrintCaution).toContain("18in");
+    expect(prefill.reducedPrintCaution).toContain("36in");
+    expect(prefill.reducedPrintCaution).toMatch(/half/i);
+  });
+
+  it("LEAVES THE LINE ALONE — only the distance it represents changes", () => {
+    // The printed row's line IS the sheet's own width. Reducing the paper does
+    // not move it; it changes how much building it spans.
+    const prefill = scalePrefillsFromReadings([printedRow()], SET_WIDTHS)[50]!;
+    expect(prefill.xs).toEqual([0.1, 0.15]);
+    expect(prefill.ys).toEqual([0.2, 0.2]);
+  });
+
+  it("NEVER TOUCHES A MEASURED SCALE, which is the safety argument", () => {
+    // p11 and p17 are the same 18in paper and their dimension votes are right.
+    // A dimension is measured off the drawing, so a reduction cannot fool it —
+    // reduce the sheet and both the line and its stated length come down
+    // together. Correcting one would break a page that works today.
+    const measured = scalePrefillsFromReadings(
+      [row({ pageNumber: 50, source: "DIMENSIONS" })],
+      SET_WIDTHS,
+    )[50]!;
+    expect(measured.scaleName).toBe('1/8" = 1\'-0"');
+    expect(measured.declaredFeet).toBe(16.375);
+    expect(measured.reducedPrintCaution).toBeUndefined();
+  });
+
+  it("leaves a full-size sheet's printed scale exactly as it was", () => {
+    const prefill = scalePrefillsFromReadings(
+      [printedRow({ pageNumber: 1, declaredDistanceFeet: "288" })],
+      SET_WIDTHS,
+    )[1]!;
+    expect(prefill.scaleName).toBe('1/8" = 1\'-0"');
+    expect(prefill.declaredFeet).toBe(288);
+    expect(prefill.reducedPrintCaution).toBeUndefined();
+  });
+
+  it("CHANGES NOTHING WHEN NO WIDTHS ARE SUPPLIED, so the old callers are safe", () => {
+    const prefill = scalePrefillsFromReadings([printedRow()])[50]!;
+    expect(prefill.scaleName).toBe('1/8" = 1\'-0"');
+    expect(prefill.declaredFeet).toBe(P50_PRINTED_FEET);
+    expect(prefill.reducedPrintCaution).toBeUndefined();
+  });
+
+  it("OFFERS NOTHING when the correction lands on no standard scale", () => {
+    // 1/32" = 1'-0" is the coarsest architectural scale, so a half-size print
+    // of it leaves the list. A wrong scale is worse than none, and the form
+    // then behaves exactly as it does with no reading at all.
+    const offTheList = scalePrefillsFromReadings(
+      [printedRow({ declaredDistanceFeet: String(18 * 32) })],
+      SET_WIDTHS,
+    );
+    expect(offTheList[50]).toBeUndefined();
+  });
+
+  it("is unmoved by a set with one oversized sheet in it", () => {
+    // The modal width, not the maximum: one big sheet must not make every other
+    // page read as a reduction of it.
+    const prefill = scalePrefillsFromReadings(
+      [printedRow({ pageNumber: 1, declaredDistanceFeet: "288" })],
+      { 1: 2592, 2: 2592, 3: 2592, 4: 3456 },
+    )[1]!;
+    expect(prefill.reducedPrintCaution).toBeUndefined();
+  });
+});

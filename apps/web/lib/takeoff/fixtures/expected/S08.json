@@ -1,0 +1,104 @@
+{
+  "id": "S08",
+  "title": "FOUR-BEDROOM RESIDENCE",
+  "page": 1,
+  "sheetNumber": "A-101",
+  "raster": false,
+  "scale": "1/4\" = 1'-0\"",
+  "scalesPrinted": [
+    "1/4\" = 1'-0\""
+  ],
+  "widthPt": 2592,
+  "heightPt": 1728,
+  "scaleAuthority": "printed",
+  "rooms": [
+    {
+      "name": "LIVING",
+      "number": "101",
+      "area": null
+    },
+    {
+      "name": "ENTRY",
+      "number": "102",
+      "area": null
+    },
+    {
+      "name": "DINING",
+      "number": "103",
+      "area": null
+    },
+    {
+      "name": "KITCHEN",
+      "number": "104",
+      "area": null
+    },
+    {
+      "name": "LAUNDRY",
+      "number": "105",
+      "area": null
+    },
+    {
+      "name": "FAMILY",
+      "number": "106",
+      "area": null
+    },
+    {
+      "name": "HALL",
+      "number": "107",
+      "area": null
+    },
+    {
+      "name": "BEDROOM",
+      "number": "108",
+      "area": null
+    },
+    {
+      "name": "BATH",
+      "number": "109",
+      "area": null
+    },
+    {
+      "name": "BATH",
+      "number": "110",
+      "area": null
+    },
+    {
+      "name": "BEDROOM",
+      "number": "111",
+      "area": null
+    },
+    {
+      "name": "BEDROOM",
+      "number": "112",
+      "area": null
+    },
+    {
+      "name": "BEDROOM",
+      "number": "113",
+      "area": null
+    }
+  ],
+  "dimensions": [
+    "18'-6\"",
+    "6'-0\"",
+    "12'-0\"",
+    "12'-0\"",
+    "8'-3 1/4\"",
+    "56'-9 1/4\"",
+    "18'-3 1/4\"",
+    "4'-0\"",
+    "18'-3 1/4\"",
+    "40'-6 1/2\"",
+    "56'-9 1/4\"",
+    "40'-6 1/2\"",
+    "14'-6\"",
+    "8'-0\"",
+    "11'-0\"",
+    "11'-0\"",
+    "12'-3 1/4\""
+  ],
+  "wallLfTotal": null,
+  "doorCount": null,
+  "windowCount": null,
+  "notes": []
+}

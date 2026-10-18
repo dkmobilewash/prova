@@ -4,7 +4,14 @@ import { resolve } from "node:path";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { TakeoffPlanViewer, FoundWalls } from "./TakeoffPlanViewer";
+import { TakeoffPlanViewer, FoundWalls, ClusterMark } from "./TakeoffPlanViewer";
+// THE PLAIN VALUES COME FROM A PLAIN MODULE, not from the viewer. Importing
+// them from a `"use client"` file is what `lib/client-boundary.test.ts` fails
+// the build over: across the RSC boundary they arrive as a client-reference
+// proxy rather than the number or the function. The guard caught this the
+// moment these cases were written, which is the whole reason it exists.
+import { DISTINCT_MARKS, SHOWN_AT_FIRST, markFor } from "@/lib/takeoff/clusterMarks";
+import { wallsOnThisSheet } from "@/lib/takeoff/wallGroups";
 import { inchLabel, type WallCluster } from "@/lib/takeoff/wallVectors";
 import { fitZoom, stepZoom } from "@/lib/takeoff-plan-view";
 import type { PlanSheet } from "@/lib/takeoff-plan-view";
@@ -66,6 +73,10 @@ function paint(sheets: PlanSheet[]) {
         planId: "plan_1",
         sheets,
         printedScaleByPage: {},
+        // No page here is a scan, which is what these cases are about: they
+        // exercise the WALL FINDER's control, whose posture (shown, disabled,
+        // enabled) is a question about calibration rather than about scans.
+        scannedPages: [],
         scalePrefillByPage: {},
       } as never),
     );
@@ -117,6 +128,56 @@ describe("the wall finder's control", () => {
     // on load — on the biggest sheet measured that would be a 1.7-second freeze
     // nobody requested.
     expect(paint([sheet()]).querySelector('[data-takeoff="found-walls"]')).toBeNull();
+  });
+
+  it("KEEPS THE CHECK BUTTON AWAY UNTIL THERE IS SOMETHING TO CHECK", () => {
+    // "Check these are walls" asks a model what the found runs actually are —
+    // countertops and bathtubs measure like walls and a real permit set
+    // returned both. Before anything is found it can only refuse, so it is not
+    // on the toolbar yet.
+    expect(paint([sheet()]).querySelector('[data-takeoff="check-runs"]')).toBeNull();
+  });
+
+  it("A RENDER TEST, because the surface census cannot see this one", () => {
+    // `aiSurfaceCensus` proves the FILE named for a feature contains a control.
+    // This file contains a dozen, so pointing it at the viewer is satisfied by
+    // any of them — the census would stay green with this button deleted, and
+    // mutation showed exactly that.
+    //
+    // #665 is the precedent and the reason this suite exists at all: it shipped
+    // a control gated on a stage value, which existed, called the right action,
+    // sat in the right branch and appeared on no screen anybody used. A census
+    // proves the code is THERE; only rendering proves somebody can reach it.
+    //
+    // The button lives behind `found !== null && found.length > 0`, which no
+    // render here can reach without opening a PDF — so what this pins is the
+    // condition itself, read off the source, beside the two render assertions
+    // that prove the source is the one on screen.
+    const source = readFileSync(
+      resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"),
+      "utf8",
+    ).replace(/\s+/g, " ");
+    expect(source, "the check control is gone from the viewer").toContain(
+      'data-takeoff="check-runs"',
+    );
+    expect(
+      source,
+      "the check control is no longer gated on there being runs to check",
+    ).toMatch(/\{found !== null && found\.length > 0 && \( <button/);
+    expect(source, "the control no longer calls the classifier").toContain("onClick={onCheckRuns}");
+    // AND THE OTHER HALF OF THE ANSWER IS ON SCREEN. The check reports walls
+    // the finder MISSED as well as runs that are not walls, and a wall nothing
+    // paired is in no cluster and no total — so if this panel stops rendering,
+    // the only thing in the app that can see an absent wall says nothing.
+    expect(source, "the missing-walls panel is gone from the viewer").toContain(
+      'data-takeoff="check-missing"',
+    );
+    expect(source, "the viewer no longer keeps what the check said was missing").toContain(
+      "setMissed(result.value.missing)",
+    );
+    expect(source, "the classifier is no longer wired to the action").toContain(
+      "await classifyWallCandidates(",
+    );
   });
 
   it("rendered a real viewer, rather than passing against an empty page", () => {
@@ -245,11 +306,131 @@ describe("the ghost lines over the sheet", () => {
     // is the half nothing else can cover.
     const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code).toMatch(/<FoundWalls\s+clusters=\{found\}\s+hovered=\{hovered\}\s*\/>/);
+    expect(code).toMatch(/<FoundWalls\s+clusters=\{shownGroups\}\s+hovered=\{hovered\}\s*\/>/);
     // And that it sits inside the overlay rather than somewhere harmless.
     const overlay = code.slice(code.indexOf("<svg"), code.indexOf("</svg>"));
     expect(overlay).toContain("<FoundWalls");
     expect(overlay.length).toBeGreaterThan(200);
+  });
+
+  it("DRAWS ONLY WHAT THE PANEL LISTS, so no line is unattributable", () => {
+    // ── THE DEFECT, FROM A REAL SHEET ──
+    //
+    // This was `clusters={found}` — every group — while the panel lists
+    // `shownGroups`, which is `found.slice(0, SHOWN_AT_FIRST)`. A West Herr
+    // floor plan clicked on production 2026-10-13 returned NINETEEN groups, so
+    // seven of them had lines on the drawing and no row beside them. Worse,
+    // the colour came from `index % 6`, so those seven wore the colours of
+    // rows 1 to 6: a blue line could be row 1's wall, which an estimator can
+    // accept, or row 13's, which they could not even see.
+    //
+    // The overlay is the verification channel for this whole feature —
+    // `wallVectors.ts` returns centrelines precisely so a wrong answer is a
+    // line where there is no wall. A line nobody can attribute breaks that.
+    //
+    // COMMENTS STRIPPED, and it is load-bearing: the comment at that call site
+    // quotes `clusters={found}` in order to record what was wrong, so a
+    // raw-text census would find the defect it is checking is gone.
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+    expect(code.length, "the viewer read as empty — this census guards nothing").toBeGreaterThan(10_000);
+    expect(code, "the overlay is drawing groups the panel does not list").not.toMatch(
+      /<FoundWalls\s+clusters=\{found\}/,
+    );
+    // And the list it follows is still the truncated one rather than having
+    // been quietly widened to all of them, which would restore the defect from
+    // the other end.
+    expect(code).toMatch(/shownGroups\s*=\s*showingAll\s*\?\s*\(found \?\? \[\]\)\s*:\s*\(found \?\? \[\]\)\.slice\(0, SHOWN_AT_FIRST\)/);
+  });
+
+  // ── SIX COLOURS WERE LABELLING NINETEEN GROUPS ──
+  //
+  // On the West Herr sheet `index % 6` put groups 0, 6, 12 and 18 in the same
+  // `#38bdf8`. The existing colour case above compares TWO groups and passes,
+  // which is why nothing caught it: the collision needs the seventh.
+  //
+  // These assert the arithmetic at every index rather than at the two a render
+  // test sets up by hand, which is the whole reason `markFor` was pulled out of
+  // JSX. A decision inside JSX is a decision no test can reach.
+
+  it("gives the first twelve groups — the panel's default — distinct marks", () => {
+    const marks = Array.from({ length: SHOWN_AT_FIRST }, (_, i) => {
+      const m = markFor(i, 2);
+      return `${m.stroke}|${m.dash}`;
+    });
+    expect(new Set(marks).size, "two of the twelve listed groups share a mark").toBe(SHOWN_AT_FIRST);
+  });
+
+  it("separates the groups that used to collide, by name", () => {
+    // The exact four from the sheet. Colour alone cannot tell them apart and
+    // is not expected to — the dash is the rest of the mark.
+    const blue = [0, 6, 12, 18].map((i) => markFor(i, 2));
+    expect(new Set(blue.map((m) => m.stroke)).size, "all four are the same colour, as before").toBe(1);
+    expect(new Set(blue.slice(0, 3).map((m) => m.dash)).size, "0, 6 and 12 must differ").toBe(3);
+  });
+
+  it("runs out at DISTINCT_MARKS and does not pretend otherwise", () => {
+    // A finite palette cannot label an arbitrary number of groups. Claiming it
+    // can is the failure the template filter's message was corrected for, so
+    // the repeat is pinned as a known fact and the panel says it out loud.
+    const all = Array.from({ length: DISTINCT_MARKS }, (_, i) => {
+      const m = markFor(i, 2);
+      return `${m.stroke}|${m.dash}`;
+    });
+    expect(new Set(all).size, "the marks are not all distinct below the limit").toBe(DISTINCT_MARKS);
+
+    const first = markFor(0, 2);
+    const wrapped = markFor(DISTINCT_MARKS, 2);
+    expect(wrapped.stroke, "the cycle must wrap, not invent a colour").toBe(first.stroke);
+    expect(wrapped.dash).toBe(first.dash);
+
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code, "the panel never tells anybody the marks repeat").toContain("repeat marks");
+    // THE WHOLE GATE, not the condition on its own. Measured as a mutation:
+    // replacing `showingAll` with `false` left both strings in the file and
+    // this case green — the sentence was present and unreachable, which is the
+    // same weakness the classifier fix was caught by hours earlier. A census
+    // over a string proves the string exists; only the derivation proves
+    // anybody can see it.
+    expect(code, "the repeat warning is in the file but can never render").toMatch(
+      /\{showingAll && found\.length > DISTINCT_MARKS && \(/,
+    );
+  });
+
+  it("the PANEL and the DRAWING use the same mark for the same group", () => {
+    // The disagreement this ends: a 12px coloured square in the panel beside a
+    // drawing holding three different lines of that colour. Rendered on both
+    // sides rather than asserted from the shared function, because "both call
+    // markFor" is a claim about the source and this is a claim about pixels.
+    //
+    // COLOUR is compared and dash LENGTHS are not: the swatch is 16 CSS pixels
+    // and the overlay is in page-width units, so the ratios match and the
+    // absolute lengths deliberately do not — a dash scaled for the drawing is
+    // one solid blob at swatch size.
+    const groups = Array.from({ length: SHOWN_AT_FIRST }, (_, i) => cluster(4 + i / 8, 1));
+    const { lines: drawn } = svg(createElement(FoundWalls, { clusters: groups, hovered: null }));
+    expect(drawn).toHaveLength(SHOWN_AT_FIRST);
+
+    for (let i = 0; i < SHOWN_AT_FIRST; i += 1) {
+      const { lines: swatch } = svg(createElement(ClusterMark, { index: i }));
+      expect(swatch, `no swatch rendered for group ${i}`).toHaveLength(1);
+      expect(
+        swatch[0].getAttribute("stroke"),
+        `the panel and the drawing disagree about group ${i}`,
+      ).toBe(drawn[i].getAttribute("stroke"));
+
+      // The dash SHAPE: on-length over off-length, which is scale-free.
+      const ratio = (value: string | null) => {
+        const [on, off] = (value ?? "").split(" ").map(Number);
+        return on / off;
+      };
+      expect(
+        ratio(swatch[0].getAttribute("stroke-dasharray")),
+        `group ${i}'s dash reads differently in the panel than on the sheet`,
+      ).toBeCloseTo(ratio(drawn[i].getAttribute("stroke-dasharray")), 5);
+    }
   });
 
   it("the viewer FILTERS to the building before grouping", () => {
@@ -262,7 +443,12 @@ describe("the ghost lines over the sheet", () => {
     // Source text, because the detect path needs a real PDF to reach. It is the
     // weaker half of a pair: the function's own behaviour is tested above, this
     // asks only whether anything calls it.
-    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    // THE FILTERS MOVED. They were inline in this component until the pipeline
+    // was lifted into `lib/takeoff/findWallsOnSheet.ts` so the bench and the
+    // server could run the SAME ones — the bench's copy had drifted and was
+    // inventing walls. The assertion is unchanged; the file that can contain
+    // the answer is not.
+    const viewer = readFileSync(resolve(process.cwd(), "lib/takeoff/findWallsOnSheet.ts"), "utf8");
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     expect(code).toMatch(/wallsInTheBuilding\(\s*everywhere\s*,\s*feetPerUnit\s*\)/);
     // And that what gets grouped is the FILTERED set, not the raw one.
@@ -275,13 +461,22 @@ describe("the ghost lines over the sheet", () => {
     // and every test above stayed green, because they exercise the function
     // directly. Without it, dimension strings and room-number tags come back as
     // walls — 79 of 205 runs on a real sheet, in two whole groups.
-    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    // THE FILTERS MOVED. They were inline in this component until the pipeline
+    // was lifted into `lib/takeoff/findWallsOnSheet.ts` so the bench and the
+    // server could run the SAME ones — the bench's copy had drifted and was
+    // inventing walls. The assertion is unchanged; the file that can contain
+    // the answer is not.
+    const viewer = readFileSync(resolve(process.cwd(), "lib/takeoff/findWallsOnSheet.ts"), "utf8");
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     expect(code).toMatch(/wallsNotLettering\(\s*inBuilding\s*,\s*textBoxes\s*,\s*feetPerUnit\s*\)/);
     expect(code).toMatch(/clusterByThickness\(walls\)/);
     expect(code).not.toMatch(/clusterByThickness\(inBuilding\)/);
     // And that Fit is computed by the tested function rather than inline again.
-    expect(code).toMatch(/fitZoom\(/);
+    // THE VIEWER'S FILE, not the pipeline's: zoom is a thing the screen does,
+    // and it stayed behind when the filters moved.
+    expect(
+      readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8"),
+    ).toMatch(/fitZoom\(/);
   });
 
   it("the viewer SHOWS the decline reason, and only when it has nothing to offer", () => {
@@ -305,9 +500,19 @@ describe("the ghost lines over the sheet", () => {
     // than 1. Passing 1 would compare a vertical border against the width and
     // let it straight through, which is the one mistake this filter exists to
     // avoid.
-    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    // THE FILTERS MOVED. They were inline in this component until the pipeline
+    // was lifted into `lib/takeoff/findWallsOnSheet.ts` so the bench and the
+    // server could run the SAME ones — the bench's copy had drifted and was
+    // inventing walls. The assertion is unchanged; the file that can contain
+    // the answer is not.
+    const viewer = readFileSync(resolve(process.cwd(), "lib/takeoff/findWallsOnSheet.ts"), "utf8");
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code).toMatch(/wallsNotTheSheetBorder\(\s*notLettering\s*,\s*1\s*,\s*pageSize\.heightPt \/ pageSize\.widthPt\s*\)/);
+    // THE ASPECT IS NAMED NOW rather than spelled inline twice — the same
+    // value, computed once where the pipeline also hands it to the detector.
+    // The census still pins that the border is measured against the page's own
+    // height and not against 1, which is the thing that was wrong.
+    expect(code).toMatch(/const aspect = pageSize\.heightPt \/ pageSize\.widthPt;/);
+    expect(code).toMatch(/wallsNotTheSheetBorder\(\s*notLettering\s*,\s*1\s*,\s*aspect\s*\)/);
     expect(code).toMatch(/clusterByThickness\(walls\)/);
     expect(code).not.toMatch(/clusterByThickness\(notLettering\)/);
   });
@@ -321,7 +526,14 @@ describe("the ghost lines over the sheet", () => {
     expect(code).toMatch(/\{strokesSeen === 0/);
     expect(code).toMatch(/setStrokesSeen\(segments\.length\)/);
     // The branch for a sheet that DOES have line work must not claim a scan.
-    const branch = code.slice(code.indexOf("strokesSeen === 0"));
+    //
+    // Anchored on the BRACE, which is the empty state's own ternary. It used
+    // to slice from the first bare `strokesSeen === 0` anywhere in the file,
+    // and the Read this sheet button -- whose condition is `found !== null &&
+    // strokesSeen === 0` and which sits higher up -- moved that first
+    // occurrence into a piece of JSX this case is not about. The property
+    // being asserted has not changed; only which branch it is read from.
+    const branch = code.slice(code.indexOf("{strokesSeen === 0"));
     const elseArm = branch.slice(branch.indexOf(": `"), branch.indexOf("`}"));
     expect(elseArm).not.toMatch(/scan/i);
     expect(elseArm).toMatch(/does have line work/);
@@ -330,6 +542,112 @@ describe("the ghost lines over the sheet", () => {
   it("draws nothing before anything has been found", () => {
     expect(svg(createElement(FoundWalls, { clusters: null, hovered: null })).lines).toHaveLength(0);
     expect(svg(createElement(FoundWalls, { clusters: [], hovered: null })).lines).toHaveLength(0);
+  });
+});
+
+/**
+ * A PROPOSAL BELONGS TO THE SHEET IT WAS READ OFF.
+ *
+ * Reported 2026-10-11 with three screenshots: Find the walls was pressed on a
+ * floor plan, and the identical dashed overlay then appeared on sheet 30, on
+ * sheet 52 and on S-101 — every run in the same place, on drawings it had
+ * nothing to do with. Two of those are the partition-types sheet, whose own
+ * scale is 3" = 1'-0", so the footage those lines implied was nonsense.
+ *
+ * `found` was page-less state that `onFindWalls` set and nothing cleared. The
+ * comment above it said "switching sheets or reloading simply forgets them",
+ * which was true of RELOADING and false of sheets for as long as the feature
+ * had existed — the same shape CLAUDE.md records elsewhere, a sentence everyone
+ * believed because it described what the code ought to do.
+ *
+ * THE REGRESSION THIS GUARDS IS THE WORST KIND THIS FEATURE CAN HAVE. The whole
+ * posture is that a found wall is a proposal and the drawing underneath is the
+ * check — the panel says "check they sit on real walls before adding them". An
+ * overlay that follows somebody to another sheet does not just show a wrong
+ * number, it corrupts the instrument they were told to verify with.
+ */
+describe("found walls stay on their own sheet", () => {
+  const group = (): WallCluster & { runs: unknown[] } =>
+    ({ inches: 4.875, feet: 100, runs: [{ feet: 100 }] }) as never;
+
+  it("shows a result on the sheet it was found on", () => {
+    expect(wallsOnThisSheet([group()] as never, 7, 7)).toHaveLength(1);
+  });
+
+  it("SHOWS NOTHING ON ANY OTHER SHEET — the defect as reported", () => {
+    // Found on sheet 1, paged to the partition-types sheet.
+    expect(wallsOnThisSheet([group()] as never, 1, 30)).toBeNull();
+    expect(wallsOnThisSheet([group()] as never, 1, 52)).toBeNull();
+    // And the neighbouring sheet, because off-by-one is the likely regression.
+    expect(wallsOnThisSheet([group()] as never, 1, 2)).toBeNull();
+  });
+
+  it("shows nothing when nothing has been found, on any sheet", () => {
+    expect(wallsOnThisSheet(null, null, 1)).toBeNull();
+    expect(wallsOnThisSheet(null, 1, 1)).toBeNull();
+  });
+
+  it("restores the result when you page back, rather than demanding another press", () => {
+    const groups = [group()] as never;
+    expect(wallsOnThisSheet(groups, 3, 4)).toBeNull();
+    expect(wallsOnThisSheet(groups, 3, 3)).toHaveLength(1);
+  });
+
+  it("IS WHAT THE VIEWER ACTUALLY RENDERS FROM, not merely written and correct", () => {
+    // The #665 lesson, and the reason this case exists next to the pure ones: a
+    // rule nothing calls is a rule the app does not have. Both the panel and the
+    // overlay must read the derived value, and the page must be recorded WITH
+    // the result rather than at render time.
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code, "the viewer never narrows the result to the sheet").toMatch(
+      /const found = wallsOnThisSheet\(foundRaw, foundOnPage, pageNumber\)/,
+    );
+    expect(code, "nothing records which sheet the result came from").toMatch(
+      /setFoundOnPage\(pageNumber\)/,
+    );
+    // ── THE RAW STATE MUST NOT REACH A RENDER SITE ──
+    //
+    // THIS ASSERTION USED TO BE A COUNT — `foundRaw` exactly twice, its own
+    // declaration and the derivation — and the count was the wrong instrument.
+    // It broke the day a legitimate NON-render read was added (an effect that
+    // seeds the state from stored proposals reads it in a guard and in its
+    // dependency list), which took it to four and failed a viewer that was
+    // correct.
+    //
+    // The temptation then is to change the 2 to a 4, which turns the guard into
+    // "however many there happen to be" and is this repo's own lesson about a
+    // check that cannot say what it means. So it now asserts WHERE rather than
+    // HOW MANY, which is both stronger and stable: a render site is inside the
+    // component's returned JSX, and the raw state has no business there.
+    // ── LOCATED FROM THE COMPONENT, NOT FROM THE FIRST `return (` IN THE FILE ──
+    //
+    // This was `code.indexOf("\n  return (")` and a MODULE-SCOPE HELPER broke
+    // it: any top-level function whose body returns a parenthesised expression
+    // at two spaces of indent sits earlier in the file, so the split landed
+    // above it and every assertion below was then made about the wrong half.
+    // The failure message it printed — "the viewer never narrows the result to
+    // the sheet" — pointed at a line that was present and correct two hundred
+    // lines further down.
+    //
+    // Its own next line already said to fix this rather than trust it. Anchored
+    // on the component now, so a helper added above it cannot move the split.
+    const componentAt = code.indexOf("export function TakeoffPlanViewer(");
+    expect(componentAt, "the component's declaration could not be found").toBeGreaterThan(0);
+    const jsxAt = code.indexOf("\n  return (", componentAt);
+    expect(jsxAt, "the component's JSX could not be located — fix this before trusting it").toBeGreaterThan(0);
+
+    const render = code.slice(jsxAt);
+    // The derivation must be ABOVE the JSX, so this cannot pass by the whole
+    // file landing on the wrong side of the split.
+    expect(code.slice(0, jsxAt)).toContain("const found = wallsOnThisSheet(");
+    expect(
+      render.match(/foundRaw/g) ?? [],
+      "the raw found-walls state is read in the viewer's JSX, around the per-sheet guard",
+    ).toHaveLength(0);
+    // And `found` IS read there, so a render region that simply shows no walls
+    // at all cannot satisfy the line above.
+    expect(render).toMatch(/\bfound\b/);
   });
 });
 
@@ -454,6 +772,72 @@ describe("the sheet and the found walls share a row", () => {
     const row = port?.parentElement;
     expect(row, "the plan port must sit inside a row container").not.toBeNull();
     expect(row?.className ?? "").toContain("flex-row-reverse");
+    await act(async () => root.unmount());
+    host.remove();
+  });
+});
+
+describe("the caution on a sheet that would double-count", () => {
+  /**
+   * A RENDER test and not a census, for the reason this file's header gives:
+   * #665 shipped a control that existed, sat in the right branch, called the
+   * right action and appeared on no screen anybody used.
+   *
+   * What it guards: scored against a 60-page answer key, mechanical plans,
+   * reflected ceiling plans and elevations invented 13,767 ft between them — a
+   * third of everything the wall finder reported across the set. The classifier
+   * catches those sheets and this caution is how an estimator finds out.
+   */
+  it("stays away until something has actually been found", async () => {
+    // The caution belongs TO the found walls. With nothing found there is
+    // nothing to caution about, and a warning on an untouched sheet is noise.
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        createElement(TakeoffPlanViewer, {
+          jobId: "job_1",
+          sheets: [sheet()],
+          canEdit: true,
+          duplicateWallsByPage: { 1: "M-101 is a mechanical plan. Adding it would bid those walls twice." },
+        } as never),
+      );
+    });
+    expect(host.querySelector('[data-takeoff="duplicate-walls-caution"]')).toBeNull();
+    await act(async () => root.unmount());
+    host.remove();
+  });
+
+  it("says nothing on a page with no caution for it", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        createElement(TakeoffPlanViewer, {
+          jobId: "job_1",
+          sheets: [sheet()],
+          canEdit: true,
+          duplicateWallsByPage: {},
+        } as never),
+      );
+    });
+    expect(host.querySelector('[data-takeoff="duplicate-walls-caution"]')).toBeNull();
+    await act(async () => root.unmount());
+    host.remove();
+  });
+
+  it("ACCEPTS THE PROP BEING ABSENT, so every existing caller still renders", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        createElement(TakeoffPlanViewer, { jobId: "job_1", sheets: [sheet()], canEdit: true } as never),
+      );
+    });
+    expect(host.querySelector('[data-testid="takeoff-plan-port"]')).not.toBeNull();
     await act(async () => root.unmount());
     host.remove();
   });

@@ -1,3 +1,4 @@
+import { openingThresholdSqFt as openingThresholdFor } from "@/lib/businessScope";
 import type { Prisma } from "@prova/db";
 import {
   openingsFromJson,
@@ -94,18 +95,59 @@ export async function loadWallSchedule(tx: Tx, companyId: string, jobId: string)
   }));
   const componentById = new Map(types.flatMap((type) => type.components).map((c) => [c.id, c]));
 
-  return { runs, runInputs, typeInputs, componentById };
+  // ── THE SHOP'S OWN ANSWER ABOUT OPENINGS ──
+  //
+  // Read here rather than at the call sites so every one of them prices the
+  // same way. `null` is unanswered and resolves to the 32 sq ft this app has
+  // always used, so a company that has never seen the question is unchanged.
+  const company = await tx.company.findUnique({
+    where: { id: companyId },
+    select: { openingDeduction: true, openingDeductionSqFt: true },
+  });
+  const openingThresholdSqFt = openingThresholdFor(
+    company?.openingDeduction ?? null,
+    // Decimal out of Postgres, so through Number rather than used raw — the
+    // resolver compares it with `> 0` and a Decimal object is not a number.
+    company?.openingDeductionSqFt == null ? null : Number(company.openingDeductionSqFt),
+  );
+
+  return { runs, runInputs, typeInputs, componentById, openingThresholdSqFt };
 }
 
 export async function syncWallScheduleLines(tx: Tx, companyId: string, jobId: string): Promise<WallSyncSummary> {
-  const { runInputs, typeInputs, componentById } = await loadWallSchedule(tx, companyId, jobId);
-  const schedule = scheduleLines(runInputs, typeInputs);
+  const { runInputs, typeInputs, componentById, openingThresholdSqFt } = await loadWallSchedule(tx, companyId, jobId);
+  const schedule = scheduleLines(runInputs, typeInputs, { openingThresholdSqFt });
 
+  // ── DELETED LINES ARE READ TOO, AND THAT IS THE WHOLE FIX ──
+  //
+  // Reported from the app: delete a wall-schedule line and it comes back. It
+  // came back because this read only `isDeleted: false`, so a line somebody
+  // had removed was invisible here and the loop below created a fresh one —
+  // at catalog prices, losing whatever had been typed on it.
+  //
+  // THE TWO KINDS OF DELETION ARE TOLD APART WITHOUT A NEW COLUMN, because
+  // this function is the only other thing that deletes one, and it does so in
+  // exactly one circumstance: the component is no longer in the schedule. So
+  // when it retires a line it RELEASES the component link (below), and the
+  // rule falls out:
+  //
+  //   deleted, still linked to its component  ->  a PERSON removed it. Leave it.
+  //   deleted, link released                  ->  this function retired it.
+  //                                               Build a new one if the
+  //                                               component comes back.
+  //
+  // A person who wants the line back adds it by hand, or changes the wall type,
+  // which is where a derived line's existence is actually decided.
   const existing = await tx.jobLineItem.findMany({
-    where: { jobId, isDeleted: false, wallTypeComponentId: { not: null } },
-    select: { id: true, wallTypeComponentId: true },
+    where: { jobId, wallTypeComponentId: { not: null } },
+    select: { id: true, wallTypeComponentId: true, isDeleted: true },
   });
-  const existingByComponent = new Map(existing.map((line) => [line.wallTypeComponentId as string, line.id]));
+  const liveByComponent = new Map(
+    existing.filter((line) => !line.isDeleted).map((line) => [line.wallTypeComponentId as string, line.id]),
+  );
+  const removedByHand = new Set(
+    existing.filter((line) => line.isDeleted).map((line) => line.wallTypeComponentId as string),
+  );
   const wanted = new Set(schedule.lines.map((line) => line.componentId));
 
   let created = 0;
@@ -128,7 +170,7 @@ export async function syncWallScheduleLines(tx: Tx, companyId: string, jobId: st
     // line — the largest block of labor on a framing bid — was outside that
     // check while every hand-typed line was inside it.
     const productionRate = component?.productionRate != null ? component.productionRate.toString() : null;
-    const lineId = existingByComponent.get(line.componentId);
+    const lineId = liveByComponent.get(line.componentId);
     if (lineId) {
       await tx.jobLineItem.update({
         where: { id: lineId },
@@ -150,6 +192,10 @@ export async function syncWallScheduleLines(tx: Tx, companyId: string, jobId: st
       updated += 1;
       continue;
     }
+    // SOMEBODY REMOVED THIS ONE. Putting it back is the bug this function
+    // was reported for; their decision outlives a re-sync.
+    if (removedByHand.has(line.componentId)) continue;
+
     const entry = component?.catalogEntry ?? null;
     await tx.jobLineItem.create({
       data: {
@@ -180,8 +226,17 @@ export async function syncWallScheduleLines(tx: Tx, companyId: string, jobId: st
   }
 
   for (const line of existing) {
+    if (line.isDeleted) continue;
     if (!wanted.has(line.wallTypeComponentId as string)) {
-      await tx.jobLineItem.update({ where: { id: line.id }, data: { isDeleted: true } });
+      // THE LINK IS RELEASED ALONG WITH THE LINE, and that is what makes this
+      // function's own deletions distinguishable from a person's. A line
+      // retired here is one whose component left the schedule; if that
+      // component comes back, a fresh line should come with it. A line a
+      // PERSON deleted keeps its link and is left alone above.
+      await tx.jobLineItem.update({
+        where: { id: line.id },
+        data: { isDeleted: true, wallTypeComponentId: null },
+      });
       removed += 1;
     }
   }

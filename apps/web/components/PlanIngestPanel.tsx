@@ -233,6 +233,47 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
     if (existing && existing.exhausted > 0) void loadFailures(existing.jobId);
   }, [existing, loadFailures]);
 
+  /**
+   * ── THE FREE READ STARTS ITSELF ──
+   *
+   * Uploading a plan set used to do NOTHING. `startPlanIngest` had two callers
+   * and both were buttons, so a set sat unread until somebody pressed "Read the
+   * sheets" — and everything downstream waits on it: the sheet numbers, the
+   * titles, which sheets are worth a takeoff, and the per-page scale readings
+   * that prefill a calibration.
+   *
+   * ── WHY THIS ONE MAY START AND THE NEXT ONE MAY NOT ──
+   *
+   * `PAGE_INVENTORY` calls no model. `stageCost.ts` says so in the table the
+   * Retry buttons read: *"Reads the PDF. No model call, so a retry costs a fetch
+   * and a parse."* So starting it spends nothing of anybody's allowance, and the
+   * cost-visibility rule this panel is built on is untouched —
+   * `onStartTitleBlocks` below is still a press that names its price first,
+   * which is Diego's call and is not being quietly overturned here.
+   *
+   * ── IT RUNS ONCE, AND ONLY ON A SET NOBODY HAS TOUCHED ──
+   *
+   * Guarded on `existing === null` — no run of any stage has ever been created
+   * for this plan — rather than on progress, so it cannot restart a finished
+   * run, cannot resume a paused one behind somebody's back, and cannot fire
+   * twice. A set that was read and whose tab was closed still shows "Paused" and
+   * still waits for "Keep reading": resuming is a decision about work already
+   * begun, and this is only about work never begun at all.
+   *
+   * `startedOnce` is a ref rather than state because React runs effects twice in
+   * development and a second `startPlanIngest` would be a second job over the
+   * same pages — the exact duplicate the schema's own index exists to stop.
+   */
+  const startedOnce = useRef(false);
+  useEffect(() => {
+    if (existing !== null || startedOnce.current) return;
+    startedOnce.current = true;
+    onStart();
+    // `onStart` is stable for this component's lifetime and re-running on its
+    // identity would defeat the ref above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existing]);
+
   return (
     <section className="rounded-lg border border-line-card bg-surface p-4" data-plan-ingest="panel">
       <h3 className="mb-1 text-sm font-semibold text-ink">Reading the sheets</h3>
@@ -254,15 +295,30 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
               `error` nothing cleared, then derived guidance — which is worth
               remembering as a shape: a message that needs fixing twice is usually
               a message that should not need to exist. */}
+          {/* ── THE BUTTON STAYS, AND IT IS NOT DECORATION ──
+
+              The effect above starts this read on a set nobody has touched, so
+              in the ordinary case nobody sees this control at all — it is
+              replaced by the progress line within a tick.
+
+              It is kept for the case where the start FAILED. `startPlanIngest`
+              refuses a set over 2,000 pages, a plan whose file cannot be read,
+              and a caller without `VIEW_JOB_COSTS`; every one of those leaves
+              `view` null with a sentence beside it, and a panel with no way to
+              try again would be a dead end. It is also what
+              `stageReachableCensus.test.ts` reads: that census requires a
+              literal `startPlanIngest(planId, "PAGE_INVENTORY")` in `app/` or
+              `components/`, and it exists so a stage cannot be built, metered
+              and unreachable — which is what #551 shipped. */}
           <p className="mb-3 text-sm text-ink-body">
-            C Stream can walk this plan set sheet by sheet, reading what each one says. It stops and resumes safely,
-            so you can close this page and come back.
+            C Stream walks this plan set sheet by sheet, reading what each one says. It starts on its own, stops and
+            resumes safely, so you can close this page and come back.
           </p>
           <button
             type="button"
             onClick={onStart}
             disabled={isPending}
-            className="min-h-[48px] rounded-md bg-neutral-800 px-4 text-sm font-medium text-ink hover:bg-neutral-700 disabled:opacity-50"
+            className="min-h-[48px] rounded-md bg-rail-hover px-4 text-sm font-medium text-ink hover:bg-lift disabled:opacity-50"
           >
             {isPending ? "Starting…" : "Read the sheets"}
           </button>
@@ -319,7 +375,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
             <button
               type="button"
               onClick={onResume}
-              className="min-h-[48px] rounded-md bg-neutral-800 px-4 text-sm font-medium text-ink hover:bg-neutral-700"
+              className="min-h-[48px] rounded-md bg-rail-hover px-4 text-sm font-medium text-ink hover:bg-lift"
             >
               Keep reading
             </button>
@@ -339,7 +395,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
                 type="button"
                 onClick={onStartTitleBlocks}
                 disabled={isPending}
-                className="min-h-[48px] rounded-md bg-neutral-800 px-4 text-sm font-medium text-ink hover:bg-neutral-700 disabled:opacity-50"
+                className="min-h-[48px] rounded-md bg-rail-hover px-4 text-sm font-medium text-ink hover:bg-lift disabled:opacity-50"
               >
                 {isPending
                   ? "Starting…"
@@ -354,16 +410,47 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
             </div>
           )}
 
-          {/* THE THIRD STAGE. Gated on TITLE_BLOCK having finished, because the
-              page types it proposes are what decide which sheets this reads —
-              and therefore what it costs. */}
-          {view.complete && view.stage === "TITLE_BLOCK" && !running && (
+          {/* THE THIRD STAGE, GATED ON ITS OWN PRECONDITION RATHER THAN ON WHICH
+              STAGE RAN LAST.
+
+              It used to read `view.stage === "TITLE_BLOCK"`, for a reason that
+              sounded right: the page types a title-block pass proposes are what
+              decide which sheets this reads, and therefore what it costs. The
+              reason is sound and the gate did not express it. `view.stage` is
+              the stage of the LATEST run, so ANY later run hides this button —
+              and the re-read sitting directly below it is a later run, costs
+              nothing, and the app recommends pressing it.
+
+              Found on 2026-10-11 by doing exactly that. A fix had just landed
+              for three sheets that could not be read; the re-read recovered all
+              three, and the act of recovering them took away the button the
+              whole exercise was for. The only route back through the UI was
+              "Read the title blocks — uses 60 sheets", a second time, for work
+              already paid for.
+
+              THIS IS THE SAME BUG #663 FIXED ONE BUTTON LOWER, and that entry
+              says so in as many words — "the gate is now COMPLETION, not which
+              stage completed". It was fixed for the re-read button and left
+              here, which is the shape worth noticing: a diagnosis recorded
+              beside the one call site somebody happened to be looking at.
+
+              The real precondition is that some sheet IS a schedule, and
+              `scheduleSheetCount` already measures exactly that — it counts
+              proposed and accepted page types, which only a title-block pass can
+              produce. So the gate is the count. `view.stage` survives only for
+              the zero case, so that "None of the title blocks named a schedule"
+              appears when a title-block run has just finished and NOT on a set
+              nobody has read yet, where it would be an answer to a question
+              nobody asked. */}
+          {view.complete &&
+            !running &&
+            (scheduleSheetCount > 0 || view.stage === "TITLE_BLOCK") && (
             <div className="mt-1 border-t border-line-card pt-3" data-plan-ingest="schedule-stage">
               <button
                 type="button"
                 onClick={onStartSchedules}
                 disabled={isPending || scheduleSheetCount === 0}
-                className="min-h-[48px] rounded-md bg-neutral-800 px-4 text-sm font-medium text-ink hover:bg-neutral-700 disabled:opacity-50"
+                className="min-h-[48px] rounded-md bg-rail-hover px-4 text-sm font-medium text-ink hover:bg-lift disabled:opacity-50"
               >
                 {isPending
                   ? "Starting\u2026"

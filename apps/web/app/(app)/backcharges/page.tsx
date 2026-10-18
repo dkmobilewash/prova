@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { BackchargeForm } from "@/components/BackchargeForm";
@@ -9,6 +11,8 @@ import { isResponseOverdue, summarizeBackcharges } from "@/lib/backcharges";
 import { money } from "@/lib/money";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { viewerToday } from "@/lib/viewerToday";
+
+export const metadata = { title: "Backcharges" };
 
 /** Stored at UTC midnight, rendered in UTC — same rule as the RFI log and
  * the safety log. Rendering locally shows the previous day to anyone west
@@ -20,12 +24,12 @@ function isoDate(date: Date | null) {
 export default async function BackchargesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; show?: string }>;
+  searchParams: Promise<{ job?: string; show?: string; new?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_BILLING");
   if (!allowed) return <NoAccess capability="MANAGE_BILLING" />;
   const { company, ...currentUser } = context;
-  const { job: jobFilter, show } = await searchParams;
+  const { job: jobFilter, show, new: startNew } = await searchParams;
   const showResolved = show === "all";
 
   const today = await viewerToday();
@@ -106,39 +110,35 @@ export default async function BackchargesPage({
   };
 
   const chip = (active: boolean) =>
-    `rounded-md border px-3 py-1.5 text-sm ${
-      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
+    `inline-flex min-h-11 items-center rounded-md border px-3 text-sm mouse:min-h-8 ${
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-rail-hover"
     }`;
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Backcharges</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        Money the GC is taking off what they owe us — cleanup, damage to another trade, our scope
-        finished by somebody else. A change order is us asking for more; this is the same
-        conversation running the other way, and until now the only record of one was an unexplained
-        short-pay months later. Log it the day it arrives: the deadline to object in writing is
-        usually short, and an objection is worth nothing without the date it went out.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/backcharges"
+        subtitle="Log what the GC takes off your pay the day it arrives, so you can object before the deadline."
+      />
 
       <section className="mb-8" data-tour="backcharges-log">
-        <BackchargeForm jobs={jobs} defaultJobId={activeJob ?? undefined} />
+        <BackchargeForm jobs={jobs} defaultJobId={activeJob ?? undefined} startOpen={startNew === "1"} />
       </section>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-4" data-tour="backcharges-totals">
-        <div className="rounded-lg border border-line-card bg-surface p-4">
+        <div className="rounded-xl border border-line-card bg-surface p-4">
           <p className="font-mono text-xl font-semibold text-ink">{money(summary.openClaimed)}</p>
           <p className="text-xs text-ink-muted">
             Claimed and unresolved ({summary.openCount})
           </p>
         </div>
-        <div className="rounded-lg border border-line-card bg-surface p-4">
+        <div className="rounded-xl border border-line-card bg-surface p-4">
           <p className={`text-2xl font-semibold ${overdueCount > 0 ? "text-tag-rose-ink" : "text-ink"}`}>
             {overdueCount}
           </p>
           <p className="text-xs text-ink-muted">Past the deadline to object</p>
         </div>
-        <div className="rounded-lg border border-line-card bg-surface p-4">
+        <div className="rounded-xl border border-line-card bg-surface p-4">
           <p className="font-mono text-xl font-semibold text-ink">{money(summary.concededTotal)}</p>
           <p className="text-xs text-ink-muted">
             What resolved ones cost us
@@ -150,7 +150,7 @@ export default async function BackchargesPage({
             )}
           </p>
         </div>
-        <div className="rounded-lg border border-line-card bg-surface p-4">
+        <div className="rounded-xl border border-line-card bg-surface p-4">
           <p className="font-mono text-xl font-semibold text-tag-green-ink">{money(summary.avoidedTotal)}</p>
           <p className="text-xs text-ink-muted">Argued off or withdrawn</p>
         </div>
@@ -216,7 +216,7 @@ export default async function BackchargesPage({
             : "Nothing unresolved. Switch to “Show resolved” for the ones already closed out."}
         </p>
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="backcharges-list">
+        <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-tour="backcharges-list">
           {rows.map((bc) => (
             <BackchargeRow
               key={bc.id}
@@ -228,6 +228,6 @@ export default async function BackchargesPage({
           ))}
         </ul>
       )}
-    </div>
+    </PageShell>
   );
 }

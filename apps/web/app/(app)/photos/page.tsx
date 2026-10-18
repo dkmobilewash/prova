@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { viewerTimeZone } from "@/lib/viewerToday";
@@ -12,6 +14,8 @@ import { JobMediaGallery } from "@/components/JobMediaGallery";
 import { JobMediaTagDatalist } from "@/components/JobMediaTagDatalist";
 import { JobMediaTagManager } from "@/components/JobMediaTagManager";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
+
+export const metadata = { title: "Site photos" };
 
 /**
  * Every site photo the company has, newest first, filterable by job, by
@@ -150,7 +154,7 @@ export default async function PhotosPage({
   // on site taps to get to their own job.
   const chip = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
-      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-rail-hover"
     }`;
 
   // A tag with no photos on it is a dead chip: tapping it empties the
@@ -161,12 +165,11 @@ export default async function PhotosPage({
   const filterableTags = tags.filter((tag) => tag.photoCount > 0 || tag.id === activeTag);
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
-      <h1 className="mb-1 text-2xl font-semibold text-ink">Site photos</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        What the job actually looked like, on the day. Photos are filed against a job, tagged in
-        this company&apos;s own words, and stay in C Stream rather than on somebody&apos;s phone.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/photos"
+        subtitle="What the job actually looked like on the day, filed against the job and tagged in your words."
+      />
 
       {jobs.length === 0 ? (
         <EmptyState
@@ -383,7 +386,7 @@ export default async function PhotosPage({
                   filters travel with the link, except that an unfiltered
                   gallery lands on the SAFE selection rather than on
                   "everything": see `selectionFromSharedFilter`. */}
-              <p className="mt-3 text-sm text-slate-400">
+              <p className="mt-3 text-sm text-ink-muted">
                 <Link
                   href={photoReportHref(activeJob, {
                     selection: selectionFromSharedFilter(activeShared),
@@ -518,6 +521,6 @@ export default async function PhotosPage({
           )}
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

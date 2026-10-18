@@ -741,6 +741,61 @@ const KNOWN_OPEN: Record<string, Capability> = {
  * the code either way, so a "deliberately ungated" line that later acquires
  * a guard fails just as loudly as a guard that goes missing.
  */
+/* ---------------------------------------------------------------- *
+ * 3c. The fourth shape: guarded MORE STRICTLY than its page
+ * ---------------------------------------------------------------- */
+
+/**
+ * `STRICTER_THAN_ITS_PAGE` — an action whose own capability is narrower than
+ * the one its page withholds, on purpose.
+ *
+ * ── THIS FILE HAD NO SHAPE FOR IT, AND TWO REGISTERS REFUSED IT BY NAME ──
+ *
+ * Added 2026-10-11 by an action that fits none of the three above, and the
+ * refusals are what identified the gap rather than any reasoning:
+ *
+ *   - `MIXED_DOORS` answered *"its doors now agree; the ordinary rule decides
+ *     it, delete this entry"*. True — there is one page, not two;
+ *   - `SECTION_DECIDED` answered *"no page reaching it withholds several
+ *     capabilities any more"*. Also true — the page withholds exactly one.
+ *
+ * Both were right, and the ordinary rule was wrong, because every register here
+ * assumes the page is at least as strict as the action. The case that breaks
+ * the assumption is a COMPANY-LEVEL write offered on a JOB page: the data
+ * outlives the job, so the job's capability is not the one that should decide
+ * who writes it.
+ *
+ * ── WHAT AN ENTRY HAS TO EARN ──
+ *
+ * The danger of a register like this is obvious: "stricter" is what every
+ * unnecessary gate calls itself, and a stricter guard that nobody can see is a
+ * DEAD CONTROL — a button rendered for somebody it then refuses, which this
+ * repo has shipped before and has an entry about. So the honesty cases below
+ * require, of every entry:
+ *
+ *   - the action really does assert the capability named;
+ *   - that capability is NOT the page's, or the ordinary rule covers it and
+ *     the entry is noise;
+ *   - the page still reaches it, so the entry cannot outlive the wiring.
+ *
+ * What they cannot check is the one that matters most — that the CONTROL is
+ * hidden from whoever the action refuses — because no test here can see a
+ * screen. That belongs to a render test, and an entry must name the one that
+ * covers it.
+ */
+const STRICTER_THAN_ITS_PAGE: Record<
+  string,
+  { capability: Capability; pageCapability: Capability; hiddenBy: string; reason: string }
+> = {
+  "wallTypes.addWallTypesFromSchedule": {
+    capability: "MANAGE_ESTIMATING",
+    pageCapability: "VIEW_JOB_COSTS",
+    hiddenBy: "components/addWallTypesFromSchedule.test.tsx",
+    reason:
+      "Pressed on /jobs/[id]/takeoff, which withholds VIEW_JOB_COSTS, and writes WallType rows — the company library /wall-types guards with MANAGE_ESTIMATING, and which outlives the job whose schedule was read. On the page's capability an ACCOUNTING member, who may open that tab, would decide what A1 means for every future job. The button is gated to match: ScheduleProposals renders it only for `canAddWallTypes`, which the page computes as can(context, \"MANAGE_ESTIMATING\").",
+  },
+};
+
 const MIXED_DOORS: Record<string, { capability: Capability | null; reason: string }> = {
   "fieldReports.createDailyFieldReport": {
     capability: null,
@@ -795,6 +850,15 @@ const MIXED_DOORS: Record<string, { capability: Capability | null; reason: strin
   // `log_payment` Ask command declares MANAGE_BILLING already
   // (lib/ask/commands/billing.ts), so the two surfaces now agree instead
   // of one of them being open.
+  // Same shape as billing.logPayment below: /settings/assistant reaches this
+  // only by importing the command registry (record_bid_outcome), never by
+  // rendering an outcome form. The bid workspace on /ai is the real door and
+  // /ai is MANAGE_ESTIMATING, which is also what the command declares.
+  "bidOutcomes.recordBidOutcome": {
+    capability: "MANAGE_ESTIMATING",
+    reason:
+      "Reached from /settings/assistant only through the Ask command registry (record_bid_outcome, MANAGE_ESTIMATING); its real form is on the /ai bid workspace, MANAGE_ESTIMATING like /bids. Gated on MANAGE_ESTIMATING so the command, the page and the action agree.",
+  },
   "billing.logPayment": {
     capability: "MANAGE_BILLING",
     reason:
@@ -1041,28 +1105,10 @@ const SECTION_DECIDED: Record<
       "The other half of approveTimesheetDay, same control, same capability, already asserted. Reopening unlocks a day's hours for editing, so it is if anything the more consequential of the two. Recorded for execution, no behaviour change.",
   },
 
-  /* ---- An eleventh that already asserts the right capability, and which
-   * this file could not SEE rather than merely never executing.
-   *
-   * It moved out of UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE below, where it was
-   * recorded as an open endpoint behind the dashboard's several gates. That
-   * record was false and had always been false: the action asserts
-   * MANAGE_JOBS on its second line. The entry existed because
-   * `assertsCapability` read the function body by counting braces from the
-   * first `{` after the declaration, and this signature ends
-   * `: Promise<ActionResultWith<{ pathname: string }>> {` — so the count
-   * closed on the return TYPE and the "body" was the signature.
-   *
-   * Worth separating from the ten above, because the ten were a gap in what
-   * this file CHOSE to execute and this was a gap in what it could read. The
-   * ten were honest and idle; this one was wrong. Nothing in the Ask lane
-   * changed to pay it off — the guard was there the whole time. ---- */
-  "ask.prepareAskAttachment": {
-    capability: "MANAGE_JOBS",
-    section: "Ask panel — attach a file",
-    reason:
-      "Already asserts MANAGE_JOBS and always has; it was invisible to this file's own body reader, not ungated (see the parser note above assertsCapability). MANAGE_JOBS is the right capability and is not a new judgement: the attachment goes through DOCUMENT INTAKE, and `intake.recordIntakeDocument` — the action that records what lands there — is gated on MANAGE_JOBS by the entry in MIXED_DOORS above, for /intake's own stated reason that a drop of GC paperwork is the correspondence that capability names. Its doors are /dashboard and /ask, neither of which refuses anyone at the route level, so the ordinary rule derives nothing and this records it instead. No behaviour change.",
-  },
+  // `ask.prepareAskAttachment` was here (it asserts MANAGE_JOBS). Removed
+  // 2026-10-10 when the Concept G home dropped the Ask panel from
+  // /dashboard: its one remaining door is /ask, which withholds nothing, so
+  // the ordinary rule decides it and this suite said to delete the entry.
 
   /* ---- /contacts/[id] — the "Client portal" section.
    *
@@ -1091,6 +1137,16 @@ const SECTION_DECIDED: Record<
     section: "Client portal",
     reason:
       "The other half of enablePortalAccess, same section and same capability, and deliberately not a looser one on the grounds that revoking is the safe direction. It is not safe: it cuts a GC off from the invoices they are being asked to pay, mid-job, and the token cannot be rotated afterwards — enabling brings the SAME link back. Whoever may hand out the credential is who may take it away, or a job function ends up able to kill a live link it cannot restore.",
+  },
+
+  /* ---- /dashboard — the Running now card ---- */
+
+  // "Run again" on a failed agent run (RunWayOut, UX review F6).
+  "agents.runAgentNow": {
+    capability: "MANAGE_ESTIMATING",
+    section: "Running now",
+    reason:
+      "The home page draws the Running now card only from a task list it loads for MANAGE_ESTIMATING (it passes none otherwise), and the Run again button inside it is the same RunAgentButton /ai offers behind that same capability. runAgentNow refuses anyone without MANAGE_ESTIMATING itself, because the agents read bids and estimates.",
   },
 };
 
@@ -1145,10 +1201,8 @@ const UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE: Record<string, { page: string; reason:
   "quickbooks.linkContactToQuickBooks": { page: "/contacts/[id]", reason: "Links a contact to a QuickBooks customer. MANAGE_BILLING is the likely answer given every other QuickBooks action, but its door is this page rather than /settings, so it is a per-section read this pass did not do." },
 
   // `/dashboard` withholds its money tiles on VIEW_JOB_COSTS and
-  // MANAGE_BILLING. Everything below is reached from it.
-  "ask.cancelAskProposal": { page: "/dashboard", reason: "An Ask card action, also reached from /ask, which withholds nothing. Its guard is not capability-shaped: what it should ask is whether the card's own command is one this person could run (canRunCommand), which follows the card rather than the page. Same argument this file already records for settleAskDraft, and the same lane." },
-  "ask.confirmAskProposal": { page: "/dashboard", reason: "Same as cancelAskProposal — and it already refuses anyone lacking the command's declared capability in a returned sentence, per lib/ask/commands/schedule.ts's own note, so a page-derived capability on top would be the wrong boundary rather than a missing one." },
-  "ask.loadAskProposal": { page: "/dashboard", reason: "Same as cancelAskProposal. A read of a card the asking person already owns." },
+  // MANAGE_BILLING. Everything below is reached from it. (The three Ask card
+  // actions left with the Ask panel on 2026-10-10; /ask is their door now.)
   "gettingStarted.hideGettingStarted": { page: "/dashboard", reason: "A per-person preference write — it hides a panel on the person's own dashboard and touches no job, no money and nothing a GC sees. Explicitly the lowest-risk category in this sweep and left for last on purpose. Recorded rather than fixed so that the count stays honest." },
 };
 
@@ -1371,13 +1425,16 @@ for (const action of [...reachedBy.keys()].sort()) {
   const key = `${moduleName}.${action}`;
   const mixed = MIXED_DOORS[key];
   const decided = SECTION_DECIDED[key];
+  const stricter = STRICTER_THAN_ITS_PAGE[key];
   const capability = mixed
     ? mixed.capability
     : decided
       ? decided.capability
-      : soleCapabilityGating(action);
+      : stricter
+        ? stricter.capability
+        : soleCapabilityGating(action);
   if (!capability) continue;
-  if (!mixed && !decided && key in KNOWN_OPEN) continue;
+  if (!mixed && !decided && !stricter && key in KNOWN_OPEN) continue;
   MUST_ASSERT.push({ action, moduleName, capability });
 }
 
@@ -1390,7 +1447,7 @@ describe("every write behind a guarded page answers to the same capability", () 
       if (!capability) continue;
       const moduleName = definingModule.get(action) as string;
       const key = `${moduleName}.${action}`;
-      if (key in KNOWN_OPEN || key in MIXED_DOORS) continue;
+      if (key in KNOWN_OPEN || key in MIXED_DOORS || key in STRICTER_THAN_ITS_PAGE) continue;
       if (assertsCapability(action, capability)) continue;
 
       const doors = [...(reachedBy.get(action) as Map<string, Capability | null>).keys()];
@@ -1409,6 +1466,44 @@ describe("every write behind a guarded page answers to the same capability", () 
         `If it must stay open, say so in MIXED_DOORS or in one of the two lists above, ` +
         `with the reason. Absence is not a decision.`,
     ).toEqual([]);
+  });
+
+  it("keeps every stricter-than-its-page entry earning its place", () => {
+    // The register exists because the ordinary rule would UNDER-gate these.
+    // Its own risk is the opposite one: an entry that is merely a gate nobody
+    // argued for. Each line has to still be true of the code.
+    const stale: string[] = [];
+
+    for (const [key, decision] of Object.entries(STRICTER_THAN_ITS_PAGE)) {
+      const [moduleName, action] = key.split(".");
+      if (definingModule.get(action) !== moduleName) {
+        stale.push(`${key} — no such action in that module any more`);
+        continue;
+      }
+      if (!reachedBy.has(action)) {
+        stale.push(`${key} — no page reaches it, so nothing is being overridden`);
+        continue;
+      }
+      const page = soleCapabilityGating(action);
+      if (page === null) {
+        stale.push(`${key} — its page no longer withholds one capability; MIXED_DOORS is the register`);
+        continue;
+      }
+      if (page !== decision.pageCapability) {
+        stale.push(`${key} — its page now withholds ${page}, not ${decision.pageCapability}`);
+        continue;
+      }
+      if (page === decision.capability) {
+        stale.push(`${key} — the action and its page agree now; the ordinary rule covers it, delete this entry`);
+      }
+      // The claim this file cannot check itself. An entry that names a render
+      // test which does not exist is the dead-control case wearing a citation.
+      if (!existsSync(join(WEB, decision.hiddenBy))) {
+        stale.push(`${key} — names ${decision.hiddenBy} as hiding the control, and there is no such file`);
+      }
+    }
+
+    expect(stale, `The stricter-than-its-page entries no longer match the code:\n${stale.join("\n")}`).toEqual([]);
   });
 
   it("keeps the open lists honest — no stale entry, no entry that is now guarded", () => {
@@ -1764,6 +1859,8 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // and this suite found it by the walk on the day it was added, which is
   // the behaviour the file is for.
   company: () => import("./actions/company"),
+  agentSettings: () => import("./actions/agentSettings"),
+  agentFindings: () => import("./actions/agentFindings"),
   proposalDrafts: () => import("./actions/proposalDrafts"),
   sheetPins: () => import("./actions/sheetPins"),
   // Only `uploadComplianceDocument` — the other eight actions in this
@@ -1854,6 +1951,8 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // walk derives its assertion and executes it as a principal without it,
   // same as the jobs/estimating modules above.
   takeoff: () => import("./actions/takeoff"),
+  takeoffClassify: () => import("./actions/takeoffClassify"),
+  takeoffReadSheet: () => import("./actions/takeoffReadSheet"),
   // Crew & time. Five of the seven actions here are decided per SECTION
   // rather than per page (SECTION_DECIDED) — `/jobs/[id]/crew` withholds
   // on two capabilities, so the ordinary rule derives nothing for it. The
@@ -1888,6 +1987,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // note on /closeout argues is worse than a consistent state.
   jobMedia: () => import("./actions/jobMedia"),
   materialOrders: () => import("./actions/materialOrders"),
+  // Messages — `submitBidPackage` is reachable from the job's proposal page,
+  // which demands MANAGE_ESTIMATING, and asserts it before it reads the bid or
+  // touches the uploaded package. The other two senders in this module are not
+  // reachable from a capability-gated page and are not walked to from here.
+  messages: () => import("./actions/messages"),
   // Lien deadlines — every write reachable only from /lien-deadlines, which
   // demands MANAGE_BILLING, and every one asserts it before any query.
   lienDeadlines: () => import("./actions/lienDeadlines"),
@@ -1973,6 +2077,10 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // turning AI off stops work for every member of the company, and turning it
   // back on is a decision about where their documents may go.
   aiSettings: () => import("./actions/aiSettings"),
+  agents: () => import("./actions/agents"),
+  // Dismiss on /ai's findings (2026-10-11), a MANAGE_ESTIMATING page.
+  bidOutcomes: () => import("./actions/bidOutcomes"),
+  recommendations: () => import("./actions/recommendations"),
   // The plan-ingestion runner, reachable from /jobs/[id]/takeoff alone, which is
   // hard-gated on VIEW_JOB_COSTS. All four actions assert that — the first
   // version asserted MANAGE_ESTIMATING, which sounds right for a plan set and is

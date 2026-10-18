@@ -1,4 +1,6 @@
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCompanyContext } from "@/lib/auth";
 import { NewJobForm } from "@/components/NewJobForm";
 import { BidWizardSteps } from "@/components/BidWizardSteps";
@@ -42,13 +44,18 @@ export default async function NewJobPage() {
     .sort((a, b) => b.jobCount - a.jobCount || a.name.localeCompare(b.name));
 
   return (
-    <div className="mx-auto max-w-xl px-6 py-8">
+    <PageShell width="reading">
+      {/* "New job", the same words as every button that opens this page —
+          it used to say "Start a bid" under a "+ New job" button (UX test
+          2026-10-11). The bid is the stage the job starts at, said below. */}
+      <PageHeader
+        route="/dashboard"
+        parent={{ href: "/jobs", label: "Jobs" }}
+        title="New job"
+        subtitle="It starts as a bid. Name it and pick the GC — you'll add the work itself on the next screen."
+      />
       <BidWizardSteps current={1} />
-      <h1 className="mb-1 text-xl font-semibold text-ink">Start a bid</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        Name it and pick the GC — you&apos;ll add the work itself on the next screen.
-      </p>
       <NewJobForm contacts={options} />
-    </div>
+    </PageShell>
   );
 }

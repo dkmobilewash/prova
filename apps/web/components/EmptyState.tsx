@@ -165,7 +165,7 @@ export function EmptyState({
                   <p className="flex flex-wrap items-center gap-2 text-sm text-ink-label">
                     <span className="break-words">{row.title}</span>
                     {row.tag && (
-                      <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs text-ink-body">{row.tag}</span>
+                      <span className="rounded-full bg-rail-hover px-2 py-0.5 text-xs text-ink-body">{row.tag}</span>
                     )}
                   </p>
                   {row.detail && <p className="mt-0.5 break-words text-xs text-ink-body">{row.detail}</p>}

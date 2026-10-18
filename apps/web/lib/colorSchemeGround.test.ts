@@ -163,16 +163,24 @@ describe("the browser's own controls follow the page", () => {
       values.length,
       "no color-scheme declaration parsed at all, so this test is about nothing",
     ).toBeGreaterThan(0);
+    // CHANGED 2026-10-10 with the light theme. Until then this asserted
+    // `dark` was the only value, because the app had no light mode. It has
+    // one now, switched by `data-theme="light"` on <html>, and a light page
+    // needs light-painted controls for the same 1.1:1 reason dark needed
+    // dark ones. So exactly one `light` is allowed, and only inside that
+    // selector — a bare second value anywhere else is still a disagreement.
     const light = values.filter((value) => value !== "dark");
+    expect(light, `globals.css declares color-scheme ${light.join(", ")}`).toEqual(["light"]);
+    const themed = [...globalsCss.matchAll(/\[data-theme="light"\]\s*\{([^}]*)\}/g)].map((m) => m[1]);
     expect(
-      light,
-      `globals.css declares color-scheme ${light.join(", ")} as well as dark. ` +
-        "This app has no light mode — no `darkMode` in tailwind.config.ts and no " +
-        "`data-theme` anywhere — so a second value is a disagreement, not a variant.",
-    ).toEqual([]);
+      themed.filter((body) => /color-scheme\s*:\s*light\b/.test(body)).length,
+      "the one `color-scheme: light` must sit in the `[data-theme=\"light\"]` block",
+    ).toBe(1);
 
     const inComponents = files()
-      .filter((full) => /colorScheme|color-scheme/.test(withoutTsComments(readFileSync(full, "utf8"))))
+      // `(?<!prefers-)`: READING the OS preference (ThemeSwitch's media
+      // query) is not setting a scheme, and only setting one is the defect.
+      .filter((full) => /colorScheme|(?<!prefers-)color-scheme/.test(withoutTsComments(readFileSync(full, "utf8"))))
       .map((full) => relative(appDir, full));
     expect(
       inComponents,

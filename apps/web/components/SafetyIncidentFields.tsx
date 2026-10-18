@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { INCIDENT_CLASSIFICATIONS, INCIDENT_OUTCOMES } from "@/components/safetyLabels";
+import { INCIDENT_CLASSIFICATIONS, INCIDENT_OUTCOMES, isNearMiss } from "@/components/safetyLabels";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
 
 // `text-base` is load-bearing, not decoration. These inputs sit inside a
@@ -38,10 +38,14 @@ export function SafetyIncidentFields({
   jobs,
   defaults,
   lockDate = false,
+  allowNearMiss = true,
 }: {
   jobs: JobOption[];
   defaults: IncidentDefaults;
   lockDate?: boolean;
+  /** False when editing a numbered case: its number is on the log, so it
+   * can never become a near miss (the action refuses it too). */
+  allowNearMiss?: boolean;
 }) {
   const [outcome, setOutcome] = useState(defaults.outcome);
 
@@ -151,7 +155,7 @@ export function SafetyIncidentFields({
             onChange={(event) => setOutcome(event.target.value)}
             className={inputClass}
           >
-            {INCIDENT_OUTCOMES.map((o) => (
+            {INCIDENT_OUTCOMES.filter((o) => allowNearMiss || !isNearMiss(o.value)).map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
@@ -159,6 +163,14 @@ export function SafetyIncidentFields({
           </select>
         </label>
       </div>
+
+      {isNearMiss(outcome) && (
+        <p className="text-sm text-ink-body" data-near-miss-note="">
+          A near miss stays on your safety log so the hazard is on record, but it is not an OSHA case: it
+          gets no case number and is not on the 300 log. If someone turns out to be hurt, edit it and pick
+          the real outcome — it gets its case number then.
+        </p>
+      )}
 
       {showDays && (
         <div className="grid gap-3 sm:grid-cols-2">

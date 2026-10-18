@@ -1,7 +1,7 @@
 import { prisma } from "@prova/db";
 import { readPlanBytes } from "./planBytes";
 import { hasTextLayer, openPlanPdf, titleBlockText, type PlanPdf, type PlanPageText } from "./planPdf";
-import { dimensionLabels } from "./dimensionLabels";
+import { dimensionLabels, metricDimensionLabels } from "./dimensionLabels";
 import { readSheetScale } from "../takeoff/scaleFromDimensions";
 import { scaleFromPrinted } from "../takeoff/scaleFromPrinted";
 import { printedScalesOnPage } from "../takeoff/scaleAudit";
@@ -239,10 +239,15 @@ async function readScaleFromSheet(
   try {
     const strokes = await pdf.pageStrokes(pageNumber);
     const labels = dimensionLabels(page);
+    // A METRIC SHEET DIMENSIONS IN BARE MILLIMETRES and the imperial pattern
+    // requires feet, so it reads nothing at all. Read here and handed on;
+    // `readSheetScale` uses it ONLY if the imperial pass declines, so no sheet
+    // that already reads a scale can change.
+    const metric = metricDimensionLabels(page);
     // THE FLOOR THE APP WILL ACTUALLY HONOUR. Without it the reader proposes
     // lines `calibrationNotices` then refuses as too short — which it did, on a
     // real sheet, leaving the estimator unable to finish. See `minLinePoints`.
-    const verdict = readSheetScale(page, strokes.segments, labels);
+    const verdict = readSheetScale(page, strokes.segments, labels, {}, metric);
     if (!verdict.ok) {
       // ── THE PRINTED SCALE, AND ONLY HERE ──
       //

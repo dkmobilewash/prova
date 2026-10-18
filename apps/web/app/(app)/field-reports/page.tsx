@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { FieldReportComposer } from "@/components/FieldReportComposer";
@@ -22,6 +24,8 @@ import {
   resolveFieldReportJobFilter,
 } from "@/lib/field-report-jobs";
 
+export const metadata = { title: "Field reports" };
+
 export const dynamic = "force-dynamic";
 
 /** How many reports this page renders. The query asks for one more, so the
@@ -40,12 +44,12 @@ const REPORT_LIMIT = 400;
 export default async function FieldReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string }>;
+  searchParams: Promise<{ job?: string; new?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_FIELD");
   if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
   const { company, ...currentUser } = context;
-  const { job: jobFilter } = await searchParams;
+  const { job: jobFilter, new: startNew } = await searchParams;
 
   // Jobs first, rather than the Promise.all this used to be: the report
   // query's own `where` depends on whether `?job=` names a job this company
@@ -130,29 +134,22 @@ export default async function FieldReportsPage({
   // site taps to get to their own job.
   const chip = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
-      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-rail-hover"
     }`;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Field reports</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        What happened on site, one entry per job per day. Grouped by week, because a week is
-        what a schedule dispute gets argued over — and a week with a day missing from it is
-        worth less than one that says which day is missing. Each job&apos;s own reports also
-        stay on{" "}
-        <Link href="/dashboard" className="text-link hover:text-link-hover">
-          its job page
-        </Link>
-        .
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/field-reports"
+        subtitle="What happened on site, one entry per job per day, grouped by week."
+      />
 
       <div className="mb-8">
         {/* The filtered job is an explicit choice, so it is also the job the
             composer starts on — the same handover /punch-lists makes. With
             no filter the composer decides for itself, and only when there
             is exactly one active job to decide between. */}
-        <FieldReportComposer jobs={jobOptions} defaultJobId={activeJob ?? undefined} />
+        <FieldReportComposer jobs={jobOptions} defaultJobId={activeJob ?? undefined} startOpen={startNew === "1"} />
       </div>
 
       {/* The job filter /punch-lists and /photos both have and this page did
@@ -217,7 +214,7 @@ export default async function FieldReportsPage({
             return (
               <section key={week.start}>
                 <header className="mb-3 border-b border-line-row pb-2">
-                  <h2 className="font-semibold text-ink">{weekLabel(week.start)}</h2>
+                  <h2 className="font-headline text-lg text-ink">{weekLabel(week.start)}</h2>
                   {/* ink-body — ink-muted is under the 4.5 floor on this ground,
                       under the 4.5 floor for text, and the coverage figure is
                       the point of grouping by week. */}
@@ -229,7 +226,7 @@ export default async function FieldReportsPage({
                       <span>{week.coveragePercent}% of finished weekdays covered</span>
                     )}
                     {week.delayDays.length > 0 && (
-                      <span className="text-amber-400">
+                      <span className="text-warn">
                         {week.delayDays.length}{" "}
                         {week.delayDays.length === 1 ? "day" : "days"} with delays
                       </span>
@@ -254,7 +251,7 @@ export default async function FieldReportsPage({
                       grouped as days nobody filed — reports that exist, on
                       the page a schedule dispute gets argued from. */}
                   {week.partial && (
-                    <p className="mt-2 rounded bg-neutral-800 px-2 py-1.5 text-xs text-ink-body">
+                    <p className="mt-2 rounded bg-rail-hover px-2 py-1.5 text-xs text-ink-body">
                       Only part of this week is loaded — this page shows the most recent{" "}
                       {REPORT_LIMIT} reports. Nothing is claimed about the days before it, and no
                       coverage figure is shown for this week for the same reason.
@@ -298,6 +295,6 @@ export default async function FieldReportsPage({
           })}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

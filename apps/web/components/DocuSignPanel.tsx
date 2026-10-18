@@ -38,7 +38,7 @@ export type DocuSignEnvelopeView = {
 };
 
 const buttonClass =
-  "rounded-md border border-line-card bg-surface px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60";
+  "rounded-md border border-line-card bg-surface px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-rail-hover disabled:cursor-not-allowed disabled:opacity-60";
 const primaryClass =
   "rounded-md bg-brand px-3 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50";
 const inputClass =
@@ -89,7 +89,7 @@ function EnvelopeRow({ envelope, canVoid }: { envelope: DocuSignEnvelopeView; ca
           </p>
         )}
         {error && (
-          <p role="alert" className="mt-1 text-xs text-red-400">
+          <p role="alert" className="mt-1 text-xs text-danger">
             {error}
           </p>
         )}
@@ -127,7 +127,7 @@ function EnvelopeRow({ envelope, canVoid }: { envelope: DocuSignEnvelopeView; ca
               }
               deleteClassName={buttonClass}
               cancelClassName="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-body hover:text-ink disabled:opacity-60"
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-tag-rose disabled:cursor-not-allowed disabled:opacity-60"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-danger hover:bg-tag-rose disabled:cursor-not-allowed disabled:opacity-60"
             />
           ) : undefined
         }
@@ -236,7 +236,7 @@ function SendForm({
         DocuSign&rsquo;s certificate are saved here.
       </p>
       {error && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       )}

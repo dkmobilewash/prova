@@ -83,7 +83,7 @@ export function PushInvoiceToQuickBooks({
           type="button"
           onClick={push}
           disabled={isPending || blocked}
-          className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-slate-500 disabled:opacity-50"
+          className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-line-card disabled:opacity-50"
         >
           {isPending ? (
             <span className="inline-flex items-center gap-1.5">

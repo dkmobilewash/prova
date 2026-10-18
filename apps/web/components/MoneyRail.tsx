@@ -43,14 +43,14 @@ function figureText(figure: MoneyRailFigure): string {
 
 export function MoneyRail({ stages }: { stages: MoneyRailStage[] }) {
   return (
-    <nav aria-label="Money pipeline" className="flex flex-col bg-neutral-900">
+    <nav aria-label="Money pipeline" className="flex flex-col bg-rail">
       <ol className="flex flex-col divide-y divide-neutral-800">
         {stages.map((stage) => (
           <li key={stage.key} className="px-4 py-3.5">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
               {stage.label}
             </p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-yellow-400">
+            <p className="mt-1 text-lg font-semibold tabular-nums text-link-hover">
               {figureText(stage.figure)}
             </p>
             <p className="mt-0.5 text-xs text-ink-muted">{stage.detail}</p>

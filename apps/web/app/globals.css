@@ -25,10 +25,9 @@
    then `dark`, and a plain text field, which our CSS paints entirely, was
    byte-identical in both arms.
 
-   UNCONDITIONAL, and that is a fact about this app rather than a
-   shortcut. There is no `darkMode` in tailwind.config.ts and no
-   `data-theme` anywhere: the palette flipped to dark in full on
-   2026-09-11. The five printable documents that DO sit on white paper —
+   THE DEFAULT, and dark is the default theme: the palette flipped to dark
+   in full on 2026-09-11, and the light theme (2026-10-10, block below) is
+   opt-in. The five printable documents that DO sit on white paper —
    WH-347, DAS-140, DAS-142, the photo report, the union remittance, the
    pay application — are white CARDS inside this dark shell, not white
    pages, and each has zero native controls, so nothing on them is painted
@@ -39,6 +38,25 @@
    document. */
 :root {
   color-scheme: dark;
+}
+
+/* THE LIGHT THEME (2026-10-10) is the one place a second value is right:
+   `data-theme="light"` on <html> is set before first paint by the script in
+   app/layout.tsx, from the theme switch or the OS preference. On that ground
+   a dark-painted date glyph would be the 1.1:1 defect above in reverse, so
+   the browser is told to paint its controls for a light page. Dark stays
+   the default at :root — no script, no attribute, the dark app. */
+[data-theme="light"] {
+  color-scheme: light;
+}
+
+/* The logo files are WHITE artwork with yellow stripes, drawn for the dark
+   ground — on the light rail the white half vanishes. Inverting lightness
+   while rotating the hue back keeps the stripes gold and turns the white
+   near-black. A second set of image files would be the purer fix; this is
+   one rule instead of two assets to keep in step. */
+[data-theme="light"] .logo-on-theme {
+  filter: invert(1) hue-rotate(180deg);
 }
 
 body {
@@ -415,5 +433,64 @@ body {
       opacity: 1;
       transform: none;
     }
+  }
+}
+
+/* ── Controls a contractor can hit and see (usability pass, 2026-10-10).
+   Defined once here so it reaches the ~45 files that style their own
+   inputs, rather than editing each one.
+
+   FOCUS. Inputs used to say "focused" with a 1px border change and nothing
+   else, and 151 of them set `focus:outline-none`. This is a 2px brand ring
+   with a 2px gap on anything interactive, on `:focus-visible` only, so a
+   mouse click on a button draws nothing while Tab and every text field do.
+   `!important` because it must beat `focus:outline-none` (0,2,0) on those
+   151 inputs — a page opting out of the focus ring is the bug. Elements
+   that already draw their own `focus-visible:ring-*` (the sidebar, Ask,
+   search) are left to it. brand #facc15 on canvas #0f0f0f is 12.9:1.
+
+   TOUCH. On a touch screen (`pointer: coarse` — a mouse at any width keeps
+   today's density) every text field is 16px and 44px tall. Under 16px iOS
+   Safari zooms the whole page on focus and leaves it zoomed. `!important`
+   again because the floor has to beat each file's own `text-sm py-1`;
+   checkboxes, radios, range and file inputs are excluded — they are sized
+   by their labels. Buttons get 44px only where it is known to be safe —
+   row action clusters below, SubmitButton and @prova/ui's Button — not from
+   a global button rule, which would also grow inline text-buttons inside
+   sentences. */
+:is(a[href], button, input, select, textarea, summary, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible:not([class*="focus-visible:ring"]) {
+  outline: 2px solid theme("colors.focus") !important;
+  outline-offset: 2px !important;
+}
+
+/* TAPS. `manipulation` drops the double-tap-to-zoom wait on controls only —
+   pinch zoom still works everywhere, and the page itself keeps it. The tap
+   flash is the brand yellow, faint, instead of the browser's grey-blue box
+   that ignores our rounded corners and both themes. */
+html {
+  -webkit-tap-highlight-color: rgb(var(--c-brand) / 0.2);
+}
+:is(a[href], button, input, select, textarea, label, summary, [role="button"], [role="option"]) {
+  touch-action: manipulation;
+}
+
+@media (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="hidden"], [type="submit"], [type="button"], [type="reset"], [type="image"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+    min-height: 44px !important;
+  }
+
+  /* Every button in a row's action cluster (components/RowActions.tsx):
+     Edit, Delete, and the armed Cancel/Confirm pair, whatever classes the
+     caller passed — 205 call sites pass their own. Height and min-width
+     only, so every control grows alike: on a row the x positions the
+     armed-delete rule was measured on do not move, and in the phone column
+     Cancel still sits on the delete's y-band. Re-measured in Chromium:
+     confirm overlap 0% at 375 and 1280, Cancel covering 100% at 375. */
+  [data-row-actions] button {
+    min-height: 44px;
+    min-width: 44px;
   }
 }

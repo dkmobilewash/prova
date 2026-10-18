@@ -245,6 +245,20 @@ const sourceFor = (route: string) => {
  * never "does it have brackets in it".
  */
 const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
+  // The regret letter — the polite decline that keeps a sub on a GC's bid
+  // list. MANAGE_ESTIMATING because it hangs off a bid invitation and
+  // /bids itself takes the same capability: a page that reads a bid's
+  // decline reason and composes a letter to the GC is estimating work, and
+  // a different capability here would be an inconsistency rather than a
+  // tightening.
+  //
+  // Page-only because no nav entry links it. The link is on a DECLINED bid's
+  // own row, which is the only place it makes sense.
+  "/bids/[id]/regret": "MANAGE_ESTIMATING",
+  // One bid as the AI agents see it (research, estimate check, addenda,
+  // advice). MANAGE_ESTIMATING like /bids and /ai; page-only because it is
+  // reached from a bid, a finding or /ai, never by a static nav href.
+  "/ai/bids/[id]": "MANAGE_ESTIMATING",
   // A pay application IS the money document — schedule of values, stored
   // materials, retainage held. permissions.ts already says billing is not
   // an estimator's business and the field tier's audit row says the same;
@@ -353,6 +367,12 @@ const OPEN_ROUTES: Record<string, string> = {
   "/sales/[id]": "Same page, same two checks — isProvaOperator, then OWNER — with notFound() for a non-operator company.",
   "/sales/[id]/drawing-read":
     "The operator-facing page that turns a finished drawing-set read into the email we send a prospect. Guarded the same two ways as /sales/[id] above it and for the same reason — isProvaOperator then OWNER, notFound() for a non-operator — and a capability would LOOSEN it. Both ids it reads from the URL are re-proved against the company by deliveredReadFor (lib/drawing-set-read-query.ts), which returns null rather than naming which of the two was not ours, and sendDrawingSetRead repeats the whole gate because the action is reachable without this page having rendered.",
+  "/sales/call-list":
+    "The CSLB call list behind /sales — same two checks, isProvaOperator then OWNER, in-page, for the same reason /sales gives: a capability would loosen it. Nothing on it is tenant data; it is a public government file joined and filtered.",
+  "/sales/[id]/sample-wh347":
+    "A sample WH-347 with a prospect's name on it, reached only from /sales/[id] — same two checks, isProvaOperator then OWNER, with notFound() for a non-operator company.",
+  "/sales/public-works":
+    "The operator's public-works market list — other firms' public record, read for C Stream's own outbound. Same two checks as /sales: isProvaOperator, then OWNER; the page refuses otherwise.",
   "/internal/usage":
     "Prova's OWN usage instrument — who is still logging in, across every company. Guarded HARDER than any capability, on the same two things /sales is: Company.isProvaOperator AND role OWNER. A capability would LOOSEN it, since every owner holds all seven, and this is the one page in the app that reads across tenants. Listed open here only in the sense that ROUTE_CAPABILITY is the wrong home for it; the page refuses.",
   "/vendors":
@@ -375,8 +395,10 @@ const OPEN_ROUTES: Record<string, string> = {
     "Same reasoning as /jobs/[id]/estimate, same issue #383: withholds on MANAGE_BILLING in-page rather than a hard gate, because this tab's write actions are not independently guarded either.",
   "/jobs/[id]/retainage":
     "Same reasoning as /jobs/[id]/billing beside it, same issue #383: withholds on MANAGE_BILLING in-page — its write actions are not independently guarded.",
-  "/jobs": "A bare redirect to /dashboard. Guarding a redirect claims a protection it redirects straight past.",
-  "/estimating": "A bare redirect to /dashboard?status=ESTIMATE. Same reason as /jobs.",
+  "/areas/[slug]":
+    "The six area pages behind the home boxes (Concept H). Open like /dashboard, and its content is not: the page draws only the tools areasFor() says this person can open (canReach, the same rule as the nav), 404s an area with none of them, and reads each count and waiting row only behind canReach/can for the page it describes (lib/areas-data.ts). Every card links to a page that still runs its own requireCapability.",
+  "/jobs": "The jobs list (it was a redirect to /dashboard until 2026-10-11). Open like /dashboard, which listed the same jobs to the same people; job values show only with VIEW_JOB_COSTS, read in-page.",
+  "/estimating": "A bare redirect to /jobs?status=ESTIMATE. Guarding a redirect claims a protection it redirects straight past.",
   "/settings/export":
     "Guarded HARDER than any capability: the page itself refuses anyone whose role is not OWNER, because it hands over the whole company's data. A capability would loosen it.",
   "/settings/import":

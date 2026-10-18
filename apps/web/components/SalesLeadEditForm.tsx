@@ -35,7 +35,7 @@ export function SalesLeadEditForm({ leadId, defaults }: { leadId: string; defaul
     >
       <SalesLeadFields defaults={defaults} />
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       <SubmitButton
         type="submit"

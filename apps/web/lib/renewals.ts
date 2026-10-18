@@ -1,6 +1,6 @@
 import { cache } from "react";
 import { prisma } from "@prova/db";
-import { toIsoDate, type RenewalSource } from "@/lib/compliance-expiry";
+import { complianceDocumentAnchor, toIsoDate, type RenewalSource } from "@/lib/compliance-expiry";
 import { governingCois } from "@/lib/coi-standing";
 
 /**
@@ -89,7 +89,7 @@ async function readRenewalSources(companyId: string): Promise<RenewalSource[]> {
       detail: doc.partyName,
       date: toIsoDate(doc.expiresAt),
       expectsDate: true,
-      href: "/compliance",
+      href: `/compliance#${complianceDocumentAnchor(doc.id)}`,
     })),
     ...licenses.map((license): RenewalSource => ({
       id: license.id,

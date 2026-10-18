@@ -32,7 +32,7 @@ export type BackchargeRowData = BackchargeDefaults & {
 };
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 export function BackchargeRow({
   backcharge,
@@ -99,7 +99,7 @@ export function BackchargeRow({
             Backcharge {backcharge.number} · {backcharge.jobName}
           </p>
           <BackchargeFields defaults={backcharge} locked={backcharge.status !== "RECEIVED"} />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
@@ -164,7 +164,7 @@ export function BackchargeRow({
             </span>
           </label>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
 
           <div className="flex gap-2">
             <button
@@ -271,7 +271,7 @@ export function BackchargeRow({
             />
           </label>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
 
           <div className="flex gap-2">
             <button
@@ -306,7 +306,8 @@ export function BackchargeRow({
   });
 
   return (
-    <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
+    // `id`: Home's "Needs you today" links to /backcharges#<id>.
+    <li id={backcharge.id} className="flex scroll-mt-24 flex-col gap-3 p-4 target:ring-2 target:ring-inset target:ring-brand sm:flex-row sm:items-start">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-xs text-ink-muted">BC {backcharge.number}</span>
@@ -319,7 +320,7 @@ export function BackchargeRow({
               Past the deadline to object
             </span>
           )}
-          <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
+          <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-body">
             {categoryLabel(backcharge.category)}
           </span>
         </div>
@@ -367,7 +368,7 @@ export function BackchargeRow({
             `${backcharge.gcReference ? " · " : ""}logged by ${backcharge.loggedByName}`}
         </p>
 
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {error && <p className="mt-1 text-sm text-danger">{error}</p>}
       </div>
 
       {/* Two rules live in RowActions/ConfirmDelete now, so neither depends on
@@ -396,7 +397,7 @@ export function BackchargeRow({
               onConfirm={() => run(() => deleteBackcharge(backcharge.id), "Could not delete it")}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-danger hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }

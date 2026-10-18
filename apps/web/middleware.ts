@@ -3,6 +3,7 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 const isProtectedRoute = createRouteMatcher([
   "/dashboard(.*)",
   "/ask(.*)",
+  "/ai(.*)",
   "/jobs(.*)",
   "/contacts(.*)",
   "/compliance(.*)",
@@ -34,6 +35,8 @@ const isProtectedRoute = createRouteMatcher([
   "/intake(.*)",
   "/sales(.*)",
   "/certifications(.*)",
+  // The six area pages behind the home page's boxes (lib/areas.ts).
+  "/areas(.*)",
   // The full-page onboarding gate. Authenticated like every other route in
   // this list — a signed-out visitor is sent to /sign-in first, same as
   // anywhere else — even though the only thing that ever LINKS here is a
@@ -45,6 +48,13 @@ const isProtectedRoute = createRouteMatcher([
   // list is the allowlist a reader checks, and a data route missing from
   // it looks public whether or not it is.
   "/api/ask(.*)",
+  // The command palette's search. The handler answers 401 itself; listed
+  // here because this is the allowlist a reader checks.
+  "/api/search(.*)",
+  // The top bar's Tasks list (agent runs). Answers 401/403 itself; listed
+  // for the same reason. NOT /api/agents(.*): /api/agents/run is the
+  // CRON_SECRET-gated agent run, which has no session — see the note below.
+  "/api/agents/tasks(.*)",
   "/messages(.*)",
   // The data export returns a file rather than a page, for the same reason
   // and with the same consequence: it is the single widest read in the app,
@@ -128,6 +138,12 @@ const isProtectedRoute = createRouteMatcher([
 // signature over the raw body, and fails closed when no secret is set — an
 // unverified "delivered" is worse than no event, because the whole value of
 // the log is that a delivered in it means something.
+// /api/webhooks/outbound is deliberately NOT protected here either — the
+// cold-email sequencer's events (reply, bounce, unsubscribe, category) come
+// from the vendor with no Clerk session. The route verifies the request
+// itself with SMARTLEAD_WEBHOOK_SECRET (an HMAC header or the body's
+// secret_key, whichever the account sends — lib/smartlead-webhook.ts says
+// why both) and fails closed with 503 when it is unset.
 // /api/intake/inbound/resend is deliberately NOT protected here either —
 // same reasoning as /api/messages/webhook, and the same provider: inbound
 // email events have no Clerk session. The route verifies the svix signature
@@ -148,6 +164,23 @@ const isProtectedRoute = createRouteMatcher([
 // 503 when no secret is set. Recorded as its own line rather than folded into
 // the digest's, because a reader looking for why THIS route is unlisted should
 // find it under its own name.
+// /api/cron/outbound-push is deliberately NOT protected here either, by the
+// same mechanism as the two above: the nightly push of new leads to the
+// cold-email sequencer is a scheduler with no Clerk session, and it checks
+// `Authorization: Bearer $CRON_SECRET` itself, timing-safe, failing closed
+// with 503 when that — or any of the four outbound settings — is unset.
+// /unsubscribe is deliberately NOT protected here, the same way /esign and
+// /portal are not: it is the opt-out link in every cold email, and CAN-SPAM
+// requires that it work with nothing but a click. The token in the path is an
+// HMAC of the lead id (lib/outbound-token.ts); a bad one opens nothing.
+// /api/agents/run is deliberately NOT protected here either, by the same
+// mechanism as the two above: it is the AI-agent run (the bid watcher), for
+// a scheduler or a one-off curl with no Clerk session. It checks
+// `Authorization: Bearer $CRON_SECRET` itself, timing-safe, failing closed
+// with 503 when no secret is set, and it starts only the watcher or
+// recommendations — never an agent a URL should be able to trigger across
+// every company. The SCHEDULE that runs the watcher daily is the digest's
+// (lib/agents/cron.ts): Hobby allows two cron jobs and both were taken.
 // /api/quickbooks/callback is deliberately NOT protected here — see
 // QuickBooksOAuthCookiePayload in lib/quickbooks-constants.ts. Intuit's
 // redirect back to that route is a third-party-initiated navigation;

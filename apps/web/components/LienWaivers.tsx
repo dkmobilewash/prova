@@ -45,7 +45,7 @@ export function LienWaivers({
   const [open, setOpen] = useState(false);
 
   return (
-    <section className="mb-10">
+    <section id="lien-waivers" className="mb-10 scroll-mt-6">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-ink-label">Lien waivers</h2>

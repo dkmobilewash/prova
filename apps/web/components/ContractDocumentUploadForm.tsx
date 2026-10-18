@@ -89,7 +89,7 @@ export function ContractDocumentUploadForm({
             name="file"
             required
             accept=".pdf,.png,.jpg,.jpeg,.webp"
-            className="text-sm text-ink-label file:mr-3 file:rounded-md file:border-0 file:bg-neutral-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink hover:file:bg-neutral-700"
+            className="text-sm text-ink-label file:mr-3 file:rounded-md file:border-0 file:bg-rail-hover file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink hover:file:bg-lift"
           />
         </label>
         <label className="flex flex-1 min-w-[180px] flex-col gap-1 text-sm text-ink-label">
@@ -103,7 +103,7 @@ export function ContractDocumentUploadForm({
         <button
           type="submit"
           disabled={isPending}
-          className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? (
             <span className="inline-flex items-center gap-1.5">
@@ -117,7 +117,7 @@ export function ContractDocumentUploadForm({
       </div>
 
       {error && (
-        <p role="alert" className="text-sm text-red-300">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       )}

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { notFound } from "next/navigation";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
@@ -127,18 +129,30 @@ export default async function CertifiedPayrollPage({
     .entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
   return (
-    <div className="mx-auto max-w-4xl p-6 print:p-0">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <Link href={`/jobs/${job.id}`} className="text-sm text-link hover:underline">
-          ← Back to job
-        </Link>
-        <PrintButton />
+    // PRINTED OUTPUT IS UNCHANGED. On screen the page wears the shared
+    // header; on paper it prints the heading it always printed, from the
+    // print-only copy below, and the shell drops its gutters and measure
+    // exactly as `p-6 print:p-0` did.
+    <PageShell width="working" className="print:max-w-none print:p-0">
+      <div className="print:hidden">
+        <PageHeader
+          route="/dashboard"
+          parent={{ href: `/jobs/${job.id}`, label: job.name }}
+          title="Certified payroll"
+          subtitle={
+            <>
+              {job.contact.name} · Week of {formatDate(weekStart)} – {formatDate(weekEnd)}
+            </>
+          }
+          actions={<PrintButton />}
+        />
       </div>
-
-      <h1 className="text-xl font-semibold text-ink">Certified payroll — {job.name}</h1>
-      <p className="mt-1 text-sm text-ink-muted">
-        {job.contact.name} · Week of {formatDate(weekStart)} – {formatDate(weekEnd)}
-      </p>
+      <div className="hidden print:block">
+        <h1 className="text-xl font-semibold text-ink">Certified payroll — {job.name}</h1>
+        <p className="mt-1 text-sm text-ink-muted">
+          {job.contact.name} · Week of {formatDate(weekStart)} – {formatDate(weekEnd)}
+        </p>
+      </div>
       <p className="mt-3 max-w-2xl text-xs text-ink-muted">
         A summary of logged hours and computed wages for this job and week. The federal form is one click away,
         below. Wages use the fringe rate schedule set under Union &amp; fringe that is in force for each craft
@@ -237,7 +251,7 @@ export default async function CertifiedPayrollPage({
               <p className="font-medium text-ink">
                 {employee.employeeName}
                 {missingName.has(employee.employeeUserId) && (
-                  <span className="ml-2 text-xs font-normal text-amber-400">
+                  <span className="ml-2 text-xs font-normal text-warn">
                     — no name on {missingName.get(employee.employeeUserId)}
                   </span>
                 )}
@@ -268,7 +282,7 @@ export default async function CertifiedPayrollPage({
                         <td className="py-1 pr-3 text-right text-ink">{formatHours(row.totalHours)}</td>
                         <td className="py-1 text-right text-ink">
                           {row.wageCost != null ? money(row.wageCost) : "—"}
-                          {row.hasUncomputedHours && <span className="ml-1 text-amber-400">*</span>}
+                          {row.hasUncomputedHours && <span className="ml-1 text-warn">*</span>}
                         </td>
                       </tr>
                     ))}
@@ -297,13 +311,13 @@ export default async function CertifiedPayrollPage({
               ))}
             </div>
             {anyUncomputed && (
-              <p className="mt-1 text-xs text-amber-400">
+              <p className="mt-1 text-xs text-warn">
                 * Some hours have no craft tag or no effective fringe rate schedule and aren&rsquo;t priced above.
               </p>
             )}
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

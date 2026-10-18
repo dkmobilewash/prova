@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Button } from "@prova/ui";
 import { acceptPlanSheets, rejectPlanSheet } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { checkDrawingIndex, type IndexCheck } from "@/lib/actions/planSheets";
 import {
   countSheets,
   duplicateSheetNumbers,
@@ -39,7 +40,7 @@ import {
  * makes the same argument.
  */
 
-export function PlanSheetReview({ rows }: { rows: SheetRow[] }) {
+export function PlanSheetReview({ rows, planId }: { rows: SheetRow[]; planId?: string }) {
   /**
    * What each row will be confirmed AS, keyed by proposal id and seeded from the
    * proposal itself.
@@ -52,6 +53,10 @@ export function PlanSheetReview({ rows }: { rows: SheetRow[] }) {
   const [edits, setEdits] = useState<Record<string, { sheetNumber: string; title: string }>>({});
   const [picked, setPicked] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** The set's own printed index, checked on request. Null until asked — see
+   *  `checkDrawingIndex`, which opens the plan file. */
+  const [indexCheck, setIndexCheck] = useState<IndexCheck | null>(null);
+  const [checkingIndex, setCheckingIndex] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   /**
@@ -131,11 +136,57 @@ export function PlanSheetReview({ rows }: { rows: SheetRow[] }) {
     <div className="flex flex-col gap-3" data-sheet-review="root">
       <p className="text-sm text-ink-body">{sheetIndexSentence(counts)}</p>
 
+      {/* ── WHAT THE SET SAYS IT CONTAINS ──────────────────────────────
+          The counts above say what ARRIVED. Every commercial set also prints
+          its own index, and nothing has ever read it — so a set missing four
+          sheets has always looked exactly like a complete one. That is the
+          expensive direction: a bid priced off an incomplete set wins and then
+          meets a drawing nobody read.
+
+          ON REQUEST, because it opens the plan file. */}
+      {planId !== undefined && (
+        <div data-sheet-review="index-check">
+          {indexCheck === null ? (
+            <button
+              type="button"
+              disabled={checkingIndex}
+              data-sheet-review="check-index"
+              onClick={() => {
+                setCheckingIndex(true);
+                void checkDrawingIndex(planId)
+                  .then(setIndexCheck)
+                  .finally(() => setCheckingIndex(false));
+              }}
+              className="min-h-[36px] self-start rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
+            >
+              {checkingIndex ? "Reading the index…" : "Check against the set's own index"}
+            </button>
+          ) : indexCheck.ok === false ? (
+            <p className="rounded-md border border-line-card bg-surface p-2 text-xs text-tag-rose-ink">
+              {indexCheck.error}
+            </p>
+          ) : (
+            <p
+              className={`rounded-md border p-2 text-xs ${
+                indexCheck.missing !== null && indexCheck.missing.length > 0
+                  ? "border-tag-rose-ink bg-surface text-ink-body"
+                  : "border-line-card bg-surface text-ink-body"
+              }`}
+            >
+              {/* MISSING SHEETS ARE NAMED IN THE SENTENCE, not counted — "4
+                  sheets are missing" sends somebody back to the index to work
+                  out which four, which is the work this was meant to save. */}
+              {indexCheck.sentence}
+            </p>
+          )}
+        </div>
+      )}
+
       {duplicates.length > 0 && (
         // ABOVE THE ROWS, because a caution under the thing it is about is read
         // after the decision has been made — `AskProposal`'s convention and the
         // one the quote reader's cautions follow.
-        <p className="rounded-md border border-line-card bg-surface-card p-2 text-xs text-ink-body">
+        <p className="rounded-md border border-line-card bg-surface p-2 text-xs text-ink-body">
           <span className="font-medium text-ink-label">More than one sheet claims the same number: </span>
           {duplicates.join(", ")}. One of them was misread, or this upload is two sets joined together. An index with
           the same number twice is one nobody can navigate by.

@@ -163,3 +163,109 @@ describe("straightening a traced path", () => {
     expect(out).toBe(5);
   });
 });
+
+describe("thinning costs what the ink costs, not what the grid costs", () => {
+  /**
+   * A sheet took 2,582 ms to thin 27,000 cells of wall, while another with FOUR
+   * TIMES the ink on a grid half the size took 571. Cost tracked the GRID, not
+   * the work: every round swept all twelve million cells looking for ink, and
+   * thinning takes one round per cell of half-thickness. The page that ran 28
+   * minutes of CPU is the same shape with a bigger grid behind it.
+   *
+   * ── WHAT THIS CAN AND CANNOT CATCH ──
+   *
+   * Asserted as a RATIO between two grids holding identical ink, never as a
+   * wall-clock budget: an absolute bound fails on a loaded machine and passes
+   * on a fast one, which is a flake rather than a guard, and this repo already
+   * has one spec that answered differently twice in an hour.
+   *
+   * The grid has to be big enough for the ratio to exist. A first version used
+   * 400x176 and every mutation came back GREEN — at that size a full sweep is
+   * microseconds and there is nothing to measure. Two million cells is where
+   * the difference stops being noise.
+   *
+   * It does NOT catch a regression that keeps sweeping only the original ink
+   * without dropping what it has cleared. That is real and it is invisible
+   * here, because on a thin shape almost nothing is cleared — and saying so is
+   * better than implying a guard covers it.
+   */
+  const BAR = (x: number, y: number) => x >= 2 && x <= 22 && y >= 2 && y <= 8;
+
+  /**
+   * ── THE TIMING GUARD IS GONE, AFTER FLAKING TWICE. READ THIS BEFORE WRITING
+   * A THIRD ONE. ──
+   *
+   * #688 made `thin` sweep only LIVE CELLS instead of the whole grid each
+   * round, which is a 51x speedup on a real sheet and the difference between
+   * the wall finder answering and appearing to hang. Two attempts were made to
+   * guard that property and both were FLAKES:
+   *
+   *   1. a ratio against a tiny grid's run. It passed alone and failed under
+   *      `preflight.sh`, which runs the build beside the tests: the baseline is
+   *      microseconds, so its own noise moved the denominator.
+   *   2. a ratio against one measured pass over an array of the same size,
+   *      taken in the same process so load would move both sides together.
+   *      **It failed under preflight too** — a GC pause inside the measured
+   *      region is enough, and nothing about the arithmetic can see that.
+   *
+   * A guard that fails when the machine is busy is noise, and noise gets a
+   * suite ignored. So the property is NOT tested, and that is recorded rather
+   * than papered over:
+   *
+   *   - what IS tested, immediately below and throughout this file, is that the
+   *     same ink thins to the same skeleton. The correctness of the change is
+   *     covered; only its SPEED is not.
+   *   - the speed is the kind of regression somebody notices in one click,
+   *     because the button visibly stops answering. That is a poor check and it
+   *     is the honest one.
+   *   - the measurement, for anyone re-deriving it by hand: on a 2000x1000 grid
+   *     holding 147 cells of ink, the live-cell version costs a fraction of one
+   *     pass over the grid and a grid-swept one costs about eight.
+   *
+   * A third attempt needs a signal that is not a clock. Counting the cells
+   * EXAMINED would be one, and it means `thin` reporting its own work — an API
+   * change for a test, which is a trade worth making deliberately rather than
+   * reaching for another stopwatch.
+   */
+  it("thins the same ink to the same skeleton whatever the grid around it", () => {
+    // What survives of the timing test: the two runs must agree. This is what
+    // actually broke when the sweep changed, and it needs no clock.
+    const WIDE = 2000;
+    const TALL = 1000;
+    const vast = thin(block(WIDE, TALL, BAR), WIDE, TALL);
+    const snug = thin(block(25, 11, BAR), 25, 11);
+    let litVast = 0;
+    let litSnug = 0;
+    for (let i = 0; i < vast.length; i += 1) litVast += vast[i];
+    for (let i = 0; i < snug.length; i += 1) litSnug += snug[i];
+    expect(litVast, "empty space around the ink must not change the skeleton").toBe(litSnug);
+  });
+
+  it("leaves ink on the border alone, exactly as the grid-swept version did", () => {
+    // The candidate list excludes the border, which is what the old
+    // `y = 1 .. height - 2` loop bounds did implicitly. This pins the
+    // behaviour rather than the mechanism.
+    //
+    // HONEST NOTE: mutating that exclusion away leaves this test GREEN, and it
+    // is kept anyway. A border cell that becomes a candidate reads its
+    // neighbour ring off the end of the array, and a typed array answers
+    // `undefined` rather than throwing — the arithmetic goes NaN, every
+    // deletion test fails, and the cell survives. Same output, by accident.
+    // The exclusion exists so the reads stay in bounds instead of depending on
+    // that, which is a reason to keep it and not a claim that it is tested.
+    const touching = block(40, 20, (x, y) => y <= 4 && x <= 30);
+    expect(() => thin(touching, 40, 20)).not.toThrow();
+    const skeleton = thin(touching, 40, 20);
+    let farSide = 0;
+    for (let y = 12; y < 20; y += 1) for (let x = 0; x < 40; x += 1) farSide += skeleton[y * 40 + x];
+    expect(farSide, "thinning must not move ink to the far side of the grid").toBe(0);
+  });
+
+  it("still terminates on a mask that is entirely ink", () => {
+    // The ceiling is the live-cell count now rather than the grid, so a fully
+    // inked mask is the case that proves it is still a ceiling.
+    const solid = block(60, 60, () => true);
+    expect(() => thin(solid, 60, 60)).not.toThrow();
+    expect(lit(thin(solid, 60, 60))).toBeGreaterThan(0);
+  });
+});

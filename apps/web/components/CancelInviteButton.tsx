@@ -51,11 +51,11 @@ export function CancelInviteButton({ inviteId }: { inviteId: string }) {
             cancelLabel="Keep invite"
             pending={isPending}
             onConfirm={handleCancel}
-            deleteClassName="text-sm text-red-400 hover:underline disabled:opacity-50"
+            deleteClassName="text-sm text-danger hover:underline disabled:opacity-50"
           />
         }
       />
-      {error && <p className="max-w-[16rem] text-right text-xs text-rose-300">{error}</p>}
+      {error && <p className="max-w-[16rem] text-right text-xs text-danger">{error}</p>}
     </div>
   );
 }

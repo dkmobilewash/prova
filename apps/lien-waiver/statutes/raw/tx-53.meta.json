@@ -1,0 +1,15 @@
+{
+  "id": "tx-53",
+  "state": "TX",
+  "citation": "Tex. Prop. Code ch. 53 (incl. § 53.284)",
+  "requestedUrl": "https://statutes.capitol.texas.gov/Docs/PR/htm/PR.53.htm",
+  "finalUrl": "https://statutes.capitol.texas.gov/?tab=1&code=PR&chapter=PR.53&artSec=",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8 (rendered DOM)",
+  "capturedVia": "headless-render",
+  "renderer": "firecrawl",
+  "rendererScrapeId": "01a11d5e-d619-720a-8005-c08d908b4bab",
+  "retrievedAt": "2026-10-08T21:15:40.286Z",
+  "bytes": 451763,
+  "sha256": "fec8b3b3834b6f0c2cc8c13cba808f617fc03b48e8380a9db74d441589dd1f1f"
+}

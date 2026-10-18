@@ -46,7 +46,7 @@ export function SubmitButton({
       aria-busy={pending || undefined}
       // Tailwind's disabled: variants only fire on the real attribute, so
       // this reads as unavailable rather than merely inert.
-      className={`${props.className ?? ""} disabled:cursor-not-allowed disabled:opacity-60`.trim()}
+      className={`${props.className ?? ""} disabled:cursor-not-allowed disabled:opacity-60 [@media(pointer:coarse)]:min-h-11`.trim()}
     >
       {/* The spinner rides on `pending`, the same flag that disables the
           button — so it cannot disagree with whether the form is in flight.

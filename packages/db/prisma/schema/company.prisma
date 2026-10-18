@@ -35,6 +35,38 @@ model Company {
   /// these from Settings; `businessScopeAskedAt` stays set so the onboarding
   /// prompt does not resurface, only the display these three used to narrow.
   contractingRelationship ContractingRelationship?
+
+  /// Whether this shop takes door and window openings off the board quantity.
+  ///
+  /// NULL MEANS UNANSWERED, and unanswered keeps exactly today's behaviour —
+  /// `DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT`, 32 sq ft, which deducts a
+  /// storefront and not a door. Nothing about any existing bid moves when this
+  /// column appears.
+  ///
+  /// IT IS A QUESTION RATHER THAN A CONSTANT BECAUSE THERE IS NO RIGHT ANSWER.
+  /// `takeoff.ts` says so where the default is declared: "shops differ, and
+  /// some deduct nothing at all". A 3'-0" x 7'-0" door is 21 sq ft, and a sub
+  /// who deducts it stops charging for board they still hang, cut out and
+  /// frame a header for — so the 32 sq ft default is the conservative one. But
+  /// a shop that genuinely deducts everything was, until this column, unable
+  /// to say so, and C Stream was quietly bidding their work the other way.
+  openingDeduction OpeningDeduction?
+
+  /// The shop's own size threshold, in square feet, for "only the big ones".
+  ///
+  /// NULL MEANS "USE OUR DEFAULT" — `DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT`,
+  /// 32 — so nothing moves for a company that does not set it.
+  ///
+  /// IT EXISTS BECAUSE 32 IS NOT THE ONLY RULE. A practising estimator's
+  /// summary of the trade names "32 OR 50 square feet" as the common
+  /// thresholds, and a shop on 50 had no way to say so: the option read "only
+  /// the big ones, like a storefront" and secretly meant a number nobody could
+  /// see or change.
+  ///
+  /// Only consulted when `openingDeduction` is LARGE_ONLY. It is stored
+  /// regardless, so a shop that switches away and back does not lose its
+  /// figure.
+  openingDeductionSqFt Decimal? @db.Decimal(6, 2)
   doesPublicWork          Boolean?
   filesMonthlyPayApps     Boolean?
 
@@ -146,9 +178,9 @@ model Company {
   vendorPriceQuotes         VendorPriceQuote[]
   outboundMessages          OutboundMessage[]
   contactInteractions       ContactInteraction[]
-  proposalClauses          ProposalClause[]
-  jobProposalClauses       JobProposalClause[]
-  proposalClauseDrafts     ProposalClauseDraft[]
+  proposalClauses           ProposalClause[]
+  jobProposalClauses        JobProposalClause[]
+  proposalClauseDrafts      ProposalClauseDraft[]
   apprenticeshipEnrollments ApprenticeshipEnrollment[]
   apprenticeshipCommittees  ApprenticeshipCommittee[]
   contactPeople             ContactPerson[]
@@ -156,10 +188,14 @@ model Company {
   salesOpportunities        SalesOpportunity[]
   salesActivities           SalesActivity[]
   salesStageChanges         SalesStageChange[]
+  salesLeadSignals          SalesLeadSignal[]
+  outboundEvents            OutboundEvent[]
+  consentRecords            ConsentRecord[]
   equipmentAssignments      EquipmentAssignment[]
   crewMembers               CrewMember[]
   payrollRegisterEntries    PayrollRegisterEntry[]
   crewScheduleDays          CrewScheduleDay[]
+  crews                     Crew[]
   workerCrafts              WorkerCraft[]
   experienceModRates        ExperienceModRate[]
   employerBurdenRates       EmployerBurdenRate[]
@@ -168,7 +204,14 @@ model Company {
   workerCertifications      WorkerCertification[]
   requiredCertifications    CertificationRequirement[]
   bidPursuits               BidPursuit[]
-  sheetPins SheetPin[]
+  sheetPins                 SheetPin[]
+  /// AI agents — see ai-agents.prisma.
+  askThreads                AskThread[]
+  agentRuns                 AgentRun[]
+  agentFindings             AgentFinding[]
+  bidOutcomes               BidOutcome[]
+  aiRecommendations         AiRecommendation[]
+  agentSettings             CompanyAgentSettings?
 }
 
 enum UserRole {
@@ -182,6 +225,21 @@ enum ContractingRelationship {
   UNDER_GENERAL_CONTRACTORS
   DIRECT_FOR_OWNERS
   BOTH
+}
+
+/// Onboarding question 4 — see Company.openingDeduction above.
+///
+/// Three answers rather than a number, because an estimator knows their own
+/// habit and does not know a square-foot threshold. `openingThresholdSqFt`
+/// turns each into the number `boardedArea` already takes.
+enum OpeningDeduction {
+  /// Bid the wall solid. The most conservative, and common.
+  NONE
+  /// Only openings big enough to be worth it — the 32 sq ft default, which
+  /// deducts a storefront and leaves a door.
+  LARGE_ONLY
+  /// Every opening comes off.
+  ALL
 }
 
 model User {
@@ -233,17 +291,18 @@ model User {
   updatedAt DateTime @updatedAt
 
   assignments                          JobAssignment[]
-  crewScheduleDays                     CrewScheduleDay[]      @relation("CrewScheduleDayUser")
-  crewScheduleDaysCreated              CrewScheduleDay[]      @relation("CrewScheduleDayCreatedBy")
-  companycamLinksCreated               CompanyCamProjectLink[] @relation("CompanyCamLinkedBy")
-  bluebeamSessionsLinked                BluebeamStudioSession[] @relation("BluebeamLinkedBy")
+  crewScheduleDays                     CrewScheduleDay[]             @relation("CrewScheduleDayUser")
+  crewScheduleDaysCreated              CrewScheduleDay[]             @relation("CrewScheduleDayCreatedBy")
+  crewMemberships                      CrewMembership[]
+  companycamLinksCreated               CompanyCamProjectLink[]       @relation("CompanyCamLinkedBy")
+  bluebeamSessionsLinked               BluebeamStudioSession[]       @relation("BluebeamLinkedBy")
   calendarFeedTokens                   CalendarFeedToken[]
   workerCrafts                         WorkerCraft[]
-  experienceModRatesCreated            ExperienceModRate[]    @relation("ExperienceModRateCreatedBy")
-  employerBurdenRatesCreated           EmployerBurdenRate[]   @relation("EmployerBurdenRateCreatedBy")
-  lienDeadlinesCreated                 LienDeadline[]         @relation("LienDeadlineCreatedBy")
-  lienWaiversCreated                   LienWaiver[]           @relation("LienWaiverCreatedBy")
-  bidPursuitsCreated                   BidPursuit[]           @relation("BidPursuitCreatedBy")
+  experienceModRatesCreated            ExperienceModRate[]           @relation("ExperienceModRateCreatedBy")
+  employerBurdenRatesCreated           EmployerBurdenRate[]          @relation("EmployerBurdenRateCreatedBy")
+  lienDeadlinesCreated                 LienDeadline[]                @relation("LienDeadlineCreatedBy")
+  lienWaiversCreated                   LienWaiver[]                  @relation("LienWaiverCreatedBy")
+  bidPursuitsCreated                   BidPursuit[]                  @relation("BidPursuitCreatedBy")
   connectedQuickBooks                  QuickBooksConnection[]
   quickBooksSyncAttempts               QuickBooksSyncAttempt[]
   connectedIntegrations                IntegrationConnection[]
@@ -304,6 +363,7 @@ model User {
   assignedContactFollowUps             ContactInteraction[]          @relation("ContactInteractionFollowUp")
   loggedSalesActivities                SalesActivity[]               @relation("SalesActivityLogger")
   recordedSalesStageChanges            SalesStageChange[]            @relation("SalesStageChangeRecorder")
+  reviewedSalesLeadSignals             SalesLeadSignal[]             @relation("SalesLeadSignalReviewer")
   recordedEquipmentAssignments         EquipmentAssignment[]
   certifications                       WorkerCertification[]         @relation("WorkerCertificationHolder")
   recordedCertifications               WorkerCertification[]         @relation("WorkerCertificationRecorder")
@@ -319,7 +379,14 @@ model User {
   /// AI settings rows this person last changed — an audit line on an
   /// owner-only switch, not a thing they own.
   aiSettingsChanged         CompanyAiSettings[]
-  sheetPins SheetPin[] @relation("SheetPinCreatedBy")
+  sheetPins                 SheetPin[]                 @relation("SheetPinCreatedBy")
+  /// AI agents — see ai-agents.prisma.
+  askThreads                AskThread[]
+  agentRunsRequested        AgentRun[]                 @relation("AgentRunRequestedBy")
+  agentFindingsDismissed    AgentFinding[]             @relation("AgentFindingDismissedBy")
+  bidOutcomesRecorded       BidOutcome[]               @relation("BidOutcomeRecordedBy")
+  aiRecommendationsResolved AiRecommendation[]         @relation("AiRecommendationResolvedBy")
+  agentSettingsChanged      CompanyAgentSettings[]     @relation("CompanyAgentSettingsUpdatedBy")
 
   @@index([companyId])
 }

@@ -8,9 +8,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * reading $0.00 / 0 / 0 / $0.00, two "nothing" field cards, two money cards,
  * "No active jobs" — with "New job" on screen two. Now it leads with the jobs
  * empty state and the checklist, and every other section waits for the first
- * job. That gate is presentation only, so the half of this file that matters
- * as much as the first is the second: a company with jobs must get every
- * section, every figure and the same order it always had.
+ * job.
+ *
+ * The second half pins the home as rebuilt for Concept G (2026-10-10): the
+ * greeting, the search box and shortcuts, the three blocks (Needs you today,
+ * Money, Crews today) and the job cards. The full jobs list moved to /jobs
+ * on 2026-10-11 (jobs/jobs-page.test.ts). It replaced "the order it always had" deliberately — the old
+ * four-tile row and job-health list are gone, and their figures moved into
+ * the blocks and cards, which is what the figures test below holds onto.
  *
  * Rendered from the real page against a fake database and a fixed dashboard
  * payload, so a condition that does not render cannot pass for one that does.
@@ -19,7 +24,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   jobs: [] as unknown[],
   renewals: [] as unknown[],
+  /** findMany results for the home page's own reads, by model. */
+  rows: {} as Record<string, unknown[]>,
+  /** aggregate()._sum.amount, by model (invoice = billed, payment = collected). */
+  sums: {} as Record<string, number>,
   today: {} as Record<string, unknown>,
+  /** The getting-started hide cookie's value; "co-1" hides the checklist. */
+  cookie: undefined as string | undefined,
   context: {
     company: { id: "co-1", name: "Ithy Drywall & Acoustics", businessScopeAskedAt: new Date("2026-09-01") },
     id: "user-1",
@@ -40,6 +51,8 @@ vi.mock("@prova/db", () => {
           {
             get: (_t, method: string) => {
               if (model === "job" && method === "findMany") return vi.fn(async () => state.jobs);
+              if (method === "findMany" && state.rows[model]) return vi.fn(async () => state.rows[model]);
+              if (method === "aggregate") return vi.fn(async () => ({ _sum: { amount: state.sums[model] ?? null } }));
               if (method === "count") return vi.fn(async () => 0);
               if (method === "findUnique" || method === "findFirst") return vi.fn(async () => null);
               return vi.fn(async () => []);
@@ -63,7 +76,10 @@ vi.mock("@/lib/compliance-expiry", () => ({
   renewalTiming: vi.fn(() => "Expires in 9 days"),
 }));
 vi.mock("next/headers", () => ({
-  cookies: vi.fn(async () => ({ get: () => undefined })),
+  cookies: vi.fn(async () => ({
+    get: (name: string) =>
+      name === "prova_getting_started_hidden" && state.cookie !== undefined ? { name, value: state.cookie } : undefined,
+  })),
   headers: vi.fn(async () => new Headers()),
 }));
 vi.mock("next/navigation", () => ({
@@ -74,11 +90,14 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/components/AskPanel", () => ({ AskPanel: () => null }));
 vi.mock("@/lib/actions", () => ({ hideGettingStarted: vi.fn() }));
+// Pin the reader's calendar so "today" is not the test machine's.
+vi.mock("@/lib/viewerToday", () => ({ viewerTimeZone: vi.fn(async () => "UTC") }));
+vi.mock("@/lib/viewer-timezone", () => ({ todayInZone: vi.fn(() => "2026-10-14") }));
 
 const { default: TodayPage } = await import("@/app/(app)/dashboard/page");
 
 async function render() {
-  return renderToStaticMarkup(await TodayPage({ searchParams: Promise.resolve({}) }));
+  return renderToStaticMarkup(await TodayPage());
 }
 
 const EMPTY_TODAY = {
@@ -93,15 +112,20 @@ const EMPTY_TODAY = {
   gcReliability: [],
 };
 
+const JOB_NAME = "Northgate Clinic TI — level 2 drywall";
+
 /** A company in use: numbers chosen to be unmistakable in the markup. */
 const BUSY_TODAY = {
   ...EMPTY_TODAY,
   invoicesRaised: 3,
-  overdue: [{}, {}],
+  receivables: [{ outstanding: 18_250 }, { outstanding: 1_750 }],
+  overdue: [
+    { id: "inv-3", jobId: "job-1", jobName: JOB_NAME, gcName: "Example GC", number: 3, outstanding: 12_000, daysOverdue: 40 },
+    { id: "inv-2", jobId: "job-1", jobName: JOB_NAME, gcName: "Example GC", number: 2, outstanding: 6_250, daysOverdue: 12 },
+  ],
   overdueTotal: 18_250,
   jobsOverBudget: 1,
   retainageHeld: 7_430,
-  crews: [{ jobId: "job-1", name: "Northgate Clinic TI — level 2 drywall", gcName: "Example GC", crew: ["Luis Ortega"] }],
   gcReliability: [
     {
       contactId: "c-1",
@@ -110,68 +134,105 @@ const BUSY_TODAY = {
     },
   ],
   jobHealth: [
-    { jobId: "job-1", name: "Northgate Clinic TI — level 2 drywall", gcName: "Example GC", tone: "over", sentence: "Forecast 8% past contract value." },
+    { jobId: "job-1", name: JOB_NAME, gcName: "Example GC", tone: "over", sentence: "Forecast 8% past contract value." },
   ],
 };
 
 const JOB = {
   id: "job-1",
-  name: "Northgate Clinic TI — level 2 drywall",
+  name: JOB_NAME,
   status: "IN_PROGRESS",
   contact: { name: "Example GC" },
-  lineItems: [{ quantity: 10, unitPrice: 1000 }],
+  lineItems: [{ quantity: 10, unitPrice: 1000, tradeScope: "METAL_FRAMING_DRYWALL" }],
   signatureRequests: [],
+  invoices: [{ amount: 5_700 }],
+};
+
+/** The home page's own reads for a busy day. */
+const BUSY_ROWS = {
+  rfi: [{ id: "rfi-1", number: 12, subject: "Head of wall", dueBy: new Date("2026-10-10T00:00:00Z"), jobId: "job-1", job: { name: JOB_NAME } }],
+  timesheetSignoff: [{ id: "so-1", date: new Date("2026-10-13T00:00:00Z"), jobId: "job-1", job: { name: JOB_NAME } }],
+  crewScheduleDay: [
+    { jobId: "job-1", job: { name: JOB_NAME }, scheduledUser: { name: "Luis Ortega", email: "l@example.com" }, crewMember: null },
+    { jobId: "job-1", job: { name: JOB_NAME }, scheduledUser: null, crewMember: { legalFirstName: "Ana", legalMiddleName: null, legalLastName: "Ruiz" } },
+  ],
 };
 
 /** Every section the page has for a company in use, in page order. */
 const POPULATED_ORDER = [
+  'data-home="greeting"',
   'data-tour="dashboard-ask"',
+  'data-tour="dashboard-new-job"',
+  // Concept H: the six area boxes under the greeting.
+  'data-home="areas"',
+  'data-home="phone-tiles"',
   'data-tour="dashboard-needs-attention"',
-  'data-tour="dashboard-field"',
   'data-tour="dashboard-money"',
+  'data-tour="dashboard-field"',
+  'id="jobs"',
   'data-tour="dashboard-job-health"',
-  "Browse all jobs",
-  'data-tour="dashboard-job-list"',
+  "Accounts receivable",
 ];
 
-/** The four Needs-attention tiles' grid, for counting what renders in it. */
-function needsAttention(html: string): string {
-  const match = html.match(/data-tour="dashboard-needs-attention"[\s\S]*?<\/section>/);
+/** One block's markup, by its tour anchor. */
+function block(html: string, anchor: string): string {
+  const match = html.match(new RegExp(`data-tour="${anchor}"[\\s\\S]*?</section>`));
   return match ? match[0] : "";
 }
 
 beforeEach(() => {
   state.jobs = [];
   state.renewals = [];
+  state.rows = {};
+  state.sums = {};
   state.today = EMPTY_TODAY;
+  state.cookie = undefined;
   state.context.role = "OWNER";
   state.context.jobFunction = null;
 });
 
 describe("/dashboard on a company with no jobs", () => {
-  it("leads with the jobs empty state, then the checklist, and nothing with nothing to say", async () => {
+  it("shows the getting-started checklist as the ONE start — no empty state, no search box", async () => {
     const html = await render();
-    expect(html, "the real page rendered").toContain("What needs a decision");
+    expect(html, "the real page rendered").toContain('data-home="greeting"');
+    expect(html).toContain("getting-started-heading");
+    for (const competing of [
+      'data-tour="dashboard-jobs-empty"',
+      'data-tour="dashboard-ask"',
+      'data-tour="dashboard-new-job"',
+      'data-tour="dashboard-needs-attention"',
+      "$0.00",
+    ]) {
+      expect(html, `a new account should not also see ${competing}`).not.toContain(competing);
+    }
+  });
 
-    const emptyAt = html.indexOf('data-tour="dashboard-jobs-empty"');
-    expect(emptyAt).toBeGreaterThan(-1);
-    expect(emptyAt).toBeLessThan(html.indexOf("getting-started-heading"));
+  it("once the checklist is hidden, leads with the jobs empty state and nothing with nothing to say", async () => {
+    state.cookie = "co-1";
+    const html = await render();
+    expect(html, "the real page rendered").toContain('data-home="greeting"');
+
+    expect(html).toContain('data-tour="dashboard-jobs-empty"');
+    expect(html).not.toContain("getting-started-heading");
 
     for (const gone of [
       'data-tour="dashboard-needs-attention"',
       'data-tour="dashboard-field"',
       'data-tour="dashboard-money"',
       'data-tour="dashboard-job-health"',
+      'data-home="phone-tiles"',
+      'data-home="areas"',
       "Browse all jobs",
       "$0.00",
-      "No active jobs",
-      "No jobs are in progress right now",
+      "Nobody is on the schedule",
+      "in progress",
     ]) {
       expect(html, `a new account should not see ${gone}`).not.toContain(gone);
     }
   });
 
   it("offers the first job as the primary action, with an example that says it is one", async () => {
+    state.cookie = "co-1";
     const html = await render();
     const empty = html.match(/data-tour="dashboard-jobs-empty"[\s\S]*?<\/section>/)?.[0] ?? "";
     expect(empty).toContain("No jobs yet");
@@ -190,7 +251,7 @@ describe("/dashboard on a company with no jobs", () => {
     const html = await render();
     expect(html).toContain("Contractor licence");
     expect(html).toContain("Expires in 9 days");
-    // ...and still none of the zero tiles around it.
+    // ...and still none of the zero blocks around it.
     expect(html).not.toContain('data-tour="dashboard-needs-attention"');
     expect(html).not.toContain("$0.00");
   });
@@ -198,19 +259,23 @@ describe("/dashboard on a company with no jobs", () => {
   it("leaves money out of the example for a viewer who cannot see job money", async () => {
     state.context.role = "MEMBER";
     state.context.jobFunction = "FIELD";
+    state.cookie = "co-1";
     const html = await render();
     expect(html).toContain("Oak Ave Medical");
     expect(html).not.toContain("$412,000");
   });
 });
 
-describe("/dashboard on a company with jobs — unchanged", () => {
+describe("/dashboard on a company with jobs", () => {
   beforeEach(() => {
     state.jobs = [JOB];
     state.today = BUSY_TODAY;
+    state.rows = BUSY_ROWS;
+    state.sums = { invoice: 41_000, payment: 9_500 };
+    state.renewals = [{ kind: "license", id: "l-1", title: "Contractor licence", detail: "C-9", urgency: "EXPIRED" }];
   });
 
-  it("renders every section, in the order it always had", async () => {
+  it("renders every block, in page order", async () => {
     const html = await render();
     const positions = POPULATED_ORDER.map((needle) => html.indexOf(needle));
     positions.forEach((at, i) => expect(at, `${POPULATED_ORDER[i]} is missing`).toBeGreaterThan(-1));
@@ -218,35 +283,147 @@ describe("/dashboard on a company with jobs — unchanged", () => {
     expect(html).not.toContain('data-tour="dashboard-jobs-empty"');
   });
 
+  it("reads a lapsed document's timing in the danger tone, like an overdue invoice", async () => {
+    const html = await render();
+    const row = html.match(/<li[^>]*>(?:(?!<\/li>)[\s\S])*Contractor licence[\s\S]*?<\/li>/)?.[0] ?? "";
+    expect(row).toContain("Contractor licence");
+    expect(row).toMatch(/text-danger">Expires in 9 days</);
+    expect(row).not.toMatch(/text-ink-muted">Expires in 9 days</);
+  });
+
+  it("greets the reader by first name, with the day's real counts", async () => {
+    const html = await render();
+    expect(html).toMatch(/Good (morning|afternoon|evening), Dana</);
+    expect(html).toContain("Wednesday, October 14 · 1 crew out · 1 job in progress");
+  });
+
   it("shows every figure it was handed", async () => {
     const html = await render();
     for (const figure of [
-      "$18,250.00", // overdue
-      "2 invoices past due",
-      "$7,430.00", // retainage held
-      "Luis Ortega", // crews today
-      "Pays in 41 days on average", // GC reliability
-      "Forecast 8% past contract value.", // job health
-      "Northgate Clinic TI — level 2 drywall", // the job list
-      "$10,000.00", // its value
+      "$41,000<", // billed this month
+      "$9,500<", // collected this month
+      "$7,430<", // retainage held
+      "$18,250<", // overdue
+      "Overdue · 2 pay apps", // billingNoun: filesMonthlyPayApps unanswered reads "pay app"
+      "Luis Ortega, Ana Ruiz", // crews today, from the schedule
+      "2 scheduled",
+      "Pays in 41 days on average",
+      "Forecast 8% past contract value.",
+      "Example GC · Metal framing / drywall · 57% billed",
     ]) {
       expect(html, `lost ${figure}`).toContain(figure);
     }
   });
 
-  it("keeps the owner's four tiles in their four-wide row", async () => {
-    const section = needsAttention(await render());
-    expect(section).toContain("grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4");
-    expect(section.match(/text-\[10px\]/g)?.length).toBe(4);
+  it("gives every Needs-you row one action, to the page that settles it, red first", async () => {
+    const needs = block(await render(), "dashboard-needs-attention");
+    expect(needs).toContain("6 items");
+    // Past due reads "overdue N days" in the danger tone (lib/due-date.ts).
+    expect(needs).toMatch(/class="[^"]*text-danger[^"]*">overdue 40 days</);
+    const order = ["Pay app #3", "Pay app #2", "Contractor licence", "RFI 12", "Approve hours for Tue, Oct 13", "forecast over budget"];
+    const at = order.map((needle) => needs.indexOf(needle));
+    at.forEach((i, n) => expect(i, `${order[n]} missing`).toBeGreaterThan(-1));
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    for (const href of ["/jobs/job-1/billing", "/compliance", "/rfis?job=job-1", "/jobs/job-1/crew", "/wip"]) {
+      expect(needs, `no action links to ${href}`).toContain(`href="${href}"`);
+    }
   });
 
-  it("gives a field role one row sized to its one tile, not a lone tile in a four-wide row", async () => {
+  it("puts the job in its stage with ONE next action from real state", async () => {
+    const html = await render();
+    expect(html).toContain('data-stage="Billing"');
+    expect(html).toContain("Chase pay app #3</span>");
+    expect(html).toContain(">Overdue 40 days<");
+  });
+
+  it("links shortcuts straight to the one job that fits", async () => {
+    const html = await render();
+    expect(html).toMatch(/href="\/jobs\/job-1\/crew#log-time"[^>]*><span[^>]*>◷<\/span>Log hours/);
+    expect(html).toMatch(/href="\/jobs\/job-1\/billing"[^>]*><span[^>]*>↗<\/span>Send pay app/);
+    expect(html).toContain('href="/rfis"');
+  });
+
+  it("puts Concept G's three field creates on the phone home, each landing on its open form", async () => {
+    const tiles = (await render()).match(/data-home="quick-tiles"[\s\S]*?<\/div>/)?.[0] ?? "";
+    // One job crewed today, so it rides along instead of a picker.
+    expect(tiles).toContain('href="/jobs/job-1/photos"');
+    expect(tiles).toContain('href="/rfis?new=1&amp;job=job-1"');
+    expect(tiles).toContain('href="/field-reports?new=1&amp;job=job-1"');
+  });
+
+  it("gates each field create like the page it opens", async () => {
+    // ACCOUNTING holds neither MANAGE_FIELD nor MANAGE_JOBS.
+    state.context.role = "MEMBER";
+    state.context.jobFunction = "ACCOUNTING";
+    const html = await render();
+    expect(html).not.toContain('data-home="quick-tiles"');
+    expect(html).not.toContain("/rfis?new=1");
+    expect(html).not.toContain("/field-reports?new=1");
+  });
+
+  it("shows a field role the work and none of the money", async () => {
     state.context.role = "MEMBER";
     state.context.jobFunction = "FIELD";
-    const section = needsAttention(await render());
-    expect(section.match(/text-\[10px\]/g)?.length, "exactly one tile for this viewer").toBe(1);
-    expect(section).toContain('class="grid grid-cols-1 gap-3"');
-    expect(section).not.toContain("grid-cols-4");
+    const html = await render();
+    expect(html).not.toContain('data-tour="dashboard-money"');
+    expect(html).not.toContain("Accounts receivable");
+    expect(html).not.toContain("/cash-flow");
+    expect(html).not.toContain('href="/wip"');
+    expect(html).not.toContain("Send pay app");
+    expect(html).not.toContain("$18,250");
+    expect(html).not.toContain("% billed");
+    const needs = block(html, "dashboard-needs-attention");
+    expect(needs).not.toContain("Pay app #");
+    // The licence is still news to them, but /compliance is not theirs to open.
+    expect(needs).toContain("Contractor licence");
+    expect(needs).not.toContain('href="/compliance"');
+    expect(html).toContain("Luis Ortega");
+  });
+
+  it("says so, with a way to the schedule, when nobody is scheduled today", async () => {
+    state.rows = {};
+    const crews = block(await render(), "dashboard-field");
+    expect(crews).toContain("Nobody is on the schedule for today.");
+    expect(crews).toContain('href="/schedule"');
+  });
+
+  it("sends the rest of the jobs to /jobs, the list, not to an anchor on this page", async () => {
+    state.today = { ...BUSY_TODAY, gcReliability: [] };
+    const html = await render();
+    expect(html).toMatch(/href="\/jobs"[^>]*>All 1 job/);
+    expect(html).toMatch(/href="\/jobs"[^>]*>Open a job</);
+    expect(html).not.toContain("#all-jobs");
+  });
+
+  it("gives each area box one line from real rows, or its plain description", async () => {
+    const html = await render();
+    const boxes = html.match(/data-home="areas"[\s\S]*?data-home="area-tiles"/)?.[0] ?? "";
+    for (const line of [
+      "1 in progress", // Jobs & bids: a count of jobs...
+      "No bids due", // ...and no invitations
+      "$18,250 overdue", // Money: the dashboard's own overdue total
+      "1 crew out today", // Crew & field: today's schedule
+      "No RFIs waiting", // Paperwork: no SENT RFIs in this fake database
+      "1 expired", // Compliance: the expired licence
+      "0 orders open", // Materials: a real zero, said as one
+    ]) {
+      expect(boxes, `lost ${line}`).toContain(line);
+    }
+    // Every box is a button that says whether its dropdown is open.
+    expect(boxes.match(/aria-expanded="false"/g)).toHaveLength(6);
+    // Phone tiles go straight to each area page.
+    for (const slug of ["jobs-bids", "money", "crew-field", "paperwork", "compliance-safety", "materials-equipment"]) {
+      expect(html).toContain(`href="/areas/${slug}"`);
+    }
+  });
+
+  it("drops the Money box for a role that can open no money page", async () => {
+    state.context.role = "MEMBER";
+    state.context.jobFunction = "FIELD";
+    const html = await render();
+    expect(html).toContain('data-home="areas"');
+    expect(html).not.toContain('href="/areas/money"');
+    expect(html).not.toContain("overdue<");
   });
 
   it("is a working-width page", async () => {

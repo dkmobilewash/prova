@@ -152,7 +152,7 @@ export function SpecFindings({
               type="button"
               disabled={isPending}
               onClick={() => fileInput.current?.click()}
-              className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50"
             >
               Attach the section PDF
             </button>
@@ -170,7 +170,7 @@ export function SpecFindings({
               type="button"
               disabled={isPending}
               onClick={onRead}
-              className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50"
             >
               {isPending ? "Reading…" : "Read it"}
             </button>
@@ -272,7 +272,7 @@ export function SpecFindings({
               type="button"
               disabled={isPending}
               onClick={onRead}
-              className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50"
             >
               {isPending ? "Reading…" : "Read it again"}
             </button>

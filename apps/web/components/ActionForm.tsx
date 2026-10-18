@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import type { ActionResult } from "@/lib/actions/shared";
+import { clearFieldErrors, showFieldErrors } from "@/components/formFieldErrors";
+import { setUnsaved } from "@/components/leaveGuard";
+import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 
 /**
  * A form that RENDERS what its action returned.
@@ -37,6 +41,19 @@ import type { ActionResult } from "@/lib/actions/shared";
  * require converting every guard in the action behind it on the same day.
  * A thrown error is still caught and shown — redacted in production, which
  * is right, because by then it is a bug rather than something typed.
+ *
+ * WHERE A REFUSAL APPEARS. A failure carrying `fieldErrors` (keyed by input
+ * `name`) puts each message under its input, marks it `aria-invalid`, and
+ * moves focus to the first one — a contractor fixing a long form no longer
+ * hunts for which box the bottom sentence meant. The sentence still renders
+ * at the bottom as an alert; with no field to point at, it is scrolled into
+ * view instead, so a refusal is never off-screen.
+ *
+ * NOT LOSING WORK. Once anything is typed, leaving the page (tab close,
+ * reload, or an in-app link) asks first — see `leaveGuard.ts` — until a save
+ * succeeds. `draftKey` additionally keeps the typing in sessionStorage via
+ * `useFormDraft` and brings it back next time the form mounts. The key
+ * carries the row's id for an edit form, so two rows never trade drafts.
  */
 export function ActionForm({
   action,
@@ -45,6 +62,7 @@ export function ActionForm({
   resetOnSuccess = true,
   errorClassName = "w-full text-sm text-tag-rose-ink",
   onSuccess,
+  draftKey,
 }: {
   action: (formData: FormData) => Promise<ActionResult | void>;
   /** Optional only so `createElement(ActionForm, props, …children)` resolves
@@ -58,9 +76,30 @@ export function ActionForm({
   resetOnSuccess?: boolean;
   errorClassName?: string;
   onSuccess?: () => void;
+  /** Opt in to draft saving; see `useFormDraft` for how to pick the key. */
+  draftKey?: string;
 }) {
-  const formRef = useRef<HTMLFormElement>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hasFieldErrors, setHasFieldErrors] = useState(false);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  // A stable identity for the leave guard; released on unmount.
+  const [guardToken] = useState(() => ({}));
+  useEffect(() => () => setUnsaved(guardToken, false), [guardToken]);
+  // Always called (hook rules); inert unless `draftKey` wires it up below.
+  const draft = useFormDraft(draftKey ?? "", { onDiscard: () => setUnsaved(guardToken, false) });
+  const draftRef = draft.formRef;
+  const attach = useCallback(
+    (form: HTMLFormElement | null) => {
+      formRef.current = form;
+      if (draftKey) draftRef(form);
+    },
+    [draftKey, draftRef],
+  );
+
+  useEffect(() => {
+    if (error && !hasFieldErrors) errorRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [error, hasFieldErrors]);
   const [isPending, startTransition] = useTransition();
 
   /**
@@ -101,14 +140,23 @@ export function ActionForm({
 
   return (
     <form
-      ref={formRef}
+      ref={attach}
       className={className}
+      onChange={(event) => {
+        setUnsaved(guardToken, true);
+        const name = (event.target as { name?: string }).name;
+        if (name) clearFieldErrors(event.currentTarget, name);
+        if (draftKey) draft.save();
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         // Read the FormData SYNCHRONOUSLY: `event.currentTarget` is null by
         // the time the transition's callback runs.
         const formData = new FormData(event.currentTarget);
+        const form = event.currentTarget;
         setError(null);
+        setHasFieldErrors(false);
+        clearFieldErrors(form);
         startTransition(async () => {
           try {
             const result = await action(formData);
@@ -116,23 +164,44 @@ export function ActionForm({
               // Nothing typed is lost — no reset on this branch, so every
               // field is still on screen next to the reason it didn't save.
               setError(result.error);
+              const first = result.fieldErrors ? showFieldErrors(form, result.fieldErrors) : null;
+              setHasFieldErrors(first !== null);
+              first?.focus();
               return;
             }
             // Queued rather than run: the data this save produced has not
             // reached the screen yet. See `settle` above.
+            setUnsaved(guardToken, false);
+            if (draftKey) draft.clear();
             settle.current = () => {
               if (resetOnSuccess) formRef.current?.reset();
               onSuccess?.();
             };
-          } catch {
+          } catch (error) {
+            // A REDIRECT IS THE ACTION SUCCEEDING. Called from a handler (not
+            // the `action` prop), an action that ends in `redirect()` REJECTS
+            // with Next's redirect error — next 15.5's server-action-reducer
+            // rejects the call while the router is already moving to the new
+            // page. Caught here it read "That didn't save" for the seconds
+            // that page took to render, on a job that HAD saved (createJob,
+            // UX test 2026-10-11) — an invitation to make a duplicate. So it is
+            // treated as the success it is. Never `await` a promise that does
+            // not settle here to hold the button: React 19 entangles pending
+            // async transitions, and the router's navigation would wait on it.
+            if (isRedirectError(error)) {
+              setUnsaved(guardToken, false);
+              if (draftKey) draft.clear();
+              return;
+            }
             setError("That didn't save. Reload the page and check before trying again.");
           }
         });
       }}
     >
+      {draftKey && <FormDraftNotice draft={draft} />}
       {children}
       {error && (
-        <p role="alert" className={errorClassName}>
+        <p ref={errorRef} role="alert" className={errorClassName}>
           {error}
         </p>
       )}

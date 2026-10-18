@@ -165,6 +165,7 @@ export const DOCUMENT_UPLOAD_PURPOSES = [
   "bid-quote",
   "bid-addendum",
   "bid-spec-section",
+  "bid-package",
 ] as const;
 
 export type DocumentUploadPurpose = (typeof DOCUMENT_UPLOAD_PURPOSES)[number];
@@ -284,6 +285,30 @@ export const DOCUMENT_UPLOAD_TARGETS: Record<DocumentUploadPurpose, DocumentUplo
     // person who cannot use it never moves the bytes either.
     capability: "MANAGE_ESTIMATING",
     refusal: "Estimating isn't part of your job function.",
+    maxBytes: DOCUMENT_UPLOAD_MAX_BYTES,
+  },
+  "bid-package": {
+    root: "bid-packages",
+    // COMPANY-scoped for `bid-quote`'s reason above: a `BidInvitation` carries
+    // no `jobId`, and on a bid nobody has won there is no job to name.
+    scope: "company",
+    // Mirrors `submitBidPackage`, which asserts the same capability. Somebody
+    // who cannot submit a bid never moves the bytes either.
+    capability: "MANAGE_ESTIMATING",
+    refusal: "Estimating isn't part of your job function.",
+    // ── THIS ONE IS A TRANSIT BUFFER, NOT A STORED DOCUMENT ──
+    //
+    // Every other purpose here uploads a file somebody will open again later.
+    // This one exists only because the package is merged in the BROWSER and a
+    // Server Action body is capped at 1 MB by the framework, so the bytes need
+    // a way to reach the server at all. `submitBidPackage` attaches them to an
+    // email and then DELETES the blob in a `finally`, exactly as
+    // `quoteRead.ts` does — nothing is kept, so nothing is stranded.
+    //
+    // The ceiling is the shared one and the SEND refuses lower still:
+    // base64 inflates by a third and the provider caps the whole message, so
+    // a file that uploads fine can still be too big to mail. That refusal
+    // belongs where the real figure is known, which is the sender.
     maxBytes: DOCUMENT_UPLOAD_MAX_BYTES,
   },
   "bid-addendum": {

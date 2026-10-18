@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import {
@@ -8,6 +10,8 @@ import {
   stayLength,
 } from "@/components/equipmentDeployment";
 import { viewerToday } from "@/lib/viewerToday";
+
+export const metadata = { title: "Deployment" };
 
 export const dynamic = "force-dynamic";
 
@@ -84,10 +88,9 @@ export default async function DeploymentPage() {
   const activeJobIds = new Set(jobs.map((j) => j.id));
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Deployment</h1>
+    <PageShell width="working">
+      <PageHeader route="/deployment" subtitle="Who and what is on which job right now." />
       <p className="mb-6 text-sm text-ink-body">
-        Who and what is on which job right now.{" "}
         <Link href="/schedule" className="text-link hover:text-link-hover">
           The schedule
         </Link>{" "}
@@ -99,7 +102,7 @@ export default async function DeploymentPage() {
       </p>
 
       {clashes.length > 0 && (
-        <div className="mb-6 rounded-lg border border-red-700 bg-tag-rose p-4" data-tour="deploy-clashes">
+        <div className="mb-6 rounded-xl border border-red-700 bg-tag-rose p-4" data-tour="deploy-clashes">
           <p className="text-sm font-medium text-tag-rose-ink">
             {clashes.length} {clashes.length === 1 ? "record puts" : "records put"} a machine in two
             places at once
@@ -119,9 +122,14 @@ export default async function DeploymentPage() {
       <section className="mb-10" data-tour="deploy-crew">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Crew</h2>
         {crew.length === 0 ? (
-          <p className="text-ink-body">Nobody on the team yet.</p>
+          <p className="text-ink-body">
+            Nobody on the team yet.{" "}
+            <Link href="/team" className="inline-flex min-h-11 items-center text-link hover:text-link-hover mouse:min-h-0">
+              Add your people on Team
+            </Link>
+          </p>
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+          <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface">
             {crew.map((person) => {
               const on = person.assignments
                 .map((a) => a.job)
@@ -142,7 +150,7 @@ export default async function DeploymentPage() {
                         </span>
                       ))}
                       {on.length > 1 && (
-                        <span className="ml-2 text-xs text-amber-400">
+                        <span className="ml-2 text-xs text-warn">
                           split across {on.length} jobs
                         </span>
                       )}
@@ -159,21 +167,21 @@ export default async function DeploymentPage() {
         <h2 className="mb-3 text-sm font-semibold text-ink-label">By job</h2>
         {jobs.length === 0 ? (
           totalJobs === 0 ? (
-            <div className="rounded-lg border border-line-card bg-surface p-6" data-tour="deploy-no-jobs">
+            <div className="rounded-xl border border-line-card bg-surface p-6" data-tour="deploy-no-jobs">
               <p className="text-ink-label">No jobs yet, so there is nowhere to be deployed.</p>
               <p className="mt-2 max-w-xl text-sm text-ink-body">
                 Once a job is contracted or in progress it appears here with whoever is assigned to it
                 and whatever equipment is signed out to it — the Monday-morning question of where
                 everybody is, answered without ringing round. Crew is assigned on the job itself;
                 equipment is signed out from{" "}
-                <Link href="/equipment" className="text-link hover:text-brand">
+                <Link href="/equipment" className="text-link hover:text-link-hover">
                   the equipment list
                 </Link>
                 .
               </p>
               <Link
                 href="/jobs/new"
-                className="mt-4 inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-medium text-neutral-900 hover:bg-yellow-500"
+                className="mt-4 inline-flex min-h-11 items-center rounded-md bg-brand px-4 text-sm font-medium text-neutral-900 hover:bg-brand-hover"
               >
                 Create a job
               </Link>
@@ -182,7 +190,7 @@ export default async function DeploymentPage() {
             <p className="text-ink-body" data-tour="deploy-none-running">
               No contracted or in-progress jobs. Deployment only covers work that is actually running
               — an estimate has nobody on it yet.{" "}
-              <Link href="/jobs" className="text-link hover:text-brand">
+              <Link href="/jobs" className="text-link hover:text-link-hover">
                 See every job
               </Link>
               .
@@ -198,7 +206,7 @@ export default async function DeploymentPage() {
               return (
                 <li
                   key={job.id}
-                  className="rounded-lg border border-line-card bg-surface p-4"
+                  className="rounded-xl border border-line-card bg-surface p-4"
                 >
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <Link
@@ -255,7 +263,7 @@ export default async function DeploymentPage() {
             finished, or never started. Usually it means nobody logged the return. Worth chasing
             before somebody drives across town looking for it.
           </p>
-          <ul className="divide-y divide-line-row rounded-lg border border-amber-700 bg-surface">
+          <ul className="divide-y divide-line-row rounded-xl border border-amber-700 bg-surface">
             {out
               .filter((s) => !activeJobIds.has(s.jobId))
               .map((s) => (
@@ -269,6 +277,6 @@ export default async function DeploymentPage() {
           </ul>
         </section>
       )}
-    </div>
+    </PageShell>
   );
 }

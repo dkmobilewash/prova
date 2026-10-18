@@ -21,6 +21,16 @@ export const jobDetailWalkthrough: Walkthrough = {
   title: "A job — overview",
   steps: [
     {
+      // FIRST, because it is the first thing on the page and the only part of
+      // it that is about what to DO — everything below is a record of what the
+      // job IS. It shows only when something is waiting, so a tour on a healthy
+      // job skips straight to the summary.
+      anchor: "job-needs",
+      title: "What this job needs from you",
+      body:
+        "Anything waiting on you, worst first: a bid deadline, quantities measured off drawings that have since been superseded, a markup that never reached the prices, and walls C Stream found on a sheet nobody has checked yet. Each row has a link straight to it. The box is missing when nothing is waiting.",
+    },
+    {
       anchor: "job-summary",
       title: "The job at a glance",
       body:
@@ -35,7 +45,7 @@ export const jobDetailWalkthrough: Walkthrough = {
       anchor: "job-status",
       title: "Where the job is",
       body:
-        "Estimate, contracted, in progress or complete. An estimate becomes contracted further down this page, once it is signed. After that, press the button here when the work starts, and again when it is finished.",
+        "Estimate, contracted, in progress or complete. An estimate becomes contracted with Mark contracted, in the box under the job name or at the bottom of the estimate page (the link here), once it is signed. After that, press the button here when the work starts, and again when it is finished.",
     },
     {
       anchor: "job-schedule",
@@ -47,7 +57,7 @@ export const jobDetailWalkthrough: Walkthrough = {
       anchor: "job-signature",
       title: "Get it signed",
       body:
-        "When the price is ready on the Estimate tab, press Create signing link and send the link to your client. They read the price and sign it on their phone or computer — no account needed.",
+        "When the price is ready on the estimate page (the Estimate step), press Create signing link and send the link to your client. They read the price and sign it on their phone or computer — no account needed.",
     },
     {
       anchor: "docusign-connect-hint",

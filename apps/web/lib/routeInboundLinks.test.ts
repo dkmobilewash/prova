@@ -59,6 +59,7 @@ const SCANNED_ROOTS = ["app", "components", "lib"] as const;
 /** Top-level directories holding source that are deliberately not scanned. */
 const NOT_SCANNED: Record<string, string> = {
   e2e: "browser tests navigate by typing a URL; a test visiting a page is not a way in for a person",
+  scripts: "command-line entry points run by a scheduler or a person at a terminal; they link to nothing and nobody browses them",
   test: "test-only helpers for the suite itself (an in-memory Web Storage); nothing here renders, so a route named in it would be a fixture rather than a way in",
 };
 
@@ -67,14 +68,16 @@ const NOT_SCANNED: Record<string, string> = {
  * one fails here until it is removed from this list, so the list cannot
  * quietly outlive its reasons. */
 const REACHED_FROM_OUTSIDE: Record<string, string> = {
-  "/estimating": "a redirect kept for old bookmarks and Slack links; it forwards to /dashboard?status=ESTIMATE",
+  "/estimating": "a redirect kept for old bookmarks and Slack links; it forwards to /jobs?status=ESTIMATE",
   "/jobs/new/[jobId]/review":
     "the bid wizard's old step 3, removed by #413 and kept as a redirect to /jobs/[id] so an open tab or history entry does not 404; delete the page and this line together",
+  "/lien-waiver": "the public lien waiver generator page, handed out as a bare link",
   "/pilot": "the public pilot page, handed to prospects as a bare link",
   "/wall-takeoff": "the free drawing-set read, handed to a prospect as a bare link in outreach; a page the app linked to would be offering its own customers a thing they already have",
   "/quickbooks/disconnected": "Intuit's disconnect landing URL, registered in Intuit's developer dashboard",
   "/sign-in/[[...sign-in]]": "Clerk's sign-in route, reached by Clerk's own redirects and the middleware",
   "/sign-up/[[...sign-up]]": "Clerk's sign-up route, reached by Clerk's own redirects",
+  "/unsubscribe/[token]": "the opt-out link in every cold email, carried into Smartlead as the {{unsubscribe_url}} custom field",
 };
 
 /** Files whose literals name routes without linking to them. */
