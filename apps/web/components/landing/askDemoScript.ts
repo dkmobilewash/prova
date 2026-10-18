@@ -389,6 +389,7 @@ export const CAN_DO: readonly CanDoGroup[] = [
       { text: "draft line items", commands: ["draft_estimate_lines"] },
       { text: "add a catalog line", commands: ["add_catalog_line"] },
       { text: "log a bid invitation", commands: ["log_bid_invitation"] },
+      { text: "record why a bid was won or lost", commands: ["record_bid_outcome"] },
       { text: "track a pursuit", commands: ["add_bid_pursuit", "set_pursuit_stage"] },
       { text: "find work out to bid", commands: ["find_bid_leads"] },
     ],

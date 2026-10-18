@@ -68,6 +68,89 @@ describe("every eval refuses to run without a key", () => {
     expect(files.some((file) => !file.includes(join("ask", "eval")))).toBe(true);
   });
 
+  /**
+   * THE EVALS THAT CALL NO MODEL, named rather than detected.
+   *
+   * This guard's real property is that **an eval must not pass on nothing**. For
+   * an eval that calls a model, an API-key check at collection is how that is
+   * guaranteed: without a key it refuses instead of scoring zero cases.
+   *
+   * `scaleAudit.eval.ts` calls no model. It is deterministic geometry over
+   * drawings somebody points it at, so there is no key to demand and demanding
+   * one would be theatre. It makes the SAME guarantee by other means, and the
+   * loop below asserts both halves rather than taking the exemption on trust:
+   * it SKIPS when given no input, and when given input it asserts the input
+   * resolved to something before reading a figure off the run.
+   *
+   * Detecting "calls a model" was tried and rejected as the discriminator:
+   * `@prova/integrations` is imported by eight of these files and NOT by the two
+   * in this folder, which do call a model. A named exemption with its own
+   * assertions is the pattern `clerkMountGate.test.ts` uses for `/sign-in` and
+   * `/sign-up`, and for the same reason — an exemption nobody checks is a hole,
+   * and one the guard re-proves is a second kind of guarantee.
+   */
+  const KEYLESS_EVALS: Record<string, string> = {
+    "scaleAudit.eval.ts":
+      "calls no model: deterministic geometry over real drawings, guarded by a skip plus a non-zero input assertion",
+    "takeoffBench.eval.ts":
+      "calls no model: generated drawings through the real scale/wall/schedule pipeline, guarded by a skip plus non-zero case and path-operator assertions",
+    "realPlan.eval.ts":
+      "calls no model: a REAL plan set from outside the repo through the same deterministic path, guarded by a skip on REAL_PLAN_PDF plus a non-zero segment assertion — a scanned sheet returns none and must not read as a clean run",
+    "layers.eval.ts":
+      "calls no model: reads optional-content group names straight off a REAL plan set to answer whether architects' exports name their layers at all, guarded by a skip on REAL_PLAN_PDF plus a non-zero page assertion — a mistyped path must not read as 'no set has layers', which is the one finding that would abandon the approach",
+    "extract.eval.ts":
+      "calls no model: reads the TEXT LAYER of twenty committed fixtures and writes the answer key from what each drawing prints, guarded by a skip when the fixtures are absent plus a non-zero file assertion — a key built from no files would be an empty key that scores everything as unknown",
+    "tesseract.eval.ts":
+      "calls no model: prices a free OCR engine (tesseract.js, Apache-2.0) against the SAME bar the model was measured on — same scans, same tiles, same 30pt tolerance, same answer key from the vector originals. Guarded by a skip when the fixtures are absent plus a non-zero text assertion on each vector original, because a key built from no words would score any engine, including one that reads nothing, at a clean 100%",
+    "tileSkip.eval.ts":
+      "calls no model: measures whether a near-blank tile of a SCANNED sheet could be skipped to save a model call, by counting ink off the render and locating the real words in the vector drawing the scan was made from. Guarded by a skip when the fixtures are absent plus a non-zero text assertion on each vector original — a key built from no words would report every tile as skippable, which is the expensive direction to be wrong in",
+    "raster.eval.ts":
+      "calls no model: renders the three SCANNED fixtures and grades the lines it finds against the vector drawings they are scans of (S18 of S02, S19 of S08, S20 of S13), guarded by a skip when the fixtures are absent plus a path-operator assertion on each vector original — a scan graded against a drawing that yielded no geometry would score the detector perfect for finding nothing",
+    "score.eval.ts":
+      "calls no model: runs the deterministic pipeline over those fixtures and scores it against the printed answers, guarded by the same skip plus a non-zero key assertion and a non-zero stroke assertion — a clean table from a run that read no geometry is the vacuous green this directory exists to end",
+    "stages.eval.ts":
+      "calls no model: reports how many wall candidates survive each filter of findWallsOnSheet on a committed fixture, so 'this sheet found nothing' can be attributed to a stage rather than guessed at, guarded by a skip when the fixtures are absent plus a non-zero row assertion",
+    "overlay.eval.ts":
+      "calls no model: renders the detections over each fixture as a PNG so a failure can be looked at rather than reasoned about, guarded by the same skip plus an assertion that one image was written per fixture",
+    "sheetTemplate.eval.ts":
+      "calls no model: the template filter's recurrence histogram over a REAL set, guarded by a skip on REAL_PLAN_PDF plus a non-zero segment assertion — a sheet that parsed to nothing must not read as a sheet with no furniture on it",
+  };
+
+  it("NAMES EVERY KEYLESS EXEMPTION, and each one still exists", () => {
+    // An exemption for a file that has been renamed or deleted is a hole left
+    // open for whatever lands on that name next.
+    for (const name of Object.keys(KEYLESS_EVALS)) {
+      expect(
+        files.some((file) => file.endsWith(name)),
+        `${name} is exempted from the key check but no such eval exists any more — remove the exemption`,
+      ).toBe(true);
+    }
+  });
+
+  it("holds the keyless evals to the SAME promise by other means", () => {
+    for (const name of Object.keys(KEYLESS_EVALS)) {
+      const file = files.find((f) => f.endsWith(name));
+      if (file === undefined) continue;
+      const source = readFileSync(file, "utf8");
+
+      // It must refuse to run on nothing rather than scoring a clean zero.
+      expect(
+        /describe\.skipIf\(/.test(source),
+        `${name} is exempt from the key check but does not skip when it has no input — so with nothing ` +
+          `set it would run and pass on nothing, which is the whole thing this guard exists to refuse`,
+      ).toBe(true);
+
+      // And when it IS given input, it must prove the input resolved to
+      // something before reading any figure off the run. A mistyped folder name
+      // otherwise produces no pages, no findings and a clean summary.
+      expect(
+        /expect\([^)]*\.length[\s\S]{0,200}?toBeGreaterThan\(0\)/.test(source),
+        `${name} never asserts its input resolved to anything, so a path that matches no file would ` +
+          `read as a clean run`,
+      ).toBe(true);
+    }
+  });
+
   it("demands a key BEFORE any case runs, not inside one", () => {
     // ── WHAT THIS ASSERTS, AND WHY IT IS NOT THE OLD REGEX ──
     //
@@ -84,6 +167,10 @@ describe("every eval refuses to run without a key", () => {
     const INSIDE_IT = /\bit\(\s*[\s\S]{0,400}?require(Eval)?ApiKey\s*\(/;
 
     for (const name of files) {
+      // The keyless evals are held to the same promise two cases above, by the
+      // means they actually have. See `KEYLESS_EVALS`.
+      if (Object.keys(KEYLESS_EVALS).some((exempt) => name.endsWith(exempt))) continue;
+
       const source = readFileSync(name, "utf8");
       expect(
         /require(Eval)?ApiKey\s*\(/.test(source),

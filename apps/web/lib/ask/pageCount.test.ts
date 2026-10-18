@@ -1,6 +1,6 @@
 import { deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { ASK_PAGE_RULES, attachmentPageCharge, pageChargeNote, pdfPageCount } from "./pageCount";
+import { ASK_PAGE_RULES, attachmentPageCharge, pageChargeNote, pageCountClause, pdfPageCount } from "./pageCount";
 
 /**
  * A document is charged its REAL page count, not one.
@@ -100,7 +100,7 @@ describe("what one attachment costs", () => {
     });
     // The person is TOLD. A charge they cannot account for is the thing
     // that turns an allowance into a support call.
-    expect(pageChargeNote(attachmentPageCharge("application/pdf", opaque))).toMatch(
+    expect(pageCountClause(attachmentPageCharge("application/pdf", opaque))).toMatch(
       /couldn't be read, so it is charged as 10/,
     );
   });
@@ -135,7 +135,78 @@ describe("what one attachment costs", () => {
   });
 
   it("phrases an ordinary charge as a plain number of pages", () => {
-    expect(pageChargeNote({ pages: 1, basis: "pdf" })).toBe("1 page");
-    expect(pageChargeNote({ pages: 12, basis: "pdf" })).toBe("12 pages");
+    expect(pageCountClause({ pages: 1, basis: "pdf" })).toBe("1 page");
+    expect(pageCountClause({ pages: 12, basis: "pdf" })).toBe("12 pages");
+  });
+});
+
+describe("the receipt a sub reads after a file is read", () => {
+  /**
+   * WHAT THIS REPLACED, AND WHY IT IS WORTH A TEST.
+   *
+   * `pageChargeNote` used to return the bare clause "3 pages", which was
+   * written to be dropped INTO a sentence — and all three readers rendered it
+   * AS the sentence. A production screenshot caught the result: the words
+   * "3 pages" floating alone between a paragraph and a Delete button.
+   *
+   * These assert the three facts a sub needs at that moment and the fact that
+   * it is a SENTENCE, because "renders as a fragment" is a defect no type can
+   * catch and the only thing that caught it last time was somebody's eyes.
+   */
+  const against = { noun: "spec pages", left: 1797, ceiling: 1800 };
+
+  it("says what it cost, which meter, and what is left — in one line", () => {
+    const note = pageChargeNote({ pages: 3, basis: "pdf" }, against);
+    expect(note).toBe("3 pages charged · 1,797 of 1,800 spec pages left this month");
+  });
+
+  it("NAMES THE UNIT, because that is the whole reason the ledgers are separate", () => {
+    // Reading specs must not silently spend the allowance for reading addenda,
+    // and a receipt that does not say which meter moved throws that away.
+    const spec = pageChargeNote({ pages: 2, basis: "pdf" }, against);
+    const addendum = pageChargeNote({ pages: 2, basis: "pdf" }, { ...against, noun: "addendum pages" });
+    expect(spec).toContain("spec pages");
+    expect(addendum).toContain("addendum pages");
+    expect(spec).not.toBe(addendum);
+  });
+
+  it("is a sentence, not a fragment", () => {
+    // The defect this replaced, stated as an assertion: a bare quantity with
+    // no verb and no context is not something a person can read off a screen.
+    const note = pageChargeNote({ pages: 3, basis: "pdf" }, against);
+    expect(note).not.toBe("3 pages");
+    expect(note).toContain("charged");
+    expect(note).toContain("left this month");
+  });
+
+  it("leads with the flat rate when the page count could not be read", () => {
+    // The one case where the number is NOT what the document is — it is this
+    // app's floor for a file it could not measure, and most likely a big scan.
+    // It goes at the FRONT, where it cannot be skimmed past.
+    const note = pageChargeNote({ pages: 10, basis: "pdf-uncountable" }, against);
+    expect(note.startsWith("Charged as 10 pages"), note).toBe(true);
+    expect(note).toContain("couldn't be read");
+    expect(note).toContain("1,797 of 1,800 spec pages left this month");
+  });
+
+  it("separates thousands, so a four-digit allowance is readable at a glance", () => {
+    const note = pageChargeNote({ pages: 1, basis: "image" }, { noun: "spec pages", left: 1234, ceiling: 1800 });
+    expect(note).toContain("1,234 of 1,800");
+  });
+
+  it("speaks the same way the refusal does", () => {
+    // `stopSentence` says "there are N of CEILING left this month". A sub who
+    // hits the cap one day and reads a receipt the next should not have to
+    // learn two vocabularies for one number.
+    expect(pageChargeNote({ pages: 1, basis: "pdf" }, against)).toContain("of 1,800 spec pages left this month");
+  });
+
+  it("says one page, not 1 pages", () => {
+    expect(pageChargeNote({ pages: 1, basis: "pdf" }, against)).toContain("1 page charged");
+  });
+
+  it("copes with an exhausted month without going negative", () => {
+    const note = pageChargeNote({ pages: 5, basis: "pdf" }, { noun: "spec pages", left: 0, ceiling: 1800 });
+    expect(note).toContain("0 of 1,800 spec pages left this month");
   });
 });

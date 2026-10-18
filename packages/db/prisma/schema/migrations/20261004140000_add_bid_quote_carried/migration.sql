@@ -1,0 +1,23 @@
+-- The quote whose number went into our bid.
+--
+-- PURELY ADDITIVE: one NULLABLE column, no backfill and no default. Every
+-- existing quote keeps a null, which reads as "nobody has said which one we
+-- carried" — true of every quote that exists today.
+--
+-- NOT BACKFILLED FROM THE CHEAPEST, deliberately. `bid-levelling.ts` refuses to
+-- call the low bid an answer ("the point of levelling is not who is cheapest,
+-- it is are they even bidding the same thing"), so inferring it here would
+-- write that refused opinion onto historical rows as if somebody had decided
+-- it.
+--
+-- The other half of this change needs no migration at all: `linkBidToJob` drops
+-- its WON gate so a bid can be linked to the job its estimate lives on before
+-- the award, and the readers that inferred won-ness from that link existing now
+-- read `status` instead.
+--
+-- Generated with `prisma migrate diff --from-schema-datamodel
+-- --to-schema-datamodel`, which opens no database connection. NEVER with
+-- `--shadow-database-url`.
+
+-- AlterTable
+ALTER TABLE "BidQuote" ADD COLUMN     "carriedAt" TIMESTAMP(3);

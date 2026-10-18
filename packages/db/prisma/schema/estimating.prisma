@@ -3,6 +3,56 @@
 //
 // Part of the multi-file Prisma schema in this folder.
 
+/// WHY A BID WAS DECLINED.
+///
+/// `BidInvitationStatus.DECLINED` has existed since this model was written and
+/// is a bare status: no reason, no date. So the app could say a bid was
+/// declined and could never answer the question a sub asks at the end of a
+/// quarter — why are we turning work down?
+///
+/// The answers are different businesses. Eight declines for CAPACITY means
+/// hire, or raise prices. Eight for SCOPE_MISMATCH means the GCs inviting you
+/// have the wrong idea of what you do. Eight for CONTRACT_TERMS means one GC's
+/// paper is costing you the relationship. Same count, three decisions, and
+/// before this the count was all there was.
+///
+/// NULLABLE ON PURPOSE, and `lib/bid-decline.ts` argues it at length: a
+/// required dropdown gets its first option picked to get past the screen, and
+/// data that looks complete and is fiction is worse than blank. The unrecorded
+/// ones are counted and reported as their own number, never folded into OTHER —
+/// "nobody wrote it down" and "the estimator chose Something else" are
+/// different facts.
+enum BidDeclineReason {
+  /// The crew is committed. Bidding it means winning work we cannot staff.
+  CAPACITY
+
+  /// Not the trade scope we do, or mostly work we would have to sub out.
+  SCOPE_MISMATCH
+
+  /// Dates clash with committed work, or the duration is not buildable.
+  SCHEDULE
+
+  /// The bond requirement or the cash flow is beyond what we can carry.
+  BONDING
+
+  /// Liquidated damages, retainage, pay-when-paid or indemnity we will not
+  /// sign. Distinct from BONDING: that is capacity, this is the paper.
+  CONTRACT_TERMS
+
+  /// Not enough information to price without carrying the risk ourselves.
+  DRAWINGS_INCOMPLETE
+
+  /// Volatile material, an unclear existing condition, or a scope that will
+  /// grow. Distinct from DRAWINGS_INCOMPLETE: the drawings may be complete and
+  /// the risk still unpriceable.
+  PRICE_RISK
+
+  /// Payment history, how the last job went, or how this one is being run.
+  RELATIONSHIP
+
+  OTHER
+}
+
 enum BidInvitationStatus {
   INVITED
   SUBMITTED
@@ -34,6 +84,33 @@ model BidInvitation {
   projectName String
   dueDate     DateTime?
   status      BidInvitationStatus @default(INVITED)
+
+  /// WHY, when the status is DECLINED. Null means nobody recorded it, which is
+  /// a first-class case rather than a gap to be filled — see `BidDeclineReason`
+  /// and `lib/bid-decline.ts`.
+  ///
+  /// Deliberately NOT constrained to the DECLINED status by the schema. A check
+  /// constraint would be correct and would also mean a bid that is declined,
+  /// reasoned, then re-opened because the GC extended the date either loses the
+  /// reason or fails to save. The reason is a fact about a decision somebody
+  /// made; the status is where the bid is now.
+  declineReason BidDeclineReason?
+
+  /// WHEN the decision was made, as a DATE somebody entered.
+  ///
+  /// This app's rule for evidence records: dates that matter are entered, not
+  /// stamped. A decline is the fact in dispute if a GC later asks why you did
+  /// not bid, and `createdAt`/`updatedAt` answer a different question — the
+  /// row's history, not the decision's.
+  declinedOn DateTime?
+
+  /// What was actually said, for OTHER and for detail on any reason.
+  ///
+  /// "A reason nobody can read is a reason nobody can act on" — the hint the
+  /// form shows beside OTHER. Free text because the useful version of this is
+  /// a sentence, and an enum member for every reason a sub ever had would be a
+  /// list nobody maintains.
+  declineNote String?
   notes       String?
 
   /// Which trade this bid is for, and what was actually bid — together
@@ -75,7 +152,38 @@ model BidInvitation {
   specSections BidSpecSection[]
   specReadings BidSpecReading[]
 
-  /// THE JOB THIS BID BECAME, when it was won and somebody linked it.
+  /// AI agents — see ai-agents.prisma.
+  outcome       BidOutcome?
+  agentRuns     AgentRun[]
+  agentFindings AgentFinding[]
+
+  /// THE JOB THIS BID IS THE SAME PIECE OF WORK AS — the estimate it is being
+  /// built on before the award, and the job it became after one.
+  ///
+  /// ── THE MEANING CHANGED ON 2026-10-04, AND THE NAME HAS NOT CAUGHT UP ──
+  ///
+  /// This read "THE JOB THIS BID BECAME, when it was won and somebody linked
+  /// it", and `linkBidToJob` refused anything not already WON. That was
+  /// coherent, and it made one thing impossible: an estimator building a number
+  /// on a job, with a levelled subcontractor quote in front of them, had no way
+  /// to say the two were the same work until the bid was won — which is after
+  /// every decision the quote informs.
+  ///
+  /// So the link is settable at any status now. **`status` is what says whether
+  /// it was won**, which is what that column has always been for, and anything
+  /// asking "what did we bid against what it cost" must read THAT rather than
+  /// infer won-ness from this link existing. `bid-outcome-query.ts` did infer
+  /// it — `where: { wonJobId: { not: null } }` with no status check — so once
+  /// this relaxed, every bid still being estimated would have entered the
+  /// bid-versus-actual comparison as though it had been won, on the one figure
+  /// whose job is to teach an estimator. Fixed in the same change.
+  ///
+  /// THE COLUMN NAME IS NOW SLIGHTLY WRONG AND IS DELIBERATELY LEFT ALONE. A
+  /// rename is a drop and an add as far as the running build is concerned, and
+  /// CLAUDE.md's #378 scar is precisely that: the migration lands in seconds
+  /// while Vercel is still building the commit that stops reading the old name.
+  /// It wants its own expand-then-contract pair rather than a ride along a
+  /// feature.
   ///
   /// Nullable and SET NULL, never required: most invitations never become a
   /// job at all, a won bid may be linked days after the job is created, and a
@@ -87,12 +195,13 @@ model BidInvitation {
   /// job bid at" a question with two answers. Re-bidding a project that was
   /// lost and re-tendered is a second BidInvitation; the link moves.
   ///
-  /// NOT set automatically, and that is the design rather than a gap. Nothing
-  /// in the data says which job a bid became — the names rarely match, the
-  /// dates rarely line up, and a fuzzy match here would attach a bid amount
-  /// to the wrong job's costs and then teach the estimator from it. A person
-  /// picks it, the same posture `JobLineItem.sourceCatalogEntryId` takes
-  /// ("deliberately NOT backfilled by fuzzy-matching descriptions").
+  /// NOT set automatically, and that is unchanged by the above. Nothing in the
+  /// data says which job a bid is — the names rarely match, the dates rarely
+  /// line up, and a fuzzy match here would attach a bid amount to the wrong
+  /// job's costs and then teach the estimator from it. A person picks it, the
+  /// same posture `JobLineItem.sourceCatalogEntryId` takes ("deliberately NOT
+  /// backfilled by fuzzy-matching descriptions"). Relaxing WHEN it may be set
+  /// does not relax WHO sets it.
   wonJobId String? @unique
   wonJob   Job?    @relation("BidInvitationWonJob", fields: [wonJobId], references: [id], onDelete: SetNull)
 
@@ -208,8 +317,8 @@ model LineItemCatalogEntry {
   unit        String?
   tradeScope  TradeScope?
 
-  defaultUnitPrice        Decimal?             @db.Decimal(12, 2)
-  defaultBudgetedUnitCost Decimal?             @db.Decimal(12, 2)
+  defaultUnitPrice        Decimal? @db.Decimal(12, 2)
+  defaultBudgetedUnitCost Decimal? @db.Decimal(12, 2)
 
   /// FLAT hours for one line, copied onto an estimate line unchanged at every
   /// quantity. NOT a per-unit figure — `catalog-line.test.ts` pins that at
@@ -219,7 +328,7 @@ model LineItemCatalogEntry {
   /// Kept exactly as it is. `Decimal(8, 2)` cannot hold a per-unit rate
   /// anyway — 0.012 stores as 0.01 — so reinterpreting this column would be
   /// both a silent change of meaning and lossy in the direction nobody checks.
-  defaultLaborHours       Decimal?             @db.Decimal(8, 2)
+  defaultLaborHours Decimal? @db.Decimal(8, 2)
 
   /// UNITS PER HOUR — the same thing, the same name and the same direction as
   /// `JobLineItem.productionRate` and `WallTypeComponent.productionRate`.
@@ -261,7 +370,7 @@ model LineItemCatalogEntry {
   /// take 1.2 hours / 8,333 hours / 0.01 hours") and writes ONE of the two
   /// columns from the answer, never both. Which convention a file uses is a
   /// fact about the file, not something any code can derive. Issue #514.
-  productionRate          Decimal?             @db.Decimal(10, 4)
+  productionRate Decimal? @db.Decimal(10, 4)
 
   /// The kind of cost this item IS, carried onto every line created from it.
   ///
@@ -281,10 +390,30 @@ model LineItemCatalogEntry {
   /// beside it has none: inferring "material" from a description string is
   /// exactly the guess this column replaces. An entry nobody has coded reads as
   /// uncoded, and the recap says so.
-  costCategory            CostCategory?
+  costCategory CostCategory?
 
-  craftClassificationId   String?
-  craftClassification     CraftClassification? @relation(fields: [craftClassificationId], references: [id])
+  /// WHICH GENERAL-CONDITIONS COST THIS ENTRY IS, when it is one — and so WHERE
+  /// THE COMPANY'S OWN FIGURE FOR IT LIVES.
+  ///
+  /// "Supervision — 1 WK @ $2,400 cost, no price" is a legal catalog entry
+  /// today and always was: `defaultBudgetedUnitCost` set, `defaultUnitPrice`
+  /// null, which `catalogLineFields` copies into a cost-only line. What was
+  /// missing is that nothing could tell it was the supervision one, so nothing
+  /// could offer it when a bid had no supervision on it.
+  ///
+  /// This is the mechanism `ARCHITECTURE.md` already sanctions — "a template
+  /// for the same `jobLineItem.create` call" — rather than a second table of
+  /// company defaults. An entry stays a starting point: changing the figure
+  /// here never moves a bid already built, exactly as the catalog has always
+  /// behaved.
+  ///
+  /// Nullable with NO BACKFILL, like `costCategory` above and for the same
+  /// reason: an entry nobody has tagged is untagged, and nothing infers it from
+  /// a description.
+  indirectKind IndirectCostKind?
+
+  craftClassificationId String?
+  craftClassification   CraftClassification? @relation(fields: [craftClassificationId], references: [id])
 
   /// Lines created from this entry. Read-only history for the actuals
   /// feedback loop on /catalog — how work priced from this template

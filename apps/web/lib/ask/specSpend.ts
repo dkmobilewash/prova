@@ -128,12 +128,17 @@ export async function claimSpecPages(
       return { ok: false, error: stopSentence(ceiling, row.specPagesUsed, charge.pages) };
     }
 
+    // AFTER this claim, not before: `row` is read back following the increment,
+    // so this is what the sub has left once this read is paid for — which is
+    // the only version of the number worth printing to them.
+    const pagesLeft = Math.max(0, ceiling - row.specPagesUsed);
+
     return {
       ok: true,
       claim: { companyId, periodStart },
       charge,
-      note: pageChargeNote(charge),
-      pagesLeft: Math.max(0, ceiling - row.specPagesUsed),
+      pagesLeft,
+      note: pageChargeNote(charge, { noun: "spec pages", left: pagesLeft, ceiling }),
     };
   } catch (err) {
     console.error(

@@ -97,7 +97,7 @@ export function RenewalAlerts({
             </span>
           )}
           {counts.undated > 0 && (
-            <span className="rounded-full border border-neutral-400 bg-neutral-800 px-2 py-0.5 text-ink-label">
+            <span className="rounded-full border border-neutral-400 bg-rail-hover px-2 py-0.5 text-ink-label">
               {counts.undated} with no date
             </span>
           )}

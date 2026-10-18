@@ -32,6 +32,22 @@ import { BUSINESS_SCOPE_QUESTIONS, type BusinessScopeAnswers } from "@/lib/busin
  * block, and gives the question text itself the weight to be the thing a
  * reader's eye lands on, while the answer OPTIONS stay a visibly quieter
  * size underneath it.
+ *
+ * ── THE OPENINGS QUESTION IS DELIBERATELY NOT HERE, AND THAT IS A BUG FIX ──
+ *
+ * It was added to this component behind an `askOpenings` flag and that was
+ * wrong, for a reason no test here could see: the three questions above are
+ * `required`, so the BROWSER refuses to submit the form until all three are
+ * answered. An optional fourth question sharing their form therefore could not
+ * be saved AT ALL by a company that had not answered the other three — which is
+ * every company that skipped onboarding. Found by clicking it, after a census
+ * had confirmed the question rendered and a unit test had confirmed it was not
+ * in the required list. Both were true; neither could see a native validation
+ * block on a form.
+ *
+ * It lives in `OpeningDeductionForm.tsx` now, with its own action, so it saves
+ * on its own. The lesson is the one this repo keeps relearning: proving a
+ * control is PRESENT is not proving it can be USED.
  */
 export function BusinessScopeFields({
   defaults,
@@ -85,6 +101,7 @@ export function BusinessScopeFields({
           optionClass={optionClass}
         />
       </fieldset>
+
     </div>
   );
 }

@@ -239,6 +239,8 @@ model PunchListItem {
   updatedAt DateTime @updatedAt
 
   @@unique([companyId, clientOperationId])
+
+  sheetPins SheetPin[] @relation("SheetPinPunchItem")
   @@index([companyId])
   @@index([jobId])
   @@index([jobId, status])
@@ -382,6 +384,10 @@ enum IncidentOutcome {
   RESTRICTED_OR_TRANSFER
   OTHER_RECORDABLE
   FIRST_AID_ONLY
+  /// Nobody was hurt. Logged so the hazard is on the record, but it is not
+  /// an OSHA case: it takes NO case number (see `caseNumber`) and is never
+  /// on the 300 log. A CHECK in the migration ties the two together.
+  NEAR_MISS
 }
 
 /// The six columns OSHA's 300 log classifies a case into.
@@ -431,7 +437,16 @@ model SafetyIncident {
   /// Sequential per company per calendar year, the way OSHA case numbers
   /// run. Issued by SafetyCaseCounter at creation and never reissued, even
   /// after the case is deleted.
-  caseNumber Int
+  ///
+  /// NULL EXACTLY WHEN `outcome` IS NEAR_MISS (CHECK
+  /// "SafetyIncident_near_miss_has_no_case_number"). A near miss is not an
+  /// OSHA case, and issuing it a number would put a gap in the filed log's
+  /// sequence that nothing on the log explains. Nullable rather than a
+  /// sentinel 0 so `@@unique([companyId, caseYear, caseNumber])` keeps
+  /// meaning what it says — Postgres treats NULLs as distinct.
+  caseNumber Int?
+  /// Still set on a near miss: it is the calendar year of `occurredAt`, and
+  /// it is what files the row under that year's tab on /safety.
   caseYear   Int
 
   occurredAt   DateTime
@@ -888,9 +903,137 @@ model DrawingRevision {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  sheetPages SheetPage[]
+
   @@unique([setId, label])
   @@index([setId])
 }
+
+/// ONE PAGE OF A DRAWING REVISION, AND THE RASTER A PHONE CAN ACTUALLY DRAW ON.
+///
+/// A `DrawingRevision` holds a PDF and nothing else — no pages, no geometry. A
+/// pin needs a page to sit on and a picture to sit over, which is what this is.
+///
+/// `imageUrl` exists because THE PHONE CANNOT RENDER A PDF. There is no PDF
+/// renderer in `apps/mobile` and the only graphics dependency is
+/// `react-native-svg`, so the field half of pinning is an `<Image>` of this
+/// raster with an SVG overlay on top — no new native module, and offline comes
+/// free from the existing media cache. The web still renders the real PDF
+/// through pdfjs, so the raster is the phone's copy, never the source of truth.
+///
+/// `widthPt`/`heightPt` are the page's own dimensions at `scale: 1`, stored so
+/// a consumer can turn a stored `y` back into a position without opening the
+/// PDF. They are NOT needed to compute a distance — see `lib/sheet-geometry.ts`
+/// for why both axes divide by the width — and nothing should start using them
+/// for one.
+model SheetPage {
+  id         String          @id @default(cuid())
+  revisionId String
+  revision   DrawingRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+
+  pageNumber Int
+  label      String?
+
+  /// The page at `scale: 1`, in PDF points, after pdf.js has applied /Rotate.
+  widthPt  Float
+  heightPt Float
+
+  /// The rasterised page the phone draws on. Null until rasterising has run,
+  /// which is why every reader must treat a page with no image as "not ready"
+  /// rather than as an error.
+  imageUrl     String?
+  imageWidthPx Int?
+
+  pins SheetPin[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([revisionId, pageNumber])
+  @@index([revisionId])
+}
+
+enum SheetPinKind {
+  PHOTO
+  PUNCH
+  NOTE
+}
+
+/// A POINT ON A SHEET THAT SAYS "THIS, HERE".
+///
+/// `x` and `y` are in the page-width box documented in `lib/sheet-geometry.ts`:
+/// `x` runs 0..1 and `y` runs 0..H/W, BOTH divided by the width. That is the
+/// same convention `TakeoffMeasurement` uses, deliberately, so one sheet cannot
+/// carry two coordinate systems.
+///
+/// WHY THIS IS NOT A `TakeoffMeasurement`. That model requires a
+/// `calibrationId` — a measurement with no scale is meaningless. A pin needs no
+/// scale at all: you pin a photo to a wall without ever telling the app how big
+/// the wall is. Reusing that table would have meant making calibration
+/// optional, which weakens the measurement model to serve a different feature.
+///
+/// THE TARGET DELETIONS ARE SetNull ON PURPOSE. Deleting the photo a pin points
+/// at does not delete the pin: somebody stood on that spot and flagged it, and
+/// that record outlives the attachment. A pin whose target is gone renders as a
+/// bare mark — which is honest — rather than vanishing and taking the knowledge
+/// that anything was ever flagged there with it.
+model SheetPin {
+  id     String    @id @default(cuid())
+
+  /// Denormalised from page -> revision -> set, and ONLY so the idempotency
+  /// index below can exist: a unique key has to live on one table. Every read
+  /// still scopes through the join, which is the authorisation — this column
+  /// is never the thing that decides who may see a pin.
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  pageId String
+  page   SheetPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  /// Page-width units. See lib/sheet-geometry.ts — y is NOT a fraction of height.
+  x Float
+  y Float
+
+  kind SheetPinKind
+
+  mediaId String?
+  media   JobMedia? @relation("SheetPinMedia", fields: [mediaId], references: [id], onDelete: SetNull)
+
+  punchItemId String?
+  punchItem   PunchListItem? @relation("SheetPinPunchItem", fields: [punchItemId], references: [id], onDelete: SetNull)
+
+  /// Only for kind NOTE. A note pin carries its own words; the other two kinds
+  /// borrow theirs from what they point at.
+  note String?
+
+  createdByUserId String?
+  createdBy       User?   @relation("SheetPinCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  /// What makes a retried offline POST replay instead of duplicating. The
+  /// READ in the route is not the guarantee -- this index is: two flushes
+  /// carrying the same key can both pass a findUnique before either inserts,
+  /// and production did exactly that on 2026-09-20 (see the punch-list route).
+  clientOperationId String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([companyId, clientOperationId])
+
+  /// A PUNCH ITEM HAS ONE LOCATION, so pinning one that is already pinned
+  /// MOVES it rather than adding a second. Without this, item 14 can sit on
+  /// three sheets at once and the punch list quietly stops meaning anything.
+  ///
+  /// The column is nullable and Postgres treats NULLs as distinct, so every
+  /// photo and note pin is unaffected — only punch pins are constrained.
+  ///
+  /// `createSheetPin` also updates in place rather than inserting, but THE
+  /// READ IS NOT THE GUARANTEE — this index is. Two submits that both see no
+  /// existing pin would otherwise both insert.
+  @@unique([punchItemId])
+  @@index([pageId])
+  @@index([mediaId])
+}
+
+
 
 /// One line of a job's closeout checklist — final lien waiver, as-builts,
 /// O&M manuals, warranty letter, final certified payroll.
@@ -1155,4 +1298,57 @@ model EquipmentAssignment {
   @@index([companyId])
   @@index([equipmentId])
   @@index([jobId])
+}
+
+/// A saved crew: a name for a group of people who usually go out together,
+/// so the schedule's "Put someone on" form can tick all of them in one pick
+/// instead of eight checkboxes every morning.
+///
+/// A PICKING AID, NOT A RECORD. Nothing is scheduled by a crew and nothing
+/// reads a crew back later — the bulk schedule action still receives the
+/// ticked people, one by one, exactly as before. So a crew can be renamed,
+/// re-saved with different people, or archived without changing a single
+/// planned day or timecard.
+///
+/// Archived rather than deleted, like CrewMember: archiving hides it from
+/// the picker, and re-saving the same name brings it back.
+model Crew {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  name       String
+  archivedAt DateTime?
+
+  members CrewMembership[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([companyId, name])
+}
+
+/// One person in a saved crew. Same worker XOR as CrewScheduleDay — EXACTLY
+/// ONE of `scheduledUserId` (a User with a login) and `crewMemberId` (crew
+/// with no login) is set, enforced by a CHECK in the migration.
+///
+/// CASCADE on every parent, and deliberately not RESTRICT like
+/// CrewScheduleDay: a membership is a convenience, not evidence. A crew
+/// member removed by `seed-demo --undo` or a deleted user should simply
+/// drop out of the crew, and a RESTRICT here would make a picking aid block
+/// a cleanup.
+model CrewMembership {
+  id     String @id @default(cuid())
+  crewId String
+  crew   Crew   @relation(fields: [crewId], references: [id], onDelete: Cascade)
+
+  scheduledUserId String?
+  scheduledUser   User?   @relation(fields: [scheduledUserId], references: [id], onDelete: Cascade)
+
+  crewMemberId String?
+  crewMember   CrewMember? @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+
+  @@unique([crewId, scheduledUserId])
+  @@unique([crewId, crewMemberId])
+  @@index([scheduledUserId])
+  @@index([crewMemberId])
 }

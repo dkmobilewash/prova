@@ -1,4 +1,6 @@
 import { prisma } from "@prova/db";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { createLineItemCatalogEntry, priceCatalogEntryFromQuotes, updateCatalogDefaultsFromActuals } from "@/lib/actions";
@@ -22,6 +24,7 @@ import { money } from "@/lib/money";
 import { SubmitButton } from "@/components/SubmitButton";
 import { EmptyState } from "@/components/EmptyState";
 import { ActionForm } from "@/components/ActionForm";
+import { CollapsedForm } from "@/components/CollapsedForm";
 
 type CatalogEntryWithLines = {
   id: string;
@@ -242,7 +245,7 @@ function QuoteLine({
           </label>
           <SubmitButton
             type="submit"
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
           >
             Set default cost from this quote
           </SubmitButton>
@@ -329,13 +332,17 @@ export default async function CatalogPage() {
   ]);
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Line item catalog</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        Reusable line items for estimating — add one here, or from an existing job&apos;s line item
-        (&quot;Save as catalog item&quot;), then pull it into a new estimate with &quot;Add from
-        catalog&quot; on any ESTIMATE-stage job.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/catalog"
+        subtitle={
+          <>
+            Reusable line items for estimating — add one here, or save one from a job&apos;s line
+            (&quot;Save as catalog item&quot;), then pull it into an estimate with &quot;Add from
+            catalog&quot;.
+          </>
+        }
+      />
 
       {/* The template library sits above the catalog it points at: a
           template is a set of pointers INTO these entries, so reading them
@@ -399,7 +406,7 @@ export default async function CatalogPage() {
             }}
           />
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="catalog-list">
+          <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-tour="catalog-list">
             {entries.map((entry) => (
               <CatalogEntryRow
                 key={entry.id}
@@ -488,186 +495,190 @@ export default async function CatalogPage() {
         )}
       </section>
 
-      <section className="rounded-lg border border-line-card bg-surface p-4" data-tour="catalog-add">
-        <h2 className="mb-3 text-sm font-semibold text-ink-label">Add a catalog entry</h2>
-        <ActionForm action={createLineItemCatalogEntry} className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-1 min-w-[200px] flex-col gap-1 text-sm text-ink-label">
-            Description
-            <input
-              name="description"
-              required
-              className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-ink-label">
-            Unit
-            <input
-              name="unit"
-              placeholder="e.g. sq ft"
-              className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
-            />
-          </label>
-          {/* THESE THREE HAD NO `type` AT ALL, so they defaulted to text and
-              fed `nullableDecimalFromForm`, which refused anything `Number()`
-              could not read. Type "1,200" or "$2.85" — the two ways a person
-              actually writes a price — and the action THREW, which on this
-              form was the worst case in the app: a plain `<form action={…}>`
-              with no client error handling, so the throw reached the error
-              boundary, the page was replaced, and every field typed alongside
-              it went with it. The message would have been redacted anyway.
-
-              THE FIX THAT USED TO BE DESCRIBED HERE WAS `type="number"`, and
-              this paragraph recommended it in as many words: "makes the
-              browser refuse the comma and the dollar sign before anything is
-              submitted". That sentence is true and it is the PROBLEM, not the
-              solution — measured in real Chromium 2026-09-21, setting such a
-              field's value to `2,800` submits an EMPTY STRING, and on a
-              NULLABLE field like these three an empty string is "not set", so
-              the price silently vanished with no error at all. Firefox
-              submits "" for anything it dislikes. Refusing input at the box
-              is only safe when the box refuses visibly, and it does not.
-
-              So: `type="text"` with `inputMode="decimal"` — what was typed
-              stays on screen and a phone still opens on a keypad — and the
-              server does the deciding, tolerantly, in lib/numeric-input.ts.
-              `1,200` and `$2.85` both save now. `step` went with the type;
-              there is nothing left for it to fix.
-
-              `createLineItemCatalogEntry` returns its refusals rather than
-              throwing them, and this form posts through `<ActionForm>`, so a
-              figure that genuinely is not a number arrives as a sentence
-              under the fields that are still filled in. */}
-          <label className="flex flex-col gap-1 text-sm text-ink-label">
-            Default unit price
-            <input
-              name="defaultUnitPrice"
-              type="text"
-              inputMode="decimal"
-              placeholder="optional"
-              className="w-32 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-ink-label">
-            Default budgeted cost
-            <input
-              name="defaultBudgetedUnitCost"
-              type="text"
-              inputMode="decimal"
-              placeholder="optional"
-              className="w-32 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
-            />
-          </label>
-          {/* The label states the ARITHMETIC, not the units, because the
-              arithmetic is what nobody could tell. `addCatalogLine` copies this
-              value onto the new line as-is while unit price and budgeted cost
-              are both multiplied by quantity downstream — so a 6 SF line and a
-              600 SF line built from this entry carry identical hours.
-
-              That open question is ANSWERED as of #514, and the answer was
-              "both, in two columns": this field stays flat and the Rate field
-              below it carries the per-unit reading, so an estimator picks the
-              one they mean instead of the app picking for them. The import asks
-              the same question about a file's Hours column. */}
-          <label className="flex flex-col gap-1 text-sm text-ink-label">
-            Default labor hrs — whole line
-            <input
-              name="defaultLaborHours"
-              type="text"
-              inputMode="decimal"
-              placeholder="optional"
-              aria-describedby="defaultLaborHours-help"
-              className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
-            />
-            <span id="defaultLaborHours-help" className="max-w-[14rem] text-xs text-ink-body">
-              Copied onto the line unchanged — a 6 SF line and a 600 SF line both
-              get this many hours. Not a per-unit rate.
-            </span>
-          </label>
-          {/* The per-unit half of the pair, #514. Same label as the estimate
-              line's own field (`LaborHoursField`) on purpose: it is the same
-              number, and two names for it is how the flat-vs-per-unit confusion
-              this screen already carries a scar for started.
-
-              The help text states the PRECEDENCE, because that is the part a
-              filled-in rate can silently lose to. `estimatedHours()` takes the
-              flat hours as the override, so an entry carrying both produces a
-              line whose rate never divides anything — and nothing else on the
-              row would say so. */}
-          <label className="flex flex-col gap-1 text-sm text-ink-label">
-            Rate (units/hr)
-            <input
-              name="productionRate"
-              type="text"
-              inputMode="decimal"
-              placeholder="62.5"
-              aria-describedby="productionRate-help"
-              className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
-            />
-            <span id="productionRate-help" className="max-w-[14rem] text-xs text-ink-body">
-              How fast the crew works — hours become quantity ÷ rate, so this one
-              does scale. If you fill in both, the whole-line hours above win.
-            </span>
-          </label>
-          {/* #513. The bid recap marks up BY cost type, and until now nothing
-              automated set it — so every line generated from this entry landed
-              uncoded and was carried into the bid at direct cost, earning no
-              markup at all. Set here once per item rather than re-coded on
-              every bid, which is the whole argument for a price book. */}
-          <label className="flex flex-col gap-1 text-sm text-ink-label">
-            Cost type
-            <select
-              name="costCategory"
-              defaultValue=""
-              className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
-            >
-              <option value="">No cost type</option>
-              {COST_CATEGORY_ORDER.map((value) => (
-                <option key={value} value={value}>
-                  {COST_CATEGORY_LABEL[value]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-ink-label">
-            Trade
-            <select
-              name="tradeScope"
-              defaultValue=""
-              className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
-            >
-              <option value="">No trade tag</option>
-              {TRADE_SCOPE_OPTIONS.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {craftClassifications.length > 0 && (
-            <label className="flex flex-col gap-1 text-sm text-ink-label">
-              Craft
-              <select
-                name="craftClassificationId"
-                defaultValue=""
-                className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
+      <section data-tour="catalog-add">
+        <CollapsedForm label="Add a catalog entry">
+          <div className="rounded-xl border border-line-card bg-surface p-4">
+            <h2 className="mb-3 text-sm font-semibold text-ink-label">Add a catalog entry</h2>
+            <ActionForm action={createLineItemCatalogEntry} className="flex flex-wrap items-end gap-3">
+              <label className="flex flex-1 min-w-[200px] flex-col gap-1 text-sm text-ink-label">
+                Description
+                <input
+                  name="description"
+                  required
+                  className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-ink-label">
+                Unit
+                <input
+                  name="unit"
+                  placeholder="e.g. sq ft"
+                  className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+                />
+              </label>
+              {/* THESE THREE HAD NO `type` AT ALL, so they defaulted to text and
+                  fed `nullableDecimalFromForm`, which refused anything `Number()`
+                  could not read. Type "1,200" or "$2.85" — the two ways a person
+                  actually writes a price — and the action THREW, which on this
+                  form was the worst case in the app: a plain `<form action={…}>`
+                  with no client error handling, so the throw reached the error
+                  boundary, the page was replaced, and every field typed alongside
+                  it went with it. The message would have been redacted anyway.
+    
+                  THE FIX THAT USED TO BE DESCRIBED HERE WAS `type="number"`, and
+                  this paragraph recommended it in as many words: "makes the
+                  browser refuse the comma and the dollar sign before anything is
+                  submitted". That sentence is true and it is the PROBLEM, not the
+                  solution — measured in real Chromium 2026-09-21, setting such a
+                  field's value to `2,800` submits an EMPTY STRING, and on a
+                  NULLABLE field like these three an empty string is "not set", so
+                  the price silently vanished with no error at all. Firefox
+                  submits "" for anything it dislikes. Refusing input at the box
+                  is only safe when the box refuses visibly, and it does not.
+    
+                  So: `type="text"` with `inputMode="decimal"` — what was typed
+                  stays on screen and a phone still opens on a keypad — and the
+                  server does the deciding, tolerantly, in lib/numeric-input.ts.
+                  `1,200` and `$2.85` both save now. `step` went with the type;
+                  there is nothing left for it to fix.
+    
+                  `createLineItemCatalogEntry` returns its refusals rather than
+                  throwing them, and this form posts through `<ActionForm>`, so a
+                  figure that genuinely is not a number arrives as a sentence
+                  under the fields that are still filled in. */}
+              <label className="flex flex-col gap-1 text-sm text-ink-label">
+                Default unit price
+                <input
+                  name="defaultUnitPrice"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="optional"
+                  className="w-32 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-ink-label">
+                Default budgeted cost
+                <input
+                  name="defaultBudgetedUnitCost"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="optional"
+                  className="w-32 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+                />
+              </label>
+              {/* The label states the ARITHMETIC, not the units, because the
+                  arithmetic is what nobody could tell. `addCatalogLine` copies this
+                  value onto the new line as-is while unit price and budgeted cost
+                  are both multiplied by quantity downstream — so a 6 SF line and a
+                  600 SF line built from this entry carry identical hours.
+    
+                  That open question is ANSWERED as of #514, and the answer was
+                  "both, in two columns": this field stays flat and the Rate field
+                  below it carries the per-unit reading, so an estimator picks the
+                  one they mean instead of the app picking for them. The import asks
+                  the same question about a file's Hours column. */}
+              <label className="flex flex-col gap-1 text-sm text-ink-label">
+                Default labor hrs — whole line
+                <input
+                  name="defaultLaborHours"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="optional"
+                  aria-describedby="defaultLaborHours-help"
+                  className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+                />
+                <span id="defaultLaborHours-help" className="max-w-[14rem] text-xs text-ink-body">
+                  Copied onto the line unchanged — a 6 SF line and a 600 SF line both
+                  get this many hours. Not a per-unit rate.
+                </span>
+              </label>
+              {/* The per-unit half of the pair, #514. Same label as the estimate
+                  line's own field (`LaborHoursField`) on purpose: it is the same
+                  number, and two names for it is how the flat-vs-per-unit confusion
+                  this screen already carries a scar for started.
+    
+                  The help text states the PRECEDENCE, because that is the part a
+                  filled-in rate can silently lose to. `estimatedHours()` takes the
+                  flat hours as the override, so an entry carrying both produces a
+                  line whose rate never divides anything — and nothing else on the
+                  row would say so. */}
+              <label className="flex flex-col gap-1 text-sm text-ink-label">
+                Rate (units/hr)
+                <input
+                  name="productionRate"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="62.5"
+                  aria-describedby="productionRate-help"
+                  className="w-28 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+                />
+                <span id="productionRate-help" className="max-w-[14rem] text-xs text-ink-body">
+                  How fast the crew works — hours become quantity ÷ rate, so this one
+                  does scale. If you fill in both, the whole-line hours above win.
+                </span>
+              </label>
+              {/* #513. The bid recap marks up BY cost type, and until now nothing
+                  automated set it — so every line generated from this entry landed
+                  uncoded and was carried into the bid at direct cost, earning no
+                  markup at all. Set here once per item rather than re-coded on
+                  every bid, which is the whole argument for a price book. */}
+              <label className="flex flex-col gap-1 text-sm text-ink-label">
+                Cost type
+                <select
+                  name="costCategory"
+                  defaultValue=""
+                  className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
+                >
+                  <option value="">No cost type</option>
+                  {COST_CATEGORY_ORDER.map((value) => (
+                    <option key={value} value={value}>
+                      {COST_CATEGORY_LABEL[value]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-ink-label">
+                Trade
+                <select
+                  name="tradeScope"
+                  defaultValue=""
+                  className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
+                >
+                  <option value="">No trade tag</option>
+                  {TRADE_SCOPE_OPTIONS.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {craftClassifications.length > 0 && (
+                <label className="flex flex-col gap-1 text-sm text-ink-label">
+                  Craft
+                  <select
+                    name="craftClassificationId"
+                    defaultValue=""
+                    className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
+                  >
+                    <option value="">No craft tag</option>
+                    {craftClassifications.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.unionLocal.parentInternational} {c.unionLocal.localNumber} — {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <SubmitButton
+                type="submit"
+                className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-brand-hover"
               >
-                <option value="">No craft tag</option>
-                {craftClassifications.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.unionLocal.parentInternational} {c.unionLocal.localNumber} — {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <SubmitButton
-            type="submit"
-            className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
-          >
-            Add entry
-          </SubmitButton>
-        </ActionForm>
+                Add entry
+              </SubmitButton>
+            </ActionForm>
+          </div>
+        </CollapsedForm>
       </section>
-    </div>
+    </PageShell>
   );
 }

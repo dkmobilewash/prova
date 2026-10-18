@@ -256,8 +256,15 @@ describe("the omissions panel", () => {
   it("renders every entry in both lists", () => {
     const rendered = html();
     for (const item of [...EXPORT_WITHHELD, ...EXPORT_OMISSIONS]) {
-      // Titles carry apostrophes and dashes through HTML escaping; the key
-      // phrase is enough to prove the entry reached the page.
+      // A LITERAL CONTAINS, so a TITLE MUST CARRY NO APOSTROPHE. This comment
+      // used to claim titles "carry apostrophes and dashes through HTML
+      // escaping", and they do not: `renderToStaticMarkup` writes `&#x27;` and
+      // this assertion looks for `'`. Every title predating 2026-10-06 happens
+      // to avoid one, so the claim was never tested — and the next person to
+      // write a natural-sounding title with a possessive in it loses twenty
+      // minutes to a failure that names the right entry for the wrong reason.
+      // Dashes are fine; an apostrophe is not. Keep it out of the title and put
+      // it in the detail, which is not asserted this way.
       expect(rendered, `${item.key} is on the page`).toContain(item.title);
     }
     const items = rendered.match(/<li>/g) ?? [];

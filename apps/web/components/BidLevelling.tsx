@@ -3,14 +3,27 @@
 import { useState, useTransition } from "react";
 
 import { ActionForm } from "@/components/ActionForm";
+import { coverageWarning, deadlineCoverage } from "@/lib/bid-deadline-coverage";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { SubmitButton } from "@/components/SubmitButton";
-import { deleteBidQuote, recordBidQuoteDecline, saveBidQuote, type QuoteSuggestion } from "@/lib/actions";
-import { QuoteReader, QuoteReadingNotes } from "@/components/QuoteReader";
 import {
+  addCarriedQuoteToEstimate,
+  deleteBidQuote,
+  recordBidQuoteDecline,
+  saveBidQuote,
+  setBidQuoteCarried,
+  type QuoteSuggestion,
+} from "@/lib/actions";
+import { QuoteReader, QuoteReadingNotes } from "@/components/QuoteReader";
+import { Spinner } from "@/components/Spinner";
+import { sendQuoteRequest } from "@/lib/actions";
+import { rfqBody, rfqRecipient, rfqSubject } from "@/lib/estimating/rfq";
+import {
+  carriedQuoteLapsed,
   exclusionLines,
   levelBid,
   outstandingNote,
+  quoteFreshness,
   requestState,
   type LevelQuote,
 } from "@/lib/bid-levelling";
@@ -31,7 +44,35 @@ import {
  * caution, above the numbers, and never in a collapsed section.
  */
 
-export type BidQuoteRow = LevelQuote & { notes: string | null; vendorId: string | null };
+/**
+ * A supplier as the levelling table knows them.
+ *
+ * ONE NAMED TYPE BECAUSE THERE WERE TWO IDENTICAL INLINE ONES — this component
+ * and `QuoteForm` below each declared `{ id, name }[]` separately, which is the
+ * two-lists shape CLAUDE.md names. Adding an address to one and not the other
+ * is exactly how they would have drifted.
+ *
+ * `email` and `contactName` are new, and nothing had ever read them: the
+ * columns have been on `Vendor` with a form behind them on /vendors the whole
+ * time while `/bids` selected `{ id, name }`. Sending an RFQ is the first thing
+ * that needs an address.
+ */
+export type LevellingVendor = {
+  id: string;
+  name: string;
+  email: string | null;
+  contactName: string | null;
+};
+
+export type BidQuoteRow = LevelQuote & {
+  notes: string | null;
+  vendorId: string | null;
+  /** When somebody said this is the price we are carrying. Null on every
+   *  quote nobody has decided about, which is most of them. */
+  carriedAt: string | null;
+  /** What the sub said about how long the price holds. Null when unsaid. */
+  validUntil: string | null;
+};
 
 const money = (value: number) =>
   value.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -41,7 +82,11 @@ export function BidLevelling({
   companyId,
   quotes,
   vendors,
+  sendable = [],
+  companyName = "",
+  projectName = "",
   today,
+  bidDueDate,
 }: {
   bidInvitationId: string;
   /** Needed only by the quote reader's upload, which is scoped to the COMPANY:
@@ -49,16 +94,30 @@ export function BidLevelling({
    *  no job to file an attachment under. */
   companyId: string;
   quotes: BidQuoteRow[];
-  vendors: { id: string; name: string }[];
+  vendors: LevellingVendor[];
+  /** The spec sections and addenda on THIS bid that HAVE a file — what a
+   *  supplier can actually be sent. Logged-without-a-file is the normal case
+   *  (`bid-specs.prisma` says so) and those are filtered out before here. */
+  sendable?: { id: string; kind: "SPEC_SECTION" | "ADDENDUM"; label: string }[];
+  /** For the message a supplier reads. Defaulted so every existing call site
+   *  and test keeps working unchanged. */
+  companyName?: string;
+  projectName?: string;
   /** The reader's calendar day, resolved on the server. Passed in rather than
    * read from a clock here: a `new Date()` during render is markup the client
    * then disagrees with, and "overdue" is a claim about a day. */
   today: string;
+  /** The day the GC wants the bid, as `YYYY-MM-DD`. Null when nobody dated it
+   *  — which is NOT the same as plenty of time, and `coverageWarning` says so
+   *  rather than going quiet. */
+  bidDueDate?: string | null;
 }) {
   const [adding, setAdding] = useState<null | "quote" | "request">(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [rowError, setRowError] = useState<string | null>(null);
+  /** Which outstanding request has its send panel open, if any. */
+  const [sendingFor, setSendingFor] = useState<string | null>(null);
 
   const packages = levelBid(quotes);
   // The labels already used on this bid, so the common case is picking a
@@ -81,14 +140,14 @@ export function BidLevelling({
         <button
           type="button"
           onClick={() => setAdding("request")}
-          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
         >
           Ask a supplier for a quote
         </button>
         <button
           type="button"
           onClick={() => setAdding("quote")}
-          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
         >
           Log a quote you received
         </button>
@@ -98,6 +157,40 @@ export function BidLevelling({
 
   return (
     <div className="mt-2 rounded-md border border-line-row bg-surface-card p-3">
+      {/* ABOVE THE PACKAGES, BECAUSE IT IS ABOUT THE BID AND NOT A ROW. A
+          carried price is the number inside what the GC was sent, so a lapsed
+          one is a fact about the whole bid — the position `underCostWarning`
+          takes by reading the estimate rather than each line. It names the
+          vendor and the date and does not say the bid is wrong. */}
+      {(() => {
+        const lapsed = carriedQuoteLapsed(quotes, today);
+        return lapsed ? (
+          <p role="alert" className="mb-3 rounded-md border border-tag-amber bg-tag-amber p-2 text-xs text-tag-amber-ink">
+            {lapsed}
+          </p>
+        ) : null;
+      })()}
+      {/* ── WHAT IS STILL UNPRICED, AGAINST THE DAY THE BID IS DUE ──
+          Above the packages for the same reason the lapsed-quote line is: it
+          is a fact about the whole bid, not about a row.
+
+          `requestState` already measures each quote against ITS OWN `dueBy` —
+          the date we asked the vendor for. Nothing measured anything against
+          the BID's date, so a quote could sit comfortably inside its window
+          while the bid was due tomorrow. The vendor is not late, and you are
+          about to be. See `bid-deadline-coverage.ts`. */}
+      {(() => {
+        const warning = coverageWarning(deadlineCoverage(packages, bidDueDate ?? null, today));
+        return warning ? (
+          <p
+            role="alert"
+            data-bid="deadline-coverage"
+            className="mb-3 rounded-md border border-tag-amber bg-tag-amber p-2 text-xs text-tag-amber-ink"
+          >
+            {warning}
+          </p>
+        ) : null;
+      })()}
       {packages.map((group) => {
         const waiting = outstandingNote(group, today);
         return (
@@ -156,6 +249,17 @@ export function BidLevelling({
                         {quote.quotedOn && (
                           <span className="ml-2 text-xs text-ink-muted">quoted {quote.quotedOn}</span>
                         )}
+                        {/* WHETHER THE PRICE IS STILL GOOD, which none of the
+                            dates beside it answers. Amber rather than rose:
+                            subs honour lapsed numbers all the time, so this
+                            is something to check, not something that is
+                            wrong. */}
+                        {(() => {
+                          const freshness = quoteFreshness(quote, today);
+                          return freshness ? (
+                            <span className="ml-2 text-xs text-tag-amber-ink">{freshness.note}</span>
+                          ) : null;
+                        })()}
                       </p>
                       {exclusionLines(quote.exclusions).length > 0 ? (
                         <ul className="mt-1 list-inside list-disc text-xs text-tag-amber-ink">
@@ -183,10 +287,52 @@ export function BidLevelling({
                         />
                       }
                     >
+                      {/* THE ESTIMATOR'S ANSWER. `bid-levelling.ts` refuses to
+                          name a winner — "lowest" above is an artefact of a
+                          sort and says so — and this is where the person who
+                          read the exclusions records what they actually
+                          carried. Marking one clears the others in the
+                          package, so the screen never shows two answers. */}
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        title={
+                          quote.carriedAt
+                            ? "This is the price in our bid. Press to un-mark it."
+                            : "Mark this as the price going into our bid."
+                        }
+                        onClick={() => {
+                          const form = new FormData();
+                          form.set("carried", quote.carriedAt ? "false" : "true");
+                          run(() => setBidQuoteCarried(quote.id, form));
+                        }}
+                        className={
+                          quote.carriedAt
+                            ? "rounded-md border border-link px-2 py-1 text-xs text-link disabled:opacity-50"
+                            : "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50"
+                        }
+                      >
+                        {quote.carriedAt ? "Carrying this" : "Carry this"}
+                      </button>
+                      {/* ONLY ON THE CARRIED ONE, because this writes money
+                          onto an estimate and the decision has to have been
+                          made first. The refusal when no job is linked names
+                          what to do rather than failing quietly. */}
+                      {quote.carriedAt && (
+                        <button
+                          type="button"
+                          disabled={isPending}
+                          title="Adds this as a subcontractor cost line on the linked job's estimate."
+                          onClick={() => run(() => addCarriedQuoteToEstimate(quote.id))}
+                          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50"
+                        >
+                          Put on the estimate
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => setEditing(quote.id)}
-                        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+                        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
                       >
                         Edit
                       </button>
@@ -229,6 +375,16 @@ export function BidLevelling({
                           {row.dueBy ? ` · wanted back by ${row.dueBy}` : " · no date asked for"}
                         </p>
                         {row.notes && <p className="mt-1 text-xs text-ink-muted">{row.notes}</p>}
+                        {sendingFor === row.id && (
+                          <RfqSender
+                            quote={row}
+                            vendor={vendors.find((v) => v.id === row.vendorId) ?? null}
+                            sendable={sendable}
+                            companyName={companyName}
+                            projectName={projectName}
+                            onSent={() => setSendingFor(null)}
+                          />
+                        )}
                       </div>
 
                       <RowActions
@@ -248,9 +404,28 @@ export function BidLevelling({
                         <button
                           type="button"
                           onClick={() => setEditing(row.id)}
-                          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+                          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
                         >
                           Enter their price
+                        </button>
+                        {/* ── SENDING THE REQUEST, WHICH THIS SCREEN NEVER DID ──
+
+                            Every other control here records a conversation that
+                            happened somewhere else. This one is the conversation:
+                            it emails the supplier the spec sections and addenda
+                            on this bid and stamps `requestedOn` if it was blank.
+
+                            Only on an outstanding row, because a request that
+                            has been answered or declined is finished, and
+                            "re-ask somebody who already said no" is not a
+                            button anybody wants next to a price. */}
+                        <button
+                          type="button"
+                          data-rfq="open"
+                          onClick={() => setSendingFor(sendingFor === row.id ? null : row.id)}
+                          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
+                        >
+                          {sendingFor === row.id ? "Close" : "Send the request"}
                         </button>
                         <DeclineButton
                           id={row.id}
@@ -322,14 +497,14 @@ export function BidLevelling({
           <button
             type="button"
             onClick={() => setAdding("request")}
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
           >
             Ask another supplier
           </button>
           <button
             type="button"
             onClick={() => setAdding("quote")}
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
           >
             Log another quote
           </button>
@@ -368,7 +543,7 @@ function DeclineButton({
         formData.set("declinedAt", today);
         onRun(() => recordBidQuoteDecline(id, formData));
       }}
-      className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-60"
+      className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-60"
     >
       {label}
     </button>
@@ -405,7 +580,7 @@ export function QuoteForm({
   bidInvitationId: string;
   companyId: string;
   quote: BidQuoteRow | null;
-  vendors: { id: string; name: string }[];
+  vendors: LevellingVendor[];
   usedLabels: string[];
   mode: "quote" | "request";
   onDone: () => void;
@@ -559,6 +734,27 @@ export function QuoteForm({
           </label>
 
           <label className="flex flex-col gap-1 text-xs text-ink-label">
+            Price holds until
+            <input
+              type="date"
+              name="validUntil"
+              defaultValue={quote?.validUntil ?? ""}
+              // `bg-canvas`, NOT the `bg-surface-input` its siblings use: that
+              // token is undefined (issue #573 — 39 form fields asking for a
+              // ground that does not exist on a near-black canvas) and
+              // `colorTokenCensus` fails when the family grows, which it did
+              // the moment this field copied its neighbour. A defined token is
+              // the only honest option, and it is what `BidDefaultsForm`'s own
+              // inputs already use.
+              className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink-body"
+            />
+            {/* Empty is the ordinary answer and must stay cheap to leave —
+                most subs name no expiry, and a date invented here would be
+                this app's guess wearing the sub's voice. */}
+            <span className="text-ink-muted">Only if they said. Blank is fine.</span>
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs text-ink-label">
             What they excluded — one per line
             <textarea
               name="exclusions"
@@ -581,10 +777,156 @@ export function QuoteForm({
       <button
         type="button"
         onClick={onDone}
-        className="mt-4 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+        className="mt-4 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
       >
         Cancel
       </button>
     </ActionForm>
+  );
+}
+
+
+/**
+ * SENDING ONE REQUEST FOR QUOTE.
+ *
+ * ── THIS SCREEN RECORDED THE CONVERSATION AND NEVER HAD IT ──
+ *
+ * `requestedOn`, `dueBy`, who declined, who is overdue — all of it was typed in
+ * after the fact, because the estimator had exported the spec section, opened
+ * their mail client, found the supplier's address and written the same sentence
+ * they write every time. The two delete confirmations on this screen still say
+ * what was true until now: *"Nothing is sent to them."*
+ *
+ * ── A PANEL, NOT A CONFIRM CARD, AND THAT IS THE DIFFERENCE FROM A BID ──
+ *
+ * `BidPackageBuilder`'s send makes somebody tick a box naming the GC, because a
+ * bid cannot be recalled and arrives against a deadline. An RFQ is a question to
+ * a supplier: the worst case of sending the wrong one is a second email, and a
+ * named-intent tick on every one of five requests trains people to tick. What
+ * it does instead is show exactly what is going out — the address, the subject,
+ * the message and which documents — and let it be read.
+ *
+ * The addresses and the documents are both things the company already recorded.
+ * Neither is typed here, and the action re-reads both from the database rather
+ * than trusting this form about them.
+ */
+function RfqSender({
+  quote,
+  vendor,
+  sendable,
+  companyName,
+  projectName,
+  onSent,
+}: {
+  quote: BidQuoteRow;
+  vendor: LevellingVendor | null;
+  sendable: { id: string; kind: "SPEC_SECTION" | "ADDENDUM"; label: string }[];
+  companyName: string;
+  projectName: string;
+  onSent: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const to = rfqRecipient({
+    quotedVendorName: quote.vendorName,
+    vendor: vendor ? { name: vendor.name, contactName: vendor.contactName, email: vendor.email } : null,
+  });
+
+  if (!to.ok) {
+    // THE REASON, NOT A DISABLED BUTTON. "No address on file" is fixed on the
+    // Vendors page and "not a recorded vendor" is fixed by linking the row, and
+    // a greyed control says neither.
+    return <p className="mt-2 text-xs text-amber-300">{to.problem}</p>;
+  }
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setBusy(true);
+    setError(null);
+    void sendQuoteRequest(quote.id, form)
+      .then((result) => {
+        if (result.ok) onSent();
+        else setError(result.error);
+      })
+      .finally(() => setBusy(false));
+  }
+
+  return (
+    <form onSubmit={submit} className="mt-2 flex flex-col gap-2 rounded-md border border-line-row p-2">
+      <p className="text-xs text-ink-muted">
+        To {to.name} — {to.address}
+      </p>
+
+      <label className="flex flex-col text-xs text-ink-label">
+        Subject
+        <input
+          name="subject"
+          defaultValue={rfqSubject(quote.packageLabel, projectName)}
+          className="mt-1 min-h-[36px] rounded-md border border-line-card bg-surface px-2 text-xs text-ink-body"
+        />
+      </label>
+
+      <label className="flex flex-col text-xs text-ink-label">
+        Message
+        <textarea
+          name="body"
+          rows={7}
+          defaultValue={rfqBody({
+            packageLabel: quote.packageLabel,
+            projectName,
+            companyName,
+            dueBy: quote.dueBy ?? null,
+            documents: sendable.map((one) => one.label),
+          })}
+          className="mt-1 rounded-md border border-line-card bg-surface px-2 py-1 text-xs text-ink-body"
+        />
+      </label>
+
+      {sendable.length > 0 ? (
+        <fieldset className="flex flex-col gap-1 text-xs text-ink-body">
+          <legend className="text-ink-label">Send with it</legend>
+          {sendable.map((one) => (
+            <label key={one.id} className="flex items-center gap-2">
+              <input type="checkbox" name="documentId" value={one.id} defaultChecked data-rfq="doc" />
+              <span>
+                {one.label}
+                <span className="ml-1 text-ink-muted">
+                  {one.kind === "ADDENDUM" ? "addendum" : "spec section"}
+                </span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      ) : (
+        // SAYS SO RATHER THAN GOING QUIET. A request with nothing attached is
+        // legitimate — a supplier who already has the drawings just needs
+        // asking — but somebody who expected the spec to go needs to know why
+        // it did not.
+        <p className="text-xs text-ink-muted">
+          Nothing on this bid has a file to send yet. The request will go on its own.
+        </p>
+      )}
+
+      {error && <p className="text-xs text-rose-300">{error}</p>}
+
+      <button
+        type="submit"
+        disabled={busy}
+        aria-busy={busy}
+        data-rfq="send"
+        className="inline-flex min-h-[36px] w-fit items-center rounded-md bg-brand px-3 py-1 text-xs font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-40"
+      >
+        {busy ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Spinner />
+            Sending…
+          </span>
+        ) : (
+          "Send it"
+        )}
+      </button>
+    </form>
   );
 }

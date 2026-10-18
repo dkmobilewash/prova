@@ -165,4 +165,92 @@ export const SPEC_CASES: SpecCase[] = [
       "Submit on the enclosed bid form. Addenda will be issued by email.",
     ],
   },
+  // ── Division 00/01 contract conditions, added 2026-10-05 with the three
+  // kinds. These cost money the way a schedule costs money, and they are
+  // routinely missed for one structural reason: they are not in the drywall
+  // section, so an estimator reading their own trade's spec never sees them.
+  //
+  // Each of the three is its own case rather than one section carrying all
+  // three, for the reason this file's own header gives: a failure on each case
+  // must mean something different. A combined case that found two of three
+  // would score as a pass on the strength of the ones it found.
+  {
+    id: "liquidated-damages",
+    why: "an LD clause with a per-day figure. The one finding on this list that is an EXPOSURE rather than a cost, so it is also the one most likely to be reported as a dollar amount it is not",
+    expectKinds: ["LIQUIDATED_DAMAGES"],
+    // The reader must not invent a total. It has not seen the schedule, so it
+    // cannot know how many days late anything will be — and a finding reading
+    // "$75,000 of liquidated damages" would be a number nobody can check.
+    forbidden: ["75,000", "$75,000", "total liquidated damages"],
+    lines: [
+      "SECTION 01 10 00 - SUMMARY OF WORK",
+      "",
+      "PART 1 - GENERAL",
+      "1.1 CONTRACT TIME",
+      "A. Substantial Completion shall be achieved within 420 calendar days of the Notice to Proceed.",
+      "",
+      "1.2 LIQUIDATED DAMAGES",
+      "A. The Contractor shall pay the Owner liquidated damages of $2,500.00 per calendar day",
+      "   for each day Substantial Completion is achieved later than the date required above.",
+      "B. Liquidated damages shall be assessed against each Subcontractor whose work is shown",
+      "   to have caused or contributed to the delay, in proportion to its contribution.",
+    ],
+  },
+  {
+    id: "working-hours-occupied",
+    why: "restricted hours in an occupied building — the constraint that changes the RATE every hour of the work is done at, which is why it is not a line item and cannot be added at the end",
+    expectKinds: ["WORKING_HOURS"],
+    lines: [
+      "SECTION 01 14 00 - WORK RESTRICTIONS",
+      "",
+      "PART 1 - GENERAL",
+      "1.1 OCCUPIED PREMISES",
+      "A. The building will remain fully occupied for the duration of the Work.",
+      "",
+      "1.2 WORKING HOURS",
+      "A. Work producing noise, dust or vibration shall be performed only between",
+      "   7:00 PM and 5:00 AM, Monday through Friday.",
+      "B. No work of any kind shall be performed on Saturdays, Sundays or Owner holidays",
+      "   without seventy-two (72) hours written notice and the Owner's written consent.",
+      "C. Corridors shall be returned to clear, broom-clean condition before 6:00 AM each day.",
+    ],
+  },
+  {
+    id: "prevailing-wage-and-apprentices",
+    why: "a wage determination plus an apprenticeship ratio. The ratio is the half that gets missed: it constrains CREW COMPOSITION, not just the rate, so a bid priced at journeyman rates throughout can be both compliant on wages and wrong on cost",
+    expectKinds: ["WAGE_REQUIREMENT"],
+    lines: [
+      "SECTION 00 73 46 - WAGE RATE REQUIREMENTS",
+      "",
+      "PART 1 - GENERAL",
+      "1.1 PREVAILING WAGE",
+      "A. This Project is subject to the State prevailing wage determination for the county",
+      "   in which the Work is performed. The applicable determination is attached.",
+      "B. Certified payroll reports shall be submitted weekly for every worker on site,",
+      "   including those of every Subcontractor of any tier.",
+      "",
+      "1.2 APPRENTICESHIP",
+      "A. Not less than one (1) apprentice shall be employed for every five (5) journeymen",
+      "   in each apprenticeable craft.",
+    ],
+  },
+  {
+    id: "solicitation-with-terms",
+    why: "THE BOUNDARY OF THE THREE KINDS ABOVE, and the case that fails if admitting Division 00/01 went too far. A solicitation that MENTIONS a completion date and a bond must still return nothing — those terms live in the contract documents it points at, and reading them here reports the same requirement twice from the weaker source",
+    expectKinds: [],
+    expectEmpty: true,
+    lines: [
+      "INSTRUCTIONS TO BIDDERS",
+      "",
+      "Project: Lakeshore Transit Center — Interior Fit-Out",
+      "Bids due: 9 December 2026, 3:00 PM local time, at the address below.",
+      "",
+      "1. Bidders shall submit one original and two copies on the enclosed form.",
+      "2. The Work is subject to liquidated damages and prevailing wage requirements",
+      "   as set forth in the Contract Documents. Refer to Division 00 and Division 01.",
+      "3. A bid bond of 5 percent is required. Performance and payment bonds will be required",
+      "   of the successful bidder.",
+      "4. Bidders shall visit the site before submitting. Contact the Construction Manager.",
+    ],
+  },
 ];

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { requireCompanyContext } from "@/lib/auth";
 import { loadAlerts } from "@/lib/alerts-query";
 import { summarizeAlerts } from "@/lib/alerts";
@@ -10,6 +12,8 @@ import { sendMyAlertDigest } from "@/lib/actions/notifications";
 import { viewerToday } from "@/lib/viewerToday";
 import { StatusLine } from "@/components/StatusLine";
 import { alertsStatus } from "@/lib/status-sentences";
+
+export const metadata = { title: "Alerts" };
 
 export default async function AlertsPage({
   searchParams,
@@ -57,15 +61,11 @@ export default async function AlertsPage({
   const nothingDerived = visible.length === 0 && silenced.length === 0;
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Alerts</h1>
-      <p className="mb-2 text-sm text-ink-body">
-        Everything with a date on it that nobody has dealt with, in one place:
-        cover about to lapse, a backcharge nobody has answered, retainage that
-        has become collectable, a closeout package the GC is sitting on,
-        certified payroll owed on a prevailing-wage week, a job forecast past
-        its contract value. Worst first, and within that, most money first.
-      </p>
+    <PageShell width="working">
+      <PageHeader
+        route="/alerts"
+        subtitle="Everything with a date on it that nobody has dealt with — worst first, then most money first."
+      />
       <p className="mb-6 text-xs text-ink-muted">
         Nothing here is stored. Every line is derived from the record it is
         about, every time this page loads — so fixing the thing removes the
@@ -92,7 +92,7 @@ export default async function AlertsPage({
         </h2>
         <Link
           href={showSilenced ? "/alerts" : "/alerts?show=silenced"}
-          className="text-sm text-link"
+          className="inline-flex min-h-11 items-center text-sm text-link mouse:min-h-0"
         >
           {showSilenced
             ? "Back to open alerts"
@@ -147,12 +147,12 @@ export default async function AlertsPage({
           />
         )
       ) : (
-        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="alerts-list">
+        <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-tour="alerts-list">
           {rows.map((alert) => (
             <AlertRow key={alert.key} alert={alert} silenced={showSilenced} />
           ))}
         </ul>
       )}
-    </div>
+    </PageShell>
   );
 }

@@ -158,10 +158,91 @@ export function attachmentPageCharge(contentType: string, bytes: Buffer): PageCh
   }
 }
 
-/** The clause a person reads about what their file cost. Only the
- * uncountable case needs explaining; the rest is just a number. */
-export function pageChargeNote(charge: PageCharge): string {
-  const pages = `${charge.pages} ${charge.pages === 1 ? "page" : "pages"}`;
+/** Which meter a read was charged against, and where that meter now stands. */
+export type ChargedAgainst = {
+  /** The unit in a sentence — "spec pages", "addendum pages", "document pages".
+   *  Named by the caller rather than derived here, because each reader owns the
+   *  words a sub sees for its own meter and they are deliberately different:
+   *  the whole reason these are separate ledgers is that a person can tell
+   *  which feature spent their month. */
+  noun: string;
+  /** How many are left after this charge. */
+  left: number;
+  /** The monthly ceiling, so this reads the way the refusal does. */
+  ceiling: number;
+};
+
+/**
+ * THE RECEIPT A SUB READS AFTER A FILE IS READ.
+ *
+ * ── WHAT THIS USED TO RETURN, AND WHAT IT LOOKED LIKE ON SCREEN ──
+ *
+ * It returned the bare clause `"3 pages"`, which was written to be dropped into
+ * a sentence — and all three callers rendered it AS the sentence. The
+ * click-through of #604 photographed the result: the words "3 pages" floating
+ * alone between a paragraph and a Delete button, meaning nothing to anybody.
+ * It had been that way on the addendum and document readers too; moving the
+ * message next to the button it belongs to is what finally made it look as
+ * orphaned as it was.
+ *
+ * ── WHAT A SUB ACTUALLY NEEDS AT THIS MOMENT, AND NOTHING ELSE ──
+ *
+ * They have just spent something they are capped on, in the middle of pricing a
+ * bid. Three facts answer every question they have, and a fourth would be
+ * noise:
+ *
+ *   1. **what this one cost** — the number they would check the meter against;
+ *   2. **which meter** — these ledgers are separate precisely so that reading
+ *      specs cannot silently eat the allowance for reading addenda, and a
+ *      receipt that does not name the unit throws that away;
+ *   3. **what is left** — the only one that changes what they do next, because
+ *      it is what tells them whether to read the next section now or wait.
+ *
+ * One line, no jargon, no instruction to go and look somewhere else. If they
+ * want the month in full it is on Settings → Assistant, and the refusal
+ * sentence points there because a refusal is where that matters.
+ *
+ * ── IT SPEAKS THE SAME WAY THE REFUSAL DOES, ON PURPOSE ──
+ *
+ * `stopSentence` says "there are 12 of 1,800 left this month". So does this.
+ * A sub who hits the cap one day and reads a receipt the next should not have
+ * to learn two vocabularies for one number — and "of 1,800" is what makes
+ * "1,797" mean something to somebody who has never seen their ceiling.
+ *
+ * ── THE UNCOUNTABLE CASE LEADS, RATHER THAN TRAILING IN BRACKETS ──
+ *
+ * A PDF whose page count cannot be read is charged a flat
+ * `uncountablePdfPages`, and that is the one case where the number is NOT what
+ * the document is — it is this app's floor for a file it could not measure,
+ * and it is most likely to be a big scan. That belongs at the front of the
+ * sentence where it cannot be skimmed past, not in a parenthesis after a figure
+ * the reader has already accepted.
+ */
+export function pageChargeNote(charge: PageCharge, against: ChargedAgainst): string {
+  const n = (value: number) => value.toLocaleString("en-US");
+  const left = `${n(against.left)} of ${n(against.ceiling)} ${against.noun} left this month`;
+
+  if (charge.basis === "pdf-uncountable") {
+    return (
+      `Charged as ${n(charge.pages)} pages — this PDF's page count couldn't be read, so it is charged ` +
+      `at the flat rate · ${left}`
+    );
+  }
+  return `${n(charge.pages)} ${charge.pages === 1 ? "page" : "pages"} charged · ${left}`;
+}
+
+/**
+ * Just the quantity, for dropping INTO a sentence somebody else is writing.
+ *
+ * Split out from `pageChargeNote` when that became a whole receipt, because
+ * `documentSpend`'s over-ceiling refusal legitimately needs the clause and not
+ * the receipt: "this document is 84 pages and one upload can use at most 60…".
+ * That call site is the shape the old function was designed for, and it is the
+ * reason the receipt rendered as a fragment everywhere else — one helper was
+ * doing two jobs and only one of them had a caller that supplied a sentence.
+ */
+export function pageCountClause(charge: PageCharge): string {
+  const pages = `${charge.pages.toLocaleString("en-US")} ${charge.pages === 1 ? "page" : "pages"}`;
   if (charge.basis === "pdf-uncountable") {
     return `${pages} (this PDF's page count couldn't be read, so it is charged as ${ASK_PAGE_RULES.uncountablePdfPages})`;
   }

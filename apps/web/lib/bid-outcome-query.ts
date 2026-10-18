@@ -33,7 +33,22 @@ export type LinkedBidOutcome = {
 export async function loadBidOutcomes(companyId: string): Promise<Map<string, LinkedBidOutcome>> {
   const [bids, fringeSchedulesByCraft, employerBurdenRates] = await Promise.all([
     prisma.bidInvitation.findMany({
-      where: { companyId, wonJobId: { not: null } },
+      // `status: "WON"` AS WELL AS A LINK, and the status half was added
+      // 2026-10-04 when `linkBidToJob` stopped requiring a win.
+      //
+      // This filtered on the link alone and took it to mean "won", which was
+      // true only because nothing could be linked before it was won. Now that
+      // an estimator can link a bid to the job they are building its number on,
+      // a link means "same piece of work" and nothing more — so without this,
+      // every bid still being estimated, and every bid eventually LOST, would
+      // walk into the bid-versus-actual comparison as though it had been won.
+      //
+      // `bid-outcome.ts` exists to teach an estimator from that comparison and
+      // opens by refusing to issue a verdict it cannot support: "a real-looking
+      // number that will be remembered and repeated" is the thing it will not
+      // produce. A lost bid's estimate costed against its own unbuilt job is
+      // exactly that.
+      where: { companyId, status: "WON", wonJobId: { not: null } },
       select: {
         id: true,
         bidAmount: true,

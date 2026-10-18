@@ -109,6 +109,7 @@ function renderWizard(lineItems: Parameters<typeof BidWizardLineItems>[0]["lineI
       jobId: "job-1",
       lineItems,
       catalogEntries,
+      defaultWastePercent: null,
     }),
   );
 }
@@ -212,7 +213,7 @@ describe("the add-from-catalog form", () => {
   });
 
   it("is not rendered at all when the company has no catalog yet", () => {
-    render(createElement(BidWizardLineItems, { jobId: "job-1", lineItems: [], catalogEntries: [] }));
+    render(createElement(BidWizardLineItems, { jobId: "job-1", lineItems: [], catalogEntries: [], defaultWastePercent: null }));
     expect(container.querySelector('[name="catalogEntryId"]')).toBeNull();
   });
 });

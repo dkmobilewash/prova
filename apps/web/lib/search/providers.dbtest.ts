@@ -73,10 +73,13 @@ beforeAll(async () => {
     prisma.changeOrder.create({ data: { jobId: jobBId, number: 1, title: `${MARKER} CO B` } }),
     prisma.invoice.create({ data: { jobId: jobAId, number: 1, amount: "1000.00", description: `${MARKER} Invoice A` } }),
     prisma.invoice.create({ data: { jobId: jobBId, number: 1, amount: "2000.00", description: `${MARKER} Invoice B` } }),
+    prisma.bidInvitation.create({ data: { companyId: companyAId, contactId: contactA.id, projectName: `${MARKER} Bid A` } }),
+    prisma.bidInvitation.create({ data: { companyId: companyBId, contactId: contactB.id, projectName: `${MARKER} Bid B` } }),
   ]);
 });
 
 afterAll(async () => {
+  await prisma.bidInvitation.deleteMany({ where: { companyId: { in: [companyAId, companyBId] } } });
   await prisma.invoice.deleteMany({ where: { jobId: { in: [jobAId, jobBId] } } });
   await prisma.changeOrder.deleteMany({ where: { jobId: { in: [jobAId, jobBId] } } });
   await prisma.drawingSet.deleteMany({ where: { jobId: { in: [jobAId, jobBId] } } });
@@ -103,6 +106,7 @@ const providerByType = new Map(SEARCH_PROVIDERS.map((provider) => [provider.type
  */
 const MARKERS: Record<string, [own: string, other: string]> = {
   job: ["Job A", "Job B"],
+  bid: ["Bid A", "Bid B"],
   contact: ["Contact A", "Contact B"],
   crew: ["User A", "User B"],
   vendor: ["Vendor A", "Vendor B"],

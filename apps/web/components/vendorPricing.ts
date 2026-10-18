@@ -46,7 +46,7 @@ export function newestFirst(quotes: QuoteData[]): QuoteData[] {
  * Inclusive of the last day: a price held "until the 30th" is still good
  * ON the 30th. Off-by-one here would tell someone a live price is dead on
  * the one day they most need it. */
-export function isExpired(quote: QuoteData, today: string): boolean {
+export function isExpired(quote: { validUntil: string | null }, today: string): boolean {
   return quote.validUntil !== null && quote.validUntil < today;
 }
 
@@ -72,8 +72,25 @@ export function daysBetween(fromIso: string, toIso: string): number {
  * outranks our rule of thumb until it lapses — at which point `isExpired`
  * is the truer answer anyway. Applying both would flag one quote two
  * different ways for the same reason. */
-export function isStale(quote: QuoteData, today: string, afterDays = STALE_AFTER_DAYS): boolean {
+export function isStale(
+  /**
+   * STRUCTURAL RATHER THAN `QuoteData`, so a `BidQuote` can be asked the same
+   * question and get the same answer. These two were one policy written once
+   * and reachable from one feature; `BidQuote.validUntil` (2026-10-04) made
+   * that an accident of typing rather than a decision. A second copy of "is
+   * this price still good" is the shape this repo writes censuses to catch,
+   * and the off-by-one in `isExpired` is exactly the detail a copy gets wrong.
+   *
+   * `quotedOn` is NULLABLE here because a bid quote has no date until the sub
+   * answers — a price nobody has given cannot be old. A vendor price quote
+   * always has one, so nothing on that side changes.
+   */
+  quote: { validUntil: string | null; quotedOn: string | null },
+  today: string,
+  afterDays = STALE_AFTER_DAYS,
+): boolean {
   if (quote.validUntil !== null) return false;
+  if (quote.quotedOn === null) return false;
   return daysBetween(quote.quotedOn, today) >= afterDays;
 }
 

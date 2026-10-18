@@ -1,6 +1,14 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ARCH_D, planSetPdf, scannedSheet, sheetWithTitleBlock } from "./planFixtures";
-import { hasTextLayer, openPlanPdf, titleBlockRegion, titleBlockText } from "./planPdf";
+import {
+  hasTextLayer,
+  openPlanPdf,
+  storableText,
+  titleBlockRegion,
+  titleBlockText,
+} from "./planPdf";
 
 /**
  * THE SERVER CAN READ A PLAN SET, AND THE TITLE-BLOCK FILTER SURVIVES ROTATION.
@@ -164,5 +172,78 @@ describe("a sheet with no text layer", () => {
     expect(region.source).toBe("whole-page");
     expect(region.items.map((i) => i.str).join(" ")).toContain("A-101");
     expect(hasTextLayer(page)).toBe(true);
+  });
+});
+
+/**
+ * ── A PDF'S TEXT IS NOT NECESSARILY SOMETHING POSTGRES WILL ACCEPT ──
+ *
+ * Three sheets of a real 60-sheet set could not be read, every attempt, and the
+ * only message anybody saw was "This page could not be read. Nothing about it
+ * was saved." Postgres had refused the write:
+ *
+ *   PostgresError 22021: invalid byte sequence for encoding "UTF8": 0x00
+ *
+ * Two NUL bytes in each sheet's title-block text. Measured across the file: 3
+ * pages of 60 carry one, and they are exactly the three that failed.
+ *
+ * WHAT MADE IT EXPENSIVE is that every other instrument said those pages were
+ * fine, because they are — pdfjs reads all three in 2-5ms, they are the cheapest
+ * pages in the set, and the real stage run against the real file with in-memory
+ * ports returns ok for every one. Only a real Postgres refuses, so the message
+ * blamed the drawing for something the storage layer could not swallow. The
+ * three sheets it hid were the partition schedule.
+ *
+ * `storableText` is checked here on text a PDF actually yields, and against a
+ * real database in `planSheetText.dbtest.ts` — which is the half that cannot be
+ * faked, since the defect was invisible to everything except Postgres.
+ */
+describe("text a Postgres text column can hold", () => {
+  it("strips a NUL byte, which no `text` column can store at any length", () => {
+    expect(storableText("A-501\u0000")).toBe("A-501");
+    expect(storableText("\u0000\u0000")).toBe("");
+  });
+
+  it("keeps everything else, including what a title block really uses", () => {
+    const block = `A-501 · PARTITION TYPES · SCALE: 3" = 1'-0" · 4-7/8" — BID SET`;
+    expect(storableText(block)).toBe(block);
+  });
+
+  it("replaces a lone surrogate, which has no UTF-8 encoding either", () => {
+    expect(storableText("A\uD800B")).toBe("A\uFFFDB");
+    expect(storableText("A\uDC00B")).toBe("A\uFFFDB");
+    // A real pair is a real character and must survive untouched.
+    expect(storableText("A\uD83D\uDE00B")).toBe("A\uD83D\uDE00B");
+  });
+
+  it("IS WIRED INTO THE READER, which no fixture in this repo can prove", () => {
+    // ── A CASE THAT WAS VACUOUS, AND WHY IT IS A CENSUS INSTEAD ──
+    //
+    // This was written first as an end-to-end test: build a fixture sheet whose
+    // text carries a NUL, read it back through `openPlanPdf`, assert none comes
+    // out. It passed. It also passed with `storableText` deleted from the
+    // extraction loop — caught by mutation, not by reading it.
+    //
+    // The reason is that PDFJS ITSELF drops the fixture's NUL. `planFixtures`
+    // writes text with a standard font, byte 0x00 maps to no glyph, and
+    // `getTextContent` never emits it. So the fixture proved nothing: "A-501\0"
+    // came back "A-501" either way.
+    //
+    // The real sheets are not like that — their NULs survive extraction, which
+    // is the whole defect — so reproducing it needs a font whose ToUnicode CMap
+    // maps a code to U+0000. That is a fixture nobody has built, and building it
+    // is the honest way to upgrade this case.
+    //
+    // Until then: the behaviour is proved on strings above and against a real
+    // Postgres in `planSheetText.dbtest.ts`, and this holds the WIRING, which is
+    // the only part those two cannot see.
+    const source = readFileSync(resolve(process.cwd(), "lib/plan-ingest/planPdf.ts"), "utf8");
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code, "the extraction loop reads item.str raw").toMatch(
+      /const str = storableText\(item\.str\);/,
+    );
+    expect(code, "item.str is read raw somewhere in the loop").not.toMatch(
+      /const str = item\.str;/,
+    );
   });
 });

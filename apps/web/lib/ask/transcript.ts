@@ -144,6 +144,39 @@ export function boundTranscript(value: unknown): TranscriptEntry[] {
   return clean.slice(-MAX_TRANSCRIPT);
 }
 
+/** A thread's name, at most. Here rather than in threads.ts because the
+ * panel's rename box needs it and threads.ts imports the database. */
+export const TITLE_CHARS = 60;
+
+/**
+ * A stored thread (lib/ask/threads.ts) as the scrollback a person reads.
+ *
+ * Each question is paired with the assistant turn that follows it; a
+ * question nobody answered is kept with an empty answer, the same as a
+ * failed one in the tab. Then boundTranscript, so a stored citation gets
+ * the same in-app-only href rule a browser's copy gets — the database is
+ * not a reason to trust a link more. ponytail: the newest MAX_TRANSCRIPT
+ * exchanges only; older ones stay in the database.
+ */
+export function entriesFromThread(
+  messages: readonly { role: string; content: string; cites: unknown; createdAt: Date | string | number }[],
+): TranscriptEntry[] {
+  const raw: unknown[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i];
+    if (message.role !== "user") continue;
+    const reply = messages[i + 1]?.role === "assistant" ? messages[i + 1] : null;
+    if (reply) i++;
+    raw.push({
+      question: message.content,
+      answer: reply?.content ?? "",
+      citations: Array.isArray(reply?.cites) ? reply.cites : [],
+      askedAt: new Date(message.createdAt).getTime(),
+    });
+  }
+  return boundTranscript(raw);
+}
+
 /**
  * How long ago, in the words a person uses.
  *

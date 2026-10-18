@@ -36,7 +36,11 @@ export const PLAN_SHEET_TOOL_NAME = "record_sheet";
  * way that could change an answer — a new rule, a reworded rule, a changed field
  * description. Not for a typo in a comment.
  */
-export const PLAN_SHEET_PROMPT_VERSION = "plan-title-block.1";
+/** Bumped to `.2` on 2026-10-05: `pageType` added as a required field and rule
+ *  6a with it. Stored on every `PlanSheetProposal`, so a proposal from before
+ *  today came from a reader that returned no page type at all — which is why a
+ *  null there is not evidence the sheet is unclassifiable. */
+export const PLAN_SHEET_PROMPT_VERSION = "plan-title-block.2";
 
 export type SheetTitleBlock = {
   /** "A-101", "S2.1", "M-201". Null when the text does not carry one. */
@@ -45,6 +49,10 @@ export type SheetTitleBlock = {
   title: string | null;
   /** "ARCHITECTURAL", "STRUCTURAL". Null when the sheet does not say. */
   discipline: string | null;
+  /** What KIND of drawing this page is, as one of `SHEET_PAGE_TYPES`. Null when
+   *  the text gives nothing to judge it from. Normalised, so a filter can act
+   *  on it — unlike `title`, which is what the sheet printed. */
+  pageType: SheetPageType | null;
   /** The scale as PRINTED — `1/4" = 1'-0"`, "NTS". Never converted. */
   scale: string | null;
   /** The revision as printed on this sheet — "REV 2", "ASI-12". */
@@ -66,6 +74,8 @@ Rules, in order of importance:
 4. confidence is about THIS READING, not about your general ability. HIGH only when the sheet number and title are unambiguous. MEDIUM when you had to choose between candidates. LOW when the text is fragmentary, when the sheet number might be a drawing reference rather than this sheet's own, or when you are reporting a number you are not sure belongs to this sheet. An honest LOW is the correct answer and costs nothing; a HIGH that is wrong is a sheet index somebody trusts.
 5. A sheet number is this sheet's OWN identifier, usually the largest or last text in a title block. Drawing text often REFERENCES other sheets — "SEE A-501", "DETAIL 3/A-301", "SIM TO S-102". Those are references, not this sheet's number. If every candidate looks like a reference, report null and say so.
 6. discipline is the drawing discipline the sheet belongs to, from the text or from the sheet number's prefix (A architectural, S structural, M mechanical, E electrical, P plumbing, FP or FA fire protection, C civil, L landscape, ID interior design, Q equipment). Null if neither says.
+
+6a. pageType is WHAT KIND OF DRAWING the page is, and it must be exactly one of: COVER, PLAN, ELEVATION, SECTION, DETAIL, SCHEDULE, OTHER. Judge it from the title and the sheet number, not from the discipline. PLAN for a floor, roof, reflected-ceiling or site plan. ELEVATION for exterior or interior elevations. SECTION for building or wall sections. DETAIL for a sheet of details at a larger scale. SCHEDULE for a sheet whose content is a TABLE — door, window, finish, partition-type or fixture schedules. COVER for a cover, title or drawing-index sheet. OTHER for anything else, including a legend, a general-notes sheet or a specification printed on a drawing. Null ONLY when the text gives you nothing to judge from, which is a different answer from OTHER: null means nobody can tell, OTHER means it is none of the six.
 7. If the text is clearly not a title block at all — a specification page, a legend, a schedule with no sheet identity — set every field except reason and confidence to null, say what it appears to be in reason, and use LOW.`;
 
 /**
@@ -108,6 +118,10 @@ export async function extractSheetTitleBlock(params: {
             sheetNumber: { type: ["string", "null"] },
             title: { type: ["string", "null"] },
             discipline: { type: ["string", "null"] },
+            // SPREAD, never a second list — the same reason `specs.ts` spreads
+            // its finding kinds: a value the type admits and the schema does
+            // not is one the model can never return, silently.
+            pageType: { type: ["string", "null"], enum: [...SHEET_PAGE_TYPES, null] },
             scale: { type: ["string", "null"] },
             revision: { type: ["string", "null"] },
             issueDate: { type: ["string", "null"] },
@@ -124,6 +138,7 @@ export async function extractSheetTitleBlock(params: {
             "sheetNumber",
             "title",
             "discipline",
+            "pageType",
             "scale",
             "revision",
             "issueDate",
@@ -172,6 +187,10 @@ export async function extractSheetTitleBlock(params: {
     // the review screen, the eval — sees the one vocabulary and none of them has to
     // remember to. See `normaliseDiscipline` for what the eval found.
     discipline: normaliseDiscipline(text(input.discipline)),
+    // Normalised here rather than trusted: the model is left the judgement
+    // (which kind is this sheet?) and code takes the vocabulary, which is the
+    // rule `normaliseDiscipline` was written for and ARCHITECTURE.md's own.
+    pageType: normaliseSheetPageType(text(input.pageType)),
     scale: text(input.scale),
     revision: text(input.revision),
     issueDate: text(input.issueDate),
@@ -233,4 +252,87 @@ export function normaliseDiscipline(value: string | null): string | null {
   const trimmed = value.trim().toUpperCase();
   if (trimmed.length === 0) return null;
   return DISCIPLINES[trimmed] ?? trimmed;
+}
+
+/**
+ * WHAT KIND OF DRAWING THIS PAGE IS — the one field the index could not filter on.
+ *
+ * `proposedTitle` already holds "EXTERIOR ELEVATIONS", and that is a label a person
+ * reads, not something the app can act on: "FLOOR PLAN", "PLANS - LEVEL 2",
+ * "ENLARGED PLAN" and "OVERALL FLOOR PLAN" are four strings and one kind. So this
+ * is the kind, as a closed set.
+ *
+ * CLOSED, WHICH IS THE OPPOSITE OF `normaliseDiscipline` ABOVE, and the difference
+ * is worth stating because the two sit three lines apart. Discipline KEEPS a value
+ * this code has never heard of — a set can carry "AV" or a consultant's own code,
+ * and dropping it would lose what the sheet said. Page type cannot afford that:
+ * its whole purpose is to answer "which pages are the schedules?", and a filter
+ * over an open vocabulary answers that wrongly the first time somebody's title
+ * block says "SCHED." Nothing is lost by closing it, because the title is stored
+ * verbatim one column away.
+ */
+export const SHEET_PAGE_TYPES = [
+  "COVER",
+  "PLAN",
+  "ELEVATION",
+  "SECTION",
+  "DETAIL",
+  "SCHEDULE",
+  "OTHER",
+] as const;
+
+export type SheetPageType = (typeof SHEET_PAGE_TYPES)[number];
+
+/**
+ * The words a title block actually prints, mapped to the kind they mean.
+ *
+ * Longest-first matching, because "ENLARGED PLAN AND SECTION" contains both and
+ * the first word of a title block is the one that names the sheet. A title
+ * carrying two kinds is a real sheet and there is no right answer; this picks the
+ * one printed first rather than pretending to a precision it has not got.
+ */
+const PAGE_TYPE_WORDS: readonly (readonly [string, SheetPageType])[] = [
+  ["COVER SHEET", "COVER"],
+  ["TITLE SHEET", "COVER"],
+  ["COVER", "COVER"],
+  ["INDEX", "COVER"],
+  ["SCHEDULE", "SCHEDULE"],
+  ["SCHED", "SCHEDULE"],
+  ["ELEVATION", "ELEVATION"],
+  ["ELEV", "ELEVATION"],
+  ["SECTION", "SECTION"],
+  ["SECT", "SECTION"],
+  ["DETAIL", "DETAIL"],
+  ["DTL", "DETAIL"],
+  ["PLAN", "PLAN"],
+];
+
+/**
+ * One vocabulary for the page type, whatever the model or the sheet called it.
+ *
+ * UNRECOGNISED BECOMES `OTHER` RATHER THAN BEING KEPT. That is the closed-set
+ * decision above, and `OTHER` is a real answer: a legend, a general-notes page and
+ * a door-hardware spec sheet are none of the six and a reader should see that
+ * rather than a word the app invented for them.
+ *
+ * Null stays null. "Nobody has read this page yet" and "this page is none of the
+ * six" are different facts, and collapsing them would make an unread page look
+ * classified.
+ */
+export function normaliseSheetPageType(value: string | null): SheetPageType | null {
+  if (value === null) return null;
+  const trimmed = value.trim().toUpperCase();
+  if (trimmed.length === 0) return null;
+  // An exact member wins outright, so a model answering in the vocabulary it was
+  // given is never put through the word search.
+  if ((SHEET_PAGE_TYPES as readonly string[]).includes(trimmed)) return trimmed as SheetPageType;
+  let best: { at: number; type: SheetPageType } | null = null;
+  for (const [word, type] of PAGE_TYPE_WORDS) {
+    const at = trimmed.indexOf(word);
+    if (at === -1) continue;
+    // Earliest match wins; on a tie the longer word does, which is why
+    // "COVER SHEET" precedes "COVER" in the list above.
+    if (best === null || at < best.at) best = { at, type };
+  }
+  return best?.type ?? "OTHER";
 }

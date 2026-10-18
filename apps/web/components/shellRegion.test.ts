@@ -87,9 +87,12 @@ function Healthy() {
   return createElement("nav", { "aria-label": "Money pipeline" }, "RAIL-OK-7731");
 }
 
-/** The shape of the layout: a shell region beside the page. */
+/** The shape of the layout: a shell region beside the page. The region was
+ * "metricbar" until 2026-10-10, when Concept G took the bottom metric bar out
+ * of the shell (its figures head /areas/money now); "topbar" is the region
+ * every page still has. */
 function shell(regionChild: ReactNode, wrap: boolean) {
-  const region = wrap ? createElement(ShellRegion, { region: "metricbar" }, regionChild) : regionChild;
+  const region = wrap ? createElement(ShellRegion, { region: "topbar" }, regionChild) : regionChild;
   return createElement("div", null, region, createElement("main", null, "PAGE-STILL-HERE-4402"));
 }
 
@@ -120,12 +123,12 @@ describe("1. a throw inside a region leaves the page standing", () => {
     act(() => root.render(shell(createElement(Boom), true)));
 
     expect(container.textContent).toContain("PAGE-STILL-HERE-4402");
-    expect(container.textContent).toContain("Company figures couldn't load.");
+    expect(container.textContent).toContain("The top bar couldn't load.");
     expect(container.querySelector("main")).not.toBeNull();
 
     const lines = shellLogLines();
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain("metricbar");
+    expect(lines[0]).toContain("topbar");
     expect(lines[0]).toContain("the page is unaffected");
     // The error itself travels with the line, so the console names the widget.
     const [, error] = consoleError.mock.calls.find((call) => String(call[0]).startsWith("[shell]"))!;
@@ -178,7 +181,7 @@ describe("2. the same throw during server rendering does not escape", () => {
 describe("3. a healthy region is invisible", () => {
   it("adds no DOM of its own and logs nothing", () => {
     root = createRoot(container);
-    act(() => root.render(createElement(ShellRegion, { region: "sidebar" }, createElement(Healthy))));
+    act(() => root.render(createElement(ShellRegion, { region: "topbar" }, createElement(Healthy))));
 
     expect(container.children).toHaveLength(1);
     expect(container.firstElementChild?.tagName).toBe("NAV");
@@ -188,7 +191,7 @@ describe("3. a healthy region is invisible", () => {
   });
 
   it("every fallback that shows anything offers Reload, and the helper fallback shows nothing", () => {
-    for (const region of ["sidebar", "topbar", "metricbar"] as const) {
+    for (const region of ["topbar", "sidebar", "bottomtabs"] as const) {
       const html = renderToString(createElement(ShellRegionFallback, { region }));
       expect(html).toContain("couldn&#x27;t load");
       expect(html).toContain("Reload");
@@ -199,11 +202,11 @@ describe("3. a healthy region is invisible", () => {
 
 describe("the server-side half: a failed query settles to the region's empty value", () => {
   it("returns the fallback and logs in the same [shell] shape", async () => {
-    const stages = await Promise.reject(new Error("Decimal overflow")).catch(shellQueryFailed("sidebar", []));
+    const stages = await Promise.reject(new Error("Decimal overflow")).catch(shellQueryFailed("topbar", []));
     expect(stages).toEqual([]);
     const lines = shellLogLines();
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain("sidebar query failed");
+    expect(lines[0]).toContain("topbar query failed");
   });
 });
 
@@ -238,9 +241,31 @@ function code(source: string): string {
 const layoutCode = code(layoutSource);
 const chromeCode = code(chromeSource);
 
-/** The five this file exists for. The derived set must contain them all —
- * a renamed import or a moved component cannot quietly shrink the census. */
-const KNOWN_SHELL_COMPONENTS = ["TimeZoneCookie", "FullTour", "Sidebar", "Topbar", "MetricBar"];
+/** The shell widgets this file exists for. The derived set must contain them
+ * all — a renamed import or a moved component cannot quietly shrink the
+ * census.
+ *
+ * CHANGED 2026-10-10 (Concept G): "Sidebar" and "Topbar" left with the left
+ * rail. Their replacements — TopBar, BottomTabs and CommandPalette — are
+ * named here instead, so the census still pins every widget the shell has
+ * rather than shrinking to whatever is left. NavigationProgress was always
+ * mounted and is named now too.
+ *
+ * CHANGED again the same day: "MetricBar" left the shell. It sat over the
+ * foot of every page and covered "Review & send" on a job's Billing stage;
+ * Concept G has no bottom strip, so its four figures moved to the top of
+ * /areas/money. The test at the end of 4b now holds that it is GONE from
+ * the layout rather than that it is wrapped there. */
+const KNOWN_SHELL_COMPONENTS = [
+  "TimeZoneCookie",
+  "NavigationProgress",
+  "FullTour",
+  "CommandPalette",
+  "TopBar",
+  // Back 2026-10-12 (restore-brief.md item 1): the desktop page list.
+  "Sidebar",
+  "BottomTabs",
+];
 
 /** The region machinery itself, which is not a widget to be wrapped. */
 const MACHINERY = ["ShellRegion", "ShellRegionFallback"];
@@ -379,15 +404,30 @@ describe("4b. app/(app)/layout.tsx mounts those regions and pairs none itself", 
     expect(inSomeSpan(spans, indexes[0])).toBe(false);
   });
 
-  it("the two money queries are settled with shellQueryFailed; the alert count is not", () => {
-    expect(layoutSource).toMatch(/loadCompanyFinancials\(company\.id\)\s*\.catch\(shellQueryFailed\("metricbar", null\)\)/);
-    expect(layoutSource).toMatch(/getMoneyRailStages\(company\.id\)\s*\.catch\(shellQueryFailed\("sidebar", \[\]\)\)/);
+  it("the money-rail query is settled with shellQueryFailed; the alert count is not", () => {
+    expect(layoutSource).toMatch(/getMoneyRailStages\(company\.id\)\s*\.catch\(shellQueryFailed\("topbar", \[\]\)\)/);
     // A wrong alert badge is a claim about the person's records, not
     // decoration — it is meant to fail the page rather than lie quietly.
     expect(layoutSource).not.toMatch(/countVisibleAlerts\([^)]*\)\s*\.catch/);
   });
 
-  it("a failed metric-bar query renders the region's fallback rather than nothing", () => {
-    expect(layoutCode).toContain('<ShellRegionFallback region="metricbar" />');
+  /* Replaces "a failed metric-bar query renders the region's fallback"
+     (2026-10-10). The bar is out of the shell, so the property worth
+     holding is that it STAYS out: nothing fixed or pinned at the foot of the
+     desktop page, and no company-figures query on every page load. Where
+     the figures went is held by lib/page-money-guards.test.ts. */
+  it("the layout no longer mounts the metric bar or loads its figures", () => {
+    expect(layoutCode).not.toMatch(/MetricBar/);
+    expect(layoutCode).not.toMatch(/loadCompanyFinancials\(/);
+    expect(layoutCode).not.toMatch(/--shell-metricbar/);
+  });
+
+  // The phone's tabs are the only fixed chrome left at the bottom. The page
+  // pads by their height AND scroll-pads by it, so neither the last line nor
+  // a control scrolled into view (focus, scrollIntoView) lands under them.
+  // happy-dom cannot measure this; the Playwright probe in the 2026-10-10
+  // report did. This pins the two classes it measured.
+  it("the scroll port clears the phone's fixed tabs, for content and for focus", () => {
+    expect(layoutCode).toMatch(/<main className="[^"]*\bpb-\[var\(--shell-tabs\)\][^"]*\bscroll-pb-\[var\(--shell-tabs\)\]/);
   });
 });

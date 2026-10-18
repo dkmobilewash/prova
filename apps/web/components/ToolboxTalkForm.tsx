@@ -20,7 +20,7 @@ export function ToolboxTalkForm({ jobs, today }: { jobs: JobOption[]; today: str
         type="button"
         onClick={() => setIsOpen(true)}
         data-tour="safety-log-talk"
-        className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+        className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover"
       >
         Log a toolbox talk
       </button>
@@ -103,7 +103,7 @@ export function ToolboxTalkForm({ jobs, today }: { jobs: JobOption[]; today: str
         <textarea name="notes" rows={2} placeholder="Anything raised or committed to" className={inputClass} />
       </label>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       <div className="flex flex-wrap gap-2">
         <button
@@ -127,7 +127,7 @@ export function ToolboxTalkForm({ jobs, today }: { jobs: JobOption[]; today: str
             setIsOpen(false);
             setError(null);
           }}
-          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
         >
           Cancel
         </button>

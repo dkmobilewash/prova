@@ -7,6 +7,8 @@ import { viewerTimeZone } from "@/lib/viewerToday";
 import { isSignatureLinkDead } from "@/lib/access-tokens";
 import { formatSignedDate } from "@/lib/signed-date";
 
+export const metadata = { title: "Sign to accept" };
+
 type Snapshot = {
   companyName: string;
   jobName: string;

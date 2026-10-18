@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
@@ -9,6 +10,8 @@ import { PunchListRow } from "@/components/PunchListRow";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { can } from "@/lib/permissions";
 import type { PunchListPeople } from "@/components/PunchItemFields";
+
+export const metadata = { title: "Punch lists" };
 
 export default async function PunchListsPage({
   searchParams,
@@ -55,6 +58,20 @@ export default async function PunchListsPage({
       // The photo prompt's input. A count, not the photos: this page never
       // renders them, and Gap 3's capture is what attaches one.
       _count: { select: { media: true } },
+      // WHERE THE ITEM IS, if somebody has put it on a drawing. Without this
+      // the pin is write-only: you can mark an item's exact location and then
+      // have no way back to it from the item itself, which is the half of a
+      // link people forget to build. At most one, by the unique index on
+      // `punchItemId` — an item has one location.
+      sheetPins: {
+        take: 1,
+        select: {
+          id: true,
+          page: {
+            select: { pageNumber: true, label: true, revisionId: true },
+          },
+        },
+      },
     },
   });
 
@@ -127,7 +144,7 @@ export default async function PunchListsPage({
   // on the page.
   const chip = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-sm ${
-      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-neutral-800"
+      active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-rail-hover"
     }`;
 
   return (
@@ -143,12 +160,7 @@ export default async function PunchListsPage({
       asideLabel="Add an item and filter by job"
       header={
         <>
-          <h1 className="mb-2 text-xl font-semibold text-ink">Punch lists</h1>
-          <p className="mb-6 text-sm text-ink-body">
-            What still has to be fixed before a job closes out. Jobs currently go straight from
-            in-progress to complete with nothing tracking the walkthrough, so this is the list that
-            used to live on someone&apos;s memory.
-          </p>
+          <PageHeader route="/punch-lists" subtitle="What still has to be fixed before a job closes out." />
         </>
       }
       aside={
@@ -271,6 +283,16 @@ export default async function PunchListsPage({
                   jobName: item.job.name,
                   status: item.status,
                   area: item.area,
+                  // Where it is on the drawing, if anybody has said. A label
+                  // when the sheet has one, its number otherwise — "A-201" is
+                  // what a person calls it, "sheet 14" is what the PDF calls
+                  // it, and only one of those is useful on a job.
+                  pinnedOn: item.sheetPins[0]
+                    ? {
+                        revisionId: item.sheetPins[0].page.revisionId,
+                        label: item.sheetPins[0].page.label ?? `sheet ${item.sheetPins[0].page.pageNumber}`,
+                      }
+                    : null,
                   dueOn: item.dueOn,
                   assignedUserId: item.assignedUserId,
                   assignedCrewMemberId: item.assignedCrewMemberId,

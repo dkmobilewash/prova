@@ -30,11 +30,11 @@ const inputClass =
 // a button at a time. `inline-flex` + `items-center` is what makes min-h
 // actually centre the label instead of pinning it to the top.
 const rowBtn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 const rowBtnDanger =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:border-red-500 hover:text-danger disabled:opacity-50";
 const rowBtnConfirm =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-danger hover:bg-tag-rose disabled:opacity-50";
 const primaryBtn =
   "inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50";
 
@@ -48,7 +48,7 @@ const primaryBtn =
 const STATUS_CHIP: Record<PunchItemStatus, string> = {
   OPEN: "border-line-card text-ink-label",
   READY_FOR_REVIEW: "border-brand text-link",
-  VERIFIED: "border-green-600 text-green-400",
+  VERIFIED: "border-green-600 text-ok",
 };
 
 export type PunchListRowItem = PunchItemFieldValues & {
@@ -65,6 +65,9 @@ export type PunchListRowItem = PunchItemFieldValues & {
   verifiedByName: string | null;
   reopenReason: string | null;
   photoCount: number;
+  /** Where this item is on a drawing, once somebody has pinned it. Null until
+   * then, and null forever for an item nobody puts on paper. */
+  pinnedOn: { revisionId: string; label: string } | null;
 };
 
 type PunchListRowProps = {
@@ -140,7 +143,7 @@ export function PunchListRow({ canDelete, canVerify, jobs, people, item, showJob
           <PunchItemFields people={people} values={item} showBlame />
 
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}
@@ -163,7 +166,7 @@ export function PunchListRow({ canDelete, canVerify, jobs, people, item, showJob
                 setIsEditing(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
             >
               Cancel
             </button>
@@ -194,7 +197,7 @@ export function PunchListRow({ canDelete, canVerify, jobs, people, item, showJob
             </span>
           )}
           {overdue && (
-            <span className="inline-flex items-center rounded-md border border-red-500 px-2 py-0.5 text-xs text-red-400">
+            <span className="inline-flex items-center rounded-md border border-red-500 px-2 py-0.5 text-xs text-danger">
               Overdue
             </span>
           )}
@@ -209,6 +212,19 @@ export function PunchListRow({ canDelete, canVerify, jobs, people, item, showJob
           {showJob && <span className="text-link">{item.jobName}</span>}
           {showJob && item.area && " · "}
           {item.area}
+          {/* THE WAY BACK, without which a pin is write-only: you can mark an
+              item's exact spot on the drawing and then have no route to it
+              from the item. `area` is the free text this replaces, and both
+              show while both exist — an item raised before pinning has only
+              the text, one raised ON the drawing has only the pin. */}
+          {item.pinnedOn && (
+            <>
+              {" · "}
+              <Link href={`/drawings/${item.pinnedOn.revisionId}`} className="text-link underline">
+                on {item.pinnedOn.label}
+              </Link>
+            </>
+          )}
           {assignee && ` · ${assignee}`}
           {item.dueOn && ` · due ${item.dueOn.toISOString().slice(0, 10)}`}
           {item.raisedByName && ` · raised by ${item.raisedByName}`}
@@ -282,7 +298,7 @@ export function PunchListRow({ canDelete, canVerify, jobs, people, item, showJob
         )}
 
         {error && (
-          <p role="alert" className="mt-1 text-sm text-red-400">
+          <p role="alert" className="mt-1 text-sm text-danger">
             {error}
           </p>
         )}

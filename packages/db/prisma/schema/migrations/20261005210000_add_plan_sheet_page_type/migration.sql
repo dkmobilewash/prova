@@ -1,0 +1,32 @@
+-- What KIND of drawing each ingested sheet is.
+--
+-- PURELY ADDITIVE: one NULLABLE column, no default and no backfill. Every
+-- existing proposal keeps a null, which is the honest value — those rows were
+-- written by prompt `plan-title-block.1`, which did not return the field at
+-- all, so a null here means "that reader could not say" rather than "this
+-- sheet is unclassifiable".
+--
+-- NOT BACKFILLED FROM `proposedTitle`, deliberately, even though
+-- `normaliseSheetPageType` could do it in one statement. A backfill would be a
+-- CLASSIFICATION written with no reading behind it, and `proposedReason` — the
+-- sentence a person checks a proposal against — would not mention it. The
+-- review surface shows a proposal and asks somebody to accept it; a field
+-- nobody proposed has no business sitting in that row. Re-running ingestion is
+-- how an old set gets page types.
+--
+-- SAFE IN THE OLD BUILD'S HANDS: a column it never selects is invisible to it,
+-- which is the additive half of the expand-then-contract rule. `migrate.yml`
+-- applies this on merge while Vercel is still building the commit that reads
+-- it, and nothing in that window can break.
+--
+-- TEXT RATHER THAN AN ENUM, and the reason is in `plan-ingest.prisma`'s own
+-- comment: this column holds MODEL OUTPUT. An enum column would reject an
+-- unexpected value at write time, and a Server Action that throws has its
+-- message REDACTED in production — so a model answering "FLOOR PLAN" would
+-- cost the whole proposal rather than one field. `normaliseSheetPageType` maps
+-- the words a title block actually prints onto the closed set and answers
+-- OTHER for everything else, and `sheetPageType.test.ts` holds that promise:
+-- nothing reaches this column but the seven.
+
+-- AlterTable
+ALTER TABLE "PlanSheetProposal" ADD COLUMN     "proposedPageType" TEXT;

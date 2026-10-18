@@ -695,3 +695,27 @@ what was actually known.
   feature: no action calls it, it is not in `AI_FEATURES`, it is not metered, and
   `aiFeatureGateCensus.test.ts` now pins that state — an eval must import it and
   nothing else may.
+
+  ### Re-run 2026-10-10: the same table, cell for cell. Do not run it a third time.
+
+  Run again eight days later, same sixteen cases, same Opus default, 103 seconds
+  and roughly a dollar. **Every number above reproduced exactly** — 4/4 and 4/4
+  clean, 0/4 with three declines on cluttered ARCH_D, 3/4 on cluttered DETAIL,
+  and the two OVERCLAIMED both `doors-11`: said 8 against 11, said 10 against 11.
+  `verdicts: requested 16, returned 16`.
+
+  **That is worth recording for one reason only, and it is not the result.** The
+  result was already here, argued at length. What the re-run adds is that a
+  STOCHASTIC instrument returned an identical verdict table a week apart, so the
+  refusal above does not rest on one sample of a sampling model. The two door
+  failures are a property of thin strokes under hatching, not of a lucky seed.
+
+  The model's uncertainty prose differed in wording and named the same cause both
+  times — hatch bands concealing swings it could not verify — which is the
+  finding this section calls more important than the counts: *a model that knows,
+  says so, and fills in `count` anyway.*
+
+  **So nobody needs to spend this again.** The next run worth paying for is not
+  this eval repeated; it is one of the three changes listed above, measured
+  against this table as its control. A fourth agent re-deriving the same sixteen
+  cases is the thing the audit exception in CLAUDE.md exists to prevent.

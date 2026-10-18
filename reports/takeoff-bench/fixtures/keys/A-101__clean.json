@@ -1,0 +1,1685 @@
+{
+ "caseId": "A-101__clean",
+ "sheetId": "A-101",
+ "variant": "clean",
+ "producer": "raw",
+ "title": "LEVEL 1 FLOOR PLAN",
+ "targets": "baseline: every heuristic on well-formed input",
+ "displayWidthPt": 2592,
+ "displayHeightPt": 1728,
+ "expectWalls": true,
+ "traps": [
+  "casework upper-cabinet line 1'-0\" off a wall face",
+  "stair handrail lines beside the CMU face",
+  "graphic scale bar: two parallel edges 4pt apart",
+  "gridlines on wall centrelines",
+  "door leaves as thin rectangles",
+  "window glazing: three parallel lines across each opening",
+  "chase wall D1 drawn as four lines",
+  "EXT-1 drawn as five lines, EXT-2 as four",
+  "F1 furring 1-1/2\" thick, under the 2-1/2\" thickness floor",
+  "curved reception wall (Béziers)",
+  "A1 and C1 thicknesses 1/8\" apart"
+ ],
+ "scales": [
+  {
+   "view": "LEVEL 1 FLOOR PLAN",
+   "scaleName": "1/8\" = 1'-0\"",
+   "feetPerInch": 8
+  }
+ ],
+ "scaleBehaviour": "name-it",
+ "expectedRefusal": null,
+ "walls": [
+  {
+   "id": "X-S",
+   "type": "EXT-1",
+   "inScope": true,
+   "thicknessIn": 8.875,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.08641975308641975,
+    "y1": 0.4529320987654321,
+    "x2": 0.8109567901234568,
+    "y2": 0.4529320987654321
+   },
+   "arc": null,
+   "clFt": 208.66666666666666,
+   "faceOverlapFt": 168.8854166666667,
+   "netFt": 172.66666666666666,
+   "openings": [
+    {
+     "mark": "SF1",
+     "kind": "storefront",
+     "widthFt": 20,
+     "heightFt": 10
+    },
+    {
+     "mark": "W1-1",
+     "kind": "window",
+     "widthFt": 4,
+     "heightFt": 5
+    },
+    {
+     "mark": "W1-2",
+     "kind": "window",
+     "widthFt": 4,
+     "heightFt": 5
+    },
+    {
+     "mark": "W1-3",
+     "kind": "window",
+     "widthFt": 4,
+     "heightFt": 5
+    },
+    {
+     "mark": "W1-4",
+     "kind": "window",
+     "widthFt": 4,
+     "heightFt": 5
+    }
+   ],
+   "areaPerSideSf": 2825.6666666666665,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "X-E",
+   "type": "EXT-1",
+   "inScope": true,
+   "thicknessIn": 8.875,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.8109567901234568,
+    "y1": 0.4529320987654321,
+    "x2": 0.8109567901234568,
+    "y2": 0.12885802469135801
+   },
+   "arc": null,
+   "clFt": 93.33333333333334,
+   "faceOverlapFt": 79.64583333333334,
+   "netFt": 82.33333333333334,
+   "openings": [
+    {
+     "mark": "W1-E1",
+     "kind": "window",
+     "widthFt": 4,
+     "heightFt": 5
+    },
+    {
+     "mark": "W1-E2",
+     "kind": "window",
+     "widthFt": 4,
+     "heightFt": 5
+    },
+    {
+     "mark": "100A",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    }
+   ],
+   "areaPerSideSf": 1353.3333333333335,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "X-N",
+   "type": "EXT-2",
+   "inScope": true,
+   "thicknessIn": 8.125,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.8109567901234568,
+    "y1": 0.12885802469135801,
+    "x2": 0.08641975308641989,
+    "y2": 0.12885802469135801
+   },
+   "arc": null,
+   "clFt": 208.66666666666666,
+   "faceOverlapFt": 170.125,
+   "netFt": 175.66666666666666,
+   "openings": [
+    {
+     "mark": "W2-1",
+     "kind": "window",
+     "widthFt": 5,
+     "heightFt": 5
+    },
+    {
+     "mark": "W2-2",
+     "kind": "window",
+     "widthFt": 5,
+     "heightFt": 5
+    },
+    {
+     "mark": "W2-3",
+     "kind": "window",
+     "widthFt": 5,
+     "heightFt": 5
+    },
+    {
+     "mark": "W2-4",
+     "kind": "window",
+     "widthFt": 5,
+     "heightFt": 5
+    },
+    {
+     "mark": "W2-5",
+     "kind": "window",
+     "widthFt": 5,
+     "heightFt": 5
+    },
+    {
+     "mark": "W2-6",
+     "kind": "window",
+     "widthFt": 5,
+     "heightFt": 5
+    },
+    {
+     "mark": "150A",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    }
+   ],
+   "areaPerSideSf": 3025.6666666666665,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "X-W",
+   "type": "EXT-1",
+   "inScope": true,
+   "thicknessIn": 8.875,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.08641975308641975,
+    "y1": 0.12885802469135801,
+    "x2": 0.08641975308641975,
+    "y2": 0.4529320987654321
+   },
+   "arc": null,
+   "clFt": 93.33333333333334,
+   "faceOverlapFt": 84.21875,
+   "netFt": 85.33333333333334,
+   "openings": [
+    {
+     "mark": "W1-W1",
+     "kind": "window",
+     "widthFt": 4,
+     "heightFt": 5
+    },
+    {
+     "mark": "W1-W2",
+     "kind": "window",
+     "widthFt": 4,
+     "heightFt": 5
+    }
+   ],
+   "areaPerSideSf": 1353.3333333333335,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "SF-1",
+   "type": "SF",
+   "inScope": false,
+   "thicknessIn": 4.5,
+   "heightFt": 10,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "storefront in the entry opening",
+   "display": {
+    "x1": 0.10609567901234568,
+    "y1": 0.4529320987654321,
+    "x2": 0.17554012345679013,
+    "y2": 0.4529320987654321
+   },
+   "arc": null,
+   "clFt": 20,
+   "faceOverlapFt": 0,
+   "netFt": 0,
+   "openings": [
+    {
+     "mark": "SF1",
+     "kind": "storefront",
+     "widthFt": 20,
+     "heightFt": 10
+    }
+   ],
+   "areaPerSideSf": 0,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "C-S",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "corridor south: L at B, T into exterior",
+   "display": {
+    "x1": 0.19290123456790123,
+    "y1": 0.3013117283950617,
+    "x2": 0.8109567901234568,
+    "y2": 0.3013117283950617
+   },
+   "arc": null,
+   "clFt": 178,
+   "faceOverlapFt": 139.36458333333337,
+   "netFt": 145,
+   "openings": [
+    {
+     "mark": "130",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "131",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "132",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "133",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "134",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "140",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "141",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "142",
+     "kind": "pair",
+     "widthFt": 6,
+     "heightFt": 7
+    },
+    {
+     "mark": "143",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "144",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    }
+   ],
+   "areaPerSideSf": 1827,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "C-N",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "corridor north",
+   "display": {
+    "x1": 0.19290123456790123,
+    "y1": 0.2804783950617284,
+    "x2": 0.8109567901234568,
+    "y2": 0.2804783950617284
+   },
+   "arc": null,
+   "clFt": 178,
+   "faceOverlapFt": 140.89422574028595,
+   "netFt": 146.5,
+   "openings": [
+    {
+     "mark": "110",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "111",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "112",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "113",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "114",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "120",
+     "kind": "pair",
+     "widthFt": 6,
+     "heightFt": 7
+    },
+    {
+     "mark": "118",
+     "kind": "sidelite",
+     "widthFt": 4.5,
+     "heightFt": 7
+    },
+    {
+     "mark": "121",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "122",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    }
+   ],
+   "areaPerSideSf": 1827,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "B-S",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "passes column B2",
+   "display": {
+    "x1": 0.19290123456790123,
+    "y1": 0.4529320987654321,
+    "x2": 0.19290123456790123,
+    "y2": 0.3013117283950617
+   },
+   "arc": null,
+   "clFt": 43.666666666666664,
+   "faceOverlapFt": 40.890625,
+   "netFt": 43.666666666666664,
+   "openings": [],
+   "areaPerSideSf": 458.5,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "B-N",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "passes column B3",
+   "display": {
+    "x1": 0.19290123456790123,
+    "y1": 0.2804783950617284,
+    "x2": 0.19290123456790123,
+    "y2": 0.12885802469135801
+   },
+   "arc": null,
+   "clFt": 43.66666666666667,
+   "faceOverlapFt": 40.890625,
+   "netFt": 43.66666666666667,
+   "openings": [],
+   "areaPerSideSf": 458.50000000000006,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "LB-1",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 9,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "stops at the soffit: 9'-0\"; dies into column A3",
+   "display": {
+    "x1": 0.08641975308641975,
+    "y1": 0.24228395061728394,
+    "x2": 0.19290123456790123,
+    "y2": 0.24228395061728394
+   },
+   "arc": null,
+   "clFt": 30.666666666666668,
+   "faceOverlapFt": 25.59375,
+   "netFt": 27.666666666666668,
+   "openings": [
+    {
+     "mark": "103",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    }
+   ],
+   "areaPerSideSf": 276,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "LB-2",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.13040123456790123,
+    "y1": 0.24228395061728394,
+    "x2": 0.13040123456790123,
+    "y2": 0.12885802469135801
+   },
+   "arc": null,
+   "clFt": 32.66666666666667,
+   "faceOverlapFt": 29.125,
+   "netFt": 29.66666666666667,
+   "openings": [
+    {
+     "mark": "102",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    }
+   ],
+   "areaPerSideSf": 343.00000000000006,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "RCP-ARC",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "curved reception wall, R=22'-0\"",
+   "display": null,
+   "arc": {
+    "cx": 0.1095679012345679,
+    "cy": 0.4020061728395062,
+    "r": 0.0763888888888889,
+    "a0": -80,
+    "a1": -20
+   },
+   "clFt": 23.03834612632515,
+   "faceOverlapFt": 23.03834612632515,
+   "netFt": 23.03834612632515,
+   "openings": [],
+   "areaPerSideSf": 241.90263432641405,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "LB-30",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "30 degree wing wall, free ends",
+   "display": {
+    "x1": 0.09567901234567901,
+    "y1": 0.3117283950617284,
+    "x2": 0.12574933886597203,
+    "y2": 0.2943672839506173
+   },
+   "arc": null,
+   "clFt": 10,
+   "faceOverlapFt": 10,
+   "netFt": 10,
+   "openings": [],
+   "areaPerSideSf": 105,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "N-BK",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "X with B1 at grid D",
+   "display": {
+    "x1": 0.19290123456790123,
+    "y1": 0.22145061728395063,
+    "x2": 0.49614197530864196,
+    "y2": 0.22145061728395063
+   },
+   "arc": null,
+   "clFt": 87.33333333333333,
+   "faceOverlapFt": 76.10416666666667,
+   "netFt": 78.33333333333333,
+   "openings": [
+    {
+     "mark": "125",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "126",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "127",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    }
+   ],
+   "areaPerSideSf": 917,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "N-EX40",
+   "type": "A2",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "exam room demising, acoustic, to deck",
+   "display": {
+    "x1": 0.22762345679012347,
+    "y1": 0.2804783950617284,
+    "x2": 0.22762345679012347,
+    "y2": 0.22145061728395063
+   },
+   "arc": null,
+   "clFt": 17,
+   "faceOverlapFt": 16.59375,
+   "netFt": 17,
+   "openings": [],
+   "areaPerSideSf": 246.5,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "N-EX50",
+   "type": "A2",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "exam room demising, acoustic, to deck",
+   "display": {
+    "x1": 0.2623456790123457,
+    "y1": 0.2804783950617284,
+    "x2": 0.2623456790123457,
+    "y2": 0.22145061728395063
+   },
+   "arc": null,
+   "clFt": 17,
+   "faceOverlapFt": 16.59375,
+   "netFt": 17,
+   "openings": [],
+   "areaPerSideSf": 246.5,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "N-EX60",
+   "type": "A2",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "exam room demising, acoustic, to deck",
+   "display": {
+    "x1": 0.2970679012345679,
+    "y1": 0.2804783950617284,
+    "x2": 0.2970679012345679,
+    "y2": 0.22145061728395063
+   },
+   "arc": null,
+   "clFt": 17,
+   "faceOverlapFt": 15.59375,
+   "netFt": 17,
+   "openings": [],
+   "areaPerSideSf": 246.5,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "N-EX70",
+   "type": "A2",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "exam room demising, acoustic, to deck",
+   "display": {
+    "x1": 0.3317901234567901,
+    "y1": 0.2804783950617284,
+    "x2": 0.3317901234567901,
+    "y2": 0.22145061728395063
+   },
+   "arc": null,
+   "clFt": 17,
+   "faceOverlapFt": 16.59375,
+   "netFt": 17,
+   "openings": [],
+   "areaPerSideSf": 246.5,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "N-EX80",
+   "type": "A2",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "exam room demising, acoustic, to deck",
+   "display": {
+    "x1": 0.36651234567901236,
+    "y1": 0.2804783950617284,
+    "x2": 0.36651234567901236,
+    "y2": 0.22145061728395063
+   },
+   "arc": null,
+   "clFt": 17,
+   "faceOverlapFt": 16.59375,
+   "netFt": 17,
+   "openings": [],
+   "areaPerSideSf": 246.5,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "N-D",
+   "type": "B1",
+   "inScope": true,
+   "thicknessIn": 7.25,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "B1 through the N-BK X junction",
+   "display": {
+    "x1": 0.39197530864197533,
+    "y1": 0.2804783950617284,
+    "x2": 0.39197530864197533,
+    "y2": 0.12885802469135801
+   },
+   "arc": null,
+   "clFt": 43.66666666666667,
+   "faceOverlapFt": 37.890625,
+   "netFt": 40.66666666666667,
+   "openings": [
+    {
+     "mark": "128",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    }
+   ],
+   "areaPerSideSf": 633.1666666666667,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "N-OF50",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.2623456790123457,
+    "y1": 0.22145061728395063,
+    "x2": 0.2623456790123457,
+    "y2": 0.12885802469135801
+   },
+   "arc": null,
+   "clFt": 26.66666666666667,
+   "faceOverlapFt": 26.125,
+   "netFt": 26.66666666666667,
+   "openings": [],
+   "areaPerSideSf": 280.00000000000006,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "N-OF70",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.3317901234567901,
+    "y1": 0.22145061728395063,
+    "x2": 0.3317901234567901,
+    "y2": 0.12885802469135801
+   },
+   "arc": null,
+   "clFt": 26.66666666666667,
+   "faceOverlapFt": 26.125,
+   "netFt": 26.66666666666667,
+   "openings": [],
+   "areaPerSideSf": 280.00000000000006,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "NS-45",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "45 degree, T into corridor",
+   "display": {
+    "x1": 0.408179012345679,
+    "y1": 0.2804783950617284,
+    "x2": 0.42901234567901236,
+    "y2": 0.2596450617283951
+   },
+   "arc": null,
+   "clFt": 8.485281374238571,
+   "faceOverlapFt": 7.9107571145245,
+   "netFt": 8.485281374238571,
+   "openings": [],
+   "areaPerSideSf": 89.095454429505,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "NS-H",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "135 degree L",
+   "display": {
+    "x1": 0.42901234567901236,
+    "y1": 0.2596450617283951,
+    "x2": 0.470679012345679,
+    "y2": 0.2596450617283951
+   },
+   "arc": null,
+   "clFt": 12,
+   "faceOverlapFt": 8.712737870142966,
+   "netFt": 9,
+   "openings": [
+    {
+     "mark": "116",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    }
+   ],
+   "areaPerSideSf": 126,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "NS-V",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.470679012345679,
+    "y1": 0.2596450617283951,
+    "x2": 0.470679012345679,
+    "y2": 0.2804783950617284
+   },
+   "arc": null,
+   "clFt": 6,
+   "faceOverlapFt": 5.59375,
+   "netFt": 6,
+   "openings": [],
+   "areaPerSideSf": 63,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "N-E",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "passes column E3",
+   "display": {
+    "x1": 0.49614197530864196,
+    "y1": 0.2804783950617284,
+    "x2": 0.49614197530864196,
+    "y2": 0.12885802469135801
+   },
+   "arc": null,
+   "clFt": 43.66666666666667,
+   "faceOverlapFt": 36.96466004291153,
+   "netFt": 39.66666666666667,
+   "openings": [
+    {
+     "mark": "RL1",
+     "kind": "relite",
+     "widthFt": 4,
+     "heightFt": 4
+    }
+   ],
+   "areaPerSideSf": 458.50000000000006,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "CF-17",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "17.5 degree conference room wall",
+   "display": {
+    "x1": 0.49614197530864196,
+    "y1": 0.2006172839506173,
+    "x2": 0.5557492847304061,
+    "y2": 0.18182317148160024
+   },
+   "arc": null,
+   "clFt": 17.99999999999999,
+   "faceOverlapFt": 17.722972454964722,
+   "netFt": 17.99999999999999,
+   "openings": [],
+   "areaPerSideSf": 188.9999999999999,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "N-F",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "cased opening",
+   "display": {
+    "x1": 0.6003086419753086,
+    "y1": 0.2804783950617284,
+    "x2": 0.6003086419753086,
+    "y2": 0.12885802469135801
+   },
+   "arc": null,
+   "clFt": 43.66666666666667,
+   "faceOverlapFt": 34.69270833333334,
+   "netFt": 37.66666666666667,
+   "openings": [
+    {
+     "mark": "CO1",
+     "kind": "cased",
+     "widthFt": 6,
+     "heightFt": 8
+    }
+   ],
+   "areaPerSideSf": 410.50000000000006,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "IM-V",
+   "type": "B1",
+   "inScope": true,
+   "thicknessIn": 7.25,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.6616512345679012,
+    "y1": 0.2804783950617284,
+    "x2": 0.6616512345679012,
+    "y2": 0.12885802469135801
+   },
+   "arc": null,
+   "clFt": 43.66666666666667,
+   "faceOverlapFt": 42.52083333333334,
+   "netFt": 43.66666666666667,
+   "openings": [],
+   "areaPerSideSf": 633.1666666666667,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "IM-H",
+   "type": "B1",
+   "inScope": true,
+   "thicknessIn": 7.25,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.6003086419753086,
+    "y1": 0.20756172839506173,
+    "x2": 0.6616512345679012,
+    "y2": 0.20756172839506173
+   },
+   "arc": null,
+   "clFt": 17.666666666666657,
+   "faceOverlapFt": 17.161458333333314,
+   "netFt": 17.666666666666657,
+   "openings": [],
+   "areaPerSideSf": 256.1666666666665,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "ST-V",
+   "type": "CMU",
+   "inScope": false,
+   "thicknessIn": 7.625,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.7484567901234568,
+    "y1": 0.2353395061728395,
+    "x2": 0.7484567901234568,
+    "y2": 0.12885802469135801
+   },
+   "arc": null,
+   "clFt": 30.66666666666667,
+   "faceOverlapFt": 29.61458333333332,
+   "netFt": 30.66666666666667,
+   "openings": [],
+   "areaPerSideSf": 444.66666666666674,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "ST-H",
+   "type": "CMU",
+   "inScope": false,
+   "thicknessIn": 7.625,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.7484567901234568,
+    "y1": 0.2353395061728395,
+    "x2": 0.8109567901234568,
+    "y2": 0.2353395061728395
+   },
+   "arc": null,
+   "clFt": 18,
+   "faceOverlapFt": 17.3125,
+   "netFt": 18,
+   "openings": [],
+   "areaPerSideSf": 261,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "FR-V",
+   "type": "F1",
+   "inScope": true,
+   "thicknessIn": 1.5,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "furring on CMU, dies into exterior",
+   "display": {
+    "x1": 0.7471366222993827,
+    "y1": 0.23665967399691357,
+    "x2": 0.7471366222993827,
+    "y2": 0.12885802469135801
+   },
+   "arc": null,
+   "clFt": 31.046875000000007,
+   "faceOverlapFt": 30.249999999999993,
+   "netFt": 31.046875000000007,
+   "openings": [],
+   "areaPerSideSf": 450.1796875000001,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "FR-H",
+   "type": "F1",
+   "inScope": true,
+   "thicknessIn": 1.5,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.7471366222993827,
+    "y1": 0.23665967399691357,
+    "x2": 0.8109567901234568,
+    "y2": 0.23665967399691357
+   },
+   "arc": null,
+   "clFt": 18.380208333333343,
+   "faceOverlapFt": 17.947916666666686,
+   "netFt": 18.380208333333343,
+   "openings": [],
+   "areaPerSideSf": 266.5130208333335,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "EL-V",
+   "type": "C1",
+   "inScope": true,
+   "thicknessIn": 4.75,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "shaft wall",
+   "display": {
+    "x1": 0.7067901234567902,
+    "y1": 0.17978395061728394,
+    "x2": 0.7067901234567902,
+    "y2": 0.12885802469135801
+   },
+   "arc": null,
+   "clFt": 14.666666666666671,
+   "faceOverlapFt": 14.130208333333329,
+   "netFt": 14.666666666666671,
+   "openings": [],
+   "areaPerSideSf": 212.66666666666674,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "EL-H",
+   "type": "C1",
+   "inScope": true,
+   "thicknessIn": 4.75,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "dies into CMU",
+   "display": {
+    "x1": 0.7067901234567902,
+    "y1": 0.17978395061728394,
+    "x2": 0.7484567901234568,
+    "y2": 0.17978395061728394
+   },
+   "arc": null,
+   "clFt": 12,
+   "faceOverlapFt": 11.359375,
+   "netFt": 12,
+   "openings": [],
+   "areaPerSideSf": 174,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "S-BK",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.19290123456790123,
+    "y1": 0.3533950617283951,
+    "x2": 0.3919753086419752,
+    "y2": 0.3533950617283951
+   },
+   "arc": null,
+   "clFt": 57.33333333333333,
+   "faceOverlapFt": 49.20312500000001,
+   "netFt": 51.33333333333333,
+   "openings": [
+    {
+     "mark": "135",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "136",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    }
+   ],
+   "areaPerSideSf": 602,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "S-EX40",
+   "type": "A2",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "exam room demising",
+   "display": {
+    "x1": 0.22762345679012347,
+    "y1": 0.3533950617283951,
+    "x2": 0.22762345679012347,
+    "y2": 0.3013117283950617
+   },
+   "arc": null,
+   "clFt": 15,
+   "faceOverlapFt": 14.59375,
+   "netFt": 15,
+   "openings": [],
+   "areaPerSideSf": 217.5,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "S-EX50",
+   "type": "A2",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "exam room demising",
+   "display": {
+    "x1": 0.2623456790123457,
+    "y1": 0.3533950617283951,
+    "x2": 0.2623456790123457,
+    "y2": 0.3013117283950617
+   },
+   "arc": null,
+   "clFt": 15,
+   "faceOverlapFt": 14.59375,
+   "netFt": 15,
+   "openings": [],
+   "areaPerSideSf": 217.5,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "S-EX60",
+   "type": "A2",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "passes column C2",
+   "display": {
+    "x1": 0.2970679012345679,
+    "y1": 0.3533950617283951,
+    "x2": 0.2970679012345679,
+    "y2": 0.3013117283950617
+   },
+   "arc": null,
+   "clFt": 15,
+   "faceOverlapFt": 13.59375,
+   "netFt": 15,
+   "openings": [],
+   "areaPerSideSf": 217.5,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "S-EX70",
+   "type": "A2",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "exam room demising",
+   "display": {
+    "x1": 0.3317901234567901,
+    "y1": 0.3533950617283951,
+    "x2": 0.3317901234567901,
+    "y2": 0.3013117283950617
+   },
+   "arc": null,
+   "clFt": 15,
+   "faceOverlapFt": 14.59375,
+   "netFt": 15,
+   "openings": [],
+   "areaPerSideSf": 217.5,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "S-EX80",
+   "type": "A2",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "exam room demising",
+   "display": {
+    "x1": 0.36651234567901236,
+    "y1": 0.3533950617283951,
+    "x2": 0.36651234567901236,
+    "y2": 0.3013117283950617
+   },
+   "arc": null,
+   "clFt": 15,
+   "faceOverlapFt": 14.59375,
+   "netFt": 15,
+   "openings": [],
+   "areaPerSideSf": 217.5,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "S-OF",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.2918595679012346,
+    "y1": 0.4529320987654321,
+    "x2": 0.2918595679012346,
+    "y2": 0.3533950617283951
+   },
+   "arc": null,
+   "clFt": 28.666666666666668,
+   "faceOverlapFt": 28.09375,
+   "netFt": 28.666666666666668,
+   "openings": [],
+   "areaPerSideSf": 301,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "S-D",
+   "type": "B1",
+   "inScope": true,
+   "thicknessIn": 7.25,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "passes columns D1, D2",
+   "display": {
+    "x1": 0.39197530864197533,
+    "y1": 0.4529320987654321,
+    "x2": 0.39197530864197533,
+    "y2": 0.3013117283950617
+   },
+   "arc": null,
+   "clFt": 43.666666666666664,
+   "faceOverlapFt": 37.484375,
+   "netFt": 40.666666666666664,
+   "openings": [
+    {
+     "mark": "137",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    }
+   ],
+   "areaPerSideSf": 633.1666666666666,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "S-E",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "X with S-20",
+   "display": {
+    "x1": 0.49614197530864196,
+    "y1": 0.4529320987654321,
+    "x2": 0.49614197530864196,
+    "y2": 0.3013117283950617
+   },
+   "arc": null,
+   "clFt": 43.666666666666664,
+   "faceOverlapFt": 40.890625,
+   "netFt": 43.666666666666664,
+   "openings": [],
+   "areaPerSideSf": 458.5,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "S-20",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "A1 x A1 X junction at grid E",
+   "display": {
+    "x1": 0.39197530864197533,
+    "y1": 0.38117283950617287,
+    "x2": 0.6003086419753086,
+    "y2": 0.38117283950617287
+   },
+   "arc": null,
+   "clFt": 60.000000000000014,
+   "faceOverlapFt": 59.088541666666686,
+   "netFt": 60.000000000000014,
+   "openings": [],
+   "areaPerSideSf": 630.0000000000001,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "S-F",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.6003086419753086,
+    "y1": 0.4529320987654321,
+    "x2": 0.6003086419753086,
+    "y2": 0.3013117283950617
+   },
+   "arc": null,
+   "clFt": 43.666666666666664,
+   "faceOverlapFt": 40.890625,
+   "netFt": 43.666666666666664,
+   "openings": [],
+   "areaPerSideSf": 458.5,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "S-165",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.6616512345679012,
+    "y1": 0.4529320987654321,
+    "x2": 0.6616512345679012,
+    "y2": 0.3013117283950617
+   },
+   "arc": null,
+   "clFt": 43.666666666666664,
+   "faceOverlapFt": 42.6875,
+   "netFt": 43.666666666666664,
+   "openings": [],
+   "areaPerSideSf": 458.5,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "RR-10",
+   "type": "A2",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": null,
+   "display": {
+    "x1": 0.6616512345679012,
+    "y1": 0.4158950617283951,
+    "x2": 0.8109567901234568,
+    "y2": 0.4158950617283951
+   },
+   "arc": null,
+   "clFt": 43,
+   "faceOverlapFt": 35.21875000000003,
+   "netFt": 37,
+   "openings": [
+    {
+     "mark": "145",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    },
+    {
+     "mark": "146",
+     "kind": "door",
+     "widthFt": 3,
+     "heightFt": 7
+    }
+   ],
+   "areaPerSideSf": 623.5,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "RR-CH",
+   "type": "D1",
+   "inScope": true,
+   "thicknessIn": 14.5,
+   "heightFt": 14.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "plumbing chase between restrooms",
+   "display": {
+    "x1": 0.7345679012345679,
+    "y1": 0.4158950617283951,
+    "x2": 0.7345679012345679,
+    "y2": 0.3013117283950617
+   },
+   "arc": null,
+   "clFt": 33,
+   "faceOverlapFt": 32.59375,
+   "netFt": 33,
+   "openings": [],
+   "areaPerSideSf": 478.5,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  },
+  {
+   "id": "EL-RM",
+   "type": "A1",
+   "inScope": true,
+   "thicknessIn": 4.875,
+   "heightFt": 10.5,
+   "view": "LEVEL 1 FLOOR PLAN",
+   "viewScale": "1/8\" = 1'-0\"",
+   "trueFeetPerUnit": 288,
+   "note": "collinear with the chase, opposite side of RR-10",
+   "display": {
+    "x1": 0.7345679012345679,
+    "y1": 0.4529320987654321,
+    "x2": 0.7345679012345679,
+    "y2": 0.4158950617283951
+   },
+   "arc": null,
+   "clFt": 10.666666666666666,
+   "faceOverlapFt": 10.09375,
+   "netFt": 10.666666666666666,
+   "openings": [],
+   "areaPerSideSf": 112,
+   "count": true,
+   "bid": true,
+   "whyNot": null
+  }
+ ]
+}

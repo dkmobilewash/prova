@@ -500,6 +500,30 @@ export const messageExclusions: Exclusion[] = [
       "T5: deletes are never commands, and a message that reached the provider cannot be deleted at all — owner only, from the row on the log.",
   },
   {
+    action: "sendQuoteRequest",
+    reason:
+      "Emails a supplier the spec sections and addenda they need to price, from the bid's own " +
+      "levelling table. Outward send with no composer, which commands.ts puts at T5 — and the " +
+      "attachments are the reason there is no composer to hand off to: the card cannot carry " +
+      "them, and which pages a supplier is sent is the whole content of the request. Lower " +
+      "stakes than submitBidPackage above and excluded on the same ground rather than a softer " +
+      "one, because the thing a model must not choose here is not the price, it is WHICH " +
+      "DOCUMENTS a third party receives. Sent from the row on /bids. Never a command.",
+  },
+  {
+    action: "submitBidPackage",
+    reason:
+      "Sends the bid itself to a general contractor, with the priced package attached. " +
+      "commands.ts's tier comment names 'outward send without a composer' as T5, which has no " +
+      "member and cannot be registered — and unlike send_email there is no composer to hand off " +
+      "to: the review IS the confirm screen on the proposal page, where the recipient, the " +
+      "attachment and what the estimate check found are read together before one press. " +
+      "A HANDOFF card would be a link to that screen with nothing added, since the card cannot " +
+      "carry the package. It is also the one send in this app with a deadline attached, so a " +
+      "misread prompt does not cost a duplicate email, it costs the bid. Submitted by a person " +
+      "on the job's proposal page. Never a command.",
+  },
+  {
     action: "sendHelpRequestEmail",
     reason:
       "#352: the internal sender behind help.ts's requestHelp, the 'Ask us for help' panel. Takes no recipient argument and always addresses the configured support inbox — not a command, and not something a model prompt should be able to trigger toward an arbitrary address even if send_email's own address resolution stays honest.",

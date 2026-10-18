@@ -104,15 +104,15 @@ Vercel deployment and repo settings). Each drives their own agent.
   surgically: schema files, `middleware.ts`, `navItems.tsx`,
   `lib/actions/shared.ts`, the actions barrel.
 
-  **AI IS DIEGO'S LANE AGAIN, FROM 2026-09-26.** That covers the whole of
-  it: the Ask assistant (`lib/ask/**`, `Ask*` components), the model
-  integration (`packages/integrations/src/{anthropic,ask,research,leads,
-  models}.ts`), the per-company AI switch (`lib/ai/**`,
-  `lib/actions/aiSettings.ts`), AI extraction, AI usage metering, and the
-  takeoff/estimating AI work now in progress.
+  **AI IS SHARED, FROM 2026-10-12 — NEITHER PERSON'S LANE.** Agreed by
+  both in `#prova-build` that day: no split. Whoever is working on an AI
+  piece (Ask, the agents and `/ai`, the model integration, the AI switch,
+  AI extraction, usage metering, the takeoff/estimating AI) keeps it; ask
+  before changing something the other is actively working on. The money
+  and estimating logic under any AI feature stays Diego's.
 
   **READ THE SHAPE OF THIS ENTRY BEFORE ITS CONTENT, because it has now been
-  wrong in both directions and each version was true when written.** This
+  in three states (Diego's, Cyrus's, shared) and each was true when written.** This
   paragraph said AI was Diego's until 2026-09-21, then said in bold that it
   had "moved from Diego to Cyrus" and that "any older line in this repo or
   its PR history calling AI 'Diego's lane' is stale" — which was correct for
@@ -825,6 +825,160 @@ anything about SIZE.
   `deploymentId` for the window of the run before reading a single
   verdict, and treat "the paste came through empty" as a separate problem
   from "the run happened".
+- **THE PAGE WILL TELL YOU WHICH COMMIT IT IS SERVING, AND IT IS THE ONLY
+  ANSWER HERE THAT CANNOT BE STALE.** 2026-10-13. Every `<script>` Next emits
+  carries a `dpl=` query parameter, and on this project **its value is the first
+  32 characters of the git commit SHA**:
+
+  ```js
+  [...document.querySelectorAll('script[src*="dpl="]')]
+    .map((s) => s.src.match(/dpl=([0-9a-f]{32})/)?.[1]).filter(Boolean)[0]
+  ```
+
+  | read from | `dpl=` | commit |
+  | --- | --- | --- |
+  | `app.cstream.ai` | `4c9a33f0e231d702288296f6a5236069` | `4c9a33f0…7c3ca878` (prod) |
+  | the previous production deployment's own URL | `8ca399f67f7ba79f8fb590e1041267cb` | `8ca399f6…fa33fc66` (prod) |
+  | a preview deployment's own URL | `205795e9c75a640f7796d60b1ec88d62` | `205795e9…739664e8` (preview) |
+
+  **Why it outranks everything else this file tells you to check.** It needs no
+  dashboard, no token and no MCP, so a browser tester can answer "am I on the
+  new build" themselves — and `curl | grep` answers it for an agent in one
+  line. An alias listing, a project's `latestDeployment` and a deployment's
+  `state` are all assertions ABOUT the serving; this is the serving. The
+  entries above about a cached `status` field and about green checks on a
+  commit nobody asked about are the same lesson twice, and this is the first
+  instrument in this section that is immune to it.
+
+  **It was a browser tester who produced it, unprompted**, by reporting the
+  `dpl=` value as circumstantial evidence while stopping at step 0 of a
+  click-list. It was the fact that cracked the whole afternoon, and no API call
+  anybody made that day was as decisive.
+
+  **Put it at the top of any click-list that follows a deploy**, as one exact
+  string to match rather than a sentence to compare. Telling a tester to look
+  for changed wording makes them judge; telling them to match 32 hex characters
+  does not, and a stale tab is then one line into the run instead of six steps
+  in.
+
+  **Two bounds, both real.** It names the COMMIT, not whether users are getting
+  it — for that you still need the hostname the app actually runs on, which is
+  the trap in the next paragraph. And all four samples are git-sourced
+  deployments; what a CLI or file-upload deployment puts there is UNTESTED, so
+  verify the mapping before trusting it on a project that deploys that way.
+
+- **NAME THE HOSTNAME, NOT "THE CUSTOM DOMAINS" — AND PRODUCTION CAN GO
+  BACKWARDS WITHOUT ANYBODY ROLLING IT BACK.** 2026-10-13, the episode the entry
+  above came out of, and the fourth member of the "name the endpoint, never say
+  'the database'" family alongside the two Neon projects and the three Clerk
+  instances.
+
+  Vercel's GitHub integration refused three successive merges to `main` with
+  **"Deployment rate limited — retry in 24 hours"** (the Hobby daily deploy cap,
+  tripped at 00:25Z), so each one landed with **no Vercel deployment at all** —
+  the "a push produced no Vercel deployment" scar, three times in one evening.
+  One session then made a DIRECT deployment request for the oldest of them to
+  get it shipped. That was accepted while the cap was still refusing pushes, so:
+  **the cap applies to the git integration, not to the API**, which is the
+  escape hatch worth knowing. It also deployed a commit that two newer merges
+  had already superseded, and it took the production alias — moving production
+  BACK to its own parent commit for 26 minutes. Nobody rolled anything back.
+
+  **The expensive part was a falsifier aimed at the wrong hostname.** That
+  session checked whether the deployment had taken "the custom domains", found
+  their `updatedAt` frozen, and reported it had NOT taken production. The
+  domains it read were `cstream.ai` and `www.cstream.ai`. **The app runs on
+  `app.cstream.ai`**, whose `updatedAt` had moved — and a click-through
+  independently read the superseded commit off the live page thirteen minutes
+  later. The reasoning was sound and the hostname was wrong, and a tester was
+  sent at a build that did not exist yet.
+
+  This project has SIX domains (`get_project` lists them) and only one of them
+  is the app. So: assert the alias of the HOST you mean by name, and read the
+  page's own `dpl=` as the second witness. One of those two alone is what this
+  cost.
+
+  **WHAT THE LIMIT ACTUALLY IS, measured rather than inherited.** It was first
+  diagnosed in Slack as the Hobby *daily* deploy cap. It is not: only **17
+  deployments existed in the 24 hours before the refusal**, and all of that
+  day's nineteen sit inside a four-and-a-half-hour window, six of them in the
+  hour before it. So it is a BURST limit. The account is `plan: "hobby"` with
+  `concurrentBuilds: 1` and `softBlock: null` (from `get_auth_user`), and Vercel
+  does not publish the threshold — so do not write a number here.
+
+  Two consequences worth more than the diagnosis:
+
+    - **A direct deployment request still works while pushes are being
+      refused.** `create_deployment` with a `gitSource` was accepted 33 minutes
+      into the refusal and went live normally. That is the way to ship a merge
+      the integration has dropped, and it builds rather than promotes, so
+      `check-schema.mjs` still runs.
+    - **Every commit was building BOTH projects**, because neither
+      `vercel.json` had an `ignoreCommand`. Over `main`'s last 30 commits, 27
+      changed nothing `apps/lien-waiver` depends on — nine builds in ten spent
+      rebuilding a marketing tool whose files had not moved, while the product's
+      own merges were refused for going too fast. `apps/lien-waiver/vercel.json`
+      now skips those; `apps/lien-waiver/lib/deployTrigger.test.ts` carries the
+      reasoning, because `vercel.json` cannot hold a comment and the polarity is
+      invertible in a way that fails silently.
+
+  **`apps/web` DELIBERATELY HAS NO `ignoreCommand`, and that asymmetry is the
+  point.** A skipped build leaves the previous deployment serving, so a project
+  that skips can legitimately sit behind `main` — which is indistinguishable, on
+  the `dpl=` check above, from the deploy failure that produced this entry. The
+  saving is taken only where being a commit behind costs nothing. The test pins
+  it so nobody optimises the product's deploys into that ambiguity.
+
+- **A 503 ON A SAVE IN THE FIRST MINUTES AFTER A DEPLOY IS THE ALIAS SWAP,
+  NOT YOUR CODE — AND THE WRITE STILL LANDS.** 2026-10-13, reported twice by
+  browser click-throughs of the same form, each run started within minutes of
+  being told the build was live.
+
+  The shape, because it reads alarmingly: the page says **"Saved."**, the
+  network panel shows the POST returning **503**, and the value is correctly
+  stored — confirmed by reload every time. A tester's natural reading is "the
+  UI lies about saving", which is the right worry and the wrong conclusion.
+
+  | saves observed | result |
+  | --- | --- |
+  | run 1, minutes after a deploy | 2 of 2 said "Saved."; both 503; both persisted |
+  | run 2, minutes after a deploy | 4 saves, 2 × 200 and 2 × 503; **all four persisted** |
+  | run 3, build ~10 min old and warm | repeated saves, **no 503 at all** |
+
+  **ELIMINATED, so nobody spends the afternoon:**
+    - **Not our code throwing.** Vercel reported ZERO runtime errors across
+      two separate windows covering both runs.
+    - **Not the action's own request.** An `ActionResult` form awaits the
+      action and branches on `result.ok` BEFORE showing success, and a thrown
+      (production-redacted) error is caught into a sentence — so a failed
+      action request produces an error line, not "Saved.". The data landing
+      every time says the same thing from the other side.
+    - **Not a lying success indicator.** Worth stating separately because it
+      is what the report alleges. `openingDeduction.test.ts` pins the
+      ordering: the ok check returns before the success flag is set.
+
+  So the remaining candidate is the `router.refresh()` that follows a
+  successful save, landing on a deployment whose alias has just been swapped
+  onto a cold function. Its failure is invisible to the person, because the
+  form already shows what they typed.
+
+  **NOT PROVEN, and here is the bound.** The MCP's runtime logs carry no
+  status codes (the tool's own CLI-fallback note says so), so they cannot
+  identify which request 503'd; the Vercel CLI, which reads request logs that
+  do, is not installed on this machine. The evidence is the correlation with
+  deploy age plus the three eliminations above — not a log row naming the
+  path. **A request log would settle it, and the dashboard's Logs tab keeps
+  only the last hour**, so it has to be read while the run is fresh: press
+  Save a few times, then filter `/settings` immediately and look for
+  `GET /settings?_rsc=…` (the refresh) against `POST /settings` (the action).
+  A fresh attempt on a warm build produced no 503 to read.
+
+  **What reopens this:** a 503 with NO deploy in the preceding ten minutes.
+  Until then, do not re-diagnose it, and do not let a click-through's "the
+  page said Saved but the request failed" send you looking at the form —
+  check the deployment's age first. It is also why the live-build check in
+  this file's own workflow matters: telling somebody to click the moment a
+  deploy lands is how you walk them into this.
 - **Do not promote a preview to production.** Merge to `main` instead, so
   the build actually runs. Previews are public (no deployment protection),
   carry the branch's latest commit at a stable alias, and are what browser
@@ -1070,6 +1224,55 @@ anything about SIZE.
   a report of this shape now needs a timestamp before it counts as
   evidence.
 
+  **SOMEBODY FINALLY RECORDED ONE, 2026-10-04, AND IT IS NOT A LOST UPDATE.**
+  The timestamp this entry has been asking for since 5 Sep. A bid quote's
+  expiry edited on production, signed in, nothing clicked afterwards and no
+  reload, polled from the page every 250ms with the clock started on the Save
+  click itself:
+
+  | | |
+  | --- | --- |
+  | Save pressed | t0 |
+  | action resolved, edit form CLOSED | **1,251 ms** |
+  | row repainted with the saved value | **3,502 ms** |
+  | still correct at | 15,000 ms |
+
+  Reload afterwards agreed: the change was stored and the screen was right.
+  So the write lands, the revalidation fires, and **the DOM corrects itself
+  without a reload** — at three and a half seconds, which is the post-action
+  server render this entry already measured at 1.5-4.4s.
+
+  **THE DEFECT IS THE GAP BETWEEN THOSE TWO ROWS, AND IT IS A UI BUG RATHER
+  THAN A DATA ONE.** `ActionForm` ran its `onSuccess` the instant
+  `await action(formData)` resolved, so for **2.25 seconds** the form was gone
+  — telling the estimator the save had finished — while the row behind it
+  still showed the OLD value. That is why this reads as a lost update: the
+  thing you were editing disappears, confirming the action worked, and the
+  screen contradicts you. Two separate click-throughs reported it as a bug;
+  neither timed it, and the untimed report is indistinguishable from a real
+  lost update, which is exactly what this entry warned.
+
+  Fixed by firing `onSuccess` (and the reset) from a settle effect gated on
+  `useTransition`'s `isPending`, which is false only once the transition's own
+  re-render has committed — so a form closes onto fresh data. The cost is that
+  a successful save leaves the form open ~2s longer, with its button disabled
+  and spinning for all of it.
+
+  **AND THE WRONG DIAGNOSIS IS WORTH MORE THAN THE FIX, because this file is
+  where it would have been believed.** Before timing it I concluded that
+  `SubmitButton`'s spinner was dead in every `ActionForm` — `useFormStatus` is
+  documented as reporting a form submitted through the `action` prop, and this
+  form uses `onSubmit`, so it followed. It is FALSE.
+  `components/actionForm.test.ts` had already measured exactly that inference,
+  says in its header that it "looked like it must break `SubmitButton`" and
+  does not because React 19 tracks a transition started in the form's own
+  submit handler, and asserts `disabled` and `aria-busy` mid-flight. Its last
+  line reads *"This test exists so that stays true rather than being
+  rediscovered."* It was rediscovered anyway, from the React docs, by somebody
+  who had not read the test sitting beside the component — and a Slack message
+  claiming 16 files were broken went out before the test was run. **Read the
+  test next to the code before believing a doc-derived inference about it.**
+
   What IS established, and was from the start: a page that fails after a
   commit invites a second click, and no create action is idempotent. #19
   disabled 57 create buttons while their form is in flight and added an
@@ -1273,12 +1476,21 @@ anything about SIZE.
       it said a preview URL, being a different host from `app.cstream.ai`,
       "would pass the egress proxies that 403 both agents' containers".
       Measured 2026-09-09 from an agent container, twice: the preview host
-      is denied exactly like production — `curl` fails at CONNECT and the
-      proxy's own status endpoint names it, `connect_rejected`, "gateway
-      answered 403 to CONNECT (policy denial)". So an agent container
-      cannot reach a preview either, and the hypothesis was dead on a
-      second ground nobody had checked. The conclusion is unchanged and
-      still rests on the build logs above;
+      was denied exactly like production — `curl` failed at CONNECT and the
+      proxy's own status endpoint named it, `connect_rejected`, "gateway
+      answered 403 to CONNECT (policy denial)".
+      **THAT SECOND GROUND IS NO LONGER TRUE, as of 2026-10-04: the preview
+      host answers 200 from an agent container, and a real Chromium drives
+      it.** Sixteen public page loads at 375 and 1280, every one hydrated
+      and clean. So "an agent container cannot reach a preview" has expired,
+      and anyone reading this list to decide where to look next must treat
+      the browser route as OPEN again.
+      The conclusion of this bullet is unchanged and never depended on it —
+      it rests on the build logs above, which say previews resolve
+      `ep-patient-lake`. A preview an agent CAN now reach still cannot write
+      to `ep-little-sea`. But the elimination has lost one of its two legs,
+      which is exactly the shape this file keeps recording: a measurement
+      that was honest on the day, cited later as a property of the world;
     - **Scheduled Routines are not it.** One exists on Diego's account, the
       hourly status desk. Disabled, and its prompt is STATUS ONLY — no
       code, no pushes, and no path to the app;
@@ -1515,6 +1727,186 @@ anything about SIZE.
   `DATABASE_URL`); copy `apps/web/.env` and `packages/db/.env` from the
   main checkout, and a build failing ONLY on `Missing publishableKey` or
   `[db] DATABASE_URL is not set` is environmental, not your diff.
+
+  **AND IN A CLOUD AGENT CONTAINER THAT COMMAND DOES NOT COMPLETE AT ALL,
+  WHICH IS WORSE THAN IT SOUNDS.** Verified 2026-10-04: `pnpm install
+  --frozen-lockfile` dies on `ERR_PNPM_FETCH_403` fetching
+  `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz` — the `xlsx`
+  dependency, which is pinned to a tarball URL rather than to the npm
+  registry, and that host is not on the egress allowlist. It aborts after
+  about 931 of 1242 packages with **nothing linked into
+  `apps/web/node_modules`**, so 258 of 555 test files fail to load on
+  missing packages and `tsc` reports ~22,000 errors that are all
+  resolution noise.
+  
+  The sentence above — "takes seconds and nothing works without it" — is
+  still right about the consequence and wrong about the cause, and an agent
+  that reads it will run the command, watch it print progress, and carry on
+  believing it has dependencies. **Piping it to `tail` or `head` reports
+  exit 0**, because the pipe's exit status is `tail`'s; that is the
+  `set -o pipefail` scar in the Git rules arriving in a new place, and it
+  is how this was nearly missed twice in one session.
+
+  **What DOES work, and it is enough for the db suite.** The blocked
+  dependency belongs to `apps/web`, so the db package is untouched by it:
+
+      pnpm install --frozen-lockfile --filter @prova/db     # completes, ~28s
+
+  That generates the Prisma client and fetches the query engine. Postgres 16
+  is already installed at `/usr/lib/postgresql/16/bin` (not on `PATH`); it
+  refuses to run as root, and the scratchpad's parents are not traversable
+  by the `postgres` user, so the data directory has to go somewhere that
+  user owns. `prisma migrate deploy` then applies every migration, so the
+  scratch database is real and current. The two resolutions that are still
+  missing — `@prova/db` (the workspace link never got made) and `next/*` —
+  are aliases in a LOCAL vitest config: the package source for the first,
+  small stubs for `next/headers` and `next/navigation`. Nothing in the repo
+  changes and CI resolves the real modules.
+
+  `lib/actions/subListing.dbtest.ts` was written and run that way, and it
+  found a defect on its first run — in the harness, not the code:
+  `assertSalesAccess` reads `isProvaOperator` off the CONTEXT, so a mocked
+  `requireCompanyContext` without it fails six cases with "Not found" while
+  the company row in the database has the flag set.
+
+  **The limit is as important as the recipe:** this reaches the DB suite. It
+  does not reach the signed-in e2e suite, which still needs a browser the
+  egress proxy will not let near Clerk's FAPI host — the paragraph near the
+  top of this file about `pnpm test:e2e` stands unchanged.
+
+  **THE 403 IS GONE AND THE INSTALL COMPLETES — 2026-10-05, and the whole
+  entry above is now about a container that no longer exists.** Measured
+  after a container restart wiped `node_modules`, so this was not a curiosity:
+  the harness had to be rebuilt before anything could be re-run.
+
+  | | measured 2026-10-05 21:55Z |
+  | --- | --- |
+  | `GET https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz` | **HTTP 200**, 2,409,319 bytes |
+  | those bytes | a real gzip tarball, 26 entries, `package/dist/LICENSE` first |
+  | `pnpm install --frozen-lockfile` (repo root) | **exit 0, "Done in 31.9s"** |
+  | `apps/web/node_modules` | populated, 21 entries — not empty |
+  | Prisma client | generated by the `packages/db` postinstall |
+
+  So the `--filter @prova/db` recipe above is no longer the ceiling: the
+  full install works, and with it the real `vitest` and a real `tsc`.
+
+  **What this does NOT establish, because the temptation is to write the
+  stronger sentence.** Not WHY the host answers now — an allowlist change
+  and a transient 403 on 4 October are both consistent with it, and nothing
+  here distinguishes them. Not that a COLD pnpm store completes: the store
+  at `/root/.local/share/pnpm/store/v10` predates today and was not cleared,
+  because clearing it to satisfy curiosity would have destroyed the working
+  install this run needed. The reachable host is the part that is settled,
+  and it is the part the old entry named as the cause.
+
+  **One thing the old recipe gets right and is worth keeping, plus the half
+  it is missing.** It says the Postgres data directory "has to go somewhere
+  that user owns" because the scratchpad's parents are not traversable by
+  `postgres`. True — and the sharper version is that a cluster under the
+  scratchpad does not SURVIVE a restart: `/tmp/claude-0` comes back
+  `drwx------`, so `initdb` fails with `could not access directory` on a
+  path that worked an hour earlier, naming the data directory rather than
+  the parent that actually refused. Put the cluster in
+  `/var/lib/postgresql/<name>` and the restart costs one `initdb` plus one
+  `prisma migrate deploy`.
+
+  **CORRECTED 2026-10-06 BY FOLLOWING IT, four hours after it was written —
+  the last sentence is wrong in both halves, and the recipe as given FAILS
+  on the second restart.** What actually happened on the next restart:
+
+  | the paragraph above says | measured |
+  | --- | --- |
+  | the restart costs one `initdb` | **none.** `/var/lib/postgresql` survived with its data and `prova_scratch` intact |
+  | …plus one `prisma migrate deploy` | that part holds — it applied only the one new migration |
+  | (silent on this) | `pg_ctl` **refused to start at all** |
+
+  Two things it does not mention and both are required. `postgres` rejects a
+  data directory that is not `u=rwx` (0700) or `u=rwx,g=rx` (0750) — and the
+  setup script that produced this entry ran `chmod 755` on it, which is
+  `o=rx` and therefore refused. That was invisible the first time because
+  `initdb` CREATES the directory 0700 and overwrote the 755; on a second run
+  the directory already exists, so the `chmod` is the last word and the
+  server dies with `data directory "…" has invalid permissions`. And the
+  **stale `postmaster.pid` from the dead container must be deleted** — it
+  names a pid that no longer exists.
+
+  So: `chmod 700`, `rm -f <dir>/postmaster.pid`, then `pg_ctl start`, and
+  skip `initdb` when `PG_VERSION` is already there.
+
+  **The shape is the reason this is written down rather than quietly fixed in
+  a script.** The entry was four hours old, written from a measurement that
+  was real, and it broke the first person who followed it — because the
+  measurement was taken on a FIRST run and written up as a property of
+  restarts. `pg_ctl` names the cause exactly in its log and says nothing on
+  stdout beyond "could not start server. Examine the log output", so the fix
+  is one `tail` away and the temptation is to guess instead.
+
+  **The limit that has NOT moved is the one that matters most:** this still
+  does not reach the signed-in e2e suite. That needs Clerk's `sk_test_`
+  secret, which is a credential and does not travel through an agent
+  channel — see the Turnstile paragraph further down, which establishes that
+  the gate was never the network.
+
+- **`tsc --noEmit` FROM THE REPO ROOT COMPILES NOTHING AND LOOKS LIKE A
+  PASS.** 2026-10-04, and it is the `gh pr checks` scar wearing the
+  toolchain's clothes: not a wrong answer, an answer about nothing.
+
+  There is no `tsconfig.json` at the repo root — only `tsconfig.base.json`.
+  So a bare `tsc --noEmit` there exits on **TS5081, "Cannot find a
+  tsconfig.json file at the current directory"**, and an agent that pipes
+  the output through `grep <my file>` sees an empty result and reads it as
+  clean. It is clean the way an unopened book has no typos.
+
+  Proved by the only method that settles it, which is the transferable part:
+  **inject a deliberate type error and require the checker to report it.**
+
+  | invocation | injected `const x: number = "s"` in `parse.ts` |
+  | --- | --- |
+  | `tsc --noEmit` from `/home/user/prova` | **0 lines. Silent.** |
+  | `tsc -p tsconfig.json --noEmit` from `apps/web` | `parse.ts(391,9): error TS2322` |
+
+  The right invocation is the project one, and in a container without
+  `node_modules` it emits ~22,500 lines of missing-module cascade — so the
+  filter stays necessary, and the count of lines naming your file is what
+  tells you the file was compiled at all. Empty filter plus a count of
+  ZERO is the vacuous case; empty filter plus a non-zero count is a real
+  pass. On this branch that was 18 lines, every one TS2307/TS7006/TS7031
+  from the unlinked `react`/`next`/`@prova/db` types.
+
+  Same family as the entries below and above it — the census with the
+  wrong scope, the watcher whose needle was already on the page, the
+  review that counted a dead agent as a refutation. **Ask what set the
+  check can SEE before reading what it found**, and for a checker that
+  means proving it can still fail.
+
+  **AND THE READING RULE IN THAT PARAGRAPH INVERTS ONCE THE INSTALL WORKS,
+  WHICH IS NOW — 2026-10-05.** The entry above tells you that "empty filter
+  plus a count of ZERO is the vacuous case". That was sound advice in a
+  container whose `node_modules` was empty, where zero lines could only mean
+  the compiler had not run. With dependencies installed it says the opposite
+  of the truth: a clean project typecheck emits **nothing at all**, and an
+  agent following the sentence would read a genuine pass as vacuous and go
+  looking for a broken invocation.
+
+  | `tsc -p tsconfig.json --noEmit` from `apps/web` | lines | exit |
+  | --- | --- | --- |
+  | no `node_modules` (4 Oct) | ~22,500 cascade, 18 naming the file | non-zero |
+  | `node_modules` installed (5 Oct) | **0** | **0** |
+  | the same, with `const __control: number = "not a number"` appended to `lib/sub-listing/signals.ts` | `signals.ts(440,7): error TS2322` | non-zero |
+
+  **So the line count was never the signal — the control was.** The third
+  row is the only one that makes the second readable, and it is the part of
+  the original entry that survives unchanged: *inject a deliberate type
+  error and require the checker to report it.* The filter and the count were
+  scaffolding around one broken container, and they dated in a day; the
+  control is what settled TS5081 on 4 October and it is what settles a
+  silent zero today, in either direction.
+
+  Read the count against the environment you are in, not against this file:
+  deps missing means a cascade and the filter is how you read it, deps
+  present means zero and the control is how you trust it. Nothing in the
+  output tells you which container you are in, which is exactly why the
+  reflex has to be the mutation rather than the number.
 
 - **"Written, documented, and never called" is a recurring shape here,
   not a one-off.** Three live instances found in a single day: 161
@@ -2091,6 +2483,62 @@ anything about SIZE.
   pages in production mode. Until that runs, this is strong evidence about
   the build and weak evidence about the mechanism.
 
+  **IT HAS RUN, 2026-10-05, AND THE CONFOUND IS SETTLED: THE DEFECT IS THE
+  BUILD, NOT THE MACHINE.** Run `37347729521`, `main` at `627465b8`, the
+  `Hydration probe (#510)` workflow — `workflow_dispatch` only, in
+  `e2e/probes/` where the gating suite's `testDir` cannot see it, so this
+  diagnostic can never turn CI red.
+
+  | | |
+  | --- | --- |
+  | loads | **24** (4 routes × 6), every one proved HYDRATED |
+  | hydration mismatches | **0** |
+  | positive control | **fired 3/3** |
+
+  **The control is why the zero is readable at all.** Phases one and two of
+  that probe would return a clean zero from a run that signed nobody in, or
+  loaded pages React never hydrated — the vacuous green this directory
+  exists to end. So every load carries a `__reactFiber$` proof, and the last
+  phase INJECTS a `<div>` inside `<body>` and fails the probe if it cannot
+  catch it. 24/24 hydrated and 3/3 control is the instrument saying it was
+  able to see what it did not find.
+
+  **And the comparison is contemporaneous rather than historical, which is
+  what makes it worth reading.** The same runner class, the same day, in
+  production mode: run `37344541638` (#631) printed NINE mismatched pages
+  and `37346674544` (#633) printed SIX, both with `verdicts: collected 94,
+  returned 94` and zero 429s. Against this entry's own measured production
+  rate of 12 in 40 loads, P(0 in 24) ≈ 0.0002; at a deliberately
+  conservative 10% per load it is still ≈ 0.08.
+
+  So the laptop's 96-load zero was NOT a laptop artefact, and the paragraph
+  above can stop hedging about which variable moved. Only the build differs
+  here. **Flight's 3,200-byte deferral remains the surviving mechanism**,
+  and it does not exist in a development build.
+
+  **THE EXPENSIVE CONSEQUENCE, AND THE REASON THIS IS WRITTEN UP RATHER THAN
+  LEFT AS A GREEN RUN: THE DEV-MODE INSTRUMENT IS NOW EXHAUSTED.** The
+  paragraph above calls it "the one instrument nobody has pointed at it yet"
+  and wants it for the one thing production cannot give — the ELEMENT and
+  its component stack. It has now been pointed, and it reports nothing,
+  because the defect does not reproduce there. **A development build can
+  only name an element it actually sees disagree.** So the element-naming
+  route is CLOSED, not pending, and the next person must not spend a run on
+  it: a dev-mode probe will keep returning 24/24, 3/3, zero, which looks
+  like progress and is the same measurement repeated.
+
+  That is the opposite of what this entry implied for ten days, and both
+  versions were true when written. What is needed next is a PRODUCTION-mode
+  instrument that can identify an element without React's help — and the
+  honest state of it is that nobody has designed one.
+
+  **Two bounds, stated because the number above is smaller than it looks.**
+  24 loads is a QUARTER of the laptop sweep's 96, over 4 routes rather than
+  16 — so this is the weaker sample of the two, and it is only decisive
+  about the MACHINE question because of what it is being compared against.
+  And it is ONE run of a RACE, which is this file's own rule: re-dispatch
+  the probe before treating a future zero as confirmation of anything.
+
   And the counter-example that keeps it honest, from this file's own record:
   the accidental dev-mode CI run (`36097089609`) DID name an element, the
   `data-clerk-component="UserButton"` div that `AfterMount` then fixed. So
@@ -2140,12 +2588,50 @@ anything about SIZE.
   frame, and Clerk hands `SignIn`/`SignUp` a `fallback` prop with
   `renderWhileLoading: true` so the waiting state is something IT draws.
 
-  And the open half, recorded rather than closed: `SignIn` and `SignUp` carry
+  And the open half — **MEASURED 2026-10-04, and it was open because nobody
+  had an instrument, not because it was hard.** `SignIn` and `SignUp` carry
   the same `clerk.loaded &&` branch as `UserButton`
   (`chunk-THNCS7QR.mjs:556` and `:577`), so the race exists on those two
-  pages in principle. The only evidence against it is that the journey's
-  monitor is attached BEFORE `signInAs` and no run has ever named `/sign-in`.
-  That is weak, and it is the honest state of it.
+  pages in principle. The only evidence against it used to be that the
+  journey's monitor is attached BEFORE `signInAs` and no run has ever named
+  `/sign-in` — which this file called weak, and it was.
+
+  A real Chromium against the preview, 48 loads with a `pageerror` monitor:
+
+  | arm | loads | hydrated | Clerk card | #418 |
+  | --- | --- | --- | --- | --- |
+  | control, before | 3 | 3 | 3 | **3** |
+  | `/sign-in` | 24 | 24 | 23 | **0** |
+  | `/sign-up` | 24 | 24 | 21 | **0** |
+  | control, after | 2 | 2 | 2 | **2** |
+
+  The controls are the whole reason the zeros are readable, and they run at
+  BOTH ends so a mid-run harness death cannot hide behind them. The control
+  injects one `<div>` into `<body>` from `addInitScript` before any page
+  script — the ColorZilla mechanism from the #61 entry — and its success
+  criterion is that the node is REGENERATED AWAY (3 of 3, 2 of 2), because
+  React says the tree "will be regenerated on the client". Against the signed-in
+  shell's own measured rate of 12 in 40, P(0 in 48) is about 10^-8.
+
+  **Two bounds, because the second one is the real limit.** This is a preview
+  deployment, not a GitHub runner, and the defect is a race. And the dangerous
+  ordering is Clerk's script winning against hydration — on 1 of 24 and 3 of 24
+  loads the Clerk card had not rendered at all by the 1.8s mark, which means
+  those loads could not have mismatched even in principle, so the fast-Clerk
+  case is probably UNDER-sampled. Strong evidence the exemption is safe at
+  anything like the shell's rate; not proof at a low one.
+
+  Three harness failures happened before this produced a number, and all three
+  were mine rather than the app's: a control that re-served a decoded body with
+  the original `content-encoding: br`, so nothing parsed and 48 loads were
+  measured against a blank document; a replacement using Playwright's
+  `route.fetch()`, which this container's egress proxy answers **403** (browser
+  navigation is allowed, Playwright's Node-side fetch is a separate path — do
+  not route around it); and a hydration gate reading only
+  `document.querySelector("body *")`, which reported `hydrated: 0` on a control
+  that was firing perfectly, because after a mismatch React regenerates the tree
+  and the first element is no longer one it owns. Scan many elements for a
+  `__reactFiber$` key, not one.
 
   **How the census keeps itself honest.** It counts the files it parsed
   against a second expression that shares no regex with the first, requires
@@ -2161,6 +2647,216 @@ anything about SIZE.
   on the COUNT: "the sources contain 4 files and this census parsed 0"), a
   new Clerk widget added, a `content` glob pointed at a directory that does
   not exist, and `<UserButton>` reached through a namespace import.
+
+- **A REAL BROWSER CAN DRIVE THE PREVIEW FROM AN AGENT CONTAINER. THE ONE
+  THING STOPPING IT WAS A CA, AND THE PROXY'S OWN README SAYS THAT IS ALREADY
+  HANDLED.** 2026-10-04. Worth as much as any bug in this file: it moves
+  "nothing here can click the app" from true to false.
+
+  Three claims checked rather than inherited, and two were stale:
+
+  | claim | measured 2026-10-04 |
+  | --- | --- |
+  | the preview host is denied like production | **200.** Reachable |
+  | Clerk's FAPI host is denied | **400** — a real Clerk response, not a denial |
+  | `cdn.playwright.dev` is needed | not needed; Chromium is pre-installed at `/opt/pw-browsers` and Playwright 1.63.0 is in the root store |
+
+  **What actually blocked it was TLS trust, and the symptom names nothing
+  useful.** Every navigation failed `ERR_CERT_AUTHORITY_INVALID`, because the
+  agent proxy re-terminates TLS and Chromium on Linux reads the NSS store
+  rather than the system one. `/root/.ccr/README.md` lists "the browser NSS
+  store" among the trust accommodations "already set up". It is not: the db at
+  `~/.pki/nssdb` was created EMPTY by my own first Chromium launch, timestamped
+  to the minute. The proxy CA sits in `/usr/local/share/ca-certificates/`, where
+  Chromium never looks.
+
+  The fix, and it needs no privilege beyond apt:
+
+      apt-get install -y libnss3-tools          # certutil is not in the image
+      # split each /usr/local/share/ca-certificates/ccr-agent-proxy*.crt into
+      # single certs, then for each one:
+      certutil -d "sql:$HOME/.pki/nssdb" -A -t "C,," -n <name> -i <cert.pem>
+
+  Then launch `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` through
+  playwright-core with `--no-sandbox`. **Do NOT reach for
+  `ignoreHTTPSErrors` or `--ignore-certificate-errors`** — that is disabling
+  verification, which the proxy README forbids in as many words, and the
+  supported fix is four lines.
+
+  **What is STILL blocked, and the reason is newly specific.** The signed-in
+  walk, because the Clerk sign-up form carries **Cloudflare Turnstile**
+  (`cf-turnstile-response` appears in the DOM after submit) and marks
+  `username` and `phoneNumber` required. Clerk's own answer to bot protection
+  in tests is a Testing Token, which is minted with the SECRET key — and
+  `sk_test_` is a credential that does not travel through an agent channel.
+  So the gate is not the network and never was: it is that CI's `e2e` job holds
+  `E2E_CLERK_SECRET_KEY` and this container does not. Defeating the bot check
+  is not an option; the routes are either walked by CI, by a laptop, or by this
+  container once that secret is set as an environment variable.
+
+  What this DOES buy, and it is the first of its kind here: every public route
+  verified in a real browser at 375 and 1280 — hydrated, no `pageerror`, no
+  console error, no horizontal scroll — and `/sales` confirmed to redirect to
+  `/sign-in?redirect_url=…` rather than 404, which a `curl` without redirects
+  had made look like a missing route.
+
+  **And the instrument lied first, which is the lesson inside the lesson.** The
+  walk's boundary detector matched `/went wrong/` over body text, and flagged
+  the landing page at both widths — because its marketing copy reads "Most subs
+  find out a job **went wrong** when it is finished." A detector whose needle is
+  already on the page, written on the same day as the entry below about exactly
+  that, by the same author. Anchor it on the app's OWN strings: `Digest:\s*\d`
+  from `app/error.tsx`, the "Migrate demo database" link from the preview arm,
+  `nextjs-portal` for the dev overlay. 16 of 16 clean once it was asking the
+  right question.
+
+- **AND THE SIGNED-IN WALL IS NOT THE LIMIT IT LOOKS LIKE: A CLIENT COMPONENT
+  FROM BEHIND SIGN-IN CAN BE CLICKED IN A REAL BROWSER WITH NO CLERK, NO
+  SERVER AND NO SOCKETS.** 2026-10-04, the sequel to the entry above and worth
+  more than it, because the entry above ends at "the signed-in routes need CI or
+  a laptop" and that is only true of ROUTES.
+
+  The thing being verified is usually a `"use client"` component. It does not
+  need Next, a database or a session — it needs React, its own imports, and the
+  app's real CSS. So: bundle it, alias the two or three server-side imports to
+  stubs, compile the REAL Tailwind from `apps/web/tailwind.config.ts` and
+  `app/globals.css`, write an HTML file whose `<body>` carries the root layout's
+  own classes, and open it over **`file://`**. No loopback, so none of the
+  proxy-bypass misery in the entries above applies at all.
+
+      esbuild entry.tsx --bundle --format=iife          # IIFE, so file:// needs no CORS
+        # alias: next/navigation -> stub, @/lib/actions -> stub
+        # a @/ onResolve plugin for the rest; nodePaths at the pnpm store
+        # (the store, because apps/web/node_modules is EMPTY here — xlsx 403)
+      tailwindcss -c <config compiled to .cjs> -i app/globals.css -o app.css
+      chromium /opt/pw-browsers/chromium-1194/chrome-linux/chrome --no-sandbox
+
+  **It found a real defect on its first run, and the defect was invisible to
+  every other instrument in this repo.** `SubListingImport`'s row checkbox
+  carried `className="mt-0.5"` and nothing else, so it rendered at the browser
+  default **13×13** at both 1280 and 375 — the primary selection control on the
+  screen. Eight other components in `components/` size theirs `h-4 w-4` or
+  `h-5 w-5`. No unit test could see it: the screen suite runs in happy-dom,
+  which does no layout and returns zeros from `getBoundingClientRect`, which is
+  the same sentence as the "Cancel inherits the delete pixel" entry and the
+  1.35-point line height on five phone screens.
+
+  **THREE CONTROLS, AND NONE OF THEM IS OPTIONAL** — each answers a way the
+  whole run could be about nothing:
+
+  | control | the vacuous run it rules out |
+  | --- | --- |
+  | `getComputedStyle(body).backgroundColor === "rgb(15, 15, 15)"` | the CSS never loaded, so every layout number is from an unstyled page |
+  | a `__reactFiber$` key across many elements, not one | it never hydrated, and React was never exercised |
+  | **zero rows asserted BEFORE any text is typed** | a row already on the page would pass every count that follows |
+
+  The third is the #61 watcher lesson as a positive requirement rather than a
+  warning, and it is the one that would have been left out.
+
+  **The harness lied first, again, and the control caught it, again.** The
+  action stub returned `{ ok: true, data: … }`; the real type is
+  `ActionResultWith<T> = { ok: true; value: T } | …` (`lib/actions/shared.ts`),
+  so the component threw `Cannot destructure property 'leadsCreated' of
+  'result.value'`. That read exactly like a product defect for a minute. Fixing
+  the STUB resolved that one check and changed nothing else — 44 checks, 42
+  passing, the two reds both the real checkbox — which is what makes the
+  attribution evidence rather than a story. **A failing control is an
+  instruction to fix the harness, not a result to read**, for the fourth time
+  in this file.
+
+  **AND THE CENSUS THAT WAS GOING TO GUARD IT WAS WRONG IN THE REPO'S FAVOURITE
+  WAY.** A regex census over JSX reported **16** unsized checkboxes; the
+  TypeScript AST reported **11**, from the same 26 `<input type="checkbox">`
+  nodes. The five false positives included `SubListingImport.tsx` itself, after
+  it was fixed. The cause is one character: `onChange={(event) => …}` contains a
+  `>`, so `<input\b[^>]*?type="checkbox"[^>]*?>` ends at the ARROW and never
+  reaches `className`. That is "a guard that parses by regex is one line break
+  from seeing nothing" with the line break replaced by a fat arrow — and it
+  fails in the direction that invents work rather than hiding it, which is the
+  only reason it was caught. **Parse JSX with the AST. There is no regex that
+  does this.**
+
+  The 11 are PRE-EXISTING and span both lanes, so no census ships here: a guard
+  needing an 11-entry exemption list documents a problem instead of preventing
+  one. Filed as an issue instead, per the working agreement's rule 3.
+
+  **What is deliberately NOT committed, and the better version of it.**
+  `esbuild` is not a declared dependency of `apps/web` — it resolved out of the
+  pnpm store — and a dependency cannot be added in this container, because
+  `pnpm install` dies on the `xlsx` tarball 403. So this recipe lives here
+  rather than in `e2e/`, where it would be an instrument nobody can install.
+  The durable version needs no bundler at all and is Diego's call because it
+  adds a route: mount the component at a **dev-only public route** outside
+  `(app)`, and the existing `e2e-public` job — real Chromium, already in CI, no
+  credentials — clicks it on every PR. That is the same trick the outlined-
+  boundary investigation above used to measure the shell without signing in.
+
+- **A MUTATION THAT SURVIVES IS NOT A WEAK GUARD — IT IS A CASE THAT PROVES
+  NOTHING, AND THE CAUSE IS ALWAYS THAT SOMETHING ELSE WAS DOING THE WORK.**
+  2026-10-04, on the subcontractor-listing parser. Five separate times in one
+  session, several of them surviving twice before the right case was found.
+  Written down because the reflex on a surviving mutation is to go and
+  strengthen the CODE, and every single time the code was fine and the TEST was
+  about nothing.
+
+  | the condition under test | why the first case proved nothing |
+  | --- | --- |
+  | the licence digit width (6-10, not any 4+ run) | the furniture lines score one signal either way, so the width never decided anything |
+  | a licence column excluded from the scope slot | a BARE `1065432` is excluded anyway by the slot's own `[A-Za-z]{4}` test |
+  | the same, second attempt | `License No. 884201` is excluded by its `^(?:lic\|license\|dir\|reg)\b` prefix test |
+  | a registration read only from its own column | a registration already alone in its column cannot tell an anchored pattern from an unanchored one |
+  | the two wrap conditions (row-shape, fewer-columns) | the fixture rows were excluded by the OTHER two conditions, so dropping either changed nothing |
+  | a bare city as data evidence | "Acme Builders" is rescued by `builders` being an entity marker, and anything naming drywall by a separate trade test |
+
+  The case that finally distinguished each one was narrower and odder than the
+  obvious one, and in every instance it took three tries: `CSLB 884201` (four
+  letters, not in that prefix list, and exactly how a California form writes
+  it); a registration buried in "Registration 1000012345 verified 2026-03-04";
+  a COMPLETE row whose scope is printed lower case AND which is narrower than
+  the row above; "Vang Carpentry | Union City | Scope of work: trim", which
+  needs all four of no entity suffix, no trade word, a labelled scope cell and
+  a city with no state code.
+
+  **So the question to ask of a surviving mutation is not "is my guard too
+  weak" but "what else in this function already handles the input I chose".**
+  Answer that and the distinguishing case writes itself. The reflex of
+  strengthening the code instead would, in two of the six rows above, have
+  removed a working capability — see the entry below on the percentage refusal
+  that nearly shipped.
+
+  And the companion, which cost nothing and caught the worst of them: **read
+  the TOTAL before the colour on every mutation run.** One run in this session
+  reported `122 passed` where the baseline was 286, because a mutation left a
+  dangling reference and three files failed to LOAD. Vitest called it green.
+  That is the "68 passed" scar from the `InvoiceCounter` work arriving again as
+  a 164-test drop, and the only reason it was not read as a pass is that the
+  total is read first.
+
+- **A REFUSAL CAN BE THE MORE DESTRUCTIVE OPTION, AND IT WILL FEEL LIKE THE
+  CAUTIOUS ONE.** Same session. A review found that any lone percentage on a
+  listing row became "listed at N% of the bid" — including `110%` and `999%`,
+  and worse, the plausible ones: a bond column prints **100%** and a retention
+  column prints **5%**.
+
+  The first fix refused every unlabelled percentage. Two existing tests failed
+  it and they were right: a fixture exists precisely because a form may carry a
+  percentage column INSTEAD of a dollar column, so refusing deletes that
+  capability outright — on the strength of a guess about bond columns, to guard
+  against another guess, in a file where every fixture is synthetic and nobody
+  has read a real form.
+
+  **The architecture already had the answer and the refusal talked over it.**
+  Every signal this feature writes lands PROPOSED and a person confirms it. So
+  the useful move is not to withhold the figure but to tell that person what
+  else the column could be: the value is claimed AND carries a concern naming
+  the alternatives. Only `> 100` is refused, because no confirmation by anybody
+  makes "999% of the bid" true — there is nothing left for a reviewer to decide.
+
+  The general form, and it applies well beyond this parser: before removing a
+  capability to avoid being wrong, ask what the system does with an uncertain
+  value ANYWAY. Where a human already gates it, "claim it and say what is
+  doubtful" beats "refuse it", and the refusal is the option that looks
+  responsible while quietly costing the most.
 
 - **A HEADER OPTION IN expo-router CAN BE DISCARDED IN SILENCE, AND THREE
   FIXES SHIPPED GREEN BECAUSE OF IT.** 2026-09-28/29, on the phone. The
@@ -2232,6 +2928,140 @@ anything about SIZE.
   on never appeared.** A defect inside dead code is invisible to every
   instrument, including the ones written for that exact defect.
 
+- **ONE SETTING, FIVE PRs, AND FOUR OF THE FIVE DEFECTS WERE FOUND BY
+  CLICKING.** 2026-10-13, the openings-deduction setting (#763 → #767). The
+  fifth member of the family directly above, and the one that says what the
+  other four were circling: the instruments in this repo are good at the
+  questions they ask, and a person on the screen asks a different question
+  entirely.
+
+  Every defect below shipped with its own census or unit test, written for
+  that exact feature, passing honestly. Not one of them was weak. Each was
+  blind in a way that only a human looking at the screen could see:
+
+  | # | the defect | the check that was green |
+  | --- | --- | --- |
+  | #764 | the setting could not be SAVED at all | a census said the question rendered; a unit test said it was not `required` |
+  | #765 | two of four options did the IDENTICAL thing, labelled as differing | "gives every answer a distinct threshold, so none is a dead option" |
+  | #766 | "only the big ones" secretly meant 32 and no shop could say 50 | every test about what 32 does, all correct |
+  | #767 | the size field sat under the WRONG option | the name, parse, save, threshold and quantity, all asserted |
+
+  **Each one has a transferable shape, and they are different shapes.**
+
+  **PRESENT IS NOT USABLE (#764).** The three business-scope radios are
+  `required`, so the BROWSER refused to submit the form until all three were
+  answered — and an optional fourth question sharing their form could not be
+  saved by any company that had skipped onboarding, which is every company
+  that had not answered those three. A census reads SOURCE; `required` does
+  its work in the browser. No assertion about the new field could have found
+  it, because the field was perfect and a SIBLING killed the submit. The fix
+  was structural — its own form, its own action, nothing else on either — and
+  the replacement assertion is a property source can carry: no `required`
+  input anywhere on that form.
+
+  **A DISTINCTNESS CHECK OVER A STORED ENUM CANNOT SEE A UI OPTION THAT IS NOT
+  IN IT (#765).** The test iterated the three enum values. The form offered
+  FOUR, because "unanswered" needs a control of its own, and unanswered
+  resolves to the same 32 sq ft as "only the big ones" — so two of the four
+  did the same thing while the label promised they differed. The collision is
+  NOT a bug and must not be "fixed": unanswered has to stay 32 or existing
+  quantities move. It is pinned as an equality now, with the screen's honesty
+  asserted beside it. Same sentence as the rest of the family, one step
+  sideways: *nothing is ever missing from a list that does not contain it.*
+
+  **NO TEST HERE CAN SEE LAYOUT, AND THIS IS THE SECOND ENTRY TO PAY FOR IT
+  (#767).** The size field was rendered after the options loop, which put it
+  under the LAST radio while the number it sets applies only to the middle
+  one. Nothing was mis-wired — name, parse, save, threshold, quantity all
+  correct and all asserted. The "Cancel inherits the delete pixel" entry
+  already records that happy-dom does no layout and returns zeros from
+  `getBoundingClientRect`; that entry is about geometry WITHIN a control
+  cluster, and this one is about which sentence a control appears to belong
+  to. The only instrument for either is an eye. What source CAN carry, and
+  now does, is that the field renders INSIDE the loop, conditional on its own
+  option's value.
+
+  **AND A CENSUS OVER A FILE THAT DOCUMENTS ITS OWN HISTORY MUST READ CODE,
+  NEVER TEXT.** Paid twice in one file, hours apart. `OpeningDeductionForm.tsx`
+  explains the bugs it exists to fix, and those explanations quote the very
+  strings the assertions forbid: first the word `required`, then the phrase
+  "the same as" in the comment recording that the label no longer says it.
+  Both times the census failed on prose describing why the code is correct —
+  the mirror image of #185, where a comment quoting a census's own pattern
+  disarmed it. `clerkMountGate.test.ts` strips comments for the same reason.
+  **The better the comment, the more likely it contains the string you are
+  forbidding.** The helper is at module scope in
+  `openingDeduction.test.ts`; use it, and do not assert over raw text in a
+  file written in this repo's house style.
+
+  **What this does NOT mean.** It is not an argument for fewer tests: the
+  censuses caught four separate defects in the same work that a person would
+  not have — an invented colour token (`text-ink-on-brand`, which Tailwind
+  emits nothing for, so the Save label would have been invisible on the
+  yellow), a `type="number"` input that would have SILENTLY BLANKED a shop's
+  threshold and billed them at 32 (measured in real Chromium: a value the
+  browser dislikes submits an empty string), an action nobody had decided
+  whether Ask may call, and a function asking for a wider type than it reads.
+  Two of those four were money bugs. The rule is not "trust clicking over
+  tests"; it is **ask what question each instrument is answering, and notice
+  that a screen answers one no test in this repo asks.**
+
+  So the practical form, for the next feature: after the suites are green,
+  the click-list is not a formality. Write it to ask the questions the suites
+  structurally cannot — can a person actually complete this, do two controls
+  do the same thing, is each control beside the thing it affects — and put a
+  PERSON on it, with a numbered expected result per step so a wrong result is
+  unmistakable.
+
+- **A FILE THE AGENT BROWSER CANNOT FETCH, AND THE SEED THAT MAKES IT NOT
+  MATTER.** 2026-10-03, verifying #596's payroll export.
+
+  Two dead ends, both found the expensive way, so nobody spends the evening
+  again:
+
+    - **`javascript_tool` refuses a fetch whose URL carries a QUERY STRING**
+      — it comes back `[BLOCKED: Cookie/query string data]`. That kills the
+      obvious trick of fetching a download URL from the page's own context to
+      read its bytes without downloading anything, because every such route
+      here is `?jobId=…&weekStart=…`. Rewriting the call to hide the URL does
+      not help; the guard is on the data, not the spelling.
+    - **`chrome://downloads` is unreachable** ("Can't interact with
+      browser-internal URLs"), so the agent cannot even find out where a file
+      landed. And `~/Downloads` is not necessarily where it went: this
+      machine runs FOUR connected Chrome instances, and a download triggered
+      in one of them is invisible from the others.
+
+  So **a file download is a human step**: the person clicks, and then either
+  pastes the contents or says where it saved. Write down what the file MUST
+  contain BEFORE asking — predicting first is what stops a wrong figure being
+  rationalised once it is on screen.
+
+  **The real fix is upstream, and it is the part worth copying.** The reason
+  a production download was needed at all is that `e2e/lib/seedDatabase.ts`
+  created a company, a contact and a job and nothing else — no crew, no craft
+  classifications, no time entries. So `payroll-export.spec.ts` could prove
+  the route, the content type, the filename, the header order and the 403,
+  and could not prove **one figure in the file**. That is not a weak spec; it
+  is the boundary of what an empty database can be asked.
+
+  The seed now carries a fixed week of hours — ONE employee in TWO
+  classifications, which is the smallest shape that catches all three of the
+  mistakes the export exists to prevent: an unknown wage written as `0`
+  instead of blank, a `rateKnown` flag that does not follow it, and a per
+  diem repeated onto a second row and therefore paid twice. **When a check
+  needs real rows to say anything, grow the fixture rather than reaching for
+  production.**
+
+- **Takeoff geometry is computed by code in `apps/web/lib/takeoff/`, never by
+  the LLM.** Every length, thickness, area and coordinate comes from the PDF's
+  own vector geometry; the model is used for interpretation only — what kind of
+  sheet this is, what a run IS, what a label means — and no model reply in this
+  repo carries a coordinate, a length or an area. Two fixture sets grade it and
+  they are not interchangeable: `reports/takeoff-bench` is the only one with
+  wall-footage ground truth, and `lib/takeoff/fixtures` is twenty sheets drawn
+  by a different generator, where **only what a drawing PRINTS may be ground
+  truth**. See `apps/web/lib/takeoff/NOTES.md` for the latest numbers and the
+  known limitations in the order they cost the most.
 - `FEATURE-AUDIT.md`: the 26-category roadmap and source of truth for
   what's built. It has drifted more than once; don't let it.
 - `CHANGELOG.md`: newest first; says why decisions were made and the

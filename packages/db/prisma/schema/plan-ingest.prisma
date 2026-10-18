@@ -66,6 +66,12 @@ enum PlanIngestStage {
   /// calls a model, and it never opens the PDF — so a retry costs one model call
   /// and no parse.
   TITLE_BLOCK
+  /// Per page, and ONLY the pages the title block called a SCHEDULE: rebuild the
+  /// table from text coordinates in code, then read what its columns mean with
+  /// one model call. Opens the PDF, which the title-block stage deliberately
+  /// does not — see `lib/plan-ingest/scheduleRows.ts` for why that trade is the
+  /// right one here and wrong there.
+  SCHEDULE_ROWS
   /// Computed at READ TIME and deliberately never a stage — ordering, duplicate
   /// numbers and what still needs a person are pure computation over rows that
   /// already exist. As a per-page job it would run once per sheet over the whole
@@ -135,7 +141,8 @@ model PlanIngestJob {
   /// stage — `PAGE_INVENTORY` writes `PlanSheetText`, which is keyed on the PLAN
   /// rather than on a run because the text of a page of an immutable file does not
   /// depend on which run read it.
-  sheetProposals PlanSheetProposal[]
+  sheetProposals    PlanSheetProposal[]
+  scheduleProposals PlanScheduleProposal[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -331,6 +338,140 @@ model PlanSheetText {
   @@index([planId, hasTextLayer])
 }
 
+/// THE SCALE A SHEET DECLARES ABOUT ITSELF, read off the dimensions printed on
+/// it — and the two facts a calibration is made of, never a factor.
+///
+/// An architect writes `16' - 4 1/2"` above the line it measures. That is a LINE
+/// and a DISTANCE, which is exactly what `TakeoffScaleCalibration` stores and
+/// exactly what an estimator supplies by clicking twice and typing. So this
+/// table proposes the same evidence by the same route, found rather than typed:
+/// `TakeoffScaleCalibration` is UNCHANGED by this feature.
+///
+/// WHY THIS IS NOT THE THING #623 DECLINED. That PR's record says the printed
+/// scale "implies a factor and not a dimension", and that a calibration "is the
+/// line somebody drew… so the printed scale cannot become one without inventing
+/// a second calibration mechanism with different evidence behind it". Both still
+/// true, and both about the scale NAME in the title block, which yields a factor
+/// and needs `pageWidthPt` — a column whose own comment calls it "A LABEL INPUT
+/// AND NOTHING ELSE". Nothing here stores a factor. If a column for one is ever
+/// added, this has become the thing that was declined.
+///
+/// WHY NOT FIELDS ON `PlanSheetProposal`. That table is the title-block
+/// READER's output: it carries `proposedConfidence` and `promptVersion` and its
+/// own comment says it holds MODEL OUTPUT. This is deterministic geometry off
+/// the PDF's own vectors — no model, no prompt, no spend. The two have different
+/// trust properties and want different review, and merging them would make
+/// "proposed" mean two things in one row.
+model PlanSheetScaleReading {
+  id String @id @default(cuid())
+
+  /// Scoped to the PLAN rather than the ingest job, like `PlanSheetText`: a
+  /// second run over the same set replaces the reading for a page rather than
+  /// accumulating one per run. There is nothing to compare between runs here,
+  /// because the answer is a property of the file.
+  planId String
+  plan   TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  pageNumber Int
+
+  /// The winning standard scale's NAME, exactly as `ARCHITECTURAL_SCALES` spells
+  /// it — `1/8" = 1'-0"`. Null when the sheet was read and no scale could be
+  /// told, which is what `declineReason` explains.
+  ///
+  /// A STRING AND NOT AN ENUM for the reason `proposedPageType` gives one level
+  /// up: a value this build has not heard of must not reject the write. The
+  /// closed set lives in code, where `scaleFromDimensions.test.ts` holds it in
+  /// step with `takeoff-plan.ts`'s own table.
+  scaleName String?
+
+  /// WHERE THE SCALE CAME FROM, and this column is the whole of what makes the
+  /// printed-scale path honest.
+  ///
+  /// `DIMENSIONS` — read off a dimension printed on the drawing. The line below
+  /// is that dimension's own line and `declaredDistanceFeet` is what the drawing
+  /// says it is, so an estimator sees the line sitting on `16' - 4 1/2"` and can
+  /// check it in two seconds. Nothing about this reading has to be taken on
+  /// faith.
+  ///
+  /// `PRINTED` — read off the scale the architect printed in the title block or
+  /// captioned under a view. **Nothing on the sheet confirms it**, and that is
+  /// not a detail to be inferred later from which columns are null: the review
+  /// screen has to SAY so, and an estimator has to accept it knowing there is
+  /// nothing to look at.
+  ///
+  /// WHY THIS EXISTS AT ALL, SINCE #623 DECLINED IT. That PR's reasoning stands:
+  /// a printed scale "implies a factor and not a dimension", and a calibration
+  /// "is the line somebody drew". What changed is a measurement. A real 76-page
+  /// bid set reads 9 of ~30 drywall-relevant sheets from their dimensions;
+  /// sixteen more PRINT their scale and fail only because no dimension on them
+  /// can be read — six have their lettering saved as line work, ten have
+  /// dimensions that scatter. Three geometry fixes were tried and measured at
+  /// zero or worse; the tables are in `scaleFromDimensions.ts`. Diego's call,
+  /// 2026-10-07: use the printed scale, clearly marked unverified.
+  ///
+  /// AND IT INVENTS NO DIMENSION, which is the part that keeps #623's rule
+  /// intact in substance. For a `PRINTED` reading the line is the SHEET'S OWN
+  /// WIDTH and the distance is what the printed scale says that width is — the
+  /// page is 42in across and says 1in = 8ft, so it spans 336ft. Both are facts
+  /// about the file, not a figure read off a dimension that is not there. It
+  /// reads back exactly at every architectural scale, and at a span of 1.0 of
+  /// the page it is the longest and least error-prone line available.
+  ///
+  /// A STRING AND NOT AN ENUM, for the reason `proposedPageType` gives one model
+  /// up: a value a future build has not heard of must not reject the write.
+  /// `scaleReadingSource.test.ts` holds the closed set.
+  source String @default("DIMENSIONS")
+
+  /// The line to propose as the calibration, in PAGE-WIDTH UNITS — x over the
+  /// rendered width, y over that same width, which is `sheet-geometry.ts`'s box
+  /// contract and NOT a fraction of the height. Stored in the same convention
+  /// `TakeoffScaleCalibration` uses so the prefill is a copy rather than a
+  /// conversion.
+  x1 Float?
+  y1 Float?
+  x2 Float?
+  y2 Float?
+
+  /// What the drawing says that line is. `Decimal(12,4)` to match
+  /// `TakeoffScaleCalibration.declaredDistanceFeet` exactly — a prefill that
+  /// rounds differently from the column it lands in would show one figure and
+  /// store another.
+  declaredDistanceFeet Decimal? @db.Decimal(12, 4)
+
+  /// The figure as PRINTED — `16' - 4 1/2"`. Shown to the estimator so they can
+  /// find it on the sheet, which is the whole verification channel: the proposed
+  /// line is drawn over the dimension it came from.
+  declaredText String?
+
+  /// Every printed dimension that agreed, as printed, newline separated. The
+  /// evidence sentence — "matched 6 printed dimensions on this sheet". Never
+  /// "AI determined": a reason nobody can check is a reason nobody can overrule.
+  agreedText String?
+
+  /// How many printed dimensions were found on the page at all, agreeing or not.
+  /// `agreedText` against this is the honest fraction.
+  consideredCount Int @default(0)
+
+  /// How far the proposed line sits from the scale the sheet voted for, as a
+  /// fraction — 0.00315 is the real export's figure. THE ERROR EVERY LATER
+  /// MEASUREMENT INHERITS, and it is stored because a scale nobody can put a
+  /// band on is one taken on faith. Measured rather than derived: an earlier
+  /// version reported a theoretical bound from the figure's own rounding and
+  /// understated the truth by threefold.
+  inheritedError Float?
+
+  /// Why no scale could be told, in words an estimator can act on. FALSE IS A
+  /// FACT, NOT A FAILURE — a sheet with no printed dimensions, or with two
+  /// scales on it, has been read successfully and has nothing to offer.
+  declineReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([planId, pageNumber])
+  @@index([planId])
+}
+
 /// WHAT THE MODEL READ OFF ONE TITLE BLOCK, and what a person said about it.
 ///
 /// THE ROW IS THE PROPOSAL, NOT THE FILING — `intake.prisma`'s rule, copied
@@ -381,6 +522,31 @@ model PlanSheetProposal {
   proposedSheetNumber String?
   proposedTitle       String?
   proposedDiscipline  String?
+
+  /// WHAT KIND OF DRAWING THIS PAGE IS — one of `SHEET_PAGE_TYPES` in
+  /// `packages/integrations/src/planSheets.ts`: COVER, PLAN, ELEVATION, SECTION,
+  /// DETAIL, SCHEDULE or OTHER.
+  ///
+  /// `proposedTitle` already holds what the sheet printed ("EXTERIOR
+  /// ELEVATIONS"), and that is a label a person reads. This is the one the app
+  /// can act on — "which pages are the schedules?" is the question the takeoff
+  /// side needs answered, and four titles can mean one kind.
+  ///
+  /// A STRING RATHER THAN AN ENUM, deliberately, and for the opposite reason to
+  /// the one that usually applies. This column holds MODEL OUTPUT. An enum
+  /// column would reject an unexpected value at write time, and a Server Action
+  /// that throws has its message REDACTED in production — so a model answering
+  /// "FLOOR PLAN" would lose the whole proposal rather than one field.
+  /// `normaliseSheetPageType` is the gate instead: it maps the words a title
+  /// block actually prints onto the closed set and answers OTHER for anything
+  /// else, so what reaches this column is always one of the seven.
+  /// `sheetPageType.test.ts` is what holds that promise.
+  ///
+  /// Null means NOBODY HAS READ THIS PAGE YET, or the text gave nothing to judge
+  /// from — distinct from OTHER, which means it is none of the six. A proposal
+  /// written before prompt `plan-title-block.2` also holds null, because that
+  /// reader did not return the field at all.
+  proposedPageType    String?
   proposedScale       String?
 
   /// THE REVISION AND DATE PRINTED ON THIS SHEET, named so they cannot be
@@ -463,4 +629,91 @@ enum PlanSheetProposalStatus {
   PROPOSED
   ACCEPTED
   REJECTED
+}
+
+/// ONE SCHEDULE READ OFF ONE SHEET, proposed for a person to accept.
+///
+/// A SEPARATE MODEL FROM `PlanSheetProposal` rather than more columns on it,
+/// because the two answer different questions about the same page and have
+/// different lifetimes. The sheet proposal is "what IS this sheet" — one answer,
+/// six fields, settled once. This is "what does its table SAY" — a list whose
+/// length the drawing decides, re-readable on its own without touching the sheet
+/// identity somebody already accepted.
+///
+/// ROWS ARE `Json`, NOT A CHILD TABLE, and this is the same call `BidSpecReading`
+/// made for its findings. A row here is a PROPOSAL: it is read, shown, and either
+/// accepted or thrown away as a set. Nothing joins to an individual row, nothing
+/// updates one in place, and nothing orders them other than as they appeared on
+/// the sheet. A child table would buy referential integrity for rows that have no
+/// referents, and cost a cascade on every re-read.
+///
+/// When a row becomes something the app acts on — a measurement matched to a door
+/// mark — THAT is a real row in a real table, and it is deliberately not in this
+/// PR. See the linking note in `lib/plan-ingest/scheduleRows.ts`.
+model PlanScheduleProposal {
+  id String @id @default(cuid())
+
+  /// WHICH RUN read it. A re-run inserts its own row rather than overwriting,
+  /// which is what keeps an accepted reading from being replaced by a later
+  /// pass — the same reason `PlanSheetProposal` carries this.
+  ingestJobId String
+  ingestJob   PlanIngestJob @relation(fields: [ingestJobId], references: [id], onDelete: Cascade)
+
+  /// CASCADEs from the plan, so one `takeoffPlan.deleteMany({ jobId })` reaches
+  /// it and it stays out of `HANDLED_MODELS` and both cleanup `del()` orders.
+  planId String
+  plan   TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  /// 1-based, the way the viewer, the runner and the title block all count.
+  pageNumber Int
+
+  /// DOOR, WINDOW, FINISH, PARTITION, FIXTURE or OTHER — `SCHEDULE_KINDS` in
+  /// `packages/integrations/src/scheduleRows.ts`. TEXT rather than an enum for
+  /// the reason `proposedPageType` gives: this holds MODEL OUTPUT, and an enum
+  /// column rejecting an unexpected value at write time would cost the whole
+  /// reading to a production error that is redacted anyway.
+  kind String
+
+  /// The schedule's own title as printed — "DOOR SCHEDULE", "ROOM FINISH
+  /// SCHEDULE". Null when the table carries no heading.
+  title String?
+
+  /// The rows, in the order they appeared. Each element: `mark` (copied exactly
+  /// — it is an identity on somebody else's drawing), `description`, `size` (as
+  /// PRINTED, never parsed: `lib/feet-inches.ts` is the app's one reader for
+  /// that), `quantity` (null unless the schedule states one) and `notes`.
+  rows Json
+
+  /// Which column was read as what, checkable against the grid the model was
+  /// given, and which lines were dropped. `intake.prisma`'s standard: "a reason
+  /// nobody can check is a reason nobody can overrule."
+  reason String
+
+  confidence PlanSheetConfidence
+
+  /// How many ROWS of the reconstructed grid were handed to the model, and how
+  /// many came back as schedule rows. Stored because the DIFFERENCE is the
+  /// thing worth seeing: a grid of sixty lines read as twelve rows either
+  /// dropped a column of headers or lost half the schedule, and only a person
+  /// looking at the sheet can say which.
+  gridRowCount Int
+  readRowCount Int
+
+  model         String
+  promptVersion String
+
+  status PlanSheetProposalStatus @default(PROPOSED)
+
+  acceptedByUserId String?
+  acceptedBy       User?     @relation("PlanScheduleProposalAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  acceptedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// One reading per page per run, so a retry landing on the same run replaces
+  /// its own answer rather than adding a second opinion.
+  @@unique([ingestJobId, pageNumber])
+  @@index([planId, pageNumber, createdAt])
+  @@index([planId, status])
 }

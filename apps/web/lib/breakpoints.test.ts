@@ -16,7 +16,7 @@ describe("breakpoints", () => {
   });
 
   it("matches the nav's md: breakpoint", () => {
-    // MobileNav is `md:hidden`.
+    // BottomTabs (the phone navigation) is `md:hidden`.
     expect(DESKTOP_NAV_MIN_WIDTH).toBe(`(min-width: ${screens.md})`);
   });
 

@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   bidQuoteProblem,
+  carriedQuoteLapsed,
   exclusionLines,
   levelBid,
   levelPackage,
   outstandingNote,
+  quoteFreshness,
   requestState,
   type LevelQuote,
 } from "./bid-levelling";
@@ -306,5 +308,162 @@ describe("bidQuoteProblem accepts a request with no price on it", () => {
       "what this quote is for",
     );
     expect(bidQuoteProblem({ packageLabel: "EIFS", vendorName: "", amount: null })).toContain("whoever gave it");
+  });
+});
+
+/**
+ * WHETHER THE PRICE IS STILL GOOD — the question none of the other dates on a
+ * `BidQuote` answers. A quote can be ANSWERED, comparable, carried and inside
+ * the number a GC was sent while the price itself lapsed weeks ago; before
+ * `validUntil` that was not merely unreported, it was inexpressible.
+ */
+describe("whether a quote's price has lapsed", () => {
+  const TODAY = "2026-10-04";
+
+  it("says nothing when the sub named no expiry and the price is recent", () => {
+    expect(quoteFreshness(quote({ id: "a", vendorName: "Acme", amount: 82_000 }), TODAY)).toBeNull();
+  });
+
+  it("is INCLUSIVE of the last day — a price held until the 4th is good on the 4th", () => {
+    // The off-by-one that matters: the wrong end tells somebody a live price
+    // is dead on the one day they most need it. Reused from `isExpired`
+    // rather than restated here, and this is the test that proves the reuse.
+    const onTheDay = quote({ id: "a", vendorName: "Acme", amount: 82_000, validUntil: TODAY });
+    expect(quoteFreshness(onTheDay, TODAY)).toBeNull();
+
+    const dayAfter = quote({ id: "a", vendorName: "Acme", amount: 82_000, validUntil: "2026-10-03" });
+    expect(quoteFreshness(dayAfter, TODAY)?.level).toBe("expired");
+  });
+
+  it("reports an old price with no expiry as stale, not expired", () => {
+    const old = quote({ id: "a", vendorName: "Acme", amount: 82_000, quotedOn: "2026-05-01" });
+    expect(quoteFreshness(old, TODAY)?.level).toBe("stale");
+  });
+
+  it("lets the sub's own date outrank our rule of thumb", () => {
+    // An old quote the sub says still holds is LIVE. Flagging it stale as well
+    // would report one quote twice for the same reason.
+    const oldButHeld = quote({
+      id: "a",
+      vendorName: "Acme",
+      amount: 82_000,
+      quotedOn: "2026-05-01",
+      validUntil: "2026-12-31",
+    });
+    expect(quoteFreshness(oldButHeld, TODAY)).toBeNull();
+  });
+
+  it("says nothing about a request nobody has answered", () => {
+    // No price, nothing to be old about — and `requestState` already reports
+    // this row. Saying "stale" too would be the same fact in two vocabularies.
+    const awaited = quote({ id: "a", vendorName: "Acme", amount: null, quotedOn: null });
+    expect(quoteFreshness(awaited, TODAY)).toBeNull();
+  });
+});
+
+describe("a lapsed price that is the one we carried", () => {
+  const TODAY = "2026-10-04";
+  const carried = (over: Partial<LevelQuote> & { carriedAt?: string | null }) => ({
+    ...quote({ id: "a", vendorName: "Acme", amount: 82_000, ...over }),
+    carriedAt: over.carriedAt ?? null,
+  });
+
+  it("is silent when the carried price still stands", () => {
+    expect(carriedQuoteLapsed([carried({ carriedAt: "2026-10-01", validUntil: "2026-12-31" })], TODAY)).toBeNull();
+  });
+
+  it("NAMES THE VENDOR AND THE DATE when the carried price has lapsed", () => {
+    const warning = carriedQuoteLapsed([carried({ carriedAt: "2026-10-01", validUntil: "2026-09-01" })], TODAY);
+    expect(warning).toContain("Acme");
+    expect(warning).toContain("2026-09-01");
+    // It asks for a confirmation rather than declaring the bid wrong: subs
+    // honour lapsed numbers all the time and this module cannot know.
+    expect(warning).toContain("Confirm");
+  });
+
+  it("IGNORES A LAPSED QUOTE NOBODY CARRIED, which is the whole point", () => {
+    // An expired price we did not use is not a fact about our bid. Warning on
+    // it would make the warning routine, and a routine warning is unread.
+    expect(carriedQuoteLapsed([carried({ carriedAt: null, validUntil: "2026-09-01" })], TODAY)).toBeNull();
+  });
+
+  it("counts them when more than one carried price has lapsed", () => {
+    const warning = carriedQuoteLapsed(
+      [
+        carried({ carriedAt: "2026-10-01", validUntil: "2026-09-01" }),
+        { ...carried({ carriedAt: "2026-10-01", validUntil: "2026-08-15" }), id: "b", vendorName: "Beta" },
+      ],
+      TODAY,
+    );
+    expect(warning).toContain("2 carried prices");
+    expect(warning).toContain("Beta");
+  });
+});
+
+/**
+ * TWO BEHAVIOURS A CLICK-THROUGH REPORTED AS SURPRISES, PINNED BECAUSE THEY
+ * ARE CORRECT.
+ *
+ * A browser test of #624 flagged both as things that looked wrong: a lapsed
+ * price replacing the "priced N days ago" note instead of showing both, and a
+ * price held "until today" still counting as live at 19:50 Denver when UTC had
+ * already rolled to the next day. Neither is a defect. Both are the kind of
+ * non-obvious correct behaviour somebody later "fixes", which is what these
+ * tests exist to stop — the posture `WalkthroughTour`'s `useMedia` note takes
+ * in CLAUDE.md: recorded because it reads like a finding and is not one.
+ */
+describe("expired and stale are mutually exclusive, on purpose", () => {
+  const TODAY = "2026-10-04";
+
+  it("reports EXPIRED only on a price that is both old and lapsed", () => {
+    // Four months old AND past the date the sub gave. Both could fire; only
+    // one does, because they are two answers to one question and showing both
+    // would flag the same quote twice for the same reason. Expiry wins: it is
+    // the sub's own statement, where staleness is our 90-day rule of thumb.
+    const oldAndLapsed = quote({
+      id: "a",
+      vendorName: "Acme",
+      amount: 82_000,
+      quotedOn: "2026-06-01",
+      validUntil: "2026-09-01",
+    });
+    const freshness = quoteFreshness(oldAndLapsed, TODAY);
+    expect(freshness?.level).toBe("expired");
+    expect(freshness?.note).toContain("lapsed");
+    // And NOT the day count — the tester saw this replace the "125 days ago"
+    // note and read the disappearance as a bug.
+    expect(freshness?.note).not.toContain("days ago");
+  });
+});
+
+describe("the expiry boundary follows the VIEWER'S calendar date", () => {
+  /**
+   * `quoteFreshness` compares two `YYYY-MM-DD` strings and reads no clock, so
+   * whoever supplies `today` decides the timezone. `/bids` supplies
+   * `viewerToday()` — the viewer's own date — which is the rule
+   * `components/localToday.ts` states for every date a person acts on.
+   *
+   * This is the scenario the click-through hit: 19:50 in Denver on the 4th is
+   * already the 5th in UTC. A price held "until the 4th" must still be live,
+   * because the person holding it has not reached the 5th. Using the UTC date
+   * would mark every such price dead for the last six hours of every day.
+   */
+  const HELD_UNTIL_THE_4TH = quote({
+    id: "a",
+    vendorName: "Acme",
+    amount: 82_000,
+    quotedOn: "2026-10-01",
+    validUntil: "2026-10-04",
+  });
+
+  it("is LIVE on the viewer's date, which is what the app passes", () => {
+    expect(quoteFreshness(HELD_UNTIL_THE_4TH, "2026-10-04")).toBeNull();
+  });
+
+  it("would be LAPSED on the UTC date, which is why the app must not pass it", () => {
+    // Same quote, same instant, one timezone later. The function is right
+    // either way; the page's choice of `today` is the decision, and this is
+    // the test that says which choice is the correct one.
+    expect(quoteFreshness(HELD_UNTIL_THE_4TH, "2026-10-05")?.level).toBe("expired");
   });
 });

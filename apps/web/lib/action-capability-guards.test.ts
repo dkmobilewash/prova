@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import ts from "typescript";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CAPABILITIES, JOB_FUNCTIONS, can, type Capability } from "./permissions";
 
@@ -436,32 +437,167 @@ function soleCapabilityGating(action: string): Capability | null {
  *
  * A source check is shape, not behaviour, and this repo has been bitten by
  * shape checks that passed over real defects. It is here only to name the
- * offender precisely; the claim is proved by execution below. */
-function bodyOfAction(action: string): string {
-  const owningModule = definingModule.get(action);
-  if (!owningModule) return "";
-  const source = sourceOfModule(owningModule);
-  const start = source.indexOf(`export async function ${action}`);
-  if (start < 0) return "";
+ * offender precisely; the claim is proved by execution below.
+ *
+ * READ THROUGH THE TYPESCRIPT PARSER, AND THE TWO REASONS ARE DIFFERENT
+ * SIZES. Issue #541 named the first; the second was found while fixing it
+ * and is the one that was costing something.
+ *
+ * ONE — A COMMENT IS NOT A GUARD, and until 2026-10-08 this file could not
+ * tell the difference. `bodyOfAction` returned raw source and
+ * `assertsCapability` was a pair of `includes` calls, so a line somebody
+ * commented out satisfied a census written to prove every action is gated.
+ * That is CLAUDE.md's #185 shape — a census disarmed by a comment quoting
+ * its own pattern — landing in the one suite that decides whether a
+ * capability check exists.
+ *
+ * MEASURED RATHER THAN REPEATED, because the issue's own wording is a
+ * little stronger than what happens and the difference is worth having
+ * written down. Comment out `deleteSafetyIncident`'s real
+ * `can(context, "MANAGE_FIELD")` and on the OLD reader exactly one test
+ * fails: the EXECUTION case in section 5, which calls the action as an
+ * ESTIMATOR and gets the owner refusal instead of the access one. Every
+ * SOURCE-level check stays green — including "leaves no action reachable
+ * only from a guarded page without a guard", whose entire purpose is to
+ * name that action. On the parser it fails too, naming
+ * `safety.deleteSafetyIncident (needs MANAGE_FIELD; reachable from
+ * /safety)`.
+ *
+ * So the execution layer is a real backstop for anything in `MUST_ASSERT`,
+ * and the thing that was actually broken is narrower and worse: the source
+ * reader cannot be trusted to say whether a guard EXISTS, and three of the
+ * decision records in this file — `KNOWN_OPEN`,
+ * `UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE` and a `MIXED_DOORS` entry with
+ * `capability: null` — are checked by asking it that question in the
+ * NEGATIVE, where nothing executes at all because the action is recorded
+ * as open on purpose. Those three lists are debt registers that may only
+ * shrink, and a comment is enough to make one of them lie.
+ *
+ * TWO — THE BRACE COUNTER ENDED SIX BODIES EARLY, which no comment
+ * stripper would have fixed. `bodyOfAction` took the first `{` after the
+ * declaration and counted to zero, and an INLINE OBJECT TYPE in the return
+ * annotation closes that count before the body has started:
+ *
+ *     export async function prepareAskAttachment(…)
+ *       : Promise<ActionResultWith<{ pathname: string }>> {
+ *
+ * The "body" was the signature. Measured against the parser on the day
+ * this changed: 402 of 408 bodies read correctly and SIX were truncated to
+ * between 100 and 300 characters — `ask.confirmAskProposal`,
+ * `ask.loadAskProposal`, `ask.prepareAskAttachment`,
+ * `messages.sendHelpRequestEmail`, `quickbooks.loadQuickBooksAccounts` and
+ * `quickbooks.reconcileQuickBooksInvoices`. One of the six was hiding a
+ * REAL guard: `prepareAskAttachment` has asserted MANAGE_JOBS since it was
+ * written and this file had never seen it, which is why it sat in
+ * `UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE` as an open endpoint while being
+ * closed. It is in `SECTION_DECIDED` now and executed like the rest.
+ *
+ * So `withoutComments` from `components/rowActionsCensus.test.ts` — which
+ * is the repo's existing answer to #185 and was the obvious thing to copy —
+ * is NOT sufficient here, for a reason specific to these inputs: the defect
+ * is not only that comments were counted, it is that the extraction never
+ * found the body. Stripping comments from a signature still leaves a
+ * signature. `lib/source-literals.ts` makes the other half of the case and
+ * makes it better: comments are simply not nodes, so nothing returned by a
+ * parser walk can come from one, and there is no regex left to be wrong
+ * about a `}` inside a string or a `//` inside a URL.
+ *
+ * What this deliberately does NOT widen: the two shapes recognised are the
+ * same two as before, down to `can`'s first argument having to be the
+ * identifier `context`. This change is about what counts as CODE, not about
+ * what counts as a guard. */
+const moduleAst = new Map<string, ts.SourceFile>();
+function astOfModule(name: string): ts.SourceFile {
+  const cached = moduleAst.get(name);
+  if (cached) return cached;
+  const parsed = parseSource(sourceOfModule(name), `${name}.ts`);
+  moduleAst.set(name, parsed);
+  return parsed;
+}
 
-  let depth = 0;
-  let index = source.indexOf("{", start);
-  for (; index < source.length; index += 1) {
-    if (source[index] === "{") depth += 1;
-    else if (source[index] === "}") {
-      depth -= 1;
-      if (depth === 0) break;
+function parseSource(source: string, fileName: string): ts.SourceFile {
+  return ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+}
+
+/** Every `export async function` in one parsed file, by name — the parser's
+ * own answer to the question `definingModule`'s regex answers, which is
+ * what makes the equality assertion in section 4 a real cross-check rather
+ * than a tautology. */
+function exportedActionsIn(file: ts.SourceFile): Map<string, ts.FunctionDeclaration> {
+  const found = new Map<string, ts.FunctionDeclaration>();
+  const visit = (node: ts.Node) => {
+    if (ts.isFunctionDeclaration(node) && node.name && node.body) {
+      const flags = ts.getCombinedModifierFlags(node);
+      if ((flags & ts.ModifierFlags.Export) !== 0 && (flags & ts.ModifierFlags.Async) !== 0) {
+        found.set(node.name.text, node);
+      }
     }
-  }
-  return source.slice(start, index + 1);
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return found;
+}
+
+const moduleActionNodes = new Map<string, Map<string, ts.FunctionDeclaration>>();
+function actionNodesOf(name: string): Map<string, ts.FunctionDeclaration> {
+  const cached = moduleActionNodes.get(name);
+  if (cached) return cached;
+  const nodes = exportedActionsIn(astOfModule(name));
+  moduleActionNodes.set(name, nodes);
+  return nodes;
+}
+
+/** The capabilities one function body asserts, as CODE. */
+function capabilitiesAssertedByNode(node: ts.FunctionDeclaration): Set<string> {
+  const found = new Set<string>();
+  const visit = (child: ts.Node) => {
+    if (ts.isCallExpression(child) && ts.isIdentifier(child.expression)) {
+      const callee = child.expression.text;
+      const [first, second] = child.arguments;
+      if (callee === "requireCapabilityForAction" && first && ts.isStringLiteral(first)) {
+        found.add(first.text);
+      }
+      if (
+        callee === "can" &&
+        first &&
+        ts.isIdentifier(first) &&
+        first.text === "context" &&
+        second &&
+        ts.isStringLiteral(second)
+      ) {
+        found.add(second.text);
+      }
+    }
+    ts.forEachChild(child, visit);
+  };
+  visit(node.body as ts.Block);
+  return found;
+}
+
+/** The same thing from raw source, for the fixture test in section 4 — a
+ * scanner that returns nothing looks exactly like a clean app, so it is
+ * mutation-tested against a hand-written module that puts a guard in a
+ * line comment, in a block comment, in a docstring and in a string. */
+function capabilitiesAssertedIn(source: string, action: string): Set<string> {
+  const node = exportedActionsIn(parseSource(source, "fixture.ts")).get(action);
+  return node ? capabilitiesAssertedByNode(node) : new Set<string>();
+}
+
+const assertedCache = new Map<string, Set<string>>();
+function capabilitiesAssertedBy(action: string): Set<string> {
+  const owningModule = definingModule.get(action);
+  if (!owningModule) return new Set<string>();
+  const key = `${owningModule}.${action}`;
+  const cached = assertedCache.get(key);
+  if (cached) return cached;
+  const node = actionNodesOf(owningModule).get(action);
+  const found = node ? capabilitiesAssertedByNode(node) : new Set<string>();
+  assertedCache.set(key, found);
+  return found;
 }
 
 function assertsCapability(action: string, capability: Capability): boolean {
-  const body = bodyOfAction(action);
-  return (
-    body.includes(`requireCapabilityForAction("${capability}"`) ||
-    body.includes(`can(context, "${capability}")`)
-  );
+  return capabilitiesAssertedBy(action).has(capability);
 }
 
 /* ------------------------------------------------------------------ *
@@ -605,6 +741,61 @@ const KNOWN_OPEN: Record<string, Capability> = {
  * the code either way, so a "deliberately ungated" line that later acquires
  * a guard fails just as loudly as a guard that goes missing.
  */
+/* ---------------------------------------------------------------- *
+ * 3c. The fourth shape: guarded MORE STRICTLY than its page
+ * ---------------------------------------------------------------- */
+
+/**
+ * `STRICTER_THAN_ITS_PAGE` — an action whose own capability is narrower than
+ * the one its page withholds, on purpose.
+ *
+ * ── THIS FILE HAD NO SHAPE FOR IT, AND TWO REGISTERS REFUSED IT BY NAME ──
+ *
+ * Added 2026-10-11 by an action that fits none of the three above, and the
+ * refusals are what identified the gap rather than any reasoning:
+ *
+ *   - `MIXED_DOORS` answered *"its doors now agree; the ordinary rule decides
+ *     it, delete this entry"*. True — there is one page, not two;
+ *   - `SECTION_DECIDED` answered *"no page reaching it withholds several
+ *     capabilities any more"*. Also true — the page withholds exactly one.
+ *
+ * Both were right, and the ordinary rule was wrong, because every register here
+ * assumes the page is at least as strict as the action. The case that breaks
+ * the assumption is a COMPANY-LEVEL write offered on a JOB page: the data
+ * outlives the job, so the job's capability is not the one that should decide
+ * who writes it.
+ *
+ * ── WHAT AN ENTRY HAS TO EARN ──
+ *
+ * The danger of a register like this is obvious: "stricter" is what every
+ * unnecessary gate calls itself, and a stricter guard that nobody can see is a
+ * DEAD CONTROL — a button rendered for somebody it then refuses, which this
+ * repo has shipped before and has an entry about. So the honesty cases below
+ * require, of every entry:
+ *
+ *   - the action really does assert the capability named;
+ *   - that capability is NOT the page's, or the ordinary rule covers it and
+ *     the entry is noise;
+ *   - the page still reaches it, so the entry cannot outlive the wiring.
+ *
+ * What they cannot check is the one that matters most — that the CONTROL is
+ * hidden from whoever the action refuses — because no test here can see a
+ * screen. That belongs to a render test, and an entry must name the one that
+ * covers it.
+ */
+const STRICTER_THAN_ITS_PAGE: Record<
+  string,
+  { capability: Capability; pageCapability: Capability; hiddenBy: string; reason: string }
+> = {
+  "wallTypes.addWallTypesFromSchedule": {
+    capability: "MANAGE_ESTIMATING",
+    pageCapability: "VIEW_JOB_COSTS",
+    hiddenBy: "components/addWallTypesFromSchedule.test.tsx",
+    reason:
+      "Pressed on /jobs/[id]/takeoff, which withholds VIEW_JOB_COSTS, and writes WallType rows — the company library /wall-types guards with MANAGE_ESTIMATING, and which outlives the job whose schedule was read. On the page's capability an ACCOUNTING member, who may open that tab, would decide what A1 means for every future job. The button is gated to match: ScheduleProposals renders it only for `canAddWallTypes`, which the page computes as can(context, \"MANAGE_ESTIMATING\").",
+  },
+};
+
 const MIXED_DOORS: Record<string, { capability: Capability | null; reason: string }> = {
   "fieldReports.createDailyFieldReport": {
     capability: null,
@@ -659,6 +850,15 @@ const MIXED_DOORS: Record<string, { capability: Capability | null; reason: strin
   // `log_payment` Ask command declares MANAGE_BILLING already
   // (lib/ask/commands/billing.ts), so the two surfaces now agree instead
   // of one of them being open.
+  // Same shape as billing.logPayment below: /settings/assistant reaches this
+  // only by importing the command registry (record_bid_outcome), never by
+  // rendering an outcome form. The bid workspace on /ai is the real door and
+  // /ai is MANAGE_ESTIMATING, which is also what the command declares.
+  "bidOutcomes.recordBidOutcome": {
+    capability: "MANAGE_ESTIMATING",
+    reason:
+      "Reached from /settings/assistant only through the Ask command registry (record_bid_outcome, MANAGE_ESTIMATING); its real form is on the /ai bid workspace, MANAGE_ESTIMATING like /bids. Gated on MANAGE_ESTIMATING so the command, the page and the action agree.",
+  },
   "billing.logPayment": {
     capability: "MANAGE_BILLING",
     reason:
@@ -904,6 +1104,50 @@ const SECTION_DECIDED: Record<
     reason:
       "The other half of approveTimesheetDay, same control, same capability, already asserted. Reopening unlocks a day's hours for editing, so it is if anything the more consequential of the two. Recorded for execution, no behaviour change.",
   },
+
+  // `ask.prepareAskAttachment` was here (it asserts MANAGE_JOBS). Removed
+  // 2026-10-10 when the Concept G home dropped the Ask panel from
+  // /dashboard: its one remaining door is /ask, which withholds nothing, so
+  // the ordinary rule decides it and this suite said to delete the entry.
+
+  /* ---- /contacts/[id] — the "Client portal" section.
+   *
+   * These two moved OUT of UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE below, which
+   * is what that list is for. The entry there said they were "the
+   * highest-risk item on this page" and deserved "its own argument and its
+   * own click-through, not a line in a batch". That argument has now been
+   * had, and the risk was understated rather than overstated: this is not a
+   * figure being shown to the wrong colleague, it is MINTING A BEARER
+   * CREDENTIAL for somebody outside the tenant. Any authenticated member of
+   * the company could issue one, a FIELD foreman included.
+   *
+   * The section they sit in withholds on MANAGE_BILLING as of this change,
+   * so the derivation here is the ordinary one — the capability the section
+   * reaching the action withholds on — rather than a judgement invented for
+   * these two. Before it, the section withheld nothing at all, which is why
+   * the ordinary rule derived nothing and why the debt entry existed. ---- */
+  "billing.enablePortalAccess": {
+    capability: "MANAGE_BILLING",
+    section: "Client portal",
+    reason:
+      "Mints `Contact.portalToken`, the bearer credential that logs a GC into `/portal/[token]` with no password and no expiry. MANAGE_BILLING is read off what the link OPENS: the contract line items and total, the change orders, and every invoice with its payments and retainage-adjusted balance — that capability's own doc comment, verbatim. It is also the narrowest capability holding everyone with a reason to send the link (ACCOUNTING, PROJECT_MANAGER, EXECUTIVE, every OWNER) while removing FIELD, PAYROLL_COMPLIANCE and ESTIMATOR. Not the VIEW_JOB_COSTS of the contract-paperwork four: that is the inside view of cost and margin, which the portal shows a GC none of, and it would readmit ESTIMATOR.",
+  },
+  "billing.revokeClientPortalAccess": {
+    capability: "MANAGE_BILLING",
+    section: "Client portal",
+    reason:
+      "The other half of enablePortalAccess, same section and same capability, and deliberately not a looser one on the grounds that revoking is the safe direction. It is not safe: it cuts a GC off from the invoices they are being asked to pay, mid-job, and the token cannot be rotated afterwards — enabling brings the SAME link back. Whoever may hand out the credential is who may take it away, or a job function ends up able to kill a live link it cannot restore.",
+  },
+
+  /* ---- /dashboard — the Running now card ---- */
+
+  // "Run again" on a failed agent run (RunWayOut, UX review F6).
+  "agents.runAgentNow": {
+    capability: "MANAGE_ESTIMATING",
+    section: "Running now",
+    reason:
+      "The home page draws the Running now card only from a task list it loads for MANAGE_ESTIMATING (it passes none otherwise), and the Run again button inside it is the same RunAgentButton /ai offers behind that same capability. runAgentNow refuses anyone without MANAGE_ESTIMATING itself, because the agents read bids and estimates.",
+  },
 };
 
 /**
@@ -922,8 +1166,16 @@ const SECTION_DECIDED: Record<
  */
 const UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE: Record<string, { page: string; reason: string }> = {
   // `/contacts/[id]` withholds on three capabilities section by section
-  // (MANAGE_ESTIMATING for bid invitations, MANAGE_BILLING for the client
-  // portal, VIEW_JOB_COSTS elsewhere). That is a bigger per-section read
+  // (MANAGE_ESTIMATING for bid invitations, MANAGE_BILLING, VIEW_JOB_COSTS
+  // elsewhere). Corrected here: this comment used to attribute the
+  // MANAGE_BILLING gate to "the client portal", and it was not there — the
+  // page's `showsBilling` wrapped "Payment reliability", and the Client
+  // portal section was wrapped in nothing at all, which is how two
+  // credential-minting actions came to be reachable by a FIELD foreman with
+  // this file describing the gate that would have stopped them. A
+  // capability named in prose is not a capability in the source. It is
+  // there now, and the two actions are in SECTION_DECIDED above. That is a
+  // bigger per-section read
   // than this pass took on, and the CRM half is a different lane
   // (WORK-SPLIT.md, the fourth lane) whose actions want announcing before
   // they are touched. Deciding three of thirteen would leave the page
@@ -939,16 +1191,18 @@ const UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE: Record<string, { page: string; reason:
   "estimating.createBidInvitation": { page: "/contacts/[id]", reason: "Bid invitations sit in a MANAGE_ESTIMATING section of this page, so the derivation is probably easy — but `/bids` and `/pipeline` read the same rows under the same capability and #79 is in flight on `/bids` right now. Left for a pass that can take the three surfaces together." },
   "estimating.deleteBidInvitation": { page: "/contacts/[id]", reason: "Same section as createBidInvitation, same reason for leaving it." },
   "estimating.updateBidInvitationStatus": { page: "/contacts/[id]", reason: "Same section as createBidInvitation. This is the one of the three that changes a status the GC's invitation is tracked by, so it is the first thing the next pass should take." },
-  "billing.enablePortalAccess": { page: "/contacts/[id]", reason: "Grants a client contact access to the portal — an outward-facing grant, and the highest-risk item on this page. Deliberately NOT swept in with the crew and contract work: a grant of access to somebody outside the company deserves its own argument and its own click-through, not a line in a batch." },
-  "billing.revokeClientPortalAccess": { page: "/contacts/[id]", reason: "The other half of enablePortalAccess; goes with it, whichever way that one is decided." },
+  // `billing.enablePortalAccess` and `billing.revokeClientPortalAccess`
+  // were here and are now in SECTION_DECIDED above, gated on
+  // MANAGE_BILLING. They are the only two entries this list has ever paid
+  // off, and the check below is what forced it: an entry recorded as
+  // undecided that starts asserting a capability fails by name, so the
+  // debt could not be quietly settled in one place and left standing in
+  // the other.
   "quickbooks.linkContactToQuickBooks": { page: "/contacts/[id]", reason: "Links a contact to a QuickBooks customer. MANAGE_BILLING is the likely answer given every other QuickBooks action, but its door is this page rather than /settings, so it is a per-section read this pass did not do." },
 
   // `/dashboard` withholds its money tiles on VIEW_JOB_COSTS and
-  // MANAGE_BILLING. Everything below is reached from it.
-  "ask.cancelAskProposal": { page: "/dashboard", reason: "An Ask card action, also reached from /ask, which withholds nothing. Its guard is not capability-shaped: what it should ask is whether the card's own command is one this person could run (canRunCommand), which follows the card rather than the page. Same argument this file already records for settleAskDraft, and the same lane." },
-  "ask.confirmAskProposal": { page: "/dashboard", reason: "Same as cancelAskProposal — and it already refuses anyone lacking the command's declared capability in a returned sentence, per lib/ask/commands/schedule.ts's own note, so a page-derived capability on top would be the wrong boundary rather than a missing one." },
-  "ask.loadAskProposal": { page: "/dashboard", reason: "Same as cancelAskProposal. A read of a card the asking person already owns." },
-  "ask.prepareAskAttachment": { page: "/dashboard", reason: "Same as cancelAskProposal, in the Ask lane. It prepares an attachment for a card the asking person already owns, so what should guard it is the card's own command rather than the page the card was opened on." },
+  // MANAGE_BILLING. Everything below is reached from it. (The three Ask card
+  // actions left with the Ask panel on 2026-10-10; /ask is their door now.)
   "gettingStarted.hideGettingStarted": { page: "/dashboard", reason: "A per-person preference write — it hides a panel on the person's own dashboard and touches no job, no money and nothing a GC sees. Explicitly the lowest-risk category in this sweep and left for last on purpose. Recorded rather than fixed so that the count stays honest." },
 };
 
@@ -977,6 +1231,124 @@ describe("the walk this file's claims rest on", () => {
     // And a page guarded ONLY at the page, never in ROUTE_CAPABILITY,
     // is picked up by reading the source rather than the map.
     expect(capabilityDemandedByPage("/jobs/[id]/certified-payroll")).toBe("MANAGE_COMPLIANCE");
+  });
+
+  it("reads every action through the parser, and says so if the parse collapses", () => {
+    // THE SIZE AND SCOPE ASSERTION for the guard reader, and the two
+    // sources are deliberately unrelated: `definingModule` is built by a
+    // REGEX over the same files (section 2), and this is the PARSER's
+    // answer to the same question. Neither can drift with the other.
+    //
+    // CLAUDE.md's rule for anything that derives its input: it can get the
+    // answer wrong, and it can get an EMPTY QUESTION, and only the first
+    // looks like a failure. A parse that returned nothing here would make
+    // `assertsCapability` false everywhere — which reads as "no action is
+    // guarded", so the holes check would go red rather than quiet. But a
+    // parse that returned nothing for ONE MODULE is the dangerous shape:
+    // every `assertsCapability` for it becomes false, every "and does not
+    // assert it" message fires, and somebody fixes the record instead of
+    // the parser. So the sets are required to be equal, by name.
+    const parsed = new Map<string, string>();
+    for (const name of ACTION_MODULES) {
+      for (const action of actionNodesOf(name).keys()) parsed.set(action, name);
+    }
+
+    const parsedNames = [...parsed.keys()].sort();
+    const regexNames = [...definingModule.keys()].sort();
+    expect(
+      parsedNames,
+      `The parser found ${parsedNames.length} exported actions and the regex walk found ` +
+        `${regexNames.length}. An action the parser cannot see asserts nothing as far as this ` +
+        `file is concerned, so fix the parse rather than the records that then disagree with it.`,
+    ).toEqual(regexNames);
+    expect(parsed.size).toBeGreaterThanOrEqual(300);
+
+    // And it must be finding GUARDS, not merely functions. 300 (action,
+    // capability) pairs the day this was written; a floor rather than an
+    // equality, because adding a guard should not fail a test about
+    // something else — but a reader that stops recognising `can(context,
+    // …)` collapses this to zero and fails here, with the number on
+    // screen, instead of silently reporting every action ungated.
+    const pairs = regexNames.reduce((total, action) => total + capabilitiesAssertedBy(action).size, 0);
+    expect(
+      pairs,
+      `The guard reader found ${pairs} capability assertions across ${regexNames.length} actions. ` +
+        `If that has collapsed, the two call shapes it recognises have been renamed or the parse ` +
+        `is failing — every check in this file that reads "does not assert it" is downstream of it.`,
+    ).toBeGreaterThanOrEqual(250);
+  });
+
+  it("counts a guard only when it is CODE, never when it is prose", () => {
+    /* THE MUTATION THIS FILE FAILED, written as a fixture so it cannot be
+       failed again. Issue #541: comment out a real guard and the old
+       `includes` pair still found it, so an action whose only gate was a
+       commented-out line passed a census built to prove the gate exists.
+
+       A fixture rather than a note, for the reason `rowActionsCensus.test.ts`
+       gives about its own scanner: a reader that returns nothing looks
+       exactly like a clean app, and the only way to know this one can tell
+       prose from code is to hand it both and watch which comes back. */
+    const FIXTURE = [
+      '"use server";',
+      "",
+      "/** This action is gated on MANAGE_COMPLIANCE. */",
+      "export async function prosePromise(formData: FormData): Promise<ActionResult> {",
+      "  const context = await requireCompanyContext();",
+      '  // if (!can(context, "MANAGE_FIELD")) return actionFail(FIELD_ONLY);',
+      '  /* requireCapabilityForAction("MANAGE_JOBS", "nope"); */',
+      '  const note = \'can(context, "MANAGE_BILLING")\';',
+      "  return actionOk(note);",
+      "}",
+      "",
+      "/* An inline object type in the return annotation: this is where the old",
+      "   brace counter stopped, six times over, before the body began. */",
+      "export async function realGuard(",
+      "  id: string,",
+      "): Promise<ActionResultWith<{ pathname: string }>> {",
+      "  const context = await requireCompanyContext();",
+      '  if (!can(context, "VIEW_JOB_COSTS")) return actionFail("not your job function");',
+      '  const brace = "}";',
+      "  return { ok: true, value: { pathname: brace + id } };",
+      "}",
+    ].join("\n");
+
+    // Four ways of writing a guard that is not one: a docstring, a line
+    // comment, a block comment and a string literal. None counts.
+    expect([...capabilitiesAssertedIn(FIXTURE, "prosePromise")]).toEqual([]);
+
+    // And the real one is found, past both the inline object type in the
+    // return annotation and a `}` sitting inside a string.
+    expect([...capabilitiesAssertedIn(FIXTURE, "realGuard")]).toEqual(["VIEW_JOB_COSTS"]);
+
+    // A name the fixture does not define reads as "asserts nothing" rather
+    // than throwing, which is the same answer the real walk gives for an
+    // action that has been renamed — and is why the staleness checks above
+    // test the module first.
+    expect([...capabilitiesAssertedIn(FIXTURE, "notThere")]).toEqual([]);
+  });
+
+  it("names three guards in the app itself, so the fixture is not the only evidence", () => {
+    // A fixture proves the reader; these prove it against the real files,
+    // and each one is a different shape of the same mistake.
+
+    // An in-body comment naming `requireCapabilityForAction` sits three
+    // lines above a real returned `can(context, …)`. Both the old reader
+    // and this one find MANAGE_FIELD — the point is that it is now found
+    // for the right reason, and nothing else in that body is.
+    expect(capabilitiesAssertedBy("deleteSafetyIncident")).toEqual(new Set(["MANAGE_FIELD"]));
+
+    // THE ONE THE OLD READER COULD NOT REACH. Its return annotation is
+    // `Promise<ActionResultWith<{ pathname: string }>>`, so the brace count
+    // closed before the body, and this file recorded a guarded endpoint as
+    // an open one for as long as the action has existed.
+    expect(assertsCapability("prepareAskAttachment", "MANAGE_JOBS")).toBe(true);
+
+    // And the other direction: `importCatalogEntries`'s docstring explains
+    // at length that `/catalog` demands MANAGE_ESTIMATING and that the
+    // endpoint behind it is open anyway. Prose naming a capability is the
+    // thing this reader must never count — it is recorded as debt in
+    // OPEN_BEHIND_AN_ALREADY_GUARDED_PAGE, and it must stay there.
+    expect(assertsCapability("importCatalogEntries", "MANAGE_ESTIMATING")).toBe(false);
   });
 
   it("accounts for every page that withholds content, not only every page that refuses the route", () => {
@@ -1053,13 +1425,16 @@ for (const action of [...reachedBy.keys()].sort()) {
   const key = `${moduleName}.${action}`;
   const mixed = MIXED_DOORS[key];
   const decided = SECTION_DECIDED[key];
+  const stricter = STRICTER_THAN_ITS_PAGE[key];
   const capability = mixed
     ? mixed.capability
     : decided
       ? decided.capability
-      : soleCapabilityGating(action);
+      : stricter
+        ? stricter.capability
+        : soleCapabilityGating(action);
   if (!capability) continue;
-  if (!mixed && !decided && key in KNOWN_OPEN) continue;
+  if (!mixed && !decided && !stricter && key in KNOWN_OPEN) continue;
   MUST_ASSERT.push({ action, moduleName, capability });
 }
 
@@ -1072,7 +1447,7 @@ describe("every write behind a guarded page answers to the same capability", () 
       if (!capability) continue;
       const moduleName = definingModule.get(action) as string;
       const key = `${moduleName}.${action}`;
-      if (key in KNOWN_OPEN || key in MIXED_DOORS) continue;
+      if (key in KNOWN_OPEN || key in MIXED_DOORS || key in STRICTER_THAN_ITS_PAGE) continue;
       if (assertsCapability(action, capability)) continue;
 
       const doors = [...(reachedBy.get(action) as Map<string, Capability | null>).keys()];
@@ -1091,6 +1466,44 @@ describe("every write behind a guarded page answers to the same capability", () 
         `If it must stay open, say so in MIXED_DOORS or in one of the two lists above, ` +
         `with the reason. Absence is not a decision.`,
     ).toEqual([]);
+  });
+
+  it("keeps every stricter-than-its-page entry earning its place", () => {
+    // The register exists because the ordinary rule would UNDER-gate these.
+    // Its own risk is the opposite one: an entry that is merely a gate nobody
+    // argued for. Each line has to still be true of the code.
+    const stale: string[] = [];
+
+    for (const [key, decision] of Object.entries(STRICTER_THAN_ITS_PAGE)) {
+      const [moduleName, action] = key.split(".");
+      if (definingModule.get(action) !== moduleName) {
+        stale.push(`${key} — no such action in that module any more`);
+        continue;
+      }
+      if (!reachedBy.has(action)) {
+        stale.push(`${key} — no page reaches it, so nothing is being overridden`);
+        continue;
+      }
+      const page = soleCapabilityGating(action);
+      if (page === null) {
+        stale.push(`${key} — its page no longer withholds one capability; MIXED_DOORS is the register`);
+        continue;
+      }
+      if (page !== decision.pageCapability) {
+        stale.push(`${key} — its page now withholds ${page}, not ${decision.pageCapability}`);
+        continue;
+      }
+      if (page === decision.capability) {
+        stale.push(`${key} — the action and its page agree now; the ordinary rule covers it, delete this entry`);
+      }
+      // The claim this file cannot check itself. An entry that names a render
+      // test which does not exist is the dead-control case wearing a citation.
+      if (!existsSync(join(WEB, decision.hiddenBy))) {
+        stale.push(`${key} — names ${decision.hiddenBy} as hiding the control, and there is no such file`);
+      }
+    }
+
+    expect(stale, `The stricter-than-its-page entries no longer match the code:\n${stale.join("\n")}`).toEqual([]);
   });
 
   it("keeps the open lists honest — no stale entry, no entry that is now guarded", () => {
@@ -1446,6 +1859,10 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // and this suite found it by the walk on the day it was added, which is
   // the behaviour the file is for.
   company: () => import("./actions/company"),
+  agentSettings: () => import("./actions/agentSettings"),
+  agentFindings: () => import("./actions/agentFindings"),
+  proposalDrafts: () => import("./actions/proposalDrafts"),
+  sheetPins: () => import("./actions/sheetPins"),
   // Only `uploadComplianceDocument` — the other eight actions in this
   // module are still recorded in OPEN_BEHIND_AN_ALREADY_GUARDED_PAGE. It is
   // the one that spends the company's paid AI allowance, so its refusal is
@@ -1534,6 +1951,8 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // walk derives its assertion and executes it as a principal without it,
   // same as the jobs/estimating modules above.
   takeoff: () => import("./actions/takeoff"),
+  takeoffClassify: () => import("./actions/takeoffClassify"),
+  takeoffReadSheet: () => import("./actions/takeoffReadSheet"),
   // Crew & time. Five of the seven actions here are decided per SECTION
   // rather than per page (SECTION_DECIDED) — `/jobs/[id]/crew` withholds
   // on two capabilities, so the ordinary rule derives nothing for it. The
@@ -1568,6 +1987,11 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // note on /closeout argues is worse than a consistent state.
   jobMedia: () => import("./actions/jobMedia"),
   materialOrders: () => import("./actions/materialOrders"),
+  // Messages — `submitBidPackage` is reachable from the job's proposal page,
+  // which demands MANAGE_ESTIMATING, and asserts it before it reads the bid or
+  // touches the uploaded package. The other two senders in this module are not
+  // reachable from a capability-gated page and are not walked to from here.
+  messages: () => import("./actions/messages"),
   // Lien deadlines — every write reachable only from /lien-deadlines, which
   // demands MANAGE_BILLING, and every one asserts it before any query.
   lienDeadlines: () => import("./actions/lienDeadlines"),
@@ -1653,6 +2077,10 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // turning AI off stops work for every member of the company, and turning it
   // back on is a decision about where their documents may go.
   aiSettings: () => import("./actions/aiSettings"),
+  agents: () => import("./actions/agents"),
+  // Dismiss on /ai's findings (2026-10-11), a MANAGE_ESTIMATING page.
+  bidOutcomes: () => import("./actions/bidOutcomes"),
+  recommendations: () => import("./actions/recommendations"),
   // The plan-ingestion runner, reachable from /jobs/[id]/takeoff alone, which is
   // hard-gated on VIEW_JOB_COSTS. All four actions assert that — the first
   // version asserted MANAGE_ESTIMATING, which sounds right for a plan set and is

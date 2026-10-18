@@ -44,6 +44,10 @@ const appDir = join(webRoot, "app");
  */
 const EMPTY_STATE_EXCEPTIONS: Record<string, string> = {
   "/ask": "not a list: the assistant box with its example questions is the whole page",
+  // Added 2026-10-11 with the AI page. Its three side lists each render their
+  // own sentence-and-button empty state (components/ai/AiParts.tsx, pinned by
+  // aiParts.render.test.tsx), and the chat beside them is never empty.
+  "/ai": "never empty as a page — the chat is always there, and each agent list says in a sentence what fills it, with a Run now or a link to bids",
   "/team": "never empty — the owner is always on it, and the invite form is the first thing on the page",
   "/settings": "a set of forms, not a list; each section says in one line what it is for",
   "/settings/integrations": "a card per connection with its own Connect button; there is no list to be empty",

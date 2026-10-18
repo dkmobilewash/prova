@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { CertifiedPayrollEmployeeSummary } from "./certified-payroll";
+import { buildCertifiedPayrollSummary, type CertifiedPayrollEmployeeSummary } from "./certified-payroll";
 import {
   buildPayrollExportRows,
   PAYROLL_EXPORT_COLUMNS,
@@ -194,5 +194,76 @@ describe("an empty week", () => {
     expect(buildPayrollExportRows([], PERIOD)).toEqual([]);
     // An employee with no classifications contributes nothing either.
     expect(buildPayrollExportRows([employee({ rows: [] })], PERIOD)).toEqual([]);
+  });
+});
+
+describe("a row that is only PARTLY priced", () => {
+  /** THE NEAR-MISS, REPRODUCED. One employee, ONE craft, one week, and a
+   * fringe schedule that stops being in force on the Tuesday. Monday and
+   * Tuesday price; Wednesday and Thursday do not. The row therefore carries
+   * a wageCost that is a real number and is SHORT — 32 hours of work
+   * exported as $800 against $1,600 — and before 2026-10-04 it carried
+   * `rateKnown: "yes"` beside it.
+   *
+   * The screen had been right about this the whole time: it draws an amber
+   * asterisk off `hasUncomputedHours`. The export never read that flag, so
+   * the file dropped the only signal saying the figure was incomplete, and
+   * a clerk pays what the file says. */
+  const craftId = "craft_partial";
+  const entry = (day: number) => ({
+    employeeUserId: "u_partial",
+    employeeName: "Partly Priced",
+    craftClassificationId: craftId,
+    craftLabel: "UBC 1234 — Taper",
+    date: new Date(`2026-08-${day}T00:00:00.000Z`),
+    hours: 8,
+    payType: "STRAIGHT" as const,
+    perDiemAmount: null,
+    travelPayAmount: null,
+  });
+  const schedules = new Map([
+    [
+      craftId,
+      [
+        {
+          baseWage: 50,
+          pensionRate: null,
+          vacationRate: null,
+          healthWelfareRate: null,
+          trainingRate: null,
+          effectiveFrom: new Date("2026-01-01T00:00:00.000Z"),
+          effectiveTo: new Date("2026-08-25T00:00:00.000Z"),
+        },
+      ],
+    ],
+  ]);
+
+  function partialRow() {
+    const summaries = buildCertifiedPayrollSummary(
+      [entry(24), entry(25), entry(26), entry(27)],
+      schedules,
+    );
+    return buildPayrollExportRows(summaries, { start: "2026-08-23", end: "2026-08-29" })[0];
+  }
+
+  it("is reachable at all — the fixture really does price only half the week", () => {
+    // Without this the three assertions below could pass on a row that is
+    // fully priced or fully unpriced, and say nothing.
+    const row = partialRow();
+    expect(row.totalHours, "the fixture did not log four days").toBe(32);
+    expect(row.wageCost, "the fixture priced everything or nothing").toBe(800);
+  });
+
+  it("says partial, not yes — the figure is real and it is short", () => {
+    expect(partialRow().rateKnown).toBe("partial");
+  });
+
+  it("still exports the hours in full, so the shortfall is visible", () => {
+    // 32 hours against $800 is the discrepancy a clerk can SEE once the
+    // flag tells them to look. Silently trimming the hours to match the
+    // priced ones would hide it instead.
+    const row = partialRow();
+    expect(row.totalHours).toBe(32);
+    expect(row.straightHours).toBe(32);
   });
 });

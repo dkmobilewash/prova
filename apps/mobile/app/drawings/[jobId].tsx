@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -118,6 +118,20 @@ export default function DrawingsScreen() {
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <SyncStatus state={offline} />
+
+      {/* The way to the SHEETS of these drawings. This screen's own header
+          used to say "there are no SHEETS in this product" — true when it was
+          written, and no longer: a revision's PDF is rendered at the office
+          into one image per page, which is what a phone can draw a pin on. A
+          link from here rather than a tenth tile on the job hub, because a
+          sheet belongs to a drawing and that is how somebody looks for it. */}
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push(`/sheets/${jobId}`)}
+        style={styles.sheetsLink}
+      >
+        <Text style={styles.sheetsLinkText}>{t("drawings.openSheets")}</Text>
+      </Pressable>
 
       <List
         data={sets}
@@ -242,6 +256,12 @@ export default function DrawingsScreen() {
 
 function makeStyles(p: Palette) {
   return StyleSheet.create({
+    sheetsLink: { minHeight: hitTarget, justifyContent: "center", paddingHorizontal: space.md },
+    sheetsLinkText: {
+      color: p.colors.link,
+      fontSize: typography.size.md,
+      fontWeight: typography.weight.medium,
+    },
     screen: { flex: 1, backgroundColor: p.colors.canvas },
     chipWrap: { padding: space.md, paddingBottom: 0 },
     error: { color: p.colors.tagRoseInk, padding: space.md, paddingBottom: 0, fontSize: typography.size.sm },

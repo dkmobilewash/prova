@@ -85,6 +85,36 @@ export const notYetRegistered: Exclusion[] = [
       "Reading a spec section for what it demands that costs money. Excluded for `quoteRead.*`'s reason above and one of its own. It spends the company's paid spec allowance on a thirty-to-sixty-page file, so a command would spend real money on a prompt's say-so — and a section is the biggest single charge of any document this app reads, which makes it the worst candidate for a path where the decision to spend is a sentence a model composed. The attach and the read are also deliberately two actions, so that uploading the wrong section costs nothing; a command collapsing them is exactly the shape that mistake needs to stay cheap. And what it returns is a list to CHECK AGAINST A NUMBER THE MODEL HAS NEVER SEEN: an Ask card saying 'this section demands Level 5' beside a bid the assistant cannot read would invite the one conclusion the whole feature refuses to draw. The estimator attaches the section where they log it, on /bids. Never a command.",
   },
   {
+    action: "proposalDrafts.*",
+    reason:
+      "Drafting, accepting and dismissing the clauses a scope letter is missing. Excluded for `specRead.*`'s second reason, sharpened: what these actions produce is a SENTENCE SENT TO A GENERAL CONTRACTOR that decides who pays when scope is disputed. An inclusion nobody read gives work away for free and an exclusion nobody read is one the sub cannot defend when asked where it came from, so accepting one is deliberately a press beside its citation and could not be a prompt — the whole review step exists because `draft-lines.ts` writes rows directly and a line item is a number somebody can see, while a clause is a legal statement. The draft action also spends a model call, so a command would spend money on a prompt's say-so. And `saveClauseToLibrary` writes to a company-wide list every future bid copies from, which is owner-only for the reason `aiSettings.*` is below it. The estimator does all of this on the job's proposal page. Never a command.",
+  },
+  {
+    action: "askThreads.*",
+    reason:
+      "The person's own stored Ask conversations (open, rename, delete). Not a business record and nothing leaves the building; the assistant managing its own memory on a prompt's say-so would let an injected instruction delete the conversation it arrived in. Never a command.",
+  },
+  {
+    action: "agents.*",
+    reason:
+      "Starting a background agent run. Excluded for `aiSettings.*`'s reason one step removed: a model must not be able to start model runs on a prompt's say-so — a run spends the company's AI allowance, and an injected instruction in a bid name could otherwise burn a month's cap. The Run-now button on /ai is a deliberate press by a person who can see the spend beside it. Never a command.",
+  },
+  {
+    action: "recommendations.*",
+    reason:
+      "Dismissing or closing one of the agents' recommendations. A recommendation is advice the person is weighing, and closing it is the person saying they have weighed it — a model closing its own advice on a prompt's say-so would let an injected sentence in a bid name hide the one warning that mattered. A press on /ai, beside the reason and its sources. Never a command.",
+  },
+  {
+    action: "agentFindings.*",
+    reason:
+      "Dismissing and restoring what a background agent found. A finding exists to be read by a person, and a model clearing it on a prompt's say-so is the agent marking its own homework — an injected line in a bid name could otherwise hide a past-due or unread-addendum warning before anyone saw it. The press is beside the finding on /ai. Never a command.",
+  },
+  {
+    action: "agentSettings.*",
+    reason:
+      "Turning agents on and off and setting their monthly spend cap. Owner-only for `aiSettings.*`'s reason: it decides what runs over every estimator's bids and what the company spends on it, and a model must not be able to raise its own cap. Never a command.",
+  },
+  {
     action: "aiSettings.*",
     reason:
       "The switch that decides whether AI runs for this company at all. Reachable from a prompt it would let the assistant be asked to re-enable itself, or to turn off the audit trail of its own proposals — a model must never hold the control over whether a model is used. Owner-only on /settings/assistant, and permanently never a command.",
@@ -144,17 +174,12 @@ export const notYetRegistered: Exclusion[] = [
   // person whose name goes on it.
   { action: "wh347Statement.*", reason: "The WH-347 Statement of Compliance is certified by a named person under penalty of perjury, and the facts it needs are who signs it and how fringes were paid — neither is a fact C Stream holds or should draft. Page only, always." },
   { action: "sales.*", reason: "Prova-operator-only CRM, unreachable for any contractor tenant; excluded from the agent surface entirely." },
+  { action: "emailFinder.*", reason: "Prova-operator-only sales tooling (finds cold-lead emails, spends search and verifier credits); excluded with the rest of the sales CRM." },
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
   { action: "notifications.*", reason: "Sends the person their own digest; not a task anyone asks the box for." },
+  { action: "letters.*", reason: "Queues and mails C Stream's own physical letters (Lob) to firms on the public-works list — buttons on /sales/public-works, operator-owner only. A letter costs money and cannot be unsent; not work a tenant asks the box for. Never a command." },
+  { action: "publicWorks.*", reason: "Pulls one slice of the state's public-works record (CSLB, DIR) into the operator's market list — a button on /sales/public-works, operator-owner only. Not work a tenant asks the box for. Never a command." },
   { action: "gettingStarted.*", reason: "Hides the dashboard's getting-started card on this browser — a cookie about one card, not work anyone asks the box for. Never a command." },
-  // Global search (lib/search). A read with its own box and its own
-  // keyboard shortcut, not a fact Ask narrates — app_help already answers
-  // "how do I find X" from the same walkthrough registry this reads for
-  // its page half. Registering it as a command would let the model return
-  // a company's own record titles and hrefs as an answer, second-guessing
-  // capability filtering that already runs once, correctly, inside
-  // globalSearch. Never a command.
-  { action: "search.*", reason: "Its own box and shortcut, not a fact for Ask to narrate; app_help already answers 'how do I find X'. Never a command." },
   { action: "prevailingWage.*", reason: "Rule sets are compliance configuration edited on their own page; needs a File for determinations." },
   // The dates a prevailing-wage determination's standing is derived from
   // (lib/determination-standing.ts): the job's bid-advertisement date and

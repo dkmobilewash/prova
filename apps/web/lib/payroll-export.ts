@@ -46,7 +46,12 @@ export type PayrollExportRow = {
   totalHours: number;
   /** Null when the summary could not compute it. NEVER 0 as a stand-in. */
   wageCost: number | null;
-  rateKnown: "yes" | "no";
+  /** `yes` every hour on the row priced. `no` none did. **`partial` SOME
+   * did**, which is the state that cost a near-miss: a row whose rate
+   * schedule lapses mid-week prices the days inside the window and not the
+   * ones outside it, so `wageCost` is a real number that is SHORT. Reported
+   * as "yes" it reads as a complete figure, and a clerk pays it. */
+  rateKnown: "yes" | "no" | "partial";
   /** Employee-level, emitted on that employee's first row only. */
   perDiem: number | null;
   travelPay: number | null;
@@ -93,7 +98,13 @@ export function buildPayrollExportRows(
         shiftDifferentialHours: hours("SHIFT_DIFFERENTIAL"),
         totalHours: row.totalHours,
         wageCost: row.wageCost,
-        rateKnown: row.wageCost == null ? "no" : "yes",
+        // THREE STATES, because the domain has three. Reproduced
+        // 2026-10-04: one employee, one craft, a schedule expiring on the
+        // Tuesday — 32 hours logged, $800 exported against $1,600 of work,
+        // and `rateKnown: yes` beside it. The SCREEN already drew an amber
+        // asterisk for exactly this row (`certified-payroll/page.tsx`); the
+        // file dropped the one signal saying the number is incomplete.
+        rateKnown: row.wageCost == null ? "no" : row.hasUncomputedHours ? "partial" : "yes",
         perDiem: first ? employee.perDiemTotal : null,
         travelPay: first ? employee.travelPayTotal : null,
       });

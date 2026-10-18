@@ -198,6 +198,12 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   "/catalog": "MANAGE_ESTIMATING",
   "/bids": "MANAGE_ESTIMATING",
   "/pipeline": "MANAGE_ESTIMATING",
+  // The AI page: agents that read bids and estimates and advise on them.
+  // Same door as /bids, because what it shows is the bid list read back.
+  "/ai": "MANAGE_ESTIMATING",
+  // The agents' timeline and their switches. Same capability as /ai, whose
+  // child it is; the switches inside are further owner-only.
+  "/ai/activity": "MANAGE_ESTIMATING",
   "/proposals": "MANAGE_ESTIMATING",
   "/wall-types": "MANAGE_ESTIMATING",
   "/vendors/pricing": "MANAGE_ESTIMATING",
@@ -220,6 +226,13 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   "/settings/assistant": "MANAGE_COMPLIANCE",
   "/prevailing-wage": "MANAGE_COMPLIANCE",
   "/union-compliance": "MANAGE_COMPLIANCE",
+  // Everyone's hours across every job — the office's payroll view, office
+  // only by Cyrus's call (2026-10-11). MANAGE_COMPLIANCE because it is the
+  // capability that already gates reviewing other people's time: timesheet
+  // sign-off (lib/actions/timesheetSignoff.ts) and certified payroll above.
+  // MANAGE_FIELD would not do it — FIELD holds that. A foreman still logs
+  // and reads his own job's hours on its Crew & time tab, which is unchanged.
+  "/hours": "MANAGE_COMPLIANCE",
 
   // MANAGE_FIELD, exactly the routes its own doc comment names: "Field
   // reports, safety, punch lists, time, materials, equipment". FIELD,
@@ -261,11 +274,17 @@ export const ROUTE_CAPABILITY: Record<string, Capability> = {
   // PROJECT_MANAGER, ESTIMATOR, EXECUTIVE and FIELD all do.
   "/intake": "MANAGE_JOBS",
   "/drawings": "MANAGE_JOBS",
+  // One revision, its sheets, and the pins on them. Same capability as the
+  // list it hangs off: a sheet mark is job correspondence.
+  "/drawings/[revisionId]": "MANAGE_JOBS",
   "/closeout": "MANAGE_JOBS",
 };
 
+/** A query or anchor does not change which page opens — `/bids?new=1` is
+ * `/bids` — so it is dropped before the lookup. Without that, a link with a
+ * query read as ungated and was offered to people the page refuses. */
 export function capabilityForRoute(href: string): Capability | null {
-  return ROUTE_CAPABILITY[href] ?? null;
+  return ROUTE_CAPABILITY[href.split(/[?#]/)[0]] ?? null;
 }
 
 /** The routes this person can reach, for filtering the nav.

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { PageShell } from "@prova/ui";
 import { requireCompanyContext } from "@/lib/auth";
@@ -8,6 +9,8 @@ import { can } from "@/lib/permissions";
 import { coiStandingFor, coiStandingLine, governingCois } from "@/lib/coi-standing";
 import { serverToday } from "@/lib/serverToday";
 import { EmptyState } from "@/components/EmptyState";
+
+export const metadata = { title: "Vendors" };
 
 export default async function VendorsPage() {
   const context = await requireCompanyContext();
@@ -41,9 +44,11 @@ export default async function VendorsPage() {
     // 768px this page used to pick put four columns of data in 60% of the
     // screen and wrapped them.
     <PageShell width="working">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Vendors</h1>
+      <PageHeader
+        route="/vendors"
+        subtitle="Suppliers and service vendors you buy from — board and steel, equipment rental, scaffolding."
+      />
       <p className="mb-6 text-sm text-ink-body">
-        Suppliers and service vendors you buy from — board and steel suppliers, equipment rental, scaffolding.
         What each of them has quoted, and which way those prices are moving, is on{" "}
         <Link href="/vendors/pricing" className="text-link hover:text-link-hover" data-tour="vendors-pricing-link">
           vendor pricing

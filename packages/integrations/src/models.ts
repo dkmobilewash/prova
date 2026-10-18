@@ -57,6 +57,16 @@ export const AI_FEATURES = {
   PLAN_INGESTION: "plan-ingestion",
   ADDENDUM_READ: "addendum-read",
   SPEC_READ: "spec-read",
+  SCHEDULE_READ: "schedule-read",
+  PROPOSAL_DRAFT: "proposal-draft",
+  /** The background agents (bid watcher, bid research, estimate check,
+   *  recommendations). ONE ledger feature for all four: which agent spent
+   *  it is on the AgentRun row, and one key is one pass through every
+   *  feature census rather than four. */
+  AI_AGENTS: "ai-agents",
+  WALL_CLASSIFY: "wall-classify",
+  /** Reading the lettering off a SCANNED sheet, which has no text layer. */
+  SHEET_TEXT: "sheet-text",
 } as const;
 
 export type AiFeatureKey = keyof typeof AI_FEATURES;
@@ -84,6 +94,39 @@ const FEATURE_MODEL: Record<AiFeatureKey, string> = {
   // The one cheap default, at Diego's direction, subject to the eval. Three
   // hundred calls per plan set is where a fifth of the price is worth having.
   PLAN_INGESTION: HAIKU_4_5,
+  // ── OPUS, AND THE REASON FIRST GIVEN HERE WAS THE WRONG ONE ──
+  //
+  // This said Haiku was refused because a misread dimension sets the sheet's
+  // scale and the scale multiplies every quantity. That argument is weak, and
+  // was weak when it was written: the scale vote needs THREE labels to agree,
+  // so a single misread character is outvoted rather than believed.
+  //
+  // Measured 2026-10-15 against the same two scanned fixtures, same prompt,
+  // same JPEG tiles:
+  //
+  //                                     Opus 5      Haiku 4.5
+  //   printed strings read exactly      101/101     89/101  (88%)
+  //   PLACED within the 30 points the
+  //   dimension pairing allows          99 (98%)    16 (16%)
+  //
+  // Haiku can mostly READ the lettering. What collapses is WHERE it says the
+  // lettering is — and that is the half that decides anything, because a
+  // label more than 30 points from its line pairs with no line at all and so
+  // votes on nothing. A sheet whose labels land at 16% does not get a scale.
+  //
+  // The conclusion stands and the reasoning behind it is now the measured
+  // one: this is bought for COORDINATES, not for characters.
+  //
+  // One honest bound: the prompt was written for, and only ever tuned
+  // against, Opus. A version written for a smaller model might place better
+  // and nobody has tried. `SHEET_TEXT_MODEL` on the eval is how that would be
+  // shown rather than argued.
+  SHEET_TEXT: OPUS_5,
+  // Opus, and the volume argument that bought Haiku above does not reach here.
+  // This runs on the sheets that HAVE walls, a handful per plan set and a few
+  // crops each, not on three hundred pages — and what it decides is whether a
+  // countertop is priced as drywall. A cheap wrong label is not cheap.
+  WALL_CLASSIFY: OPUS_5,
   // Opus, and the argument cuts closer here than anywhere else on this list.
   // An addendum reader is 2-6 documents per bid rather than the quote reader's
   // one, so it IS more volume — but the test this file applies is not "more
@@ -96,6 +139,14 @@ const FEATURE_MODEL: Record<AiFeatureKey, string> = {
   // comment.
   ADDENDUM_READ: OPUS_5,
   SPEC_READ: OPUS_5,
+  // Opus: a schedule row becomes a COUNT in a bid, so this is not the
+  // high-volume page work PLAN_INGESTION's Haiku was chosen for. A handful of
+  // sheets per set, and a wrong row is a wrong quantity.
+  SCHEDULE_READ: OPUS_5,
+  // Opus: a handful of calls per bid, and the output is a sentence that
+  // decides who pays when a GC disputes scope. Not page work.
+  PROPOSAL_DRAFT: OPUS_5,
+  AI_AGENTS: OPUS_5,
 };
 
 /** `ANTHROPIC_MODEL_PLAN_INGESTION` etc. — the per-feature env override. */

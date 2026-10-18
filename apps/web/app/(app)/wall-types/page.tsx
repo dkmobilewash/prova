@@ -1,4 +1,5 @@
 import { prisma } from "@prova/db";
+import { PageHeader } from "@/components/PageHeader";
 import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -16,7 +17,7 @@ export default async function WallTypesPage() {
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
   const { company } = context;
 
-  const [types, catalog, crafts] = await Promise.all([
+  const [types, catalog, crafts, bidDefaults] = await Promise.all([
     prisma.wallType.findMany({
       where: { companyId: company.id },
       orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
@@ -34,6 +35,13 @@ export default async function WallTypesPage() {
       where: { companyId: company.id },
       orderBy: { name: "asc" },
       select: { id: true, name: true, unionLocal: { select: { parentInternational: true, localNumber: true } } },
+    }),
+    // Only the waste figure. The recap rates on this row have no business on
+    // this page, and selecting the whole thing would invite one of them being
+    // rendered here later by accident.
+    prisma.companyBidDefaults.findUnique({
+      where: { companyId: company.id },
+      select: { defaultWastePercent: true },
     }),
   ]);
 
@@ -68,10 +76,12 @@ export default async function WallTypesPage() {
 
   return (
     <PageShell width="working">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Wall types</h1>
+      <PageHeader
+        route="/wall-types"
+        subtitle="Your partition schedule: each wall type by its drawing tag, and what goes into a foot of it."
+      />
       <p className="mb-6 max-w-3xl text-sm text-ink-body">
-        Your partition schedule: each wall type by the tag the drawings give it, and what goes into a foot of it —
-        studs, track, board, insulation. On a job you enter each run of wall by its type, length and height, and the
+        On a job you enter each run of wall by its type, length and height, and the
         estimate&rsquo;s lines are worked out from these. Link a part to your price book to price it, and give it your
         crew&rsquo;s rate to get the hours.
       </p>
@@ -95,7 +105,13 @@ export default async function WallTypesPage() {
       ) : (
         <ul data-tour="wall-types-list" className="mb-6 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {views.map((type) => (
-            <WallTypeCard key={type.id} type={type} catalog={catalogOptions} crafts={craftOptions} />
+            <WallTypeCard
+              key={type.id}
+              type={type}
+              catalog={catalogOptions}
+              crafts={craftOptions}
+              defaultWastePercent={bidDefaults?.defaultWastePercent?.toString() ?? null}
+            />
           ))}
         </ul>
       )}

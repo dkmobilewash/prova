@@ -207,7 +207,14 @@ describe("the pages are claimed before the document is sent", () => {
     // And the document still reached the model — the charge is not instead
     // of the extraction.
     expect(extracted).toEqual({ mediaType: "application/pdf", fileName: "COI.pdf" });
-    expect(result).toEqual({ ok: true, value: { note: "23 pages", pagesLeft: 277 } });
+    // The note is the RECEIPT the person reads, not a bare quantity: what it
+    // cost, which meter it came off, and what is left. It used to be the words
+    // "23 pages" alone, which rendered on screen as a floating fragment — a
+    // production screenshot of the spec reader is what finally caught it.
+    expect(result).toEqual({
+      ok: true,
+      value: { note: "23 pages charged · 277 of 300 document pages left this month", pagesLeft: 277 },
+    });
   });
 
   it("charges a photograph of a piece of paper one page", async () => {

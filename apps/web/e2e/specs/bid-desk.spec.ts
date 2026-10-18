@@ -3,6 +3,7 @@ import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { finishWizard, landOnDashboard, settleAction, startJob } from "../lib/journey";
+import { dataTour } from "../lib/dataTour";
 
 /**
  * /bids GREW FOUR WHOLE PANELS IN THREE DAYS AND NOBODY OPENED IT.
@@ -52,7 +53,10 @@ test.describe("the bid desk", () => {
 
   /** The one bid row on /bids. Everything in this file is inside it, which is
    * also the point: four features share it. */
-  const bidRow = (): Locator => page.locator("li").filter({ hasText: PROJECT }).first();
+  // Scoped to the bids list itself: since the "Due soon" view (2026-10-12) a
+  // bid due within the window is ALSO listed above it, as a short row with
+  // no trade scope or amount, and a bare `li` filter found that one first.
+  const bidRow = (): Locator => page.locator(`${dataTour("bids-list")} li`).filter({ hasText: PROJECT }).first();
 
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext();
@@ -100,7 +104,10 @@ test.describe("the bid desk", () => {
     await expect(page.locator("li").filter({ hasText: PROJECT }).first()).toBeVisible();
     await expectHealthy(page, "the GC's contact page after logging a bid", { monitor });
 
-    await page.goto("/bids");
+    // ?view=all: since ux round 4, /bids opens on its "Due soon" view whenever
+    // a bid is due within the window, and the list this asserts on is the
+    // "All" view's (the bids-list anchor, via dataTour()).
+    await page.goto("/bids?view=all");
     await expectHealthy(page, "/bids with one bid", { monitor });
     await expect(bidRow()).toContainText(PROJECT);
     await expect(bidRow()).toContainText("Metal framing / drywall");
@@ -278,17 +285,26 @@ test.describe("the bid desk", () => {
     await expect(row.getByText("Same exclusions on every quote — these are comparable.")).toHaveCount(0);
   });
 
-  test("7. a won bid, linked to the job it became (#491)", async () => {
-    // A job for it to have become, built through the real wizard on the GC
-    // this bid came from.
+  test("7. a bid linked to its job, before and after the win (#491)", async () => {
+    // A job for it to be for, built through the real wizard on the GC this bid
+    // came from.
     jobId = await startJob(page, monitor, { name: JOB_NAME, gcName: GC_NAME });
     await finishWizard(page, monitor, jobId);
 
-    // The status lives on the GC's record, which is where a win is recorded.
-    await page.goto("/bids");
-    await expect(bidRow().getByRole("button", { name: "Link to the job this became" })).toHaveCount(0);
+    // THE LINK IS OFFERED BEFORE THE WIN, and this assertion used to demand
+    // the opposite — `toHaveCount(0)` on a bid that was still INVITED. That
+    // was right until #619 let `linkBidToJob` run on any status, after which
+    // it pinned the gate that made the action unreachable. Asserting the
+    // control is HERE is the browser half of that regression guard: carrying a
+    // quote onto a job's estimate happens while the bid is still out.
+    await page.goto("/bids?view=all");
+    await expect(bidRow().getByRole("button", { name: "Link the job this bid is for" })).toBeVisible();
 
-    await bidRow().getByRole("link", { name: new RegExp(PROJECT) }).click();
+    // The project name opens the bid's own page (/ai/bids/<id>) since the AI
+    // bid desk landed; the GC's name is the link to the GC. This clicked the
+    // project name and waited for /contacts until run 38327113148 timed out
+    // on /ai/bids/<id>.
+    await bidRow().getByRole("link", { name: GC_NAME }).click();
     await page.waitForURL(/\/contacts\/[^/]+$/);
     await expectHealthy(page, "the GC's contact page", { monitor });
     const statusForm = page
@@ -300,16 +316,16 @@ test.describe("the bid desk", () => {
     await statusForm.locator('select[name="status"]').selectOption("WON");
     await settleAction(page, () => statusForm.getByRole("button", { name: "Update" }).click());
 
-    await page.goto("/bids");
+    await page.goto("/bids?view=all");
     await expectHealthy(page, "/bids with a won bid", { monitor });
-    // Only a WON bid can be linked, so the control appears with the win.
-    const link = bidRow().getByRole("button", { name: "Link to the job this became" });
+    // Still here after the win — the control is not gated either way.
+    const link = bidRow().getByRole("button", { name: "Link the job this bid is for" });
     await expect(link).toBeVisible();
     await link.click();
     // By the option that names the job — `jobPickerLabel` decorates it with the
     // GC and the status (issue #65: fifteen jobs, seven with the same name), so
     // the label is not a string this file can spell.
-    const jobPicker = bidRow().getByRole("combobox", { name: "Which job did this become?" });
+    const jobPicker = bidRow().getByRole("combobox", { name: "Which job is this bid for?" });
     const jobValue = await jobPicker.locator("option", { hasText: JOB_NAME }).first().getAttribute("value");
     expect(jobValue, "the job should be offered to link").toBeTruthy();
     await jobPicker.selectOption(jobValue!);
@@ -318,7 +334,7 @@ test.describe("the bid desk", () => {
     await page.reload();
     await expectHealthy(page, "/bids with the bid linked to its job", { monitor });
     const row = bidRow();
-    await expect(row).toContainText("Became");
+    await expect(row).toContainText("This bid is for");
     await expect(row).toContainText(JOB_NAME);
     await expect(row).toContainText(`Bid ${BASE}`);
     // The job has not finished, so there is no verdict — and the panel gives

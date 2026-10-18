@@ -76,6 +76,22 @@ export const DEFAULT_OPENING_DEDUCTION_THRESHOLD_SQFT = 32;
 /** A 4x8 sheet. 4x12 is common on commercial ceilings; hence an argument. */
 export const DEFAULT_SHEET_AREA_SQFT = 32;
 
+/**
+ * WASTE WHEN NOBODY HAS SAID, and the last answer rather than the first one.
+ *
+ * The order is: the figure typed on this takeoff, else the company's
+ * `defaultWastePercent`, else this. It is 10 because 10 is what the takeoff
+ * form already prefilled, so putting the number here changed no estimate.
+ *
+ * THIS CONSTANT IS THE POINT OF THAT COLUMN. One concept had four hard-coded
+ * answers — `WallTypes.tsx` prefilled `0`, `TakeoffForm.tsx` prefilled `10`,
+ * and this module and `takeoff-recipes.ts` each wrote `?? 10` — so the same
+ * question got two different answers on the same job depending on which form
+ * you reached it through. A company that cuts tighter than 10 had nowhere to
+ * say so. Now there is one place to say it and one fallback when nobody has.
+ */
+export const DEFAULT_WASTE_PERCENT = 10;
+
 /** Metal studs at 16" on centre, in feet. 24" is common on non-load-bearing
  * partitions, which is exactly why this is not hard-coded. */
 export const DEFAULT_STUD_SPACING_FT = 16 / 12;
@@ -124,7 +140,7 @@ export function sheetsRequired(
   areaSqFt: SquareFeet,
   options: { wastePercent?: number; sheetAreaSqFt?: SquareFeet } = {},
 ): number {
-  const waste = options.wastePercent ?? 10;
+  const waste = options.wastePercent ?? DEFAULT_WASTE_PERCENT;
   const sheetArea = options.sheetAreaSqFt ?? DEFAULT_SHEET_AREA_SQFT;
   if (areaSqFt <= 0 || sheetArea <= 0) return 0;
   return Math.ceil((areaSqFt * (1 + waste / 100)) / sheetArea);

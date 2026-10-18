@@ -46,7 +46,7 @@ import { Spinner } from "@/components/Spinner";
 const field =
   "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 type Result = { ok: true } | { ok: false; error: string };
 export type Das142WithStanding = Das142Row & { standing: Das142Standing };
@@ -257,7 +257,7 @@ function RequestCard({
                 }
                 deleteClassName={btn}
                 cancelClassName={btn}
-                confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+                confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-danger hover:bg-tag-rose disabled:opacity-50"
               />
             ) : null
           }
@@ -320,7 +320,7 @@ function RequestCard({
             afterwards.
           </p>
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}
@@ -395,7 +395,7 @@ function RequestCard({
             shows you asked and nobody came.
           </p>
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}
@@ -455,7 +455,7 @@ function RequestCard({
             <Das142Fields values={request} committees={committees} committeeEditable={false} />
           )}
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}
@@ -482,7 +482,7 @@ function RequestCard({
       )}
 
       {mode === "view" && error && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       )}
@@ -567,7 +567,7 @@ export function Das142Panel({
             committeeEditable
           />
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}

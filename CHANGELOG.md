@@ -23,6 +23,5196 @@ Entries say what changed and why it mattered, not which functions moved.
 
 ---
 
+### A sub's price can lapse, and waste had four different right answers (Diego)
+`diego/quote-expiry-waste`
+
+Two columns off the estimating audit, both additive and nullable.
+
+## `BidQuote.validUntil` — whether the price is still good
+
+Every date on a `BidQuote` was about the CONVERSATION: `requestedOn`, `dueBy`,
+`quotedOn`, `declinedAt`, `carriedAt`. None of them says whether the PRICE still
+stands. So *"Alpha's number lapsed three weeks ago and it is still inside our
+bid"* was not merely unreported — **it was inexpressible.** Expiry existed only
+on `VendorPriceQuote`, which is the price-book side, not the quotes a bid is
+actually built from.
+
+**The policy is reused, not restated.** `isExpired`, `isStale`, `daysBetween`
+and `STALE_AFTER_DAYS` in `components/vendorPricing.ts` already answer "is this
+price still good", including the off-by-one that makes a price held *"until the
+30th"* good ON the 30th, and the rule that a date the sub gave outranks our
+90-day heuristic until it lapses. Both functions were widened to structural
+parameter types so a `BidQuote` can ask the same question and get the same
+answer; `isStale` additionally takes a nullable `quotedOn`, because a bid quote
+has no date until the sub answers and a price nobody gave cannot be old.
+
+The mutation is the proof that reuse is real rather than cosmetic: flipping
+`isExpired` to `<=` reds **the existing vendor-pricing test and the new
+bid-levelling test together.** One implementation, two consumers, and the end it
+would get wrong is the one that tells somebody a live price is dead on the day
+they need it.
+
+**Two places it shows, and the second is worth more than the first.** A badge on
+the row says `Price lapsed 2026-09-01` or `Priced 156 days ago — worth
+re-checking`. Above the packages, `carriedQuoteLapsed` says the thing that is a
+fact about the BID rather than about a row: the price you carried is the number
+inside what the GC was sent, so a lapsed one gets named with its vendor and date
+and a request to confirm it still stands — the posture `underCostWarning` takes
+by reading the whole estimate rather than each line. A lapsed quote **nobody
+carried** is deliberately silent: warning on it would make the warning routine,
+and a routine warning is unread.
+
+**Advisory, never a refusal.** Subs honour old numbers all the time and the
+estimator is the one who knows whether this one will. Amber, not rose.
+
+`validUntil` lives on the answer form only, so it takes the `formData.has`
+treatment `requestedOn`/`dueBy` already use — otherwise editing the request half
+of a row would wipe an expiry the sub had given.
+
+## `CompanyBidDefaults.defaultWastePercent` — one answer instead of four
+
+Waste had four hard-coded answers for one question. `WallTypes.tsx` prefilled
+**`"0"`**, `TakeoffForm.tsx` prefilled **`"10"`**, and `takeoff.ts` and
+`takeoff-recipes.ts` each fell back to **`?? 10`**. So the same question got two
+different answers on the same job depending on which form you reached it
+through, and zero is the worse of the two: a component authored without thinking
+about waste bought the exact material the geometry needed and no offcuts.
+
+One company figure now answers all four, with `DEFAULT_WASTE_PERCENT` (10 — what
+the takeoff form already used) as the floor when nobody has set one. **No
+existing estimate moves by a cent.**
+
+**It is NOT a recap rate and the code says so three times.** `ratesFromForm`
+walks `RECAP_RATE_KEYS` and this is outside that list, so it is written
+explicitly in `saveCompanyBidDefaults`; the settings form takes it as its own
+prop rather than inside the rate map, because folding it in would put it one
+careless `Object.keys` away from being multiplied into a bid total; and the
+export dataset names it separately, with its note reworded, since a customer
+reading a CSV headed "Default markup rates" would otherwise read it as one.
+Waste buys more material — it does not charge more for it.
+
+Nullable rather than defaulted to 10 in the column: "has not decided" and "chose
+10" are different facts, and only one of them should survive us later changing
+our mind about the sensible default.
+
+## Verification
+
+Two censuses caught real things rather than being appeased. `exportColumnCensus`
+demanded a bucket for both columns. `colorTokenCensus` caught the new date input
+copying its neighbour's `bg-surface-input` — an **undefined** token (issue #573,
+39 form fields with no ground on a near-black canvas) whose site count the
+census pins; it is `bg-canvas` now, which is what `BidDefaultsForm`'s own inputs
+use.
+
+`typecheck`, `lint`, 569 files / 8,840 unit tests, and the 63-file/632-test db
+suite run locally against the new migration. Announced in `#prova-build` before
+the push, per rule 4.
+
+### The title block was read, shown, and believed by nobody (Diego)
+`diego/scale-from-title-block`
+
+Plan ingestion asks a model for six things off each sheet's title block. Two of
+them — the sheet number and the title — have an accept path. `proposedScale` was
+extracted, stored, and concatenated into a ` · ` metadata line on
+`PlanSheetReview`, **and read by nothing else in the repo**: three references
+total, the writer, the query and that one string. The app paid for the token,
+printed the answer, and threw it away.
+
+This makes it the one thing in the calibration dialog that can disagree with the
+estimator.
+
+**Why that is worth having, and it is not convenience.** `takeoff-plan.ts` opens
+by quoting the sentence that deferred the whole feature for weeks — *"a measuring
+tool that is slightly wrong is more dangerous than no measuring tool, because a
+number that came off a screen gets trusted."* Every notice the dialog shows today
+is derived from the same two clicks and the same typed distance, so a calibration
+dragged along the wrong dimension is **self-consistent and silent**: it reads
+back as a real standard scale, the sheet width looks plausible, no notice fires,
+and every quantity taken off that sheet is wrong by that factor. The title block
+is the only evidence in the system that did not come from those two clicks.
+
+So `calibrationNotices` now names both readings when they disagree:
+
+> The title block on this sheet says 1/4" = 1'-0", and this calibration reads
+> 1 in = 8 ft. If you calibrated against a blown-up detail that is expected —
+> otherwise check the dimension you dragged along.
+
+**A WARN, never a refusal, and that is not timidity.** A detail blown up on a
+sheet whose title block names the plan's scale is ordinary draughting; `AS NOTED`
+exists precisely because one sheet carries several scales, and multi-scale
+detection is explicitly not built. This file cannot tell that from a mistake, so
+it names the two readings and says which case would explain them rather than
+deciding. Same position `bid-responsiveness.ts` takes by having no "compliant"
+verdict.
+
+**It never calibrates anything, and the type says so.** A calibration is the line
+somebody dragged — `TakeoffScaleCalibration` stores that line and deliberately
+never a factor, so the printed scale cannot become one without inventing a second
+calibration mechanism with different evidence behind it. `PlanSheet.printedScale`
+is comparison input and nothing else.
+
+**`standardScaleFromText` matches names rather than parsing arithmetic.**
+`STANDARD_SCALES` is already the list of scales this app can name, and a parser
+would be a second, divergent authority on the same question. It returns null
+rather than guessing on all three "no answer" cases, which are different from
+each other and equally uncomparable: nothing was read, the sheet said `AS NOTED`
+or `NTS`, or it printed a form this file does not list — including metric
+`1:100`. A number invented from any of those would then contradict a correct
+calibration, which is worse than silence.
+
+**The prime-mark table is reused, not retyped.** A model reading a title block
+returns `1/4″ = 1′-0″` some of the time, and `specs/quoteMatch.ts` already owns
+`TYPOGRAPHIC_EQUIVALENTS` — U+2019 is the variant a real paid run produced there.
+That is a fact about typography, not about specs, and a second copy of the list
+is the defect this repo writes censuses to catch. Whitespace and hyphens come out
+too: `1/4"=1'0"` and `1/4" = 1'-0"` are one scale typed by two people.
+
+**The new argument is REQUIRED rather than defaulted.** A defaulted safety
+argument is off until somebody remembers it, and #622 landed this afternoon
+because a gate existed and could not be reached. The server action passes `null`
+explicitly with its reason on the line above — the comparison is a warn and
+`calibrationRefusal` reads only refusals, so loading the proposal there would
+change no outcome, and a title-block disagreement must never block a save. An
+omission that is visible in a diff is not the same as a missing argument.
+
+Nine tests, and two mutations: `standardScaleFromText` forced to never match
+reds five of them; dropping the punctuation normalisation reds exactly the two
+prime-mark cases — the failure that would otherwise go quiet rather than wrong.
+`typecheck`, `lint`, 569 files / 8,840 unit tests. No schema change, no
+migration.
+
+Still deliberately absent, and now cheap: nothing prefills the typed distance,
+because the printed scale implies a factor and not a dimension; and a sheet
+carrying several scales still has one calibration per page.
+
+### The link was there, the gate was still on it (Diego)
+`diego/reachable-bid-link`
+
+Both of these were found by CLICKING the two features #618 and #619 shipped, in
+the browser, on production. Every check in the repo was green on both.
+
+**The capability was unreachable.** #619's whole point was that a bid can be
+linked to a job *before* anybody knows whether it was won — a carried quote
+reaches that job's estimate, and an addendum gets checked against its takeoff,
+while the bid is still out. `linkBidToJob` dropped its `status !== "WON"` check
+accordingly. The bids page kept rendering the control behind
+`{bid.status === "WON" && …}`, so the only way to reach the action was to mark
+the bid won first, which is the exact workflow the change existed to remove.
+The tester hit it in one sentence: *"A bid that's still Invited can't be linked
+to a job at all."*
+
+**No census here could have seen it, and that is the transferable part.**
+`reachable.test.ts` asks whether an action has a UI caller. `linkBidToJob` has
+one. Whether that caller can be reached in the state that matters is a
+different question, and nothing was asking it — CLAUDE.md's *"nothing is ever
+missing from a question nobody is asking"*, arriving on the web app rather than
+the phone. Worse, `page.test.ts` was actively asserting the gate: *"shows the
+control on a WON bid and not on an open one"*, counting exactly one control
+across a WON row and an INVITED row. True and right when written; stale the
+moment the action changed, and then standing guard over the defect. It asks the
+reachability question now, and its old number (1) is the mutation that reds it.
+
+**Removing the gate needed one more thing than removing the gate.** `linked`
+was derived entirely from `loadBidOutcomes`, which filters `status: "WON"` —
+deliberately, so a lost or in-progress bid never enters the bid-versus-actual
+comparison. So an un-won bid appears in no outcome map, and simply deleting the
+gate would have rendered the "link" button on a bid that was *already linked*.
+The page reads `wonJob` itself now; the link is its own fact. `outcome` is
+nullable, and a linked-but-not-won bid says what is waiting — *"What the job
+actually cost against what you bid appears here once this bid is marked won."*
+— rather than showing a blank, because the comparison staying won-only is
+correct and is a different question from the link.
+
+The copy stopped saying "became", which was true only of a won bid: *"Link the
+job this bid is for"*, *"Which job is this bid for?"*, *"This bid is for X"*.
+A test asserts the word is absent from an un-won bid's row.
+
+**And a dead sentence with three passing tests.** #618's
+`missingIndirectsSentence` built *"This estimate carries nothing for Cleanup
+and Dumpsters."* Nothing ever called it. `MissingIndirects.tsx` writes its own
+sentence — the one on screen — and that one names no kinds, because the buttons
+beneath it already name every missing kind, so a sentence listing them was the
+same list twice.
+
+It is deleted rather than wired up, for that reason. What is kept is the
+property that mattered: *"never says the bid is wrong, and never says what to
+do"* was being asserted against text no user could read, and now runs against
+rendered output in `components/missingIndirects.test.tsx` — the panel had no
+component test at all, which is the gap that let a documented sentence differ
+from the rendered one. A property is only as good as the thing it is pointed
+at.
+
+Writing that test caught its own blunt edge, worth recording: the first version
+forbade the bare word "required" and went red on *"they are not required"* —
+the clause that makes the panel advisory in the first place. The assertion was
+cruder than the property. It now requires every "required" to be negated.
+
+`components/missingIndirectsCensus.test.ts` asks the other question — not "is
+the sentence right" but **"is there a second one"**, the guard that survives
+somebody inlining a copy. It strips comments (both surviving docstrings quote
+the phrase, and #185 is where a comment quoting a pattern disarmed its own
+census), asserts the size of the tree it walked, and NAMES the file it expects
+rather than counting to one — a count of one stays green if the wording moves
+into a module nobody renders, which is this defect exactly.
+
+Three mutations, each red and each naming the offender: the WON gate restored
+(two tests, one reading `expected 1 to be 2` — the old assertion's own number),
+a second copy of the wording added (the census printed
+`+ "lib/estimating/indirect-costs.ts"`), and the component made to render
+nothing (4 of 5 red — the mutation that tells a real render from a mock).
+
+One thing deliberately NOT changed. `add-indirect.ts` leaves `costCategory`
+null when no catalog entry backs the kind, so the app warns *"1 line has no
+cost type."* That warning is the system working: classification in this repo is
+declared, never guessed, and auto-assigning a category would be the guess the
+rule forbids. Rough on day one, since the catalog ships empty; a product
+decision rather than a defect, and not one to fix by quietly picking a value.
+
+### The app traps at launch on iOS 27, and every suite was green (Diego)
+`diego/ios-scene-lifecycle`
+
+No migration. One `app.json` key, one config plugin, one test file, two
+`.gitignore` lines.
+
+**WHAT HAPPENS WITHOUT THIS.** On iOS 27 an app that does not adopt the
+UIScene life cycle is TRAPPED at launch —
+`_UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption`,
+EXC_BREAKPOINT/SIGTRAP, on `com.apple.main-thread`, **before a line of JS
+runs**. No splash, no error, straight back to the home screen. Found
+2026-10-04 while trying to drive a simulator for something else entirely;
+the iPhone 18 Pro on iOS 27.0 is the only runtime installed on this Mac.
+
+**Expo 57.0.23 ships BOTH halves of the fix and wires up neither.**
+`ExpoAppSceneDelegate` and the `ExpoReactNativeFactoryProvider` protocol are
+in the package's own iOS source. `@expo/prebuild-config` emits no
+`UIApplicationSceneManifest` (zero hits) and generates the pre-scene
+AppDelegate, so a stock prebuild produces an app that cannot launch on 27.
+
+**Two edits, and the second is the one that is easy to miss.** Declaring the
+conformance alone still crashes — it just moves the crash INTO
+`ExpoAppSceneDelegate.scene(willConnectTo:)`, which was the single most
+useful signal in the whole investigation:
+
+| build | what happened at launch |
+| --- | --- |
+| stock prebuild | trap in `…NoSceneLifecycleAdoption`, no UI |
+| manifest only, no conformance | `fatalError` inside `ExpoAppSceneDelegate` |
+| manifest + conformance + window removed | **launches, mounts React Native, renders** |
+
+The scene delegate creates the window itself, so an AppDelegate that also
+creates one and calls `startReactNative(in:)` mounts React twice into two
+different windows.
+
+**Where each half lives, and why they are not in the same place.** The
+manifest is CONFIG and sits in `app.json`'s `ios.infoPlist`, where a reader
+sees it without opening a plugin. `plugins/withSceneLifecycle.js` does only
+what `app.json` cannot: patch generated Swift.
+
+**The plugin THROWS when an anchor is missing, and that is the part worth
+keeping.** A patch that silently matches nothing produces a green build and
+an app that traps on a phone — this repo's most expensive recurring shape. If
+Expo's template moves, `prebuild` fails loudly and names what to check
+instead of shipping a dead binary.
+
+| mutation | result |
+| --- | --- |
+| control | green |
+| **plugin made a no-op** | **RED** |
+| conformance added, window block left in | **RED** |
+| manifest names the wrong delegate class | **RED** |
+
+Each was confirmed to have RUN rather than merely gone red, because a build
+break reports itself as a caught regression.
+
+**READ WHAT THE TEST CANNOT DO.** `lib/scene-lifecycle.test.ts` proves the two
+Swift edits are present and correctly shaped. It cannot prove iOS HONOURS
+them — only a launch does, and a launch is what found this. Same shape as the
+`expo-router` header entry in CLAUDE.md one layer down: *nothing is ever
+missing from a question nobody is asking.* Every suite in this repo was green
+while the app could not start.
+
+**What is NOT established, deliberately.** The trap was observed on a DEBUG
+build. Apple's `EvaluateRuntimeIssue…` family is typically debug-only, and
+**whether a release/TestFlight build also traps on iOS 27 is UNVERIFIED**.
+Diego's phone is on iOS 26.7.1, where build 13 runs fine, so nothing is
+broken for anyone today. The fix is correct regardless — scene adoption is
+required going forward — but nobody should read this entry as saying the
+shipped app is currently crashing, and nobody should read it as saying it
+isn't. It needs one device on iOS 27 running a release build.
+
+`apps/mobile/ios` and `android` are now ignored: prebuild writes 1.2GB, and
+this PR is what makes people run it.
+
+Mobile: 40 files / 333 tests, screens 15 / 74, typecheck clean.
+
+### Nothing could tell supervision from permits, so nothing could notice one was missing (Diego)
+`diego/indirect-costs`
+
+The 2026-10-04 estimating audit listed indirect costs — supervision, permits,
+mobilization, cleanup, safety gear — as a missing capability. Exploring it found
+something more useful than a gap.
+
+**The mechanism was never missing.** #512 built and tested it: a `JobLineItem`
+with a cost and `unitPrice: null` is in the cost base, receives no share of the
+spread, and is recovered through the billable lines — *"$500 of GC cost on a
+$3,000 job spreads $3,500 across the two billable lines."* Twelve files repeat
+the rule and the GC portal has a test whose failure message is *"a cost-only
+budget line reached the GC's contract."* General conditions have priced
+**correctly** all along.
+
+**What was missing is that nothing could recognise one.** Every indirect was
+`CostCategory.OTHER` with a free-text description — and `OTHER`'s only
+documentation anywhere was a UI hint string, *"Permits, testing, anything
+uncategorised elsewhere."* No screen could tell supervision from permits, so
+nothing could ever say "this bid has nothing for cleanup". A forgotten $2,500
+mobilization is money off the bottom line and no surface said a word. Nothing in
+the repo matched the word "mobilization" at all; a dumpster appeared only as
+something to EXCLUDE in proposal prose.
+
+So: `IndirectCostKind`, and two nullable columns — one on `JobLineItem`, one on
+`LineItemCatalogEntry`. The catalog entry is where the company's own figure
+lives, which is the mechanism `ARCHITECTURE.md` already sanctions (*"a template
+for the same `jobLineItem.create` call"*) rather than a second defaults table.
+The line column exists so a **hand-tagged** indirect counts as present —
+without it, an estimator who typed "Mobilization — $2,500" would be told they
+have no mobilization, which is the cry-wolf failure #616 was shaped to avoid.
+
+**Deliberately not a sixth `CostCategory`.** That enum is a total `Record` keyed
+by `RECAP_RATE_FIELDS`, so a new member forces a new markup rate column; it is
+keyed on by the QuickBooks account mapping; and the EQUIPMENT/OTHER split of
+2026-09-26 is documented as permanently un-backfillable. Indirect-ness and
+markup treatment are different questions — supervision is LABOR that happens to
+be general conditions — so it gets its own axis.
+
+**And deliberately no derivation**, which exploration turned from caution into a
+fact. Supervision as "weeks × rate" needs a duration: there is **no duration
+concept anywhere in the schema**, no `JobSchedule`, no `JobPhase`, no crew size
+at bid time, and `startDate`/`endDate` are nullable and *not written by job
+creation at all* — the app's own labor pricing already assumes `startDate` is
+absent. Both factors are missing, so a derived figure would be built on an
+invented input, and `estimate-labor-cost.ts`'s rule applies: it never guesses a
+rate *"because a wrong one gets bid"*.
+
+**Present means TAGGED, never guessed**, the rule `jobs.prisma` already states
+for `costCategory`, `craftClassificationId` and `phaseCodeId`. The
+`IndirectLine` type carries no description at all, which is the strongest form
+of that guarantee — the module *cannot* read one. And a tagged line with **no
+cost** still counts as present: an estimator who added a cleanup line and left
+it at zero has decided cleanup is free on this job, and saying "you have nothing
+for cleanup" after that is arguing with somebody who already answered.
+
+**It names what is absent and nothing else.** No verdict, no tick, no refusal —
+`bid-responsiveness.ts`'s *"there is no 'compliant' verdict in this file"*,
+`lien-waiver.ts`'s *"nothing here blocks a save"*, `addenda-overlap.ts`'s
+*"names, never concludes"*. An estimate with no dumpster line is usually an
+estimate that needs no dumpster. The copy says so: *"Add what applies, or leave
+them out on purpose — they are not required and nothing here is checking up on
+you."*
+
+Each button prints the company's own figure **before** it is pressed, because
+adding supervision quietly puts $2,400 on a bid. Where the company has
+catalogued nothing it says "no figure yet" and adds a named line with no cost,
+which is honest — and `bid-margin.ts` then reports the costless line rather than
+this feature pretending to know what cleanup costs. The action is excluded from
+Ask for the same reason: an assistant doing it on request would put a cost on an
+estimate the person never saw.
+
+Three censuses caught the registrations this owed and all three were right: the
+export column census on both models, and the Ask command coverage census. A
+fourth thing the compiler caught — `catalogLineFields` gaining a required field
+broke the estimate-template path, which is exactly what a required field is for.
+
+Migration `20261004120000_add_indirect_cost_kind`, purely additive, generated
+`--from-schema-datamodel --to-schema-datamodel` and verified by comparison
+against the generated SQL. Announced in `#prova-build` before the push.
+
+565 test files, 8,800 unit tests, and the 63-file/632-test db suite run locally
+against the new migration. Mutation-proved both ways — never report missing
+(8 red), always report missing (6 red).
+
+### The winning quote was read, judged, and then retyped (Diego)
+`diego/carried-quotes`
+
+Bid levelling worked. An estimator could record what each sub quoted, see the
+exclusions side by side, and decide who was actually comparable. Then they
+retyped the winning number into a line item by hand — on the most expensive
+lines in the bid, from a screen that already held the figure. That is the
+re-entry `ARCHITECTURE.md` calls *"the single biggest source of error, wasted
+time, and mistrust in this workflow, and the reason this product exists."*
+
+Three things had to change, and the order matters because each one unblocked
+the next.
+
+**1. The decision had nowhere to live.** `bid-levelling.ts` refuses to name a
+winner, on purpose and correctly: *"THE POINT OF LEVELLING IS NOT 'WHO IS
+CHEAPEST'. IT IS 'ARE THEY EVEN BIDDING THE SAME THING'."* No scoring, no
+weighting, no adjusted price. "Lowest" is an artefact of a sort, recomputed on
+every render and never stored, because it is not an answer.
+
+None of that changed. What was missing is the ESTIMATOR'S answer —
+`BidQuote.carriedAt`, a date rather than a boolean for the reason `declinedAt`
+beside it gives. Nothing infers it, nothing defaults to the low bid, and marking
+a quote carried is not a claim it was the best one. One per package, cleared and
+set in a transaction, so the screen can never show two answers to one question.
+
+**2. A quote had no job to reach.** A `BidQuote` hangs off a `BidInvitation`,
+which carries no line items; the estimate lives on a `Job`; and the two could
+only be linked once the bid was **WON** — which is after every decision a quote
+informs. So `linkBidToJob` dropped that gate, and `BidInvitation.wonJobId` now
+means "the same piece of work" rather than "the job this became".
+
+**3. And that change had a trap in it, which is the part worth reading.**
+`bid-outcome-query.ts` filtered on `wonJobId: { not: null }` with **no status
+check** — it inferred won-ness from the link existing, which was true only
+because nothing could be linked before it was won. Left alone, every bid still
+being estimated, and every bid eventually LOST, would have walked into the
+bid-versus-actual comparison as though it had been won. That is the one figure
+whose whole job is to teach an estimator, and `bid-outcome.ts` opens by refusing
+to produce *"a real-looking number that will be remembered and repeated."* It
+filters on `status: "WON"` now, which is what it always meant.
+
+Two sibling call sites were checked and deliberately left alone: the link
+picker's "already claimed" lookup wants **any** link (a job claimed by a losing
+bid is still claimed), and the takeoff-currency banner wants linkage too — it
+gets strictly more useful, since an addendum on the bid you are estimating is
+exactly when a measurement wants re-checking.
+
+**The line it writes is shaped by what a quote actually is.** `BidQuote.amount`
+is a lump sum with no unit and no quantity — what one sub said one package
+costs. So: quantity 1, the amount as the cost, `costCategory: SUBCONTRACTOR`,
+and **no unit price**. Spreading it across units would invent a breakdown the
+sub never gave, the rule `catalog-quote-price.ts` states for the neighbouring
+case. The category is set rather than left null because it is not a guess — a
+price from a subcontractor is subcontractor cost, and this is the one place in
+the estimate where the category is known from its source.
+
+**Carrying and spending stay two acts.** Recording what you carried is free,
+costs nothing if the bid is lost, and is worth having either way — *"we carried
+Alpha at $48,000 and lost at $512,000"* is the only way to learn anything
+afterwards. Putting the money on a line is a separate press, because a carried
+quote is an assumption and a line item cost is a figure somebody will be held
+to. Neither action is available to Ask: an assistant marking a quote carried
+would be making precisely the call `bid-levelling.ts` declines to make, and one
+putting it on the estimate would land the biggest cost line on a bid without
+anybody having read what it excludes.
+
+The column name `wonJobId` is now slightly wrong and is **deliberately left
+alone**. A rename is a drop and an add as far as the running build is concerned,
+and CLAUDE.md's #378 scar is exactly that — the migration lands in seconds while
+Vercel is still building the commit that stops reading the old name. It wants
+its own expand-then-contract pair rather than a ride along a feature.
+
+Migration `20261004140000_add_bid_quote_carried`, one nullable column, no
+backfill — and deliberately not backfilled from the cheapest quote, which would
+write the opinion `bid-levelling.ts` refuses onto historical rows as though
+somebody had decided it.
+
+565 test files, 8,799 unit tests, and the 63-file/632-test db suite run locally
+against the new migration. Four censuses caught the registrations this owed —
+the export column census, the Ask command census, and `reachable.test.ts` twice,
+which correctly refused to let two Server Actions exist with no UI calling them.
+
+### 32 hours, $800, and "Rate known: yes" (Diego)
+`diego/bug-hunt`
+
+No migration. One expression in `lib/payroll-export.ts`, and three tests.
+
+**A ROW CAN BE PARTLY PRICED, AND THE EXPORT CALLED THAT "yes".** A fringe
+rate schedule has `effectiveFrom` and `effectiveTo`. When one lapses
+mid-week, the same employee under the same craft has days inside the window
+that price and days outside it that do not. `wageCost` then comes out a real
+number that is SHORT.
+
+Reproduced through the real code path rather than argued — one employee, one
+craft, a schedule expiring on the Tuesday:
+
+| | |
+| --- | --- |
+| hours logged | **32** |
+| wage at $50/hr | should be **$1,600** |
+| `Wage cost` exported | **800** |
+| `Rate known` exported | **`yes`** |
+| `hasUncomputedHours` internally | **`true`** |
+
+A clerk opens that file, reads "yes", and pays half.
+
+**THE SCREEN HAD BEEN RIGHT ABOUT THIS THE WHOLE TIME.** The certified-payroll
+page draws an amber asterisk straight off `hasUncomputedHours`
+(`certified-payroll/page.tsx:271`) and footnotes it. The export never read the
+flag — it asked only `wageCost == null`, which is two states for a domain
+that has three. `rateKnown` is now `"yes" | "no" | "partial"`.
+
+**AND THE WH-347 ALREADY SOLVED IT, which is the strongest evidence that the
+export was wrong rather than the model.** The government form keys a line as
+`${baseKey}::rate${n}` when the schedule changes (`lib/wh347.ts:473`), so a
+mid-week rate split prints as SEPARATE LINES, each with its own rate. Two
+surfaces off one summary: one split the row, one silently summed it.
+
+| mutation | result |
+| --- | --- |
+| control | green |
+| the bug as shipped (`partial` → `yes`) | **RED** — "expected 'yes' to be 'partial'" |
+| hours trimmed to match the priced ones | **RED** |
+
+The first was re-run on its own to confirm the suite STARTED and failed on the
+assertion by name, not on a build error — a false red earlier in the same
+session is the reason that is now checked rather than assumed.
+
+The hours stay at 32 on purpose. **32 hours against $800 is a discrepancy a
+clerk can see once the flag says to look**; trimming the hours to match the
+priced ones would have hidden it and made the row internally consistent and
+wrong.
+
+Found by sweeping for this file's own documented shapes. Three of the four
+sweeps were noise — `assertOwner`, `<form action={…}>` and `window.confirm`
+all have censuses that pass, and every `window.confirm` hit was a comment
+saying never to use it. The fourth, `?? 0` on money, had two more candidates
+that turned out CORRECT and are worth not re-investigating: `bid-levelling`'s
+`spread` is guarded by an early `sorted.length < 2` return, and
+`certified-payroll`'s accumulator seeds with `?? 0` only inside
+`if (cost != null)`.
+
+563 files / 8762 tests, typecheck and lint clean.
+
+### A bid that does not cover its own cost now says so (Diego)
+`diego/bid-margin`
+
+The 2026-10-04 workflow audit, stage 7: *"no margin-threshold check … nothing
+flags an unusually low or negative overall margin."* Cost-base integrity checks
+existed — `uncategorised`, `pricedWithNoCost` — and nothing anywhere said a bid
+was priced under what the work costs to build.
+
+**The obvious implementation would have been unreachable code with a sentence
+attached**, and that is the whole design. `bidRecap()` derives `bidTotal` as the
+direct cost plus markup, escalation, tax, overhead, profit, bond and
+contingency; `rate()` turns a missing percentage into 0 and
+`nullablePercentFromForm` bounds a typed one to 0–100. Every step adds
+`base × percent / 100` with a non-negative percent, so **`bidTotal >= direct.total`
+always** and `(bidTotal − direct.total) / bidTotal` is the sum of the rates
+restated — positive by construction. A warning on it could never fire once.
+
+So the check is the **prices on the lines** against the costs on the lines:
+what the schedule of values prints and what a GC is asked to pay. That goes
+under cost in three real ways — a price typed by hand below cost, a recap never
+applied, and lines added after Apply. `bid-margin.test.ts` pins the vacuity
+argument as a test rather than a comment, because the "simplification" onto
+`bidTotal` looks like removing a duplicate and would silently switch the warning
+off. A comment does not fail a build.
+
+**The false positive it was nearly shipped with.** A cost-only line — general
+conditions, supervision, cleanup — carries real cost and deliberately gets no
+price back; `spreadToLines` filters it out because *"general conditions are
+recovered through the billable lines"*. Before Apply that recovery is not on the
+lines yet, so the prices genuinely total less than the costs **on an estimate
+that is correct and merely unfinished**. Found while exploring, not while
+testing. So `costOnlyLineCount` rides along in every state and the sentence names
+those lines when they exist. Diego chose "warn on under-cost only" precisely so
+this could not cry wolf, and a warning that fires on correct work is the one
+people learn to ignore — after which the real one is missed too.
+
+**Four states, not a number.** `NO_PRICES` (nothing priced — not 0%, not
+negative), `NO_COSTS` (a `$0` cost base is the honest ordinary state of a
+wizard-built, AI-drafted or QuickBooks-sourced job, and `bid-recap.ts` says so
+itself — a margin there would be a fiction), `UNDER_COST` with the shortfall in
+money, and `COVERED` with its figure. Every state carries both contaminant
+counts, because a margin stated without them is exactly the *"real-looking
+number that will be remembered and repeated"* `bid-outcome.ts` refuses to
+produce.
+
+**Advisory, never blocking**, which is this repo's standing convention —
+`lien-waiver.ts`'s *"refusing the save would make the app wrong about the world
+and teach people to route around it"*, `bid-responsiveness.ts`'s refusal to
+stage a compliant verdict, `addenda-overlap.ts`'s *"names, never concludes"*. A
+sub may bid under cost on purpose to keep a crew together through a slow month.
+The sentence names the money and does not say what to do, because three answers
+are right and the app does not know which.
+
+**On the recap panel it is a table row under the bid total, not a fourth
+notice** — that panel already carries three and its own rule is that *"a
+permanent notice is noise that teaches people to stop reading notices."* Only
+the under-cost case adds a sentence, in rose rather than the amber the two
+fixable problems use: a bid that does not cover the work is not a field somebody
+forgot to fill in.
+
+**On the proposal page it is `print:hidden`.** That page deliberately shows the
+GC no cost figure at all, and its existing warning carries the reason — *"A note
+on the PRINTED page would be telling a customer our prices may be wrong, which
+is a different and much worse sentence."* A margin on a printed proposal would
+hand a customer our cost base, which is worse still. No new query: the page
+already reads every live line's cost to compute `addedTotal`, and has simply
+never rendered one.
+
+**It is a BID-TIME margin and the module says so.** `company-financials.ts`
+(`HEALTHY_MARGIN_RATE`, `marginIsHealthy`), `wip.ts` and
+`conceptual-estimate.ts` each already mean something by "margin" — all three
+post-award, on actual cost. This is the only one about prices nobody has been
+paid yet, which is why it is a separate function rather than a fourth caller of
+one of those. Naming the other three in the header is what stops it being read
+as a competing definition of the same thing.
+
+Mutation-proved both ways, which matters for a warning: make it never fire —
+**6 red**; make it always fire — **4 red**. A check that cannot do both is
+pinning one half of itself.
+
+564 test files, 8,777 unit tests, and the 63-file/632-test db suite run locally
+against a throwaway Postgres.
+
+### The Ask animation is whole on the first screen, and the phone reserve stops being 140px short (Cyrus)
+`cyrus/landing-hero-fold`
+
+Cyrus, filming a launch video at 1280, looking at cstream.ai: *"can we get
+the animation to come up more at the top so they dont have to scroll down
+to see the whole thing"*. He was right, and it was worse than it looked —
+the Ask demo is the most persuasive thing on the page and a prospect had to
+scroll to watch it finish.
+
+**Measured before arguing**, in real Chromium against a production build,
+sampled every 100ms across a full 26-step loop of the scene so that the
+number is the TALLEST frame rather than whichever one was on screen:
+
+    header 40 + hero py-10 + headline 395.5 + gap-y-10 -> demo top 547.5
+    tallest frame 623.9                                -> demo bottom 1171.4
+    fold at 1280x900   271.4px of the panel below it
+    fold at 1280x800   371.4px below it
+
+**That budget is what decided the fix, and it ruled out every cheaper
+one.** To be whole at 900 the demo must start by y=276.1, and at 800 by
+y=176.1. The header and the hero's own padding are already 112px. So
+nothing may sit above the demo — no headline at any size, no smaller gap,
+no trimmed padding — and the demo has to be in the FIRST grid row. Trimming
+`py-10` and `gap-y-10` to nothing would have bought 80 of the 271px needed.
+
+So from `xl` (1280) the demo takes column 2 and spans BOTH rows, and the
+headline takes column 1 of row 1 — the layout LandingPage.tsx's own comment
+says could not be built. That comment is not wrong about why: at 96px the
+headline's min-content really is 824.3px and the left column really is
+612px. What it was missing is that the stacked alternative loses the fold,
+which nobody had measured until now.
+
+**The price is the headline, and it is a real one.** `xl:text-[4rem]` (64px
+against 96px), because 612px is a width 96px cannot be set in. Swept in the
+browser at 1280, line count in that column: 96/80/76px overflow it outright
+at six lines, 72/70/68px give five, 64px gives four with the widest line at
+588.7 of 612, 48px gives three. 64px is the largest size that keeps the
+four-line shape the full-width headline already had. **The clamp itself is
+untouched** — every width below 1280 renders exactly what it rendered
+before, 9vw and the 96px top end included.
+
+    1280x900   demo bottom 1171.4 -> 735.9    164.1px ABOVE the fold
+    1280x800   demo bottom 1171.4 -> 735.9     64.1px ABOVE the fold
+    1440x900   the same
+    1024, 375, 320  unchanged, to the pixel
+
+**Two things the file said that the measurement contradicted**, both
+corrected in place rather than left standing. The headline does not "keep
+the full 1088px and its three lines": `max-w-4xl` caps it at 896 and at
+1280 it is four lines, 395.5px tall. The 1088 is the GRID's width — the
+right number for deciding what a column can hold, carried by mistake into a
+sentence about a different element.
+
+**And the base height reserve had gone 139.8px short on the smallest
+phone**, which the same note predicted in writing: *"IF THAT OVERFLOW IS
+EVER FIXED, THE FIGURE DROPS BACK TO 288 WIDE AND THIS BASE TIER IS 140px
+SHORT. Re-measure with it."* The 320px overflow WAS fixed (the headline's
+floor is 2rem now), so the figure is 288 wide and 889.8 tall against a 750
+reserve — the demo cell's own height swung 750 -> 889.8 across the loop,
+which is the headline and every section under it jumping that far while the
+one animation this page is built around plays. Re-measured per width and
+tiered: 890 base, 790 from 336, 770 from 360, 750 from 375. A narrower box
+wraps taller monotonically, so each tier only needed measuring at its own
+left edge.
+
+**The check.** Cell height is now CONSTANT across the whole loop at 320,
+336, 344, 360 and 375 (it was 750->889.8, 750->785.8, 750->785.8,
+750->769.8 before), with `scrollWidth === innerWidth` at every one of them,
+so nothing pans sideways. `app/page.test.ts` pins the new arrangement —
+`xl:col-start-2` + `xl:row-start-1`/`xl:row-end-3` on the cell,
+`xl:col-end-2` + `xl:row-start-1` on the headline, an `xl:` size on the
+headline at all, and a base reserve of at least 800px. Four mutations, four
+reds, each naming the class it removed. One of those mutations was green on
+its first run and the green was VACUOUS — the literal `xl:text-[4rem]`
+appears in the file's own comment as well as in the class, so the edit
+never applied. Re-run against the class alone, it is red.
+
+**What could not be checked from here, stated rather than glossed.** This
+page loads no webfont — `document.fonts.size` is 0 and the headline
+computes to `ui-sans-serif, system-ui, sans-serif` — so every width above is
+this container's font, not the SF Pro a Mac renders. The error runs the safe
+way (the fallback here is a wide face; SF and Segoe are narrower, so a real
+visitor gets more slack than the 62.5px measured, not less), but the line
+count is not guaranteed: a narrower face may set the headline in three lines
+rather than four. Nothing breaks if it does — the demo spans both rows and is
+anchored to the top of the first, so it does not move when the headline does.
+
+---
+
+**Then Cyrus asked for two more things on the same branch: a bigger Ask
+panel, and a typeface.** They turned out to be the same change.
+
+**The panel is 544px wide at `xl`, up from 420.** 544 is not a round
+number: it is 34rem, the figure's own `max-w-[34rem]` cap. A column wider
+than that does not widen the panel — it parks the panel at 544 with dead
+space beside it, because the cell pins the figure right. So 544 is the
+largest column that is ALL panel.
+
+**Widening BOUGHT fold margin instead of spending it**, which is the
+opposite of the risk. The demo's cards reflow, and a wider panel wraps
+shorter. Sampled across the full 26-step loop at 1280, tallest frame by
+column width: 420 → 623.9, 460 → 623.9, 500 → 617.9, 520 → 617.9,
+544 → **603.9**. So the largest panel is also the safest one, and the
+answer to "what is the biggest panel that still clears an 800 fold" is
+"the biggest panel there is".
+
+**THE PAGE HAD NO TYPEFACE AT ALL, AND THAT IS THE WHOLE ARGUMENT.**
+Nothing in `globals.css`, `tailwind.config.ts` or `layout.tsx` set a
+family. Measured, not assumed: `document.fonts.size` was 0 and no font
+file was requested. Every heading rendered in `ui-sans-serif, system-ui,
+sans-serif` — SF Pro on a Mac, Segoe UI on Windows, Roboto on Android. The
+page had no identity and looked different on every machine, and every
+width this repo has ever measured for it was a measurement of whatever the
+measuring machine happened to have. That is why the first half of this
+entry had to end with a caveat about its own numbers.
+
+**No psychology claim is being made and none should be.** The evidence for
+"serifs read as trustworthy" compares competent faces against Comic Sans;
+it says nothing about choosing between two competent ones. The two reasons
+here are both measurable: one appearance everywhere, and a condensed face
+fits materially more per line.
+
+**That second reason is what made the bigger panel possible.** Min-content
+of "subcontractors." — the widest unbreakable word, and the thing that
+decides how narrow its column can be — at 64px, in real Chromium:
+
+    system fallback   549.5      Archivo           449.9
+    Barlow Condensed  342.0      Chivo             484.7
+    Archivo Narrow    364.5      Roboto Condensed  383.2
+
+In the hero's left column at the widened panel (488px), the largest size
+that still sets the headline in four lines:
+
+    Barlow Condensed  84px   <- chosen      Archivo          64px
+    Archivo Narrow    72px                  Chivo            none fits
+    Roboto Condensed  72px                  SYSTEM FALLBACK  none fits
+
+**The last row is the finding.** The stack this page used to render in
+does not fit the widened column at any size down to 56px. The panel could
+not have been widened this far without changing the face. Barlow Condensed
+over Archivo Narrow on the numbers — 84px against 72px in the same column
+— and it reads like the signage this trade is surrounded by. Roboto
+Condensed tied Archivo Narrow and is the Android system font, so it is the
+one condensed face that would look like no choice had been made.
+
+So the headline went UP from the 64px this branch shipped an hour earlier,
+in a column 124px NARROWER. Headings only; body text stays on the system
+stack, because a second family is a second download.
+
+**`next/font/local`, not `next/font/google`, and the reason is a failed
+build rather than a preference.** The Google loader fetches at BUILD time —
+a third-party dependency on every build in CI and on Vercel, for a 22KB
+file that never changes, where a failure to reach it fails the build
+rather than degrading it. It also could not be measured from an agent
+container at all: Node's fetch does not use the egress proxy, so the build
+died on "Failed to fetch `Barlow Condensed` from Google Fonts" and there
+was no page to put a browser in front of. A face chosen by measurement has
+to be measurable. The file and its OFL licence are in `app/fonts/`.
+
+    viewport     before this branch   after #532's fold fix   now
+    1280x900     271.4 BELOW fold     164.1 above             184.1 above
+    1280x800     371.4 BELOW          64.1 above               84.1 above
+    1280x720     391.4 BELOW          15.9 BELOW                4.1 above
+    1366x768     403.4 BELOW          32.1 above               52.1 above
+    1920x1080    91.4 BELOW           344.1 above             364.1 above
+    1024x768     387.5 BELOW          387.5 BELOW             292.6 BELOW
+    375x812      21.8 BELOW           21.8 BELOW               21.8 BELOW
+    320x568      421.8 BELOW          421.8 BELOW             421.8 BELOW
+
+**The checks.** The measuring harness now REFUSES to report a number unless
+`document.fonts` says the face is loaded — without that control it measures
+the fallback and calls it the result, which is the exact mistake the
+webfont exists to end. Phone geometry is unchanged to the pixel and the
+cell height is still constant across the loop at 320, 336, 344, 360 and
+375, with `scrollWidth === innerWidth` at every one. `displayFontWiring.
+test.ts` holds the five-link chain that delivers the face — file, `src`,
+the variable, the `<html>` mount, the Tailwind family, a component using it
+— because every link but the last fails SILENTLY back to the system stack,
+which is what the page did before and so looks like nothing is wrong. It
+strips comments before reading structure, since both files discuss
+`font-headline` in their own notes. Five mutations, five reds, plus two on
+the widened column.
+
+**What is worse, and is recorded rather than hidden.** The empty background
+to the right of the paperwork list, below the figure, grew from 370.7px to
+**551.2px** — a narrower left column makes the words taller (769 against
+691) while a wider panel makes the figure shorter (603.9 against 623.9).
+It is all below the fold. The fix is a third structural change (the
+paperwork list taking the right column under the demo at `xl`) and belongs
+in its own pass rather than folded into a font change.
+
+### The screen said "≈ $5,600 labor" and the bid carried $0 (Diego)
+`diego/estimate-labor-burden`
+
+Two defects in the same place, found by the 2026-10-04 audit of the estimating
+workflow against source.
+
+**A labor line could contribute nothing to the bid while the screen priced it.**
+A line with 80 hours of Local 300 journeyman, coded LABOR and with no
+`budgetedUnitCost`, is left out of the recap's cost base entirely and marked up
+at nothing — correct, documented, and silent. The hint beside the hours field
+printed "≈ $5,600 labor" next to it. Both numbers were right and the screen was
+a lie by omission.
+
+It now says **"not in the bid"** when the line carries no cost, in amber, and
+there is a **Use this as the cost** button beside it that writes the per-unit
+figure. That button is not a backfill and not automatic: four places in this
+repo argue against auto-filling a cost and all four are right —
+`setLineBudgetedCost`'s *"One number at a time, each one the estimator's own"*,
+`bid-recap.ts`'s *"deliberately not softened by a backfill"*, the schema's
+*"never filled in from `unitPrice` … No backfill was ever run"*. A press is a
+different thing, and `applyBidRecap` is the standing precedent for one: *"a
+decision with a date on it, not a side effect."*
+
+**It refuses a line that is not coded LABOR, and that refusal is the feature.**
+A `JobLineItem` carries one `costCategory` and one `budgetedUnitCost` — there is
+no labor/material split on a line anywhere in the schema. On a "hang and finish
+5,000 SF" line coded MATERIAL, writing the labor cost would not add to the board
+cost, it would delete it. The refusal says so and says to split the line.
+
+**The second defect was quieter and is the one that moved every job's numbers.**
+The estimate priced labor at wage + CBA fringes; the job costing it is later
+compared against adds employer FICA, FUTA/SUTA and workers' comp on top. Same
+hours, two bases — so every job showed a labor overrun of roughly the burden
+percentage, systematically, and because percent complete is cost-to-cost the
+completion figure drifted with it. `estimate-labor-cost.ts`'s own header says it
+reuses the actuals functions precisely so a variance is never *"partly an
+artefact of the arithmetic"*, and then the burden sat one layer above in a path
+the estimate does not go through. Nothing in the code ever argued for that; it
+was structural, not chosen.
+
+The estimate now prices labor the way the job costs it. **The percentage
+multiplies the base wage only, never the fringes** — `employer-burden.ts` states
+that as a modelling choice for a CPA to confirm, and the estimate asks the same
+question of the same base-wage function rather than inventing a second rule. The
+burden is resolved at the job's **labor rate date**, not today, because the
+fringes already price at that day and a figure whose two halves answered as of
+different days is one nobody can reconcile.
+
+**With no `EmployerBurdenRate` recorded, nothing moves.** That is the guarantee
+the change rests on and the opt-out for a shop that carries burden inside its
+overhead percentage instead — don't record a rate and nothing is counted twice.
+It is proved rather than asserted: every pre-existing case in
+`estimate-labor-cost.test.ts` passes `null` and still expects the figure it
+expected before the parameter existed, and the parameter is REQUIRED rather than
+defaulted so a new caller has to decide instead of silently inheriting "no
+burden".
+
+**It does not round, where the actuals path does**, and that is deliberate rather
+than a second rule: `labor-job-cost.ts` accumulates across many `TimeEntry` rows
+and rounds once because it posts a ledger figure; this is one line, linear in
+hours, and rounds exactly once — when the per-unit cost is written to
+`Decimal(12,2)`. Rounding earlier would also break the property the live preview
+depends on, that rate × hours is the line's own figure to nine decimal places.
+
+**The screen stopped over-claiming too.** The hint hardcoded *"Burdened labor:
+base wage plus fringes"* — using the word "burdened", which to a contractor means
+fully loaded, for a figure with no employer taxes in it. That is the exact
+over-claim Cyrus removed from the job-cost side; the sentence is generated from
+`laborCostBasisLabel` now and cannot drift from the arithmetic again.
+
+**Two censuses caught this branch and both were right.** `hoursRenderCensus`
+found a bare `{decision.hours}` that would have reached a screen as
+`35.300000000000004`; `action-capability-guards` flagged the new action as
+unguarded, which was a false positive worth reading — its `bodyOfAction` takes
+the first `{` after the function name, and on a multi-line signature returning
+`ActionResultWith<{ … }>` that is the inline object in the RETURN TYPE, so it
+never saw the guard. It fails loudly rather than quietly, which is the safe
+direction, and the fix here was a named return type rather than a change to the
+census.
+
+Also added `fringeScheduleInput` to `labor-cost.ts`: there were already six
+hand-written copies of that Decimal→number mapping and this action was about to
+be the seventh. Only the two files this change already touched were migrated onto
+it; the other five are a follow-up rather than a silent rewrite of code this PR
+has no reason to be in.
+
+563 test files, 8,759 unit tests, and the 63-file/632-test db suite run locally
+against a throwaway Postgres — the gate `pnpm test` does not cover and that caught
+two stale fixtures on #609.
+
+### What actually changed, in plain English (Cyrus)
+`cyrus/e2e-verdict-annotations`
+
+**The one number that says whether a red `e2e` run means anything was the
+hardest number in CI to get.** `verdicts.mjs` is the guard behind this repo's
+"absence of a failure is not a pass" rule: it requires the count of verdicts
+returned to equal the count collected, and every one of them to be `expected`.
+It was working correctly and saying so almost nowhere. A failing `e2e` job's
+only check-run annotation was `Process completed with exit code 1`, and
+`verdicts: collected N, returned N` lived solely in the job log.
+
+That matters because of where the log lives. Both the job log and the
+Playwright report artifact download redirect to `*.blob.core.windows.net`,
+which an agent container's egress proxy refuses at CONNECT — measured today on
+#532's and #601's `e2e` jobs, `gh api …/logs` and `…/artifacts/<id>/zip` both
+returning zero bytes. So from a container the question *"is this red run main's
+known #418 baseline, or did it prove nothing?"* was unanswerable, and the
+answer is the whole basis of the merge gate. For the person this suite was
+built for it was worse than unanswerable: nobody reads a 1,600-line log tail to
+find one line.
+
+The check-run **annotations** API needs no blob host and is reachable. So the
+script now emits its findings as `::error::` workflow commands as well — the
+count mismatch, and each test that did not return `expected`, by name and with
+its first error line. They show on the PR and come back from
+`/repos/{owner}/{repo}/check-runs/{id}/annotations`. Ten at most, because that
+is what GitHub displays per step, with a line saying how many were not shown.
+Gated on `GITHUB_ACTIONS`, so a local run reads exactly as before. **No
+workflow edit**, which is deliberate: `.github/workflows/` is unpushable from
+Cyrus's keyring until `gh auth refresh -s workflow` is run, and this needed to
+not depend on that.
+
+**And writing the test for it found a live injection route in the half nobody
+was watching.** GitHub parses *any* stdout line beginning with `::`. The
+human-readable report printed `v.title` raw, so a spec title containing a
+newline — a title built from a template literal is all it takes — ended the
+report line and let whatever followed be read as a workflow command. A title
+of `step 11\n::error::forged` really did produce a second annotation. Not in
+the new escaping; in the existing plain-text output, which had no escaping
+because nobody had thought of it as output a machine parses. Fixed by flattening
+every title and error to one line at construction: one verdict is one line,
+which is now a safety property rather than a formatting choice. The annotation
+escapes `%`/`\r`/`\n` on top of that, and `:`/`,` in the `title=` property
+only — the message needs none, because command parsing is anchored at the start
+of a line, so a mid-line `::` is inert.
+
+Two things the test got wrong before it got it right, both worth the line.
+It first asserted the newline arrived via the error message; it cannot, because
+the script already reduces an error to `message.split("\n")[0]`. Then it
+asserted the forged title would be `:`-escaped inside the message; it is not,
+and should not be. Each wrong assertion was a wrong belief about the mechanism,
+corrected against what the script actually printed rather than argued.
+
+The check: `apps/web/e2e/verdicts.test.ts`, 11 tests, which spawn the real file
+and read its stdout and exit code — all CI ever reads. Six mutations, each
+confirmed as landed on disk before its result was read, each red: the
+annotation block disabled (8 red), the `GITHUB_ACTIONS` gate dropped, `%`
+escaping removed, `oneLine` dropped from the title, the ten-annotation cap
+removed, and the count-mismatch annotation silenced. Baseline and full restore
+both green at 11/11.
+
+Not run here: the repo's own `pnpm install --frozen-lockfile` still dies on
+`cdn.sheetjs.com`'s `xlsx` tarball with `ERR_PNPM_FETCH_403`, leaving
+`apps/web/node_modules` empty, so these 11 were run under a standalone
+`vitest@3.2.7` — the same minor the repo pins — against the real file. The test
+imports only `vitest` and Node builtins, so there is nothing in it that CI
+resolves differently. CI's own `ci` job is the instrument for that, and the
+first red `e2e` after this lands is the instrument for the annotations.
+
+### A week of hours in the fixture, so the next check does not need production (Diego)
+`diego/e2e-seed-payroll`
+
+No migration, no product change. Test fixture, one spec, one CLAUDE.md entry.
+
+**VERIFYING #596's FIGURES COST AN EVENING AND A PRODUCTION DOWNLOAD, AND IT
+SHOULD NOT HAVE.** `payroll-export.spec.ts` could prove the route, the
+content type, the filename, the header order and the 403 refusal. It could
+not prove **one number in the file**, because `seedDatabase.ts` created a
+company, a contact and a job and nothing else — no crew, no classifications,
+no time entries. That is not a weak spec; it is the boundary of what an empty
+database can be asked.
+
+The seed now carries a fixed week: a union local, a craft classification, a
+fringe rate in force, and **one employee in TWO classifications** — the
+smallest shape that catches all three mistakes the export exists to prevent.
+
+| mutation | result |
+| --- | --- |
+| control | green |
+| an unknown wage written as `0` | **RED** |
+| per diem repeated on every classification row | **RED** |
+| the seed writes no rows at all | **RED** — "the seed did not land" |
+
+**THE FIRST VERSION OF THAT THIRD MUTATION WAS A FALSE RED and is worth more
+than the other two.** It was `if (true) return;`, which does not compile
+cleanly — the run died before Playwright started, and a build break reported
+itself as a caught regression. The rewritten mutation (`createMany({ data: []
+})`) compiles, lints, and fails on the size assertion by name. **A mutation
+has to be checked for having RUN, not merely for being red** — the same rule
+this file already applies to green.
+
+**Two things this branch broke on the way, both mine, both worth recording.**
+
+`seedDatabase.test.ts` mocks Prisma model-by-model, so adding models to the
+seed made four unrelated tests fail on `undefined.findFirst`. The new models
+are stubbed there with a comment saying why they are stubbed rather than
+asserted: that file is about the onboarding-gate shape of the seeded users,
+and a stub that does not exist fails every test for a reason that has nothing
+to do with what it tests.
+
+And the figures test first looked for an **empty** Classification on the
+untagged row. It is labelled **"No craft tag"** (`certified-payroll.ts:68`) —
+exactly what production had shown hours earlier. The test was wrong about the
+product, not the reverse, for the third time in one session.
+
+**ESTABLISHED BY CONTROL, NOT BY ARGUMENT: a full LOCAL `pnpm test:e2e` run
+fails ~21 specs with `Unique constraint failed on (clerkId)` from
+`prisma.user.create()`, and it does so WITH THIS BRANCH REVERTED TOO.** It is
+a concurrent sign-in race, pre-existing and not this change. Recorded so the
+next person who sees that wall of red locally does not spend the afternoon on
+their own diff — reverting and re-running is a five-minute control and
+answers it.
+
+**Corrected AFTER this merged, from CI's own log rather than from the
+assumption — and the timing is the lesson:** the first draft of this paragraph said "CI runs the same suite
+without it". It does not. CI's run of this very branch logs the SAME
+constraint error **fourteen times** and still finishes with zero non-hydration
+failures — so the race happens in both places and is merely SURVIVED in CI,
+where the local run lets it take specs down. "It does not happen there" and
+"it does not fail there" are different claims, and only the second one is
+true.
+
+The correction was written five minutes after #611 merged, not before, and
+the first draft of this very paragraph said "before". **#611 merged at
+04:14:22Z; the correcting commit is stamped 04:19:16Z.** It was pushed to a
+branch whose PR had already closed, which is this repo's oldest scar
+arriving in a new shape: a commit on a merged branch is not on `main`, and
+nothing says so. `git branch -r --contains <sha>` answers it in one line and
+named only the feature branch.
+
+559 files / 8700 tests, typecheck and lint clean; the three payroll specs
+pass in isolation.
+
+### "3 pages" was a sentence fragment pretending to be a receipt (Diego)
+`diego/charge-receipt`
+
+A production screenshot of the spec reader caught two words floating between a
+paragraph and a Delete button: **"3 pages"**. That is what all three readers —
+spec sections, GC addenda and compliance documents — had been telling a
+subcontractor after spending part of a capped monthly allowance on their behalf.
+
+`pageChargeNote` returned the bare clause `"3 pages"`, written to be dropped
+INTO a sentence. One caller does exactly that — `documentSpend`'s over-ceiling
+refusal reads *"this document is 84 pages and one upload can use at most 60…"* —
+and every other caller rendered it AS the sentence. One helper doing two jobs,
+with only one of them having a caller that supplied the surrounding words.
+
+**What a sub needs at that moment, and nothing else.** They have just spent
+something they are capped on, in the middle of pricing a bid. Three facts answer
+every question they have:
+
+1. **what this one cost** — the number they would check the meter against;
+2. **which meter** — these ledgers are separate precisely so reading specs
+   cannot silently eat the allowance for reading addenda, and a receipt that
+   does not name the unit throws that away;
+3. **what is left** — the only one that changes what they do next, because it
+   is what tells them whether to read the next section now or wait.
+
+So:
+
+    3 pages charged · 1,797 of 1,800 spec pages left this month
+
+One line, no jargon, and no instruction to go and look somewhere else. If they
+want the month in full it is on Settings → Assistant, and the refusal sentence
+already points there, because a refusal is where that matters.
+
+**It speaks the way the refusal does, on purpose.** `stopSentence` says "there
+are 12 of 1,800 left this month"; so does this. A sub who hits the cap one day
+and reads a receipt the next should not have to learn two vocabularies for one
+number — and "of 1,800" is what makes "1,797" mean anything to somebody who has
+never seen their ceiling. The thousands separator is there for the same reason.
+
+**The unreadable-PDF case now leads instead of trailing in brackets.** A PDF
+whose page count cannot be read is charged a flat 10, and that is the one case
+where the number is not what the document is — it is this app's floor for a file
+it could not measure, and most likely a big scan. It belongs at the front of the
+sentence where it cannot be skimmed past, not in a parenthesis after a figure the
+reader has already accepted: *"Charged as 10 pages — this PDF's page count
+couldn't be read, so it is charged at the flat rate · 1,790 of 1,800 spec pages
+left this month."*
+
+**`pageCountClause` is the old function under its real name**, kept for the one
+caller that genuinely wants a fragment. Splitting them is what stops this
+recurring: the receipt can now only be used as a receipt, because it demands the
+meter it was charged against.
+
+**The "left" figure is the one AFTER this charge**, checked rather than assumed —
+all three read their counter back following the increment. The production
+screenshot agrees: a 3-page read showed 1,797, and Settings → Assistant said
+1,797.
+
+Eight new tests on the receipt, including that it is **not** a fragment — the
+defect restated as an assertion, since "renders as a fragment" is something no
+type can catch and the only thing that caught it was somebody's eyes. The
+compliance-upload test that pinned the old `"23 pages"` now pins the full line,
+which is also end-to-end proof the document reader reports its own numbers
+correctly: 23 charged, 277 of 300 left.
+
+559 test files, 8,700 tests.
+
+### The payroll export, fetched rather than argued about (Diego)
+`diego/payroll-export-clicked`
+
+No migration, no product change. One e2e spec.
+
+**#596 shipped the hours-OUT half of payroll with 198 lines of unit tests on
+the row builder and nobody having asked the route for a file.** The pure half
+was well covered. What was not covered is everything that only exists once it
+is an HTTP response: the capability gate, the content type, the filename, and
+the header row a payroll clerk opens in Excel.
+
+**THE ASSERTION WORTH THE FILE IS THE REFUSAL ONE**, and the trap it guards
+is already written down in this repo: a route that refuses by REDIRECTING
+sends the sign-in page with a 200, and the browser saves that HTML as
+`payroll-….csv`. The clerk opens a spreadsheet full of markup with no way to
+tell that from an export bug. The refusal must be plain text with a 403.
+
+| mutation | result |
+| --- | --- |
+| control | green |
+| the route refuses by redirecting to sign-in | **RED** |
+| the per-diem column is dropped from the export | **RED** |
+
+Both checked for VACUITY as well as colour — the harness requires
+"Running 2 tests" in the output, so a build break cannot pass itself off as a
+caught regression. Files restored byte-for-byte, never by `git checkout`.
+
+**TWO OF THE THREE FAILURES ON THE WAY HERE WERE THE SPEC BEING WRONG ABOUT
+THE PRODUCT, and both are worth writing down.**
+
+The first selector looked for a link matching `/export/i`. The link reads
+**"Download hours for payroll (CSV)"** — it says what it DOES, not what the
+route is called, which is the better label and the reason the spec missed it.
+
+The second is the transferable one: the refusal test signed in as MAIN,
+called `page.context().clearCookies()`, and signed in as FIELD. Clerk threw
+**"You're already signed in"**. **Clearing cookies looks like signing out and
+is not.** Each `test()` already gets a fresh context, so the fix was to sign
+in only as FIELD — which is also the more realistic shape of the attack, since
+a field user cannot load the certified-payroll page to read the link in the
+first place. They would have a guessed or shared URL, and that is now what the
+test sends.
+
+**What this does NOT prove, stated because the gap is the point.** The e2e
+seed creates no time entries, crew or craft classifications, so this covers
+the route and the SHAPE of the file — not that the numbers are right for a
+real week of hours. That needs a job with real payroll data, and the only
+place one exists is production.
+
+559 files / 8692 tests, typecheck and lint clean.
+
+### Anyone on the payroll could hand a GC a login. Now two job functions can, and the button is gone for everybody else (Cyrus)
+`cyrus/portal-capability-gate`
+
+`Contact.portalToken` is a bearer credential. Whoever holds the string IS
+the GC on `/portal/<token>` — no password, no expiry, no rotation — and
+that page shows the contract line items and total, the change orders, and
+every invoice with its payments and its retainage-adjusted balance.
+
+`enablePortalAccess` and `revokeClientPortalAccess` called
+`requireCompanyContext()`, checked that the contact belonged to the
+company, and stopped. No capability check of any kind. So any
+authenticated member — a FIELD crew member on a phone in a jobsite
+trailer included — could POST to a stable Server Action id and mint one.
+This app already knew that field was a credential: #527 exports
+`portalRevokedAt` from the contact CSV and deliberately keeps
+`portalToken` in `EXPORT_WITHHELD` **because it is a bearer credential**.
+We withheld the string from the customer's own download while letting
+anyone on the payroll issue one, which is the first question a GC's IT
+person asks.
+
+**MANAGE_BILLING, derived rather than picked.** The capability is read off
+what the link OPENS, and what it opens is `MANAGE_BILLING`'s own doc
+comment in `lib/permissions.ts` read back: "Invoices, pay applications,
+retainage". It is also the narrowest capability that still holds everyone
+with a reason to send a GC their link — ACCOUNTING, who raises the
+invoices, PROJECT_MANAGER, who drives the pay application, EXECUTIVE, and
+every OWNER — while removing FIELD, PAYROLL_COMPLIANCE and ESTIMATOR, of
+whom that file already says "Billing is out: what has been invoiced is not
+an estimator's business". Not the `VIEW_JOB_COSTS` the contract-paperwork
+four in the same module take: that one is scoped by its own comment to
+cost, forecast, margin and WIP — the inside view, which the portal shows a
+GC none of — and it would readmit ESTIMATOR.
+
+**Gated AND hidden, because a gate alone here is a dead button.** Both
+actions refuse by throwing, matching every sibling in their module, and
+production redacts a thrown Server Action message to a digest. A visible
+button whose refusal cannot be read is worse than a missing one: the
+person clicks, nothing happens, and they file a bug. So the whole "Client
+portal" section on `/contacts/[id]` now sits behind `showsBilling`. The
+whole section, not just the buttons — two of its three branches print the
+token itself, and showing the credential while hiding the button would
+leave the interesting half on screen.
+
+**What the existing census could see and why it could not act.**
+`action-capability-guards.test.ts` had both actions listed by name in
+`UNDECIDED_BEHIND_AN_AMBIGUOUS_PAGE` as "the highest-risk item on this
+page" — its rule derives an action's capability from the page it sits
+behind, and `/contacts/[id]` withholds three different capabilities
+section by section, so it could derive nothing. They are now in
+`SECTION_DECIDED`, the first debt that list has ever paid off, and the
+suite EXECUTES both refusals: four new cases call each action as every job
+function lacking MANAGE_BILLING, require a refusal before the database is
+touched at all, and require every holder plus an OWNER through. That
+list's header comment also claimed the page withheld MANAGE_BILLING for
+"the client portal" — it did not; `showsBilling` wrapped Payment
+reliability, and the portal section was wrapped in nothing. A capability
+named in prose is not a capability in the source, so that line is
+corrected too.
+
+**The new guard, and why it is about a generator rather than two
+function names.** A credential's risk does not come from the page it is
+minted on — had these controls lived on a page that withheld nothing, the
+existing census would not even have listed them.
+`lib/portalCredentialCensus.test.ts` starts instead from `linkToken()`,
+which `lib/tokens.ts` calls "the one generator for links that ARE their
+own access control", plus the `Contact` fields that switch such a link on
+and off. Every exported action in every `"use server"` module that mints
+or switches one must assert a capability BEFORE its first query, or be
+recorded as needing none with the reason — the two `calendarFeed` actions
+are, because the token they mint is the caller's own row keyed
+(companyId, userId). And every `action={…}` posting to a gated one must
+sit inside a region the page withholds on the SAME capability. Scope comes
+from `tsconfig.json`'s own `include` globs, the `"use server"` set is
+counted a second time against the actions barrel, the field names come
+from the Prisma schema, every `linkToken()` hit must be attributed to an
+exported action or fail by name, and comments are stripped — which is not
+decoration, because `billing.ts` prints `linkToken()` and `portalToken`
+inside its own docblocks, one of them inside `enablePortalAccess`'s.
+
+Fourteen mutations, each verified as actually applied before its result
+was read, each red: guard removed from either action, guard present only
+in a comment, guard moved below the first query, guard changed to the
+wrong capability, the section's hiding removed, one form moved outside the
+withheld region, the schema-field pattern matching nothing, the
+`"use server"` detection drifted to single quotes, a new ungated minter
+added, a new minter whose gate is only a comment, a `linkToken()` call
+attributed to no action, a stale exemption, and an exempt action that
+starts asserting a capability. The two that matter most are the ones where
+a broken census would have gone quiet instead of red — the field pattern
+and the directive detection both fail loudly with both numbers on screen.
+
+Not fixed and deliberately left: `enablePortalAccess` still reactivates
+the SAME token rather than rotating it (its own comment has said so since
+#217), so revoke-then-enable hands back a string the GC's mail server has
+already seen. That is a feature with a UI question attached, not a gate.
+
+### Nine findings and not one of them said how sure it was (Diego)
+`diego/spec-click-findings`
+
+The spec reader (#604) was clicked through on production the day it shipped.
+Most of it held: it found the mock-up buried on page 2, Level 5, UL U465; it
+did **not** report the fireproofing or seismic bracing that page 3 expressly
+excludes; the spec meter moved by exactly 3 and the plan-sheet and
+addendum-page meters never moved; the off switch refused in a readable sentence
+and charged nothing. Four real defects came out of it, and the two that matter
+were both invisible to every test in this repo.
+
+**Confidence was shown for LOW findings and for nothing else.** The run
+returned nine findings, every one MEDIUM or HIGH, so the screen showed no
+confidence anywhere — and the tester reported the lowest-confidence-first
+ordering as *unverifiable*, because there was nothing on the page to order.
+
+That is not untidiness. This whole feature rests on `DECISIONS.md`'s rule —
+*"a count that is 85% accurate and says so is useful; a count that is 85%
+accurate and reads as certain is a wrong bid"* — and a MEDIUM finding rendered
+identically to a HIGH one reads as certain. **The eval cannot catch it**: it
+reads the `confidence` field, which was correct the whole time. Only a person
+looking at the screen could, and one did. Every finding now carries a word —
+"clear in the section", "worth checking", "least sure" — with the amber colour
+still only on LOW, so the badge keeps meaning "look here" while the other two
+stop meaning nothing. A word and a colour, never a colour, and never neither.
+
+**Spec pages were missing from the cost panel, and this is the expensive one.**
+The unit was registered in eight places that fail to compile when one is
+missed — `AI_FEATURES`, `FEATURE_MODEL`, the `AiFeature` enum,
+`AI_FEATURE_LABEL`, `AI_FEATURE_DESCRIPTION`, `AskUsageFeature`, the gate
+census, `FEATURE_LABELS` — and all eight were done. `unitDefs` in
+`cost-query.ts` is a ninth and is a hand-written array, so nothing forced it.
+`allowanceOver` never summed `specPagesUsed` either.
+
+The symptom was the quietest available: the per-FEATURE table showed
+`spec-read` and its 10,894 tokens correctly, so the screen looked complete,
+while the cost **per spec page** — the one figure step 2 of the AI plan exists
+to produce, and the only thing that can answer whether 1,800 pages a month is
+right — was never computed. The allowance decision was resting on a number the
+panel could not produce.
+
+`unitCensus.test.ts` closes it, and asks the second-list question rather than
+the completeness one, per CLAUDE.md's #526 entry: *a guard that a list is
+complete cannot notice a second list.* It derives the metered units from
+`AskAllowancePeriod`'s own `…Used` columns — a unit is metered exactly when a
+column counts it — and the panel's units from `unitDefs`, asserts both sizes
+against counts taken a different way, strips comments first (`cost-query.ts`
+now discusses the missing row at length, and a raw-text census would find it
+in the prose and call it registered — the #185 shape), and fails in both
+directions. Mutation-proved by cutting the spec entry back out: **3 of 4 red**,
+on the world exactly as #604 shipped it.
+
+**The refusal rendered at the top, above nine findings.** You press "Read it
+again" at the bottom; the gate refusal appeared under the summary line, off the
+top of a long scroll, and was not announced to screen readers. A refusal nobody
+reads is a dead button — the exact failure the `ActionResult` convention exists
+to prevent, lost at the last step by putting the correct string somewhere nobody
+looks. It now renders directly under whichever control was pressed, in a
+`role="alert"` region.
+
+**And "3 pages" became "3 pages charged"**, matching the promise the line above
+the button makes before the press.
+
+**Two things the run flagged that are NOT defects**, checked rather than
+assumed. The row reading "09 21 16ZZ-TEST Gypsum Board Assemblies" is text
+extraction, not layout: the number and title are separate spans and the second
+carries `ml-2`, the identical pattern the addendum and bid-form rows in that
+file already use — there is a gap on screen and no whitespace text node for
+`textContent` to report. And the model's mock-up quote stopping before "shall be
+demolished and removed" is quote selection, not a miss; the finding's own
+wording carries the demolition.
+
+**The honest gap in that run, now closed.** The tester's mouse, keyboard and
+screenshots all failed together, so it worked by script and said so: *"I can't
+confirm that a real mouse click works on these buttons."* Right to flag it, and
+it left the data path proved and the first press unproved.
+`bidComplianceSpecClick.test.tsx` does the press properly — `element.click()`
+through React's own delegated listener, no handler reached for, nothing asserted
+about internal state, only what a person would then see. It also proves the
+spec button opens the **spec** form rather than one of its two neighbours, and
+that opening a form calls no action.
+
+Mutation-proved three ways, the last being the decisive one from the
+expo-router scar — *make it render nothing*: point the button at the addendum
+form, 3 red; make the handler a no-op, 3 red; hide confidence for HIGH and
+MEDIUM as it shipped, 2 red. The first run of that file also printed
+`act(...) is not configured` on every test while passing all six, which is luck
+about React's scheduling rather than a result, so the flag was set before the
+greens were believed. And `tsc` caught the fixture missing a required `id` after
+vitest had run it green — a reminder that the runner does not typecheck.
+
+559 test files, 8,692 tests.
+
+### A banner prop that could never render, and a finding that wasn't one (Diego)
+`diego/mobile-today-and-dead-prop`
+
+Mobile only. No migration, no behaviour change.
+
+**`JobProgressBanner` took an `empty` string and a nullable `value` for the
+"nothing to measure" case, and neither could be reached.** The caller gates
+on `{punch ? … : null}` and `punchBreakdown` returns null when a job has no
+punch rows — so the gate always fired first, `total` was never 0, and the
+null branch was dead from the day it shipped. Removed: `value` is now
+`number`, and the decision "there is nothing to measure" stays with the
+CALLER, which renders no band at all. That is the better half anyway — a
+band announcing a job has no punch items is still a box on a screen that
+had nothing to report.
+
+**AND THE PART WORTH MORE THAN THE FIX: a second "finding" from the same
+device sweep was not a defect, and the test written for it is what said so.**
+
+Home's TODAY section was seen on a real iPhone as a heading with a bare
+divider and nothing under it. The reasoning looked sound — `summariseToday`
+can return `[]`, and the section is not gated on length. A fix was written.
+
+Then the regression test for it **failed with the fix in place**, because
+`cachedRead` falls back rather than throwing, so `lines` was never empty.
+Back to the phone: once warm, TODAY renders its three lines correctly
+("Today's report isn't filed", "No hours logged today", "No photos today").
+**The first screenshot had caught a cold start mid-load** — seven seconds
+was not enough — and a loading state was about to be shipped as a bug fix.
+
+The gate and its test are reverted. Recorded because the shape recurs in this
+file: the instrument disagreed with the conclusion, and the instrument was
+right. A test that fails when the fix is in is not a broken test; it is the
+fix being wrong.
+
+**AND THE ONE THE PHONE ACTUALLY CAUGHT: a tab that fetches on mount and
+never again.** A contact and its dates were deleted on the web, `/alerts`
+there went to "Nothing needs attention" — and the phone's Alerts tab still
+showed all three, through tab switches and an app resume. A tab screen stays
+MOUNTED when you switch away, so an effect keyed on mount runs once per app
+launch. Pull-to-refresh cleared it, which is the problem rather than the
+answer: the one list whose entire job is to be current only updated if you
+already distrusted it. Home and Outbox refreshed on focus; Alerts and Jobs
+did not. They do now.
+
+`lib/tab-refresh-census.test.ts` guards it, **and it is a SOURCE census that
+says so in its own header.** No test here can tell `useFocusEffect` from
+`useEffect`, because `screens/setup.tsx` mocks the first as the second — the
+right mock, and it blinds every behavioural test to this exact defect. Same
+shape as the expo-router header entry in CLAUDE.md: a check can prove code is
+present, never that a framework honours it.
+
+| mutation | result |
+| --- | --- |
+| alerts back to a mount-only effect | **RED** |
+| census scope points at a directory that does not exist | **RED** |
+| the "which tabs fetch" pattern matches nothing | **RED** |
+
+The first version of that census went **GREEN** against the real bug: it
+matched the bare string `useFocusEffect`, and reverting the fix left the name
+sitting in the import line. It matches the CALL now. A census that counts an
+import as a usage is measuring nothing — and it took a mutation to find that
+out, not a reading.
+
+**Not verified on the device.** The fix needs a new build in TestFlight; this
+session could only prove the defect on the phone, not the cure.
+
+54 files / 402 tests across both mobile suites, typecheck and lint clean.
+
+### A paid eval failed on a curly apostrophe, and said the model had fabricated a quote (Diego)
+`diego/spec-quote-matcher`
+
+The spec reader's eval (#604) scores one thing above all others: **a finding
+whose quote is not in the document is FATAL**, because a quote that is not on
+the page is a paraphrase presented as the spec's own words. It is the one
+assertion a plausible-sounding answer cannot satisfy.
+
+Its first paid run failed `buried-mock-up` on three quotes, with that message.
+
+**It was not a paraphrase.** All three were character-for-character the page's
+own sentence, **the same length**, differing at exactly one code point: the
+model wrote `’` (U+2019) where the fixture has `'` (U+0027). Measured rather
+than argued — every differing index was printed, and the only entry was that
+pair. A reader that transcribes a sentence perfectly and types the apostrophe
+the way a typesetter would has invented nothing.
+
+So the check was answering "are these bytes identical" while claiming to answer
+"is this sentence on the page" — this repo's most familiar failure, in a new
+costume, and this time inside the assertion written to catch dishonesty. A
+false accusation of fabrication is worse than a vague one: it sends the next
+person reading the prompt for a defect that is in the harness.
+
+**The matcher now lives in `lib/specs/quoteMatch.ts` rather than inside the
+eval, and that move is the substantive part.** The eval costs money to run, so
+nothing inside it is exercised on a push — which means the function deciding
+whether a fabricated quote gets caught was checked only by a paid run nobody
+runs often. It is now covered by `quoteMatch.test.ts` on every push.
+
+Normalisation maps a character to its ASCII twin and nothing else: the
+apostrophe and quote families, the hyphen and dash family, non-breaking and
+thin spaces, the ellipsis. **No substitution can turn one word into another**,
+which is the property that keeps a real fabrication failing. Deliberately not
+done: stripping punctuation, stemming, dropping short words, or any fuzzy or
+percentage match — each of those would let a paraphrase through, and a
+paraphrase is the entire point.
+
+**Both directions are tested, and only the second half is a guard.** The
+permissive cases prove an honest transcription is not failed; the hostile ones
+prove a paraphrase, an absent sentence, a too-short fragment and an empty quote
+all still fail. A file with only the first half would pass a matcher that
+returns `true` unconditionally. Proved by mutation rather than asserted:
+disabling the normalisation reds 3 tests naming the variants; making the matcher
+permissive reds 3 different tests naming the fabrications.
+
+**One test of my own was wrong, and the wrong version was the tempting one.** I
+first asserted that a truncated fragment inverting the page's meaning must
+fail — the page says "**No** field mock-up is required", so dropping the "No"
+reverses it. It passes, and it should: the remainder is a literal substring, and
+a containment check reporting that is reporting a true fact. Making it stricter
+would reject honest mid-sentence quotes too. The inversion is caught by the
+eval's INVENTED check instead, which reads the finding's own claims against the
+case's `forbidden` list — and that check passed on the first run, the reader
+having declined the case and explained that the section "expressly disclaims
+Level 5 and any field mock-up". Two checks, two questions, and collapsing them
+into one fuzzy test would do both badly.
+
+**The eval now passes 6 of 6 with every fatal counter at zero** — `requested 6,
+returned 6`, INVENTED 0, EAGER 0, UNQUOTED 0, OVERCLAIMED 0, on `claude-opus-5`
+with prompt `spec-section.1`. One `missed`, reported and not fatal, and it is
+arguably the reader being right: it declined to call Level 4 a cost driver
+because Level 4 is the default a drywall estimator prices without being told.
+
+### The rates got clicked, and the form was still telling people they didn't exist (Diego)
+`diego/wage-rates-clicked`
+
+No migration. One sentence of copy, one e2e spec.
+
+**#598 SHIPPED WITH 547 FILES OF UNIT TESTS GREEN AND NOBODY HAVING TYPED A
+RATE IN.** This is that typing, and it found something the whole suite could
+not: the determination form, three inches above the new rate form, still read
+
+> *"No rate is entered anywhere — the rate stays on the document."*
+
+True when it was written and false the moment #598 merged. It is the exact
+shape this repo keeps paying for — a sentence that was accurate about an
+older version of its own screen, left standing, and then read as
+instructions by the person using it.
+
+**The assertion worth the file is the REFUSAL one.** `formActionCensus`
+caught #598's first draft using `<form action={…}>`, which in React 19
+resets the form BEFORE the action runs — so "a base wage of 0 is not a rate"
+would have arrived over six emptied boxes, after somebody had copied those
+figures off a government PDF. **A census can see the shape of the code; only
+a browser can see that the figures are still on screen when the refusal
+lands.** The spec types a 0, reads the refusal, and then asserts both inputs
+still hold what was typed.
+
+| mutation | assertion | result |
+| --- | --- | --- |
+| the form resets BEFORE the action (the React 19 bug) | refusal keeps your figures | **RED** |
+| `PageAlerts` renders its section when empty | nothing when there is nothing | **RED** |
+
+Both mutations were checked for VACUITY as well as colour — the harness
+requires "Running 2 tests" in the output, so a build break cannot pass itself
+off as a caught regression. Files restored byte-for-byte, never by
+`git checkout`.
+
+The spec also pins three decisions that are easy to "tidy" into bugs: an
+unmapped classification renders **"not mapped to a craft"** rather than an
+error, because the document's names are not ours; an omitted fringe renders
+**an em dash, not $0.00**, because "the document does not say" and "the
+document says none" are different facts a pay clerk acts on differently; and
+`/wip` renders **no section at all** when nothing is outstanding, rather than
+an empty box announcing it has nothing to say.
+
+Run against a throwaway Postgres that did not exist a minute before, through
+real Chromium, signed in as a real Clerk test user. 548 files / 8604 tests,
+typecheck and lint clean.
+
+### Nothing in this app had ever read a specification (Diego)
+`diego/spec-section-reader`
+
+A GC's invitation arrives with a spec book. For a framing, drywall, plaster,
+EIFS, ceilings or fireproofing sub the money sits in two or three sections of
+Division 09, each thirty to sixty pages of requirements written by an architect,
+and the estimator's fear is one sentence long: **a requirement that costs money
+and was not in the number.** Level 5 finish where Level 4 was bid. A UL assembly
+that changes the stud gauge. A field mock-up nobody priced. Third-party testing.
+"No substitutions" on a product that costs twice the one in the catalogue. Any
+one of those is a bid won at a loss, and the only thing standing between the sub
+and it was somebody reading forty pages carefully at 11pm.
+
+The 2026-10-02 audit of the whole estimating workflow established against source
+— not against `FEATURE-AUDIT.md` — that this app had never read a spec at all.
+No specification model, no reader, and no `AI_FEATURES` member for one. The only
+hits for "spec" anywhere were a label on an addendum item
+(`BidAddendumReferenceKind.SPEC_SECTION`) and a free-text `specSection` on the
+RFI and submittal forms.
+
+So: log the sections of a bid's book, attach the PDF, and read one. What comes
+back is a list of what the section DEMANDS that costs money — each finding with
+the sentence it was read from, the page it was on, and one line on why it costs,
+ordered **lowest confidence first** so the reader's least certain claim is where
+somebody will look rather than buried at the end.
+
+**What it deliberately does not do, and each refusal has a prior cost behind
+it.** It writes nothing any other module reads — not a `BidRequirement`, not a
+bid verdict, not a takeoff line. `bid-compliance.prisma` already states why: a
+row the app can check itself carries a `satisfiedOn` that the underlying data can
+contradict. It does not decide whether the bid carries the cost; that is the
+`affectsPricedScope` mistake the addendum review killed, where `false` silently
+removed a live warning and `true` was inert. And there is no carried/not-carried
+tick in v1, because a decision keyed to free prose is discarded the moment a
+second reading words it differently — the exact bug the addendum plan's review
+caught. The findings sit beside the estimator's judgement and never replace it.
+
+**The checks, and two of them found real defects.**
+
+The double-read guard is an **atomic claim with a lease**, not a time window.
+Issue #563 is open against the addendum reader for precisely this: a window that
+reads, decides, then writes has thirty seconds in which two submits both see
+nothing and both charge. A conditional `updateMany` that only matches an unclaimed
+row cannot — `count === 0` IS the refusal, and the lease means a crashed read
+does not wedge the section forever.
+
+Pages are claimed **before** the model call, in one conditional `updateMany`
+marked never released, so a failure is recorded rather than refunded. Spec pages
+get their **own** meter rather than sharing the addendum one, because a section
+is thirty to sixty pages against an addendum's two to twenty — sharing would mean
+reading specs silently eating the allowance for reading addenda with no way for a
+contractor to tell which feature spent their month. 1,800 pages a month, which is
+a figure and not a measurement, in those words. The first draft of this said 600
+on the strength of "four ten-page sections"; ten pages was wrong by five times,
+which made 600 about three bids.
+
+The eval scores **false confidence, not recall**, the same asymmetry the addendum
+and symbol evals use. An invented requirement is FATAL — a finding the section
+does not contain sends somebody to add money for work nobody asked for, and
+unlike a missed finding they have no way to discover it short of re-reading the
+section, which is the thing the feature was supposed to save them. One case names
+Level 5 and a mock-up only to say both are **not** required here; reporting either
+fails the run. Findings on a document of the wrong kind are FATAL, because a
+reader asked to find things will find things. A quote that is not in the document
+is FATAL. A missed requirement is reported and is **not** a failure: quiet is no
+worse than today.
+
+And the free half of it runs on every push, because a fixture nobody has opened
+is a measurement about nothing — every synthetic section is rendered to a real
+PDF and read back with the same pdfjs the app ships, including a control that the
+invention trap's own forbidden sentence really is on the page. Without that, a
+broken line in the PDF writer would send six blank pages, collect six empty
+findings lists, and report a perfect score for a reader that was never shown
+anything.
+
+Two defects this branch wrote and two censuses on `main` caught while it was in
+flight, which is the whole argument for rebasing before pushing rather than
+after. `colorTokenCensus.test.ts` found `hover:border-line-strong` on three
+buttons — a token that does not exist, so Tailwind emits nothing and the hover
+renders colourless — and then found that the confidence badge had copied
+`bg-tag-amber-ground` from its sibling component, which is issue #573's open
+defect. The census's second assertion exists exactly to stop a known-undefined
+token gaining call sites, and it did.
+
+Migration `20261003030000_add_bid_spec_reading`, purely additive, generated
+`--from-schema-datamodel --to-schema-datamodel` and **never** with
+`--shadow-database-url`, which dropped `ep-icy-hat` on 2026-09-18. Renamed to
+sort after `20261003013000` once that landed on `main`: out-of-order migration
+names are a risk with no upside when the thing has never been applied anywhere.
+
+### What actually changed, in plain English (Cyrus)
+`cyrus/seed-counters-zzbqtu`
+
+Sixty-two places in this app ask Tailwind for a colour that does not exist, and
+Tailwind's answer to an undefined class is silence. No error, no fallback — the
+element simply renders with no colour.
+
+Found while surveying the palette before reworking Settings. Seven invented
+names: `surface-input` (39 sites), `surface-card` (16), `surface-muted` (3),
+`surface-sunken`, `ink-strong`, `tag-red-ink`, `tag-amber-ground`, plus
+`tag-emerald`/`tag-emerald-ink` (6). None is in `tailwind.config.ts`; there is
+no `@apply` in `globals.css`, no safelist and no plugin, so nothing defines
+them anywhere.
+
+**Two of these are worse than a missing colour.** `bg-surface-input` is on 39
+form fields, on a canvas of `#0f0f0f` — those inputs have no ground of their
+own at all. And `tag-emerald-ink` appears in three ternaries whose other branch
+is `text-tag-rose-ink`, which IS defined: so the failure state is red and the
+success state is nothing. A user reads "not acknowledged" in red and
+"acknowledged" in default ink, which looks like something that has not
+finished loading rather than something that is fine.
+
+Every one of the 62 is in the estimating / takeoff / bids / billing lane, so
+per CLAUDE.md they are issue #573 rather than a PR. This change is the guard
+only.
+
+**Why no existing check could see it.** `theme-contrast.test.ts` walks every
+DEFINED ink/ground pair and checks its ratio in every palette. It is exhaustive
+over the palette and silent about the source. An undefined token is not a pair
+with bad contrast — it is not a pair at all, so there is no row it can be
+missing from. That is the third member of a family this file already names
+twice: *nothing is ever missing from a directory you do not walk*, *nothing is
+ever missing from a list nobody imports*, and now **nothing is ever wrong with
+a colour that was never defined**. Each is a check that is correct about the
+set it can see and blind to the set the defect is in.
+
+So `lib/colorTokenCensus.test.ts` asks the other direction — not "is every
+token readable" but "does every token a source file NAMES actually exist". It
+derives the valid set from the config rather than restating it, derives which
+namespaces are ours from the keys (so adding one extends the census with no
+edit here), takes its roots from the `content` globs, and strips comments
+through a string-aware tokenizer — load-bearing, because this very file writes
+`tag-emerald` in prose and a raw scan would name the census as the offender.
+
+The 62 are held as nine entries keyed by TOKEN AND COUNT, the shape
+`formActionCensus` uses. Sixty-two line keys would rot on the first reformat;
+a count per token fails when the family grows AND when a name is partly fixed,
+which is the moment the number has to come down rather than the moment it gets
+forgotten.
+
+**One thing the mutation testing caught that is worth more than the census.**
+The scope control originally threw from `statSync` while the `describe` bodies
+were evaluated — so a root resolving to nothing reported as **"no tests"**
+rather than a red assertion naming the root. CLAUDE.md records that exact shape
+costing a session already. "No tests" beside a green sibling is the most
+ignorable failure there is. The roots now come back as data and are asserted
+inside an `it` that names the broken glob.
+
+Mutation-tested five ways, each red naming the offender except where green is
+the point: a new invented token (red), one extra call site of a token already
+excepted (red, "gained new call sites"), a dead `content` glob (red, names the
+glob), an exception count left too high (red, prune test), and the same
+invented token written only inside a comment (**green** — which is the proof
+that the tokenizer is doing its job).
+
+### What actually changed, in plain English (Cyrus)
+`cyrus/seed-counters-zzbqtu`
+
+Three Opus audits traced all eight integrations end to end. The headline was not
+what anyone expected: **none of them is fake.** Jobber, CompanyCam, myCOI,
+Procore, Autodesk, DocuSign and Bluebeam each close their round trip in code —
+real OAuth with PKCE, encrypted tokens, compare-and-swap refresh on providers
+whose refresh tokens are single-use, database-level dedupe, proper disconnect.
+What they have never had is one run against the real service, because every one
+needs a developer account or a partner programme nobody holds.
+
+So the defect was never "it isn't built". It was that **you cannot tell whether
+it worked.** This change fixes the two worst instances of that.
+
+**One — nine providers were writing to a log nobody could read.**
+`IntegrationSyncLog` has twenty write sites across DocuSign, Bluebeam, Procore,
+ACC, Jobber, CompanyCam and QuickBooks. The only thing rendering it sat inside
+`{impl.kind === "builtin" && …}` on the integrations page — the Sandbox card, and
+nothing else. So "Connected to DocuSign", "Sent for signature", and the FAILURE
+row written when a credential dies were all stored and shown to no one. That
+failure row is the single piece of evidence an owner wants when an integration
+stops working.
+
+The query never had a provider filter and has always loaded these for every
+connection, so this is a move rather than new plumbing. It is CLAUDE.md's
+recurring shape arriving one layer out from where that file usually finds it:
+not a function nothing calls, but **a table nothing renders**.
+
+Deliberately NOT gated on `isConnected`. The moment an owner reaches for this
+list is the moment a connection has just gone `NEEDS_REAUTH` or been
+disconnected; blanking the history exactly then is backwards. The status pill
+says whether it is live, the log says what happened to it.
+
+**Two — Bluebeam never recorded a failure at all.** Both write sites set
+`lastSyncStatus: "SUCCESS"` unconditionally with no catch, so a push or refresh
+that threw left the previous success standing: the card read "synced 2 minutes
+ago · ok" about an attempt that had failed. `bluebeam.prisma` says in as many
+words why those three columns exist — "an integration that fails silently is
+indistinguishable from one nobody used" — and they were doing the opposite.
+`lib/companycam/import.ts` already handled this correctly; Bluebeam now matches.
+
+**And the reason it could not be tested, which is the same bug one level down.**
+`linkJobToBluebeamStudio` and `pushDocumentToBluebeamSession` called the client
+without forwarding `deps.fetchImpl`, while `refreshBluebeamStudioSession` did. Two
+of three paths had no seam to inject a failing transport into, so they had no
+round-trip test, so nobody noticed the missing catch. One line per call site.
+
+**Three — a half-done link stranded a Studio Session at Bluebeam.** The session
+is created remotely and then the row is written here; if the write lost, an empty
+session sat in the owner's Bluebeam account that this app had no record of and no
+way to reach. DocuSign handles the same hazard by naming the envelope id and
+telling the user to void it by hand. Bluebeam logged nothing. It now names the
+session and its id, because the id is the only thing that makes the orphan
+findable.
+
+**The checks.** `syncLogVisibility.test.ts` asserts the activity log opens at the
+same depth as the per-kind sibling blocks — a proxy for "not nested inside one of
+them" that a block enclosing it cannot satisfy — and that its condition names no
+provider kind and no `isConnected`. Comments are stripped first, which is
+load-bearing rather than tidy: the comment left at the render site explains the
+fix and says `builtin` three times, so a raw scan could conclude the opposite of
+the truth.
+
+Its first version asserted that every `{impl.kind === …}` match shared one depth.
+They do not — several are nested in the status-pill JSX at columns 12 and 14. The
+control failing is what found that, and it was fixed rather than loosened: the
+reference is now the outermost depth, with a minimum number of blocks required at
+it before it counts as a sibling level.
+
+`sessionFailure.test.ts` covers the branch that did not previously exist, and
+carries a control on itself: it proves the injected transport is the one actually
+called, because if `fetchImpl` were not forwarded — which is how push shipped —
+the real `fetch` would run, the call would fail for a different reason, and every
+assertion in the file would be about the wrong thing.
+
+Mutation-tested six ways, each red naming the offender: the log re-gated on a
+provider kind, the log gated on `isConnected`, the log indented one level deeper
+(which is what re-nesting looks like), the FAILURE catch removed from push, and
+`fetchImpl` no longer forwarded — that last one reds the harness control, as
+designed.
+
+**What this does NOT do.** It does not make any integration work. Seven of eight
+still need an account: DocuSign a demo account then Partner Program, Bluebeam a
+paid plan then a five-day review, Procore Marketplace Partner verification,
+Autodesk an APS app plus a cooperating GC's admin, CompanyCam a paid plan, myCOI a
+partner agreement with illumend that is a sales conversation. Jobber is the only
+self-serve one. Those are relationships, not sprints — and the audits' most
+useful finding is that the engineering was never the blocker.
+
+### What actually changed, in plain English (Cyrus)
+`cyrus/seed-counters-zzbqtu`
+
+The rest of what the three integration audits found, excluding everything that
+needs a developer account. Four fixes, all of the same family: work that was
+done and could not be seen.
+
+**CompanyCam promised a mark it could not draw.** The card says imported photos
+arrive "marked as imported", and `media.prisma` says in as many words that "the
+galleries derive a 'CompanyCam' mark from this being non-null." Nothing derived
+anything. Every reference to `companycamPhotoId` in the repo sat inside the
+module that WRITES it.
+
+The row carried it the whole time — the gallery query uses `include`, so every
+scalar comes back — and the mapping in `job-media-query.ts` dropped it before a
+component could ever see it. So the fix is one derived field and one line of
+render, and it lands in the slot an import necessarily leaves empty: an imported
+photo has no `capturedByUserId`, so where a captured photo says who took it, an
+imported one now says where it came from.
+
+This is CLAUDE.md's recurring shape with the missing half on the READ side, and
+that is why nothing caught it: the write is guarded by a unique index, a
+pre-filter, a P2002 catch and a test that the same photo is never written twice.
+All green, all about writing. A test that a value is stored correctly cannot
+notice that nobody looks at it.
+
+**A photo store that refused a write became a redacted crash with no record.**
+`putImpl` was the one call in `importOne` outside a try/catch while every other
+failure there returns "failed", so it threw past `explain()`, out of the Server
+Action, into production's redaction. The operator got a digest.
+
+The message was the lesser half. The throw happened BEFORE the summary block, so
+`lastImportedAt`, `lastImportStatus`, `lastImportMessage` and the sync-log row
+were never written while rows already stored in that press persisted — and
+`companycam.prisma` says those three columns exist because "an import that fails
+silently is indistinguishable from one nobody ran."
+
+Not exotic, either: `BLOB_READ_WRITE_TOKEN` is not in
+`COMPANYCAM_REQUIRED_ENV`, so a card reads "Connected" and offers Import photos
+on an install with no store, and then every photo takes this path.
+
+It is counted apart from `failed` rather than folded in, because the summary
+would otherwise have lied about the cause: these photos WERE fetched. The
+sentence now says the storage is ours and the problem is not at CompanyCam —
+which is the difference between the operator checking their own setup and
+ringing CompanyCam about an outage that is not happening.
+
+**Autodesk blamed the GC for a path we chose.** A 404 on the feed said "it may
+have been removed, or you were taken off the project." For `/hubs` that is fair.
+For the two feed paths it is not: `acc.ts`'s own NOT VERIFIED block says
+`/construction/rfis/v2/…` and `/construction/submittals/v2/…` were resolved from
+reference pages and never confirmed against a live project, and Autodesk's blog
+says the RFI v2 API has been superseded. Those two paths are the whole feed, so
+the likeliest cause of a 404 there is us asking at the wrong address.
+
+That is worse than an unhelpful error. It sends a subcontractor to ring the GC's
+account admin about a permission problem that does not exist, spending the sub's
+credibility with their customer on our bug. The message now says which it
+probably is, and says so plainly.
+
+**And the setup gap underneath all of it.** `.env.example` documented QuickBooks
+and not one of the other seven. Setting any of them up meant reading
+`lib/<provider>/setup.ts` to learn the variable names existed. With them unset
+each card renders "Not set up" with no button — correct behaviour that looks
+exactly like a broken feature, which may well be the whole of what prompted
+"some of the integrations aren't done". All 23 names were verified present in
+source before being written down; a wrong name here is worse than no name.
+
+`envExampleCensus.test.ts` keeps it honest by importing each provider's
+`*_REQUIRED_ENV` rather than grepping for it — a regex would be the shape this
+repo distrusts, and `ACC_REQUIRED_ENV` is built from `ACC_ENV.clientId` rather
+than string literals, so it would defeat one anyway. Only the required names are
+pinned; the optional ones are documentation, and pinning them would make the
+test about prose.
+
+**One mutation result worth more than the fixes.** `provenanceReadCensus.test.ts`
+asserts the provenance column has a reader outside the module that writes it.
+Its first version passed the mutation that reproduced the original defect —
+because the explanatory comment left beside the fix names `companycamPhotoId`
+several times, and a raw scan counted that as a reader. A census satisfied by a
+comment ABOUT the defect it guards is the #185 shape exactly, and this file
+reproduced it on the first try. Comments are stripped now, and the mutation reds
+both assertions.
+
+Mutation-tested throughout, each red naming the offender: the store try/catch
+removed, the store failure folded into `failed`, the derived field dropped from
+the mapping, a provider's env var removed, the shared key removed, and a var
+present only as a comment rather than an assignment.
+
+**Still blocked, and not on code.** Seven of eight integrations need an account
+nobody holds — DocuSign a demo account then Partner Program, Bluebeam a paid
+plan then a five-day review, Procore Marketplace Partner verification, Autodesk
+an APS app plus a cooperating GC's admin, CompanyCam a paid plan, myCOI a
+partner agreement. Jobber is the only self-serve one.
+
+### What actually changed, in plain English (Cyrus)
+`cyrus/seed-counters-zzbqtu`
+
+Every button in this app that was working on something said so with a word
+that did not move. `Saving…`, a hundred and thirty times, and the ellipsis
+was the only promise that anything was happening. Cyrus found it while
+filming: *"it's just a stagnate word, no loading icon, and I think it makes
+people think the thing crashed."* He is right, and it is worse than cosmetic
+— a page that looks dead invites a second click, and no create action in
+this app is idempotent. `SubmitButton` exists because of exactly that.
+
+So `components/Spinner.tsx` now sits beside all of them. The word STAYS: the
+spinner is `aria-hidden`, so the label is the whole of what a screen reader
+gets and the only thing that says *what* is happening.
+
+**The two that mattered most were not in the hundred and thirty**, because
+they had no word to find. `SubmitButton` — 48 call sites across 22 files —
+disabled itself, set `aria-busy`, and changed nothing you can see. It greyed
+out. There was no static label for a census to catch, so this was the one
+place where the fix and the check both had to be written from scratch.
+
+**44 of the 48, not all 48, and the four exceptions are the interesting
+part.** `useFormStatus` reports the nearest enclosing form, so the spinner
+fires only where that form is driven by a server action. Measured rather than
+assumed: 19 of the 22 files are, through `<ActionForm>` (which renders
+`<form action={…}>`) or a literal one. The other three — `ContactEditForm`,
+`SalesLeadEditForm`, `TakeoffPlanUploader` — are `onSubmit` forms where
+`pending` is always false, so `SubmitButton` contributes nothing there. They
+are not a gap: each already carries its own `disabled={isPending}`, so the
+duplicate-submit protection this component exists for is intact, and each got
+a label-level spinner in the sweep. That also means they cannot double-spin,
+which was the risk worth checking. The 48th is the armed confirm below.
+
+**One button deliberately did not get one, and that is the interesting
+half.** `ConfirmDelete`'s armed confirm is reached by 67 `pendingLabel` call
+sites — one line, enormously tempting. It was patched and then reverted. That
+component's own header states the invariant: once armed, it renders exactly
+the DOM it rendered before. A spinner WIDENS the confirm, and CLAUDE.md's
+"Cancel inherits the delete pixel" entry measured that cluster in real
+Chromium across three axes — the third being a confirm drifting under the
+delete's vacated pixel *precisely because the armed pair stopped covering the
+same span*. No test here can see layout (happy-dom returns zeros from
+`getBoundingClientRect`), and `pending={isPending}` at 70 of those sites
+comes from a shared `useTransition`, so it is not only true after the confirm
+click. The honest move was to leave it alone. It has a `spinner={false}`
+opt-out and `spinnerCensus.test.ts` pins that opt-out at **exactly one use**
+— a second one fails the build, because the next one will be somebody
+quietening a spinner they found noisy, which is the opposite of the point.
+
+**The check.** `lib/spinnerCensus.test.ts` asserts per EXPRESSION, not per
+file: half these files have three or four buttons and importing `Spinner`
+once proves nothing about the other three. It takes its scan roots from
+Tailwind's `content` globs (`theme-contrast.test.ts`'s scar — nothing is ever
+missing from a directory you do not walk), asserts one root per glob and that
+each exists, and counts the labels a second way that shares no logic with the
+first, requiring the two totals to agree exactly. It strips comments through
+a brace-tracking tokenizer with a balance control, and that is load-bearing
+rather than tidy: `Spinner.tsx`, `AskPanel.tsx` and `askDemoScript.ts` all
+quote these labels in prose, and the opt-out site's own comment quotes
+`spinner={false}` — so a raw-text scan would count two opt-outs and pass an
+assertion of "exactly one" against the wrong two. That was observed, not
+predicted: a mutation that removed the real opt-out left the quoted one
+behind, and the census still correctly reported zero.
+
+Mutation-tested four ways, each red and each naming the offender: the opt-out
+removed, a second caller opting out, `SubmitButton` made to render nothing
+(CLAUDE.md's own "make it render nothing" mutation), and a label stripped of
+its spinner.
+
+**And the sweep broke a census on its way through, which is the part worth
+recording.** `hintCensus.test.ts` went red naming five money controls — Save
+backcharge, and the four QuickBooks send buttons — as buttons that "no longer
+exist under that label". They had not been renamed. `enclosingTag` took the
+tag whose `<` most recently preceded the label, which is the enclosing
+element only while the label is the button's FIRST child; wrapping the label
+put a `</span>` there, the name regex failed, and the lookup returned
+nothing. The census was RIGHT to fail — it cannot distinguish "renamed" from
+"I can no longer see this", and it must never assume the second. But the
+model of "enclosing" was one level too shallow, so it now walks left with a
+depth count: a closing tag deepens, a self-closing element is balanced and
+skipped, an opening tag at depth zero is the answer. `<h2>Log a
+backcharge</h2>` still resolves to `h2` and is still not a control, which is
+the exclusion that function exists for.
+
+Also in here, from the same filming session: the Ask box is a `<textarea>`
+that grows to 144px instead of scrolling a long prompt sideways out of view
+— Enter sends, Shift+Enter makes a new line.
+
+### An alert where its subject lives, not only in a list you have to visit (Diego)
+`diego/alerts-where-they-live`
+
+**No migration. No new derivation.** Web only.
+
+**THE PROBLEM WAS DELIVERY, NOT DETECTION.** Every derived alert reached
+exactly one surface: `/alerts`, behind a bell with a count. That is a list
+somebody has to decide to go and read — and the kinds this was built for are
+precisely the ones nobody goes looking for, because their subject is
+somewhere else entirely. `lib/alerts.ts` says it about its own DAS-140
+alerts: both deadlines "were computed and shown correctly on one screen each
+and reached nobody who was not already looking at that job's compliance
+tab."
+
+`PageAlerts` puts them on that tab.
+
+**IT IS THE SAME `loadAlerts` CALL THE LIST USES, not a second derivation.**
+If the two ever disagreed one of them would be lying and nobody would know
+which — and this app already carries the scar of a figure computed twice.
+Per-principal filtering and the money strip come along for free, because
+they are inside the call rather than beside it.
+
+**It renders NOTHING when there is nothing**, deliberately. An empty state
+here would be a box on every clean page announcing it has nothing to say.
+`/alerts` is where "nothing outstanding" is the useful answer, because being
+empty is the whole point of going there.
+
+**Where they landed:**
+
+| page | kinds |
+| --- | --- |
+| `/wip` | `WIP_VARIANCE` — a job forecast over its contract value is a fact about that very table |
+| job → Compliance | `APPRENTICE_RATIO`, `CERTIFIED_PAYROLL`, `DAS140_NOTICE`, `DAS142_DISPATCH`, scoped to that job |
+
+**`/compliance` was already doing it** and is left alone: `RenewalAlerts`
+has surfaced licence, COI and bond expiries there through
+`lib/compliance-expiry.ts`'s own ranking for a while. Adding a second
+renewal surface to the same page would have been the duplication this entry
+is arguing against.
+
+**The job scoping is by href, not by a kind→job map.** The alert already
+carries the thing it says to open, so matching on `href` needs no second
+mapping — and no second mapping that could drift from the first.
+
+547 files / 8578 tests green, typecheck and lint clean. **Not clicked:**
+nobody has loaded `/wip` with a variance outstanding, or a job compliance
+tab with a DAS-140 due.
+
+### A determination can carry its rates now, and that sentence was a refusal (Diego)
+`diego/determination-wage-rates`
+
+**One additive migration — one new table, three indexes, three foreign keys,
+no drops.** Preflight names it and reports it additive.
+
+**THIS REVERSES A DECISION WRITTEN INTO THE SCHEMA.** `PrevailingWageDetermination`
+said of itself:
+
+> *"Nothing here is a wage rate — there is no rate column and none is
+> planned; the rate is read off the linked document by a person."*
+
+That reasoning was sound for what it described: those columns are what the
+document says ABOUT ITSELF, and a rate is not that. It is reversed
+deliberately, by Diego, because it was the thing blocking multi-state rates
+— and the original sentence is kept in the schema above the reversal rather
+than deleted, because it explains the distinction the new model preserves.
+
+**WHY IT BLOCKED MULTI-STATE.** Rates lived only in `FringeRateSchedule`,
+which hangs off `CraftClassification` → `UnionLocal`. **A union local is not
+a jurisdiction.** One craft could not hold a different rate in Nevada than
+in California, and no column anywhere could express it.
+
+`DeterminationWageRate` is a CHILD of the determination rather than columns
+on it, which keeps the original distinction intact: that row is still the
+document, and the rates are still what a person read off it. **Multi-state
+then falls out with no jurisdiction column anywhere new** — a determination
+already carries `jurisdiction`, so its rates inherit it. The same craft in
+two states is two determinations with two rate sets, and nothing has to
+decide which is "the" rate.
+
+**Three deletion rules, each a different answer on purpose.** `Cascade` from
+the determination (these rows are its contents). `SetNull` from our craft —
+an unmapped rate is still a rate the document publishes, and deleting one of
+our classifications must not delete what a government document said.
+`Restrict` from Company, which blocks nothing: **no script deletes a company**,
+checked rather than assumed, and `prevailingWageDetermination` is already
+deleted at `clean-scratch-data.mjs:344`, before `job` at `:374`. So the
+cleanup scripts need no edit — which is the conclusion #224 got wrong by not
+checking.
+
+**NO `effectiveFrom`/`effectiveTo` ON THE RATE.** The determination carries
+`issuedOn`/`expiresOn` and `lib/determination-standing.ts` derives the window
+from them. Dates here too would be a second source for one window, and the
+two would disagree.
+
+**The figures are copied off a PDF, which drove the parser.** Currency
+furniture is stripped rather than refused — somebody pasting `$1,284.00` is
+doing the normal thing, and refusing it teaches them to retype a number they
+had right, which is how a digit gets dropped. And a zero BASE wage is
+refused while a zero FRINGE is kept: no determination publishes a base rate
+of nothing, so a 0 there is a mis-key that would price work at nothing,
+while plenty of determinations carry no training contribution.
+
+| mutation | `determination-wage-rate` |
+| --- | --- |
+| control | green |
+| zero base wage accepted | **RED** |
+| omitted fringe stored as 0 | **RED** |
+| only the first fringe checked | **RED** |
+| `Number()` instead of the digit guard | **RED** |
+
+The last one is not pedantry: `Number("0x10")` is 16, and a hex-looking
+paste is not a wage.
+
+**FOUR CENSUSES CAUGHT THIS BRANCH AND EVERY ONE WAS RIGHT.**
+
+- `exportCompletenessCensus` — a new model must be in exactly one export
+  bucket. It is withheld, for that bucket's own stated reason: *"Hours are
+  exported; what they are worth is not."* Exporting a determination's rates
+  would hand over precisely what the bucket exists to hold back.
+- `formActionCensus` — a client `<form action={…}>` **resets before the
+  action runs in React 19**, so the refusal "a base wage of 0 is not a rate"
+  would have arrived over emptied fields, after somebody had copied six
+  figures off a PDF. It is `onSubmit` + `preventDefault` now, resetting only
+  on success.
+- `theme-contrast` — the save button carried `text-brand-ink` on `bg-brand`.
+  White on the founder yellow is 1.53:1; `text-neutral-900` is 11.71:1.
+- `commands.coverage` — every exported action is a command or excluded with
+  a reason. Both are excluded: a card would put a model between somebody and
+  a PDF they are reading digit by digit, which is the one place a plausible
+  number is worse than no number.
+
+**Not clicked.** 547 files / 8595 tests green, typecheck, lint and preflight
+clean. Nobody has opened a job's compliance tab and typed a rate in.
+
+### Hours going out, so pay can actually be run (Diego)
+`diego/payroll-export`
+
+**No migration. No schema change. Web only.** One of the four rows
+FEATURE-AUDIT.md had as Missing.
+
+**THE GAP WAS ONE-DIRECTIONAL.** `PayrollRegisterImport` has read a
+finished weekly register IN from Gusto, ADP RUN or Sage 100 for a while —
+gross, deductions, net, after somebody else ran payroll. Nothing went the
+other way. So the hours a payroll clerk needs existed only on the
+certified-payroll screen, and getting them into a pay run meant retyping
+them off it. `/api/payroll-export` is that file.
+
+**IT IS A FORMATTER, NOT A SECOND SOURCE OF TRUTH**, and that is the
+design rather than a convenience. The assembly that turns a week of
+`TimeEntry` rows into per-employee, per-classification hours was fifty-odd
+lines inside the page; it is lifted to
+`lib/certified-payroll-week.summary.ts` and the page and the export now
+both call it. A payroll file that disagreed with the screen it was
+downloaded from is worse than no export at all — somebody runs pay off one
+and reconciles against the other, and the difference is wages.
+
+**TWO THINGS IT REFUSES TO DO, both money bugs, both mutation-checked.**
+
+*It never writes 0 for a wage it does not know.* `buildCertifiedPayrollSummary`
+leaves `wageCost` null when an entry has no craft tag or no
+`FringeRateSchedule` effective on its date — "never invents a wage" is
+that core's own first rule. A blank cell in a spreadsheet reads as
+nothing; a `0` reads as free labour and imports into a pay run as such.
+The cell stays empty and a **`Rate known`** column says `no` beside it,
+which is a fact a clerk can act on rather than a hole they have to notice.
+
+*It never repeats an employee-level total on a per-classification row.*
+Per diem and travel pay are totals for the PERSON. Somebody who worked two
+crafts in a week has two rows, and printing their per diem on both doubles
+it — in a file that goes into a pay run. They appear once, on that
+employee's first row, under a column that says `(employee total)`.
+
+| mutation | `payroll-export` |
+| --- | --- |
+| control | green |
+| unpriced wage exported as `0` | **RED** |
+| per diem on every classification row | **RED** |
+| a pay type loses its column | **RED** |
+| the pay-type list drifts from `TimeEntryPayType` | **RED** |
+
+That last row is the scope half rather than the size half: the test parses
+the union out of `labor-cost.ts` and requires a column for each member, so
+a fifth pay type cannot be added there and have its hours silently dropped
+from every payroll file. A dropped column does not look like a failure —
+the hours simply would not appear, and nothing would say so.
+
+**Gated at `MANAGE_COMPLIANCE`**, which is what the certified-payroll PAGE
+asks for and therefore the only honest gate: this file is that page's
+figures, and gating the download harder than the screen showing the same
+numbers would be theatre. A Route Handler rather than a Server Action for
+the reason `app/api/export/route.ts` already gives — a download needs a
+Response carrying its own content type — and a plain-text 403 rather than
+a redirect, because a redirect saves the sign-in page as a `.csv`.
+
+The job is scoped in the WHERE rather than checked after the read, and the
+requested week is SNAPPED with `certifiedPayrollWeekStart` rather than
+trusted: a mid-week date in the query string would otherwise export a
+window starting on a Wednesday and disagree with every other
+certified-payroll surface while looking perfectly reasonable.
+
+**Not verified on a screen yet.** 547 files / 8587 tests green, typecheck
+and lint clean. Nobody has clicked the link.
+
+### Three audit claims that stopped being true, and the evidence for each (Diego)
+`diego/audit-mobile-distributed`
+
+**DOCS-ONLY.** No code. Shipped alone under the audit exception the working
+agreement grants, which exists for exactly this: documentation being dragged
+back to reality after it has drifted, with no accompanying change for it to
+ride along with. `FEATURE-AUDIT.md` says of itself that it has drifted more
+than once and not to let it.
+
+**1. The mobile app row said it was Partial for two reasons and gave them by
+name** — "no TestFlight build exists" and "it has not been clicked through on
+a device end-to-end", adding "those are the flips to Built". Both are false.
+Builds 7 through 12 are in TestFlight (build 12 is commit `88ff819a`,
+accepted by App Store Connect), and build 11 was driven end-to-end on a
+physical iPhone through iPhone Mirroring on 2026-10-02 — Home, Jobs, a job
+hub, the punch list, creating a punch item and moving it OPEN →
+READY_FOR_REVIEW, and the new job-progress band tracking that change. The
+row is Built on its own stated terms.
+
+What the clicking found is kept rather than quietly dropped, because it is
+the honest remainder: the phone can create a punch item and cannot delete
+one (#592), a punch row's chevron toggles status instead of navigating
+(#593), and the field tier has still not been walked as a FIELD user.
+
+**2. The field-tier row carried the same stale half** — "the app is not yet
+distributed" — alongside a true one. It now says the one thing that is
+still true, and says why the 2026-10-02 walk is not evidence for it: that
+walk was as the OWNER, which is the principal this row is not about.
+
+**3. FIVE alert rows were waiting on "the two environment variables and one
+observed run". The variables are set.** `NOTIFY_BASE_URL` and `CRON_SECRET`
+both exist on the Vercel production environment, created 2026-09-28 —
+verified by listing the project's variables, not assumed. `CRON_SECRET`
+carries its own note that it was set through the API because a clipboard
+copy kept adding a trailing newline, which Vercel rejects as whitespace in
+a header value.
+
+**The run is still unconfirmed, and this entry refuses to claim otherwise.**
+Runtime logs cannot settle it: Pro retention is one day, and a count grouped
+by request path over the last 24 hours returned a single line, for `/`. An
+instrument that sees one request in a day is not a control, and absence in
+it is not evidence that a daily cron did not fire — the same rule this repo
+has written down after being caught by it twice. The remaining check is
+`NotificationDispatch` rows or Vercel's own cron history.
+
+**AND THE FIX FOR WHAT THE CORRECTION ITSELF GOT WRONG.** The first pass
+at point 3 pasted the same long paragraph into all five rows, which made
+one blocker look like five and buried the half that was already dealt
+with. It is stated ONCE now, under Sheet 26's heading, and each row points
+at it. A sheet that repeats a sentence five times is how a reader learns
+to skim the one place it mattered.
+
+**What this does NOT do:** flip any row's verdict. Every one of these rows
+was written by somebody who had a reason, and three of those reasons have
+expired while a fourth has not. Changing Partial to Built is a judgement
+for whoever owns the sheet, made with a true row in front of them rather
+than a stale one.
+
+### The proposal said nothing when its prices had never met the markup (Diego)
+`diego/estimating-audit-fixes`
+
+An audit of the full estimating workflow on 2026-10-02 — seven stages, every
+claim verified against source rather than against `FEATURE-AUDIT.md` — turned up
+one defect that reaches a customer and three claims that had gone false. This is
+those four. The remaining gaps the audit found are listed at the bottom, scoped
+and deliberately NOT built.
+
+**THE ONE THAT MATTERS: a GC-facing document that quietly omits the markup.**
+
+`/jobs/[id]/proposal` is the bid a sub sends: scope, a schedule of values, a
+total, and the exclusions `proposals.prisma` calls *"the spine of a sub's bid"*.
+Its total is `Σ (quantity × unitPrice)` over the live line items — and the page
+**read `JobBidRecap` nowhere at all**, verified by grep as zero references.
+
+So a bid could carry a fully configured recap — markup per cost type,
+escalation, material tax, overhead, profit, bond, contingency, the whole
+seven-step pipeline — and the document that went to the general contractor showed
+**none of it**, unless somebody had remembered to press "Apply to line prices" on
+the estimate tab first. Nothing on the page said so. `FEATURE-AUDIT.md` conceded
+the same gap in one clause — *"Still not yet: the GC-facing proposal printing the
+marked-up total"* — which undersells it: the risk is not a missing feature, it is
+a number a customer acts on being quietly low.
+
+**IT DOES NOT PRINT THE RECAP TOTAL INSTEAD, and that was the first idea.** The
+schedule of values is a table of line prices a GC will add up. Substituting a
+different grand total under it produces a document that does not reconcile with
+itself — and a GC who adds the column and gets a different answer has found a
+reason to distrust every other number on the page. That is worse than the defect.
+`applyBidRecap` already does this correctly: `spreadToLines` raises each line
+pro-rata, largest-remainder-first for the cents, so lines and total move together.
+
+So the fix invents no figure. `lib/estimating/proposal-recap-currency.ts` answers
+one question and the page shows a sentence — `bid-recap.ts`'s own rule applied one
+surface further on: *"the thing that cannot be computed is named on screen
+instead of invented."* The warning is `print:hidden`, addressed to the sender and
+never to the GC: a note on the printed page would be telling a customer our prices
+may be wrong, which is a different and much worse sentence.
+
+**It catches the second case too, which is the easier one to miss.** Applying the
+recap and then editing a line is ordinary estimating, and the moment it happens
+the prices are part marked-up with `appliedAt` still set — so a check asking only
+"has it ever been applied" would call that document current. `appliedTotal`
+against the live line sum is what makes it visible, compared in CENTS because
+`spreadToLines` is exact to the cent and a tolerance would hide exactly the
+one-line edit this exists to find. Mutation-proven: a $10,000 tolerance reds that
+test and nothing else.
+
+**Three claims that had gone false**, each corrected with what it used to say:
+
+`jobs.prisma` on `JobLineItem.costCategory` read *"Equipment has no member of
+CostCategory today and sits under OTHER."* **EQUIPMENT is a member of that enum
+four hundred lines below the comment, in the same file**, and
+`equipmentMarkupPercent` has its own recap rate. False since 2026-09-26.
+`FEATURE-AUDIT.md` recorded striking the equivalent prose when the member landed;
+this comment was missed — the ordinary way a correction goes half-done.
+
+`bid-recap.prisma` said the applied columns *"refuse to apply the same recap
+twice."* Nothing refuses anything, and **the header of that same file says so
+eighty lines above** — *"`applyBidRecap` has never read `appliedAt`"* — so the file
+contradicted itself. Safety comes from IDEMPOTENCE, not a guard. The distinction
+is worth keeping because the takeoff path next door really does guard
+(`TakeoffMeasurement.postedAt`, a hard refusal before any write), and reading
+these as the same kind of protection would be wrong about both.
+
+`estimate-stage.ts` labels an estimate **READY_TO_SEND** on `lineItemCount > 0`
+with no signature request, and nothing else. It consults no recap, no
+`bid-responsiveness.ts`, no `takeoff-currency.ts` and no cost figure — so a job
+whose every line carries a price and no cost reads $0 direct cost to the recap and
+"Ready to send" here. The label is not renamed, deliberately: the words are useful
+on the jobs list, and the fix for an overstated label is to say what is behind it.
+`estimate-stage.test.ts` now pins the list of what it does not check, including
+the function's own arity, so widening it without widening the label fails.
+
+---
+
+**What the audit found and this PR deliberately does NOT build**, so the next
+person starts from a list rather than from the code:
+
+*Needs an external credential:* CAD/BIM import (the app already speaks Autodesk
+Platform Services for ACC, but at `data:read account:read` — Model Derivative
+needs write scopes, which widens a deliberately narrow promise); supplier pricing
+(no distributor API exists; RSMeans via Gordian is the paid option);
+per-jurisdiction sales tax.
+
+*Needs a product decision:* target margin (there is no field, so "is this bid
+sane" has nothing to compare against); which indirects to line-item
+(`mobilization` has zero hits repo-wide); whether contingency needs weighted risk
+factors; how retainage carry is priced.
+
+*Needs clicking, so not done unsupervised:* `addLineItem` and `updateLineItem`
+collect no `costCategory`, making the manual form the last path producing an
+uncoded line — visible rather than silent, since `directCostByCategory` reports
+them and the recap panel offers to code each one, but a second step on every
+hand-typed line. The action half alone would be a field no form sends, which is
+the "written, documented, never called" shape this repo punishes. Same for
+grouping the sheet index by discipline, where the value is already captured and
+normalised and only a query and a view are missing.
+
+*Deliberate refusals, not gaps:* volumes (the three-primitive vocabulary is closed
+on purpose — though spray fireproofing is priced on area × thickness, which is
+worth re-arguing), levelled-quote-to-estimate-line, equipment cost into job
+costing, sheet-gap detection.
+
+Checked: `typecheck`, `lint`, **546 test files and 8,575 unit tests passing.** No
+migration, no schema change, no new dependency — the two `.prisma` edits are
+comments only.
+
+### A design system with a document, and the light palette changes sides (Diego)
+`diego/mobile-design-system`
+
+**Phone only. No schema, no migration, no web files, no logic.** The web
+app is untouched and stays dark.
+
+**WHAT CAME IN.** `DESIGN.md` at the repo root, extracted from
+`cstream-mobile-design-ui` — colour, type, spacing, radius, depth,
+density, buttons, inputs, list density — plus a CLAUDE.md rule making it
+the authority ("All UI must follow DESIGN.md. Don't use default shadcn
+styling"). `apps/mobile/lib/theme.ts` is its executable copy and says so
+in its own header.
+
+**THREE THINGS ABOUT THE SOURCE, recorded because none is obvious from
+opening it.** It ships **no screenshots** — `public/` is favicons and v0's
+stock `placeholder-*` files, so every value here came from reading CSS,
+not from looking. Its design is **two themes stacked in one 82-line
+file**: a blue/multicolour base, then a `/* FieldLink monochrome theme */`
+block appended after it, and later rules win — so the monochrome theme is
+what renders and the blue one is dead. That override is **not** inside a
+media query, so it also beats the `prefers-color-scheme: dark` block above
+it: the reference has no working dark mode. And its
+`components/ui/button.tsx` is **untouched default shadcn** that its own
+`page.tsx` never imports — scaffold, not design, which is precisely why
+the CLAUDE.md rule names shadcn.
+
+**THE LIGHT PALETTE CHANGED SIDES, and #584 was not wrong.** #584
+darkened the canvas to `#e5e7ee` so white cards would lift off it, on the
+correct observation that with a ~4% step the outline was doing all the
+separating. The reference removes the *premise* instead of the conclusion:
+its canvas and surface are the **same white**, and a card is told apart by
+a `#e5e5e5` hairline. With no canvas step there is nothing for a shadow to
+fall on. So `light` is now `flat`, `dark` stays `lifted` (a hairline is
+nearly invisible on `#0f0f0f`), and `outdoor` stays `flat` with its
+glare-proof `#6b6b6b`. The old reasoning is kept in `card-depth.test.ts`'s
+header rather than deleted — it was right about the canvas it described.
+
+**WHAT THE REFERENCE DID NOT GET TO CHANGE.** Its type runs 9-13px on
+40pt targets. Body stays **17**, nothing below **13**, targets stay
+**48** — the parts that earn their keep in gloves. The hierarchy was
+adopted (30/-.05em title, 18/-.03em section, tracked overline); the sizes
+were not. Eight deviations total, each with its reason, in DESIGN.md's own
+table so nobody "fixes" one back.
+
+**ONE VALUE WAS SUBSTITUTED RATHER THAN COPIED.** The reference's muted
+grey `#858585` is **3.69:1** on white and fails the 4.5:1 floor — at 9px,
+in the tab bar. `#737373` (4.74:1) is the nearest principled value with
+headroom. Every one of the 17 enforced pairs was computed before the file
+was edited, not after.
+
+**AND A REGRESSION THE TESTS COULD NOT HAVE SEEN.** Making `rail` white
+made it identical to `surface`, and `app/job/[jobId].tsx` used
+`colors.rail` as its activity-tile **pressed** state — so a pressed tile
+would have shown no feedback whatsoever. Nothing in this repo can catch
+that: it is two tokens being equal, which is legal, on a state no test
+renders. Found by grepping every `rail`-as-background use after the change
+and asking what it sat on. It is `railHover` now, which is what
+`GroupedRow` and `JobContextChip` already used.
+
+| mutation | card-depth |
+| --- | --- |
+| control, nothing changed | green |
+| `light` flips back to `lifted` | **RED** |
+| `outdoor`'s border softened to light's hairline | **RED** |
+
+That second row is the one worth having. The two flat palettes are flat
+for *different* reasons, and a "both flat, so share the value" tidy-up
+would spend the only cue a crew in direct sun has. The new assertion
+compares the two border weights rather than trusting a comment.
+
+**Still unverified, and it needs a phone.** Nothing here was looked at on
+a device. The tab bar separates by a 1px top border it already drew, so
+white-on-white is fine there; `handover.tsx`'s header draws **no** border
+and is now white on white, which matches the reference's own borderless
+topbar but has not been seen. Suites: 37 files / 319 tests and 15 / 74,
+typecheck clean.
+
+---
+
+### The reference's components, built — and the donut that measured nothing
+
+**A SECOND PASS, because the first one shipped a design SYSTEM and not a
+design.** The tokens above were correct and almost invisible: canvas
+`#e5e7ee` → `#ffffff` and card radius 12 → 15, on a phone pinned to the
+DARK palette, which this change never touched. Diego saw nothing and said
+so. The reference's identity was never in its stylesheet — it is in
+`page.tsx`, a file the first pass read **twelve lines of** (the import
+list) before deciding the tokens were the job.
+
+So this pass builds what that file actually renders.
+
+**`AppHeader`** — the brand lockup: mark, a tracked `C STREAM` overline,
+the screen name at 32pt. The reference also puts a notification bell up
+here; we do not. That mock has the same five tabs we do, so a header bell
+is a second door to the Alerts tab sitting one thumb-reach below it with
+its own unread badge. Two controls for one destination is chrome, and it
+costs a 48pt target in the row where titles live. The avatar stays and
+carries the name the greeting used to.
+
+**It costs the greeting**, which is a product change rather than a
+restyle: "Good afternoon, Diego" is warmer than "Home", but two stacked
+headings is one too many and the lockup is the most recognisable thing in
+the reference. The date stays — on a field app the day is a fact people
+check. The three `home.greeting.*` keys went with it, which
+`strings-census.test.ts` noticed before a human did: *"written, documented
+and never called — 3 keys nothing references."*
+
+**`QuickActions`** — the four-up row. The reference's four are mock labels
+("Create project", "Users & groups") and it tints each tile a different
+colour; ours are the four things that happen on a site TODAY — the same
+set the job hub groups as `day` — and all four tiles take one yellow.
+Four colours would be four meanings nobody assigned, on a row where the
+icon already says what the thing is. Status colour is spent on status.
+
+**`JobProgressBanner`** — and this is where the money was. The reference
+leads the job screen with `Job value $12,092.64` and `Balance due
+$5,046.32` either side of a donut. Diego's call: keep the band, drop the
+money. The ring is now the share of the punch list VERIFIED, flanked by
+the other two states — because punch items have **three**, and
+`lib/types.ts` already says the middle one is "the one a foreman needs to
+see". A band showing open-vs-done would hide exactly the state somebody
+has to act on. It reads the rows the Punch list tile already counts, via
+`cacheGet` — no request, no new key.
+
+It is **inverted rather than black**: the reference hardcodes `#111111`,
+which on our `#0f0f0f` canvas is a card you cannot see. Painting `ink` on
+`surface`-coloured text gives a solid band in light, a bright one in dark
+and true black in outdoor, with no new tokens — and the text pair is the
+inverse of `ink on surface`, which theme-contrast already holds at 7:1.
+
+**THE DONUT IN THE REFERENCE MEASURES NOTHING, AND THAT IS THE FINDING
+WORTH KEEPING.** Its CSS is `border: 8px solid #facc24;
+border-left-color: #111111` — three sides one colour, one side another,
+with "58%" printed in the middle. It draws an identical shape at 12% and
+at 94%. Ported faithfully it would have been decoration wearing a
+measurement's clothes, which is this repo's most expensive recurring
+shape.
+
+So the arc is derived, and the derivation lives in `lib/progress-arc.ts`
+where a plain-node test can hold it to the claim — `react-native-svg`
+cannot be imported by the lib suite and is mocked away in the screens
+suite, so a test routed through a render could only ever assert that
+nothing threw.
+
+| mutation | `progress-arc` |
+| --- | --- |
+| control | green |
+| **fixed quarter-ring (the reference's own donut)** | **RED** |
+| clamp removed (1.4 draws past the circle) | **RED** |
+| radius not inset by the stroke (ring clips flat) | **RED** |
+
+The first mutation is the reference implementation. A guard that goes red
+on the thing you were asked to copy is the point of writing it.
+
+**One new native dependency**, `react-native-svg@15.15.4` at the SDK-pinned
+version — an arc needs a renderer. It is mocked in `screens/setup.tsx`
+alongside the fifteen already there.
+
+**Still phone-unverified.** 38 files / 325 tests and 15 / 74, typecheck
+clean, `expo lint` clean. Nobody has looked at any of it on a device.
+
+---
+
+### Two defects a phone found, and one the phone could not have
+
+**Build 11 on a real device, driven through iPhone Mirroring.** The band
+works: on ZZQB-TEST with one open punch item it rendered `Open 1` / a real
+`0%` ring / `Awaiting check 0`, and the Punch list tile moved 0 -> 1 in
+step. That is the hero verified against live data rather than argued.
+
+**THE 0% RING DREW A DOT.** `strokeLinecap="round"` paints a round cap even
+on a zero-length arc, so "nothing verified" rendered as a small yellow mark
+at twelve o'clock — which reads as *a little bit done* when the truth is
+none. The arc is now omitted entirely at zero rather than drawn with a cap.
+Nothing in this repo could have caught it: `arcDash` returns `filled: 0`
+correctly, which is what the unit test asserts; the defect was what a
+renderer did with that zero, and happy-dom does no layout.
+
+**THE BRAND LOCKUP WAS ON ONE SCREEN OUT OF FIVE.** `AppHeader` went into
+Home and nowhere else, so Jobs/Alerts/Outbox/Settings still drew a bare
+`LargeTitle`. All five tabs now use `AppHeader`; `LargeTitle` is deleted
+rather than left as a second way to title a screen.
+
+That swap fixed a **pre-existing misalignment** nobody had reported:
+`LargeTitle` carried its own `paddingHorizontal: space.md` AND sat inside a
+container that already padded by the same amount, so every tab's title was
+indented one gutter further than its own content. Visible in the build-11
+screenshots the moment two screens were compared side by side.
+
+`AppHeader` is now self-sufficient — it reads the name from Clerk and
+routes to Settings itself, so five call sites cannot drift on what the
+avatar does. Settings passes `showAvatar={false}`: the avatar's only job is
+to go where you already are.
+
+**And a census checked rather than assumed.** Moving titles from children
+(`<LargeTitle>{t(...)}</LargeTitle>`) to a prop (`<AppHeader title={...}/>`)
+could have put them outside what `strings-census.test.ts` can see. Probed
+with a positive control — hardcode `title="Jobs"` and run it — and the
+census went **RED**, so prop strings were already covered. The dead
+`LargeTitle` alternative was then removed from its regex and the control
+re-run, still RED. A pattern alternative matching a component that no
+longer exists is the empty-question failure this file keeps naming.
+
+Suites 38/325 and 15/74, typecheck and `expo lint` clean.
+
+**Left on production and owed back:** a punch item `ZZ-TEST banner check -
+delete me` on ZZQB-TEST, created to make the band renderable at all. The
+job had none, which is itself the finding — the hero is invisible on a job
+with an empty punch list, exactly as designed, and that is most jobs for
+most of their life. Mirroring dropped before it could be removed.
+
+---
+
+### The rest of the reference, and the three pieces of it that have no data
+
+**Built.** `JobCard` — the reference's job row as its own card: a tinted
+square holding a glyph, the name, a quiet meta line, the status and a
+chevron. Not a `GroupedRow`, for two reasons and the second is the real
+one: the reference draws these as separate cards with air between them
+rather than one grouped slab, and `GroupedRow`'s icon slot is 28pt against
+the reference's 37, so fitting a tile would have widened it for every row
+in the app including the three on Home that hold a 10pt dot. Depth comes
+from `cardSurface`, so it inherits the palette's decision rather than
+making a fourth one.
+
+**`SearchBar`** on the Jobs tab, filtering by name. The reference's is a
+static `div` that cannot be typed into; this one searches, because a
+search bar that does not search is the same class of object as its donut
+that does not measure.
+
+**The activity grid is one slab now, not four floating cards.** The
+reference's block is a single rounded container whose cells are separated
+by 1px gaps with a grey ground showing through — the gap IS the divider,
+the container painted `lineCard` and each cell `surface`. Four cards with
+12pt between them read as four separate things; one slab with hairlines
+reads as a table of the job, which is what it is. `flexGrow` rather than a
+fixed 48%, so the two cells divide what a 1pt gap leaves (no percentage
+can spell that) and an odd fifth cell fills its row instead of leaving a
+stripe of bare grey.
+
+**`design-tokens.test.ts` caught the hairline** the moment it was written
+as a bare `1`. `space.one` exists for exactly this — it is one of the two
+deliberate half-steps the scale documents — and the census would not take
+the literal. Correct refusal; the token says what the number means.
+
+**A DEAD CARD ON HOME, found by tapping it.** Home's job card was a plain
+`<Card>` — no `onPress`. A card showing a job, on the home screen, that
+does nothing when you touch it. It is a `JobCard` now and opens the job.
+Nothing could have caught this either: an absent handler is not an error,
+it is a component rendering exactly what it was asked to.
+
+**NOT BUILT, AND THE REASON IS DATA RATHER THAN EFFORT.** Three pieces of
+the reference have nothing behind them on this phone:
+
+| piece | what it needs | what exists |
+| --- | --- | --- |
+| job card meta `RC-1775 · Austin, TX` | a code and a location | `Job` is `{id, name, status, startDate, endDate}`; `/api/v1/jobs` selects exactly those five |
+| job card progress bar | a percent-complete | no progress field anywhere in the mobile types |
+| handoff card + crew stack | today's handover and its crew | no handover or crew cache key; `CrewMember` is `{id, name}` |
+
+Inventing a number for that bar would have made every card look
+informative and tell you nothing — the same defect as the reference's
+fixed-geometry donut, which this branch already refused once. Each of the
+three is a small API change in the web lane and a cache key here; none is
+a design question. They are listed rather than guessed.
+
+### The symbol-counting question is measured: yes on Opus, dangerously no on Haiku (Diego)
+`diego/ai-cost-click-findings`
+
+`docs/ai/DECISIONS.md` carried *"whether symbol-counting can reach a precision an
+estimator would accept"* as an open question with **zero code behind it**, and it
+gates the whole takeoff-from-drawings project. It is measured now.
+
+`lib/takeoff/symbolCount.eval.ts` — eight cases, synthetic sheets, two runs:
+
+| model | correct | OVERCLAIMED | declined |
+| --- | --- | --- | --- |
+| **claude-opus-5** | **8 / 8** | **0** | 0 |
+| claude-haiku-4-5 | 4 / 8 | **4** | **0** |
+
+**THE EXPECTED ANSWER WAS "IT NEEDS TILING", AND IT IS REFUTED.** The eval has two
+arms because `plan-ingest/planPdf.ts` had already measured the constraint that
+made tiling look inevitable: an ARCH D sheet is 36 inches wide, so it fits a
+vision tier at ~44 DPI, which is why title blocks are read as vector text and
+never looked at. The prediction was that symbols would count on a letter-size
+sheet (~143 DPI) and not on a full one, making drawing takeoff a rasterisation
+project before it could be a feature.
+
+Opus counted a full ARCH D sheet at 44 DPI, four cases out of four, with
+confidence tracking the real difficulty — MEDIUM on every ARCH D case, HIGH only
+on the two easy high-resolution ones. **So the blocker is not resolution, and
+nobody has to build a tiler to find that out.** That is the expensive project the
+paired arms existed to avoid starting on a guess.
+
+**WHAT HAIKU DID IS THE MORE IMPORTANT HALF, because it is the failure a feature
+would have shipped.** Not 4 wrong out of 8 — 4 wrong at **HIGH** confidence, with
+**zero declines in sixteen opportunities**, and specific fabricated reassurance:
+
+    doors-11@DETAIL   said 14, truth 11, HIGH
+      "All 14 are plainly resolved at this resolution with distinct
+       quarter-circle swing arcs. I examined the entire sheet and counted each one."
+
+The prompt invites a decline in its first rule, in capitals, and promises no
+penalty for it. Haiku never took it once. And DETAIL was **worse** than ARCH_D for
+doors — more pixels made it further wrong — so this is not a seeing problem, it is
+a not-knowing-it-cannot-count problem, which no resolution fixes. Exactly the
+metric this repo says to care about: *"a count that is 85% accurate and reads as
+certain is a wrong bid."*
+
+**A FEATURE MUST NOT INHERIT `PLAN_INGESTION`'s MODEL.** That is Haiku for a
+VOLUME reason — hundreds of sheets per set — and counting symbols on one sheet an
+estimator chose is not that. The eval asked Haiku first only because plan
+ingestion was the nearest feature to borrow a model from; that was the wrong
+stand-in, and it now defaults to Opus with `ANTHROPIC_MODEL_SYMBOL_COUNT` to
+re-measure any model.
+
+**THE FIXTURES ARE WRITTEN BYTE BY BYTE, and the fixture is proved before
+anything is measured against it.** Synthetic because *"never use real customer
+files in tests or fixtures"* and a GC's drawing set is precisely that. Hand-rolled
+PDF rather than a new dependency, so there is no licence to review and the bytes
+an eval is graded against are auditable in the same file. `syntheticSheet.test.ts`
+opens every sheet with the `pdfjs-dist` the app already ships and asserts the page
+count, the media box, that the operator count GROWS with the symbol count (an
+empty valid PDF would pass everything else), that the title-block text extracts,
+and that two runs are byte-identical. This repo's harness rule: *a control that
+fails is the instruction to fix the harness, not a result to read.*
+
+**`countSymbols` IS AN INSTRUMENT, NOT A FEATURE** — no action calls it, it is not
+in `AI_FEATURES`, it is not metered, and `FEATURE-AUDIT.md` keeps drawing takeoff
+as Missing. `aiFeatureGateCensus.test.ts` caught it on the first run, correctly,
+as the "written, documented, and never called" shape. Rather than skip it, the
+census grew a second and differently-shaped exemption that **pins** the state: an
+instrument must be imported by at least one `*.eval.ts` and by **no other file**.
+The first half means it is not dead; the second means it has not become a path a
+customer reaches. Mutation-proven both ways — remove the eval's import and it
+reds as dead code; add a non-eval importer and it reds naming the file, with the
+original ungated-caller assertion firing too.
+
+**BOUNDED, and the bound is wide.** Clean synthetic geometry, one symbol kind per
+sheet, no hatching, no dimension strings, no overlapping notes, no scanner noise.
+A pass is a **FLOOR**: Opus can count marks it can see and knows roughly how sure
+it is. It does not mean Opus can take off a real drawing set, and the measurement
+that would justify building anything needs sheets with competing geometry.
+
+### That measurement was then run, and the clean 8/8 does not survive it
+
+Sixteen cases: the eight clean ones kept unchanged as a **control**, plus eight
+carrying poché, dimension strings, keynotes and a second symbol kind.
+
+| arm | correct | declined | OVERCLAIMED |
+| --- | --- | --- | --- |
+| CLEAN (control) | **8 / 8** | 0 | 0 |
+| CLUTTERED | 3 / 8 | 3 | **2** |
+
+**The control held at 8/8, which is the only reason the rest is readable.** The
+clean arm is kept rather than replaced so a drop is attributable: had the fixtures
+simply been hardened, a regression in the prompt, the model, the PDF writer or the
+grader would be indistinguishable from the clutter working as intended. A control
+that is not run is not a control.
+
+**The confidence signal does not discriminate under clutter, and that matters
+more than the two wrong counts.** MEDIUM was right three times and wrong once;
+LOW declined three times and answered wrong once; nothing scored HIGH. So a
+feature cannot be made safe by showing only confident counts — the band that was
+wrong is the band that was right, and the worst answer in the run was a MEDIUM
+(said 8 against a truth of 11).
+
+**What fails is one symbol shape, in both sizes: the thin-stroke one.** Doors — a
+leaf line plus a swing arc — overclaimed on both cluttered arms. Circles and
+filled squares were either correct or honestly declined. At 44 DPI a hatch stroke
+and a door leaf are both one thin line, which is the competition added on purpose.
+
+**And Opus's self-report was accurate, which is a different failure from Haiku's.**
+Haiku fabricated reassurance. Opus named the real cause — *"two large
+cross-hatched blocks could completely conceal additional door swings drawn inside
+or beneath the hatch, and I could not verify those areas"* — which is true, the
+hatch is drawn over the symbol grid, and then returned a number anyway. Not a
+model that does not know; a model that knows, says so usefully, and fills in
+`count` instead of declining.
+
+**So phase 1 is NOT built, deliberately.** Two confident wrong counts in eight, in
+a world still far easier than a real sheet, is not a foundation for a quantity
+that reaches a bid. `FEATURE-AUDIT.md` keeps drawing takeoff as Missing.
+
+The fixture generator grew `clutter` and multi-kind sheets, and
+`syntheticSheet.test.ts` asserts the clutter **lands** — each kind adds drawing
+operators, hatching adds more than fifty, and `trueCount` counts only the asked-for
+kind. A `clutter` array that silently drew nothing would have produced a cluttered
+arm identical to the clean one, scored 8/8, and read as "competing geometry does
+not break it" — a confident wrong answer to the exact question the arm was added
+to ask.
+
+**And the eval guard had the scope bug its own comment warns about.**
+`harness.test.ts` says, in these words, *"this walks the directory rather than a
+list — nothing is ever missing from a directory you do not walk"* — and
+`DIR = join(import.meta.dirname, ".")` walked only `lib/ask/eval/`, which holds
+**two** of the repo's nine eval files. The other seven live beside the features
+they measure and were outside the walk entirely. `theme-contrast.test.ts` and
+`packages/ui/Button.tsx` again: right pattern, wrong scope, and no size assertion
+can see it because a file outside the walk is not a small set — it is not in the
+set at all. Citing the rule it was breaking is what stopped anyone looking.
+
+Rescoping it to all of `lib/` found one live violation: **`addenda.eval.ts`
+demanded its API key INSIDE the `it` body**, the one placement that file's own
+comment describes as the thing to refuse — so a keyless run started the suite and
+threw once per case, reading as a measurement that went badly rather than one
+that never happened. Moved to collection scope. The guard's floor went from 2 to
+8 (a floor the old scope could not reach, so the fix cannot be undone quietly)
+and it now asserts the walk leaves that folder.
+
+Five of the six "violations" the rescoped guard first reported were false alarms
+from my own over-strict regex — it demanded column-zero placement and one exact
+function name, while six evals legitimately call the **better** shared helper
+(`requireEvalApiKey`, which also rejects the "…" placeholder from an eval's own
+run instructions) from the `describe` body, which runs at collection. The
+assertion now states the property — reached before any case, never inside an
+`it` — instead of a position. Mutation-proven.
+
+Checked: `typecheck`, `lint`, **545 test files and 8,566 unit tests passing.** The
+eval is not in CI and never will be: it spends money, `*.eval.ts` is outside the
+unit config's include, and it is run by hand with `pnpm eval:symbols`.
+
+### Three defects a click-through found on the cost panel, one of them the number it exists to produce (Diego)
+`diego/ai-cost-click-findings`
+
+#589 shipped step 2 of the AI plan with `typecheck`, `lint`, 8,536 unit tests and
+four censuses green. **Loading the page found three real defects in under ten
+minutes**, which is this repo's oldest rule arriving on schedule: *real bugs here
+have only ever been found by loading the page and doing the thing.* The
+click-list in #589's own body is what produced them, and the browser tester's
+report is the reason all three are written down rather than two.
+
+**ONE — every feature row rendered its raw database key on a money screen.**
+
+`AI_FEATURE_LABEL` is keyed in SCREAMING_SNAKE (`PLAN_INGESTION`) because it is a
+TypeScript union and a settings column. `AskUsage.feature` stores kebab
+(`plan-ingestion`) because it is a ledger string. The panel looked the label up
+with the ledger's spelling, which is `undefined` for **every feature, always**,
+and fell through to a `?? feature` fallback. The row read `ask · 2 calls · $0.43`.
+
+The tester reported this as *"small inconsistency: `ask` in the cost list but
+`Ask` in the usage list"* — reasonable, and it was not a casing difference. The
+lookup never matched once.
+
+**Two things of mine hid it, and both looked like care at the time.** An
+`as keyof typeof` cast silenced the exact type error that would have failed the
+build. And the fallback — written on purpose so an unnamed feature would not be
+DROPPED from a bill — turned a total failure into something that reads as a rare
+edge case. A graceful degradation is a disguise when it degrades on every row.
+
+Two guards that already existed could not see it, and the reason is the #526
+shape one step further out. `AI_FEATURE_LABEL` is a total
+`Record<AiFeatureKey, string>`, so a feature with no label does not compile —
+**that assertion was true and passing the whole time.** It proves the map is
+COMPLETE; it cannot see a consumer indexing it with the wrong key. *Nothing is
+ever missing from a map nobody can index.*
+
+`askFeatureLabel` now derives the translation (kebab → SCREAMING_SNAKE) rather
+than adding a second hand-kept list, and `askFeatureLabelCensus.test.ts` asks the
+question neither old guard asked: not "does every key have a label" but **"does
+every string the ledger can actually write resolve to one"**. It parses the
+`AskUsageFeature` union from its own source with comments stripped (those doc
+comments quote feature names in prose — the #185 shape), asserts the parsed count
+equals `AI_FEATURE_KEYS.length` so a pattern matching nothing fails loudly, and
+requires the fallback to fire for ZERO known features. Mutation-proven: restoring
+the shipped lookup reds it naming all nine.
+
+**TWO — the per-unit figure divided a 30-day numerator by a one-period
+denominator.**
+
+The number this whole step exists to produce. Numerator: every `AskUsage` row in
+the last 30 days. Denominator: `askAllowancePeriod.findFirst({ periodStart: { gte:
+from } })` — a single period. One line, two distinct failures:
+
+  - **It fails blank.** With no period starting inside the window, `findFirst`
+    returns null, every count reads 0, and every row says "no questions this
+    month" while the usage block directly above shows calls in the same window.
+    That is the symptom the click-through hit, and the tester flagged it
+    correctly while saying they could not tell which cause it was — the page
+    shows no dates.
+  - **It fails LOUD on the 1st of a month.** Thirty days of spend over two days
+    of usage renders a confident per-sheet figure with an "a month would be" line
+    beneath it — measured at 3x in the test, up to ~15x early in a month. That is
+    the figure feeding the $399 pricing decision `DECISIONS.md` has open, and
+    `costPerUnit`'s own docstring calls an invented per-unit cost "the most
+    confidently wrong number on the page". It was producing one, monthly.
+
+**We got lucky in which mode fired first.** Blank is survivable; the wrong number
+is the one that gets quoted.
+
+The denominator now covers the same window: `allowanceOver` sums every period
+overlapping it. A period is a UTC calendar MONTH with no end column, so the
+query reaches back to `startOfUtcMonth(from)` — which has its own test, because a
+filter that stopped at the window's own day would never FETCH the straddling
+period and the fix would stay green while summing a list that was already short.
+
+**THE STRADDLE IS DECLARED RATHER THAN HIDDEN.** The earliest period can begin
+before `from` — a 30-day window opening 2 Oct reaches into September, whose
+period began 1 Sept — and the counters are per-period, not per-day, so it
+contributes 1 Sept as well. **Nothing records which day a unit was claimed on**,
+so it cannot be apportioned, only stated. The denominator is therefore slightly
+too large and every per-unit figure slightly too LOW. The panel says so in the
+same small print as the FLOOR warning, and a test pins the DIRECTION: an
+under-estimate of a cost is the survivable error, so the fix must never move the
+figure the other way.
+
+Narrowing the numerator to the period instead was considered and rejected: on the
+2nd of a month it reports a cost per sheet from two days of data, which is a worse
+measurement than a conservative one over thirty, and it answers a question nobody
+asked — "what did it cost since Tuesday" rather than "what does a sheet cost".
+
+**THREE — the total was correct and nobody could check it.**
+
+The screen showed `$0.43` beside a usage block reading "1,285 tokens in, 267
+out". Those tokens multiply out to about a cent. The tester's first conclusion was
+that **a rate had been entered per-1,000 instead of per-million**, which would
+mean every figure on a money screen was 1,000x overstated.
+
+That hypothesis is refuted by the code — `PER_MTOK = 1_000_000` and the division
+is `tokens × rate / PER_MTOK`, with the census asserting the rates. The $0.43 is
+right: roughly 67,000 cache-WRITE tokens at $6.25/MTok, from Ask caching its
+system prompt and tool definitions at four breakpoints. The usage block renders
+`inputTokens` and `outputTokens` and **nothing else**, so two of the four token
+kinds being charged for were invisible.
+
+**That is the defect even though no number was wrong.** The screen made a correct
+answer indistinguishable from a catastrophic one, and the only way to tell them
+apart was to read the database — which is the definition of a cost screen that
+does not work. A figure whose inputs are invisible gets distrusted when it is
+right and trusted when it is wrong, and both directions are expensive.
+
+`tokensOver` reports what the total was computed from, over the PRICED rows only
+— counting unpriced rows' tokens beside a total that excludes them would
+reintroduce the same mismatch — and the panel prints it.
+
+**Two stale comments, riding along as the agreement requires.**
+`AiCostPanel.tsx` said "three of the five rates are not confirmed yet", false
+within hours of being written, and also described an uncomputable figure as
+rendering "a dash with a reason" when the code renders `not priced`. Wrong about
+its own output as well as about the rates. And `docs/ai/DECISIONS.md`'s **Open
+questions** said the cost-per-sheet figure "cannot report a number: three of the
+five rates are unconfirmed… until they are pasted in" — in the section whose
+stated job is *"recorded so nobody re-derives them"*. A reader would have opened
+`pricing.ts` to fill in rates that are already there and concluded the instrument
+was half-built when it is merely unused. Both corrected with what the old
+sentences said and why they would have misled, per this file's own convention.
+
+The second one was found only because the first was grepped for rather than
+fixed in place. Worth keeping: the line somebody points at is not always the
+expensive instance of it.
+
+Checked: `typecheck`, `lint`, **543 test files and 8,549 unit tests, all
+passing.** Every fix mutation-proven — the shipped label lookup, the
+single-period denominator, and the unpriced-token leak each red their own guard
+and nothing else.
+
+### Step 2 of the AI plan: what a model call costs, and what one unit of work costs (Diego)
+`diego/ai-cost-step-2`
+
+Two other sections of `docs/ai/DECISIONS.md` referred to step 2 for five days
+while there was no step 2. Step 0 said *"Nothing prices that column today; the
+cost work coming next will"*; step 1 said *"1,500 is a figure, not a
+measurement. Whether it is sustainable depends on measured cost per sheet, which
+step 2 produces."* An audit on 2026-10-01 found nothing in the repo computed a
+dollar cost for any model call. **A reference to work that does not exist reads
+exactly like a reference to work that does**, which is why it survived.
+
+**A BILLED UNIT WAS COUNTED AND THEN THROWN AWAY, and that is the whole reason
+this was blocked.** `AskUsageTotals.webSearches` has carried the per-search
+count since lead search shipped, with a comment on the field saying *"each one
+bills on top of tokens, which is why it is counted apart from them"* — and
+`recordAskUsage` never put it in the insert. So the two features that use web
+search, `lead-search` and `bid-research`, were exactly the two whose cost could
+not be worked out. `AskUsage.webSearches` exists now; `usage.test.ts` asserts the
+insert carries it, because the field existed and the value existed and the write
+did not.
+
+Rows before today read 0. Correct for the seven features that never search, a
+FLOOR for the two that do: the API reported the real number at the time and
+nothing wrote it down, so it is not recoverable. Any total spanning 2026-10-02
+says it is a floor rather than presenting itself as complete.
+
+**Rates are dated and a cost is never stored.** CLAUDE.md's rule — a stored
+figure can disagree with what it was derived from. A cost is tokens times a
+rate, so it is computed at read time against the rate in force ON THE ROW'S OWN
+DAY. Each model carries a list of rates with a `from` date, so a price change
+prepends an entry and every historical figure stays true; one mutable rate would
+silently restate last quarter's bill.
+
+**AN UNKNOWN COST IS A RESULT, NEVER A ZERO.** Only two of the five rates were
+recorded anywhere in this repo when this started — Opus 5 at $5/$25 per MTok and
+Haiku 4.5 at $1/$5, in DECISIONS.md. `pricing.ts` does not invent a rate: the
+entire output of that module is a dollar figure somebody multiplies out to decide
+whether an allowance is sustainable, and a confident wrong price is the one kind
+of error nobody re-checks. An unset rate is `null`, not 0, because a zero
+multiplies out to "this call was free" — indistinguishable from a cheap call and
+the one reading that stops anybody asking. `costOf` returns a discriminated
+result so every caller has to render the unknown case.
+
+It needs only the rates a row actually USED, which matters more than it sounds:
+requiring all five would make every row read unknown until the last one was
+filled, and the per-unit figures this exists for would stay unavailable for no
+reason.
+
+**THE GATE WAS RED AND IS NOW SATISFIED.** `pricingCensus.test.ts` fails while
+any rate a live feature needs is unset and names which, and two of its nine
+assertions were red by design for exactly that reason. All five rates are now
+recorded, read off the official pricing page on 2026-10-02:
+
+| | input | output | cache read | cache write (5m) |
+| --- | --- | --- | --- | --- |
+| Opus 5 | $5 | $25 | $0.50 | $6.25 |
+| Haiku 4.5 | $1 | $5 | $0.10 | $1.25 |
+
+plus web search at **$10 per 1,000 searches**. Nothing was weakened to go green,
+which is the only thing that would have made the red worthless — the two tests
+keep their `GATE:` titles because a model routed somewhere unpriced next month
+fails them the same way. Every rate carries a `source` string saying where the
+figure came from and the day it was read, so a number cannot arrive anonymously
+and cannot be checked against an invoice later without one.
+
+**THE CACHE-WRITE RATE IS THE ONE THAT CAN BE WRONG QUIETLY,** and it is recorded
+with the reason rather than just the number. Anthropic publishes two — a 5-minute
+TTL and a 1-hour TTL — and for Opus 5 they are $6.25 and $10 per MTok, a 60%
+difference on the same token. The 5-minute figure is correct here because
+`ask.ts:54` sends `cache_control: { type: "ephemeral" }` with no `ttl` across all
+four of its breakpoints, and that is the 5-minute default. If anybody adds
+`ttl: "1h"`, these rates understate the bill and nothing in the repo will say so:
+there is no per-row record of which TTL a cache write used. Written into the
+`source` strings and `pricing.ts`'s header so the next person reads the
+dependency rather than the number.
+
+**THREE COST TESTS CHANGED SHAPE WHEN THE RATES ARRIVED, AND THEY WERE NOT
+DELETED.** `cost.test.ts` was written against the gap: it reached the "a rate
+this row needs is missing" branch through the real table, because a row with
+cached tokens genuinely could not be priced. Filling all five in made that branch
+unreachable from `RATES` and the three tests went red — not a regression, the
+fixture they leaned on stopped existing. Deleting them would have been the #185
+shape, a guard disarmed by the code getting better. They reach the branch two
+ways now that survive a complete table: an injected rate lookup returning a
+half-filled rate, and a model id that is not in the table at all. Mutation-proven
+— `missing.length > 0` → `> 99` reds the injected-lookup test and nothing else,
+so it is the sole guard on that branch and it is live.
+
+**The denominator comes from the allowance ledger, not from a row count.**
+`planSheetsUsed`, `addendumPagesUsed`, `pagesUsed` and `questionsUsed` already
+existed on `AskAllowancePeriod`. Counting `AskUsage` rows would divide by the
+wrong thing for three of the four — a plan-sheet row happens to be one sheet,
+but one document read is one row and many pages, so a per-page figure taken from
+rows would be the per-CALL figure wearing the wrong label. `*Used` includes the
+failures, which is right for a cost: the claim increments it before the call and
+`markAskAllowanceFailure` adds to `failed*` without taking anything back,
+because a call that died halfway was still billed.
+
+**On screen** (`/settings/assistant`, under the existing usage section): what the
+month cost by feature, how many calls could NOT be priced and why, and cost per
+unit of work with what a full month at the allowance ceiling would come to.
+That last column is the figure the open question wants — whether 1,500 plan
+sheets and 600 addendum pages a month are sustainable.
+
+**What this step does not decide:** whether a plan set sits inside the $399 plan
+or is metered. That is Diego's call and always was; this makes it answerable
+rather than answering it. Both allowance figures stay figures rather than
+measurements until a real month has run through a complete rate table.
+
+Migration `20261002200000_add_ask_usage_web_searches`, additive with a default,
+announced in `#prova-build` before the push. Written by hand rather than through
+`migrate diff`: the `--from-migrations` form needs a shadow database, which is
+the one thing CLAUDE.md forbids after it dropped `ep-icy-hat`.
+
+**THE RECONCILIATION AGAINST A REAL BILL DOES NOT FULLY CLOSE, AND THAT IS
+RECORDED RATHER THAN ROUNDED.** Diego's console figures for the last 30 days —
+2,385,121 tokens in, 43,035 out, 26 web searches, **$21.53 actually billed** —
+multiply out against the rates above to about **$13.26** if every token were
+uncached Opus input. **$8.27 is unexplained.** About 1.3M tokens of cache WRITE
+at $6.25/MTok would account for it and is the leading candidate, since a cache
+write bills at 1.25× input and the console's "tokens in" does not separate it;
+16.5M cache reads would also arithmetically fit and is implausible at this
+volume. Not closed, and deliberately not presented as closed.
+
+What the attempt did establish, which is worth more than the gap: **the console
+is a SUPERSET of what `AskUsage` holds.** An eval run passes no usage reporter,
+so it bills Anthropic and writes no ledger row — 12 of the 26 searches were my
+own eval runs during this work. So a console total will always exceed the app's
+own total, by an amount that is not a defect and is not recoverable, and the
+screen's figures are the app's spend rather than the account's. `DECISIONS.md`
+carries the arithmetic and both candidates.
+
+Checked: `typecheck`, `lint`, and the full unit suite — **all green, with all
+nine pricing-census assertions passing on real rates.**
+
+### A quote read left its PDF at a public URL forever, and so did three quarters of a compliance upload (Diego)
+`diego/quote-blob-reaper`
+
+Issue #559, plus a second instance of the same defect that asking "is there
+another one" turned up.
+
+**The reported half.** `readBidQuoteDocument` took the blob URL as an argument
+and no bid model has a `fileUrl` column, so every quote read left a PDF in the
+store that nothing pointed at. Blobs are uploaded `access: "public"` — the URL
+is unguessable, but anybody who ever holds it can fetch a competitor's pricing
+forever with no sign-in, which is why documents normally reach a browser through
+an authenticated route instead. A stranded one had no row in the database that
+would let anybody find it again to remove it. `deleteDocument` had four callers
+in the repo and none was this path.
+
+**A `finally`, not a delete at each return.** There are five ways out of that
+action — the switch being off, the store not serving the bytes back, the
+allowance refusing, the extractor throwing, and success — and every one stranded
+the file. Five call sites would be five chances to forget, and a sixth exit added
+later would strand it again with nothing to say so.
+
+**Nothing is lost that existed.** The browser uploads straight to the store,
+calls the action once, hands the suggestion to its parent and never touches the
+URL again (`QuoteReader`'s `onRead` remounts the component), and no model has a
+column for it. The person still has their own file. If the quote PDF should later
+be kept as evidence beside its `BidQuote` row, that is an additive change — a
+column, a write, and the `finally` comes out — not a reason to leave an orphan
+meanwhile. #559 named that trade-off and this is the side of it that strands
+nothing.
+
+**AND THE SECOND INSTANCE, WHICH IS THE PART WORTH READING.** `#559` is about the
+quote path. Asking whether another path had the same defect found
+`uploadComplianceDocument`. It DOES record `fileUrl` on the row, so it looked
+collectable — and on the success path it is. But since #277 the browser uploads
+BEFORE the action runs, so on all four failure paths the file already exists and
+no row is ever written to point at it: the switch being off, the store not
+serving the bytes, the allowance refusing, the extractor throwing.
+
+These are COIs, lien waivers and certified payroll — a subcontractor's and their
+workers' records — at a permanent unauthenticated address. Worse than a quote,
+and it would have survived a fix that closed the issue as filed. CLAUDE.md
+records the shape twice: *a guard that a list is complete cannot notice a second
+list*, and *nothing is ever missing from a list nobody imports*.
+
+**The two fixes are deliberately NOT the same shape, and the test is what keeps
+them apart.** The quote path deletes on every exit, because the file has no
+purpose once its bytes are read. Compliance KEEPS the file on success — the row
+renders a link to it — so the rule there is "delete unless a row now points at
+it", with a `filed` flag set immediately after the create and nowhere else. A
+blanket `finally` copied over from the quote fix passes every failure case and
+silently deletes the file off every document a contractor successfully filed,
+which is a worse bug than the one being fixed. `complianceUploadBlob.test.ts`
+asserts the success case KEEPS the file, and that mutation reds exactly that one
+assertion.
+
+**Neither deletes before the URL is proved ours**, and both tests assert it in
+that direction too. `documentUrlProblem` has to accept the URL first — our own
+store, this company's own folder, that purpose — because before it does, the URL
+is a claim the browser made and could name an addendum's stored file, a contract
+document or another tenant's upload. #195's rule that a blob URL is not proof of
+whose file it is cuts both ways, and deleting by an unvalidated URL is the
+dangerous half.
+
+**Mutation-proven, four ways:**
+
+| mutation | result |
+| --- | --- |
+| quote path deletes only on success | RED on all four failure cases |
+| quote path deletes before `documentUrlProblem` | RED, including "an unvalidated URL must never be deleted" |
+| compliance uses a blanket `finally` | RED on "a filed document keeps its file" — the copied-fix mistake |
+| compliance deletes before validation | covered by the same unvalidated-URL case |
+
+**THE "NO THIRD ONE" CLAIM THIS ENTRY ORIGINALLY MADE WAS FALSE, AND THE WAY IT
+WAS FALSE IS THE MOST USEFUL THING HERE.** It said every other path taking a blob
+URL had been checked — four actions take a `fileUrl`, and `labor.ts` and the rest
+of `compliance.ts` persist it on the row they create. All of that is true, and it
+is the wrong question.
+
+The defect is "a blob with no row pointing at it". Taking a URL *in* is one way
+to cause it. **Dropping the row while leaving the blob is the other**, and asking
+that question finds three more sites:
+
+| row delete | deletes the blob? |
+| --- | --- |
+| `bidAddendum` (`estimating.ts`) | yes |
+| `contractDocument` (`billing.ts`) | yes |
+| `complianceDocument` (`compliance.ts`) | **no — fixed here** |
+| `takeoffPlan` (`takeoff.ts`) | **no — fixed here** |
+| `drawingRevision` (`drawings.ts`) | **no — fixed here** |
+
+So two of the five already did it right, which is why the pattern looked
+established. `TakeoffPlan.fileUrl` is a required column, so deleting a plan set
+strands an entire plan PDF.
+
+This is CLAUDE.md's census lesson arriving at my own claim: I asserted a set was
+complete after enumerating it along one axis, and the counter-examples were on a
+second axis I had not asked about. *Nothing is ever missing from a question
+nobody is asking.* The narrow claim is replaced rather than deleted, because the
+shape of the mistake is worth more than the sentence.
+
+**NOT FIXED, and it cannot be from here:** the blobs already stranded by past
+quote reads and failed compliance uploads. Nothing in the database names them,
+so there is nothing to enumerate them from — they need a sweep of the store
+itself from the Vercel dashboard. A read-write blob token is a credential and
+never travels through an agent channel, which CLAUDE.md states and this change
+does not get to make an exception to. This stops new ones; it does not collect
+the old ones. **Issue #587** carries that half, and also records that preview and
+production SHARE one blob store (`BLOB_STORE_ID` and `BLOB_READ_WRITE_TOKEN` both
+target production and preview with the same store id), which contradicts a
+written decision and means browser testing on a preview has been writing into the
+production store all along.
+
+**ALL THREE ROW-DELETES ARE FIXED HERE TOO.** They were going to be left out —
+`drawingRevision` is the other lane, which the working agreement says becomes an
+issue rather than a PR. Diego took estimating, takeoff and now drawings back into
+this lane on 2026-10-02, so there is no lane boundary left to respect and
+splitting one defect across a PR and two issues would just be three places to
+forget it.
+
+Each deletes the file AFTER the row, never before, which is the order
+`deleteBidAddendum` and `deleteContractDocument` already used. The other way
+round can leave a row pointing at a file that is gone — a dead link on a document
+somebody is working from, which is strictly worse than a stranded file because it
+breaks something that still looks fine. `deleteTakesTheFile.test.ts` asserts the
+SEQUENCE rather than just that both happened.
+
+**`deleteTakeoffPlan` had a comment arguing for the old behaviour, and half of it
+was right.** It read: *"The blob itself is left alone: a dangling file costs
+storage, and a delete that half-succeeded costs a drawing somebody was working
+from."* The second half is a real hazard and is exactly why the order above
+matters. The first half called a public leak a storage cost — `TakeoffPlan.fileUrl`
+is a REQUIRED column, so every plan delete stranded a whole plan set, a GC's
+drawings at a permanent unauthenticated address. The comment is replaced with
+what changed and why rather than deleted.
+
+Mutation-proven in one pass: removing all three deletes reds exactly the three
+"deletes the row and then the file" cases and leaves the six guard cases green.
+
+Checked: `typecheck`, `lint`, and the full unit suite, all green.
+
+### Five shipped AI features had no row on the audit sheet, and a dead table was marked Built (Diego) — DOCS-ONLY AUDIT
+`diego/feature-audit-ai-drift`
+
+**Flagged docs-only, under the exception Diego granted 2026-09-07.** It corrects
+claims that are false or stale, with the evidence and which it is, and there is
+no accompanying code change for it to ride along with — the work it describes is
+already on `main`.
+
+**The headline is an absence, not a wrong status.** `FEATURE-AUDIT.md` Sheet 23
+counted six AI features while `AI_FEATURES` declared nine. `QUOTE_EXTRACT`,
+`PLAN_INGESTION`, `ADDENDUM_READ`, `BID_RESEARCH` and `LEAD_SEARCH` each had no
+row at all — gated, metered, model-routed, live, and absent from the file
+CLAUDE.md calls the source of truth for what is built.
+
+`plumbing.test.ts` was green throughout and correctly so: it checks the header's
+arithmetic against its own rows, and it cannot check that a row EXISTS for
+something built. That is the gap a person has to cover.
+
+**Why the absence mattered more than a wrong status.** On 2026-10-01 an audit
+found `BID_RESEARCH` and `LEAD_SEARCH` had no control on any page — each ran
+inside one Ask command, so a contractor paying for them could not find them.
+This sheet is where somebody would have looked, and it did not know the features
+existed. Five rows added, each naming the call site, the model, the gate, the
+control, the eval and the gaps.
+
+**The Anthropic row was false on both counts.** It said "Four call sites, all on
+`claude-opus-5`… **Verified 2026-09-16 by audit, three ways that have to
+agree**". Re-read today: **nine** call sites across seven files, and
+`extractSheetTitleBlock` resolves to `claude-haiku-4-5`, which is the entire
+point of `models.ts`.
+
+Every word of that sentence was true on 2026-09-16. Five features shipped after
+it. **The citation did not rot — it stayed exactly as convincing as the day it
+was written, which is what made this the last row anybody would re-check.** A
+dated verification is evidence about a date, not a standing guarantee, and the
+more rigorous it sounds the longer it survives being wrong.
+
+**`CompanyTradeScope` was marked Built and the table has been empty in every
+account since it shipped.** Verified: there is no `prisma.companyTradeScope` call
+anywhere in the repo — no form, no action, no seed. Its only two references
+outside the schema are `export.ts`'s CSV allowlist, which therefore promises to
+export a company's trade scopes and emits an empty file, and a comment in
+`ask/commands/leads.ts` saying it "is empty in every account". Built → **Missing**,
+held to the standard the row directly below it already states: marked Built on the
+models alone, while not one row could be created through the app. **Third time
+this sheet has recorded that defect.** Missing rather than Descoped because there
+is no changelog entry, no issue and no "deliberately not built" note, so forgotten
+and superseded cannot be told apart from the code.
+
+**Two rows contradicting two other rows on the same sheets**, which is the drift
+this file exists to prevent: "no sheet register" on the takeoff row (there is one,
+on that same tab — `PlanSheetReview` over `sheetIndex.ts`), "on-screen tracing"
+listed as not-yet on the wall-types row while the row twelve lines above describes
+#515 shipping it, and "equipment sits under OTHER" on the recap row while Sheet 06
+describes `EQUIPMENT` becoming its own `CostCategory` on 2026-09-26.
+
+**Arithmetic re-derived from the rows, not diffed:** 154 items — 132 built / 16
+partial / 5 missing / 1 descoped. `plumbing.test.ts` checks all three places it is
+stated and agrees.
+
+## `ONBOARDING.md`, because this file's header says they must tell the same story
+
+They were wrong together, in the same direction, about the same six features: "the
+three AI features" is now nine, with the registry named rather than a hand count.
+
+**Section 7 was the worse half, and it is the first thing a new engineer reads
+about where the product stands.** Eleven of the twelve things it called "not
+started at all" have shipped — retainage, WH-347 certified payroll,
+prevailing-wage rules, labor time tracking, safety, submittals, RFIs, drawings,
+equipment, vendors, punch lists, warranty, notifications — and it also said no
+role exists beyond Owner/Member while `permissions.ts` defines `ESTIMATOR`,
+`PROJECT_MANAGER` and `ACCOUNTING`. Only real payment processing is still true,
+and it is left standing. The built list is not re-enumerated: a prose list of
+twelve things is twelve claims with twelve expiry dates kept in a second place,
+which is exactly what rotted.
+
+**"There is no automated test suite anywhere" was the most expensive sentence in
+the file.** There are 589 test files; `pnpm test` runs over eight thousand unit
+tests in about thirty seconds, plus a db suite, a browser journey and four CI
+jobs. A new engineer reading that would hand-verify work a thirty-second command
+already covers, and would not know a dozen censuses fail the build over the exact
+mistakes this repo keeps making.
+
+**AND ONE CLAIM THAT LOOKED STALE AND IS STILL TRUE, which is the half worth
+reading.** The same paragraph warns that QuickBooks tokens are stored unencrypted.
+The sentence beside it had gone false, so the whole paragraph read stale — and
+`QuickBooksConnection.accessToken`/`.refreshToken` really are bare `String`
+columns on `billing.prisma`, with open issue #353 naming it. It is kept, and now
+says why the neighbouring "credentials are encrypted at rest" is also true: that
+is the newer `IntegrationConnection` shelf, and QuickBooks predates it on its own
+tables. A stale paragraph is not a stale sentence, and I nearly corrected a live
+security warning out of the file.
+
+Checked: `typecheck`, `lint`, **8,487 unit tests over 537 files**, all green.
+
+### Cards that look like cards: a darker canvas, elevation, and a smaller large title (Diego)
+`diego/mobile-visual-pass`
+
+**Phone only. No schema, no migration, no logic, no API.** Tokens and three
+surfaces. This is the half of the UI brief #581 and #582 did not do.
+
+**THE HONEST FRAMING FIRST.** #581 restructured the app — five tabs, a job
+hub with counts — and did not touch the visual language at all. Diego's
+brief had asked for both: *"analyze the uploaded screenshots for colour
+contrast, card layouts, typography scale, and use of whitespace."* The app
+came back rearranged and looking exactly as it had, which is what he said
+when he saw build 8. Nothing was blocking it; the wrong half was done first.
+
+**1. The canvas was ~4% away from the surfaces sitting on it.**
+`#f2f2f7` under `#ffffff` is about a 4% step — invisible on a phone, so
+nothing read as layered and the 1px outline was doing all the separating by
+itself. Canvas is `#e5e7ee` now, roughly an 11% step, and every contrast
+floor still clears with room: ink 13.8:1 (floor 7), inkBody 7.4:1 (4.5),
+link 5.7:1 (4.5).
+
+**2. Cards are lifted, and the old reasoning is kept rather than deleted.**
+The theme said elevation was used *"exactly once in this app… Everything
+else stays flat: borders and surface tones do the lifting."* That was a
+real choice and it is revised on evidence rather than taste: an outlined
+rectangle reads as a BOX, and every reference layout this was reviewed
+against uses a white surface floating on grey. `shadow.card` is deliberately
+much softer than `shadow.floating` — opacity 0.06 against 0.18 — so a list
+of them reads as paper rather than a stack of buttons.
+
+**3. The large title went 34 → 28.** At 34 the greeting and the job name
+took the most valuable band on the screen to say the least operational
+thing on it.
+
+**`outdoor` MUST NOT GET THE SHADOW, AND THAT IS WHY `depth` EXISTS AS A
+TOKEN RATHER THAN A COMMENT.** A soft shadow is the first thing direct
+sunlight destroys, so in glare a card is told apart by its border — which is
+why `lineCard` there is `#6b6b6b` rather than a hairline. Elevating outdoor
+would spend the one cue those users have on decoration none of them can see,
+and it is exactly what a later "make the palettes consistent" tidy-up would
+do. So each palette declares `depth: "lifted" | "flat"`, one `cardSurface()`
+reads it, and `Card`, `GroupedList`, the job-hub tiles and its facts card
+all go through that one function.
+
+| mutation | card-depth | theme-contrast |
+| --- | --- | --- |
+| ctl nothing changed | green | green |
+| outdoor made `"lifted"` | **RED** | green |
+| a lifted card also gets a border | **RED** | green |
+| `GroupedList` hand-rolled again | **RED** | green |
+| canvas darkened past the contrast floor | green | **RED** |
+
+The last row is the point of having both: a colour defect is invisible to the
+depth contract and a structural one is invisible to contrast. Neither test
+could have been written as the other.
+
+**WHAT THIS DELIBERATELY DOES NOT DO.** It does not census every hand-rolled
+border in the app. Nine files pair `surface` with `lineCard` and most are
+CONTROLS — Chip, Button, Field, the way-home button — which keep their
+outlines on purpose, because a control should read as a thing you press
+rather than as paper. A blanket rule there would be a false-positive machine,
+and a census that cries wolf gets its exception list padded until it means
+nothing.
+
+And the yellow is untouched, on Diego's instruction. It is the loudest
+remaining difference from the reference layouts — their status chips are
+muted pastels — but it is brand, not style.
+
+**NOT PROVED, as ever:** nothing here can measure layout, so whether the
+shadow reads at all on a real screen, and whether 28pt titles leave the
+screens feeling tight or balanced, are claims a phone has to settle.
+
+### The guard that would have caught two features nobody could find (Diego)
+`diego/ai-surface-census`
+
+Promised in both #579's and #580's changelogs, which said it would land once both
+were merged. Both are merged, so here it is — an unkept promise in a merged
+changelog is a claim with an expiry date, which is the thing this repo deletes.
+
+**What it is for.** The 2026-10-01 estimating audit found `BID_RESEARCH` and
+`LEAD_SEARCH` both at "2 of 4": a real prompt, a real per-company gate, real
+metering, a real model route, and **no control on any page.** Each ran inside one
+Ask command and nowhere else, so using a feature the contractor was paying for
+meant knowing to phrase a sentence at the assistant.
+
+Nothing was red. `aiFeatureGateCensus` was green, because both WERE gated.
+`promptVersionCensus` was green. `FEATURE_MODEL` had an entry for each. Both
+features were reachable, correctly gated, correctly metered, and unusable.
+
+`aiSurfaceCensus.test.ts` now fails the build when an `AiFeature` has no control
+a page renders. It is the sibling of `stageReachableCensus` and does not replace
+it: `PLAN_INGESTION` would have PASSED this census on the day #551 shipped
+broken, because its control existed and its gate was reachable — it was the stage
+behind them that nothing started. Whether a feature has a control and whether its
+work can run are two questions and need two guards.
+
+**TWO ATTEMPTS AT THIS FILE PASSED THEIR OWN MUTATION, AND THAT IS WORTH MORE
+THAN THE FILE.** Both are recorded in its header rather than quietly dropped,
+because each is a way the next census here will be tempted to go wrong.
+
+Attempt one derived both ends properly: walk imports from every file under `app/`
+and `components/`, collect every `aiGate(_, "FEATURE")` reachable. The mutation
+for it — unmounting `<ProjectLookup />` from /pipeline, which is exactly the world
+before #579 — came back **GREEN**. `ProjectLookup.tsx` was itself a root, so a
+component nobody renders counted as a control. That is this repo's oldest
+recorded shape, "written, documented, and never called", sitting inside the guard
+written to catch it.
+
+Attempt two used only Next's own entry points as roots. **Still green**, for a
+reason specific to this codebase: `lib/actions/index.ts` is an `export *` barrel
+over every action module, so any page importing `@/lib/actions` transitively
+reaches every gate in the app. The graph is effectively fully connected through
+one file.
+
+Cutting the barrel does not rescue it either, and that was measured rather than
+assumed: **five of the seven existing controls** — `QuoteReader`,
+`AddendumFindings`, `WipNarrativeButton`, `DraftLineItemsForm`,
+`PlanIngestPanel` — import their action FROM the barrel. Cutting it reports five
+features with real controls as having none. Over-approximating with the barrel,
+under-approximating without it.
+
+**So import reachability is the wrong instrument here, and saying so is the
+finding.** The shape that works is the one `commands.coverage.test.ts` already
+uses for "did somebody decide": an explicit entry per feature, with the feature
+SET derived from `AI_FEATURES` so a new feature cannot arrive without one.
+Absence is not a decision.
+
+What is derived is the half that catches the next one. What is named is then
+checked rather than trusted: the component must exist, and something must render
+it. A map whose entries are never verified is a comment — and the first run
+proved that immediately by rejecting `ComplianceDocuments.tsx`, a filename I had
+guessed; the real control is `ComplianceUploadForm.tsx`.
+
+**Mutation-proven in both directions this time**, each red naming the feature, the
+file and the reason:
+
+| mutation | result |
+| --- | --- |
+| `<ProjectLookup />` unmounted from /pipeline | RED — "BID_RESEARCH: ProjectLookup.tsx exists and NOTHING renders it" |
+| `LEAD_SEARCH`'s entry deleted (type widened so tsc could not cover for it) | RED — "these AI features have no entry in CONTROLS: LEAD_SEARCH" |
+| a named component that does not exist | RED — found on the first real run, as above |
+
+The ask-only exemption is held to one member by assertion, and `ASK` is it. A
+second one is an argument somebody has to make, not a line somebody adds — an
+exemption list that grows is this census being repealed one reasonable case at a
+time, which is the shape the docs-only rule was changed on purpose to avoid.
+
+Checked: `typecheck`, `lint`, **8,487 unit tests over 537 files**, all green.
+
+### Lead search had no button either, and now /pipeline can find work to bid (Diego)
+`diego/lead-search-control`
+
+The last of three AI features an audit found at 2 of 4 on 2026-10-01.
+`LEAD_SEARCH` was built, gated, metered and model-routed, and it ran inside the
+`find_bid_leads` Ask command and nowhere else — no page had a control, so using
+it meant knowing to type a sentence at the assistant.
+
+**Where it went.** `/pipeline`, above the chase list and collapsed behind a
+button. The page's job is the chase list, two open AI panels above it would bury
+it, and each press is a billed set of web searches — a form that is not open
+cannot be pressed by accident. It is the other direction from the project
+look-up: that one answers a question about a project somebody already named, this
+one answers "what should we be bidding".
+
+**Every field is a choice, and that is the privacy boundary showing through to
+the screen.** Trades are checkboxes over the enum, the state is a two-letter
+code, size is a band. `leads.ts` renders the ENTIRE outgoing query from a fixed
+template over those values and refuses anything that does not fit — so there is
+deliberately no free-text box anywhere on this form, because a free-text box is
+the one input shape that boundary exists to exclude. The sentence under the form
+says so. `bidsAfter` comes from `viewerToday()` on the server and is never taken
+from the form: a browser-supplied "today" is a browser-supplied filter.
+
+**It reuses `boundLeadFinder` rather than rebuilding the pass.** That module
+already does the gate, the usage row and the log line, and its own header says it
+is a module rather than a closure so the ACCOUNTING can be tested. A second copy
+would be a second place for the `feature: "lead-search"` row to be forgotten —
+and that file's note about the cost case for scheduling this later resting on
+those rows existing is exactly what a duplicate quietly breaks. So the action is
+validation plus a call, and everything about spend and switching off is shared
+with Ask.
+
+**The bid date reaches `expectedBidDate` only when the page stated a whole
+calendar day**, which is what `executeFindBidLeads` has always done — see the
+revision note below for how this paragraph got there, because it said the
+opposite first. "October 07, 2026, 02:00 PM" fills the field; "late spring" and
+"October 3" leave it blank and keep their text in the note, so nothing the page
+said is silently turned into null. A day already past is also dropped.
+`lib/leads/bidDay.test.ts` pins both gates.
+
+**The eval, which queries the live web.**
+
+    lead-search eval (lead-search.1, claude-opus-5): requested 2, returned 2
+      leads: 1 over 2 cases, 5 web searches
+      city-that-does-not-exist   0 lead(s), 2 search(es)
+      large-metro                1 lead(s), 3 search(es)
+          Las Vegas Convention Center – North Annex Renovation (ITB #100025)
+          https://www.lvccdistrict.com/bids/
+
+The invented place returned nothing after really searching, which is the promise
+holding where no code rule could enforce it. `verifiedLeads` already drops a lead
+whose source was never searched — but a real page about a real project that is
+NOT out to bid, or is in another state, cites perfectly and passes every guard.
+`leads.ts` says what that costs better than this entry can: *"a sub who calls an
+owner about a job that does not exist has spent credibility he cannot get back."*
+
+**One lead from three searches in Las Vegas is thin, and that is reported rather
+than smoothed over.** The feature does not invent, and it also does not find
+much. Whether that is the prompt, the search tool or the genuine state of public
+bid boards is not something this run can say, and the version is what a prompt
+change would move.
+
+**The counter-metric is in the case list from the first run, on purpose** — a
+searcher that returned nothing always would score perfectly against the paragraph
+above. The report prints a WARNING when the metro case comes back empty, because
+then the invention pass is unproven rather than clean, and `searches > 0` is
+asserted for the same reason. An `invalid` result is treated as a HARNESS failure
+rather than a result: an invented city name is one typo from failing
+`CITY_PATTERN`, and a query refused before it was sent measures the validator
+instead of the model.
+
+**Four censuses again, and one of them was a real test I had changed under.**
+`leadFinder.test.ts` pins the exact usage record, and adding `promptVersion`
+broke it — correctly. It is updated to assert the exact version rather than its
+presence. `action-capability-guards` wanted the module registered and the shared
+"part of your job function" refusal; `commands.coverage` wanted a decision about
+whether this is an Ask command, and the reason it is not is in `exclusions.ts`.
+A fifth caught my own test: the note-order assertion hardcoded my guess at
+`LEAD_FIELDS`' order, asserted Size before Scope, and failed — the declaration
+has it the other way round. It now derives the expected order from the enum,
+because a test that restates the thing under test from memory is a test that can
+disagree with it.
+
+Checked after the revision: `typecheck`, `lint`, **8,452 unit tests over 532 files**, all green.
+`pnpm eval:lead-search` runs the eval by hand with a key.
+
+**REVISED 2026-10-02 AFTER A BROWSER RUN, AND THE THREE THINGS IT FOUND WERE ALL
+MINE.** None was visible to any test in this repo, and each was something the Ask
+command had been doing correctly all along:
+
+- **The panel offered "Track this as a pursuit" on a lead already on the chase
+  list.** `placeAgainstKnown` has been exported from the leads command the whole
+  time — it matches a lead against the company's pipeline, jobs and bids by URL,
+  by name and fuzzily — and the Ask path HIDES those, saying "nothing new". This
+  panel showed them raw, and `createBidPursuit` has no duplicate-name guard, so
+  the tester could have made a real duplicate row. The action now places every
+  lead against the same set from the same query: an exact match is dropped and
+  counted, a fuzzy one gets a badge naming what it looks like. The hide/badge
+  asymmetry is copied rather than reinvented, because `placeAgainstKnown`'s own
+  comment calls that asymmetry the part worth a test.
+- **`pursuitNoteFor` already existed, and I shipped a second one.** It was
+  already exported and builds a pursuit note from the same five fields.
+  `lib/lead-search.ts` was a third implementation of one rule — and this entry's
+  own last section warned about duplicating #579's note builder while missing
+  that a copy was already in the repo. That is "nothing is ever missing from a
+  list nobody imports" with me as the author. The module and its test are
+  deleted and the action calls the original.
+- **The search count was dropped.** `findLeads` returns it, `boundLeadFinder`
+  discarded it, and the panel printed nothing where the project look-up prints
+  "Found on the web in 2 searches". Web search is billed PER SEARCH, so this
+  panel was spending money with nothing on screen saying how much. `LeadFinder`
+  now carries `searches` out to its caller — the Ask command ignores the field,
+  which is why adding it broke nothing — and the panel prints it.
+
+**And the bid date is now prefilled when it parses, which REVERSES this entry's
+own argument.** The paragraph above said a found bid date must never reach
+`expectedBidDate`, with a test pinning it. Every sentence of that reasoning is
+still true, and it was still the wrong answer: `executeFindBidLeads` has been
+writing `expectedBidDate: lead.bidDay` all along, guarded to "only when the
+page's date read as a full calendar day". So the Ask card and this form
+disagreed about one field, which is worse than either answer on its own. Diego's
+call, 2026-10-02: match Ask. `bidDayFor` applies that guard plus one more — a day
+already PAST is dropped, because the create form carries `min={localToday()}` and
+a filled field the browser silently refuses to submit is worse than a blank one.
+The raw text still goes in the note either way, so "late spring" is never
+silently turned into null.
+
+`bidDayFor` lives in `lib/leads/bidDay.ts` rather than in the action, and that is
+a trap worth recording: `leadSearch.ts` is `"use server"`, where only async
+functions may be exported, and a sync export from one fails at BUILD and not at
+typecheck. It would have passed every check run locally and gone red in CI.
+
+**Two follow-ups, named rather than implied.**
+
+**Half of the note-builder duplication is closed and half is not.**
+`lib/lead-search.ts` is gone and this panel uses `pursuitNoteFor`. #579's
+`lib/project-lookup.ts` still has its own builder, so there are two rather than
+three; unifying the last pair is a follow-up once both are on `main`, since
+neither branch may be based on the other.
+
+And the guard that would have caught this entire class — a census asserting every
+`AiFeature` is reachable from a product SURFACE, the `stageReachableCensus` shape
+— still cannot be written on either branch alone: `BID_RESEARCH`'s control is on
+#579 and `LEAD_SEARCH`'s is here, so a census on either one fails over the other.
+It lands once both are merged. Shipping it now with a "pending #579" exception
+would be a claim with an expiry date, which is the thing this repo deletes.
+
+### Bid research had no button anywhere, and now it has one on /pipeline (Diego)
+`diego/bid-research-control`
+
+`BID_RESEARCH` was built, gated, metered and model-routed in step 0, and the only
+way to reach it was to know how to phrase a sentence at the Ask box — it ran
+inside the start-a-bid command and nowhere else. No page had a control. An audit
+of the estimating lane on 2026-10-01 put it at 2 of 4: real prompt, real gate, no
+UI, no eval. A contractor who never typed at the assistant could not use a feature
+they were paying for.
+
+**Where it went, and why there rather than on a bid.** `/pipeline`, above the chase
+list, because that page's own header says what it is for — "what we are chasing
+before anybody invites us" — and the seven fields research can return map almost
+exactly onto `BidPursuit`: owner, architect, GCs bidding, bid date. Research is
+worth most BEFORE an invitation, which is also the moment the contractor has least:
+a project name heard from somebody, and a city. On `/bids` it would arrive after
+the GC has already sent the documents.
+
+**It writes nothing.** The action returns suggestions; a lookup nobody acts on
+leaves no row at all. Ticking what you believe and pressing "Track this" opens the
+ORDINARY pursuit form, prefilled, and the save goes through `createBidPursuit` —
+the same action, the same validation, the same refusals as the hand-typed form.
+There is deliberately no second writer for those rows. `BidPursuitFields` gained a
+`prefill` prop rather than a synthetic `PursuitRow`, because that type carries an
+id and six derived flags and inventing an id to reuse a form is the kind of
+convenient lie that ends up in a query.
+
+**The bid date is never prefilled into the date field, which is the one place this
+does less than it could.** A date printed on a plan-room page is not the user's
+assertion about when their bid is due; the found value is free text as printed
+("Nov 14", "late spring"); and a wrong bid date is the most expensive field on a
+pursuit — `bid-responsiveness.ts` exists because a late bid is rejected unread. So
+it is shown, carried into the note with its source, and the person types the date
+they are willing to be held to. `project-lookup.test.ts` asserts it, because a
+deliberate refusal to do something the schema allows is one helpful edit from being
+undone by somebody reading the gap as an oversight.
+
+**What goes out is on screen.** The two inputs are the whole of what leaves: the
+project name and the location, as typed. `research.ts` enforces that by signature,
+and the panel says it in a sentence under the form rather than only in a comment —
+a feature that searches the public web on your behalf should not have to be read
+about in the source.
+
+**The eval, and it is not like the others here.** Every other `*.eval.ts` in this
+repo runs against synthetic fixtures. This one queries the LIVE public web, because
+the feature's whole job is to read pages nobody here wrote. So only the invention
+assertion is fatal — it is the only one that stays true as the web moves — and no
+assertion names a specific owner or architect, which would be a test of today's
+search rankings with an expiry date on it.
+
+    bid-research eval (bid-research.1, claude-opus-5): requested 3, returned 3
+      facts: 5 over 3 cases, 7 web searches
+      project-that-does-not-exist    0 fact(s), 2 search(es)
+      real-public-project            5 fact(s), 2 search(es)
+      generic-name-many-matches      0 fact(s), 3 search(es)
+
+The invented project — a plausible-sounding facility that does not exist — returned
+nothing after really searching, which is the promise ("a blank field is correct; a
+guess is wrong") holding where no code-level rule could enforce it: a fact lifted
+off a page about a *different* hospital expansion arrives with a working link and
+passes every citation check this feature has. The generic name was declined too.
+
+**The counter-metric is in the case list from the first run, on purpose.** A
+researcher that returned nothing, always, would score perfectly against that
+paragraph. The draft-lines eval shipped with exactly that hole last week and its
+first run was green while 11 of 19 lines came back unpriced. So one case is a large
+public project the web documents heavily, it returned 5 well-sourced facts, and the
+report prints a WARNING when that case comes back empty — because then the invention
+pass is unproven rather than clean. `searches > 0` is asserted for the same reason:
+a workspace without web search would otherwise score "found nothing, correctly".
+
+**Four censuses caught four real defects in this work, which is the part worth
+recording.** None was found by reading the diff:
+
+- `theme-contrast` — the button shipped `text-ink-on-brand`, a token that does not
+  carry the measured label. Brand is the founder-approved yellow; white on it is
+  **1.53:1**. This is CLAUDE.md's own scar arriving again in new code, and the
+  census named the file and the required class.
+- `formActionCensus` — both forms used `<form action={fn}>`, which React 19 RESETS
+  before the action resolves. This action's refusals are its whole error path, so
+  "give a city or state as well" would have rendered above two fields it had just
+  emptied, telling somebody to add a city with the project name gone too. Now
+  `onSubmit` + `preventDefault`, and nothing is reset on a refusal.
+- `action-capability-guards` — reported the action as unguarded when it was
+  guarded, and the reason is worth knowing: it finds a body by taking the first
+  `{` after the function name, and an inline object type in the return annotation
+  (`ActionResultWith<{ … }>`) IS that brace, so it read the signature as the body.
+  Fixed here with a named type. It fails in the safe direction — a false alarm,
+  never a false pass — so the shared guard is left alone; but the tempting way to
+  silence that alarm is to add the action to the census's own exception list, which
+  would exempt it for real. Said out loud in the action's header.
+- `action-capability-guards` again, then `commands.coverage` — the refusal must use
+  the shared "part of your job function" sentence, because that is how the census
+  tells a capability refusal from an action failing for one of a dozen other
+  reasons; a refusal in my own words looked identical to no refusal. And a new
+  actions module must decide whether it is an Ask command. It is not, with the
+  reason in `exclusions.ts`: it writes nothing, so there is no proposal to confirm,
+  Ask already researches inside start-a-bid, and it bills a per-search web charge.
+
+Checked: `typecheck`, `lint`, **8,456 unit tests over 532 files**, all green. The
+eval is run by hand with a key, like every other one here: `pnpm eval:bid-research`.
+
+**Not done here:** `LEAD_SEARCH` is the last feature still at 2 of 4, with the same
+two gaps. A census asserting that every `AiFeature` has a product caller — the
+`stageReachableCensus` shape, which is what would have caught this gap and the
+plan-ingest one — belongs with that PR, where it can pass over all nine rather than
+fail on the one that is left.
+
+### A tab labelled "Waiting t…", and the guard that could not have caught it (Diego)
+`diego/mobile-tab-labels`
+
+**Phone only. No schema, no migration, no logic.** Found by looking at build 8
+on a real phone, which is the only instrument that could have found it.
+
+**THE BUG.** #581 gave the Outbox tab `title: t("nav.outbox")`, and that
+string is **"Waiting to send"**. Five tabs across a phone is roughly 78pt
+each at `typography.size.xs`, so the bar rendered **"Waiting t…"** — which
+names nothing. A truncated word is worse than a short one.
+
+**IT PASSED EVERYTHING.** `design-tokens`, `theme-contrast`, `theme-parity`
+and `touch-targets` all police TOKENS, and every token here was correct. The
+defect was the number of characters the correct token was asked to render.
+happy-dom returns zeros from `getBoundingClientRect`, so nothing in this repo
+can see a width — the same blindness that put a 1.35-point line height on
+five screens. The #581 PR body listed "five tab labels at 375pt" as a claim a
+phone would have to settle. It did, and the claim was wrong.
+
+**The fix is a new key, not a shorter string.** `nav.outbox` is *correct* on
+the Outbox screen's own large title, in the Settings section header and on
+the Settings row — "Waiting to send" says exactly what the queue is. It is
+only wrong in the bar. So the tab gets `nav.tab.outbox` ("Outbox" /
+"Envíos") and everything else is untouched. **A tab label and a screen title
+are different things**, and this is the proof.
+
+Also: `settings.title` was still **"More"** from when that tab was a
+catch-all, while the tab now carries a gear icon and the Outbox has moved
+out of it. It is "Settings" / "Ajustes" now, on both the tab and the screen.
+
+**AND THE JOB HUB LOST A FACT IT SHOULD NEVER HAVE HAD, also found by
+looking.** The card above the grid carried two: "Scheduled" and "Punch
+items". On a job with no dates it collapsed to the one row and read as a
+stray box — and that number was **already on screen**, in the "Punch list"
+tile eight points below it. A summary that repeats the thing it is sitting
+next to is not a summary. Nothing here could have caught that either: the
+duplication only exists once both are rendered together, which is a layout
+fact.
+
+So the card is one fact — when the job runs, which is the only thing about a
+job the grid cannot express, since every tile there is a count. No dates now
+means no card, which is better than a box containing a dash.
+
+**THE GUARD, and it is honest about what it is.** `tab-label-width.test.ts`
+caps a tab label at **8 characters in both languages** — a character count
+standing in for a pixel width, exactly the trade `rowActionsCensus.test.ts`
+makes for delete labels, and it says so in its own header. It cannot prove a
+label fits. It can prove nobody puts a sentence in the bar again.
+
+The ceiling is the longest label the app ACTUALLY uses ("Settings" /
+"Ajustes", 8) rather than a round number, so it cannot quietly grow to admit
+the next offender.
+
+| mutation | census |
+| --- | --- |
+| ctl nothing changed | green |
+| Outbox tab borrows `nav.outbox` again | **RED** |
+| the short key is given a long string | **RED** |
+| only the **es** label grows | **RED** |
+| the `title:` pattern drifts (empty set) | **RED** |
+
+The last two are the ones worth having. A Spanish-only regression is
+invisible to anyone reading the English, and an extractor that stops matching
+makes every assertion pass on an empty list — nothing is ever too long in a
+set with nothing in it. So the key count is checked against a second
+expression sharing no regex with the first (`<Tabs.Screen` openings), and
+every key is asserted to RESOLVE in both tables, because `undefined` has no
+length and passes silently.
+
+Its own scope assertion caught a real mistake while it was being written: the
+first version imported `{ strings }` and the module exports `EN`.
+
+### Five tabs instead of three, and a job hub that says how much of each thing there is (Diego)
+`diego/mobile-ui-overhaul`
+
+**Phone only. No schema, no migration, no API call added, no business logic
+touched.** Structure and hierarchy, from a UI review against reference
+layouts in Procore, JobNimbus and CompanyCam.
+
+**ALERTS AND OUTBOX WERE HIDDEN DESTINATIONS AND ARE NOW TABS.** Alerts was
+reachable only by tapping a push notification. Outbox only from a row inside
+Settings. Both are things a person needs to CHECK without being prompted —
+"did my report actually send?" is the question a queue exists to answer, and
+it was two taps inside a menu. The bar is Home · Jobs · Alerts · Outbox ·
+Settings.
+
+The files moved into `app/(tabs)/`, and **that changes no URL**: `(tabs)` is
+a route group, so `/alerts` and `/outbox` are still `/alerts` and `/outbox`.
+Every `router.push` and the notification tap router (`lib/push-target.ts`)
+work untouched. Both screens gained a `LargeTitle` and a `SafeAreaView` —
+they had been borrowing the root stack header, which as tabs they no longer
+have.
+
+**AND IT RETIRES THE COLD-START DEAD END ON /alerts STRUCTURALLY, which is
+worth more than the tab.** That bug — a notification tap from a killed app
+landing on a screen with no back chevron and no tab bar — took four releases
+(#548, #553, #554, #555) and three silent failures. A tab destination cannot
+have it: the navigator renders the bar on every frame, cold launch included.
+That is a stronger guarantee than a view each screen has to remember to
+draw.
+
+So `<WayHome />` is **removed from Alerts** and kept on `/job/[jobId]`, which
+is still outside the group. Keeping it would have been actively wrong:
+`canGoBack()` is false at a tab root, so it would have put a redundant Home
+button at the top of the Alerts tab on every single visit.
+
+**That meant changing `push-destination-exit.test.ts`, which is scar tissue,
+so the rule was SPLIT rather than relaxed.** Its old sentence — every
+destination renders `<WayHome />` — was right while every destination was a
+bare stack screen, and wrong the moment one became a tab. Now each
+destination is asserted against the mechanism it actually has:
+
+    TAB   -> must be declared in the tab layout, and must NOT draw WayHome
+    STACK -> must draw WayHome in its body, exactly as before
+
+Its resolver also learned that a route group is invisible in a URL, derived
+from the directory listing rather than hardcoded, so `app/(tabs)/alerts.tsx`
+resolves for `/alerts` instead of reporting "no screen file" for a screen
+that exists. And a new case asserts neither branch is empty, because a split
+rule can be satisfied by a vacuous side.
+
+| mutation | census |
+| --- | --- |
+| ctl nothing changed | green |
+| WayHome put back on the Alerts tab | **RED** |
+| WayHome removed from `/job/[jobId]` | **RED** |
+| alerts tab undeclared in the bar | **RED** |
+
+**THE JOB HUB NOW CARRIES NUMBERS, AND THEY COST NOTHING.** It listed the
+same nine features with a fixed description under each — "Photos / Site
+photos and videos". That is a label, not information: every row looked
+equally urgent, so the screen disclosed nine doors and said nothing about
+what was behind any of them. It is now a large title, a full-width status
+band, two operational facts, and a two-column grid of tiles carrying a count
+each.
+
+The counts are free because `lib/prefetch.ts` already fills exactly those
+nine cache keys, from Home, while there is still signal — so the hub reads
+them back with `cacheGet` and makes **no request of its own**. The band
+reuses `statusPair("job", …)`, the same source `StatusBadge` reads, so the
+band and any badge on the screen physically cannot disagree about what a
+status means.
+
+**An empty cache renders NO number, not `0`.** Null is not zero and the
+difference is the point: an empty cache means the section has never reached
+this phone, and printing `0` would be the app asserting "no photos on this
+job" on the strength of a failed sync. Home already refuses that trade; a
+tile is a louder place to get it wrong, because a number reads as a fact.
+
+**No money, deliberately.** The reference layout leads with job value and
+balance due. The phone carries no figures at all, by product rule. The band
+and the two facts are the operational equivalents — what the job IS, when it
+runs, and how much is open on it.
+
+**And no site address, which is a data limit rather than a choice:** the
+phone's `Job` type is `{id, name, status, startDate, endDate}`. A location
+would need the API and the type to carry one, which is a bigger change than
+a layout and is not in here.
+
+**What is NOT proved.** Nothing in this repo can measure layout — happy-dom
+returns zeros from `getBoundingClientRect`, which is how a 1.35-point line
+height once shipped on five screens. So tile height (`hitTarget * 1.5`),
+five tab labels at 375pt, and whether the status band reads as doubled-up
+beside its badge are all claims a phone has to settle. The four design
+censuses (`design-tokens`, `theme-contrast`, `theme-parity`,
+`touch-targets`) pass, and they check tokens, not pixels.
+
+### A pay app could bill against scope the GC had already deducted (Diego)
+`diego/pay-app-removed-line-ceiling`
+
+**No schema, no migration.** Issue #567, raised by Cyrus's agent in the
+billing lane. One query field, one shared function, two guards.
+
+**What was wrong.** `submitPayApplication` checked the over-billing ceiling
+against a scheduled value it computed itself:
+
+```ts
+scheduledValue: line ? Number(line.quantity) * Number(line.unitPrice ?? 0) : 0,
+```
+
+under a comment reading *"Same expression the job page and the report use
+for a live line"* — and the qualifier was the defect. Its query selected no
+`isDeleted`, so a removed line had no second branch and was measured against
+its **pre-deduction** value. A $40,000 line with $10,000 billed, then removed
+by an approved deductive change order, accepted another $25,000: money
+claimed against scope the GC had already taken back, on the document they pay
+against. `pay-application-query.ts` had closed exactly this hole on the READ
+path (#98) and the write path kept its own copy.
+
+**THE OBVIOUS FIX WAS WORSE THAN THE BUG, and that is the part worth
+reading.** The issue's framing — two expressions for one money figure, make
+them one — is right about the diagnosis and a trap on the remedy. The
+canonical `scheduledValueFor(lineItem, floor)` returns `max(0, floor)` for a
+removed line, and the render side's floor is total completed and stored to
+date **including the period being entered**. But `payAppEntryError` compares
+`totalCompletedAndStoredToDate` against `scheduledValue`, and that total *is*
+the render side's floor. Share the function and its argument and the
+comparison becomes `x > x` — false for every input. **A removed line would
+have accepted any amount at all**, where the shipped bug at least capped at
+the original value.
+
+So the function is shared and the FLOOR is not: submit passes prior earnings
+only (`previousBilled + previousMaterialsStored`), excluding the period being
+submitted. That is also the right rule rather than merely the safe one — a
+deductive change order takes back the unbilled remainder, so there is no
+scope left to bill NEW work against, while work already performed and
+certified stays billed. A downward correction still works, bounded
+separately by the can't-un-bill-what-was-never-billed guard.
+
+Diego's call, since it is a decision about what a deductive CO permits
+rather than a mechanical fix.
+
+**Two guards, and the mutation matrix is the argument for both.** The unit
+test (`pay-application-submit-ceiling.test.ts`) is pure — the defect is
+entirely in which NUMBER reaches `payAppEntryError`, and both halves are pure
+functions, so it needs no database. The census
+(`scheduledValueCensus.test.ts`) is the "is there a second one" kind: it asks
+whether any site derives a `scheduledValue` from `quantity` without the
+shared function, and whether any priced line-item read in `billing.ts`
+neither selects nor filters `isDeleted`.
+
+| mutation | census | unit test |
+| --- | --- | --- |
+| ctl nothing changed | green | green |
+| M1 #567 reverted to a local copy | **RED** | green |
+| M2 `isDeleted` dropped from the select | **RED** | green |
+| M3 the form's `isDeleted` filter removed | **RED** | green |
+| M4 shared fn stops checking `isDeleted` | green | **RED** |
+
+**Neither guard alone is sufficient and the table proves it rather than
+asserting it.** M1-M3 are invisible to the pure test, because a pure test
+cannot see its own call site — the "written, documented, and never called"
+shape, and a one-line revert to a local multiplication reads like a
+simplification. M4 is invisible to the census, which checks structure and
+not arithmetic.
+
+**One site is still allowed to multiply directly, and its exception is
+conditional.** The pay-app FORM (`jobs/[id]/(tabs)/billing/page.tsx`) holds
+only live lines — its query filters `isDeleted: false` — so the raw
+expression there IS the live branch. But that correctness lives in a `where`
+clause sixty lines from the arithmetic, so the allowlist entry asserts the
+filter as well as naming the file: M3 above is that assertion firing.
+
+**Two things the census got wrong first, both caught by its own checks
+rather than by reading it.** Its size floor counted sites that DERIVE a
+scheduled value and demanded three — but after the fix only one does, since
+the other two now call the shared function, so the floor was satisfied only
+by the bug it was written to prevent. It now takes its size from a second
+pattern that shares no sub-expression with the first and does not shrink as
+sites adopt the function. And its query check anchored on "the
+`jobLineItem.findMany`" in `billing.ts` and matched a different one two
+hundred lines away; there are three, and it now checks every read that
+fetches a price.
+
+### The draft-estimate drafter now has an instrument, and it immediately found something (Diego)
+`diego/draft-lines-eval`
+
+`FEATURE-AUDIT.md` carries "draft estimate line items from text" as Built, and it
+is. What it had no instrument for was whether the output is any good. The only
+test touching it was a ROUTING case (`lib/ask/eval/cases.ts`, `cmd-draft-lines`),
+which proves the assistant picks the command and says nothing whatever about what
+the command then produces. An audit of the estimating lane on 2026-10-01 put this
+feature at 3 of 4 — prompt, gated caller, UI control, no output eval.
+
+**The failure the eval is built around, because it is the one no code can reach.**
+`draftEstimateLineItems` already downgrades a `catalogEntryId` the model invented,
+and a `COMPANY_CATALOG` basis with no verified entry behind it. A catalog id that
+is REAL but describes different work survives every one of those guards: the id
+resolves, the foreign key is valid, nothing is missing, and the badge reads
+COMPANY_CATALOG — the strongest basis the UI shows. `draft-lines.ts` then copies
+that entry's unit price, budgeted cost, labour hours, craft and cost category onto
+the line, so **one wrong match writes five wrong fields and labels them
+trustworthy.** The system prompt names this exact case ('a catalog entry for 5/8"
+type X board is not a match for acoustic ceiling tile'), which is the reason to
+measure it rather than assume it: a rule stated in a prompt is a hope until
+something scores it.
+
+Fatal and reported are split on one rule — fatal is where the estimator cannot
+catch it. Over-claimed basis, a priced line for another trade's scope, and a price
+with nothing behind it are fatal. A catch-all line and a quoted price that drifts
+from the catalog's own are reported, because the estimator sees both.
+
+**The run, on Opus 5, which is what `modelFor` resolves for this feature:**
+
+    draft-lines eval (draft-estimate-lines.1, claude-opus-5): requested 7, returned 7
+      false confidence: 0 OVERCLAIMED
+      scope:            0 priced another trade's work, 0 INVENTED a price
+      silence:          6 of 18 lines carried NO PRICE; 2 cases where a price was
+                        available and none was given
+
+`requested 7, returned 7` first, so the numbers are over the whole suite rather
+than over however many cases survived.
+
+**AND THE FIRST RUN WAS GREEN WHILE HIDING ITS OWN BEST FINDING, WHICH IS THE PART
+WORTH READING.** That run reported 0 over-claimed, 0 invented, nothing else — and
+its basis tally showed 11 of 19 lines came back with **no price at all**, including
+all five lines of a 5,500 sq ft EIFS scope with a stated build-up. The case
+asserted `allowedBases: ["GENERAL_KNOWLEDGE"]` and passed, because a null basis has
+no basis to constrain: it asserted a basis and examined none.
+
+So a drafter that priced NOTHING, ever, would have scored a flawless run. That is
+CLAUDE.md's own rule — absence of a failure is not a pass — arriving inside the
+guard written to apply it, which is why it is recorded here rather than quietly
+fixed. The eval now counts unpriced lines, flags a case where a price was available
+and none was given, and **prints when its own `allowedBases` check examined
+nothing**. Reported, never fatal: a missing price is the safe direction, the
+estimator types one in, and that is what they did before this feature existed.
+
+**What the instrument says about the model, stated as one sample and not more.**
+Zero over-claims on both runs, and the near-miss ceiling case was resisted
+correctly both times — it declined the drywall entry and still got
+`ACOUSTICAL_CEILINGS` right. Reproduced on both runs: it declines to price work it
+has no catalog or won-bid basis for, even where general market knowledge plainly
+applies, and it never reached for `HISTORICAL_BID` once despite being handed two
+won fireproofing bids. Line counts moved between runs (19 then 18), so the shape is
+one sample per case; the no-price result is 2 for 2 on those two cases. Whether the
+prompt should push harder on rule 3 is a product decision with its own evidence,
+not a change made in passing — which is what the version is for.
+
+**The cases are checked for free before anybody pays Opus to run against them**
+(`draftLineCases.test.ts`, 11 tests, in CI at no cost). The plan-sheet eval shipped
+with its most important case measuring nothing, because the trap sat where the
+region filter removed it. The same failure is available twice here and both read as
+a clean run: a `foreignScope` term the case's own scope text never mentions (the
+drafter cannot price glazing it was never shown, so the assertion can only pass),
+and a near-miss case with an empty catalog (no wrong match to resist, and the
+downgrade guarantees the pass). Both are now build failures. Mutation-proven by
+adding "roofing" to a scope that never mentions it — red, naming the case and the
+term.
+
+**Three prompt versions, not the one this needed, and the census is why.**
+`promptVersionCensus.test.ts` derives the versioned features per FILE: a file
+declaring a `*_PROMPT_VERSION` and resolving features with `modelFor(...)` has a
+versioned prompt for every feature it resolves. That was exactly right while every
+versioned prompt lived in a single-feature file — `planSheets.ts`, `addenda.ts`,
+`quotes.ts`, `leads.ts`, `research.ts` and `ask.ts` are one apiece. `anthropic.ts`
+is the only file holding three.
+
+Proved by doing it rather than predicted: versioning the draft prompt alone turned
+the census red, naming `billing.ts` recording `wip-narrative` and `compliance.ts`
+recording `compliance-extract` without a version. The alternative was splitting a
+150-line function into its own module to dodge a guard that was right. So all three
+are versioned and all three usage records carry it, which closes the attribution
+gap on two features nobody had got to. Mutation-proven: removing the one line from
+`draft-lines.ts` reds the census and names the file.
+
+Checked: `typecheck`, `lint`, and 8,444 unit tests over 531 files, all green. The
+eval is run by hand with a key and is not in CI, like every other `*.eval.ts` here
+— `pnpm eval:draft-lines`, or put the key in `apps/web/.env` once and run it with
+nothing in front of it.
+
+### #418 does not reproduce in a dev build, and the production-writes hunt was looking for the wrong artefact (Diego)
+`diego/418-dev-mode-audit`
+
+**DOCS-ONLY. No code, no schema, no migration.** Two CLAUDE.md entries
+corrected from measurements, under the audit exception in the working
+agreement — both are "recording what an investigation established or
+ELIMINATED, so the next person does not re-run the same checks", and one of
+them corrects a live elimination that is false outside the context it was
+measured in.
+
+**1. The #418 instrument was finally pointed at the bug, and the bug
+vanished.** The entry has said for a week that `E2E_DEV_SERVER=1` is "the
+one instrument nobody has pointed at it yet" and "the only way left to learn
+WHICH element the two sides disagree about". It has now been run on a
+laptop: **96 authenticated page loads across 16 routes, zero mismatches.**
+Sixteen routes is the union of all four page lists the entry records, plus
+three it never named, so "you tested the quiet pages" is answered rather
+than left open. Against production's own measured 12-in-40, P(0 in 96) is
+about 10^-15.
+
+The zero is only reportable because the probe was proved able to return
+non-zero, which is the part worth copying. Each batch ended with a positive
+control that rewrote `/dashboard`'s HTML to carry one extra `<div>` inside
+`<body>` — inside React's tree, the ColorZilla mechanism from the #61 entry
+— and all four fired 3/3 naming the injected node. Every load was
+independently proved hydrated by looking for a `__reactFiber$` key, since
+React cannot mismatch on a page it never hydrated and an un-hydrated load is
+a silent zero. The first version of the probe had neither check and its zero
+would have meant nothing.
+
+Per the entry's own rule — a mismatch that vanishes under `next dev` is
+probably the Flight deferral — this is the first POSITIVE signal in an
+investigation that had produced nine eliminations and no mechanism. It is
+recorded as evidence, not a verdict: build mode and machine moved together,
+the defect is a race, and a laptop dev server is not a GitHub runner. The
+experiment that separates them is named in the entry (the same probe in CI),
+and the counter-example that keeps it honest is kept too — the accidental
+dev-mode CI run DID name the `UserButton` div, so dev mode is not blind to
+#418 in general.
+
+**2. "A CHECKOUT holding the connection string" was never run, and is
+unsupported.** That has been the leading hypothesis for the stray production
+rows since 4-5 September. Running it took three messages: `ListAgents`
+listed three peer sessions on this machine and all three checked their own
+checkouts. 185 files name the endpoint across 18 worktrees and every one is
+repo-tracked source, docs, `migrate.yml`'s deliberately-hardcoded
+`MIGRATE_EXPECT_HOST`, or the two tests that name it precisely to assert the
+scratch guard refuses it. **No env file on the machine points at
+production.** Snapshot of 2026-09-30 against sightings 25 days earlier, so
+it is "unsupported now" rather than "it was not that" — a distinction this
+file has an entry about.
+
+**The route it was hiding needs no env file, which is why looking for one
+found nothing.** The strays were `SalesActivity`, `SalesLead` and
+`CompanyLicense` — app-level rows a migration workflow cannot write. A
+session signed into `app.cstream.ai` can, on production's own Vercel
+variables. That is now demonstrated rather than supposed: one of the peers
+disclosed unprompted that it created real production rows on 2026-09-20
+through exactly that route, by browser automation against the UI, and did it
+correctly — announced in `#prova-build` before the writes, all six deleted
+and verified on screen afterwards. It is not the culprit (it postdates the
+sightings and never touched the sales models); it proves the mechanism is
+real and in routine use.
+
+**And the elimination that hid it was true about containers and read as true
+about everything.** The browser route was eliminated because an agent
+container's `curl` "fails at CONNECT". That measurement stands for
+containers and does not cover a laptop, where a plain `fetch` to Clerk's API
+returned `HTTP 200` on 2026-09-30. "An agent cannot reach production" was
+never a property of agents.
+
+**Also corrected: this entry said peers were unreachable.** It read "A cloud
+session cannot be questioned from another container… `SendMessage` returns
+`No agent named '…' is reachable`". True, and about CLOUD sessions — read
+generally it is the one sentence that stops anyone trying, and trying took
+minutes. Cloud sessions remain unreachable; that half needed no correction.
+
+**Two mechanisms recorded that are not the cause.** An agent copied
+`apps/web/.env` and `packages/db/.env` between worktrees on 2026-09-26 (demo
+endpoint, so nothing leaked, and exactly how a production string would
+spread if one existed). And every `pnpm build` and `preflight.sh` opens a
+connection — not in the "migrations that will hit PRODUCTION" report, which
+is pure git and grep, but one step earlier at `preflight.sh:104` →
+`check-schema.mjs:74`, which runs `prisma migrate status`. A read, so not a
+candidate for the rows, but "nobody wrote" and "nobody connected" are
+different questions and only the first was asked.
+
+**One defect found in passing and NOT fixed here.** `/closeout` logs React's
+missing-`key` warning on every render, 6 of 6 loads, the only page of
+sixteen that did — and production React strips that warning, so no
+production run can ever surface it. Closeout & Warranty is Cyrus's lane
+(WORK-SPLIT.md:44), so it is a GitHub issue assigned to him per rule 3, not
+a change in this PR. The transferable half is in the entry: there is a class
+of real defect only a development build will report, which is a reason to
+point a dev run at this app occasionally even when nothing is wrong.
+
+**Harness notes for whoever runs it next**, because three of four attempts
+died before producing a number. `next dev` has two distinct memory failures:
+"approaching the used memory threshold, restarting" is cured by
+`NODE_OPTIONS=--max-old-space-size=8192`, and `FATAL ERROR: Zone Allocation
+failed` is not — zone allocation is a separate allocator the heap flag does
+not govern, and its next symptom is `ERR_CONNECTION_REFUSED`, which reads
+like a broken app. Four routes per dev server, one worker, fresh server per
+batch.
+
+### What actually changed, in plain English (Cyrus)
+`cyrus/seed-counters-zzbqtu`
+
+**Two things Cyrus hit while filming, and one of them is bigger than it looks.**
+
+**The Ask box was a single-line `<input>`.** Type more than a few words and the
+caret runs off to the right, taking the start of the question with it — so the
+one box in the app that invites a long sentence was the one box that would not
+show you the sentence. The whole draft-an-estimate flow is one long sentence.
+It is a `<textarea>` now: it wraps, it grows to about six lines and then
+scrolls, Enter still sends and Shift+Enter makes a line break, because every
+chat box in the world sends on Enter and somebody demoing it will press Enter.
+
+**Nothing in this product had a loading indicator. Not one.** A search for
+`animate-spin` or `Spinner` across every component returned nothing, while
+**133 in-flight states** were a word that stopped changing — `"Saving…"` ×115,
+`"Sending…"` ×7, `"Working…"` ×4, and the rest. Cyrus named the cost exactly:
+a label that sits still reads as a crash. An ellipsis promises that something
+is happening and nothing on screen was keeping the promise.
+
+`components/Spinner.tsx` is the missing piece. An SVG stroke in
+`currentColor`, so it is the colour of the text beside it in light, dark and
+outdoor without needing a token of its own; `h-[1em]` so it scales with
+whatever it sits in; `aria-hidden`, because the word next to it already says
+what is happening and "loading loading" is worse than either; and
+`motion-reduce:animate-none`, because a spinner is the canonical thing
+somebody turns motion off for.
+
+**Where it went first, and why there.** The Ask panel's status line, which is
+the one on screen for the whole 5–7 second wait. Its own comment has said
+since it was written that *"a static message for eight seconds reads as a hang
+rather than as work"* — and then showed a static message. The code knew.
+
+**The census that caught the loose end.** `numericInputCensus` went red:
+`INPUT_EXCEPTIONS` still named `AskPanel.tsx (unnamed)`, which covered the
+question box and the file input beside it. The question box is not an `<input>`
+any more and a `type="file"` is not something that census flags, so nothing in
+that file matched and the dead entry had to go. That refusal is the point — an
+exception list nobody prunes becomes permanent, which is the same reason
+`KNOWN_UNREACHABLE` is pruned by its own test.
+
+**The other 130 are not done.** This adds the component and uses it in the
+three places that matter for a demo — the Ask button, the Ask status line, and
+the WH-347 page-2 save. Sweeping the remaining `"Saving…"` sites is a
+mechanical change across about a hundred files, and landing a hundred-file diff
+an hour before filming is how a demo breaks. It is worth doing deliberately,
+with a census that keeps a loading word and a spinner together, and that is its
+own change.
+
+### What actually changed, in plain English (Cyrus)
+`cyrus/seed-counters-zzbqtu`
+
+**The WH-347 could not be filed by anybody, for any week, ever — and it said so
+honestly, which is why nobody chased it.** `lib/wh347.ts` added
+`statementOfCompliance` to `blocking` unconditionally, with a comment explaining
+that page 2 was not built, so `fileable` was `false` on every week of every job
+for every company since the module was written. Page 1 was real: hours in the
+right boxes for the right days, deductions and net wages off the imported
+register, a sequential payroll number. Page 2 — the certification a person signs
+under penalty of perjury — did not exist, and without it page 1 is a very good
+draft of a document nobody can send.
+
+Page 2 exists now. `statementOfCompliance` clears when its facts are recorded,
+so **`fileable` can be true for the first time.**
+
+**That is the dangerous half, and it needed a guard nobody had written.** The
+red banner at the top of the form was rendered UNCONDITIONALLY — no
+`blocking.length > 0` around it. So the first week that ever cleared would have
+printed *"This is not ready to file. 0 things are missing."* over an empty list:
+a red panel reporting that nothing is wrong. Nothing could have caught it,
+because no code path had ever produced an empty blocking list. There is a second
+branch now, and it is the only new UI in this change that existed to be
+impossible before.
+
+**Three things page 2 needs that the app cannot derive, and one it refuses to.**
+
+*Who signs it and their title* are entered, never taken from the session: the
+person logged in is not necessarily the person who signs a federal
+certification, and an owner, an office manager and a payroll clerk sign
+different things.
+
+*The section 4 fringe election* — whether fringe benefits went to approved
+plans (4(a)) or were paid in cash with the wage (4(b)) — is entered because
+`FringeRateSchedule` holds four RATE columns and **no column saying where the
+money goes.** Inferring 4(a) from the existence of the fringe-remittance
+feature, or from `fringeCreditFor` treating fringes as a credit, would be C
+Stream asserting how a company pays its people, on a document that company
+signs under penalty of perjury, off a column nobody ever asked that question of.
+
+*A signature* is refused outright. There is no `signedAt`, no signature image
+and no e-sign flow; the page prints a line for wet ink. This app holds an
+e-signature capability, and using it here would put a row in the database
+asserting that a named person certified a federal filing — a claim about a legal
+act, and the wrong kind of thing for a checkbox to create.
+
+**THE STATUTORY PROSE IS UNVERIFIED AND THE FORM SAYS SO, IN PRINT.** Not one
+paragraph was read off a DOL page — `dol.gov` is unreachable from the container
+this was written in — so `WH347_STATEMENT_CITATIONS` holds every paragraph with
+`verified: false`, a primary URL and the question a human has to answer, and
+`wh347-statement.test.ts` fails the build if one is flipped to true without a
+source. The printed page carries the disclosure the pay application already
+carries for being G702/G703-*style*: reproduced, not transcribed, read it
+against the official form before signing. Unverified prose does **not** block —
+it is disclosed, the way the pay app discloses its own — and there is a test
+pinning that distinction, because it is the one most likely to be "fixed" by
+mistake.
+
+**`fileable` STILL could not have become true without one more column, and
+finding that out is what changed the scope of this.** `contractNumber` blocked
+unconditionally in practice: the header asks for it, the sentence beside it read
+*"A job does not record one"* — true — and there was no such column anywhere in
+the schema. Page 2 landing alone would have left the form one unfixable field
+short of fileable, which is worse than being obviously unbuilt. `Job.contractNumber`
+is the fifth entered public-works fact, on the Compliance tab beside the other
+four, and the blocking sentence now says where to put it.
+
+**Two censuses caught real bugs in this work, and one of them caught a defect I
+would not have found by reading.** `formActionCensus` refused
+`<form action={…}>`: in React 19 that resets the fields BEFORE the action runs,
+so a returned refusal arrives over an emptied form — seven fields and every
+exception row gone, and an error message about text no longer on screen. It is
+`onSubmit` + `preventDefault` + `new FormData(event.currentTarget)` now, the
+shape `LogTimeEntryForm` already used. `rowActionsCensus` flagged the same form
+as a one-click destructive submit and cleared with it. `action-capability-guards`
+found the new action by derivation and now executes it as a principal without
+`MANAGE_COMPLIANCE` to prove the refusal. `exportCompletenessCensus` went red on
+both new models until they had a bucket, and `exportColumnCensus` on the new
+`Job` column — the fourth registration the `InvoiceCounter` three-edit scar does
+not mention.
+
+**`Wh347StatementException` is deliberately NOT in `HANDLED_MODELS`.** The loop
+in `clean-test-jobs.mjs` issues `deleteMany({ where: { jobId } })` for every
+model in that list and the exception has no `jobId` — it cascades from its
+statement. Giving it one purely to satisfy a script would denormalise a column to
+feed a cleanup loop. `scratch-cleanup-order.test.ts` agrees: a Cascade edge is
+not a RESTRICT blocker, so it requires the statement in both `del()` orders and
+does not ask for the exception.
+
+**Not done, said plainly.** There is no dbtest for the new models: this container
+has no Postgres, and a test whose first run is on CI is a claim rather than a
+check. The static cleanup-order census covers the ordering and the database
+constraints cover the rest. And `JOB_HISTORY_RELATIONS` in `lib/job-details.ts`
+still omits every per-job WH-347 relation — its docblock claims "every other
+relation on the model is here", `job-details.test.ts` pins a hardcoded
+`toHaveLength(19)` rather than deriving from the schema, and about fifteen
+relations are missing. I did not add mine, because fixing one of fifteen while
+the count stays hardcoded is worse than leaving the gap visible. It is a
+separate change and an issue.
+
+### What actually changed, in plain English (Cyrus)
+`cyrus/seed-counters-zzbqtu` — second capability in #566
+
+**The WH-347 told people to do something that could not work.** The federal
+form's header wants PROJECT AND LOCATION. The page built it with
+`job: { name: job.name }` and nothing else, so the location was always null,
+always in `blocking`, and the form always reported itself not ready to file —
+while the red sentence beside the empty box read *"Record the job's site
+address on the job page."* Doing that changed nothing. `Job.siteAddress` and
+`Job.projectLocation` are both columns, both were on the row that page already
+loads, and neither was ever passed.
+
+The reason is one stale comment, and it is this file's most expensive recurring
+shape. `Wh347JobInput.location` said *"Neither is on the Job model yet; both
+are accepted so the caller that gains them does not change this module's
+shape."* True when it was written. The columns landed, nothing broke, nobody
+re-read the comment, and the sentence went on telling every reader the app did
+not hold the value — which is the direction that stops people looking. Same as
+the `InvoiceCounter` entry: a claim about what the app does NOT have perishes
+exactly as fast as a claim about what it does. (It is STILL true for
+`contractNumber` — there is no such column anywhere in the schema, verified,
+which is why that field keeps its honest "a job does not record one".)
+
+**The rule already existed and the WH-347 was the only form not using it.**
+`lib/das-print.ts` has resolved this since the DAS forms were written:
+`job.siteAddress ?? job.projectLocation` — the street address first, the
+looser "in the person's words" location as a fallback. So the fix is not a new
+decision. It is `lib/job-form-location.ts`, one named rule with a test, called
+by both, so a fourth government form cannot pick a different order. Two
+documents a state receives disagreeing about where one job is would be the
+two-computations-disagreeing shape this repo keeps paying for, on paper
+somebody signs.
+
+Extracting it fixed a second, smaller thing in `das-print`: `??` does not
+treat a blank as absent. A cleared form field leaves `""`, which `??` returns —
+so the looser location that IS recorded got skipped, and `project.location ===
+null` then called the empty box filled in. `committeeDeliverability` already
+states the rule for the same reason ("a space is what a form field leaves
+behind"), and on a document a state receives a box that LOOKS filled is worse
+than an empty one, because nobody re-checks a filled box.
+
+**Two guards, because one of them proves nothing on its own.** The first bans
+the `??` chain anywhere in the five form sources. The second requires the two
+form builders to actually CALL the helper — needed because banning the chain
+is satisfied by a form that passes no location at all, which is exactly what
+the WH-347 did. Both mutation-tested: restoring the chain in `das-print` reds
+the first, and removing the call from the WH-347 page — the bug as it shipped —
+reds the second.
+
+### The date picker's button was painted black on a black field, on 112 date fields (Cyrus)
+`cyrus/seed-counters-zzbqtu`
+
+`apps/web/app/globals.css` never declared `color-scheme`, so every control
+the BROWSER paints — rather than our CSS — kept its light-mode appearance on
+a page whose ground is `#0f0f0f`. One line fixes it. The reason it is worth a
+changelog entry is what the measurement turned out to be.
+
+**Measured in real Chromium, not reasoned about.** The calendar glyph on
+`<input type="date">` is painted `#000000` on our `#0f0f0f` field:
+
+| | the glyph | the field under it | ratio | the floor |
+| --- | --- | --- | --- | --- |
+| as shipped | `#000000`, 36px | `#0f0f0f` | **1.1:1** | 3:1 for non-text |
+| with `color-scheme: dark` | `#ffffff`, 35px | `#0f0f0f` | 19.2:1 | 3:1 |
+
+The pixel counts are the part that settles it: **36 and 35 — the same glyph,
+painted in the opposite colour.** Not a control appearing, a control that was
+rendering the whole time and could not be seen. 112 date inputs across the
+app.
+
+**Why no test here could have found it, and how it was found anyway.** The
+screen suite renders in happy-dom, which does no layout and no painting;
+`theme-contrast.test.ts` reads OUR colour pairs out of OUR class strings, and
+this glyph lives in a shadow root nobody in this repo wrote. So it was
+screenshotted in the local Chromium and the pixels sampled — `setContent`
+only, no server and no sockets, which is what makes it runnable in an agent
+container where loopback is refused.
+
+**Both of the probe's own controls held, and they are the reason the number is
+believable.** The positive control: `getComputedStyle(root).colorScheme` read
+`normal` then `dark`, so the declaration was genuinely in effect. The negative
+control: a plain `<input type="text">`, which our CSS paints entirely, came
+back byte-identical in both arms — so the arms differ by the declaration and
+not by something else. A first pass used `#0a0a0a`/`#262626` from memory
+instead of the real `canvas` and `line-card` tokens; re-run against
+`tailwind.config.ts`.
+
+**What else moves, stated honestly rather than claimed as a win.** The file
+input's "Choose File" chip stops being a near-white button on a dark page
+(`#efefef` → `#6b6b6b`, still clearing the 3:1 non-text floor at 3.6:1), and
+the checkbox/radio accent moves to the browser's dark-mode accent, which
+lifts the radio's contrast against our canvas from 4.55:1 to 11.01:1. **Not
+claimed: the scrollbar.** Headless Chromium reports a scrollbar width of 0 —
+overlay scrollbars — so nothing here measured it. **Also not claimed:** the
+`<select>` chevron and the number spinners did not move in this instrument,
+but the instrument reports the two most common colours in a clip and a
+few-pixel glyph is invisible to it. That is a limit, not a finding.
+
+**UNCONDITIONAL, and that is a fact about this app rather than a shortcut.**
+There is no `darkMode` in `tailwind.config.ts` and no `data-theme` anywhere;
+the palette flipped to dark in full on 2026-09-11. The five printable
+documents that DO sit on white paper — WH-347, DAS-140, DAS-142, the photo
+report, the union remittance, the pay application — are white CARDS inside
+the dark shell, not white pages, and **each has zero browser-painted
+controls**, so nothing on them is reached by a declaration about controls.
+That was checked before the declaration went in, not after.
+
+**The guard is the differential.** `colorSchemeGround.test.ts` holds three
+things: the declaration exists at `:root` and says `dark`; nothing declares a
+second or opposite value; and **no browser-painted control sits on a light
+ground**. That last one is the one that matters — put a date field on the
+WH-347 and `color-scheme: dark` would paint a dark-mode control on paper going
+to the state, so the test fails naming the file instead of the document going
+out wrong.
+
+**Mutation-tested seven ways, and two of the seven were found broken by the
+mutations rather than confirmed by them.**
+
+- **M5 was GREEN on the first run**, with the control pattern's `date` arm
+  drifted so no date input matched. The size assertion compared "files with
+  ANY browser-painted control" against "files with a date input" — different
+  sets, the first much larger, so the inequality stayed comfortably true
+  while 112 fields stopped being seen. **A size assertion has to be about the
+  same SUBJECT as the thing it guards**, so it is now an equality between two
+  independent reads of one question: which files hold a date input. M5 now
+  reds naming all 59.
+- **M6 failed as a COLLECTION error printing `no tests`**, because the scope
+  assertions ran at module scope. Red, but red in the way CLAUDE.md refuses
+  outright — a failure indistinguishable from never having run. The scan is
+  memoised and called inside a test now, so a `content` glob pointing
+  nowhere reds with a message.
+
+The other five: the declaration deleted, the declaration present only inside
+a comment (the #185 shape, and load-bearing here because the fix's own
+comment block spells `color-scheme: dark` while explaining it), `dark` changed
+to `light`, a date field put on the white WH-347 card, and a component
+setting a scheme of its own. Control green before and after every restore —
+file copies, never `git checkout --`.
+
+One smaller thing worth keeping: the "declares no second value" check first
+reported the correct declaration as an offender. `(?!dark\b)` after `\s*` lets
+the engine backtrack onto the space and match ` dark`. Captured plainly and
+filtered in JS now — a clever pattern that is wrong about its own subject is
+worse than a dull one.
+
+Verified by result rather than by the source: `:root{color-scheme:dark}` is in
+the built stylesheet of a production build.
+
+### The field produces rows nothing ever chased — now four of them ring the bell (Cyrus)
+`cyrus/seed-counters-zzbqtu`
+
+Every alert in this app was about paper or money: a COI expiring, a backcharge
+unanswered, retainage sitting, a submittal with the GC. The office side has
+been chased since the bell was built. **The field side produced rows nobody
+was ever told about**, and all four of these were derivable from data that
+already existed:
+
+- **a delivery that never came** — `MaterialOrder.promisedFor` against today
+- **a punch item nobody came back for** — `PunchListItem.dueOn`, OPEN only
+- **equipment still out** on a job, sometimes a job that has finished
+- **a delay the GC was never told about** — `gcNotifiedAt` null
+
+The last one is the most valuable and the most galling. What makes a delay
+claim collectible is that the GC was told AT THE TIME, so a delay sitting here
+with no notice recorded is evidence the sub has already paid for and cannot
+use. The Ask read tool `daily_field_reports` has counted
+`delaysTheGcWasNotTold` all along — **the derivation existed and nothing
+surfaced it.**
+
+**None of this is AI, and that is the finding.** The instinct was to reach for
+a model to "notice" these. Every one is a date compared against today, which
+is the same `severityForDate` call the eleven older kinds make. A model here
+would have cost money to be worse.
+
+**What they refuse to say is the design.** Where a date exists the alert is
+DATED and says how late. Where no date exists it is STANDING and says what it
+does not know, because "overdue" against a date nobody recorded is a claim
+about a contract this app has never read. `operations.prisma` puts it best and
+the delivery alert obeys it literally: *"a guessed date is worse than no date,
+because 'late' would then be measured against a guess"* — so an order with no
+promised date is never called late, only silent for however long it has been.
+The delay alert never goes OVERDUE at all, however old, for the same reason
+`createLienDeadline` is excluded from the Ask commands: the notice period is
+legal advice and the app refuses to generate it.
+
+All four take `MANAGE_FIELD`, matching what `ROUTE_CAPABILITY` already gives
+the pages they point at. An alert is a summary of the thing it points at, so
+somebody who cannot open `/punch-lists` is not told what is on it.
+
+**Three existing guards caught three real mistakes on the way in, and they are
+the reason this entry can be trusted.**
+
+`alertLabels.ts`'s total `Record<AlertKind, string>` failed the typecheck the
+moment the union grew — so a kind cannot ship without words a person would
+read.
+
+The horizon floor test caught a **3-day** warning window on late deliveries.
+The argument for 3 was about the bell and it ignored the digest: `week` fires
+at days<=7 and `approaching` fires off severity, so a horizon under the rung
+makes `week` cross FIRST and **the approaching mail silently never sends.** A
+notification no code path can reach — this repo's "written, documented, and
+never called" shape wearing a number. Now 7, with the reason written beside it.
+
+`hoursRenderCensus.test.ts` caught the delay alert interpolating
+`hoursLost` raw. That column is `Decimal(7,2)` and `parseDelay` COMPUTES it
+from workers × minutes ÷ 60, so it is exactly the floating-point sum
+`render-hours.ts` exists for — four men over 200 minutes is
+`13.333333333333334` without it. Routed through `formatHours` like every
+other hours figure in the app.
+
+**And the builders are CALLED**, which is the check that matters rather than
+the one that looks complete: four `export function`s in `alerts.ts`, four
+`...call(` sites in `loadAlerts`, verified by grep rather than by the diff
+looking finished.
+
+`alerts.field.test.ts` is 18 tests over the seam all four share — a record
+that carries a date and a record that does not. The assertions that matter are
+the second kind: STANDING after a named chase window, silent before it, never
+OVERDUE, and a DIFFERENT `alertKey` once a date is finally recorded so that
+dismissing the vague version cannot silence the specific one.
+
+**Deliberately not built: the missing daily field report.** It is the fifth of
+the five and the only one needing a cross-model derivation — days that have
+`TimeEntry` rows and no `DailyFieldReport` — which is a real query cost rather
+than a single-table date comparison. It belongs with the report-drafting work,
+not here.
+
+### Two alerts that told you about a problem and then dropped you nowhere near it (Cyrus)
+`cyrus/seed-counters-zzbqtu`
+
+From the same seven-agent UI sweep as the portal work. The founder's brief
+was "anything that takes more than four or five clicks, shorten it" — and the
+sweep's finding was that click depth is mostly fine and **findability is
+not**. Almost nothing it turned up was a bug in the normal sense: it was
+features that exist and cannot be reached.
+
+**One — the certified payroll alert was a six-click dead end.** `alerts.ts`
+set `href: "/compliance"`, a page with no certified-payroll sheet on it and
+no link to one, while `period.jobId` sat in scope two lines above. So the
+most time-critical weekly filing in the product raised an alert you could not
+act on: `/compliance`, back to the dashboard, the job, Crew & time, certified
+payroll, the week.
+
+It points at the week now. **`periodEnd` is handed over rather than a
+computed week start**, because `openingCertifiedPayrollWeek` already SNAPS
+whatever it receives to the containing week and falls back to its own default
+on anything it cannot parse. So a weekly filer lands on exactly the late
+week, a monthly filer on the last week of the late period, and a malformed
+value degrades to the page's default rather than to a confidently wrong week.
+Computing the start here would be a second implementation of a rule that
+module owns.
+
+**Pinned as a regression, not as a census, and the distinction is the point.**
+A census that every alert href resolves to a real route would have passed on
+this bug — `/compliance` resolves. The defect is semantic: the page cannot do
+the thing the alert is about, and nothing mechanical sees that. So it is an
+explicit pin with the reason attached rather than a guard pretending to more
+reach than it has. Mutation-tested: restoring `/compliance` reds both cases.
+
+**Two — renewal alerts dropped you at the top of a 900-line page.**
+`lib/renewals.ts` sent licence, insurance and bond expiries to `/settings`,
+which has ten sections and had `id`s on five of them. The three that matter
+here had none, so "Licence 8821 — expires in 9 days" meant a scroll.
+
+**That one IS mechanically checkable, so it gets a census.**
+`renewalAnchors.test.ts` requires every `/settings#…` href to name an element
+that exists. A fragment with no matching `id` fails **silently** — it scrolls
+nowhere and reports nothing, which is indistinguishable from a working anchor
+on a page you have not scrolled yet. It asserts its own size against a second
+expression, strips comments before both reads (renewals.ts and the test both
+quote `/settings` while explaining the bug), and says plainly what it cannot
+see: that the section an anchor lands on is the RIGHT one. `#licences`
+resolving to the bonding section would pass it. Mutation-tested three ways —
+href reverted to bare `/settings`, an `id` removed, the href pattern drifted
+to match nothing — each red, control green either side.
+
+**Three — a refusal that named one section out of ten.** `/settings` answers
+non-owners with "Only the account owner can manage integrations". Integrations
+are one of its ten sections; the others are the company profile that prints on
+the WH-347, contractor licences, insurance policies, bonds, company locations,
+employer burden rates, phase codes and default markup. It now names what is
+behind the door.
+
+**AND A PLANNED CHANGE THAT WAS DROPPED AFTER CHECKING ONE FACT.** The sweep
+proposed adding `/settings` to `OWNER_ONLY_FOOTER`, on the rule the nav file
+states itself — *"a button to a page that only refuses is a door that will
+not open."* That was announced in Slack and then **not done**, because
+`ALERT_CAPABILITY` gates `RENEWAL` on `MANAGE_COMPLIANCE`: a compliance
+member genuinely receives licence and bond alerts, and those alerts point at
+`/settings`. Hiding it from their rail would leave them an alert pointing at
+a page they can neither open nor navigate to — strictly worse than today.
+
+The real fix is to let `MANAGE_COMPLIANCE` read the licence, insurance and
+bond sections, since they are the person chasing the renewal. That is a
+permissions decision, it is not one to make on the way past, and it is
+recorded here rather than guessed at.
+
+Also recorded, unfixed: `/settings` renders `id="quickbooks-import"` twice.
+Both appear to sit in mutually exclusive branches, so the duplicate is
+probably never in one document — "probably" is why it is written down rather
+than called fine.
+
+**Still held, not shipped:** the global-search aliases. Search returns
+"Nothing found" for `certified payroll`, `WH-347`, `DAS-140`, `retainage`,
+`takeoff`, `insurance`, `licence`, `bond` and `pay application` — because
+`isRelevant` needs a title or route hit, a step title scores 3, and the word
+"certified" is in no walkthrough at all. The fix is additive (`aliases?:
+string[]` scored 6, `isRelevant` untouched) but `lib/ask/appHelp.ts` is the
+AI lane, and the post-and-wait has not been answered by its owner.
+
+### The two records that come back from the GC can now say where their paper lives (Cyrus)
+`cyrus/seed-counters-zzbqtu`
+
+`recordSubmittalResponse` stored the outcome the stamp said and the reviewer's
+notes, and had nowhere to point at the stamp itself. `answerRfi` stored the
+answer somebody typed, and had nowhere to point at the letter it was typed
+from. Both are the document an argument is had over when a crew is told it
+built the wrong thing, and both lived only in somebody's inbox.
+
+**Four nullable columns, not an upload.** `SubmittalRevision.responseUrl` /
+`responseFileName` and `Rfi.answerUrl` / `answerFileName`, migration
+`20260930020000_add_correspondence_document_links` — additive, no backfill,
+nothing reads them until somebody fills one in.
+
+**A pasted LINK rather than a file, and that was a correction to my own first
+design.** I had this as blob upload until I read what the app already does with
+a document that arrives from outside: `DrawingRevision.fileUrl` is a pasted
+link, and its own help text names where those documents actually live —
+"Procore, Box, the GC's portal". The stamped submittal is already stored
+somewhere the GC controls and the sub cannot delete, which is better provenance
+than a copy in our blob store, and it needs no plumbing to get there.
+
+**The scope narrowed twice, both times by reading rather than by arguing.**
+This started as "the four evidence records with no paper". Punch list items
+already hold photos. RFIs already carry a free-text drawing reference, which is
+a different field answering a different question. What was left is the two
+records whose document comes BACK from the GC, which is also the half that
+matters in a dispute.
+
+**Both actions use `optionalLinkOrThrow`**, which is correct here because both
+are inside `runAction` — see the entry for the link-validator consolidation on
+this same branch for why the pair exists at all. **The census shipped with that
+change covered both new fields with no edit to it**, which is the outcome an
+"is there a second one" guard is for: mutating the submittal action back to a
+bare `text()` read makes `linkValidationCensus.test.ts` name the field.
+
+**Exported rather than withheld.** `answerUrl` and `answerFileName` are in the
+`rfis` export dataset's `columns`. `exportColumnCensus.test.ts` forces that
+decision rather than letting the columns default into silence, and the decision
+is: a note of where the customer's own evidence lives is not a credential —
+opening it still needs the GC's own login — and a customer leaving with the
+summary and no way to find the original has been given the weaker half. The
+submittal columns needed no entry because they went on `SubmittalRevision`,
+which is not an exported model.
+
+**The test is a render test, and the third case is what keeps it honest.** A
+column nothing renders is this repo's "written, documented, and never called"
+shape wearing a migration, so `correspondenceDocumentLink.test.ts` reads the
+assertions off the DOM and its anchor query THROWS when it finds nothing — a
+test that silently matched no anchor would pass on a row that had stopped
+rendering the link. Null must render NOTHING: recording an outcome with no
+paper attached is the ordinary case, and a row that grew an empty "the stamped
+submittal" link or a dangling separator would be this change making the common
+path worse to serve the rare one. Mutation-tested three ways: the `RfiRow`
+render removed (2 red), the `SubmittalRow` render removed (2 red), the
+words-fallback label dropped (1 red).
+
+Both view types took the new fields as REQUIRED rather than optional, so every
+producer had to be visited and the compiler said which — `moneyRail.ts` passes
+them through, `alerts-query.ts` selects and maps them, both page queries map
+them, four fixtures updated. Optional would have let a producer silently hand
+over a row with no link and no error.
+
+One thing worth naming because it nearly went in wrong: my first pass at
+threading `alerts-query.ts` was a regex, and it wrote `responseUrl: null` into
+a Prisma `select` block — exactly the "structural regex inserted code into the
+wrong block" trap. Fixed by hand to `responseUrl: true` plus the pass-through
+in the map.
+
+### The free classifier can finally read the page, and CO #1's $7,595 got its line item back (Cyrus)
+`cyrus/seed-counters-zzbqtu`
+
+Two things, and the first one is a capability that was built, documented and
+never called.
+
+**`lib/intake/classify.ts` has a complete text-evidence path that nothing
+ever fed.** It matches "Certificate of Liability Insurance", "Request for
+Taxpayer Identification Number", "IN WITNESS WHEREOF", "Application and
+Certificate for Payment" and a `Project:` job hint, and it quotes the
+fragment it matched as the reason it shows a person. It reads all of that
+from `textPreview`. There were four references to that field in the entire
+repository: the action reading it off a FormData, the email path passing
+`null`, and two lines inside the classifier consuming it. **No producer
+anywhere.** Every detector that needed text was unreachable on every live
+path, and `scan_0042.pdf` stayed UNKNOWN forever.
+
+`classify.test.ts` was green throughout — 584 lines of it — because it calls
+`classifyDocument({ textPreview })` directly. It proves the detectors work
+and says nothing about anybody feeding them. That is this repo's "written,
+documented, and never called" shape wearing a form field.
+
+**Why it is worth fixing rather than deleting: the classifier is free.** Pure
+regex, no model call, no query. It is the triage layer that decides which
+documents deserve a paid read, and a whole-document read is costed in-repo at
+$2.25–$4.50 against a 300-page monthly allowance. Every point of accuracy
+here is a paid read not spent.
+
+`lib/intake/pdf-text.ts` reads the first page in the browser — the second use
+of the already-installed `pdfjs-dist` and the same dynamic import
+`TakeoffPlanViewer` uses, so no new package and a shared chunk. It runs
+concurrently with the upload rather than before it, is capped at 4,000
+characters and 4 seconds, and **never throws**: a scan with no text layer, an
+image, or a PDF that will not open all return null, which is the
+filename-only classification every file got until now. The inbound EMAIL path
+is deliberately untouched and still passes `null`, because extracting text
+from an arbitrary emailed file is "parser attack surface a webhook has no
+business opening" — a dropped file is one a signed-in person chose and opened
+in their own tab, which is a different exposure.
+
+**The check that proves it** is `lib/intake/textPreviewCensus.test.ts`, and it
+guards the whole CHAIN rather than any one function, because the defect was a
+broken chain: every caller of `recordIntakeDocument` sets `textPreview`, the
+action still reads that key and still passes it to `classifyDocument`, and
+the classifier still declares and reads the field. Any one of those three can
+be deleted without breaking a type, and each alone silently restores the
+original defect. Scope comes from Tailwind's `content` globs, call sites are
+counted a second time by a different expression (importers vs. callers), and
+every structural read is on source with comments stripped — load-bearing
+here, since `IntakeDropZone.tsx` names `recordIntakeDocument` in three
+comments and calls it once, so a raw-text census would find four call sites
+in one file.
+
+Mutation-tested six ways, each killing the right assertion by name: either
+producer dropped, the set surviving only as a comment, the action's read
+removed, the classifier's read removed, and a `content` glob pointed at a
+directory that does not exist — which trips the scope check and the size
+check both. The first run of that harness restored files with
+`git checkout --`, which reverts to the INDEX and therefore wiped the
+unstaged change under test; two of its six results were about an
+already-reverted file and proved nothing. The harness now restores from file
+copies and asserts a green control after every restore, which is the only
+reason that was caught.
+
+**And the second thing, rescued rather than written.** #546 squash-merged,
+which rewrites a branch's commits under new SHAs — so `git log
+origin/main..HEAD` still printed all five and read as "nothing landed".
+Checked by content instead: main has `LIST_COMPANIES` and the company-scoped
+`providerMessageId`, and did NOT have `DEMO_JOB_NAMES`, `announceUntagged`,
+`restore-names` or `originChangeOrderId`. Three commits were genuinely
+stranded and one of them is a money fix: **CO #1 was seeded APPROVED with no
+`JobLineItem`, leaving $7,595 of scope in no line item at all** on the job
+the launch video films. `approveChangeOrder`'s ADD branch creates that row;
+the seed wrote the terminal state directly and skipped it. Reseeding the demo
+database from `main` would have put that back on camera.
+
+The general lesson, which this repo has paid for before in the other
+direction: a fixture that reaches a terminal state by WRITING the state
+rather than running the transition is wrong in exactly the ways the
+transition's other side effects are invisible.
+
+### Two link fields went into an `href` unchecked, and `type="url"` was doing the guarding (Cyrus)
+`cyrus/seed-counters-zzbqtu`
+
+This started as a tidy-up — five action modules each carried their own
+`optionalLink` — and turned into a security fix on the way.
+
+**`ApprenticeshipCommittee.sourceUrl` and `PrevailingWageDetermination.sourceUrl`
+had no server-side URL check at all.** `dasForms.ts` read the first with
+`text(formData, "sourceUrl")` and `labor.ts` read the second with
+`String(formData.get("sourceUrl") ?? "").trim()`, and both are rendered
+straight into an `href` — `ApprenticeshipCommitteePanel.tsx:111` and the job
+compliance tab. Both inputs carry `type="url"`.
+
+**That attribute is a browser hint and no part of the server's story.** A
+Server Action receives whatever the POST body contains. So a member could
+store `javascript:…` on a committee record and it became a script running in
+a colleague's session the moment they clicked "Where this came from" — stored
+XSS inside the tenant, needing nothing but an account that can edit
+compliance records.
+
+`lib/ask/webSuggestions.ts` already had the rule written down, in as many
+words: *"Absolute http(s) links only. A stored source is rendered as a link on
+the job page, and a `javascript:` URL there would be a script."* These two
+fields were simply the places nobody applied it.
+
+**Why the duplication is what let it happen.** Five modules had their own
+`optionalLink`. Three were byte-identical; `prevailingWage`'s was BETTER — it
+named the field in the refusal — and the worse version won three-to-one. That
+is CLAUDE.md's #526 shape: one canonical thing, several hand-written copies,
+and no way for a completeness test to notice a module that never adopted it.
+With five copies there was no single place where "does every link field go
+through this?" could even be asked.
+
+**One implementation now, in `lib/actions/shared.ts`, and a deliberate pair.**
+`optionalLinkFromForm` returns `{ ok, value } | { ok, error }`;
+`optionalLinkOrThrow` throws `InputError`. **That split is not decoration.**
+Every deleted copy threw, which is correct only inside `runAction` — and
+`uploadPrevailingWageDetermination` is NOT wrapped in `runAction`, it returns
+`actionFail` directly. A throw there would have reached a real user as the
+digest production redacts a thrown Server Action message into, which is this
+repo's oldest scar. Same reasoning and same shape as the `ownerRefusal` /
+`assertOwner` pair `shared.ts` already documents.
+
+**One small honesty fix rode along.** Every old copy accepted `http:` while
+telling the person it needed `https://`. The behaviour is unchanged —
+breaking a GC portal that is still plain HTTP would be the worse trade — and
+only the wording is accurate now.
+
+**The guard is the "is there a second one" kind, because the other kind could
+not have caught this.** `linkValidationCensus.test.ts` asserts that no module
+carries its own URL-scheme check, and that every function reading a
+url-shaped form key calls one of three validators: `optionalLinkFromForm` /
+`optionalLinkOrThrow` for a link a PERSON TYPED, where the scheme is the
+risk; `documentUrlProblem` or `isBlobStorageUrl` for a blob URL the upload SDK
+returned, where the risk is that it is not our store. None subsumes another.
+
+**The third validator was found by the census contradicting me on its first
+run.** `recordIntakeDocument` and `recordJobMedia` came back as offenders, and
+reading them showed `isBlobStorageUrl` plus per-tenant path checks — a
+validator this file had not been told about rather than a hole. An exemption
+discovered by being contradicted is worth more than one assumed in advance.
+
+Scope is the actions directory asserted to exist; size is cross-checked by a
+second expression; comments are stripped before every structural read — which
+matters concretely, because `shared.ts`'s own header quotes
+`String(formData.get(...))` while explaining the bug and both patched
+functions name `javascript:` in their comments. A raw-text census would have
+found unvalidated reads that do not exist.
+
+Mutation-tested four ways, each red and naming the offender: the committee
+field reverted to an unchecked read, a module growing its own protocol check
+back, the shared validator made to accept `javascript:`, and the walk pointed
+at a directory that does not exist. Control green before and after every one —
+the harness restores from file copies rather than `git checkout --`, which on
+an earlier run silently reverted the change under test and made two results
+meaningless.
+
+**And a second existing census caught the change**, which is the part worth
+keeping: `actionErrorBoundaryCensus.test.ts` pins the shared parsers that
+raise `InputError` at a literal roll-call, and its own comment says *"adding a
+raising parser to shared.ts is a deliberate act, and updating this line is
+part of it."* It went red on `optionalLinkOrThrow` immediately. Registered,
+with the reason beside it.
+
+### The GC portal was showing bids we hadn't won, and our own overhead lines (Cyrus)
+`cyrus/seed-counters-zzbqtu`
+
+Found while a seven-agent sweep of the whole UI was looking for something
+else. Three live disclosures on the one surface a general contractor ever
+sees, all verified in the code rather than taken from a report.
+
+**One — jobs at ESTIMATE status were listed, with a running total.** The
+portal's job query had no status filter at all: `contact.jobs` with only an
+`orderBy`, and `money(total)` rendered beside every row. `enablePortalAccess`
+mints **one token per contact, permanently**, so a link turned on for a live
+job in March is still open when a bid for the same GC is entered in
+September. And ESTIMATE is the one state where the number *moves* —
+`assertEditableDirectly` permits direct line-item edits only there — so a GC
+who reloaded watched the pencil sharpen and learned the floor.
+
+Filtered on `status: { not: "ESTIMATE" }` rather than a rule of its own,
+because the way out of ESTIMATE is already the guarded transition:
+`markJobContracted` refuses without line items **and** evidence of an
+executed contract. "Not an estimate" therefore already means "this GC signed
+something, or we hold their executed subcontract" — the same evidence the
+rest of the client-facing surface leans on, rather than a second definition
+free to drift from it.
+
+**The per-job read got the same filter, and that is not belt-and-braces.**
+Closing only the index removes the link and leaves the page — and estimates
+*were* listed until now, so a GC who opened their portal last week has the
+URL of a bid in progress in their browser history. A job id is a cuid and
+unguessable; a visited URL needs no guessing. Nothing legitimate is lost:
+signing happens at `/esign/<token>`, and no proposal flow routes through the
+portal (checked, not assumed).
+
+**Two — cost-only budget lines printed on the GC's contract.** The line-item
+read had no price filter, and `ContractSummary` renders every row with `"—"`
+where the price goes. `jobs.prisma` says what a null `unitPrice` is: *"a
+cost-only budget line (general conditions, overhead, contingency) has no
+client-facing sale price."* So "General conditions", "Overhead" and
+"Contingency" — plus whatever the estimator typed after them — were itemised
+rows on the document a GC reads as the contract.
+
+Two harms, and the second is the one nobody would predict. It publishes how
+this company structures a bid. And **`"—"` in a price column reads as
+free**, which invites "you're not charging for that, so do it."
+
+The total cannot move, and that is checked rather than asserted:
+`ContractSummary` sums `unitPrice != null ? … : 0`, so these lines already
+contributed zero. This removes rows, never money. Printing them on the sub's
+own proposal stays exactly as it was and is right — a proposal is chosen and
+sent; this page renders whenever somebody opens a link.
+
+**Three — a credential over-fetched, and this one is LATENT rather than
+live.** `company: true` for `name` alone fetched the whole row, including
+`intakeEmailToken`, which company.prisma calls *"the unguessable half of this
+company's inbound intake address… The token IS the routing"* and says to
+regenerate if it leaks. Anyone holding it can inject documents into the
+company's intake tray.
+
+**It was not disclosed, and the first write-up of this said so too loosely.**
+Diego's review narrowed it correctly: both portal pages are pure server
+components, nothing hands `company` or `contact` to a client component, and
+only `company.name` is ever read — so the token never reached the browser or
+the RSC payload. Calling it "in the page's props" reads as *it is in the
+browser*, and would send the next person hunting a payload it is not in.
+
+Closed anyway, for the shape rather than the severity: the next person to add
+one client component taking `contact` or `company` wholesale turns it into a
+real disclosure with no visible change at the call site. The same `include`
+pulled `ChangeOrderLineItemEdit` (the before-and-after pricing of every
+approved change), the full contact row, and four unused fields on every
+payment.
+
+**Four — two formulas for contract value, agreeing by coercion.** Found by
+Diego's review while checking the second finding. The index reduced
+`Number(item.quantity) * Number(item.unitPrice)` with no null test while
+`ContractSummary` checks explicitly; they matched only because `Number(null)`
+is 0. That is a coercion standing in for a rule, in the one place a GC sees a
+total, and in the copy that did not document it. Both selects now exclude
+those rows so neither total depends on the coercion, and the reduce states
+the rule out loud.
+
+**The fix is a module, not three `where` clauses, and that is the point.**
+`lib/portal-query.ts` now holds both loaders and every clause in them.
+`lib/job-media-query.ts` already made this argument for the photo half and
+made it well — the boundary belongs in "the module the page imports", so
+widening it is a visible deliberate edit rather than a forgetful one. The
+contract half simply never got the same treatment.
+
+It also makes the claims **testable**, which matters more. A Server Component
+cannot be called from a test; a loader can. `portal-query.dbtest.ts` runs
+them against a real Postgres, because every claim here is a claim about a
+`where` clause and a pure test structurally cannot see one.
+
+**The last case in that file is the one that will catch the next
+regression.** Three of them assert behaviour a reviewer could also spot in a
+diff. The fourth reads the KEYS that came back — because the defect this
+module was written after was not a wrong filter, it was a whole row fetched
+for one field, and no behavioural test can notice that. Neither can a type:
+widening a `select` widens the derived type with it and everything still
+compiles. Only counting the keys does.
+
+The selects are module constants and the exported types are derived from them
+with `GetPayload`, so the type and the query cannot drift — adding a field to
+the type without adding it to the select is not expressible.
+
+**One thing improved on the way past.** `contactId` is now part of the
+`where` instead of a `job.contactId !== contact.id` check after the fetch.
+Same answer, smaller window: a row that is not this contact's never leaves
+the database, so there is nothing in memory for a later edit to render by
+accident.
+
+**And a guard caught me mid-change, which is the system working.**
+`retainage-single-source.test.ts` went red the moment the module named
+`retainageWithheld`, because it holds a literal roll-call of every file that
+reads that column. Registered with its reason. Worth noting separately that
+`gc-surface-tokens.dbtest.ts`'s header still says *"CI has no database"* —
+true when written, and `ci.yml` has had a `dbtest` job with a `postgres:16`
+service since.
+
+**Not verified here:** no Postgres exists in an agent container, so the
+dbtest has not been executed — CI's `dbtest` job is where it is either proved
+or not. Typecheck, lint, build and the full unit suite are clean (8,321
+passing; the 7 `xlsx` failures are the container's blocked `cdn.sheetjs.com`
+tarball, identical on `main`).
+
+### An addendum reads itself — what it changed, for the estimator to judge (Diego)
+`diego/addenda-read`
+
+A GC issues an addendum mid-bid. It revises the partition types, moves a corridor,
+adds a form to the bid packet, moves the bid date. The estimator reads twelve
+pages and logs one row: a reference, two dates they type, a boolean, a note. The
+app knows the row exists and nothing about what the letter said.
+
+So the fear the feature exists for was unaddressed — that something changed and
+nobody noticed. On a bid that is not a near miss: a non-responsive bid is rejected
+unread, and a bid priced against superseded scope is won at a loss.
+
+This attaches the GC's PDF to the addendum, reads it, and lists what it says it
+changed — per item, with the reason it was read that way and the page to check it
+on. Lowest confidence first. A person marks each scope as theirs or not, and where
+two addenda on one bid name the same scope, it says so.
+
+**IT WRITES NOTHING ANY OTHER MODULE READS**, and that is the design rather than a
+limitation. Not `affectsPricedScope`, not `acknowledgedOn`, not `issuedOn`, not
+the bid's due date. No verdict on any bid or any job changes because somebody read
+an addendum — `bid-responsiveness.ts` and `takeoff-currency.ts` cannot tell it
+happened.
+
+**The first design did the opposite, and the review that killed it is worth more
+than the feature.** It proposed `affectsPricedScope` beside the estimator's own
+tick, the `DocumentIntake` pattern, and I asked Diego to choose it — which he did,
+on my framing. The review asked the question I had not: what does the write DO?
+
+| accepting | what actually happens |
+| --- | --- |
+| `false` | overwrites a person's own tick. The reprice warning and the job's supersession banner both vanish — a model clearing a warning on a job somebody is building, with nothing recording that it happened |
+| `true` | **nothing.** `takeoff-currency.ts:141` supersedes only when `issuedOn` is set, and a model-proposed date is deliberately inert text — so it lands in `undatedAddenda` and changes no verdict |
+
+One direction destructive, the other a no-op. There was no version of that field
+that worked. And `lib/ask/commands/estimating.ts` had already settled it when it
+refused `saveBidAddendum` to the assistant — *"an estimator's judgement about
+drawings the assistant has not seen"* — which reading the addendum does not
+change, because the drawings and the estimate are still not in the request.
+
+The transferable part is narrower than "don't let a model write". **Every decision
+that design quoted was quoted correctly. None of them said what the write would do
+once made.** `takeoff-currency.ts:141` is two lines below a comment I had cited.
+
+**Decisions are keyed on the addendum and the scope, never on the reading**, and
+this is the other thing the review caught before it shipped. `PlanSheetProposal`
+survives a re-run because `pageNumber` is a stable natural key — page 12 is page 12
+in every run. An addendum's items have none: `ordinal` is the model's ordering
+within one run, and the reference and summary are free text a second pass words
+differently. Keying decisions to a reading would discard every one of them on every
+re-read, presenting the whole list afresh as though nobody had looked — the exact
+thing `plan-ingest.prisma` and `intake.prisma` both refuse.
+
+`@@unique([bidAddendumId, normalisedReference])` fixes it by construction, and is
+better on the merits: what an estimator decides is that **a scope** is or is not
+theirs, which stays true when the wording changes. `addenda-readings.dbtest.ts`
+proves it against a real Postgres — read, decide, re-read with a different
+spelling, and the decision is still there and still attached to the new item.
+
+**A fourth metering unit**, which the plan argued against and was wrong about.
+`quoteRead.ts` says a second ledger for a second kind of document is how a bill
+stops adding up, and that rule does not cover this: it checks the per-document
+CEILING and never the MONTH. An addendum is eight pages against a hundred-page
+ceiling, so one fits — but twenty bids with three addenda each is ~480 pages
+against a 300-page month shared with Ask and with the compliance paperwork the job
+they *win* will need. That is `DECISIONS.md`'s plan-sheet argument arriving again,
+differing only in how the volume shows up: a plan set spends it in one click,
+addenda spend it eight pages at a time on every bid. **600 a month is a figure, not
+a measurement.**
+
+**The whole PDF goes to the model, not extracted text.** GC addenda are routinely
+scanned, and a scan has no text layer. `plan-ingest` reads text instead, but that
+is a cost rule about three hundred pages per set rather than a capability — at one
+document per click there is nothing to save and a scan would simply fail.
+
+**Smaller things, each a scar somebody else already paid for.** A 30-second
+double-read guard, because readings are append-only so nothing in the schema stops
+a double-click buying two — `plan-ingest` has a unique index for exactly that, and
+there is no natural key here to put one on. The re-read button says how many times
+the addendum has been read and that reading again charges again, *before* it is
+pressed. `deleteBidAddendum` now deletes the stored PDF, which it did not need to
+do until this PR gave it one to strand. And `fileUrl` is the one column on
+`BidAddendum` the CSV export withholds: uploads are `access: "public"`, so that URL
+is a permanent unauthenticated key to a customer's bid document, and a CSV is a
+file that gets forwarded.
+
+**Three stale claims fixed in passing, because this PR is the one that makes them
+false.** `ai-settings.prisma` and — worse — the *user-facing* description on
+`/settings/assistant` both still said plan-set reading was "not built yet", three
+weeks after #551 built it. And `docs/ai/DECISIONS.md`'s open questions still said
+the 250MB ceiling was unbuilt, that `promptVersion` had no writer, and that nothing
+was known about Haiku's accuracy — when the eval had run 9/9 with nothing
+overclaimed and the result was never written into the file whose entire charter is
+to record it.
+
+### The clerkId race was already handled. The invite race next to it was not (Diego)
+`diego/invite-race-p2025`
+
+**No schema change, no migration.** One condition, one helper, two tests.
+
+**READ THE CORRECTION BEFORE THE FIX, because it is worth more.** The
+`User_clerkId_key` violations in the CI Postgres logs — twelve in one run,
+three backends on one key inside twelve milliseconds, raised in
+`#prova-build` three times as the "green-while-broken" shape — **are not a
+bug. They are the recovery working.**
+
+`adoptCompanyContext` already catches a unique-constraint collision and
+re-reads what the winner created, under clerkId and then under email.
+`isUniqueConstraintError` duck-types `err.code === "P2002"` rather than
+using the `instanceof` that CLAUDE.md records as dead under Next's bundling,
+so the guard is LIVE. `auth.raceRecovery.test.ts` has pinned all three arms
+since it was written. So the sequence is: three requests miss, three insert,
+one wins, two collide, two recover, nobody sees a failure. Postgres logs the
+violation because a violation genuinely happened; Prisma logs it for the
+same reason. **No test failed because nothing was broken** — which is a
+different sentence from "a test should have failed", and the two have been
+confused for a week.
+
+Nested `company: { create }` rolls back with its parent, so the losing
+inserts leave no orphan Company either. The cost of the herd is two wasted
+INSERTs per concurrent burst and two lines of log noise. That is worth
+knowing and not worth restructuring security-critical adoption logic for.
+
+**WHAT WAS ACTUALLY BROKEN IS THE ARM THE CATCH DESCRIBED IN WORDS AND
+COULD NOT REACH.** The invite path runs
+
+```ts
+prisma.$transaction([invite.delete({ where: { id } }), prisma.user.create({ … })])
+```
+
+and the DELETE goes first. `Invite.email` is `@unique`, so an invite belongs
+to exactly one address — which makes a concurrent consumption **the same
+person in two tabs**, not two people. The loser's delete hits a row the
+winner has already consumed, and that is **P2025, not P2002**. The guard
+admitted only P2002, so the error escaped and a recoverable double-click
+left as a 500.
+
+Three lines above that guard, its own comment says *"or someone else
+consuming the same invite first."* The case was named and unhandled — this
+repo's most repeated shape, and the second instance of it this week.
+
+**The fix** is `isMissingRecordError` (P2025) beside its P2002 sibling in
+`shared.ts`, and one `||` in the catch.
+
+**Widening the entry condition is safe because the recovery is
+EVIDENCE-BASED, not blanket.** It returns only if a re-read actually finds a
+row and rethrows the original error untouched otherwise — so a P2025 with
+nothing behind it still escapes exactly as before. That is not an argument,
+it is mutation M3 below.
+
+**Mutation-tested three ways:**
+
+| | mutation | result |
+| --- | --- | --- |
+| ctl | nothing | green |
+| **M1** | the fix reverted — guard blind to P2025 | **RED on the new test ONLY**; the other four still pass |
+| M2 | helper checks the wrong Prisma code | RED, same test |
+| **M3** | helper returns `true` for everything | **green — and that is the right answer** |
+
+M1 is the proof the new test catches the real defect without dragging the
+existing ones along. **M3 is the proof of the safety argument**: even with
+the guard admitting every error, the control still escapes, because the
+recovery needs evidence before it returns.
+
+**Not claimed:** that the log noise goes away. It will not, and it should
+not — the herd is real and the recovery is what handles it. Anyone reading
+`User_clerkId_key` in a CI log after this should read it as the system
+working, and go look at the invite arm only if they see an actual 500.
+
+### What actually changed, in plain English (Cyrus)
+`cyrus/seed-counters-zzbqtu`
+
+**Four alert kinds were being built and thrown away, and had been since they
+shipped.** `loadAlerts` computed `permitted = visibleToPrincipal(alerts, …)`
+partway down the function and then pushed four more kinds onto `alerts`
+afterwards. `visibleToPrincipal` returns a NEW array, so that assignment was a
+snapshot — the late delivery, the aging punch item, the equipment still out on
+a finished job and the delay the GC was never told about were assembled,
+capability-checked, and never returned. The bell and `/alerts` had never shown
+one of them.
+
+Nothing failed and nothing could. The builders were called. Their unit tests
+passed, because they are pure functions given inputs directly. The capability
+map was exhaustive over every kind. `itemLinksCensus.test.ts` found all four
+hrefs and proved each was reachable by the person who receives it. Every
+instrument was pointed at whether the alerts were CORRECT; the defect was
+whether they were RETURNED — the shape CLAUDE.md's newest trap entry names,
+arriving in the alert engine rather than on the phone: nothing is ever missing
+from a question nobody is asking.
+
+The fix is moving one statement below the last push. `alertAssemblyOrder.test.ts`
+is the part worth keeping: it asserts every builder `alerts-query.ts` imports is
+actually called, that no push lands after the snapshot, and that nothing sits
+between the snapshot and the return where a future push could land. Three
+mutations, each red and each naming the offender — the snapshot restored to its
+old position (names all six stranded line numbers), a builder imported and never
+called, and the anchor present only inside a comment, which a raw-text census
+would have read as code and passed.
+
+**The two apprenticeship deadlines now reach the bell.** `das140Standing` and
+`das142Standing` have been right since they were written, and were rendered in
+exactly one place each — the job's compliance tab and the two detail pages — so
+the only way to learn a DAS 140 was overdue was to open the job it was overdue
+on and look. Same invisibility as the field four above, on the one deadline in
+the app carrying a statutory penalty.
+
+`DAS140_NOTICE` fires on an unsent notice that is late or within ten days of
+due. Ten is the whole statutory window rather than a runway in front of it,
+because the other bound — the first day a worker logs hours — can close the
+window on day one. `DAS142_DISPATCH` fires three ways: a request unsent past
+its latest send day ("already short notice"), one whose needed day has gone
+entirely, and one that went out with no committee answer recorded at all. The
+last is STANDING, not overdue: the committee's answer has no date this app was
+ever told.
+
+Neither builder re-derives a date. Both call the module written to be the only
+place that decides them, for the reason `lienDeadlineAlerts` calls
+`lienDeadlineState` — a second opinion about a statutory deadline, in a red
+badge, is the one place a wrong one gets acted on. Severity is read off the
+standing rather than recomputed from the date; the horizon decides only whether
+a deadline still ahead is close enough to mention. Neither asserts a
+consequence: every citation in `das-forms.ts` is `verified: false`, located by
+search and never read off a primary DIR page, so an alert claiming "this is
+your defence at a hearing" would invent the one thing that file refuses to
+claim. `dasAlerts.test.ts` pins the holiday caveat's DIRECTION, because the
+alert tells people a holiday makes the real cut-off earlier — which is only
+safe advice while the caveat still runs that way.
+
+**Two existing censuses were quietly unable to see what they were checking, and
+both said so when asked.** `itemLinksCensus.test.ts` matched a kind name as
+`[A-Z_]+`; `DAS140_NOTICE` was the first kind with a digit in it (the form
+number is the name), so the census reported both new kinds as building no href
+at all. It failed by NAME rather than shrinking to an empty set, which is what
+its size assertion is for. And `appHelpRouteCensus.test.ts` normalised every
+`${…}` in an href to `[id]` but compared against page paths named whatever the
+page called them — so `/jobs/[id]/das-140/[id]` could never match
+`/jobs/[id]/das-140/[noticeId]`, and the census had been structurally unable to
+resolve ANY nested dynamic route. Both sides are normalised now; segment count,
+order and every literal segment are still compared, and only the parameter
+name, which an href cannot get wrong, stops mattering. Mutation-tested by
+pointing a DAS href at `/das-999/` and watching it go red.
+
+One small thing that is a finding rather than a fix: `das142Alerts` writes its
+href out in full at each of three push sites instead of hoisting it into a
+`const`. A shorthand `href,` is invisible to the census that checks the person
+receiving an alert can open the page it points at, and a census that cannot see
+the destination cannot check anything about it.
+
 ### `settleAction` waited for the wrong POST, and four specs rolled dice on it (Diego)
 `diego/settle-action-origin`
 

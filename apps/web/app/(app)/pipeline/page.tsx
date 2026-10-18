@@ -1,7 +1,11 @@
 import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
+import { bidStandings, standingLines } from "@/lib/bid-standing";
+import { bidCrowds, crowdingLines } from "@/lib/bid-crowding";
 import { loadBidPipeline } from "@/lib/bid-pipeline-query";
 import { valueIsPartial, winRateLabel } from "@/lib/bid-pipeline";
 import { money } from "@/lib/money";
@@ -50,21 +54,48 @@ export default async function PipelinePage() {
     loadLinkableInvitations(context.company.id),
   ]);
 
-  const overdueCount = live.filter((b) => b.overdue).length;
+  // ── WHAT EACH LIVE BID NEEDS TODAY ──
+  //
+  // This was `live.filter((b) => b.overdue).length`, and `overdue` is
+  // `dueDate < today` with NO STATUS IN IT. A bid submitted on time and
+  // waiting on the GC — the normal state of every bid anybody has sent —
+  // counted as overdue from the day after the deadline, forever. A desk with
+  // ten bids out for award read "10 past the date they asked for" in red with
+  // nothing wrong, and the one bid that was never sent was hiding in it.
+  //
+  // See `bid-standing.ts`. The three things that DO want somebody are kept
+  // apart, because they want different people.
+  const standings = bidStandings(live, today);
+  const lines = standingLines(standings);
+  // ── AND THE WEEKS WITH TOO MUCH IN THEM ──
+  //
+  // `standingLines` is about bids that are already late or already cold. This
+  // is the one that arrives EARLY ENOUGH TO ACT ON: the app knows what to do
+  // once capacity has gone wrong (`CAPACITY` is a decline reason, and a regret
+  // letter can name it) and has never said it was about to. See
+  // `bid-crowding.ts` — it reports crowding and deliberately judges nothing.
+  const crowding = crowdingLines(bidCrowds(live, today));
+  // Keyed for the rows below, so a date is only coloured when its colour
+  // carries a meaning somebody can act on.
+  const byId = new Map(
+    [...standings.dueSoon, ...standings.missed, ...standings.cold].map((one) => [one.bid.id, one.standing]),
+  );
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Bid pipeline</h1>
-      <p className="mb-6 text-sm text-ink-body">
-        What we are chasing before anyone has invited us, then who invites us to bid and what comes
-        of it. The chase list is its own record, kept here. Everything below it is worked out from
-        the bid invitations listed on {""}
+    <PageShell width="working">
+      <PageHeader
+        route="/pipeline"
+        title="Bid pipeline"
+        subtitle="What you are chasing before anyone invites you, then who invites you to bid and what comes of it."
+      />
+      <p className="mb-6 text-xs text-ink-muted">
+        The chase list is its own record, kept here. Everything below it is worked out from the bid
+        invitations listed on{" "}
         <Link href="/bids" className="text-link hover:underline">
           Bids
         </Link>
-        . Those figures are not stored separately, so correcting a bid moves them with it —
-        and a status or an amount is changed on the GC&apos;s own contact record, under
-        &ldquo;Bid invitations&rdquo;, not on the Bids list, which only filters and reads.
+        , so correcting a bid moves these figures with it. A status or an amount is changed on the
+        GC&apos;s own contact record, under &ldquo;Bid invitations&rdquo;.
       </p>
 
       {/* AHEAD OF THE CHASE LIST, because it is what feeds it: a project name
@@ -120,19 +151,34 @@ export default async function PipelinePage() {
           <section className="mb-8" data-tour="pipeline-waiting">
             <div className="mb-3 flex items-baseline gap-3">
               <h2 className="text-sm font-medium text-ink-label">Waiting on us</h2>
-              {overdueCount > 0 && (
+              {standings.missed.length > 0 && (
                 <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">
-                  {overdueCount} past the date they asked for
+                  {standings.missed.length} past the deadline and never sent
                 </span>
               )}
             </div>
 
+            {/* ONE LINE PER THING THAT WANTS DOING, above the list rather than
+                beside a row: each is about the desk, not about one bid. */}
+            {lines.length + crowding.length > 0 && (
+              <ul data-pipeline="standings" className="mb-3 flex flex-col gap-1">
+                {[...lines, ...crowding].map((line) => (
+                  <li
+                    key={line}
+                    className="rounded-md border border-line-card bg-surface p-2 text-xs text-ink-body"
+                  >
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            )}
+
             {live.length === 0 ? (
-              <p className="rounded-lg border border-line-card bg-surface p-4 text-sm text-ink-body">
+              <p className="rounded-xl border border-line-card bg-surface p-4 text-sm text-ink-body">
                 Nothing outstanding — every invitation on file has been won, lost or declined.
               </p>
             ) : (
-              <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+              <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface">
                 {live.map((bidRow) => (
                   <li key={bidRow.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 p-4">
                     <span className="text-ink">{bidRow.projectName}</span>
@@ -145,8 +191,8 @@ export default async function PipelinePage() {
                     <span
                       className={`rounded px-1.5 py-0.5 text-xs ${
                         bidRow.status === "SUBMITTED"
-                          ? "bg-tag-blue text-tag-blue-ink"
-                          : "bg-neutral-800 text-ink-label"
+                          ? "bg-tag-brand text-tag-brand-ink"
+                          : "bg-rail-hover text-ink-label"
                       }`}
                     >
                       {bidRow.status === "SUBMITTED" ? "Submitted" : "Invited"}
@@ -155,7 +201,19 @@ export default async function PipelinePage() {
                       {bidRow.dueDate === null ? (
                         <span className="text-ink-muted">no date given</span>
                       ) : (
-                        <span className={bidRow.overdue ? "text-tag-rose-ink" : undefined}>
+                        // RED ONLY WHEN IT MEANS SOMETHING. `overdue` is
+                        // `dueDate < today` with no status in it, so this used
+                        // to redden the date on every submitted bid waiting on
+                        // a GC — the normal state of a bid, shown as a problem.
+                        <span
+                          className={
+                            byId.get(bidRow.id) === "MISSED"
+                              ? "text-tag-rose-ink"
+                              : byId.get(bidRow.id) === "DUE_SOON"
+                                ? "text-tag-amber-ink"
+                                : undefined
+                          }
+                        >
                           due {bidRow.dueDate}
                         </span>
                       )}
@@ -168,7 +226,7 @@ export default async function PipelinePage() {
 
           <section data-tour="pipeline-by-gc">
             <h2 className="mb-3 text-sm font-medium text-ink-label">By general contractor</h2>
-            <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+            <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface">
               {rows.map((row) => (
                 <li key={row.contactId} className="p-4">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -184,7 +242,7 @@ export default async function PipelinePage() {
                       </span>
                     )}
                     {row.record.outstanding > 0 && row.record.overdue === 0 && (
-                      <span className="rounded bg-tag-blue px-1.5 py-0.5 text-xs text-tag-blue-ink">
+                      <span className="rounded bg-tag-brand px-1.5 py-0.5 text-xs text-tag-brand-ink">
                         {row.record.outstanding} live
                       </span>
                     )}
@@ -234,6 +292,6 @@ export default async function PipelinePage() {
           </section>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

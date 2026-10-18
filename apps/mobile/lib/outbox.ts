@@ -97,6 +97,15 @@ export function describeOp(op: PendingOp, names: Record<string, string> = {}): {
       return { title: t("outbox.op.delay"), detail: `${job(op.jobId)} · ${day(op.date)}` };
     case "signoff:create":
       return { title: t("outbox.op.signoff", { name: op.signerName }), detail: `${job(op.jobId)} · ${day(op.date)}` };
+      case "sheet-pin:create":
+        // The NOTE is the title, because that is what the person wrote and it
+        // is the only thing that tells two waiting pins apart. A photo or
+        // punch pin has no words of its own here -- what it points at lives on
+        // the server -- so it says which kind it is rather than nothing.
+        return {
+          title: op.note?.trim() || t(op.kind === "PHOTO" ? "outbox.op.pinPhoto" : "outbox.op.pinPunch"),
+          detail: t("outbox.op.sheetPin", { job: job(op.jobId) }),
+        };
     default: {
       const exhaustive: never = op;
       return exhaustive;

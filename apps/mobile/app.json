@@ -24,14 +24,26 @@
           "photosPermission": "C Stream adds photos from your library to a job."
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "./plugins/withSceneLifecycle"
     ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.cstream.prova",
       "deploymentTarget": "17.0",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIApplicationSceneManifest": {
+          "UIApplicationSupportsMultipleScenes": false,
+          "UISceneConfigurations": {
+            "UIWindowSceneSessionRoleApplication": [
+              {
+                "UISceneConfigurationName": "Default Configuration",
+                "UISceneDelegateClassName": "EXExpoAppSceneDelegate"
+              }
+            ]
+          }
+        }
       }
     },
     "android": {
@@ -58,6 +70,12 @@
       "resizeMode": "contain",
       "backgroundColor": "#f2f2f7"
     },
-    "backgroundColor": "#f2f2f7"
+    "backgroundColor": "#f2f2f7",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/2f42926a-3311-4a3a-a351-1b57abdb4f5e"
+    }
   }
 }

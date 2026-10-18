@@ -116,6 +116,14 @@ export type CreateOp =
       tagIds?: string[];
       dailyFieldReportId?: string;
       punchListItemId?: string;
+      /** Where on a drawing this was taken, when the camera was opened from a
+       * sheet. Sent WITH the photo rather than as a second op: the drain runs
+       * ops independently on purpose -- see its own comment, a day of time
+       * must never sit behind a photo -- so there is no way to say "this pin
+       * after that photo". One request makes both rows or neither. */
+      sheetPageId?: string;
+      pinX?: number;
+      pinY?: number;
     }
   | ({
       type: "delay:create";
@@ -129,6 +137,32 @@ export type CreateOp =
       date: string;
       signerName: string;
       signaturePath: string;
+    }
+  | {
+      /** A mark put on a plan sheet, standing in front of the thing it marks.
+       *
+       * QUEUED RATHER THAN SENT, like every other write on this phone, and the
+       * reason is sharper here than most: a drawing is what somebody walks the
+       * building with, and that walk happens in a basement, a stairwell, or
+       * the middle of a slab with no signal at all. A pin that needed a
+       * connection would be a pin nobody could place where they were standing
+       * — which is the only place worth placing one.
+       *
+       * `jobId` is NOT sent to the server: the page already determines its
+       * revision, set and job. It is carried so the OUTBOX can say which job a
+       * waiting note belongs to, because "a note on a sheet" with no job is a
+       * line a foreman cannot act on.
+       */
+      type: "sheet-pin:create";
+      jobId: string;
+      pageId: string;
+      clientOperationId: string;
+      x: number;
+      y: number;
+      kind: "PHOTO" | "PUNCH" | "NOTE";
+      note?: string;
+      mediaId?: string;
+      punchItemId?: string;
     };
 
 export type UpdateOp = {
@@ -590,6 +624,11 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
       }
       if (op.dailyFieldReportId) parameters.dailyFieldReportId = op.dailyFieldReportId;
       if (op.punchListItemId) parameters.punchListItemId = op.punchListItemId;
+      if (op.sheetPageId && op.pinX !== undefined && op.pinY !== undefined) {
+        parameters.sheetPageId = op.sheetPageId;
+        parameters.pinX = String(op.pinX);
+        parameters.pinY = String(op.pinY);
+      }
       // One value per field in a native multipart upload, so several tags
       // travel comma-separated; the route splits them.
       if (op.tagIds?.length) parameters.tagIds = op.tagIds.join(",");
@@ -619,6 +658,23 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
           date: op.date,
           signerName: op.signerName,
           signaturePath: op.signaturePath,
+          clientOperationId: op.clientOperationId,
+        },
+        token,
+      );
+      return;
+    case "sheet-pin:create":
+      // `jobId` is deliberately not passed: it is outbox wording, not input.
+      // The page a pin sits on already determines the job on the server.
+      await api.createSheetPin(
+        {
+          pageId: op.pageId,
+          x: op.x,
+          y: op.y,
+          kind: op.kind,
+          note: op.note,
+          mediaId: op.mediaId,
+          punchItemId: op.punchItemId,
           clientOperationId: op.clientOperationId,
         },
         token,

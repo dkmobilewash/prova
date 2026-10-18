@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeFooterHref, activeGroupHeading, NAV_FOOTER, NAV_GROUPS, NAV_ITEMS, navFooterFor, navGroupsFor } from "./navItems";
+import { activeFooterHref, activeGroupHeading, activeItemHref, NAV_FOOTER, NAV_GROUPS, NAV_ITEMS, navFooterFor, navGroupsFor } from "./navItems";
 import { JOB_FUNCTIONS } from "@/lib/permissions";
 import { HIDEABLE_ROUTES, UNANSWERED_SCOPE, type BusinessScopeAnswers } from "@/lib/businessScope";
 
@@ -124,12 +124,12 @@ describe("the deployment link", () => {
     const found = NAV_GROUPS.filter((group) =>
       group.items.some((item) => item.href === "/deployment"),
     );
-    expect(found.map((g) => g.heading)).toEqual(["Operations"]);
+    expect(found.map((g) => g.heading)).toEqual(["Daily work"]);
   });
 
   it("sits next to the schedule, which is the page it contrasts itself with", () => {
-    const operations = NAV_GROUPS.find((g) => g.heading === "Operations");
-    const hrefs = operations?.items.map((item) => item.href) ?? [];
+    const daily = NAV_GROUPS.find((g) => g.heading === "Daily work");
+    const hrefs = daily?.items.map((item) => item.href) ?? [];
     expect(hrefs.indexOf("/deployment")).toBe(hrefs.indexOf("/schedule") + 1);
   });
 
@@ -162,7 +162,14 @@ describe("the collapsible rail (#240)", () => {
     // that are navigation follow. The pipeline story is still there in
     // the first four; it just no longer has two silent groups wedged
     // into the middle of it.
+    //
+    // CHANGED AGAIN 2026-10-10: "Daily work" now leads, above every
+    // figure. It carries none — it is the always-open set of pages a
+    // contractor uses every day, and the jobs list used to be filed under
+    // "Pre-construction", a heading that means work not yet won. The four
+    // figure groups stay contiguous directly beneath it.
     expect(NAV_GROUPS.map((g) => g.heading)).toEqual([
+      "Daily work",
       "Pre-construction",
       "Operations",
       "Financials",
@@ -170,6 +177,15 @@ describe("the collapsible rail (#240)", () => {
       "Paper trail",
       "Logistics",
     ]);
+  });
+
+  it("leads with ONE always-open daily-work group of about seven pages, the jobs list first", () => {
+    const primary = NAV_GROUPS.filter((g) => g.primary);
+    expect(primary).toHaveLength(1);
+    expect(NAV_GROUPS[0]).toBe(primary[0]);
+    expect(primary[0].heading).not.toBe("Pre-construction");
+    expect(primary[0].items[0].href).toBe("/dashboard");
+    expect(primary[0].items.length).toBeLessThanOrEqual(8);
   });
 
   it("gives every group an icon, since at 64px the rail shows nothing else for it", () => {
@@ -198,7 +214,12 @@ describe("the collapsible rail (#240)", () => {
 
   it("opens the group of the current page, by the longest matching href", () => {
     expect(activeGroupHeading(NAV_GROUPS, "/rfis")).toBe("Paper trail");
-    expect(activeGroupHeading(NAV_GROUPS, "/jobs/abc")).toBe(null);
+    // A job page belongs to the jobs list (the dashboard): the rail used to
+    // collapse every group here and highlight nothing.
+    expect(activeGroupHeading(NAV_GROUPS, "/jobs/abc")).toBe(
+      NAV_GROUPS.find((g) => g.items.some((i) => i.href === "/dashboard"))?.heading,
+    );
+    expect(activeGroupHeading(NAV_GROUPS, "/jobsite")).toBe(null);
     // /vendors and /vendors/pricing are both in Logistics, so either prefix
     // lands there; /settings/assistant hangs off /settings and must land in
     // the group that holds it, not on whichever prefix came first.
@@ -212,11 +233,24 @@ describe("the collapsible rail (#240)", () => {
     expect(activeGroupHeading(NAV_GROUPS, "/sign-in")).toBe(null);
   });
 
+  it("highlights exactly one item: the longest match, with job pages lighting the jobs list", () => {
+    expect(activeItemHref(NAV_GROUPS, "/jobs/abc/estimate")).toBe("/dashboard");
+    expect(activeItemHref(NAV_GROUPS, "/jobs")).toBe("/dashboard");
+    expect(activeItemHref(NAV_GROUPS, "/dashboard")).toBe("/dashboard");
+    expect(activeItemHref(NAV_GROUPS, "/vendors/pricing")).toBe("/vendors/pricing");
+    expect(activeItemHref(NAV_GROUPS, "/vendors/abc")).toBe("/vendors");
+    expect(activeItemHref(NAV_GROUPS, "/jobsite")).toBe(null);
+    expect(activeItemHref(NAV_GROUPS, "/settings")).toBe(null);
+    // An alias only counts when its target is on this person's rail.
+    const withoutJobs = NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => i.href !== "/dashboard") }));
+    expect(activeItemHref(withoutJobs, "/jobs/abc")).toBe(null);
+  });
+
   it("keeps the internal sales group last, outside every tenant's pipeline", () => {
     const owner = { role: "OWNER" as const, jobFunction: null };
     const headings = navGroupsFor(owner, { showsInternal: true }).map((g) => g.heading);
     expect(headings.at(-1)).toBe("Internal");
-    expect(headings).toHaveLength(7);
+    expect(headings).toHaveLength(8);
   });
 });
 
@@ -330,7 +364,6 @@ describe("the business-scope nav filter (onboarding questions)", () => {
     );
     expect(financials).toBeDefined();
     expect(financials?.items.map((i) => i.href)).toEqual([
-      "/cash-flow",
       "/wip",
       "/phase-codes",
       "/lien-deadlines",

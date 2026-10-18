@@ -1,0 +1,12 @@
+{
+  "id": "nv-108",
+  "state": "NV",
+  "citation": "NRS Chapter 108 (incl. 108.2457)",
+  "requestedUrl": "https://www.leg.state.nv.us/NRS/NRS-108.html",
+  "finalUrl": "https://www.leg.state.nv.us/NRS/NRS-108.html",
+  "status": 200,
+  "contentType": "text/html",
+  "retrievedAt": "2026-10-08T21:11:06.717Z",
+  "bytes": 445854,
+  "sha256": "76a6247984851415524d11768a1009f26f7d834065e67fc57536322715fc49d7"
+}

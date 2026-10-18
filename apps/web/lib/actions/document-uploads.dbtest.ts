@@ -450,7 +450,12 @@ describe("uploadComplianceDocument reads the file back out of the store", () => 
       expect(await uploadComplianceDocument(form(url))).toEqual({
         ok: true,
         value: {
-          note: "10 pages (this PDF's page count couldn't be read, so it is charged as 10)",
+          // The uncountable case LEADS with the flat rate rather than trailing
+          // it in brackets: this is the one charge where the number is not what
+          // the document is, and it is most likely a big scan.
+          note:
+            "Charged as 10 pages — this PDF's page count couldn't be read, so it is charged at the " +
+            "flat rate · 290 of 300 document pages left this month",
           pagesLeft: 290,
         },
       });

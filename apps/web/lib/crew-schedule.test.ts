@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  blocksImplicitSubmit,
   CrewScheduleInputError,
   dayKey,
   isPastDay,
+  resolveWeekStart,
+  schedulableJobs,
+  scheduleDays,
+  scheduleSavedMessage,
   plannedWithNoHours,
   timeEntryWorkerKey,
   workDateFromString,
@@ -149,5 +154,97 @@ describe("which days can be missing hours at all", () => {
 
   it("flags yesterday", () => {
     expect(isPastDay(day("2026-09-16"), today)).toBe(true);
+  });
+});
+
+/* ------------------------------------------------- week board + bulk add */
+
+describe("which week the board shows", () => {
+  // 2026-10-11 is a Sunday: the week holding it began Monday Oct 5, and
+  // "today" must be inside the range shown (ux medium-B #12).
+  it("defaults to the Monday of the week holding today, today included", () => {
+    expect(resolveWeekStart(undefined, "2026-10-11")).toBe("2026-10-05");
+    expect(resolveWeekStart(undefined, "2026-10-12")).toBe("2026-10-12");
+  });
+
+  it("snaps any day of a ?week= to its Monday and ignores junk", () => {
+    expect(resolveWeekStart("2026-10-21", "2026-10-11")).toBe("2026-10-19");
+    expect(resolveWeekStart("2026-02-30", "2026-10-11")).toBe("2026-10-05");
+    expect(resolveWeekStart("next week", "2026-10-11")).toBe("2026-10-05");
+  });
+});
+
+describe("the days a bulk add covers", () => {
+  it("skips Saturday and Sunday in a range when asked", () => {
+    expect(scheduleDays("2026-10-16", "2026-10-20", true)).toEqual(["2026-10-16", "2026-10-19", "2026-10-20"]);
+    expect(scheduleDays("2026-10-16", "2026-10-20", false)).toHaveLength(5);
+  });
+
+  it("keeps a single weekend day somebody picked on purpose", () => {
+    expect(scheduleDays("2026-10-17", "2026-10-17", true)).toEqual(["2026-10-17"]);
+  });
+
+  it("refuses a backwards or runaway range in words", () => {
+    expect(() => scheduleDays("2026-10-20", "2026-10-16", true)).toThrow(CrewScheduleInputError);
+    expect(() => scheduleDays("2026-01-01", "2026-12-31", false)).toThrow(/62 days or less/);
+  });
+});
+
+describe("the jobs the schedule form offers", () => {
+  it("leaves out COMPLETE jobs and keeps everything else", () => {
+    const jobs = [
+      { id: "a", status: "COMPLETE" },
+      { id: "b", status: "IN_PROGRESS" },
+      { id: "c", status: "ESTIMATE" },
+      { id: "d", status: null },
+    ];
+    expect(schedulableJobs(jobs).map((j) => j.id)).toEqual(["b", "c", "d"]);
+  });
+});
+
+describe("Enter in the schedule form", () => {
+  it("does not submit from a select, an input or a checkbox — only the button submits", () => {
+    expect(blocksImplicitSubmit("Enter", "SELECT")).toBe(true);
+    expect(blocksImplicitSubmit("Enter", "INPUT")).toBe(true);
+    expect(blocksImplicitSubmit("Enter", "BUTTON")).toBe(false);
+    expect(blocksImplicitSubmit("Enter", "TEXTAREA")).toBe(false);
+    expect(blocksImplicitSubmit("ArrowDown", "SELECT")).toBe(false);
+  });
+});
+
+describe("what a save says", () => {
+  it("names the person, the job and the day for one row", () => {
+    expect(
+      scheduleSavedMessage({ workers: ["Hector Ramirez"], jobName: "Lakeview", days: ["2026-10-19"], created: 1, clashes: [] }),
+    ).toBe("Hector Ramirez on Lakeview, Mon, Oct 19 — saved.");
+  });
+
+  it("counts new rows and rows that were already there, rather than refusing", () => {
+    const message = scheduleSavedMessage({
+      workers: ["Hector", "Luis"],
+      jobName: "Lakeview",
+      days: ["2026-10-19", "2026-10-20", "2026-10-21"],
+      created: 4,
+      clashes: [],
+    });
+    expect(message).toBe("2 people on Lakeview, Mon, Oct 19 – Wed, Oct 21 — saved (4 added, 2 already there).");
+  });
+
+  it("says nothing new was saved when every row existed", () => {
+    expect(
+      scheduleSavedMessage({ workers: ["Hector"], jobName: "Lakeview", days: ["2026-10-19"], created: 0, clashes: [] }),
+    ).toBe("Hector already on Lakeview, Mon, Oct 19 — nothing new to save.");
+  });
+
+  it("warns, naming person, other job and day, when somebody is double-booked", () => {
+    const message = scheduleSavedMessage({
+      workers: ["Hector"],
+      jobName: "Lakeview",
+      days: ["2026-10-19"],
+      created: 1,
+      clashes: [{ worker: "Hector", jobName: "Riverside", day: "2026-10-19" }],
+    });
+    expect(message).toContain("saved.");
+    expect(message).toContain("Double-booked: Hector is also on Riverside Mon, Oct 19.");
   });
 });

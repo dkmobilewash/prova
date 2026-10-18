@@ -195,4 +195,10 @@ export const contactExclusions: Exclusion[] = [
     action: "clearBusinessScope",
     reason: ADMIN + " Same reasoning as saveBusinessScope — the reverse of the same owner-only setting.",
   },
+  {
+    action: "saveOpeningDeduction",
+    reason:
+      ADMIN +
+      " Whether openings come off the board quantity. Of all the owner-only settings this is the one a model must least be able to flip from a sentence: it silently changes the QUANTITY on every bid the company takes off afterwards, with no line of its own on the estimate to show it happened. A shop that deducts every opening bids a forty-door plan ~840 sq ft lighter than one that bids solid, and the three answers are a trade convention the estimator holds — not a fact the assistant can look up. The screen states what each answer means and says plainly that unset keeps today's behaviour; a command would be a bid-wide change with none of that in front of anyone.",
+  },
 ];

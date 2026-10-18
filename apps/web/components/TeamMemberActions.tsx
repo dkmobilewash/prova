@@ -65,7 +65,7 @@ export function TeamMemberActions({
             pending={isPending}
             onConfirm={handleRemove}
             armedClassName="flex flex-wrap items-center justify-end gap-2"
-            deleteClassName="text-sm text-red-400 hover:underline disabled:opacity-50"
+            deleteClassName="text-sm text-danger hover:underline disabled:opacity-50"
             hint={
               <span className="max-w-[16rem] text-right text-ink-muted">
                 Their account goes, and with it their sign-in. A teammate with hours or a dispatch
@@ -77,7 +77,7 @@ export function TeamMemberActions({
       >
         {children}
       </RowActions>
-      {error && <p className="max-w-[16rem] text-right text-xs text-rose-300">{error}</p>}
+      {error && <p className="max-w-[16rem] text-right text-xs text-danger">{error}</p>}
     </div>
   );
 }

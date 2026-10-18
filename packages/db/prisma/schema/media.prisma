@@ -267,6 +267,8 @@ model JobMedia {
   /// would only be a second index to write on every insert.
   @@unique([jobId, companycamPhotoId])
   @@unique([companyId, clientOperationId])
+
+  sheetPins SheetPin[] @relation("SheetPinMedia")
   @@index([companyId, capturedAt])
   @@index([dailyFieldReportId])
   @@index([punchListItemId])

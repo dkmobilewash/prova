@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { updateTimeEntry } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
+import { clearFieldErrors, reportFieldErrors } from "@/components/formFieldErrors";
 import {
   TimeEntryFields,
   type TimeEntryCraftOption,
@@ -43,7 +44,7 @@ export type TimeEntryRowData = {
 };
 
 const btn =
-  "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-ink-muted disabled:opacity-50";
 
 /**
  * One logged day's hours, with the two things issue #63 found missing.
@@ -94,19 +95,24 @@ export function TimeEntryRow({
 
   if (editing) {
     return (
-      <li className="flex flex-col gap-2 rounded-lg border border-blue-900 bg-slate-900 p-3 text-sm">
+      <li className="flex flex-col gap-2 rounded-lg border border-link bg-surface p-3 text-sm">
         <form
           // A refusal is about the values that were submitted, so it goes the
           // moment one of them changes — otherwise "Hours has to be a
           // positive number" sits under a field that by then reads 8.
-          onInput={() => setError(null)}
+          onInput={(event) => {
+            setError(null);
+            clearFieldErrors(event.currentTarget);
+          }}
           onSubmit={(event) => {
             event.preventDefault();
-            const formData = new FormData(event.currentTarget);
+            const form = event.currentTarget;
+            const formData = new FormData(form);
             setError(null);
             startTransition(async () => {
               try {
                 const result = await updateTimeEntry(entry.id, formData);
+                reportFieldErrors(form, result);
                 if (!result.ok) {
                   setError(result.error);
                   return;
@@ -123,7 +129,7 @@ export function TimeEntryRow({
           }}
           className="flex flex-col gap-2"
         >
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
             Correcting a logged hour
           </p>
           <div className="flex flex-wrap items-end gap-2">
@@ -138,12 +144,12 @@ export function TimeEntryRow({
             The person and the day worked can&rsquo;t be corrected — an hour logged against the wrong
             name or the wrong day is a different record. Remove this entry and log the right one.
           </p>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={isPending}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
             >
               {isPending ? (
                 <span className="inline-flex items-center gap-1.5">
@@ -172,12 +178,12 @@ export function TimeEntryRow({
   }
 
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm">
+    <li className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line-card bg-surface p-3 text-sm">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="text-slate-100">{entry.dateLabel}</span>
-        <span className="text-slate-300">{entry.employeeLabel}</span>
-        <span className="text-slate-400">{entry.hours}h</span>
-        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+        <span className="text-ink">{entry.dateLabel}</span>
+        <span className="text-ink-body">{entry.employeeLabel}</span>
+        <span className="text-ink-body">{entry.hours}h</span>
+        <span className="rounded bg-tag-slate px-1.5 py-0.5 text-xs text-tag-slate-ink">
           {timeEntryPayTypeLabel(entry.payType)}
         </span>
         {entry.craftLabel && <span className="text-xs text-ink-muted">{entry.craftLabel}</span>}
@@ -196,7 +202,7 @@ export function TimeEntryRow({
           /* The trace the issue asks for: that a correction happened, when,
              and by whom. It deliberately does not claim to say what the
              figure used to be — see labor.prisma. */
-          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-xs text-amber-300">
+          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-xs text-warn">
             {entry.lastCorrectedLabel}
           </span>
         )}
@@ -204,7 +210,7 @@ export function TimeEntryRow({
 
       {entry.lockedLabel ? (
         <span
-          className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs text-emerald-300"
+          className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs text-ok"
           title="This day is signed, so its hours are locked. Reopen the day under Timesheet sign-off to change them."
         >
           {entry.lockedLabel} · locked
@@ -228,9 +234,9 @@ export function TimeEntryRow({
                ever running on the two together; `main` has been red on this
                one assertion since. */
             describe="Takes these hours off the job for good, so they come off certified payroll for that week. To fix a wrong number, use Edit instead — a correction is recorded, a removal is not."
-            deleteClassName="text-xs text-red-400 hover:underline disabled:opacity-50"
+            deleteClassName="text-xs text-danger hover:underline disabled:opacity-50"
             cancelClassName={btn}
-            confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-xs text-danger hover:bg-red-500/10 disabled:opacity-50"
             /* No `hint` and no `prompt`, deliberately. Both render as extra
                flex items inside this cluster, and the cluster is `shrink-0` —
                a sentence in there widens the row rather than wrapping inside

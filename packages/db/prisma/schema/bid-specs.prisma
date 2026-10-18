@@ -190,6 +190,12 @@ enum BidSpecFindingKind {
   ATTIC_STOCK
   /// Deflection criteria (L/240, L/360), height limits, wind load.
   PERFORMANCE
-  /// Anything the eight above do not cover.
+  /// A per-day amount for finishing late. Division 00/01, not the trade section.
+  LIQUIDATED_DAMAGES
+  /// Restricted hours, night or weekend work, noise windows, occupied building.
+  WORKING_HOURS
+  /// Prevailing or union scale, certified payroll, apprenticeship ratios.
+  WAGE_REQUIREMENT
+  /// Anything the others do not cover.
   GENERAL
 }

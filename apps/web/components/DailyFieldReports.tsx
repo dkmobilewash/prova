@@ -25,11 +25,11 @@ export const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
 // button at a time. These were `py-1.5 text-xs` — 30px tall, the smallest
 // buttons anywhere in the field screens.
 const rowBtn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50";
 const rowBtnDanger =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-xs text-ink-label hover:border-red-500 hover:text-red-400 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-xs text-ink-label hover:border-red-500 hover:text-danger disabled:opacity-50";
 const rowBtnConfirm =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-xs text-red-400 hover:bg-tag-rose disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-xs text-danger hover:bg-tag-rose disabled:opacity-50";
 
 export type FieldReport = {
   id: string;
@@ -143,7 +143,7 @@ function FieldReportEditForm({
       <p className="text-sm font-medium text-ink">{formatDate(report.reportDate)}</p>
       <FormDraftNotice draft={draft} />
       <FieldReportFields report={report} />
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
       <div className="flex gap-2">
         <button
           type="submit"
@@ -163,7 +163,7 @@ function FieldReportEditForm({
           type="button"
           disabled={isPending}
           onClick={onCancel}
-          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
         >
           Cancel
         </button>
@@ -250,7 +250,7 @@ export function DailyFieldReports({
             <input type="date" name="reportDate" required defaultValue={localToday()} className={inputClass} />
           </label>
           <FieldReportFields />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
@@ -273,7 +273,7 @@ export function DailyFieldReports({
                 setIsOpen(false);
                 setError(null);
               }}
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
             >
               Cancel
             </button>
@@ -281,7 +281,7 @@ export function DailyFieldReports({
         </form>
       )}
 
-      {siteNote && <p className="mb-3 text-sm text-amber-400">{siteNote}</p>}
+      {siteNote && <p className="mb-3 text-sm text-warn">{siteNote}</p>}
 
       {reports.length === 0 ? (
         <p className="text-sm text-ink-body">
@@ -332,7 +332,7 @@ export function DailyFieldReports({
                         {report.weatherAutoLine ? "Site conditions" : "Weather"}: {report.weather}
                       </p>
                     )}
-                    {report.delays && <p className="text-amber-400">Delays: {report.delays}</p>}
+                    {report.delays && <p className="text-warn">Delays: {report.delays}</p>}
                     {report.photoCount ? (
                       <p className="mt-1 text-ink-body">
                         {report.photoCount} {report.photoCount === 1 ? "photo" : "photos"} attached — see Site photos below
@@ -355,7 +355,7 @@ export function DailyFieldReports({
                       `rowActionsCensus.test.ts`. */}
                   {report.lockedLabel ? (
                     <span
-                      className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs text-emerald-300"
+                      className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs text-ok"
                       title="This day is signed, so its report is locked. Reopen the day under Timesheet sign-off to change it."
                     >
                       {report.lockedLabel} · locked
@@ -397,7 +397,7 @@ export function DailyFieldReports({
                   )}
                 </div>
                 {error && deleteErrorId === report.id && (
-                  <p className="mt-1 text-sm text-red-400">{error}</p>
+                  <p className="mt-1 text-sm text-danger">{error}</p>
                 )}
               </li>
             ),

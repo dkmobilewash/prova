@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useState, useTransition } from "react";
 import {
   deleteDrawingRevision,
@@ -31,7 +33,7 @@ export type DrawingSetRowData = DrawingSetDefaults & {
 };
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 const primaryBtn =
   "rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50";
 
@@ -129,7 +131,7 @@ function RevisionEditForm({
       </p>
       <FormDraftNotice draft={draft} />
       <ReceiptFields defaults={revision} />
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
       <div className="flex gap-2">
         <button type="submit" disabled={isPending} className={primaryBtn}>
           {isPending ? (
@@ -205,7 +207,7 @@ export function DrawingSetRow({
           <p className="text-sm font-semibold text-ink-label">{set.jobName}</p>
           <FormDraftNotice draft={editDraft} />
           <DrawingSetFields defaults={set} />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
               {isPending ? (
@@ -279,7 +281,7 @@ export function DrawingSetRow({
 
           <ReceiptFields />
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
 
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
@@ -306,7 +308,7 @@ export function DrawingSetRow({
       ? "bg-tag-rose text-tag-rose-ink"
       : state === "CURRENT_IN_HAND"
         ? "bg-tag-green text-tag-green-ink"
-        : "bg-neutral-800 text-ink-body";
+        : "bg-rail-hover text-ink-body";
 
   return (
     <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
@@ -315,7 +317,7 @@ export function DrawingSetRow({
           <span className="text-ink">{set.name}</span>
           <span className={`rounded px-1.5 py-0.5 text-xs ${stateChip}`}>{stateLabel(state)}</span>
           {current && (
-            <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
+            <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-body">
               Build from {current.label}
             </span>
           )}
@@ -376,7 +378,7 @@ export function DrawingSetRow({
                               onConfirm={() => run(() => deleteDrawingRevision(rev.id))}
                               deleteClassName="ml-2 text-ink-muted underline disabled:opacity-50"
                               cancelClassName="ml-2 text-ink-body underline disabled:opacity-50"
-                              confirmClassName="ml-2 text-red-400 underline disabled:opacity-50"
+                              confirmClassName="ml-2 text-danger underline disabled:opacity-50"
                             />
                           ) : null
                         }
@@ -391,6 +393,15 @@ export function DrawingSetRow({
                             {rev.fileName || "open"}
                           </a>
                         )}
+                          {rev.fileUrl && (
+                            // Inside RowActions with the others, so it is
+                            // hidden while a delete is armed -- issue #152's
+                            // rule 1 is about EVERY ordinary action, not just
+                            // the one somebody remembered.
+                            <Link href={`/drawings/${rev.id}`} className="ml-2 text-link underline">
+                              pins
+                            </Link>
+                          )}
                         <button
                           type="button"
                           disabled={isPending}
@@ -410,7 +421,7 @@ export function DrawingSetRow({
 
         {showJob && <p className="mt-1 text-xs text-link">{set.jobName}</p>}
 
-        {error && !editingRevisionId && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {error && !editingRevisionId && <p className="mt-1 text-sm text-danger">{error}</p>}
       </div>
 
       {/* Arming the delete empties this cluster. "Record an issue" and
@@ -431,7 +442,7 @@ export function DrawingSetRow({
               onConfirm={() => run(() => deleteDrawingSet(set.id))}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+              confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-danger hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }

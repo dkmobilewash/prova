@@ -60,7 +60,7 @@ export function LogPaymentForm({ jobId, invoiceId }: { jobId: string; invoiceId:
           <button
             type="button"
             onClick={() => setIsOpen(true)}
-            className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700"
+            className="rounded-md bg-rail-hover px-3 py-1.5 text-sm font-medium text-ink hover:bg-lift"
           >
             Log a payment
           </button>
@@ -147,13 +147,13 @@ export function LogPaymentForm({ jobId, invoiceId }: { jobId: string; invoiceId:
         any platform fee — that is what clears the balance. Put a Textura or GC Pay deduction in Platform fee and the
         row will show what actually reached the bank.
       </p>
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
       <div className="flex gap-2">
         <Hint text="Records money you have actually received against this invoice. It changes what the invoice shows as outstanding here; it does not move any money and it does not tell the GC.">
           <button
             type="submit"
             disabled={isPending}
-            className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-md bg-rail-hover px-3 py-1.5 text-sm font-medium text-ink hover:bg-lift disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isPending ? "Logging…" : "Log payment"}
           </button>
@@ -169,7 +169,7 @@ export function LogPaymentForm({ jobId, invoiceId }: { jobId: string; invoiceId:
             // with the next payment.
             setFee("");
           }}
-          className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+          className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
         >
           Cancel
         </button>

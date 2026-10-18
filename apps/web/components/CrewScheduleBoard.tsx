@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
-import { localToday } from "@/components/localToday";
+import { useLocalToday } from "@/components/localToday";
 import { primaryActionClass } from "@/components/emptyStateStyles";
-import { scheduleCrewDay, unscheduleCrewDay } from "@/lib/actions";
+import { dayLabel } from "@/components/fieldReportWeeks";
+import { blocksImplicitSubmit } from "@/lib/crew-schedule";
+import { moveCrewDay, scheduleCrewDay, unscheduleCrewDay } from "@/lib/actions";
+import { CrewPicker, ManageCrews, SaveCrew, type SavedCrew } from "@/components/SavedCrews";
 
 /**
  * Who is planned on which job, which day — and which past days nobody
@@ -33,57 +36,182 @@ export type ScheduleDay = {
 export type WorkerOption = { value: string; label: string };
 export type CraftOption = { id: string; name: string };
 
+const moveField = "mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink";
+const moveBtn =
+  "shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-link hover:text-link disabled:opacity-50";
+
+/** The inline "Move" form on one planned day: change its date and/or job in
+ * place, one action (moveCrewDay), instead of Remove + re-add. Renders the
+ * action's result — a refusal stays on screen next to the choices that
+ * caused it, a double-booking warning is said after the move. */
+function MoveDayForm({
+  day,
+  jobs,
+  onDone,
+}: {
+  day: ScheduleDay;
+  jobs: JobOption[];
+  onDone: (message: string) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  // The day's own job may be COMPLETE and so missing from the picker; keep
+  // it selectable so moving only the DATE does not silently change the job.
+  const options = jobs.some((job) => job.id === day.jobId)
+    ? jobs
+    : [{ id: day.jobId, name: day.jobName, clientName: null, status: null }, ...jobs];
+  return (
+    <form
+      data-testid="move-day-form"
+      // onSubmit, not `action=` — see the add form's note (formActionCensus).
+      onKeyDown={(event) => {
+        if (blocksImplicitSubmit(event.key, (event.target as HTMLElement).tagName)) event.preventDefault();
+      }}
+      onSubmit={(event) => {
+        event.preventDefault();
+        const formData = new FormData(event.currentTarget);
+        startTransition(async () => {
+          const result = await moveCrewDay(day.id, formData);
+          if (result.ok) onDone(result.value.message);
+          else setError(result.error);
+        });
+      }}
+      className="mt-2 grid gap-2 rounded-md border border-line-card p-3 sm:grid-cols-2"
+    >
+      <label className="block text-sm">
+        <span className="text-ink-label">Date</span>
+        <input type="date" name="workDate" required defaultValue={day.workDate} className={moveField} />
+      </label>
+      <label className="block text-sm">
+        <span className="text-ink-label">Job</span>
+        <select name="jobId" required defaultValue={day.jobId} className={moveField}>
+          {options.map((job) => (
+            <option key={job.id} value={job.id}>
+              {jobPickerLabel(job)}
+            </option>
+          ))}
+        </select>
+      </label>
+      {error && (
+        <p className="text-sm text-tag-rose-ink sm:col-span-2" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="flex gap-2 sm:col-span-2">
+        <button
+          type="submit"
+          disabled={pending}
+          className="min-h-11 rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
+        >
+          {pending ? "Moving…" : "Move it"}
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => onDone("")}
+          className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label hover:bg-rail-hover"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+type DayRowProps = {
+  day: ScheduleDay;
+  date: string;
+  jobs: JobOption[];
+  canWrite: boolean;
+  onMoved: (message: string) => void;
+};
+
+function DayRow({ day, date, jobs, canWrite, onMoved }: DayRowProps) {
+  const [moving, setMoving] = useState(false);
+  return (
+    <li>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm text-ink">
+            {day.worker}
+            {day.craft && <span className="text-ink-muted"> · {day.craft}</span>}
+          </p>
+          <p className="text-xs text-ink-body">
+            <Link href={`/jobs/${day.jobId}`} className="underline hover:text-link">
+              {day.jobName}
+            </Link>
+            {day.note && <span className="text-ink-muted"> — {day.note}</span>}
+          </p>
+        </div>
+        {canWrite && !moving && (
+          // A row, right-pinned: [Move][Remove]. Armed, Move is hidden and
+          // Cancel lands last (pinned="end"), on the pixel Remove vacated.
+          <RowActions
+            className="flex shrink-0 items-center gap-2"
+            destructive={
+              <ConfirmDelete
+                // Short on purpose: rowActionsCensus caps a delete label
+                // at 12 characters, standing in for the pixel width that
+                // decides whether Cancel covers the delete's position.
+                label="Remove"
+                confirmLabel="Remove it"
+                describe={`Takes ${day.worker} off ${day.jobName} on ${dayLabel(date)}. It does not touch any hours already logged.`}
+                pinned="end"
+                // The revalidate inside the action is what removes the
+                // row from the screen. Nothing here filters a local copy.
+                action={async () => {
+                  await unscheduleCrewDay(day.id);
+                }}
+                armedClassName="flex flex-wrap items-center justify-end gap-2"
+                deleteClassName="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-danger"
+              />
+            }
+          >
+            <button
+              type="button"
+              onClick={() => setMoving(true)}
+              className={moveBtn}
+            >
+              Move
+            </button>
+          </RowActions>
+        )}
+      </div>
+      {moving && (
+        <MoveDayForm
+          day={day}
+          jobs={jobs}
+          onDone={(message) => {
+            setMoving(false);
+            // Said at the board, not on this row: a moved day usually lands
+            // under another date, so this row unmounts with the revalidate.
+            if (message) onMoved(message);
+          }}
+        />
+      )}
+    </li>
+  );
+}
+
 function DayGroup({
   date,
   days,
+  jobs,
   canWrite,
+  onMoved,
 }: {
   date: string;
   days: ScheduleDay[];
+  jobs: JobOption[];
   canWrite: boolean;
+  onMoved: (message: string) => void;
 }) {
   return (
     <li className="px-4 py-3">
-      <p className="text-sm font-semibold text-ink-label">{date}</p>
+      <p className="text-sm font-semibold text-ink-label">{dayLabel(date)}</p>
       <ul className="mt-2 space-y-2">
         {days.map((day) => (
-          <li key={day.id} className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm text-ink">
-                {day.worker}
-                {day.craft && <span className="text-ink-muted"> · {day.craft}</span>}
-              </p>
-              <p className="text-xs text-ink-body">
-                <Link href={`/jobs/${day.jobId}`} className="underline hover:text-link">
-                  {day.jobName}
-                </Link>
-                {day.note && <span className="text-ink-muted"> — {day.note}</span>}
-              </p>
-            </div>
-            {canWrite && (
-              <RowActions
-                className="flex shrink-0 flex-col items-end gap-1"
-                destructive={
-                  <ConfirmDelete
-                    // Short on purpose: rowActionsCensus caps a delete label
-                    // at 12 characters, standing in for the pixel width that
-                    // decides whether Cancel covers the delete's position.
-                    label="Remove"
-                    confirmLabel="Remove it"
-                    describe={`Takes ${day.worker} off ${day.jobName} on ${date}. It does not touch any hours already logged.`}
-                    pinned="end"
-                    // The revalidate inside the action is what removes the
-                    // row from the screen. Nothing here filters a local copy.
-                    action={async () => {
-                      await unscheduleCrewDay(day.id);
-                    }}
-                    armedClassName="flex flex-wrap items-center justify-end gap-2"
-                    deleteClassName="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-red-400"
-                  />
-                }
-              />
-            )}
-          </li>
+          <DayRow key={day.id} day={day} date={date} jobs={jobs} canWrite={canWrite} onMoved={onMoved} />
         ))}
       </ul>
     </li>
@@ -97,17 +225,47 @@ export function CrewScheduleBoard({
   workers,
   crafts,
   canWrite,
+  week,
+  initialJobId,
+  startOpen = false,
+  crews = [],
+  canArchiveCrews = false,
 }: {
   upcoming: ScheduleDay[];
   missingHours: ScheduleDay[];
+  /** Jobs the form offers — already without COMPLETE ones (schedulableJobs). */
   jobs: JobOption[];
   workers: WorkerOption[];
   crafts: CraftOption[];
   canWrite: boolean;
+  /** The week board, rendered under the form and above the two-week list. */
+  week?: ReactNode;
+  /** `?job=` — the Crew tab's "Schedule crew" link preselects its job. */
+  initialJobId?: string;
+  /** `?add=1` — open the form on arrival. */
+  startOpen?: boolean;
+  /** Saved crews, for the picker that ticks their people. */
+  crews?: SavedCrew[];
+  /** Archiving a crew is owner-only (the action refuses anyone else too). */
+  canArchiveCrews?: boolean;
 }) {
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(startOpen);
+  const today = useLocalToday();
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
+  // The job the form opens on: the one asked for, else the last one saved
+  // to, else the only one there is, else nothing — never "the first job",
+  // which was a COMPLETE one (ux medium-B #10).
+  const [lastJob, setLastJob] = useState(
+    initialJobId && jobs.some((job) => job.id === initialJobId)
+      ? initialJobId
+      : jobs.length === 1
+        ? jobs[0].id
+        : "",
+  );
   const [pending, startTransition] = useTransition();
+  // The crew picker and "save as a crew" read and tick this form's boxes.
+  const formRef = useRef<HTMLFormElement>(null);
 
   // RENDERED FROM PROPS, NEVER FROM STATE, and this cost a click test.
   //
@@ -134,7 +292,7 @@ export function CrewScheduleBoard({
     <>
       <section className="mb-10" data-tour="schedule-crew-board">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-ink-label">Who is on, next two weeks</h2>
+          <h2 className="text-lg font-semibold text-ink">Who is on where</h2>
           {canWrite && (
             // Collapsed behind a button, like every other list page in this
             // app — a form open by default on a page you came to READ is
@@ -145,6 +303,7 @@ export function CrewScheduleBoard({
               onClick={() => {
                 setAdding((open) => !open);
                 setError(null);
+                setSaved(null);
               }}
               className="min-h-11 rounded-md border border-line-card px-3 text-sm text-ink-label hover:border-link hover:text-link"
             >
@@ -156,6 +315,7 @@ export function CrewScheduleBoard({
         {adding && (
           <form
             data-testid="crew-schedule-form"
+            ref={formRef}
             // onSubmit, NOT `action={...}`. In React 19 a form `action`
             // resets the form before the action runs, whatever it returns
             // (`startHostTransition` -> `requestFormReset`), so a refused
@@ -163,6 +323,14 @@ export function CrewScheduleBoard({
             // that had snapped back to the first job, the first worker and
             // today. Reset only on success. formActionCensus.test.ts keeps
             // this from coming back.
+            // Enter in a select (or any field) does not save: only the
+            // button does. Enter-after-picking-a-job saved a default person
+            // on today, twice, with nothing on screen (ux medium-B #8).
+            onKeyDown={(event) => {
+              if (blocksImplicitSubmit(event.key, (event.target as HTMLElement).tagName)) {
+                event.preventDefault();
+              }
+            }}
             onSubmit={(event) => {
               event.preventDefault();
               const form = event.currentTarget;
@@ -170,7 +338,10 @@ export function CrewScheduleBoard({
               startTransition(async () => {
                 const result = await scheduleCrewDay(formData);
                 if (result.ok) {
-                  form.reset();
+                  // No form.reset(): the form unmounts on close, and the
+                  // next open starts on this job rather than the first.
+                  setLastJob(String(formData.get("jobId") ?? ""));
+                  setSaved(result.value.message);
                   setError(null);
                   setAdding(false);
                   // The row list is refreshed by the action's revalidate;
@@ -188,8 +359,12 @@ export function CrewScheduleBoard({
                 <select
                   name="jobId"
                   required
+                  defaultValue={lastJob}
                   className="mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink"
                 >
+                  <option value="" disabled>
+                    Pick a job
+                  </option>
                   {jobs.map((job) => (
                     <option key={job.id} value={job.id}>
                       {jobPickerLabel(job)}
@@ -197,22 +372,22 @@ export function CrewScheduleBoard({
                   ))}
                 </select>
               </label>
-              <label className="block text-sm">
-                <span className="text-ink-label">Who</span>
-                <select
-                  name="worker"
-                  required
-                  className="mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink"
-                >
+              {/* Checkboxes, not a <select multiple>: ctrl-click is not a
+                  thing anyone does on a phone, and a crew is several people. */}
+              <fieldset className="text-sm sm:row-span-3">
+                <legend className="text-ink-label">Who (pick one or more)</legend>
+                <CrewPicker crews={crews} formRef={formRef} />
+                <div className="mt-2 max-h-64 overflow-y-auto rounded-md border border-line-card">
                   {workers.map((worker) => (
-                    <option key={worker.value} value={worker.value}>
+                    <label key={worker.value} className="flex min-h-11 items-center gap-2 px-3 text-ink">
+                      <input type="checkbox" name="worker" value={worker.value} className="size-4" />
                       {worker.label}
-                    </option>
+                    </label>
                   ))}
-                </select>
-              </label>
+                </div>
+              </fieldset>
               <label className="block text-sm">
-                <span className="text-ink-label">Day</span>
+                <span className="text-ink-label">From</span>
                 <input
                   type="date"
                   name="workDate"
@@ -224,13 +399,24 @@ export function CrewScheduleBoard({
                   // foreman whose day was the 17th. localToday.ts's own
                   // comment describes exactly that case.
                   //
-                  // Safe to call during render here for the reason that
-                  // file gives: this form only exists once somebody has
-                  // clicked "Put someone on", so it is never in
-                  // server-rendered markup and cannot break hydration.
-                  defaultValue={localToday()}
+                  // Set after mount (useLocalToday), not in render: `?add=1`
+                  // (startOpen) puts this form in server-rendered markup,
+                  // where a render-time date would break hydration.
+                  defaultValue={today}
                   className="mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink"
                 />
+              </label>
+              <label className="block text-sm">
+                <span className="text-ink-label">To (optional — blank for one day)</span>
+                <input
+                  type="date"
+                  name="endDate"
+                  className="mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink"
+                />
+              </label>
+              <label className="flex min-h-11 items-center gap-2 text-sm text-ink">
+                <input type="checkbox" name="skipWeekends" defaultChecked className="size-4" />
+                Skip Saturdays and Sundays in a range
               </label>
               <label className="block text-sm">
                 <span className="text-ink-label">As (optional)</span>
@@ -256,6 +442,7 @@ export function CrewScheduleBoard({
                 className="mt-1 w-full rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted"
               />
             </label>
+            <SaveCrew formRef={formRef} />
             {error && (
               <p className="text-sm text-tag-rose-ink" role="alert">
                 {error}
@@ -270,7 +457,17 @@ export function CrewScheduleBoard({
             </button>
           </form>
         )}
+        {adding && <ManageCrews crews={crews} canArchive={canArchiveCrews} />}
 
+        {saved && (
+          <p className="mb-4 text-sm text-ink" role="status">
+            {saved}
+          </p>
+        )}
+
+        {week}
+
+        <h3 className="mb-2 text-base font-semibold text-ink">Next two weeks, as a list</h3>
         {dates.length === 0 ? (
           <div className="rounded-lg border border-line-card bg-surface p-6">
             <p className="text-ink-label">Nobody is on the schedule for the next two weeks.</p>
@@ -303,7 +500,9 @@ export function CrewScheduleBoard({
                 key={date}
                 date={date}
                 days={byDate[date]}
+                jobs={jobs}
                 canWrite={canWrite}
+                onMoved={setSaved}
               />
             ))}
           </ul>
@@ -332,7 +531,7 @@ export function CrewScheduleBoard({
                 <div className="min-w-0">
                   <p className="text-sm text-ink">
                     {day.worker}
-                    <span className="text-ink-muted"> · {day.workDate}</span>
+                    <span className="text-ink-muted"> · {dayLabel(day.workDate)}</span>
                   </p>
                   <p className="text-xs text-ink-body">
                     <Link href={`/jobs/${day.jobId}`} className="underline hover:text-link">
@@ -372,13 +571,13 @@ export function CrewScheduleBoard({
                       <ConfirmDelete
                         label="Remove"
                         confirmLabel="Remove it"
-                        describe={`Takes ${day.worker} off ${day.jobName} on ${day.workDate}, a day that has already gone by. It records no hours: the row leaves this list because nobody is planned on that day any more, not because the hours were logged.`}
+                        describe={`Takes ${day.worker} off ${day.jobName} on ${dayLabel(day.workDate)}, a day that has already gone by. It records no hours: the row leaves this list because nobody is planned on that day any more, not because the hours were logged.`}
                         pinned="end"
                         action={async () => {
                           await unscheduleCrewDay(day.id);
                         }}
                         armedClassName="flex flex-wrap items-center justify-end gap-2"
-                        deleteClassName="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-red-400"
+                        deleteClassName="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-danger"
                       />
                     }
                   />

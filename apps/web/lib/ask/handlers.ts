@@ -1647,7 +1647,7 @@ async function safetyRecord(companyId: string, input: Input): Promise<ToolResult
   const [incidents, talks] = await Promise.all([
     prisma.safetyIncident.findMany({
       where: { companyId, caseYear: year },
-      orderBy: { caseNumber: "desc" },
+      orderBy: { caseNumber: { sort: "desc", nulls: "last" } },
       select: {
         caseNumber: true,
         caseYear: true,
@@ -1668,7 +1668,8 @@ async function safetyRecord(companyId: string, input: Input): Promise<ToolResult
   ]);
 
   const cases = incidents.map((incident) => ({
-    case: `${incident.caseYear}-${incident.caseNumber}`,
+    // A near miss has no case number and is not an OSHA case.
+    case: incident.caseNumber == null ? null : `${incident.caseYear}-${incident.caseNumber}`,
     occurredOn: iso(incident.occurredAt),
     person: incident.employeeName,
     job: incident.job?.name ?? null,

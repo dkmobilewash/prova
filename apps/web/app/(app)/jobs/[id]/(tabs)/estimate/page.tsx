@@ -36,8 +36,22 @@ import {
 } from "@/lib/wip";
 import { jobEarnedRevenue, jobOverUnderBilling } from "@/lib/company-financials";
 import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
+import { fringeScheduleInput } from "@/lib/labor-cost";
+import { laborCostApplyDecision } from "@/lib/estimating/labor-cost-apply";
+import { UseLaborCostButton } from "@/components/UseLaborCostButton";
+import { missingIndirects } from "@/lib/estimating/indirect-costs";
+import { MissingIndirects } from "@/components/MissingIndirects";
+import { estimateCrossChecks } from "@/lib/estimating/estimate-crosschecks";
+import { loadCrossCheckInputs } from "@/lib/estimating/estimate-crosschecks-query";
+import { EstimateCrossChecks } from "@/components/EstimateCrossChecks";
+import { PriceAnomalies } from "@/components/PriceAnomalies";
+import { loadPriceAnomalies } from "@/lib/estimating/price-anomalies-query";
 import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
-import { employerBurdenPercentOnDay, laborCostBasisLabel } from "@/lib/employer-burden";
+import {
+  employerBurdenPercentOn,
+  employerBurdenPercentOnDay,
+  laborCostBasisLabel,
+} from "@/lib/employer-burden";
 import { serverToday } from "@/lib/serverToday";
 import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
 import { ActionForm } from "@/components/ActionForm";
@@ -58,11 +72,11 @@ import {
   updateLineItemForecast,
 } from "@/lib/actions";
 
-const rowDeleteClass = "text-xs text-red-400 hover:underline";
+const rowDeleteClass = "text-xs text-danger hover:underline";
 const rowCancelClass =
-  "rounded-md border border-slate-700 px-2 py-1 text-xs text-ink-label hover:border-slate-500";
+  "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:border-line-card";
 const rowConfirmClass =
-  "rounded-md border border-red-500 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10";
+  "rounded-md border border-red-500 px-2 py-1 text-xs text-danger hover:bg-red-500/10";
 
 /**
  * Estimate — pricing and job costing. Withheld on VIEW_JOB_COSTS exactly
@@ -265,24 +279,67 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
   }));
 
   const laborRateDate = laborRateDateFor(job, new Date());
+  // THE BURDEN IS RESOLVED AT THE LABOR RATE DATE, NOT TODAY, and the
+  // distinction is the same one `laborRateDateFor` exists for: this job's labor
+  // will be worked and paid around its start date, the fringes are already
+  // priced at that day, and a figure whose two halves answered as of different
+  // days would be a number nobody can reconcile. `burdenPercentToday` below is a
+  // different question — what LOGGED hours cost — and keeps its own date.
+  const burdenPercentForBid = employerBurdenPercentOn(employerBurdenRates, laborRateDate);
+
+  // WHICH GENERAL CONDITIONS THIS BID CARRIES NOTHING FOR. No new query: the
+  // lines and the catalog are both already in hand. Derived on every read and
+  // never stored — a stored "this bid has its indirects" is wrong the moment a
+  // line is deleted.
+  const missingIndirectLines = missingIndirects(
+    job.lineItems.map((item) => ({ indirectKind: item.indirectKind })),
+    catalogEntries.map((entry) => ({
+      id: entry.id,
+      description: entry.description,
+      indirectKind: entry.indirectKind,
+      defaultBudgetedUnitCost:
+        entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
+    })),
+  );
+  // A QUANTITY SOMEWHERE ELSE THAT IMPLIES A LINE HERE. Two queries, because
+  // both implying quantities live outside the job's own row — which is exactly
+  // why no check on this page could previously see them. Only fetched while
+  // the estimate is still being built: after award a missing line is a change
+  // order, and the page is read-only anyway.
+  const crossCheckInputs = isEstimateStage
+    ? await loadCrossCheckInputs(job.id, company.id)
+    : { measurements: [], carried: [] };
+  const crossChecks = estimateCrossChecks({
+    measurements: crossCheckInputs.measurements,
+    carried: crossCheckInputs.carried,
+    // Already in hand, and the live set: `lineItems` is loaded with
+    // `isDeleted: false`, so a deleted line cannot satisfy a cross-check.
+    lines: job.lineItems.map((item) => ({
+      description: item.description,
+      costCategory: item.costCategory,
+      budgetedUnitCost: item.budgetedUnitCost != null ? Number(item.budgetedUnitCost) : null,
+    })),
+  });
+
+  // GATED ON THE ESTIMATE STAGE, like the cross-checks above and for the same
+  // reason: after award a mis-priced line is a change order rather than
+  // something to fix before sending, and the page is read-only anyway. It also
+  // costs three queries and a fringe-schedule load, which is not worth paying
+  // on a page nobody can act on.
+  const priceAnomalyReport = isEstimateStage
+    ? await loadPriceAnomalies(job.id, company.id)
+    : { anomalies: [], checked: 0, unchecked: 0 };
+
   const schedulesByCraft = new Map(
     craftClassifications.map((craft) => [
       craft.id,
-      craft.fringeRateSchedules.map((schedule) => ({
-        baseWage: Number(schedule.baseWage),
-        pensionRate: schedule.pensionRate != null ? Number(schedule.pensionRate) : null,
-        vacationRate: schedule.vacationRate != null ? Number(schedule.vacationRate) : null,
-        healthWelfareRate: schedule.healthWelfareRate != null ? Number(schedule.healthWelfareRate) : null,
-        trainingRate: schedule.trainingRate != null ? Number(schedule.trainingRate) : null,
-        effectiveFrom: schedule.effectiveFrom,
-        effectiveTo: schedule.effectiveTo,
-      })),
+      craft.fringeRateSchedules.map(fringeScheduleInput),
     ]),
   );
   const craftOptions = craftClassifications.map((craft) => ({
     id: craft.id,
     label: `${craft.unionLocal.parentInternational} ${craft.unionLocal.localNumber} — ${craft.name}`,
-    hourlyRate: burdenedHourlyRate(schedulesByCraft.get(craft.id) ?? [], laborRateDate),
+    hourlyRate: burdenedHourlyRate(schedulesByCraft.get(craft.id) ?? [], laborRateDate, burdenPercentForBid),
   }));
 
   const estimatedHoursByLineItem = new Map(
@@ -303,6 +360,30 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
         estimatedHoursByLineItem.get(item.id) ?? null,
         item.craftClassificationId ? (schedulesByCraft.get(item.craftClassificationId) ?? []) : [],
         laborRateDate,
+        burdenPercentForBid,
+      ),
+    ]),
+  );
+
+  // WHAT "USE THIS AS THE COST" WOULD DO TO EACH LINE, decided here with the
+  // same function the action re-runs before it writes. Rendering a button from
+  // one implementation and writing from another is how the two come to
+  // disagree — `catalog-quote-price.ts` states the rule and `QuoteLine` is the
+  // pattern.
+  const laborCostApplyByLineItem = new Map(
+    job.lineItems.map((item) => [
+      item.id,
+      laborCostApplyDecision(
+        {
+          quantity: Number(item.quantity),
+          laborHours: item.laborHours != null ? Number(item.laborHours) : null,
+          productionRate: item.productionRate != null ? Number(item.productionRate) : null,
+          budgetedUnitCost: item.budgetedUnitCost != null ? Number(item.budgetedUnitCost) : null,
+          costCategory: item.costCategory,
+        },
+        item.craftClassificationId ? (schedulesByCraft.get(item.craftClassificationId) ?? []) : [],
+        laborRateDate,
+        burdenPercentForBid,
       ),
     ]),
   );
@@ -444,18 +525,27 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
   );
   const isContractExecuted = contractIsExecuted(contractExecution);
 
-  return (
-    <div>
+  // The GC-facing bid document built from these lines, with its inclusions
+  // and exclusions. Its own route asserts MANAGE_ESTIMATING; this tab only
+  // needs VIEW_JOB_COSTS, so a member with one and not the other gets
+  // NoAccess there.
+  const proposalLink = (
+    <Link href={`/jobs/${job.id}/proposal`} className="text-sm text-link hover:underline">
+      Proposal &amp; exclusions →
+    </Link>
+  );
+
+  // Job costing & WIP. After contract it leads the tab, as it always has.
+  // On an ESTIMATE it is folded away at the bottom: an estimator came to
+  // type line items, and cost-to-cost percent complete, earned revenue and
+  // over/under billing on a job that has not started were 250 lines of
+  // accounting to scroll past first.
+  const costingSection = (
       <section className="mb-10">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-semibold text-ink">Job costing &amp; WIP</h2>
-          {/* The GC-facing bid document built from these lines, with its
-              inclusions and exclusions. Its own route asserts
-              MANAGE_ESTIMATING; this tab only needs VIEW_JOB_COSTS, so a
-              member with one and not the other gets NoAccess there. */}
-          <Link href={`/jobs/${job.id}/proposal`} className="text-sm text-link hover:underline">
-            Proposal &amp; exclusions →
-          </Link>
+          {!isEstimateStage && <h2 className="text-lg font-semibold text-ink">Job costing &amp; WIP</h2>}
+          {/* On an estimate the proposal link sits above the line items. */}
+          {!isEstimateStage && proposalLink}
         </div>
         {/* WHAT THE LABOR IN THESE FIGURES IS MADE OF, SAID OUT LOUD AND
             DRIVEN BY THE DATA. This screen used to describe logged hours as
@@ -493,7 +583,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
             <p className="text-xs text-ink-muted">Actual cost to date</p>
             <p className="text-ink">{money(jobWip.actualCostToDate)}</p>
             {jobWip.unpricedLaborHours > 0 && (
-              <p className="mt-1 text-xs text-amber-400">
+              <p className="mt-1 text-xs text-warn">
                 {formatLoggedHours(jobWip.unpricedLaborHours)} of{" "}
                 {formatLoggedHours(jobWip.pricedLaborHours + jobWip.unpricedLaborHours)} logged hours have no craft
                 tag or no effective fringe rate schedule, so they are in this figure at $0 of wages (
@@ -505,7 +595,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
             <p className="text-xs text-ink-muted">% complete</p>
             <p className="text-ink">{formatPercentComplete(jobWip.percentComplete) ?? "—"}</p>
             {jobWip.percentComplete != null && (jobWip.estimatedCoverage < 1 || jobWip.costCoverage < 1) && (
-              <p className="mt-1 text-xs text-amber-400">
+              <p className="mt-1 text-xs text-warn">
                 Over the {formatCoveragePercent(jobWip.estimatedCoverage)} of contract value that carries a cost
                 forecast
                 {jobWip.costCoverage < 1 ? `, and ${formatCoveragePercent(jobWip.costCoverage)} of cost to date` : ""}
@@ -529,7 +619,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                 figure, so a billing position would be guesswork. Budget the rest to see where it lands.
               </p>
             ) : (
-              <p className={billingPosition > 0 ? "text-amber-400" : "text-green-400"}>
+              <p className={billingPosition > 0 ? "text-warn" : "text-ok"}>
                 {billingPosition > 0
                   ? `Overbilled ${money(billingPosition)}`
                   : billingPosition < 0
@@ -551,7 +641,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                   <p className="font-medium text-ink">
                     {item.description}
                     {tradeLabel && (
-                      <span className="ml-2 rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
+                      <span className="ml-2 rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-body">
                         {tradeLabel}
                       </span>
                     )}
@@ -637,7 +727,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                   </label>
                   <SubmitButton
                     type="submit"
-                    className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700"
+                    className="rounded-md bg-rail-hover px-3 py-1.5 text-sm font-medium text-ink hover:bg-lift"
                   >
                     Save forecast
                   </SubmitButton>
@@ -647,43 +737,23 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
           })}
         </div>
       </section>
+  );
+
+  return (
+    <div>
+      {!isEstimateStage && costingSection}
 
       {isEstimateStage ? (
         <>
-          <section className="mb-10" data-tour="job-wall-schedule">
-            <h2 className="mb-3 text-lg font-semibold text-ink">Wall schedule</h2>
-            <WallSchedule jobId={job.id} types={wallTypeInputs} runs={wallRunViews} unpricedRunLabels={unpricedWallRuns} />
-          </section>
-
-          <section className="mb-10" data-tour="job-bid-recap">
-            <h2 className="mb-1 text-lg font-semibold text-ink">Bid recap</h2>
-            <p className="mb-3 text-sm text-ink-body">
-              Built from each line&apos;s <span className="text-ink-label">budgeted cost</span>, not its price — markup
-              is per cost type, so material and subcontracted work need not carry the same rate as your own crew. A line
-              with no cost recorded is named below and marked up at nothing.
-              {bidRecapRow == null && bidDefaults != null
-                ? " These are your company defaults — saving them here keeps them on this job."
-                : ""}
-            </p>
-            <BidRecapPanel
-              jobId={job.id}
-              lines={bidRecapLines}
-              rates={bidRecapRates}
-              applied={
-                bidRecapRow?.appliedAt != null
-                  ? {
-                      at: formatInstant(bidRecapRow.appliedAt, timeZone, "numeric"),
-                      total: Number(bidRecapRow.appliedTotal ?? 0),
-                    }
-                  : null
-              }
-            />
-          </section>
+          <div className="mb-6 flex justify-end">{proposalLink}</div>
 
           <section className="mb-10" data-tour="job-line-items">
             <h2 className="mb-3 text-lg font-semibold text-ink">Line items (estimate)</h2>
             <DraftLineItemsForm jobId={job.id} initialScope={job.scope ?? ""} />
-            <TakeoffForm jobId={job.id} />
+            <TakeoffForm
+              jobId={job.id}
+              defaultWastePercent={bidDefaults?.defaultWastePercent?.toString() ?? null}
+            />
             {/* The other way in. This form does the arithmetic from
                 dimensions somebody already has; the Takeoff tab is where you
                 get those dimensions off a drawing. */}
@@ -703,7 +773,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                       {item.aiDrafted && <PriceBasisBadge basis={item.priceBasis} />}
                       {item.wallTypeComponentId && (
                         <span
-                          className="inline-flex items-center rounded-full bg-neutral-800 px-2 py-0.5 text-xs font-medium text-ink-label"
+                          className="inline-flex items-center rounded-full bg-rail-hover px-2 py-0.5 text-xs font-medium text-ink-label"
                           title="Worked out from the wall schedule above. Its quantity follows the runs; the price is yours to change."
                         >
                           From wall schedule
@@ -791,7 +861,21 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                           className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                         />
                       </label>
-                      <LaborCostHint cost={estimatedLaborCostByLineItem.get(item.id) ?? null} />
+                      <LaborCostHint
+                        cost={estimatedLaborCostByLineItem.get(item.id) ?? null}
+                        basis={laborCostBasisLabel(burdenPercentForBid)}
+                        // A line with no budgeted cost is left out of the bid's
+                        // cost base entirely and marked up at nothing — the
+                        // recap's own `pricedWithNoCost`. Saying so here is the
+                        // half of #614 that fixes the money bug.
+                        inBid={item.budgetedUnitCost != null}
+                      />
+                      <UseLaborCostButton
+                        jobId={job.id}
+                        lineItemId={item.id}
+                        decision={laborCostApplyByLineItem.get(item.id)!}
+                        inBid={item.budgetedUnitCost != null}
+                      />
                       <ProductionBackCheckHint
                         check={productivityByLineItem.get(item.id) ?? null}
                         unit={item.unit}
@@ -818,7 +902,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                       <SubmitButton
                         type="submit"
                         title="Save"
-                        className="rounded-md bg-neutral-800 px-2 py-1 text-xs font-medium text-ink hover:bg-neutral-700"
+                        className="rounded-md bg-rail-hover px-2 py-1 text-xs font-medium text-ink hover:bg-lift"
                       >
                         Save
                       </SubmitButton>
@@ -833,7 +917,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                         describe="Removes the line and its cost history from the estimate. The contract value drops by its amount. A line already billed on a pay application cannot be removed."
                         label="Remove"
                         confirmLabel="Confirm remove"
-                        deleteClassName="rounded-md bg-red-950 px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-900"
+                        deleteClassName="rounded-md bg-red-950 px-2 py-1 text-xs font-medium text-danger hover:bg-red-900"
                         cancelClassName={rowCancelClass}
                         confirmClassName={rowConfirmClass}
                         hint={
@@ -926,7 +1010,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
               <PhaseCodeField phaseCodes={phaseCodes} />
               <SubmitButton
                 type="submit"
-                className="inline-flex items-center justify-center rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
+                className="inline-flex items-center justify-center rounded-md bg-rail-hover px-4 py-2 text-sm font-medium text-ink hover:bg-lift"
               >
                 Add line item
               </SubmitButton>
@@ -991,12 +1075,61 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                 </label>
                 <SubmitButton
                   type="submit"
-                  className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+                  className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover"
                 >
                   Add from catalog
                 </SubmitButton>
               </ActionForm>
             )}
+          </section>
+
+          <section className="mb-10" data-tour="job-wall-schedule">
+            <h2 className="mb-3 text-lg font-semibold text-ink">Wall schedule</h2>
+            <WallSchedule jobId={job.id} types={wallTypeInputs} runs={wallRunViews} unpricedRunLabels={unpricedWallRuns} />
+          </section>
+
+          <section className="mb-10" data-tour="job-bid-recap">
+            <h2 className="mb-1 text-lg font-semibold text-ink">Bid recap</h2>
+            <p className="mb-3 text-sm text-ink-body">
+              Built from each line&apos;s <span className="text-ink-label">budgeted cost</span>, not its price — markup
+              is per cost type, so material and subcontracted work need not carry the same rate as your own crew. A line
+              with no cost recorded is named below and marked up at nothing.
+              {bidRecapRow == null && bidDefaults != null
+                ? " These are your company defaults — saving them here keeps them on this job."
+                : ""}
+            </p>
+            <BidRecapPanel
+              jobId={job.id}
+              lines={bidRecapLines}
+              rates={bidRecapRates}
+              applied={
+                bidRecapRow?.appliedAt != null
+                  ? {
+                      at: formatInstant(bidRecapRow.appliedAt, timeZone, "numeric"),
+                      total: Number(bidRecapRow.appliedTotal ?? 0),
+                    }
+                  : null
+              }
+            />
+            {/* BELOW THE RECAP, because it is a question about the cost base the
+                recap marks up, and above the line list, because the answer is a
+                new line. Nothing is checked or stored — `missingIndirects` is
+                derived on every read. */}
+            <MissingIndirects jobId={job.id} missing={missingIndirectLines} />
+            {/* DIRECTLY BELOW `MissingIndirects`, because they are the same
+                kind of finding read at two ranges: that one asks whether a
+                FIXED LIST of general conditions is represented, this one asks
+                whether a quantity that exists somewhere else reached a line.
+                Both are muted, neither blocks, and putting them together is
+                what stops a reader treating one as more serious than the
+                other. */}
+            <EstimateCrossChecks checks={crossChecks} />
+            {/* BESIDE the cross-checks, because they answer adjacent halves of
+                the same question before a bid goes out: #630 asks what was
+                measured or carried and never priced, and this asks whether what
+                WAS priced looks like what the work has cost. Both advisory,
+                both silent when there is nothing to say. */}
+            <PriceAnomalies report={priceAnomalyReport} />
           </section>
 
           <section className="mb-10">
@@ -1043,14 +1176,14 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
               </label>
               <SubmitButton
                 type="submit"
-                className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+                className="inline-flex items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover"
               >
                 Save version
               </SubmitButton>
             </form>
           </section>
 
-          <section className="mb-10 rounded-lg border border-line-card bg-surface p-4" data-tour="job-lock-in">
+          <section id="job-lock-in" className="mb-10 scroll-mt-4 rounded-lg border border-line-card bg-surface p-4" data-tour="job-lock-in">
             <h2 className="mb-2 text-lg font-semibold text-ink">Ready to lock this in?</h2>
             <p className="mb-3 text-sm text-ink-body">
               Once contracted, line items can only change through a change order — this keeps an audit trail of
@@ -1059,13 +1192,20 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
             {isContractExecuted ? (
               <MarkContractedButton markContracted={markContractedWithId} />
             ) : (
-              <p className="text-sm text-amber-400">
+              <p className="text-sm text-warn">
                 This job has no executed contract yet. Either send the GC a signing link on the Overview tab and
                 wait for them to sign it in C Stream, or — if they already sent you the executed subcontract —
                 record it there under Contract signature.
               </p>
             )}
           </section>
+
+          <details className="mb-10 rounded-lg border border-line-card p-4">
+            <summary className="cursor-pointer text-lg font-semibold text-ink">
+              Job costing &amp; WIP <span className="text-sm font-normal text-ink-muted">— for once the work starts</span>
+            </summary>
+            <div className="mt-4">{costingSection}</div>
+          </details>
         </>
       ) : (
         <ChangeOrders

@@ -107,7 +107,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       // record. `priceBasis` says whether a price was a catalog match, a
       // past-bid inference or a guess, which is exactly the provenance a
       // person re-reading their own estimate needs.
-      "tradeScope", "costCategory", "productionRate", "priceBasis",
+      "tradeScope", "costCategory", "indirectKind", "productionRate", "priceBasis",
       "phaseCodeId", "wallTypeComponentId",
       "createdAt", "updatedAt",
     ],
@@ -255,7 +255,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     note: "Your own catalog of standard line items and their default rates.",
     columns: [
       "id", "description", "unit", "tradeScope", "defaultUnitPrice",
-      "defaultBudgetedUnitCost", "defaultLaborHours", "productionRate", "costCategory", "craftClassificationId",
+      "defaultBudgetedUnitCost", "defaultLaborHours", "productionRate", "costCategory", "indirectKind", "craftClassificationId",
       "createdAt", "updatedAt",
     ],
     scope: byCompany,
@@ -281,7 +281,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     model: "wallType",
     label: "Wall types",
     note: "Your partition schedule — each wall type by its tag from the drawings.",
-    columns: ["id", "code", "name", "defaultHeightFt", "sides", "studSpacingIn", "notes", "sortOrder", "createdAt", "updatedAt"],
+    columns: ["id", "code", "name", "thicknessIn", "defaultHeightFt", "sides", "studSpacingIn", "notes", "sortOrder", "createdAt", "updatedAt"],
     scope: byCompany,
   },
   {
@@ -343,7 +343,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "the same bid.",
     columns: [
       "id", "bidInvitationId", "packageLabel", "vendorId", "vendorName", "amount", "quotedOn",
-      "requestedOn", "dueBy", "declinedAt", "exclusions", "notes", "createdAt", "updatedAt",
+      "requestedOn", "dueBy", "declinedAt", "carriedAt", "validUntil", "exclusions", "notes", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -408,9 +408,13 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     key: "bidDefaults",
     model: "companyBidDefaults",
     label: "Default markup rates",
-    note: "Your standing markup, overhead and profit rates, which pre-fill a new job's recap.",
+    note: "Your standing markup, overhead and profit rates, plus the waste a takeoff adds — these pre-fill a new job.",
     columns: [
-      "id", ...RECAP_RATE_KEYS, "createdAt", "updatedAt",
+      // `defaultWastePercent` is named separately rather than folded into
+      // RECAP_RATE_KEYS, because it is not a rate: see the column's comment in
+      // bid-recap.prisma. The note above says so too, since a customer reading
+      // a CSV headed "Default markup rates" would otherwise read it as one.
+      "id", ...RECAP_RATE_KEYS, "defaultWastePercent", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },
@@ -633,6 +637,17 @@ export const EXPORT_WITHHELD: ExportWithheld[] = [
  */
 export const EXPORT_OMISSIONS: ExportOmission[] = [
   {
+    key: "sheet-marks",
+    title: "Pins on drawing sheets",
+    detail:
+      "Photo, punch and note pins dropped on a plan sheet, and the arrows, clouds and text drawn " +
+      "on it. These are POSITIONS — a pair of numbers whose whole meaning is the sheet they sit on " +
+      "and the image behind them. In a spreadsheet they would be two columns of decimals nobody " +
+      "can act on, and the thing they point at (the photo, the punch item) is already exported in " +
+      "its own dataset. The drawing itself is the export.",
+    models: ["SheetPage", "SheetPin"],
+  },
+  {
     key: "compliance",
     title: "Licences, bonds, insurance and compliance documents",
     detail:
@@ -672,8 +687,58 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "sheet numbers are a different matter: that is a person's own work and it is the part " +
       "worth exporting, as the table of contents of a drawing set. It is omitted here because " +
       "no dataset has been written for it, not because it would be meaningless — and this line " +
+      "exists so that is stated rather than quietly true." +
+      " `PlanSheetScaleReading` is omitted for the first of those reasons and not the second: it" +
+      " is the scale a sheet declares about itself, derived from the dimension strings and" +
+      " stroked lines already in the PDF, so it is re-read at no cost and nobody's own work is" +
+      " lost by leaving it out. The calibration an estimator ACCEPTED from it is a different" +
+      " matter and is `TakeoffScaleCalibration`, exported with the takeoff.",
+    models: ["PlanSheetText", "PlanSheetProposal", "PlanSheetScaleReading"],
+  },
+  {
+    key: "plan-wall-proposals",
+    title: "The walls found on each calibrated sheet",
+    detail:
+      "When a sheet is calibrated, the geometry is read for walls and what it finds is kept as " +
+      "one proposal per group — the centrelines, the thickness, and whether the drawing named " +
+      "the group with a printed tag or a general note. Not exported, and for the strongest of " +
+      "the three reasons this file gives: a proposal is not anybody's work. It is a reading of " +
+      "a PDF this file does not contain, re-derived from that PDF at no cost, and it is keyed " +
+      "to the calibration it was found under, so it is thrown away for free the moment somebody " +
+      "recalibrates the sheet. Nothing here is lost by leaving it out. What an estimator " +
+      "ACCEPTED from it is a different matter entirely, and it is already exported: accepting a " +
+      "group writes a `TakeoffMeasurement`, which is in the takeoff dataset with the " +
+      "calibration it was measured at. That is the line this table exists to keep — found is " +
+      "not chosen — and the export boundary is where it shows.",
+    models: ["TakeoffWallProposal"],
+  },
+  {
+    key: "plan-schedule-readings",
+    title: "The schedules read off each plan sheet",
+    detail:
+      "When a sheet the title blocks called a schedule is read, its rows are kept as one " +
+      "proposal per sheet — the mark, size, description and notes of each line of the table, " +
+      "with which column was read as what. Not exported yet, and the reason is the same as " +
+      "the sheet index above: the rows are a reading of a PDF this file does not contain, " +
+      "and re-reading the drawing is what produces them. What WOULD be worth exporting is a " +
+      "reading an estimator has accepted, because that is their own work and it is the door " +
+      "schedule as they have agreed it stands — but nothing accepts one yet, and this line " +
       "exists so that is stated rather than quietly true.",
-    models: ["PlanSheetText", "PlanSheetProposal"],
+    models: ["PlanScheduleProposal"],
+  },
+  {
+    key: "proposal-clause-drafts",
+    title: "Drafted proposal clauses, and the ones you dismissed",
+    detail:
+      "When the app drafts the clauses a scope letter does not mention, each suggestion is kept with the " +
+      "requirement it answers and the quote it came from \u2014 including the ones you turned down, so the same " +
+      "thing is not suggested again. Not exported yet, and the two halves differ. A clause you ACCEPTED is " +
+      "already in this file: it became a real clause on that job's proposal, which IS exported. What is left " +
+      "here is the suggestion queue and your decisions about it \u2014 useful to us for telling a good draft " +
+      "from a bad one, and not a record of your work in the way the accepted clause is. The dismissals are the " +
+      "part worth asking for if you ever want them: they are a list of what you decided does not belong on a " +
+      "letter, which is a judgement nobody else can reconstruct.",
+    models: ["ProposalClauseDraft"],
   },
   {
     key: "bid-addendum-readings",
@@ -823,16 +888,32 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     title: "The sales pipeline and bidding",
     detail:
       "Leads, opportunities, bid invitations, the pre-bid chase list on the bid pipeline " +
-      "page (projects being pursued before any GC invited you), vendor price quotes, and " +
-      "the named people and call history behind a contact. The contact record itself is " +
-      "exported; the work of winning it is not.",
+      "page (projects being pursued before any GC invited you), vendor price quotes, the " +
+      "researched signals behind a prospect and their sources, and the named people and " +
+      "call history behind a contact. The contact record itself is exported; the work of " +
+      "winning it is not.",
     models: [
       "BidPursuit",
       "SalesLead",
       "SalesOpportunity",
       "SalesActivity",
       "SalesStageChange",
+      // Researched facts about a prospect, each with the page it came from.
+      // An omission rather than a dataset, for the same reason as the rest of
+      // this line: it is the work of winning the deal, not a record of the
+      // customer's own business. It is also operator-only data -- these
+      // models are populated only on the Company with isProvaOperator -- so a
+      // tenant's export would carry nothing from it even as a dataset.
+      "SalesLeadSignal",
+      // The cold-email sequencer's raw events and the consent proofs behind
+      // automated calls: operator-only like the line above, and the consent
+      // row is evidence about a PROSPECT, which a tenant export never holds.
+      "OutboundEvent",
+      "ConsentRecord",
       "BidInvitation",
+      // Why a bid was won or lost, entered by a person — the result itself
+      // is on the invitation. Lives with the bidding it explains.
+      "BidOutcome",
       "VendorPriceQuote",
       "ContactPerson",
       "ContactInteraction",
@@ -993,6 +1074,8 @@ export const EXPORT_COLUMN_OMISSIONS: Record<string, string> = {
 };
 
 export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
+  Crew: "picking aid — a saved name for people the schedule form ticks together; the planned days themselves are exported",
+  CrewMembership: "picking aid — who a saved crew ticks; the planned days themselves are exported",
   BackchargeCounter: "sequence counter — the numbers it issued are on the rows themselves",
   ChangeOrderCounter: "sequence counter — the numbers it issued are on the exported change orders",
   CloseoutSubmissionCounter: "sequence counter — the numbers it issued are on the rows themselves",
@@ -1020,10 +1103,21 @@ export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
   NotificationDispatch: "notification record — which alert was sent to whom, not the thing it was about",
   AlertAcknowledgement: "notification record — who dismissed or snoozed an alert",
   DeviceToken: "notification record — a phone's push address, and a credential in its own right",
+  PublicWorksFirm: "the state's own licence list of OTHER firms (C Stream's market), read for outbound by the operating company; not this company's data",
+  PublicWorksSignal: "what DIR publishes about those other firms' public-works filings; not this company's data",
+  PublicWorksSyncSlice: "sync bookmark — when each slice of the public record was last pulled",
+  PublicWorksLetter: "C Stream's own outbound letters to those other firms, mailed through Lob; not this company's data",
   AskUsage: "AI usage metering",
   AskAllowancePeriod:
     "AI usage metering — how much of this month's included allowance has been claimed. Our bookkeeping about what we owe them, not a record of their work, and it is meaningless outside this app.",
   AskProposal: "AI usage — a change the assistant proposed and waited on; anything confirmed is in the real tables",
+  AskThread:
+    "AI conversation — a person's own chat with the assistant. What it changed is in the real tables; what it said is advice about them, not a record of the work.",
+  AskMessage: "AI conversation — one turn of an AskThread, same argument",
+  AgentRun: "AI bookkeeping — one run of a background agent, when it started and how it ended; what it found is advice, not a record of the work",
+  AgentFinding: "AI bookkeeping — what an agent run flagged, with its sources; every source it cites is a real record that exports on its own",
+  AiRecommendation: "AI bookkeeping — a ranked suggestion derived from the real tables, which export on their own",
+  CompanyAgentSettings: "AI settings — which agents are on and what they may spend, meaningless outside this app",
   PlanIngestJob:
     "processing bookkeeping — one run of plan-set ingestion, its stage and when it started and stopped. What the run PRODUCED is in the real tables and exports with them; this is the scaffolding, and it means nothing outside this app.",
   PlanIngestTask:

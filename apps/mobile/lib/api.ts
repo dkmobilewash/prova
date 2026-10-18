@@ -23,6 +23,8 @@ import type {
   ToolboxTalk,
   UpdateFieldReportInput,
   Vendor,
+  SheetRow,
+  SheetPinRow,
 } from "./types";
 
 import { apiBaseUrl } from "./env";
@@ -347,6 +349,26 @@ export async function setPunchListItemStatus(
     token,
     body: { status },
   });
+}
+
+export async function listSheets(jobId: string, token: string): Promise<SheetRow[]> {
+  return request(`/api/v1/sheets?jobId=${encodeURIComponent(jobId)}`, { token });
+}
+
+export async function createSheetPin(
+  input: {
+    pageId: string;
+    x: number;
+    y: number;
+    kind: "PHOTO" | "PUNCH" | "NOTE";
+    note?: string;
+    mediaId?: string;
+    punchItemId?: string;
+    clientOperationId?: string;
+  },
+  token: string,
+): Promise<SheetPinRow> {
+  return request(`/api/v1/sheets`, { method: "POST", token, body: input });
 }
 
 export async function listDrawings(jobId: string, token: string): Promise<DrawingSetRow[]> {

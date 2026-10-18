@@ -29,6 +29,7 @@ export const cacheKeys = {
   safety: (jobId: string) => `safety.${jobId}`,
   tickets: (jobId: string) => `tickets.${jobId}`,
   drawings: (jobId: string) => `drawings.${jobId}`,
+  sheets: (jobId: string) => `sheets.${jobId}`,
   schedule: (jobId: string) => `schedule.${jobId}`,
 } as const;
 

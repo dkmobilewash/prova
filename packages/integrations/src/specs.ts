@@ -45,19 +45,59 @@ import { reportUsage, type ModelUsageReporter } from "./anthropic";
  * plumbing.
  */
 
-export const SPEC_SECTION_PROMPT_VERSION = "spec-section.1";
+/** Bumped to `.2` on 2026-10-05: three kinds added, and rules 8/9 changed what
+ * the reader will READ at all — Division 00/01 used to come back empty by rule.
+ * Stored on every `BidSpecReading` (`actions/specRead.ts`), so a finding from
+ * before this date came from a reader that could not have reported a
+ * liquidated-damages clause, and a re-read of the same section may legitimately
+ * return more than it did. Without the bump that difference looks like the
+ * model being inconsistent. */
+export const SPEC_SECTION_PROMPT_VERSION = "spec-section.2";
 
-/** Mirrors `BidSpecFindingKind` in `bid-specs.prisma`. */
-export type SpecFindingKind =
-  | "FINISH_LEVEL"
-  | "FIRE_RATING"
-  | "ACOUSTIC"
-  | "MOCK_UP"
-  | "TESTING"
-  | "NAMED_PRODUCT"
-  | "ATTIC_STOCK"
-  | "PERFORMANCE"
-  | "GENERAL";
+/**
+ * THE ONE LIST. The type, the tool schema and the runtime guard all read it.
+ *
+ * It used to be three hand-written copies — this union, the `kind` enum in the
+ * tool schema below, and `SPEC_FINDING_KINDS` two hundred lines down — plus the
+ * prompt's rule 5, `SPEC_FINDING_LABEL` in `apps/web/lib/specs/spec-findings.ts`
+ * and the `BidSpecFindingKind` enum in `bid-specs.prisma`. Six places, and the
+ * only thing tying them together was this comment claiming to mirror the
+ * schema. CLAUDE.md names that shape exactly: *"a completeness test proves the
+ * SHARED list has every member; it cannot see a consumer that has stopped
+ * reading it… nothing is ever missing from a list nobody imports."*
+ *
+ * Three of the six are now derived rather than guarded, which is strictly
+ * better than a census over copies: the type is `(typeof …)[number]`, the tool
+ * schema spreads this array, and the guard already did. What CANNOT be derived
+ * is the Postgres enum and the on-screen label, so those two keep a census —
+ * `specFindingKindCensus.test.ts` — and the prompt keeps rule 5, which is prose
+ * a model reads and no type can check.
+ *
+ * Adding a kind: add it here, add its label, add its sentence to rule 5, add it
+ * to `bid-specs.prisma`, and write the migration. The census fails until the
+ * schema agrees; the total `Record` fails until the label exists.
+ */
+export const SPEC_FINDING_KINDS = [
+  "FINISH_LEVEL",
+  "FIRE_RATING",
+  "ACOUSTIC",
+  "MOCK_UP",
+  "TESTING",
+  "NAMED_PRODUCT",
+  "ATTIC_STOCK",
+  "PERFORMANCE",
+  // ── Division 00/01 contract conditions, added 2026-10-05 ──
+  // These three cost money the way a schedule costs money: not a line in the
+  // takeoff, a term in the contract. See rules 9 and 11 in the prompt.
+  "LIQUIDATED_DAMAGES",
+  "WORKING_HOURS",
+  "WAGE_REQUIREMENT",
+  "GENERAL",
+] as const;
+
+/** Mirrors `BidSpecFindingKind` in `bid-specs.prisma`, and
+ * `specFindingKindCensus.test.ts` is what makes that sentence true. */
+export type SpecFindingKind = (typeof SPEC_FINDING_KINDS)[number];
 
 export type SpecFindingExtraction = {
   ordinal: number;
@@ -102,20 +142,10 @@ const SPEC_TOOL: Anthropic.Tool = {
           type: "object",
           properties: {
             ordinal: { type: "integer", description: "Your own 1-based ordering." },
-            kind: {
-              type: "string",
-              enum: [
-                "FINISH_LEVEL",
-                "FIRE_RATING",
-                "ACOUSTIC",
-                "MOCK_UP",
-                "TESTING",
-                "NAMED_PRODUCT",
-                "ATTIC_STOCK",
-                "PERFORMANCE",
-                "GENERAL",
-              ],
-            },
+            // SPREAD, never a second list: a kind the type admits and the tool
+            // schema does not is a finding the model cannot report, and nothing
+            // would have failed — the model would simply never use it.
+            kind: { type: "string", enum: [...SPEC_FINDING_KINDS] },
             label: { type: "string", description: "Short and scannable." },
             requirement: { type: "string", description: "What the section demands, in its own terms." },
             whyItCosts: { type: "string", description: "Why it costs money, in one line." },
@@ -161,17 +191,21 @@ Rules, in the order they matter.
 
 4. whyItCosts is ONE LINE, factual, and checkable against the page. "Level 5 requires a skim coat over the entire surface, which is an extra pass that Level 4 does not include." Never "this may increase costs" and never "AI determined": a reason nobody can check is a reason nobody can overrule.
 
-5. kind GROUPS the finding and never decides whether to report it. Use GENERAL whenever none of the other eight fits — it exists so this list can never refuse a real finding. FINISH_LEVEL for finish levels and skim coats. FIRE_RATING for rated assemblies, UL numbers, firestopping. ACOUSTIC for STC/NIC, acoustic insulation and sealant. MOCK_UP for sample panels and field mock-ups. TESTING for third-party inspection and field quality control. NAMED_PRODUCT for sole-sourced products and "no substitutions". ATTIC_STOCK for extra material left on site. PERFORMANCE for deflection criteria, height limits and load requirements.
+5. kind GROUPS the finding and never decides whether to report it. Use GENERAL whenever none of the others fits — it exists so this list can never refuse a real finding. FINISH_LEVEL for finish levels and skim coats. FIRE_RATING for rated assemblies, UL numbers, firestopping. ACOUSTIC for STC/NIC, acoustic insulation and sealant. MOCK_UP for sample panels and field mock-ups. TESTING for third-party inspection and field quality control. NAMED_PRODUCT for sole-sourced products and "no substitutions". ATTIC_STOCK for extra material left on site. PERFORMANCE for deflection criteria, height limits and load requirements. LIQUIDATED_DAMAGES for a stated per-day amount, or a per-day charge for missing a milestone. WORKING_HOURS for restricted hours, night or weekend work, noise windows, shift work, or occupied-building limits. WAGE_REQUIREMENT for prevailing or union wage scales, certified payroll, apprenticeship ratios, and local-hire requirements.
 
 6. confidence is about THIS FINDING being real and correctly read. HIGH only when the document plainly states it and you have quoted it exactly. MEDIUM when you are reading it from context or the wording is ambiguous. LOW when the text is unclear, damaged, or you are unsure the requirement applies to this subcontractor's trades. BE HONEST AND PREFER LOW. Findings are shown lowest-confidence first, because the ones you are least sure of are the ones a person most needs to look at. A confident wrong finding is far worse than an honest uncertain one.
 
 7. sourcePageLabel is where to look, as the document labels its pages — "Page 12", "09 21 16-4". Null if the document does not label them. On a thirty-page section this is what makes a quote checkable.
 
-8. IF THIS IS NOT A SPECIFICATION SECTION — a drawing, an addendum, a quote, an invitation to bid, a submittal — return an EMPTY findings list and say so in readingReason. Do not try to find cost drivers in a document that has none.
+8. IF THIS IS NOT A SPECIFICATION SECTION — a drawing, an addendum, a quote, a submittal — return an EMPTY findings list and say so in readingReason. Do not try to find cost drivers in a document that has none. A document whose PURPOSE IS TO SOLICIT A BID — an invitation to bid, a bid form, instructions on how and when to submit — returns empty even when it mentions bonds, insurance or a completion date in passing: those terms belong to the contract documents it points AT, and reporting them from here reports the same requirement twice, from the weaker source. A Division 00 or Division 01 SECTION OF THE PROJECT MANUAL is a different document and does carry findings: see rule 9a.
 
 9. IF IT IS A SPEC SECTION FOR WORK THAT IS NOT THESE TRADES — electrical, plumbing, roofing, earthwork — return an empty findings list and say which division it appears to be. Do not report another trade's requirements as this subcontractor's cost.
 
-10. An empty findings list is a real and useful answer. A section that demands nothing out of the ordinary is the common case, and saying so plainly is better than padding the list to look thorough.`;
+9a. DIVISION 00 AND DIVISION 01 ARE THE EXCEPTION TO RULE 9, AND YOU SHOULD READ THEM. They are not another trade's work — they are the contract conditions and general requirements that bind EVERY trade on the job, this subcontractor included. Three things there cost them money and are routinely missed because they are not in the drywall section: a LIQUIDATED DAMAGES clause with a per-day amount; WORKING HOUR restrictions — night work, weekend-only work, noise windows, an occupied building, shift work; and WAGE REQUIREMENTS — prevailing or union scales, certified payroll, apprenticeship ratios, local hire. Report these with the same quote-it-or-drop-it discipline as everything else.
+
+10. An empty findings list is a real and useful answer. A section that demands nothing out of the ordinary is the common case, and saying so plainly is better than padding the list to look thorough.
+
+11. A CONTRACT TERM COSTS MONEY DIFFERENTLY FROM A MATERIAL, AND whyItCosts MUST SAY WHICH. Liquidated damages at $2,500 a day is not $2,500 of cost — it is an exposure if the work runs late, and whether to carry anything for it is the estimator's judgement. Restricted hours and prevailing wages are different again: those change the RATE the work is done at, every hour of it. So state the mechanism and the number the document gives — "liquidated damages of $2,500 per calendar day past substantial completion" — and never a dollar amount you worked out yourself. You have not seen their schedule, their crew or their wage sheet. Rule 3 applies in full: do not say whether their bid already carries it.`;
 
 /**
  * Read one spec section.
@@ -246,20 +280,6 @@ export async function extractSpecSection(params: {
   };
 }
 
-const SPEC_FINDING_KINDS: readonly SpecFindingKind[] = [
-  "FINISH_LEVEL",
-  "FIRE_RATING",
-  "ACOUSTIC",
-  "MOCK_UP",
-  "TESTING",
-  "NAMED_PRODUCT",
-  "ATTIC_STOCK",
-  "PERFORMANCE",
-  "GENERAL",
-];
-
 export function isSpecFindingKind(value: unknown): value is SpecFindingKind {
   return typeof value === "string" && (SPEC_FINDING_KINDS as readonly string[]).includes(value);
 }
-
-export { SPEC_FINDING_KINDS };

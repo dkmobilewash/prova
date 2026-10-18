@@ -129,8 +129,23 @@ model TakeoffPlan {
   /// paper trail is still `DrawingSet`/`DrawingRevision`, and `label` on
   /// `TakeoffPlanPage` is still typed by a person. Accepting a proposal writes
   /// neither.
-  sheetTexts     PlanSheetText[]
-  sheetProposals PlanSheetProposal[]
+  sheetTexts        PlanSheetText[]
+  sheetScaleReadings PlanSheetScaleReading[]
+  sheetProposals    PlanSheetProposal[]
+  scheduleProposals PlanScheduleProposal[]
+
+  /// AND ONE MORE CHILD THAT DOES NOT HANG OFF THIS MODEL: the walls found on a
+  /// sheet are `TakeoffWallProposal`, keyed on the PAGE and its CALIBRATION
+  /// rather than on the set, because wall geometry is meaningless without the
+  /// scale it was measured at. It still reaches the same end — page cascades
+  /// from plan, proposal cascades from page — so one
+  /// `takeoffPlan.deleteMany({ jobId })` still collects it and it too stays out
+  /// of `HANDLED_MODELS` and both `del()` orders.
+  ///
+  /// This list is named in CLAUDE.md as the shape that goes stale: a new child
+  /// added without amending it leaves the sentence above asserting something
+  /// nobody re-checked. `takeoffCascadeCensus.test.ts` now fails the build
+  /// instead.
 
   createdAt DateTime @default(now())
 
@@ -167,6 +182,11 @@ model TakeoffPlanPage {
 
   calibrations TakeoffScaleCalibration[]
   measurements TakeoffMeasurement[]
+
+  /// What the geometry FOUND on this sheet, which is not what anybody chose —
+  /// see `TakeoffWallProposal`. CASCADEs from here like the two above, so it
+  /// needs registering in neither cleanup script.
+  wallProposals TakeoffWallProposal[]
 
   createdAt DateTime @default(now())
 
@@ -219,6 +239,10 @@ model TakeoffScaleCalibration {
 
   measurements TakeoffMeasurement[]
 
+  /// The walls FOUND at this scale. Keyed here rather than carrying a staleness
+  /// flag, which is what makes a recalibration invalidate them for free.
+  wallProposals TakeoffWallProposal[]
+
   @@index([pageId, createdAt])
 }
 
@@ -267,6 +291,42 @@ model TakeoffMeasurement {
 
   kind TakeoffMeasurementKind
 
+  /// WHICH PRICING PACKAGE THIS QUANTITY BELONGS TO — null is the BASE BID.
+  ///
+  /// A GC's bid form asks for a base number, then alternates it may or may not
+  /// take. The estimator measures all of it off the same sheets, and before
+  /// this column there was nowhere to say which was which: `label` is free text
+  /// for whatever somebody wants to call a run, so forty traced runs for an
+  /// alternate and four hundred for the base were one undifferentiated list.
+  /// Posting them put every foot into the number sent to the GC.
+  ///
+  /// NULL IS THE BASE, and that default is the whole safety argument. Every
+  /// measurement traced before this column existed is untagged and stays in the
+  /// number; so is every one traced without thinking about it. The alternative
+  /// — an untagged quantity sitting OUTSIDE the base until somebody claims it —
+  /// would silently bid LOW, and low and high are not symmetric: a high bid is
+  /// lost work, a low bid is work won at a loss and then built.
+  ///
+  /// TEXT, AND DELIBERATELY NOT A RELATION TO `BidLine`. `bid-lines.prisma`
+  /// already models a bid's alternates properly — signed amounts, three-state
+  /// `accepted`, kept out of the base total — and pointing at one is the
+  /// obvious move. It cannot be done yet, for a structural reason rather than a
+  /// decision: `BidLine` hangs off `BidInvitation`, a `TakeoffPlan` hangs off a
+  /// `Job`, and the only link between them is `BidInvitation.wonJobId`, which
+  /// exists AFTER the bid is won. Measuring happens before, so at the moment an
+  /// estimator is tracing an alternate the job has no reachable bid at all.
+  ///
+  /// So the estimate side is NOT keyed by package. A posted line names its
+  /// package as a prefix on the description and nothing more — said here rather
+  /// than half-built. Joining the two wants the invitation reachable from the
+  /// job before award, which is its own piece of work.
+  ///
+  /// Matched EXACTLY as typed, trimmed only of surrounding whitespace.
+  /// `bid-levelling.ts` made the same call for the same reason: a typo showing
+  /// as two headings gets fixed in a second, and two scopes silently merged
+  /// into one is a wrong number nobody can see.
+  packageLabel String?
+
   /// WHERE IT WAS DRAWN, in page-width units (see the box at the top of this
   /// file). Two parallel arrays rather than a JSON blob or a row per vertex.
   ///
@@ -293,10 +353,181 @@ model TakeoffMeasurement {
   /// four runs twice silently doubles a bid and nothing on screen says so.
   postedAt DateTime?
 
+  /// WHAT IT WAS POSTED INTO, so deleting that can let go of it again.
+  ///
+  /// `postedAt` on its own is a one-way door. Delete the wall run a
+  /// measurement was posted into and its estimate line goes with it, while the
+  /// measurement still reads "already on the estimate" and `postMeasuredWallRun`
+  /// still refuses it — nothing on the estimate, and no way to put it back.
+  /// Nothing recorded which run it went into, so nothing could clear the flag.
+  ///
+  /// SetNull rather than Cascade: the MEASUREMENT is the survey and outlives
+  /// any pricing decision made from it. Cascade would delete somebody's traced
+  /// walls because they changed their mind about a wall type. It is also
+  /// deliberately not a blocking FK — a RESTRICT here would be a new child of
+  /// `WallRun` that both cleanup scripts would have to learn about, which is
+  /// the `InvoiceCounter` trap in CLAUDE.md.
+  wallRunId String?
+  wallRun   WallRun? @relation(fields: [wallRunId], references: [id], onDelete: SetNull)
+
   createdByUserId String?
   createdBy       User?    @relation("TakeoffMeasurementBy", fields: [createdByUserId], references: [id])
   createdAt       DateTime @default(now())
 
   @@index([pageId, createdAt])
   @@index([calibrationId])
+  @@index([wallRunId])
+}
+
+/// WHERE A FOUND GROUP CAME FROM. Three members, mirroring `GroupSource` in
+/// `apps/web/lib/takeoff/wallGroups.ts`.
+///
+/// AN ENUM HERE, AND A `String` IN `PlanScheduleProposal.kind`, FOR A REASON
+/// WORTH STATING. That column holds MODEL OUTPUT, so an enum rejecting an
+/// unexpected value at write time would cost a whole reading to a production
+/// error that is redacted anyway. This holds the verdict of deterministic code
+/// over geometry and the sheet's own text — no model anywhere near it — so the
+/// three members are the whole population and a fourth would be a bug rather
+/// than a surprise.
+enum TakeoffWallProposalSource {
+  /// The drawing printed this name beside these runs.
+  TAG
+  /// Nothing named them; they are what is left of a thickness group.
+  REMAINDER
+  /// The sheet's general notes name a default for everything untagged — "ALL
+  /// PARTITIONS TYPE A1 U.N.O." — and these measure like that type. Weaker
+  /// evidence than a tag, which is why it is its own member and not a TAG.
+  GENERAL_NOTE
+}
+
+/// WHAT THE GEOMETRY SAYS THE SHEET HAS, before anybody agreed to any of it.
+///
+/// A FOUND WALL IS A PROPOSAL. The rule this table keeps rather than breaks:
+/// `TakeoffMeasurement` is for things somebody CHOSE, and nothing here has been
+/// chosen. Accepting a group is still one press, and it still writes a
+/// measurement. The only thing that changes is that the proposal survives
+/// leaving the page, so the estimator stops paying for the same detection run
+/// every time they come back to a sheet.
+///
+/// ── KEYED ON THE CALIBRATION, WHICH IS WHAT MAKES INVALIDATION FREE ──
+///
+/// Wall geometry means nothing without the scale it was measured at, so a
+/// proposal belongs to a calibration the way a measurement does. Recalibrating
+/// INSERTS a calibration, so proposals found under the old one are simply never
+/// read again — no `staleAt` column, no sweep, nothing to forget to run. That
+/// is the same mechanism `TakeoffScaleCalibration`'s own append-only comment
+/// describes, reused rather than reinvented.
+///
+/// APPEND-ONLY, newest-per-calibration wins, derived from `createdAt`.
+///
+/// ── THREE COLUMNS THAT ARE DELIBERATELY NOT HERE ──
+///
+/// NO `feet`. It is the runs' lengths under this calibration and it is computed
+/// on every read. Storing it would put a third number beside two that already
+/// determine it, and on the day they disagree the stored one wins silently —
+/// the reasoning `feetPerPageWidth` is refused with, a few models up.
+///
+/// NO WALL TYPE. `matchClusterToWallType` is pure and cheap, and the company's
+/// wall-type library CHANGES — so a stored match would go stale the moment
+/// somebody adds a type, and would then be wrong in the one direction nobody
+/// checks. Derived at read time, which is this repo's own rule for derived
+/// state rather than a performance judgement.
+model TakeoffWallProposal {
+  id     String          @id @default(cuid())
+  pageId String
+  page   TakeoffPlanPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  /// THE SCALE THESE WERE FOUND AT. Required, because a wall in page-width
+  /// units is not a length until something says how big the sheet is.
+  ///
+  /// CASCADE, and explicit because Prisma's default for a required relation is
+  /// RESTRICT — the latent bug `TakeoffMeasurement.calibrationId` documents at
+  /// length, and for exactly the same reason: deleting a page cascades to its
+  /// calibrations AND to this, Postgres fires those triggers in creation order,
+  /// so a RESTRICT here would see rows that are about to be deleted and block
+  /// `takeoffPlan.deleteMany({ jobId })` in both cleanup scripts. The #227
+  /// shape, avoided by reading the generated SQL rather than by a cleanup
+  /// script failing halfway through somebody's database.
+  calibrationId String
+  calibration   TakeoffScaleCalibration @relation(fields: [calibrationId], references: [id], onDelete: Cascade)
+
+  /// THE CLUSTER'S AVERAGE THICKNESS, IN INCHES — the one number here that
+  /// genuinely is not derivable from this row.
+  ///
+  /// It LOOKS like derived state and is not, which earns the paragraph because
+  /// the first draft of this model left it out on exactly that reasoning.
+  /// `clusterByThickness` labels a bucket with the MEAN of its members
+  /// (`wallVectors.ts`: "the average, so the label is the thickness the runs
+  /// actually have rather than whichever one happened to open the cluster").
+  /// One cluster then SPLITS into several groups — one per printed tag, plus
+  /// whatever was left untagged — and each of them keeps the whole cluster's
+  /// average.
+  ///
+  /// So re-clustering a single group's runs returns the mean of THOSE runs,
+  /// which is a different number. Members of a cluster sit within
+  /// `CLUSTER_INCHES` (1.25in) of each other, so the error is bounded by that
+  /// and it is not cosmetic: `typesAtThickness` admits a type within
+  /// `THICKNESS_SLACK_IN` (0.625in), so a shifted average silently changes
+  /// WHICH WALL TYPES the estimator is offered for the group.
+  ///
+  /// Recording it keeps the reading intact rather than storing a second copy of
+  /// something. What IS derived and stays out is the match itself:
+  /// `typesAtThickness(thicknessInches, ...)` for an untagged group and
+  /// `sameDesignation(code, tag)` for a tagged one, both computed on read
+  /// against the company's CURRENT wall types.
+  thicknessInches Float
+
+  source TakeoffWallProposalSource
+
+  /// The tag as PRINTED, or the general note's own words. Copied exactly: it is
+  /// text on somebody else's drawing. Null for REMAINDER, which by definition
+  /// is the group nothing named.
+  sourceLabel String?
+
+  /// THE WALL-TYPE DESIGNATION THAT EVIDENCE NAMES — "A1", "EXT-1". Null for
+  /// REMAINDER.
+  ///
+  /// SEPARATE FROM `sourceLabel` BECAUSE OF THE NOTE CASE, which is the whole
+  /// reason this column exists. For a TAG the two are the same string: the
+  /// printed text IS the designation. For a GENERAL_NOTE the label is the
+  /// sentence — "ALL PARTITIONS TYPE A1 U.N.O." — and the designation is `A1`,
+  /// pulled out of it by `defaultWallTypeFromNotes`, which needs the sheet's
+  /// text layer and therefore the PDF. Nothing reading this table has the PDF,
+  /// so a note's designation cannot be recovered at read time and has to be
+  /// recorded here.
+  ///
+  /// IT IS A STRING OFF THE DRAWING, NOT A FOREIGN KEY, and that is the line
+  /// this keeps: the designation is the READING, and which of the company's
+  /// types it currently resolves to is DERIVED on every read by
+  /// `sameDesignation`. So renaming a wall type re-points the group, deleting
+  /// one leaves the group as a plain measurement with its footage intact, and
+  /// no row here goes stale. A `wallTypeId` would have been a stored match,
+  /// which is the one thing this model refuses.
+  namedCode String?
+
+  /// The runs, in PAGE-WIDTH UNITS — every coordinate a fraction of this page's
+  /// width, which is the one convention the whole takeoff stores.
+  ///
+  /// Each element: `x1`, `y1`, `x2`, `y2` (the centreline, what an estimator
+  /// would have traced), `thicknessFeet`, and `openings` — the gaps inside the
+  /// run narrow enough to be doors, present only where `mergeWalls` joined
+  /// across one.
+  ///
+  /// NO `lengthFeet`, although `WallCandidate` carries one. It is `hypot` of
+  /// the stored centreline under this calibration, so writing it down would be
+  /// the `feet` column above wearing a different name.
+  ///
+  /// `Json` AND NOT A CHILD TABLE, the call `PlanScheduleProposal.rows` makes
+  /// and for the same test: nothing joins to a single run, nothing updates one
+  /// in place, and they are accepted or discarded as a set. A child table would
+  /// buy referential integrity for rows with no referents. The element shape is
+  /// refused at the WRITER rather than by the column — see
+  /// `apps/web/lib/takeoff/wallProposal.ts`.
+  runs Json
+
+  createdAt DateTime @default(now())
+
+  /// The read this table exists for: the newest proposals for a page at the
+  /// scale it is currently calibrated to.
+  @@index([pageId, calibrationId, createdAt])
 }

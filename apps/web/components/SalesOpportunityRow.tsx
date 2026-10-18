@@ -36,16 +36,16 @@ export type SalesOpportunityHistory = {
 };
 
 const STAGE_STYLE: Record<string, string> = {
-  NEW: "bg-neutral-800 text-ink-label",
-  CONTACTED: "bg-neutral-800 text-ink-label",
-  DEMO_SCHEDULED: "bg-tag-blue text-tag-blue-ink",
-  TRIAL: "bg-tag-blue text-tag-blue-ink",
+  NEW: "bg-rail-hover text-ink-label",
+  CONTACTED: "bg-rail-hover text-ink-label",
+  DEMO_SCHEDULED: "bg-tag-brand text-tag-brand-ink",
+  TRIAL: "bg-tag-brand text-tag-brand-ink",
   WON: "bg-tag-green text-tag-green-ink",
-  LOST: "bg-tag-rose text-red-400",
+  LOST: "bg-tag-rose text-danger",
 };
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 export function SalesOpportunityRow({
   opportunity,
@@ -90,7 +90,7 @@ export function SalesOpportunityRow({
             // moved: this field records the move you are making now.
             defaults={{ ...opportunity, stageEffectiveOn: localToday() }}
           />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
@@ -144,7 +144,7 @@ export function SalesOpportunityRow({
             </p>
           )}
           {opportunity.notes && <p className="mt-1 text-sm text-ink-body">{opportunity.notes}</p>}
-          {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+          {error && <p className="mt-1 text-sm text-danger">{error}</p>}
 
           {history.spells.length > 0 && (
             <>

@@ -25,6 +25,7 @@ import { jobDetailBillingWalkthrough } from "./job-detail-billing";
 import { jobDetailFieldReportsWalkthrough } from "./job-detail-field-reports";
 import { jobDetailPhotosWalkthrough } from "./job-detail-photos";
 import { newJobWalkthrough } from "./jobs-new";
+import { jobsWalkthrough } from "./jobs";
 import { pipelineWalkthrough } from "./pipeline";
 import { proposalsWalkthrough } from "./proposals";
 import { wallTypesWalkthrough } from "./wall-types";
@@ -33,6 +34,8 @@ import { scheduleWalkthrough } from "./schedule";
 import { settingsImportWalkthrough } from "./settings-import";
 import { settingsIntegrationsWalkthrough } from "./settings-integrations";
 import { deploymentWalkthrough } from "./deployment";
+import { hoursWalkthrough } from "./hours";
+import { aiWalkthrough } from "./ai";
 import { phaseCodesWalkthrough } from "./phase-codes";
 import { photosWalkthrough } from "./photos";
 import { prevailingWageWalkthrough } from "./prevailing-wage";
@@ -59,6 +62,7 @@ export type { Walkthrough, WalkthroughStep } from "./types";
  */
 export const WALKTHROUGHS: Walkthrough[] = [
   dashboardWalkthrough,
+  jobsWalkthrough,
   newJobWalkthrough,
   jobDetailWalkthrough,
   jobDetailEstimateWalkthrough,
@@ -103,6 +107,8 @@ export const WALKTHROUGHS: Walkthrough[] = [
   vendorsWalkthrough,
   vendorPricingWalkthrough,
   deploymentWalkthrough,
+  hoursWalkthrough,
+  aiWalkthrough,
 ];
 
 /**
@@ -114,9 +120,8 @@ export const WALKTHROUGHS: Walkthrough[] = [
  * covered. So writing a walkthrough forces its line out of this list, and
  * adding a page to the nav forces a decision.
  *
- * `/jobs` and `/estimating` are not here because neither is a page: both
- * redirect to /dashboard, whose walkthrough covers the jobs list and the
- * Estimating filter.
+ * `/estimating` is not here because it is not a page: it redirects to
+ * /jobs?status=ESTIMATE, whose walkthrough covers the Estimating filter.
  */
 export const ROUTES_WITHOUT_WALKTHROUGH: string[] = [
   // C Stream's own operator page (who is still logging in, across every

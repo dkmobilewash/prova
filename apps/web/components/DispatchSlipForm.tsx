@@ -136,21 +136,21 @@ export function DispatchSlipForm({
             type="file"
             name="file"
             accept="application/pdf,image/png,image/jpeg,image/webp"
-            className={`${field} file:mr-2 file:rounded file:border-0 file:bg-neutral-800 file:px-2 file:py-1 file:text-ink-label`}
+            className={`${field} file:mr-2 file:rounded file:border-0 file:bg-rail-hover file:px-2 file:py-1 file:text-ink-label`}
           />
         </label>
         <input name="note" placeholder="Note (optional)" className={field} />
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-ink hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md bg-rail-hover px-3 py-1.5 text-sm font-medium text-ink hover:bg-lift disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? "Logging…" : "Log dispatch"}
         </button>
       </div>
 
       {error && (
-        <p role="alert" className="text-xs text-red-300">
+        <p role="alert" className="text-xs text-danger">
           {error}
         </p>
       )}

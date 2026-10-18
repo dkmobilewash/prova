@@ -91,9 +91,16 @@ export default function PhotosScreen() {
   // than a screen of its own — the capture, the GPS fix, the stamping and
   // the upload queue all live here, and a second copy of that would be a
   // second copy of the stamp.
-  const { jobId, punchListItemId, open } = useLocalSearchParams<{
+  const { jobId, punchListItemId, open, sheetPageId, pinX, pinY } = useLocalSearchParams<{
     jobId: string;
     punchListItemId?: string;
+    /** Set when the camera was opened from a sheet: the photo is pinned there
+     * at the shutter, the way `punchListItemId` attaches it to an item. The
+     * foreman is standing at the wall — he does not have the photo yet, and
+     * he is not going to scroll two hundred of them one-handed afterwards. */
+    sheetPageId?: string;
+    pinX?: string;
+    pinY?: string;
     open?: string;
   }>();
   const getToken = useStableGetToken();
@@ -273,6 +280,11 @@ export default function PhotosScreen() {
         tagIds: pickedTags.length ? pickedTags : undefined,
         dailyFieldReportId: attachReport && todaysReportId ? todaysReportId : undefined,
         punchListItemId: punchItemId ?? undefined,
+        // Straight through to the op, which sends them WITH the photo. A
+        // number the route will parse, not one this screen rounds.
+        sheetPageId: sheetPageId || undefined,
+        pinX: pinX === undefined ? undefined : Number(pinX),
+        pinY: pinY === undefined ? undefined : Number(pinY),
       });
       if (!saved.ok) {
         // Take the tile back off. It was added before the write and is a

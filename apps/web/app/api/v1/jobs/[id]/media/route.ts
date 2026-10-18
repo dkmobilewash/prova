@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
+import { parseNumericInput } from "@/lib/numeric-input";
+import { pinPlacementProblem } from "@/lib/sheet-pins";
 import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
 import { put } from "@vercel/blob";
@@ -183,6 +185,49 @@ export async function POST(
     if (!item || item.jobId !== job.id) return jsonError("That punch list item is not on this job", 400);
   }
 
+  // WHERE ON THE DRAWING IT WAS TAKEN, if the camera was opened from a sheet.
+  //
+  // THIS IS ONE REQUEST ON PURPOSE. The phone's queue runs its ops
+  // INDEPENDENTLY and deliberately -- `drain` skips a not-yet-due op and
+  // carries on, because "a day of time can sit behind a photo" (OFF-32).
+  // There is no way to say "this pin after that photo", and adding one would
+  // fight the scar that rule exists for. So the photo and its pin are created
+  // together, by one op, or not at all: a photo with no pin is one somebody
+  // has to go and place by hand, and a pin with no photo points at nothing.
+  const sheetPageId = String(formData.get("sheetPageId") ?? "").trim() || null;
+  let sheetPin: { pageId: string; x: number; y: number } | null = null;
+  if (sheetPageId) {
+    const page = await prisma.sheetPage.findFirst({
+      where: { id: sheetPageId, revision: { set: { companyId: context.companyId } } },
+      select: {
+        id: true,
+        widthPt: true,
+        heightPt: true,
+        revision: { select: { set: { select: { jobId: true } } } },
+      },
+    });
+    // Same rule as the report and the punch item above: a sheet from another
+    // job is a bug or a probe, and either way not this photo's.
+    if (!page || page.revision.set.jobId !== job.id) {
+      return jsonError("That sheet is not on this job", 400);
+    }
+    // `parseNumericInput`, not `Number()`. This route answers whoever posts
+    // to it, and `Number("")` is 0 while `Number("0x10")` is 16 — a pin at a
+    // silent zero lands in the sheet's top-left corner and looks deliberate.
+    const px = parseNumericInput(formData.get("pinX"), { label: "The pin position across" });
+    const py = parseNumericInput(formData.get("pinY"), { label: "The pin position down" });
+    if (!px.ok) return jsonError(px.error, 400);
+    if (!py.ok) return jsonError(py.error, 400);
+    const x = px.n;
+    const y = py.n;
+    // The SAME rule the web uses, from the same module, so a pin dropped on
+    // the phone cannot land somewhere the web would have refused.
+    const problem = pinPlacementProblem(x, y, page);
+    if (problem) return jsonError(problem, 400);
+    sheetPin = { pageId: page.id, x, y };
+  }
+
+
   // Tags picked at the shutter. Company-scoped, deduplicated, and silently
   // narrowed to the ones that exist — a tag renamed or deleted between
   // taking the photo and the upload going through must not lose the photo.
@@ -211,8 +256,7 @@ export async function POST(
     contentType,
   });
 
-  const media = await prisma.jobMedia.create({
-    data: {
+  const mediaData = {
       companyId: context.companyId,
       jobId: job.id,
       blobUrl: result.url,
@@ -230,9 +274,27 @@ export async function POST(
       tags: tags.length
         ? { create: tags.map((t) => ({ tagId: t.id, taggedByUserId: context.id })) }
         : undefined,
-    },
-    select: mediaSelect,
-  });
+  };
+
+  // ONE TRANSACTION: the photo and the mark it was taken for land together or
+  // neither does. Half of this pair is worse than neither half.
+  const media = sheetPin
+    ? await prisma.$transaction(async (tx) => {
+        const created = await tx.jobMedia.create({ data: mediaData, select: mediaSelect });
+        await tx.sheetPin.create({
+          data: {
+            companyId: context.companyId,
+            pageId: sheetPin.pageId,
+            x: sheetPin.x,
+            y: sheetPin.y,
+            kind: "PHOTO",
+            mediaId: created.id,
+            createdByUserId: context.id,
+          },
+        });
+        return created;
+      })
+    : await prisma.jobMedia.create({ data: mediaData, select: mediaSelect });
 
   return NextResponse.json(toJson(media), { status: 201 });
 }

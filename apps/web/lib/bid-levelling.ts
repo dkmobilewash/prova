@@ -34,6 +34,11 @@
  * Pure. No database, no React.
  */
 
+// The price book's expiry policy, reused rather than restated — see
+// `quoteFreshness` below. `vendorPricing.ts` is a pure helper despite living
+// beside components, and 21 other `lib/` modules already import from there.
+import { daysBetween, isExpired, isStale } from "@/components/vendorPricing";
+
 export type LevelQuote = {
   id: string;
   packageLabel: string;
@@ -49,7 +54,74 @@ export type LevelQuote = {
   requestedOn?: string | null;
   dueBy?: string | null;
   declinedAt?: string | null;
+  /** How long the sub said the price holds, null when they did not say. */
+  validUntil?: string | null;
 };
+
+/**
+ * WHETHER THE PRICE IS STILL GOOD — which none of the dates above answers.
+ *
+ * `requestState` reports on the CONVERSATION: answered, declined, overdue,
+ * awaited. A quote can be ANSWERED, comparable, carried, and inside the number
+ * we sent a GC, while the price itself lapsed three weeks ago. That was not
+ * merely unreported before `BidQuote.validUntil` — it was inexpressible.
+ *
+ * THE POLICY IS NOT RESTATED HERE. `isExpired` and `isStale` in
+ * `components/vendorPricing.ts` are the price book's answer to this same
+ * question and they are reused whole, including the off-by-one that makes a
+ * price held "until the 30th" good ON the 30th, and the rule that a date the
+ * sub gave outranks our 90-day heuristic until it lapses. Two implementations
+ * of "is this price still good" is the second-list defect, and the end this
+ * file would get wrong is the one that tells somebody a live price is dead.
+ *
+ * NULL IS THE ORDINARY CASE and means nothing to say. Most subs name no
+ * expiry, and a quote with no amount yet has no price to go off.
+ */
+export type QuoteFreshness = { level: "expired" | "stale"; note: string };
+
+export function quoteFreshness(
+  quote: { validUntil?: string | null; quotedOn: string | null; amount: number | null },
+  today: string,
+): QuoteFreshness | null {
+  // No price, nothing to be stale about. An unanswered request is
+  // `requestState`'s business and saying "old" about it would double-report
+  // the same fact in a second vocabulary.
+  if (quote.amount === null) return null;
+  const dated = { validUntil: quote.validUntil ?? null, quotedOn: quote.quotedOn };
+  if (isExpired(dated, today)) {
+    return { level: "expired", note: `Price lapsed ${dated.validUntil}` };
+  }
+  if (isStale(dated, today)) {
+    return { level: "stale", note: `Priced ${daysBetween(quote.quotedOn!, today)} days ago — worth re-checking` };
+  }
+  return null;
+}
+
+/**
+ * The sentence for a bid whose CARRIED price has lapsed, or null.
+ *
+ * This is the one that is worth more than a badge on a row. A carried quote is
+ * the number inside what we sent the GC, so "the price we are carrying expired"
+ * is a fact about the bid rather than about a row in a list — the same reason
+ * `underCostWarning` reads off the whole estimate rather than per line.
+ *
+ * It names the vendor and the date and stops. It does not say the bid is wrong:
+ * subs honour lapsed numbers all the time, and whether this one will is
+ * knowledge the estimator has and this module does not.
+ */
+export function carriedQuoteLapsed<T extends LevelQuote & { carriedAt?: string | null }>(
+  quotes: readonly T[],
+  today: string,
+): string | null {
+  const lapsed = quotes.filter(
+    (quote) => (quote.carriedAt ?? null) !== null && quoteFreshness(quote, today)?.level === "expired",
+  );
+  if (lapsed.length === 0) return null;
+  const named = lapsed.map((quote) => `${quote.vendorName} (${quote.validUntil})`).join(", ");
+  return lapsed.length === 1
+    ? `The price you carried has lapsed: ${named}. Confirm it still stands before you send this bid.`
+    : `${lapsed.length} carried prices have lapsed: ${named}. Confirm they still stand before you send this bid.`;
+}
 
 /** A quote with a price on it. The type-level half of the guard below: every
  * comparison in this file takes these, so an unanswered request cannot be

@@ -235,7 +235,7 @@ export function JobCostPanel({ className }: { className?: string }) {
   return (
     <PanelFrame
       title="Job costing & WIP"
-      meta={`${DEMO_JOB.name} · Estimate tab`}
+      meta={`${DEMO_JOB.name} · Estimate step`}
       /* "burdened rate" until 2026-09-22, and it was the screen lying about
          the arithmetic rather than the arithmetic being wrong. To a
          contractor "burdened" means fully loaded — employer FICA, FUTA/SUTA
@@ -305,7 +305,7 @@ export function JobCostPanel({ className }: { className?: string }) {
           <li key={id} className="rounded-lg border border-line-card bg-canvas p-3">
             <p className="text-sm font-medium text-ink">
               {description}
-              <span className="ml-2 rounded bg-neutral-800 px-1.5 py-0.5 text-xs font-normal text-ink-body">{trade}</span>
+              <span className="ml-2 rounded bg-rail-hover px-1.5 py-0.5 text-xs font-normal text-ink-body">{trade}</span>
             </p>
             <dl className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums text-ink-body">
               <div>

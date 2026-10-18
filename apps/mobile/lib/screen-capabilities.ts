@@ -25,6 +25,7 @@ export const SCREEN_CAPABILITY = {
   "ticket/[jobId]": "MANAGE_FIELD",
   "schedule/[jobId]": "MANAGE_FIELD",
   "drawings/[jobId]": "MANAGE_JOBS",
+  "sheets/[jobId]": "MANAGE_JOBS",
 } as const satisfies Record<string, Capability>;
 
 export type GuardedScreen = keyof typeof SCREEN_CAPABILITY;
@@ -42,6 +43,7 @@ export const SCREEN_ROUTE: Record<GuardedScreen, string> = {
   "ticket/[jobId]": "jobs/[id]/tickets/route.ts",
   "schedule/[jobId]": "jobs/[id]/schedule/route.ts",
   "drawings/[jobId]": "jobs/[id]/drawings/route.ts",
+  "sheets/[jobId]": "sheets/route.ts",
 };
 
 /**
@@ -69,4 +71,5 @@ export const SCREEN_NOUN: Record<GuardedScreen, StringKey> = {
   "ticket/[jobId]": "notYourJob.noun.tickets",
   "schedule/[jobId]": "notYourJob.noun.schedule",
   "drawings/[jobId]": "notYourJob.noun.drawings",
+  "sheets/[jobId]": "notYourJob.noun.sheets",
 };

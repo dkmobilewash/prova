@@ -1,4 +1,5 @@
 import {
+  calculateTimeEntryBaseWage,
   calculateTimeEntryLaborCost,
   findEffectiveFringeRateSchedule,
   type FringeRateScheduleInput,
@@ -23,11 +24,54 @@ import {
  * Estimate hours are treated as STRAIGHT time. No overtime or double-time
  * concept exists at bid time — nobody plans a bid in OT hours — and
  * inventing a premium here would inflate every estimate.
+ *
+ * ── THE EMPLOYER BURDEN IS IN HERE AS OF 2026-10-04, AND IT HAD TO BE ──
+ *
+ * The paragraph above says this reuses the actuals functions so that a variance
+ * is never "partly an artefact of the arithmetic". For a year it then did the
+ * one thing that sentence forbids: `calculateTimeEntryLaborCost` is base wage
+ * plus the four CBA fringes and stops, while the job costing this estimate is
+ * later compared against adds employer FICA, FUTA/SUTA and workers' comp on top
+ * (`lib/labor-job-cost.ts`). Same hours, two bases — so every job showed a labor
+ * overrun of roughly the burden percentage, systematically, and because percent
+ * complete is cost-to-cost the completion figure drifted with it.
+ *
+ * Nothing in the code ever argued for that asymmetry; the burden simply lived
+ * one layer above, in a path the estimate does not go through. Diego's call,
+ * 2026-10-04: the estimate prices labor the way the job costs it.
+ *
+ * **THE PERCENTAGE MULTIPLIES THE BASE WAGE ONLY, NEVER THE FRINGES.**
+ * `lib/employer-burden.ts` states that as a modelling choice for a CPA to
+ * confirm — bona fide benefit-plan contributions sit outside the wage base
+ * employer payroll taxes are computed on. The estimate must not invent a second
+ * rule, so it asks the same question of the same base-wage function the actuals
+ * use (`calculateTimeEntryBaseWage`, exported for exactly this kind of caller).
+ *
+ * **WITH NO RATE RECORDED, NOTHING MOVES.** `employerBurdenPercentOn` returns
+ * null for a company that has never recorded one, every figure here is then
+ * byte-identical to what it was, and that is also the opt-out for a shop that
+ * carries burden inside its overhead percentage instead: don't record a rate and
+ * nothing is counted twice.
+ *
+ * **AND IT DOES NOT ROUND, WHERE THE ACTUALS PATH DOES.** That is deliberate and
+ * is not a second rule. `labor-job-cost.ts` accumulates base wages across many
+ * `TimeEntry` rows and rounds once at the end because it posts a ledger figure.
+ * This is ONE line, the cost is linear in hours, and `calculateTimeEntryLaborCost`
+ * above is itself unrounded for the same reason — rounding happens exactly once,
+ * when a figure is written to a `Decimal(12,2)` money column. Rounding here would
+ * also break the property `burdenedHourlyRate` depends on, that rate × hours is
+ * the line's own figure to nine decimal places; a preview that quotes a different
+ * number from the row it creates is worse than no preview.
+ *
+ * `employerBurdenPercent` is REQUIRED rather than defaulted, so a new caller has
+ * to decide rather than silently inherit "no burden" — the compiler asking the
+ * question is the only thing that stops this drifting apart again.
  */
 export function estimateBurdenedLaborCost(
   laborHours: number | null,
   schedules: FringeRateScheduleInput[],
   asOf: Date,
+  employerBurdenPercent: number | null,
 ): number | null {
   if (laborHours === null || laborHours <= 0) return null;
 
@@ -37,7 +81,15 @@ export function estimateBurdenedLaborCost(
   const schedule = findEffectiveFringeRateSchedule(schedules, asOf);
   if (!schedule) return null;
 
-  return calculateTimeEntryLaborCost({ hours: laborHours, payType: "STRAIGHT", date: asOf }, schedule);
+  const entry = { hours: laborHours, payType: "STRAIGHT" as const, date: asOf };
+  const wageCost = calculateTimeEntryLaborCost(entry, schedule);
+  if (wageCost === null || employerBurdenPercent === null) return wageCost;
+
+  const baseWage = calculateTimeEntryBaseWage(entry, schedule);
+  if (baseWage === null) return wageCost;
+
+  // A percentage, so `/ 100`. Unrounded — see the header.
+  return wageCost + (baseWage * employerBurdenPercent) / 100;
 }
 
 /**
@@ -66,6 +118,7 @@ export function laborRateDateFor(job: { startDate: Date | null }, today: Date): 
 export function burdenedHourlyRate(
   schedules: FringeRateScheduleInput[],
   asOf: Date,
+  employerBurdenPercent: number | null,
 ): number | null {
-  return estimateBurdenedLaborCost(1, schedules, asOf);
+  return estimateBurdenedLaborCost(1, schedules, asOf, employerBurdenPercent);
 }

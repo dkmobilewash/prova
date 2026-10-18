@@ -45,6 +45,13 @@ export const SPEC_FINDING_LABEL: Record<SpecFindingKind, string> = {
   NAMED_PRODUCT: "Named product",
   ATTIC_STOCK: "Attic stock",
   PERFORMANCE: "Performance",
+  // Division 00/01 contract conditions. Named as an estimator would say them
+  // out loud — "LDs" is what they are called on a job, but spelled out here
+  // because the person reading this screen may be the one who has not met one
+  // before, which is exactly who the finding is for.
+  LIQUIDATED_DAMAGES: "Liquidated damages",
+  WORKING_HOURS: "Working hours",
+  WAGE_REQUIREMENT: "Wage requirement",
   GENERAL: "Other",
 };
 

@@ -314,6 +314,7 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   t("q-bids-out", "what bids have we got out?", "bid_status", ESTIMATOR),
   t("q-bids-due", "what's due this week?", "bid_status", ESTIMATOR),
   c("q-bid-log", "Turner asked us to bid the Riverside fireproofing, bids due 10/3", "log_bid_invitation", ESTIMATOR),
+  c("q-bid-outcome", "we lost Riverside on price, Acme got it", "record_bid_outcome", ESTIMATOR),
   c("q-estimate-new", "start an estimate for Northgate Apartments for Skanska", "create_estimate_job", ESTIMATOR),
   c("q-estimate-lines", "draft the line items for Northgate off the scope", "draft_estimate_lines", ESTIMATOR),
   // THE ONE CASE THE MODEL EVAL FAILED, AND THE QUESTION WAS WRONG RATHER
@@ -524,7 +525,8 @@ export const CENSUS_REFUSALS = 2;
  * the attendance refusal, which is a KNOWN_GAP and not an entry here — but
  * they are routable, and a tool nobody's words reach is the shape this
  * census exists to notice. */
-export const TOTAL_QUESTIONS = 125;
+/** -> 126 on 2026-10-11: one question for `record_bid_outcome`, the win/loss card the research agents learn from. */
+export const TOTAL_QUESTIONS = 126;
 
 /**
  * The routable ninety-seven, as eval cases, so the model half of the
