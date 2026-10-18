@@ -46,7 +46,7 @@ export type LabelVerdict = {
   lengthFeet: number;
   thicknessFeet: number;
   /** What the reviewer said about this run. */
-  verdict: "wall" | "not-wall" | "traced";
+  verdict: "wall" | "not-wall" | "traced" | "unsure";
 };
 
 export type LabelRow = {
@@ -69,8 +69,40 @@ export type LabelFile = {
   feetPerUnit: number;
   featureNames: string[];
   reviewComplete: boolean;
-  counts: { accepted: number; rejected: number; traced: number; unreviewed: number };
+  /** `unsure` is REVIEWED and excluded; `unreviewed` is nobody looked. They
+   *  were one field once and the file could not tell them apart. */
+  counts: {
+    accepted: number;
+    rejected: number;
+    traced: number;
+    unsure: number;
+    unreviewed: number;
+  };
   rows: LabelRow[];
+  /**
+   * ── WHAT THE REVIEWER ACTUALLY DECIDED, KEPT AS THEY DECIDED IT ──
+   *
+   * The `rows` above are DERIVED: one per pairing, with a label and a feature
+   * vector and no geometry. That is what a trainer wants and it throws away
+   * what a person did — which run they accepted, which they rejected, which
+   * they could not call.
+   *
+   * The first version of this file format stored only the rows, so Camp Bow
+   * Wow A101's twenty-six minutes of work could not be revisited, audited or
+   * corrected: there was no way to ask "which were the 48 unsure ones" except
+   * to review the sheet again. A label set nobody can re-open is a label set
+   * nobody can fix, and the first thing anyone wanted to do with the first
+   * real sheet was fix it.
+   */
+  verdicts: {
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    lengthFeet: number;
+    thicknessFeet: number;
+    verdict: "wall" | "not-wall" | "traced" | "unsure";
+  }[];
   /** Walls the reviewer drew because nothing was offered. No feature vector
    *  exists for these — nothing proposed them — so they are kept apart rather
    *  than invented into rows. */
@@ -139,7 +171,21 @@ export function labelRows(
   feetPerUnit: number,
   reviewComplete: boolean,
 ): LabelRow[] {
+  // ── AN UNSURE RUN REMOVES ITS PAIRINGS FROM THE FILE ──
+  //
+  // It is not a negative and it is not a positive. The first version of this
+  // never received unsure verdicts at all, so a reviewer's 48 "not sure" runs
+  // on Camp Bow Wow A101 fell through to the `no-run` branch below and were
+  // written as 483 confident NEGATIVES — the precise thing the verdict exists
+  // to prevent, and invisible in the file, which recorded them only as a
+  // count of 48 "unreviewed".
+  //
+  // `reviewComplete` is why the fall-through was silent: unsure counts as
+  // reviewed, so the sheet was complete, so "no run covers this" meant "the
+  // reviewer saw it and did not call it a wall". For an unsure run that
+  // reading is false.
   const judged = verdicts.filter((v) => v.verdict !== "traced");
+  const unsure = verdicts.filter((v) => v.verdict === "unsure");
   const rows: LabelRow[] = [];
   for (const candidate of candidates) {
     // A candidate can lie under more than one run; an ACCEPTED one wins,
@@ -147,11 +193,14 @@ export function labelRows(
     // how it was found.
     let best: LabelVerdict | null = null;
     for (const run of judged) {
+      if (run.verdict === "unsure") continue;
       if (!belongsTo(run, candidate, feetPerUnit)) continue;
       if (best === null || (run.verdict === "wall" && best.verdict !== "wall")) best = run;
     }
     if (best === null) {
       if (!reviewComplete) continue;
+      // Nothing judged it, but something UNSURE lies along it: leave it out.
+      if (unsure.some((run) => belongsTo(run, candidate, feetPerUnit))) continue;
       rows.push({
         features: candidate.features,
         label: 0,
@@ -200,9 +249,19 @@ export function labelFile(input: {
       accepted: input.verdicts.filter((v) => v.verdict === "wall").length,
       rejected: input.verdicts.filter((v) => v.verdict === "not-wall").length,
       traced: traced.length,
+      unsure: input.verdicts.filter((v) => v.verdict === "unsure").length,
       unreviewed: input.unreviewed,
     },
     rows,
+    verdicts: input.verdicts.map((v) => ({
+      x1: v.x1,
+      y1: v.y1,
+      x2: v.x2,
+      y2: v.y2,
+      lengthFeet: v.lengthFeet,
+      thicknessFeet: v.thicknessFeet,
+      verdict: v.verdict,
+    })),
     traced: traced.map((t) => ({
       x1: t.x1,
       y1: t.y1,

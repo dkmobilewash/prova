@@ -127,6 +127,61 @@ describe("a reviewed sheet survives being saved and read back", () => {
       candidates[0].features.length,
     );
     expect(back.featureNames).toContain("penPercentile");
+
+    // ── THE REVIEWER'S OWN DECISIONS, NOT JUST THE DERIVED ROWS ──
+    //
+    // Without these a saved sheet cannot be re-opened: A101's first review
+    // stored 6,030 rows and no way to ask which 48 runs the reviewer could
+    // not call. Twenty-six minutes of work, unauditable.
+    expect(back.verdicts.length, "the reviewer's verdicts are not in the file").toBe(
+      verdicts.length,
+    );
+    expect(back.verdicts.some((v) => v.verdict === "wall")).toBe(true);
+    expect(back.verdicts[0].lengthFeet).toBeGreaterThan(0);
+  });
+
+  it("LEAVES AN UNSURE RUN'S PAIRINGS OUT OF THE FILE ENTIRELY", async () => {
+    // Not 0 and not 1 — absent. They reached one real sheet as 483 confident
+    // negatives because the panel never sent the verdict and `reviewComplete`
+    // made "nothing covers this" mean "the reviewer said no".
+    const { candidates, walls } = reviewed();
+    const byLength = [...walls].sort((a, b) => b.lengthFeet - a.lengthFeet);
+    const asVerdict = (w: (typeof walls)[number], verdict: "wall" | "unsure") => ({
+      x1: w.x1,
+      y1: w.y1,
+      x2: w.x2,
+      y2: w.y2,
+      lengthFeet: w.lengthFeet,
+      thicknessFeet: w.thicknessFeet,
+      verdict,
+    });
+    const file = (verdicts: ReturnType<typeof asVerdict>[]) =>
+      labelFile({
+        set: "round-trip",
+        sheet: "A103",
+        page: 19,
+        reviewedBy: "test",
+        secondsSpent: 1,
+        feetPerUnit: 1 / 12,
+        reviewComplete: true,
+        candidates,
+        verdicts,
+        unreviewed: 0,
+      });
+
+    const bothWalls = file([asVerdict(byLength[0], "wall"), asVerdict(byLength[1], "wall")]);
+    const oneUnsure = file([asVerdict(byLength[0], "wall"), asVerdict(byLength[1], "unsure")]);
+
+    expect(bothWalls.rows.length, "nothing was labelled, so this proves nothing").toBeGreaterThan(0);
+    expect(
+      oneUnsure.rows.length,
+      "the unsure run's pairings are still in the file",
+    ).toBeLessThan(bothWalls.rows.length);
+    expect(oneUnsure.counts.unsure).toBe(1);
+    // And it is not hiding as a negative.
+    expect(oneUnsure.rows.filter((r) => r.label === 0).length).toBe(
+      bothWalls.rows.filter((r) => r.label === 0).length,
+    );
   });
 
   it("COUNTS A REJECTION AS A REJECTION", async () => {

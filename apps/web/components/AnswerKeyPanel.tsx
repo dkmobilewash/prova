@@ -246,7 +246,7 @@ export function AnswerKeyPanel({
       const verdicts = [
         ...state.candidates
           .map((c) => ({ c, v: state.verdicts[c.id] ?? "unreviewed" }))
-          .filter((x) => x.v === "wall" || x.v === "not-a-wall")
+          .filter((x) => x.v === "wall" || x.v === "not-a-wall" || x.v === "unsure")
           .map((x) => ({
             x1: x.c.x1,
             y1: x.c.y1,
@@ -256,10 +256,11 @@ export function AnswerKeyPanel({
             thicknessFeet: (x.c.thicknessIn ?? 0) / 12,
             // "not-wall", not "not-a-wall": `LabelVerdict` spells it the
             // short way and `labelFile` counts rejections by that literal.
-            // The rows would still have carried label 0 — it tests for
-            // "wall" — so this was wrong only in the summary, which is the
-            // kind of wrong nobody reads until the training set is built.
-            verdict: x.v === "wall" ? "wall" : "not-wall",
+            //
+            // And "unsure" travels as itself. It did not travel at all once,
+            // so every unsure run's pairings reached the file as confident
+            // negatives — 483 of them on one sheet.
+            verdict: x.v === "wall" ? "wall" : x.v === "unsure" ? "unsure" : "not-wall",
           })),
         ...state.traced.map((t) => ({
           x1: t.x1,
@@ -425,6 +426,31 @@ export function AnswerKeyPanel({
               <li>The fill inside a wall — stipple, dots, diagonal shading.</li>
               <li>Desks, casework, fixtures. Drawn inside a room, not between two.</li>
               <li>Grid lines and dimension lines.</li>
+            </ul>
+            {/*
+              * ── DIEGO'S RULES, 2026-10-18, AFTER THE FIRST REAL SHEET ──
+              *
+              * Added because Camp Bow Wow A101 produced 48 "not sure" out of
+              * 144, and most of them were one of these five. They are a
+              * SCOPE decision rather than a drawing one — the question is
+              * what this sub bills for, and nothing in the geometry can
+              * answer it — so they have to be written down or every
+              * reviewer decides them differently.
+              */}
+            <p className="font-semibold text-ink-label">
+              No — only the building itself counts
+            </p>
+            <ul className="list-disc space-y-0.5 pl-4">
+              <li>
+                Site walls OUTSIDE the building: trash enclosures, planters,
+                barricades, screen walls, equipment pad edges.
+              </li>
+              <li>Outdoor yard dividers and fences.</li>
+              <li>Kennels, and anything else the owner supplies.</li>
+              <li>
+                The short &ldquo;bumps&rdquo; where a column crosses a
+                wall&apos;s thickness.
+              </li>
             </ul>
             <p>
               If you cannot tell, press <b>U</b> for Not sure. That is a real answer

@@ -19,6 +19,7 @@ import { ActionForm } from "@/components/ActionForm";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
 import { SubmitButton } from "@/components/SubmitButton";
+import { canvasPlan } from "@/lib/takeoff/canvasPlan";
 import { DISTINCT_MARKS, SHOWN_AT_FIRST, markFor } from "@/lib/takeoff/clusterMarks";
 import { formatFeetInches, parseFeetInches } from "@/lib/feet-inches";
 import {
@@ -1182,14 +1183,30 @@ export function TakeoffPlanViewer({
         const unit = page.getViewport({ scale: 1 });
         setPageSize({ widthPt: unit.width, heightPt: unit.height });
 
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        const scale = BASE_SCALE * zoomFactor;
-        const viewport = page.getViewport({ scale: scale * dpr });
-        canvas.width = Math.round(viewport.width);
-        canvas.height = Math.round(viewport.height);
-        canvas.style.width = `${Math.round(viewport.width / dpr)}px`;
-        canvas.style.height = `${Math.round(viewport.height / dpr)}px`;
-        setCssWidth(Math.round(viewport.width / dpr));
+        // ── SIZED WITHIN WHAT A BROWSER WILL ACTUALLY DRAW ──
+        //
+        // This multiplied the page by zoom and by devicePixelRatio and handed
+        // the result straight to the canvas. Past Fit that asks for more
+        // pixels than any browser allocates — 4x on a retina screen wants 645
+        // megapixels of an ARCH-D sheet — and a canvas over the cap does not
+        // throw: it allocates nothing and the page renders BLACK. Zooming in
+        // to look at a line is the commonest thing a reviewer does, so every
+        // customer would have met this. `canvasPlan` holds the limits and the
+        // reasoning.
+        const plan = canvasPlan({
+          pageWidth: unit.width,
+          pageHeight: unit.height,
+          scale: BASE_SCALE * zoomFactor,
+          devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+        });
+        const viewport = page.getViewport({ scale: plan.renderScale });
+        canvas.width = plan.canvasWidth;
+        canvas.height = plan.canvasHeight;
+        // The CSS size is what was asked for and is never reduced, so the
+        // overlay's coordinates and the scroll position do not move.
+        canvas.style.width = `${plan.cssWidth}px`;
+        canvas.style.height = `${plan.cssHeight}px`;
+        setCssWidth(plan.cssWidth);
 
         const canvasContext = canvas.getContext("2d");
         if (!canvasContext) return;

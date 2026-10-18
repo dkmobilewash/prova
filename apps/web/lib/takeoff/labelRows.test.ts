@@ -133,7 +133,10 @@ describe("carrying a verdict from a run back to its pairings", () => {
     });
     expect(file.rows).toHaveLength(1);
     expect(file.traced).toHaveLength(1);
-    expect(file.counts).toEqual({ accepted: 1, rejected: 0, traced: 1, unreviewed: 2 });
+    // `unsure` is its own count: it is REVIEWED and excluded, where
+    // `unreviewed` is nobody looked. They were one number once, and a
+    // reviewer's 48 unsure runs reached a file as 483 confident negatives.
+    expect(file.counts).toEqual({ accepted: 1, rejected: 0, traced: 1, unsure: 0, unreviewed: 2 });
     expect(file.secondsSpent).toBe(61);
     expect(file.featureNames).toEqual([...FEATURE_NAMES]);
   });
