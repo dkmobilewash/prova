@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { mergeWalls } from "./mergeWalls";
-import type { WallCandidate } from "./wallVectors";
+import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /**
  * THE SAME WALL, FOUND TWICE, REPORTED ONCE.
@@ -327,6 +327,82 @@ describe("a corridor is not a doorway, and is NARROWER than a double door", () =
     const merged = mergeWalls(corridorScene(), 1);
     const vertical = merged.filter((m) => Math.abs(m.x2 - m.x1) < 0.01);
     expect(vertical, "the partitions were joined through open floor").toHaveLength(2);
+    for (const run of vertical) {
+      expect(run.lengthFeet, "a run spans the corridor").toBeLessThan(25);
+    }
+  });
+
+  /**
+   * ── THE SAME CORRIDOR, WITH THE DRAWING UNDER IT ──
+   *
+   * Everything above hands `mergeWalls` walls and no strokes, so a rule that
+   * reads the drawing to decide whether a gap is a doorway is not exercised by
+   * any of it. That is not hypothetical: such a rule was built on 2026-10-17,
+   * passed all 42 tests in this file including every corridor case, and took
+   * the bench from 111 missed walls to 271 by bridging corridors 253 times.
+   *
+   * These two scenes are the drawing the rule has to be wrong about. They pass
+   * today because a bounded gap is refused outright and the strokes are
+   * ignored; they exist for the day something reads them.
+   */
+  /** A flattened quarter-circle: the shape a door swing arrives as. */
+  const swing = (
+    cx: number,
+    cy: number,
+    radius: number,
+    fromDeg: number,
+    pieces = 12,
+  ): StrokeSegment[] => {
+    const out: StrokeSegment[] = [];
+    for (let i = 0; i < pieces; i += 1) {
+      const a = ((fromDeg + (i * 90) / pieces) * Math.PI) / 180;
+      const b = ((fromDeg + ((i + 1) * 90) / pieces) * Math.PI) / 180;
+      out.push({
+        x1: cx + radius * Math.cos(a),
+        y1: cy + radius * Math.sin(a),
+        x2: cx + radius * Math.cos(b),
+        y2: cy + radius * Math.sin(b),
+        width: 0.5,
+        curved: true,
+      });
+    }
+    return out;
+  };
+
+  // PROVEN AGAINST THE REVERTED RULE: re-applying it turns the mouth scene
+  // below RED and leaves this one green. So this scene is a legitimate
+  // regression case and is NOT yet known to distinguish a wrong rule from a
+  // right one — the swing sits far enough from the gap that the reverted rule
+  // ignored it anyway. Kept rather than tuned until it bites, because a
+  // fixture adjusted until one particular wrong rule fails it is fitted to
+  // that rule rather than to the hazard.
+  it("REFUSES THE CORRIDOR EVEN WITH A DOOR SWING DRAWN BESIDE IT", () => {
+    // A door in the corridor's south wall, hinged at (62,20) and swinging into
+    // the room below. It is near the corridor gap and has nothing to do with
+    // it — which is exactly the arc a careless rule reads as "a door is drawn
+    // in this gap".
+    const merged = mergeWalls(corridorScene(), 1, undefined, [
+      ...swing(62, 20, 3, 180),
+      ...swing(62, 20, 3, 180).map((one) => ({ ...one, y1: one.y1, y2: one.y2 })),
+    ]);
+    const vertical = merged.filter((m) => Math.abs(m.x2 - m.x1) < 0.01);
+    expect(vertical, "a swing beside the corridor opened it").toHaveLength(2);
+  });
+
+  // THIS IS THE ONE THAT BITES. Re-applying the reverted door-evidence rule
+  // turns it red: 1 failed, 43 passed. It is the scene that makes this whole
+  // block non-vacuous.
+  it("REFUSES A CORRIDOR WITH A DOOR AT ITS MOUTH", () => {
+    // The dangerous case named when the reverted rule was written: a door at
+    // the END of a corridor is hinged at the corridor's own end and swings a
+    // leaf about as wide as the corridor, so a rule asking only "is there an
+    // arc hinged near one end of this gap, about this wide" says yes.
+    //
+    // The corridor gap runs (50,20) to (50,25.58) — 5.58 ft. This door is
+    // hinged at (50,20), the gap's own end, with a 5.5 ft leaf.
+    const merged = mergeWalls(corridorScene(), 1, undefined, swing(50, 20, 5.5, 0));
+    const vertical = merged.filter((m) => Math.abs(m.x2 - m.x1) < 0.01);
+    expect(vertical, "a door at the corridor mouth opened the corridor").toHaveLength(2);
     for (const run of vertical) {
       expect(run.lengthFeet, "a run spans the corridor").toBeLessThan(25);
     }

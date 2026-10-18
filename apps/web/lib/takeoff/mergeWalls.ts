@@ -1,4 +1,4 @@
-import type { WallCandidate } from "./wallVectors";
+import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /**
  * ── TWO ENGINES, ONE ANSWER ──
@@ -346,7 +346,33 @@ export function mergeWalls(
   walls: readonly WallCandidate[],
   feetPerUnit: number,
   maxOpeningFeet = MAX_OPENING_FEET,
+  /**
+   * The sheet's own strokes.
+   *
+   * ── NOTHING READS THIS YET, AND THAT IS DELIBERATE ──
+   *
+   * A door-evidence rule — bridge a gap the corridor guard refused, when the
+   * door is drawn in it — was built, measured and reverted on 2026-10-17. It
+   * fixed the one doorway the guard costs on a real plan and took the bench
+   * from 111 missed walls to 271, bridging 651 of 1,087 bounded gaps and
+   * drawing wall across the bench's 6.4 ft corridors 253 times.
+   *
+   * The part worth keeping is why nobody noticed until the bench ran: the
+   * corridor tests here passed throughout, all of them, because they call this
+   * function with no drawing and the rule's code never executed in any test.
+   * A corridor test that cannot reach the code deciding corridors is the
+   * vacuous green this repository keeps paying for.
+   *
+   * So the parameter exists ahead of the rule, and the corridor tests hand it
+   * a real swing and a real door at a corridor's mouth. They pass today
+   * because the gap is refused outright; the moment a rule reads this, those
+   * scenes exercise it, and the wrong rule goes red where it previously went
+   * green. Verified by re-applying the reverted rule locally and watching them
+   * fail.
+   */
+  segments: readonly StrokeSegment[] = [],
 ): WallCandidate[] {
+  void segments;
   if (!(feetPerUnit > 0) || walls.length === 0) return [];
   const nearEnough = SAME_LINE_FEET / feetPerUnit;
 

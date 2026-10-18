@@ -179,6 +179,80 @@ TAKEOFF_BENCH=1 pnpm takeoff:bench
 Overlays are **not committed** — they are an output, they are large, and a
 stale one is worse than none. Regenerate before looking.
 
+## Where accuracy stands — 2026-10-17
+
+Every number here is from the runs on that date. Re-run before quoting any of
+it; this section is a snapshot and the rest of this file is full of entries
+that were true when written.
+
+### The twenty fixtures — someone else's conventions
+
+**15 of 17 vector plans within 2% of key gross.** 3 walls missed across the
+set, 2 extras. S11 at −3.0% and S12 at −2.3% are the two that fail. The three
+raster sheets are refused rather than guessed, which is the right answer.
+
+Total shortfall across the set is about **33 ft of 4,121** — under 1%.
+
+### The bench — our own generator, with wall-LF ground truth
+
+| bar | state |
+| --- | --- |
+| no wall over 10 ft missed | ❌ 111 walls over 27 of 60 cases |
+| in-scope LF within 2% per type | ❌ 17 of 60 type-totals outside |
+| zero-wall sheets: no phantom LF | ✅ 0 of 41 unflagged |
+
+**Where the missed footage goes, grouped.** 5,595 ft is attributed across 91
+loss lines, but 2,210 ft of that is `A-101__scan` — a raster sheet with no
+vector strokes, refused honestly. Of the remaining **3,385 ft**:
+
+| feet | share | cause |
+| --- | --- | --- |
+| 1,864 | 55% | a neighbouring line claimed one of its faces first (`one-face-one-use`, longest first, first match wins) |
+| 1,096 | 32% | read as hatching rather than wall (the series test) |
+| 371 | 11% | only one face reached the reader, or the faces came back under the 2.4 in thickness floor |
+| 54 | 2% | curves with no straight faces, faces of unequal length, pieces under the 2 ft input floor |
+
+### Cedar Hollow — the held-out plan, now a practice one
+
+    missing   5.07 ft   0.8%
+    extra     0.50 ft   0.1%   (0.00 phantom + 0.50 over-count)
+    net      -4.57 ft  -0.7%
+
+21 of 21 walls found, no run matching no key wall. Its first held-out run,
+before any of this work, was −7.9%.
+
+### The real plans — totals only, and that is the point
+
+No answer keys exist for these, so **missing and extra are undefined** and only
+a total can be quoted. That is a real limit of this instrument, not an
+omission: a total cannot tell a phantom from a recovery.
+
+| sheet | ft | runs |
+| --- | --- | --- |
+| ELEVEN03 A4.B-Y2 (p117) | 1,571 | 81 |
+| ELEVEN03 A4.B.1 (p119) | 2,424 | 224 |
+| ELEVEN03 A4.B.2 (p120) | 2,517 | 288 |
+| ELEVEN03 A4.B.3 (p121) | 2,356 | 282 |
+| Camp Bow Wow A101 (p8) | 2,530 | 133 |
+| Camp Bow Wow A102 (p9) | 2,082 | 114 |
+| Camp Bow Wow A120 (p15) | 129 | 12 |
+| Alden Green A103 (p19) | 29 | 2 |
+| Eleven03 A2.20 (p9) | not measured — no scale |
+
+### Open, and why each is parked
+
+- **A doorway the corridor guard refuses** — 3.50 ft on Cedar Hollow, one gap
+  on the whole sheet. A door-evidence rule was built and reverted; the entry
+  above has the numbers and the flaw.
+- **The 8,000-piece curve cap** — A102 gets no curved walls. Waiting on an
+  A102 answer key, because the phantoms this file records all landed on
+  hatched fill and nothing could grade the result.
+- **The bench's `one-face-one-use` loss** — the largest single cause above and
+  untouched. It is a greedy pairing: faces are claimed longest-first and the
+  first match wins, so a neighbouring line can take a face its own wall needed.
+- **`A-401`'s two scales on one page** — the scale is read 2x wrong, which is
+  why that sheet is the worst place on the bench to spend any tolerance.
+
 ## Every score is THREE numbers, not one — the standard from 2026-10-17
 
     missing — key wall nothing found, or found short
