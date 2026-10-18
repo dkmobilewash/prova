@@ -652,6 +652,9 @@ export type ViewWalls = {
  * absolute reading of the captions can do.
  */
 export function wallsPerView(input: {
+  /** Reported for every pairing the finder considers, in every view. Used by
+   *  answer-key mode to save a sheet as training data. */
+  onCandidate?: (features: number[], wall: WallCandidate, i: number, j: number) => void;
   segments: readonly StrokeSegment[];
   textItems: readonly SheetTextItem[];
   pageSize: { widthPt: number; heightPt: number };
@@ -708,6 +711,15 @@ export function wallsPerView(input: {
       feetPerUnit,
       wallTypes: input.wallTypes,
       sampledSheets: input.sampledSheets ?? null,
+      // ── WHY THIS IS HERE AND NOT ONLY AT THE VIEWER'S OWN CALL ──
+      //
+      // A sheet carrying several plan views is measured view by view, and the
+      // viewer then takes `picked.primary.found` rather than running the
+      // finder itself. Answer-key mode collected candidates only at the
+      // viewer's call, so on exactly those sheets it collected none — Save to
+      // labels refused every multi-view sheet with "no pairings were
+      // captured", which is most real bid-package sheets.
+      onCandidate: input.onCandidate,
     });
     return {
       view: band.view,

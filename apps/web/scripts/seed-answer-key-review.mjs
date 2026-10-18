@@ -59,6 +59,11 @@ if (!email.includes("@")) {
 const SETS = [
   { job: "Camp Bow Wow – Answer Keys", file: "Camp Bow Wow - 100% CD_ARCH (2) (1).pdf" },
   { job: "ELEVEN03 – Answer Keys", file: "2025-03-28_ELEVEN03 PERMIT SET_ARCH.pdf" },
+  // A103 is on this set, and sheets-to-label.md puts it first: the engine
+  // returns 29 ft over 2 runs there, which cannot be right for a house plan,
+  // so whatever is wrong is worth a label set before anything else.
+  { job: "Alden Green – Answer Keys", file: "10-Alden-Green-House-Bid-Package.pdf" },
+  { job: "HPL Lighthouse – Answer Keys", file: "20260424_HPL Lighthouse_Bulletin 2.pdf" },
 ];
 
 const prisma = new PrismaClient();

@@ -30,7 +30,25 @@ import type { WallCandidate } from "../wallVectors";
  *       npx vitest run --config vitest.eval.config.mts \
  *         lib/takeoff/realplan/zzBim.eval.ts
  */
+/**
+ * ── THE SPLIT, AGREED WITH DIEGO 2026-10-18 ──
+ *
+ * DEV      clinic, esplanades, smiley-west — fixed and measured against.
+ * HELD-OUT kit-office, fzk-haus, duplex — never looked at while fixing, and
+ *          scored once at the end.
+ *
+ * Split by BUILDING rather than by sheet, for the reason the plan-set split
+ * uses: two floors of one building share an office's conventions and its
+ * renderer, so scoring on one after tuning on the other is scoring on a sheet
+ * the work has effectively seen. `BIM_GROUP=dev` and `BIM_GROUP=held` select
+ * them; naming the group rather than remembering which folders are which is
+ * what stops a held-out building being read by accident.
+ */
+export const BIM_DEV = ["medical-dental-clinic", "esplanades", "kit-smiley-west"];
+export const BIM_HELD_OUT = ["kit-office", "kit-fzk-haus", "duplex-apartment"];
+
 const DIR = process.env.BIM_DIR ?? "";
+const GROUP = process.env.BIM_GROUP ?? "";
 const OUT = process.env.BIM_OUT ?? "";
 const ONLY = process.env.BIM_ONLY ?? "";
 
@@ -86,12 +104,56 @@ const overlapOf = (a: Line, b: Line) => {
   return Math.max(0, hi - lo);
 };
 
-/** Does this run lie along that key wall? The same test both directions. */
-const covers = (kw: Line & { thickness_in: number }, r: WallCandidate, feetPerUnit: number) =>
+/** Is this run on that key wall's line at all? Position only — how MUCH of
+ *  the wall it covers is measured separately, in feet. */
+const onTheLine = (kw: Line & { thickness_in: number }, r: WallCandidate, feetPerUnit: number) =>
   parallelism(kw, r) > 0.98 &&
   offLine(kw, (r.x1 + r.x2) / 2, (r.y1 + r.y2) / 2) <=
-    Math.max(r.thicknessFeet / feetPerUnit, kw.thickness_in / 12 / feetPerUnit, 0.002) * 2 &&
-  overlapOf(kw, r) >= 0.5 * Math.min(lengthOf(kw), lengthOf(r));
+    Math.max(r.thicknessFeet / feetPerUnit, kw.thickness_in / 12 / feetPerUnit, 0.002) * 2;
+
+/**
+ * ── MISSING IS FEET OF WALL, NOT A COUNT OF WALLS ──
+ *
+ * This used to ask whether a run covered HALF THE SHORTER of the two, which
+ * on a long wall is half the RUN: a 5 ft run lying on an 85 ft facade made the
+ * whole 85 ft count as found, and the other 80 ft vanished from the score.
+ * Every exterior wall broken by windows is exactly that shape, so the number
+ * this set exists to measure was the one it could not see — and a fix that
+ * bridged 353 gaps on one sheet moved the printed score by nothing at all,
+ * which is how it was noticed.
+ *
+ * So coverage is a UNION OF SPANS along the wall, in feet, and a wall
+ * contributes its uncovered length. The same union, taken the other way,
+ * gives the feet of run that lie on no wall.
+ */
+const unionLength = (pieces: { from: number; to: number }[]): number => {
+  if (pieces.length === 0) return 0;
+  const sorted = [...pieces].sort((p, q) => p.from - q.from);
+  let total = 0;
+  let at = sorted[0].from;
+  let end = sorted[0].to;
+  for (const piece of sorted.slice(1)) {
+    if (piece.from > end) {
+      total += end - at;
+      at = piece.from;
+      end = piece.to;
+    } else if (piece.to > end) {
+      end = piece.to;
+    }
+  }
+  return total + (end - at);
+};
+
+/** Where `b` lies along `a`, clipped to `a`. */
+const spanAlong = (a: Line, b: Line): { from: number; to: number } | null => {
+  const len = lengthOf(a) || 1;
+  const ux = (a.x2 - a.x1) / len;
+  const uy = (a.y2 - a.y1) / len;
+  const at = (x: number, y: number) => (x - a.x1) * ux + (y - a.y1) * uy;
+  const lo = Math.max(0, Math.min(at(b.x1, b.y1), at(b.x2, b.y2)));
+  const hi = Math.min(len, Math.max(at(b.x1, b.y1), at(b.x2, b.y2)));
+  return hi > lo ? { from: lo, to: hi } : null;
+};
 
 type Row = {
   id: string;
@@ -119,8 +181,18 @@ describe.skipIf(DIR === "")("the BIM held-out sheets", () => {
     const models = readdirSync(DIR, { withFileTypes: true })
       .filter((d) => d.isDirectory())
       .map((d) => d.name)
+      .filter((m) =>
+        GROUP === "dev" ? BIM_DEV.includes(m) : GROUP === "held" ? BIM_HELD_OUT.includes(m) : true,
+      )
       .sort();
     expect(models.length, `no model folders under ${DIR}`).toBeGreaterThan(0);
+    // A group that names folders which are not there would silently score a
+    // subset, and a subset of a held-out set is not a held-out set.
+    if (GROUP !== "") {
+      const want = GROUP === "dev" ? BIM_DEV : BIM_HELD_OUT;
+      expect(models.length, `BIM_GROUP=${GROUP} wanted ${want.join(", ")}`).toBe(want.length);
+    }
+    console.log(`group: ${GROUP === "" ? "ALL" : GROUP} — ${models.join(", ")}`);
     if (OUT) mkdirSync(OUT, { recursive: true });
 
     const rows: Row[] = [];
@@ -181,9 +253,16 @@ describe.skipIf(DIR === "")("the BIM held-out sheets", () => {
         let missAll = 0;
         let missNoFur = 0;
         for (const kw of keyWalls) {
-          if (runs.some((r) => covers(kw, r, feetPerUnit))) continue;
-          missAll += kw.length_ft;
-          if (kw.role !== "furring") missNoFur += kw.length_ft;
+          const onIt = runs.filter((r) => onTheLine(kw, r, feetPerUnit));
+          const spans = onIt
+            .map((r) => spanAlong(kw, r))
+            .filter((x): x is { from: number; to: number } => x !== null);
+          const inUnits = lengthOf(kw) || 1;
+          const coveredShare = Math.min(1, unionLength(spans) / inUnits);
+          const shortBy = kw.length_ft * (1 - coveredShare);
+          if (shortBy <= 0.01) continue;
+          missAll += shortBy;
+          if (kw.role !== "furring") missNoFur += shortBy;
           // The cause, in the order a reader would ask: not drawn at all,
           // then curved, then thin, then plain.
           const why = !kw.cut_by_plan
@@ -195,19 +274,38 @@ describe.skipIf(DIR === "")("the BIM held-out sheets", () => {
                 : kw.length_ft < 3
                   ? "short (<3 ft)"
                   : `plain ${kw.role}`;
-          bump(missBy, why, kw.length_ft);
+          bump(missBy, why, shortBy);
         }
 
         let extraAll = 0;
         let extraNoFur = 0;
         for (const r of runs) {
-          const onAny = keyWalls.some((kw) => covers(kw, r, feetPerUnit));
-          const onNonFurring = keyWalls.some(
-            (kw) => kw.role !== "furring" && covers(kw, r, feetPerUnit),
+          // Feet of this run that lie on no key wall, the same union the other
+          // way round — a run half on a wall and half across a corridor is
+          // half a phantom, not all or nothing.
+          const asLine = { x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2 };
+          const runUnits = lengthOf(asLine) || 1;
+          const onAnyShare = Math.min(
+            1,
+            unionLength(
+              keyWalls
+                .filter((kw) => onTheLine(kw, r, feetPerUnit))
+                .map((kw) => spanAlong(asLine, kw))
+                .filter((x): x is { from: number; to: number } => x !== null),
+            ) / runUnits,
           );
-          if (!onAny) extraAll += r.lengthFeet;
-          if (!onNonFurring) extraNoFur += r.lengthFeet;
-          if (onAny) continue;
+          const onNonFurShare = Math.min(
+            1,
+            unionLength(
+              keyWalls
+                .filter((kw) => kw.role !== "furring" && onTheLine(kw, r, feetPerUnit))
+                .map((kw) => spanAlong(asLine, kw))
+                .filter((x): x is { from: number; to: number } => x !== null),
+            ) / runUnits,
+          );
+          extraAll += r.lengthFeet * (1 - onAnyShare);
+          extraNoFur += r.lengthFeet * (1 - onNonFurShare);
+          if (onAnyShare > 0.99) continue;
           // Blame it on whatever the key's own strokes say is there.
           const band = Math.max(r.thicknessFeet / feetPerUnit, 0.003);
           const near = new Map<string, number>();
@@ -220,7 +318,7 @@ describe.skipIf(DIR === "")("the BIM held-out sheets", () => {
             near.set(kl.type, (near.get(kl.type) ?? 0) + ov);
           }
           const blame = [...near.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "nothing in the key";
-          bump(extraBy, blame, r.lengthFeet);
+          bump(extraBy, blame, r.lengthFeet * (1 - onAnyShare));
         }
 
         rows.push({

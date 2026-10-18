@@ -463,6 +463,114 @@ comparison. No model is committed: this one is worse than the rules on every
 real guard, and a model file in the tree that nobody should load is a thing the
 next person has to work out the status of.
 
+## THE BIM SCORER COULD NOT SEE PARTIAL COVERAGE — 2026-10-18
+
+Every BIM number published yesterday was too kind, and the amount is large.
+
+`covers()` asked whether a run overlapped **half the SHORTER** of the two,
+which on a long wall is half the RUN. A 5 ft run lying anywhere on an 85 ft
+facade made the whole 85 ft count as found and the other 80 ft vanished. An
+exterior wall broken by window after window is exactly that shape, so the
+thing this set exists to measure was the one it could not see.
+
+| BIM-DEV, rules only | old scorer | measuring FEET |
+| --- | --- | --- |
+| missing | 9.2% | **16.3%** |
+| extra | 3.3% | **5.3%** |
+| missing, no furring | 7.1% | **14.3%** |
+
+Coverage is a union of spans along the wall now, in feet, and a wall
+contributes its uncovered length; the same union taken the other way gives
+the feet of run lying on no wall, so a run half on a wall and half across a
+corridor is half a phantom rather than all or nothing.
+
+**How it was caught is the part worth keeping.** A window-bridging rule was
+built, measured, and reported the baseline TO THE FOOT. That looked like a
+rule which changed nothing — the third time in two days something has worn
+that disguise here. It had in fact bridged 353 gaps on one sheet; the score
+simply could not move, because the walls it bridged were already counted as
+found. A fix that moves nothing is a claim about the INSTRUMENT as much as
+about the fix, and this file now has three instances: the veto that matched
+by object identity, the rule in dead code behind a grouping filter, and a
+scorer that rounded every partially-found wall up to whole.
+
+`zzMessy.eval.ts` scores the same way and has not been corrected, so the
+messy synthetic figures (2.9% missing, 13.6% extra) are on the OLD basis and
+are not comparable to anything above.
+
+## THE BIM SPLIT — 2026-10-18
+
+| | buildings |
+| --- | --- |
+| **DEV** — fixed and measured against | medical-dental-clinic, esplanades, kit-smiley-west |
+| **HELD OUT** — scored once, at the end | kit-office, kit-fzk-haus, duplex-apartment |
+
+By BUILDING, not by sheet: two floors of one building share an office's
+conventions and its renderer, so scoring on one after tuning on the other is
+scoring on a sheet the work has effectively seen. `BIM_GROUP=dev|held`
+selects them, and the eval asserts the group it found has as many buildings
+as the list names — a held-out set quietly missing a folder is not a held-out
+set.
+
+### BIM-DEV baseline, measured in feet
+
+47,316 key ft over 22 sheets.
+
+| | missing | extra | net |
+| --- | --- | --- | --- |
+| with furring | 7,690 (16.3%) | 2,524 (5.3%) | −5,166 |
+| without furring | 6,318 (14.3%) | 3,045 (6.9%) | −3,272 |
+
+| cause of missing | ft |
+| --- | --- |
+| plain exterior | 3,612 |
+| plain partition | 1,796 |
+| furring under 3 in | 1,326 |
+| runs under 3 ft | 727 |
+
+| what the extra sits on | ft |
+| --- | --- |
+| dimension lines | 1,354 |
+| stairs | 377 |
+| room-space outlines | 282 |
+
+## FIX (a), WINDOW BRIDGING: REVERTED — 2026-10-18
+
+Bridge a gap when glazing spans it and both sides are the same line and the
+same thickness. Two lines of glazing minimum, 60% of the gap covered, inside
+the wall band; doors deliberately excluded, since a swing is an arc and a leaf
+is one line.
+
+It works on the set it was built for and **fails the bench**:
+
+| | baseline | with the rule |
+| --- | --- | --- |
+| BIM-DEV missing | 16.3% | **14.8%** |
+| BIM-DEV extra | 5.3% | **6.1%** |
+| bench type-totals outside ±2% | 17 of 60 | **21 of 60** |
+| bench walls over 10 ft missed | 111 | **200** |
+| bench zero-wall bar | PASS | PASS |
+| 20 fixtures printed floor | 16 of 17 | 16 of 17 |
+
+Reverted. 671 ft of real wall recovered on BIM-DEV is not worth 89 more
+missed walls on the bench — and the direction is the surprise worth recording:
+bridging MERGES runs, and a longer merged run then falls foul of filters the
+two short ones passed, so a rule that only ever joins things ended up losing
+wall.
+
+Two things found on the way, both kept:
+
+**`mergeWalls` was never given the drawing.** Its fourth parameter has existed
+since the door-evidence experiment with a docstring saying nothing reads it
+yet; the one production call site in `wallRuns.ts` omitted it, so it defaulted
+to an empty array. Any rule reading it would have fired on nothing.
+
+**A rule placed in the spans loop is dead code for a wide gap.** Two runs
+further apart than `MAX_OPENING_FEET` are never put in the same group by the
+pre-filter above it, so the spans loop never sees that gap. The pre-filter
+carries a comment calling itself redundant, and for a gap inside the cap it
+is.
+
 ## The BIM held-out set: real buildings, exact keys — 2026-10-18
 
 36 sheets from 6 real IFC models, 2 renderers each, with the answer key taken

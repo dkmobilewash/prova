@@ -2157,6 +2157,39 @@ export function TakeoffPlanViewer({
         viewRegions(segments, pageSize),
       );
       let found: FoundOnSheet;
+      /**
+       * Every pairing the finder considered on this sheet, with its feature
+       * vector, for answer-key mode.
+       *
+       * Declared out here because the sheet is measured by one of TWO paths —
+       * `wallsPerView` when the sheet carries several plan views, the single
+       * call below when it carries one — and a reviewed sheet is training data
+       * only if both report. Collecting at just the second one meant Save to
+       * labels refused every multi-view sheet, which is most real ones.
+       */
+      const pairings: {
+        x1: number;
+        y1: number;
+        x2: number;
+        y2: number;
+        lengthFeet: number;
+        thicknessFeet: number;
+        features: number[];
+      }[] = [];
+      const collect =
+        answerKeyRef.current?.onPairings === undefined
+          ? undefined
+          : (features: number[], wall: WallCandidate) => {
+              pairings.push({
+                x1: wall.x1,
+                y1: wall.y1,
+                x2: wall.x2,
+                y2: wall.y2,
+                lengthFeet: wall.lengthFeet,
+                thicknessFeet: wall.thicknessFeet,
+                features: [...features],
+              });
+            };
       let otherViews: ViewWalls[] = [];
       let leftOut: ExcludedView[] = [];
       let primaryShown: { name: string; scaleName: string | null } | null = null;
@@ -2171,6 +2204,7 @@ export function TakeoffPlanViewer({
           wallTypes,
           feetPerUnit,
           sampledSheets,
+          onCandidate: collect,
         });
         const picked = primaryView(measured);
         otherViews = picked.others;
@@ -2234,19 +2268,8 @@ export function TakeoffPlanViewer({
         );
         const onTheDrawing = segmentsInRegions(segments, drawing, pageSize.widthPt);
         planBoxes = drawing.length > 0 ? [...drawing] : null;
-        // The pairings are collected only when somebody is listening, which
-        // is answer-key mode. `onCandidate` fires after the sheet-relative
-        // columns are filled, so what is reported here is what a model would
-        // be scored on.
-        const pairings: {
-          x1: number;
-          y1: number;
-          x2: number;
-          y2: number;
-          lengthFeet: number;
-          thicknessFeet: number;
-          features: number[];
-        }[] = [];
+        // `onCandidate` fires after the sheet-relative columns are filled, so
+        // what is reported is what a model would be scored on.
         found = findWallsOnSheet({
           segments: onTheDrawing,
           textItems,
@@ -2254,20 +2277,8 @@ export function TakeoffPlanViewer({
           feetPerUnit,
           wallTypes,
           sampledSheets,
-          onCandidate: answerKeyRef.current?.onPairings
-            ? (features, wall) =>
-                pairings.push({
-                  x1: wall.x1,
-                  y1: wall.y1,
-                  x2: wall.x2,
-                  y2: wall.y2,
-                  lengthFeet: wall.lengthFeet,
-                  thicknessFeet: wall.thicknessFeet,
-                  features: [...features],
-                })
-            : undefined,
+          onCandidate: collect,
         });
-        if (pairings.length > 0) answerKeyRef.current?.onPairings?.(pairings);
       }
       setOtherViewsByPage((prev) => ({ ...prev, [pageNumber]: otherViews }));
       setExcludedByPage((prev) => ({ ...prev, [pageNumber]: leftOut }));
@@ -2277,6 +2288,9 @@ export function TakeoffPlanViewer({
       setTemplateStrokes(found.templateDropped);
       setLayerDropped(found.layerDropped);
 
+      // Both measuring paths have run by here, so this is the one place that
+      // sees every pairing on the sheet whichever one was taken.
+      if (pairings.length > 0) answerKeyRef.current?.onPairings?.(pairings);
       runsRef.current = walls;
       feetAcrossRef.current = feetPerUnit;
       regroupRef.current = regroup;
