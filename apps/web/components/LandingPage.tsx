@@ -153,7 +153,7 @@ import { SubmittalStamp } from "@/components/landing/SubmittalStamp";
 const cta =
   "inline-flex items-center justify-center rounded-md bg-brand px-8 py-4 text-lg font-semibold text-neutral-900 transition-colors duration-[var(--speed-fast)] ease-[var(--ease-landing-snap)] hover:bg-yellow-500";
 const ctaQuiet =
-  "inline-flex items-center justify-center rounded-md bg-neutral-800 px-8 py-4 text-lg font-medium text-ink transition-colors duration-[var(--speed-fast)] ease-[var(--ease-landing-snap)] hover:bg-neutral-700";
+  "inline-flex items-center justify-center rounded-md bg-rail-hover px-8 py-4 text-lg font-medium text-ink transition-colors duration-[var(--speed-fast)] ease-[var(--ease-landing-snap)] hover:bg-lift";
 const ctaNav =
   "inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 transition-colors duration-[var(--speed-fast)] ease-[var(--ease-landing-snap)] hover:bg-yellow-500";
 
@@ -353,7 +353,7 @@ function CapabilitySection({
         <ul className="mt-6 flex flex-col gap-3">
           {points.map((point) => (
             <li key={point} className="flex gap-3 text-sm leading-relaxed text-ink-body sm:text-base">
-              <span aria-hidden className="mt-0.5 shrink-0 text-brand">
+              <span aria-hidden className="mt-0.5 shrink-0 text-link-hover">
                 &#8212;
               </span>
               <span>{point}</span>
@@ -380,7 +380,7 @@ export function LandingPage() {
           alt="C Stream"
           width={240}
           height={48}
-          className="h-8 w-auto sm:h-10"
+          className="logo-on-theme h-8 w-auto sm:h-10"
           priority
         />
         <Link href="/sign-up" className={ctaNav}>

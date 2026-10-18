@@ -126,6 +126,11 @@ const CONTROLS: Record<AiFeatureKey, Control> = {
     file: "components/PlanIngestPanel.tsx",
     why: "The panel on a job's takeoff tab that opens a plan set and then reads its title blocks. See stageReachableCensus for the separate question of whether each STAGE has a caller.",
   },
+  AI_AGENTS: {
+    kind: "component",
+    file: "components/RunAgentButton.tsx",
+    why: "The 'Run now' button on /ai: a person starts a background agent by hand, which is how the watcher, research and the estimate check are reached without waiting for the cron or a new bid. The runs themselves are gated in lib/agents/core.ts.",
+  },
   SCHEDULE_READ: {
     kind: "component",
     file: "components/ScheduleProposals.tsx",
@@ -145,6 +150,16 @@ const CONTROLS: Record<AiFeatureKey, Control> = {
     kind: "component",
     file: "components/SpecFindings.tsx",
     why: "Attach a spec section on /bids and list what in it costs money — finish level, ratings, mock-ups, testing, named products — each with the sentence it was read from and a page to check it against.",
+  },
+  SHEET_TEXT: {
+    kind: "component",
+    file: "components/TakeoffPlanViewer.tsx",
+    why: "Read this sheet, on the takeoff sheet toolbar. It appears only once Find the walls has run and found NO lines, which is what a scanned sheet looks like: a picture carries no strokes to read and no writing either. It reads the room names, dimensions and scale note off the picture so the sheet can be scaled — the lines are measured from the picture in code, and no length comes from the model.",
+  },
+  WALL_CLASSIFY: {
+    kind: "component",
+    file: "components/TakeoffPlanViewer.tsx",
+    why: "Check these are walls, on the takeoff sheet toolbar beside Find the walls. It appears once runs have been found, reads the part of the sheet on screen, and sets aside the ones that are countertops, fixtures or reference lines — the lengths are measured from the drawing either way.",
   },
 };
 

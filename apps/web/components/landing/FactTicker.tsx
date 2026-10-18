@@ -138,7 +138,7 @@ function FactList({ hidden = false }: { hidden?: boolean }) {
     >
       {FACTS.map((fact) => (
         <li key={fact.text} className="flex items-center gap-3 text-sm text-ink-body sm:text-base">
-          <span aria-hidden className="shrink-0 text-brand">
+          <span aria-hidden className="shrink-0 text-link-hover">
             &#9670;
           </span>
           <span>{fact.text}</span>

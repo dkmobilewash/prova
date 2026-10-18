@@ -309,7 +309,7 @@ export function JobMediaCapture({ jobId }: { jobId: string }) {
             const files = Array.from(event.target.files ?? []);
             if (files.length) void handleFiles(files);
           }}
-          className="min-h-11 text-base text-ink-label file:mr-3 file:min-h-11 file:rounded-md file:border-0 file:bg-neutral-800 file:px-4 file:text-base file:font-medium file:text-ink hover:file:bg-neutral-700 disabled:opacity-50"
+          className="min-h-11 text-base text-ink-label file:mr-3 file:min-h-11 file:rounded-md file:border-0 file:bg-rail-hover file:px-4 file:text-base file:font-medium file:text-ink hover:file:bg-lift disabled:opacity-50"
         />
       </label>
 
@@ -327,7 +327,7 @@ export function JobMediaCapture({ jobId }: { jobId: string }) {
             </p>
           )}
           {failures.map((failure) => (
-            <p key={failure.name} className="text-red-400">
+            <p key={failure.name} className="text-danger">
               {failure.name}: {failure.message}
             </p>
           ))}
@@ -348,13 +348,13 @@ export function JobMediaCapture({ jobId }: { jobId: string }) {
             (locationOutcome.ok ? (
               <>
                 {locationOutcome.usedOn > 0 && (
-                  <p className="text-slate-400">
+                  <p className="text-ink-muted">
                     Location recorded on {locationOutcome.usedOn} of {succeeded} file
                     {succeeded === 1 ? "" : "s"}.
                   </p>
                 )}
                 {locationOutcome.skippedStale > 0 && (
-                  <p className="text-slate-400">
+                  <p className="text-ink-muted">
                     {locationOutcome.skippedStale} file
                     {locationOutcome.skippedStale === 1 ? " was" : "s were"} not taken just now, so
                     where you are standing is not where {locationOutcome.skippedStale === 1 ? "it" : "they"}{" "}
@@ -364,7 +364,7 @@ export function JobMediaCapture({ jobId }: { jobId: string }) {
                 )}
               </>
             ) : (
-              <p className="text-slate-400">{locationFailureMessage(locationOutcome.failure)}</p>
+              <p className="text-ink-muted">{locationFailureMessage(locationOutcome.failure)}</p>
             ))}
         </div>
       )}

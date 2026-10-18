@@ -108,7 +108,7 @@ export function ConceptualEstimateHelper() {
           setOpen(false);
           setArea("");
         }}
-        className="mt-3 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+        className="mt-3 rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
       >
         Close
       </button>

@@ -64,7 +64,7 @@ export function QuickBooksMapping({ mappings }: { mappings: MappingRow[] }) {
           type="button"
           onClick={load}
           disabled={isPending}
-          className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+          className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-rail-hover disabled:opacity-50"
         >
           {isPending ? (
             <span className="inline-flex items-center gap-1.5">
@@ -147,7 +147,7 @@ export function QuickBooksMapping({ mappings }: { mappings: MappingRow[] }) {
                   <button
                     type="submit"
                     disabled={isPending}
-                    className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+                    className="rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50"
                   >
                     Save
                   </button>

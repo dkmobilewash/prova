@@ -13,7 +13,7 @@ import { PublicDocument } from "@/components/PublicDocument";
  * they write them, this page says only what can be stood behind.
  */
 
-export const metadata: Metadata = { title: "Terms — C Stream" };
+export const metadata: Metadata = { title: "Terms of use" };
 
 export default function TermsPage() {
   return (

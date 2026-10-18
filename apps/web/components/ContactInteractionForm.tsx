@@ -45,7 +45,7 @@ export function ContactInteractionForm({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
+        className="rounded-md bg-rail-hover px-3 py-2 text-sm font-medium text-ink hover:bg-lift"
       >
         Log an interaction
       </button>
@@ -95,7 +95,7 @@ export function ContactInteractionForm({
         }}
       />
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       <div className="flex gap-2">
         <button
@@ -120,7 +120,7 @@ export function ContactInteractionForm({
             setIsOpen(false);
             setError(null);
           }}
-          className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+          className="rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
         >
           Cancel
         </button>

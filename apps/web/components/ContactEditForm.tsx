@@ -32,8 +32,8 @@ function expiryNote(dateIso: string | null, kind: "MSA" | "PREQUALIFICATION", to
     { id: "", kind, title: "", detail: null, date: dateIso, expectsDate: true, href: "" },
     today,
   );
-  if (renewal.urgency === "EXPIRED") return { text: "Expired", className: "text-red-400" };
-  if (renewal.urgency === "DUE_SOON") return { text: renewalTiming(renewal), className: "text-amber-400" };
+  if (renewal.urgency === "EXPIRED") return { text: "Expired", className: "text-danger" };
+  if (renewal.urgency === "DUE_SOON") return { text: renewalTiming(renewal), className: "text-warn" };
   return { text: renewalTiming(renewal), className: "text-ink-muted" };
 }
 
@@ -122,7 +122,7 @@ export function ContactEditForm({
         </label>
       </div>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       <SubmitButton
         type="submit"

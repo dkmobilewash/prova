@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { notFound } from "next/navigation";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -35,15 +36,23 @@ export default async function PayApplicationPage({
   const timeZone = await viewerTimeZone();
 
   return (
-    <div className="mx-auto max-w-4xl p-6 print:p-0">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <Link href={`/jobs/${job.id}`} className="text-sm text-link hover:underline">
-          ← Back to job
-        </Link>
-        <PrintButton />
+    // PRINTED OUTPUT IS UNCHANGED. On screen the page wears the shared
+    // header; on paper it prints the heading it always printed, from the
+    // print-only copy below, and the shell drops its gutters and measure
+    // exactly as `p-6 print:p-0` did.
+    <PageShell width="working" className="print:max-w-none print:p-0">
+      <div className="print:hidden">
+        <PageHeader
+          route="/dashboard"
+          parent={[
+            { href: `/jobs/${job.id}`, label: job.name },
+            { href: `/jobs/${job.id}/billing`, label: "Billing" },
+          ]}
+          title={`Application for payment #${invoice.number}`}
+          actions={<PrintButton />}
+        />
       </div>
-
-      <h1 className="text-xl font-semibold text-ink">
+      <h1 className="hidden text-xl font-semibold text-ink print:block">
         Application for payment #{invoice.number} — {job.name}
       </h1>
       {/* LABELLED, because unlabelled it is read as the wrong field. A
@@ -61,7 +70,7 @@ export default async function PayApplicationPage({
         This is a G702/G703-style summary and continuation sheet built from this job&rsquo;s schedule of values — it is
         not formatted as the AIA G702/G703 forms themselves.
       </p>
-      <p className="mt-2 max-w-2xl text-xs text-amber-300 print:hidden">
+      <p className="mt-2 max-w-2xl text-xs text-warn print:hidden">
         No PERIOD TO date. A G702 states the period this application covers, and C Stream does not yet record one — so
         this document prints the application date and nothing that could be mistaken for the period. Write the period
         ending date on whatever cover sheet this GC wants before you send it.
@@ -98,7 +107,7 @@ export default async function PayApplicationPage({
             </div>
             <div>
               <p className="text-xs text-ink-muted">Current payment due</p>
-              <p className="font-medium text-green-400">{money(summary.currentPaymentDue)}</p>
+              <p className="font-medium text-ok">{money(summary.currentPaymentDue)}</p>
             </div>
             <div className="col-span-2 sm:col-span-3">
               <p className="text-xs text-ink-muted">Balance to finish, including retainage</p>
@@ -138,6 +147,6 @@ export default async function PayApplicationPage({
           </div>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

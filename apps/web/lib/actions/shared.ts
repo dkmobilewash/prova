@@ -8,8 +8,8 @@
 import { prisma } from "@prova/db";
 import { numericReaders, PERCENT_BOUNDS, type NumericInputOptions } from "@/lib/numeric-input";
 
-const { number, optionalNumber } = numericReaders((message) => {
-  throw new InputError(message);
+const { number, optionalNumber } = numericReaders((message, key) => {
+  throw new InputError(message, key);
 });
 
 /** The same two readers, for the action modules that already throw THIS
@@ -292,12 +292,32 @@ export const COMPLIANCE_DOCUMENT_TYPES = [
 export function enumFromForm<T extends readonly string[]>(formData: FormData, key: string, allowed: T): T[number] {
   const raw = String(formData.get(key) ?? "");
   if (!allowed.includes(raw as T[number])) {
-    throw new InputError(`"${key}" must be one of: ${allowed.join(", ")}`);
+    throw new InputError(`"${key}" must be one of: ${allowed.join(", ")}`, key);
   }
   return raw as T[number];
 }
 
 export const BID_INVITATION_STATUSES = ["INVITED", "SUBMITTED", "WON", "LOST", "DECLINED"] as const;
+
+/**
+ * Why a bid was declined. Mirrors `BidDeclineReason` in `estimating.prisma`.
+ *
+ * Here beside the statuses rather than in `lib/bid-decline.ts`, for the reason
+ * this file exists: a form-parsing list is shared by actions, and two feature
+ * modules exporting the same name is the `TS2308` build break the barrel makes
+ * unavoidable. `bid-decline.test.ts` holds this list and the labels in step.
+ */
+export const BID_DECLINE_REASONS = [
+  "CAPACITY",
+  "SCOPE_MISMATCH",
+  "SCHEDULE",
+  "BONDING",
+  "CONTRACT_TERMS",
+  "DRAWINGS_INCOMPLETE",
+  "PRICE_RISK",
+  "RELATIONSHIP",
+  "OTHER",
+] as const;
 
 export const CONTACT_STATUSES = ["PROSPECT", "ACTIVE", "INACTIVE"] as const;
 
@@ -333,7 +353,7 @@ export function optionalEnumFromForm<T extends readonly string[]>(
   if (!raw) return null;
   if (!allowed.includes(raw as T[number])) {
     // InputError for the same reason enumFromForm's is — see its comment.
-    throw new InputError(`"${key}" must be one of: ${allowed.join(", ")}`);
+    throw new InputError(`"${key}" must be one of: ${allowed.join(", ")}`, key);
   }
   return raw as T[number];
 }
@@ -355,12 +375,20 @@ export const INVOICE_STATUSES = ["SUBMITTED", "APPROVED", "PARTIALLY_PAID", "PAI
  * pure helper, so it stays out of the "use server" modules and out of the
  * barrel — see the note at the top of this file.
  */
-export type ActionResult = { ok: true } | { ok: false; error: string };
+/**
+ * `fieldErrors` is optional and keyed by the input's `name`: `ActionForm`
+ * puts each message under its field (aria-invalid, focus on the first one)
+ * and still shows `error` at the bottom. Every plain `{ ok: false, error }`
+ * keeps working unchanged — it just has nowhere more specific to point.
+ */
+export type ActionResult =
+  | { ok: true }
+  | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
 export const actionOk: ActionResult = { ok: true };
 
-export function actionFail(error: string): ActionResult {
-  return { ok: false, error };
+export function actionFail(error: string, fieldErrors?: Record<string, string>): ActionResult {
+  return fieldErrors ? { ok: false, error, fieldErrors } : { ok: false, error };
 }
 
 /**
@@ -448,7 +476,17 @@ export type ActionResultWith<T> = { ok: true; value: T } | { ok: false; error: s
  * a race — must abort by throwing, and this is the type that says "abort,
  * but this one is the user's to read".
  */
-export class InputError extends Error {}
+export class InputError extends Error {
+  /** The form field (`name`) this refusal is about, when there is one —
+   * `runAction` turns it into `fieldErrors` so the message lands next to
+   * the input instead of only at the bottom of the form. */
+  constructor(
+    message: string,
+    readonly field?: string,
+  ) {
+    super(message);
+  }
+}
 
 /**
  * The boundary that turns an `InputError` into a returned failure.
@@ -466,7 +504,9 @@ export async function runAction(fn: () => Promise<ActionResult>): Promise<Action
   try {
     return await fn();
   } catch (err) {
-    if (err instanceof InputError) return actionFail(err.message);
+    if (err instanceof InputError) {
+      return actionFail(err.message, err.field ? { [err.field]: err.message } : undefined);
+    }
     throw err;
   }
 }
@@ -636,6 +676,6 @@ export function optionalLinkOrThrow(
   label = "That link",
 ): string | null {
   const result = optionalLinkFromForm(formData, key, label);
-  if (!result.ok) throw new InputError(result.error);
+  if (!result.ok) throw new InputError(result.error, key);
   return result.value;
 }

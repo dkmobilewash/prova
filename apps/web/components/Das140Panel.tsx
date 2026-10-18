@@ -41,7 +41,7 @@ import type { Das140Row } from "@/lib/das-query";
 const field =
   "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 type Result = { ok: true } | { ok: false; error: string };
 export type Das140WithStanding = Das140Row & { standing: Das140Standing };
@@ -325,7 +325,7 @@ function NoticeCard({
                 }
                 deleteClassName={btn}
                 cancelClassName={btn}
-                confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+                confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-danger hover:bg-tag-rose disabled:opacity-50"
               />
             ) : null
           }
@@ -386,7 +386,7 @@ function NoticeCard({
             afterwards — check it before you save.
           </p>
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}
@@ -449,7 +449,7 @@ function NoticeCard({
             />
           )}
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}
@@ -476,7 +476,7 @@ function NoticeCard({
       )}
 
       {mode === "view" && error && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       )}
@@ -565,7 +565,7 @@ export function Das140Panel({
             committeeEditable
           />
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}

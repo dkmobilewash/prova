@@ -8,8 +8,11 @@ import { wallFromPair, wallsFromStrokes, type StrokeSegment, type WallFinderOpti
   wallsNotLettering,
   LETTER_FEET,
   wallsNotTheSheetBorder,
+  oneWallPerPlace,
   MOST_OF_THE_SHEET,
   type WallCandidate,
+  oneFacePerLine,
+  SAME_FACE_GAP_FEET,
 } from "./wallVectors";
 
 /**
@@ -53,10 +56,33 @@ describe("two faces a wall-thickness apart are a wall", () => {
     expect(wall?.lengthFeet).toBeCloseTo(20, 1);
   });
 
-  it("finds an 18in shaft wall, the thickest thing still a wall", () => {
-    const wall = wallFromPair(h(100, 500, 180), h(100, 500 + 1.5 * 9, 180), EIGHTH);
+  it("finds an 18in shaft wall when ASKED for one — it is no longer the default", () => {
+    // A CMU or double-stud shaft really is this thick, so this case is real and
+    // stays. What changed is that it must be asked for.
+    //
+    // The default cap came down to 12in because against a 60-page answer key an
+    // 18in cap left 188 ft of one page's exterior walls reading 12.44in — the
+    // envelope found, and priced as an assembly on no drawing. The 12.4in band
+    // is empty by 12in and the tighter caps the key would argue for (9.2in,
+    // its widest real assembly) cost three times the recall for a quarter more
+    // of the gain. Swept, not reasoned; the table is in `wallVectors.ts`.
+    const asked = wallFromPair(h(100, 500, 180), h(100, 500 + 1.5 * 9, 180), {
+      ...EIGHTH,
+      maxThicknessFeet: 1.5,
+    });
+    expect(asked).not.toBeNull();
+    expect(asked?.thicknessFeet).toBeCloseTo(1.5, 1);
+  });
+
+  it("REFUSES 18in by default, which is the change", () => {
+    // The mutation that matters: put the cap back to 1.5 and this reds.
+    expect(wallFromPair(h(100, 500, 180), h(100, 500 + 1.5 * 9, 180), EIGHTH)).toBeNull();
+  });
+
+  it("still finds a 12in wall, the widest the default admits", () => {
+    const wall = wallFromPair(h(100, 500, 180), h(100, 500 + 1.0 * 9, 180), EIGHTH);
     expect(wall).not.toBeNull();
-    expect(wall?.thicknessFeet).toBeCloseTo(1.5, 1);
+    expect(wall?.thicknessFeet).toBeCloseTo(1.0, 1);
   });
 });
 
@@ -505,5 +531,819 @@ describe("telling the sheet border from a wall", () => {
 
   it("returns nothing for nothing", () => {
     expect(wallsNotTheSheetBorder([], PAGE_W, PAGE_H)).toEqual([]);
+  });
+});
+
+describe("a SEGMENTED sheet border, which the span rule alone cannot see", () => {
+  // Found by a browser run on Augusta A1.11, 2026-10-10 — the first time "Find
+  // the walls" had been pressed on a real drawing. The panel offered a
+  // "6-inch, 237 ft" group that was the drawing frame and the title-block
+  // lines, on a sheet 168 feet wide. An architectural border is four runs
+  // INSET from the paper that stop short of the corners, so each piece is well
+  // under `MOST_OF_THE_SHEET` and every one of them passed.
+  //
+  // The reporter named the hazard better than any test had: "The total footage
+  // looks plausible, which is the danger."
+
+  // An ARCH D sheet as the viewer hands it over: x a fraction of sheet width,
+  // y scaled by the same factor.
+  const W = 1;
+  const H = 0.667;
+  const at = (x1: number, y1: number, x2: number, y2: number): WallCandidate => ({
+    x1,
+    y1,
+    x2,
+    y2,
+    thicknessFeet: 0.5,
+    lengthFeet: 50,
+  });
+
+  it("DROPS a border segment that covers a third of the width along the top", () => {
+    // 0.33 of the sheet — nowhere near the 0.9 the span rule needs.
+    const kept = wallsNotTheSheetBorder([at(0.02, 0.012, 0.35, 0.012)], W, H);
+    expect(kept).toHaveLength(0);
+  });
+
+  it("DROPS border segments along all four sides", () => {
+    const frame = [
+      at(0.02, 0.012, 0.5, 0.012),
+      at(0.5, 0.655, 0.98, 0.655),
+      at(0.012, 0.02, 0.012, 0.4),
+      at(0.988, 0.3, 0.988, 0.64),
+    ];
+    expect(wallsNotTheSheetBorder(frame, W, H)).toHaveLength(0);
+  });
+
+  // ── THE THREE SAFETY CASES. Neither half of the rule is safe alone, and
+  //    mutation is what says so rather than argument.
+
+  it("KEEPS a long wall that is NOT in the edge strip", () => {
+    // Half the sheet — 84 feet of building on Augusta's scale, far longer than
+    // the border segments dropped above, and kept because of WHERE it is. The
+    // edge rule alone would have to drop this to catch a segmented border.
+    expect(wallsNotTheSheetBorder([at(0.25, 0.2, 0.75, 0.2)], W, H)).toHaveLength(1);
+  });
+
+  it("KEEPS a short wall that IS in the edge strip", () => {
+    // Position alone would drop the outermost partitions of a plan drawn close
+    // to the frame.
+    expect(wallsNotTheSheetBorder([at(0.3, 0.012, 0.4, 0.012)], W, H)).toHaveLength(1);
+  });
+
+  it("PINS THE EDGE STRIP so it cannot be widened to reach a title block", () => {
+    // `ALONG_THE_EDGE` is tight because nothing of the BUILDING is in that
+    // strip — the border occupies it and the plan is inside the border. A strip
+    // wide enough to cover a title block is a corner guess this module has no
+    // measurement for, and it would eat real wall on any sheet drawn out to the
+    // title-block strip. A wall 15% in is ordinary.
+    expect(wallsNotTheSheetBorder([at(0.2, 0.15, 0.8, 0.15)], W, H)).toHaveLength(1);
+    expect(wallsNotTheSheetBorder([at(0.15, 0.1, 0.15, 0.55)], W, H)).toHaveLength(1);
+  });
+
+  it("AND THE PRE-EXISTING SPAN RULE DROPS A REAL WALL, which this change does not fix", () => {
+    // Written after two of the safety cases above failed on fixtures spanning
+    // 94% and 96% of the sheet. They were not failing on the new rule — they
+    // were failing on `MOST_OF_THE_SHEET`, which has dropped any run over 90%
+    // of the sheet, at ANY position, since before this change.
+    //
+    // So a building scaled to fill its sheet loses its longest wall, silently,
+    // and that is a HAZARD rather than a feature: on Augusta's 168-foot sheet
+    // it is every wall over 151 feet. It is pinned here rather than changed,
+    // because changing it needs a measurement on real sheets that nobody has
+    // taken — the span rule is also the only thing catching a border drawn as
+    // one unbroken line, and loosening it without the edge rule proven on real
+    // drawings would trade a known false positive for an unknown one.
+    //
+    // Do not read this test as approval. It records what the code does.
+    const acrossTheWholeSheet = at(0.03, 0.33, 0.97, 0.33);
+    expect(wallsNotTheSheetBorder([acrossTheWholeSheet], W, H), "dropped by MOST_OF_THE_SHEET").toHaveLength(0);
+    // Same wall, shorter, away from the edge: kept. The rule is about span.
+    expect(wallsNotTheSheetBorder([at(0.1, 0.33, 0.8, 0.33)], W, H)).toHaveLength(1);
+  });
+
+  it("FALLS BACK TO THE SPAN RULE when the geometry is not inside the page given", () => {
+    // "Along the bottom edge" is meaningless if the walls extend past the
+    // stated page, and the failure mode is the worst kind: every run reads as
+    // edge-hugging, the filter returns NOTHING, and an empty panel looks like a
+    // sheet with no walls rather than a bug.
+    //
+    // The first attempt at this guard used a NEGATIVE band to mean "off", which
+    // inverted the rule instead of disabling it — `pageHeight - (-1)` is larger
+    // than the page, so everything hugged the bottom. A negative distance is
+    // not a disabled distance.
+    const outside = [at(0.02, 0.012, 0.35, 0.012)];
+    expect(wallsNotTheSheetBorder(outside, W, 0.001)).toHaveLength(1);
+  });
+
+  it("still drops a border drawn as ONE full-width line", () => {
+    // The original rule, unchanged. This is additive.
+    expect(wallsNotTheSheetBorder([at(0.01, 0.33, 0.99, 0.33)], W, H)).toHaveLength(0);
+  });
+});
+
+describe("one physical wall is found once, however many faces it is drawn with", () => {
+  // ── THE DEFECT A HAND COUNT FOUND ──
+  //
+  // School-01's own tag `EXT-1` came back on THREE thickness groups at once.
+  // One assembly cannot be three thicknesses, so one wall was being found three
+  // times: the pairer takes the widest valid pair and CONSUMES those two faces,
+  // and the leftover faces in the middle then pair with each other.
+  //
+  // Over-reporting is the direction that reaches a bid. Every copy sits exactly
+  // on a real wall, so the overlay looks perfect while the footage is double.
+
+  /** One inch of BUILDING, in points at 1/8" = 1'-0". */
+  const INCH = 0.75;
+
+  /** Face offsets measured on a real exterior wall: outer finish, two layers of
+   *  sheathing, stud face, inner face. */
+  const EXTERIOR_IN = [0, 1.56, 2.28, 8.28, 8.88];
+
+  const exterior = (y: number, lenPt: number) =>
+    EXTERIOR_IN.map((inches) => h(100, y + inches * INCH, lenPt));
+
+  it("REPORTS A 40FT EXTERIOR WALL ONCE, NOT TWICE", () => {
+    // Before the dedup this returned two 40ft walls, 8.88in and 6.72in, lying
+    // on top of each other — 80 ft of bid for 40 ft of building.
+    const walls = wallsFromStrokes(exterior(500, 360), EIGHTH);
+    expect(walls, "one wall was found more than once").toHaveLength(1);
+    expect(walls[0].lengthFeet).toBeCloseTo(40, 1);
+  });
+
+  it("keeps the FINISH-TO-FINISH thickness, not one layer of it", () => {
+    // Which copy survives decides what assembly it is priced as. An estimator
+    // measures finish to finish, and that is the pairer's own first answer.
+    const walls = wallsFromStrokes(exterior(500, 360), EIGHTH);
+    expect(walls[0].thicknessFeet * 12).toBeCloseTo(8.88, 1);
+  });
+
+  it("KEEPS THE WALL AND NOT THE COLUMN GRID LINE'S PAIRING", () => {
+    // The first draft of the dedup got this WRONG and the mutation run caught
+    // it. Faces are walked longest-first, so a 115ft grid line is reached
+    // before the 40ft wall it runs past, and its pairing is emitted first —
+    // one wall of 10.92in where the drawing has an 8.88in one. Correct
+    // deduplication, wrong copy, and worse than the duplicate it replaced
+    // because the footage now looks right.
+    //
+    // A grid line is not a balanced partner for a wall, and the pairer already
+    // knew that. Balanced findings are now considered first.
+    const gridline = h(-100, 500 + 12.48 * INCH, 1035);
+    const walls = wallsFromStrokes([...exterior(500, 360), gridline], EIGHTH);
+    expect(walls).toHaveLength(1);
+    expect(walls[0].thicknessFeet * 12, "the grid line's pairing was kept as the wall").toBeCloseTo(8.88, 1);
+  });
+
+  it("STILL FINDS A PLAIN TWO-FACE PARTITION — nothing is given up", () => {
+    // The control. A partition has one possible pairing, so the dedup has
+    // nothing to do and must do nothing.
+    const walls = wallsFromStrokes([h(100, 500, 180), h(100, 500 + PARTITION_PT, 180)], EIGHTH);
+    expect(walls).toHaveLength(1);
+    expect(walls[0].lengthFeet).toBeCloseTo(20, 1);
+  });
+});
+
+describe("what the dedup must NOT collapse", () => {
+  // Tested on `oneWallPerPlace` directly rather than through the pairer: these
+  // are about the dedup's own judgement, and routing them through the pairing
+  // would be measuring that instead.
+
+  /** A horizontal run at `y`, `lenPt` long, of the given thickness. */
+  const run = (y: number, lenPt: number, thicknessIn: number): WallCandidate => ({
+    x1: 100,
+    y1: y,
+    x2: 100 + lenPt,
+    y2: y,
+    thicknessFeet: thicknessIn / 12,
+    lengthFeet: lenPt / 9,
+  });
+
+  const INCH = 0.75;
+
+  it("DROPS a second finding inside the first wall's thickness", () => {
+    // The defect itself, stated as the dedup sees it.
+    const kept = oneWallPerPlace([run(500, 360, 8.88), run(500 + 0.48 * INCH, 360, 6.72)], 1 / 9);
+    expect(kept).toHaveLength(1);
+    expect(kept[0].thicknessFeet * 12).toBeCloseTo(8.88, 1);
+  });
+
+  it("KEEPS a furring wall standing against a thick one", () => {
+    // Centreline 5.25in off an 8in wall, whose half-thickness is 4in. Real, and
+    // the closest real thing to a duplicate on any drawing — which is why the
+    // test is the centreline being INSIDE the thickness rather than merely near.
+    const kept = oneWallPerPlace([run(500, 360, 8), run(500 + 5.25 * INCH, 360, 2.5)], 1 / 9);
+    expect(kept, "a furring wall was swallowed by the wall it furs").toHaveLength(2);
+  });
+
+  it("KEEPS the two walls either side of a corridor", () => {
+    const corridor = 5.583 * 9;
+    expect(
+      oneWallPerPlace([run(500, 360, 4.875), run(500 + corridor, 360, 4.875)], 1 / 9),
+    ).toHaveLength(2);
+  });
+
+  it("KEEPS two walls end to end on the same line", () => {
+    // Same line, zero overlap. Without the overlap test these collapse into one
+    // and a whole wall leaves the bid.
+    const second: WallCandidate = { ...run(500, 180, 4.875), x1: 300, x2: 480 };
+    expect(oneWallPerPlace([run(500, 180, 4.875), second], 1 / 9)).toHaveLength(2);
+  });
+
+  it("KEEPS walls that cross at a right angle", () => {
+    const across: WallCandidate = {
+      x1: 200,
+      y1: 400,
+      x2: 200,
+      y2: 700,
+      thicknessFeet: 4.875 / 12,
+      lengthFeet: 300 / 9,
+    };
+    expect(oneWallPerPlace([run(500, 360, 4.875), across], 1 / 9)).toHaveLength(2);
+  });
+
+  it("KEEPS A WALL CROSSING THIS ONE AT A SHALLOW ANGLE", () => {
+    // Found by mutation: dropping the parallel test left every other case
+    // green, because a wall crossing at a RIGHT angle projects to nothing and
+    // the overlap test refuses it anyway. A shallow crossing is the case that
+    // needs the parallel test, and School-01 has one — the 17.5-degree wall in
+    // Conference 118, T-ing into the wall on grid E.
+    //
+    // Its midpoint lies ON the other wall's line, and 95% of it lies alongside.
+    // Only the ANGLE says these are two walls.
+    const diagonal: WallCandidate = {
+      x1: 194.2,
+      y1: 472.9,
+      x2: 365.8,
+      y2: 527.1,
+      thicknessFeet: 4.875 / 12,
+      lengthFeet: 20,
+    };
+    expect(
+      oneWallPerPlace([run(500, 360, 4.875), diagonal], 1 / 9),
+      "a wall crossing at 17.5 degrees was read as the same wall",
+    ).toHaveLength(2);
+  });
+
+  it("KEEPS a short duplicate's VICTIM — overlap is judged against the shorter run", () => {
+    // Also found by mutation. The leftover pairing is often a FRAGMENT, because
+    // the inner layers are interrupted where the outer finish is not. Judged
+    // against the longer run a 15ft fragment on a 40ft wall fails the overlap
+    // test and survives as a second wall; against the shorter one it is caught.
+    const fragment: WallCandidate = { ...run(500 + 0.48 * INCH, 135, 6), lengthFeet: 15 };
+    expect(oneWallPerPlace([run(500, 360, 8.88), fragment], 1 / 9)).toHaveLength(1);
+  });
+
+  it("KEEPS a wall whose centreline is JUST OUTSIDE the other's thickness", () => {
+    // The boundary, stated so a widened band fails here rather than quietly
+    // eating real walls.
+    const kept = oneWallPerPlace([run(500, 360, 8), run(500 + 4.2 * INCH, 360, 4.875)], 1 / 9);
+    expect(kept).toHaveLength(2);
+  });
+});
+
+/**
+ * ── A CORRIDOR'S TWO SIDES ARE NOT THE SAME LENGTH ──
+ *
+ * `MAX_FACE_LENGTH_RATIO` was 3, and its own comment named the case it then
+ * rejected: "a wall whose far end is interrupted by a doorway is drawn as a
+ * long face and a short one". A corridor is that shape at its worst — one side
+ * runs continuously, the other is cut into pieces by every door off it.
+ *
+ * The numbers below are the real ones, traced on School-01's A-101: a 12.21 ft
+ * face whose partner is a 53.25 ft face 4.87in away, overlapping it along its
+ * whole length. Parallel, thickness, overlap and minimum length all pass; the
+ * pair died on 53.25 / 12.21 = 4.36 > 3.
+ *
+ * At 1/8" = 1'-0" a foot is 9pt, so these are built in points like the rest of
+ * the file.
+ */
+describe("two faces of very different lengths", () => {
+  const opts: WallFinderOptions = { feetPerPoint: 1 / 9 };
+  /** A horizontal face: `feet` long, starting at `atFt`, on line `yFt`. */
+  const face = (atFt: number, feet: number, yFt: number): StrokeSegment => ({
+    x1: atFt * 9,
+    y1: yFt * 9,
+    x2: (atFt + feet) * 9,
+    y2: yFt * 9,
+    width: 0.7,
+  });
+
+  it("PAIRS A DOORWAY-BROKEN FACE WITH THE LONG ONE OPPOSITE — the corridor", () => {
+    // 4.87in = 0.406 ft between the faces: A1.
+    const short = face(0, 12.21, 0);
+    const long = face(0, 53.25, 0.406);
+    const wall = wallFromPair(long, short, opts);
+    expect(wall, "a 4.4x length ratio refused a real wall").not.toBeNull();
+    expect(wall!.thicknessFeet * 12).toBeCloseTo(4.87, 1);
+    // The run is the OVERLAP, not the long face: claiming the whole 53 ft
+    // would be the over-reporting this must not buy.
+    expect(wall!.lengthFeet).toBeCloseTo(12.21, 1);
+    // AND THE GEOMETRY, not only the reported number. `lengthFeet` comes from
+    // the overlap, so it stays right even when the drawn run is stretched to
+    // the long face — mutation-tested, and blind until this line. A run that
+    // carries past its own wall is the over-reporting the bench counts as
+    // "not on a wall", and it is invisible to a length assertion alone.
+    const span = Math.hypot(wall!.x2 - wall!.x1, wall!.y2 - wall!.y1) / 9;
+    expect(span, "the run was stretched past its own wall").toBeCloseTo(12.21, 1);
+  });
+
+  it("STILL REFUSES THE SHEET BORDER AGAINST THE TITLE BLOCK", () => {
+    // The case the constant was first measured on: a 36in sheet border against
+    // a 180pt title-block rule, a 13-fold gap no wall has. 10pt apart, which at
+    // this scale is 1.1 ft and sits squarely inside the partition window — so
+    // nothing but the length ratio separates them.
+    const border = face(0, 288, 0);
+    const titleBlock = face(0, 20, 1.1);
+    expect(wallFromPair(border, titleBlock, opts), "the border paired with the title block").toBeNull();
+  });
+
+  it("refuses a ratio just past the limit, so the bound is real and not decorative", () => {
+    const a = face(0, 10, 0);
+    const beyond = face(0, 10 * 5 + 1, 0.406);
+    expect(wallFromPair(beyond, a, opts)).toBeNull();
+    const within = face(0, 10 * 5 - 1, 0.406);
+    expect(wallFromPair(within, a, opts)).not.toBeNull();
+  });
+
+  it("keeps pairing two faces of the same length, which is most walls", () => {
+    const wall = wallFromPair(face(0, 20, 0), face(0, 20, 0.406), opts);
+    expect(wall).not.toBeNull();
+    expect(wall!.lengthFeet).toBeCloseTo(20, 1);
+  });
+});
+
+/**
+ * ── 9-1/2 INCHES IS NOT A WALL ANYBODY BUILDS ──
+ *
+ * "The widest valid pair is the wall and the narrower ones are its layers" is
+ * right for one wall drawn in layers and wrong where two assemblies touch.
+ * 1-1/2in furring on an 8in block wall is drawn as three lines, and the pairs
+ * are 8in (the block), 1-1/2in (the furring) and 9-1/2in (across both). Widest
+ * won, so the finder returned ONE WALL AT 9-1/2IN: a thickness on no schedule,
+ * priced as an assembly nobody ordered. That is the 33 ft reported "on the
+ * block" on School-01's A-101. The furring is still missed — see the test
+ * below that pins why, which is a different rule and a separate piece of
+ * work.
+ *
+ * Thickness cannot separate that from a layered exterior, where the widest span
+ * IS the wall. The SCHEDULE can: 8 and 1-1/2 are on it, 9-1/2 is on nothing.
+ *
+ * Graded per wall on `reports/takeoff-bench`, against the key's centreline:
+ * Mesa Ridge 59,538 -> 61,253 ft found with not-on-a-wall DOWN 4,500 -> 3,902,
+ * and A-101 1,853 -> 1,936 ft with its 33 ft of block reporting gone.
+ */
+describe("the partition schedule", () => {
+  const PT = 9;
+  const face = (feet: number, offsetInches: number): StrokeSegment => ({
+    x1: 0,
+    y1: (offsetInches / 12) * PT,
+    x2: feet * PT,
+    y2: (offsetInches / 12) * PT,
+    width: 0.7,
+  });
+  const found = (offsets: number[], knownThicknessesIn?: number[]) =>
+    wallsFromStrokes(
+      offsets.map((at) => face(30, at)),
+      { feetPerPoint: 1 / PT, knownThicknessesIn },
+    )
+      .map((wall) => Number((wall.thicknessFeet * 12).toFixed(2)))
+      .sort((a, b) => b - a);
+
+  // 8in block, then 1-1/2in furring on its inner face.
+  const BLOCK_AND_FURRING = [0, 8, 9.5];
+  // EXT-2 as a real export draws it: PARTITION_TYPES["EXT-2"].planLines.
+  const LAYERED_EXTERIOR = [4.0625, 3.4375, -2.5625, -4.0625];
+  const SCHEDULE = [8, 1.5, 8.125, 4.875, 4.75, 14.5];
+
+  // The bench's own partition schedule, and it is what made the collision below
+  // reachable: it carries EXT-1 at 8.875in, and 9.125in is a quarter inch away.
+  const BENCH_SCHEDULE = [4.875, 7.25, 4.75, 14.5, 1.5, 8.875, 8.125, 7.625, 4.5];
+
+  it("READS 1-1/2IN FURRING ON 7-5/8IN BLOCK AS THE BLOCK, NOT AS A 9-1/8IN WALL", () => {
+    // ── THE SLACK COLLISION, AND WHY THE FIXTURE BELOW HID IT FOR WEEKS ──
+    //
+    // These are the real numbers: furring face, block near face, block far
+    // face. The span across both is 9.125in and EXT-1 is 8.875in — exactly
+    // `KNOWN_SLACK_IN` apart — so the span LOOKED like a type this company
+    // builds. "The widest pair the schedule names" took it, and the finder
+    // returned one wall at 9.13in where the drawing has a block wall with
+    // furring in front of it.
+    //
+    // Worse, it poisoned both halves: `enclosedByAScheduledWall` saw the same
+    // phantom wall and marked the block AND the furring as layer lines of it,
+    // so each was refused before the schedule tier could prefer either. That
+    // is why this cost 1,210 ft of furring on Mesa Ridge rather than the 20 ft
+    // the probe table reports against one wall.
+    //
+    // The fixture in the next test uses 8in and 9.5in, where the span matches
+    // NOTHING on its schedule — which is exactly why the schedule preference
+    // looked like it worked.
+    // The block at 7.63 rather than a phantom 9.13, and the furring with it
+    // once the phantom stops claiming both faces — see `secondAssemblyPass`.
+    expect(found([0, 7.625, 9.125], BENCH_SCHEDULE)).toEqual([7.63, 1.5]);
+  });
+
+  it("believes a thickness a HAIR off the schedule, because a plotted line is not exact", () => {
+    // ── WHAT PINS `EXACT_SCHEDULE_IN` FROM BELOW ──
+    //
+    // The rule only overrides a LOOSE match, and "loose" cannot mean "not
+    // identical": a real export measures 8.10in where the legend says 8.125,
+    // and refusing that would price the wall as the wrong assembly.
+    //
+    // Added because a mutation said so. Setting the constant to 0 left the
+    // whole suite green — the window-broken exterior clears it either way,
+    // because its span is EXACTLY on its schedule. So nothing distinguished
+    // 1/16in from zero, and the tolerance that exists for plotter noise was
+    // unpinned. This case is 0.025in off and decomposes into two scheduled
+    // halves, so it is refused the moment the tolerance stops existing.
+    expect(found([0, 1.5, 8.1], [1.5, 6.6, 8.125])).toEqual([8.1]);
+  });
+
+  // ── TWO MUTATIONS OF THIS RULE STAY GREEN, WRITTEN DOWN RATHER THAN DRESSED
+  // UP, in the manner of `foundTwice`'s own unpinned choice above ──
+  //
+  // 1. Dropping the "is the second half scheduled" check does not change any
+  //    outcome I could construct. The case below is the closest: its halves are
+  //    3in (scheduled) and 6.125in (not), and with the check gone the span is
+  //    refused — and the finder still answers 9.13 from a lower tier, because
+  //    refusing a pair as SCHEDULED does not stop `bestWall` choosing it as the
+  //    widest balanced pair. So the requirement is real in the code and its
+  //    effect is masked by the fallback everywhere I could reach. Left in,
+  //    because "one named gap inside a wall" is the layered-exterior case and
+  //    dropping it is wrong on purpose rather than by accident.
+  //
+  // 2. Widening the `> 6` gate changes nothing, and should not: it exists so an
+  //    O(n) scan does not run on every candidate inside an O(n^2) loop — this
+  //    file's own note about `inAHatchSeries`. A performance gate asserted as
+  //    behaviour would be a test lying about what it protects.
+  it("NEEDS BOTH HALVES SCHEDULED, so one named gap inside a wall proves nothing", () => {
+    // The rule asks for the span to divide into TWO scheduled types. A single
+    // named gap inside a wider pair is an ordinary layer line and the wider
+    // pair is still the wall — 3in is on this schedule, 9.125 - 3 = 6.125in is
+    // not, so nothing is refused and the span stands.
+    //
+    // THE SUB-GAP IS 6.125IN DELIBERATELY, and the first version of this test
+    // used 1.875in and proved nothing: a 1.875in gap is under the 2.4in
+    // thickness floor and unscheduled, so `wallFromPair` returns null for it
+    // and the half is rejected before its thickness is ever considered. The
+    // mutation that drops the "is it scheduled" check stayed green. A case has
+    // to fail for the reason it names.
+    expect(found([0, 3, 9.125], [3, 8.875])).toEqual([9.13]);
+  });
+
+  it("READS THE BLOCK WALL AT 8IN INSTEAD OF 9-1/2IN ACROSS BOTH", () => {
+    // The block at its own thickness, which is what #751 fixed. The 1.5in
+    // beside it is the furring, recovered by `secondAssemblyPass` — asserted
+    // in its own test below rather than here, so a regression in either one
+    // names itself.
+    expect(found(BLOCK_AND_FURRING, SCHEDULE)).toContain(8);
+  });
+
+  it("RECOVERS THE FURRING TOO, on the other side of the face the block took", () => {
+    // ── THE TEST THIS REPLACES SAID "DOES NOT YET", AND NAMED THE CONDITION ──
+    //
+    // It read: "this is the next piece of work, and it needs a way to admit the
+    // second side of a face WITHOUT admitting all of them." That is what
+    // `secondAssemblyPass` does, and the condition is the whole reason it is
+    // safe: a face may serve a second wall only when that wall is on its OTHER
+    // SIDE, only at a thickness the schedule names, and only where no layer
+    // line or hatch series explains it.
+    //
+    // THE OLD TEST'S MEASUREMENT WAS HONEST AND IS NOW MISLEADING, so it is
+    // worth saying exactly what changed. It recorded the unguarded version
+    // buying "about 100 ft" and costing "roughly 2,900 ft on Mesa Ridge and
+    // 2,000 ft on the holdout" of footage not on any wall, because every face
+    // gained a second chance to pair with something that is not its partner.
+    // That was true of THAT version.
+    //
+    // It was also measured again, guarded, and it bought 27 ft for nothing —
+    // because the thing it was trying to find was being eaten by a different
+    // defect. The span across block and furring was being read as a 9-1/8in
+    // wall (see the slack-collision test below), so there was no free side to
+    // find: the phantom wall had claimed both faces. Fixing that first is what
+    // made this pass worth having, and the order matters — on its own it is a
+    // wash, and after the decomposition fix it is 101 ft of holdout furring at
+    // no cost in not-on-a-wall footage.
+    //
+    // Graded on `reports/takeoff-bench`: holdout furring 162 -> 263 ft of a 307
+    // ft key, holdout found 31,998 -> 32,100, Mesa 64,993 -> 65,021, and
+    // not-on-a-wall UNCHANGED on both sets at 3,610 and 389.
+    expect(found(BLOCK_AND_FURRING, SCHEDULE)).toEqual([8, 1.5]);
+  });
+
+  // ── FIVE OF THIS PASS'S SIX GUARDS ARE NOT PINNED BY THE CASES BELOW, AND
+  // SAYING SO IS WORTH MORE THAN PRETENDING OTHERWISE ──
+  //
+  // Mutation-tested six ways. Only "never call the pass at all" reds this
+  // suite. Dropping the opposite-side condition, the scheduled-thickness
+  // check, the layer-line check, the empty-schedule early return or the
+  // claimed-face restriction all leave it green — because these fixtures are
+  // three parallel lines, and three lines cannot produce the junk those guards
+  // exist to refuse. A richer fixture was not written because the thing it
+  // would have to model is a busy sheet, which is what the bench is.
+  //
+  // So the guards are measured there instead, and ONE of them turns out not to
+  // earn its place on the evidence available:
+  //
+  //   opposite-side condition removed:  Mesa found 65,021 -> 65,078 (+57)
+  //                                     holdout not-on-a-wall 389 -> 408 (+19)
+  //
+  // That is nearly behaviour-neutral, and it is NOT the 2,900 ft the earlier
+  // unguarded attempt cost. The guards doing that work are the scheduled
+  // thickness and the layer-line test; the side condition is kept because it
+  // is the physical statement the pass is built on — a face has two sides and
+  // what is built against one says nothing about the other — and because the
+  // 19 ft it saves on the holdout is the direction this bench is graded in.
+  // Recorded rather than asserted, so the next person weighing a simplification
+  // starts from a number instead of an argument.
+  it("STILL REFUSES THE SECOND SIDE WITHOUT A SCHEDULE, so nothing changes for a caller that has none", () => {
+    // The pass returns early on an empty schedule. Pinned because it is the
+    // only thing standing between this and the unguarded version the old test
+    // measured at 2,900 ft of false footage.
+    expect(found(BLOCK_AND_FURRING, [])).toEqual([9.5]);
+  });
+
+  it("reports the 9-1/2in span when it has no schedule to consult", () => {
+    // Not an aspiration — the behaviour this shipped with, pinned so the
+    // schedule is doing the work rather than some other change.
+    expect(found(BLOCK_AND_FURRING)).toEqual([9.5]);
+    expect(found(BLOCK_AND_FURRING, [])).toEqual([9.5]);
+  });
+
+  it("STILL READS A LAYERED EXTERIOR AS ONE WALL, not as wall plus furring", () => {
+    // EXT-2's inner two lines are 1.500in apart — the SAME as F1 furring, which
+    // is on the schedule. Thickness cannot tell them apart; only position can.
+    // See `enclosedByAScheduledWall`.
+    expect(found(LAYERED_EXTERIOR, SCHEDULE)).toEqual([8.13]);
+    expect(found(LAYERED_EXTERIOR)).toEqual([8.13]);
+  });
+
+  it("FINDS A 1-1/2IN WALL THE SCHEDULE NAMES, which the 2.4in floor refuses", () => {
+    // The floor exists because, knowing nothing about the building, a gap this
+    // thin is more likely a doubled stroke than a wall. The schedule answers
+    // that doubt for the thicknesses on it and for nothing else.
+    expect(found([0, 1.5], SCHEDULE)).toEqual([1.5]);
+    expect(found([0, 1.5]), "the floor let a sub-minimum pair through unasked").toEqual([]);
+  });
+
+  it("STILL REFUSES A LAYER LINE WHEN THE OUTER FACE IS BROKEN INTO PIECES", () => {
+    // THE SHAPE THAT ACTUALLY SHIPPED THE BUG, and the reason the clean
+    // four-line test above cannot catch it: with one unbroken outer face, the
+    // wall's own pair consumes it and there is nothing left to form the thin
+    // pair. A real sheet breaks that face at every window and corner.
+    //
+    // Here EXT-2's outer face is two 15 ft pieces, its inner layer line and far
+    // face run the full 30 ft. One piece pairs with the far face to make the
+    // 8-1/8in wall; the other is left over, 1.500in from the layer line, which
+    // is F1's thickness and ON THE SCHEDULE. Without the enclosure test that is
+    // a wall. Measured on one holdout sheet before the test existed: 438 ft of
+    // runs in a 1.68in cluster where the drawing has 40 ft of furring.
+    const piece = (fromFt: number, toFt: number, offsetInches: number): StrokeSegment => ({
+      x1: fromFt * PT,
+      y1: (offsetInches / 12) * PT,
+      x2: toFt * PT,
+      y2: (offsetInches / 12) * PT,
+      width: 0.7,
+    });
+    const brokenExterior = [
+      piece(0, 15, -4.0625),
+      piece(15, 30, -4.0625),
+      piece(0, 30, -2.5625),
+      piece(0, 30, 4.0625),
+    ];
+    const thicknesses = wallsFromStrokes(brokenExterior, {
+      feetPerPoint: 1 / PT,
+      knownThicknessesIn: SCHEDULE,
+    }).map((wall) => Number((wall.thicknessFeet * 12).toFixed(2)));
+    expect(thicknesses, "a layer line was reported as furring").not.toContain(1.5);
+  });
+
+  it("refuses it with the pieces the other way round, so the test is not one-sided", () => {
+    // `enclosedByAScheduledWall` is asked in BOTH directions — from each face of
+    // the pair — because which of the two is `i` depends on the order the finder
+    // happens to walk, which is length order, which the drawing decides. Mirrored
+    // here so one direction alone cannot pass.
+    const piece = (fromFt: number, toFt: number, offsetInches: number): StrokeSegment => ({
+      x1: fromFt * PT,
+      y1: (offsetInches / 12) * PT,
+      x2: toFt * PT,
+      y2: (offsetInches / 12) * PT,
+      width: 0.7,
+    });
+    const mirrored = [
+      piece(0, 30, -4.0625),
+      piece(0, 30, 2.5625),
+      piece(0, 15, 4.0625),
+      piece(15, 30, 4.0625),
+    ];
+    const thicknesses = wallsFromStrokes(mirrored, {
+      feetPerPoint: 1 / PT,
+      knownThicknessesIn: SCHEDULE,
+    }).map((wall) => Number((wall.thicknessFeet * 12).toFixed(2)));
+    expect(thicknesses, "a layer line was reported as furring").not.toContain(1.5);
+  });
+
+  it("REFUSES A THIN PAIR THE SCHEDULE DOES NOT NAME", () => {
+    // 0.75in is the gap a doubled stroke leaves. The floor still refuses it,
+    // and the schedule does not rescue it.
+    expect(found([0, 8, 8.75], SCHEDULE)).toEqual([8]);
+  });
+
+  it("refuses a thickness that is merely CLOSE to one on the schedule", () => {
+    // The slack is 1/4in, so 1-1/2in admits 1.25 to 1.75 and nothing else.
+    expect(found([0, 8, 10.1], SCHEDULE)).toEqual([8]);
+  });
+});
+
+/**
+ * ── A FACE INTERRUPTED BY A HOLE IS ONE FACE ──
+ *
+ * A CAD export splits the line a wall's face is drawn with: at every vertex, at
+ * every window, at every door. Its near face and its interior layer lines come
+ * through whole. The pairing loop walks faces LONGEST FIRST, so the whole lines
+ * are reached first, pair with each other, and consume themselves — and the
+ * broken face's pieces arrive to find the partner they needed already spoken
+ * for. The wall is then reported at whatever the leftovers make.
+ *
+ * Measured on the bench against the key's own thicknesses, before this existed:
+ * 30.2% of Mesa Ridge's reported footage and 28.1% of the holdout's came back
+ * at a thickness on NO schedule, the biggest single offender being about
+ * 6-1/2in — 9,579 ft of it on Mesa — which is both exterior types' internal
+ * stud-cavity gap of 6.625in being sold as the wall.
+ *
+ * `wallVectors.ts` has described this failure since it was written ("the
+ * envelope was being found and then reported at 6.6in") and attributed it to
+ * taking the first partner instead of the widest. That fix was right and it
+ * could not reach this case, because here the true partner is not a candidate
+ * at all.
+ *
+ * With the pieces joined first: Mesa Ridge 30.2% -> 20.2% at an unscheduled
+ * thickness and the holdout 28.1% -> 25.6%, with found footage up 3,326 ft on
+ * Mesa, 517 ft on the holdout and 124 ft on A-101 (87.2% -> 92.9%).
+ */
+describe("joining the pieces of a face", () => {
+  const PT = 9;
+  const piece = (fromFt: number, toFt: number, offIn: number): StrokeSegment => ({
+    x1: fromFt * PT,
+    y1: (offIn / 12) * PT,
+    x2: toFt * PT,
+    y2: (offIn / 12) * PT,
+    width: 0.7,
+  });
+  const spans = (segments: StrokeSegment[]) =>
+    oneFacePerLine(segments, 1 / PT)
+      .map((one) => [
+        Number((Math.min(one.x1, one.x2) / PT).toFixed(1)),
+        Number((Math.max(one.x1, one.x2) / PT).toFixed(1)),
+      ])
+      .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+
+  it("JOINS THE PIECES AN EXPORTER SPLITS ONE LINE INTO", () => {
+    // A CAD export breaks a polyline at every vertex, so one face arrives as a
+    // run of touching or near-touching pieces. That is what this is for.
+    expect(spans([piece(0, 20, 0), piece(20.5, 50, 0)])).toEqual([[0, 50]]);
+  });
+
+  it("DOES NOT BRIDGE A 3FT DOORWAY, and that bound is measured not chosen", () => {
+    // Worth stating plainly because the obvious reading of this function is
+    // "join a face across its openings", and at this bound it does not. A 3 ft
+    // door stays a gap. Swept on the bench:
+    //
+    //   gap    Mesa found       Mesa not-wall   holdout found    not-wall
+    //   8 ft   57,909 (74.2%)   11,735          31,362 (95.0%)   1,442
+    //   4 ft   63,624 (81.5%)    5,120          32,004 (96.9%)     644
+    //   2 ft   63,779 (81.7%)    5,023          31,894 (96.6%)     610
+    //   0.75   63,478 (81.3%)    4,961          31,831 (96.4%)     607
+    //
+    // 4 ft does bridge a door and is WORSE on Mesa Ridge, which is the set this
+    // is tuned on, and worse on thickness too (21.2% against 20.2% of footage
+    // at an unscheduled thickness). A building aligns its walls, so the wider
+    // the bound the more often it joins two different walls on one grid line
+    // instead of two pieces of one face — and 8 ft is a catastrophe.
+    expect(spans([piece(0, 20, 0), piece(23, 50, 0)])).toEqual([
+      [0, 20],
+      [23, 50],
+    ]);
+  });
+
+  it("LEAVES TWO WALLS ON ONE GRID LINE AS TWO FACES", () => {
+    // The bound that makes this safe rather than destructive. Joining across
+    // any gap was measured: Mesa Ridge drops to 57,909 ft found with 11,735 ft
+    // not on a wall, against 60,453 and 4,432 before — because a building
+    // aligns its walls, so collinear-and-far is the normal case, and a joined
+    // face pairs with everything along its new length.
+    const far = SAME_FACE_GAP_FEET + 2;
+    expect(spans([piece(0, 20, 0), piece(20 + far, 50, 0)])).toEqual([
+      [0, 20],
+      [20 + far, 50],
+    ]);
+  });
+
+  it("keeps parallel lines at different offsets apart", () => {
+    // 0.625in is the gap between an exterior wall's finish and its sheathing —
+    // the tightest real pair on the bench's schedule. Merging those would erase
+    // the layer the thickness is measured to.
+    expect(oneFacePerLine([piece(0, 30, 0), piece(0, 30, 0.625)], 1 / PT)).toHaveLength(2);
+  });
+
+  it("KEEPS TWO WALLS 1/8IN APART IN THICKNESS AS TWO WALLS", () => {
+    // The bench names this trap in as many words — "A1 and C1 thicknesses 1/8in
+    // apart" — and it is what sets `SAME_FACE_OFFSET_FEET`. A 4-7/8in wall and
+    // a 4-3/4in wall drawn end to end on one centreline put their faces 1/16in
+    // apart. Merge those lines and both walls are gone, replaced by one run at
+    // about 4.81in: a thickness neither of them is, over the length of both,
+    // which is the wrong assembly billed across the lot.
+    //
+    // Mutation-tested: at a tolerance of 0.12in this passes with the walls
+    // merged, so the bound is doing work no other test here can see.
+    const pair = [
+      piece(0, 20, 2.4375),
+      piece(0, 20, -2.4375),
+      piece(20, 40, 2.375),
+      piece(20, 40, -2.375),
+    ];
+    const thicknesses = wallsFromStrokes(pair, { feetPerPoint: 1 / PT })
+      .map((wall) => Number((wall.thicknessFeet * 12).toFixed(2)))
+      .sort((a, b) => b - a);
+    expect(thicknesses, "two wall types were merged into one that is neither").toEqual([4.88, 4.75]);
+  });
+
+  it("keeps lines of different directions apart", () => {
+    const vertical: StrokeSegment = { x1: 0, y1: 0, x2: 0, y2: 30 * PT, width: 0.7 };
+    expect(oneFacePerLine([piece(0, 30, 0), vertical], 1 / PT)).toHaveLength(2);
+  });
+
+  it("JOINS PIECES DRAWN IN OPPOSITE DIRECTIONS, which real sheets do", () => {
+    // Measured on a holdout sheet: the two faces of one wall came back as
+    // x 24.6->152.6 and x 152.6->24.6. A face drawn right-to-left is the same
+    // face, so the direction is normalised before anything is compared.
+    //
+    // THE OFFSET HERE IS NOT ZERO ON PURPOSE. A line's offset is computed as
+    // `x1 * uy - y1 * ux`, which for a horizontal line through the origin is 0
+    // whichever way it points — so a fixture at y=0 passes with the
+    // normalisation deleted, and mutation caught exactly that. Off the origin
+    // the two directions give offsets of opposite sign and the pieces land in
+    // different groups.
+    const backwards = piece(50, 20.5, 6);
+    expect(spans([piece(0, 20, 6), backwards])).toEqual([[0, 50]]);
+  });
+
+  it("SURVIVES PIECES SHORTER THAN THE 2FT LENGTH FLOOR", () => {
+    // Why the join runs BEFORE the length filter. A face chopped into 1 ft
+    // pieces has every piece under the floor while the face itself is 30 ft of
+    // building, so filtering first throws the wall away before anything can
+    // pair it.
+    const chopped: StrokeSegment[] = [];
+    for (let at = 0; at < 30; at += 1.5) chopped.push(piece(at, at + 1, 0));
+    const joined = oneFacePerLine(chopped, 1 / PT);
+    expect(joined, "a face chopped into 1 ft pieces did not come back as one").toHaveLength(1);
+    // 20 pieces at 1.5 ft centres, each 1 ft long: 0 to 28.5 + 1.
+    expect(Math.abs(joined[0].x2 - joined[0].x1) / PT).toBeCloseTo(29.5, 1);
+  });
+
+  it("FINDS A WALL WHOSE EVERY PIECE IS UNDER THE LENGTH FLOOR", () => {
+    // The ORDER of the join and the 2 ft input filter, end to end through
+    // `wallsFromStrokes` rather than through `oneFacePerLine` alone — which is
+    // the only way to see it, and mutation proved it: swapping the two left the
+    // direct test above green.
+    //
+    // Both faces of this 30 ft wall arrive as 1 ft pieces, as an export that
+    // breaks a polyline at every vertex delivers them. Filter first and every
+    // piece is under the floor, so the wall is gone before anything can pair
+    // it. Join first and it is a wall.
+    const chopped: StrokeSegment[] = [];
+    for (let at = 0; at < 30; at += 1.2) {
+      chopped.push(piece(at, at + 1, 0));
+      chopped.push(piece(at, at + 1, 4.875));
+    }
+    const walls = wallsFromStrokes(chopped, { feetPerPoint: 1 / PT });
+    expect(walls, "a wall drawn in 1 ft pieces was filtered away").toHaveLength(1);
+    expect(walls[0].thicknessFeet * 12).toBeCloseTo(4.875, 2);
+    expect(walls[0].lengthFeet).toBeGreaterThan(28);
+  });
+
+  it("READS A WINDOW-BROKEN EXTERIOR WALL AT ITS OWN THICKNESS", () => {
+    // The whole point, end to end. EXT-2 as the bench draws it — planLines
+    // 4.0625, 3.4375, -2.5625, -4.0625 — with its outer face arriving in three
+    // pieces while everything else runs through whole. The true pair is
+    // 8.125in; the stud cavity is 6.625in and the interior lines are whole, so
+    // without the join the cavity wins and the wall is priced as the wrong
+    // assembly.
+    const windowed = [
+      piece(0, 12, -4.0625),
+      piece(13, 28, -4.0625),
+      piece(29, 40, -4.0625),
+      piece(0, 40, -2.5625),
+      piece(0, 40, 3.4375),
+      piece(0, 40, 4.0625),
+    ];
+    const SCHEDULE = [1.5, 4.75, 4.875, 6.625, 7.625, 8.125, 8.875, 14.5];
+    const thicknesses = wallsFromStrokes(windowed, {
+      feetPerPoint: 1 / PT,
+      knownThicknessesIn: SCHEDULE,
+    }).map((wall) => Number((wall.thicknessFeet * 12).toFixed(2)));
+    expect(thicknesses, "the stud cavity was sold as the wall").toContain(8.13);
+    // 6.625in is ON this schedule deliberately: the schedule cannot rescue this
+    // case, so the test cannot be passing because of #751's preference.
+    expect(thicknesses).not.toContain(6.63);
   });
 });

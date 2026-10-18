@@ -23,8 +23,8 @@ import {
 } from "./shared";
 import { normalizeEin, normalizeWebsite } from "@/lib/company-profile";
 import { can } from "@/lib/permissions";
-import { numericReaders, PERCENT_BOUNDS } from "@/lib/numeric-input";
-import { CONTRACTING_RELATIONSHIPS } from "@/lib/businessScope";
+import { isBlank, numericReaders, parseNumericInput, PERCENT_BOUNDS } from "@/lib/numeric-input";
+import { CONTRACTING_RELATIONSHIPS, OPENING_DEDUCTIONS } from "@/lib/businessScope";
 
 /** The job-function refusal for the company record, worded the way
  * `closeoutSubmissions.ts` words its own: the person reading it has done
@@ -641,4 +641,91 @@ export async function clearBusinessScope(): Promise<ActionResult> {
 
   revalidatePath("/settings");
   return ok;
+}
+
+/**
+ * The openings question, saved ON ITS OWN.
+ *
+ * ── WHY IT IS NOT PART OF `saveBusinessScope`, WHICH IS WHERE IT STARTED ──
+ *
+ * It was a fourth field on that form for about an hour. The three onboarding
+ * radios are `required`, so the BROWSER refused to submit until all three were
+ * answered — and the openings answer went down with them. Any company that had
+ * skipped onboarding (which is every company that has not answered those three)
+ * could not save this setting at all. Not a permission error, not a validation
+ * message of ours: a native tooltip on a different question.
+ *
+ * A census said the question rendered. A unit test said it was not required.
+ * Both were true, and the setting was unusable. Only clicking it found that,
+ * which is why it now has its own form and its own action with nothing else on
+ * them.
+ *
+ * AN EMPTY ANSWER CLEARS, and that is deliberate rather than an oversight: null
+ * means unanswered, `openingThresholdSqFt` resolves it to the 32 sq ft the app
+ * has always used, and a shop that changes its mind must be able to get back to
+ * "however C Stream does it" without picking a convention it does not hold.
+ */
+export async function saveOpeningDeduction(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    if (!can(context, "MANAGE_COMPLIANCE")) return fail(COMPLIANCE_ONLY);
+
+    // Owner-only for the same reason the scope answers are: this decides how
+    // the WHOLE COMPANY's board quantities are taken off, so it is one person
+    // choosing the bid convention for everybody who estimates.
+    const refusal = ownerRefusal(
+      context,
+      "Only the account owner can set this — it decides how every bid takes off board.",
+    );
+    if (refusal) return refusal;
+
+    const raw = text(formData, "openingDeduction");
+    const openingDeduction = raw ? enumFromForm(formData, "openingDeduction", OPENING_DEDUCTIONS) : null;
+
+    // ── THE SHOP'S OWN THRESHOLD, VALIDATED IN ITS OWN TERMS ──
+    //
+    // Blank means "use our default" and stores null; the resolver turns that
+    // into 32. A figure is a size in square feet, so it must be positive, and
+    // the ceiling is a sanity bound rather than a rule — an opening larger than
+    // 10,000 sq ft is a wall, not a hole, and a typo of that size would silently
+    // turn "only the big ones" into "deduct nothing".
+    //
+    // Stored whatever the answer is, so a shop that switches to "bid solid" and
+    // back does not lose its number.
+    // ── PARSED THE WAY EVERY OTHER NUMBER IN THIS APP IS ──
+    //
+    // `Number(raw)` was here and it is the exact parser `lib/numeric-input.ts`
+    // exists to replace: `Number("2,800")` is NaN, and a contractor writes the
+    // comma without thinking. The field is `type="text"` precisely so the
+    // thousands comma REACHES the server rather than being eaten by the
+    // browser, which makes tolerant parsing the server's job.
+    //
+    // Blank stays null — "use our default". A figure must be a positive size in
+    // square feet; the ceiling is a sanity bound rather than a rule, since an
+    // opening larger than 10,000 sq ft is a wall and a typo of that size would
+    // silently turn "only the big ones" into "deduct nothing".
+    const sqFtRaw = formData.get("openingDeductionSqFt");
+    let openingDeductionSqFt: number | null = null;
+    if (!isBlank(sqFtRaw)) {
+      // `maxDecimals: 2` because the column is DECIMAL(6,2) and Postgres rounds
+      // a third place SILENTLY — the parser refuses it with a sentence instead.
+      const parsed = parseNumericInput(sqFtRaw, {
+        label: "The opening size",
+        min: 1,
+        max: 10000,
+        maxDecimals: 2,
+        unit: " sq ft",
+      });
+      if (!parsed.ok) return fail(parsed.error);
+      openingDeductionSqFt = parsed.n;
+    }
+
+    await prisma.company.update({
+      where: { id: context.company.id },
+      data: { openingDeduction, openingDeductionSqFt },
+    });
+
+    revalidatePath("/settings");
+    return ok;
+  });
 }

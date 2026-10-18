@@ -53,7 +53,7 @@ export type CloseoutJobData = {
 };
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 const primaryBtn =
   "rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50";
 const linkBtn = "text-xs text-ink-muted underline disabled:opacity-50";
@@ -143,10 +143,10 @@ export function CloseoutJobCard({
 
   const warrantyChip =
     wState === "ACTIVE"
-      ? "bg-tag-blue text-tag-blue-ink"
+      ? "bg-tag-brand text-tag-brand-ink"
       : wState === "EXPIRED"
-        ? "bg-neutral-800 text-ink-body"
-        : "bg-neutral-800 text-ink-body";
+        ? "bg-rail-hover text-ink-body"
+        : "bg-rail-hover text-ink-body";
 
   return (
     <li className="flex flex-col gap-4 p-5">
@@ -251,7 +251,7 @@ export function CloseoutJobCard({
                       Note
                       <textarea name="note" rows={2} defaultValue={item.note ?? ""} className={inputClass} />
                     </label>
-                    {error && <p className="text-sm text-red-400">{error}</p>}
+                    {error && <p className="text-sm text-danger">{error}</p>}
                     <div className="flex gap-2">
                       <button type="submit" disabled={isPending} className={primaryBtn}>
                         {isPending ? (
@@ -301,7 +301,7 @@ export function CloseoutJobCard({
                           onConfirm={() => run(() => deleteCloseoutItem(item.id))}
                           deleteClassName={`${linkBtn} ml-2`}
                           cancelClassName={`${linkBtn} ml-2`}
-                          confirmClassName="ml-2 text-xs text-red-400 underline disabled:opacity-50"
+                          confirmClassName="ml-2 text-xs text-danger underline disabled:opacity-50"
                         />
                       ) : null
                     }
@@ -355,7 +355,7 @@ export function CloseoutJobCard({
               Note
               <textarea name="note" rows={2} className={inputClass} />
             </label>
-            {error && <p className="text-sm text-red-400">{error}</p>}
+            {error && <p className="text-sm text-danger">{error}</p>}
             <div className="flex gap-2">
               <button type="submit" disabled={isPending} className={primaryBtn}>
                 {isPending ? "Adding…" : "Add item"}
@@ -424,7 +424,7 @@ export function CloseoutJobCard({
               Note
               <textarea name="note" rows={2} defaultValue={job.warranty?.note ?? ""} className={inputClass} />
             </label>
-            {error && <p className="text-sm text-red-400">{error}</p>}
+            {error && <p className="text-sm text-danger">{error}</p>}
             <div className="flex gap-2">
               <button type="submit" disabled={isPending} className={primaryBtn}>
                 {isPending ? (
@@ -457,7 +457,7 @@ export function CloseoutJobCard({
                   onConfirm={() => run(() => deleteWarrantyPeriod(job.id))}
                   deleteClassName={btn}
                   cancelClassName={btn}
-                  confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+                  confirmClassName="rounded-md border border-red-500 px-3 py-1.5 text-sm text-danger hover:bg-tag-rose disabled:opacity-50"
                 />
               ) : null
             }
@@ -532,7 +532,7 @@ export function CloseoutJobCard({
                         className={inputClass}
                       />
                     </label>
-                    {error && <p className="text-sm text-red-400">{error}</p>}
+                    {error && <p className="text-sm text-danger">{error}</p>}
                     <div className="flex gap-2">
                       <button type="submit" disabled={isPending} className={primaryBtn}>
                         {isPending ? (
@@ -597,7 +597,7 @@ export function CloseoutJobCard({
                           onConfirm={() => run(() => deleteServiceRequest(r.id))}
                           deleteClassName={`${linkBtn} ml-2`}
                           cancelClassName={`${linkBtn} ml-2`}
-                          confirmClassName="ml-2 text-xs text-red-400 underline disabled:opacity-50"
+                          confirmClassName="ml-2 text-xs text-danger underline disabled:opacity-50"
                         />
                       ) : null
                     }
@@ -646,7 +646,7 @@ export function CloseoutJobCard({
                 className={inputClass}
               />
             </label>
-            {error && <p className="text-sm text-red-400">{error}</p>}
+            {error && <p className="text-sm text-danger">{error}</p>}
             <div className="flex gap-2">
               <button type="submit" disabled={isPending} className={primaryBtn}>
                 {isPending ? (
@@ -671,7 +671,7 @@ export function CloseoutJobCard({
       </section>
 
       {error && openForm === "none" && !editingItemId && !editingRequestId && (
-        <p className="text-sm text-red-400">{error}</p>
+        <p className="text-sm text-danger">{error}</p>
       )}
     </li>
   );

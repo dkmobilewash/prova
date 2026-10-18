@@ -314,6 +314,7 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   t("q-bids-out", "what bids have we got out?", "bid_status", ESTIMATOR),
   t("q-bids-due", "what's due this week?", "bid_status", ESTIMATOR),
   c("q-bid-log", "Turner asked us to bid the Riverside fireproofing, bids due 10/3", "log_bid_invitation", ESTIMATOR),
+  c("q-bid-outcome", "we lost Riverside on price, Acme got it", "record_bid_outcome", ESTIMATOR),
   c("q-estimate-new", "start an estimate for Northgate Apartments for Skanska", "create_estimate_job", ESTIMATOR),
   c("q-estimate-lines", "draft the line items for Northgate off the scope", "draft_estimate_lines", ESTIMATOR),
   // THE ONE CASE THE MODEL EVAL FAILED, AND THE QUESTION WAS WRONG RATHER
@@ -513,7 +514,8 @@ export const CENSUS_REFUSALS = 2;
  * hole somebody wrote down, closed by code, and left on the list that is
  * injected into the system prompt. It went from a census entry nobody had
  * written to a refusal nobody had withdrawn. */
-export const TOTAL_QUESTIONS = 123;
+/** 123 -> 124 on 2026-10-11: one question for `record_bid_outcome`, the win/loss card the research agents learn from. */
+export const TOTAL_QUESTIONS = 124;
 
 /**
  * The routable ninety-seven, as eval cases, so the model half of the

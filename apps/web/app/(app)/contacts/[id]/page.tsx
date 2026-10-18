@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
-import { StatusBadge } from "@prova/ui";
+import { PageShell, StatusBadge } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import {
@@ -26,6 +27,26 @@ import { ContactPersonRow } from "@/components/ContactPersonRow";
 import { toIsoDate } from "@/lib/compliance-expiry";
 import { serverToday } from "@/lib/serverToday";
 import { ActionForm } from "@/components/ActionForm";
+import { DECLINE_REASONS } from "@/lib/bid-decline";
+
+export const metadata = { title: "Edit contact" };
+
+/**
+ * The decline reasons, in the order they are offered.
+ *
+ * Derived from `DECLINE_REASONS` rather than retyped, so a label changed in one
+ * place changes here too — and `bid-decline.test.ts` asserts every member has a
+ * label and a hint, which is what makes deriving safe.
+ *
+ * OTHER sorts last by construction: `Object.entries` preserves insertion order
+ * and it is declared last. A real reason should be easier to reach than the
+ * escape hatch.
+ */
+const DECLINE_REASON_OPTIONS = Object.entries(DECLINE_REASONS).map(([value, { label, hint }]) => ({
+  value,
+  label,
+  hint,
+}));
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -44,11 +65,11 @@ const BID_STATUS_OPTIONS = [
 ] as const;
 
 const BID_STATUS_STYLE: Record<string, string> = {
-  INVITED: "bg-neutral-800 text-ink-label",
-  SUBMITTED: "bg-tag-blue text-tag-blue-ink",
+  INVITED: "bg-rail-hover text-ink-label",
+  SUBMITTED: "bg-tag-brand text-tag-brand-ink",
   WON: "bg-tag-green text-tag-green-ink",
-  LOST: "bg-tag-rose text-red-400",
-  DECLINED: "bg-neutral-800 text-ink-muted",
+  LOST: "bg-tag-rose text-danger",
+  DECLINED: "bg-rail-hover text-ink-muted",
 };
 
 function formatDate(date: Date | null) {
@@ -164,9 +185,10 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
   const origin = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}`;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <section className="mb-10 rounded-lg border border-line-card bg-surface p-6">
-        <h1 className="mb-4 text-lg font-semibold text-ink">Edit contact</h1>
+    <PageShell width="reading">
+      <PageHeader route="/contacts" parent={{ href: "/contacts", label: "Contacts" }} title={contact.name} />
+      <section className="mb-10 rounded-xl border border-line-card bg-surface p-6">
+        <h2 className="mb-4 text-lg font-semibold text-ink">Edit contact</h2>
         <ContactEditForm
           contactId={contact.id}
           today={serverToday()}
@@ -187,7 +209,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
       </section>
 
       {showsBilling && (
-      <section className="mb-10 rounded-lg border border-line-card bg-surface p-6">
+      <section className="mb-10 rounded-xl border border-line-card bg-surface p-6">
         <h2 className="mb-1 text-lg font-semibold text-ink">Payment reliability</h2>
         <p className="mb-4 text-sm text-ink-body">
           Computed from every invoice/payment on {contact.name}&apos;s jobs — nothing here is a stored
@@ -242,7 +264,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
       )}
 
       {showsEstimating && (
-      <section className="mb-10 rounded-lg border border-line-card bg-surface p-6">
+      <section className="mb-10 rounded-xl border border-line-card bg-surface p-6">
         <h2 className="mb-3 text-lg font-semibold text-ink">Bid invitations</h2>
         {contact.bidInvitations.length === 0 ? (
           <p className="mb-4 text-sm text-ink-body">No bid invitations logged from {contact.name} yet.</p>
@@ -288,9 +310,9 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                       describe="Takes this bid invitation off the GC's record here. The GC is not told, and a won bid stops counting toward your win rate with them."
                       pinned="end"
                       action={deleteBidInvitation.bind(null, bid.id)}
-                      deleteClassName="text-xs text-ink-body hover:text-red-400 hover:underline"
-                      cancelClassName="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
-                      confirmClassName="rounded-md border border-red-500 px-2 py-1 text-xs text-red-400 hover:bg-tag-rose"
+                      deleteClassName="text-xs text-ink-body hover:text-danger hover:underline"
+                      cancelClassName="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
+                      confirmClassName="rounded-md border border-red-500 px-2 py-1 text-xs text-danger hover:bg-tag-rose"
                       hint={
                         bid.status === "WON" ? (
                           <span className="max-w-[14rem] text-right text-tag-amber-ink">
@@ -329,9 +351,40 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                       title="Amount bid, once known"
                       className="w-24 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
                     />
+                    {/* ── WHY, WHEN THE ANSWER IS DECLINED ──
+
+                        Always rendered rather than revealed by the select, and
+                        that is deliberate: this form is a server component with
+                        no state, so hiding it behind the status would need a
+                        client component for a field that costs one select of
+                        width. Shown always, it also tells somebody the question
+                        is asked BEFORE they decline — which is when they still
+                        remember the answer.
+
+                        No reason is pre-selected, and the first option is
+                        "Why? (optional)" rather than a real reason. A required
+                        dropdown gets its first option picked to get past the
+                        screen, and data that looks complete and is fiction is
+                        worse than blank — `lib/bid-decline.ts` counts the
+                        unrecorded ones as their own number instead. */}
+                    <select
+                      key={`${bid.id}-reason`}
+                      name="declineReason"
+                      defaultValue={bid.declineReason ?? ""}
+                      title="Why this was declined — only used when the status is Declined"
+                      data-bid="decline-reason"
+                      className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
+                    >
+                      <option value="">Why? (optional)</option>
+                      {DECLINE_REASON_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value} title={o.hint}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
                     <SubmitButton
                       type="submit"
-                      className="rounded-md bg-neutral-800 px-2 py-1 text-xs font-medium text-ink hover:bg-neutral-700"
+                      className="rounded-md bg-rail-hover px-2 py-1 text-xs font-medium text-ink hover:bg-lift"
                     >
                       Update
                     </SubmitButton>
@@ -400,7 +453,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           </label>
           <SubmitButton
             type="submit"
-            className="inline-flex items-center justify-center rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
+            className="inline-flex items-center justify-center rounded-md bg-rail-hover px-4 py-2 text-sm font-medium text-ink hover:bg-lift"
           >
             Log invitation
           </SubmitButton>
@@ -409,7 +462,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
       )}
 
       {showsEstimating && (
-        <section className="mb-10 rounded-lg border border-line-card bg-surface p-6">
+        <section className="mb-10 rounded-xl border border-line-card bg-surface p-6">
           <h2 className="mb-1 text-lg font-semibold text-ink">People</h2>
           <p className="mb-4 text-sm text-ink-body">
             The individuals at {contact.name} -- not a separate account of their own, just who to
@@ -439,7 +492,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
       )}
 
       {showsEstimating && (
-        <section className="mb-10 rounded-lg border border-line-card bg-surface p-6">
+        <section className="mb-10 rounded-xl border border-line-card bg-surface p-6">
           <h2 className="mb-3 text-lg font-semibold text-ink">Interactions</h2>
           <p className="mb-4 text-sm text-ink-body">
             Calls, emails, site visits, and notes with {contact.name} -- a log of the relationship,
@@ -478,7 +531,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
       )}
 
       {quickBooksConnected && (
-        <section className="mb-10 rounded-lg border border-line-card bg-surface p-6">
+        <section className="mb-10 rounded-xl border border-line-card bg-surface p-6">
           <h2 className="mb-3 text-lg font-semibold text-ink">QuickBooks</h2>
           <p className="mb-3 text-sm text-ink-body">
             Invoices for this GC&apos;s jobs can only be pushed once they&apos;re linked to a
@@ -511,7 +564,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           that reason. Showing the link to somebody who may not issue one
           would leave the credential readable and only the button gone. */}
       {showsBilling && (
-      <section className="mb-10 rounded-lg border border-line-card bg-surface p-6">
+      <section className="mb-10 rounded-xl border border-line-card bg-surface p-6">
         <h2 className="mb-3 text-lg font-semibold text-ink">Client portal</h2>
         {contact.portalToken && contact.portalRevokedAt ? (
           // Issue #106 finding 2 / #217: revoked, not deleted or rotated —
@@ -527,7 +580,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
             <form action={enablePortalWithId}>
               <SubmitButton
                 type="submit"
-                className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
+                className="rounded-md bg-rail-hover px-3 py-2 text-sm font-medium text-ink hover:bg-lift"
               >
                 Re-enable client portal
               </SubmitButton>
@@ -559,7 +612,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
             <form action={enablePortalWithId}>
               <SubmitButton
                 type="submit"
-                className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
+                className="rounded-md bg-rail-hover px-3 py-2 text-sm font-medium text-ink hover:bg-lift"
               >
                 Enable client portal
               </SubmitButton>
@@ -578,11 +631,11 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           <p className="text-ink-body">
             No jobs for {contact.name} yet.{" "}
             <Link href="/jobs/new" className="text-link hover:underline">
-              Start a bid for them →
+              New job for them →
             </Link>
           </p>
         ) : (
-          <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
+          <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface">
             {contact.jobs.map((job) => {
               const total = job.lineItems.reduce(
                 (sum, item) => sum + Number(item.quantity) * Number(item.unitPrice),
@@ -605,6 +658,6 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           </ul>
         )}
       </section>
-    </div>
+    </PageShell>
   );
 }

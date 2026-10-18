@@ -93,7 +93,7 @@ export function PrevailingWageDeterminationForm({ jobId }: { jobId: string }) {
             type="file"
             name="file"
             accept="application/pdf,image/png,image/jpeg,image/webp"
-            className={`${field} file:mr-2 file:rounded file:border-0 file:bg-neutral-800 file:px-2 file:py-1 file:text-ink-label`}
+            className={`${field} file:mr-2 file:rounded file:border-0 file:bg-rail-hover file:px-2 file:py-1 file:text-ink-label`}
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-ink-body">

@@ -58,7 +58,7 @@ export type WallComponentView = {
 
 const field =
   "rounded-md border border-line-card bg-canvas px-2 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
-const small = "rounded-md bg-neutral-800 px-3 py-1.5 text-xs font-medium text-ink hover:bg-neutral-700 disabled:opacity-50";
+const small = "rounded-md bg-rail-hover px-3 py-1.5 text-xs font-medium text-ink hover:bg-lift disabled:opacity-50";
 const labelClass = "flex flex-col gap-1 text-xs text-ink-label";
 
 function useSubmit(run: (formData: FormData) => Promise<Result>, resetOnSuccess = true) {
@@ -141,7 +141,7 @@ export function StarterWallTypesButton() {
             setMessage(result.ok ? `Added ${result.value.added.join(" and ")}. Link each part to your price book.` : result.error);
           })
         }
-        className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+        className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
       >
         {isPending ? "Adding…" : "Start from two common wall types"}
       </button>
@@ -393,7 +393,7 @@ function WallComponentRow({
                   if (!result.ok) setRemoveError(result.error);
                 });
               }}
-              deleteClassName="text-xs text-red-400 hover:underline"
+              deleteClassName="text-xs text-danger hover:underline"
             />
           }
         />

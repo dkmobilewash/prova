@@ -50,11 +50,17 @@ const dayShape = {
 
 /** Planned days from `today` forward, for the whole company or one job. */
 export async function loadUpcomingSchedule(companyId: string, today: string, jobId?: string) {
+  return loadScheduleBetween(companyId, today, SCHEDULE_HORIZON_DAYS, jobId);
+}
+
+/** Planned days from `from` for `days` more days (inclusive) — the week
+ * board asks for its Monday and 6. */
+export async function loadScheduleBetween(companyId: string, from: string, days: number, jobId?: string) {
   return prisma.crewScheduleDay.findMany({
     where: {
       companyId,
       ...(jobId ? { jobId } : {}),
-      workDate: { gte: utcDay(today), lte: utcDay(today, SCHEDULE_HORIZON_DAYS) },
+      workDate: { gte: utcDay(from), lte: utcDay(from, days) },
     },
     select: dayShape,
     orderBy: [{ workDate: "asc" }, { jobId: "asc" }],

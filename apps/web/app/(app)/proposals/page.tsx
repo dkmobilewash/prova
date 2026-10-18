@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
@@ -25,10 +26,13 @@ export default async function ProposalsPage() {
 
   return (
     <PageShell width="working">
-      <h1 className="mb-2 text-xl font-semibold text-ink">Proposal clauses</h1>
+      <PageHeader
+        route="/proposals"
+        subtitle="The inclusions, exclusions, clarifications and alternates you repeat on every bid."
+      />
       <p className="mb-6 text-sm text-ink-body">
-        The inclusions, exclusions, clarifications and alternates you repeat on every bid. Add them
-        to a job&rsquo;s proposal from its Estimate tab. A clause already on a proposal is a copy, so
+        Add them
+        to a job&rsquo;s proposal from its estimate page (the Estimate step). A clause already on a proposal is a copy, so
         changing it here never changes a proposal you have already sent.
       </p>
 

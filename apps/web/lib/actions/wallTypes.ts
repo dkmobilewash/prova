@@ -6,6 +6,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { asCostCategory, type CostCategory } from "@/lib/cost-category";
 import { syncWallScheduleLines, type WallSyncSummary } from "@/lib/estimating/wall-schedule";
+import { wallTypesFromSchedule, type PartitionScheduleRow } from "@/lib/estimating/partitionTypes";
 import { NOT_ESTIMATE_STAGE } from "@/lib/estimating/draft-lines";
 import { openingsFromJson, WALL_COMPONENT_BASES, type WallComponentBasis } from "@/lib/wall-assemblies";
 import {
@@ -298,6 +299,146 @@ export async function addStarterWallTypes(): Promise<StarterResult> {
   return { ok: true, value: { added: toAdd.map((type) => type.code) } };
 }
 
+/**
+ * ── THE PARTITION SCHEDULE, TURNED INTO WALL TYPES ──
+ *
+ * `SCHEDULE_ROWS` has already read the table off the sheet and a person has
+ * already looked at the rows on screen. This writes the ones it can into the
+ * company's library, WITH A THICKNESS — which is the field that lets a wall
+ * measured off a drawing find the assembly that prices it.
+ *
+ * ── IT SKIPS A CODE YOU ALREADY HAVE, AND NEVER OVERWRITES ONE ──
+ *
+ * `WallType` is company-scoped and unique on its code, while a partition
+ * schedule belongs to ONE job. `A1` on this set is 4⅞in and `A1` on the next
+ * job may be 6in, so a code already in the library is a genuine conflict and
+ * not a duplicate to be tidied away. Updating it in place would silently
+ * re-price every other job that uses it.
+ *
+ * So a taken code is REPORTED and left alone, the same shape
+ * `addStarterWallTypes` takes, and the person edits it themselves if they meant
+ * to. The conflict is one sentence; a wrong re-price is a bid.
+ *
+ * ── NO COMPONENTS, AND THAT IS NOT AN OMISSION ──
+ *
+ * A schedule says what a wall IS. It does not say what your supplier charges
+ * for the board or what your crew hangs in an hour, and a type created with
+ * invented components would read as priced while costing nothing real. These
+ * arrive with the thickness, the height and the schedule's own words, and the
+ * person adds their own parts — the state `addStarterWallTypes` also leaves
+ * behind, deliberately.
+ */
+type ScheduleImport = ActionResultWith<{ added: string[]; taken: string[]; unread: number }>;
+
+export async function addWallTypesFromSchedule(
+  jobId: string,
+  proposalId: string,
+): Promise<ScheduleImport> {
+  const context = await requireCompanyContext();
+  // ── PRESSED ON A JOB, WRITES THE COMPANY LIBRARY ──
+  //
+  // `MANAGE_ESTIMATING`, like every other write on /wall-types, and NOT the
+  // `VIEW_JOB_COSTS` the takeoff tab withholds on. What this adds is company
+  // reference data that outlives the job it was read from, so an accountant
+  // who can open the tab is not the person who decides what A1 means.
+  //
+  // Recorded in `action-capability-guards.test.ts`'s MIXED_DOORS, because that
+  // census derives the capability from the PAGE and would otherwise read this
+  // as locking out a real person. The button follows the same rule — see
+  // `AddWallTypesFromSchedule`, which is not rendered for somebody this would
+  // refuse, so nobody meets the refusal by pressing it.
+  if (!can(context, "MANAGE_ESTIMATING")) return { ok: false, error: NO_ESTIMATING };
+  const companyId = context.company.id;
+
+  // Scoped through the PLAN and the JOB, so a proposal id from another tenant
+  // reads as missing rather than as a schedule.
+  const proposal = await prisma.planScheduleProposal.findFirst({
+    where: { id: proposalId, kind: "PARTITION", plan: { job: { id: jobId, companyId } } },
+    select: { rows: true },
+  });
+  if (proposal === null) return { ok: false, error: NO_SCHEDULE };
+
+  const rows = partitionRowsFromJson(proposal.rows);
+  const proposed = wallTypesFromSchedule(rows);
+  if (proposed.length === 0) {
+    return {
+      ok: false,
+      error:
+        "None of the rows on that schedule gave a wall thickness that could be read, so nothing was added. " +
+        "Add the types by hand — the thickness is what lets a measured wall find its price.",
+    };
+  }
+
+  const taken = new Set(
+    (await prisma.wallType.findMany({ where: { companyId }, select: { code: true } })).map((type) =>
+      type.code.toUpperCase(),
+    ),
+  );
+  const toAdd = proposed.filter((type) => !taken.has(type.code.toUpperCase()));
+  const clashes = proposed.filter((type) => taken.has(type.code.toUpperCase())).map((type) => type.code);
+  if (toAdd.length === 0) {
+    return { ok: false, error: ALREADY_HAVE(clashes) };
+  }
+
+  const sortFrom = await prisma.wallType.count({ where: { companyId } });
+  await prisma.$transaction(async (tx) => {
+    for (const [index, type] of toAdd.entries()) {
+      await tx.wallType.create({
+        data: {
+          companyId,
+          code: type.code,
+          name: type.name,
+          thicknessIn: type.thicknessIn.toFixed(2),
+          defaultHeightFt: type.defaultHeightFt === null ? null : type.defaultHeightFt.toFixed(2),
+          sides: 2,
+          studSpacingIn: "16",
+          sortOrder: sortFrom + index,
+          notes: type.notes,
+        },
+      });
+    }
+  });
+
+  revalidateLibrary();
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  return {
+    ok: true,
+    value: { added: toAdd.map((type) => type.code), taken: clashes, unread: rows.length - proposed.length },
+  };
+}
+
+const NO_SCHEDULE = "That partition schedule isn't on this job any more.";
+
+const ALREADY_HAVE = (codes: string[]) =>
+  `You already have wall types tagged ${codes.join(", ")}, so nothing was added. A tag means different things on ` +
+  `different jobs, so C Stream will not change one you already use — open Wall types and edit them yourself if ` +
+  `this set's version is the one you want.`;
+
+/**
+ * The stored rows, re-read rather than trusted.
+ *
+ * `rows` is a `Json` column, so a row written by an older build — or by a
+ * reader whose shape has since changed — is not evidence of anything. The same
+ * posture `loadScheduleProposals` takes on the way out, and for the same
+ * reason: this one feeds a THICKNESS, and a malformed row that slipped through
+ * as a string would land in the library as a wall.
+ */
+function partitionRowsFromJson(raw: unknown): PartitionScheduleRow[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PartitionScheduleRow[] = [];
+  for (const row of raw) {
+    if (typeof row !== "object" || row === null) continue;
+    const cell = (key: string): string | null => {
+      const value = (row as Record<string, unknown>)[key];
+      return typeof value === "string" && value.trim() !== "" ? value : null;
+    };
+    const mark = cell("mark");
+    if (mark === null) continue;
+    out.push({ mark, description: cell("description"), size: cell("size"), notes: cell("notes") });
+  }
+  return out;
+}
+
 /* -------------------------------------------------------------- job runs */
 
 async function estimateJob(jobId: string, companyId: string): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -398,6 +539,28 @@ export async function deleteWallRun(jobId: string, runId: string): Promise<RunRe
   if (!gate.ok) return gate;
   try {
     const summary = await prisma.$transaction(async (tx) => {
+      // ── THE MEASUREMENTS GO BACK TO UNPOSTED, FIRST ──
+      //
+      // Deleting this run deletes its estimate line. A measurement posted into
+      // it would otherwise keep saying "already on the estimate" for a line
+      // that no longer exists, and `postMeasuredWallRun` refuses anything
+      // already posted — so the estimator is left with a traced wall they
+      // cannot price and nothing on the estimate to show for it.
+      //
+      // Before the delete, because the FK is SetNull: afterwards there is no
+      // `wallRunId` left to find them by.
+      //
+      // `wallRunId: null` is REDUNDANT and kept deliberately: the FK is
+      // ON DELETE SET NULL, so Postgres clears it a line later whatever this
+      // says. Mutation confirms it — dropping it leaves all twelve tests
+      // green, which makes it the one change here no test can see. It stays
+      // because the clearing is then stated where it is read rather than
+      // inferred from a constraint two files away, and `postedAt` — the half
+      // that matters — is asserted either way.
+      await tx.takeoffMeasurement.updateMany({
+        where: { wallRunId: runId },
+        data: { postedAt: null, wallRunId: null },
+      });
       const removed = await tx.wallRun.deleteMany({ where: { id: runId, jobId, companyId } });
       if (removed.count === 0) throw new InputError("That wall run is already gone.");
       return syncWallScheduleLines(tx, companyId, jobId);

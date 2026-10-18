@@ -32,33 +32,23 @@ import {
 } from "@/lib/company-financials";
 
 /**
- * Four company-wide numbers, pinned under the content.
+ * Four company-wide numbers, at the top of the Money area (/areas/money).
  *
- * Inside the content column rather than fixed to the viewport, so it can
- * never sit over the nav rail — and so a page that scrolls keeps it in
- * view without the rail having to know it exists.
- *
- * Dark, matching the rail and the top bar: the chrome is one surface and
- * the page inside it is another. It moves to the light tokens when the
- * pages it frames do.
+ * MOVED 2026-10-10 (Concept G). This was a 52px strip pinned under the
+ * content of EVERY page, and it covered things: on a job's Billing stage it
+ * sat over "Review & send". Concept G has no bottom chrome, so the figures
+ * live where someone goes to look at money, behind the same
+ * VIEW_COMPANY_FINANCIALS gate the strip had. The component keeps its name
+ * so `hintCensus.test.ts` and `hintClientOnly.test.ts` keep pointing at it.
  *
  * The margin is the only conditionally-coloured figure here, and only
  * above the healthy threshold. Colouring a number green regardless of its
  * value teaches people to stop reading the colour; a 24.6% margin is
  * ordinary and should look ordinary.
  *
- * AND IT RENDERS NOTHING UNTIL IT HAS A FIGURE, which is a usability fix
- * rather than a tidy-up. On a brand-new account all four read
- * "$0.00 / — / $0.00 / $0.00", and those 52px come off the bottom of the
- * scroll port on EVERY screen — measured on `/jobs/new/[id]/items` at a
- * 740px-tall window, where the page's own "Continue" button sat below the
- * port with the bar occupying the pixels where it would otherwise have
- * been. A bar with nothing to report was pushing the primary control of
- * the screen out of sight. It comes back the instant any of the four
- * becomes a number, so nothing a reader has ever seen disappears on them.
- *
- * Deliberately NOT "hide the zeros and keep the bar": a 52px empty strip
- * costs the same pixels and says less than nothing.
+ * IT RENDERS NOTHING UNTIL IT HAS A FIGURE. On a brand-new account all four
+ * read "$0.00 / - / $0.00 / $0.00", which says less than nothing; it comes
+ * back the instant any of the four becomes a number.
  */
 export function MetricBar({ financials }: { financials: CompanyFinancials }) {
   if (hasNothingToSay(financials)) return null;
@@ -81,7 +71,7 @@ export function MetricBar({ financials }: { financials: CompanyFinancials }) {
       : undefined;
 
   return (
-    <div className="print:hidden flex h-[52px] shrink-0 items-center gap-6 overflow-x-auto border-t border-line-card bg-surface px-4 sm:px-6">
+    <section aria-label="Company figures" className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4" data-area="company-figures">
       <Metric
         label="Estimated revenue"
         value={money(financials.estimatedRevenue)}
@@ -104,7 +94,7 @@ export function MetricBar({ financials }: { financials: CompanyFinancials }) {
         value={money(financials.retainageHeld)}
         describe="What GCs are still holding out of what they have been billed, across every job: withheld less released. Yours, and not paid yet."
       />
-    </div>
+    </section>
   );
 }
 
@@ -116,12 +106,10 @@ export function MetricBar({ financials }: { financials: CompanyFinancials }) {
  * said what any of them meant: "Cash collected" and "Estimated revenue" are
  * both money and neither is what an owner assumes until told.
  *
- * THE FIGURE IS A TAB STOP NOW, and that is the cost of the feature rather
+ * THE FIGURE IS A TAB STOP, and that is the cost of the feature rather
  * than an accident. A hover-only explanation is no explanation for anyone
  * using a keyboard, and the only way a static figure can take focus is
- * `tabIndex`. It adds four stops at the end of every page. The `div` became
- * a `span` in the same change; it still carries `flex`, so its box is the
- * box it was.
+ * `tabIndex`.
  */
 function Metric({
   label,
@@ -140,7 +128,7 @@ function Metric({
     <Hint text={describe}>
       <span
         tabIndex={0}
-        className="flex shrink-0 items-baseline gap-2 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+        className="flex h-full min-w-0 flex-col rounded-[14px] border border-line-card bg-surface px-4 py-3.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
       >
         {/* `text-slate-500` until 2026-09-21, and it was 3.66:1 on this
             ground — below the 4.5:1 floor, at 10px, uppercase, in a truck
@@ -151,17 +139,17 @@ function Metric({
             cannot see because it matches `bg-brand` and nothing maps a raw
             grey back to the ground under it. `ink-muted` is 6.9:1 here and
             is the token the config sanctions for exactly this job. */}
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
+        <span className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
           {label}
         </span>
         <span
-          className={`text-sm font-semibold tabular-nums ${
-            tone === "good" ? "text-green-400" : "text-ink"
+          className={`mt-1.5 truncate font-headline text-[26px] leading-tight tabular-nums ${
+            tone === "good" ? "text-ok" : "text-ink"
           }`}
         >
           {value}
         </span>
-        {hint && <span className="text-[10px] text-ink-muted">{hint}</span>}
+        {hint && <span className="mt-0.5 text-xs text-ink-muted">{hint}</span>}
       </span>
     </Hint>
   );

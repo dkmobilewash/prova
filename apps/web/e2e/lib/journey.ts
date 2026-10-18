@@ -2,6 +2,7 @@ import path from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { CRASH_MARKERS, expectHealthy, type HealthMonitor } from "./health";
 import { stubDocumentUpload } from "./blobStub";
+import { historyLog } from "./historyLog";
 
 /**
  * The pilot contractor's path through the product, as reusable steps.
@@ -21,9 +22,154 @@ import { stubDocumentUpload } from "./blobStub";
 // __dirname, not import.meta.url — see playwright.config.ts's comment.
 export const EXECUTED_SUBCONTRACT_FIXTURE = path.resolve(__dirname, "../fixtures/executed-subcontract.pdf");
 
-/** The tab rail under a job's summary header (components/JobSectionNav.tsx). */
+/**
+ * Which of the five stage boxes on a job (components/job/jobStages.ts,
+ * Concept G 2026-10-10) files each tab under. The old tab rail is gone;
+ * every tab keeps its route but is listed only while its stage is open.
+ *
+ * Copied, not imported: this file loads @playwright/test, so the unit suite
+ * cannot import it. e2e/lib/jobTabs.test.ts derives the same map from
+ * `jobStages()` and fails when the two disagree, so a tab moved to another
+ * stage cannot leave the specs clicking the stage that no longer holds it.
+ */
+export type JobStageKey = "estimate" | "contract" | "crew" | "billing" | "closeout";
+export const JOB_TAB_STAGE: Record<string, JobStageKey> = {
+  Estimate: "estimate",
+  Takeoff: "estimate",
+  "Contract signature": "contract",
+  Overview: "contract",
+  // "Change orders" stopped being a stage link 2026-10-12 (restore-nav):
+  // the estimate route is "Estimate" at every stage, and change orders are
+  // a Paperwork-panel row at /estimate#change-orders.
+  Compliance: "contract",
+  "Crew & time": "crew",
+  "Field reports": "crew",
+  Photos: "crew",
+  Billing: "billing",
+  Retainage: "billing",
+  "Punch list": "closeout",
+  "Closeout (all jobs)": "closeout",
+};
+
+/** The stage boxes across the top of a job (components/job/JobStageNav.tsx). */
+export function jobStageNav(page: Page): Locator {
+  return page.getByRole("navigation", { name: "Job stages" });
+}
+
+/** The box for one stage. It is a link to the stage's first page whenever
+ * the stage has pages at all (a bid has no Billing pages yet). */
+export function jobStageBox(page: Page, stage: JobStageKey): Locator {
+  return jobStageNav(page).locator(`li[data-stage="${stage}"]`);
+}
+
+/** The job's tab row (components/job/JobSectionNav.tsx). */
+export function jobSectionNav(page: Page): Locator {
+  return page.getByRole("navigation", { name: "Job sections" });
+}
+
+/**
+ * One tab of the job's page row.
+ *
+ * ── THIS LOOKED IN THE WRONG PLACE FOR A DAY, AND SIX SPECS BLAMED THE APP ──
+ *
+ * It used to read `jobStageNav(page).getByRole("list", { name: / pages$/ })`,
+ * because the shell it was written against gave each stage its own row of
+ * pages INSIDE the stage boxes, `<ul aria-label="<Stage> pages">`, and put only
+ * the open stage's row in the DOM. #757 replaced that with ONE row listing
+ * every page of the job, in a sibling `<nav aria-label="Job sections">`.
+ *
+ * So the locator matched nothing, on a page that was rendering the tabs
+ * perfectly well. Six specs failed — the estimating desk, the job detail tabs,
+ * retainage, plan ingestion, on-screen takeoff — and every one of them read as
+ * "the Estimate tab is missing", which is exactly what somebody looking at the
+ * new UI had reported for other reasons. The product was never at fault:
+ * captured in the failure's own page snapshot, the row holds Overview,
+ * Estimate, Takeoff, Crew & time, Compliance, Field reports and Photos, each
+ * with the right href.
+ *
+ * The lesson is the repo's own and this is a fresh instance of it: a locator
+ * that stops matching does not say "I stopped matching", it says the thing it
+ * was looking for is gone. Read the page snapshot before believing the app
+ * broke.
+ */
 export function jobTab(page: Page, label: string): Locator {
-  return page.getByRole("navigation", { name: "Job sections" }).getByRole("link", { name: label, exact: true });
+  return jobSectionNav(page).getByRole("link", { name: label, exact: true });
+}
+
+/**
+ * Open a tab by its label, the way a person does.
+ *
+ * The row lists every page of the job at once now (#757), so the tab is
+ * normally there to click. The stage-box step below is kept for the case the
+ * row genuinely does not carry it — a page gated on a capability or on the
+ * job's stage, like Billing before the contract — where clicking the stage is
+ * still how a person gets there. Ends on the tab's own URL.
+ */
+export async function openJobTab(page: Page, label: string): Promise<void> {
+  const stage = JOB_TAB_STAGE[label];
+  if (!stage) throw new Error(`openJobTab: "${label}" is not a tab jobStages.ts files under any stage — add it to JOB_TAB_STAGE`);
+  await expect(jobStageNav(page), "the job's stage boxes should be on screen").toBeVisible();
+  const tab = jobTab(page, label);
+  if ((await tab.count()) === 0) {
+    // The box is a Link to the stage's first page; opening the stage IS a
+    // soft navigation. On failure say whether the router fetched the new
+    // route at all, and where the URL ended up — #748's runs reported only
+    // that the row never appeared.
+    const rsc = nextRscAnswer(page);
+    const before = page.url();
+    const clickedAt = Date.now();
+    await jobStageBox(page, stage).getByRole("link").click();
+    await expect(tab, `the ${stage} stage should list a "${label}" tab`)
+      .toBeVisible()
+      .catch(async (error: Error) => {
+        throw new Error(
+          `opening the ${stage} stage for "${label}": ${await rsc}; URL ${before} -> ${page.url()}; ${await historyLog(page, clickedAt)}. ${firstLine(error)}`,
+        );
+      });
+  }
+  await expect(tab, `the ${stage} stage should list a "${label}" tab`).toBeVisible();
+  await tab.click();
+}
+
+/**
+ * Every tab the job offers, read by opening each stage in turn. Tabs that
+ * leave the job (Punch list, Closeout — `leavesJob` in jobStages.ts) are
+ * left out: they are doors to other pages, not pages of this job.
+ */
+export async function allJobTabs(page: Page): Promise<Array<{ label: string; href: string }>> {
+  // ── ONE ROW, READ ONCE ──
+  //
+  // This used to click each stage box in turn and read that stage's own row of
+  // pages, because the shell it was written against put only the open stage's
+  // row in the DOM. #757 replaced that with a single `<nav aria-label="Job
+  // sections">` carrying every page of the job, so the walk had nothing left to
+  // walk: the row it looked for, `<ul aria-label="<Stage> pages">`, no longer
+  // exists and the locator matched nothing.
+  //
+  // The stage boxes are still asserted, because they are still the thing that
+  // tells somebody where the job IS — they just no longer own the tabs.
+  const boxes = jobStageNav(page).locator("li[data-stage]");
+  expect(await boxes.count(), "a job should show its five stage boxes").toBe(5);
+
+  const row = jobSectionNav(page);
+  await expect(row, "the job's page row should be on screen").toBeVisible();
+  const links = row.getByRole("link");
+  const tabs: Array<{ label: string; href: string }> = [];
+  for (let i = 0; i < (await links.count()); i++) {
+    const href = (await links.nth(i).getAttribute("href")) ?? "";
+    // A destination that leaves the job (Closeout goes to /punch-lists for all
+    // jobs) is not one of the job's own pages.
+    if (!href.startsWith("/jobs/")) continue;
+    tabs.push({ label: (await links.nth(i).innerText()).trim(), href });
+  }
+  return tabs;
+}
+
+/** The home page's one h1 — the greeting (app/(app)/dashboard/page.tsx,
+ * Concept G): "Good morning", "…afternoon" or "…evening", with the first
+ * name after it when there is one. The old "Today" heading is gone. */
+export function homeHeading(page: Page): Locator {
+  return page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ });
 }
 
 /**
@@ -36,17 +182,26 @@ export function jobTab(page: Page, label: string): Locator {
  */
 export async function landOnDashboard(page: Page, monitor: HealthMonitor): Promise<void> {
   await page.goto("/dashboard");
-  await page.waitForURL(/\/(dashboard|welcome)(\?|$)/);
+
+  // With a loading boundary on (app) (Concept G, 2026-10-10 — gone since
+  // #748, but this helper does not depend on which way it goes) the onboarding
+  // redirect in dashboard/page.tsx is no longer an HTTP 307: the skeleton
+  // streams first and the jump to /welcome is a client-side navigation
+  // after hydration. So the URL reads /dashboard at `load` on BOTH paths,
+  // and what settles the question is whichever first screen arrives — the
+  // welcome questions or the home page's greeting. (#748's first run read
+  // the skeleton here, twelve characters, on every brand-new persona.)
+  const welcome = page.getByRole("heading", { name: "A few questions about how you work" });
+  await expect(welcome.or(homeHeading(page))).toBeVisible();
 
   if (/\/welcome/.test(page.url())) {
     await expectHealthy(page, "welcome screen", { monitor, signedIn: false });
-    await expect(page.getByRole("heading", { name: "A few questions about how you work" })).toBeVisible();
     await page.getByRole("button", { name: "Skip for now" }).click();
     await page.waitForURL(/\/dashboard(\?|$)/);
   }
 
   await expectHealthy(page, "dashboard", { monitor });
-  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+  await expect(homeHeading(page)).toBeVisible();
 }
 
 export interface NewJobInput {
@@ -86,8 +241,20 @@ export async function startJob(page: Page, monitor: HealthMonitor, input: NewJob
   // "Continue →" until #413. The label names its destination now, which is
   // the point of the change: a button that creates a real row should not say
   // the vaguest word available.
+  const answer = nextActionAnswer(page);
+  const clickedAt = Date.now();
   await page.getByRole("button", { name: "Start the job — add the work next →" }).click();
-  await page.waitForURL(/\/jobs\/new\/[^/]+\/items$/);
+  // On failure, say what the action's POST did rather than only that the URL
+  // never changed: #748's runs reported a bare 30s timeout here on brand-new
+  // personas while the same step took under a second on an established one,
+  // and nothing in the report said whether the server had answered at all.
+  // 12s, under the 30s test timeout: a wait that outlives the test is
+  // killed by Playwright before the catch below can say what it saw.
+  await page.waitForURL(/\/jobs\/new\/[^/]+\/items$/, { timeout: 12_000 }).catch(async (error: Error) => {
+    throw new Error(
+      `"Start the job" did not reach step 2: ${await answer}; the page is at ${page.url()}; ${await historyLog(page, clickedAt)}. ${firstLine(error)}`,
+    );
+  });
   await expectHealthy(page, "new job, step 2 (add work)", { monitor });
 
   const match = page.url().match(/\/jobs\/new\/([^/]+)\/items$/);
@@ -129,7 +296,19 @@ export async function submitLineItem(page: Page, line: LineItemInput): Promise<v
   if (line.budgetedUnitCost !== undefined) {
     await form.locator('input[name="budgetedUnitCost"]').fill(line.budgetedUnitCost);
   }
+  const answer = nextActionAnswer(page);
+  const clickedAt = Date.now();
   await form.getByRole("button", { name: "Add line" }).click();
+  const said = await answer;
+  if (said.startsWith(NEVER_ANSWERED)) throw new Error(`"Add line": ${said}`);
+  // The server answered. Either the row is on screen or a readable refusal
+  // is; a third outcome means the browser dropped the answer, and the
+  // history log is what says who moved the URL while it was in flight.
+  await expect(estimateRow(page, line.description).or(readableRefusal(page)).first())
+    .toBeVisible()
+    .catch(async (error: Error) => {
+      throw new Error(`"Add line": ${said}, and neither the row nor a refusal appeared; ${await historyLog(page, clickedAt)}. ${firstLine(error)}`);
+    });
 }
 
 /** A row in step 2's "On this estimate" list carrying this description. */
@@ -158,7 +337,7 @@ export async function finishWizard(page: Page, monitor: HealthMonitor, jobId: st
   await expect(page.getByRole("link", { name: /review/i })).toHaveCount(0);
 
   await openJob.click();
-  await page.waitForURL(new RegExp(`/jobs/${jobId}(\\?|$)`));
+  await page.waitForURL(new RegExp(`/jobs/${jobId}(\\?|$)`), { timeout: 12_000 });
   await expectHealthy(page, "job overview after the wizard", { monitor });
 }
 
@@ -181,9 +360,25 @@ export async function recordExecutedSubcontract(page: Page, monitor: HealthMonit
   await form.locator('input[name="file"]').setInputFiles(EXECUTED_SUBCONTRACT_FIXTURE);
   await form.locator('input[name="executedSignedDate"]').fill("2026-09-15");
   await form.locator('input[name="note"]').fill("ZZ-E2E fully executed copy from the GC");
+  const answer = nextActionAnswer(page);
+  // The component calls router.refresh() once the action says ok, which is
+  // what puts the executed state on screen; that refresh is the first RSC
+  // GET after the click (the upload token and the action are POSTs).
+  const refresh = nextRscAnswer(page);
+  const clickedAt = Date.now();
   await form.getByRole("button", { name: "Record executed subcontract" }).click();
+  const said = await answer;
+  if (said.startsWith(NEVER_ANSWERED)) throw new Error(`"Record executed subcontract": ${said}`);
 
-  await expect(page.getByText(/Executed — GC signed/).first()).toBeVisible();
+  await expect(page.getByText(/Executed — GC signed/).first())
+    .toBeVisible()
+    .catch(async (error: Error) => {
+      const formText = (await form.innerText().catch(() => "(form gone)")).replace(/\s+/g, " ").slice(0, 300);
+      throw new Error(
+        `"Record executed subcontract": ${said}; ${await refresh}; the executed state never showed; the form reads "${formText}"; ` +
+          `${await historyLog(page, clickedAt)}. ${firstLine(error)}`,
+      );
+    });
   await expectHealthy(page, "job overview after recording the executed subcontract", { monitor });
 }
 
@@ -198,10 +393,17 @@ export async function markContracted(page: Page, monitor: HealthMonitor, jobId: 
   await page.goto(`/jobs/${jobId}/estimate`);
   await expectHealthy(page, "estimate tab", { monitor });
 
-  await page.getByRole("button", { name: "Mark as contracted" }).click();
+  // Two of these since Concept G: the job header's "Won it?" box and the
+  // estimate page's own panel, both the same action. The first is the header's.
+  await page.getByRole("button", { name: "Mark as contracted" }).first().click();
 
-  await expect(jobTab(page, "Billing")).toBeVisible();
-  await expect(jobTab(page, "Retainage")).toBeVisible();
+  // Concept G: on a bid the Billing stage box has no pages and is not a
+  // link (jobStages.ts leaves `billing` empty while status is ESTIMATE); it
+  // becomes one, with Billing and Retainage under it, the moment the job
+  // leaves ESTIMATE. So the box turning into a link is the observable proof
+  // the status write happened — the tabs themselves are listed once that
+  // stage is opened, which step 6 does.
+  await expect(jobStageBox(page, "billing").getByRole("link")).toBeVisible();
   await expectHealthy(page, "estimate tab after marking contracted", { monitor });
 }
 
@@ -336,6 +538,47 @@ export async function settleOutcome(
  * feature. The helper's own name says "action"; anything else was always the
  * wrong tool.
  */
+const NEVER_ANSWERED = "the action POST never answered";
+
+function firstLine(error: Error): string {
+  return error.message.split("\n")[0];
+}
+
+/**
+ * Starts listening for the next Server Action POST and resolves to one
+ * sentence about it — its status, whether it redirected, how big the answer
+ * was — or, after `timeout`, to a sentence saying it never came. Never
+ * rejects: it exists to be quoted inside a failure message, so the failure
+ * that quotes it stays the one being reported.
+ */
+export function nextActionAnswer(page: Page, timeout = 20_000): Promise<string> {
+  return page.waitForResponse((response) => isServerActionPost(response.request()), { timeout }).then(
+    async (response) => {
+      const redirect = response.headers()["x-action-redirect"];
+      const bytes = await response.body().then((body) => body.length, () => -1);
+      return `the action POST answered ${response.status()}${redirect ? ` redirecting to ${redirect}` : ""} with ${bytes} bytes`;
+    },
+    (error: Error) => `${NEVER_ANSWERED} within ${timeout}ms (${firstLine(error)})`,
+  );
+}
+
+/**
+ * The next RSC fetch the router makes — a soft navigation or a
+ * `router.refresh()` is a GET carrying the `RSC: 1` header — as one
+ * sentence: which path, what status, what content type; or that none was
+ * made within `timeout`. Register it BEFORE the click that should cause it.
+ */
+export function nextRscAnswer(page: Page, timeout = 15_000): Promise<string> {
+  return page
+    .waitForResponse((response) => response.request().method() === "GET" && response.request().headers()["rsc"] === "1", { timeout })
+    .then(
+      (response) =>
+        `the router's RSC fetch of ${new URL(response.url()).pathname} answered ${response.status()} ` +
+        `(${response.headers()["content-type"] ?? "no content-type"})`,
+      (error: Error) => `the router made no RSC fetch within ${timeout}ms (${firstLine(error)})`,
+    );
+}
+
 export async function settleAction(page: Page, act: () => Promise<unknown>): Promise<void> {
   const posted = page.waitForResponse((response) => isServerActionPost(response.request()));
   await act();

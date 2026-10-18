@@ -1,0 +1,165 @@
+/* WaiverFill.tsx — the mess scanned into a clean lien waiver.
+   Same shape as the submittal stamp in app/globals.css (kept out of that
+   file: app/globals.motion.test.ts counts its motion rules).
+
+   AT REST = FINISHED. These rules come BEFORE the media block: the clean
+   waiver is on the stage, the mess and the scan band are gone, and the
+   stamp has landed on the paper — for the server render, no JS, and
+   prefers-reduced-motion: reduce. The block below only replays it.
+
+   The sequence, under four seconds, played once per view (no loop, so no
+   pause control is needed):
+     0.0s  the mess drops in, one card after another
+     1.0s  the scan band sweeps the stage top to bottom; each card flashes
+           and shrinks away the moment the band reaches it
+     2.1s  the clean waiver feeds out of the slot over the last of it
+           and settles
+     3.15s PDF READY is stamped over the signature line */
+.landing-waiver {
+  /* The stage is sized to the waiver: 12px slot, the paper, 20px under it
+     — the same as the paper's side margins. The scan sweeps this height. */
+  --landing-waiver-stage-h: 341px;
+  --landing-waiver-drop-duration: 450ms;
+  --landing-waiver-drop-stagger: 110ms;
+  --landing-waiver-scan-delay: 1000ms;
+  --landing-waiver-scan-duration: 1400ms;
+  --landing-waiver-digitise-duration: 450ms;
+  --landing-waiver-doc-delay: 2100ms;
+  --landing-waiver-doc-duration: 950ms;
+  --landing-waiver-mark-delay: 3150ms;
+  --landing-waiver-mark-duration: 450ms;
+  /* Overshoot, local to its only use — struck, not placed. */
+  --landing-waiver-ease: cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.landing-waiver__stage {
+  height: var(--landing-waiver-stage-h);
+}
+.landing-waiver__drop {
+  transform: rotate(var(--r, 0deg));
+}
+.landing-waiver__mess {
+  opacity: 0;
+}
+/* The scanner's flash on a card: a static tint whose opacity is animated. */
+.landing-waiver__mess::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(250, 204, 21, 0.35);
+  opacity: 0;
+}
+.landing-waiver__scan {
+  opacity: 0;
+}
+/* The resting angle lives here, not in a Tailwind class: the keyframes set
+   `transform` outright, so the last frame must carry the same angle. */
+.landing-waiver__mark {
+  transform: rotate(-7deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Transform and opacity only. Everything sits in a fixed-height, clipped
+     stage, so nothing changes height and nothing below it moves. */
+  [data-motion-play="playing"] .landing-waiver__drop {
+    animation: landing-waiver-drop var(--landing-waiver-drop-duration) var(--ease-landing)
+      calc(var(--i, 0) * var(--landing-waiver-drop-stagger)) both;
+  }
+  /* Each card digitises when the band's centre line reaches its top: the
+     band is linear, so that moment is scan-delay + t × scan-duration. */
+  [data-motion-play="playing"] .landing-waiver__mess {
+    animation: landing-waiver-digitise var(--landing-waiver-digitise-duration) ease-in
+      calc(var(--landing-waiver-scan-delay) + var(--t, 0) * var(--landing-waiver-scan-duration)) both;
+  }
+  [data-motion-play="playing"] .landing-waiver__mess::after {
+    animation: landing-waiver-flash var(--landing-waiver-digitise-duration) ease-out
+      calc(var(--landing-waiver-scan-delay) + var(--t, 0) * var(--landing-waiver-scan-duration)) both;
+  }
+  [data-motion-play="playing"] .landing-waiver__scan {
+    animation: landing-waiver-scan var(--landing-waiver-scan-duration) linear var(--landing-waiver-scan-delay)
+      both;
+  }
+  [data-motion-play="playing"] .landing-waiver__doc {
+    animation: landing-waiver-doc var(--landing-waiver-doc-duration) cubic-bezier(0.4, 0, 0.2, 1)
+      var(--landing-waiver-doc-delay) both;
+  }
+  [data-motion-play="playing"] .landing-waiver__mark {
+    animation: landing-waiver-mark var(--landing-waiver-mark-duration) var(--landing-waiver-ease)
+      var(--landing-waiver-mark-delay) both;
+  }
+  @keyframes landing-waiver-drop {
+    from {
+      opacity: 0;
+      transform: translateY(-14px) rotate(calc(var(--r, 0deg) * 2));
+    }
+    to {
+      opacity: 1;
+      transform: rotate(var(--r, 0deg));
+    }
+  }
+  @keyframes landing-waiver-digitise {
+    0% {
+      opacity: 1;
+      transform: none;
+    }
+    30% {
+      opacity: 1;
+      transform: scale(1.03);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(var(--dx, 0), var(--dy, 0)) scale(0.55);
+    }
+  }
+  @keyframes landing-waiver-flash {
+    0% {
+      opacity: 0;
+    }
+    30% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  /* The band is h-28 (112px); its centre line runs from the top edge of
+     the stage to the bottom edge. */
+  @keyframes landing-waiver-scan {
+    0% {
+      opacity: 0;
+      transform: translateY(-56px);
+    }
+    8% {
+      opacity: 1;
+    }
+    88% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(calc(var(--landing-waiver-stage-h) - 56px));
+    }
+  }
+  /* Fed out of the slot, a few pixels past, and settled back. */
+  @keyframes landing-waiver-doc {
+    0% {
+      transform: translateY(-102%);
+    }
+    84% {
+      transform: translateY(3px);
+    }
+    100% {
+      transform: translateY(0);
+    }
+  }
+  @keyframes landing-waiver-mark {
+    from {
+      opacity: 0;
+      transform: translateY(-16px) rotate(-14deg) scale(1.8);
+    }
+    to {
+      opacity: 1;
+      transform: rotate(-7deg);
+    }
+  }
+}

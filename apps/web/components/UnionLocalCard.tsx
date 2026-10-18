@@ -19,7 +19,7 @@ import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
 
 const btn =
-  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 /** One local: the agreement, its apprentice ratio, and its classifications
  * with their rates. Everything the two reports above read from. */
@@ -84,7 +84,7 @@ export function UnionLocalCard({
         {current ? (
           <span className="rounded bg-tag-green px-1.5 py-0.5 text-xs text-tag-green-ink">Current</span>
         ) : (
-          <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-muted">Ended</span>
+          <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-muted">Ended</span>
         )}
       </div>
 
@@ -220,7 +220,7 @@ export function UnionLocalCard({
                           onConfirm={() => run(() => deleteCraftClassification(craft.id))}
                           deleteClassName="text-xs text-ink-muted underline disabled:opacity-50"
                           cancelClassName="text-xs text-ink-body underline disabled:opacity-50"
-                          confirmClassName="text-xs text-red-400 underline disabled:opacity-50"
+                          confirmClassName="text-xs text-danger underline disabled:opacity-50"
                         />
                       ) : null
                     }
@@ -366,7 +366,7 @@ export function UnionLocalCard({
         </div>
       )}
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
     </li>
   );
 }

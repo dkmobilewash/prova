@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { answerRfi, deleteRfi, markRfiSent, setRfiClosed, updateRfi } from "@/lib/actions";
 import type { ActionResult } from "@/lib/actions/shared";
 import { RfiFields, fieldInputClass, labelClass, type RfiDefaults } from "@/components/RfiFields";
-import { daysBetween, isOverdue, statusLabel } from "@/components/rfiLabels";
+import { daysBetween, isOpen, isOverdue, isWaitingAWeekPlus, statusLabel } from "@/components/rfiLabels";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { formatCalendarDay } from "@/lib/render-date";
 import { localToday } from "@/components/localToday";
@@ -30,7 +30,7 @@ export type RfiRowData = RfiDefaults & {
 // 44px, from 34px.  +  is what makes min-h centre
 // the label rather than pin it to the top.
 const btn =
-  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
 export function RfiRow({
   rfi,
@@ -98,7 +98,7 @@ export function RfiRow({
           <FormDraftNotice draft={editDraft} />
           <RfiFields defaults={rfi} />
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}
@@ -236,7 +236,7 @@ export function RfiRow({
           </p>
 
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}
@@ -266,6 +266,7 @@ export function RfiRow({
   }
 
   const overdue = isOverdue(rfi, today);
+  const waitingAWeekPlus = isWaitingAWeekPlus(rfi, today);
   // The actions now refuse an answer dated before the send, so this can't
   // go negative — but a day count is the number people will quote in a
   // dispute, so it doesn't get to render nonsense even if data predating
@@ -274,7 +275,7 @@ export function RfiRow({
   const openDays = rawDays !== null && rawDays >= 0 ? rawDays : null;
 
   return (
-    <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
+    <li id={`rfi-${rfi.id}`} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start scroll-mt-24 target:ring-2 target:ring-inset target:ring-brand">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-xs text-ink-body">RFI {rfi.number}</span>
@@ -283,8 +284,12 @@ export function RfiRow({
             <span className="rounded bg-tag-rose px-1.5 py-0.5 text-xs text-tag-rose-ink">
               Overdue
             </span>
+          ) : waitingAWeekPlus ? (
+            <span className="rounded bg-tag-amber px-1.5 py-0.5 text-xs text-tag-amber-ink">
+              Waiting a week+
+            </span>
           ) : (
-            <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">
+            <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-body">
               {statusLabel(rfi.status)}
             </span>
           )}
@@ -320,7 +325,10 @@ export function RfiRow({
           {rfi.sentOn ? `sent ${formatCalendarDay(rfi.sentOn)}` : "not sent"}
           {rfi.dueBy && ` · due ${formatCalendarDay(rfi.dueBy)}`}
           {rfi.answeredOn && ` · answered ${formatCalendarDay(rfi.answeredOn)}`}
-          {openDays !== null && ` · ${openDays} day${openDays === 1 ? "" : "s"}`}
+          {openDays !== null &&
+            (isOpen(rfi.status)
+              ? ` · asked ${openDays === 0 ? "today" : `${openDays} day${openDays === 1 ? "" : "s"} ago`}`
+              : ` · ${openDays} day${openDays === 1 ? "" : "s"}`)}
         </p>
         <p className="text-xs text-ink-body">
           {[rfi.drawingReference, rfi.specSection].filter(Boolean).join(" · ")}
@@ -328,7 +336,7 @@ export function RfiRow({
         </p>
 
         {error && (
-          <p role="alert" className="mt-1 text-sm text-red-400">
+          <p role="alert" className="mt-1 text-sm text-danger">
             {error}
           </p>
         )}
@@ -366,7 +374,7 @@ export function RfiRow({
               onConfirm={() => run(() => deleteRfi(rfi.id))}
               deleteClassName={btn}
               cancelClassName={btn}
-              confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-red-400 hover:bg-tag-rose disabled:opacity-50"
+              confirmClassName="inline-flex min-h-11 items-center justify-center rounded-md border border-red-500 px-3 py-2 text-sm text-danger hover:bg-tag-rose disabled:opacity-50"
             />
           ) : null
         }

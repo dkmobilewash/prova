@@ -35,6 +35,7 @@ const labelClass = "flex flex-col gap-1 text-sm text-ink-label";
  * the `catch` below was rendering reference numbers. The `try` stays for
  * the genuinely unexpected. */
 export function ComplianceUploadForm({ companyId, jobs }: { companyId: string; jobs: JobOption[] }) {
+  const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [charged, setCharged] = useState<string | null>(null);
@@ -85,6 +86,21 @@ export function ComplianceUploadForm({ companyId, jobs }: { companyId: string; j
     });
   }
 
+  // Collapsed behind a button like every other add form (CLAUDE.md, list
+  // pages). It stays open after a successful upload so the allowance note
+  // under the buttons is still there to read.
+  if (!isOpen) {
+    return (
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
+      >
+        Upload a document
+      </button>
+    );
+  }
+
   return (
     <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col gap-3">
       <label className={labelClass}>
@@ -94,7 +110,7 @@ export function ComplianceUploadForm({ companyId, jobs }: { companyId: string; j
           name="file"
           required
           accept=".pdf,.png,.jpg,.jpeg,.webp"
-          className="text-sm text-ink-label file:mr-3 file:rounded-md file:border-0 file:bg-neutral-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink hover:file:bg-neutral-700"
+          className="text-sm text-ink-label file:mr-3 file:rounded-md file:border-0 file:bg-rail-hover file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink hover:file:bg-lift"
         />
       </label>
       <label className={labelClass}>
@@ -108,14 +124,28 @@ export function ComplianceUploadForm({ companyId, jobs }: { companyId: string; j
           ))}
         </select>
       </label>
-      <button
-        type="submit"
-        disabled={isPending}
-        className="inline-flex w-fit items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
-      >
-        {isPending ? "Uploading & extracting…" : "Upload & extract"}
-      </button>
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="submit"
+          disabled={isPending}
+          className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
+        >
+          {isPending ? "Uploading & extracting…" : "Upload & extract"}
+        </button>
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={() => {
+            setIsOpen(false);
+            setError(null);
+            setCharged(null);
+          }}
+          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
+      {error && <p className="text-sm text-danger">{error}</p>}
       {charged && <p className="text-sm text-ink-muted">{charged}</p>}
     </form>
   );

@@ -476,7 +476,7 @@ export function SpreadsheetImport(props: Props) {
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className="min-h-11 rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-neutral-800"
+            className="min-h-11 rounded-md border border-line-card px-4 py-2 text-sm font-medium text-ink-label hover:bg-rail-hover"
           >
             {copy.button}
           </button>
@@ -522,7 +522,7 @@ export function SpreadsheetImport(props: Props) {
         <a
           href={templateHref}
           download={template.fileName}
-          className="inline-flex min-h-11 items-center rounded-md border border-line-card px-3 text-xs text-ink-label hover:bg-neutral-800"
+          className="inline-flex min-h-11 items-center rounded-md border border-line-card px-3 text-xs text-ink-label hover:bg-rail-hover"
         >
           Download a blank template
         </a>
@@ -540,7 +540,7 @@ export function SpreadsheetImport(props: Props) {
               ? "Choose a spreadsheet or phone-contacts file of clients"
               : `Choose a spreadsheet file of ${copy.noun[1]}`
           }
-          className="min-h-11 text-xs text-ink-body file:mr-3 file:min-h-11 file:rounded-md file:border file:border-line-card file:bg-neutral-800 file:px-3 file:text-xs file:text-ink-label"
+          className="min-h-11 text-xs text-ink-body file:mr-3 file:min-h-11 file:rounded-md file:border file:border-line-card file:bg-rail-hover file:px-3 file:text-xs file:text-ink-label"
         />
       </div>
       <p className="mb-3 text-xs text-ink-muted">

@@ -32,6 +32,8 @@
 // else, so a document whose own lines disagree is worse than no document.
 
 import { Fragment } from "react";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 import Link from "next/link";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -51,6 +53,8 @@ import {
   remittanceBlockingFields,
   type RemittanceFilingCompany,
 } from "@/lib/fringe-remittance-filing";
+
+export const metadata = { title: "Fringe remittance" };
 
 /** What goes where a value should have been. A sentence or a short phrase
  * in red, never a dash — the reader has to learn what to do about it.
@@ -420,32 +424,34 @@ export default async function FringeRemittanceDocumentPage({
   };
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8 print:px-0 print:py-0">
+    // Printed output is unchanged: the shell's gutters are zeroed for print
+    // exactly as this page's own container did, and neither the old cap
+    // (max-w-6xl) nor the shell's binds at paper width.
+    <PageShell width="working" className="print:max-w-none print:px-0 print:py-0">
       <div className="print:hidden">
-        <Link href={`/union-compliance?month=${month}`} className="text-sm text-link hover:underline">
-          ← Union fringe &amp; apprenticeship for this month
-        </Link>
-        <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold text-ink">Fringe remittance</h1>
-            <p className="mt-1 text-sm text-ink-body">
+        <PageHeader
+          route="/union-compliance"
+          parent={{ href: `/union-compliance?month=${month}`, label: "Fringe & apprentices" }}
+          title="Fringe remittance"
+          subtitle={
+            <>
               One report per local, {start} through {end}. Each hall gets its own sheet and its own
               check, so nothing here is totalled across halls.
-            </p>
-          </div>
-          <PrintButton />
-        </div>
+            </>
+          }
+          actions={<PrintButton />}
+        />
 
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Link href={href(previousMonth, localParam)} className="text-sm text-link">
+        <div className="flex flex-wrap items-center gap-3">
+          <Link href={href(previousMonth, localParam)} className="inline-flex min-h-11 items-center text-sm text-link mouse:min-h-0">
             ← {previousMonth}
           </Link>
           <span className="text-sm text-ink-label">{month}</span>
-          <Link href={href(nextMonth, localParam)} className="text-sm text-link">
+          <Link href={href(nextMonth, localParam)} className="inline-flex min-h-11 items-center text-sm text-link mouse:min-h-0">
             {nextMonth} →
           </Link>
           {localParam && (
-            <Link href={href(month)} className="text-sm text-link">
+            <Link href={href(month)} className="inline-flex min-h-11 items-center text-sm text-link mouse:min-h-0">
               Show every local
             </Link>
           )}
@@ -507,6 +513,6 @@ export default async function FringeRemittanceDocumentPage({
           <Sheet key={local.unionLocalId} local={local} first={index === 0} />
         ))
       )}
-    </div>
+    </PageShell>
   );
 }

@@ -1,0 +1,81 @@
+{
+  "id": "S12",
+  "title": "CHILD CARE CENTER",
+  "page": 1,
+  "sheetNumber": "A-101",
+  "raster": false,
+  "scale": null,
+  "scalesPrinted": [],
+  "widthPt": 1224,
+  "heightPt": 792,
+  "scaleAuthority": "none",
+  "rooms": [
+    {
+      "name": "LOBBY",
+      "number": "101",
+      "area": null
+    },
+    {
+      "name": "OFFICE",
+      "number": "102",
+      "area": null
+    },
+    {
+      "name": "STORAGE",
+      "number": "103",
+      "area": null
+    },
+    {
+      "name": "CORRIDOR",
+      "number": "104",
+      "area": null
+    },
+    {
+      "name": "CLASSROOM",
+      "number": "105",
+      "area": null
+    },
+    {
+      "name": "CLASSROOM",
+      "number": "106",
+      "area": null
+    },
+    {
+      "name": "RESTROOM",
+      "number": "107",
+      "area": null
+    },
+    {
+      "name": "RESTROOM",
+      "number": "108",
+      "area": null
+    },
+    {
+      "name": "KITCHEN",
+      "number": "109",
+      "area": null
+    },
+    {
+      "name": "STAFF",
+      "number": "110",
+      "area": null
+    }
+  ],
+  "dimensions": [
+    "16'-4\"",
+    "6'-0\"",
+    "21'-0\"",
+    "21'-4\"",
+    "64'-8\"",
+    "16'-6\"",
+    "12'-0\"",
+    "12'-4\"",
+    "40'-10\""
+  ],
+  "wallLfTotal": null,
+  "doorCount": null,
+  "windowCount": null,
+  "notes": [
+    "No scale printed on this sheet. The app must DECLINE rather than guess."
+  ]
+}

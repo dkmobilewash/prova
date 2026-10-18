@@ -12,6 +12,7 @@ export function RfiForm({
   jobs,
   defaultJobId,
   draft,
+  startOpen = false,
 }: {
   jobs: JobOption[];
   defaultJobId?: string;
@@ -19,8 +20,10 @@ export function RfiForm({
    * tells the card it saved. The sent date is NOT part of it — a draft
    * proposed by the assistant has not been sent to anybody either. */
   draft?: RfiDraft;
+  /** Open on arrival — the page was reached by a create shortcut (`?new=1`). */
+  startOpen?: boolean;
 }) {
-  const [isOpen, setIsOpen] = useState(draft !== undefined);
+  const [isOpen, setIsOpen] = useState(draft !== undefined || startOpen);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const formDraft = useFormDraft("rfi:create");
@@ -111,7 +114,7 @@ export function RfiForm({
       />
 
       {error && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       )}
@@ -138,7 +141,7 @@ export function RfiForm({
             setIsOpen(false);
             setError(null);
           }}
-          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+          className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-card px-4 py-2 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
         >
           Cancel
         </button>

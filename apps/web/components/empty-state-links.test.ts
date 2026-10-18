@@ -75,6 +75,9 @@ describe("ReceivablesList with an empty list", () => {
       createElement(ReceivablesProvider, {
         rows: [],
         invoicesRaised,
+        // An invoicing company, so the sentences below say "invoice". The
+        // pay-app wording of the same two sentences is receivablesNoun.test.ts.
+        filesMonthlyPayApps: false,
         children: createElement(ReceivablesList),
       }),
     );

@@ -142,18 +142,19 @@ export type TimeEntryFigures = {
   craftClassificationId: string | null;
 };
 
-type Parsed = { ok: true; value: TimeEntryFigures } | { ok: false; error: string };
+/** `field` names the input a refusal is about, for `ActionResult.fieldErrors`. */
+type Parsed = { ok: true; value: TimeEntryFigures } | { ok: false; error: string; field: string };
 
 function optionalMoney(
   formData: FormData,
   key: string,
   label: string,
-): { ok: true; value: string | null } | { ok: false; error: string } {
+): { ok: true; value: string | null } | { ok: false; error: string; field: string } {
   const raw = formData.get(key);
   const value = typeof raw === "string" ? raw.trim() : "";
   if (!value) return { ok: true, value: null };
-  if (Number.isNaN(Number(value))) return { ok: false, error: `${label} has to be a number, or left blank.` };
-  if (Number(value) < 0) return { ok: false, error: `${label} can't be negative.` };
+  if (Number.isNaN(Number(value))) return { ok: false, error: `${label} has to be a number, or left blank.`, field: key };
+  if (Number(value) < 0) return { ok: false, error: `${label} can't be negative.`, field: key };
   return { ok: true, value };
 }
 
@@ -170,7 +171,7 @@ function optionalMoney(
 export function parseTimeEntryFigures(formData: FormData): Parsed {
   const hours = String(formData.get("hours") ?? "").trim();
   if (!hours || Number.isNaN(Number(hours)) || Number(hours) <= 0) {
-    return { ok: false, error: "Hours has to be a positive number — e.g. 8, or 7.5." };
+    return { ok: false, error: "Hours has to be a positive number — e.g. 8, or 7.5.", field: "hours" };
   }
 
   const perDiemAmount = optionalMoney(formData, "perDiemAmount", "Per diem");

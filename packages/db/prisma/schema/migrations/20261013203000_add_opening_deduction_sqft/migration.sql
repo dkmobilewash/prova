@@ -1,0 +1,11 @@
+-- AlterTable
+--
+-- The shop's own size threshold for "only the big ones". 32 sq ft was hardcoded
+-- and is not the only rule in the trade: a practising estimator's account names
+-- "32 or 50 square feet" as the common thresholds, and a shop on 50 had no way
+-- to say so.
+--
+-- NULLABLE WITH NO DEFAULT, deliberately: null means "use our default", which
+-- resolves to the same 32 the app already used. Every existing company keeps the
+-- exact quantities it had, and only a company that types a figure moves.
+ALTER TABLE "Company" ADD COLUMN "openingDeductionSqFt" DECIMAL(6,2);

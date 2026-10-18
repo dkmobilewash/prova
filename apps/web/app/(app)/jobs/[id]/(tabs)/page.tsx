@@ -23,6 +23,8 @@ import { viewerTimeZone } from "@/lib/viewerToday";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
 import { formatSignedDate } from "@/lib/signed-date";
 import { SubmitButton } from "@/components/SubmitButton";
+import { NeedsBlock } from "@/components/home/HomeParts";
+import { loadJobNeeds } from "@/lib/jobs/job-needs-query";
 import {
   assignCrewMember,
   createSignatureRequest,
@@ -32,11 +34,11 @@ import {
   updateJobSchedule,
 } from "@/lib/actions";
 
-const rowDeleteClass = "text-xs text-red-400 hover:underline";
+const rowDeleteClass = "text-xs text-danger hover:underline";
 const rowCancelClass =
-  "rounded-md border border-slate-700 px-2 py-1 text-xs text-ink-label hover:border-slate-500";
+  "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:border-line-card";
 const rowConfirmClass =
-  "rounded-md border border-red-500 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10";
+  "rounded-md border border-red-500 px-2 py-1 text-xs text-danger hover:bg-red-500/10";
 
 /**
  * Overview — job details, status, schedule & crew, and the contract's own
@@ -90,6 +92,19 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
   const assignedUserIds = new Set(job.assignments.map((a) => a.userId));
   const unassignedMembers = companyMembers.filter((m) => !assignedUserIds.has(m.id));
 
+  // ── WHAT THIS JOB NEEDS FROM A PERSON ──
+  //
+  // `estimate-stage.ts` answers "what happens next" for the jobs LIST, and its
+  // own header names four things it deliberately cannot consult there, ending:
+  // "Widening the function to take those inputs is a real option and a bigger
+  // change: it would make a jobs-list cell depend on three more queries per
+  // row." This is one job rather than a page of them, so those queries are
+  // affordable here, and `loadJobNeeds` is where they live.
+  //
+  // MONEY-GATED, like the rest of the estimate on this page: somebody who
+  // cannot see job costs must not be told the markup is missing.
+  const needs = showsJobMoney ? await loadJobNeeds(company.id, job) : [];
+
   const timeZone = await viewerTimeZone();
   const headerList = await headers();
   const origin = `${headerList.get("x-forwarded-proto") ?? "https"}://${headerList.get("host")}`;
@@ -120,6 +135,28 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
 
   return (
     <>
+      {/* ── WHAT THIS JOB NEEDS FROM YOU ──
+
+          FIRST, above the contract summary, because it is the only thing on
+          this page that is about what to DO. Everything below it is a record of
+          what the job IS, and a list of pending work under a printable summary
+          is a list nobody scrolls to.
+
+          PRINT-HIDDEN, deliberately: the summary below is what Print produces
+          ("Print prints this part only", per the walkthrough), and a contract
+          a client signs must not carry the estimator's own to-do list.
+
+          It renders only when there is something to say. `NeedsBlock` has a
+          perfectly good empty state and it belongs on the dashboard, where the
+          question is "is anything waiting anywhere"; here the question has
+          already been answered by the rest of the page, and an empty card on
+          every healthy job is how a reader learns to skip this one. */}
+      {needs.length > 0 && (
+        <div className="mb-10 print:hidden" data-tour="job-needs">
+          <NeedsBlock items={needs} />
+        </div>
+      )}
+
       {/* Contract-style summary — the same JobLineItem rows used as the
           estimate are rendered here as contract content, via the shared
           ContractSummary component also used by the public /esign/[token]
@@ -150,7 +187,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
       <div className="print:hidden">
         {showsJobManagement && (
           <section className="mb-10" data-tour="job-details">
-            <h2 className="mb-3 text-lg font-semibold text-slate-100">Job details</h2>
+            <h2 className="mb-3 text-lg font-semibold text-ink">Job details</h2>
             <JobDetailsForm
               jobId={job.id}
               name={job.name}
@@ -174,7 +211,11 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
         {showsJobManagement && (
           <section className="mb-10" data-tour="job-status">
             <h2 className="mb-3 text-lg font-semibold text-ink">Job status</h2>
-            <JobStatusControl jobId={job.id} status={job.status as JobStatusValue} />
+            <JobStatusControl
+              jobId={job.id}
+              status={job.status as JobStatusValue}
+              showsEstimateTab={showsJobMoney}
+            />
           </section>
         )}
 
@@ -245,7 +286,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
                 </label>
                 <SubmitButton
                   type="submit"
-                  className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
+                  className="rounded-md bg-rail-hover px-3 py-2 text-sm font-medium text-ink hover:bg-lift"
                 >
                   Save dates
                 </SubmitButton>
@@ -329,7 +370,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
                   </label>
                   <SubmitButton
                     type="submit"
-                    className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
+                    className="rounded-md bg-rail-hover px-3 py-2 text-sm font-medium text-ink hover:bg-lift"
                   >
                     Assign
                   </SubmitButton>
@@ -340,7 +381,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
         </section>
 
         {showsJobMoney && (
-          <section className="mb-10" data-tour="job-signature">
+          <section id="contract-signature" className="mb-10 scroll-mt-4" data-tour="job-signature">
             <h2 className="mb-3 text-lg font-semibold text-ink">Contract signature</h2>
 
             <div
@@ -375,17 +416,17 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
 
             <div className="rounded-lg border border-line-card bg-surface p-4">
               {signedSignature ? (
-                <p className="text-sm text-green-400">
+                <p className="text-sm text-ok">
                   Signed by {signedSignature.signerName} on{" "}
                   {signedSignature.signedAt && formatSignedDate(signedSignature.signedAt, timeZone)}.
                 </p>
               ) : pendingSignature && pendingSignature.revokedAt ? (
                 <div className="text-sm">
-                  <p className="mb-3 text-amber-400">This signing link was revoked and no longer works.</p>
+                  <p className="mb-3 text-warn">This signing link was revoked and no longer works.</p>
                   <form action={createSignatureRequestWithId}>
                     <SubmitButton
                       type="submit"
-                      className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
+                      className="rounded-md bg-rail-hover px-3 py-2 text-sm font-medium text-ink hover:bg-lift"
                     >
                       Create a new signing link
                     </SubmitButton>
@@ -419,7 +460,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
                   <form action={createSignatureRequestWithId}>
                     <SubmitButton
                       type="submit"
-                      className="rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium text-ink hover:bg-neutral-700"
+                      className="rounded-md bg-rail-hover px-3 py-2 text-sm font-medium text-ink hover:bg-lift"
                     >
                       Create signing link
                     </SubmitButton>
@@ -510,7 +551,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
                             confirmClassName={rowConfirmClass}
                             hint={
                               doc.executedSignedDate ? (
-                                <span className="max-w-[16rem] text-right text-amber-300">
+                                <span className="max-w-[16rem] text-right text-warn">
                                   This is the EXECUTED subcontract — the evidence that made this job billable.
                                   Deleting it removes the file and the signed date.
                                 </span>

@@ -39,7 +39,7 @@ export function TakeoffPlanRevisionForm({
         onClick={() => setOpen(true)}
         className={`rounded-md border px-2 py-1 text-xs ${
           sheetIssuedOn
-            ? "border-line-card text-ink-label hover:bg-neutral-800"
+            ? "border-line-card text-ink-label hover:bg-rail-hover"
             : "border-tag-amber-ink/40 text-tag-amber-ink hover:bg-amber-500/10"
         }`}
       >
@@ -91,7 +91,7 @@ export function TakeoffPlanRevisionForm({
       <button
         type="button"
         onClick={() => setOpen(false)}
-        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800"
+        className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
       >
         Cancel
       </button>

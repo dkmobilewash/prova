@@ -5,7 +5,7 @@ import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
-import { finishWizard, jobTab, landOnDashboard, startJob } from "../lib/journey";
+import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/journey";
 
 /**
  * THE INGESTION RUNNER, DRIVEN BY A BROWSER — because the browser IS the worker.
@@ -93,7 +93,7 @@ test.describe("plan-ingestion runner", () => {
     jobId = await startJob(page, monitor, { name: JOB_NAME, gcName: GC_NAME });
     await finishWizard(page, monitor, jobId);
 
-    await jobTab(page, "Takeoff").click();
+    await openJobTab(page, "Takeoff");
     await page.waitForURL(new RegExp(`/jobs/${jobId}/takeoff$`));
     await expectHealthy(page, "takeoff tab, nothing uploaded", { monitor });
 

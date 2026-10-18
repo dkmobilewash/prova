@@ -7,8 +7,15 @@ import { TimesheetSignoffs } from "@/components/TimesheetSignoffs";
 import { SignatureImage } from "@/components/SignatureImage";
 import { DispatchSlipForm } from "@/components/DispatchSlipForm";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
-import { can } from "@/lib/permissions";
-import { viewerTimeZone } from "@/lib/viewerToday";
+import { can, canReach } from "@/lib/permissions";
+import { viewerTimeZone, viewerToday } from "@/lib/viewerToday";
+import { CrewWeekGrid } from "@/components/CrewWeekGrid";
+import { resolveWeekStart } from "@/lib/crew-schedule";
+import { loadScheduleBetween, scheduledWorkerName } from "@/lib/crew-schedule-query";
+import { formatHours } from "@/lib/render-hours";
+import { toHoursEntry, weeklyHours } from "@/lib/weekly-hours";
+import { weekStart } from "@/components/fieldReportWeeks";
+import { WeeklyHoursTable } from "@/components/WeeklyHoursTable";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
 import { money } from "@/lib/money";
 import { calculateTimeEntryLaborCost, findEffectiveFringeRateSchedule } from "@/lib/labor-cost";
@@ -16,11 +23,11 @@ import { NAME_NOT_RECORDED, crewMemberName, timeEntryWorkerName } from "@/lib/wo
 import { workerOptions } from "@/lib/worker-select";
 import { deleteDispatchSlip, deleteTimeEntry } from "@/lib/actions";
 
-const rowDeleteClass = "text-xs text-red-400 hover:underline";
+const rowDeleteClass = "text-xs text-danger hover:underline";
 const rowCancelClass =
-  "rounded-md border border-slate-700 px-2 py-1 text-xs text-ink-label hover:border-slate-500";
+  "rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:border-line-card";
 const rowConfirmClass =
-  "rounded-md border border-red-500 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10";
+  "rounded-md border border-red-500 px-2 py-1 text-xs text-danger hover:bg-red-500/10";
 
 /**
  * Crew & time — field time entries, timesheet sign-off, T&M tickets and
@@ -28,8 +35,15 @@ const rowConfirmClass =
  * monolith (only T&M tickets withhold on MANAGE_FIELD; everything else
  * here was always open to anyone who could open the job).
  */
-export default async function JobCrewPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function JobCrewPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ week?: string }>;
+}) {
   const { id } = await params;
+  const { week: weekParam } = await searchParams;
   const { principal, job: jobRef } = await requireJob(id);
   const { showsField } = jobCapabilities(principal);
   const canApproveTimesheet = can(principal, "MANAGE_COMPLIANCE");
@@ -102,6 +116,14 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
   }));
 
   const timeZone = await viewerTimeZone();
+  const today = await viewerToday();
+  const week = resolveWeekStart(weekParam, today);
+  const weekDays = await loadScheduleBetween(jobRef.companyId, week, 6, job.id);
+  // Hours totals are always THIS week; ?week= only moves the schedule grid.
+  const thisWeek = weeklyHours(
+    job.timeEntries.map((entry) => toHoursEntry(entry, job)),
+    weekStart(today),
+  );
 
   // Days with a live timesheet sign-off: their hours are locked. Uncapped,
   // unlike the sign-off history list above, so an old signed day never
@@ -142,6 +164,37 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
 
   return (
     <div>
+      {/* Scheduling lived only on /schedule, so the job's own Crew step had
+          no way to put anyone on it (ux medium-B #11). The link opens the
+          same form there with this job already picked. */}
+      <section className="mb-10">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-ink">Who is on this job</h2>
+          {showsField && (
+            <Link
+              href={`/schedule?job=${job.id}&add=1`}
+              className="inline-flex min-h-11 items-center rounded-md border border-line-card px-3 text-sm text-ink-label hover:border-link hover:text-link"
+            >
+              Schedule crew
+            </Link>
+          )}
+        </div>
+        <CrewWeekGrid
+          days={weekDays.map((row) => ({
+            id: row.id,
+            workDate: row.workDate.toISOString().slice(0, 10),
+            jobId: row.jobId,
+            jobName: row.job.name,
+            worker: scheduledWorkerName(row),
+            craft: row.craftClassification?.name ?? null,
+            note: row.note,
+          }))}
+          week={week}
+          today={today}
+          basePath={`/jobs/${job.id}/crew`}
+        />
+      </section>
+
       <section className="mb-10" data-tour="job-time">
         <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-lg font-semibold text-ink">Field time entries</h2>
@@ -154,6 +207,36 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
           a cost code and craft classification. Tracks hours by pay type; wage cost is estimated from the applicable
           fringe rate schedule when one applies.
         </p>
+
+        {/* The add form comes BEFORE the history: "Log hours" (Home, ⌘K)
+            lands on #log-time, and under ~45 past entries it was six
+            screens down (ux round 4). */}
+        <div className="mb-4">
+          <LogTimeEntryForm
+            jobId={job.id}
+            workers={timeEntryWorkers}
+            lineItems={job.lineItems}
+            craftOptions={timeEntryCraftOptions}
+          />
+        </div>
+
+        <div className="mb-4">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-base font-semibold text-ink">
+              This week: {formatHours(thisWeek.totalHours)} hrs
+            </h3>
+            {canReach(principal, "/hours") && (
+              <Link href="/hours" className="text-sm text-link hover:underline">
+                Every job&rsquo;s hours →
+              </Link>
+            )}
+          </div>
+          {thisWeek.people.length > 0 ? (
+            <WeeklyHoursTable week={thisWeek} caption="Hours on this job this week, by person and day" />
+          ) : (
+            <p className="text-sm text-ink-muted">No hours logged on this job yet this week.</p>
+          )}
+        </div>
 
         {job.timeEntries.length > 0 && (
           <ul className="mb-4 flex flex-col gap-2">
@@ -194,12 +277,6 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
           </ul>
         )}
 
-        <LogTimeEntryForm
-          jobId={job.id}
-          workers={timeEntryWorkers}
-          lineItems={job.lineItems}
-          craftOptions={timeEntryCraftOptions}
-        />
 
         <h3 className="mb-1 mt-6 text-base font-semibold text-ink">Timesheet sign-off</h3>
         <p className="mb-3 text-sm text-ink-muted">
@@ -248,14 +325,14 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
               {tmTickets.map((ticket) => (
                 <li
                   key={ticket.id}
-                  className="flex flex-wrap items-start gap-3 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm"
+                  className="flex flex-wrap items-start gap-3 rounded-lg border border-line-row bg-surface p-3 text-sm"
                 >
                   {ticket.signaturePath ? (
                     <SignatureImage path={ticket.signaturePath} label={`Signature of ${ticket.signerName}`} />
                   ) : null}
                   <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <span className="text-slate-100">{formatCalendarDate(ticket.workDate)}</span>
-                    <span className="text-slate-300">{ticket.workDescription}</span>
+                    <span className="text-ink">{formatCalendarDate(ticket.workDate)}</span>
+                    <span className="text-ink-body">{ticket.workDescription}</span>
                     <span className="text-xs text-ink-muted">
                       Signed by {ticket.signerName}, {formatInstant(ticket.signedAt, timeZone)}
                       {ticket.signaturePath ? "" : " (typed name — signed before the phone took drawn signatures)"}
@@ -287,7 +364,7 @@ export default async function JobCrewPage({ params }: { params: Promise<{ id: st
                   <span className="text-ink-label">{dispatchSlipWorkerLabel(slip)}</span>
                   {slip.craftClassification && <span className="text-xs text-ink-muted">{slip.craftClassification.name}</span>}
                   {slip.dispatchNumber && (
-                    <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-ink-body">#{slip.dispatchNumber}</span>
+                    <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-body">#{slip.dispatchNumber}</span>
                   )}
                   {slip.fileUrl && (
                     <a href={slip.fileUrl} target="_blank" rel="noreferrer" className="text-xs text-link hover:underline">

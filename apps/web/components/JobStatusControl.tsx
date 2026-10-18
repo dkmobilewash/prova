@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { setJobStatus } from "@/lib/actions";
 import { StatusBadge } from "@prova/ui";
@@ -29,9 +30,14 @@ import { Spinner } from "@/components/Spinner";
 export function JobStatusControl({
   jobId,
   status,
+  showsEstimateTab = true,
 }: {
   jobId: string;
   status: JobStatusValue;
+  /** Whether this viewer has the estimate page (and the header's "Won
+   * it?" box), where "Mark contracted" lives. Without it the sentence names the step but links nothing — a
+   * link to a page that refuses is a door that will not open. */
+  showsEstimateTab?: boolean;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -61,7 +67,7 @@ export function JobStatusControl({
                 }
               });
             }}
-            className="rounded-md border border-line-card px-3 py-1.5 text-sm font-medium text-ink-label hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-md border border-line-card px-3 py-1.5 text-sm font-medium text-ink-label hover:bg-rail-hover disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isPending ? (
               <span className="inline-flex items-center gap-1.5">
@@ -77,9 +83,20 @@ export function JobStatusControl({
 
       {status === "ESTIMATE" ? (
         <p className="mt-2 text-sm text-ink-muted">
-          An estimate becomes a contracted job further down this page, once the contract is
-          executed — either the GC signs it in C Stream or you record the executed subcontract they
-          sent.
+          An estimate becomes a contracted job with Mark contracted{" "}
+          {showsEstimateTab ? (
+            <>
+              — the &ldquo;Won it?&rdquo; box at the top of this job, or the{" "}
+              <Link href={`/jobs/${jobId}/estimate#job-lock-in`} className="text-link hover:underline">
+                bottom of the estimate page
+              </Link>{" "}
+              —
+            </>
+          ) : (
+            "on the job's estimate page (the Estimate step)"
+          )}
+          , once the contract is executed — either the GC signs it in C Stream or you record the
+          executed subcontract they sent, under Contract signature below.
         </p>
       ) : (
         <p className="mt-2 text-sm text-ink-muted">

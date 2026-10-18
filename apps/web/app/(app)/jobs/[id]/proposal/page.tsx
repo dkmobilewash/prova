@@ -5,6 +5,9 @@ import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
+import { BidPackageBuilder, type SubmitTarget } from "@/components/BidPackageBuilder";
+import { recipientFor } from "@/lib/estimating/bid-submission";
+import { emailSetupProblem } from "@prova/integrations";
 import { JobProposalClauseBuilder, JobProposalClauseRow } from "@/components/ProposalClauses";
 import { money } from "@/lib/money";
 import { formatInstant } from "@/lib/render-date";
@@ -12,7 +15,7 @@ import { viewerTimeZone } from "@/lib/viewerToday";
 import { groupProposalClauses, PROPOSAL_CLAUSE_HEADINGS } from "@/lib/proposal-clauses";
 import { ProposalDrafts, type ProposalDraftView } from "@/components/ProposalDrafts";
 import { loadProposalFacts } from "@/lib/estimating/proposal-facts-query";
-import { bidRecap, RECAP_RATE_KEYS, type CostCategoryValue, type RecapRates } from "@/lib/bid-recap";
+import { recapLines, recapStateFor } from "@/lib/estimating/recap-state";
 import { proposalPriceState, proposalPriceWarning } from "@/lib/estimating/proposal-recap-currency";
 import { bidMargin, underCostWarning } from "@/lib/estimating/bid-margin";
 
@@ -128,27 +131,14 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
   // tab falls back to the defaults because it is a FORM pre-filling an unsaved
   // row; this is a document asking "did the rates reach these prices", and
   // company defaults a person has never opened on this job have not.
-  const recapState = proposalPriceState(
-    recapRow
-      ? {
-          addedTotal: bidRecap(
-            job.lineItems.map((line) => ({
-              id: line.id,
-              quantity: Number(line.quantity),
-              unitCost: line.budgetedUnitCost != null ? Number(line.budgetedUnitCost) : null,
-              unitPrice: line.unitPrice != null ? Number(line.unitPrice) : null,
-              costCategory: (line.costCategory as CostCategoryValue | null) ?? null,
-            })),
-            Object.fromEntries(
-              RECAP_RATE_KEYS.map((key) => [key, recapRow[key] != null ? Number(recapRow[key]) : null]),
-            ) as RecapRates,
-          ).addedTotal,
-          appliedAt: recapRow.appliedAt,
-          appliedTotal: recapRow.appliedTotal != null ? Number(recapRow.appliedTotal) : null,
-        }
-      : null,
-    bidTotal,
-  );
+  // ASSEMBLED BY `recapStateFor`, which the job page's "needs you" list also
+  // calls. It was forty lines here; two copies of a money judgement would
+  // disagree the day either was edited, and the disagreement would show up as a
+  // job page saying the markup is fine over a proposal printing un-marked-up
+  // prices. The two nuances this page documented — `budgetedUnitCost` rather
+  // than the PM's re-forecast (#512), and the job's own recap row rather than
+  // `CompanyBidDefaults` — moved with it and are stated there.
+  const recapState = proposalPriceState(recapStateFor(recapRow, job.lineItems), bidTotal);
   const priceWarning = proposalPriceWarning(recapState);
 
   // DOES THIS BID COVER ITS OWN COST? The same conversion as above, over the
@@ -156,18 +146,61 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
   // new is queried: the page already reads every live line's cost to compute
   // `addedTotal`, and it has never RENDERED one, which is the point of the
   // print:hidden box below.
-  const marginWarning = underCostWarning(
-    bidMargin(
-      job.lineItems.map((line) => ({
-        id: line.id,
-        quantity: Number(line.quantity),
-        unitCost: line.budgetedUnitCost != null ? Number(line.budgetedUnitCost) : null,
-        unitPrice: line.unitPrice != null ? Number(line.unitPrice) : null,
-        costCategory: (line.costCategory as CostCategoryValue | null) ?? null,
+  // `recapLines` is the same conversion the recap above uses, which is the
+  // point: the margin and the markup must read one set of numbers.
+  const marginWarning = underCostWarning(bidMargin(recapLines(job.lineItems)), money);
+
+  /**
+   * WHAT THIS JOB'S BID CAN BE SENT TO, when one is linked to it.
+   *
+   * `BidInvitation` is company-scoped and carries no `jobId`; only a bid that
+   * was WON points back at a job, through `wonJobId`. So most jobs have no bid
+   * here, the send controls do not appear, and the package still builds and
+   * downloads — which is what this whole control was until sending existed.
+   *
+   * EVERY REASON IT CANNOT BE SENT IS WORKED OUT HERE AND SHOWN, rather than
+   * discovered on the press. "No email on file" and "sending is not set up"
+   * are both fixed somewhere else entirely, and a person who reads them before
+   * they have built a package can go and fix them.
+   */
+  const linkedBid = await prisma.bidInvitation.findFirst({
+    where: { wonJobId: job.id, companyId: company.id },
+    include: { contact: { include: { people: true } } },
+  });
+
+  let submitTarget: SubmitTarget | undefined;
+  if (linkedBid) {
+    const choice = recipientFor({
+      contactName: linkedBid.contact.name,
+      contactEmail: linkedBid.contact.email,
+      people: linkedBid.contact.people.map((person) => ({ name: person.name, email: person.email })),
+    });
+
+    // Not dismissed, newest first — the same rows `/ai` shows, read here
+    // rather than re-derived. The agent advises; this only displays.
+    const findings = await prisma.agentFinding.findMany({
+      where: { companyId: company.id, bidInvitationId: linkedBid.id, dismissedAt: null },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: { id: true, title: true, fixHref: true },
+    });
+
+    submitTarget = {
+      bidInvitationId: linkedBid.id,
+      companyId: company.id,
+      companyName: company.name,
+      gcName: linkedBid.contact.name,
+      addresses: choice.ok ? [choice.recipient, ...choice.alternatives] : [],
+      // The setup problem outranks the address one: an install that cannot
+      // send at all is not a contact record somebody should go and edit.
+      problem: emailSetupProblem() ?? (choice.ok ? null : choice.problem),
+      findings: findings.map((finding) => ({
+        id: finding.id,
+        title: finding.title,
+        href: finding.fixHref,
       })),
-    ),
-    money,
-  );
+    };
+  }
 
   return (
     // A document, so "reading" — and `print:p-0` so the printed page runs to
@@ -223,7 +256,7 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
           <p className="mt-1 text-sm text-ink-body print:hidden">
             This job has no line items yet.{" "}
             <Link href={`/jobs/${job.id}/estimate`} className="text-link hover:underline">
-              Price it on the Estimate tab
+              Price it on the estimate page
             </Link>{" "}
             and the schedule of values fills in here.
           </p>
@@ -291,6 +324,12 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
         canOfferLibrary={context.role === "OWNER"}
       />
       </section>
+
+      {/* LAST ON THE PAGE, because it is the last thing done to a bid: the
+          proposal has to exist and be printed before there is a package to
+          assemble. `print:hidden` on the section itself — it is a working
+          surface, not part of the document the GC receives. */}
+      <BidPackageBuilder projectName={job.name} submit={submitTarget} />
     </PageShell>
   );
 }

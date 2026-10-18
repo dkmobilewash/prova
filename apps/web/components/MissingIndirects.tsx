@@ -83,7 +83,7 @@ export function MissingIndirects({
                   setAdding(null);
                 });
               }}
-              className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-neutral-800 disabled:opacity-50"
+              className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50"
             >
               {isPending && adding === item.kind ? "Adding…" : `+ ${item.label}`}
               {/* WHAT IT WOULD COST, BEFORE THE PRESS. A button that silently

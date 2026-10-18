@@ -126,11 +126,12 @@ export type IncidentOutcome =
   | "DAYS_AWAY"
   | "RESTRICTED_OR_TRANSFER"
   | "OTHER_RECORDABLE"
-  | "FIRST_AID_ONLY";
+  | "FIRST_AID_ONLY"
+  | "NEAR_MISS";
 
 export type SafetyIncident = {
   id: string;
-  caseNumber: number;
+  caseNumber: number | null;
   caseYear: number;
   occurredAt: string;
   employeeName: string;

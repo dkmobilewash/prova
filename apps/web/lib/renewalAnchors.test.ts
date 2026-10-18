@@ -51,7 +51,9 @@ describe("every settings anchor a renewal points at exists", () => {
     // below: count the RenewalSource entries, and require at least as many
     // hrefs as there are kinds that link into settings. Nothing is ever
     // broken in an empty list of links.
-    const hrefs = [...renewals.matchAll(/href:\s*"([^"]+)"/g)].map((m) => m[1]);
+    // Template literals too: the compliance href became one when it learned to
+    // name the document's own row (ux round 4).
+    const hrefs = [...renewals.matchAll(/href:\s*["`]([^"`]+)["`]/g)].map((m) => m[1]);
     expect(hrefs.length, "no hrefs parsed out of renewals.ts").toBeGreaterThanOrEqual(4);
     expect(
       hrefs.filter((href) => href.startsWith("/settings")).length,

@@ -3,6 +3,7 @@ import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { finishWizard, landOnDashboard, settleAction, startJob } from "../lib/journey";
+import { dataTour } from "../lib/dataTour";
 
 /**
  * /bids GREW FOUR WHOLE PANELS IN THREE DAYS AND NOBODY OPENED IT.
@@ -52,7 +53,10 @@ test.describe("the bid desk", () => {
 
   /** The one bid row on /bids. Everything in this file is inside it, which is
    * also the point: four features share it. */
-  const bidRow = (): Locator => page.locator("li").filter({ hasText: PROJECT }).first();
+  // Scoped to the bids list itself: since the "Due soon" view (2026-10-12) a
+  // bid due within the window is ALSO listed above it, as a short row with
+  // no trade scope or amount, and a bare `li` filter found that one first.
+  const bidRow = (): Locator => page.locator(`${dataTour("bids-list")} li`).filter({ hasText: PROJECT }).first();
 
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext();
@@ -100,7 +104,10 @@ test.describe("the bid desk", () => {
     await expect(page.locator("li").filter({ hasText: PROJECT }).first()).toBeVisible();
     await expectHealthy(page, "the GC's contact page after logging a bid", { monitor });
 
-    await page.goto("/bids");
+    // ?view=all: since ux round 4, /bids opens on its "Due soon" view whenever
+    // a bid is due within the window, and the list this asserts on is the
+    // "All" view's (the bids-list anchor, via dataTour()).
+    await page.goto("/bids?view=all");
     await expectHealthy(page, "/bids with one bid", { monitor });
     await expect(bidRow()).toContainText(PROJECT);
     await expect(bidRow()).toContainText("Metal framing / drywall");
@@ -290,10 +297,14 @@ test.describe("the bid desk", () => {
     // it pinned the gate that made the action unreachable. Asserting the
     // control is HERE is the browser half of that regression guard: carrying a
     // quote onto a job's estimate happens while the bid is still out.
-    await page.goto("/bids");
+    await page.goto("/bids?view=all");
     await expect(bidRow().getByRole("button", { name: "Link the job this bid is for" })).toBeVisible();
 
-    await bidRow().getByRole("link", { name: new RegExp(PROJECT) }).click();
+    // The project name opens the bid's own page (/ai/bids/<id>) since the AI
+    // bid desk landed; the GC's name is the link to the GC. This clicked the
+    // project name and waited for /contacts until run 38327113148 timed out
+    // on /ai/bids/<id>.
+    await bidRow().getByRole("link", { name: GC_NAME }).click();
     await page.waitForURL(/\/contacts\/[^/]+$/);
     await expectHealthy(page, "the GC's contact page", { monitor });
     const statusForm = page
@@ -305,7 +316,7 @@ test.describe("the bid desk", () => {
     await statusForm.locator('select[name="status"]').selectOption("WON");
     await settleAction(page, () => statusForm.getByRole("button", { name: "Update" }).click());
 
-    await page.goto("/bids");
+    await page.goto("/bids?view=all");
     await expectHealthy(page, "/bids with a won bid", { monitor });
     // Still here after the win — the control is not gated either way.
     const link = bidRow().getByRole("button", { name: "Link the job this bid is for" });
