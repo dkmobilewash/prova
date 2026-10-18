@@ -172,6 +172,16 @@ const REACHED_FROM: Record<string, Reached> = {
     parents: ["apps/web/app/(app)/sales/page.tsx"],
     needle: 'href="/sales/call-list"',
   },
+  "/sales/replies": {
+    reason: "The replies link beside today's calls on /sales (operator only).",
+    parents: ["apps/web/app/(app)/sales/page.tsx"],
+    needle: 'href="/sales/replies"',
+  },
+  "/sales/scoreboard": {
+    reason: "The scoreboard link beside today's calls on /sales (operator only).",
+    parents: ["apps/web/app/(app)/sales/page.tsx"],
+    needle: 'href="/sales/scoreboard"',
+  },
   "/sales/[id]/sample-wh347": {
     reason: "The sample WH-347 link on a lead's page (operator only).",
     parents: ["apps/web/app/(app)/sales/[id]/page.tsx"],

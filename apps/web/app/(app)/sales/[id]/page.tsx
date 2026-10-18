@@ -9,6 +9,7 @@ import { SalesOpportunityForm } from "@/components/SalesOpportunityForm";
 import { SalesOpportunityRow } from "@/components/SalesOpportunityRow";
 import { SalesActivityForm } from "@/components/SalesActivityForm";
 import { CallLogButtons } from "@/components/CallLogButtons";
+import { FilesReceivedButton } from "@/components/FilesReceivedButton";
 import { doNotCallFrom } from "@/lib/call-dispositions";
 import { SalesActivityRow } from "@/components/SalesActivityRow";
 import { SalesLeadSignals } from "@/components/SalesLeadSignals";
@@ -79,6 +80,12 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
   // The viewer's calendar day, not the server's — a deal that moved today
   // reads as moving tomorrow to anyone west of UTC once the server ticks over.
   const today = await viewerToday();
+  // The door the Files-received button defaults to: whichever the latest reply came through.
+  const latestReply = await prisma.outboundReply.findFirst({
+    where: { leadId: lead.id },
+    orderBy: { receivedAt: "desc" },
+    select: { door: true },
+  });
 
   const historyByOpportunity = new Map(
     lead.opportunities.map((opportunity) => {
@@ -278,6 +285,10 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
         ) : null}
         <div className="mb-4">
           <CallLogButtons leadId={lead.id} />
+        </div>
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-ink-body">
+          <span>They sent the files?</span>
+          <FilesReceivedButton leadId={lead.id} door={latestReply?.door ?? "UNKNOWN"} />
         </div>
         {activityRows.length === 0 ? (
           <p className="mb-4 text-sm text-ink-body">
