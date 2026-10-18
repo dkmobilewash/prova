@@ -267,3 +267,97 @@ describe("a sheet too hatched to ask about curves", () => {
     expect(MAX_CURVE_PIECES).toBeGreaterThan(5_000);
   });
 });
+
+/**
+ * ── A CURVED WALL WITH A WINDOW IN IT IS STILL ONE WALL ──
+ *
+ * Measured on a held-out library plan: its reading room is a 55 ft arc with
+ * three 4 ft windows, and it came back as three fragments totalling about half
+ * its length. The gaps between the fragments were 4.00 ft and 2.99 ft — the
+ * window and door widths from that plan's own key, to the inch.
+ *
+ * Two things were wrong and the second is the subtle one. The pieces were
+ * never joined, and the pieces that were left were then DISCARDED: a 7 ft
+ * fragment of a 26.9 ft-radius wall turns 14.9 degrees, just under the 15
+ * `MIN_TOTAL_TURN` wants, so it failed the "is this an arc" test while the
+ * wall it belongs to turns 117.
+ */
+describe("an opening does not end a curved wall", () => {
+  const half = 6.5 / 12 / 2;
+
+  /** The bay, with a `gapDeg` hole cut out of the middle of both faces. */
+  const bayWithGap = (gapDeg: number): StrokeSegment[] => {
+    const mid = (FROM + TO) / 2;
+    const out: StrokeSegment[] = [];
+    for (const radius of [RADIUS - half, RADIUS + half]) {
+      const step = (TO - FROM) / 40;
+      for (let i = 0; i < 40; i += 1) {
+        const a = FROM + i * step;
+        const b = FROM + (i + 1) * step;
+        // Drop the pieces that fall inside the opening.
+        if (b > mid - gapDeg / 2 && a < mid + gapDeg / 2) continue;
+        const ar = (a * Math.PI) / 180;
+        const br = (b * Math.PI) / 180;
+        out.push({
+          x1: CENTRE.x + radius * Math.cos(ar),
+          y1: CENTRE.y + radius * Math.sin(ar),
+          x2: CENTRE.x + radius * Math.cos(br),
+          y2: CENTRE.y + radius * Math.sin(br),
+          width: 0.8,
+        });
+      }
+    }
+    return out;
+  };
+
+  it("JOINS ACROSS THE OPENING AND REPORTS ONE WALL", () => {
+    // A 3 ft door in a 7.2 ft-radius bay is about 24 degrees of it.
+    const walls = curvedWalls(bayWithGap(24), OPTS);
+    expect(walls, "the opening split the wall in two").toHaveLength(1);
+  });
+
+  it("reports the GROSS length, with the opening included", () => {
+    const whole = curvedWalls([...face(RADIUS - half, 40), ...face(RADIUS + half, 40)], OPTS);
+    const broken = curvedWalls(bayWithGap(24), OPTS);
+    expect(broken).toHaveLength(1);
+    // Within a few per cent of the unbroken wall: the chord across the
+    // opening is slightly shorter than the arc it replaces, and that is the
+    // only difference there should be.
+    expect(broken[0].lengthFeet).toBeGreaterThan(whole[0].lengthFeet * 0.93);
+    expect(broken[0].lengthFeet).toBeLessThanOrEqual(whole[0].lengthFeet + 0.01);
+  });
+
+  it("does not join across a gap wider than any opening", () => {
+    // 8 ft is `MAX_OPENING_FEET`; at this radius 90 degrees is far past it,
+    // and two arcs that far apart are two walls.
+    const walls = curvedWalls(bayWithGap(90), OPTS);
+    expect(walls.length === 0 || walls.length >= 2).toBe(true);
+  });
+
+  /**
+   * ── AND THE GUARD THAT JOINING EXPOSED ──
+   *
+   * `totalTurn` summed the ABSOLUTE turn at every vertex, which is safe only
+   * while chains are short. Once a chain could run a whole wall, a straight
+   * line drawn in many small pieces accumulated enough jitter to pass as an
+   * arc: a real forming plan reported 113 curved runs and 974 ft, one of them
+   * a 56.7 ft "arc" whose ends have the same y.
+   */
+  it("A JITTERY STRAIGHT LINE IS NOT AN ARC, however many pieces it has", () => {
+    const pieces: StrokeSegment[] = [];
+    for (const offset of [-0.27, 0.27]) {
+      for (let i = 0; i < 120; i += 1) {
+        // Alternating jitter: the net turn is zero, the summed turn is not.
+        const wobble = (i % 2 === 0 ? 1 : -1) * 0.004;
+        pieces.push({
+          x1: i * 0.4,
+          y1: offset + wobble,
+          x2: (i + 1) * 0.4,
+          y2: offset - wobble,
+          width: 0.8,
+        });
+      }
+    }
+    expect(curvedWalls(pieces, OPTS), "a straight line was read as a curve").toEqual([]);
+  });
+});

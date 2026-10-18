@@ -110,6 +110,8 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: classifies the long lines the pairer could NOT pair on named REAL sheets — by pen weight against the sheet's own wall pen, by company (a hatch is many parallels), by composition (a dashed line is many collinear strokes), by position (past the walls' own box) and by closure — and writes one overlay per class. It changes no detection; it exists so an answer-key reviewer meets a handful of named groups rather than eight thousand feet of line, and it is what established that 93% of A102's unpaired footage is hatching. Reads in place from REAL_PLAN_DIR, writes overlays to REAL_PLAN_OUT, prints counts and pen widths only. Skips without the folder and asserts a sheet matched",
     "zzMissed.eval.ts":
       "calls no model: a TEMPORARY diagnostic for the missed-wall work — it walks the filter chain stage by stage on named REAL sheets and reports what each stage removed, then asks separately how many unclaimed long faces have a valid partner anywhere at all. The first version of it asked a worse question and answered it with an artefact (every heavy line is drawn as two coincident strokes, so its NEAREST parallel is always its own edge), which is recorded in its header. Reads in place from REAL_PLAN_DIR, writes nothing, prints feet and thicknesses only. Skips without that folder and asserts a sheet matched, so a mistyped selector fails rather than passing on nothing",
+    "zzHeldout.eval.ts":
+      "calls no model: runs the product's own pipeline over ONE pdf named by `HELDOUT_PDF` and prints what it found — stroke counts, the views it captions, what each filter removed, every run's geometry in feet, and a thickness breakdown. It exists for held-out plans, whose drawing and answer key both live outside the repository: it reads the DRAWING and has no way to reach a key, which `truthWall.test.ts` now enforces for held-out plans the same way it does for the twenty fixtures' committed truth. The scoring against a key is done outside the engine, by a scorer that has read it — that separation is the whole value of the exercise, since a detector that can see the answer is not being measured. Skips without `HELDOUT_PDF` and asserts the file has bytes, so a mistyped path fails rather than reporting an empty sheet",
     "zzSheetVerdict.eval.ts":
       "calls no model: runs the product's own `takeoffSheetVerdict` over every sheet of a REAL set, reading each title block with the keyless glyph reader in `plan-ingest/sheetNumber.ts` and the drawings' own captions with `sheetViews`, and prints what each sheet would be offered. It exists because A130 (PARTITION TYPES) and A140 (PLAN DETAILS) offered wall detection exactly as a floor plan does, and a wall type drawn in section is the most convincing phantom this product can make. It asserts that the reading HAPPENED and prints the whole list rather than a count, because whether each verdict is right is a person's judgement. Reads in place from REAL_PLAN_DIR, writes nothing, prints sheet numbers, titles and verdicts only. Skips without that folder and asserts the named set matched, so a mistyped REAL_PLAN_SET fails rather than printing an empty list",
     "zzMixedSheet.eval.ts":
@@ -172,7 +174,10 @@ describe("every eval refuses to run without a key", () => {
       // something before reading any figure off the run. A mistyped folder name
       // otherwise produces no pages, no findings and a clean summary.
       expect(
-        /expect\([^)]*\.length[\s\S]{0,200}?toBeGreaterThan\(0\)/.test(source),
+        // Any floor, not the literal zero: `zzHeldout.eval.ts` requires its pdf to be
+        // over a thousand bytes, which keeps this promise more tightly than `> 0` and
+        // was failing a census that insisted on the weaker spelling.
+        /expect\([^)]*\.length[\s\S]{0,200}?toBeGreaterThan\(\d+\)/.test(source),
         `${name} never asserts its input resolved to anything, so a path that matches no file would ` +
           `read as a clean run`,
       ).toBe(true);

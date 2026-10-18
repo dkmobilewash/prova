@@ -1,3 +1,4 @@
+import { CAP_SLACK_FEET, MAX_OPENING_FEET } from "./mergeWalls";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /**
@@ -165,7 +166,10 @@ export function curvedWalls(
     return [];
   }
 
-  const chains = assemble(pieces, JOINT_FEET / options.feetPerUnit);
+  const chains = joinAcrossOpenings(
+    assemble(pieces, JOINT_FEET / options.feetPerUnit),
+    options.feetPerUnit,
+  );
   const arcs = chains.filter(
     (chain) =>
       chain.lengthUnits * options.feetPerUnit >= MIN_CHAIN_FEET &&
@@ -246,12 +250,45 @@ function opensOut(chain: Chain): boolean {
 }
 
 /** The sum of the absolute turns at every interior vertex of a chain. */
+/**
+ * ── HOW FAR THE CHAIN TURNS, NET — NOT HOW MUCH IT WOBBLES ──
+ *
+ * This summed the ABSOLUTE turn at every vertex, and that was safe only while
+ * chains were short. Once `joinAcrossOpenings` let a chain run the length of a
+ * wall, a straight line drawn in many small pieces accumulated enough jitter
+ * to pass: ELEVEN03's forming plan reported **113 curved runs and 974 ft**,
+ * among them a 56.7 ft "arc" whose two endpoints have the same y to a tenth of
+ * a foot. A straight line, called a curve, because it had enough vertices.
+ *
+ * `MIN_TOTAL_TURN`'s own note says what the test is for — "S07's bay turns
+ * 113. A dashed line turns 0" — and a dashed line turns 0 NET, while its
+ * summed wobble grows without bound in the number of pieces. So the
+ * implementation is brought to what the constant already claimed.
+ *
+ * Signed, then absolute at the end: an arc turns the same way throughout and
+ * accumulates, including past 180 degrees where a start-to-end angle
+ * comparison would wrap and read small. Jitter cancels.
+ */
 function totalTurn(chain: Chain): number {
-  let total = 0;
+  let signed = 0;
   for (let k = 1; k < chain.points.length - 1; k += 1) {
-    total += turnAt(chain.points[k - 1], chain.points[k], chain.points[k + 1]);
+    signed += signedTurnAt(chain.points[k - 1], chain.points[k], chain.points[k + 1]);
   }
-  return total;
+  return Math.abs(signed);
+}
+
+/** The turn at a vertex, positive to the left and negative to the right. */
+function signedTurnAt(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  c: { x: number; y: number },
+): number {
+  const in1 = Math.atan2(b.y - a.y, b.x - a.x);
+  const in2 = Math.atan2(c.y - b.y, c.x - b.x);
+  let delta = in2 - in1;
+  while (delta > Math.PI) delta -= 2 * Math.PI;
+  while (delta < -Math.PI) delta += 2 * Math.PI;
+  return delta;
 }
 
 /**
@@ -304,6 +341,125 @@ function assemble(pieces: readonly StrokeSegment[], jointUnits: number): Chain[]
     chains.push({ points, lengthUnits });
   }
   return chains;
+}
+
+/**
+ * ── A CURVED WALL WITH A WINDOW IN IT IS STILL ONE WALL ──
+ *
+ * `assemble` chains pieces that touch, within a joint's slack. An opening does
+ * not touch: the drawing simply stops and starts again on the other side of
+ * the window, so a curved wall carrying three windows assembles as four
+ * separate chains.
+ *
+ * Measured on a held-out library plan whose reading room is a 55 ft arc with
+ * three 4 ft windows in it. The gaps between the fragments came back at
+ * **4.00 ft and 2.99 ft** — the window and door widths from that plan's own
+ * key, to the inch. Nothing was wrong with the assembly; the wall is drawn in
+ * pieces because it has holes in it.
+ *
+ * ── AND THE FRAGMENTS WERE NOT MERELY SHORT, THEY WERE DISCARDED ──
+ *
+ * This is why the join belongs HERE and not after the filters. `MIN_TOTAL_TURN`
+ * asks whether a chain turns enough to be an arc, and how much a piece turns
+ * depends on its radius: a 7 ft fragment of a 26.9 ft-radius wall turns 14.9
+ * degrees, just under the 15 the test wants, so it was thrown away as "not an
+ * arc" — while the whole wall it belongs to turns 117. Joining first means the
+ * test is asked of the WALL, which is the thing it is actually about.
+ *
+ * A dashed straight line still fails it, which is what that constant is for: a
+ * joined dashed line turns zero.
+ *
+ * ── THE WIDTH IS THE PRODUCT'S OWN, NOT A SECOND ONE ──
+ *
+ * `MAX_OPENING_FEET` and `CAP_SLACK_FEET` are `mergeWalls`'s, where the same
+ * question is answered for straight walls, and the slack is there because a
+ * standard opening lands exactly ON the cap far more often than just inside
+ * it. Two copies of "how wide is a door" would drift.
+ *
+ * ── WHAT THIS DOES NOT COPY FROM `mergeWalls`, AND THE RISK THAT CARRIES ──
+ *
+ * That file bridges a gap only when something bounds it, because bridging on
+ * width alone once drew wall straight across a 5'-7" corridor — 39 ft of wall
+ * nobody can build. The same check is not applied here, deliberately and with
+ * the reason stated: joining two chains requires the direction to CONTINUE
+ * through the gap within `TURN_RAD` at both ends, and two arcs that face each
+ * other across a corridor do not continue each other's curvature. A corridor
+ * is bounded by walls that meet it at a right angle, which is four times that
+ * tolerance.
+ *
+ * It is a weaker argument than a measurement, so the guards are the check: if
+ * a fixture or the bench grows a curved phantom, this is the first thing to
+ * suspect and `gapIsCrossing` is the thing to borrow.
+ */
+function joinAcrossOpenings(chains: readonly Chain[], feetPerUnit: number): Chain[] {
+  if (chains.length < 2 || !(feetPerUnit > 0)) return [...chains];
+  const widest = (MAX_OPENING_FEET + CAP_SLACK_FEET) / feetPerUnit;
+  // Anything this close `assemble` has already joined; re-joining it here
+  // would walk the same chain twice.
+  const touching = JOINT_FEET / feetPerUnit;
+
+  // ── GROWN FROM BOTH ENDS, THE WAY `assemble` DOES, AND NOT RESTARTED ──
+  //
+  // The first version re-ran the whole pairwise scan after every join, which
+  // is the number of joins times the square of the chain count. On the bench's
+  // densest sheets that is minutes rather than the two seconds the whole
+  // suite takes, and `curvedWalls` has been the slow part of this pipeline
+  // before: it was 96% of a 61-second run on a real sheet until
+  // `MAX_CURVE_PIECES` was added.
+  //
+  // This walks each chain once and extends it from both ends, so the work is
+  // quadratic in the chain count and nothing is scanned twice. It is the same
+  // shape as `assemble` immediately above, deliberately — one idiom for
+  // "grow a chain", in one file.
+  const used = new Array(chains.length).fill(false);
+  const out: Chain[] = [];
+
+  for (let i = 0; i < chains.length; i += 1) {
+    if (used[i]) continue;
+    used[i] = true;
+    let points = [...chains[i].points];
+    let lengthUnits = chains[i].lengthUnits;
+
+    for (const atEnd of [true, false]) {
+      let growing = true;
+      while (growing) {
+        growing = false;
+        const tip = atEnd ? points[points.length - 1] : points[0];
+        const before = atEnd ? points[points.length - 2] : points[1];
+        if (before === undefined) break;
+
+        for (let j = 0; j < chains.length; j += 1) {
+          if (used[j]) continue;
+          const other = chains[j];
+          if (other.points.length < 2) continue;
+
+          for (const fromHead of [true, false]) {
+            const otherTip = fromHead ? other.points[0] : other.points[other.points.length - 1];
+            const otherNext = fromHead ? other.points[1] : other.points[other.points.length - 2];
+            const gap = Math.hypot(otherTip.x - tip.x, otherTip.y - tip.y);
+            if (gap <= touching || gap > widest) continue;
+            // THE DIRECTION MUST CONTINUE THROUGH THE GAP, at both ends: this
+            // is what separates a window in a wall from two walls that happen
+            // to face each other across a corridor.
+            if (turnAt(before, tip, otherTip) > TURN_RAD) continue;
+            if (turnAt(tip, otherTip, otherNext) > TURN_RAD) continue;
+
+            const add = fromHead ? other.points : [...other.points].reverse();
+            points = atEnd ? [...points, ...add] : [...[...add].reverse(), ...points];
+            // GROSS: the opening is part of the wall's length, the same way
+            // `mergeWalls` reports a straight wall with a door in it.
+            lengthUnits += gap + other.lengthUnits;
+            used[j] = true;
+            growing = true;
+            break;
+          }
+          if (growing) break;
+        }
+      }
+    }
+    out.push({ points, lengthUnits });
+  }
+  return out;
 }
 
 function turnAt(
