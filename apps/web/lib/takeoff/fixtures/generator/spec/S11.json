@@ -1,0 +1,455 @@
+{
+ "id": "S11",
+ "title": "GUEST HOUSE",
+ "units": "imperial",
+ "scale_ratio": 48,
+ "scale_text": "1/8\" = 1'-0\"",
+ "scale_text_printed": "1/8\" = 1'-0\"",
+ "page": "ANSI_B",
+ "wall_style": "pairs",
+ "clutter": "easy",
+ "ceiling_height_ft": 8.0,
+ "walls": [
+  {
+   "id": "W1",
+   "a": [
+    0.0,
+    0.0
+   ],
+   "b": [
+    30.0,
+    0.0
+   ],
+   "type": "EXT-MASONRY-12",
+   "thickness_in": 12.0,
+   "exterior": true
+  },
+  {
+   "id": "W2",
+   "a": [
+    30.0,
+    0.0
+   ],
+   "b": [
+    30.0,
+    22.0
+   ],
+   "type": "EXT-MASONRY-12",
+   "thickness_in": 12.0,
+   "exterior": true
+  },
+  {
+   "id": "W3",
+   "a": [
+    30.0,
+    22.0
+   ],
+   "b": [
+    0.0,
+    22.0
+   ],
+   "type": "EXT-MASONRY-12",
+   "thickness_in": 12.0,
+   "exterior": true
+  },
+  {
+   "id": "W4",
+   "a": [
+    0.0,
+    22.0
+   ],
+   "b": [
+    0.0,
+    0.0
+   ],
+   "type": "EXT-MASONRY-12",
+   "thickness_in": 12.0,
+   "exterior": true
+  },
+  {
+   "id": "W5",
+   "a": [
+    16.0,
+    0.0
+   ],
+   "b": [
+    16.0,
+    22.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W6",
+   "a": [
+    0.0,
+    10.0
+   ],
+   "b": [
+    16.0,
+    10.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W7",
+   "a": [
+    16.0,
+    12.0
+   ],
+   "b": [
+    30.0,
+    12.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W8",
+   "a": [
+    24.0,
+    12.0
+   ],
+   "b": [
+    24.0,
+    22.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  }
+ ],
+ "openings": [
+  {
+   "id": "D1",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W1",
+   "at_ft": 8.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D2",
+   "kind": "door",
+   "subtype": "cased",
+   "wall": "W6",
+   "at_ft": 8.0,
+   "width_ft": 6.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D3",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W5",
+   "at_ft": 6.0,
+   "width_ft": 3.0,
+   "side": -1,
+   "hinge": 0
+  },
+  {
+   "id": "D4",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W7",
+   "at_ft": 4.0,
+   "width_ft": 2.5,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D5",
+   "kind": "door",
+   "subtype": "sliding",
+   "wall": "W7",
+   "at_ft": 11.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN1",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W3",
+   "at_ft": 22.0,
+   "width_ft": 5.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN2",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W2",
+   "at_ft": 6.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN3",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W4",
+   "at_ft": 17.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  }
+ ],
+ "rooms": [
+  {
+   "id": "R101",
+   "label": "KITCHEN 101",
+   "name": "KITCHEN",
+   "number": "101",
+   "type": "kitchen",
+   "label_at": [
+    8.0,
+    5.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R102",
+   "label": "LIVING 102",
+   "name": "LIVING",
+   "number": "102",
+   "type": "living",
+   "label_at": [
+    8.0,
+    16.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R103",
+   "label": "BEDROOM 103",
+   "name": "BEDROOM",
+   "number": "103",
+   "type": "bedroom",
+   "label_at": [
+    23.0,
+    6.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R104",
+   "label": "BATH 104",
+   "name": "BATH",
+   "number": "104",
+   "type": "bathroom",
+   "label_at": [
+    20.0,
+    17.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R105",
+   "label": "CLOSET 105",
+   "name": "CLOSET",
+   "number": "105",
+   "type": "closet",
+   "label_at": [
+    27.0,
+    17.0
+   ],
+   "show_area": false
+  }
+ ],
+ "notes": "The printed scale note says 1/8\" = 1'-0\" but the plan is drawn at 1/4\" = 1'-0\". Dimension strings are correct and must override the note. scale_text is as printed; scale_ratio is the TRUE ratio (48).",
+ "scale_bar": false,
+ "grid": null,
+ "views": [],
+ "placement": {
+  "page_size_pt": [
+   1224,
+   792
+  ],
+  "views": [
+   {
+    "name": "FLOOR PLAN",
+    "origin_pt": [
+     261.0,
+     217.0
+    ],
+    "pt_per_ft": 18.0,
+    "scale_ratio": 48,
+    "box_ft": [
+     -0.5,
+     -0.5,
+     30.5,
+     22.5
+    ]
+   }
+  ],
+  "dims": [
+   {
+    "p1_ft": [
+     -0.5,
+     -0.5
+    ],
+    "p2_ft": [
+     16.0,
+     -0.5
+    ],
+    "text": "16'-6\"",
+    "distance_ft": 16.5,
+    "line_pt": [
+     [
+      252.0,
+      175.6
+     ],
+     [
+      549.0,
+      175.6
+     ]
+    ],
+    "text_pt": [
+     400.5,
+     178.1
+    ]
+   },
+   {
+    "p1_ft": [
+     16.0,
+     -0.5
+    ],
+    "p2_ft": [
+     30.5,
+     -0.5
+    ],
+    "text": "14'-6\"",
+    "distance_ft": 14.5,
+    "line_pt": [
+     [
+      549.0,
+      175.6
+     ],
+     [
+      810.0,
+      175.6
+     ]
+    ],
+    "text_pt": [
+     679.5,
+     178.1
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.5,
+     -0.5
+    ],
+    "p2_ft": [
+     30.5,
+     -0.5
+    ],
+    "text": "31'-0\"",
+    "distance_ft": 31.0,
+    "line_pt": [
+     [
+      252.0,
+      146.8
+     ],
+     [
+      810.0,
+      146.8
+     ]
+    ],
+    "text_pt": [
+     531.0,
+     149.3
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.5,
+     -0.5
+    ],
+    "p2_ft": [
+     -0.5,
+     10.0
+    ],
+    "text": "10'-6\"",
+    "distance_ft": 10.5,
+    "line_pt": [
+     [
+      219.6,
+      208.0
+     ],
+     [
+      219.6,
+      397.0
+     ]
+    ],
+    "text_pt": [
+     217.1,
+     302.5
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.5,
+     10.0
+    ],
+    "p2_ft": [
+     -0.5,
+     22.5
+    ],
+    "text": "12'-6\"",
+    "distance_ft": 12.5,
+    "line_pt": [
+     [
+      219.6,
+      397.0
+     ],
+     [
+      219.6,
+      622.0
+     ]
+    ],
+    "text_pt": [
+     217.1,
+     509.5
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.5,
+     -0.5
+    ],
+    "p2_ft": [
+     -0.5,
+     22.5
+    ],
+    "text": "23'-0\"",
+    "distance_ft": 23.0,
+    "line_pt": [
+     [
+      190.8,
+      208.0
+     ],
+     [
+      190.8,
+      622.0
+     ]
+    ],
+    "text_pt": [
+     188.3,
+     415.0
+    ]
+   }
+  ]
+ }
+}

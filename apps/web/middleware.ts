@@ -5,6 +5,11 @@ const isProtectedRoute = createRouteMatcher([
   "/ask(.*)",
   "/ai(.*)",
   "/jobs(.*)",
+  // The full-screen takeoff workspace. OUTSIDE the `(app)` route group — see
+  // `app/takeoff/[id]/page.tsx` for why it has to be — so it is not covered by
+  // any of the patterns above and needs its own. It authenticates itself as
+  // well; this is the outer gate, exactly as it is for `/jobs`.
+  "/takeoff(.*)",
   "/contacts(.*)",
   "/compliance(.*)",
   "/bids(.*)",

@@ -1,0 +1,455 @@
+{
+ "id": "S06",
+ "title": "HOUSE WITH ANGLED WING",
+ "units": "imperial",
+ "scale_ratio": 48,
+ "scale_text": "1/4\" = 1'-0\"",
+ "scale_text_printed": "1/4\" = 1'-0\"",
+ "page": "ARCH_C",
+ "wall_style": "filled",
+ "clutter": "medium",
+ "ceiling_height_ft": 9.0,
+ "walls": [
+  {
+   "id": "W1",
+   "a": [
+    0.0,
+    0.0
+   ],
+   "b": [
+    32.0,
+    0.0
+   ],
+   "type": "EXT-MASONRY-12",
+   "thickness_in": 12.0,
+   "exterior": true
+  },
+  {
+   "id": "W2",
+   "a": [
+    32.0,
+    0.0
+   ],
+   "b": [
+    32.0,
+    12.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W3",
+   "a": [
+    32.0,
+    12.0
+   ],
+   "b": [
+    41.89949493661167,
+    21.899494936611667
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W4",
+   "a": [
+    41.89949493661167,
+    21.899494936611667
+   ],
+   "b": [
+    29.899494936611667,
+    33.89949493661167
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W5",
+   "a": [
+    29.899494936611667,
+    33.89949493661167
+   ],
+   "b": [
+    20.0,
+    24.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W6",
+   "a": [
+    20.0,
+    24.0
+   ],
+   "b": [
+    0.0,
+    24.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W7",
+   "a": [
+    0.0,
+    24.0
+   ],
+   "b": [
+    0.0,
+    0.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W8",
+   "a": [
+    32.0,
+    12.0
+   ],
+   "b": [
+    20.0,
+    24.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W9",
+   "a": [
+    26.0,
+    18.0
+   ],
+   "b": [
+    35.89949493661167,
+    27.899494936611667
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W10",
+   "a": [
+    16.0,
+    0.0
+   ],
+   "b": [
+    16.0,
+    24.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  }
+ ],
+ "openings": [
+  {
+   "id": "D1",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W1",
+   "at_ft": 8.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D2",
+   "kind": "door",
+   "subtype": "cased",
+   "wall": "W10",
+   "at_ft": 12.0,
+   "width_ft": 5.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D3",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W8",
+   "at_ft": 4.242640687119286,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D4",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W8",
+   "at_ft": 12.727922061357857,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN1",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W1",
+   "at_ft": 24.0,
+   "width_ft": 5.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN2",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W7",
+   "at_ft": 12.0,
+   "width_ft": 5.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN3",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W4",
+   "at_ft": 4.242640687119286,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN4",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W4",
+   "at_ft": 12.727922061357857,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN5",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W3",
+   "at_ft": 7.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  }
+ ],
+ "rooms": [
+  {
+   "id": "R101",
+   "label": "LIVING 101",
+   "name": "LIVING",
+   "number": "101",
+   "type": "living",
+   "label_at": [
+    8.0,
+    12.0
+   ],
+   "show_area": true
+  },
+  {
+   "id": "R102",
+   "label": "KITCHEN / DINING 102",
+   "name": "KITCHEN / DINING",
+   "number": "102",
+   "type": "kitchen",
+   "label_at": [
+    24.0,
+    7.0
+   ],
+   "show_area": true
+  },
+  {
+   "id": "R103",
+   "label": "BEDROOM 103",
+   "name": "BEDROOM",
+   "number": "103",
+   "type": "bedroom",
+   "label_at": [
+    34.82842712474619,
+    19.071067811865476
+   ],
+   "show_area": true
+  },
+  {
+   "id": "R104",
+   "label": "BATH 104",
+   "name": "BATH",
+   "number": "104",
+   "type": "bathroom",
+   "label_at": [
+    27.071067811865476,
+    26.82842712474619
+   ],
+   "show_area": true
+  }
+ ],
+ "notes": "A 45-degree wing: four angled walls, a 135-degree outside corner pair, an angled interior wall with two doors, Revit-style filled walls.",
+ "scale_bar": false,
+ "grid": null,
+ "views": [],
+ "placement": {
+  "page_size_pt": [
+   1728,
+   1296
+  ],
+  "views": [
+   {
+    "name": "FLOOR PLAN",
+    "origin_pt": [
+     404.8949000122106,
+     362.95740001221054
+    ],
+    "pt_per_ft": 18.0,
+    "scale_ratio": 48,
+    "box_ft": [
+     -0.2708333333333333,
+     -0.5,
+     42.28251110975438,
+     34.28251110975438
+    ]
+   }
+  ],
+  "dims": [
+   {
+    "p1_ft": [
+     -0.270833,
+     -0.5
+    ],
+    "p2_ft": [
+     16.0,
+     -0.5
+    ],
+    "text": "16'-3 1/4\"",
+    "distance_ft": 16.270833,
+    "line_pt": [
+     [
+      400.0199060122106,
+      321.55740001221056
+     ],
+     [
+      692.8949000122107,
+      321.55740001221056
+     ]
+    ],
+    "text_pt": [
+     546.4574030122106,
+     324.05740001221056
+    ]
+   },
+   {
+    "p1_ft": [
+     16.0,
+     -0.5
+    ],
+    "p2_ft": [
+     42.282511,
+     -0.5
+    ],
+    "text": "26'-3 3/8\"",
+    "distance_ft": 26.282511,
+    "line_pt": [
+     [
+      692.8949000122107,
+      321.55740001221056
+     ],
+     [
+      1165.9800980122106,
+      321.55740001221056
+     ]
+    ],
+    "text_pt": [
+     929.4374990122107,
+     324.05740001221056
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     -0.5
+    ],
+    "p2_ft": [
+     42.28251110975438,
+     -0.5
+    ],
+    "text": "42'-6 5/8\"",
+    "distance_ft": 42.55334444308772,
+    "line_pt": [
+     [
+      400.0199000122106,
+      292.75740001221055
+     ],
+     [
+      1165.9800999877896,
+      292.75740001221055
+     ]
+    ],
+    "text_pt": [
+     783.0000000000001,
+     295.25740001221055
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     -0.5
+    ],
+    "p2_ft": [
+     -0.2708333333333333,
+     34.282511
+    ],
+    "text": "34'-9 3/8\"",
+    "distance_ft": 34.782511,
+    "line_pt": [
+     [
+      367.6199000122106,
+      353.95740001221054
+     ],
+     [
+      367.6199000122106,
+      980.0425980122105
+     ]
+    ],
+    "text_pt": [
+     365.1199000122106,
+     666.9999990122105
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     -0.5
+    ],
+    "p2_ft": [
+     -0.2708333333333333,
+     34.28251110975438
+    ],
+    "text": "34'-9 3/8\"",
+    "distance_ft": 34.78251110975438,
+    "line_pt": [
+     [
+      338.8199000122106,
+      353.95740001221054
+     ],
+     [
+      338.8199000122106,
+      980.0425999877895
+     ]
+    ],
+    "text_pt": [
+     336.3199000122106,
+     667.0
+    ]
+   }
+  ]
+ }
+}

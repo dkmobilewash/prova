@@ -149,6 +149,20 @@ model TakeoffPlan {
 
   createdAt DateTime @default(now())
 
+  /// ── ADDED 2026-10-16, CLOSING A SHORTCUT `AUDIT.md` RECORDED ──
+  ///
+  /// The workspace's "changed in another tab" notice had to derive a signature
+  /// from three aggregates — counts and max `createdAt` across calibrations,
+  /// measurements and wall proposals — because this table had only
+  /// `createdAt`, set when the drawing was uploaded. Nothing moved when a
+  /// measurement was saved.
+  ///
+  /// That signature could not see an UPDATE which changed neither a count nor
+  /// a timestamp, and it was three queries where one indexed read would do.
+  /// AUDIT.md said the proper fix was this column, "worth doing with the next
+  /// takeoff migration rather than on its own". This is that migration.
+  updatedAt DateTime @updatedAt
+
   @@index([jobId, createdAt])
   @@index([companyId])
 }
@@ -348,6 +362,33 @@ model TakeoffMeasurement {
   /// name the `fixture-count` recipe emits as the line label.
   label String?
 
+  /// The item this measurement belongs to.
+  ///
+  /// `SetNull` ON PURPOSE: deleting an item must not destroy traced geometry.
+  /// The measurement falls back into "Unassigned", where somebody can give it
+  /// to another item — losing a morning's tracing because a condition was
+  /// renamed wrong would be unforgivable, and `Cascade` would do exactly that.
+  itemId String?
+  item   TakeoffItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  /// Who drew it. `DETECTED` is the wall finder proposing into an item;
+  /// `IMPORTED` is reserved and unused today.
+  source TakeoffMeasurementSource @default(MANUAL)
+
+  /// The finder's confidence, 0..1. Null unless `source` is `DETECTED` — a
+  /// number a person drew has no confidence to report, and defaulting one to
+  /// 1 would invent agreement nobody expressed.
+  confidence Float?
+
+  /// Openings deducted from an AREA: `[{ xs: [...], ys: [...] }]`, in the same
+  /// page-width box as `xs`/`ys` above.
+  ///
+  /// `Json` rather than a child table, the call `TakeoffWallProposal.runs`
+  /// makes and for the same test: nothing joins to a single cutout, nothing
+  /// updates one in place, and they are saved and discarded with the shape
+  /// they belong to.
+  cutouts Json @default("[]")
+
   /// WHEN THIS WAS TURNED INTO LINE ITEMS, or null. An event, not derived
   /// state — there is nothing to derive it from. Without it, posting the same
   /// four runs twice silently doubles a bid and nothing on screen says so.
@@ -377,6 +418,7 @@ model TakeoffMeasurement {
   @@index([pageId, createdAt])
   @@index([calibrationId])
   @@index([wallRunId])
+  @@index([itemId])
 }
 
 /// WHERE A FOUND GROUP CAME FROM. Three members, mirroring `GroupSource` in
@@ -527,7 +569,129 @@ model TakeoffWallProposal {
 
   createdAt DateTime @default(now())
 
+  /// ── WHICH TAKEOFF ITEM THIS GROUP PROPOSES INTO, or null ──
+  ///
+  /// Detection ADDS to a condition somebody named, rather than landing in a
+  /// pile called "Add these". `lib/takeoff/proposalMatch.ts` decides it, by
+  /// the drawing's own wall tag first and the measured thickness last, and
+  /// REFUSES a tie — two items of the same thickness leave the group here
+  /// with a null, which the screen shows as "Unassigned walls".
+  ///
+  /// `SetNull`, like every other item link: deleting a condition must not
+  /// destroy a detection run somebody is part-way through reviewing.
+  itemId String?
+  item   TakeoffItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
   /// The read this table exists for: the newest proposals for a page at the
   /// scale it is currently calibrated to.
   @@index([pageId, calibrationId, createdAt])
+  @@index([itemId])
+}
+
+/// What KIND of thing an item measures, which decides which properties apply
+/// and what its total is denominated in.
+///
+/// `SEGMENT` and `AREA_WITH_PERIMETER` store LINEAR and AREA geometry
+/// respectively — the item's type says how to READ the geometry, it does not
+/// change what was traced. Widening `TakeoffMeasurementKind` instead would
+/// invalidate every existing row's arithmetic for no gain.
+enum TakeoffItemType {
+  LINEAR
+  AREA
+  COUNT
+  SEGMENT
+  AREA_WITH_PERIMETER
+}
+
+enum TakeoffLineStyle {
+  SOLID
+  DASHED
+  DOTTED
+}
+
+/// Where a measurement came from. `DETECTED` carries a confidence; the other
+/// two never do.
+enum TakeoffMeasurementSource {
+  MANUAL
+  DETECTED
+  IMPORTED
+}
+
+/// ─────────────────────────────────────────────────────────────────────────
+/// A TAKEOFF ITEM — the "condition" every estimating tool is built around
+/// ─────────────────────────────────────────────────────────────────────────
+///
+/// A named, coloured thing being taken off: "6in metal stud partition, 10ft",
+/// "acoustic ceiling", "fire extinguishers". Measurements belong to it, across
+/// every sheet in the set, and it points at the assembly that prices it.
+///
+/// It is the ONE model this product was missing. The assembly, its parts, the
+/// quantity formula, the price book and the estimate line all existed already
+/// under other names — see `docs/TAKEOFF-WORKSPACE-DESIGN.md`, which audits
+/// them field by field.
+///
+/// ── NO STORED TOTAL, and that is this file's standing rule rather than a
+/// choice made here. A total is computed from the measurements and the sheet's
+/// calibration on every read, like every other number in this file: a stored
+/// one is a number that was true against a scale somebody has since corrected.
+///
+/// ── NO `isVisible`. Which items somebody has hidden while they work is a
+/// per-viewer convenience, so it lives in `localStorage` per CLAUDE.md's
+/// storage rule. A column would also be a fourth kind of state two open tabs
+/// can disagree about.
+model TakeoffItem {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// Keyed on the JOB, not the plan set. A revision replaces the drawings; the
+  /// thing being taken off is the same thing, and its history should survive
+  /// the re-upload that `recordTakeoffPlanRevision` performs.
+  ///
+  /// THIS IS THE `InvoiceCounter` SHAPE — a jobId-keyed child that deleting a
+  /// job's plans does NOT reach. Both cleanup scripts delete it explicitly and
+  /// `HANDLED_MODELS` names it; see the entry in CLAUDE.md for what happened
+  /// the last time that was forgotten.
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id])
+
+  name String
+  type TakeoffItemType
+
+  /// `#RRGGBB`, validated at the writer.
+  ///
+  /// A RAW HEX STRING AND NOT A DESIGN TOKEN, which is a deliberate exception
+  /// to `DESIGN.md`: these colours mark USER DATA over a drawing that is not
+  /// our palette, and the user picks them. What the picker OFFERS is tokens.
+  colorHex  String
+  lineStyle TakeoffLineStyle @default(SOLID)
+
+  /// ── PROPERTIES ──
+  /// Nullable because which ones apply depends on `type`, and because an item
+  /// may legitimately be measured before anybody has decided its height. They
+  /// mirror the assembly's defaults so a job can override the company library
+  /// without editing it.
+  heightFt     Decimal? @db.Decimal(8, 2)
+  sides        Int?
+  thicknessIn  Decimal? @db.Decimal(6, 2)
+  wastePercent Decimal? @db.Decimal(5, 2)
+  spacingIn    Decimal? @db.Decimal(6, 2)
+  depthIn      Decimal? @db.Decimal(6, 2)
+
+  /// The assembly that prices it. Nullable: an estimator measures first and
+  /// prices later, which is how the work actually happens.
+  wallTypeId String?
+  wallType   WallType? @relation(fields: [wallTypeId], references: [id], onDelete: SetNull)
+
+  sortOrder Int @default(0)
+
+  measurements  TakeoffMeasurement[]
+  lineItems     JobLineItem[]
+  wallProposals TakeoffWallProposal[]
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  @@index([jobId, sortOrder])
+  @@index([companyId])
+  @@index([wallTypeId])
 }

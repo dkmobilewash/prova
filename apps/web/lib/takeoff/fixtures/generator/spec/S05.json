@@ -1,0 +1,709 @@
+{
+ "id": "S05",
+ "title": "L-SHAPED RESIDENCE",
+ "units": "imperial",
+ "scale_ratio": 64,
+ "scale_text": "3/16\" = 1'-0\"",
+ "scale_text_printed": "3/16\" = 1'-0\"",
+ "page": "ARCH_C",
+ "wall_style": "pairs",
+ "clutter": "medium",
+ "ceiling_height_ft": 9.0,
+ "walls": [
+  {
+   "id": "W1",
+   "a": [
+    0.0,
+    0.0
+   ],
+   "b": [
+    44.0,
+    0.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W2",
+   "a": [
+    44.0,
+    0.0
+   ],
+   "b": [
+    44.0,
+    20.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W3",
+   "a": [
+    44.0,
+    20.0
+   ],
+   "b": [
+    20.0,
+    20.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W4",
+   "a": [
+    20.0,
+    20.0
+   ],
+   "b": [
+    20.0,
+    44.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W5",
+   "a": [
+    20.0,
+    44.0
+   ],
+   "b": [
+    0.0,
+    44.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W6",
+   "a": [
+    0.0,
+    44.0
+   ],
+   "b": [
+    0.0,
+    0.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W7",
+   "a": [
+    24.0,
+    0.0
+   ],
+   "b": [
+    24.0,
+    20.0
+   ],
+   "type": "CMU-8",
+   "thickness_in": 8.0,
+   "exterior": false
+  },
+  {
+   "id": "W8",
+   "a": [
+    0.0,
+    20.0
+   ],
+   "b": [
+    20.0,
+    20.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W9",
+   "a": [
+    14.0,
+    0.0
+   ],
+   "b": [
+    14.0,
+    20.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W10",
+   "a": [
+    14.0,
+    12.0
+   ],
+   "b": [
+    24.0,
+    12.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W11",
+   "a": [
+    9.0,
+    20.0
+   ],
+   "b": [
+    9.0,
+    44.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W12",
+   "a": [
+    13.0,
+    20.0
+   ],
+   "b": [
+    13.0,
+    44.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W13",
+   "a": [
+    0.0,
+    32.0
+   ],
+   "b": [
+    9.0,
+    32.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W14",
+   "a": [
+    13.0,
+    32.0
+   ],
+   "b": [
+    20.0,
+    32.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  }
+ ],
+ "openings": [
+  {
+   "id": "D1",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W1",
+   "at_ft": 7.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D2",
+   "kind": "door",
+   "subtype": "cased",
+   "wall": "W9",
+   "at_ft": 6.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D3",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W10",
+   "at_ft": 5.0,
+   "width_ft": 2.5,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D4",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W7",
+   "at_ft": 16.0,
+   "width_ft": 3.0,
+   "side": -1,
+   "hinge": 0
+  },
+  {
+   "id": "D5",
+   "kind": "door",
+   "subtype": "overhead",
+   "wall": "W1",
+   "at_ft": 34.0,
+   "width_ft": 16.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D6",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W8",
+   "at_ft": 11.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D7",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W11",
+   "at_ft": 6.0,
+   "width_ft": 3.0,
+   "side": -1,
+   "hinge": 0
+  },
+  {
+   "id": "D8",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W11",
+   "at_ft": 18.0,
+   "width_ft": 3.0,
+   "side": -1,
+   "hinge": 0
+  },
+  {
+   "id": "D9",
+   "kind": "door",
+   "subtype": "sliding",
+   "wall": "W12",
+   "at_ft": 6.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D10",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W12",
+   "at_ft": 18.0,
+   "width_ft": 2.5,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN1",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W1",
+   "at_ft": 19.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN2",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W6",
+   "at_ft": 34.0,
+   "width_ft": 5.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN3",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W6",
+   "at_ft": 18.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN4",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W5",
+   "at_ft": 16.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN5",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W5",
+   "at_ft": 3.0,
+   "width_ft": 2.5,
+   "side": 1,
+   "hinge": 0
+  }
+ ],
+ "rooms": [
+  {
+   "id": "R101",
+   "label": "LIVING 101",
+   "name": "LIVING",
+   "number": "101",
+   "type": "living",
+   "label_at": [
+    7.0,
+    10.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R102",
+   "label": "KITCHEN 102",
+   "name": "KITCHEN",
+   "number": "102",
+   "type": "kitchen",
+   "label_at": [
+    19.0,
+    6.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R103",
+   "label": "LAUNDRY 103",
+   "name": "LAUNDRY",
+   "number": "103",
+   "type": "laundry",
+   "label_at": [
+    19.0,
+    16.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R104",
+   "label": "GARAGE 104",
+   "name": "GARAGE",
+   "number": "104",
+   "type": "garage",
+   "label_at": [
+    34.0,
+    10.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R105",
+   "label": "HALL 105",
+   "name": "HALL",
+   "number": "105",
+   "type": "hallway",
+   "label_at": [
+    11.0,
+    30.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R106",
+   "label": "BEDROOM 106",
+   "name": "BEDROOM",
+   "number": "106",
+   "type": "bedroom",
+   "label_at": [
+    4.5,
+    26.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R107",
+   "label": "BEDROOM 107",
+   "name": "BEDROOM",
+   "number": "107",
+   "type": "bedroom",
+   "label_at": [
+    4.5,
+    38.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R108",
+   "label": "CLOSET 108",
+   "name": "CLOSET",
+   "number": "108",
+   "type": "closet",
+   "label_at": [
+    16.5,
+    26.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R109",
+   "label": "BATH 109",
+   "name": "BATH",
+   "number": "109",
+   "type": "bathroom",
+   "label_at": [
+    16.5,
+    38.0
+   ],
+   "show_area": false
+  }
+ ],
+ "notes": "Non-rectangular L footprint with a reflex corner; an 8\" CMU wall between garage and house; a 16' overhead door.",
+ "scale_bar": false,
+ "grid": null,
+ "views": [],
+ "placement": {
+  "page_size_pt": [
+   1728,
+   1296
+  ],
+  "views": [
+   {
+    "name": "FLOOR PLAN",
+    "origin_pt": [
+     486.0,
+     370.0
+    ],
+    "pt_per_ft": 13.5,
+    "scale_ratio": 64,
+    "box_ft": [
+     -0.2708333333333333,
+     -0.2708333333333333,
+     44.270833333333336,
+     44.270833333333336
+    ]
+   }
+  ],
+  "dims": [
+   {
+    "p1_ft": [
+     -0.270833,
+     -0.2708333333333333
+    ],
+    "p2_ft": [
+     14.0,
+     -0.2708333333333333
+    ],
+    "text": "14'-3 1/4\"",
+    "distance_ft": 14.270833,
+    "line_pt": [
+     [
+      482.3437545,
+      333.94375
+     ],
+     [
+      675.0,
+      333.94375
+     ]
+    ],
+    "text_pt": [
+     578.67187725,
+     336.44375
+    ]
+   },
+   {
+    "p1_ft": [
+     14.0,
+     -0.2708333333333333
+    ],
+    "p2_ft": [
+     24.0,
+     -0.2708333333333333
+    ],
+    "text": "10'-0\"",
+    "distance_ft": 10.0,
+    "line_pt": [
+     [
+      675.0,
+      333.94375
+     ],
+     [
+      810.0,
+      333.94375
+     ]
+    ],
+    "text_pt": [
+     742.5,
+     336.44375
+    ]
+   },
+   {
+    "p1_ft": [
+     24.0,
+     -0.2708333333333333
+    ],
+    "p2_ft": [
+     44.270833,
+     -0.2708333333333333
+    ],
+    "text": "20'-3 1/4\"",
+    "distance_ft": 20.270833000000003,
+    "line_pt": [
+     [
+      810.0,
+      333.94375
+     ],
+     [
+      1083.6562455,
+      333.94375
+     ]
+    ],
+    "text_pt": [
+     946.82812275,
+     336.44375
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     -0.2708333333333333
+    ],
+    "p2_ft": [
+     44.270833333333336,
+     -0.2708333333333333
+    ],
+    "text": "44'-6 1/2\"",
+    "distance_ft": 44.54166666666667,
+    "line_pt": [
+     [
+      482.34375,
+      305.14375
+     ],
+     [
+      1083.65625,
+      305.14375
+     ]
+    ],
+    "text_pt": [
+     783.0,
+     307.64375
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     -0.270833
+    ],
+    "p2_ft": [
+     -0.2708333333333333,
+     20.0
+    ],
+    "text": "20'-3 1/4\"",
+    "distance_ft": 20.270833,
+    "line_pt": [
+     [
+      449.94375,
+      366.3437545
+     ],
+     [
+      449.94375,
+      640.0
+     ]
+    ],
+    "text_pt": [
+     447.44375,
+     503.17187724999997
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     20.0
+    ],
+    "p2_ft": [
+     -0.2708333333333333,
+     32.0
+    ],
+    "text": "12'-0\"",
+    "distance_ft": 12.0,
+    "line_pt": [
+     [
+      449.94375,
+      640.0
+     ],
+     [
+      449.94375,
+      802.0
+     ]
+    ],
+    "text_pt": [
+     447.44375,
+     721.0
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     32.0
+    ],
+    "p2_ft": [
+     -0.2708333333333333,
+     44.270833
+    ],
+    "text": "12'-3 1/4\"",
+    "distance_ft": 12.270833000000003,
+    "line_pt": [
+     [
+      449.94375,
+      802.0
+     ],
+     [
+      449.94375,
+      967.6562455000001
+     ]
+    ],
+    "text_pt": [
+     447.44375,
+     884.82812275
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     -0.2708333333333333
+    ],
+    "p2_ft": [
+     -0.2708333333333333,
+     44.270833333333336
+    ],
+    "text": "44'-6 1/2\"",
+    "distance_ft": 44.54166666666667,
+    "line_pt": [
+     [
+      421.14375,
+      366.34375
+     ],
+     [
+      421.14375,
+      967.65625
+     ]
+    ],
+    "text_pt": [
+     418.64375,
+     667.0
+    ]
+   }
+  ]
+ }
+}

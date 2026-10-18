@@ -91,7 +91,10 @@ describe("the scan reader can actually be reached", () => {
       resolve(process.cwd(), "app/(app)/jobs/[id]/(tabs)/takeoff/page.tsx"),
       "utf8",
     );
-    expect(page).toMatch(/scannedPages\s*=\s*sheetRows\.filter\(\(row\) => !row\.hasTextLayer\)/);
+    // The COMPUTATION is in the loader both takeoff pages share; the PROP
+    // below is on the page that passes it.
+    const loader = readFileSync(resolve(process.cwd(), "lib/takeoff/workspaceLoad.ts"), "utf8");
+    expect(loader).toMatch(/scannedPages\s*=\s*sheetRows\.filter\(\(row\) => !row\.hasTextLayer\)/);
     expect(page).toMatch(/scannedPages=\{scannedPages\}/);
   });
 

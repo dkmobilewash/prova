@@ -465,6 +465,29 @@ model PlanSheetScaleReading {
   /// scales on it, has been read successfully and has nothing to offer.
   declineReason String?
 
+  /// THE SCALES CAPTIONED UNDER EACH DRAWING, when the sheet carries more than
+  /// one of them.
+  ///
+  /// `{ "views": [{ name, scaleName, feetPerInch, from, to, fromY, toY }] }`,
+  /// the regions in page-WIDTH units like every other box in this schema.
+  ///
+  /// WHY A COLUMN AND NOT A ROW PER VIEW. The obvious shape is to relax
+  /// `@@unique([planId, pageNumber])` and write one reading per view. That
+  /// migration is not additive in the way that matters: `saveScaleReading`
+  /// upserts THROUGH that constraint, so for the two or three minutes between
+  /// the migration landing and the new build going live, the running build
+  /// would be upserting through an index that no longer exists. AUDIT.md
+  /// records the one time that gap was crossed carelessly and what it cost.
+  ///
+  /// A nullable column is invisible to the old build and needs no second PR.
+  /// Nothing queries inside it — the viewer reads a page's views whole — so the
+  /// usual argument against JSON does not apply here.
+  ///
+  /// NULL MEANS "NOT A MULTI-SCALE SHEET", and it is the ordinary case: a sheet
+  /// whose dimensions or printed scale answered has nothing to put here, and so
+  /// does a sheet with one drawing on it.
+  viewScales Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

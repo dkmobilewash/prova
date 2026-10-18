@@ -270,13 +270,52 @@ function runsFromStrokes(
  * contributor's thickness, which assumes only that a wall is as long as the
  * longest evidence for it.
  */
+/**
+ * The shortest piece worth offering to the merge, in feet.
+ *
+ * Not a wall — a wall still has to clear `minLengthFeet` once the pieces are
+ * joined. This is only the floor on what enters the pairer at all, and it is
+ * here to keep a sheet's jamb lines, leader ticks and hatch strokes from
+ * becoming candidates: the pairing is O(n squared), so the count matters as
+ * much as the noise.
+ *
+ * Six inches, because the smallest thing that is genuinely part of a wall is a
+ * return beside a door, and nothing drawn shorter than half a foot of building
+ * is a piece of wall at any scale this app reads.
+ */
+const FRAGMENT_FLOOR_FEET = 0.5;
+
+/** The default a merged run must clear to be a wall, mirroring `DEFAULTS`
+ *  in `wallVectors.ts` — imported rather than duplicated would be a cycle, so
+ *  it is pinned by a test instead. */
+const WALL_MIN_LENGTH_FEET = 2;
+
 export function wallsFromBothEngines(
   segments: readonly StrokeSegment[],
   widthUnits: number,
   heightUnits: number,
   options: WallFinderOptions & { gridCap?: number; closeOpenings?: boolean },
 ): WallCandidate[] {
-  const paired = wallsFromStrokes(segments, options);
+  // ── THE MINIMUM LENGTH IS ABOUT A WALL, AND A FRAGMENT IS NOT ONE YET ──
+  //
+  // `wallFromPair`'s rule 4 refuses a pair under `minLengthFeet` — "long
+  // enough to be a wall rather than a jamb, a hatch stroke or a leader" — and
+  // that is the right question asked a stage too early. A wall interrupted by
+  // two doors arrives as three pieces, and the pieces between them can each be
+  // shorter than the wall's own floor:
+  //
+  //   S10's W7 is 12 ft with two 2.5 ft doors, so its pieces are 1.75, 3.5 and
+  //   1.75 ft. Both 1.75s fell under the 2 ft floor, never became candidates,
+  //   and so were never offered to `mergeWalls` — which would have rejoined
+  //   all three across the doorways. The sheet reported 3.5 ft of a 12 ft wall.
+  //
+  // So the floor moves AFTER the merge, where a run is a whole wall. A piece
+  // still has to clear `FRAGMENT_FLOOR_FEET` to be considered at all, which
+  // keeps the pairer from drowning in jamb-sized noise; what changes is that
+  // clearing it no longer means being sold as a wall on its own.
+  const paired = wallsFromStrokes(segments, { ...options, minLengthFeet: FRAGMENT_FLOOR_FEET });
   const rooms = wallRunsFromStrokes(segments, widthUnits, heightUnits, options);
-  return mergeWalls([...paired, ...rooms], options.feetPerPoint);
+  const merged = mergeWalls([...paired, ...rooms], options.feetPerPoint);
+  const floor = options.minLengthFeet ?? WALL_MIN_LENGTH_FEET;
+  return merged.filter((wall) => wall.lengthFeet >= floor);
 }

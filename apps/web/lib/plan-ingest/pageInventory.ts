@@ -3,6 +3,8 @@ import { readPlanBytes } from "./planBytes";
 import { hasTextLayer, openPlanPdf, titleBlockText, type PlanPdf, type PlanPageText } from "./planPdf";
 import { dimensionLabels, metricDimensionLabels } from "./dimensionLabels";
 import { readSheetScale } from "../takeoff/scaleFromDimensions";
+import { sheetScale, type StoredViewScales } from "../takeoff/sheetScale";
+import type { StrokeSegment } from "../takeoff/wallVectors";
 import { scaleFromPrinted } from "../takeoff/scaleFromPrinted";
 import { printedScalesOnPage } from "../takeoff/scaleAudit";
 import type { StageCtx, StageWork } from "./stages";
@@ -62,6 +64,14 @@ export type ScaleReadingRow = {
    * line too (the sheet's own width), so it has to travel explicitly.
    */
   source: string;
+  /**
+   * The scales captioned under each drawing, for a sheet carrying several at
+   * several scales — the case `scaleFromPrinted` refuses, because it cannot
+   * tell which drawing a scale belongs to when there is more than one.
+   *
+   * Undefined on every ordinary sheet, which is most of them.
+   */
+  viewScales?: StoredViewScales;
   /** In page-width units — `sheet-geometry.ts`'s box, so the prefill is a copy
    *  rather than a conversion. */
   x1: number | null;
@@ -280,6 +290,34 @@ async function readScaleFromSheet(
           // as "measured and perfect".
           inheritedError: null,
           declineReason: null,
+        };
+      }
+      // ── AND THE SHEET THAT CARRIES SEVERAL DRAWINGS AT SEVERAL SCALES ──
+      //
+      // Which is exactly what the step above refuses: `scaleFromPrinted`
+      // declines a page with MORE THAN ONE printed scale on it, because it
+      // cannot tell which drawing each belongs to. Reading them per VIEW is
+      // how it can — each caption is read against the region its drawing
+      // occupies, so the scales stop competing.
+      //
+      // The sheet itself still has NO scale, and that is recorded honestly: a
+      // page-wide calibration would be wrong for every drawing but one. What
+      // is stored is the per-view answer, for the workspace to offer.
+      const perView = sheetScale({
+        textItems: page.items,
+        segments: strokes.segments as StrokeSegment[],
+        pageSize: { widthPt: page.widthPt, heightPt: page.heightPt },
+        fromDimensions: { ok: false, reason: verdict.reason },
+        fromPrinted: null,
+      });
+      if (perView.kind === "VIEWS") {
+        return {
+          ...empty,
+          consideredCount: verdict.considered,
+          viewScales: { views: perView.views },
+          declineReason:
+            `This sheet carries ${perView.views.length} drawings at their own scales, so there is ` +
+            `no one scale for the page. Each drawing can be measured at its own.`,
         };
       }
       return { ...empty, consideredCount: verdict.considered, declineReason: verdict.reason };

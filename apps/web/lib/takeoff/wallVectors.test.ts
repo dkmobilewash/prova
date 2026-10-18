@@ -372,21 +372,44 @@ describe("keeping only the walls in the building", () => {
     expect(wallsInTheBuilding([], FOOT)).toEqual([]);
   });
 
-  it("REFUSES A SHEET WHOSE BIGGEST GROUP IS A BOX, rather than offering it", () => {
-    // Found by looking at a real roof/equipment sheet: the plan yielded almost
-    // no wall, so the biggest group was the TITLE BLOCK — four runs, 64ft, a
-    // rectangle in the corner offered to an estimator as the walls of a
-    // building. The numbers looked unremarkable; only the picture showed it.
-    const titleBlock = [at(300, 0, 340, 0), at(340, 0, 340, 20), at(300, 20, 340, 20), at(300, 0, 300, 20)];
-    expect(wallsInTheBuilding(titleBlock, FOOT)).toEqual([]);
+  it("KEEPS A FOUR-RUN GROUP, because a one-room building is four runs", () => {
+    // ── THIS TEST USED TO ASSERT THE OPPOSITE, AND IT WAS RIGHT TO ──
+    //
+    // It read: "REFUSES A SHEET WHOSE BIGGEST GROUP IS A BOX". The reason was
+    // real — on a roof/equipment sheet the biggest group was the TITLE BLOCK,
+    // four runs, 64 ft, a rectangle in the corner offered to an estimator as
+    // the walls of a building, and only the picture showed it.
+    //
+    // The rule it bought was `best.length < NOT_A_BOX ? [] : best`, and that
+    // count could not tell a title block from a BUILDING WITH ONE ROOM,
+    // because both are four runs. It discarded S01 (a studio office), S10 (a
+    // cottage) and S11 (a guest house) — ordinary plans, thin double-line
+    // walls, perfectly axis-aligned — and returned zero feet on all three.
+    //
+    // The title block is now removed before this function is reached:
+    // `findWallsOnSheet` runs `wallsNotLettering`, `wallsNotTheSheetBorder`
+    // and `wallsNotTheScaleBar` FIRST. That asks what the geometry IS instead
+    // of how much of it there is, and it costs no buildings. The ordering is
+    // pinned in `findWallsOnSheet`'s own tests; what belongs here is that no
+    // size is refused.
+    const oneRoom = [at(300, 0, 340, 0), at(340, 0, 340, 20), at(300, 20, 340, 20), at(300, 0, 300, 20)];
+    expect(wallsInTheBuilding(oneRoom, FOOT)).toHaveLength(4);
   });
 
-  it("still returns a real plan, which is an order of magnitude bigger", () => {
-    // Real floor plans measured here returned 38, 58, 68, 230, 295 and 453
-    // runs. The gap between a box and a plan is not a margin, so this does not
-    // have to be a finely judged number to sit inside it.
+  it("still returns a large plan unchanged", () => {
     const plan = Array.from({ length: NOT_A_BOX + 2 }, (_, i) => at(0, i * 10, 40, i * 10));
     expect(wallsInTheBuilding(plan, FOOT)).toHaveLength(NOT_A_BOX + 2);
+  });
+
+  it("KEEPS THE BIGGEST GROUP AND ONLY THAT, which is the job it does have", () => {
+    // Two separate clusters far apart: the bigger by footage wins. This is the
+    // part of the function that was never in question and must survive the
+    // threshold being removed.
+    const near = [at(0, 0, 40, 0), at(0, 10, 40, 10)];
+    const far = [at(5000, 0, 5010, 0)];
+    const kept = wallsInTheBuilding([...near, ...far], FOOT);
+    expect(kept).toHaveLength(2);
+    expect(kept.every((w) => w.x1 < 1000)).toBe(true);
   });
 
   it("uses a distance wide enough for a corridor and far short of a title block", () => {
@@ -803,8 +826,9 @@ describe("what the dedup must NOT collapse", () => {
 /**
  * ── A CORRIDOR'S TWO SIDES ARE NOT THE SAME LENGTH ──
  *
- * `MAX_FACE_LENGTH_RATIO` was 3, and its own comment named the case it then
- * rejected: "a wall whose far end is interrupted by a doorway is drawn as a
+ * `MAX_FACE_LENGTH_RATIO` was 3 — the gate is gone entirely as of 2026-10-16,
+ * and this case is why it kept being loosened rather than removed. Its own
+ * comment named the case it then rejected: "a wall whose far end is interrupted by a doorway is drawn as a
  * long face and a short one". A corridor is that shape at its worst — one side
  * runs continuously, the other is cut into pieces by every door off it.
  *
@@ -856,12 +880,31 @@ describe("two faces of very different lengths", () => {
     expect(wallFromPair(border, titleBlock, opts), "the border paired with the title block").toBeNull();
   });
 
-  it("refuses a ratio just past the limit, so the bound is real and not decorative", () => {
-    const a = face(0, 10, 0);
-    const beyond = face(0, 10 * 5 + 1, 0.406);
-    expect(wallFromPair(beyond, a, opts)).toBeNull();
-    const within = face(0, 10 * 5 - 1, 0.406);
-    expect(wallFromPair(within, a, opts)).not.toBeNull();
+  it("STILL REFUSES THE PAIR RULE 5 WAS WRITTEN FOR, now on rule 6", () => {
+    // The sheet border against the title-block box: the 20 ft of phantom on
+    // every clean sheet that rule 5 was added for, and the thing that had to
+    // keep working when it was removed for not being scale-free.
+    //
+    // 2592pt of border and 180pt of box, 10pt apart. Their raw ratio is 14.4,
+    // which is what rule 5 read. What rule 6 reads is that the border
+    // overhangs the box by 134 ft at EACH end against a 20 ft face — and
+    // overhanging at BOTH ends is the thing no wall does, because the only
+    // legitimate reason a face outruns its partner is a corner and a corner
+    // overruns by a wall thickness.
+    const border = face(0, 2592 / 9, 0);
+    const titleBlock = face(1206 / 9, 180 / 9, 0.406);
+    expect(wallFromPair(border, titleBlock, opts), "the border phantom is back").toBeNull();
+    expect(wallFromPair(titleBlock, border, opts), "and in the other order").toBeNull();
+  });
+
+  it("and accepts a corner, where a face outruns its partner by ONE THICKNESS", () => {
+    // The other half, without which the test above is satisfied by refusing
+    // everything. This is the case a raw-length gate kept confusing with the
+    // border: an outer face is longer than its inner face at every corner in
+    // every building, by the thickness of the wall it turns into.
+    const inner = face(0, 20, 0);
+    const outer = face(-0.406, 20 + 0.406 * 2, 0.406);
+    expect(wallFromPair(outer, inner, opts), "a corner was refused").not.toBeNull();
   });
 
   it("keeps pairing two faces of the same length, which is most walls", () => {
@@ -1345,5 +1388,98 @@ describe("joining the pieces of a face", () => {
     // 6.625in is ON this schedule deliberately: the schedule cannot rescue this
     // case, so the test cannot be passing because of #751's preference.
     expect(thicknesses).not.toContain(6.63);
+  });
+});
+
+/**
+ * ── THE SERIES RULE HAD NO TEST, AND THAT IS HOW IT COST 22 FEET ──
+ *
+ * `inAHatchSeries` is the discriminator between "two faces of a wall" and
+ * "three strokes of a fill", and the whole suite exercised it only through a
+ * thickness case ("two lines a HATCH apart"), which asks a different question.
+ * So a change to the series rule could be made with every test green.
+ *
+ * At 1/8" = 1'-0" with `feetPerPoint` 1/9: a 4.5in partition is 3.375pt
+ * between faces, and a foot of building is 9pt.
+ */
+describe("a series is strokes that look alike, not merely strokes nearby", () => {
+  const STEP = 3.375; // 4.5in between the faces of a partition
+  const LONG = 17.5 * 9; // a 17.5 ft wall
+
+  it("STILL REFUSES GENUINE HATCHING — the thing this rule is for", () => {
+    // Machine-generated fill: a constant pitch, and every stroke the same
+    // length as its neighbours. Nothing here is a wall and nothing may be
+    // reported as one.
+    const fill = Array.from({ length: 6 }, (_, i) => h(100, 500 + i * STEP, LONG));
+    expect(wallsFromStrokes(fill, EIGHTH), "hatching was sold as wall").toEqual([]);
+  });
+
+  it("KEEPS A WALL WITH A SHORT FIXTURE LINE BESIDE IT — S09's 22 ft", () => {
+    // The hall's south partition, and a 2.5 ft fixture in the room above it.
+    // The fixture sits 0.70 ft away against a 0.375 ft step — 1.84 of them,
+    // which rounds to 2 inside `SERIES_PITCH_TOLERANCE`, so the pitch test
+    // alone reads three strokes at a constant pitch and throws the wall away.
+    const faces = [h(100, 500, LONG), h(100, 500 + STEP, LONG)];
+    const fixture = h(140, 500 - 1.84 * STEP, 2.5 * 9);
+    const walls = wallsFromStrokes([...faces, fixture], EIGHTH);
+    expect(walls, "a 2.5 ft fixture suppressed a 17.5 ft wall").toHaveLength(1);
+    expect(walls[0].thicknessFeet * 12).toBeCloseTo(4.5, 1);
+  });
+
+  it("and finds that wall identically when the fixture is not there", () => {
+    // The control. Without it the case above proves only that SOMETHING was
+    // found, not that the fixture stopped mattering.
+    const walls = wallsFromStrokes([h(100, 500, LONG), h(100, 500 + STEP, LONG)], EIGHTH);
+    expect(walls).toHaveLength(1);
+    expect(walls[0].lengthFeet).toBeCloseTo(17.5, 1);
+  });
+
+  it("KEEPS A WALL WITH A DIMENSION STRING BELOW IT — S17's whole south side", () => {
+    // The long end of the same defect. A dimension string runs the full side
+    // of a building, parallel to the wall it measures, at a round offset — and
+    // a round offset lands on a whole number of steps often enough to matter.
+    //
+    // S17's south wall is 300mm, so its faces are 0.98 ft apart, and its
+    // dimension line sits 1.88 ft below the outer face: 1.918 steps, which is
+    // 0.08 from a whole number and well inside the pitch tolerance. The wall
+    // was discarded, and the GLAZING LINES of its two windows then paired with
+    // each other — the sheet reported the windows as the wall, 16.4 ft of 49.2
+    // at the wrong thickness.
+    const WALL = 0.98 * 9; // a 300mm wall's two faces, in points at 1/8"
+    const faces = [h(100, 500, 17.6 * 9), h(100, 500 + WALL, 17.6 * 9)];
+    const dimension = h(60, 500 - 1.918 * WALL, 50 * 9);
+    const walls = wallsFromStrokes([...faces, dimension], EIGHTH);
+    expect(walls, "a dimension string suppressed the wall it measures").toHaveLength(1);
+    expect(walls[0].thicknessFeet * 12).toBeCloseTo(11.8, 0);
+  });
+
+  it("a dimension string is not a series member, however close its pitch", () => {
+    // The control for the case above: without the dimension line the wall is
+    // found identically, so the assertion is about the line and not about the
+    // faces happening to pair.
+    const WALL = 0.98 * 9;
+    const walls = wallsFromStrokes([h(100, 500, 17.6 * 9), h(100, 500 + WALL, 17.6 * 9)], EIGHTH);
+    expect(walls).toHaveLength(1);
+    expect(walls[0].lengthFeet).toBeCloseTo(17.6, 1);
+  });
+
+  it("A FIVE-STROKE FILL STILL LEAKS ONE WALL, and that is OLDER than these rules", () => {
+    // Six strokes are refused outright; five leave one pair standing. The
+    // cause is the pairer taking every OTHER stroke: such a pair has one
+    // neighbour at a whole number of its own steps and, in a five-stroke
+    // fill, only TWO at a half step — one short of what this file requires
+    // before calling a half-pitch pattern a fill.
+    //
+    // MEASURED, not assumed: requiring two instead of three closes this and
+    // costs six walls on the bench, 111 missed to 117, for no gain on the
+    // twenty. So the leak is left where it was found and recorded here.
+    //
+    // This case is UNCHANGED by the member-count and length rules around it —
+    // proved by setting each of their constants to its disabling value, where
+    // this stayed at one wall throughout.
+    const five = Array.from({ length: 5 }, (_, i) => h(100, 500 + i * STEP, LONG));
+    expect(wallsFromStrokes(five, EIGHTH), "a five-stroke fill now behaves differently").toHaveLength(1);
+    const six = Array.from({ length: 6 }, (_, i) => h(100, 500 + i * STEP, LONG));
+    expect(wallsFromStrokes(six, EIGHTH), "a six-stroke fill leaked a wall").toEqual([]);
   });
 });

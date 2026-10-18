@@ -1,0 +1,8 @@
+{
+ "id": "S18",
+ "raster_of": "S02",
+ "dpi": 300,
+ "rotate_deg": 0.3,
+ "noise": 0.0,
+ "notes": "Raster copy of S02 at 300 DPI, nearly clean (0.3 degree skew). Image only, no text layer."
+}

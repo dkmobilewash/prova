@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { sheetSuitability, duplicateWallsCaution } from "./sheetSuitability";
+import {
+  cautionToShow,
+  multiScaleCaution,
+  sheetSuitability,
+  duplicateWallsCaution,
+  viewsMeasuredCaution,
+} from "./sheetSuitability";
 
 /**
  * THE DEFECT THIS EXISTS FOR, IN NUMBERS.
@@ -167,5 +173,112 @@ describe("the answer key's own pages, by sheet", () => {
     ] as const) {
       expect(sheetSuitability(number, title, pageType).likelyDuplicate, number).toBe(true);
     }
+  });
+});
+
+/**
+ * ── THE SHEET THAT CARRIES TWO DRAWINGS ──
+ *
+ * Every assertion here is about a sentence an estimator reads, because that is
+ * the whole of what this does. The measurement is unchanged and correct — it is
+ * right about ONE drawing — and the defect is that nothing said which one.
+ */
+describe("more than one scale on a sheet", () => {
+  const TWO = ['1/4" = 1\'-0"', '1/2" = 1\'-0"'];
+
+  it("SAYS NOTHING ON AN ORDINARY SHEET, which is 19 of the 20 fixtures", () => {
+    // The cost of a false caution is that the real one stops being read, so
+    // this is the assertion that matters most. Measured across the fixture set
+    // with `printedScalesOnPage`: S15 is the only sheet printing two, and no
+    // other sheet produces more than one.
+    expect(multiScaleCaution([], '1/4" = 1\'-0"')).toBe("");
+    expect(multiScaleCaution(['1/4" = 1\'-0"'], '1/4" = 1\'-0"')).toBe("");
+  });
+
+  it("does not count the SAME scale printed twice as two drawings", () => {
+    // A plan captioned under the drawing AND in the title block is one scale
+    // written down twice, which is ordinary and must not caution.
+    expect(multiScaleCaution(['1/4" = 1\'-0"', '1/4" = 1\'-0"'], '1/4" = 1\'-0"')).toBe("");
+    expect(multiScaleCaution(['1/4" = 1\'-0" ', ' 1/4" = 1\'-0"', ""], '1/4" = 1\'-0"')).toBe("");
+  });
+
+  it("NAMES BOTH SCALES AND THE ONE IN USE, because that is what can be checked", () => {
+    const said = multiScaleCaution(TWO, '1/4" = 1\'-0"');
+    expect(said).toContain('1/4" = 1\'-0"');
+    expect(said).toContain('1/2" = 1\'-0"');
+    // The one in use is named as the one measured at, not merely listed.
+    expect(said).toMatch(/measured at 1\/4" = 1'-0"/);
+    // And the OTHER is named as the risk, which is the actionable half.
+    expect(said).toMatch(/off 1\/2" = 1'-0" would be out/);
+  });
+
+  it("still warns when the scale in use is not one of the printed ones", () => {
+    // A calibration set by clicking a known distance has no printed name to
+    // match. The sheet still carries two drawings, so the caution stands — it
+    // just cannot say which one was measured.
+    const said = multiScaleCaution(TWO, null);
+    expect(said).not.toBe("");
+    expect(said).toContain("measured at a single scale");
+  });
+
+  it("OUTRANKS BOTH OTHER CAUTIONS, and the precedence is the point", () => {
+    // A wrong scale makes every number meaningless by a factor and looks like a
+    // right one; a duplicate-walls caution is a correct quantity in the wrong
+    // place. One slot, so the more expensive mistake takes it.
+    expect(cautionToShow("from the proposal", "from the drawing", "two scales")).toBe("two scales");
+    expect(cautionToShow(undefined, "from the drawing", "two scales")).toBe("two scales");
+    expect(cautionToShow("   ", "   ", "two scales")).toBe("two scales");
+  });
+
+  it("GIVES THE SLOT BACK when there is no scale caution — nothing already shown is lost", () => {
+    // The mutation this is written against is "make it always win": an empty
+    // scale caution must leave the existing precedence exactly as it was.
+    expect(cautionToShow("from the proposal", "from the drawing", "")).toBe("from the proposal");
+    expect(cautionToShow(undefined, "from the drawing", undefined)).toBe("from the drawing");
+    expect(cautionToShow(undefined, undefined, undefined)).toBe("");
+  });
+});
+
+describe("nothing is excluded silently", () => {
+  const plan = { name: "ENLARGED RESTROOM PLAN", scaleName: '1/4" = 1\'-0"' };
+  const stair = { name: "ENLARGED STAIR PLAN", scaleName: '1/2" = 1\'-0"', lengthFeet: 352 };
+  const detail = { name: "HEAD OF WALL DETAIL", reason: "not to scale, not measured" };
+
+  it("NAMES AN EXCLUDED DRAWING AND SAYS WHY", () => {
+    // Diego's rule, 2026-10-16. A sheet with three drawings reported two and
+    // said nothing about the third, and an estimator cannot check an omission
+    // nobody mentioned.
+    const said = viewsMeasuredCaution(plan, [stair], [detail]);
+    expect(said).toContain("HEAD OF WALL DETAIL");
+    expect(said).toContain("not to scale, not measured");
+    expect(said).toContain("Left out of the quantities");
+  });
+
+  it("SPEAKS UP EVEN WHEN THE EXCLUDED ONE IS THE ONLY OTHER DRAWING", () => {
+    // The case the first version skipped: it returned early when there was no
+    // second MEASURED view, so a plan beside a single NTS detail said nothing
+    // at all. That is exactly the sheet the rule is for.
+    const said = viewsMeasuredCaution(plan, [], [detail]);
+    expect(said).not.toBe("");
+    expect(said).toContain("HEAD OF WALL DETAIL");
+    expect(said).toContain("not to scale");
+  });
+
+  it("still reports a measured view with its own figure", () => {
+    const said = viewsMeasuredCaution(plan, [stair], []);
+    expect(said).toContain("352 ft");
+    expect(said).toContain("NOT included");
+    expect(said).not.toContain("Left out of the quantities");
+  });
+
+  it("says nothing at all when there is one drawing and nothing left out", () => {
+    expect(viewsMeasuredCaution(plan, [], [])).toBe("");
+    expect(viewsMeasuredCaution(null, [stair], [detail])).toBe("");
+  });
+
+  it("lists EVERY excluded drawing, not just the first", () => {
+    const said = viewsMeasuredCaution(plan, [], [detail, { name: "JAMB DETAIL", reason: "not to scale, not measured" }]);
+    expect(said).toContain("HEAD OF WALL DETAIL");
+    expect(said).toContain("JAMB DETAIL");
   });
 });

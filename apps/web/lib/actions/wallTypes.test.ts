@@ -39,6 +39,16 @@ function matches(row: Row, where: Record<string, unknown> = {}): boolean {
       const parent = db[key === "wallType" ? "wallType" : key]?.find((r) => r.id === row[`${key}Id`]);
       return parent ? matches(parent, cond) : false;
     }
+    // ── AN UNSET NULLABLE COLUMN READS AS NULL, NOT AS undefined ──
+    //
+    // Which is what the real client does: a row created without
+    // `takeoffItemId` comes back with it `null`, so `where: { x: null }`
+    // matches. This fake stored `undefined` and the strict compare missed
+    // every such row — so when `syncWallScheduleLines` grew a
+    // `takeoffItemId: null` filter (to stop it retiring the takeoff
+    // expander's lines) it read back NOTHING and created duplicates, and
+    // three tests here went red against correct code.
+    if (value === null) return row[key] === null || row[key] === undefined;
     return row[key] === value;
   });
 }
@@ -306,14 +316,26 @@ describe("who may do what", () => {
 });
 
 describe("starter wall types", () => {
-  it("adds W1 and W2, unpriced and without crew rates, and not twice", async () => {
+  it("adds the starter library, unpriced and without crew rates, and not twice", async () => {
+    // TEN ENTRIES NOW, NOT TWO. The set grew in Phase 3 to cover the trades
+    // the workspace measures — ceilings, flooring, painting, slabs, footings
+    // — which need the bases a wall run cannot produce. Written out rather
+    // than derived from STARTER_TYPES, so the list and the test have to
+    // agree: a census checked against itself asserts nothing.
     db.wallType = db.wallType.filter((t) => t.companyId !== "co_1");
     db.wallTypeComponent = [];
     const { addStarterWallTypes } = await actions();
-    expect(await addStarterWallTypes()).toEqual({ ok: true, value: { added: ["W1", "W2"] } });
+    const expected = ["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "FLR1", "PT1", "SLB1", "FTG1"];
+    expect(await addStarterWallTypes()).toEqual({ ok: true, value: { added: expected } });
     const mine = db.wallType.filter((t) => t.companyId === "co_1");
-    expect(mine.map((t) => t.code)).toEqual(["W1", "W2"]);
+    expect(mine.map((t) => t.code)).toEqual(expected);
+
+    // UNPRICED, every one. A seeded price is a number that looks researched,
+    // gets bid, and is nobody's — so a starter part makes an unpriced line
+    // the estimator fills in from their own supplier.
     expect(db.wallTypeComponent.every((c) => c.catalogEntryId == null && c.productionRate == null)).toBe(true);
+    expect(db.wallTypeComponent.length).toBeGreaterThan(expected.length);
+
     expect(await addStarterWallTypes()).toMatchObject({ ok: false });
   });
 });

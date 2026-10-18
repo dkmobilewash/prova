@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@prova/db";
+import { loadTakeoffWorkspace } from "@/lib/takeoff/workspaceLoad";
 
 import { can } from "@/lib/permissions";
 import { NoAccess } from "@/components/NoAccess";
@@ -132,154 +133,10 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   // The filter used to be in the query, and the wall finder inherited it. That
   // is why reading School-01's partition schedule produced ten wall types the
   // finder could not see — see `MatchableWallType` for the measurement.
-  const allWallTypes = await prisma.wallType.findMany({
-    where: { companyId: company.id },
-    orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
-    select: {
-      id: true,
-      code: true,
-      name: true,
-      defaultHeightFt: true,
-      sides: true,
-      thicknessIn: true,
-      _count: { select: { components: true } },
-    },
-  });
-  // POSTING IS STILL GATED ON LAYERS, and this is the gate — unchanged in
-  // substance, moved so that naming is not gated with it. A type with no
-  // components produces no line items, so a measurement posted against one adds
-  // nothing to the estimate and loses the quantities it replaced.
-  const postableWallTypes = allWallTypes.filter((type) => type._count.components > 0);
-
-  const plan = await prisma.takeoffPlan.findFirst({
-    where: { jobId: job.id, companyId: company.id },
-    orderBy: { createdAt: "desc" },
-    include: {
-      pages: {
-        orderBy: { pageNumber: "asc" },
-        include: {
-          calibrations: { orderBy: { createdAt: "desc" } },
-          /**
-           * THE WALLS FOUND WHEN THE SCALE WAS SAVED. Newest first, and
-           * filtered to the CURRENT calibration below rather than here —
-           * `calibrations[0]` is only known once this query has returned.
-           *
-           * That filter is the whole invalidation story: a recalibration
-           * inserts a new calibration, so proposals found under the old one
-           * are simply never read again. No staleness flag, no sweep.
-           */
-          wallProposals: { orderBy: { createdAt: "desc" } },
-          measurements: {
-            orderBy: { createdAt: "asc" },
-            include: { calibration: true },
-          },
-        },
-      },
-    },
-  });
-
-  // THE PRINTED SCALE PER PAGE, newest proposal first. One query for the plan
-  // rather than one per page, and the newest row wins because there is no
-  // `acceptedScale` to prefer — accepting a sheet writes only its number and
-  // title, by design, so the proposal is the only record of what was printed.
-  //
-  // Scoped through `plan.id`, which the query above already scoped to this
-  // company; a proposal carries no companyId of its own.
-  // KEYED BY PAGE NUMBER, NOT HUNG OFF A SHEET ROW — and that is the whole
-  // correction. This used to be folded into each `PlanSheet`, which is built
-  // from a `TakeoffPlanPage`, and the only thing that creates one of those is
-  // saving a calibration. So on the first calibration of a sheet there was no
-  // row, no `PlanSheet`, and no printed scale — null exactly when it mattered.
-  // A page number exists whether or not anybody has calibrated it.
-  const printedScaleByPage: PrintedScaleByPage = plan
-    ? printedScalesFromProposals(
-        await prisma.planSheetProposal.findMany({
-          where: { planId: plan.id },
-          // Newest first — `printedScalesFromProposals` keeps the first it sees
-          // per page and the ordering is what makes that the current reading.
-          orderBy: { createdAt: "desc" },
-          select: { pageNumber: true, proposedScale: true },
-        }),
-      )
-    : {};
-
-  // WHICH FLOOR EACH SHEET DRAWS, read off its own title. Keyed by page number
-  // for the same reason the printed scale above is — a `PlanSheet` row only
-  // exists once somebody has calibrated — and newest-first for the same reason
-  // too: `levelsByPage` keeps the first row it sees per page.
-  const levelByPage: Record<number, string> = {};
-  if (plan) {
-    const levels = levelsByPage(
-      await prisma.planSheetProposal.findMany({
-        where: { planId: plan.id },
-        orderBy: { createdAt: "desc" },
-        select: {
-          pageNumber: true,
-          proposedTitle: true,
-          acceptedTitle: true,
-          proposedPageType: true,
-        },
-      }),
-    );
-    for (const [pageNumber, level] of levels) levelByPage[pageNumber] = level.label;
-  }
-
-  // WHAT EACH SHEET SAID ABOUT ITS OWN SCALE, read off the dimensions printed on
-  // it by `PAGE_INVENTORY`. Keyed by page number for the same reason the printed
-  // scale above is: a `PlanSheet` row only exists once somebody has calibrated,
-  // so keying by sheet id would be null exactly when the prefill matters most —
-  // on the first calibration of a sheet.
-  const scaleReadingRows = plan
-    ? await prisma.planSheetScaleReading.findMany({
-        where: { planId: plan.id },
-        orderBy: { updatedAt: "desc" },
-        select: {
-          pageNumber: true,
-          scaleName: true,
-          x1: true,
-          y1: true,
-          x2: true,
-          y2: true,
-          declaredDistanceFeet: true,
-          declaredText: true,
-          agreedText: true,
-          consideredCount: true,
-          inheritedError: true,
-          source: true,
-          declineReason: true,
-        },
-      })
-    : [];
-  // ── EVERY SHEET'S OWN SIZE, SO A REDUCED PRINT CAN BE CAUGHT ──
-  //
-  // A half-size print carries the FULL-SIZE scale name in its title block, and
-  // taking that name at face value measures every length at half. The answer
-  // key's page 50 is exactly that — an 18in sheet in a 36in set with no
-  // dimensions of its own to catch it — and it scored 32%, worst of sixty.
-  //
-  // A sheet cannot tell on its own: a half-size ARCH D is exactly an ARCH B, a
-  // size drawings are genuinely issued at. The SET is what tells, so the widths
-  // of all its pages are needed together. `widthPt` has been stored per page
-  // since the inventory stage was written, so this is a second select on a table
-  // already being written, not new extraction. See `takeoff/reducedPrint.ts`.
-  const sheetWidthByPage: Record<number, number> = {};
-  if (plan) {
-    for (const sheet of await prisma.planSheetText.findMany({
-      where: { planId: plan.id },
-      select: { pageNumber: true, widthPt: true },
-    })) {
-      sheetWidthByPage[sheet.pageNumber] = sheet.widthPt;
-    }
-  }
-  const scalePrefillByPage: ScalePrefillByPage = scalePrefillsFromReadings(scaleReadingRows, sheetWidthByPage);
-  // THE SAME ROWS, ASKED THE OTHER QUESTION: why a sheet offered nothing. One
-  // query, two derivations — the reason is already on the row, and re-querying
-  // for it would be a second trip for data we are holding.
-  const scaleDeclineByPage: ScaleDeclineByPage = scaleDeclinesFromReadings(scaleReadingRows);
-
+  const loaded = await loadTakeoffWorkspace(company, job);
   const isEstimateStage = job.status === "ESTIMATE";
 
-  if (!plan) {
+  if (loaded === null) {
     return (
       <section className="flex flex-col gap-4">
         <Header jobId={job.id} />
@@ -297,200 +154,92 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
     );
   }
 
-  // DERIVED HERE, NOT STORED: which calibration is current, and therefore
-  // which measurements read at an older scale. Nothing on the row says so.
-  // WHAT READING THE SCHEDULES WILL COST, counted over the newest title-block
-  // proposal per page. The button says this number before anybody presses it,
-  // which is the house rule for every control that spends an allowance.
+  const {
+    plan,
+    sheets,
+    allWallTypes,
+    postableWallTypes,
+    printedScaleByPage,
+    scannedPages,
+    storedWallsByPage,
+    levelByPage,
+    scalePrefillByPage,
+    viewScalesByPage,
+    scaleDeclineByPage,
+    duplicateWallsByPage,
+    sheetLabelByPage,
+    sheetRows,
+    scheduleSheetCount,
+  } = loaded;
+
+
   /**
-   * WHICH SHEETS A WALL TAKEOFF WOULD DOUBLE-COUNT.
+   * How many sheets the index would have somebody look at: a number nobody has
+   * confirmed, or one that two sheets both claim.
    *
-   * Scored against a 60-page answer key: a THIRD of everything the wall finder
-   * reported was not a wall, and every phantom page was a mechanical plan, a
-   * reflected ceiling plan or an elevation — 13,767 ft invented. Those sheets
-   * carry the architectural walls repeated in grey, so the finder is right
-   * about the lines and they are still the same walls the A-101 already has.
-   *
-   * The evidence was already in the database. `proposedPageType` has held
-   * COVER/PLAN/ELEVATION/SECTION/DETAIL/SCHEDULE since the ingest was built and
-   * its schema comment says why: "'which pages are the schedules?' is the
-   * question the takeoff side needs answered". The takeoff side never asked.
-   *
-   * Read from the SAME rows the sheet review below uses, rather than queried
-   * again — one answer, one round trip.
+   * A DUPLICATE IS THE SHARPER OF THE TWO and is why this is in the summary
+   * rather than only inside. A set where A5.11 appears twice is a set nobody
+   * can navigate by number, and on a folded panel that fact would otherwise be
+   * invisible until somebody opened it.
    */
-  const sheetRows = isEstimateStage ? await sheetIndexFor(plan.id, company.id) : [];
-  /**
-   * WHICH PAGES ARE SCANS, straight off the ingest record.
-   *
-   * A scanned page has no text layer, which is the one thing that CANNOT be
-   * worked out from a `PlanSheet`: a sheet row only exists once somebody has
-   * saved a calibration, and a scan is precisely the page nobody can calibrate
-   * until its printed scale has been read off the picture.
-   *
-   * `sheetIndexFor` already selects `hasTextLayer`, so this is free.
-   */
-  const scannedPages = sheetRows.filter((row) => !row.hasTextLayer).map((row) => row.pageNumber);
-  const duplicateWallsByPage: Record<number, string> = {};
-  /**
-   * WHAT EACH SHEET IS CALLED, so the pager can be jumped to one.
-   *
-   * Measured before it was built: reaching `A-101` on a 52-sheet set took
-   * TWENTY presses of Next, and the pager reads "Sheet 23 of 52" — a position
-   * in the file, not the sheet's own number — so all twenty were blind. It was
-   * the largest single number in a nine-step press count of one real bid, and
-   * the only one that was pure navigation.
-   *
-   * NOTHING IS QUERIED FOR IT. These are the rows two lines above, which the
-   * sheet review already renders on this same page; the numbers were on screen
-   * and were not reachable. One more assignment in a loop that was already
-   * running is the whole server cost.
-   *
-   * AND IT LABELS NO QUANTITY, which is the distinction that makes this
-   * legitimate. `TakeoffPlanPage.label` is "TYPED, never parsed off the title
-   * block", because "a wrong one labels somebody's quantities with another
-   * floor's name" — that argument is about naming measurements and it stands.
-   * A jump target is not a name: nothing is stored, nothing is attached to a
-   * measurement, and the worst a wrong number can do is open the wrong sheet,
-   * which the estimator is looking straight at.
-   */
-  const sheetLabelByPage: Record<number, string> = {};
+  const seenNumbers = new Map<string, number>();
   for (const row of sheetRows) {
     const number = effectiveSheetNumber(row);
-    const title = effectiveTitle(row);
-    const caution = duplicateWallsCaution(
-      sheetSuitability(number, title, row.proposal?.pageType ?? null),
-      number,
-    );
-    if (caution) duplicateWallsByPage[row.pageNumber] = caution;
-    const label = sheetPickerLabel(number, title);
-    if (label !== null) sheetLabelByPage[row.pageNumber] = label;
+    if (number) seenNumbers.set(number, (seenNumbers.get(number) ?? 0) + 1);
   }
-
-  const scheduleSheetCount = await scheduleSheetCountFor(plan.id);
-
-  const sheets: PlanSheet[] = plan.pages.map((page) => {
-    const current = page.calibrations[0] ?? null;
-    // EVERY calibration on the sheet, not just the newest — the question
-    // "does this page carry two scales" cannot be asked of one row. The data
-    // has supported this since the FK was added; nothing ever read it.
-    const zones = zoneScales(
-      page.calibrations.map((c) => ({
-        id: c.id,
-        x1: c.x1,
-        y1: c.y1,
-        x2: c.x2,
-        y2: c.y2,
-        declaredDistanceFeet: c.declaredDistanceFeet.toNumber(),
-      })),
-      page.pageWidthPt,
-    );
-    const notices = zoneNotices(zones);
-    const measurements: PlanMeasurementRow[] = page.measurements.map((m) => ({
-      id: m.id,
-      kind: m.kind,
-      xs: m.xs,
-      ys: m.ys,
-      label: m.label,
-      packageLabel: m.packageLabel,
-      postedAt: m.postedAt ? m.postedAt.toISOString() : null,
-      calibration: {
-        x1: m.calibration.x1,
-        y1: m.calibration.y1,
-        x2: m.calibration.x2,
-        y2: m.calibration.y2,
-        declaredDistanceFeet: m.calibration.declaredDistanceFeet.toNumber(),
-      },
-      outOfDate: current !== null && m.calibrationId !== current.id,
-      scaleLabel: measurementScaleLabel(m.calibrationId, zones, notices),
-    }));
-    return {
-      id: page.id,
-      pageNumber: page.pageNumber,
-      label: page.label,
-      pageWidthPt: page.pageWidthPt,
-      calibration: current
-        ? {
-            id: current.id,
-            x1: current.x1,
-            y1: current.y1,
-            x2: current.x2,
-            y2: current.y2,
-            declaredDistanceFeet: current.declaredDistanceFeet.toNumber(),
-            // Provenance, not decoration — see `PlanViewerCalibration`.
-            note: current.note,
-          }
-        : null,
-      measurements,
-      zoneNotices: notices,
-    };
-  });
-
-  /**
-   * ── THE WALLS ALREADY FOUND, PER SHEET ──
-   *
-   * Detection runs when a calibration is saved, so these are usually waiting
-   * before anybody opens the sheet. Read here so the viewer can show them
-   * without a press.
-   *
-   * ONLY THE NEWEST RUN, AND ONLY UNDER THE CURRENT CALIBRATION. The rows are
-   * append-only — a second detection writes a second set rather than replacing
-   * one — so "newest `createdAt`" is what makes a re-run win, and the
-   * calibration filter is what makes a RECALIBRATION invalidate the lot for
-   * free.
-   *
-   * AND IT REFUSES THE WHOLE SHEET ON A SINGLE BAD ROW. `groupsFromProposals`
-   * returns null rather than a shorter list: a page showing three of its four
-   * groups looks exactly like a page that has three, and the estimator has no
-   * way to tell. Falling back to the Find the walls button is slow and honest.
-   */
-  const storedWallsByPage: Record<number, WallGroup[]> = {};
-  for (const page of plan.pages) {
-    const current = page.calibrations[0] ?? null;
-    if (!current) continue;
-    const feetPerUnit = feetPerPageWidth({
-      x1: current.x1,
-      y1: current.y1,
-      x2: current.x2,
-      y2: current.y2,
-      declaredDistanceFeet: current.declaredDistanceFeet.toNumber(),
-    });
-    if (feetPerUnit === null) continue;
-
-    const mine = page.wallProposals.filter((row) => row.calibrationId === current.id);
-    if (mine.length === 0) continue;
-    // One detection run writes every row at one timestamp, so the newest run is
-    // every row sharing the newest `createdAt`.
-    const newest = mine[0].createdAt.getTime();
-    const groups = groupsFromProposals(
-      mine
-        .filter((row) => row.createdAt.getTime() === newest)
-        .map((row) => ({
-          thicknessInches: row.thicknessInches,
-          source: row.source,
-          sourceLabel: row.sourceLabel,
-          namedCode: row.namedCode,
-          runs: row.runs,
-        })),
-      allWallTypes.map((type) => ({
-        id: type.id,
-        code: type.code,
-        name: type.name,
-        hasParts: type._count.components > 0,
-        thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
-      })),
-      feetPerUnit,
-    );
-    if (groups !== null && groups.length > 0) storedWallsByPage[page.pageNumber] = groups;
-  }
+  const indexNeedsAttention = sheetRows.filter((row) => {
+    const number = effectiveSheetNumber(row);
+    if (!number) return true;
+    if ((seenNumbers.get(number) ?? 0) > 1) return true;
+    return row.proposal?.status === "PROPOSED";
+  }).length;
 
   return (
     <section className="flex flex-col gap-4">
-      <Header jobId={job.id} />
+      <Header jobId={job.id} hasPlan />
       {/* ABOVE the measurements, for the reason the levelling caution sits
           above the quotes: it decides whether the numbers below mean
           anything. */}
       <TakeoffCurrencyBanner jobId={job.id} currency={currency} />
+
+      {/* ── THE DRAWING FIRST, 2026-10-16 ──
+          It used to be LAST, under the revision form, the ingest panel, the
+          sheet index and the schedule proposals. On a 55-sheet set that is the
+          whole index between somebody and the thing they came to look at, and
+          it was reported as exactly that: "way too much scrolling to get down
+          to the actual plan sheet display".
+          Everything below it is about the SET — which sheets there are, what
+          they are called, what has been read. Useful, and not what this tab is
+          for. */}
+      <TakeoffPlanViewer
+        duplicateWallsByPage={duplicateWallsByPage}
+        sheetLabelByPage={sheetLabelByPage}
+        jobId={job.id}
+        planId={plan.id}
+        sheets={sheets}
+        printedScaleByPage={printedScaleByPage}
+        scannedPages={scannedPages}
+        storedWallsByPage={storedWallsByPage}
+        scalePrefillByPage={scalePrefillByPage}
+        viewScalesByPage={viewScalesByPage}
+        scaleDeclineByPage={scaleDeclineByPage}
+        levelByPage={levelByPage}
+        // MATCHING ONLY. The viewer never picks a wall type — it reports which
+        // of these the DRAWING named beside a detected group. Already filtered
+        // to types with layers, so a match always produces line items.
+        // AND THE THICKNESS, which is what reaches the UNTAGGED walls: an
+        // architect tags representative walls, not every wall — 25-43% of the
+        // footage on a real sheet — so without it the majority of every
+        // drawing stays unpriced. Null where the company never recorded one,
+        // which the matcher reads as "cannot be matched by thickness".
+        wallTypes={allWallTypes.map((type) => ({
+          id: type.id,
+          code: type.code,
+          name: type.name,
+          hasParts: type._count.components > 0,
+          thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
+        }))}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-ink-body">
@@ -550,7 +299,28 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           all times rather than behind a condition: an empty index says so in one
           sentence, which is more useful than a section that appears from nowhere
           the first time a run finishes. */}
-      {isEstimateStage && <PlanSheetReview rows={sheetRows} planId={plan.id} />}
+      {/* ── THE INDEX, FOLDED AWAY ──
+          Fifty-five rows every time the tab opens, above the drawing, is a
+          wall. It is a <details> so it costs one line until somebody wants it,
+          and the summary carries the two numbers that would make them want it:
+          how many sheets there are and how many have something to check.
+          Native <details> rather than state: it works before hydration, it is
+          keyboard-operable for free, and the browser's own disclosure is what
+          a screen reader already announces. */}
+      {isEstimateStage && (
+        <details className="rounded-lg border border-line-card bg-surface" data-takeoff="sheet-index">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-ink-label">
+            Sheet index
+            <span className="ml-2 font-normal text-ink-muted">
+              {sheetRows.length} sheet{sheetRows.length === 1 ? "" : "s"}
+              {indexNeedsAttention > 0 ? ` · ${indexNeedsAttention} to check` : ""}
+            </span>
+          </summary>
+          <div className="px-4 pb-4">
+            <PlanSheetReview rows={sheetRows} planId={plan.id} />
+          </div>
+        </details>
+      )}
 
       {/* BELOW the sheet review, because the page types it shows are what decide
           which sheets have schedules at all. Silent until something has been
@@ -568,34 +338,6 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         />
       )}
 
-      <TakeoffPlanViewer
-        duplicateWallsByPage={duplicateWallsByPage}
-        sheetLabelByPage={sheetLabelByPage}
-        jobId={job.id}
-        planId={plan.id}
-        sheets={sheets}
-        printedScaleByPage={printedScaleByPage}
-        scannedPages={scannedPages}
-        storedWallsByPage={storedWallsByPage}
-        scalePrefillByPage={scalePrefillByPage}
-        scaleDeclineByPage={scaleDeclineByPage}
-        levelByPage={levelByPage}
-        // MATCHING ONLY. The viewer never picks a wall type — it reports which
-        // of these the DRAWING named beside a detected group. Already filtered
-        // to types with layers, so a match always produces line items.
-        // AND THE THICKNESS, which is what reaches the UNTAGGED walls: an
-        // architect tags representative walls, not every wall — 25-43% of the
-        // footage on a real sheet — so without it the majority of every
-        // drawing stays unpriced. Null where the company never recorded one,
-        // which the matcher reads as "cannot be matched by thickness".
-        wallTypes={allWallTypes.map((type) => ({
-          id: type.id,
-          code: type.code,
-          name: type.name,
-          hasParts: type._count.components > 0,
-          thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
-        }))}
-      />
 
       {/* ── WHOSE SHEET IS THIS, AND WHY THERE IS A HEADING ABOVE THE LIST ──
           A browser run reported "Measured on sheet 21" as a stale caption,
@@ -643,10 +385,28 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   );
 }
 
-function Header({ jobId }: { jobId: string }) {
+function Header({ jobId, hasPlan = false }: { jobId: string; hasPlan?: boolean }) {
   return (
     <div className="flex flex-col gap-1">
-      <h2 className="text-lg font-semibold text-ink-strong">Takeoff</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold text-ink-strong">Takeoff</h2>
+        {/* ── THE WAY INTO THE FULL-SCREEN WORKSPACE ──
+            Added 2026-10-16, after it was reported missing — and it was: the
+            workspace shipped reachable only from the ESTIMATE tab, which is
+            not where anybody stands when they want the drawing bigger. They
+            stand here, on a 55-sheet set, scrolling.
+            A real link, so Cmd-click and right-click open it in a tab of its
+            own; an estimator comparing a bid against a drawing wants both. */}
+        {hasPlan && (
+          <Link
+            href={`/takeoff/${jobId}`}
+            className="rounded-md border border-line-card px-3 py-1.5 text-sm text-link hover:text-link-hover"
+            data-takeoff="open-workspace"
+          >
+            Open full screen
+          </Link>
+        )}
+      </div>
       <p className="max-w-prose text-sm text-ink-body">
         Measure a drawing on screen. Set the scale on each sheet against a dimension printed on it, trace what
         you&rsquo;re taking off, and add it to the estimate.{" "}

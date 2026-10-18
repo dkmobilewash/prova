@@ -201,3 +201,36 @@ stale one is worse than none. Regenerate before looking.
 4. **The wall classifier must not run unasked** — graded 2026-10-15: it drops
    3 real walls per sheet to catch 1 phantom, and caught 3 of 12 on a sheet
    where every candidate was a phantom. It stays a button a person presses.
+
+
+## Known phantoms on Camp Bow Wow A120, kept as examples — 2026-10-17
+
+A120 is retired as the first answer key: it is mostly interior elevations, and
+its one plan is a two-restroom enlargement too small to grade a detector on.
+What it still gets wrong is recorded here rather than fixed, because these are
+the next two shapes worth a rule and both are visible on one small drawing.
+
+The sheet now measures 121 ft over 11 runs, the enlarged plan only. Of those:
+
+| | what it is | why it survives today |
+| --- | --- | --- |
+| runs through the middle of BOTH restrooms, across the fixtures | the toilet partitions and the fixtures themselves — a WC and a lavatory drawn in plan present two parallel edges at a partition-ish spacing | nothing distinguishes a fixture outline from a wall face by shape, and `wallsNotIsolatedStubs` cannot reach them because they touch the real walls at both ends |
+| a run along the TOP DIMENSION LINE | a dimension string runs parallel to the wall it measures, offset by a round distance, and its extension ticks give it the company a face needs | `inAHatchSeries` is written for exactly this and its own note explains why it cannot fire here: it needs TWO neighbours at a whole number of steps, and a dimension line has one |
+
+Neither is a hatch, so `drawnCoverage` does not see them: both are drawn end to
+end along their own length, which is the one thing that rule asks about. That
+is the correct behaviour of that rule and the reason these need their own.
+
+**What a fix would have to separate**, so the next attempt starts narrower than
+"phantoms on A120":
+
+  - a FIXTURE is a closed outline — a WC, a lavatory and a partition pilaster
+    all close on themselves within a few feet. A wall face does not close.
+    `rooms.ts` already finds closed regions; nothing asks whether a candidate's
+    faces belong to one.
+  - a DIMENSION LINE carries TEXT along it, at its midpoint, reading as a
+    length — and the drawing prints that number. `dimensionLabels.ts` already
+    reads those for the scale vote, and their positions are never compared
+    against the runs the pairer returns.
+
+Both are measurements nobody has taken yet. Neither is guessed at here.

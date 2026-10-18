@@ -537,10 +537,35 @@ describe("the verdict", () => {
     // it at 5pm. Recorded rather than fixed here: it is one line in an
     // integrations component, it changes no stored value, and it is not
     // what this PR is about. Listed by name so the next person finds it.
+    // ── BY FILE AND BY WHAT IT READS, NOT BY LINE NUMBER ──
+    //
+    // This listed `path:line` and broke three times in one session — every
+    // time for an edit ELSEWHERE in `AnswerKeyPanel.tsx` that moved the clock
+    // read down the file. A census that fails for a reason it is not about
+    // teaches people to update the number without reading why, which is the
+    // opposite of what it is for.
+    //
+    // The expression is what the test actually cares about: a clock read that
+    // is not a calendar day. A new one still fails, in a new file or in this
+    // one, because the pair is new.
     const other = scanned
       .filter((f) => !isTestFile(f.path))
-      .flatMap((f) => f.sites.filter((s) => !isCalendarDay(s)).map((s) => `${f.path}:${s.line}`))
+      .flatMap((f) =>
+        f.sites.filter((s) => !isCalendarDay(s)).map((s) => `${f.path}  ${s.text.trim()}`),
+      )
       .sort();
-    expect(other).toEqual(["apps/web/components/QuickBooksReconcile.tsx:59"]);
+    //
+    // `AnswerKeyPanel` is the second, and it is CORRECT rather than tolerated.
+    // An answer key records when somebody reviewed a sheet, and that is an
+    // INSTANT: the file is read on another machine, in another timezone,
+    // months later, to decide whether a key predates a change to the detector.
+    // A calendar day would lose exactly the ordering that question needs.
+    //
+    // Listed here rather than exempted, because the point of this test is that
+    // every clock read in the app is one somebody chose.
+    expect(other).toEqual([
+      "apps/web/components/AnswerKeyPanel.tsx  new Date().toISOString()",
+      "apps/web/components/QuickBooksReconcile.tsx  new Date().toISOString()",
+    ]);
   });
 });

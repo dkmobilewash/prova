@@ -109,6 +109,36 @@ const SAME_LINE_FEET = 0.5;
  */
 export const MAX_OPENING_FEET = 8;
 
+/**
+ * The hair of slack on that cap, in feet.
+ *
+ * ── AN EXCLUSIVE CAP REFUSES ITS OWN WIDEST LEGITIMATE OPENING ──
+ *
+ * S02 and S03 are the same building drawn at 1/4" and 1/8", and each has a
+ * 16 ft partition containing a single 8 ft opening — exactly
+ * `MAX_OPENING_FEET`. Neither bridged it, so a 16 ft wall was reported as 4 ft
+ * on both sheets, and the whole 40 ft line it belongs to read 32 ft.
+ *
+ * MEASURED by sweeping the cap: the boundary sits between 8.0 and 8.02, and
+ * 8.02 is enough. So the gap is 8 ft, as drawn, and the comparison loses to
+ * floating point — the gap is measured in page units from two stroke endpoints
+ * while the cap arrives through a division by `feetPerUnit`, and the two
+ * roundings do not agree at the last bit.
+ *
+ * The reason this is worth a named constant rather than an epsilon: a standard
+ * opening lands exactly ON the cap far more often than just inside it. 8 ft is
+ * a double door, 6 ft a slider, 3 ft a doorway — openings come in whole feet,
+ * and the cap is a whole number too. The limit case is the common case here,
+ * so an exclusive comparison fails at precisely the width that matters most.
+ *
+ * A quarter of an inch, which is smaller than any feature on any of these
+ * drawings and far smaller than the cap's own uncertainty. In feet rather than
+ * points so it means the same thing at every scale — S02 and S03 are the pair
+ * that proves it has to, since their walls differ twofold on paper and not at
+ * all in the building.
+ */
+export const CAP_SLACK_FEET = 1 / 48;
+
 /** How far from a gap's end a perpendicular wall counts as bounding it, in
  *  feet. About a wall's own thickness plus drafting slack: the partition's
  *  centreline ends at the corridor wall's centreline, not at its face. */
@@ -143,6 +173,66 @@ const ROUGHLY_PERPENDICULAR = 0.25;
  * bounds the gap and the join goes ahead — the same answer as before this
  * existed, rather than a refusal of everything.
  */
+/** The least a line must be, in feet, to count as CROSSING a gap rather than
+ *  closing it. A door's jamb is one wall thickness long and sits square across
+ *  both ends of the opening — exactly the shape a corridor's walls make, at a
+ *  twentieth of the size. Without a floor on length the jambs of every door
+ *  would read as a crossing, which is the opposite of the answer.
+ *
+ *  Zero for walls, because a `WallCandidate` is already past the finder's own
+ *  minimum length and no jamb ever becomes one. */
+const CROSSES_MIN_FEET = 3;
+
+/** Anything with two ends. A `WallCandidate`'s centreline and a raw
+ *  `StrokeSegment` are the same shape to this test, which is the point: the
+ *  rule for "is this gap a hole or a junction" must be ONE rule. */
+export type Spanning = { x1: number; y1: number; x2: number; y2: number };
+
+/**
+ * ── IS SOMETHING RUNNING ACROSS BOTH ENDS OF THIS GAP? ──
+ *
+ * The shared core of `gapIsCrossing`, lifted out so `oneFacePerLine` can ask
+ * the same question about raw face segments that `mergeWalls` asks about
+ * finished runs. Two copies of this rule would drift, and the drift would be
+ * invisible: each would still answer plausibly, about different geometry.
+ *
+ * `minLengthUnits` is the only thing the two callers disagree about, and the
+ * disagreement is real rather than a tuning knob — see `CROSSES_MIN_FEET`.
+ */
+export function gapIsBounded(
+  lines: readonly Spanning[],
+  unit: readonly { ux: number; uy: number }[],
+  skip: (index: number) => boolean,
+  along: { ux: number; uy: number },
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  nearUnits: number,
+  minLengthUnits: number,
+): boolean {
+  let atFrom = -1;
+  let atTo = -1;
+  for (let k = 0; k < lines.length; k += 1) {
+    if (skip(k)) continue;
+    const v = unit[k];
+    // Perpendicular to the run being joined, within slack.
+    if (Math.abs(v.ux * along.ux + v.uy * along.uy) > ROUGHLY_PERPENDICULAR) continue;
+    const line = lines[k];
+    if (minLengthUnits > 0) {
+      if (Math.hypot(line.x2 - line.x1, line.y2 - line.y1) < minLengthUnits) continue;
+    }
+    if (atFrom < 0 && distanceToLine(fromX, fromY, line) <= nearUnits) atFrom = k;
+    if (atTo < 0 && distanceToLine(toX, toY, line) <= nearUnits) atTo = k;
+    // TWO DIFFERENT LINES. One long wall running past both ends is a wall
+    // alongside the gap, not the two sides of a corridor.
+    if (atFrom >= 0 && atTo >= 0 && atFrom !== atTo) return true;
+  }
+  return false;
+}
+
+export { CROSSES_MIN_FEET };
+
 function gapIsCrossing(
   walls: readonly WallCandidate[],
   unit: readonly { ux: number; uy: number }[],
@@ -154,32 +244,26 @@ function gapIsCrossing(
   toY: number,
   feetPerUnit: number,
 ): boolean {
-  const near = BOUNDS_THE_GAP_FEET / feetPerUnit;
-  const u = unit[i];
-  let atFrom = -1;
-  let atTo = -1;
-  for (let k = 0; k < walls.length; k += 1) {
-    // `k === j` is REDUNDANT against the perpendicularity test below — j is
-    // collinear with i by the time this runs, so it can never be perpendicular
-    // to it — and mutation confirms removing it changes no answer. Kept because
-    // "the two walls being joined do not get to bound their own gap" is the
-    // intent, and reading it here is cheaper than deducing it from a filter
-    // three lines down.
-    if (k === i || k === j) continue;
-    const v = unit[k];
-    // Perpendicular to the run being joined, within slack.
-    if (Math.abs(v.ux * u.ux + v.uy * u.uy) > ROUGHLY_PERPENDICULAR) continue;
-    if (atFrom < 0 && distanceToSegment(fromX, fromY, walls[k]) <= near) atFrom = k;
-    if (atTo < 0 && distanceToSegment(toX, toY, walls[k]) <= near) atTo = k;
-    // TWO DIFFERENT WALLS. One long wall running past both ends is a wall
-    // alongside the gap, not the two sides of a corridor.
-    if (atFrom >= 0 && atTo >= 0 && atFrom !== atTo) return true;
-  }
-  return false;
+  // Delegates, so the rule lives in ONE place. Walls pass no length floor: a
+  // `WallCandidate` is already past the finder's own minimum and no door jamb
+  // ever becomes one, so there is nothing here for `CROSSES_MIN_FEET` to
+  // exclude.
+  return gapIsBounded(
+    walls,
+    unit,
+    (k) => k === i || k === j,
+    unit[i],
+    fromX,
+    fromY,
+    toX,
+    toY,
+    BOUNDS_THE_GAP_FEET / feetPerUnit,
+    0,
+  );
 }
 
-/** Distance from a point to a wall's centreline segment. */
-function distanceToSegment(px: number, py: number, wall: WallCandidate): number {
+/** Distance from a point to a line's own span. */
+function distanceToLine(px: number, py: number, wall: Spanning): number {
   const dx = wall.x2 - wall.x1;
   const dy = wall.y2 - wall.y1;
   const len2 = dx * dx + dy * dy;
@@ -275,7 +359,7 @@ export function mergeWalls(
         // grouping is not free of consequence, since a group is rebuilt on its
         // leader's line. Noted so the next reader does not spend a mutation on
         // it, as I did.
-        if (-overlap > maxOpeningFeet / feetPerUnit) continue;
+        if (-overlap > (maxOpeningFeet + CAP_SLACK_FEET) / feetPerUnit) continue;
         // ── A GAP-JOIN NEEDS TIGHTER COLLINEARITY THAN AN OVERLAP-MERGE ──
         //
         // Kept because the test that used to forbid all gap-joins was right
@@ -392,7 +476,7 @@ export function mergeWalls(
       });
       run = [];
     };
-    const gapAllowance = maxOpeningFeet / feetPerUnit;
+    const gapAllowance = (maxOpeningFeet + CAP_SLACK_FEET) / feetPerUnit;
     for (const span of spans) {
       const last = run[run.length - 1];
       // `+ gapAllowance` is the whole change: a doorway-sized gap keeps the

@@ -1,0 +1,308 @@
+import { type AnswerKey, type KeyWall } from "@/lib/takeoff/answerKey";
+
+/**
+ * ── THE STATE OF REVIEWING ONE SHEET ──
+ *
+ * Making a key means deciding, for every candidate on a sheet, whether it is a
+ * wall. The decisions are the whole value, so they live here as data rather
+ * than inside a component: a reducer can be tested at every transition, and a
+ * component cannot.
+ *
+ * ── EVERYTHING STARTS UNREVIEWED, WHICH IS THE POINT ──
+ *
+ * The obvious design is to pre-accept the detector's output and let the
+ * reviewer remove what is wrong. That makes a key that agrees with the
+ * detector by construction, because nobody deletes 122 rows one at a time —
+ * and a key that agrees with the thing it is grading is not a key.
+ *
+ * So a detected wall arrives as a CANDIDATE. It is on screen, it is one press
+ * to accept, and until somebody presses it counts for nothing.
+ *
+ * ── AND THE SINGLE LINES ARE CANDIDATES TOO ──
+ *
+ * 7,694 ft of unpaired long lines were measured on A102 and 93% of them
+ * classify as hatching. The remaining 7% is the question nobody can answer
+ * from geometry, so those lines are offered the same way: one press to accept,
+ * one to reject, and the key records which were which.
+ */
+
+export type Verdict = "unreviewed" | "wall" | "not-a-wall";
+
+/** One thing a reviewer is deciding about. */
+export type Candidate = {
+  id: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  lengthFeet: number;
+  /** Null for a single line, which has no second face to measure against. */
+  thicknessIn: number | null;
+  /** How the drawing showed it — recorded in the key, and what colours it. */
+  from: "pair" | "single";
+  /** For a single line, what it looks like — hatching, dashed, and so on. */
+  note: string;
+};
+
+export type ReviewState = {
+  candidates: Candidate[];
+  verdicts: Record<string, Verdict>;
+  /** What the reviewer has traced by hand, already accepted by definition. */
+  traced: Candidate[];
+};
+
+export function startReview(candidates: readonly Candidate[]): ReviewState {
+  const verdicts: Record<string, Verdict> = {};
+  for (const one of candidates) verdicts[one.id] = "unreviewed";
+  return { candidates: [...candidates], verdicts, traced: [] };
+}
+
+export function setVerdict(state: ReviewState, ids: readonly string[], verdict: Verdict): ReviewState {
+  const next = { ...state.verdicts };
+  for (const id of ids) {
+    // Only things that are actually on the sheet. A box-select that caught
+    // nothing must not invent rows.
+    if (id in next) next[id] = verdict;
+  }
+  return { ...state, verdicts: next };
+}
+
+/** A wall the reviewer drew because the detector missed it entirely. */
+/**
+ * A wall somebody drew by hand, as a candidate the key can hold.
+ *
+ * ── TRACED IS ACCEPTED BY DEFINITION, AND THAT IS THE WHOLE POINT ──
+ *
+ * Every other candidate starts `unreviewed` because the app proposed it. This
+ * one was drawn by the person whose judgement the key records, so there is
+ * nobody left to ask. `keyFromReview` takes the traced list without consulting
+ * a verdict for exactly that reason.
+ *
+ * ── NO THICKNESS, HONESTLY ──
+ *
+ * Two clicks give a centreline and say nothing about how thick the wall is.
+ * `thicknessIn` is null rather than a default, for the reason `candidatesFrom
+ * Sheet` gives for an unpaired line: a guess would be in the key for ever, and
+ * a key is graded against.
+ */
+export function tracedWall(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  feetPerUnit: number,
+  at: number,
+): Candidate {
+  return {
+    id: `t${at}`,
+    x1: from.x,
+    y1: from.y,
+    x2: to.x,
+    y2: to.y,
+    lengthFeet: Math.hypot(to.x - from.x, to.y - from.y) * feetPerUnit,
+    thicknessIn: null,
+    from: "single",
+    note: "traced by hand",
+  };
+}
+
+export function addTraced(state: ReviewState, wall: Candidate): ReviewState {
+  return { ...state, traced: [...state.traced, wall] };
+}
+
+export function removeTraced(state: ReviewState, id: string): ReviewState {
+  return { ...state, traced: state.traced.filter((w) => w.id !== id) };
+}
+
+export type Progress = {
+  total: number;
+  reviewed: number;
+  walls: number;
+  notWalls: number;
+  traced: number;
+  /** Feet the key would carry if saved now. */
+  feet: number;
+};
+
+export function progressOf(state: ReviewState): Progress {
+  let reviewed = 0;
+  let walls = 0;
+  let notWalls = 0;
+  let feet = 0;
+  for (const one of state.candidates) {
+    const verdict = state.verdicts[one.id] ?? "unreviewed";
+    if (verdict === "unreviewed") continue;
+    reviewed += 1;
+    if (verdict === "wall") {
+      walls += 1;
+      feet += one.lengthFeet;
+    } else {
+      notWalls += 1;
+    }
+  }
+  for (const one of state.traced) feet += one.lengthFeet;
+  return {
+    total: state.candidates.length,
+    reviewed,
+    walls,
+    notWalls,
+    traced: state.traced.length,
+    feet,
+  };
+}
+
+/** The next thing needing a decision after `afterId`, wrapping once. */
+export function nextUnreviewed(state: ReviewState, afterId: string | null): Candidate | null {
+  const at = afterId === null ? -1 : state.candidates.findIndex((c) => c.id === afterId);
+  const order = [...state.candidates.slice(at + 1), ...state.candidates.slice(0, Math.max(at + 1, 0))];
+  return order.find((c) => (state.verdicts[c.id] ?? "unreviewed") === "unreviewed") ?? null;
+}
+
+/** Candidates whose midpoint falls inside a drag box, in page-width units. */
+export function candidatesInBox(
+  state: ReviewState,
+  box: { x1: number; y1: number; x2: number; y2: number },
+): string[] {
+  const minX = Math.min(box.x1, box.x2);
+  const maxX = Math.max(box.x1, box.x2);
+  const minY = Math.min(box.y1, box.y2);
+  const maxY = Math.max(box.y1, box.y2);
+  return state.candidates
+    .filter((c) => {
+      const mx = (c.x1 + c.x2) / 2;
+      const my = (c.y1 + c.y2) / 2;
+      return mx >= minX && mx <= maxX && my >= minY && my <= maxY;
+    })
+    .map((c) => c.id);
+}
+
+/**
+ * The key, as it would be saved right now.
+ *
+ * ── UNREVIEWED IS NOT ACCEPTED ──
+ *
+ * Only what somebody said yes to. A half-finished review therefore produces a
+ * SHORT key rather than a wrong one, and the progress count is what says it is
+ * half-finished — a key that quietly included the undecided would grade every
+ * later run against a number nobody stood behind.
+ */
+export function keyFromReview(
+  state: ReviewState,
+  about: {
+    set: string;
+    page: number;
+    number: string;
+    reviewedBy: string;
+    reviewedAt: string;
+    feetPerUnit: number;
+  },
+): AnswerKey {
+  const walls: KeyWall[] = [];
+  for (const one of state.candidates) {
+    if ((state.verdicts[one.id] ?? "unreviewed") !== "wall") continue;
+    walls.push({
+      x1: one.x1,
+      y1: one.y1,
+      x2: one.x2,
+      y2: one.y2,
+      lengthFeet: one.lengthFeet,
+      thicknessIn: one.thicknessIn,
+      from: one.from,
+    });
+  }
+  for (const one of state.traced) {
+    walls.push({
+      x1: one.x1,
+      y1: one.y1,
+      x2: one.x2,
+      y2: one.y2,
+      lengthFeet: one.lengthFeet,
+      thicknessIn: one.thicknessIn,
+      from: one.from,
+    });
+  }
+  return {
+    sheet: { set: about.set, page: about.page, number: about.number },
+    reviewedBy: about.reviewedBy,
+    reviewedAt: about.reviewedAt,
+    feetPerUnit: about.feetPerUnit,
+    walls,
+  };
+}
+
+/**
+ * ── EVERYTHING ON THE SHEET THAT SOMEBODY HAS TO DECIDE ABOUT ──
+ *
+ * Two populations, deliberately in one list:
+ *
+ *   - what the detector REPORTED, every row of it a candidate rather than an
+ *     answer, so the key cannot agree with the detector by default;
+ *   - the long lines with NO partner, which the detector cannot reach at all.
+ *     7,694 ft of them on A102, 93% classifying as hatching — and the only way
+ *     to learn what the other 7% is, is to ask somebody.
+ *
+ * Reported walls come first because they are the quicker decisions, and a
+ * reviewer who runs out of patience should run out of it on the ambiguous
+ * half rather than on the obvious one.
+ */
+export function candidatesFromSheet(input: {
+  walls: readonly { x1: number; y1: number; x2: number; y2: number; lengthFeet: number; thicknessFeet: number }[];
+  singles: readonly {
+    line: { x1: number; y1: number; x2: number; y2: number };
+    lengthFeet: number;
+    kind: string;
+    why: string;
+  }[];
+}): Candidate[] {
+  const out: Candidate[] = [];
+  input.walls.forEach((wall, at) => {
+    out.push({
+      id: `w${at}`,
+      x1: wall.x1,
+      y1: wall.y1,
+      x2: wall.x2,
+      y2: wall.y2,
+      lengthFeet: wall.lengthFeet,
+      thicknessIn: wall.thicknessFeet * 12,
+      from: "pair",
+      note: "detected",
+    });
+  });
+  input.singles.forEach((single, at) => {
+    out.push({
+      id: `s${at}`,
+      x1: single.line.x1,
+      y1: single.line.y1,
+      x2: single.line.x2,
+      y2: single.line.y2,
+      lengthFeet: single.lengthFeet,
+      // A single line has no second face, so there is no thickness to record.
+      // Saying null is the honest answer; a guess would be in the key for ever.
+      thicknessIn: null,
+      from: "single",
+      note: single.kind,
+    });
+  });
+  return out;
+}
+
+/**
+ * ── THE COLOUR EACH STATE DRAWS IN, HERE RATHER THAN IN THE PANEL ──
+ *
+ * They were exported from `AnswerKeyPanel.tsx`, which is a `"use client"`
+ * module, and `clientBoundary` refuses a server module importing a non-
+ * component value from one. That rule caught an eval reading these to draw an
+ * overlay — the right catch: a colour is not a component, and a palette that
+ * can only be read by the browser cannot be used by the thing that grades it.
+ *
+ * Both the panel and the viewer draw from this, so the mark beside a candidate
+ * in the rail is the mark on the sheet by construction rather than by two
+ * literals agreeing.
+ */
+export const VERDICT_COLOURS: Record<Verdict, string> = {
+  unreviewed: "#f59e0b",
+  wall: "#16a34a",
+  "not-a-wall": "#9ca3af",
+};
+
+/** A single line is offered in its own colour, because it is a different
+ *  question: not "is this wall right" but "is this a wall at all". */
+export const SINGLE_LINE_COLOUR = "#2563eb";

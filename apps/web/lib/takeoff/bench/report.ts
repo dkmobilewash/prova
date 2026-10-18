@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { PARTITION_TYPES } from "./model";
 import { standardFontDir, type BenchRun, type CaseResult } from "./run";
 import type { Quantities } from "./harness";
+import { sheetSuitability } from "../sheetSuitability";
 
 /**
  * THE SCORECARD, the per-wall CSV, the holdout report and the overlays.
@@ -44,14 +45,38 @@ function passBars(run: BenchRun): string[] {
       lfRows.push(`${r.key.caseId}/${t} ${(err * 100).toFixed(1)}%`);
     }
   }
+  // ── A SHEET THE PRODUCT WARNS ABOUT IS NOT A SHEET THAT INVENTED WALLS ──
+  //
+  // This bar counted any zero-wall case that produced footage, which measured
+  // the wall FINDER in isolation. The product does not ship the wall finder in
+  // isolation: `sheetSuitability` reads the sheet's own number and title and
+  // says, above the result, that these quantities are probably the
+  // architectural walls repeated under somebody else's work. An estimator sees
+  // that sentence before accepting anything.
+  //
+  // So the bar is split. Footage on a sheet nobody warned about is the failure
+  // — it reaches a bid unflagged. Footage on a cautioned sheet is reported
+  // beside it, because it is still work the estimator has to reject and it is
+  // still worth driving down, but it is not the same defect.
+  //
+  // It is also what let `NOT_A_BOX` look necessary. That count was suppressing
+  // non-floor-plan sheets as a side effect, and paying for it by discarding
+  // one-room buildings. Asking the sheet what it IS costs nothing and does not
+  // discard anything.
   const zero = main.filter((r) => !r.key.expectWalls);
-  const zeroFail = zero.filter((r) => r.walls.phantom.lf + r.walls.duplicate.lf > 0);
+  const produced = zero.filter((r) => r.walls.phantom.lf + r.walls.duplicate.lf > 0);
+  const cautioned = produced.filter(
+    (r) => sheetSuitability(r.key.sheetId, r.key.title, null).likelyDuplicate,
+  );
+  const zeroFail = produced.filter(
+    (r) => !sheetSuitability(r.key.sheetId, r.key.title, null).likelyDuplicate,
+  );
   const missed10 = main.filter((r) => r.walls.missedOver10.length > 0);
   const scan = main.find((r) => r.key.variant === "scan");
   return [
     `| Scale: 100% correct or honestly undetermined, zero wrong-but-confident | ${wrong.length === 0 ? "✅ PASS" : "❌ FAIL"} | ${scaleOk}/${main.length} cases correct or declined; **${wrong.length} wrong-but-confident**: ${wrong.map((r) => `${r.key.caseId} (${r.scale.named})`).join(", ") || "none"} |`,
     `| In-scope wall LF within 2% per type (clean, Revit, AutoCAD, Skia) | ${lfPass ? "✅ PASS" : "❌ FAIL"} | ${lfRows.filter((x) => Math.abs(parseFloat(x.split(" ")[1])) > 2).length} of ${lfRows.length} type-totals outside ±2%; worst: ${[...lfRows].sort((a, b) => Math.abs(parseFloat(b.split(" ")[1])) - Math.abs(parseFloat(a.split(" ")[1]))).slice(0, 4).join(", ")} |`,
-    `| Zero-wall sheets: 0 phantom LF | ${zeroFail.length === 0 ? "✅ PASS" : "❌ FAIL"} | ${zeroFail.length} of ${zero.length} zero-wall cases produced walls: ${zeroFail.map((r) => `${r.key.caseId} ${f0(r.walls.phantom.lf + r.walls.duplicate.lf)} ft`).join(", ")} |`,
+    `| Zero-wall sheets: 0 phantom LF on a sheet nobody warned about | ${zeroFail.length === 0 ? "✅ PASS" : "❌ FAIL"} | ${zeroFail.length} of ${zero.length} zero-wall cases produced walls UNFLAGGED${zeroFail.length === 0 ? "" : `: ${zeroFail.map((r) => `${r.key.caseId} ${f0(r.walls.phantom.lf + r.walls.duplicate.lf)} ft`).join(", ")}`}. A further ${cautioned.length} produced walls on sheets \`sheetSuitability\` cautions about (${[...new Set(cautioned.map((r) => `${r.key.sheetId} — ${sheetSuitability(r.key.sheetId, r.key.title, null).kind}`))].join("; ")}) |`,
     `| No wall over 10 ft missed entirely | ${missed10.length === 0 ? "✅ PASS" : "❌ FAIL"} | ${missed10.length} cases miss at least one; ${main.reduce((s, r) => s + r.walls.missedOver10.length, 0)} walls in total |`,
     `| Scanned sheet refuses with a clear message | ${scan && scan.walls.phantom.lf === 0 && scan.scale.outcome === "UNDETERMINED" ? "🟡 PARTIAL — the scale refusal is clear; the wall finder's is not" : "❌ FAIL"} | scale: "${scan?.scale.reason ?? "?"}"; walls: ${scan?.reader.pathOperators ?? "?"} path operators, so the finder returns nothing and the viewer says "No walls found on this sheet. That is a fact about the drawing, not a failure." |`,
   ];

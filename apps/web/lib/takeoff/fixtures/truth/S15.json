@@ -1,0 +1,340 @@
+{
+  "id": "S15",
+  "file": "plan.pdf",
+  "page": 1,
+  "kind": "vector",
+  "units": "imperial",
+  "scale_text": "1/4\" = 1'-0\"",
+  "scale_ratio": 48,
+  "sheet_type": "floor_plan",
+  "ceiling_height_ft": 9.0,
+  "totals": {
+    "wall_lf_gross": 206.0,
+    "wall_lf_net": 174.0,
+    "wall_lf_exterior_gross": 128.0,
+    "wall_lf_interior_gross": 78.0,
+    "wall_sf_exterior_net": 976.5,
+    "wall_sf_interior_net": 589.5,
+    "gross_building_area_sf": 1042.96,
+    "room_count": 5,
+    "door_count": 5,
+    "window_count": 4
+  },
+  "walls": [
+    {
+      "id": "W1",
+      "start_ft": [
+        0.0,
+        0.0
+      ],
+      "end_ft": [
+        36.0,
+        0.0
+      ],
+      "length_ft": 36.0,
+      "net_length_ft": 28.0,
+      "thickness_in": 6.5,
+      "type": "EXT-2x6",
+      "exterior": true,
+      "height_ft": 9.0,
+      "wall_sf_net": 252.0
+    },
+    {
+      "id": "W2",
+      "start_ft": [
+        36.0,
+        0.0
+      ],
+      "end_ft": [
+        36.0,
+        28.0
+      ],
+      "length_ft": 28.0,
+      "net_length_ft": 24.0,
+      "thickness_in": 6.5,
+      "type": "EXT-2x6",
+      "exterior": true,
+      "height_ft": 9.0,
+      "wall_sf_net": 216.0
+    },
+    {
+      "id": "W3",
+      "start_ft": [
+        36.0,
+        28.0
+      ],
+      "end_ft": [
+        0.0,
+        28.0
+      ],
+      "length_ft": 36.0,
+      "net_length_ft": 28.5,
+      "thickness_in": 6.5,
+      "type": "EXT-2x6",
+      "exterior": true,
+      "height_ft": 9.0,
+      "wall_sf_net": 256.5
+    },
+    {
+      "id": "W4",
+      "start_ft": [
+        0.0,
+        28.0
+      ],
+      "end_ft": [
+        0.0,
+        0.0
+      ],
+      "length_ft": 28.0,
+      "net_length_ft": 28.0,
+      "thickness_in": 6.5,
+      "type": "EXT-2x6",
+      "exterior": true,
+      "height_ft": 9.0,
+      "wall_sf_net": 252.0
+    },
+    {
+      "id": "W5",
+      "start_ft": [
+        18.0,
+        0.0
+      ],
+      "end_ft": [
+        18.0,
+        28.0
+      ],
+      "length_ft": 28.0,
+      "net_length_ft": 24.0,
+      "thickness_in": 4.5,
+      "type": "INT-2x4",
+      "exterior": false,
+      "height_ft": 9.0,
+      "wall_sf_net": 216.0
+    },
+    {
+      "id": "W6",
+      "start_ft": [
+        0.0,
+        14.0
+      ],
+      "end_ft": [
+        18.0,
+        14.0
+      ],
+      "length_ft": 18.0,
+      "net_length_ft": 15.0,
+      "thickness_in": 4.5,
+      "type": "INT-2x4",
+      "exterior": false,
+      "height_ft": 9.0,
+      "wall_sf_net": 135.0
+    },
+    {
+      "id": "W7",
+      "start_ft": [
+        18.0,
+        14.0
+      ],
+      "end_ft": [
+        36.0,
+        14.0
+      ],
+      "length_ft": 18.0,
+      "net_length_ft": 12.5,
+      "thickness_in": 4.5,
+      "type": "INT-2x4",
+      "exterior": false,
+      "height_ft": 9.0,
+      "wall_sf_net": 112.5
+    },
+    {
+      "id": "W8",
+      "start_ft": [
+        27.0,
+        14.0
+      ],
+      "end_ft": [
+        27.0,
+        28.0
+      ],
+      "length_ft": 14.0,
+      "net_length_ft": 14.0,
+      "thickness_in": 4.5,
+      "type": "INT-2x4",
+      "exterior": false,
+      "height_ft": 9.0,
+      "wall_sf_net": 126.0
+    }
+  ],
+  "openings": [
+    {
+      "id": "D1",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W1",
+      "width_ft": 3.0,
+      "center_ft": [
+        9.0,
+        0.0
+      ]
+    },
+    {
+      "id": "D2",
+      "kind": "door",
+      "subtype": "cased",
+      "wall": "W5",
+      "width_ft": 4.0,
+      "center_ft": [
+        18.0,
+        7.0
+      ]
+    },
+    {
+      "id": "D3",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W6",
+      "width_ft": 3.0,
+      "center_ft": [
+        9.0,
+        14.0
+      ]
+    },
+    {
+      "id": "D4",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W7",
+      "width_ft": 3.0,
+      "center_ft": [
+        22.5,
+        14.0
+      ]
+    },
+    {
+      "id": "D5",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W7",
+      "width_ft": 2.5,
+      "center_ft": [
+        31.5,
+        14.0
+      ]
+    },
+    {
+      "id": "WN1",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W1",
+      "width_ft": 5.0,
+      "center_ft": [
+        27.0,
+        0.0
+      ]
+    },
+    {
+      "id": "WN2",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W3",
+      "width_ft": 5.0,
+      "center_ft": [
+        9.0,
+        28.0
+      ]
+    },
+    {
+      "id": "WN3",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W3",
+      "width_ft": 2.5,
+      "center_ft": [
+        31.5,
+        28.0
+      ]
+    },
+    {
+      "id": "WN4",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W2",
+      "width_ft": 4.0,
+      "center_ft": [
+        36.0,
+        7.0
+      ]
+    }
+  ],
+  "rooms": [
+    {
+      "id": "R101",
+      "label": "LIVING 101",
+      "type": "living",
+      "area_sf": 237.54,
+      "perimeter_lf": 62.17,
+      "centroid_ft": [
+        9.04,
+        7.04
+      ]
+    },
+    {
+      "id": "R102",
+      "label": "KITCHEN 102",
+      "type": "kitchen",
+      "area_sf": 237.54,
+      "perimeter_lf": 62.17,
+      "centroid_ft": [
+        26.96,
+        7.04
+      ]
+    },
+    {
+      "id": "R103",
+      "label": "BEDROOM 103",
+      "type": "bedroom",
+      "area_sf": 237.54,
+      "perimeter_lf": 62.17,
+      "centroid_ft": [
+        9.04,
+        20.96
+      ]
+    },
+    {
+      "id": "R104",
+      "label": "BEDROOM 104",
+      "type": "bedroom",
+      "area_sf": 116.8,
+      "perimeter_lf": 44.33,
+      "centroid_ft": [
+        22.5,
+        20.96
+      ]
+    },
+    {
+      "id": "R105",
+      "label": "BATH 105",
+      "type": "bathroom",
+      "area_sf": 115.67,
+      "perimeter_lf": 44.17,
+      "centroid_ft": [
+        31.46,
+        20.96
+      ]
+    }
+  ],
+  "notes": "Two views on one sheet: the floor plan at 1/4\" = 1'-0\" and an enlarged bath plan at 1/2\" = 1'-0\". The answer sheet counts the building once (from the plan view).",
+  "viewports": [
+    {
+      "name": "FLOOR PLAN",
+      "scale_ratio": 48,
+      "scale_text": "1/4\" = 1'-0\""
+    },
+    {
+      "name": "ENLARGED BATH PLAN",
+      "scale_ratio": 24,
+      "scale_text": "1/2\" = 1'-0\""
+    }
+  ]
+}

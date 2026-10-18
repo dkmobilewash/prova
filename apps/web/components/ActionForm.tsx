@@ -75,7 +75,24 @@ export function ActionForm({
    * value after a successful save is not what a reset does. */
   resetOnSuccess?: boolean;
   errorClassName?: string;
-  onSuccess?: () => void;
+  /**
+   * Called once the successful save's own re-render has committed.
+   *
+   * ── IT RECEIVES THE RESULT, which most callers ignore ──
+   *
+   * Widened 2026-10-16 from `() => void`, additively: an existing `() => void`
+   * callback is assignable here unchanged, which is why sixty call sites did
+   * not move. The argument exists for an action returning
+   * `ActionResultWith<T>` — the takeoff workspace undoes a saved measurement
+   * by deleting what it created, and the new row's id is the one thing it
+   * cannot work out for itself.
+   *
+   * Typed `unknown` rather than generic: `ActionForm` takes an action
+   * returning `ActionResult | void` and making the component generic over the
+   * payload would push a type parameter through every caller to serve the few
+   * that read it. A caller that wants the value narrows it.
+   */
+  onSuccess?: (result: unknown) => void;
   /** Opt in to draft saving; see `useFormDraft` for how to pick the key. */
   draftKey?: string;
 }) {
@@ -175,7 +192,7 @@ export function ActionForm({
             if (draftKey) draft.clear();
             settle.current = () => {
               if (resetOnSuccess) formRef.current?.reset();
-              onSuccess?.();
+              onSuccess?.(result);
             };
           } catch (error) {
             // A REDIRECT IS THE ACTION SUCCEEDING. Called from a handler (not

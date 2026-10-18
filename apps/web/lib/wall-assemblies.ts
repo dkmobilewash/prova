@@ -18,9 +18,41 @@
 
 import { boardedArea, studsRequired, type Opening } from "./takeoff";
 
-export type WallComponentBasis = "LINEAR_FT" | "FACE_SQFT" | "BOARDED_SQFT" | "STUDS" | "PER_RUN";
+export type WallComponentBasis =
+  | "LINEAR_FT"
+  | "FACE_SQFT"
+  | "BOARDED_SQFT"
+  | "STUDS"
+  | "PER_RUN"
+  | "AREA_SQFT"
+  | "PERIMETER_FT"
+  | "COUNT_EACH"
+  | "VOLUME_CY";
 
+/**
+ * Every basis, in the order a picker should offer them.
+ *
+ * ── THE FIRST FIVE ARE A WALL'S; THE LAST FOUR ARE EVERYTHING ELSE'S ──
+ *
+ * `WALL_RUN_BASES` below is the subset a `WallRun` can actually produce, and
+ * it is a different list on purpose. The wall-type editor offers only those,
+ * because a wall run asked for `AREA_SQFT` reports zero — and a part that
+ * silently prices nothing is worse than one that was never offered.
+ */
 export const WALL_COMPONENT_BASES: readonly WallComponentBasis[] = [
+  "LINEAR_FT",
+  "FACE_SQFT",
+  "BOARDED_SQFT",
+  "STUDS",
+  "PER_RUN",
+  "AREA_SQFT",
+  "PERIMETER_FT",
+  "COUNT_EACH",
+  "VOLUME_CY",
+];
+
+/** The subset a `WallRun` can produce. See `WALL_COMPONENT_BASES`. */
+export const WALL_RUN_BASES: readonly WallComponentBasis[] = [
   "LINEAR_FT",
   "FACE_SQFT",
   "BOARDED_SQFT",
@@ -34,6 +66,10 @@ export const WALL_BASIS_LABELS: Record<WallComponentBasis, string> = {
   BOARDED_SQFT: "per sq ft boarded",
   STUDS: "per stud",
   PER_RUN: "per run",
+  AREA_SQFT: "per sq ft of area",
+  PERIMETER_FT: "per foot of perimeter",
+  COUNT_EACH: "per one counted",
+  VOLUME_CY: "per cubic yard",
 };
 
 export type WallTypeInput = {
@@ -66,6 +102,23 @@ export type WallRunInput = {
   openings: Opening[];
 };
 
+/**
+ * Everything a basis can be computed from.
+ *
+ * ── ONE SHAPE FOR BOTH SOURCES, AND ONE `basisAmount` ──
+ *
+ * A `WallRun` fills the first five and leaves the rest at zero; a
+ * `TakeoffItem` can fill any of them. Two geometry types would have meant two
+ * `basisAmount` functions free to disagree about what `LINEAR_FT` means — the
+ * second-list shape this repo has paid for repeatedly, most expensively when
+ * `CostCategory`'s rates had one canonical list and four hand-rolled copies
+ * and Ask reported a bid $1,732.50 under the Estimate screen.
+ *
+ * A run reporting ZERO for `AREA_SQFT` is honest rather than a gap: a run of
+ * wall has no area of its own, only a face. A part that asks a run for one
+ * produces nothing, which is visible, instead of producing the face area,
+ * which would be wrong and plausible.
+ */
 export type RunGeometry = {
   linearFt: number;
   heightFt: number;
@@ -74,6 +127,14 @@ export type RunGeometry = {
   /** Face area × boarded sides, openings deducted on every side. */
   boardedSqFt: number;
   studs: number;
+  /** The traced area, cutouts deducted. Zero for a wall run. */
+  areaSqFt?: number;
+  /** The traced outline's perimeter. Zero for a wall run. */
+  perimeterFt?: number;
+  /** How many things were counted. Zero for a wall run. */
+  count?: number;
+  /** Area × depth ÷ 27. Zero without a depth. */
+  volumeCy?: number;
 };
 
 /** The height a run is priced at: its own, else its type's default, else none. */
@@ -119,6 +180,14 @@ function basisAmount(basis: WallComponentBasis, geometry: RunGeometry): number {
       return geometry.studs;
     case "PER_RUN":
       return 1;
+    case "AREA_SQFT":
+      return geometry.areaSqFt ?? 0;
+    case "PERIMETER_FT":
+      return geometry.perimeterFt ?? 0;
+    case "COUNT_EACH":
+      return geometry.count ?? 0;
+    case "VOLUME_CY":
+      return geometry.volumeCy ?? 0;
   }
 }
 

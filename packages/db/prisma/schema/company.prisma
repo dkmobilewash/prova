@@ -144,6 +144,7 @@ model Company {
   dailyFieldReports         DailyFieldReport[]
   jobMedia                  JobMedia[]
   takeoffPlans              TakeoffPlan[]
+  takeoffItems              TakeoffItem[]
   planIngestJobs            PlanIngestJob[]
   bidQuotes                 BidQuote[]
   bidLines                  BidLine[]

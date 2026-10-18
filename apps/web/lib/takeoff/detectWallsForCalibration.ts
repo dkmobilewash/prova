@@ -6,7 +6,8 @@ import { pagesToSample } from "./sheetTemplate";
 import { findWallsOnSheet, inPageWidthUnits, type SheetTextItem } from "./findWallsOnSheet";
 import { SheetTooDenseError, type StrokeSegment } from "./wallVectors";
 import type { MatchableWallType } from "./wallTypeMatch";
-import { proposalRowsFor } from "./wallProposal";
+import { namedCodeOf, proposalRowsFor } from "./wallProposal";
+import { matchGroups } from "./proposalMatch";
 
 /**
  * FINDING THE WALLS THE MOMENT A SCALE IS ACCEPTED, so the groups are waiting
@@ -191,11 +192,49 @@ export async function detectWallsForCalibration(
     // APPEND-ONLY, so there is nothing to delete first. A second run under the
     // same calibration writes a second set; the reader takes the newest
     // `createdAt`, and `createMany` gives every row of one run the same one.
+    // ── WHICH CONDITION EACH GROUP PROPOSES INTO ──
+    //
+    // Detection ADDS to an item somebody named rather than landing in a pile
+    // called "Add these". The rules are in `proposalMatch.ts` — the drawing's
+    // own wall tag first, the measured thickness last, and a REFUSAL on a tie
+    // — and a group that matches nothing keeps a null and shows as
+    // "Unassigned walls", which an estimator sorts in a minute.
+    //
+    // A job with no items matches nothing, which is the ordinary state until
+    // somebody names a condition and costs one query to establish.
+    // THE JOB, VIA THE PLAN. `DetectTarget` carries the plan and the company
+    // but not the job — it is keyed on a page, and a page belongs to a plan.
+    // One lookup rather than widening the type, because every other caller of
+    // that type has no use for a job id.
+    const plan = await prisma.takeoffPlan.findUnique({
+      where: { id: target.planId },
+      select: { jobId: true },
+    });
+    const items = plan === null
+      ? []
+      : await prisma.takeoffItem.findMany({
+      where: { jobId: plan.jobId, companyId: target.companyId },
+      select: { id: true, name: true, thicknessIn: true, wallType: { select: { code: true } } },
+    });
+    const { matched } = matchGroups(
+      found.groups.map((group) => ({
+        namedCode: namedCodeOf(group),
+        thicknessInches: group.inches,
+      })),
+      items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        thicknessIn: item.thicknessIn === null ? null : Number(item.thicknessIn),
+        assemblyCode: item.wallType?.code ?? null,
+      })),
+    );
+
     await prisma.takeoffWallProposal.createMany({
-      data: proposalRowsFor(found.groups, {
-        pageId: target.pageId,
-        calibrationId: target.calibrationId,
-      }),
+      data: proposalRowsFor(
+        found.groups,
+        { pageId: target.pageId, calibrationId: target.calibrationId },
+        matched,
+      ),
     });
     return "written";
   } catch (error) {

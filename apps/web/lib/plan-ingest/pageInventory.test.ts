@@ -371,3 +371,92 @@ describe("a metric sheet", () => {
     expect(reading?.scaleName).toBe("1:100");
   });
 });
+
+/**
+ * ── A SHEET CARRYING SEVERAL DRAWINGS AT SEVERAL SCALES ──
+ *
+ * The case BOTH earlier steps refuse. The dimensions disagree, because they are
+ * dimensions of different drawings; and `scaleFromPrinted` declines a page with
+ * more than one printed scale on it, because it cannot tell which drawing each
+ * belongs to.
+ *
+ * A page-wide scale would be wrong for every drawing but one, so none is
+ * stored — what gets stored is the per-view answer, for the workspace to offer.
+ * This asserts the column is actually written, which is the half a census
+ * cannot see.
+ */
+describe("a sheet with two drawings at two scales", () => {
+  /** A caption block at the offsets real sheets use — see `viewCaptionScale`. */
+  function caption(name: string, scale: string, atX: number, atY: number, w: number) {
+    return [
+      { str: name, x: atX * w, y: atY * w, width: 60, height: 10 },
+      { str: `SCALE: ${scale}`, x: (atX + 0.0202) * w, y: (atY + 0.006) * w, width: 60, height: 8 },
+    ];
+  }
+
+  it("STORES EACH DRAWING'S OWN SCALE, and no scale for the page", async () => {
+    const d = deps();
+    const work = pageInventoryWork(CTX, {
+      ...d.deps,
+      openPdf: async (bytes) => {
+        const pdf = await openPlanPdf(bytes);
+        return {
+          ...pdf,
+          pageText: async (n: number) => {
+            const page = await pdf.pageText(n);
+            const w = page.widthPt;
+            return {
+              ...page,
+              // Only the captions, so no dimension can be read and the printed
+              // pass sees TWO scales and declines — which is the state this
+              // path exists for.
+              items: [
+                ...caption("FLOOR PLAN", `1/8" = 1'-0"`, 0.1, 0.2, w),
+                ...caption("ENLARGED RESTROOM PLAN", `1/2" = 1'-0"`, 0.6, 0.2, w),
+              ],
+            };
+          },
+          // Geometry in both halves, with a gutter between them: a caption over
+          // empty paper is a legend, not a drawing, and must not become a view.
+          pageStrokes: async (n: number) => {
+            const strokes = await pdf.pageStrokes(n);
+            const w = strokes.widthPt;
+            const segments = [];
+            for (let i = 0; i < 40; i += 1) {
+              const y = (0.3 + i * 0.004) * w;
+              segments.push({ x1: 0.08 * w, y1: y, x2: 0.35 * w, y2: y });
+              segments.push({ x1: 0.58 * w, y1: y, x2: 0.85 * w, y2: y });
+            }
+            return { ...strokes, segments };
+          },
+        };
+      },
+    });
+
+    expect(await work(task(1))).toEqual({ ok: true });
+    const row = d.scales[0]!;
+    // NO PAGE-WIDE SCALE. One would be wrong for every drawing but one, and a
+    // calibration an estimator accepts is one they are taken to have checked.
+    expect(row.scaleName).toBeNull();
+    expect(row.declineReason).toMatch(/drawings at their own scales/);
+    // …and the per-view answer IS stored.
+    expect(row.viewScales, "nothing stored for a multi-scale sheet").toBeDefined();
+    const names = (row.viewScales?.views ?? []).map((v) => v.scaleName).sort();
+    expect(names).toEqual([`1/2" = 1'-0"`, `1/8" = 1'-0"`]);
+    // Each carries its own region, which is what keeps the two scales from
+    // competing — see `sheetScale.ts`.
+    for (const view of row.viewScales?.views ?? []) {
+      expect(view.to).toBeGreaterThan(view.from);
+      expect(view.feetPerInch).toBeGreaterThan(0);
+    }
+  });
+
+  it("stores NOTHING for an ordinary sheet, which is most of them", async () => {
+    // The fixture reads its printed scale, so this path is never reached. A
+    // column written on every sheet would be a column nobody could trust to
+    // mean "this sheet is unusual".
+    const d = deps();
+    await pageInventoryWork(CTX, d.deps)(task(1));
+    expect(d.scales[0]!.viewScales).toBeUndefined();
+  });
+});

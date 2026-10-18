@@ -35,6 +35,10 @@ export type PlanMeasurementRow = {
   xs: number[];
   ys: number[];
   label: string | null;
+  /** The takeoff item this belongs to, or null for Unassigned. */
+  itemId?: string | null;
+  /** Openings deducted from an AREA. Empty for the other kinds. */
+  cutouts?: { xs: number[]; ys: number[] }[];
   /**
    * Which pricing package this quantity is in — null is the BASE BID.
    *
@@ -310,7 +314,7 @@ export function printedScalesFromProposals(
   return byPage;
 }
 
-export type ToolId = "pan" | "calibrate" | "linear" | "area" | "count";
+export type ToolId = "pan" | "calibrate" | "linear" | "area" | "rect" | "count" | "cutout" | "edit";
 
 /**
  * The measuring vocabulary, and it is deliberately the same three primitives
@@ -330,8 +334,30 @@ export const TOOLS: { id: ToolId; label: string; hint: string }[] = [
     hint: "Click each end of a dimension printed on the drawing, then type what it says.",
   },
   { id: "linear", label: "Line", hint: "Click along a run. Every click adds a point; the length adds up as you go." },
-  { id: "area", label: "Area", hint: "Click around the outline. It closes back to the first point." },
+  {
+    id: "area",
+    label: "Area",
+    hint:
+      "Click around the outline. Click the first point again to close it. Hold Shift to keep an edge straight.",
+  },
+  {
+    id: "rect",
+    label: "Rectangle",
+    hint: "Click two opposite corners. For a room that is square, which most of them are.",
+  },
   { id: "count", label: "Count", hint: "Click each one. The name you give it becomes the line item." },
+  {
+    id: "edit",
+    label: "Edit",
+    hint:
+      "Click a shape you have already drawn to move its corners, or to delete it. Hold Shift while dragging to keep an edge straight.",
+  },
+  {
+    id: "cutout",
+    label: "Cut out",
+    hint:
+      "Click round an opening INSIDE an area you have already saved, to take it off that area. Pick the area first.",
+  },
 ];
 
 /**
@@ -458,6 +484,28 @@ export function fitZoom(
     frame.height > 0 && page.heightPt > 0 ? (frame.height - inset) / (page.heightPt * baseScale) : forWidth;
   // Never zero or negative in a very small frame: the sheet would vanish.
   return Math.max(0.05, Math.min(forWidth, forHeight));
+}
+
+/**
+ * ── THE SAME FIT, ACROSS THE WIDTH ONLY ──
+ *
+ * `fitZoom` above fits BOTH dimensions, which is what somebody opening a sheet
+ * wants: the whole drawing, centred, whatever its orientation. This one fills
+ * the width and lets the height overflow, which is what somebody READING a
+ * tall sheet wants — a schedule, a set of sections, anything where the detail
+ * is wide and the scroll is natural.
+ *
+ * A separate function rather than a mode flag on `fitZoom`, because its tests
+ * pin the min() that makes it a box fit and a flag would make them conditional.
+ */
+export function fitWidthZoom(
+  frame: { width: number },
+  page: { widthPt: number },
+  baseScale: number,
+  inset = 24,
+): number {
+  if (page.widthPt <= 0 || baseScale <= 0 || frame.width <= 0) return 1;
+  return Math.max(0.05, (frame.width - inset) / (page.widthPt * baseScale));
 }
 
 /** What a sheet says about why it has no scale, keyed by page number. */

@@ -21,6 +21,32 @@ import { wallsFromStrokes, SheetTooDenseError, type StrokeSegment } from "./wall
  *
  * With the budget in, that same set runs end to end: p7 refuses in **22ms** and
  * the other fifteen pages behave as before.
+ *
+ * ── AND THEN THE BUDGET REFUSED A SHEET SOMEBODY NEEDED, 2026-10-17 ──
+ *
+ * It was `n*(n-1)/2 > MAX_PAIR_TESTS`, decided BEFORE any work. Camp Bow Wow
+ * A101 — 16,538 lines, the sheet an estimator would actually price — scores
+ * 136.7 million on that arithmetic and was refused outright. The work it was
+ * predicting is **286,783 pair tests**, and the whole of `findWallsOnSheet`
+ * takes about nine seconds on it.
+ *
+ * The estimate was not wrong that the loop is quadratic. It was wrong that
+ * every iteration costs a pair test: a bounding-box prefilter rejects 99.8% of
+ * them in four comparisons, because a pair that is both a wall thickness apart
+ * and overlapping must have its bounding boxes that close. So the budget now
+ * COUNTS what it spends and refuses mid-flight.
+ *
+ * ── WHICH MADE THIS FILE'S OWN FIXTURE STOP MEANING ANYTHING ──
+ *
+ * `fence()` builds segments "spread so no two are a wall thickness apart" — by
+ * construction, nothing in it can pair. Under the old arithmetic 10,000 of
+ * them scored 50M and refused; under a counter they cost nothing and sail
+ * through, which is CORRECT. A sheet of well-separated lines is not too dense
+ * to pair, and refusing it was the A101 defect in miniature.
+ *
+ * So the dense fixture is now one that is actually dense: lines piled on the
+ * same spot, alternating direction so no pair ever succeeds and no face is
+ * ever consumed, which is the shape that really does spend the budget.
  */
 
 /** A segment long enough to survive the pairer's own 2ft pre-filter, at the
@@ -38,25 +64,70 @@ function fence(count: number): StrokeSegment[] {
   return out;
 }
 
+/**
+ * Real wall-shaped pairs: two faces a wall thickness apart, repeated.
+ *
+ * `fence` is spread so nothing is ever a candidate, which makes it useless for
+ * reaching a counter — the prefilter rejects every pair in four comparisons
+ * and the budget is never spent. These cost tests, which is what the guard
+ * counts.
+ */
+function nearPairs(count: number): StrokeSegment[] {
+  const out: StrokeSegment[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const y = i * 3;
+    // 0.05pt apart is 0.4ft at this scale, inside the thickness band.
+    out.push({ x1: 0, y1: y, x2: 0.5, y2: y });
+    out.push({ x1: 0, y1: y + 0.05, x2: 0.5, y2: y + 0.05 });
+  }
+  return out;
+}
+
 describe("a sheet too dense to pair", () => {
-  it("REFUSES rather than running, when the pairs exceed the budget", () => {
-    // 10,000 segments is 50M pairs, past the 40M budget. Houston p7 is 30,825.
-    expect(() => wallsFromStrokes(fence(10_000), { feetPerPoint })).toThrow(SheetTooDenseError);
+  it("REFUSES when it has actually spent the budget", () => {
+    // ── THE GUARD IS A COUNTER NOW, SO THIS PASSES IT A SMALL ONE ──
+    //
+    // With the bounding-box prefilter in front of it, the real budget is
+    // effectively unreachable: `oneFacePerLine` collapses coincident lines
+    // first, so whatever survives is bounded by how much the drawing really
+    // puts within a wall thickness of itself. Camp Bow Wow A101 — the densest
+    // sheet anybody has produced here, 16,538 lines — spends 286,783 of the
+    // 40,000,000 available.
+    //
+    // A guard nobody can reach is a guard nobody can check, so the threshold
+    // is injectable and this reaches it from the other end.
+    expect(() => wallsFromStrokes(nearPairs(400), { feetPerPoint, maxPairTests: 10 })).toThrow(
+      SheetTooDenseError,
+    );
   });
 
-  it("REFUSES UP FRONT — in milliseconds, not after grinding", () => {
-    // The whole point: a refusal somebody waits two seconds for is still a
-    // button that feels broken. p7 refuses in 22ms in the real pipeline.
+  it("REFUSES while there is still a person waiting", () => {
     const started = Date.now();
-    expect(() => wallsFromStrokes(fence(10_000), { feetPerPoint })).toThrow();
+    expect(() => wallsFromStrokes(nearPairs(400), { feetPerPoint, maxPairTests: 10 })).toThrow();
     expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  it("DOES NOT REFUSE A BIG SHEET WHOSE LINES ARE SPREAD OUT — the A101 case", () => {
+    // ── THIS FIXTURE USED TO PROVE THE OPPOSITE, AND THAT WAS THE DEFECT ──
+    //
+    // `fence` builds segments "spread so no two are a wall thickness apart":
+    // by construction nothing in it can pair. 10,000 of them score 50 million
+    // on the old `n*(n-1)/2` arithmetic and were REFUSED — a sheet that costs
+    // nothing, turned away on a prediction about work nobody attempted.
+    //
+    // That is exactly what happened to A101, at 136.7 million predicted
+    // against 286,783 spent. So the fixture that used to demonstrate the guard
+    // working now demonstrates it being wrong, and it is kept for that.
+    const started = Date.now();
+    expect(() => wallsFromStrokes(fence(10_000), { feetPerPoint })).not.toThrow();
+    expect(Date.now() - started).toBeLessThan(10_000);
   });
 
   it("SAYS HOW MANY LINES, and what to do instead", () => {
     // A number somebody can sanity-check against the sheet, and an instruction.
     // "Couldn't be read" would be false — it was read fine, there is too much.
     try {
-      wallsFromStrokes(fence(10_000), { feetPerPoint });
+      wallsFromStrokes(nearPairs(5_000), { feetPerPoint, maxPairTests: 10 });
       throw new Error("should have refused");
     } catch (e) {
       expect(e).toBeInstanceOf(SheetTooDenseError);

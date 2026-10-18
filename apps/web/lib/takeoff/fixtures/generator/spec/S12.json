@@ -1,0 +1,771 @@
+{
+ "id": "S12",
+ "title": "CHILD CARE CENTER",
+ "units": "imperial",
+ "scale_ratio": 96,
+ "scale_text": null,
+ "scale_text_printed": null,
+ "page": "ANSI_B",
+ "wall_style": "filled",
+ "clutter": "medium",
+ "ceiling_height_ft": 10.0,
+ "walls": [
+  {
+   "id": "W1",
+   "a": [
+    0.0,
+    0.0
+   ],
+   "b": [
+    64.0,
+    0.0
+   ],
+   "type": "EXT-MASONRY-12",
+   "thickness_in": 12.0,
+   "exterior": true
+  },
+  {
+   "id": "W2",
+   "a": [
+    64.0,
+    0.0
+   ],
+   "b": [
+    64.0,
+    40.0
+   ],
+   "type": "CMU-8",
+   "thickness_in": 8.0,
+   "exterior": true
+  },
+  {
+   "id": "W3",
+   "a": [
+    64.0,
+    40.0
+   ],
+   "b": [
+    0.0,
+    40.0
+   ],
+   "type": "CMU-8",
+   "thickness_in": 8.0,
+   "exterior": true
+  },
+  {
+   "id": "W4",
+   "a": [
+    0.0,
+    40.0
+   ],
+   "b": [
+    0.0,
+    0.0
+   ],
+   "type": "CMU-8",
+   "thickness_in": 8.0,
+   "exterior": true
+  },
+  {
+   "id": "W5",
+   "a": [
+    16.0,
+    0.0
+   ],
+   "b": [
+    16.0,
+    40.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W6",
+   "a": [
+    22.0,
+    0.0
+   ],
+   "b": [
+    22.0,
+    20.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W7",
+   "a": [
+    22.0,
+    24.0
+   ],
+   "b": [
+    22.0,
+    40.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W8",
+   "a": [
+    22.0,
+    20.0
+   ],
+   "b": [
+    64.0,
+    20.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W9",
+   "a": [
+    22.0,
+    24.0
+   ],
+   "b": [
+    64.0,
+    24.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W10",
+   "a": [
+    43.0,
+    0.0
+   ],
+   "b": [
+    43.0,
+    20.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W11",
+   "a": [
+    30.0,
+    24.0
+   ],
+   "b": [
+    30.0,
+    40.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W12",
+   "a": [
+    38.0,
+    24.0
+   ],
+   "b": [
+    38.0,
+    40.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W13",
+   "a": [
+    50.0,
+    24.0
+   ],
+   "b": [
+    50.0,
+    40.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W14",
+   "a": [
+    0.0,
+    16.0
+   ],
+   "b": [
+    16.0,
+    16.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W15",
+   "a": [
+    0.0,
+    28.0
+   ],
+   "b": [
+    16.0,
+    28.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  }
+ ],
+ "openings": [
+  {
+   "id": "D1",
+   "kind": "door",
+   "subtype": "double",
+   "wall": "W1",
+   "at_ft": 8.0,
+   "width_ft": 6.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D2",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W5",
+   "at_ft": 8.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D3",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W5",
+   "at_ft": 22.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D4",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W5",
+   "at_ft": 34.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D5",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W8",
+   "at_ft": 10.0,
+   "width_ft": 3.0,
+   "side": -1,
+   "hinge": 0
+  },
+  {
+   "id": "D6",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W8",
+   "at_ft": 32.0,
+   "width_ft": 3.0,
+   "side": -1,
+   "hinge": 0
+  },
+  {
+   "id": "D7",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W9",
+   "at_ft": 4.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D8",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W9",
+   "at_ft": 12.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D9",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W9",
+   "at_ft": 22.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D10",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W9",
+   "at_ft": 35.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D11",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W2",
+   "at_ft": 22.0,
+   "width_ft": 3.5,
+   "side": -1,
+   "hinge": 0
+  },
+  {
+   "id": "WN1",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W1",
+   "at_ft": 30.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN2",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W1",
+   "at_ft": 36.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN3",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W1",
+   "at_ft": 50.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN4",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W1",
+   "at_ft": 58.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN5",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W4",
+   "at_ft": 32.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  }
+ ],
+ "rooms": [
+  {
+   "id": "R101",
+   "label": "LOBBY 101",
+   "name": "LOBBY",
+   "number": "101",
+   "type": "lobby",
+   "label_at": [
+    8.0,
+    8.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R102",
+   "label": "OFFICE 102",
+   "name": "OFFICE",
+   "number": "102",
+   "type": "office",
+   "label_at": [
+    8.0,
+    22.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R103",
+   "label": "STORAGE 103",
+   "name": "STORAGE",
+   "number": "103",
+   "type": "storage",
+   "label_at": [
+    8.0,
+    34.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R104",
+   "label": "CORRIDOR 104",
+   "name": "CORRIDOR",
+   "number": "104",
+   "type": "corridor",
+   "label_at": [
+    19.0,
+    30.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R105",
+   "label": "CLASSROOM 105",
+   "name": "CLASSROOM",
+   "number": "105",
+   "type": "other",
+   "label_at": [
+    32.5,
+    10.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R106",
+   "label": "CLASSROOM 106",
+   "name": "CLASSROOM",
+   "number": "106",
+   "type": "other",
+   "label_at": [
+    53.5,
+    10.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R107",
+   "label": "RESTROOM 107",
+   "name": "RESTROOM",
+   "number": "107",
+   "type": "restroom",
+   "label_at": [
+    26.0,
+    32.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R108",
+   "label": "RESTROOM 108",
+   "name": "RESTROOM",
+   "number": "108",
+   "type": "restroom",
+   "label_at": [
+    34.0,
+    32.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R109",
+   "label": "KITCHEN 109",
+   "name": "KITCHEN",
+   "number": "109",
+   "type": "kitchen",
+   "label_at": [
+    44.0,
+    32.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R110",
+   "label": "STAFF 110",
+   "name": "STAFF",
+   "number": "110",
+   "type": "break_room",
+   "label_at": [
+    57.0,
+    32.0
+   ],
+   "show_area": false
+  }
+ ],
+ "notes": "Scale is shown ONLY by a graphic scale bar (no scale text). 1/8\" = 1'-0\"; 12\" masonry south wall, CMU elsewhere; an L-shaped corridor.",
+ "scale_bar": true,
+ "grid": null,
+ "views": [],
+ "placement": {
+  "page_size_pt": [
+   1224,
+   792
+  ],
+  "views": [
+   {
+    "name": "FLOOR PLAN",
+    "origin_pt": [
+     243.00000000000006,
+     235.75
+    ],
+    "pt_per_ft": 9.0,
+    "scale_ratio": 96,
+    "box_ft": [
+     -0.3333333333333333,
+     -0.5,
+     64.33333333333333,
+     40.333333333333336
+    ]
+   }
+  ],
+  "dims": [
+   {
+    "p1_ft": [
+     -0.333333,
+     -0.5
+    ],
+    "p2_ft": [
+     16.0,
+     -0.5
+    ],
+    "text": "16'-4\"",
+    "distance_ft": 16.333333,
+    "line_pt": [
+     [
+      240.00000300000005,
+      198.85
+     ],
+     [
+      387.00000000000006,
+      198.85
+     ]
+    ],
+    "text_pt": [
+     313.50000150000005,
+     201.35
+    ]
+   },
+   {
+    "p1_ft": [
+     16.0,
+     -0.5
+    ],
+    "p2_ft": [
+     22.0,
+     -0.5
+    ],
+    "text": "6'-0\"",
+    "distance_ft": 6.0,
+    "line_pt": [
+     [
+      387.00000000000006,
+      198.85
+     ],
+     [
+      441.00000000000006,
+      198.85
+     ]
+    ],
+    "text_pt": [
+     414.00000000000006,
+     201.35
+    ]
+   },
+   {
+    "p1_ft": [
+     22.0,
+     -0.5
+    ],
+    "p2_ft": [
+     43.0,
+     -0.5
+    ],
+    "text": "21'-0\"",
+    "distance_ft": 21.0,
+    "line_pt": [
+     [
+      441.00000000000006,
+      198.85
+     ],
+     [
+      630.0,
+      198.85
+     ]
+    ],
+    "text_pt": [
+     535.5,
+     201.35
+    ]
+   },
+   {
+    "p1_ft": [
+     43.0,
+     -0.5
+    ],
+    "p2_ft": [
+     64.333333,
+     -0.5
+    ],
+    "text": "21'-4\"",
+    "distance_ft": 21.333332999999996,
+    "line_pt": [
+     [
+      630.0,
+      198.85
+     ],
+     [
+      821.9999970000001,
+      198.85
+     ]
+    ],
+    "text_pt": [
+     725.9999985000001,
+     201.35
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.3333333333333333,
+     -0.5
+    ],
+    "p2_ft": [
+     64.33333333333333,
+     -0.5
+    ],
+    "text": "64'-8\"",
+    "distance_ft": 64.66666666666666,
+    "line_pt": [
+     [
+      240.00000000000006,
+      170.05
+     ],
+     [
+      822.0,
+      170.05
+     ]
+    ],
+    "text_pt": [
+     531.0,
+     172.55
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.3333333333333333,
+     -0.5
+    ],
+    "p2_ft": [
+     -0.3333333333333333,
+     16.0
+    ],
+    "text": "16'-6\"",
+    "distance_ft": 16.5,
+    "line_pt": [
+     [
+      207.60000000000005,
+      231.25
+     ],
+     [
+      207.60000000000005,
+      379.75
+     ]
+    ],
+    "text_pt": [
+     205.10000000000005,
+     305.5
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.3333333333333333,
+     16.0
+    ],
+    "p2_ft": [
+     -0.3333333333333333,
+     28.0
+    ],
+    "text": "12'-0\"",
+    "distance_ft": 12.0,
+    "line_pt": [
+     [
+      207.60000000000005,
+      379.75
+     ],
+     [
+      207.60000000000005,
+      487.75
+     ]
+    ],
+    "text_pt": [
+     205.10000000000005,
+     433.75
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.3333333333333333,
+     28.0
+    ],
+    "p2_ft": [
+     -0.3333333333333333,
+     40.333333
+    ],
+    "text": "12'-4\"",
+    "distance_ft": 12.333333000000003,
+    "line_pt": [
+     [
+      207.60000000000005,
+      487.75
+     ],
+     [
+      207.60000000000005,
+      598.749997
+     ]
+    ],
+    "text_pt": [
+     205.10000000000005,
+     543.2499985
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.3333333333333333,
+     -0.5
+    ],
+    "p2_ft": [
+     -0.3333333333333333,
+     40.333333333333336
+    ],
+    "text": "40'-10\"",
+    "distance_ft": 40.833333333333336,
+    "line_pt": [
+     [
+      178.80000000000007,
+      231.25
+     ],
+     [
+      178.80000000000007,
+      598.75
+     ]
+    ],
+    "text_pt": [
+     176.30000000000007,
+     415.0
+    ]
+   }
+  ]
+ }
+}

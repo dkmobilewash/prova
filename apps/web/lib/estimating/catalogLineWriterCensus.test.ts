@@ -161,12 +161,20 @@ function writeLiterals(source: string): string[] {
   return out;
 }
 
-/** The three hand-written mappings, by name. A fourth is not forbidden — it
- * is required to be added here, which is the one moment anybody reads this
- * file's subject line. */
+/** The hand-written mappings, by name. Another is not forbidden — it is
+ * required to be added here, which is the one moment anybody reads this
+ * file's subject line.
+ *
+ * `takeoff-item-lines.ts` is the fourth, added 2026-10-17 with the expander
+ * that turns a traced condition into estimate lines. It is a near-twin of
+ * `wall-schedule.ts` — same three rules, same inheritance from the catalog —
+ * which is exactly why it belongs on this list: two writers that look alike
+ * are two writers free to drift, and the per-field assertions below are what
+ * stop one of them quietly forgetting `productionRate`. */
 const EXPECTED_WRITERS = [
   "apps/web/lib/estimating/catalog-line.ts",
   "apps/web/lib/estimating/draft-lines.ts",
+  "apps/web/lib/estimating/takeoff-item-lines.ts",
   "apps/web/lib/estimating/wall-schedule.ts",
 ];
 
@@ -227,7 +235,7 @@ describe("the census can see what it is reasoning about", () => {
 const INHERITED_FIELDS = ["productionRate", "costCategory"] as const;
 
 describe("every catalog-sourced line carries what it inherits", () => {
-  it("is written by exactly the three known mappings", () => {
+  it("is written by exactly the known mappings, and no others", () => {
     expect([...writers].sort()).toEqual([...EXPECTED_WRITERS].sort());
   });
 

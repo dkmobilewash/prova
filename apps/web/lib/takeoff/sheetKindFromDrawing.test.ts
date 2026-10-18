@@ -158,8 +158,14 @@ describe("and the viewer actually shows it", () => {
     // `cautionToShow`'s own cases pin what the rule IS. This pins that the
     // viewer hands it the two readings in that order — the mutation that swaps
     // them is otherwise invisible, because both names still appear either way.
+    //
+    // A THIRD ARGUMENT ARRIVED 2026-10-15 and this pattern ended at the closing
+    // bracket, so it failed on a change it has no opinion about. Widened to the
+    // ORDER OF THE PAIR rather than the shape of the whole call: that is the
+    // thing this test is for, and pinning the argument COUNT as well made it
+    // fail for a second reason it never meant to assert.
     expect(code(), "the precedence at the call site is backwards or gone").toMatch(
-      /cautionToShow\(\s*duplicateWallsByPage\[pageNumber\]\s*,\s*readCaution\[pageNumber\]\s*\)/,
+      /cautionToShow\(\s*duplicateWallsByPage\[pageNumber\]\s*,\s*readCaution\[pageNumber\]\s*[,)]/,
     );
   });
 

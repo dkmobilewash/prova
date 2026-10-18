@@ -1,0 +1,317 @@
+{
+  "id": "S11",
+  "file": "plan.pdf",
+  "page": 1,
+  "kind": "vector",
+  "units": "imperial",
+  "scale_text": "1/8\" = 1'-0\"",
+  "scale_ratio": 48,
+  "sheet_type": "floor_plan",
+  "ceiling_height_ft": 8.0,
+  "totals": {
+    "wall_lf_gross": 166.0,
+    "wall_lf_net": 135.5,
+    "wall_lf_exterior_gross": 104.0,
+    "wall_lf_interior_gross": 62.0,
+    "wall_sf_exterior_net": 712.0,
+    "wall_sf_interior_net": 372.0,
+    "gross_building_area_sf": 713.0,
+    "room_count": 5,
+    "door_count": 5,
+    "window_count": 3
+  },
+  "walls": [
+    {
+      "id": "W1",
+      "start_ft": [
+        0.0,
+        0.0
+      ],
+      "end_ft": [
+        30.0,
+        0.0
+      ],
+      "length_ft": 30.0,
+      "net_length_ft": 27.0,
+      "thickness_in": 12.0,
+      "type": "EXT-MASONRY-12",
+      "exterior": true,
+      "height_ft": 8.0,
+      "wall_sf_net": 216.0
+    },
+    {
+      "id": "W2",
+      "start_ft": [
+        30.0,
+        0.0
+      ],
+      "end_ft": [
+        30.0,
+        22.0
+      ],
+      "length_ft": 22.0,
+      "net_length_ft": 18.0,
+      "thickness_in": 12.0,
+      "type": "EXT-MASONRY-12",
+      "exterior": true,
+      "height_ft": 8.0,
+      "wall_sf_net": 144.0
+    },
+    {
+      "id": "W3",
+      "start_ft": [
+        30.0,
+        22.0
+      ],
+      "end_ft": [
+        0.0,
+        22.0
+      ],
+      "length_ft": 30.0,
+      "net_length_ft": 25.0,
+      "thickness_in": 12.0,
+      "type": "EXT-MASONRY-12",
+      "exterior": true,
+      "height_ft": 8.0,
+      "wall_sf_net": 200.0
+    },
+    {
+      "id": "W4",
+      "start_ft": [
+        0.0,
+        22.0
+      ],
+      "end_ft": [
+        0.0,
+        0.0
+      ],
+      "length_ft": 22.0,
+      "net_length_ft": 19.0,
+      "thickness_in": 12.0,
+      "type": "EXT-MASONRY-12",
+      "exterior": true,
+      "height_ft": 8.0,
+      "wall_sf_net": 152.0
+    },
+    {
+      "id": "W5",
+      "start_ft": [
+        16.0,
+        0.0
+      ],
+      "end_ft": [
+        16.0,
+        22.0
+      ],
+      "length_ft": 22.0,
+      "net_length_ft": 19.0,
+      "thickness_in": 4.5,
+      "type": "INT-2x4",
+      "exterior": false,
+      "height_ft": 8.0,
+      "wall_sf_net": 152.0
+    },
+    {
+      "id": "W6",
+      "start_ft": [
+        0.0,
+        10.0
+      ],
+      "end_ft": [
+        16.0,
+        10.0
+      ],
+      "length_ft": 16.0,
+      "net_length_ft": 10.0,
+      "thickness_in": 4.5,
+      "type": "INT-2x4",
+      "exterior": false,
+      "height_ft": 8.0,
+      "wall_sf_net": 80.0
+    },
+    {
+      "id": "W7",
+      "start_ft": [
+        16.0,
+        12.0
+      ],
+      "end_ft": [
+        30.0,
+        12.0
+      ],
+      "length_ft": 14.0,
+      "net_length_ft": 7.5,
+      "thickness_in": 4.5,
+      "type": "INT-2x4",
+      "exterior": false,
+      "height_ft": 8.0,
+      "wall_sf_net": 60.0
+    },
+    {
+      "id": "W8",
+      "start_ft": [
+        24.0,
+        12.0
+      ],
+      "end_ft": [
+        24.0,
+        22.0
+      ],
+      "length_ft": 10.0,
+      "net_length_ft": 10.0,
+      "thickness_in": 4.5,
+      "type": "INT-2x4",
+      "exterior": false,
+      "height_ft": 8.0,
+      "wall_sf_net": 80.0
+    }
+  ],
+  "openings": [
+    {
+      "id": "D1",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W1",
+      "width_ft": 3.0,
+      "center_ft": [
+        8.0,
+        0.0
+      ]
+    },
+    {
+      "id": "D2",
+      "kind": "door",
+      "subtype": "cased",
+      "wall": "W6",
+      "width_ft": 6.0,
+      "center_ft": [
+        8.0,
+        10.0
+      ]
+    },
+    {
+      "id": "D3",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W5",
+      "width_ft": 3.0,
+      "center_ft": [
+        16.0,
+        6.0
+      ]
+    },
+    {
+      "id": "D4",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W7",
+      "width_ft": 2.5,
+      "center_ft": [
+        20.0,
+        12.0
+      ]
+    },
+    {
+      "id": "D5",
+      "kind": "door",
+      "subtype": "sliding",
+      "wall": "W7",
+      "width_ft": 4.0,
+      "center_ft": [
+        27.0,
+        12.0
+      ]
+    },
+    {
+      "id": "WN1",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W3",
+      "width_ft": 5.0,
+      "center_ft": [
+        8.0,
+        22.0
+      ]
+    },
+    {
+      "id": "WN2",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W2",
+      "width_ft": 4.0,
+      "center_ft": [
+        30.0,
+        6.0
+      ]
+    },
+    {
+      "id": "WN3",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W4",
+      "width_ft": 3.0,
+      "center_ft": [
+        0.0,
+        5.0
+      ]
+    }
+  ],
+  "rooms": [
+    {
+      "id": "R101",
+      "label": "KITCHEN 101",
+      "type": "kitchen",
+      "area_sf": 142.6,
+      "perimeter_lf": 49.25,
+      "centroid_ft": [
+        8.16,
+        5.16
+      ]
+    },
+    {
+      "id": "R102",
+      "label": "LIVING 102",
+      "type": "living",
+      "area_sf": 173.22,
+      "perimeter_lf": 53.25,
+      "centroid_ft": [
+        8.16,
+        15.84
+      ]
+    },
+    {
+      "id": "R103",
+      "label": "BEDROOM 103",
+      "type": "bedroom",
+      "area_sf": 150.6,
+      "perimeter_lf": 49.25,
+      "centroid_ft": [
+        22.84,
+        6.16
+      ]
+    },
+    {
+      "id": "R104",
+      "label": "BATH 104",
+      "type": "bathroom",
+      "area_sf": 71.01,
+      "perimeter_lf": 33.88,
+      "centroid_ft": [
+        20.0,
+        16.84
+      ]
+    },
+    {
+      "id": "R105",
+      "label": "CLOSET 105",
+      "type": "closet",
+      "area_sf": 49.47,
+      "perimeter_lf": 29.25,
+      "centroid_ft": [
+        26.84,
+        16.84
+      ]
+    }
+  ],
+  "notes": "The printed scale note says 1/8\" = 1'-0\" but the plan is drawn at 1/4\" = 1'-0\". Dimension strings are correct and must override the note. scale_text is as printed; scale_ratio is the TRUE ratio (48)."
+}
