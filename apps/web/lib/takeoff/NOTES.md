@@ -463,6 +463,108 @@ comparison. No model is committed: this one is worse than the rules on every
 real guard, and a model file in the tree that nobody should load is a thing the
 next person has to work out the status of.
 
+## TRAINING ON REAL BUILDINGS: THE FEATURES ARE FIXED, THE TRANSFER IS NOT — 2026-10-18
+
+Veto-only, sheet-relative features, trained on BIM-DEV's 22 real-building
+sheets with the synthetic fifty contributing NEGATIVES ONLY — 19,118 rows of
+desks, tables, hatch, poché, stairs, fixtures and counters, and not one
+positive, because what a generator thinks a wall looks like is the thing that
+did not transfer last time.
+
+40,698 rows, 25.2% positive. Threshold chosen on BIM-DEV alone at the standing
+rule — missing must not rise more than 0.5 percentage points — which admits
+0.2 (+0.2 pp) and refuses 0.35 (+1.0 pp). 0.25 and 0.3 sit exactly on the
+limit for 0.1 pp more of extra, so 0.2 it is.
+
+### On the set it was trained on, it is the best model yet
+
+| BIM-DEV | missing | extra |
+| --- | --- | --- |
+| rules | 16.3% | 4.9% |
+| veto @0.2 | 16.5% | **3.1%** |
+
+879 ft of phantom removed for 111 ft of wall. That is a genuinely good trade
+and the first one any model here has offered.
+
+### On the held-out buildings it falls over
+
+| BIM-HELD-OUT, scored once | missing | extra | net |
+| --- | --- | --- | --- |
+| rules | 780 (9.0%) | 373 (4.3%) | −406 |
+| veto @0.2 | 1,664 (**19.2%**) | 345 (4.0%) | −1,319 |
+
+Missing more than doubles to buy 28 ft of phantom.
+
+### And the guards are worse than that
+
+| | rules | veto @0.2 |
+| --- | --- | --- |
+| Cedar Hollow missing | 5.07 ft (0.8%) | **219.85 ft (32.7%)** |
+| 20 fixtures within 2% | 15 of 17 | **2 of 17** |
+| bench walls missed | 111 | **266** |
+| bench type-totals outside ±2% | 17 of 60 | **35 of 60** |
+| bench phantom footage | 3,497 ft | 1,857 ft |
+| bench zero-wall | PASS | **PASS** |
+| ELEVEN03 A4.B-Y2 | 1,571 ft | 901 ft (**−42.6%**) |
+| Camp Bow Wow A101 | 2,530 ft | 1,814 ft (−28.3%) |
+| Camp Bow Wow A102 | 2,082 ft | 1,792 ft (−13.9%) |
+| Camp Bow Wow A120 | 129 ft | 73 ft (−43.4%) |
+
+Every real sheet moved more than 5% except A4.B.3. The zero-wall bar held
+again, which is the veto guarantee rather than a property of this model: it
+cannot add a phantom, so everything it costs it costs in missing wall.
+
+**The A4.B-Y2 overlay says what the numbers cannot.** The envelope survives
+almost intact and nearly every interior partition is gone — the rows of short
+demising and bathroom walls down the left and through the middle. BIM-DEV is
+two large, mostly open buildings (esplanades and the clinic are 36,683 of its
+47,316 ft); a hotel floor plate is hundreds of short partitions. The model
+learned which of ITS buildings' runs were walls, and short interior stubs were
+mostly not.
+
+### The features are genuinely fixed, and that is worth separating out
+
+| model | top feature | importance |
+| --- | --- | --- |
+| absolute features, synthetic | penMean | 0.721 |
+| sheet-relative, synthetic | penPercentile | 0.616 |
+| sheet-relative, real buildings | **nearestNeighbourThicknessRatio** | **0.317** |
+
+**No feature over 0.4 for the first time.** `nearestNeighbourThicknessRatio`
+encodes "is the nearest parallel thing a similar thickness to me" — a wall's
+neighbour across a room is another wall, and a hatch line's neighbour is
+another hatch line, so it is a property of the drawing's structure rather than
+of one office's pen. `offOrthogonalDeg` (0.213) and `penDelta` (0.154) follow,
+with `penPercentile` down to 0.131 from 0.616. Eight features are never split
+on, the schedule and layer ones among them.
+
+So the feature work did what it was for. What has not been solved is that
+three buildings are not enough to learn from, whoever drew them.
+
+### Plainly: did real buildings transfer better than synthetic?
+
+**No — and it failed in the opposite direction, which is the useful part.**
+
+| | on its own kind | on the guards |
+| --- | --- | --- |
+| synthetic-trained | extra 13.6% → 5.0% | Cedar 26.3% missing, fixtures 0 of 17 |
+| real-building-trained | extra 4.9% → 3.1% | Cedar 32.7% missing, fixtures 2 of 17 |
+
+The synthetic model learned a drawing STYLE — pen weight — and refused walls
+drawn by any office it had not seen. The sheet-relative features cured that.
+This model learned a BUILDING TYPE — two large open-plan buildings — and
+refuses the short partitions of everything else. Both are the same failure at
+different levels, and the second cannot be fixed by features: it needs more
+buildings, of more kinds.
+
+Three buildings, 22 sheets, 10,271 positive rows is not a training set. It is
+one office's two office blocks and a clinic. The next model wants real sheets
+from several plan sets of different BUILDING TYPES — a hotel floor plate, a
+house, a fit-out — which is exactly what the labelling screen is for, and why
+no amount of further work on this set is worth doing first.
+
+No model is committed. `wall-model.json` is absent by design.
+
 ## FIVE FIXES ATTEMPTED ON BIM-DEV, NONE SHIPPED — 2026-10-18
 
 The engine is unchanged by this round. What changed is the measuring, and

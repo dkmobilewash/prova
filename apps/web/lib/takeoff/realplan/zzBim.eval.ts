@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { findWallsOnSheet } from "../findWallsOnSheet";
 import { sheetStrokes } from "../sheetStrokes";
+import { FEATURE_NAMES } from "../wallFeatures";
+import { deciderFor, type WallModel } from "../wallClassifier";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import type { WallCandidate } from "../wallVectors";
 
@@ -52,6 +54,23 @@ const DIR = process.env.BIM_DIR ?? "";
 const GROUP = process.env.BIM_GROUP ?? "";
 const OUT = process.env.BIM_OUT ?? "";
 const ONLY = process.env.BIM_ONLY ?? "";
+/**
+ * Where to write training rows, if anywhere.
+ *
+ * ── THESE ARE TEST SHEETS, AND THAT IS A RULE ABOUT THE HELD-OUT HALF ──
+ *
+ * Writing rows from BIM-DEV is legitimate: it is the half this work is
+ * allowed to look at. Writing them from BIM-HELD-OUT is not, and nothing here
+ * stops you — so the refusal is explicit: with `BIM_LABELS` set, the group
+ * must be `dev`. A model trained on the held-out set makes every number this
+ * file prints meaningless and nothing downstream would notice.
+ */
+const LABELS = process.env.BIM_LABELS ?? "";
+/** A trained model to VETO with. The rules choose; the model may only remove
+ *  one of their choices, never add. Off by default. */
+const MODEL = process.env.BIM_MODEL ?? "";
+/** Below this score the model refuses a run the rules proposed. */
+const CUT = Number(process.env.BIM_CUT ?? "0.35");
 
 type KeyWall = {
   id: string;
@@ -195,6 +214,24 @@ describe.skipIf(DIR === "")("the BIM held-out sheets", () => {
     }
     console.log(`group: ${GROUP === "" ? "ALL" : GROUP} — ${models.join(", ")}`);
     if (OUT) mkdirSync(OUT, { recursive: true });
+    if (LABELS !== "") {
+      expect(
+        GROUP,
+        "BIM_LABELS with any group but dev would train on the held-out buildings",
+      ).toBe("dev");
+      mkdirSync(LABELS, { recursive: true });
+    }
+
+    let veto: ((f: number[], w: WallCandidate) => boolean) | undefined;
+    if (MODEL !== "") {
+      const loaded = JSON.parse(readFileSync(MODEL, "utf8")) as WallModel;
+      const scorer = deciderFor(loaded, FEATURE_NAMES);
+      // Refusing beats scoring with the wrong columns: a silent fall back to
+      // the rules would be reported as the model's own result.
+      expect(scorer, "the model's columns do not match this build's features").not.toBeNull();
+      veto = (f, w) => scorer!(f, w) < CUT;
+      console.log(`veto with ${MODEL} at ${CUT}`);
+    }
 
     const rows: Row[] = [];
 
@@ -256,9 +293,16 @@ describe.skipIf(DIR === "")("the BIM held-out sheets", () => {
           return { x1: a.x, y1: a.y, x2: b.x, y2: b.y, type: typeOf.get(s[4]) ?? "unknown" };
         });
 
+        const candidates: { features: number[]; wall: WallCandidate }[] = [];
         const found = findWallsOnSheet({
           segments: read.segments,
           textItems,
+          onCandidate:
+            LABELS === ""
+              ? undefined
+              : (features: number[], wall: WallCandidate) =>
+                  candidates.push({ features: [...features], wall }),
+          veto,
           pageSize: { widthPt, heightPt },
           feetPerUnit,
           wallTypes: [],
@@ -355,6 +399,50 @@ describe.skipIf(DIR === "")("the BIM held-out sheets", () => {
           missBy,
           extraBy,
         });
+
+        if (LABELS !== "") {
+          // ── A CANDIDATE IS POSITIVE IF IT LIES ON A KEY WALL ──
+          //
+          // Against the MODEL's centrelines, so this is the real thing rather
+          // than a reading of a drawing. Furring is labelled positive and
+          // carries its role, so a later run can drop it without re-extracting.
+          const rows = candidates.map(({ features, wall }) => {
+            let on: string | null = null;
+            for (const kw of keyWalls) {
+              if (!onTheLine(kw, wall, feetPerUnit)) continue;
+              const asLine = { x1: wall.x1, y1: wall.y1, x2: wall.x2, y2: wall.y2 };
+              const span = spanAlong(asLine, kw);
+              if (span === null) continue;
+              if (span.to - span.from < (lengthOf(asLine) || 1) * 0.5) continue;
+              on = kw.role;
+              break;
+            }
+            return {
+              features,
+              label: on === null ? 0 : 1,
+              lengthFt: wall.lengthFeet,
+              role: on ?? "none",
+            };
+          });
+          writeFileSync(
+            join(LABELS, `${key.id}.json`),
+            JSON.stringify(
+              {
+                format: "takeoff-labels-v1",
+                set: "bim-dev",
+                sheet: key.id,
+                model,
+                storey: key.storey,
+                renderer: key.renderer,
+                featureNames: [...FEATURE_NAMES],
+                rows,
+              },
+              null,
+              1,
+            ),
+            "utf8",
+          );
+        }
 
         if (OUT) {
           const w = 1400;
