@@ -463,6 +463,106 @@ comparison. No model is committed: this one is worse than the rules on every
 real guard, and a model file in the tree that nobody should load is a thing the
 next person has to work out the status of.
 
+## The BIM held-out set: real buildings, exact keys — 2026-10-18
+
+36 sheets from 6 real IFC models, 2 renderers each, with the answer key taken
+from the MODEL's own centrelines rather than from anyone's reading of a
+drawing. **Test only.** Training on these makes them stop measuring anything.
+
+### The score
+
+| | missing | extra | net |
+| --- | --- | --- | --- |
+| with furring (55,976 key ft) | 4,668 (**8.3%**) | 1,958 (**3.5%**) | −2,710 |
+| without furring (50,498 key ft) | 3,437 (**6.5%**) | 2,289 (**4.3%**) | −1,148 |
+
+| renderer | sheets | missing | extra |
+| --- | --- | --- | --- |
+| r1-section | 18 | 8.9% | 3.7% |
+| r2-ifcsvg | 18 | 7.8% | 3.3% |
+
+Per model, missing runs 0.0% (fzk-haus) to 11.6% (esplanades); extra runs 0.0%
+to 10.2% (smiley-west). Two renderings of the same floor can differ by 4× —
+esplanades 5.korrus is 469 ft missing on r1-section and 234 on r2-ifcsvg.
+
+### Why wall is missed, in feet across the set
+
+| ft | share | cause |
+| --- | --- | --- |
+| 1,723 | 3.1% | plain exterior wall |
+| 1,218 | 2.2% | furring, under 3 in thick |
+| 813 | 1.5% | plain partition |
+| 725 | 1.3% | runs under 3 ft |
+
+**The first is openings and the second is thickness, and both were measured
+from the keys alone.** Walking every wall's centreline in the key's own
+coordinates and asking what ink lies beside it: **exterior walls are 20.2% of
+their length opening** (3,846 ft of 19,055), partitions 7.2%, furring 0.0%.
+One 85 ft esplanades facade has 852 window stroke-endpoints along it against
+293 wall ones — it is a glazed elevation drawn as wall stub, window, wall
+stub. That is the unbridged-openings scar this file already records as
+known-and-unfixed, arriving as the single largest cause on real buildings.
+
+Furring is a separate and simpler story: it is a thin finish layer, 3,230 ft
+of it, with **no openings at all**, and 38% of it is missed on thickness.
+
+### What the extra sits on
+
+| ft | share | sits on |
+| --- | --- | --- |
+| 970 | 1.7% | dimension lines |
+| 306 | 0.5% | stairs |
+| 128 | 0.2% | the scale bar |
+
+A scale bar is drawn AT PLAN SCALE, so a 20 ft bar is a 20 ft pair of parallel
+lines. It is a wall by every geometric test this engine applies.
+
+### HARDER THAN THE SYNTHETIC SHEETS ON MISSING, EASIER ON EXTRA
+
+| | missing | extra |
+| --- | --- | --- |
+| messy synthetic, held-out styles | 2.9% | 13.6% |
+| BIM, with furring | **8.3%** | **3.5%** |
+
+Nearly three times the missing and a quarter of the extra, and both directions
+have the same cause: **a real building is mostly wall, and a synthetic sheet is
+mostly furniture.** The generator's job was to clutter a plan, so its sheets
+are full of desks and tables that read as wall pairs — hence 13.6% extra. Real
+plans have fewer such decoys, so the phantom rate falls. But a real building
+has long glazed facades, 3 in furring and hundreds of short returns, none of
+which a generator thought to produce — so the missing rate triples.
+
+**Neither set predicts the other, which is the finding.** A model picked on the
+synthetic sheets is being chosen on the failure mode real buildings have least
+of.
+
+### THE READER IS NOT THE PROBLEM, AND THAT HAD TO BE CHECKED
+
+`zzBimRead.eval.ts` counts our strokes against each key's own count: **271,371
+against 264,244, or 102.7%** (we flatten curves into segments, they do not). So
+a missed BIM wall is never a wall we failed to read. Worth a run of its own
+because a finder that cannot pair two faces and a reader that never hands it
+the faces produce the same score.
+
+### A DIAGNOSTIC THAT FAILED ITS CONTROL, AND WAS NOT SHIPPED
+
+A third eval classified each missed wall as not-drawn / unpaired / broken, and
+reported **87% of missed footage as "no stroke along either face"**. It was
+false. The control — running the same detector over walls the finder DID find
+— returned "not drawn" for 70% of those too, which is impossible.
+
+The lesson is the one this file keeps paying for, so here is the shape rather
+than the fix: the first version had NO control, and its answer was confident,
+specific and wrong in a way nothing downstream would have caught. What settled
+it was not more detector work but two numbers from outside it — the reader
+count above, and a histogram of what actually lies beside one wall in raw PDF
+points, with no unit conversion in the path. The wall-role and opening-share
+numbers in this entry all come from the keys directly for that reason.
+
+The detector was deleted rather than fixed. A measurement whose control fails
+is not a result to repair later; it is a thing that must not be in the
+repository where somebody will read its output.
+
 ## The labelling screen, finished — 2026-10-18
 
 Real sheets are the bottleneck and this is what makes them labellable. The core
