@@ -93,6 +93,33 @@ export type OffsetFinding = {
   coverage: [number, number];
   /** Faces found parallel to the run at all — the denominator of the search. */
   facesNearby: number;
+  /**
+   * The two faces of the chosen pair, as signed perpendicular offsets from the
+   * run, in page-width units.
+   *
+   * Returned so a reviewer can be SHOWN the claim rather than told it: a crop
+   * with these two drawn over the sheet answers "is that pair the wall?" in a
+   * second, and that is the one question this function cannot answer itself.
+   */
+  pairFaces: [number, number];
+  /**
+   * How long the shorter face of the chosen pair is, in feet.
+   *
+   * ── THE NUMBER THAT SAYS WHETHER THE PAIR IS A WALL OR A GRID LINE ──
+   *
+   * Pairs are ranked by this, so the longest wins — and the longest parallel
+   * lines on a floor plan are the GRID and column lines, which run past the
+   * building at both ends and are drawn in pairs. Two crops reviewed by eye
+   * both showed the chosen pair spanning the whole crop, and 23 of 62 findings
+   * chose a pair under five inches apart, with `(4.1in apart, 8.1in off)`
+   * repeating five times — one long thin pair winning over and over.
+   *
+   * Whether those are grid lines or genuine long demising walls is a question
+   * about the drawing, which this cannot answer and a reviewer can. So the
+   * number is reported rather than acted on: a face thirty times the length of
+   * the run it is supposed to belong to is the thing to be suspicious of.
+   */
+  pairFaceFeet: number;
 };
 
 type Band = {
@@ -225,7 +252,13 @@ export function offsetCandidates(input: {
     // So pairs are ranked by the shorter of their two faces, and the winner is
     // the pair whose weaker member is still long. A wall-and-shelf pair is
     // beaten by the wall's own two faces whenever both are drawn.
-    let best: { centre: number; gap: number; cov: [number, number]; weakest: number } | null = null;
+    let best: {
+      centre: number;
+      gap: number;
+      cov: [number, number];
+      weakest: number;
+      faces: [number, number];
+    } | null = null;
     for (let i = 0; i < full.length; i += 1) {
       for (let j = i + 1; j < full.length; j += 1) {
         const gapFeet = Math.abs(full[i].offset - full[j].offset) * feetPerUnit;
@@ -239,7 +272,13 @@ export function offsetCandidates(input: {
           // keeps a correct run reported as correct.
           (Math.abs(weakest - best.weakest) <= 0.01 && Math.abs(centre) < Math.abs(best.centre));
         if (better) {
-          best = { centre, gap: gapFeet, cov: [full[i].coverage, full[j].coverage], weakest };
+          best = {
+            centre,
+            gap: gapFeet,
+            cov: [full[i].coverage, full[j].coverage],
+            weakest,
+            faces: [full[i].offset, full[j].offset],
+          };
         }
       }
     }
@@ -252,6 +291,8 @@ export function offsetCandidates(input: {
       pairThicknessInches: best.gap * 12,
       coverage: best.cov,
       facesNearby: bands.length,
+      pairFaces: best.faces,
+      pairFaceFeet: best.weakest,
     });
   }
   return found.sort((a, b) => b.offsetInches - a.offsetInches);

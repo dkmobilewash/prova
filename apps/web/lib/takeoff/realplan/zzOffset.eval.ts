@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { OFFSET_INCHES, offsetCandidates, type Run } from "../offsetCandidates";
@@ -27,6 +27,8 @@ import { sheetStrokes } from "../sheetStrokes";
  *       --config vitest.eval.config.mts lib/takeoff/realplan/zzOffset.eval.ts
  */
 const DIR = process.env.REAL_PLAN_DIR ?? "";
+/** Where to write the findings as JSON, for the crop generator. */
+const JSON_OUT = process.env.OFFSET_JSON ?? "";
 const LABELS = process.env.TAKEOFF_LABEL_DIR ?? "";
 const SET = "2025-03-28_ELEVEN03 PERMIT SET_ARCH.pdf";
 const LABEL_SET = "2025-03-28_ELEVEN03_PERMIT_SET_ARCH.pdf";
@@ -48,6 +50,7 @@ describe.skipIf(DIR === "" || LABELS === "")("accepted runs that sit off the wal
     let flaggedAnywhere = 0;
     /** Every sheet whose geometry was actually read, so a wrong path fails. */
     const sheetsRead: string[] = [];
+    const asJson: Record<string, unknown[]> = {};
     for (const [sheet, page] of SHEETS) {
       const saved = JSON.parse(
         readFileSync(join(LABELS, LABEL_SET, `${sheet}.json`), "utf8"),
@@ -127,6 +130,21 @@ describe.skipIf(DIR === "" || LABELS === "")("accepted runs that sit off the wal
       // eslint-disable-next-line no-console
       console.log(lines.join("\n"));
       flaggedAnywhere += findings.length;
+      if (JSON_OUT !== "") {
+        asJson[sheet] = findings.map((f) => ({
+          at: (f.run as Run & { at: number }).at,
+          x1: f.run.x1,
+          y1: f.run.y1,
+          x2: f.run.x2,
+          y2: f.run.y2,
+          lengthFeet: f.run.lengthFeet,
+          runThickIn: (f.run.thicknessFeet ?? 0) * 12,
+          offsetInches: f.offsetInches,
+          pairThickIn: f.pairThicknessInches,
+          faces: f.pairFaces,
+          pairFaceFeet: f.pairFaceFeet,
+        }));
+      }
 
       if (sheet === "A4.B.3") {
         const positions = new Set(findings.map((f) => (f.run as Run & { at: number }).at));
@@ -145,6 +163,11 @@ describe.skipIf(DIR === "" || LABELS === "")("accepted runs that sit off the wal
     }
     // The input resolved: a REAL_PLAN_DIR or a label dir that matches nothing
     // would otherwise print an empty report and pass.
+    if (JSON_OUT !== "") {
+      writeFileSync(JSON_OUT, JSON.stringify(asJson, null, 1), "utf8");
+      // eslint-disable-next-line no-console
+      console.log(`\nwrote ${JSON_OUT}`);
+    }
     expect(
       sheetsRead.length,
       "no sheet was read at all — check REAL_PLAN_DIR and TAKEOFF_LABEL_DIR",
