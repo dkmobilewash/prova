@@ -50,6 +50,11 @@ export type AnswerKeyPanelProps = {
   onTracing?: (next: boolean) => void;
   /** Both ends are down, so Enter will commit. */
   traceReady?: boolean;
+  /** Split the focused candidate where an accepted wall crosses it. The
+   *  workspace owns this because the split needs the sheet's scale. */
+  onSplit?: (id: string) => void;
+  /** What the last split attempt did, for the reviewer. */
+  splitNote?: string | null;
   /**
    * Every pairing the finder considered, with its feature vector.
    *
@@ -85,6 +90,8 @@ export { SINGLE_LINE_COLOUR, VERDICT_COLOURS };
 export const IDLE_AFTER_SECONDS = 360;
 
 export function AnswerKeyPanel({
+  onSplit,
+  splitNote,
   pairings,
   setAside,
   offerAll,
@@ -183,6 +190,20 @@ export function AnswerKeyPanel({
       } else if (key === "r") {
         event.preventDefault();
         decide(focusedId, "not-a-wall");
+      } else if (key === "s") {
+        // ── S SPLITS WHERE AN ACCEPTED WALL CROSSES ──
+        //
+        // The case is a wall that stops being a wall part way along: it
+        // leaves the building and crosses a yard, a canopy or a slab. Before
+        // this the reviewer could only accept the whole thing (billing yard)
+        // or reject it (losing real wall) or park it as unsure (losing it
+        // either way). See `splitCandidate.ts`.
+        //
+        // No crossing wall is not a failure — it is the ordinary case for a
+        // yard with no wall at its edge, and the reviewer clicks the point
+        // instead. The message says so rather than just refusing.
+        event.preventDefault();
+        if (focusedId !== null && onSplit !== undefined) onSplit(focusedId);
       } else if (key === "u") {
         // ── NOT SURE IS A VERDICT, NOT AN ABSENCE ──
         //
@@ -485,6 +506,16 @@ export function AnswerKeyPanel({
                 wall&apos;s thickness.
               </li>
             </ul>
+            <p className="font-semibold text-ink-label">
+              A wall that stops being a wall part way along
+            </p>
+            <p>
+              A wall that continues past the building into a yard, a canopy or a
+              slab: press <b>S</b> to <b>split</b> it at the building wall, then
+              accept the building half and reject the rest. Splitting beats
+              accepting the whole run (which bills the yard) and beats rejecting
+              it (which throws away real wall).
+            </p>
             <p>
               If you cannot tell, press <b>U</b> for Not sure. That is a real answer
               and better than guessing — a guess teaches the software something false.
@@ -497,9 +528,9 @@ export function AnswerKeyPanel({
             </p>
             <p className="font-semibold text-ink-label">Keys</p>
             <p>
-              <b>A</b> wall · <b>R</b> not a wall · <b>U</b> not sure · <b>N</b> next ·{" "}
-              <b>H</b> hide overlays · <b>T</b> trace a missed wall · drag a box to
-              reject many · shift-drag to accept many
+              <b>A</b> wall · <b>R</b> not a wall · <b>U</b> not sure · <b>S</b> split ·{" "}
+              <b>N</b> next · <b>H</b> hide overlays · <b>T</b> trace a missed wall ·
+              drag a box to reject many · shift-drag to accept many
             </p>
           </div>
         ) : null}
@@ -555,6 +586,12 @@ export function AnswerKeyPanel({
             })}
           </ul>
         </div>
+      ) : null}
+
+      {splitNote !== null && splitNote !== undefined ? (
+        <p className="text-[11px] text-ink-muted" data-takeoff="key-split-note">
+          {splitNote}
+        </p>
       ) : null}
 
       <div className="rounded-md border border-line-card bg-surface p-2">
@@ -621,6 +658,17 @@ export function AnswerKeyPanel({
           className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
         >
           Reject all shown
+        </button>
+        <button
+          type="button"
+          data-takeoff="key-split"
+          disabled={focusedId === null || onSplit === undefined}
+          onClick={() => {
+            if (focusedId !== null && onSplit !== undefined) onSplit(focusedId);
+          }}
+          className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50"
+        >
+          Split (S)
         </button>
         <button
           type="button"

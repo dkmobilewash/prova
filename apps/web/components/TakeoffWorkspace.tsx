@@ -7,6 +7,7 @@ import { Spinner } from "@/components/Spinner";
 import { AnswerKeyPanel } from "@/components/AnswerKeyPanel";
 import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
 import { addTraced, startReview, tracedWall, type ReviewState } from "@/lib/takeoff/answerKeyReview";
+import { crossingPoint, splitCandidate } from "@/lib/takeoff/splitCandidate";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
 import { TakeoffAssemblyPanel } from "@/components/TakeoffAssemblyPanel";
@@ -607,6 +608,8 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
    * reviewer switching sheets and back must not be shown another sheet's
    * candidates, and a save must not send them.
    */
+  /** What the last split did or refused to do, shown in the panel. */
+  const [splitNote, setSplitNote] = useState<string | null>(null);
   const [pairingsByPage, setPairingsByPage] = useState<
     Record<
       number,
@@ -1047,6 +1050,27 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
                               : 0,
                           ),
                         ),
+                      onSplitAt: (id, at) => {
+                        // The shift-click path. Same split, a point the
+                        // reviewer aimed at instead of a crossing wall.
+                        const feetPerUnit =
+                          currentSheet?.calibration != null
+                            ? (feetPerPageWidth(currentSheet.calibration) ?? 0)
+                            : 0;
+                        if (keyState === null) return;
+                        const out = splitCandidate(keyState, id, at, feetPerUnit);
+                        if (out.halves === null) {
+                          setSplitNote("That cut would leave a stub shorter than a foot.");
+                          return;
+                        }
+                        setKeyState(out.state);
+                        setKeyFocus(out.halves[0]);
+                        const byId = new Map(out.state.candidates.map((c) => [c.id, c]));
+                        setSplitNote(
+                          `Split into ${byId.get(out.halves[0])?.lengthFeet.toFixed(1)} ft and ` +
+                            `${byId.get(out.halves[1])?.lengthFeet.toFixed(1)} ft — judge each.`,
+                        );
+                      },
                       onPairings: (rows) =>
                         setPairingsByPage((prev) => setOnThisSheet(prev, page, rows)),
                     }
@@ -1109,6 +1133,37 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
                   setOfferAllByPage((prev) => setOnThisSheet(prev, page, next ? true : null))
                 }
                 pairings={onThisSheet(pairingsByPage, page) ?? undefined}
+                splitNote={splitNote}
+                onSplit={(id) => {
+                  // ── THE WORKSPACE SPLITS, BECAUSE IT HAS THE SCALE ──
+                  //
+                  // `SHORTEST_HALF_FEET` is in feet of building, so the split
+                  // needs feetPerUnit, which lives here with the calibration.
+                  const feetPerUnit =
+                    currentSheet?.calibration != null
+                      ? (feetPerPageWidth(currentSheet.calibration) ?? 0)
+                      : 0;
+                  const at = crossingPoint(keyState, id);
+                  if (at === null) {
+                    setSplitNote(
+                      "No accepted wall crosses this one. Accept the wall at the" +
+                        " boundary first, or click the point to cut at.",
+                    );
+                    return;
+                  }
+                  const out = splitCandidate(keyState, id, at, feetPerUnit);
+                  if (out.halves === null) {
+                    setSplitNote("That cut would leave a stub shorter than a foot.");
+                    return;
+                  }
+                  setKeyState(out.state);
+                  setKeyFocus(out.halves[0]);
+                  const byId = new Map(out.state.candidates.map((c) => [c.id, c]));
+                  setSplitNote(
+                    `Split into ${byId.get(out.halves[0])?.lengthFeet.toFixed(1)} ft and ` +
+                      `${byId.get(out.halves[1])?.lengthFeet.toFixed(1)} ft — judge each.`,
+                  );
+                }}
                 state={keyState}
                 onState={setKeyState}
                 focusedId={keyFocus}

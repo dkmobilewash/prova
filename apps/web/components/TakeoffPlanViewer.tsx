@@ -454,6 +454,9 @@ export function TakeoffPlanViewer({
      * `labelRows` carries each verdict from the run back to the pairings it
      * was made of, and without these there is nothing to carry it to.
      */
+    /** Cut the candidate at a point on it — the shift-click path, for a
+     *  boundary with no wall on it. In page-width units. */
+    onSplitAt?: (id: string, at: { x: number; y: number }) => void;
     onPairings?: (
       pairings: { x1: number; y1: number; x2: number; y2: number; lengthFeet: number; thicknessFeet: number; features: number[] }[],
     ) => void;
@@ -3472,6 +3475,27 @@ export function TakeoffPlanViewer({
                         style={{ cursor: "pointer" }}
                         onClick={(event) => {
                           event.stopPropagation();
+                          // ── SHIFT-CLICK CUTS WHERE YOU CLICKED ──
+                          //
+                          // The other half of S: a yard with no wall at its
+                          // edge has no crossing to cut at, so the reviewer
+                          // aims. Shift rather than a mode, because a mode
+                          // you can forget you are in is how a stray click
+                          // becomes a split nobody meant.
+                          if (event.shiftKey && answerKey.onSplitAt !== undefined) {
+                            // Measured against the SVG, not the line: this
+                            // handler's `currentTarget` is the line itself,
+                            // whose box is a few pixels of stroke.
+                            const svg = event.currentTarget.ownerSVGElement;
+                            const rect = svg?.getBoundingClientRect();
+                            if (rect !== undefined && rect.width > 0) {
+                              answerKey.onSplitAt(one.id, {
+                                x: (event.clientX - rect.left) / rect.width,
+                                y: (event.clientY - rect.top) / rect.width,
+                              });
+                              return;
+                            }
+                          }
                           answerKey.onFocus(one.id);
                         }}
                       />

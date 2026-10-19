@@ -1,5 +1,5 @@
 import { requireCompanyContext } from "@/lib/auth";
-import { LABEL_DIR_VAR, writeLabels } from "@/lib/plan-ingest/labelStore";
+import { LABEL_DIR_VAR, readLabels, writeLabels } from "@/lib/plan-ingest/labelStore";
 import { labelFile, type LabelCandidate, type LabelVerdict } from "@/lib/takeoff/labelRows";
 import { NextResponse } from "next/server";
 
@@ -71,6 +71,8 @@ export async function POST(request: Request) {
     feetPerUnit?: number;
     reviewComplete?: boolean;
     unreviewed?: number;
+    /** Acknowledges replacing a larger saved review. */
+    replacing?: boolean;
     candidates: LabelCandidate[];
     verdicts?: LabelVerdict[];
   };
@@ -86,6 +88,39 @@ export async function POST(request: Request) {
     verdicts: input.verdicts ?? [],
     unreviewed: input.unreviewed ?? 0,
   });
+  // ── A SAVE MUST NOT QUIETLY REPLACE A BIGGER REVIEW ──
+  //
+  // The app cannot RELOAD a saved review, so opening a sheet that already has
+  // labels starts from a blank one — and Save then replaces everything that
+  // was there. That is how Camp Bow Wow A101's 143 verdicts became 15: a
+  // second pass over the same sheet, saved, and about twenty-four minutes of
+  // somebody's work gone with no warning and no copy.
+  //
+  // Until a sheet's labels can be loaded back in, this refuses the shape of
+  // that accident: a save carrying far fewer verdicts than the file already
+  // holds. It does not refuse a smaller save outright — a reviewer may
+  // legitimately redo a sheet — it refuses an UNACKNOWLEDGED one, and says
+  // exactly what it is protecting so the answer is obvious.
+  const existing = await readLabels(parsed.set, parsed.sheet, process.env);
+  if (existing !== null) {
+    const had = existing.verdicts?.length ?? 0;
+    const now = file.verdicts.length;
+    if (had >= 20 && now < had * 0.6 && input.replacing !== true) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            `This sheet already has ${had} verdicts and this save carries ${now}. ` +
+            `Saving would replace the larger review. If that is what you want, ` +
+            `save again with "replacing" set.`,
+          had,
+          now,
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   const written = await writeLabels(parsed.set, parsed.sheet, file);
   if (!written.ok) {
     return NextResponse.json({ ok: false, error: written.error }, { status: 400 });

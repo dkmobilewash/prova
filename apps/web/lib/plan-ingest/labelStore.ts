@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve, sep } from "node:path";
 
 /**
@@ -70,6 +70,31 @@ export function labelPath(
 }
 
 /** Writes one sheet's labels, creating the set's folder. */
+/**
+ * Reads a sheet's saved labels, or null when there are none.
+ *
+ * Exists so a save can see what it is about to replace. Camp Bow Wow A101's
+ * 143 verdicts were overwritten by a 15-verdict second pass with no warning,
+ * because nothing on this path ever looked at the file it was writing over.
+ *
+ * Deliberately forgiving: an unreadable or malformed file reads as "nothing
+ * there", because this informs a guard rather than being one. A reviewer
+ * whose save is refused by a parse error has lost the sheet just as surely.
+ */
+export async function readLabels(
+  set: string,
+  sheet: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ verdicts?: unknown[]; rows?: unknown[] } | null> {
+  const path = labelPath(set, sheet, env);
+  if (path === null) return null;
+  try {
+    return JSON.parse(await readFile(path, "utf8")) as { verdicts?: unknown[] };
+  } catch {
+    return null;
+  }
+}
+
 export async function writeLabels(
   set: string,
   sheet: string,
