@@ -523,11 +523,25 @@ export function AnswerKeyPanel({
               A wall that stops being a wall part way along
             </p>
             <p>
+              <b>NIC counts.</b> A wall in an area marked <b>NIC</b> or{" "}
+              &ldquo;not in contract&rdquo; is still a wall — say so. Whether it
+              is in your scope is decided later in the estimate, and a wall left
+              out here is invisible to that decision.
+            </p>
+            <p>
               A wall that continues past the building into a yard, a canopy or a
               slab: press <b>S</b> to <b>split</b> it at the building wall, then
               accept the building half and reject the rest. Splitting beats
               accepting the whole run (which bills the yard) and beats rejecting
               it (which throws away real wall).
+            </p>
+            <p>
+              <b>Where it cuts.</b> At the nearest wall you have already
+              accepted that crosses this one — so accept the building wall
+              first. Where no wall crosses, hold <b>shift</b> and click the
+              point on the run to cut at. Both halves come back{" "}
+              <b>undecided</b>, with their own length, and you judge each one;
+              a cut that would leave a stub under a foot is refused.
             </p>
             <p>
               If you cannot tell, press <b>U</b> for Not sure. That is a real answer

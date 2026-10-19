@@ -1,5 +1,6 @@
 import { findWallsOnSheet, type FoundOnSheet, type SheetTextItem } from "./findWallsOnSheet";
 import { printedScalesAt } from "./printedScales";
+import { takeoffRank } from "./sheetSuitability";
 import { isPlanView, viewKind } from "./viewKind";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 import type { MatchableWallType } from "./wallTypeMatch";
@@ -889,6 +890,38 @@ export function primaryView(measured: readonly ViewWalls[]): {
   others: ViewWalls[];
 } {
   if (measured.length === 0) return { primary: null, others: [] };
+  // ── WHAT THE DRAWING IS BEATS HOW MUCH IS DRAWN ON IT ──
+  //
+  // This sorted on footage alone, and on a sheet carrying four views of one
+  // floor — finish, lighting, partition, RCP — the lighting plan won. It is
+  // the same building drawn at the same scale, so the view with the most line
+  // work is a question about drafting, not about which drawing prices the job.
+  // A decorative lighting layout has more of it than the partition plan it is
+  // drawn over.
+  //
+  // `takeoffRank` already ranks these captions and `viewKind` already asks it,
+  // so this asks the same function rather than restating the vocabulary. It is
+  // the ordering that was missing, not the words — DIMENSIONED FLOOR PLAN 100,
+  // FLOOR PLAN and PARTITION PLAN 90, ENLARGED PLAN 70, anything else saying
+  // PLAN 40.
+  //
+  // Footage stays as the tie-break, which is what decides between two views
+  // that are the same KIND of drawing: a floor plan and a partition plan both
+  // score 90, and then the one with more building on it is the right answer.
+  //
+  // ── ONLY THE PICK MOVES, AND THE REST STAY BIGGEST-FIRST ──
+  //
+  // Ranking the whole list reordered `others` too, which an existing test
+  // caught: the caution names the views that were NOT measured, and an
+  // estimator scanning that list wants the biggest first. That ordering was
+  // never part of this defect, so it is left alone.
+  //
+  // `reduce` replaces only on a STRICTLY higher score, over a list already
+  // sorted biggest-first, so two views of the same kind fall to the one with
+  // more building on it — the tie-break, without a second comparator.
   const byFootage = [...measured].sort((a, b) => b.lengthFeet - a.lengthFeet);
-  return { primary: byFootage[0], others: byFootage.slice(1) };
+  const best = byFootage.reduce((pick, one) =>
+    takeoffRank(null, one.view.name).score > takeoffRank(null, pick.view.name).score ? one : pick,
+  );
+  return { primary: best, others: byFootage.filter((one) => one !== best) };
 }

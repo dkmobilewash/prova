@@ -372,6 +372,14 @@ const NOT_WHAT_YOU_PRICE: ReadonlyArray<readonly [RegExp, number, string]> = [
   [/\bREFLECTED\s+CEILING\b/i, -200, "a reflected ceiling plan"],
   [/\bRCP\b/i, -200, "a reflected ceiling plan"],
   [/\bFINISH(ES)?\b/i, -150, "a finish plan"],
+  // Found on HPL p3, which carries four views of the same floor. LIGHTING
+  // was in neither list, so it scored 40 as "a plan of some kind" and won
+  // the sheet on footage — a decorative lighting layout measured as
+  // partitions. POWER rode along: the `ELECTRICAL` entry below catches a
+  // sheet TITLED electrical, but a view captioned POWER PLAN on an
+  // architectural sheet says nothing about electricity.
+  [/\bLIGHTING\b/i, -200, "a lighting plan"],
+  [/\bPOWER\b/i, -200, "a power plan"],
   // ── THE ABBREVIATIONS, WHICH A VIEW CAPTION USES AND A SHEET TITLE DOES NOT ──
   //
   // A title block has room for "INTERIOR ELEVATIONS". The caption under a
