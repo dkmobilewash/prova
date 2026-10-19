@@ -463,6 +463,117 @@ comparison. No model is committed: this one is worse than the rules on every
 real guard, and a model file in the tree that nobody should load is a thing the
 next person has to work out the status of.
 
+## WHAT TWO REAL REVIEWS FOUND, AND NONE OF IT WAS IN THE ENGINE — 2026-10-19
+
+Camp Bow Wow A101 was labelled twice, 144 candidates each time. Everything
+below came out of trying to USE the result, and not one of it is a takeoff
+bug. They are all bugs in the apparatus around it, which is the part nobody
+had exercised.
+
+| what | how it showed |
+| --- | --- |
+| "Not sure" written as a confident negative | 48 unsure runs became 483 negative rows |
+| The file kept no verdicts at all | 26 minutes of work could not be re-opened |
+| Zooming past Fit rendered the plan black | a canvas over the browser's cap allocates nothing |
+| The plan got 268 px of a 1600 px window | two rails this component cannot see |
+| The clock read 135 minutes for 24 minutes of work | it timed the tab, not the deciding |
+| A duplicate pair was missed | the matcher consumed its own keeper |
+
+### NOT SURE WAS THE WORST OF THEM, BECAUSE IT WAS SILENT
+
+The panel filtered its verdicts to wall and not-a-wall, so an unsure run never
+travelled. Its pairings then fell through `labelRows`' no-run branch, which on
+a FINISHED sheet means "the reviewer saw it and did not call it a wall" — and
+`reviewComplete` is true, because unsure counts as reviewed. The file recorded
+them only as a count of 48 "unreviewed", so nothing on screen or in the data
+said that forty-eight careful "I cannot tell"s had become confident training
+negatives.
+
+The verdict travels now, an unsure run's pairings are left out of the file
+entirely, and `counts.unsure` is its own number. Two mutations, both red.
+
+### THE FILE KEPT DERIVED ROWS AND THREW AWAY THE DECISIONS
+
+6,030 pairing rows with features, a label and a length — no geometry, no run
+list. So the first thing anyone wanted to do with the first real sheet, fix
+it, was impossible: there was no way to ask which runs were the unsure ones
+except to review the sheet again. `labelFile` records the verdicts as given
+now, with their geometry.
+
+### A CANVAS OVER THE CAP DOES NOT THROW, IT GOES BLACK
+
+The viewer multiplied the page by zoom and by `devicePixelRatio` and handed
+the result to the canvas. An ARCH-D sheet at 4x on a retina screen asks for
+31,104 x 20,736 — 645 megapixels and about twice the longest side Safari
+allows. Over the cap a canvas allocates nothing, the render writes into
+nowhere, and the page is black with no error anywhere. Zooming in to inspect
+a line is the commonest thing a reviewer does.
+
+`canvasPlan.ts` clamps the backing store and leaves the CSS size exactly as
+asked, so the overlay's coordinates and the scroll position do not move; the
+drawing softens at extreme zoom instead of vanishing. **Its own test caught a
+flaw in the first version**: a 0.25 density floor, added so a huge sheet would
+"still draw something", put a 12x sheet back over the limit. A quality floor
+cannot override a hardware one. Verified in a real browser at 400%: clamped to
+exactly 64.0 Mpx, sharp, zero page errors.
+
+### NO BREAKPOINT CAN SEE WHAT TWO OTHER RAILS LEFT BEHIND
+
+Measured in the running app at 1600 px: the sheet rail took 232, the
+answer-key rail 384, leaving the canvas region 690 — and the found-walls list
+took 368 of that, so the plan had 268 pixels. `xl:` asks how wide the WINDOW
+is, and the window was wide.
+
+The rule is the MODE rather than a width: in answer-key mode the rail is the
+working surface and the found list is a reference, so it goes under the
+drawing. Canvas 268 to 648 px, measured the same way.
+
+### A CLOCK THAT PRICES PIECEWORK HAS TO MEASURE THE WORK
+
+A101 took about 24 minutes and the file said 135, because the sheet had been
+open while other things happened. The old comment defended wall clock on the
+grounds that a flattering figure would be worse than none — true, and it was
+wrong by 5.6x in the expensive direction, which is the same mistake.
+
+It sums the gaps BETWEEN decisions now and ignores any gap over six minutes.
+Loading the sheet and reading the instructions are not counted, which
+understates a first sheet; that is the honest direction to be wrong in.
+
+### THE DUPLICATE RULE NEEDED TWO FIXES AND THE SECOND IS THE GENERAL ONE
+
+One wall offered twice is a real thing: a layered partition, or a wall redrawn
+on a second layer, yields more than one pairing along the same line, and
+accepting both bills it twice.
+
+**The matcher consumed its own keeper.** A candidate could belong to at most
+one pair, so a 34.6 ft wall matched an 11.7 ft fragment, was consumed, and the
+4.2 ft fragment inside the SAME wall was orphaned — it became the keeper of
+its own little pair. Only the dropped one is consumed now.
+
+**And direction is the wrong test for a short run.** The angular tolerance was
+2 degrees; the missed fragment is 3.2 degrees off, because its endpoints
+differ by a couple of inches and over four feet that is three degrees. It is a
+property of the LENGTH, not of the wall. The binding test is now whether both
+ENDPOINTS lie inside the band of the longer's line — the same claim a reviewer
+makes by eye, and indifferent to how short the run is. Direction survives as
+an 11-degree pre-filter.
+
+8 pairs became 12 on the real sheet. The band is 1.5 ft, which is wider than
+drafting jitter and narrower than the 5.2 ft gap between A101's east wall and
+the line outside it — NOT a duplicate, and a test says so by name, because
+calling it one would delete 65 ft of real work.
+
+### WHAT THE REVIEW ITSELF SAYS
+
+23 accepted, 801 ft, 120 rejected, 1 unsure, nothing left unjudged. The
+accepted runs form the envelope and the west rooms; the outdoor yard, the
+kennel bays and the site lines are rejected, which is the scope rule working.
+
+**1,152 ft of runs 15 ft or longer were rejected**, and four of the twelve
+longest are INSIDE the building envelope. Whether those are kennel dividers
+(out of scope) or built partitions (in scope) is a judgement about the
+building rather than the drawing, and it is worth about 190 ft on one sheet.
+
 ## TRAINING ON REAL BUILDINGS: THE FEATURES ARE FIXED, THE TRANSFER IS NOT — 2026-10-18
 
 Veto-only, sheet-relative features, trained on BIM-DEV's 22 real-building
