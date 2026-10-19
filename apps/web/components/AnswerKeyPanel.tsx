@@ -128,8 +128,20 @@ export function AnswerKeyPanel({
    * to be wrong in when the number prices piecework.
    */
   const spent = useRef({ seconds: 0, last: 0 });
+  /**
+   * The same number, mirrored so the panel can show it.
+   *
+   * The ref is the record because it must be exact at the moment of saving;
+   * this follows it. No timer: active time only advances when a decision is
+   * made, so every value it could take is produced by an event that already
+   * re-renders. A ticking clock here would show time passing during a gap
+   * that is about to be discarded as idle, which is the opposite of what the
+   * number means.
+   */
+  const [spentSeconds, setSpentSeconds] = useState(0);
   useEffect(() => {
     spent.current = { seconds: 0, last: 0 };
+    setSpentSeconds(0);
   }, [sheet.number, sheet.page]);
 
   /** Called on every verdict. Exported shape kept tiny on purpose. */
@@ -138,6 +150,7 @@ export function AnswerKeyPanel({
     const gap = (now - spent.current.last) / 1000;
     if (spent.current.last > 0 && gap <= IDLE_AFTER_SECONDS) spent.current.seconds += gap;
     spent.current.last = now;
+    setSpentSeconds(spent.current.seconds);
   };
   /**
    * Who is reviewing, typed rather than assumed.
@@ -605,8 +618,17 @@ export function AnswerKeyPanel({
           {progress.unsure > 0 ? ` · ${progress.unsure} not sure` : ""}
           {progress.traced > 0 ? ` · ${progress.traced} traced` : ""}
         </p>
-        <p className="mt-0.5 text-[11px] text-ink-muted">
-          {progress.feet.toFixed(0)} ft in the key so far
+        <p className="mt-0.5 text-[11px] text-ink-muted" data-takeoff="key-time">
+          {progress.feet.toFixed(0)} ft in the key so far ·{" "}
+          {/* Active time: the gaps BETWEEN decisions, with anything over six
+              minutes dropped as idle. It read 135 minutes for 24 minutes of
+              work when it timed the tab instead. */}
+          <span title="Time spent deciding. Gaps over six minutes are not counted.">
+            {spentSeconds < 60
+              ? `${Math.round(spentSeconds)}s`
+              : `${Math.floor(spentSeconds / 60)}m ${String(Math.round(spentSeconds % 60)).padStart(2, "0")}s`}{" "}
+            spent
+          </span>
         </p>
       </div>
 

@@ -1360,6 +1360,26 @@ export function TakeoffPlanViewer({
   };
 
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    // ── CLICKING THE PLAN TAKES THE KEYBOARD WITH IT ──
+    //
+    // The shortcut handler ignores keys typed into an INPUT, correctly — a
+    // reviewer typing a filename should not accept a wall with every "a".
+    // But focus stays in the name box after they type it, so the first click
+    // on the drawing moves the highlight and the next N/A/R goes into the
+    // box. The reviewer sees a candidate selected and their verdicts landing
+    // nowhere, with their own name slowly filling up with "nanana".
+    //
+    // Blurring on pointer-down is the whole fix: the plan does not need focus
+    // itself, since the shortcuts listen on the document. It needs the INPUT
+    // not to have it.
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLElement &&
+      (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)
+    ) {
+      active.blur();
+    }
+
     // ── A DRAG IN REVIEW MODE IS A SELECTION, NOT A DRAWING ──
     //
     // Deciding a hundred hatch lines one at a time is the thing that makes a
