@@ -97,14 +97,35 @@ describe("one wall offered twice", () => {
     expect(past).toHaveLength(0);
   });
 
-  it("collapses three offers of one wall onto the longest, not a chain", () => {
+  it("COLLAPSES THREE OFFERS OF ONE WALL ONTO THE LONGEST", () => {
+    // The A101 miss: the keeper used to be consumed by its first match, so a
+    // wall offered three times dropped one fragment and left the other to
+    // become a keeper in its own right. Both fragments must go.
     const pairs = duplicatePairs(
       [run("mid", 0.5, 0, 0.5, 50), run("longest", 0, 0, 0, 56), run("short", 1, 0, 1, 48)],
       FEET_PER_UNIT,
     );
-    // Two pairs at most, and the longest is never dropped.
-    expect(pairs.every((p) => p.drop !== "longest")).toBe(true);
-    expect(pairs.length).toBeLessThanOrEqual(2);
+    expect(pairs).toHaveLength(2);
+    expect(pairs.every((p) => p.keep === "longest")).toBe(true);
+    expect(new Set(pairs.map((p) => p.drop))).toEqual(new Set(["mid", "short"]));
+  });
+
+  it("DROPS A SHORT FRAGMENT INSIDE A LONG WALL even when another fragment matched first", () => {
+    // A101 exactly: a 34.6 ft wall with an 11.7 ft and a 4.2 ft fragment
+    // along it. The 4.2 was missed and paired with a 2.9 ft piece instead.
+    const pairs = duplicatePairs(
+      [
+        run("wall", 0, 0, 0, 34.6),
+        run("frag11", 0.9, 5, 0.9, 16.7),
+        run("frag4", 1.1, 20, 1.1, 24.2),
+        run("frag3", 1.3, 20.3, 1.3, 23.2),
+      ],
+      FEET_PER_UNIT,
+    );
+    const dropped = new Set(pairs.map((p) => p.drop));
+    expect(dropped.has("frag11"), "the 11.7 ft fragment was kept").toBe(true);
+    expect(dropped.has("frag4"), "the 4.2 ft fragment was kept — this is the A101 miss").toBe(true);
+    expect(pairs.every((p) => p.drop !== "wall")).toBe(true);
   });
 
   it("tells the panel which side of a pair a candidate is on", () => {
@@ -115,6 +136,26 @@ describe("one wall offered twice", () => {
     expect(duplicateOf(pairs, "a")).toMatchObject({ other: "b", keeping: true });
     expect(duplicateOf(pairs, "b")).toMatchObject({ other: "a", keeping: false });
     expect(duplicateOf(pairs, "nobody")).toBeNull();
+  });
+
+  it("CATCHES A SHORT FRAGMENT THAT IS A FEW DEGREES OFF — the #128 miss", () => {
+    // 4.2 ft lying on a 34.6 ft wall, 0.00 ft from its centreline, 99.9%
+    // overlapping, and 3.2 degrees off because its two endpoints differ by a
+    // couple of inches. A 2-degree direction test refused it; where the
+    // endpoints lie does not care how short the run is.
+    const wall = run("wall", 0, 0, 0, 34.6);
+    const frag = run("frag", 0, 12, 0.23, 16.2);
+    const pairs = duplicatePairs([wall, frag], FEET_PER_UNIT);
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0].drop).toBe("frag");
+  });
+
+  it("REFUSES a wall crossing at a shallow angle, which the midpoint alone would admit", () => {
+    // It touches the line in the middle and leaves at both ends. The midpoint
+    // test says 0 ft apart; the endpoints say ten.
+    const wall = run("wall", 0, 0, 0, 60);
+    const crossing = run("crossing", -10, 20, 10, 40);
+    expect(duplicatePairs([wall, crossing], FEET_PER_UNIT)).toHaveLength(0);
   });
 
   it("finds nothing in nothing", () => {

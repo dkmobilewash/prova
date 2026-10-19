@@ -2869,7 +2869,20 @@ export function TakeoffPlanViewer({
           side and the drawing takes what is left, which is most of it. Narrow
           screens keep the stack, where a column each would make both unusable. */}
       <div
-        className={`flex gap-3 xl:flex-row-reverse${
+        // ── IN ANSWER-KEY MODE THE FOUND LIST GOES UNDER THE PLAN ──
+        //
+        // Measured on a 1600 px window with a sheet open for review: the
+        // sheet rail took 232, the answer-key rail 384, leaving this region
+        // 690 — and the found-walls list then took 368 of THAT, so the canvas
+        // got 268 pixels. A sixth of the screen, to look at a plan on.
+        //
+        // No breakpoint can see that. `xl:` asks how wide the WINDOW is, and
+        // the window was wide; what was narrow was the space left over after
+        // two rails this component knows nothing about. So the rule is the
+        // MODE rather than a width: in answer-key mode the rail is the
+        // working surface and this list is a reference, which belongs under
+        // the drawing rather than beside it.
+        className={`flex gap-3 ${answerKey === undefined ? "xl:flex-row-reverse" : ""}${
           fill
             ? // CANVAS FIRST AT EVERY WIDTH, which is the host's whole promise.
               // Below xl this is a COLUMN and the panel is first in the DOM, so
@@ -2880,13 +2893,19 @@ export function TakeoffPlanViewer({
               // restate a flex-direction for xl or it wins and the panel
               // stacks under a 5%-tall drawing — measured at 1440px, and the
               // reason test 11 now runs with the panel OPEN as well as closed.
-              " min-h-0 flex-1 flex-col-reverse xl:items-stretch"
-            : " flex-col xl:items-start"
+              ` min-h-0 flex-1 flex-col-reverse${answerKey === undefined ? " xl:items-stretch" : ""}`
+            : ` flex-col${answerKey === undefined ? " xl:items-start" : ""}`
         }`}
       >
       {found !== null && panelOpen && (
         <div
-          className="rounded-md border border-line-card bg-surface p-3 xl:w-[23rem] xl:shrink-0 xl:overflow-auto xl:max-h-[calc(var(--shell-port)-11rem)]"
+          className={`rounded-md border border-line-card bg-surface p-3${
+            answerKey === undefined
+              ? " xl:w-[23rem] xl:shrink-0 xl:overflow-auto xl:max-h-[calc(var(--shell-port)-11rem)]"
+              : // Under the plan, and short: it is a reference here, not the
+                // thing being worked on.
+                " max-h-[13rem] shrink-0 overflow-auto"
+          }`}
           data-takeoff="found-walls"
         >
           {/* ABOVE the groups, because a caution under the thing it is about is

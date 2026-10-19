@@ -35,8 +35,22 @@ export const SAME_WALL_FEET = 1.5;
 /** How much of the shorter one must lie along the longer, as a share. */
 export const MOSTLY_OVERLAPPING = 0.7;
 
-/** Directions this close to parallel count. About 2 degrees. */
-const PARALLEL = 0.9994;
+/**
+ * A cheap pre-filter on direction — about 11 degrees.
+ *
+ * ── DIRECTION IS THE WRONG TEST FOR A SHORT RUN, AND THIS IS WHY IT IS LOOSE ──
+ *
+ * The first version used 2 degrees as the whole angular test and missed the
+ * case the reviewer asked about: a 4.2 ft fragment lying exactly on a 34.6 ft
+ * wall, 0.00 ft from its centreline, 99.9% overlapping — and 3.2 degrees off,
+ * because its two endpoints differ by a couple of inches and over four feet
+ * that is three degrees. Short runs have noisy directions; it is a property
+ * of the length, not of the wall.
+ *
+ * So the binding test is where the ENDPOINTS lie, below. This only keeps the
+ * loop from measuring every crossing wall on the sheet.
+ */
+const ROUGHLY_PARALLEL = 0.98;
 
 export type DuplicatePair = {
   /** The one to keep: the longer, or the thicker when lengths tie. */
@@ -99,10 +113,20 @@ export function duplicatePairs(
       if (!(lb > 0)) continue;
 
       const dot = ((a.x2 - a.x1) / la) * ((b.x2 - b.x1) / lb) + ((a.y2 - a.y1) / la) * ((b.y2 - b.y1) / lb);
-      if (Math.abs(dot) < PARALLEL) continue;
+      if (Math.abs(dot) < ROUGHLY_PARALLEL) continue;
 
+      // ── BOTH ENDS ON THE LONGER'S LINE, NOT JUST THE MIDPOINT ──
+      //
+      // The midpoint alone would admit a wall crossing at a shallow angle,
+      // which touches the line in the middle and leaves at both ends. Both
+      // endpoints inside the band is the same claim a reviewer makes by eye:
+      // this whole thing lies along that wall.
+      const ends = [
+        offLine(a, b.x1, b.y1) * feetPerUnit,
+        offLine(a, b.x2, b.y2) * feetPerUnit,
+      ];
+      if (Math.max(...ends) > SAME_WALL_FEET) continue;
       const apart = offLine(a, (b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2) * feetPerUnit;
-      if (apart > SAME_WALL_FEET) continue;
 
       const share = overlapOf(a, b) / Math.min(la, lb);
       if (share < MOSTLY_OVERLAPPING) continue;
@@ -117,9 +141,20 @@ export function duplicatePairs(
         share,
         apartFeet: apart,
       });
-      paired.add(a.id);
-      paired.add(b.id);
-      break;
+      // ── ONLY THE DROPPED ONE IS CONSUMED, AND THE SCAN CONTINUES ──
+      //
+      // The first version consumed BOTH and broke out, so a candidate could
+      // belong to at most one pair. A wall offered three times then kept two
+      // of them: on Camp Bow Wow A101 the 34.6 ft run matched an 11.7 ft
+      // fragment, was consumed, and the 4.2 ft fragment lying inside the
+      // SAME wall was left over — it went on to become the keeper of its own
+      // little pair with a 2.9 ft piece. The reviewer asked why that one was
+      // missed; this is why.
+      //
+      // A long wall can legitimately absorb several short offers of itself,
+      // so the keeper stays available and the inner loop keeps looking.
+      paired.add(keepA ? b.id : a.id);
+      if (!keepA) break;
     }
   }
   return out;

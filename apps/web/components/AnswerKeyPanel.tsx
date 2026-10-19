@@ -75,6 +75,15 @@ import { Spinner } from "@/components/Spinner";
 import { SINGLE_LINE_COLOUR, VERDICT_COLOURS } from "@/lib/takeoff/answerKeyReview";
 export { SINGLE_LINE_COLOUR, VERDICT_COLOURS };
 
+/**
+ * A gap longer than this is not work.
+ *
+ * Six minutes: far longer than any single candidate takes — A101 averaged
+ * about ten seconds — and short enough that lunch, a phone call or a tab left
+ * open overnight cannot be counted as labelling.
+ */
+export const IDLE_AFTER_SECONDS = 360;
+
 export function AnswerKeyPanel({
   pairings,
   setAside,
@@ -96,16 +105,33 @@ export function AnswerKeyPanel({
   const [savingLabels, setSavingLabels] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   /**
-   * When this sheet was opened, so a save can record what labelling costs.
+   * ── TIME SPENT DECIDING, NOT TIME THE TAB WAS OPEN ──
    *
-   * Wall clock and deliberately crude: it counts the time the sheet was open,
-   * including the reviewer making tea. A figure that flatters the work would
-   * be worse than no figure, because it is going to be used to price a job.
+   * This was wall clock from when the sheet opened, on the argument that a
+   * figure which flattered the work would be worse than none. It is worse
+   * than none in the other direction too: Camp Bow Wow A101 was reviewed in
+   * about 24 minutes and the file recorded 135, because the sheet had been
+   * open while other things happened. Used to price a job that is 5.6 times
+   * too expensive, which is the same mistake the other way round.
+   *
+   * So: sum the gaps BETWEEN decisions, and ignore any gap longer than
+   * `IDLE_AFTER` — nobody spends six minutes on one candidate, and a gap
+   * that long is lunch. Loading the sheet and reading the instructions are
+   * not counted, which understates a first sheet and is the honest direction
+   * to be wrong in when the number prices piecework.
    */
-  const startedAt = useRef(Date.now());
+  const spent = useRef({ seconds: 0, last: 0 });
   useEffect(() => {
-    startedAt.current = Date.now();
+    spent.current = { seconds: 0, last: 0 };
   }, [sheet.number, sheet.page]);
+
+  /** Called on every verdict. Exported shape kept tiny on purpose. */
+  const noteActivity = () => {
+    const now = Date.now();
+    const gap = (now - spent.current.last) / 1000;
+    if (spent.current.last > 0 && gap <= IDLE_AFTER_SECONDS) spent.current.seconds += gap;
+    spent.current.last = now;
+  };
   /**
    * Who is reviewing, typed rather than assumed.
    *
@@ -128,6 +154,7 @@ export function AnswerKeyPanel({
   );
 
   function decide(id: string | null, verdict: Verdict) {
+    noteActivity();
     if (id === null) return;
     const next = setVerdict(state, [id], verdict);
     onState(next);
@@ -281,7 +308,7 @@ export function AnswerKeyPanel({
           page: sheet.page,
           reviewedBy: reviewer.trim(),
           feetPerUnit: sheet.feetPerUnit,
-          secondsSpent: (Date.now() - startedAt.current) / 1000,
+          secondsSpent: spent.current.seconds,
           // Only a sheet the reviewer finished can say that an unproposed
           // place is NOT a wall — see `labelRows`.
           reviewComplete: progress.reviewed >= progress.total,
@@ -572,7 +599,12 @@ export function AnswerKeyPanel({
         <button
           type="button"
           data-takeoff="key-accept-all-shown"
-          onClick={() => onState(setVerdict(state, shown.map((c) => c.id), "wall"))}
+          onClick={() => {
+            // Bulk accepts and rejects are work too, and the clock only sees
+            // what calls it.
+            noteActivity();
+            onState(setVerdict(state, shown.map((c) => c.id), "wall"));
+          }}
           className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
         >
           Accept all shown
@@ -580,7 +612,12 @@ export function AnswerKeyPanel({
         <button
           type="button"
           data-takeoff="key-reject-all-shown"
-          onClick={() => onState(setVerdict(state, shown.map((c) => c.id), "not-a-wall"))}
+          onClick={() => {
+            // Bulk accepts and rejects are work too, and the clock only sees
+            // what calls it.
+            noteActivity();
+            onState(setVerdict(state, shown.map((c) => c.id), "not-a-wall"));
+          }}
           className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
         >
           Reject all shown
