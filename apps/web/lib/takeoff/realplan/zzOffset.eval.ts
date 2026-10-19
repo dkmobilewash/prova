@@ -2,7 +2,12 @@ import { Buffer } from "node:buffer";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { OFFSET_INCHES, offsetCandidates, type Run } from "../offsetCandidates";
+import {
+  OFFSET_INCHES,
+  lopsidedPairs,
+  offsetCandidates,
+  type Run,
+} from "../offsetCandidates";
 import { sheetStrokes } from "../sheetStrokes";
 
 /**
@@ -68,15 +73,69 @@ describe.skipIf(DIR === "" || LABELS === "")("accepted runs that sit off the wal
 
       // Points -> page-width units, which is what the saved runs are in.
       const W = read.widthPt;
+      const segments = read.segments.map((g) => ({
+        ...g,
+        x1: g.x1 / W,
+        y1: g.y1 / W,
+        x2: g.x2 / W,
+        y2: g.y2 / W,
+      }));
+
+      // ── THE DIRECT TEST, PRINTED BESIDE THE SEARCH IT REPLACES ──
+      //
+      // `offsetCandidates` looks for a BETTER pair near the run.
+      // `lopsidedPairs` asks the run's OWN two faces whether one of them stops
+      // short, which is what a shelf does and what the defect actually is.
+      const own = lopsidedPairs({
+        runs: accepted,
+        segments,
+        feetPerUnit: saved.feetPerUnit,
+        maxRatio: Number(process.env.OWN_RATIO ?? "0.7"),
+      });
+      // eslint-disable-next-line no-console
+      console.log(
+        `\n${sheet}: own-pair check — ${own.examined} of ${accepted.length} accepted runs had ` +
+          `both their own faces findable, ${own.findings.length} lopsided` +
+          (own.findings.length === 0
+            ? ""
+            : `\n` +
+              own.findings
+                .slice(0, 16)
+                .map(
+                  (f) =>
+                    `  #${String((f.run as Run & { at: number }).at).padStart(4)}` +
+                    `  ${f.run.lengthFeet.toFixed(1).padStart(6)} ft` +
+                    `  ${((f.run.thicknessFeet ?? 0) * 12).toFixed(1).padStart(5)} in` +
+                    `  faces ${f.faces.longFeet.toFixed(1)} / ${f.faces.shortFeet.toFixed(1)} ft` +
+                    `  ratio ${f.faces.ratio.toFixed(2)}`,
+                )
+                .join("\n")),
+      );
+
+      if (JSON_OUT !== "") {
+        const halfOf = (r: Run) => (r.thicknessFeet ?? 0) / 2 / saved.feetPerUnit;
+        asJson[sheet] = own.findings.map((f) => ({
+          at: (f.run as Run & { at: number }).at,
+          x1: f.run.x1,
+          y1: f.run.y1,
+          x2: f.run.x2,
+          y2: f.run.y2,
+          lengthFeet: f.run.lengthFeet,
+          runThickIn: (f.run.thicknessFeet ?? 0) * 12,
+          // The run's OWN faces, which is what the crop should show.
+          faces: [-halfOf(f.run), halfOf(f.run)],
+          pairThickIn: (f.run.thicknessFeet ?? 0) * 12,
+          pairFaceFeet: f.faces.shortFeet,
+          longFeet: f.faces.longFeet,
+          shortFeet: f.faces.shortFeet,
+          ratio: f.faces.ratio,
+          offsetInches: 0,
+        }));
+      }
+
       const findings = offsetCandidates({
         runs: accepted,
-        segments: read.segments.map((s) => ({
-          ...s,
-          x1: s.x1 / W,
-          y1: s.y1 / W,
-          x2: s.x2 / W,
-          y2: s.y2 / W,
-        })),
+        segments,
         feetPerUnit: saved.feetPerUnit,
       });
 
@@ -89,13 +148,7 @@ describe.skipIf(DIR === "" || LABELS === "")("accepted runs that sit off the wal
       // search can produce.
       const withPair = offsetCandidates({
         runs: accepted,
-        segments: read.segments.map((s) => ({
-          ...s,
-          x1: s.x1 / W,
-          y1: s.y1 / W,
-          x2: s.x2 / W,
-          y2: s.y2 / W,
-        })),
+        segments,
         feetPerUnit: saved.feetPerUnit,
         minInches: 0,
       }).length;
@@ -130,21 +183,7 @@ describe.skipIf(DIR === "" || LABELS === "")("accepted runs that sit off the wal
       // eslint-disable-next-line no-console
       console.log(lines.join("\n"));
       flaggedAnywhere += findings.length;
-      if (JSON_OUT !== "") {
-        asJson[sheet] = findings.map((f) => ({
-          at: (f.run as Run & { at: number }).at,
-          x1: f.run.x1,
-          y1: f.run.y1,
-          x2: f.run.x2,
-          y2: f.run.y2,
-          lengthFeet: f.run.lengthFeet,
-          runThickIn: (f.run.thicknessFeet ?? 0) * 12,
-          offsetInches: f.offsetInches,
-          pairThickIn: f.pairThicknessInches,
-          faces: f.pairFaces,
-          pairFaceFeet: f.pairFaceFeet,
-        }));
-      }
+
 
       if (sheet === "A4.B.3") {
         const positions = new Set(findings.map((f) => (f.run as Run & { at: number }).at));

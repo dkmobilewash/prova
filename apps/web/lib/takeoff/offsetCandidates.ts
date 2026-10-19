@@ -73,6 +73,56 @@ const NARROWEST_WALL_FEET = 2 / 12;
  */
 const NEARBY_FEET = 1.5;
 
+/**
+ * ── WHAT THE RUN'S OWN TWO FACES LOOK LIKE ──
+ *
+ * The defect is a run paired with a shelf instead of the wall's far face, and
+ * its signature is in the run's OWN pair: one face runs the length of the wall
+ * and the other stops where the shelf stops.
+ *
+ * `offsetCandidates` went looking for a BETTER pair nearby instead, and three
+ * sheets of output say that was the wrong question. Checked against the
+ * labelled sheets:
+ *
+ *   - not one of its 62 findings has an offset of half the chosen pair's
+ *     thickness, which is what "the run sits ON a face of the real wall"
+ *     measures as — the shelf story leaves no trace in its own output;
+ *   - 18 of 62 have an offset of one whole pair-thickness, which is a
+ *     NEIGHBOURING parallel wall;
+ *   - none of the chosen pairs is a wall the labeller accepted anywhere else.
+ *
+ * So it reports "there is other parallel geometry near this run", which is
+ * true of most walls in a dense residential plan — furring, chases, finishes,
+ * the next unit — and is not the defect.
+ *
+ * This asks the direct question instead, and needs no search: take the two
+ * faces the run was BUILT from, at plus and minus half its own thickness, and
+ * compare how far each one runs.
+ */
+export type OwnFaces = {
+  /** The longer face's extent, in feet. */
+  longFeet: number;
+  /** The shorter face's extent, in feet. */
+  shortFeet: number;
+  /**
+   * shortFeet / the RUN's own length. A wall is at or above 1; a shelf pairing
+   * is below it.
+   *
+   * ── MEASURED AGAINST THE RUN, NOT AGAINST THE OTHER FACE ──
+   *
+   * The first version compared the two faces to each other, and flagged 49 of
+   * 128 accepted runs on one sheet. Reading them says why: a short wall butting
+   * into a long one has a 5 ft face and a 175 ft face — the building's whole
+   * width — and a ratio of 0.03, while covering its own run perfectly. That is
+   * an ordinary wall, not a defect.
+   *
+   * The question that separates a wall from a shelf is whether the face spans
+   * THE RUN. Both faces of a wall do, by construction. A shelf stops where the
+   * shelf stops.
+   */
+  ratio: number;
+};
+
 export type Run = {
   id?: string;
   x1: number;
@@ -296,4 +346,62 @@ export function offsetCandidates(input: {
     });
   }
   return found.sort((a, b) => b.offsetInches - a.offsetInches);
+}
+
+/**
+ * How lopsided each run's own face pair is.
+ *
+ * A wall's two faces are both as long as the wall, so the ratio is near 1. A
+ * run paired with a shelf, a shelf end or a counter edge has one long face and
+ * one short one, and the ratio falls away from 1 — which is the defect, stated
+ * as a measurement rather than as a search.
+ *
+ * Returns one entry per run that HAS both faces findable, worst ratio first. A
+ * run whose faces cannot be found is left out rather than reported as perfect:
+ * it is the same silence-is-not-success trap the offset search fell into, and
+ * the count of runs examined is returned beside the findings so a caller can
+ * tell an empty list from an empty question.
+ */
+export function lopsidedPairs(input: {
+  runs: readonly Run[];
+  segments: readonly StrokeSegment[];
+  feetPerUnit: number;
+  /**
+   * Report runs whose shorter face covers at or below this share of the run.
+   * The default allows a face to fall a tenth short of its own wall, which
+   * absorbs the gap a door or an intersection leaves in a face.
+   */
+  maxRatio?: number;
+}): { findings: { run: Run; faces: OwnFaces }[]; examined: number } {
+  const { runs, segments, feetPerUnit } = input;
+  const maxRatio = input.maxRatio ?? 0.9;
+  if (!(feetPerUnit > 0)) return { findings: [], examined: 0 };
+  const findings: { run: Run; faces: OwnFaces }[] = [];
+  let examined = 0;
+
+  for (const run of runs) {
+    const halfThick = (run.thicknessFeet ?? 0) / 2 / feetPerUnit;
+    if (!(halfThick > 0)) continue;
+    const bands = bandsAlong(run, segments, feetPerUnit);
+    // The two bands nearest to where the run's own faces must be. Tolerance is
+    // generous because the pairing that produced the run already decided these
+    // two lines are a wall's width apart.
+    const tolerance = Math.max(halfThick * 0.35, (1 / 12 / feetPerUnit) * 1.5);
+    const near = (want: number) =>
+      bands
+        .filter((b) => Math.abs(b.offset - want) <= tolerance)
+        .sort((a, b) => b.extentFeet - a.extentFeet)[0];
+    const a = near(-halfThick);
+    const b = near(halfThick);
+    if (a === undefined || b === undefined) continue;
+    examined += 1;
+    const longFeet = Math.max(a.extentFeet, b.extentFeet);
+    const shortFeet = Math.min(a.extentFeet, b.extentFeet);
+    if (!(longFeet > 0)) continue;
+    const ratio = run.lengthFeet > 0 ? shortFeet / run.lengthFeet : 1;
+    if (ratio > maxRatio) continue;
+    findings.push({ run, faces: { longFeet, shortFeet, ratio } });
+  }
+  findings.sort((x, y) => x.faces.ratio - y.faces.ratio);
+  return { findings, examined };
 }
