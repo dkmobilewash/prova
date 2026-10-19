@@ -3339,6 +3339,39 @@ export function TakeoffPlanViewer({
               }}
               onPointerUp={() => {
                 if (keyBox !== null && answerKey !== undefined) {
+                  // ── SHIFT-CLICK ACTS ON THE SELECTION, NEVER ON WHAT WAS HIT ──
+                  //
+                  // Reported from the ELEVEN03 runs: shift-click to split
+                  // "gets caught by thin non-candidate lines". It did two
+                  // wrong things at once. The split was wired to each
+                  // candidate line's own `onClick`, so on a dense plan the
+                  // element under the cursor decided which run was cut —
+                  // single-line candidates and hairline geometry sit on top of
+                  // the run you are looking at. And every pointer-down in this
+                  // mode opens a selection box, so the same shift-click also
+                  // arrived here as a zero-sized box and ACCEPTED whatever it
+                  // caught. One gesture, a split and a verdict, neither aimed.
+                  //
+                  // So: a shift gesture that did not MOVE cuts the focused
+                  // candidate at the point clicked, and nothing else happens.
+                  // The reviewer has already selected the run they are judging
+                  // — it is the one drawn thick, and the panel is showing its
+                  // length — so the selection is the only unambiguous answer
+                  // to "which run".
+                  const moved = Math.max(
+                    Math.abs(keyBox.x2 - keyBox.x1),
+                    Math.abs(keyBox.y2 - keyBox.y1),
+                  );
+                  if (
+                    keyShift &&
+                    moved <= CLICK_NOT_DRAG &&
+                    answerKey.onSplitAt !== undefined &&
+                    answerKey.focusedId !== null
+                  ) {
+                    answerKey.onSplitAt(answerKey.focusedId, { x: keyBox.x2, y: keyBox.y2 });
+                    setKeyBox(null);
+                    return;
+                  }
                   const ids = candidatesInBox(answerKey.state, keyBox);
                   // A box that caught nothing is a CLICK ON NOTHING, which
                   // clears the focus rather than deciding anything — the same
@@ -3495,27 +3528,11 @@ export function TakeoffPlanViewer({
                         style={{ cursor: "pointer" }}
                         onClick={(event) => {
                           event.stopPropagation();
-                          // ── SHIFT-CLICK CUTS WHERE YOU CLICKED ──
-                          //
-                          // The other half of S: a yard with no wall at its
-                          // edge has no crossing to cut at, so the reviewer
-                          // aims. Shift rather than a mode, because a mode
-                          // you can forget you are in is how a stray click
-                          // becomes a split nobody meant.
-                          if (event.shiftKey && answerKey.onSplitAt !== undefined) {
-                            // Measured against the SVG, not the line: this
-                            // handler's `currentTarget` is the line itself,
-                            // whose box is a few pixels of stroke.
-                            const svg = event.currentTarget.ownerSVGElement;
-                            const rect = svg?.getBoundingClientRect();
-                            if (rect !== undefined && rect.width > 0) {
-                              answerKey.onSplitAt(one.id, {
-                                x: (event.clientX - rect.left) / rect.width,
-                                y: (event.clientY - rect.top) / rect.width,
-                              });
-                              return;
-                            }
-                          }
+                          // Shift-click is handled on the SVG's pointer-up, as
+                          // a GESTURE on the selected candidate — see the
+                          // "shift-click acts on the selection" note there.
+                          // Hit-testing it here meant whichever thin line was
+                          // on top won, which is the bug this replaced.
                           answerKey.onFocus(one.id);
                         }}
                       />
@@ -4454,6 +4471,15 @@ export function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: (
 /** One empty list, so a page with no missed walls does not hand every
  *  consumer a new array on each render. */
 const EMPTY_MISSED: { where: string; why: string }[] = [];
+
+/**
+ * How far a pointer may move and still count as a CLICK, in page-width units.
+ *
+ * About eleven pixels on a 2592pt sheet — a hand resting on a trackpad, not a
+ * box anybody drew. It only has to separate "I clicked that run" from "I swept
+ * an area", and the two gestures are nowhere near each other.
+ */
+const CLICK_NOT_DRAG = 0.004;
 
 const STROKE_PX = 2;
 

@@ -536,12 +536,25 @@ export function AnswerKeyPanel({
               it (which throws away real wall).
             </p>
             <p>
+              <b>A candidate that is not quite on the wall.</b> Zoom in before
+              accepting a run in a closet or against millwork. If its line is
+              paired with a <b>shelf</b>, a shelf end or a counter edge instead
+              of the wall&rsquo;s other face, it sits a few inches off the real
+              wall — the length looks right and the wall it describes does not
+              exist. Same for a double wall where only <b>one layer</b> is
+              offered. Press <b>U</b>: it is not a wall as drawn, and it is not
+              a clean reject either.
+            </p>
+            <p>
               <b>Where it cuts.</b> At the nearest wall you have already
               accepted that crosses this one — so accept the building wall
               first. Where no wall crosses, hold <b>shift</b> and click the
               point on the run to cut at. Both halves come back{" "}
               <b>undecided</b>, with their own length, and you judge each one;
-              a cut that would leave a stub under a foot is refused.
+              a cut that would leave a stub under a foot is refused. Shift-click
+              always cuts the run that is <b>selected</b> — the thick one, whose
+              length this panel is showing — not whatever line is under the
+              cursor.
             </p>
             <p>
               If you cannot tell, press <b>U</b> for Not sure. That is a real answer

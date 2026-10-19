@@ -574,6 +574,69 @@ longest are INSIDE the building envelope. Whether those are kennel dividers
 (out of scope) or built partitions (in scope) is a judgement about the
 building rather than the drawing, and it is worth about 190 ft on one sheet.
 
+## SIX REAL LABELLED SHEETS ARE THREE BUILDINGS, AND ONE OF THEM IS 89% OF IT — 2026-10-19
+
+A trend check, not a candidate: veto-only, the same sheet-relative features,
+trained on the six sheets Diego has labelled (A101, A120, HPL p3, A4.B.1,
+A4.B.2, A4.B.3) with the synthetic 150 contributing NEGATIVES ONLY.
+
+32,410 rows, 13.6% positive. The synthetic half is CAPPED at 700 rows per
+drafting style — 14,000 of the 100,816 available — because all of them against
+4,394 real positives is 3.7% positive, and a model trained on that learns that
+almost nothing is a wall. Stratified per style rather than taken off the top:
+`ironbark` alone has 13,202 rows and would otherwise have been a third of the
+synthetic half, which is a style rather than a lesson.
+
+### It does not transfer, and the family table says why before any test does
+
+| real family | wall rows | share of all positives |
+| --- | --- | --- |
+| eleven03 (3 sheets) | 3,899 | **89%** |
+| cbw (2 sheets) | 431 | 10% |
+| hpl (1 sheet) | 64 | 1% |
+
+**Six sheets is not six buildings.** It is three, drawn by three offices, and
+one of them carries nine positives in ten. Leave-one-family-out therefore has
+nothing left to learn a wall from when ELEVEN03 is the one held back:
+
+| held out | missing ft | extra ft |
+| --- | --- | --- |
+| eleven03 | **21,934** | 20 |
+| cbw | 2,861 | 2,240 |
+| hpl | 500 | 47 |
+
+### On BIM it is the worst model this directory has recorded
+
+Both halves, at the most permissive threshold swept:
+
+| | missing | extra |
+| --- | --- | --- |
+| BIM-HELD-OUT, rules | 9.0% | 4.3% |
+| BIM-HELD-OUT, veto @0.2 | **31.2%** | 3.2% |
+| BIM-HELD-OUT, veto @0.35 | 37.4% | 3.0% |
+| BIM-DEV, rules | 16.3% | 4.9% |
+| BIM-DEV, veto @0.2 | **34.7%** | 1.6% |
+
+On the held-out buildings it deletes **1,922 ft of real wall to remove 95 ft of
+phantom**. The standing rule — missing must not rise more than 0.5 percentage
+points — is missed by a factor of forty, so no threshold admits it and the
+sweep is recorded only to show that none does.
+
+### What this changes about the labelling plan, which is the useful part
+
+Nothing here is a surprise about the MODEL; the 2026-10-18 entry below already
+established that synthetic learns a drawing style and real learns a building
+type, and that more buildings is what is needed. This run prices that
+conclusion: **three buildings is not enough, and the sixth sheet of the third
+building adds almost nothing.** The next sheets are worth more if they are new
+BUILDINGS than if they are more levels of ELEVEN03 — and the supply of those is
+the problem recorded in `sheets-to-label.md`, not here.
+
+The model is not committed, the switch stays off, and the rows and the model
+live outside the tree. Reproduce with `buildrows` against
+`~/Claude Folder/takeoff/labels` and `scripts/train-wall-model.py`; the seed is
+`20261019`.
+
 ## TRAINING ON REAL BUILDINGS: THE FEATURES ARE FIXED, THE TRANSFER IS NOT — 2026-10-18
 
 Veto-only, sheet-relative features, trained on BIM-DEV's 22 real-building
