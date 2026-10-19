@@ -31,13 +31,3 @@ check.
 Backup files are listed by name on the PDF and say so ("sent separately; not part of this PDF").
 They are not uploaded: a phone photo is 3-5 MB and the function's request body caps out near
 4.5 MB.
-
-Found by clicking, before it shipped: after a send, coming back to the tool started with the whole
-last request filled in (job, GC, every line, markup, days, backup) and yesterday's date, and
-typing appended to the old values, so re-sending old numbers was one tap away. A sent request is
-now finished, not a draft. `freshDraft` in `lib/change-order.ts` keeps only the sub's company and
-today's date, the way the waiver keeps only who you are (`saveContact`: name, email, company).
-The send, "Make another change order request" and "Forget them" all go through it. An unfinished
-draft is still restored after a reload, but `startDraft` moves a date that is in the past up to
-today. A request is dated the day it goes out, and a date picked for later is kept. "Today" is the
-user's calendar (`localToday` in `lib/fills.ts`), set in an effect and never server-rendered.

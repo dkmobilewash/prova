@@ -1,5 +1,5 @@
 ### The third free tool: a T&M ticket the GC super signs on the foreman's phone (Cyrus)
-`cyrus/change-order-tool`
+`cyrus/tm-ticket`
 
 Diego's plan (2026-10-17, section 3) puts the T&M / extra-work ticket third. It lives at
 `/lien-waiver/tm-ticket`, in the same frame as the waiver and the change order request: no account,
@@ -33,3 +33,16 @@ no company.
 
 Not built: a photo. The app has no file storage, and a phone photo is near the function's request
 limit, so the work screen says to send photos with the PDF.
+
+### A sent change order request is finished, not a draft to come back to (Cyrus)
+`cyrus/tm-ticket`
+
+Found by clicking, before it shipped: after a send, coming back to the tool started with the whole
+last request filled in (job, GC, every line, markup, days, backup) and yesterday's date, and
+typing appended to the old values, so re-sending old numbers was one tap away. A sent request is
+now finished, not a draft. `freshDraft` in `lib/change-order.ts` keeps only the sub's company and
+today's date, the way the waiver keeps only who you are (`saveContact`: name, email, company).
+The send, "Make another change order request" and "Forget them" all go through it. An unfinished
+draft is still restored after a reload, but `startDraft` moves a date that is in the past up to
+today. A request is dated the day it goes out, and a date picked for later is kept. "Today" is the
+user's calendar (`localToday` in `lib/fills.ts`), set in an effect and never server-rendered.
