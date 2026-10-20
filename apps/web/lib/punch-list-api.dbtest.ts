@@ -52,6 +52,11 @@ function patch(itemId: string, body: Record<string, unknown>) {
   return item.PATCH(request, { params: Promise.resolve({ id: jobId, itemId }) });
 }
 
+function del(itemId: string, job = jobId) {
+  const request = new NextRequest(`http://test/api/v1/jobs/${job}/punch-list/${itemId}`, { method: "DELETE" });
+  return item.DELETE(request, { params: Promise.resolve({ id: job, itemId }) });
+}
+
 describe("the punch list endpoints the phone talks to", () => {
   beforeAll(async () => {
     const company = await prisma.company.create({ data: { name: "Queue Co" } });
@@ -71,6 +76,7 @@ describe("the punch list endpoints the phone talks to", () => {
   });
 
   afterAll(async () => {
+    await prisma.jobMedia.deleteMany({ where: { companyId: context.companyId } });
     await prisma.punchListItem.deleteMany({ where: { companyId: context.companyId } });
     await prisma.job.deleteMany({ where: { companyId: context.companyId } });
     await prisma.contact.deleteMany({ where: { companyId: context.companyId } });
@@ -141,5 +147,71 @@ describe("the punch list endpoints the phone talks to", () => {
     const res = await patch(created.id, { status: "OPEN" });
     expect(res.status).toBe(409);
     expect((await prisma.punchListItem.findUniqueOrThrow({ where: { id: created.id } })).status).toBe("VERIFIED");
+  });
+
+  /** #592: the phone could add an item and had no way to take one off. */
+  it("removes the item, and a replay of the same delete settles rather than failing", async () => {
+    const created = await (await post({ description: "Logged on the wrong job", clientOperationId: "op_g" })).json();
+
+    expect((await del(created.id)).status).toBe(200);
+    expect(await prisma.punchListItem.findUnique({ where: { id: created.id } })).toBeNull();
+
+    // The queue replays. 404 is the contract that lets it settle this as
+    // done — `punch-list:delete` in apps/mobile/lib/sync-queue.ts reads the
+    // status, so this number is load-bearing rather than cosmetic.
+    expect((await del(created.id)).status).toBe(404);
+  });
+
+  it("refuses a foreman and leaves the row exactly where it was", async () => {
+    // OWNER-ONLY, in parity with the web action. This is the one test that
+    // would notice the phone being allowed to destroy what the web refuses.
+    const created = await (await post({ description: "Not yours to remove", clientOperationId: "op_h" })).json();
+
+    context.role = "MEMBER";
+    context.jobFunction = "FIELD";
+    try {
+      const res = await del(created.id);
+      expect(res.status).toBe(403);
+      expect((await res.json()).error).toContain("account owner");
+    } finally {
+      context.role = "OWNER";
+      context.jobFunction = null;
+    }
+
+    expect(await prisma.punchListItem.findUnique({ where: { id: created.id } })).not.toBeNull();
+  });
+
+  it("will not remove an item through another job's URL", async () => {
+    const other = await prisma.job.create({
+      data: { companyId: context.companyId, contactId: (await prisma.contact.findFirstOrThrow({ where: { companyId: context.companyId } })).id, name: "Other Job" },
+    });
+    const created = await (await post({ description: "Belongs to the first job", clientOperationId: "op_i" })).json();
+
+    expect((await del(created.id, other.id)).status).toBe(404);
+    expect(await prisma.punchListItem.findUnique({ where: { id: created.id } })).not.toBeNull();
+  });
+
+  it("lets the photo of the fix outlive the item it was taken against", async () => {
+    // The schema's answer, not the handler's: `JobMedia.punchListItemId` is
+    // SetNull. Asserted against a real database because a RESTRICT here
+    // would turn every delete of a photographed item into a 500 the phone
+    // would then retry five times and file under "needs attention".
+    const created = await (await post({ description: "Photographed", clientOperationId: "op_j" })).json();
+    const photo = await prisma.jobMedia.create({
+      data: {
+        companyId: context.companyId,
+        jobId,
+        blobUrl: "https://example.test/photo.jpg",
+        contentType: "image/jpeg",
+        byteSize: 1024,
+        capturedAt: new Date(),
+        punchListItemId: created.id,
+      },
+    });
+
+    expect((await del(created.id)).status).toBe(200);
+
+    const after = await prisma.jobMedia.findUniqueOrThrow({ where: { id: photo.id } });
+    expect(after.punchListItemId).toBeNull();
   });
 });

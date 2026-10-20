@@ -42,6 +42,18 @@ export const EN = {
   "punch.field.where": "Where (optional)",
   "punch.field.whereHint": "e.g. Level 3 corridor",
   "punch.due": "due {date}",
+  /* #592 — the way out. "Remove" and "Remove it" are both well inside the
+   * 12-character ceiling CLAUDE.md puts on a delete label, in both
+   * languages: a long label makes the armed pair narrower than the button
+   * it replaces, which is how a confirm ends up under the delete's own
+   * pixel with the ORDER perfectly correct. What is being removed rides in
+   * `punch.remove.which`, which is an accessibilityLabel and costs no
+   * width. */
+  "punch.remove": "Remove",
+  "punch.remove.which": "Remove “{what}” from this punch list",
+  "punch.remove.cancel": "Cancel",
+  "punch.remove.confirm": "Remove it",
+  "punch.removing": "Removing…",
 
   // The outbox
   "outbox.waiting": "Waiting to send",
@@ -494,6 +506,7 @@ export const EN = {
   "outbox.op.punchItem": "Punch item · {job}",
   "outbox.op.punchReady": "Punch item marked ready",
   "outbox.op.punchReopened": "Punch item reopened",
+  "outbox.op.punchRemoved": "Punch item removed",
   "outbox.op.tmTicket": "T&M ticket · {job} · {date}",
   "outbox.op.photo": "Photo",
   "outbox.op.delay": "Delay",

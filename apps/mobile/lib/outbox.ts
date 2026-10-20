@@ -89,6 +89,10 @@ export function describeOp(op: PendingOp, names: Record<string, string> = {}): {
         title: op.status === "READY_FOR_REVIEW" ? t("outbox.op.punchReady") : t("outbox.op.punchReopened"),
         detail: job(op.jobId),
       };
+    // No description to show: the item's words live on the server, and a
+    // removal is the one op whose subject is deliberately not quoted back.
+    case "punch-list:delete":
+      return { title: t("outbox.op.punchRemoved"), detail: job(op.jobId) };
     case "ticket:create":
       return { title: op.workDescription, detail: t("outbox.op.tmTicket", { job: job(op.jobId), date: day(op.workDate) }) };
     case "media:create":
