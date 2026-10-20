@@ -8,6 +8,7 @@ import {
   keepReview,
   restoreDraft,
   restoreOffer,
+  reviewSignature,
 } from "@/lib/takeoff/reviewDraft";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -685,6 +686,14 @@ export function TakeoffWorkspace({
   const draftSet = data.plan.fileName ?? data.plan.revisionLabel ?? "";
   const [restorable, setRestorable] = useState<{ page: number; offer: string } | null>(null);
   const [draftNote, setDraftNote] = useState<string | null>(null);
+  /**
+   * What the review looked like when it last saved to labels.
+   *
+   * Per page, because a save is about one sheet and leaving a different one
+   * unsaved is still a reason to warn.
+   */
+  const [savedSigByPage, setSavedSigByPage] = useState<Record<number, string>>({});
+  const savedSignature = onThisSheet(savedSigByPage, page) ?? undefined;
 
   // ── WRITTEN AFTER EVERY CHANGE, NOT ON A TIMER ──
   //
@@ -706,6 +715,13 @@ export function TakeoffWorkspace({
     // restore was working perfectly on a draft that had already been
     // overwritten.
     if (restorable !== null) return;
+    // ── NOR FOR WORK THAT IS ALREADY ON DISK ──
+    //
+    // The draft is cleared when a save succeeds, and this effect would put it
+    // straight back from the still-populated review — so "cleared on save"
+    // lasted one render and the sheet offered to restore work that was
+    // already saved.
+    if (savedSignature !== undefined && savedSignature === reviewSignature(keyState)) return;
     const draft = draftFrom({ state: keyState, set: draftSet, page, finderVersion });
     if (draft === null) {
       // Nothing worth keeping — and clear any older draft for this sheet, so
@@ -719,7 +735,7 @@ export function TakeoffWorkspace({
       // their work is being kept when it is not.
       setDraftNote("This browser will not keep a backup of this review — save often.");
     }
-  }, [keyMode, keyState, draftSet, page, finderVersion, restorable]);
+  }, [keyMode, keyState, draftSet, page, finderVersion, restorable, savedSignature]);
 
   // ── OFFERED ON OPENING, NOT RESTORED BEHIND THEIR BACK ──
   useEffect(() => {
@@ -791,14 +807,14 @@ export function TakeoffWorkspace({
   // tab. It is armed only when there IS something to lose, because a prompt
   // on every sheet anybody opens is one people learn to dismiss.
   useEffect(() => {
-    if (!keyMode || keyState === null || !hasUnsavedWork(keyState)) return;
+    if (!keyMode || keyState === null || !hasUnsavedWork(keyState, savedSignature)) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [keyMode, keyState]);
+  }, [keyMode, keyState, savedSignature]);
 
 
   const itemsPanel = (
@@ -1291,7 +1307,16 @@ export function TakeoffWorkspace({
                 restoreOffer={restorable?.page === page ? restorable.offer : null}
                 onRestore={restoreReview}
                 onDiscardDraft={clearReviewDraft}
-                onSaved={clearReviewDraft}
+                onSaved={() => {
+                  // The review is not emptied by a save — the reviewer goes
+                  // on looking at the sheet — so "saved" is recorded as what
+                  // it LOOKED LIKE, and the leave-warning and the autosave
+                  // both compare against that.
+                  clearReviewDraft();
+                  setSavedSigByPage((prev) =>
+                    setOnThisSheet(prev, page, reviewSignature(keyStateRef.current)),
+                  );
+                }}
                 draftNote={draftNote}
                 tracing={onThisSheet(tracingByPage, page) ?? false}
                 onTracing={(next) =>

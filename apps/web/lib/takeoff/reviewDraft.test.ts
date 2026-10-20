@@ -7,6 +7,7 @@ import {
   hasUnsavedWork,
   keepReview,
   restoreDraft,
+  reviewSignature,
   restoreOffer,
 } from "./reviewDraft";
 import type { Candidate, ReviewState } from "./answerKeyReview";
@@ -256,5 +257,87 @@ describe("a re-detect must not wipe the sheet", () => {
       verdicts: { w0: "unreviewed", w1: "not-a-wall" },
     };
     expect(keepReview(untouched, premarked).verdicts.w1).toBe("not-a-wall");
+  });
+});
+
+describe("a save disarms the leave-page warning", () => {
+  /**
+   * ── THE TAB THAT WOULD NOT MOVE ──
+   *
+   * After "Labels saved…" on Murray A101, the tab could not navigate:
+   * navigation failed twice, setting `location` from a script did nothing,
+   * F5 did not reload, and no dialog was visible. An automation browser
+   * dismisses a `beforeunload` prompt, and a dismissed prompt CANCELS the
+   * navigation — so the tab was trapped by a warning about work that had
+   * already been written to disk.
+   *
+   * The cause is that the warning asked only whether the review had any work
+   * in it. A save does not empty the review; the reviewer goes on looking at
+   * the sheet they just saved.
+   */
+  it("warns while the work is unsaved", () => {
+    expect(hasUnsavedWork(reviewed())).toBe(true);
+  });
+
+  it("STOPS warning once that exact review is saved", () => {
+    const state = reviewed();
+    expect(hasUnsavedWork(state, reviewSignature(state))).toBe(false);
+  });
+
+  it("warns again after one more decision", () => {
+    const state = reviewed();
+    const saved = reviewSignature(state);
+    const changed: ReviewState = { ...state, verdicts: { ...state.verdicts, w2: "wall" } };
+    expect(hasUnsavedWork(changed, saved), "a change after the save went unwarned").toBe(true);
+  });
+
+  it("warns again after one more TRACE", () => {
+    // The expensive kind of change, and the one a signature over verdicts
+    // alone would miss.
+    const state = reviewed();
+    const saved = reviewSignature(state);
+    const changed: ReviewState = { ...state, traced: [...state.traced, traced("t2", 0.9)] };
+    expect(hasUnsavedWork(changed, saved)).toBe(true);
+  });
+
+  it("warns again after a trace is REMOVED", () => {
+    const state = reviewed();
+    const saved = reviewSignature(state);
+    const changed: ReviewState = { ...state, traced: state.traced.slice(1) };
+    expect(hasUnsavedWork(changed, saved)).toBe(true);
+  });
+
+  it("does not warn on an untouched sheet, saved or not", () => {
+    const empty = fresh(["w0", "w1"]);
+    expect(hasUnsavedWork(empty)).toBe(false);
+    expect(hasUnsavedWork(empty, reviewSignature(empty))).toBe(false);
+  });
+
+  it("still warns when a DIFFERENT review was the one saved", () => {
+    // Per sheet: saving one sheet must not disarm the warning on another.
+    const other = { ...fresh(["w0"]), verdicts: { w0: "wall" as const } };
+    expect(hasUnsavedWork(reviewed(), reviewSignature(other))).toBe(true);
+  });
+});
+
+describe("the signature a save is remembered by", () => {
+  it("ignores a re-detect that changes nothing", () => {
+    // The candidates are not in the signature: the same walls re-offered
+    // leave the same decisions, and counting that as a change would re-arm
+    // the warning on every redraw.
+    const state = reviewed();
+    const after = keepReview(state, fresh(["w0", "w1", "w2"]));
+    expect(reviewSignature(after)).toBe(reviewSignature(state));
+  });
+
+  it("does not depend on the ORDER verdicts were made in", () => {
+    const a: ReviewState = { ...fresh(["w0", "w1"]), verdicts: { w0: "wall", w1: "unsure" } };
+    const b: ReviewState = { ...fresh(["w0", "w1"]), verdicts: { w1: "unsure", w0: "wall" } };
+    expect(reviewSignature(a)).toBe(reviewSignature(b));
+  });
+
+  it("is empty for nothing at all", () => {
+    expect(reviewSignature(fresh(["w0"]))).toBe("|");
+    expect(reviewSignature(null)).toBe("");
   });
 });

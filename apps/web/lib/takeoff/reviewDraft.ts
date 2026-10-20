@@ -167,8 +167,53 @@ export function restoreOffer(draft: ReviewDraft): string {
   return `Restore unsaved review (${bits.join(", ")})`;
 }
 
-/** Whether a review has anything in it that leaving the page would lose. */
-export function hasUnsavedWork(state: ReviewState): boolean {
+/**
+ * A short summary of the DECISIONS in a review, for "has this been saved?".
+ *
+ * The candidates are not in it: a re-detect that produces the same walls
+ * leaves the same decisions, and asking about the candidates would call that
+ * a change. What is in it is every verdict and every traced wall, which is
+ * exactly what a save writes.
+ */
+export function reviewSignature(state: ReviewState | null): string {
+  if (state === null) return "";
+  const verdicts = Object.entries(state.verdicts)
+    .filter(([, v]) => v !== "unreviewed")
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([id, v]) => `${id}=${v}`)
+    .join(",");
+  const traced = state.traced
+    .map((t) => `${round(t.x1)},${round(t.y1)},${round(t.x2)},${round(t.y2)}`)
+    .sort()
+    .join(";");
+  return `${verdicts}|${traced}`;
+}
+
+/**
+ * Whether leaving the page now would lose something.
+ *
+ * ── A SAVE MUST DISARM IT, AND IT DID NOT ──
+ *
+ * This asked only whether the review had any work in it. A successful save
+ * does not empty the review — the reviewer goes on looking at the sheet they
+ * just saved — so the warning stayed armed for the rest of the session.
+ *
+ * On 2026-10-20 that trapped a tab: after "Labels saved…" on Murray A101,
+ * navigation failed twice, setting `location` from a script did nothing and
+ * F5 did not reload, with no dialog visible. An automation browser dismisses
+ * a `beforeunload` prompt, and a dismissed prompt CANCELS the navigation. A
+ * person would have seen a dialog and been merely annoyed; a script sees a
+ * tab that will not move.
+ *
+ * `savedSignature` is what the review looked like when it last saved. Equal
+ * means nothing has changed since, so there is nothing to warn about.
+ */
+export function hasUnsavedWork(state: ReviewState, savedSignature?: string): boolean {
+  // An untouched sheet needs no early return of its own: it has no traces
+  // and no decided verdicts, so the test below is already false. Mutation
+  // showed a guard here changed nothing reachable, and a guard nobody can
+  // test is one more line to keep in step with the one doing the work.
+  if (savedSignature !== undefined && savedSignature === reviewSignature(state)) return false;
   return (
     state.traced.length > 0 ||
     Object.values(state.verdicts).some((v) => v !== "unreviewed")
