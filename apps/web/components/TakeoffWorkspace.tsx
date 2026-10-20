@@ -719,10 +719,40 @@ export function TakeoffWorkspace({
     setRestorable({ page, offer: restoreOffer(draft) });
   }, [keyMode, draftSet, page, finderVersion]);
 
+  /**
+   * The live review, for handlers.
+   *
+   * ── WHY A REF AND NOT THE STATE ──
+   *
+   * `restoreReview` closed over `keyState`, and the button rendered before
+   * the candidates existed kept the callback from that render — where
+   * `keyState` was still null. Clicking it hit the early return: no restore,
+   * no note, nothing. Measured rather than reasoned about: a trace of the
+   * panel's count every 250 ms after the click read 5 at 0 ms and 5 at
+   * 5,750 ms, so the work was never applied rather than applied and
+   * overwritten. Those two look identical in a single reading taken
+   * afterwards, which is why the first fix went to the wrong place.
+   */
+  const keyStateRef = useRef<ReviewState | null>(null);
+  keyStateRef.current = keyState;
+
   const restoreReview = useCallback(() => {
     const draft = loadDraft(draftSet, page, finderVersion);
-    if (draft === null || keyState === null) return;
-    const got = restoreDraft(draft, keyState);
+    const current = keyStateRef.current;
+    if (draft === null || current === null) {
+      // ── SAY SO, RATHER THAN DOING NOTHING ──
+      //
+      // A button that silently does nothing is worse than one that refuses:
+      // the reviewer presses it, sees their work absent, and concludes the
+      // feature does not work — which is what happened here.
+      setDraftNote(
+        draft === null
+          ? "That backup is no longer in this browser."
+          : "Press Find the walls first, then restore.",
+      );
+      return;
+    }
+    const got = restoreDraft(draft, current);
     if (!got.ok) {
       // ── REFUSED, AND SAID ──
       //
@@ -735,7 +765,7 @@ export function TakeoffWorkspace({
     setKeyState(got.state);
     setRestorable(null);
     setDraftNote(null);
-  }, [draftSet, page, finderVersion, keyState, setKeyState]);
+  }, [draftSet, page, finderVersion, setKeyState]);
 
   const clearReviewDraft = useCallback(() => {
     clearDraft(draftSet, page, finderVersion);
