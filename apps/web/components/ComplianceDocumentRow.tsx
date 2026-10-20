@@ -11,6 +11,7 @@ import { formatCalendarDate } from "@/lib/render-date";
 import { complianceDocumentAnchor, daysUntil, toIsoDate } from "@/lib/compliance-expiry";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
+import { Disclosure } from "@/components/Disclosure";
 
 const TYPE_LABELS: Record<string, string> = {
   LIEN_WAIVER: "Lien waiver",
@@ -215,19 +216,20 @@ export function ComplianceDocumentRow({
     ? { text: "Renewed — a later certificate replaces this one", className: "text-ink-muted" }
     : expirationStatus(doc.expiresAt, todayIso);
 
+  // Density audit #25: one line per document — type · status · expiry ·
+  // party · job — and the dates, notes, file and actions on click. The
+  // expiring chip stays on the line (the audit keeps the chips here).
   return (
-    <li id={complianceDocumentAnchor(doc.id)} className="flex scroll-mt-24 flex-col gap-2 p-4 target:ring-2 target:ring-inset target:ring-brand">
-      {/* flex-wrap, and the text column may shrink: this row's action
-          cluster was shrink-0 and unwrappable, so on a 360px screen it ran
-          past the viewport and dragged the whole page sideways. Found by
-          measuring, not by looking — scrollWidth 429 against a 360 client. */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="font-medium text-ink">
+    <li id={complianceDocumentAnchor(doc.id)} className="scroll-mt-24 px-4 target:ring-2 target:ring-inset target:ring-brand">
+      <Disclosure
+        variant="row"
+        name="compliance-doc"
+        summary={
+          <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-medium text-ink">
               {TYPE_LABELS[doc.type] ?? doc.type}
               {doc.coverageType && <span className="font-normal text-ink-body"> — {doc.coverageType}</span>}
-            </p>
+            </span>
             <span
               className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                 doc.status === "RECEIVED" ? "bg-tag-green text-tag-green-ink" : "bg-rail-hover text-ink-label"
@@ -235,77 +237,86 @@ export function ComplianceDocumentRow({
             >
               {doc.status === "RECEIVED" ? "Received" : "Pending"}
             </span>
+            {expiration && <span className={`text-xs font-medium ${expiration.className}`}>{expiration.text}</span>}
+            <span className="text-ink-body">
+              {doc.partyName}
+              {doc.jobName && <> · {doc.jobName}</>}
+            </span>
+          </span>
+        }
+      >
+        {/* flex-wrap, and the text column may shrink: this row's action
+            cluster was shrink-0 and unwrappable, so on a 360px screen it ran
+            past the viewport and dragged the whole page sideways. Found by
+            measuring, not by looking — scrollWidth 429 against a 360 client. */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             {doc.aiExtracted && (
               <span className="inline-flex items-center rounded-full bg-tag-brand px-2 py-0.5 text-xs font-medium text-tag-brand-ink">
                 AI-extracted — verify
               </span>
             )}
-            {expiration && <span className={`text-xs font-medium ${expiration.className}`}>{expiration.text}</span>}
-          </div>
-          <p className="mt-1 text-sm text-ink-body">
-            {doc.partyName}
-            {doc.jobName && <> · {doc.jobName}</>}
-            {doc.amount != null && <> · {money(Number(doc.amount))}</>}
-          </p>
-          <p className="mt-1 text-xs text-ink-muted">
-            {doc.periodStart || doc.periodEnd ? (
-              <>
-                Period {formatDate(doc.periodStart)} – {formatDate(doc.periodEnd)}
-                {" · "}
-              </>
-            ) : null}
-            Effective {formatDate(doc.effectiveDate)}
-            {doc.expiresAt && <> · Expires {formatDate(doc.expiresAt)}</>}
-          </p>
-          {doc.notes && <p className="mt-1 text-xs text-ink-muted">Note: {doc.notes}</p>}
-          {doc.fileUrl && (
-            <a
-              href={doc.fileUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-1 inline-block text-xs text-link hover:underline"
-            >
-              {doc.fileName ?? "View file"}
-            </a>
-          )}
-        </div>
-        {/* Two steps, like every other list. A compliance document is
-            evidence — a signed waiver or a certificate someone sent you —
-            and one stray click should not be able to destroy it.
-
-            Arming it also empties this row: "Edit" and "Mark received" both
-            used to stay live beside the armed confirm, which is issue #152's
-            fourth instance and how somebody marks a document received while
-            trying to cancel a delete. They are children of RowActions now,
-            so the next button added here is covered without anyone
-            remembering to cover it. */}
-        <RowActions
-          className="flex flex-wrap items-center gap-3"
-          destructive={
-            canDelete ? (
-              <ConfirmDelete describe="Removes the document from your compliance file here. A copy you already sent a GC stays with them." pinned="end" action={deleteComplianceDocument.bind(null, doc.id)} />
-            ) : null
-          }
-        >
-          <button
-            type="button"
-            onClick={() => setIsEditing(true)}
-            className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-rail-hover"
-          >
-            Edit
-          </button>
-          {doc.status === "PENDING" && (
-            <form action={markComplianceDocumentReceived.bind(null, doc.id)}>
-              <button
-                type="submit"
-                className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-rail-hover"
+            {doc.amount != null && <p className="mt-1 text-sm text-ink-body">{money(Number(doc.amount))}</p>}
+            <p className="mt-1 text-xs text-ink-muted">
+              {doc.periodStart || doc.periodEnd ? (
+                <>
+                  Period {formatDate(doc.periodStart)} – {formatDate(doc.periodEnd)}
+                  {" · "}
+                </>
+              ) : null}
+              Effective {formatDate(doc.effectiveDate)}
+              {doc.expiresAt && <> · Expires {formatDate(doc.expiresAt)}</>}
+            </p>
+            {doc.notes && <p className="mt-1 text-xs text-ink-muted">Note: {doc.notes}</p>}
+            {doc.fileUrl && (
+              <a
+                href={doc.fileUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 inline-block text-xs text-link hover:underline"
               >
-                Mark received
-              </button>
-            </form>
-          )}
-        </RowActions>
-      </div>
+                {doc.fileName ?? "View file"}
+              </a>
+            )}
+          </div>
+          {/* Two steps, like every other list. A compliance document is
+              evidence — a signed waiver or a certificate someone sent you —
+              and one stray click should not be able to destroy it.
+
+              Arming it also empties this row: "Edit" and "Mark received" both
+              used to stay live beside the armed confirm, which is issue #152's
+              fourth instance and how somebody marks a document received while
+              trying to cancel a delete. They are children of RowActions now,
+              so the next button added here is covered without anyone
+              remembering to cover it. */}
+          <RowActions
+            className="flex flex-wrap items-center gap-3"
+            destructive={
+              canDelete ? (
+                <ConfirmDelete describe="Removes the document from your compliance file here. A copy you already sent a GC stays with them." pinned="end" action={deleteComplianceDocument.bind(null, doc.id)} />
+              ) : null
+            }
+          >
+            <button
+              type="button"
+              onClick={() => setIsEditing(true)}
+              className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-rail-hover"
+            >
+              Edit
+            </button>
+            {doc.status === "PENDING" && (
+              <form action={markComplianceDocumentReceived.bind(null, doc.id)}>
+                <button
+                  type="submit"
+                  className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-label hover:bg-rail-hover"
+                >
+                  Mark received
+                </button>
+              </form>
+            )}
+          </RowActions>
+        </div>
+      </Disclosure>
     </li>
   );
 }

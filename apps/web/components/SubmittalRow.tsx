@@ -24,6 +24,7 @@ import {
 import { localToday } from "@/components/localToday";
 import { formatCalendarDay } from "@/lib/render-date";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Disclosure } from "@/components/Disclosure";
 import { Spinner } from "@/components/Spinner";
 
 export type SubmittalRowData = SubmittalDefaults & {
@@ -323,43 +324,51 @@ export function SubmittalRow({
 
         {submittal.description && <p className="mt-1 text-sm text-ink-label">{submittal.description}</p>}
 
+        {/* Every revision line opens on click (density audit #32); the
+            state chip above already says where the submittal stands. */}
         {submittal.revisions.length > 0 && (
-          <ul className="mt-2 flex flex-col gap-1 border-l-2 border-line-card pl-3">
-            {[...submittal.revisions]
-              .sort((a, b) => a.revisionNumber - b.revisionNumber)
-              .map((rev) => {
-                const days = rev.returnedOn ? daysBetween(rev.sentOn, rev.returnedOn) : null;
-                return (
-                  <li key={rev.revisionNumber} className="text-xs text-ink-body">
-                    <span className="font-mono text-ink-muted">R{rev.revisionNumber}</span>
-                    {` · sent ${formatCalendarDay(rev.sentOn)}`}
-                    {rev.dueBack && !rev.returnedOn && ` · due back ${formatCalendarDay(rev.dueBack)}`}
-                    {rev.returnedOn && rev.outcome && (
-                      <>
-                        {` · ${outcomeLabel(rev.outcome).toLowerCase()} ${formatCalendarDay(rev.returnedOn)}`}
-                        {days !== null && days >= 0 && ` · ${days} day${days === 1 ? "" : "s"}`}
-                      </>
-                    )}
-                    {rev.responseNotes && (
-                      <span className="text-ink-muted"> — {rev.responseNotes}</span>
-                    )}
-                    {rev.responseUrl && (
-                      <>
-                        {" · "}
-                        <a
-                          href={rev.responseUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-link hover:underline"
-                        >
-                          {rev.responseFileName || "the stamped submittal"}
-                        </a>
-                      </>
-                    )}
-                  </li>
-                );
-              })}
-          </ul>
+          <Disclosure
+            variant="plain"
+            className="mt-2"
+            summary={`Revisions · ${submittal.revisions.length}`}
+          >
+            <ul className="-mt-2 flex flex-col gap-1 border-l-2 border-line-card pl-3">
+              {[...submittal.revisions]
+                .sort((a, b) => a.revisionNumber - b.revisionNumber)
+                .map((rev) => {
+                  const days = rev.returnedOn ? daysBetween(rev.sentOn, rev.returnedOn) : null;
+                  return (
+                    <li key={rev.revisionNumber} className="text-xs text-ink-body">
+                      <span className="font-mono text-ink-muted">R{rev.revisionNumber}</span>
+                      {` · sent ${formatCalendarDay(rev.sentOn)}`}
+                      {rev.dueBack && !rev.returnedOn && ` · due back ${formatCalendarDay(rev.dueBack)}`}
+                      {rev.returnedOn && rev.outcome && (
+                        <>
+                          {` · ${outcomeLabel(rev.outcome).toLowerCase()} ${formatCalendarDay(rev.returnedOn)}`}
+                          {days !== null && days >= 0 && ` · ${days} day${days === 1 ? "" : "s"}`}
+                        </>
+                      )}
+                      {rev.responseNotes && (
+                        <span className="text-ink-muted"> — {rev.responseNotes}</span>
+                      )}
+                      {rev.responseUrl && (
+                        <>
+                          {" · "}
+                          <a
+                            href={rev.responseUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-link hover:underline"
+                          >
+                            {rev.responseFileName || "the stamped submittal"}
+                          </a>
+                        </>
+                      )}
+                    </li>
+                  );
+                })}
+            </ul>
+          </Disclosure>
         )}
 
         <p className="mt-1 text-xs text-ink-muted">

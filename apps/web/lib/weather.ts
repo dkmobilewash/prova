@@ -69,6 +69,24 @@ const WMO: Record<number, string> = {
   99: "Severe thunderstorm with hail",
 };
 
+/**
+ * The one line a job's field reports show about where the weather comes
+ * from, or null when the site was found and there is nothing to say.
+ *
+ * Declutter audit, 2026-10-13: "add the site address" read as wrong on a job
+ * whose Overview form showed "123 Main St, Portland, OR 97201" — which was
+ * the field's PLACEHOLDER, not an address (JobDetailsForm now uses one that
+ * cannot be read as data). The condition was right; it lives here so it is
+ * tested rather than inlined in the page. A blank-but-present address (a
+ * cleared field leaves "") counts as absent.
+ */
+export function siteWeatherNote(job: { siteAddress: string | null; siteLatitude: number | null }): string | null {
+  if (job.siteLatitude !== null) return null;
+  return job.siteAddress?.trim()
+    ? "Weather can't be filled in: the site address above wasn't found on a map. Try a street address or \"City, ST\"."
+    : "Add the job's site address on the Overview tab and each report fills in the day's weather automatically.";
+}
+
 export function weatherSummary(code: number | null): string {
   if (code === null) return "Conditions not reported";
   return WMO[code] ?? `Weather code ${code}`;

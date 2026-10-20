@@ -1,0 +1,88 @@
+/// WHAT THE REPLY AGENT DECIDED ABOUT ONE PROSPECT'S ANSWER, AND WHAT IT SENT.
+///
+/// One row per inbound reply event (`eventId` is unique, Cascade: the raw
+/// event is the evidence and this row is a reading of it; delete the event
+/// and the reading goes with it). The event stays verbatim in `OutboundEvent`
+/// — this holds the DERIVED half: the class the model (or a person) gave it,
+/// the door it was about, the draft, and whether the draft went out.
+///
+/// `status` is the one thing a person acts on. AUTO_SENT is the agent's own
+/// send — only ever for the three safe classes at high confidence, and only
+/// when `REPLY_AGENT_AUTOSEND` is on. Everything that commits to a price, a
+/// date, a scope or a legal position is PENDING_REVIEW by construction: there
+/// is no template for those, so there is nothing the agent could send.
+///
+/// `leadId` is Restrict, like `ConsentRecord`: a lead that has been written
+/// to by a machine is not deleted with its correspondence still attached.
+
+enum ReplyClass {
+  INTERESTED
+  SEND_INFO
+  NOT_NOW
+  WRONG_PERSON
+  OUT_OF_OFFICE
+  STOP
+  HOSTILE
+  QUESTION
+  UNCLEAR
+}
+
+/// Which of the three offers the thread is about — the sequence pitches one
+/// per campaign, and the intake asked for differs by door.
+enum OutboundDoor {
+  PAY_APP
+  CERTIFIED_PAYROLL
+  TAKEOFF
+  UNKNOWN
+}
+
+enum ReplyHandling {
+  PENDING_REVIEW
+  AUTO_SENT
+  APPROVED_SENT
+  DISMISSED
+  SUPPRESSED
+}
+
+model OutboundReply {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  leadId String
+  lead   SalesLead @relation(fields: [leadId], references: [id], onDelete: Restrict)
+
+  eventId String        @unique
+  event   OutboundEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  fromEmail  String
+  subject    String?
+  bodyText   String
+  /// The vendor's time for the reply — entered from the event, never stamped.
+  receivedAt DateTime
+
+  classification ReplyClass
+  /// `model` or `person` — a person re-classifying from /sales/replies
+  /// overwrites the model's verdict and says so.
+  classifiedBy   String
+  door           OutboundDoor
+  /// 0..1 from the model; a person's verdict is 1.
+  confidence     Float
+
+  draft          String?
+  draftRationale String?
+
+  status             ReplyHandling
+  sentAt             DateTime?
+  /// `agent` for an auto-send, otherwise the approving user's id.
+  sentBy             String?
+  /// Smartlead's id for the message we sent, when it returned one; set once
+  /// and the send is never repeated while it is set.
+  smartleadMessageId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, status])
+  @@index([leadId])
+}

@@ -6,6 +6,8 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { EmptyState } from "@/components/EmptyState";
 import { NewProposalClauseForm, ProposalClauseRow } from "@/components/ProposalClauses";
+import { CollapsedForm } from "@/components/CollapsedForm";
+import { Disclosure } from "@/components/Disclosure";
 
 /**
  * The proposal clause library — the company's reusable standard set of
@@ -30,11 +32,13 @@ export default async function ProposalsPage() {
         route="/proposals"
         subtitle="The inclusions, exclusions, clarifications and alternates you repeat on every bid."
       />
-      <p className="mb-6 text-sm text-ink-body">
-        Add them
-        to a job&rsquo;s proposal from its estimate page (the Estimate step). A clause already on a proposal is a copy, so
-        changing it here never changes a proposal you have already sent.
-      </p>
+      {/* The one action first, behind its button (declutter, 2026-10-13:
+          the add form rendered open under the list). */}
+      <div data-tour="proposals-add" className="mb-4">
+        <CollapsedForm label="Add clause">
+          <NewProposalClauseForm />
+        </CollapsedForm>
+      </div>
 
       {clauses.length === 0 ? (
         <div className="mb-6">
@@ -59,14 +63,18 @@ export default async function ProposalsPage() {
         </ul>
       )}
 
-      <div data-tour="proposals-add">
-        <NewProposalClauseForm />
-      </div>
-
-      <p className="mt-4 text-xs text-ink-muted">
-        Removing a clause from the library is owner-only. Proposals are built per job — open a job and
-        choose <span className="text-ink-label">Proposal</span>, or go to <Link href="/bids" className="text-link hover:underline">Bids</Link>.
-      </p>
+      <Disclosure summary="How proposals use these">
+        <p className="text-sm text-ink-body">
+          Add them to a job&rsquo;s proposal from its estimate page (the Estimate step). A clause
+          already on a proposal is a copy, so changing it here never changes a proposal you have
+          already sent.
+        </p>
+        <p className="mt-2 text-sm text-ink-body">
+          Removing a clause from the library is owner-only. Proposals are built per job — open a job
+          and choose <span className="text-ink-label">Proposal</span>, or go to{" "}
+          <Link href="/bids" className="text-link hover:underline">Bids</Link>.
+        </p>
+      </Disclosure>
     </PageShell>
   );
 }

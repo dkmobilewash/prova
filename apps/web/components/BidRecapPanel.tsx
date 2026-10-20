@@ -18,6 +18,7 @@ import {
   type RecapRates,
 } from "@/lib/bid-recap";
 import { Spinner } from "@/components/Spinner";
+import { secondaryActionClass } from "@/components/emptyStateStyles";
 
 /**
  * The bid recap on the Estimate tab: what the work costs, what it is sold for,
@@ -55,12 +56,18 @@ export function BidRecapPanel({
   lines,
   rates,
   applied,
+  ratesCollapsed = false,
 }: {
   jobId: string;
   lines: RecapLineView[];
   rates: RecapRates;
   applied: { at: string; total: number } | null;
+  /** Presentational: start with the rates form behind an "Edit rates"
+   * button (declutter round 2). The draft rates live in state above, so the
+   * preview below is the same whether the form is shown or not. */
+  ratesCollapsed?: boolean;
 }) {
+  const [ratesShown, setRatesShown] = useState(!ratesCollapsed);
   const [draft, setDraft] = useState<Record<string, string>>(() =>
     Object.fromEntries(RATE_FIELDS.map((f) => [f.key, rates[f.key] != null ? String(rates[f.key]) : ""])),
   );
@@ -104,6 +111,16 @@ export function BidRecapPanel({
 
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-line-card bg-surface p-4">
+      {!ratesShown && (
+        <button
+          type="button"
+          onClick={() => setRatesShown(true)}
+          className={`${secondaryActionClass} self-start`}
+        >
+          Edit rates
+        </button>
+      )}
+      {ratesShown && (
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           {RATE_FIELDS.map((f) => (
@@ -141,6 +158,7 @@ export function BidRecapPanel({
           {saveError && <p className="text-sm text-tag-amber-ink">{saveError}</p>}
         </div>
       </form>
+      )}
 
       <table className="w-full text-sm">
         <tbody>

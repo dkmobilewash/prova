@@ -143,10 +143,10 @@ describe("the desktop page list", () => {
   it("collapses to icons and back, keeps each page's name for assistive tech, and remembers it", () => {
     nav.pathname = "/jobs";
     const sidebar = render();
-    expect(sidebar.className).toMatch(/\bw-64\b/);
+    expect(sidebar.className).toMatch(/\bw-72\b/);
     act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Collapse to icons"]')!.click());
     expect(sidebar.className).toMatch(/\bw-16\b/);
-    expect(sidebar.className).not.toMatch(/\bw-64\b/);
+    expect(sidebar.className).not.toMatch(/\bw-72\b/);
     const link = container.querySelector('a[href="/jobs"]')!;
     expect(link.getAttribute("title")).toBe("Jobs");
     expect(link.textContent).toContain("Jobs");

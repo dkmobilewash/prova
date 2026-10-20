@@ -3,6 +3,7 @@ import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { E2E_TAG } from "../lib/seedDatabase";
 import { HealthMonitor, expectHealthy } from "../lib/health";
+import { openCollapsed } from "../lib/collapsed";
 
 /**
  * THE RATES A DETERMINATION PUBLISHES, clicked.
@@ -23,7 +24,9 @@ test("a determination carries its rates, and a refusal keeps what you typed", as
   const monitor = new HealthMonitor(page);
   await signInAs(page, PERSONAS.main.email);
 
-  await page.goto("/schedule");
+  // ?all=1: since declutter round 3 the start-date and Unscheduled lists show
+  // 5 each (newest first), and the seeded job is the OLDEST one on the account.
+  await page.goto("/schedule?all=1");
   await page.getByRole("link", { name: new RegExp(`${E2E_TAG} Seeded Job`) }).first().click();
   await page.waitForURL(/\/jobs\/[^/]+$/);
   const jobPath = new URL(page.url()).pathname;
@@ -35,8 +38,12 @@ test("a determination carries its rates, and a refusal keeps what you typed", as
     page.getByRole("heading", { name: "Prevailing wage determination", exact: true }),
   ).toBeVisible();
 
-  // 2. attach a determination — a link is enough, per the form's own copy
-  await page.getByPlaceholder("e.g. California, federal (Davis-Bacon)").fill("Nevada");
+  // 2. attach a determination — a link is enough, per the form's own copy.
+  // The form is behind "Attach a determination" since the declutter
+  // (a CollapsedForm, which renders nothing inside until it is pressed).
+  const jurisdiction = page.getByPlaceholder("e.g. California, federal (Davis-Bacon)");
+  await openCollapsed(page, "Attach a determination", jurisdiction);
+  await jurisdiction.fill("Nevada");
   await page.getByPlaceholder("https://sam.gov/...").fill("https://sam.gov/e2e-wage-rates");
   await page.getByRole("button", { name: "Attach" }).click();
   await expect(page.getByText("Nevada", { exact: true }).first()).toBeVisible();

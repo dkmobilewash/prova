@@ -7,6 +7,7 @@ import { CertificationFields } from "@/components/CertificationFields";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { Spinner } from "@/components/Spinner";
+import { Disclosure } from "@/components/Disclosure";
 import {
   STANDING_LABELS,
   standingChipClass,
@@ -263,21 +264,33 @@ export function WorkerCertificationRow({
   }
 
   const holdings = showEverything ? standing.holdings : standing.problems;
+  const expiringSoon = standing.problems.find((holding) => holding.standing === "EXPIRING");
 
   return (
-    <li className="flex flex-col gap-3 p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-ink">{workerLabel(standing.worker)}</span>
-        <span className={`rounded px-1.5 py-0.5 text-xs ${standingChipClass(standing.worst)}`}>
-          {STANDING_LABELS[standing.worst]}
-        </span>
-        <span className="text-xs text-ink-muted">
-          {standing.problems.length === 0
-            ? "nothing outstanding"
-            : `${standing.problems.length} to sort out`}
-        </span>
-      </div>
-
+    // Density audit #27: one line per person — name, worst standing, what is
+    // outstanding and the soonest date — and the cards and their history on
+    // click, instead of every holding of every person open at once.
+    <li className="px-4">
+      <Disclosure
+        variant="row"
+        name="worker-certifications"
+        // An edit in progress keeps its row open across the re-render.
+        open={editingId !== null ? true : undefined}
+        summary={
+          <span className="flex flex-wrap items-center gap-2" data-worker-line>
+            <span className="text-ink">{workerLabel(standing.worker)}</span>
+            <span className={`rounded px-1.5 py-0.5 text-xs ${standingChipClass(standing.worst)}`}>
+              {STANDING_LABELS[standing.worst]}
+            </span>
+            <span className="text-xs text-ink-muted">
+              {standing.problems.length === 0
+                ? "nothing outstanding"
+                : `${standing.problems.length} to sort out`}
+              {expiringSoon && ` · ${expiringSoon.title} ${standingTiming(expiringSoon)}`}
+            </span>
+          </span>
+        }
+      >
       {holdings.length === 0 ? (
         <p className="text-xs text-ink-muted">
           Nothing recorded for this person, and nothing required of everyone yet. Requiring a
@@ -315,6 +328,7 @@ export function WorkerCertificationRow({
       )}
 
       {error && !editingId && <p className="text-sm text-danger">{error}</p>}
+      </Disclosure>
     </li>
   );
 }

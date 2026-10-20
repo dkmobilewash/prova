@@ -189,7 +189,7 @@ function headlineFor(total: number, groups: readonly DeclineGroup[], unrecorded:
   if (total === 0) return null;
   const bids = `${total} ${total === 1 ? "bid" : "bids"}`;
   if (groups.length === 0) {
-    return `${bids} declined, with no reason recorded on any of them.`;
+    return total === 1 ? `${bids} declined, with no reason recorded.` : `${bids} declined, with no reason recorded on any of them.`;
   }
   const top = groups[0];
   const most =

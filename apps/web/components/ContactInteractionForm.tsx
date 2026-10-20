@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createContactInteraction } from "@/lib/actions";
 import { ContactInteractionFields, type MemberOption, type PersonOption } from "@/components/ContactInteractionFields";
@@ -21,6 +21,24 @@ export function ContactInteractionForm({
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+
+  /**
+   * The success side-effects, held until the saved row is on screen.
+   *
+   * `router.refresh()` stays inside the transition, so `isPending` is true
+   * until the refreshed tree COMMITS — measured on production at 3,502 ms
+   * against the action resolving at 1,251 ms. Running the close at the
+   * earlier moment took the form away while the row behind it still showed
+   * the old value, which two click-throughs reported as a lost update.
+   * Issue #163.
+   */
+  const settle = useRef<null | (() => void)>(null);
+  useEffect(() => {
+    if (isPending || settle.current === null) return;
+    const run = settle.current;
+    settle.current = null;
+    run();
+  }, [isPending]);
 
   if (!isOpen) {
     return (
@@ -49,8 +67,12 @@ export function ContactInteractionForm({
               return;
             }
             router.refresh();
-            formRef.current?.reset();
-            setIsOpen(false);
+            // Queued rather than run: what this save produced has not
+            // reached the screen yet. See `settle` above.
+            settle.current = () => {
+              formRef.current?.reset();
+              setIsOpen(false);
+            };
           } catch {
             setError("Could not log the interaction");
           }
@@ -79,6 +101,7 @@ export function ContactInteractionForm({
         <button
           type="submit"
           disabled={isPending}
+          aria-busy={isPending || undefined}
           className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
           {isPending ? (

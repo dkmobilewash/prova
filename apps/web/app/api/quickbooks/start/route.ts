@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
   // VALUE — quickBooksSetup only reports which names are present.
   if (!quickBooksSetup(process.env).configured) {
     const url = new URL("/settings", request.url);
+    url.searchParams.set("tab", "quickbooks");
     url.searchParams.set("qb", "error");
     url.searchParams.set("qb_detail", "not_configured");
     return NextResponse.redirect(url);

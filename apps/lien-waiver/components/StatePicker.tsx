@@ -27,6 +27,14 @@ export function StatePicker({ query = "" }: { query?: string }) {
           Pick your state, answer two questions, fill in the blanks one screen at a time, and we email you a clean PDF to hand the GC. The form
           text is copied from the state&apos;s own code, not rewritten.
         </p>
+        <div className="mt-3 flex flex-wrap gap-x-6">
+          <Link href="/change-order" className="inline-flex min-h-touch items-center font-semibold text-ink underline">
+            Also free: change order request
+          </Link>
+          <Link href="/tm-ticket" className="inline-flex min-h-touch items-center font-semibold text-ink underline">
+            Also free: T&amp;M ticket
+          </Link>
+        </div>
 
         <h2 className="mt-10 text-xl font-bold text-ink">Pick your state</h2>
         <ul className="mt-4 grid gap-3 sm:grid-cols-2">

@@ -10,6 +10,7 @@ import type { ToolName } from "./tools";
 const LABELS: Record<ToolName, string> = {
   crew_assignments: "your crews",
   crew_schedule: "the crew schedule",
+  who_would_know: "who would know",
   open_punch_list: "the punch list",
   compliance_status: "certificates and licences",
   drawing_currency: "your drawings",

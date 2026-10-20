@@ -59,8 +59,11 @@ describe("the hundred questions", () => {
     // never a gap, REMOVED from the list injected into the system prompt. The
     // other failure direction from the line above: there, a hole nobody had
     // written down; here, a refusal nobody had withdrawn.
-    // 124 with record_bid_outcome, 2026-10-11.
-    expect(TOTAL_QUESTIONS).toBe(124);
+    // 125 with the two halves of the attendance follow-up, 2026-09-27: who
+    // the rows name for a job and a day, and the drafted message to them.
+    // The refusal they follow is a KNOWN_GAP, not a census question.
+    // 126 with record_bid_outcome, 2026-10-11 (124 on main before the merge).
+    expect(TOTAL_QUESTIONS).toBe(126);
     expect(TOP_QUESTIONS).toHaveLength(TOTAL_QUESTIONS);
   });
 

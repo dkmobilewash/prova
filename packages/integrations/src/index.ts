@@ -15,6 +15,7 @@ export * from "./specs";
 export * from "./proposalClauses";
 export * from "./planSheets";
 export * from "./wallClassify";
+export * from "./replyClassify";
 export * from "./scheduleRows";
 export * from "./wallLegend";
 /** The symbol-counting INSTRUMENT, not a feature — nothing calls it but an eval.

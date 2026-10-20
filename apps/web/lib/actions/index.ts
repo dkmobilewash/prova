@@ -102,5 +102,7 @@ export * from "./takeoff";
 export * from "./takeoffItems";
 export * from "./outboundPush";
 export * from "./outboundOptOut";
+export * from "./replies";
 export * from "./takeoffClassify";
 export * from "./takeoffReadSheet";
+export * from "./takeoffOffer";

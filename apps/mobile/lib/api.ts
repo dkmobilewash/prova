@@ -351,6 +351,28 @@ export async function setPunchListItemStatus(
   });
 }
 
+/**
+ * Taking an item off the list.
+ *
+ * OWNER-ONLY on the server, in parity with the web (#592 asks whether crew
+ * should be able to remove their own typo; the route's comment says why that
+ * is not answered here). A crew member's call comes back 403 with a sentence
+ * to render.
+ *
+ * `void` rather than the removed row: there is nothing to put on screen
+ * afterwards, and a 404 — the row was already gone — is the queue's
+ * business rather than this layer's. `request` throws `ApiError` with the
+ * status either way, and `sync-queue.ts`'s `punch-list:delete` case is what
+ * decides a 404 is a finished job rather than a refusal. This stays a
+ * faithful transport: it reports what the server said.
+ */
+export async function deletePunchListItem(jobId: string, itemId: string, token: string): Promise<void> {
+  await request(`/api/v1/jobs/${encodeURIComponent(jobId)}/punch-list/${encodeURIComponent(itemId)}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
 export async function listSheets(jobId: string, token: string): Promise<SheetRow[]> {
   return request(`/api/v1/sheets?jobId=${encodeURIComponent(jobId)}`, { token });
 }

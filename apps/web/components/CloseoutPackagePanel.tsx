@@ -16,7 +16,6 @@ import { Spinner } from "@/components/Spinner";
 import { money } from "@/lib/money";
 import type { CloseoutReadiness } from "@/lib/closeout-readiness";
 import {
-  blockerLabel,
   stageBadgeClass,
   stageLabel,
   submissionStatusLabel,
@@ -121,15 +120,12 @@ export function CloseoutPackagePanel({
         )}
       </div>
 
-      {readiness.blockers.length > 0 && (
-        <p className="mt-2 text-sm text-ink-body">
-          Holding it up: {readiness.blockers.map(blockerLabel).join(", ")}.
-          {readiness.stage === "AWAITING_GC" && (
-            <span className="text-tag-amber-ink">
-              {" "}
-              The package went anyway — worth knowing before they come back asking.
-            </span>
-          )}
+      {/* What is holding it up is said ONCE, on the /closeout row this panel
+          opens under (declutter, 2026-10-13); only the warning that goes
+          with it stays here. */}
+      {readiness.blockers.length > 0 && readiness.stage === "AWAITING_GC" && (
+        <p className="mt-2 text-sm text-tag-amber-ink">
+          The package went with something still outstanding — worth knowing before they come back asking.
         </p>
       )}
 

@@ -16,7 +16,7 @@ import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
 import { useMe } from "@/lib/use-me";
 import { useT, type StringKey } from "@/lib/i18n";
-import { leadingFor, type Palette, radius, space, typography } from "@/lib/theme";
+import { hitTarget, leadingFor, type Palette, radius, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -68,6 +68,31 @@ export default function PunchListScreen() {
    * claim the job is clear. */
   const [loadedFrom, setLoadedFrom] = useState<string | "nothing" | null>(null);
 
+  /**
+   * The id of the ONE row whose delete is armed, or null.
+   *
+   * A single id rather than a set, deliberately: two rows offering
+   * "Remove it" at once on a 375pt screen is two destructive buttons a
+   * gloved thumb can reach, and arming the second disarming the first is
+   * free here.
+   */
+  const [armed, setArmed] = useState<string | null>(null);
+
+  /**
+   * Items this phone has asked to remove and the server has not confirmed
+   * gone. The delete half of `local` above, and here for the same reason:
+   * the write is QUEUED, so with no signal the row is still in this
+   * phone's cache and will keep coming back from `load()` until the queue
+   * drains.
+   *
+   * The row therefore STAYS, saying it is on its way out, rather than
+   * vanishing and reappearing — a row that comes back looks like the
+   * delete failed, and the only honest alternative (hide it locally) would
+   * be this screen keeping a second opinion about what is on the list.
+   * Cleared per item the moment the server's own list no longer has it.
+   */
+  const [removing, setRemoving] = useState<Record<string, true>>({});
+
   const load = useCallback(async () => {
     if (!jobId) return;
     const result = await cachedRead(
@@ -81,6 +106,16 @@ export default function PunchListScreen() {
     }
     setItems(result.value);
     setLoadedFrom(staleNote(result));
+    // Still on its way out: the list this phone just read still has it.
+    // Gone from the list means the delete landed, so the flag goes with it
+    // — it must never outlive the write it stands in for.
+    setRemoving((current) => {
+      const next: Record<string, true> = {};
+      for (const id of Object.keys(current)) {
+        if (result.value.some((item) => item.id === id)) next[id] = true;
+      }
+      return next;
+    });
     setLocal((current) => {
       const next: Record<string, PunchItemStatus> = {};
       for (const [id, status] of Object.entries(current)) {
@@ -170,11 +205,62 @@ export default function PunchListScreen() {
     await sync();
   };
 
+  /**
+   * Taking an item off the list — #592.
+   *
+   * QUEUED, not sent, like every other write on this phone: the person who
+   * typed the typo is standing in the building where they typed it, and a
+   * basement is the normal case. The op carries NO `clientOperationId`, for
+   * the same reason `punch-list:status` carries none — deleting the same row
+   * twice lands on the same outcome, and the server answers a replayed
+   * DELETE with a 404 that the queue settles as done (see the route's own
+   * comment, and `punch-list:delete` in lib/sync-queue.ts).
+   *
+   * NOTHING IS DISARMED OR MARKED UNTIL THE WRITE IS ON DISK. That ordering
+   * is lib/save-queued.ts's rule and write-ordering.test.ts is its guard: a
+   * phone that cannot write to its own storage must not leave a row looking
+   * removed.
+   */
+  const remove = async (item: PunchListItem) => {
+    if (!jobId) return;
+    setError(null);
+    const saved = await saveQueued({ type: "punch-list:delete", jobId, itemId: item.id });
+    if (!saved.ok) {
+      setError(saved.error);
+      return;
+    }
+    setArmed(null);
+    setRemoving((current) => ({ ...current, [item.id]: true }));
+    await sync();
+  };
+
   // The server refuses this route to anybody without the
   // capability (see lib/screen-capabilities.ts, checked against the
   // route itself in its test). Saying so beats a 403 rendering as
   // an empty screen with no explanation.
   if (!holds(me, SCREEN_CAPABILITY["punch-list/[jobId]"])) return <NotYourJobFunction what={SCREEN_NOUN["punch-list/[jobId]"]} />;
+
+  /**
+   * WHETHER TO DRAW THE REMOVE CONTROL AT ALL.
+   *
+   * The DELETE route is owner-only (`ownerRefusal`, in parity with the web
+   * row), so offering this to a crew member would be a button whose only
+   * outcome is a 403 sitting in "needs attention" with the server's
+   * sentence under it. lib/use-me.ts exists precisely so the shell does not
+   * lie about what it can do.
+   *
+   * `me === null` — never been online, nothing cached — draws it, the same
+   * way `holds()` answers true for an unknown capability and for the same
+   * reason: one honest refusal beats a phone that has quietly hidden the
+   * way out. One rule in the app, not two.
+   *
+   * THIS LEAVES #592's OWN EXAMPLE UNSOLVED and that is a decision above
+   * this screen, not a gap in it: the issue is about "a crew member who
+   * typos an item", and a crew member still cannot remove one. Flipping it
+   * is this one predicate plus the route's guard — it is written as a
+   * predicate so that it is one line in each place.
+   */
+  const mayRemove = me === null || me.role === "OWNER";
 
   const empty = emptyFor(loadedFrom, "thing.punchList", {
     title: "punch.empty.title",
@@ -211,6 +297,14 @@ export default function PunchListScreen() {
             {items.map((item, i) => {
               const status = statusOf(item);
               const queued = local[item.id] !== undefined;
+              const onItsWayOut = removing[item.id] !== undefined;
+              const isArmed = armed === item.id;
+              /** Rule 1 of issue #152: an armed row hides EVERY ordinary
+               * action, not just the one somebody remembered. Here those
+               * are the row's own tap (which changes status) and the photo
+               * prompt. A row already on its way out has nothing to toggle
+               * either. */
+              const ordinaryActions = !isArmed && !onItsWayOut;
               return (
                 <GroupedRow
                   key={item.id}
@@ -225,7 +319,11 @@ export default function PunchListScreen() {
                   }
                   title={item.description}
                   titleStyle={status === "VERIFIED" ? styles.descriptionDone : undefined}
-                  subtitle={[t(STATUS_LABEL[status]) + (queued ? ` · ${t("common.syncing")}` : ""), item.area]
+                  subtitle={[
+                    t(STATUS_LABEL[status]) +
+                      (onItsWayOut ? ` · ${t("punch.removing")}` : queued ? ` · ${t("common.syncing")}` : ""),
+                    item.area,
+                  ]
                     .filter(Boolean)
                     .join(" · ") || undefined}
                   detail={[
@@ -235,7 +333,23 @@ export default function PunchListScreen() {
                     .filter(Boolean)
                     .join(" · ") || undefined}
                   divider={i > 0}
-                  onPress={() => toggle(item)}
+                  onPress={ordinaryActions ? () => toggle(item) : undefined}
+                  /* ISSUE #593. `GroupedRow` defaults `chevron = true` and
+                   * draws one whenever `onPress` exists — even with
+                   * `role="checkbox"` — so this row promised a destination
+                   * and delivered a STATUS CHANGE, which is the one thing a
+                   * foreman acts on. Set here rather than on `GroupedRow`,
+                   * whose default is right for the rows that really do
+                   * navigate.
+                   *
+                   * Dropped rather than given a real destination (an item
+                   * detail screen) on two grounds: once the row has an
+                   * explicit Remove, a chevron promising a destination is
+                   * strictly worse than nothing, and dropping is reversible
+                   * where inventing a screen is not. The detail-screen
+                   * option stays the founder's to choose and is in the PR
+                   * body. */
+                  chevron={false}
                   accessibilityLabel={
                     status === "OPEN" ? t("punch.markReady") : t("punch.markOpen")
                   }
@@ -243,13 +357,71 @@ export default function PunchListScreen() {
                   {/* Asked for, not required — a crew with no signal still
                       has to be able to close the item. The camera screen
                       attaches the photo to THIS item at the shutter. */}
-                  {status !== "OPEN" && item.photoCount === 0 ? (
+                  {status !== "OPEN" && item.photoCount === 0 && ordinaryActions ? (
                     <Pressable
                       onPress={() => router.push(`/photos/${jobId}?punchListItemId=${item.id}`)}
                       accessibilityRole="button"
                     >
                       <Text style={styles.photoPrompt}>{t("punch.noPhoto")}</Text>
                     </Pressable>
+                  ) : null}
+
+                  {/* THE WAY OUT — #592. Not offered on a VERIFIED item:
+                      that status is somebody else's sign-off, and the
+                      toggle above already refuses to take one back from a
+                      phone. Not offered while the item is already on its
+                      way out, because there is nothing left to arm. */}
+                  {mayRemove && status !== "VERIFIED" && !onItsWayOut ? (
+                    <View style={styles.removeBlock}>
+                      {isArmed ? (
+                        /* CANCEL ON TOP, CONFIRM BELOW, BOTH FULL WIDTH.
+                         *
+                         * CLAUDE.md, "Cancel inherits the delete pixel":
+                         * the rule is not "Cancel first", it is that the
+                         * confirm must not land on the pixel the delete
+                         * just vacated. On a phone there is no x axis to
+                         * read it on, so the armed pair is a COLUMN and
+                         * Cancel takes the top — the slot "Remove" was
+                         * sitting in — which is that sentence read
+                         * vertically. A hurried second tap costs a tap.
+                         *
+                         * Nothing is inserted above Cancel (no heading, no
+                         * hint): whatever took the top slot would take
+                         * Cancel out of it, and what is being removed is
+                         * already the row's own title, two lines up. The
+                         * long form rides in the trigger's
+                         * accessibilityLabel, which costs no width — the
+                         * third axis of that same entry, where a long
+                         * delete LABEL made the armed pair too narrow to
+                         * reach the pixel at all.
+                         */
+                        <>
+                          <Pressable
+                            onPress={() => setArmed(null)}
+                            accessibilityRole="button"
+                            style={styles.confirmCancel}
+                          >
+                            <Text style={styles.confirmCancelLabel}>{t("punch.remove.cancel")}</Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => remove(item)}
+                            accessibilityRole="button"
+                            style={styles.confirmDelete}
+                          >
+                            <Text style={styles.confirmDeleteLabel}>{t("punch.remove.confirm")}</Text>
+                          </Pressable>
+                        </>
+                      ) : (
+                        <Pressable
+                          onPress={() => setArmed(item.id)}
+                          accessibilityRole="button"
+                          accessibilityLabel={t("punch.remove.which", { what: item.description })}
+                          style={styles.removeTrigger}
+                        >
+                          <Text style={styles.removeLabel}>{t("punch.remove")}</Text>
+                        </Pressable>
+                      )}
+                    </View>
                   ) : null}
                 </GroupedRow>
               );
@@ -324,6 +496,56 @@ function makeStyles(p: Palette) {
     boxDone: { backgroundColor: p.colors.brand, borderColor: p.colors.brand },
     descriptionDone: { color: p.colors.inkMuted, textDecorationLine: "line-through" },
     photoPrompt: { color: p.colors.link, fontSize: typography.size.sm, marginTop: space.two },
+
+    /**
+     * THE DELETE BLOCK. Built here rather than from `Button` because the
+     * destructive half needs the rose pair and `Button` has three variants,
+     * none of them destructive — and `components/` is another lane this
+     * week. If a `Button variant="destructive"` lands, this collapses into
+     * it; the geometry, which is the part that is a scar, is in the JSX
+     * above rather than in these three styles.
+     *
+     * `alignSelf: "stretch"` on both armed controls is the FULL WIDTH half
+     * of the phone rule, and the `gap` is the separation a destructive
+     * action is owed from the control beside it.
+     */
+    removeBlock: { marginTop: space.sm, gap: space.sm, alignSelf: "stretch" },
+    /** Quiet by design: this sits on every open row, and a filled button on
+     * each one would make removing look like the thing the screen is for.
+     * It still clears the gloved-hand floor. */
+    removeTrigger: { minHeight: hitTarget, justifyContent: "center" },
+    removeLabel: { color: p.colors.link, fontSize: typography.size.sm },
+    confirmCancel: {
+      minHeight: hitTarget,
+      alignSelf: "stretch",
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: radius.card,
+      borderWidth: 1,
+      borderColor: p.colors.lineCard,
+      backgroundColor: p.colors.surface,
+    },
+    confirmCancelLabel: {
+      color: p.colors.ink,
+      fontSize: typography.size.md,
+      fontWeight: typography.weight.semibold,
+    },
+    confirmDelete: {
+      minHeight: hitTarget,
+      alignSelf: "stretch",
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: radius.card,
+      backgroundColor: p.colors.tagRose,
+    },
+    /** `tagRoseInk` on `tagRose` — the pair theme-contrast.test.ts already
+     * holds to 4.5:1 in all three palettes. The meaning is carried by the
+     * WORD as well as the colour, per the field rules. */
+    confirmDeleteLabel: {
+      color: p.colors.tagRoseInk,
+      fontSize: typography.size.md,
+      fontWeight: typography.weight.semibold,
+    },
     footer: { padding: space.md, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
   });
 }

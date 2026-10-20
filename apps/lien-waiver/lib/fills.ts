@@ -34,6 +34,14 @@ export function formatDate(raw: string): string | null {
   return `${month}/${day}/${year}`;
 }
 
+/** The date on the USER'S calendar, as a date input wants it ("2026-10-18").
+ * The one "today" in this app (apps/web/components/localToday.ts is the same
+ * rule): call it only in effects and click handlers, never during render --
+ * the server's clock is not the user's, and hydration would disagree. */
+export function localToday(now: Date = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
 function format(kind: SlotKind, raw: string): string | null {
   if (kind === "money") return formatMoney(raw);
   if (kind === "date") return formatDate(raw);

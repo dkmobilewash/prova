@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   alertsStatus,
   assistantStatus,
+  backchargesStatus,
   closeoutStatus,
   count,
   drawingsStatus,
+  lienDeadlinesStatus,
   listed,
   LISTED,
   materialOrdersStatus,
@@ -222,6 +224,22 @@ describe("alerts", () => {
   });
 });
 
+describe("lien deadlines", () => {
+  it("is quiet with nothing at risk, and says how many are served", () => {
+    expect(lienDeadlinesStatus({ overdueUnserved: 0, dueSoon: 0, dueSoonDays: 14, served: 2 })).toEqual({
+      quiet: "Nothing overdue or due in the next 14 days. 2 served.",
+      problems: [],
+    });
+  });
+
+  it("is red for an overdue unserved deadline and amber for one due soon", () => {
+    expect(lienDeadlinesStatus({ overdueUnserved: 1, dueSoon: 3, dueSoonDays: 14, served: 0 }).problems).toEqual([
+      { tone: "red", text: "1 deadline overdue and not served." },
+      { tone: "amber", text: "3 deadlines due in the next 14 days." },
+    ]);
+  });
+});
+
 describe("closeout", () => {
   it("is quiet when nothing is outstanding", () => {
     const report = closeoutStatus({
@@ -273,5 +291,28 @@ describe("assistant", () => {
       problems: [],
     });
     expect(assistantStatus({ proposed: 0, done: 0, notDone: 0 }).quiet).toBe("No cards in the last 30 days.");
+  });
+});
+
+describe("backcharges", () => {
+  const base = { openCount: 2, openClaimed: "$4,650.00", conceded: "$180.00", avoided: "$450.00", unknownConceded: 0 };
+
+  it("is one quiet sentence carrying every figure the four tiles showed", () => {
+    expect(backchargesStatus({ ...base, overdue: 0 })).toEqual({
+      quiet: "2 unresolved backcharges, $4,650.00 claimed. Resolved ones cost us $180.00; $450.00 argued off or withdrawn.",
+      problems: [],
+    });
+    expect(backchargesStatus({ ...base, overdue: 0, unknownConceded: 1 }).quiet).toMatch(
+      / 1 settled with no figure recorded, not counted\.$/,
+    );
+  });
+
+  it("goes red only for one past the deadline to object, and keeps the figures", () => {
+    expect(backchargesStatus({ ...base, overdue: 1 }).problems).toEqual([
+      {
+        tone: "red",
+        text: "1 backcharge past the deadline to object. 2 unresolved backcharges, $4,650.00 claimed. Resolved ones cost us $180.00; $450.00 argued off or withdrawn.",
+      },
+    ]);
   });
 });

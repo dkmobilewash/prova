@@ -73,6 +73,7 @@ vi.mock("@/lib/viewerToday", () => ({
 }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/certifications",
+  useSearchParams: () => new URLSearchParams(),
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
@@ -103,9 +104,9 @@ const REQUIREMENT = {
   createdAt: new Date("2026-09-01T00:00:00.000Z"),
 };
 
-async function load(): Promise<string> {
+async function load(params: { view?: string } = {}): Promise<string> {
   const { default: Page } = await import("@/app/(app)/certifications/page");
-  return renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
+  return renderToStaticMarkup(await Page({ searchParams: Promise.resolve(params) }));
 }
 
 /** Where a `data-tour` anchor starts in the markup; -1 when absent. */
@@ -145,6 +146,15 @@ describe("/certifications, nothing set up", () => {
     expect(html).toContain("at the top of the page");
     expect(html).not.toContain("Require OSHA 10 below");
   });
+
+  it("names the CLOSED section the control is in, not just 'the top of the page'", async () => {
+    const html = await load();
+    // The requirement form is inside the "Start here" disclosure, closed on
+    // load — pointing at "the top of the page" alone sent people to a
+    // heading with nothing visible under it.
+    expect(html).toMatch(/<details id="certifications-required"(?![^>]*\bopen\b)/);
+    expect(html).toContain("Open “Start here” at the top of the page and require OSHA 10 there");
+  });
 });
 
 describe("/certifications, an account with something on file keeps its page", () => {
@@ -165,16 +175,20 @@ describe("/certifications, an account with something on file keeps its page", ()
       expect(html).not.toContain("data-start-here");
       expect(html).not.toContain(">Start here<");
 
-      // The order it always had: record, totals, people, by job, required.
+      // The order it always had: record, totals, people, required — with
+      // "by job" now the same list's other view (?view=job, density audit #27).
       const order = [
         "certifications-record",
         "certifications-totals",
         "certifications-people",
-        "certifications-by-job",
         "certifications-required",
       ].map((anchor) => at(html, anchor));
       expect(order.every((position) => position > -1)).toBe(true);
       expect([...order].sort((a, b) => a - b)).toEqual(order);
+      expect(at(html, "certifications-by-job")).toBe(-1);
+      const jobView = await load({ view: "job" });
+      expect(at(jobView, "certifications-by-job")).toBeGreaterThan(-1);
+      expect(at(jobView, "certifications-people")).toBe(-1);
     });
   }
 
@@ -182,5 +196,35 @@ describe("/certifications, an account with something on file keeps its page", ()
     seed.certificationRequirement = { findMany: [REQUIREMENT] };
     const html = await load();
     expect(html).toMatch(/>1<\/p><p[^>]*>Required, nothing on file</);
+  });
+});
+
+describe("/certifications declutter (density audit #27)", () => {
+  it("puts the explainer and Start here in one closed disclosure while nothing is set up", async () => {
+    const html = await load();
+    const start = html.indexOf('<details id="certifications-required"');
+    expect(start).toBeGreaterThan(-1);
+    const details = html.slice(start);
+    expect(details).not.toMatch(/^<details[^>]* open/);
+    expect(details.indexOf("A man turned away on Monday morning")).toBeGreaterThan(-1);
+    expect(html.match(/A man turned away on Monday morning/g)).toHaveLength(1);
+  });
+
+  it("drops the explainer once something is set up", async () => {
+    seed.certificationRequirement = { findMany: [REQUIREMENT] };
+    const html = await load();
+    expect(html).not.toContain("A man turned away on Monday morning");
+  });
+
+  it("draws each person as one closed row with the cards inside", async () => {
+    seed.certificationRequirement = { findMany: [REQUIREMENT] };
+    const html = await load();
+    const start = html.indexOf('name="worker-certifications"');
+    expect(start).toBeGreaterThan(-1);
+    const row = html.slice(start);
+    const summary = row.slice(0, row.indexOf("</summary>"));
+    expect(summary).toContain("data-worker-line");
+    expect(summary).not.toContain("Required of everyone here");
+    expect(row).toContain("Required of everyone here");
   });
 });

@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { hoursWeekStart, weeklyHours, type HoursEntry } from "./weekly-hours";
+import { hoursWeekStart, splitThisWeek, weeklyHours, type HoursEntry } from "./weekly-hours";
+
+describe("splitThisWeek", () => {
+  it("lists under the table exactly the week the table totals; everything else is history", () => {
+    const d = (iso: string) => ({ id: iso, date: new Date(`${iso}T00:00:00.000Z`) });
+    const entries = [d("2026-10-20"), d("2026-10-18"), d("2026-10-12"), d("2026-10-11"), d("2026-09-01")];
+    const { thisWeek, earlier } = splitThisWeek(entries, "2026-10-12");
+    // Mon 12 .. Sun 18 inclusive.
+    expect(thisWeek.map((e) => e.id)).toEqual(["2026-10-18", "2026-10-12"]);
+    // A future-dated typo is not "this week".
+    expect(earlier.map((e) => e.id)).toEqual(["2026-10-20", "2026-10-11", "2026-09-01"]);
+  });
+});
 
 const e = (date: string, hours: number, personId: string, jobId: string): HoursEntry => ({
   date,

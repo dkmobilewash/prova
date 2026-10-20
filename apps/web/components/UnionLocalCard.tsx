@@ -17,6 +17,7 @@ import { localToday } from "@/components/localToday";
 import { ratioLabel } from "@/lib/apprentice-ratio";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
+import { Disclosure } from "@/components/Disclosure";
 
 const btn =
   "rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50";
@@ -69,304 +70,329 @@ export function UnionLocalCard({
   }
 
   const current = local.effectiveTo === null || local.effectiveTo >= today;
+  const untiered = local.crafts.filter((craft) => craft.tier === null).length;
+  const unpriced = local.crafts.filter((craft) => craft.schedules.length === 0).length;
 
+  // Closed to one line — name, classification count, anything missing —
+  // with the agreement, ratio, classifications and rates inside (density
+  // audit #5: every local rendered fully expanded). One open at a time via
+  // name="union-local". A local with no classifications opens, because the
+  // only thing to do with it is add one.
   return (
-    <li className="flex flex-col gap-3 p-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-ink">{local.label}</p>
-          <p className="text-xs text-ink-muted">
-            {local.tradeJurisdiction && `${local.tradeJurisdiction} · `}
-            agreement from {local.effectiveFrom}
-            {local.effectiveTo ? ` to ${local.effectiveTo}` : ""}
-          </p>
-        </div>
-        {current ? (
-          <span className="rounded bg-tag-green px-1.5 py-0.5 text-xs text-tag-green-ink">Current</span>
-        ) : (
-          <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-muted">Ended</span>
-        )}
-      </div>
-
-      {/* ---------------------------------------------------- ratio --- */}
-      <div className="text-sm">
-        <span className="text-ink-body">Apprentice ratio: </span>
-        {local.ratio ? (
-          <>
-            <span className="text-ink-label">{ratioLabel(local.ratio)}</span>
-            {local.ratio.programStandardReference && (
-              <span className="text-ink-muted"> · {local.ratio.programStandardReference}</span>
-            )}
-          </>
-        ) : (
-          <span className="text-tag-amber-ink">
-            none recorded — days with apprentice hours read &ldquo;can&apos;t be judged&rdquo;
+    <li className="px-4">
+      <Disclosure
+        variant="row"
+        name="union-local"
+        open={local.crafts.length === 0}
+        summary={
+          <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+            <span className="text-ink">{local.label}</span>
+            <span className="text-xs text-ink-muted">
+              {local.crafts.length} classification{local.crafts.length === 1 ? "" : "s"}
+            </span>
+            {untiered > 0 && <span className="text-xs text-tag-amber-ink">{untiered} not tiered</span>}
+            {unpriced > 0 && <span className="text-xs text-tag-amber-ink">{unpriced} with no rate</span>}
+            {!current && <span className="text-xs text-ink-muted">Ended</span>}
           </span>
-        )}
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={() => {
-            setOpen(open === "ratio" ? "none" : "ratio");
-            setError(null);
-          }}
-          className="ml-2 text-xs text-link underline disabled:opacity-50"
-        >
-          {local.ratio ? "change" : "set it"}
-        </button>
-      </div>
-
-      {open === "ratio" && (
-        <form
-          onSubmit={(e) => submit(e, setApprenticeRatioRule, () => setOpen("none"))}
-          className="flex flex-wrap items-end gap-2 rounded-md border border-line-card p-3"
-        >
-          <input type="hidden" name="unionLocalId" value={local.unionLocalId} />
-          <label className={labelClass}>
-            <span className="text-xs">Apprentices</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              name="apprenticeCount"
-              required
-              defaultValue={local.ratio?.apprenticeCount ?? 1}
-              className={`${inputClass} w-24 py-1 text-sm`}
-            />
-          </label>
-          <span className="pb-2 text-sm text-ink-muted">per</span>
-          <label className={labelClass}>
-            <span className="text-xs">Journeymen</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              name="journeymenCount"
-              required
-              defaultValue={local.ratio?.journeymenCount ?? 3}
-              className={`${inputClass} w-24 py-1 text-sm`}
-            />
-          </label>
-          <label className={`${labelClass} min-w-[14rem] flex-1`}>
-            <span className="text-xs">Program standard</span>
-            <input
-              type="text"
-              name="programStandardReference"
-              defaultValue={local.ratio?.programStandardReference ?? ""}
-              placeholder="Optional — where the ratio is written, and whether it counts hours or heads"
-              className={`${inputClass} py-1 text-sm`}
-            />
-          </label>
-          <button type="submit" disabled={isPending} className={btn}>
-            {isPending ? (
-              <span className="inline-flex items-center gap-1.5">
-                <Spinner />
-                Saving…
-              </span>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-xs text-ink-muted">
+                {local.tradeJurisdiction && `${local.tradeJurisdiction} · `}
+                agreement from {local.effectiveFrom}
+                {local.effectiveTo ? ` to ${local.effectiveTo}` : ""}
+              </p>
+            </div>
+            {current ? (
+              <span className="rounded bg-tag-green px-1.5 py-0.5 text-xs text-tag-green-ink">Current</span>
             ) : (
-              "Save ratio"
+              <span className="rounded bg-rail-hover px-1.5 py-0.5 text-xs text-ink-muted">Ended</span>
             )}
-          </button>
-          <button type="button" disabled={isPending} onClick={() => setOpen("none")} className={btn}>
-            Cancel
-          </button>
-        </form>
-      )}
+          </div>
 
-      {/* ----------------------------------------------- classifications */}
-      <div>
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
-          Classifications
-        </p>
-        {local.crafts.length === 0 ? (
-          <p className="text-sm text-ink-body">
-            None yet. Hours can only be tagged to a classification that exists here.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-3">
-            {local.crafts.map((craft) => (
-              <li key={craft.id} className="rounded-md border border-line-row p-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-sm text-ink">{craft.name}</p>
-                    <p className="text-xs text-ink-muted">
-                      {craft.usageCount > 0
-                        ? `${craft.usageCount} record${craft.usageCount === 1 ? "" : "s"} tagged`
-                        : "nothing tagged yet"}
-                    </p>
-                  </div>
-                  {/* The tier picker is a live write — a <select> that saves on
-                      change and an apprentice-period box that saves on blur —
-                      and it used to stay live beside an armed "confirm delete",
-                      so a click meant for cancel could re-classify the record
-                      you were about to destroy. It is a child of RowActions
-                      now, so arming empties this cluster of everything but the
-                      cancel/confirm pair. Per-row state too: each craft owns
-                      its own armed flag, so the keyed `confirming === craft.id`
-                      is gone. */}
-                  <RowActions
-                    className="flex flex-col items-end gap-1"
-                    destructive={
-                      canDelete ? (
-                        <ConfirmDelete
-                          describe="Removes this craft classification from the local. Rates entered under it go with it."
-                          pinned="end"
-                          label="delete"
-                          confirmLabel="confirm delete"
-                          cancelLabel="cancel"
-                          // This cluster is a COLUMN (the tier picker sits
-                          // above), so the armed pair needs its own row or
-                          // it stacks.
-                          armedClassName="flex gap-2"
-                          pending={isPending}
-                          onConfirm={() => run(() => deleteCraftClassification(craft.id))}
-                          deleteClassName="text-xs text-ink-muted underline disabled:opacity-50"
-                          cancelClassName="text-xs text-ink-body underline disabled:opacity-50"
-                          confirmClassName="text-xs text-danger underline disabled:opacity-50"
-                        />
-                      ) : null
-                    }
-                  >
-                    <CraftTierPicker
-                      craftId={craft.id}
-                      tier={craft.tier}
-                      apprenticePeriod={craft.apprenticePeriod}
-                    />
-                  </RowActions>
-                </div>
+          {/* ---------------------------------------------------- ratio --- */}
+          <div className="text-sm">
+            <span className="text-ink-body">Apprentice ratio: </span>
+            {local.ratio ? (
+              <>
+                <span className="text-ink-label">{ratioLabel(local.ratio)}</span>
+                {local.ratio.programStandardReference && (
+                  <span className="text-ink-muted"> · {local.ratio.programStandardReference}</span>
+                )}
+              </>
+            ) : (
+              <span className="text-tag-amber-ink">
+                none recorded — days with apprentice hours read &ldquo;can&apos;t be judged&rdquo;
+              </span>
+            )}
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={() => {
+                setOpen(open === "ratio" ? "none" : "ratio");
+                setError(null);
+              }}
+              className="ml-2 text-xs text-link underline disabled:opacity-50"
+            >
+              {local.ratio ? "change" : "set it"}
+            </button>
+          </div>
 
-                <FringeScheduleList
-                  craftId={craft.id}
-                  craftName={craft.name}
-                  schedules={craft.schedules}
-                  today={today}
-                  canDelete={canDelete}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {open === "craft" ? (
-          <form
-            onSubmit={(e) =>
-              submit(e, createCraftClassification, () => {
-                setOpen("none");
-                setTier("");
-              })
-            }
-            className="mt-2 flex flex-wrap items-end gap-2 rounded-md border border-line-card p-3"
-          >
-            <input type="hidden" name="unionLocalId" value={local.unionLocalId} />
-            <label className={`${labelClass} min-w-[14rem] flex-1`}>
-              <span className="text-xs">Classification name</span>
-              <input
-                type="text"
-                name="name"
-                required
-                placeholder="As the CBA words it"
-                className={`${inputClass} py-1 text-sm`}
-              />
-            </label>
-            <label className={labelClass}>
-              <span className="text-xs">Tier</span>
-              <select
-                name="tier"
-                value={tier}
-                onChange={(event) => setTier(event.target.value)}
-                className={`${inputClass} py-1 text-sm`}
-              >
-                <option value="">Not classified</option>
-                <option value="JOURNEYMAN">Journeyman</option>
-                <option value="APPRENTICE">Apprentice</option>
-                <option value="FOREMAN">Foreman</option>
-              </select>
-            </label>
-            {tier === "APPRENTICE" && (
+          {open === "ratio" && (
+            <form
+              onSubmit={(e) => submit(e, setApprenticeRatioRule, () => setOpen("none"))}
+              className="flex flex-wrap items-end gap-2 rounded-md border border-line-card p-3"
+            >
+              <input type="hidden" name="unionLocalId" value={local.unionLocalId} />
               <label className={labelClass}>
-                <span className="text-xs">Period</span>
+                <span className="text-xs">Apprentices</span>
                 <input
-                  name="apprenticePeriod"
                   type="text"
                   inputMode="numeric"
-                  className={`${inputClass} w-20 py-1 text-sm`}
+                  name="apprenticeCount"
+                  required
+                  defaultValue={local.ratio?.apprenticeCount ?? 1}
+                  className={`${inputClass} w-24 py-1 text-sm`}
                 />
               </label>
-            )}
-            <button type="submit" disabled={isPending} className={btn}>
-              {isPending ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <Spinner />
-                  Saving…
-                </span>
-              ) : (
-                "Add"
-              )}
-            </button>
-            <button type="button" disabled={isPending} onClick={() => setOpen("none")} className={btn}>
-              Cancel
-            </button>
-          </form>
-        ) : (
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={() => {
-              setOpen("craft");
-              setError(null);
-            }}
-            className="mt-2 text-xs text-link underline disabled:opacity-50"
-          >
-            Add a classification
-          </button>
-        )}
-      </div>
-
-      {/* ------------------------------------------------- end agreement */}
-      {local.effectiveTo === null && (
-        <div>
-          {open === "end" ? (
-            <form
-              onSubmit={(e) =>
-                submit(e, (fd) => endUnionAgreement(local.agreementId, fd), () => setOpen("none"))
-              }
-              className="flex flex-wrap items-end gap-2"
-            >
+              <span className="pb-2 text-sm text-ink-muted">per</span>
               <label className={labelClass}>
-                <span className="text-xs">Agreement in force until</span>
+                <span className="text-xs">Journeymen</span>
                 <input
-                  type="date"
-                  name="effectiveTo"
+                  type="text"
+                  inputMode="numeric"
+                  name="journeymenCount"
                   required
-                  defaultValue={localToday()}
+                  defaultValue={local.ratio?.journeymenCount ?? 3}
+                  className={`${inputClass} w-24 py-1 text-sm`}
+                />
+              </label>
+              <label className={`${labelClass} min-w-[14rem] flex-1`}>
+                <span className="text-xs">Program standard</span>
+                <input
+                  type="text"
+                  name="programStandardReference"
+                  defaultValue={local.ratio?.programStandardReference ?? ""}
+                  placeholder="Optional — where the ratio is written, and whether it counts hours or heads"
                   className={`${inputClass} py-1 text-sm`}
                 />
               </label>
               <button type="submit" disabled={isPending} className={btn}>
-                Save
+                {isPending ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Spinner />
+                    Saving…
+                  </span>
+                ) : (
+                  "Save ratio"
+                )}
               </button>
               <button type="button" disabled={isPending} onClick={() => setOpen("none")} className={btn}>
                 Cancel
               </button>
             </form>
-          ) : (
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => {
-                setOpen("end");
-                setError(null);
-              }}
-              className="text-xs text-ink-muted underline disabled:opacity-50"
-            >
-              End this agreement
-            </button>
           )}
-          <p className="mt-1 text-xs text-ink-muted">
-            Ended, never deleted — payroll already filed under this CBA has to stay explainable.
-          </p>
-        </div>
-      )}
 
-      {error && <p className="text-sm text-danger">{error}</p>}
+          {/* ----------------------------------------------- classifications */}
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+              Classifications
+            </p>
+            {local.crafts.length === 0 ? (
+              <p className="text-sm text-ink-body">
+                None yet. Hours can only be tagged to a classification that exists here.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-3">
+                {local.crafts.map((craft) => (
+                  <li key={craft.id} className="rounded-md border border-line-row p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm text-ink">{craft.name}</p>
+                        <p className="text-xs text-ink-muted">
+                          {craft.usageCount > 0
+                            ? `${craft.usageCount} record${craft.usageCount === 1 ? "" : "s"} tagged`
+                            : "nothing tagged yet"}
+                        </p>
+                      </div>
+                      {/* The tier picker is a live write — a <select> that saves on
+                          change and an apprentice-period box that saves on blur —
+                          and it used to stay live beside an armed "confirm delete",
+                          so a click meant for cancel could re-classify the record
+                          you were about to destroy. It is a child of RowActions
+                          now, so arming empties this cluster of everything but the
+                          cancel/confirm pair. Per-row state too: each craft owns
+                          its own armed flag, so the keyed `confirming === craft.id`
+                          is gone. */}
+                      <RowActions
+                        className="flex flex-col items-end gap-1"
+                        destructive={
+                          canDelete ? (
+                            <ConfirmDelete
+                              describe="Removes this craft classification from the local. Rates entered under it go with it."
+                              pinned="end"
+                              label="delete"
+                              confirmLabel="confirm delete"
+                              cancelLabel="cancel"
+                              // This cluster is a COLUMN (the tier picker sits
+                              // above), so the armed pair needs its own row or
+                              // it stacks.
+                              armedClassName="flex gap-2"
+                              pending={isPending}
+                              onConfirm={() => run(() => deleteCraftClassification(craft.id))}
+                              deleteClassName="text-xs text-ink-muted underline disabled:opacity-50"
+                              cancelClassName="text-xs text-ink-body underline disabled:opacity-50"
+                              confirmClassName="text-xs text-danger underline disabled:opacity-50"
+                            />
+                          ) : null
+                        }
+                      >
+                        <CraftTierPicker
+                          craftId={craft.id}
+                          tier={craft.tier}
+                          apprenticePeriod={craft.apprenticePeriod}
+                        />
+                      </RowActions>
+                    </div>
+
+                    <FringeScheduleList
+                      craftId={craft.id}
+                      craftName={craft.name}
+                      schedules={craft.schedules}
+                      today={today}
+                      canDelete={canDelete}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {open === "craft" ? (
+              <form
+                onSubmit={(e) =>
+                  submit(e, createCraftClassification, () => {
+                    setOpen("none");
+                    setTier("");
+                  })
+                }
+                className="mt-2 flex flex-wrap items-end gap-2 rounded-md border border-line-card p-3"
+              >
+                <input type="hidden" name="unionLocalId" value={local.unionLocalId} />
+                <label className={`${labelClass} min-w-[14rem] flex-1`}>
+                  <span className="text-xs">Classification name</span>
+                  <input
+                    type="text"
+                    name="name"
+                    required
+                    placeholder="As the CBA words it"
+                    className={`${inputClass} py-1 text-sm`}
+                  />
+                </label>
+                <label className={labelClass}>
+                  <span className="text-xs">Tier</span>
+                  <select
+                    name="tier"
+                    value={tier}
+                    onChange={(event) => setTier(event.target.value)}
+                    className={`${inputClass} py-1 text-sm`}
+                  >
+                    <option value="">Not classified</option>
+                    <option value="JOURNEYMAN">Journeyman</option>
+                    <option value="APPRENTICE">Apprentice</option>
+                    <option value="FOREMAN">Foreman</option>
+                  </select>
+                </label>
+                {tier === "APPRENTICE" && (
+                  <label className={labelClass}>
+                    <span className="text-xs">Period</span>
+                    <input
+                      name="apprenticePeriod"
+                      type="text"
+                      inputMode="numeric"
+                      className={`${inputClass} w-20 py-1 text-sm`}
+                    />
+                  </label>
+                )}
+                <button type="submit" disabled={isPending} className={btn}>
+                  {isPending ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Spinner />
+                      Saving…
+                    </span>
+                  ) : (
+                    "Add"
+                  )}
+                </button>
+                <button type="button" disabled={isPending} onClick={() => setOpen("none")} className={btn}>
+                  Cancel
+                </button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => {
+                  setOpen("craft");
+                  setError(null);
+                }}
+                className="mt-2 text-xs text-link underline disabled:opacity-50"
+              >
+                Add a classification
+              </button>
+            )}
+          </div>
+
+          {/* ------------------------------------------------- end agreement */}
+          {local.effectiveTo === null && (
+            <div>
+              {open === "end" ? (
+                <form
+                  onSubmit={(e) =>
+                    submit(e, (fd) => endUnionAgreement(local.agreementId, fd), () => setOpen("none"))
+                  }
+                  className="flex flex-wrap items-end gap-2"
+                >
+                  <label className={labelClass}>
+                    <span className="text-xs">Agreement in force until</span>
+                    <input
+                      type="date"
+                      name="effectiveTo"
+                      required
+                      defaultValue={localToday()}
+                      className={`${inputClass} py-1 text-sm`}
+                    />
+                  </label>
+                  <button type="submit" disabled={isPending} className={btn}>
+                    Save
+                  </button>
+                  <button type="button" disabled={isPending} onClick={() => setOpen("none")} className={btn}>
+                    Cancel
+                  </button>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => {
+                    setOpen("end");
+                    setError(null);
+                  }}
+                  className="text-xs text-ink-muted underline disabled:opacity-50"
+                >
+                  End this agreement
+                </button>
+              )}
+              <p className="mt-1 text-xs text-ink-muted">
+                Ended, never deleted — payroll already filed under this CBA has to stay explainable.
+              </p>
+            </div>
+          )}
+
+          {error && <p className="text-sm text-danger">{error}</p>}
+        </div>
+      </Disclosure>
     </li>
   );
 }

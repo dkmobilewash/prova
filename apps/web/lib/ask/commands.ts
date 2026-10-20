@@ -66,6 +66,7 @@ export type CommandName =
   | "release_retainage"
   | "log_time_entry"
   | "send_email"
+  | "ask_who_would_know"
   | "reschedule_job"
   | "log_bid_invitation"
   | "record_bid_outcome"
@@ -335,6 +336,11 @@ export const EXCLUSIONS: Exclusion[] = [
     action: "outboundOptOut.*",
     reason:
       "The public unsubscribe link's button. Its only authority is the signed token in the email; it has no signed-in user, so there is no Ask session it could ever run under.",
+  },
+  {
+    action: "replies.*",
+    reason:
+      "Approving, dismissing or stopping a prospect's reply is done on /sales/replies with the prospect's own words on screen and the draft in front of the person. Sending real email to a real prospect from a sentence to Ask is the one thing the reply agent is built to never do.",
   },
   {
     action: "crews.*",

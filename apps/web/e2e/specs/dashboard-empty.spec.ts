@@ -39,11 +39,14 @@ test.describe("dashboard, brand-new empty company", () => {
     // Concept G (2026-10-10): while the checklist shows on a brand-new
     // account it is the ONE start (dashboard/page.tsx `onlyChecklist`) — its
     // "Add your first job" step is the door to /jobs/new, and the jobs
-    // empty state, the tour offer and the shortcut chips stay off screen so
-    // the same door is not drawn three times. The empty state returns only
+    // empty state and the shortcut chips stay off screen so the same door is
+    // not drawn twice. The empty state returns only
     // once the checklist is hidden, which is not this persona's state.
     await expect(page.getByRole("link", { name: "Add a job" })).toHaveAttribute("href", "/jobs/new");
     await expect(page.locator(dataTour("dashboard-jobs-empty"))).toHaveCount(0);
+    // The tour is offered on the first login, beside the checklist — not only
+    // after the checklist is hidden, which almost nobody does on day one.
+    await expect(page.getByRole("region", { name: "Tour of C Stream" })).toBeVisible();
     // Nothing has anything to say before the first job, so none of it shows.
     await expect(page.getByText("Needs attention")).toHaveCount(0);
     await expect(page.getByText("Browse all jobs")).toHaveCount(0);

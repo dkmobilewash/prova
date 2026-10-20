@@ -74,8 +74,11 @@ const str = (payload: Record<string, unknown>, key: string): string | null =>
 async function loadDraftRow(
   viewer: Viewer,
   proposalId: string | undefined,
-  command: CommandName,
+  /** The command(s) this page owns. A list because two commands can share
+   * one form: `send_email` and `ask_who_would_know` both prefill the composer. */
+  command: CommandName | readonly CommandName[],
 ): Promise<DraftLookup<Record<string, unknown>>> {
+  const owned: readonly CommandName[] = typeof command === "string" ? [command] : command;
   if (proposalId === undefined) return { kind: "none" };
   if (!proposalId || proposalId.length > MAX_ID) return { kind: "gone" };
   const row = await prisma.askProposal.findFirst({
@@ -92,7 +95,7 @@ async function loadDraftRow(
     },
   });
   if (!row || row.createdByUserId !== viewer.id) return { kind: "gone" };
-  if (row.command !== command || row.mode !== "HANDOFF") return { kind: "gone" };
+  if (!owned.includes(row.command as CommandName) || row.mode !== "HANDOFF") return { kind: "gone" };
   if (row.outcome || row.claimedAt) return { kind: "settled" };
   if (row.expiresAt < new Date()) return { kind: "gone" };
   if (!row.openedAt) {
@@ -141,13 +144,18 @@ export async function loadRfiDraft(viewer: Viewer, proposalId: string | undefine
  * loader below arrived from #249 and is untouched by that retirement.
  */
 
+/** The two commands whose card opens the composer. Both write the same
+ * payload keys (`toAddress`, `toName`, `jobId`, `subject`, `body`), so one
+ * loader reads both; `commands/messages.ts` holds the pair. */
+export const COMPOSER_COMMANDS = ["send_email", "ask_who_would_know"] as const satisfies readonly CommandName[];
+
 /** The message composer's prefill. A job is optional on an email, so a
  * missing `jobId` is "not tied to a job" rather than "gone". */
 export async function loadMessageDraft(
   viewer: Viewer,
   proposalId: string | undefined,
 ): Promise<DraftLookup<MessageDraft>> {
-  const found = await loadDraftRow(viewer, proposalId, "send_email");
+  const found = await loadDraftRow(viewer, proposalId, COMPOSER_COMMANDS);
   if (found.kind !== "draft" || !proposalId) return found as DraftLookup<MessageDraft>;
   const payload = found.draft;
   const toAddress = str(payload, "toAddress");

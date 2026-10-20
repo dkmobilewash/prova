@@ -27,6 +27,8 @@ import { loadBidOutcomes, loadLinkableJobs } from "@/lib/bid-outcome-query";
 import { BidOutcomeForm } from "@/components/BidOutcomeForm";
 import { outcomeReasonLabel } from "@/components/ai-bid/outcome";
 import { LogBidForm } from "@/components/LogBidForm";
+import { Disclosure } from "@/components/Disclosure";
+import { SeeAll, seeAllWindow } from "@/components/SeeAll";
 import { bidsDueSoon, bidsView, daysLeftLabel } from "@/lib/bids-due-soon";
 
 const TRADE_SCOPE_OPTIONS = [
@@ -62,15 +64,18 @@ function labelFor(options: readonly { value: string; label: string }[], value: s
  * is what stops a quote dated Tuesday reading as Monday in California. */
 const day = (value: Date | null) => (value === null ? null : value.toISOString().slice(0, 10));
 
+/** All bids shows the latest 20; `?all=1` lifts it (declutter round 2). */
+const BIDS_SHOWN = 20;
+
 export default async function BidsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ trade?: string; status?: string; new?: string; view?: string }>;
+  searchParams: Promise<{ trade?: string; status?: string; new?: string; view?: string; all?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
   const { company } = context;
-  const { trade, status, new: isNew, view: viewParam } = await searchParams;
+  const { trade, status, new: isNew, view: viewParam, all } = await searchParams;
 
   const tradeFilter = trade && trade in TradeScope ? (trade as TradeScope) : undefined;
   const statusFilter = status && status in BidInvitationStatus ? (status as BidInvitationStatus) : undefined;
@@ -214,6 +219,19 @@ export default async function BidsPage({
   // bids. A count would be a second read that could only agree.
   const isFiltered = tradeFilter != null || statusFilter != null;
 
+  // THE CAP IS ON WHAT IS RENDERED, NOT ON WHAT IS READ. The count, the won
+  // value and the decline line above all aggregate `bids`, every matching
+  // row, and must keep doing so — a `take` on the query would quietly turn
+  // each of them into "of the latest 20". So the query is unchanged and the
+  // list is sliced. ponytail: still loads every bid's panels' data; a lean
+  // aggregate query plus `take` on this one is the upgrade if /bids gets slow.
+  const { take, limit, showingAll } = seeAllWindow(all, BIDS_SHOWN);
+  const shownBids = take === undefined ? bids : bids.slice(0, take);
+  const listParams = new URLSearchParams({ view: "all", ...(trade ? { trade } : {}), ...(status ? { status } : {}) });
+  const fewerHref = `/bids?${listParams}`;
+  listParams.set("all", "1");
+  const allHref = `/bids?${listParams}`;
+
   // Read-only over the same rows: what is still to price, soonest first.
   // Its own query because the history filters above must not hide it.
   const dueSoon = bidsDueSoon(
@@ -249,36 +267,25 @@ export default async function BidsPage({
           nagged about it would be wrong most of the time while sounding
           authoritative. */}
       {declineSummary.headline !== null && (
-        <section
-          className="mb-6 rounded-xl border border-line-card bg-surface p-4"
-          data-bids="decline-summary"
-        >
-          <h2 className="text-sm font-semibold text-ink-label">Work turned down</h2>
-          <p className="mt-1 text-sm text-ink-body">{declineSummary.headline}</p>
-          {declineSummary.groups.length > 0 && (
-            <ul className="mt-3 flex flex-col gap-1">
-              {declineSummary.groups.map((group) => (
-                <li key={group.reason} className="flex items-baseline justify-between gap-3 text-sm">
-                  <span className="text-ink-body">{group.label}</span>
-                  <span className="shrink-0 tabular-nums text-ink-muted">
-                    {group.count} {group.count === 1 ? "bid" : "bids"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+        <p className="mb-4 text-sm text-ink-body" data-bids="decline-summary">
+          <span className="font-semibold text-ink-label">Work turned down:</span> {declineSummary.headline}
+          {declineSummary.groups.length > 1 && (
+            <span className="text-ink-muted">
+              {" "}
+              {declineSummary.groups.map((group) => `${group.label} ${group.count} ${group.count === 1 ? "bid" : "bids"}`).join(" · ")}
+              .
+            </span>
+          )}{" "}
+          {/* SAID OUT LOUD, never folded into "Something else" — and asked
+              for, never required, so the unrecorded count is how much of the
+              picture is missing rather than a figure to drive to zero. */}
           {declineSummary.unrecorded > 0 && (
-            /* SAID OUT LOUD, never folded into "Something else". "Nobody wrote
-               it down" and "the estimator chose Something else" are different
-               facts, and merging them makes the data look more complete than
-               it is. */
-            <p className="mt-3 text-xs text-ink-muted">
-              {declineSummary.unrecorded} of these {declineSummary.unrecorded === 1 ? "has" : "have"} no
-              reason recorded. The reason is asked for on the bid, never required — so this number is
-              how much of the picture is missing rather than a figure to drive to zero.
-            </p>
+            <span className="text-ink-muted">Reasons are asked for, never required. </span>
           )}
-        </section>
+          <Link href="/bids?view=all&status=DECLINED" className="text-link hover:text-link-hover hover:underline">
+            See the declined bids
+          </Link>
+        </p>
       )}
 
       <nav aria-label="Bid views" className="mb-4 flex gap-1" data-bids="views">
@@ -460,7 +467,7 @@ export default async function BidsPage({
         )
       ) : (
         <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-tour="bids-list">
-          {bids.map((bid) => (
+          {shownBids.map((bid) => (
             <li key={bid.id} id={bid.id} className="scroll-mt-24 p-4 target:ring-2 target:ring-inset target:ring-brand">
               {/* The name opens the bid's own page (Research, Estimate check,
                   Addenda, Decision); the GC's name opens the GC. Two links, not
@@ -522,6 +529,36 @@ export default async function BidsPage({
                   )}
                 </div>
               )}
+              {/* THE ROW'S WORKING PANELS, ONE CLICK DOWN. Lines, compliance,
+                  supplier levelling and the job link used to render open under
+                  every bid, so a list of 40 bids was 40 mini workspaces. They
+                  are unchanged — same components, same props — just behind
+                  this row disclosure, one open at a time. /ai/bids/[id] does
+                  NOT render these four (BidWorkspace renders only
+                  BidOutcomeForm), which is why they live here and not there. */}
+              <Disclosure
+                variant="row"
+                name="bid"
+                className="mt-2"
+                summary={
+                  bid.lines.length + bid.addenda.length + bid.quotes.length === 0 && !bid.wonJob ? (
+                    // Nothing in it yet: the row still opens (it is how lines,
+                    // addenda and quotes get ADDED), but a string of zeros is
+                    // noise on every empty row.
+                    <span data-bids="row-panels">Add lines, addenda, quotes or link the job</span>
+                  ) : (
+                    <span data-bids="row-panels">
+                      Lines, addenda, quotes and job
+                      <span className="text-ink-muted">
+                        {" "}
+                        · {bid.lines.length} {bid.lines.length === 1 ? "line" : "lines"} · {bid.addenda.length}{" "}
+                        {bid.addenda.length === 1 ? "addendum" : "addenda"} · {bid.quotes.length}{" "}
+                        {bid.quotes.length === 1 ? "quote" : "quotes"} · {bid.wonJob ? `job: ${bid.wonJob.name}` : "no job linked"}
+                      </span>
+                    </span>
+                  )
+                }
+              >
               <BidLines
                 bidInvitationId={bid.id}
                 base={bid.bidAmount === null ? null : Number(bid.bidAmount)}
@@ -709,9 +746,13 @@ export default async function BidsPage({
                     : null
                 }
               />
+              </Disclosure>
             </li>
           ))}
         </ul>
+      )}
+      {bids.length > 0 && (
+        <SeeAll total={bids.length} limit={limit} showingAll={showingAll} noun="bids" href={allHref} fewerHref={fewerHref} />
       )}
       </>
       )}

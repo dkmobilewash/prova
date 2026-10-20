@@ -14,6 +14,7 @@ import { viewerTimeZone } from "@/lib/viewerToday";
 import { todayInZone } from "@/lib/viewer-timezone";
 import { loadTodayDashboard } from "@/lib/today-dashboard";
 import { EmptyState } from "@/components/EmptyState";
+import { Disclosure } from "@/components/Disclosure";
 import { GettingStartedCard } from "@/components/GettingStartedCard";
 import { FullTourOffer } from "@/components/FullTourOffer";
 import { tradeScopeLabel } from "@/components/tradeScopeLabels";
@@ -175,7 +176,8 @@ export default async function TodayPage() {
   const isNewAccount = allJobs.length === 0;
   // While the checklist shows on a brand-new account it is the ONE start:
   // its first step is "start your first job" and it links Ask, so the
-  // search box, the empty state and the tour offer would be the same door.
+  // search box and the empty state would be the same door. (The tour offer
+  // is NOT gated on this: it shows people around rather than starting a job.)
   const checklistShowing = gettingStarted !== null && !gettingStarted.complete;
   const onlyChecklist = isNewAccount && checklistShowing;
 
@@ -317,7 +319,6 @@ export default async function TodayPage() {
   const logHours = rights.field
     ? pickJob("Log hours", crewedToday.length > 0 ? crewedToday : inProgress, "crew#log-time", "log hours")
     : null;
-  const sendPayApp = showsBilling ? pickJob(`Send ${bill.lower}`, inProgress, "billing", "pay app") : null;
   const rfisReachable = canReach(principal, "/rfis");
   // The field creates (Concept G's phone tiles, restored 2026-10-11): each
   // lands on its form already open. With one job to choose it rides along;
@@ -331,22 +332,24 @@ export default async function TodayPage() {
     ...(rfisReachable ? [{ icon: "?", shortcut: { label: "New RFI", href: `/rfis?new=1${onlyJob}` } }] : []),
     ...(canReach(principal, "/field-reports") ? [{ icon: "✎", shortcut: { label: "Daily report", href: `/field-reports?new=1${onlyJob}` } }] : []),
   ];
+  // Declutter (2026-10-13): four beside the greeting — Search or ask, New
+  // job, Log hours, Daily report. The rest (send a pay app, RFIs, photos)
+  // are a job card's next action, an area box, or the search palette away.
   const chips = [
     ...(logHours ? [{ icon: "◷", shortcut: logHours }] : []),
-    ...(sendPayApp ? [{ icon: "↗", shortcut: sendPayApp }] : []),
-    ...(rfisReachable ? [{ icon: "?", shortcut: { label: "Find an RFI", href: "/rfis" } }] : []),
-    ...quick,
+    ...quick.filter((q) => q.shortcut.label === "Daily report"),
   ];
 
   /* ---------------------------------------------------------- areas -- */
-  // Each box's one line, from the same rows the pages read. Overdue money
-  // and today's crews are already in hand above, so they are passed in.
+  // Each box's one line, from the same rows the pages read. Today's crews
+  // are already in hand above, so they are passed in. Overdue money is NOT:
+  // it is said once on this page, in the Money block (declutter, 2026-10-13
+  // — it was said three times on one screen).
   const areas = isNewAccount
     ? null
     : areaViews(
         areasFor(principal),
         await loadToolStatuses(company.id, principal, todayIso, {
-          overdue: showsBilling ? { total: today.overdueTotal, count: today.overdue.length } : undefined,
           crewsOut: extras.crewsToday.length,
           inProgress: inProgress.length,
         }),
@@ -409,20 +412,18 @@ export default async function TodayPage() {
               {!onlyChecklist && <ShortcutChips newJob={!isNewAccount} others={isNewAccount ? [] : chips} />}
             </div>
 
-            {/* ------------------------------------------------ areas -- */}
-            {/* Where everything is. Once there is a job: before that every
-                box would read zero, and the checklist is the one start. */}
-            {areas && <AreaBoxes areas={areas} hours={logHours} />}
-
             {/* On a phone the foreman's one big action stays first, and the
                 three things he creates from the field sit under it. */}
             {!isNewAccount && (logHours || quick.length > 0) && (
               <PhoneTiles primary={logHours ? { ...logHours, label: "Log today's hours" } : null} quick={quick} />
             )}
 
-            {/* The full tour, offered once to a brand-new account — but not
-                while the checklist is the one start on screen. */}
-            {isNewAccount && !onlyChecklist && <FullTourOffer />}
+            {/* The full tour, offered once to a brand-new account, beside the
+                checklist rather than after it is hidden: a first login is when
+                someone wants showing around, and almost nobody hides the
+                checklist on day one (Cyrus, 2026-10-19). Still one line they
+                can take or dismiss, never started for them. */}
+            {isNewAccount && <FullTourOffer />}
 
             {/* A brand-new company that has hidden the checklist still gets
                 the one thing it can do. The example rows are static markup,
@@ -512,6 +513,13 @@ export default async function TodayPage() {
               </div>
             )}
 
+            {/* ------------------------------------------------ areas -- */}
+            {/* Where everything is — under what needs you, not above it
+                (declutter, 2026-10-13: Needs you today started at y=419).
+                Once there is a job: before that every box would read zero,
+                and the checklist is the one start. */}
+            {areas && <AreaBoxes areas={areas} hours={logHours} />}
+
             {/* ------------------------------------------- your jobs -- */}
             {!isNewAccount && (
               <section id="jobs" className="mt-5 scroll-mt-20" data-tour="dashboard-job-health">
@@ -534,13 +542,22 @@ export default async function TodayPage() {
                 how each GC has paid. */}
             {showsBilling && !isNewAccount && (
               <section className="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <Card>
-                  <h3 className="text-sm font-semibold text-ink">Accounts receivable</h3>
-                  <p className="mb-2 text-xs text-ink-body">
-                    Outstanding {bill.lowerMany}, longest overdue first. Open one for the detail.
-                  </p>
+                {/* One line, not a second money list: the overdue total is
+                    the Money block's to say. Open it for every outstanding
+                    bill, and a row for the side panel. */}
+                <Disclosure
+                  id="receivables"
+                  className="self-start"
+                  summary={
+                    <>
+                      Who owes you &rarr; {today.receivables.length} outstanding{" "}
+                      {today.receivables.length === 1 ? bill.lower : bill.lowerMany}
+                    </>
+                  }
+                >
+                  <p className="mb-2 text-xs text-ink-body">Longest overdue first. Open one for the detail.</p>
                   <ReceivablesList />
-                </Card>
+                </Disclosure>
 
                 <Card>
                   <h3 className="text-sm font-semibold text-ink">How your GCs pay</h3>

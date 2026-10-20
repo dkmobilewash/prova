@@ -40,10 +40,42 @@ export const saveFields = (fields: Record<string, string>) => write(FIELDS, fiel
  * browser "returning" and ungated from then on. */
 export const loadContact = () => read<Contact>(CONTACT);
 export const saveContact = (contact: Contact) => write(CONTACT, contact);
+/** The change order request in progress (components/ChangeOrderTool.tsx),
+ * so a reload or a dropped signal on site does not lose a priced request. */
+const CHANGE_ORDER = "change-order:draft:v1";
+export const loadChangeOrder = () => read<Record<string, unknown>>(CHANGE_ORDER);
+export const saveChangeOrder = (draft: unknown) => write(CHANGE_ORDER, draft);
+
+/** The T&M ticket in progress (components/TmTicketTool.tsx). */
+const TICKET = "tm-ticket:draft:v1";
+export const loadTicket = () => read<Record<string, unknown>>(TICKET);
+export const saveTicket = (draft: unknown) => write(TICKET, draft);
+/** The second the last ticket number was issued in (lib/tm-ticket.ts
+ * issueTicketNumber). What makes "never reused" hold in this browser, so
+ * "Forget them" deliberately leaves it: it says nothing about anyone. */
+const TICKET_LAST_ISSUED = "tm-ticket:last-issued:v1";
+export const loadLastIssued = () => {
+  const value = read<number>(TICKET_LAST_ISSUED);
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+};
+export const saveLastIssued = (second: number) => write(TICKET_LAST_ISSUED, second);
+/** Tickets sent from this browser and not yet turned into a change order
+ * (lib/tm-ticket.ts HandoffTicket). Newest last, at most 20. */
+const TICKETS_SENT = "tm-ticket:sent:v1";
+export const loadSentTickets = (): unknown[] => {
+  const value = read<unknown[]>(TICKETS_SENT);
+  return Array.isArray(value) ? value : [];
+};
+export const addSentTicket = (ticket: unknown) => write(TICKETS_SENT, [...loadSentTickets(), ticket].slice(-20));
+export const clearSentTickets = () => write(TICKETS_SENT, []);
+
 export function forgetEverything() {
   try {
     window.localStorage.removeItem(FIELDS);
     window.localStorage.removeItem(CONTACT);
+    window.localStorage.removeItem(CHANGE_ORDER);
+    window.localStorage.removeItem(TICKET);
+    window.localStorage.removeItem(TICKETS_SENT);
   } catch {
     // Nothing to forget.
   }

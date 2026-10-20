@@ -4,8 +4,13 @@ import { EmptyState } from "@/components/EmptyState";
 import { NoAccess } from "@/components/NoAccess";
 import { loadWipSchedule } from "@/lib/wip-schedule-query";
 import { WIP_SCHEDULE_COLUMNS } from "@/lib/wip-schedule";
-import { wipScheduleCell, CANNOT_SAY, CANNOT_SAY_TITLE } from "@/lib/wip-schedule-cell";
+import { wipScheduleCell, CANNOT_SAY } from "@/lib/wip-schedule-cell";
 import { viewerToday } from "@/lib/viewerToday";
+import { secondaryActionClass } from "@/components/emptyStateStyles";
+import { HintedText } from "@/components/HintedText";
+import Link from "next/link";
+import { PageShell } from "@prova/ui";
+import { PageHeader } from "@/components/PageHeader";
 
 /**
  * The work-in-progress schedule, on screen.
@@ -39,7 +44,44 @@ import { viewerToday } from "@/lib/viewerToday";
 
 export const dynamic = "force-dynamic";
 
-export default async function WipSchedulePage() {
+/**
+ * The columns that fit one screen (density audit #35: earned and over/under,
+ * the point of the schedule, were off-screen to the right). The other
+ * eleven — the cost breakdown and coverage — are one link away at
+ * `?detail=1`, which renders exactly the table this page always rendered.
+ * Same rows, same cells, same `wipScheduleCell`; only which columns show.
+ *
+ * The short headings are LABELS ONLY. The CSV's full heading is the hint on
+ * each, so nothing that names the figure is lost.
+ */
+const KEY_COLUMNS: Partial<Record<(typeof WIP_SCHEDULE_COLUMNS)[number]["key"], string>> = {
+  job: "Job",
+  status: "Status",
+  contractValue: "Contract",
+  percentComplete: "% complete",
+  earnedRevenue: "Earned",
+  billedToDate: "Billed",
+  overbilled: "Overbilled",
+  underbilled: "Underbilled",
+};
+
+/** The two columns most often read backwards. Overbilled is a LIABILITY —
+ *  money taken for work not yet done — and it looks like good news to
+ *  anybody reading it as "we billed more". Said on the heading itself. */
+const COLUMN_DEFINITIONS: Partial<Record<(typeof WIP_SCHEDULE_COLUMNS)[number]["key"], string>> = {
+  overbilled: "Billed ahead of the work earned. That money is not yours yet — it is owed back in work.",
+  underbilled: "Work earned that has not been billed. It is yours; nobody has been asked for it yet.",
+};
+
+export default async function WipSchedulePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ detail?: string | string[] }>;
+}) {
+  const showDetail = (await searchParams).detail === "1";
+  const columns = showDetail
+    ? WIP_SCHEDULE_COLUMNS
+    : WIP_SCHEDULE_COLUMNS.filter((column) => column.key in KEY_COLUMNS);
   const { context, allowed } = await requireCapability("VIEW_COMPANY_FINANCIALS");
   if (!allowed) return <NoAccess capability="VIEW_COMPANY_FINANCIALS" />;
 
@@ -53,15 +95,11 @@ export default async function WipSchedulePage() {
   const jobCount = Math.max(rows.length - 1, 0);
 
   return (
-    <div className="p-4 sm:p-6">
-      <header className="mb-4">
-        <h1 className="text-lg font-semibold text-ink">Work in progress</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          Every contracted and in-progress job: what it is worth, what it has cost, what has been
-          earned, and whether it is over- or under-billed. Percentage of completion, cost-to-cost.
-          As of {today}.
-        </p>
-      </header>
+    <PageShell width="working">
+      <PageHeader
+        route="/wip"
+        subtitle={<>Earned against billed on every contracted job, cost-to-cost. As of {today}.</>}
+      />
 
       {/* A job forecast over its contract value is a fact about THIS table,
           and until now it reached only /alerts — a list somebody has to
@@ -94,15 +132,28 @@ export default async function WipSchedulePage() {
               that means "we cannot say" is worthless if the sentence
               explaining it only exists in the download. */}
           <p className="mb-3 text-xs text-ink-muted" data-tour="wip-coverage">
-            <span className="font-medium text-ink-body">{CANNOT_SAY}</span> is not zero.{" "}
-            {CANNOT_SAY_TITLE}
+            {/* One sentence. It used to print "— is not zero." and then the
+                cell tooltip ("Not zero — not enough…"), which read as the
+                dash being garbled into the copy. The tooltip on each cell
+                is unchanged. */}
+            A <span className="font-medium text-ink-body">{CANNOT_SAY}</span> means the figure
+            cannot be worked out yet, not that it is zero: too little of that job carries the
+            estimate it depends on, and the cost breakdown&apos;s coverage columns show how much does.
+          </p>
+
+          <p className="mb-2 text-sm">
+            <Link href={showDetail ? "/wip" : "/wip?detail=1"} className="inline-flex min-h-11 items-center text-link hover:text-link-hover mouse:min-h-8">
+              {showDetail
+                ? "Hide the cost breakdown"
+                : `Show the cost breakdown (${WIP_SCHEDULE_COLUMNS.length - columns.length} more columns)`}
+            </Link>
           </p>
 
           <div className="overflow-x-auto rounded-md border border-line-card" data-tour="wip-table">
             <table className="min-w-full border-collapse text-sm">
-              <thead>
+              <thead data-tour="wip-billing">
                 <tr className="bg-surface">
-                  {WIP_SCHEDULE_COLUMNS.map((column, index) => (
+                  {columns.map((column, index) => (
                     <th
                       key={column.key}
                       scope="col"
@@ -110,7 +161,14 @@ export default async function WipSchedulePage() {
                         index === 0 ? "sticky left-0 z-10 bg-surface" : ""
                       }`}
                     >
-                      {column.label}
+                      {showDetail ? (
+                        column.label
+                      ) : (
+                        <HintedText
+                          label={KEY_COLUMNS[column.key] ?? column.label}
+                          hint={[column.label, COLUMN_DEFINITIONS[column.key]].filter(Boolean).join(". ")}
+                        />
+                      )}
                     </th>
                   ))}
                 </tr>
@@ -123,7 +181,7 @@ export default async function WipSchedulePage() {
                       key={`${row.job}-${rowIndex}`}
                       className={isTotal ? "bg-surface font-semibold" : "odd:bg-canvas"}
                     >
-                      {WIP_SCHEDULE_COLUMNS.map((column, index) => {
+                      {columns.map((column, index) => {
                         const cell = wipScheduleCell(column.key, row[column.key]);
                         return (
                           <td
@@ -148,34 +206,13 @@ export default async function WipSchedulePage() {
             </table>
           </div>
 
-          {/* The two columns most often read backwards, said once under
-              the table rather than left to a tooltip. Overbilled is a
-              LIABILITY — money taken for work not yet done — and it looks
-              like good news to anybody reading it as "we billed more". */}
-          <dl className="mt-3 grid gap-2 text-xs text-ink-muted sm:grid-cols-2" data-tour="wip-billing">
-            <div>
-              <dt className="inline font-medium text-ink-body">Overbilled: </dt>
-              <dd className="inline">
-                billed ahead of the work earned. That money is not yours yet — it is owed back in
-                work.
-              </dd>
-            </div>
-            <div>
-              <dt className="inline font-medium text-ink-body">Underbilled: </dt>
-              <dd className="inline">
-                work earned that has not been billed. It is yours; nobody has been asked for it
-                yet.
-              </dd>
-            </div>
-          </dl>
-
           <div className="mt-4 flex flex-wrap items-center gap-3" data-tour="wip-download">
             {/* A plain link, not a button: this is a GET returning a file,
                 so the browser's own download is the whole mechanism. */}
             <a
               href="/api/wip-schedule"
               download
-              className="inline-flex rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
+              className={secondaryActionClass}
             >
               Download WIP schedule (CSV)
             </a>
@@ -186,6 +223,6 @@ export default async function WipSchedulePage() {
           </div>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

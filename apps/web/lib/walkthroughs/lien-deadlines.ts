@@ -9,7 +9,7 @@ export const lienDeadlinesWalkthrough: Walkthrough = {
       anchor: "lien-totals",
       title: "The counts",
       body:
-        "How many deadlines have passed without being served, how many are due in the next two weeks, and how many are done. A red box means you may be about to lose lien rights.",
+        "One line: how many deadlines have passed without being served, how many are due in the next two weeks, and how many are done. It turns red when you may be about to lose lien rights.",
     },
     {
       anchor: "lien-add",

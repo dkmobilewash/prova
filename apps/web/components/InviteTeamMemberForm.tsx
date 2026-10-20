@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { inviteTeamMember } from "@/lib/actions";
 
@@ -22,6 +22,24 @@ export function InviteTeamMemberForm() {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
 
+  /**
+   * The reset, held until the invite is on screen.
+   *
+   * This form has nothing to close — it is always on the page, above the
+   * pending-invite list — so the cleared field IS the whole success signal,
+   * and clearing it when the action resolves says "sent" while the list
+   * below still has not grown. `router.refresh()` stays inside the
+   * transition, so `isPending` is true until the refreshed tree COMMITS;
+   * production measured those two moments 2.25 s apart. Issue #163.
+   */
+  const settle = useRef<null | (() => void)>(null);
+  useEffect(() => {
+    if (isPending || settle.current === null) return;
+    const run = settle.current;
+    settle.current = null;
+    run();
+  }, [isPending]);
+
   return (
     <form
       ref={formRef}
@@ -37,7 +55,11 @@ export function InviteTeamMemberForm() {
               return;
             }
             router.refresh();
-            formRef.current?.reset();
+            // Queued rather than run: the invite this sent has not reached
+            // the list below yet. See `settle` above.
+            settle.current = () => {
+              formRef.current?.reset();
+            };
           } catch {
             setError("Could not send this invite");
           }
@@ -58,6 +80,7 @@ export function InviteTeamMemberForm() {
       <button
         type="submit"
         disabled={isPending}
+        aria-busy={isPending || undefined}
         className="inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
       >
         {isPending ? "Inviting…" : "Invite"}

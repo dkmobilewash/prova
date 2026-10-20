@@ -9,7 +9,9 @@ import { expectFitsTheViewport } from "../lib/viewport";
  * describe, checked the only way it can be: a real Chromium viewport. */
 test("schedule rows are readable at 375px with no sideways scroll", async ({ page }) => {
   await signInAs(page, PERSONAS.main.email);
-  await page.goto("/schedule");
+  // ?all=1: since declutter round 3 the start-date and Unscheduled lists show
+  // 5 each (newest first), and the seeded job is the OLDEST one on the account.
+  await page.goto("/schedule?all=1");
 
   await expect(page.getByText(`${E2E_TAG} Seeded Job`)).toBeVisible();
 
