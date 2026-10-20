@@ -35,6 +35,19 @@ export type AnswerKeyPanelProps = {
   /** Which candidate the overlay is highlighting, if any. */
   focusedId: string | null;
   onFocus: (id: string | null) => void;
+  /**
+   * An unsaved review for this sheet is in the browser — the text to offer.
+   *
+   * Offered rather than restored behind their back: a reviewer who came back
+   * deliberately to start again should not have yesterday applied for them.
+   */
+  restoreOffer?: string | null;
+  onRestore?: () => void;
+  onDiscardDraft?: () => void;
+  /** Said once the labels are on disk, so the draft can be cleared. */
+  onSaved?: () => void;
+  /** Storage refused the backup, or a restore was impossible — shown as-is. */
+  draftNote?: string | null;
   /** Hide every overlay so the raw drawing can be read. */
   overlaysOn: boolean;
   onOverlays: (on: boolean) => void;
@@ -103,6 +116,11 @@ export function AnswerKeyPanel({
   onState,
   focusedId,
   onFocus,
+  restoreOffer,
+  onRestore,
+  onDiscardDraft,
+  onSaved,
+  draftNote,
   overlaysOn,
   onOverlays,
   sheet,
@@ -363,6 +381,13 @@ export function AnswerKeyPanel({
           ? `Labels saved — ${body.path}`
           : `Not saved: ${body.error ?? "the request failed"}`,
       );
+      // ── ONLY AFTER THE FILE IS ON DISK ──
+      //
+      // The draft is the only copy of this review until the save succeeds, so
+      // it is cleared on `ok` and on nothing else — not on the attempt, and
+      // not in a `finally`. A 400 must leave the reviewer's work exactly where
+      // it was.
+      if (body.ok) onSaved?.();
     } catch (cause) {
       setSaved(`Not saved: ${String(cause)}`);
     } finally {
@@ -738,6 +763,44 @@ export function AnswerKeyPanel({
         * labelling; this panel carries the rules as text and says where the
         * pictures are.
         */}
+      {/* ── AN UNSAVED REVIEW FROM LAST TIME ──
+          Above the save button, because it is about the work that is NOT in
+          front of them. Offered rather than applied: somebody who came back
+          deliberately to start again should not have yesterday restored for
+          them. */}
+      {restoreOffer != null && restoreOffer !== "" ? (
+        <div
+          className="rounded-md border border-brand/60 bg-brand/10 p-2"
+          data-takeoff="key-restore"
+        >
+          <p className="text-[11px] text-ink-label">
+            This sheet has an unsaved review in this browser.
+          </p>
+          <div className="mt-1.5 flex gap-1.5">
+            <button
+              type="button"
+              data-takeoff="key-restore-yes"
+              onClick={() => onRestore?.()}
+              className="flex-1 rounded-md bg-brand px-2 py-1 text-[11px] font-semibold text-neutral-900 hover:bg-yellow-500"
+            >
+              {restoreOffer}
+            </button>
+            <button
+              type="button"
+              data-takeoff="key-restore-no"
+              onClick={() => onDiscardDraft?.()}
+              className="rounded-md border border-line-card px-2 py-1 text-[11px] text-ink-muted hover:text-ink-label"
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {draftNote != null && draftNote !== "" ? (
+        <p className="text-[11px] text-ink-muted" data-takeoff="key-draft-note">
+          {draftNote}
+        </p>
+      ) : null}
       <div className="rounded-md border border-line-card p-2" data-takeoff="key-labels">
         <button
           type="button"
