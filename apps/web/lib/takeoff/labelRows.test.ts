@@ -96,11 +96,26 @@ describe("carrying a verdict from a run back to its pairings", () => {
     // offered. If traced runs were treated as judged, "traced" is not "wall"
     // and every pairing beneath one would be labelled a negative — the exact
     // opposite of what the reviewer meant by drawing it.
+    //
+    // ── THIS TEST PERMITTED THE HARM ITS OWN NAME FORBIDS, UNTIL 2026-10-20 ──
+    //
+    // It asserted `rows[0].label` was `not.toBe(1)`, which is satisfied by
+    // label 0 — a confident negative, the thing the comment above calls "the
+    // exact opposite of what the reviewer meant". And it required the row to
+    // EXIST, pinning the defect in place: `judged` excludes traced runs, so
+    // the candidate fell through to `no-run` and was written as a negative at
+    // the one place somebody had gone out of their way to say a wall is.
+    //
+    // The right behaviour is the one the unsure branch already had: leave the
+    // candidate out. Neither a positive (there is no feature vector behind the
+    // reviewer's two clicks) nor a negative (there is a wall there).
+    //
+    // It matters most on the four held-out buildings, where tracing is the
+    // whole point — their labels are the test key and must contain the walls
+    // the finder missed.
     const beneath = [candidate(0, 0, 0.3, 0)];
     const rows = labelRows(beneath, [run(0, 0, 0.3, 0, "traced")], FPU, true);
-    expect(rows).toHaveLength(1);
-    expect(rows[0].label, "a traced wall labelled its own ground a negative").not.toBe(1);
-    expect(rows[0].from).toBe("no-run");
+    expect(rows, "a traced wall labelled its own ground a negative").toHaveLength(0);
   });
 
   it("does not claim a pairing on a parallel wall a room away", () => {

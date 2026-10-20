@@ -126,9 +126,33 @@ describe("no held-out set reaches training", () => {
       // `labelStore.ts` writes them, the offset evals audit them.
       .filter((f) => /\bTrainingRow\b|\btrainingRows\b|\bfamily\b/.test(f.code));
 
-    const unguarded = mustAsk.filter(
-      (f) => !/heldOutReason|isHeldOut|splitForTraining|HELD_OUT_SETS/.test(f.code),
-    );
+    // ── ASKING DIRECTLY, OR GOING THROUGH SOMETHING THAT ASKS ──
+    //
+    // `collectSheets` and `trainingRows` both refuse held-out sets and are
+    // themselves in this census — `labelCollect.ts` is required to name
+    // `heldOutReason` by the very assertion below, and `trainingRows.ts` is
+    // where the refusal lives. So a caller that routes its rows through
+    // either one has asked, through them.
+    //
+    // This is a widening, and the first version of it made the census BLIND.
+    // Mutation caught that in one run: a file that DEFINES `collectSheets`
+    // contains the word `collectSheets`, so `labelCollect.ts` satisfied the
+    // "delegates to something that asks" pattern by naming ITSELF. Stripping
+    // its own guard out left every test green.
+    //
+    // So the delegates are named, and they are excluded from the widening:
+    // they must ask DIRECTLY. Everyone else may ask through them. If either
+    // delegate stops asking, the census reds on that file — which is the
+    // property the widening depends on and the first version destroyed.
+    const DELEGATES = ["lib/takeoff/labelCollect.ts", "lib/takeoff/trainingRows.ts"];
+    const DIRECT = /heldOutReason|isHeldOut|splitForTraining|HELD_OUT_SETS/;
+    const VIA = /collectSheets\(|trainingRows\(/;
+    const unguarded = mustAsk.filter((f) => {
+      if (DIRECT.test(f.code)) return false;
+      // A delegate cannot vouch for itself.
+      if (DELEGATES.some((d) => f.path.endsWith(d.replace("lib/takeoff/", "")))) return true;
+      return !VIA.test(f.code);
+    });
     expect(
       unguarded.map((f) => f.path),
       "these build training rows without asking whether the set is held out",
