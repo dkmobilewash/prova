@@ -30,7 +30,21 @@ PORT="${PORT:-3000}"
 # the same variable passed to `next -H` below, so the check and the actual
 # bind cannot disagree: setting one sets both. Client drawings are on this
 # disk; a server reachable from the network has no business serving them.
-HOSTNAME="${HOSTNAME:-127.0.0.1}"
+# ── AND IT IS NOT NAMED `HOSTNAME` AT THE DOOR, BECAUSE THE SHELL SETS THAT ──
+#
+# `${HOSTNAME:-127.0.0.1}` inherits zsh's own HOSTNAME, which is the machine
+# name: the first run of this printed `bind : Diegos-MacBook-Pro.local`, which
+# binds a LAN-reachable interface AND fails the loopback check, so the server
+# would have come up unable to open a drawing for a second reason. Caught by
+# printing the value rather than by anything failing.
+# `localhost`, NOT `127.0.0.1`. Binding the literal IPv4 address makes Next's
+# own internal proxy fail: it dials `http://localhost:3001`, which resolves to
+# `::1` first on this machine, finds nothing listening and returns 500 for
+# EVERY request — `Failed to proxy ... ECONNREFUSED` in the log. `localhost`
+# binds the loopback names the proxy and the labeller both use, and still
+# satisfies the loopback check in `localPlanFile.ts`.
+TAKEOFF_BIND="${TAKEOFF_BIND:-localhost}"
+HOSTNAME="$TAKEOFF_BIND"
 export HOSTNAME
 # ── THE DEFAULT USER IS WHOEVER IS RUNNING THIS, NOT `postgres` ──
 #

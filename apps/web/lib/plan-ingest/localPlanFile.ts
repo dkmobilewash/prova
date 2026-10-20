@@ -82,14 +82,41 @@ const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 export function productionLocalPlansAllowed(
   env: Readonly<Record<string, string | undefined>>,
 ): boolean {
-  // Any VERCEL variable at all, not just "1".
-  if (env.VERCEL !== undefined) return false;
-  if (env.ALLOW_LOCAL_PLANS !== "1") return false;
-  const bind = (env.HOSTNAME ?? "").trim().toLowerCase();
-  if (!LOOPBACK.has(bind)) return false;
-  const dir = env.TAKEOFF_LOCAL_PLAN_DIR ?? "";
-  return dir !== "" && isAbsolute(dir);
+  return productionLocalPlansRefusal(env) === null;
 }
+
+/**
+ * WHICH condition refuses, as a name, or null when all four hold.
+ *
+ * ── A REFUSAL THAT SAYS NOTHING COSTS AN AFTERNOON ──
+ *
+ * The browser is told "That drawing could not be read", which is right — a
+ * server filesystem path has no business in a page. But the SERVER said
+ * nothing either, so a refusal and a missing file and a path escape all
+ * looked identical from outside, and the only way to tell them apart was to
+ * guess at four environment variables that `ps` on macOS will not show you.
+ *
+ * Names only, never values: these are not secrets, and the names are what a
+ * person needs to fix it.
+ */
+export function productionLocalPlansRefusal(
+  env: Readonly<Record<string, string | undefined>>,
+): string | null {
+  // Any VERCEL variable at all, not just "1".
+  if (env.VERCEL !== undefined) return "VERCEL is set — local plans never run on Vercel";
+  if (env.ALLOW_LOCAL_PLANS !== "1") return "ALLOW_LOCAL_PLANS is not exactly \"1\"";
+  const bind = (env.HOSTNAME ?? "").trim().toLowerCase();
+  if (!LOOPBACK.has(bind)) {
+    return `HOSTNAME is ${bind === "" ? "unset" : `"${bind}"`}, not loopback`;
+  }
+  const dir = env.TAKEOFF_LOCAL_PLAN_DIR ?? "";
+  if (dir === "") return "TAKEOFF_LOCAL_PLAN_DIR is unset";
+  if (!isAbsolute(dir)) return "TAKEOFF_LOCAL_PLAN_DIR is not an absolute path";
+  return null;
+}
+
+/** Said once per cold start, not once per request. */
+let saidWhy = false;
 
 /** Whether a stored `fileUrl` is asking for a file on this machine. */
 export function isLocalPlanUrl(fileUrl: string): boolean {
@@ -107,7 +134,17 @@ export function localPlanPath(fileUrl: string, env: NodeJS.ProcessEnv): string |
   // Never on Vercel, in any mode, whatever else is configured.
   if (env.VERCEL !== undefined) return null;
   // A production build reads from disk only under the four conditions above.
-  if (env.NODE_ENV === "production" && !productionLocalPlansAllowed(env)) return null;
+  if (env.NODE_ENV === "production") {
+    const why = productionLocalPlansRefusal(env);
+    if (why !== null) {
+      if (!saidWhy) {
+        saidWhy = true;
+        // eslint-disable-next-line no-console
+        console.warn(`[local-plans] refusing to read plan files: ${why}`);
+      }
+      return null;
+    }
+  }
   const dir = env.TAKEOFF_LOCAL_PLAN_DIR ?? "";
   if (dir === "" || !isAbsolute(dir)) return null;
 
