@@ -27,6 +27,85 @@ describe("where a label file is allowed to go", () => {
     expect(labelPath("set", "A101", env({ NODE_ENV: "production" }))).toBeNull();
   });
 
+  /**
+   * ── THE LABELLING SERVER IS A PRODUCTION BUILD, AND MUST BE ABLE TO SAVE ──
+   *
+   * `next start` always sets NODE_ENV=production, so a flat refusal made the
+   * no-recompile server unable to write — worse than being unable to read,
+   * because the reviewer finds out AFTER doing the sheet. On 2026-10-20 a
+   * finished sheet sat in an open tab with nowhere to put itself.
+   *
+   * The conditions are `localPlanFile.ts`'s, imported rather than restated.
+   */
+  describe("a production build with the labelling opt-in", () => {
+    const built = (extra: Record<string, string | undefined> = {}) =>
+      env({
+        NODE_ENV: "production",
+        ALLOW_LOCAL_PLANS: "1",
+        HOSTNAME: "localhost",
+        TAKEOFF_LOCAL_PLAN_DIR: "/plans",
+        ...extra,
+      });
+
+    it("writes when ALL the conditions hold", () => {
+      expect(labelPath("Camp Bow Wow", "A101", built())).toBe(`${dir}/Camp_Bow_Wow/A101.json`);
+    });
+
+    // One condition removed at a time: a gate tested only as a whole is a
+    // gate where three of four conditions could be dead.
+    it("refuses without the opt-in", () => {
+      expect(labelPath("set", "A101", built({ ALLOW_LOCAL_PLANS: undefined }))).toBeNull();
+      expect(labelPath("set", "A101", built({ ALLOW_LOCAL_PLANS: "0" }))).toBeNull();
+    });
+
+    it("refuses when not bound to loopback", () => {
+      for (const bind of ["0.0.0.0", "", "10.0.0.5"]) {
+        expect(labelPath("set", "A101", built({ HOSTNAME: bind })), bind).toBeNull();
+      }
+    });
+
+    it("refuses on Vercel, whatever the value", () => {
+      for (const value of ["1", "0", "", "preview"]) {
+        expect(labelPath("set", "A101", built({ VERCEL: value })), value).toBeNull();
+      }
+    });
+
+    it("REFUSES A REAL DEPLOYMENT even with the label folder set by accident", () => {
+      // Not a production build with the labelling variables removed, which is
+      // easy to pass — the actual mistake this guard exists for.
+      expect(
+        labelPath(
+          "set",
+          "A101",
+          env({
+            NODE_ENV: "production",
+            VERCEL: "1",
+            VERCEL_ENV: "production",
+            HOSTNAME: "0.0.0.0",
+          }),
+        ),
+      ).toBeNull();
+    });
+
+    it("still cannot be climbed out of", () => {
+      // The opt-in buys a folder, not the filesystem. Asserted as
+      // CONTAINMENT rather than an exact spelling: `safeName` is stricter
+      // than it looks — `../../etc` becomes `_.._etc`, not `etc` — and a test
+      // pinning the spelling would fail the day it is made stricter still,
+      // which is the wrong direction to make somebody defend.
+      for (const [set, sheet] of [
+        ["../../etc", "passwd"],
+        ["set", "../../../etc/passwd"],
+        ["..", ".."],
+      ]) {
+        const got = labelPath(set, sheet, built());
+        expect(got, `${set}/${sheet}`).not.toBeNull();
+        expect(got?.startsWith(`${dir}/`), `${set}/${sheet} escaped to ${got}`).toBe(true);
+        expect(got?.includes("/../"), `${set}/${sheet} kept a climb`).toBe(false);
+      }
+    });
+  });
+
   it("CANNOT BE CLIMBED OUT OF by a crafted sheet or set name", () => {
     // `..` is flattened by the name cleaner before the path is built, so these
     // land inside the folder rather than above it.

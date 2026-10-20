@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { productionLocalPlansRefusal } from "./localPlanFile";
 import { isAbsolute, join, resolve, sep } from "node:path";
 
 /**
@@ -40,6 +41,9 @@ function safeName(raw: string): string {
   return cleaned === "" ? "unnamed" : cleaned.slice(0, 120);
 }
 
+/** Said once per cold start, not once per save. */
+let saidWhy = false;
+
 /**
  * Where a label file resolves to, or null when it must not be written.
  *
@@ -51,7 +55,30 @@ export function labelPath(
   sheet: string,
   env: NodeJS.ProcessEnv,
 ): string | null {
-  if (env.NODE_ENV === "production") return null;
+  // ── THE SAME OPT-IN AS LOCAL PLAN FILES, FOR THE SAME REASON ──
+  //
+  // `next start` always sets NODE_ENV=production, so a flat refusal here made
+  // the no-recompile labelling server unable to SAVE — which is worse than
+  // being unable to load, because the reviewer finds out after doing the
+  // sheet. On 2026-10-20 a finished sheet sat in an open tab with nowhere to
+  // go: "Labels are not being saved: TAKEOFF_LABEL_DIR is not set, or this is
+  // a production build."
+  //
+  // The conditions are `localPlanFile.ts`'s, imported rather than restated —
+  // two copies of a security gate is how one of them quietly stops matching
+  // the other. A real deployment fails the opt-in, the loopback bind and the
+  // Vercel test independently, so it still refuses.
+  if (env.NODE_ENV === "production") {
+    const why = productionLocalPlansRefusal(env);
+    if (why !== null) {
+      if (!saidWhy) {
+        saidWhy = true;
+        // eslint-disable-next-line no-console
+        console.warn(`[local-labels] refusing to write label files: ${why}`);
+      }
+      return null;
+    }
+  }
   const dir = env[LABEL_DIR_VAR];
   if (dir === undefined || dir.trim() === "") return null;
   const root = resolve(dir.trim());
