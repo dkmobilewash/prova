@@ -155,10 +155,32 @@ export const SIMILAR_LENGTH = 2.5;
  * the real wall does. Found by writing the fixture that way first and
  * watching the test fail.
  *
- * The remaining signal for that case is the one Diego named second: whether
- * the THICKNESS matches the wall as drawn. It needs a notion of the sheet's
- * own thicknesses, which this file does not have, and it is not built — so
- * the bound is written here rather than left for somebody to discover.
+ * ── THICKNESS MATCHING WAS BUILT FOR THAT CASE AND MADE IT WORSE ──
+ *
+ * The obvious remaining signal is whether a twin's THICKNESS matches the wall
+ * as drawn, and it does not need a legend or a model: a sheet draws its
+ * partitions at a handful of sizes, so the other candidates are the evidence.
+ * Built 2026-10-20 as "prefer the twin whose thickness more of the sheet's
+ * runs share", and measured against nine sheets of human verdicts rather than
+ * argued about:
+ *
+ *   | rule | agrees with the reviewer |
+ *   | --- | --- |
+ *   | support, then length — what ships | **97 of 97** |
+ *   | support, then prefer the THICKER | 90 of 96 |
+ *   | support, then prefer the commoner thickness | 82 of 96 |
+ *
+ * ── WHY COMMONALITY IS THE WRONG QUESTION, AND IT IS NOT A TUNING PROBLEM ──
+ *
+ * Most candidates are NOT walls — the reviewers rejected 65 of 92 on E Street
+ * and 72 of 100 on SW Grand Junction. So the commonest thickness on a sheet
+ * is the commonest ARTIFACT, not the commonest wall type: on ELEVEN03 the
+ * rule kept 2.5-inch readings with 27 to 45 witnesses over the 5.3 and 10-inch
+ * runs the reviewer actually took. No threshold fixes that, because the
+ * witnesses are real and they are counting the wrong population.
+ *
+ * It is written down at this length because the idea is a good one that
+ * survives being described, and the next person will have it again.
  */
 
 export function duplicatePairs(

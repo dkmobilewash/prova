@@ -1,4 +1,5 @@
 import { FEATURE_NAMES } from "./wallFeatures";
+import { finderVersion } from "./finderVersion";
 
 /**
  * ── TURNING A REVIEWED SHEET INTO TRAINING ROWS ──
@@ -82,6 +83,16 @@ export type LabelFile = {
    * why this field exists rather than a convention about names.
    */
   reviewerKind: "human" | "ai";
+  /**
+   * The build of the finder that drew the candidates these verdicts judge.
+   *
+   * Not decoration. The candidate list is NOT stable across finder changes —
+   * Camp Bow Wow A120's saved `21.7 ft / 3.8 in` had become `22.6 ft / 7.7 in`
+   * by the afternoon of 2026-10-20 — so `rows` below corresponds to THIS
+   * build's candidates and to no other. See `finderVersion.ts`, including why
+   * a `-dirty` value is not an identity.
+   */
+  finderVersion: string;
   /**
    * Seconds of wall-clock the reviewer spent with this sheet open.
    *
@@ -248,6 +259,8 @@ export function labelFile(input: {
   page: number;
   reviewedBy: string;
   secondsSpent: number;
+  /** Overrides the environment; the app leaves it out and gets the build. */
+  finderVersion?: string;
   feetPerUnit: number;
   reviewComplete: boolean;
   candidates: readonly LabelCandidate[];
@@ -264,6 +277,7 @@ export function labelFile(input: {
     reviewedBy: input.reviewedBy,
     reviewedAt: new Date().toISOString(),
     reviewerKind: reviewerKindOf(input.reviewedBy),
+    finderVersion: input.finderVersion ?? finderVersion(),
     secondsSpent: Math.round(input.secondsSpent),
     feetPerUnit: input.feetPerUnit,
     featureNames: [...FEATURE_NAMES],

@@ -72,10 +72,29 @@ mkdir -p "$LABELS"
 # Use `next dev` when you are the one changing the code and want it reloaded.
 MODE="${BUILT:-0}"
 
+# ── THE BUILD THAT DREW THE CANDIDATES GOES INTO EVERY LABEL FILE ──
+#
+# A later finder does not produce the same candidate list: Camp Bow Wow A120's
+# saved `21.7 ft / 3.8 in` had become `22.6 ft / 7.7 in` within days, and
+# nothing in the file said which build had drawn it, so the mismatch read as a
+# matching bug. `-dirty` is the load-bearing part rather than the commit id:
+# labelling here nearly always runs from a worktree with uncommitted changes,
+# so a bare SHA would name a finder that never ran.
+if [ -z "${TAKEOFF_FINDER_VERSION:-}" ]; then
+  if SHA=$(git rev-parse --short=12 HEAD 2>/dev/null); then
+    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then SHA="$SHA-dirty"; fi
+    TAKEOFF_FINDER_VERSION="$SHA"
+  else
+    TAKEOFF_FINDER_VERSION="unknown"
+  fi
+fi
+export TAKEOFF_FINDER_VERSION
+
 echo "plans from : $PLANS"
 echo "labels to  : $LABELS"
 echo "port       : $PORT"
 echo "database   : $HOST"
+echo "finder     : $TAKEOFF_FINDER_VERSION"
 echo "mode       : $([ "$MODE" = "1" ] && echo 'production build — no recompiles' || echo 'next dev — recompiles on every edit')"
 echo "sheets stay on this machine; nothing is uploaded"
 echo
@@ -85,6 +104,7 @@ if [ "$MODE" = "1" ]; then
   DIRECT_URL="$LOCAL_DB" \
   TAKEOFF_LOCAL_PLAN_DIR="$PLANS" \
   TAKEOFF_LABEL_DIR="$LABELS" \
+  TAKEOFF_FINDER_VERSION="$TAKEOFF_FINDER_VERSION" \
     npx next build
 fi
 
@@ -92,4 +112,5 @@ DATABASE_URL="$LOCAL_DB" \
 DIRECT_URL="$LOCAL_DB" \
 TAKEOFF_LOCAL_PLAN_DIR="$PLANS" \
 TAKEOFF_LABEL_DIR="$LABELS" \
+TAKEOFF_FINDER_VERSION="$TAKEOFF_FINDER_VERSION" \
   exec npx next "$([ "$MODE" = "1" ] && echo start || echo dev)" -p "$PORT"
