@@ -176,7 +176,8 @@ export default async function TodayPage() {
   const isNewAccount = allJobs.length === 0;
   // While the checklist shows on a brand-new account it is the ONE start:
   // its first step is "start your first job" and it links Ask, so the
-  // search box, the empty state and the tour offer would be the same door.
+  // search box and the empty state would be the same door. (The tour offer
+  // is NOT gated on this: it shows people around rather than starting a job.)
   const checklistShowing = gettingStarted !== null && !gettingStarted.complete;
   const onlyChecklist = isNewAccount && checklistShowing;
 
@@ -417,9 +418,12 @@ export default async function TodayPage() {
               <PhoneTiles primary={logHours ? { ...logHours, label: "Log today's hours" } : null} quick={quick} />
             )}
 
-            {/* The full tour, offered once to a brand-new account — but not
-                while the checklist is the one start on screen. */}
-            {isNewAccount && !onlyChecklist && <FullTourOffer />}
+            {/* The full tour, offered once to a brand-new account, beside the
+                checklist rather than after it is hidden: a first login is when
+                someone wants showing around, and almost nobody hides the
+                checklist on day one (Cyrus, 2026-10-19). Still one line they
+                can take or dismiss, never started for them. */}
+            {isNewAccount && <FullTourOffer />}
 
             {/* A brand-new company that has hidden the checklist still gets
                 the one thing it can do. The example rows are static markup,
