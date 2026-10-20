@@ -696,15 +696,38 @@ export function wallsPerView(input: {
     // puts it in the caution by name. Measuring an unrecognised drawing is how
     // this defect happened; dropping it without a word would be the same
     // failure with better manners.
-    .filter(
-      (band) =>
-        band.segments.length > 0 &&
-        band.view.feetPerInch !== null &&
-        isPlanView(band.view.name),
-    );
-  if (bands.length === 0) return [];
+    .filter((band) => band.segments.length > 0 && isPlanView(band.view.name));
 
-  const measure = (band: (typeof bands)[number], feetPerUnit: number): ViewWalls => {
+  // ── A SHEET WHOSE PLANS PRINT NO SCALE IS NOT A SHEET WITH NO PLANS ──
+  //
+  // Dropping a view with no readable scale is right while ANOTHER view on the
+  // sheet has one: the sheet is then drawn at more than one scale, the
+  // calibration belongs to whichever view it was taken from, and measuring
+  // the others at it would be inventing a scale for them.
+  //
+  // It is wrong when NO view on the sheet prints a scale. Murray A101 (page
+  // 24) is two views — "1st Floor Plan" and "1st Floor Reflected Ceiling
+  // Plan" — and neither caption carries one. Every band was dropped,
+  // `wallsPerView` returned nothing, `primaryView` had nothing to pick, and
+  // the viewer took its deliberate empty result: "Nothing to review on this
+  // sheet", on a sheet the finder reads perfectly well. Driven directly at
+  // the calibrated scale it offers 731 pairings and 158 runs.
+  //
+  // The user had already answered the question the filter was asking. They
+  // calibrated the sheet — 23 ft across a known span, 288 ft per page width —
+  // and `feetPerUnit` is that answer, passed in and then ignored.
+  //
+  // So: prefer the views that print their own scale, and fall back to the
+  // calibrated one only when NOT ONE of them does. The multi-scale protection
+  // is untouched, because it only applies where a printed scale exists to
+  // protect. `isPlanView` still refuses the elevations and the schedules —
+  // that is the guard that stopped eight elevations reaching the quantities,
+  // and this does not relax it.
+  const printed = bands.filter((band) => band.view.feetPerInch !== null);
+  const measurable = printed.length > 0 ? printed : bands;
+  if (measurable.length === 0) return [];
+
+  const measure = (band: (typeof measurable)[number], feetPerUnit: number): ViewWalls => {
     const found = findWallsOnSheet({
       segments: band.segments as StrokeSegment[],
       textItems: input.textItems,
@@ -734,7 +757,7 @@ export function wallsPerView(input: {
   // calibration is ABOUT. Measuring a detail at the plan's scale under-reports
   // it, which is this file's own table — so the biggest here is the plan by a
   // wider margin than it really is, and that only makes the choice safer.
-  const first = bands.map((band) => measure(band, input.feetPerUnit));
+  const first = measurable.map((band) => measure(band, input.feetPerUnit));
   let bestAt = 0;
   for (let i = 1; i < first.length; i += 1) {
     if (first[i].lengthFeet > first[bestAt].lengthFeet) bestAt = i;
@@ -745,11 +768,15 @@ export function wallsPerView(input: {
   // be read as a scale never reaches here — `printedScalesAt` only emits
   // standard ones — so the ratio is always between two real numbers.
   return first.map((already, i) => {
-    const mine = bands[i].view.feetPerInch ?? 0;
+    // `measurable`, NOT `bands`: they are different arrays whenever any view
+    // prints a scale, and indexing the wrong one measures a view at its
+    // neighbour's ratio. `first` was built from `measurable`, so the index
+    // belongs to it.
+    const mine = measurable[i].view.feetPerInch ?? 0;
     if (i === bestAt || !(anchor > 0) || !(mine > 0)) return already;
     const ratio = mine / anchor;
     if (ratio === 1) return already;
-    return measure(bands[i], input.feetPerUnit * ratio);
+    return measure(measurable[i], input.feetPerUnit * ratio);
   });
 }
 
