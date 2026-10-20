@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/takeoff/draftStore";
-import { draftFrom, hasUnsavedWork, restoreDraft, restoreOffer } from "@/lib/takeoff/reviewDraft";
+import {
+  draftFrom,
+  hasUnsavedWork,
+  keepReview,
+  restoreDraft,
+  restoreOffer,
+} from "@/lib/takeoff/reviewDraft";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Spinner } from "@/components/Spinner";
@@ -1143,14 +1149,28 @@ export function TakeoffWorkspace({
                       // The scale, so `startReview` can measure duplicates in
                       // FEET. Without it no duplicate is looked for and the
                       // panel silently loses the check.
+                      // ── A RE-DETECT MUST NOT WIPE THE SHEET ──
+                      //
+                      // This assigned `startReview` straight in, so anything
+                      // that made the viewer re-run detection threw away every
+                      // decision and put the duplicate pre-marking back — no
+                      // reload needed, nothing said. `keepReview` keeps the
+                      // verdicts when the candidate list is the same one.
                       onCandidates: (candidates, segments) =>
-                        setKeyState(
-                          startReview(
-                            candidates,
-                            currentSheet?.calibration != null
-                              ? (feetPerPageWidth(currentSheet.calibration) ?? 0)
-                              : 0,
-                            segments,
+                        setKeyStateByPage((prev) =>
+                          setOnThisSheet(
+                            prev,
+                            page,
+                            keepReview(
+                              onThisSheet(prev, page),
+                              startReview(
+                                candidates,
+                                currentSheet?.calibration != null
+                                  ? (feetPerPageWidth(currentSheet.calibration) ?? 0)
+                                  : 0,
+                                segments,
+                              ),
+                            ),
                           ),
                         ),
                       onSplitAt: (id, at) => {

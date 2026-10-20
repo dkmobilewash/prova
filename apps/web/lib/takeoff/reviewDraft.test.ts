@@ -5,6 +5,7 @@ import {
   draftKey,
   fingerprint,
   hasUnsavedWork,
+  keepReview,
   restoreDraft,
   restoreOffer,
 } from "./reviewDraft";
@@ -206,5 +207,54 @@ describe("the fingerprint", () => {
 
   it("leads with the count, so a mismatch can say how many", () => {
     expect(fingerprint(fresh(["w0", "w1", "w2"]).candidates).startsWith("3:")).toBe(true);
+  });
+});
+
+describe("a re-detect must not wipe the sheet", () => {
+  /**
+   * ── THE DEFECT THE RELOAD TEST FOUND ──
+   *
+   * `onCandidates` assigned `startReview` straight in, so anything that made
+   * the viewer re-run detection — a redraw, a reflow, the re-render after a
+   * restore — threw away every decision and put the duplicate pre-marking
+   * back. No reload was needed and nothing said a word.
+   *
+   * Measured rather than theorised: a reload test restored 11 decisions and
+   * then read 5 off the panel. The restore had worked, and a re-detect landed
+   * on top of it.
+   */
+  it("keeps the verdicts when the same candidates come back", () => {
+    const got = keepReview(reviewed(), fresh(["w0", "w1", "w2"]));
+    expect(got.verdicts).toEqual({ w0: "wall", w1: "not-a-wall", w2: "unsure" });
+  });
+
+  it("keeps the traces, which no re-detect can reproduce", () => {
+    expect(keepReview(reviewed(), fresh(["w0", "w1", "w2"])).traced).toHaveLength(2);
+  });
+
+  it("takes the FRESH review when the sheet really was re-read", () => {
+    // A different candidate list is a different set of walls, and keeping
+    // verdicts across it would attach them to the wrong ones.
+    const got = keepReview(reviewed(), fresh(["w0", "w1", "w2", "w3"]));
+    expect(Object.values(got.verdicts).every((v) => v === "unreviewed")).toBe(true);
+  });
+
+  it("takes the fresh review when there was nothing before", () => {
+    const first = fresh(["w0"]);
+    expect(keepReview(null, first)).toBe(first);
+  });
+
+  it("lets the fresh pre-marking stand where the reviewer had not decided", () => {
+    // The duplicate rule's answer is better than nothing; only the reviewer's
+    // own decisions outrank it.
+    const untouched: ReviewState = {
+      ...fresh(["w0", "w1"]),
+      verdicts: { w0: "unreviewed", w1: "unreviewed" },
+    };
+    const premarked: ReviewState = {
+      ...fresh(["w0", "w1"]),
+      verdicts: { w0: "unreviewed", w1: "not-a-wall" },
+    };
+    expect(keepReview(untouched, premarked).verdicts.w1).toBe("not-a-wall");
   });
 });

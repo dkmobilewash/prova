@@ -174,3 +174,34 @@ export function hasUnsavedWork(state: ReviewState): boolean {
     Object.values(state.verdicts).some((v) => v !== "unreviewed")
   );
 }
+
+/**
+ * Keep an existing review when the finder re-offers the SAME candidates.
+ *
+ * ── A RE-DETECT USED TO WIPE THE SHEET ──
+ *
+ * `onCandidates` called `startReview` and assigned the result, so anything
+ * that made the viewer re-run detection — a redraw, a zoom that reflows, a
+ * restore that re-rendered — threw away every decision on the sheet and put
+ * the duplicate pre-marking back. No reload was needed and nothing said a
+ * word.
+ *
+ * Found by a reload test that restored 11 decisions and then read 5 off the
+ * panel: the restore had worked and a re-detect had landed on top of it.
+ *
+ * The same fingerprint means the same candidate list in the same order, so
+ * the verdicts still belong to the walls they were made about. A different
+ * one means the sheet really has been re-read and a fresh review is right.
+ */
+export function keepReview(existing: ReviewState | null, fresh: ReviewState): ReviewState {
+  if (existing === null) return fresh;
+  if (fingerprint(existing.candidates) !== fingerprint(fresh.candidates)) return fresh;
+  // The duplicate pre-marking comes from `fresh`, and the reviewer's verdicts
+  // sit on top — their decision outranks the rule's, which is the same order
+  // `restoreDraft` uses.
+  const verdicts: Record<string, Verdict> = { ...fresh.verdicts };
+  for (const [id, verdict] of Object.entries(existing.verdicts)) {
+    if (id in verdicts && verdict !== "unreviewed") verdicts[id] = verdict;
+  }
+  return { ...fresh, verdicts, traced: existing.traced };
+}
