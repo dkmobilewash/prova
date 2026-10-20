@@ -693,6 +693,19 @@ export function TakeoffWorkspace({
   // verdict, split and trace, so this effect is the event.
   useEffect(() => {
     if (!keyMode || keyState === null || draftSet === "") return;
+    // ── NOT WHILE A DRAFT IS WAITING TO BE RECLAIMED ──
+    //
+    // After a reload the review starts fresh, with the duplicate pre-marking
+    // in place — and this effect would write THAT over the draft holding the
+    // reviewer's work, before they had a chance to press Restore. The offer
+    // still said "11 decisions", because it was read a moment earlier; by the
+    // time the button was pressed the draft behind it held 5.
+    //
+    // Measured, after two wrong fixes: the draft on disk after the click read
+    // `decided: 5`, with the same fingerprint, and no refusal note. The
+    // restore was working perfectly on a draft that had already been
+    // overwritten.
+    if (restorable !== null) return;
     const draft = draftFrom({ state: keyState, set: draftSet, page, finderVersion });
     if (draft === null) {
       // Nothing worth keeping — and clear any older draft for this sheet, so
@@ -706,7 +719,7 @@ export function TakeoffWorkspace({
       // their work is being kept when it is not.
       setDraftNote("This browser will not keep a backup of this review — save often.");
     }
-  }, [keyMode, keyState, draftSet, page, finderVersion]);
+  }, [keyMode, keyState, draftSet, page, finderVersion, restorable]);
 
   // ── OFFERED ON OPENING, NOT RESTORED BEHIND THEIR BACK ──
   useEffect(() => {
