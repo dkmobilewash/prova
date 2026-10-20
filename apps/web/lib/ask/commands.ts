@@ -333,6 +333,11 @@ export const EXCLUSIONS: Exclusion[] = [
       "The public unsubscribe link's button. Its only authority is the signed token in the email; it has no signed-in user, so there is no Ask session it could ever run under.",
   },
   {
+    action: "replies.*",
+    reason:
+      "Approving, dismissing or stopping a prospect's reply is done on /sales/replies with the prospect's own words on screen and the draft in front of the person. Sending real email to a real prospect from a sentence to Ask is the one thing the reply agent is built to never do.",
+  },
+  {
     action: "crews.*",
     reason:
       "A saved crew is a picking aid for the schedule form's checkboxes, not a record. Ask already schedules people by name (crew schedule commands), so a crew there would be a second way to say the same thing.",

@@ -9,6 +9,7 @@ import { RunAgentButton } from "@/components/RunAgentButton";
 import { RUN_PILL, RunStatusPill, RunWayOut } from "./RunStatusPill";
 import { AiRowAction } from "./AiRowAction";
 import { AiSideToggle } from "./AiSideToggle";
+import { Disclosure } from "@/components/Disclosure";
 
 /**
  * The /ai page (C Stream AI mockup, ai-home-desktop.png / ai-home-phone.png):
@@ -100,6 +101,9 @@ function SectionHead({ title, id, aside }: { title: string; id: string; aside?: 
   );
 }
 
+/** Findings in the rail; the rest are on /ai/activity. */
+const FINDINGS_SHOWN = 5;
+
 const ASIDE_LINK = "inline-flex min-h-11 items-center text-[13px] text-ink-muted hover:text-ink lg:min-h-0";
 
 /** Every finding and recommendation cites what it read. A source with a
@@ -162,6 +166,18 @@ export function RunningNow({ runs, now }: { runs: AiRun[]; now: Date }) {
           </div>
         </div>
       ) : (
+        // A count and a link; the runs one click down (density audit #19 —
+        // the tasks menu and /ai/activity carry them too). Opens by itself
+        // when a run failed, was capped or skipped: that one has a way out.
+        <Disclosure
+          variant="row"
+          open={runs.some((run) => run.status !== "RUNNING" && run.status !== "DONE")}
+          summary={
+            <span data-ai-running-count className="text-[14.5px] text-ink">
+              {runs.filter((run) => run.status === "RUNNING").length} running · {runs.filter((run) => run.status !== "RUNNING").length} recent
+            </span>
+          }
+        >
         <ul className="divide-y divide-line-row">
           {runs.map((run) => (
             <li key={run.id} className="py-1.5 first:pt-0.5">
@@ -195,6 +211,7 @@ export function RunningNow({ runs, now }: { runs: AiRun[]; now: Date }) {
             </li>
           ))}
         </ul>
+        </Disclosure>
       )}
     </section>
   );
@@ -348,28 +365,37 @@ export function Watching({
             Nothing flagged. When the bid watcher or the estimate check finds something, it lands here with what it read.
           </p>
         ) : (
-          <ul className="mt-1 divide-y divide-line-row">
-            {findings.map((finding) => (
-              <li key={finding.id} className="py-2">
-                <div className="flex items-start gap-2">
-                  <span className={`${PILL} ${SEVERITY[finding.severity].tone}`}>{SEVERITY[finding.severity].label}</span>
-                  <p className="min-w-0 break-words text-[14px] font-semibold text-ink">{finding.title}</p>
-                </div>
-                <p className="mt-1 break-words text-[13px] text-ink-body">{finding.body}</p>
-                <Sources sources={finding.sources} />
-                <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-                  {finding.fixHref ? (
-                    <Link href={finding.fixHref} className="inline-flex min-h-11 items-center text-sm font-semibold text-link hover:text-link-hover mouse:min-h-8">
-                      Fix it →
-                    </Link>
-                  ) : (
-                    <span />
-                  )}
-                  <span className="flex items-center gap-1">
-                    <AiRowAction id={finding.id} action={dismissFinding} label="Dismiss" />
-                    <AiRowAction id={finding.id} action={markFindingWrong} label="Not right" />
-                  </span>
-                </div>
+          // One line each — severity and title — opening to the body, the
+          // sources and the three actions; five at most (density audit #19).
+          <ul className="mt-1">
+            {findings.slice(0, FINDINGS_SHOWN).map((finding) => (
+              <li key={finding.id}>
+                <Disclosure
+                  variant="row"
+                  name="ai-finding"
+                  summary={
+                    <>
+                      <span className={`${PILL} ${SEVERITY[finding.severity].tone}`}>{SEVERITY[finding.severity].label}</span>
+                      <span className="min-w-0 break-words text-[14px] font-semibold text-ink">{finding.title}</span>
+                    </>
+                  }
+                >
+                  <p className="break-words text-[13px] text-ink-body">{finding.body}</p>
+                  <Sources sources={finding.sources} />
+                  <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                    {finding.fixHref ? (
+                      <Link href={finding.fixHref} className="inline-flex min-h-11 items-center text-sm font-semibold text-link hover:text-link-hover mouse:min-h-8">
+                        Fix it →
+                      </Link>
+                    ) : (
+                      <span />
+                    )}
+                    <span className="flex items-center gap-1">
+                      <AiRowAction id={finding.id} action={dismissFinding} label="Dismiss" />
+                      <AiRowAction id={finding.id} action={markFindingWrong} label="Not right" />
+                    </span>
+                  </div>
+                </Disclosure>
               </li>
             ))}
           </ul>

@@ -33,3 +33,35 @@ describe("/lien-deadlines lien waivers", () => {
     expect(html).not.toContain("/jobs/j2/billing");
   });
 });
+
+describe("/lien-deadlines declutter (density audit #26)", () => {
+  it("prints the explainer once, inside a closed disclosure", async () => {
+    const html = renderToStaticMarkup(await Page());
+    expect(html.match(/Miss one and you can lose lien rights/g)).toHaveLength(1);
+    expect(html.indexOf("<details")).toBeGreaterThan(-1);
+    expect(html.indexOf("Miss one")).toBeGreaterThan(html.indexOf("<details"));
+    expect(html).not.toMatch(/<details[^>]* open/);
+  });
+
+  it("says the counts in one quiet sentence, not three tiles", async () => {
+    const html = renderToStaticMarkup(await Page());
+    expect(html).not.toContain("<dl");
+    expect(html).toContain('data-status="quiet"');
+    expect(html).toContain("Nothing overdue or due in the next 14 days. 0 served.");
+  });
+
+  it("makes the waivers one line of job links, not a section", async () => {
+    const html = renderToStaticMarkup(await Page());
+    expect(html).toMatch(/<p id="lien-waivers"/);
+    expect(html).not.toContain("<h2");
+  });
+
+  it("drops the board's copy of the explainer from its empty state", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { dirname, join } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const board = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../components/LienDeadlinesBoard.tsx"), "utf8");
+    expect(board).not.toContain("This app never works out a lien deadline");
+    expect(board).toContain("An empty list means nothing has been entered");
+  });
+});

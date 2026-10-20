@@ -172,10 +172,25 @@ const REACHED_FROM: Record<string, Reached> = {
     parents: ["apps/web/app/(app)/sales/page.tsx"],
     needle: 'href="/sales/call-list"',
   },
+  "/sales/replies": {
+    reason: "The replies link beside today's calls on /sales (operator only).",
+    parents: ["apps/web/app/(app)/sales/page.tsx"],
+    needle: 'href="/sales/replies"',
+  },
+  "/sales/scoreboard": {
+    reason: "The scoreboard link beside today's calls on /sales (operator only).",
+    parents: ["apps/web/app/(app)/sales/page.tsx"],
+    needle: 'href="/sales/scoreboard"',
+  },
   "/sales/[id]/sample-wh347": {
     reason: "The sample WH-347 link on a lead's page (operator only).",
     parents: ["apps/web/app/(app)/sales/[id]/page.tsx"],
     needle: "`/sales/${lead.id}/sample-wh347`",
+  },
+  "/sales/[id]/drawing-read": {
+    reason: "The free drawing-set read link on a lead's page (operator only).",
+    parents: ["apps/web/app/(app)/sales/[id]/page.tsx"],
+    needle: "`/sales/${lead.id}/drawing-read`",
   },
   "/union-compliance/remittance": {
     reason: "Each month's remittance report link on /union-compliance.",
@@ -224,7 +239,7 @@ const REACHED_FROM: Record<string, Reached> = {
   },
   "/jobs/[id]/pay-applications/[invoiceId]": {
     reason: "Each pay application on the job's Billing tab.",
-    parents: ["apps/web/components/PayApplications.tsx", "apps/web/components/job/PayAppSummary.tsx"],
+    parents: ["apps/web/app/(app)/jobs/[id]/(tabs)/billing/page.tsx", "apps/web/components/job/PayAppSummary.tsx"],
     needle: "/pay-applications/${",
   },
   "/jobs/[id]/photo-report": {

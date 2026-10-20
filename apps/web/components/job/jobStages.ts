@@ -30,7 +30,7 @@ export type StageKey = "estimate" | "contract" | "crew" | "billing" | "closeout"
 /** `leavesJob`: the page is not one of this job's own tabs (the punch list,
  * company-wide closeout), so following it leaves the job header and these
  * stages behind. The nav marks it, so the jump is not a surprise. */
-export type StageLink = { href: string; label: string; leavesJob?: true };
+export type StageLink = { href: string; label: string; leavesJob?: true; overview?: true };
 export type JobStage = {
   key: StageKey;
   label: string;
@@ -135,9 +135,11 @@ export function jobStages(input: JobStageInput): JobStage[] {
       // same route the rail always had, with an anchor. That section only
       // renders for a viewer shown job money ((tabs)/page.tsx), so anyone
       // else keeps the plain Overview link.
+      // `overview`: the page is the whole job's, not this stage's — see
+      // selectedStageKey for which step it outlines.
       isEstimate && input.showsJobMoney
-        ? { href: `/jobs/${id}#contract-signature`, label: "Contract signature" }
-        : { href: `/jobs/${id}`, label: "Overview" },
+        ? { href: `/jobs/${id}#contract-signature`, label: "Contract signature", overview: true as const }
+        : { href: `/jobs/${id}`, label: "Overview", overview: true as const },
       { href: `/jobs/${id}/compliance`, label: "Compliance" },
     ],
     crew: [
@@ -226,9 +228,25 @@ export function isCurrentLink(href: string, pathname: string, search = ""): bool
   return [...new URLSearchParams(query)].every(([k, v]) => have.get(k) === v);
 }
 
-/** The stage whose pages include the page being shown — the one shown open. */
-export function selectedStageKey(stages: JobStage[], pathname: string, search = ""): StageKey | null {
-  return stages.find((stage) => stage.links.some((link) => isCurrentLink(link.href, pathname, search)))?.key ?? null;
+/** The stage whose pages include the page being shown — the one shown open.
+ *
+ * The Overview is the whole job's page, not the Contract stage's, though the
+ * Contract step links to it. Outlining Contract there read as a wrong
+ * highlight (density audit, 2026-10-13: Lakeshore, a bid, outlined Contract
+ * while its number sat on Estimate). So the Overview outlines where the job
+ * IS — unless the visit is the Contract step's own `#contract-signature`
+ * link, which `hash` (`location.hash`) tells apart. */
+export function selectedStageKey(stages: JobStage[], pathname: string, search = "", hash = ""): StageKey | null {
+  const current = stages.find((s) => s.state === "current")?.key ?? "closeout";
+  for (const stage of stages) {
+    for (const link of stage.links) {
+      if (!isCurrentLink(link.href, pathname, search)) continue;
+      if (!link.overview) return stage.key;
+      const fragment = link.href.split("#")[1];
+      return fragment && hash === `#${fragment}` ? stage.key : current;
+    }
+  }
+  return null;
 }
 
 /** The Paperwork panel's lien-waiver row. The waivers live at the foot of

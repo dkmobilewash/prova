@@ -9,6 +9,7 @@ import { SalesOpportunityForm } from "@/components/SalesOpportunityForm";
 import { SalesOpportunityRow } from "@/components/SalesOpportunityRow";
 import { SalesActivityForm } from "@/components/SalesActivityForm";
 import { CallLogButtons } from "@/components/CallLogButtons";
+import { FilesReceivedButton } from "@/components/FilesReceivedButton";
 import { doNotCallFrom } from "@/lib/call-dispositions";
 import { SalesActivityRow } from "@/components/SalesActivityRow";
 import { SalesLeadSignals } from "@/components/SalesLeadSignals";
@@ -79,6 +80,12 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
   // The viewer's calendar day, not the server's — a deal that moved today
   // reads as moving tomorrow to anyone west of UTC once the server ticks over.
   const today = await viewerToday();
+  // The door the Files-received button defaults to: whichever the latest reply came through.
+  const latestReply = await prisma.outboundReply.findFirst({
+    where: { leadId: lead.id },
+    orderBy: { receivedAt: "desc" },
+    select: { door: true },
+  });
 
   const historyByOpportunity = new Map(
     lead.opportunities.map((opportunity) => {
@@ -216,6 +223,20 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
         </Link>
       </p>
 
+      {/* The ONLY way in to the drawing-set read page, and deliberately not a
+          nav entry: that screen is about one lead and one uploaded plan set, so
+          there is no useful version of it reached without a lead. Shown on every
+          lead rather than only the INBOUND ones — an operator can offer the free
+          read to somebody they met at a job walk, and hiding the door on a lead
+          we typed in ourselves would make it look broken. Beside the sample
+          WH-347 because both are things we send a prospect.
+          `lib/routeInboundLinks.test.ts` is what requires it to exist at all. */}
+      <p className="mt-1 text-sm">
+        <Link href={`/sales/${lead.id}/drawing-read`} className="text-ink-label hover:underline">
+          Send {lead.companyName} a free drawing-set read →
+        </Link>
+      </p>
+
       {/* Beside the sample, because the sample is what the first email sends. */}
       <FindEmailButton
         leadId={lead.id}
@@ -278,6 +299,10 @@ export default async function SalesLeadPage({ params }: { params: Promise<{ id: 
         ) : null}
         <div className="mb-4">
           <CallLogButtons leadId={lead.id} />
+        </div>
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-ink-body">
+          <span>They sent the files?</span>
+          <FilesReceivedButton leadId={lead.id} door={latestReply?.door ?? "UNKNOWN"} />
         </div>
         {activityRows.length === 0 ? (
           <p className="mb-4 text-sm text-ink-body">

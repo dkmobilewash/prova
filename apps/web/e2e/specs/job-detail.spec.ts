@@ -44,7 +44,9 @@ test("job detail: every tab renders its sections, in the rail's order, no crash"
   test.setTimeout(90_000);
   const monitor = new HealthMonitor(page);
   await signInAs(page, PERSONAS.main.email);
-  await page.goto("/schedule");
+  // ?all=1: since declutter round 3 the start-date and Unscheduled lists show
+  // 5 each (newest first), and the seeded job is the OLDEST one on the account.
+  await page.goto("/schedule?all=1");
 
   await page.getByRole("link", { name: new RegExp(`${E2E_TAG} Seeded Job`) }).first().click();
   await page.waitForURL(/\/jobs\/[^/]+$/);
@@ -77,7 +79,7 @@ test("job detail: every tab renders its sections, in the rail's order, no crash"
   // as "Change orders". The Billing register's heading is one bill noun per
   // company (billingNoun in components/job/jobStages.ts): the seeded
   // company has not answered the pay-apps question, so it reads "Pay apps".
-  const tabs: Array<{ label: string; path: string; headings: string[]; absent?: string[] }> = [
+  const tabs: Array<{ label: string; path: string; headings: string[]; absent?: string[]; buttons?: string[] }> = [
     { label: "Takeoff", path: `${jobPath}/takeoff`, headings: ["Takeoff"] },
     {
       // THE TAB IS "Estimate" AT EVERY STAGE NOW (#757). It was "Change
@@ -95,7 +97,11 @@ test("job detail: every tab renders its sections, in the rail's order, no crash"
     { label: "Crew & time", path: `${jobPath}/crew`, headings: ["Field time entries"] },
     { label: "Field reports", path: `${jobPath}/field-reports`, headings: ["Daily field reports"] },
     { label: "Photos", path: `${jobPath}/photos`, headings: ["Site photos"] },
-    { label: "Billing", path: `${jobPath}/billing`, headings: ["Pay apps", "Pay applications"] },
+    // ONE list since declutter round 2: the "Pay applications" section was a
+    // second copy of the pay apps already listed as rows under "Pay apps", so
+    // its heading is gone. What it uniquely carried — starting a pay app — is
+    // the button, which is what is checked in its place.
+    { label: "Billing", path: `${jobPath}/billing`, headings: ["Pay apps"], buttons: ["Submit pay application"] },
     { label: "Retainage", path: `${jobPath}/retainage`, headings: ["Retainage"] },
   ];
 
@@ -108,6 +114,9 @@ test("job detail: every tab renders its sections, in the rail's order, no crash"
 
     for (const heading of tab.headings) {
       await expect(page.getByRole("heading", { name: heading, exact: true }), `${tab.label} shows "${heading}"`).toBeVisible();
+    }
+    for (const button of tab.buttons ?? []) {
+      await expect(page.getByRole("button", { name: button, exact: true }), `${tab.label} offers "${button}"`).toBeVisible();
     }
     for (const heading of tab.absent ?? []) {
       await expect(page.getByRole("heading", { name: heading, exact: true }), `${tab.label} does not show "${heading}"`).toHaveCount(0);

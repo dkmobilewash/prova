@@ -9,6 +9,9 @@ import { toJobOption } from "@/components/jobLabels";
 import { loadLienDeadlines } from "@/lib/lien-deadlines-query";
 import { DUE_SOON_DAYS, summarizeLienDeadlines } from "@/lib/lien-deadlines";
 import { viewerToday } from "@/lib/viewerToday";
+import { Disclosure } from "@/components/Disclosure";
+import { StatusLine } from "@/components/StatusLine";
+import { lienDeadlinesStatus } from "@/lib/status-sentences";
 
 /**
  * Lien-rights deadlines — preliminary notices, mechanic's liens, stop
@@ -53,40 +56,30 @@ export default async function LienDeadlinesPage() {
           </>
         }
       />
-      <p className="mb-6 max-w-2xl text-sm text-ink-body">
-        Miss one and you can lose lien rights. This app does
-        not work out any of these dates: they depend on the state, on public or private work and on
-        your tier, so every date here is one you entered from your attorney or the statute. It keeps
-        them sorted here, and puts any within 14 days or overdue on the alerts list, until they are
-        served.
-      </p>
+      {/* The one explainer — LienDeadlinesBoard's empty state printed the
+          same paragraph again (density audit #26). */}
+      <Disclosure variant="plain" summary="How these dates work · the app never computes one" className="mb-4 max-w-2xl">
+        <p className="text-sm text-ink-body">
+          Miss one and you can lose lien rights. This app does
+          not work out any of these dates: they depend on the state, on public or private work and on
+          your tier, so every date here is one you entered from your attorney or the statute. It keeps
+          them sorted here, and puts any within 14 days or overdue on the alerts list, until they are
+          served.
+        </p>
+      </Disclosure>
 
-      {/* One column on a phone: three tiles across 375px left ~60px
-          per tile for labels like "Due in the next 14 days". */}
-      <dl className="mb-8 grid gap-3 sm:grid-cols-3" data-tour="lien-totals">
-        <div
-          className={`rounded-xl border p-4 ${
-            summary.overdueUnserved > 0 ? "border-bar-rose bg-tag-rose" : "border-line-card bg-surface"
-          }`}
-        >
-          <dt className="text-xs text-ink-label">Overdue, not served</dt>
-          <dd
-            className={`mt-1 text-2xl font-semibold ${
-              summary.overdueUnserved > 0 ? "text-tag-rose-ink" : "text-ink"
-            }`}
-          >
-            {summary.overdueUnserved}
-          </dd>
-        </div>
-        <div className="rounded-xl border border-line-card bg-surface p-4">
-          <dt className="text-xs text-ink-label">Due in the next {DUE_SOON_DAYS} days</dt>
-          <dd className="mt-1 text-2xl font-semibold text-ink">{summary.dueWithin14Days}</dd>
-        </div>
-        <div className="rounded-xl border border-line-card bg-surface p-4">
-          <dt className="text-xs text-ink-label">Served</dt>
-          <dd className="mt-1 text-2xl font-semibold text-ink">{summary.served}</dd>
-        </div>
-      </dl>
+      {/* One sentence instead of three tiles that mostly read 0; red or
+          amber only when a deadline is at risk. */}
+      <div data-tour="lien-totals">
+        <StatusLine
+          report={lienDeadlinesStatus({
+            overdueUnserved: summary.overdueUnserved,
+            dueSoon: summary.dueWithin14Days,
+            dueSoonDays: DUE_SOON_DAYS,
+            served: summary.served,
+          })}
+        />
+      </div>
 
       <LienDeadlinesBoard
         rows={rows}
@@ -99,27 +92,28 @@ export default async function LienDeadlinesPage() {
       {/* There is no company-wide waiver list: each job's waivers live at the
           foot of its Billing tab. This is the door to them from the Money
           area, one link per job that HAS a Billing tab (not an estimate). */}
-      <section id="lien-waivers" className="mt-10 scroll-mt-6">
-        <h2 className="text-sm font-semibold text-ink-label">Lien waivers</h2>
-        <p className="mt-1 text-sm text-ink-body">Each job&apos;s waivers are kept on its Billing tab. Pick the job.</p>
+      <p id="lien-waivers" className="mt-10 scroll-mt-6 text-sm text-ink-body">
+        <span className="font-semibold text-ink-label">Lien waivers</span> are kept on each job&apos;s Billing tab
         {billedJobs.length === 0 ? (
-          <p className="mt-3 text-sm text-ink-muted">No contracted jobs yet. Waivers start once a job is contracted.</p>
+          <span className="text-ink-muted"> — no contracted jobs yet. Waivers start once a job is contracted.</span>
         ) : (
-          <ul className="mt-3 divide-y divide-line-row border-y border-line-row">
-            {billedJobs.map((job) => (
-              <li key={job.id}>
+          <>
+            :{" "}
+            {billedJobs.map((job, i) => (
+              <span key={job.id}>
+                {i > 0 && " · "}
                 <Link
                   href={`/jobs/${job.id}/billing#lien-waivers`}
-                  className="flex min-h-11 items-center justify-between gap-3 py-2 text-base text-ink hover:text-link mouse:min-h-9 sm:text-sm"
+                  title={job.contact?.name ?? undefined}
+                  className="inline-flex min-h-11 items-center text-link hover:text-link-hover hover:underline mouse:min-h-7"
                 >
-                  <span className="min-w-0 truncate">{job.name}</span>
-                  {job.contact?.name && <span className="shrink-0 text-sm text-ink-muted">{job.contact.name}</span>}
+                  {job.name}
                 </Link>
-              </li>
+              </span>
             ))}
-          </ul>
+          </>
         )}
-      </section>
+      </p>
     </PageShell>
   );
 }

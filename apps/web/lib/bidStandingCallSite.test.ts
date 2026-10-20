@@ -67,10 +67,15 @@ describe("the pipeline page's standing lines", () => {
     expect(text).toContain("{lines.length + crowding.length > 0 && (");
   });
 
-  it("keeps the red badge for the one state that is actually wrong", () => {
+  it("keeps red for the one state that is actually wrong", () => {
     // A bid past its deadline that was never sent. That is the claim the old
-    // badge was making and almost never true of; it is true of this.
-    expect(source()).toContain("past the deadline and never sent");
+    // badge was making and almost never true of; it is true of this. Since
+    // the declutter follow-up it is the standing LINE that goes red, not a
+    // badge repeating its count above it — `pipeline-missed-once.test.ts`
+    // renders the page and holds the "said once" half.
+    const text = source();
+    expect(text).toContain("standingLines({ dueSoon: [], missed: standings.missed, cold: [] })");
+    expect(text).toContain("bg-tag-rose text-tag-rose-ink");
   });
 
   it("renders the crowding lines in the same list, not a second one", () => {

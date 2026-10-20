@@ -272,9 +272,17 @@ export default async function SalesPage() {
       <section className="mb-6 rounded-lg border border-line-card bg-surface p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h2 className="text-sm font-semibold text-ink">Today&apos;s calls</h2>
-          <Link href="/sales/call-list" className="text-xs text-ink-label hover:underline">
-            Open the call list (CSLB) →
-          </Link>
+          <span className="flex gap-3">
+            <Link href="/sales/scoreboard" className="text-xs text-ink-label hover:underline">
+              Scoreboard →
+            </Link>
+            <Link href="/sales/replies" className="text-xs text-ink-label hover:underline">
+              Replies to answer →
+            </Link>
+            <Link href="/sales/call-list" className="text-xs text-ink-label hover:underline">
+              Open the call list (CSLB) →
+            </Link>
+          </span>
         </div>
         <dl className="mt-2 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           {(

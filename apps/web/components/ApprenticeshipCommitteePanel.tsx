@@ -221,12 +221,10 @@ export function ApprenticeshipCommitteePanel({
       {committees.length === 0 ? (
         <div className="rounded-lg border border-line-card bg-surface p-4">
           <p className="text-sm text-ink-label">No apprenticeship committees recorded.</p>
+          {/* What a committee is and where to look one up is said once, in
+              the page's "How this works" — this used to repeat it. */}
           <p className="mt-2 text-xs text-ink-muted">
-            A DAS 140 and a DAS 142 both go to a committee — for one craft, in one area. C Stream
-            holds no directory of them and will not invent one: look yours up on DIR&rsquo;s own list
-            and record it once here, and every notice on every job can then be addressed from it.
-            Until there is one committee here, the DAS sections on a job have nowhere to send
-            anything.
+            Until there is one here, the DAS sections on a job have nowhere to send anything.
           </p>
         </div>
       ) : (

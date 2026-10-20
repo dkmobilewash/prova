@@ -12,6 +12,7 @@ import { createBidPursuit } from "@/lib/actions";
 import { searchBidLeads, type PlacedLead } from "@/lib/actions/leadSearch";
 import { BidPursuitFields } from "@/components/BidPursuitList";
 import { localToday } from "@/components/localToday";
+import { secondaryActionClass } from "@/components/emptyStateStyles";
 
 /**
  * FIND PUBLIC PROJECTS OUT TO BID.
@@ -64,23 +65,23 @@ export function LeadSearch() {
   const [isSaving, startSaving] = useTransition();
 
   if (!open) {
+    // The secondary half of /pipeline's one row of two buttons; "Look up a
+    // project" beside it is the yellow one (declutter, 2026-10-13).
     return (
-      <div className="mb-6">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="rounded-md border border-line-card px-3 py-2 text-sm font-medium text-ink hover:bg-surface"
-          data-pipeline="lead-search-open"
-        >
-          Find projects out to bid
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={secondaryActionClass}
+        data-pipeline="lead-search-open"
+      >
+        Find projects out to bid
+      </button>
     );
   }
 
   return (
     <section
-      className="mb-6 rounded-lg border border-line-card bg-surface p-4"
+      className="rounded-lg border border-line-card bg-surface p-4"
       data-pipeline="lead-search"
     >
       <div className="flex items-start justify-between gap-3">

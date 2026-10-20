@@ -14,7 +14,7 @@ export const jobDetailEstimateWalkthrough: Walkthrough = {
       anchor: "job-line-items",
       title: "Price the job",
       body:
-        "These are the lines of your estimate. Describe the work in the box and press Draft line items to have them written for you, or use Add from a takeoff if you have measurements. Check every line — you can change any of them.",
+        "These are the lines of your estimate, one row each — press a row to check or change it. To have lines written for you, press Draft line items from scope and describe the work, or use Add from a takeoff if you have measurements.",
     },
     {
       anchor: "job-add-line-item",

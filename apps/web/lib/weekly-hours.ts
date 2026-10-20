@@ -92,3 +92,15 @@ export function weeklyHours(entries: HoursEntry[], weekStartIso: string): Weekly
     totalHours,
   };
 }
+
+/** The crew tab's two time-entry lists: the entries IN the week the table
+ * above them totals, and every other one (the history, capped by SeeAll).
+ * An entry dated after that week — a typo'd future date — is history, not
+ * "this week", so the list under the table always matches the table. */
+export function splitThisWeek<T extends { date: Date }>(entries: T[], weekStartIso: string): { thisWeek: T[]; earlier: T[] } {
+  const days = new Set(weekDates(weekStartIso));
+  const thisWeek: T[] = [];
+  const earlier: T[] = [];
+  for (const e of entries) (days.has(e.date.toISOString().slice(0, 10)) ? thisWeek : earlier).push(e);
+  return { thisWeek, earlier };
+}

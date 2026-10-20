@@ -1,14 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
+import { Disclosure } from "@/components/Disclosure";
+import { secondaryActionClass } from "@/components/emptyStateStyles";
 import { Hint } from "@/components/Hint";
 import { NEW_PAY_APP_HASH } from "@/components/job/payAppFigures";
 import { submitPayApplication, updateInvoiceStatus } from "@/lib/actions";
 import { money } from "@/lib/money";
 import { parseNumericInput } from "@/lib/numeric-input";
 import { payAppRowsFromForm, payAppTotal, thisPeriodForPercentComplete } from "@/lib/pay-application";
-import { formatInstant } from "@/lib/render-date";
 
 const inputClass =
   "w-28 rounded-md border border-line-card bg-canvas px-2 py-1 text-right text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
@@ -52,14 +52,6 @@ function PercentNote({ note }: { note?: { ok: boolean; text: string } }) {
   );
 }
 
-export type PayAppInvoice = {
-  id: string;
-  number: number;
-  status: string;
-  amount: number;
-  issuedAt: string;
-};
-
 export function StatusForm({ jobId, invoiceId, status }: { jobId: string; invoiceId: string; status: string }) {
   const [isPending, startTransition] = useTransition();
 
@@ -88,19 +80,21 @@ export function StatusForm({ jobId, invoiceId, status }: { jobId: string; invoic
   );
 }
 
+/**
+ * The submit-a-pay-application form, behind its button, and how it works.
+ *
+ * Declutter round 2 (2026-10-14): this used to end in a SECOND list of the
+ * pay applications the Billing tab already lists as invoice rows, each with
+ * its own status select. The Billing page's one list now carries everything
+ * that list did — the "Application #N" link, the issued date, the amount and
+ * the one status control — so this component is the form and nothing else.
+ */
 export function PayApplications({
   jobId,
   lineItems,
-  payApplications,
-  timeZone,
 }: {
   jobId: string;
   lineItems: PayAppLineItemOption[];
-  payApplications: PayAppInvoice[];
-  // Resolved on the server by viewerTimeZone() and handed down, rather
-  // than read from Intl here: this is a client component, and computing a
-  // zone during render makes the markup disagree with the server's.
-  timeZone: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   /** Set when the form was opened from the Billing summary's "Start pay app"
@@ -224,40 +218,40 @@ export function PayApplications({
   const creditAmount = total !== null && total < 0 ? -total : null;
 
   return (
-    <section>
-      <div className="mb-1 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-ink">Pay applications</h2>
-        {!isOpen && (
+    <div className="flex flex-col gap-3">
+      {/* Secondary, not the blue primary it was: the Billing summary's
+          "Start pay app #N" opens this same form and is the page's one
+          primary. */}
+      {!isOpen && (
+        <div>
           <Hint text="Opens the form. Nothing is billed and nothing reaches the GC until you submit it.">
-            <button
-              type="button"
-              onClick={() => setIsOpen(true)}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-            >
+            <button type="button" onClick={() => setIsOpen(true)} className={secondaryActionClass}>
               Submit pay application
             </button>
           </Hint>
-        )}
-      </div>
-      <p className="mb-3 text-sm text-ink-muted">
-        A pay application bills against specific schedule-of-values lines — this period&rsquo;s completed work plus
-        any materials stored, per line — rather than a single lump-sum amount. New materials stored carries forward
-        automatically on later applications; leave it blank if nothing new was stored this period. See the full
-        G702/G703-style report for each one below.
-      </p>
-      <p className="mb-3 max-w-2xl text-sm text-ink-muted">
-        <span className="text-ink-body">Once stored material gets installed,</span> enter it twice on the same
-        line: the amount as a <strong className="text-ink-label">negative</strong> under New materials stored, and
-        the same amount as a positive under This period. That moves the value from stored to completed. Skip the
-        negative and you bill the same material twice — the running &ldquo;stored to date&rdquo; figure under each
-        box is what is still sitting there.
-      </p>
-      <p className="mb-3 max-w-2xl text-sm text-ink-muted">
-        <span className="text-ink-body">Billed too much on a line last time?</span> Enter the
-        difference as a <strong className="text-ink-label">negative</strong> under This period on that
-        line and it comes off what you have claimed to date — the same thing a G703 does. You can take
-        back at most what that line has already been billed.
-      </p>
+        </div>
+      )}
+      <Disclosure summary="How pay applications work">
+        <p className="max-w-2xl text-sm text-ink-muted">
+          A pay application bills against specific schedule-of-values lines — this period&rsquo;s completed work plus
+          any materials stored, per line — rather than a single lump-sum amount. New materials stored carries forward
+          automatically on later applications; leave it blank if nothing new was stored this period. See the full
+          G702/G703-style report for each one in the list above.
+        </p>
+        <p className="mt-3 max-w-2xl text-sm text-ink-muted">
+          <span className="text-ink-body">Once stored material gets installed,</span> enter it twice on the same
+          line: the amount as a <strong className="text-ink-label">negative</strong> under New materials stored, and
+          the same amount as a positive under This period. That moves the value from stored to completed. Skip the
+          negative and you bill the same material twice — the running &ldquo;stored to date&rdquo; figure under each
+          box is what is still sitting there.
+        </p>
+        <p className="mt-3 max-w-2xl text-sm text-ink-muted">
+          <span className="text-ink-body">Billed too much on a line last time?</span> Enter the
+          difference as a <strong className="text-ink-label">negative</strong> under This period on that
+          line and it comes off what you have claimed to date — the same thing a G703 does. You can take
+          back at most what that line has already been billed.
+        </p>
+      </Disclosure>
 
       {isOpen && (
         <form
@@ -302,7 +296,7 @@ export function PayApplications({
               }
             });
           }}
-          className="mb-4 flex flex-col gap-3 rounded-lg border border-line-card bg-surface p-4"
+          className="flex flex-col gap-3 rounded-lg border border-line-card bg-surface p-4"
         >
           <div className="flex flex-wrap gap-3">
             <label className="flex flex-col gap-1 text-sm text-ink-label">
@@ -472,7 +466,7 @@ export function PayApplications({
 
           {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
-            <Hint text="Creates the application here and numbers it. It does not email the GC — print or export the G702/G703 below and send it the way this GC wants it.">
+            <Hint text="Creates the application here and numbers it. It does not email the GC — print or export the G702/G703 from its row above and send it the way this GC wants it.">
               <button
                 type="submit"
                 disabled={isPending}
@@ -496,31 +490,6 @@ export function PayApplications({
           </div>
         </form>
       )}
-
-      {payApplications.length === 0 ? (
-        <p className="text-sm text-ink-body">No pay applications submitted yet.</p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {payApplications.map((app) => (
-            <li
-              key={app.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line-card bg-surface p-3 text-sm"
-            >
-              <div>
-                <Link href={`/jobs/${jobId}/pay-applications/${app.id}`} className="text-link hover:underline">
-                  Application #{app.number}
-                </Link>
-                <span className="ml-2 text-ink-muted">
-                  {formatInstant(new Date(app.issuedAt), timeZone)}
-                  {" · "}
-                  {app.amount.toLocaleString("en-US", { style: "currency", currency: "USD" })}
-                </span>
-              </div>
-              <StatusForm jobId={jobId} invoiceId={app.id} status={app.status} />
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    </div>
   );
 }

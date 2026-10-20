@@ -133,6 +133,9 @@ describe("the ?job= filter", () => {
     expect(fieldReportsFilterHref("riverside")).toBe("/field-reports?job=riverside");
     expect(fieldReportsFilterHref(null)).toBe("/field-reports");
     expect(fieldReportsFilterHref("a b&c")).toBe("/field-reports?job=a+b%26c");
+    // "See all N" keeps the job filter it was clicked under.
+    expect(fieldReportsFilterHref("riverside", true)).toBe("/field-reports?job=riverside&all=1");
+    expect(fieldReportsFilterHref(null, true)).toBe("/field-reports?all=1");
   });
 });
 

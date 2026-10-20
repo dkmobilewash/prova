@@ -158,6 +158,19 @@ vi.mock("@/lib/actions", () => ({
   deleteContractDocument: vi.fn(),
 }));
 
+/* "Edit dates" is a CollapsedForm, which renders its children only once
+ * clicked — client state a static render never reaches. Stood in for by a
+ * wrapper that ALWAYS renders them, labelled, so the EDITABLE markers below
+ * still prove the form is offered (and only to MANAGE_JOBS), and the
+ * label proves where it lives. */
+vi.mock("@/components/CollapsedForm", async () => {
+  const { createElement } = await import("react");
+  return {
+    CollapsedForm: ({ label, children }: { label: string; children: unknown }) =>
+      createElement("div", { "data-collapsed-form": label }, children as never),
+  };
+});
+
 async function renderOverviewAs(jobFunction: string | null, role = "MEMBER") {
   principal.role = role;
   principal.jobFunction = jobFunction;
@@ -228,6 +241,16 @@ describe("the Schedule and crew box is shown to everyone who can open the job", 
     expect(html).toContain("Save dates");
     // And the read-only rendering is NOT what they get.
     expect(html).not.toContain("Not set");
+    // Declutter: the dates are a read-only line on screen, and the form sits
+    // behind "Edit dates" — the inputs are INSIDE that collapsed wrapper.
+    const current = html.match(/<p[^>]*data-schedule="current"[^>]*>([\s\S]*?)<\/p>/)?.[1] ?? "";
+    expect(current).toContain("Oct 6, 2026");
+    expect(current).toContain("Nov 20, 2026");
+    expect(current).toContain("North Yard");
+    const collapsed = html.match(/<div data-collapsed-form="Edit dates">([\s\S]*?Save dates[\s\S]*?)<\/form>/)?.[1] ?? "";
+    for (const marker of EDITABLE) {
+      expect(collapsed, `${marker} must be behind Edit dates`).toContain(marker);
+    }
   });
 
   it("offers an OWNER everything, whatever their job function says", async () => {

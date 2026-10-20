@@ -198,6 +198,7 @@ model SalesLead {
   signals       SalesLeadSignal[]
   outboundEvents OutboundEvent[]
   consents       ConsentRecord[]
+  outboundReplies OutboundReply[]
 
   @@index([companyId])
   /// For the lookup this column exists to make possible: find the lead holding
@@ -500,6 +501,9 @@ model OutboundEvent {
   occurredAt DateTime?
 
   createdAt DateTime @default(now())
+
+  /// The reply agent's reading of this event, when it was a reply.
+  reply OutboundReply?
 
   @@index([companyId])
   @@index([leadId])

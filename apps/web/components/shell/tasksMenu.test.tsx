@@ -129,7 +129,7 @@ describe("the Tasks item", () => {
     expect(text).toContain("Model call timed out after 45 seconds");
     expect(text).toContain("Paused: cap reached");
     const hrefs = [...panel()!.querySelectorAll("a")].map((a) => a.getAttribute("href"));
-    expect(hrefs).toEqual(["/ai/bids/b1", "/ai/bids/b2", "/ai/activity", "/ai/activity", "/ai/activity#cap", "/ai", "/ai/activity"]);
+    expect(hrefs).toEqual(["/ai/bids/b1", "/ai/bids/b2", "/ai/activity", "/ai/activity", "/ai/activity?tab=settings#cap", "/ai", "/ai/activity"]);
     // The failed run can be run again from right here (UX review F6).
     expect(panel()!.querySelector('[data-agent="BID_WATCHER"]')?.textContent).toBe("Run again");
     // Focus moves into the list, like the avatar menu.
@@ -205,6 +205,6 @@ describe("the home page's Running now card", () => {
     expect(html).toContain("Model call timed out after 45 seconds");
     expect(html).not.toContain("truncate");
     expect(html).toContain(">Run again<");
-    expect(html).toContain('href="/ai/activity#cap"');
+    expect(html).toContain('href="/ai/activity?tab=settings#cap"');
   });
 });

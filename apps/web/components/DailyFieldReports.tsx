@@ -11,6 +11,8 @@ import type { ActionResult } from "@/lib/actions/shared";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { Spinner } from "@/components/Spinner";
+import { Disclosure } from "@/components/Disclosure";
+import { FieldReportFacts } from "@/components/FieldReportFacts";
 
 // `text-base` is load-bearing, not decoration. These inputs sit inside a
 // `text-sm` label and INHERIT 14px, and iOS Safari zooms the whole page
@@ -49,6 +51,10 @@ export type FieldReport = {
   lockedLabel?: string | null;
   /** Photos taken on the phone with "Attach to today's report" on. */
   photoCount?: number;
+  /** The day's crew from its time entries, for the closed row. */
+  manpower?: { headcount: number; hours: number } | null;
+  /** A delay was logged for this day in the delay log. */
+  hasDelayEvent?: boolean;
 };
 
 /** Date only, formatted from the stored UTC-midnight value. Using UTC here
@@ -178,6 +184,7 @@ export function DailyFieldReports({
   canDelete,
   siteNote,
   children,
+  seeAll,
 }: {
   jobId: string;
   reports: FieldReport[];
@@ -185,8 +192,10 @@ export function DailyFieldReports({
   /** Shown when the job has no site address found on a map, so reports
    *  can't fill in the weather — says where to fix it. */
   siteNote?: string | null;
-  /** The delay log, rendered inside this section. */
+  /** The delay log, rendered inside this section, above the reports. */
   children?: ReactNode;
+  /** The SeeAll line under a capped list of reports. */
+  seeAll?: ReactNode;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -283,16 +292,22 @@ export function DailyFieldReports({
 
       {siteNote && <p className="mb-3 text-sm text-warn">{siteNote}</p>}
 
+      {/* The delay log ABOVE the reports (declutter, density audit #8): it
+          sat under the whole uncapped report history, unreachable without
+          scrolling every report. */}
+      {children}
+      {children && <h3 className="mb-2 mt-6 text-base font-semibold text-ink">Reports</h3>}
+
       {reports.length === 0 ? (
         <p className="text-sm text-ink-body">
           No reports yet. One entry a day — what got done and who else was on site. The crew comes from the
           day&rsquo;s time entries and the weather from the site address, so neither is typed.
         </p>
       ) : (
-        <ul className="flex flex-col gap-2">
+        <ul aria-label="Daily reports" className="divide-y divide-line-row rounded-md border border-line-card bg-surface px-3">
           {reports.map((report) =>
             editingId === report.id ? (
-              <li key={report.id} className="rounded-md border border-line-card bg-surface p-3">
+              <li key={report.id} className="py-3">
                 <FieldReportEditForm
                   report={report}
                   isPending={isPending}
@@ -310,10 +325,24 @@ export function DailyFieldReports({
                 />
               </li>
             ) : (
-              <li key={report.id} className="rounded-md border border-line-card bg-surface p-3 text-sm">
+              <li key={report.id}>
+                {/* One line until opened — the same row as the company-wide
+                    log (FieldReportFacts), one report open at a time. */}
+                <Disclosure
+                  variant="row"
+                  name="field-report"
+                  summary={
+                    <FieldReportFacts
+                      dateLabel={formatDate(report.reportDate)}
+                      manpower={report.manpower}
+                      hasDelays={Boolean(report.delays) || Boolean(report.hasDelayEvent)}
+                      filedByName={report.filedByName}
+                      lockedLabel={report.lockedLabel}
+                    />
+                  }
+                >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
-                    <p className="font-medium text-ink">{formatDate(report.reportDate)}</p>
                     {report.manpowerLine && <p className="text-ink-body">Crew: {report.manpowerLine}</p>}
                     {report.crewPresent && <p className="text-ink-body">Also on site: {report.crewPresent}</p>}
                     <p className="mt-1 text-ink-label">{report.workPerformed}</p>
@@ -399,12 +428,13 @@ export function DailyFieldReports({
                 {error && deleteErrorId === report.id && (
                   <p className="mt-1 text-sm text-danger">{error}</p>
                 )}
+                </Disclosure>
               </li>
             ),
           )}
         </ul>
       )}
-      {children}
+      {seeAll}
     </section>
   );
 }

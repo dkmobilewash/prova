@@ -3,6 +3,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { CRASH_MARKERS, expectHealthy, type HealthMonitor } from "./health";
 import { stubDocumentUpload } from "./blobStub";
 import { historyLog } from "./historyLog";
+import { openCollapsed } from "./collapsed";
 
 /**
  * The pilot contractor's path through the product, as reusable steps.
@@ -412,9 +413,29 @@ export function retainageForm(page: Page): Locator {
   return page.locator("form").filter({ has: page.locator('input[name="retainagePercent"]') });
 }
 
+/** Open the retainage terms. Since declutter round 3 they read as one line
+ * ("10% · expected substantial completion …") with an "Edit" CollapsedForm,
+ * which renders the form only once pressed — so every fill AND every
+ * read-back after a reload opens it first. Scoped to the terms line, so a
+ * release row's controls can never be the "Edit" pressed. */
+export async function openRetainageTerms(page: Page): Promise<void> {
+  await openCollapsed(page.locator("[data-retainage-terms]"), "Edit", retainageForm(page));
+}
+
 /** The invoice form on the Billing tab — the one with a "Create invoice" button. */
 export function invoiceForm(page: Page): Locator {
   return page.locator("form").filter({ has: page.getByRole("button", { name: "Create invoice" }) });
+}
+
+/**
+ * The invoice form sits behind its own "Create invoice" button since
+ * declutter round 2 (a `CollapsedForm` in `#pay-applications`, under the
+ * pay-app list). The opener and the form's submit carry the same words, so
+ * the press is scoped to that block and confirmed by the FORM appearing.
+ * Already open (a second invoice in one visit) presses nothing.
+ */
+export async function openInvoiceForm(page: Page): Promise<void> {
+  await openCollapsed(page.locator("#pay-applications"), "Create invoice", invoiceForm(page));
 }
 
 /**
@@ -425,6 +446,7 @@ export async function submitInvoice(
   page: Page,
   input: { description: string; amount: string; dueAt?: string },
 ): Promise<void> {
+  await openInvoiceForm(page);
   const form = invoiceForm(page);
   await form.locator('input[name="description"]').fill(input.description);
   await form.locator('input[name="amount"]').fill(input.amount);
