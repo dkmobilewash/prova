@@ -139,8 +139,27 @@ MODE="${BUILT:-0}"
 # so a bare SHA would name a finder that never ran.
 if [ -z "${TAKEOFF_FINDER_VERSION:-}" ]; then
   if SHA=$(git rev-parse --short=12 HEAD 2>/dev/null); then
-    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then SHA="$SHA-dirty"; fi
+    # ── DIRTY MEANS "THE BUILD DIFFERS FROM THE COMMIT", NOT "THE TREE DOES" ──
+    #
+    # A whole-repo `git status` answers the wrong question. On 2026-10-20 it
+    # reported dirty because of 92 BENCH FIXTURES under `reports/` — PDFs and
+    # answer keys that nothing compiles — so every label file was stamped
+    # `-dirty` while the app bundle corresponded exactly to its commit. A
+    # warning that fires when nothing is wrong is one nobody reads.
+    #
+    # So the question is scoped to what a Next build actually reads, and to
+    # TRACKED files: an untracked file changes the build only if something
+    # imports it, and this repo deliberately keeps scratch modules out of the
+    # tree (`openingEvidence.ts`, see `lib/takeoff/NOTES.md`).
+    #
+    # The untracked ones are PRINTED rather than ignored silently, so the
+    # claim stays falsifiable: if one of them is in the bundle, the list is
+    # where somebody notices.
+    if [ -n "$(git status --porcelain -- ../../apps/web ../../packages 2>/dev/null | grep -v "^??")" ]; then
+      SHA="$SHA-dirty"
+    fi
     TAKEOFF_FINDER_VERSION="$SHA"
+    UNTRACKED=$(git status --porcelain -- ../../apps/web ../../packages 2>/dev/null | grep "^??" | sed "s/^?? //" || true)
   else
     TAKEOFF_FINDER_VERSION="unknown"
   fi
@@ -167,6 +186,11 @@ echo "port       : $PORT"
 echo "database   : $HOST"
 echo "bind       : $HOSTNAME (loopback is required for local plans)"
 echo "finder     : $TAKEOFF_FINDER_VERSION"
+if [ -n "${UNTRACKED:-}" ]; then
+  echo "untracked under the build inputs, NOT counted in the finder version:"
+  printf '             %s\n' $UNTRACKED
+  echo "             (if one of these is imported, the version above is a lie)"
+fi
 echo "mode       : $([ "$MODE" = "1" ] && echo 'production build — no recompiles' || echo 'next dev — recompiles on every edit')"
 echo "sheets stay on this machine; nothing is uploaded"
 echo
