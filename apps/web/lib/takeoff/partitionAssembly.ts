@@ -132,6 +132,8 @@ const LUMBER_WIDTH: Record<string, number> = { "4": 3.5, "6": 5.5, "8": 7.25, "1
  * word STUD is a board thickness that drifted there — see below.
  */
 const NARROWEST_STUD_IN = 1.5;
+/** The narrowest stud spacing a drawing can mean; 12, 16 and 24 are the modules. */
+export const NARROWEST_STUD_SPACING_IN = 12;
 
 /** Every distinct stud width the text states, in inches. */
 function studWidths(lines: readonly string[]): { value: number; phrase: string }[] {
@@ -356,6 +358,19 @@ export function readPartitionAssembly(input: {
     });
   } else if (spacingValues.length === 1) {
     studSpacingIn = spacingValues[0];
+  }
+  // ── A SPACING UNDER A FOOT IS A DROPPED DIGIT, NOT A MODULE ──
+  //
+  // NG Green Bay's IW-5 reads `6" 20 GA. MTL. STUD FRAMING @ 6" O.C.` on the
+  // drawing itself — almost certainly 16, the digit lost in the cell. Studs
+  // are framed at 12, 16 or 24; a smaller number would double the count on a
+  // quantity, so it is flagged and left unread rather than believed.
+  if (studSpacingIn !== null && studSpacingIn < NARROWEST_STUD_SPACING_IN) {
+    flags.push({
+      why: `studs at ${fraction(studSpacingIn)}in o.c. is not a framing module — the drawing may have dropped a digit`,
+      phrase: onStudLine?.phrase ?? spacingFound.map((s) => s.phrase).join("  ·  "),
+    });
+    studSpacingIn = null;
   }
 
   const gaugeHit = joined.match(/\b(\d{2})\s*(?:GA\.?|GAUGE)\b/i);

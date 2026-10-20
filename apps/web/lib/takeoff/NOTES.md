@@ -1763,3 +1763,101 @@ heading hit was a note). 220 rows read, 97 placed across the eleven; the
 symbol path beats or equals loose text on every set where the marks are
 drawn in one, and the gap detector matched 0–50% of them, which is the
 finder's ceiling as before.
+
+### Third pass: the numbers the plan asked for, and what is wired (2026-10-20, evening)
+
+**Held-out discipline, stated before the numbers.** The second pass above
+was tuned with Gen BBQ, STEM, Central Bank and SLN in hand (the undirected
+walker, the quarter fair share, `G4.1`, the assembly-line tie-break each
+cite one of them). Those four are the held-out sets, so for the second
+pass's changes they are not a clean held-out. This pass developed on the
+ten training sets only — Baker, Bunkie, Crosslines, Murray, MHK, NG Green
+Bay, Camp Bow Wow, ELEVEN03, E Street, SW — and ran the four once at the
+end. Nothing was adjusted on them; their table is below, apart.
+
+**What is wired and what is eval-only.** `readWallLegend.ts` is app code
+(legend finder → model read → `readPartitionAssembly` → quantity-only
+proposals) and NOTHING CALLS IT yet. `tagsFromSymbols` and
+`joinOpeningsToSchedule` have no caller outside `realplan/*.eval.ts`. All
+three chains are measured below from the evals; none reaches the takeoff
+screen until the finder's lane wires them in.
+
+**Wall tags: share of found runs that get a type, training sets, final
+code** (`zzTagReport`, `walls typed` line; a run is one finder segment, and
+a drawing tags a wall once, not per segment, so the ceiling is well under
+100%):
+
+| set, plan page | runs | coded symbols | matched | runs typed |
+| --- | --- | --- | --- | --- |
+| NG Green Bay A3.2 p10 | 90 | 45 | 31 | 25 (28%) |
+| Baker A101 p13 | 47 | 12 | 10 | 9 (19%) |
+| SW A110 p5 | 110 | 33 | 21 | 16 (15%) |
+| Camp Bow Wow A101 p8 | 137 | 93 | 23 | 16 (12%) |
+| ELEVEN03 A4.B.1 p119 | 224 | 20 | 14 | 10 (4%) |
+| E Street A2.1 p28 | 95 | 19 | 9 | 3 (3%) |
+| MHK A1.01 p32 | 40 | 13 | 1 | 1 (3%) |
+| Murray A2.01 p24 | 160 | 9 | 5 | 3 (2%) |
+| Crosslines p10 | 263 | 8 | 2 | 2 (1%) |
+| Bunkie A100 p31 | 55 | 0 | 0 | 0 |
+
+**Spot check, 15 crops looked at** (rendered with `CROP_JSON=` from the
+eval and a Swift/PDFKit script in the session scratchpad — this Mac has no
+pdftoppm or PIL): 11 pair the tag with the wall the drafter meant (Baker
+C8B and S6A, Camp Bow Wow A, ELEVEN03 MC and WS, E Street 2, Murray 2, NG
+IW-2, SW B2, Crosslines D, MHK 4); 2 are wrong — NG IW-5's leader points
+LEFT to the insulated corridor wall and the detected leader ended on the
+corner where it meets the horizontal wall, which won; Camp Bow Wow B's
+connector runs UP and the detector took a stroke to the left; 2 are
+ambiguous — Camp Bow Wow D's leader ends on a T-junction, SW `A1 ABOVE` is
+a note about a soffit and was matched to the A1 wall beside it. The one
+false positive found — Murray's `3'-0"` dimension box resting on a `2`
+diamond, read as one split symbol and tagged type 2 — is fixed:
+`tagSymbols` rejects any symbol whose text carries a foot or inch mark as
+`dimension`, and `openingMarks` inherits that. Next lever, not taken: a
+leader that ends on a junction should prefer the wall it is perpendicular
+to, and a typed run should hand its type to the collinear runs that
+continue it; both belong with the finder.
+
+**Legend reading, per set** (Opus 5, $5/$25 per Mtok, one call per
+candidate page; the finder's misses are counted, since they were paid for):
+
+| set | pages read | legend $ | door schedule $ | per set |
+| --- | --- | --- | --- | --- |
+| Baker | p24 miss, p25 | 0.109 | 0.090 | 0.20 |
+| Bunkie | p45, p5 misses, p4 | 0.129 | 0.075 | 0.20 |
+| Crosslines | p30, p16 misses, p2 | 0.139 | not found | 0.14 |
+| Murray | p26 | 0.088 | 0.050 (p10 was a note) | 0.14 |
+| MHK | p42, p25 misses, p32 | 0.137 | 0.107 | 0.24 |
+| NG Green Bay | p10 | 0.072 | 0.120 | 0.19 |
+| E Street | p45 | 0.094 | 0.165 | 0.26 |
+| SW | p6 | 0.055 | 0.060 | 0.12 |
+| ELEVEN03 | p9 (p96 read earlier, cost not logged) | 0.078 | — | — |
+| Camp Bow Wow | p1 miss, p16 (earlier, cost not logged) | — | — | — |
+
+The misses are the pre-fix finder's; with the headed-block rule and the
+trade-sheet demotion every surveyed set puts the right page first, so a
+fresh set costs one legend read (3–9 cents) plus one schedule read (5–17
+cents). Cached reads re-run for nothing. One parser change from this pass:
+NG Green Bay's IW-5 says `FRAMING @ 6" O.C.` on the drawing (its eight
+sisters say 16), and a 6 in spacing would double a stud count, so a spacing
+under 12 in is flagged as a dropped digit and left unread.
+
+**Door schedule → openings, training sets** (rows read → placed by a mark
+in a symbol, loose text as the control): Baker 18 → 15, E Street 19 → 15,
+SW 5 → 5, NG Green Bay 19 → 7 (9 loose), Bunkie 11 → 0 (5 loose; marks are
+bare text), MHK 31 → 1 (19 loose; bare text), Murray 0 (p10 is not the
+schedule), Crosslines no schedule page found. Camp Bow Wow 30 → 29 from the
+first pass; ELEVEN03 not joined.
+
+**Held-out, run once with the finished code, nothing adjusted:**
+
+| set | runs | coded | matched | runs typed | doors read → placed | $ per set |
+| --- | --- | --- | --- | --- | --- | --- |
+| STEM A-1.1 p21 | 181 | 124 | 49 | 35 (19%) | 45 → 31 | 0.28 |
+| Gen BBQ A101 p26 | 168 | 10 | 8 | 6 (4%) | 16 → 16 | 0.17 |
+| Central Bank p24 | 102 | 4 | 3 | 2 (2%) | 50 → 3 | 0.37 |
+| SLN A-101A p10 | 93 | 3 | 2 | 2 (2%) | 6 → 6 | 0.18 |
+
+Legends on all four read to studs, track and board (Central Bank 10 of 10
+types, Gen BBQ 19, SLN 4, STEM 13 with two layer-count flags and U1's two
+stud sizes flagged).

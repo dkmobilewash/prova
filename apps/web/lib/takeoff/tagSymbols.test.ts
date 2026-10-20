@@ -166,6 +166,17 @@ describe("telling a tag from a detail callout", () => {
     expect(got[0].rejected).toBe("sheet-reference");
   });
 
+  it("rejects a symbol holding a dimension, even when a legend code shares the box", () => {
+    // Murray Towers A2.01: `3'-0"` in a rectangle resting on a `2` diamond
+    // read as one split symbol, and the chain tagged a dimension as type 2.
+    const got = tagSymbols({
+      segments: polygon(100, 100, R, 4),
+      text: [label("3'-0\"", 100, 100)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(got[0].rejected).toBe("dimension");
+  });
+
   it("rejects a symbol split by a line through its middle", () => {
     // The detail number sits above the divider and the sheet below it.
     const segments = [

@@ -100,6 +100,9 @@ export const SHEET_REFERENCE = /^[A-Z]{1,2}-?(?:\d{3,4}|\d{1,2}\.\d{1,3})[A-Z]?$
 /** The longest a tag's code can be. Longer is a note, not a tag. */
 export const LONGEST_CODE = 6;
 
+/** A digit followed by a foot or inch mark: `3'-0"`, `16"`, `6'`. */
+export const DIMENSION_MARK = /\d\s*['"\u2032\u2033\u201d\u2019]/;
+
 /**
  * How long a leader may be, as a multiple of the symbol's radius.
  *
@@ -149,7 +152,7 @@ export type TagSymbol = {
    * symbol is REPORTED either way: a sheet that is all detail callouts and a
    * sheet where the detector failed look identical if the rejects are dropped.
    */
-  rejected: "sheet-reference" | "no-text" | "code-too-long" | null;
+  rejected: "sheet-reference" | "no-text" | "code-too-long" | "dimension" | null;
 };
 
 export type TextForSymbol = { str: string; x: number; y: number; width: number; height: number };
@@ -577,9 +580,18 @@ export function tagSymbols(input: {
       const compact = s.replace(/\s+/g, "").toUpperCase();
       return compact.length >= 3 && SHEET_REFERENCE.test(compact);
     };
+    // ── A DIMENSION IN A BOX IS A DIMENSION ──
+    //
+    // Murray Towers A2.01 draws `3'-0"` in a rectangle whose bottom edge sits
+    // on the diamond below it, so the two read as one split symbol with the
+    // diamond's `2` as the lower part, and `2` is a legend code. No wall type
+    // is named with a foot or inch mark, so a symbol whose text carries one
+    // is reported and never offered to the legend.
     const rejected: TagSymbol["rejected"] =
       words.length === 0
         ? "no-text"
+        : DIMENSION_MARK.test(words.join(" "))
+          ? "dimension"
         : parts.some(isSheetReference) || isSheetReference(words.join(""))
           ? "sheet-reference"
           : parts.every((p) => p.replace(/\s+/g, "").length > LONGEST_CODE)

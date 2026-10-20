@@ -47,3 +47,21 @@ them on Gen BBQ, SLN and SW, most on Baker and E Street, and the misses are
 named per set (bare-text marks on MHK and Bunkie, a three-level schedule
 against a one-level plan on Central Bank, a page that was not the schedule
 on Murray).
+
+Third pass, on the training sets only: the number the plan asks for is the
+share of found runs that get a type, and on the final code it is 1–28% per
+training sheet (NG Green Bay 25 of 90, Baker 9 of 47, SW 16 of 110, Camp
+Bow Wow 16 of 137, down to Bunkie 0 of 55, whose tags are bare text); a run
+is a finder segment and a drafter tags a wall once, so that is the honest
+ceiling's shape, not a fault in the matching. Fifteen crops spot-checked:
+eleven right, two wrong (a leader ending on a junction, a connector that
+runs the other way), two ambiguous, and one false positive — a `3'-0"`
+dimension box resting on a `2` diamond — now rejected as a dimension. A
+stud spacing under a foot (NG Green Bay's `@ 6" O.C.`) is flagged as a
+dropped digit rather than doubling a count. Cost per plan set, legend plus
+door schedule, 12–26 cents on the training sets. The four held-out sets
+were run once at the end and reported apart (STEM 35 of 181 runs typed and
+45 → 31 doors, Gen BBQ 6 of 168 and 16 → 16, Central Bank 2 of 102 and
+50 → 3, SLN 2 of 93 and 6 → 6), with the caveat that the second pass had
+already looked at them. `readWallLegend`, `tagsFromSymbols` and the door
+join have no caller outside the evals yet; wiring them is the finder's lane.

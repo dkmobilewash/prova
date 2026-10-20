@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { WallLegendRead } from "@prova/integrations/src/wallLegend";
@@ -90,6 +90,36 @@ describe.skipIf(DIR === "" || CACHE === "")("tag report", () => {
       );
     }
     console.log("\n  verdicts: " + [...tally].map(([k, n]) => `${k} ${n}`).join(" | "));
+    // ── THE NUMBER THE PLAN ASKS FOR: WHAT SHARE OF THE FOUND WALLS GOT A TYPE ──
+    const typed = tagged.byRun.size;
+    console.log(
+      `  walls typed: ${typed} of ${found.walls.length} runs (${found.walls.length === 0 ? 0 : Math.round((100 * typed) / found.walls.length)}%)`,
+    );
+    // ── CROPS FOR A PERSON TO LOOK AT ──
+    //
+    // `CROP_JSON=path` writes each MATCHED symbol with the run it was paired to,
+    // in points, so a renderer can cut a crop around the pair. The pairing is
+    // the eval's own nearest-run reading, which is `tagByRun`'s choice wherever
+    // the verdict is MATCHED.
+    if (process.env.CROP_JSON) {
+      const crops = holding.flatMap((s) => {
+        const anchor = s.leader ?? { x: s.x, y: s.y };
+        let best: { d: number; w: (typeof found.walls)[number] } | null = null;
+        for (const w of found.walls) {
+          const d = distanceFeet(anchor.x / W, anchor.y / W, w);
+          if (best === null || d < best.d) best = { d, w };
+        }
+        const code = [s.text, ...s.parts].map((p) => p.trim().toUpperCase()).find((p) => vocabulary.has(p)) ?? s.text;
+        const matched = tagged.byRun.get(best!.w) === vocabulary.get(code);
+        if (!matched || best === null || best.d > TAG_REACH_FEET) return [];
+        return [{
+          code: s.text, shape: s.shape, sx: s.x, sy: s.y, lx: s.leader?.x ?? null, ly: s.leader?.y ?? null,
+          wall: { x1: best.w.x1 * W, y1: best.w.y1 * W, x2: best.w.x2 * W, y2: best.w.y2 * W }, distFt: best.d,
+        }];
+      });
+      writeFileSync(process.env.CROP_JSON, JSON.stringify({ set: SET, page: PLAN_PAGE, widthPt: W, heightPt: H, feetPerUnit: FEET_PER_UNIT, crops }, null, 1));
+      console.log(`  wrote ${crops.length} crops to ${process.env.CROP_JSON}`);
+    }
     expect(holding.length).toBeGreaterThan(0);
   });
 });

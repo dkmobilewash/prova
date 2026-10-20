@@ -295,6 +295,19 @@ describe("the longer stud spellings real sets use", () => {
     expect(got.flags).toEqual([]);
   });
 
+  it("flags a stud spacing under a foot instead of doubling the count", () => {
+    // NG Green Bay A3.2, IW-5: `FRAMING @ 6" O.C.` on the drawing, beside
+    // eight sister types at 16. A dropped digit, read as a module, would put
+    // twice the studs in a quantity.
+    const got = readPartitionAssembly({
+      lines: ['5/8" GYPSUM BOARD,', "EACH SIDE", '6" 20 GA. MTL. STUD', 'FRAMING @ 6" O.C.', "SOUND ATTENUATION", "BATTS"],
+      where: "test",
+    });
+    expect(got.read.studWidthIn).toBe(6);
+    expect(got.read.studSpacingIn).toBeNull();
+    expect(got.flags.map((f) => f.why)).toEqual([expect.stringContaining("6in o.c. is not a framing module")]);
+  });
+
   it("never reads a board thickness that precedes the word STUD as a stud", () => {
     // Joining wrapped lines is what makes this reachable: `5/8" GYP. BD.` ends
     // one line and `STUDS AT 16" O.C.` begins the next.
