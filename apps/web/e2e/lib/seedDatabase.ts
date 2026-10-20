@@ -1,4 +1,5 @@
 import { prisma } from "@prova/db";
+import { seedSubcontractReview } from "./subcontractReviewFixture";
 import type { PersonaKey } from "./personas";
 import { E2E_TAG } from "./tag";
 import {
@@ -139,6 +140,7 @@ export async function seedDatabase(clerkIds: ClerkIds): Promise<void> {
 
   await seedCertifiedPayrollWeek(main.companyId);
   await seedSalesOperator(clerkIds);
+  await seedSubcontractReview(clerkIds.subcontractReview);
 }
 
 /**

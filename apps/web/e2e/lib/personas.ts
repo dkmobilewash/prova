@@ -264,6 +264,13 @@ export const PERSONAS = {
     // once — see the note on PLAN_INGEST's number just above.
     phone: "+15555550122",
   },
+  subcontractReview: {
+    email: "e2e-subreview+clerk_test@example.com",
+    label: "SUBCONTRACT_REVIEW",
+    username: "e2e_subreview",
+    // 0123: the last number in this table was 0122.
+    phone: "+15555550123",
+  },
 } as const;
 
 export type PersonaKey = keyof typeof PERSONAS;

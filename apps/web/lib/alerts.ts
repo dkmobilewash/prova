@@ -88,7 +88,12 @@ export type AlertKind =
   // correctly on one screen each and reached nobody who was not already
   // looking at that job's compliance tab -- see das140Alerts.
   | "DAS140_NOTICE"
-  | "DAS142_DISPATCH";
+  | "DAS142_DISPATCH"
+  // A deadline the GC's subcontract imposes, confirmed by a person from an
+  // AI subcontract review. The builder lives with the feature —
+  // lib/subcontract-review/obligationAlerts.ts — so this module gains a
+  // member and a capability and nothing else (announced in #prova-build).
+  | "SUBCONTRACT_OBLIGATION";
 
 /** Three levels, not five. OVERDUE is "a date has passed"; DUE_SOON is "a
  * date is coming"; STANDING is a condition with no deadline attached to
@@ -189,6 +194,8 @@ export const ALERT_CAPABILITY: Record<AlertKind, Capability> = {
   // person who sends these forms.
   DAS140_NOTICE: "MANAGE_COMPLIANCE",
   DAS142_DISPATCH: "MANAGE_COMPLIANCE",
+  // The same capability the review and the contract it came from require.
+  SUBCONTRACT_OBLIGATION: "VIEW_JOB_COSTS",
 };
 
 /**
@@ -289,6 +296,8 @@ export const ALERT_HORIZON_DAYS: Partial<Record<AlertKind, number>> = {
   // EQUIPMENT_OUT_LONG and DELAY_GC_NOT_TOLD get no horizon ON PURPOSE —
   // neither has a date to be early against, so both are STANDING and a
   // horizon here would imply a deadline this app has never been told.
+  // Seven, the floor the digest's `week` rung needs (see MATERIAL_DELIVERY_LATE).
+  SUBCONTRACT_OBLIGATION: 7,
 };
 
 /**

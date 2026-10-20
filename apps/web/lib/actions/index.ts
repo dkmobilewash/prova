@@ -92,6 +92,8 @@ export * from "./bidRecap";
 export * from "./quoteRead";
 export * from "./addendumRead";
 export * from "./specRead";
+export * from "./subcontractReview";
+export * from "./subcontractFollowThrough";
 export * from "./proposalDrafts";
 export * from "./projectLookup";
 export * from "./leadSearch";

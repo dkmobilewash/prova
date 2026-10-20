@@ -100,6 +100,16 @@ vi.mock("@prova/db", () => ({
   },
 }));
 
+// The subcontract-review seed has its own rows and its own reasons
+// (`subcontractReviewFixture.ts`); this file is about the personas the GATE
+// sees, so it records only WHO that seed was handed.
+const subcontractSeeded: { id: string; email: string }[] = [];
+vi.mock("./subcontractReviewFixture", () => ({
+  seedSubcontractReview: vi.fn(async (persona: { id: string; email: string }) => {
+    subcontractSeeded.push(persona);
+  }),
+}));
+
 const { seedDatabase, ESTABLISHED_ACCOUNT_ASKED_AT } = await import("./seedDatabase");
 const { shouldGateToOnboarding } = await import("@/lib/onboarding-gate");
 const { PERSONAS } = await import("./personas");
@@ -167,6 +177,13 @@ describe("seedDatabase: MAIN is an established account", () => {
     // is what this assertion is for.
     expect(seeded).toEqual(["clerk-field", "clerk-main", "clerk-sales"]);
     expect(calls.companyCreate).toHaveLength(0);
+  });
+
+  it("hands the subcontract-review seed its own persona, and only that one", () => {
+    // SUBCONTRACT_REVIEW is seeded for SALES's reason above: no screen in this
+    // product can produce a FINISHED review in CI, where the model key is empty.
+    expect(subcontractSeeded.map((persona) => persona.id)).toContain("clerk-subcontractReview");
+    expect(new Set(subcontractSeeded.map((persona) => persona.id))).toEqual(new Set(["clerk-subcontractReview"]));
   });
 });
 

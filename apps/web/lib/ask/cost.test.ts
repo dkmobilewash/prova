@@ -236,7 +236,9 @@ group("the denominator covers the same window as the numerator", () => {
     failedPlanSheets: 0,
     failedAddendumPages: 0,
     specPagesUsed: 0,
+    contractPagesUsed: 0,
     failedSpecPages: 0,
+    failedContractPages: 0,
     ...over,
   });
 

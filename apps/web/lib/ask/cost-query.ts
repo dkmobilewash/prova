@@ -38,7 +38,7 @@ import {
 
 /** A unit an allowance is denominated in, and the features that consume it. */
 type Unit = {
-  key: "planSheets" | "addendumPages" | "specPages" | "documentPages" | "questions";
+  key: "planSheets" | "addendumPages" | "specPages" | "contractPages" | "documentPages" | "questions";
   label: string;
   /** What one of them is called in a sentence. */
   noun: string;
@@ -198,6 +198,15 @@ export async function loadCostReport(companyId: string, from: Date): Promise<Cos
       used: claimed.specPagesUsed,
       failed: claimed.failedSpecPages,
       allowance: settings?.specPagesPerMonth ?? null,
+    },
+    {
+      key: "contractPages",
+      label: "Subcontract pages reviewed",
+      noun: "page",
+      features: ["subcontract-review"],
+      used: claimed.contractPagesUsed,
+      failed: claimed.failedContractPages,
+      allowance: settings?.contractPagesPerMonth ?? null,
     },
     {
       key: "documentPages",

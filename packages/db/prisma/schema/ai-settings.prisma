@@ -171,6 +171,23 @@ enum AiFeature {
   /// With it off, a scanned sheet behaves as it does today: recognised as a
   /// scan and set aside.
   SHEET_TEXT
+
+  /// `reviewSubcontractChunk` — reading the GC's subcontract and its exhibits
+  /// BEFORE the sub signs, and listing the clauses that shift money, risk or a
+  /// deadline onto them.
+  ///
+  /// ITS OWN MEMBER, for `QUOTE_EXTRACT`'s reason and a fifth turn of it: a
+  /// contract under negotiation is the most sensitive document anybody here
+  /// hands us — it names prices, parties and terms neither side has agreed —
+  /// and a contractor content for us to read a spec section has said nothing
+  /// about this.
+  ///
+  /// WHAT IT MAY NOT DO: write anything another module reads. Every finding
+  /// lands as a proposal a person accepts, dismisses or edits
+  /// (`SubcontractFindingDecision`), and nothing here touches the job's
+  /// retainage, its contract status, a ContractDocument, or an e-sign request.
+  /// See subcontract-review.prisma.
+  SUBCONTRACT_REVIEW
 }
 
 /// One row per company. Absent means every default below.
@@ -250,6 +267,17 @@ model CompanyAiSettings {
   /// what the plan includes rather than a preference, and a form that posted it
   /// would let an owner raise their own paid allowance by editing one input.
   specPagesPerMonth Int @default(1800)
+
+  /// Subcontract pages a month — `AskAllowancePeriod.contractPagesUsed`, claimed
+  /// by `claimContractPages` (`lib/ask/contractSpend.ts`) before each chunk of a
+  /// subcontract review.
+  ///
+  /// A SIXTH UNIT rather than the shared document pages, decided 2026-10-17: one
+  /// 100-page contract package would otherwise spend a third of the month's quote
+  /// and COI reading. Only pages that carry text are charged — a scanned page is
+  /// listed as unread and costs nothing. 600 is a figure, not a measurement, and
+  /// it is not editable by the company for `specPagesPerMonth`'s reason.
+  contractPagesPerMonth Int @default(600)
 
   /// Override the model for every feature on this company, e.g. a customer who
   /// wants the cheapest option on everything.

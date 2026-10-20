@@ -166,6 +166,11 @@ model Job {
   estimateVersions               EstimateVersion[]
   estimateVersionCounter         EstimateVersionCounter?
   contractDocuments              ContractDocument[]
+  subcontractReviews             SubcontractReview[]
+  subcontractFindingDecisions    SubcontractFindingDecision[]
+  subcontractRiders              SubcontractRider[]
+  subcontractObligations         SubcontractObligation[]
+  subcontractInsuranceReqs       SubcontractInsuranceRequirement[]
   timeEntries                    TimeEntry[]
   dispatchSlips                  DispatchSlip[]
   prevailingWageDeterminations   PrevailingWageDetermination[]

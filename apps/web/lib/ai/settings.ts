@@ -46,6 +46,7 @@ export async function aiSettingsFor(companyId: string): Promise<AiSettings> {
       planSheetsPerMonth: true,
       addendumPagesPerMonth: true,
       specPagesPerMonth: true,
+      contractPagesPerMonth: true,
       modelOverride: true,
     },
   });
