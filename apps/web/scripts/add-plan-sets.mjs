@@ -62,6 +62,37 @@ if (!dir.startsWith(resolve(ROOT))) {
 
 const prisma = new PrismaClient();
 
+/**
+ * Queue the page inventory for a plan, once.
+ *
+ * ── THE STEP THIS SCRIPT WAS MISSING ──
+ *
+ * It created the job and the plan and then printed "drain the queue", and
+ * there was no queue: twelve sets ingested, zero ingest jobs, and the drain
+ * reported "0 tasks over 0 rounds" — which reads like a queue that was
+ * already empty rather than one that was never filled. `PlanSheetText` and
+ * every scale reading come from this stage, so without it `sheets-for-set.mjs`
+ * has nothing to report and says the queue has not run, correctly and
+ * for the wrong reason.
+ */
+async function queueInventory(planId, companyId, pageCount) {
+  const existing = await prisma.planIngestJob.findFirst({
+    where: { planId, stage: "PAGE_INVENTORY" },
+  });
+  if (existing) return { id: existing.id, fresh: false };
+  const job = await prisma.planIngestJob.create({
+    data: { planId, companyId, stage: "PAGE_INVENTORY", pageCount },
+  });
+  await prisma.planIngestTask.createMany({
+    data: Array.from({ length: pageCount }, (_, i) => ({
+      jobId: job.id,
+      pageNumber: i + 1,
+      stage: "PAGE_INVENTORY",
+    })),
+  });
+  return { id: job.id, fresh: true };
+}
+
 /** Everything the app needs to serve a local plan, created once per file. */
 async function ingestOne(companyId, contactId, file, relPath) {
   const id = `local-${relPath.slice(0, 20).replace(/\W+/g, "")}`;
@@ -86,7 +117,8 @@ async function ingestOne(companyId, contactId, file, relPath) {
         fileName: file,
       },
     }));
-  return { job, plan, pageCount, bytes };
+  const queued = await queueInventory(plan.id, companyId, pageCount);
+  return { job, plan, pageCount, bytes, queued };
 }
 
 /**
@@ -136,16 +168,29 @@ async function main() {
       console.log(`SKIPPED  ${file}\n  the name marks it as held out, so it is not ingested`);
       continue;
     }
-    const { job, plan, pageCount, bytes } = await ingestOne(company.id, contact.id, file, file);
+    const { job, plan, pageCount, bytes, queued } = await ingestOne(company.id, contact.id, file, file);
     const scan = looksScanned(bytes);
     console.log(`${file}`);
-    console.log(`  job ${job.id}  ·  ${pageCount} pages  ·  plan ${plan.id}`);
+    console.log(
+      `  job ${job.id}  ·  ${pageCount} pages  ·  plan ${plan.id}` +
+        `  ·  ${queued.fresh ? `queued ${pageCount} pages for inventory` : "inventory already queued"}`,
+    );
     if (scan.scanned) {
+      // ── A WEAK SIGNAL, AND IT HAS BEEN WRONG ──
+      //
+      // This reads the first 4 MB of the file, which on a large set is title
+      // blocks, logos and a cover sheet — all raster, all before the drawings.
+      // It flagged SIX of the twelve new sets, every one of which the other
+      // session had already shown to be vector on every page by counting path
+      // operators and segments. So it is printed as a prompt to check rather
+      // than as a verdict.
       console.log(
-        `  LOOKS SCANNED — ${scan.images} images against ${scan.texts} text runs in the first pages.`,
+        `  MAYBE SCANNED — ${scan.images} images against ${scan.texts} text runs in the ` +
+          `first few MB, which is often just the cover and the title blocks.`,
       );
-      console.log(`  A scan has no vector geometry, so there is nothing for the finder to measure.`);
-      console.log(`  Ingested anyway so you can look; do not expect sheets from it.`);
+      console.log(
+        `  Weak signal: confirm per page with setUsability.eval.ts before believing it.`,
+      );
     }
     ingested.push({ file, job, plan, pageCount });
   }

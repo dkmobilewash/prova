@@ -157,7 +157,19 @@ async function main() {
     // 2. The scale captioned under the sheet's biggest view. A sheet carrying
     //    several drawings at several scales HAS no one scale, so this is the
     //    fallback rather than the rule, and it is recorded as weaker.
-    const views = Array.isArray(reading.viewScales) ? reading.viewScales : [];
+    // ── `viewScales` IS `{ views: [...] }`, NOT A BARE ARRAY ──
+    //
+    // The first version asked `Array.isArray` and got false, so this fallback
+    // never fired: Central Bank p25 — a 1/8in floor plan beside a 1/4in
+    // enlarged restroom — was reported as having no readable scale while the
+    // page carried two, both named, both captioned. Either shape is accepted
+    // now, because a column read one way in one place and another way here is
+    // how that silence happens.
+    const views = Array.isArray(reading.viewScales)
+      ? reading.viewScales
+      : Array.isArray(reading.viewScales?.views)
+        ? reading.viewScales.views
+        : [];
     const usable = views.filter(
       (v) =>
         v !== null &&
