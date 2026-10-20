@@ -23,7 +23,23 @@ LABELS="${TAKEOFF_LABEL_DIR:-$HOME/Claude Folder/takeoff/labels}"
 # reported it dead — three separate "it keeps dying" diagnoses, a rebuilt
 # .next, and an afternoon, for a port nobody had written down.
 PORT="${PORT:-3000}"
-LOCAL_DB="${LOCAL_DATABASE_URL:-postgresql://postgres@127.0.0.1:5432/prova_dev}"
+# ── LOOPBACK, AND THE SAME VALUE REACHES THE GUARD AND THE BIND ──
+#
+# `localPlanFile.ts` lets a PRODUCTION build read local plan files only when
+# the server is bound to loopback, and it reads HOSTNAME to decide. That is
+# the same variable passed to `next -H` below, so the check and the actual
+# bind cannot disagree: setting one sets both. Client drawings are on this
+# disk; a server reachable from the network has no business serving them.
+HOSTNAME="${HOSTNAME:-127.0.0.1}"
+export HOSTNAME
+# ── THE DEFAULT USER IS WHOEVER IS RUNNING THIS, NOT `postgres` ──
+#
+# It said `postgres` for months and that role DOES NOT EXIST on the machine
+# this runs on — Homebrew's postgres creates a role named after the user. It
+# never showed because everybody exported LOCAL_DATABASE_URL and the default
+# was dead code, until 2026-10-20 when a labelling server was started without
+# it. See the refusal below for what that cost.
+LOCAL_DB="${LOCAL_DATABASE_URL:-postgresql://${PGUSER:-$USER}@127.0.0.1:5432/prova_dev}"
 
 # ── The two refusals, before anything starts ──
 #
@@ -42,6 +58,33 @@ if [ "$HOST" != "127.0.0.1" ] && [ "$HOST" != "localhost" ]; then
   echo "REFUSING: LOCAL_DATABASE_URL points at '$HOST', not a local database." >&2
   echo "  Client plans must never be recorded anywhere a preview can read." >&2
   exit 1
+fi
+
+# ── AND THE CONNECTION IS TRIED BEFORE THE SERVER STARTS ──
+#
+# A database the app cannot authenticate against is not a slow page or a bad
+# sheet: every request 500s with `PrismaClientInitializationError: User was
+# denied access`, which reaches the labeller as "Something went wrong reading
+# your data" and a reference number. On 2026-10-20 that looked like a problem
+# with one plan set, because it happened to be the sheet they opened next, and
+# the real cause was a database user that does not exist.
+#
+# Nothing downstream can tell those apart. So the connection is made HERE,
+# where the failure can name the user, and the server does not start without
+# one. Checked with psql when it is installed; when it is not, say so rather
+# than imply the check passed.
+if command -v psql >/dev/null 2>&1; then
+  if ! DB_ERR=$(psql "$LOCAL_DB" -tAc 'select 1' 2>&1); then
+    echo "REFUSING: cannot connect to the local database." >&2
+    echo "  $DB_ERR" >&2
+    echo "  url user : $(printf '%s' "$LOCAL_DB" | sed -E 's#^[^:]+://([^:@/]*).*#\1#')" >&2
+    echo "  set LOCAL_DATABASE_URL to a role that exists, e.g." >&2
+    echo "    LOCAL_DATABASE_URL=postgresql://$USER@127.0.0.1:5432/prova_dev" >&2
+    echo "  Every page would 500 with \"Something went wrong reading your data\"." >&2
+    exit 1
+  fi
+else
+  echo "note: psql not installed, so the database connection was NOT checked" >&2
 fi
 
 # ── THE LABEL FOLDER IS MADE, NOT DEMANDED ──
@@ -90,10 +133,25 @@ if [ -z "${TAKEOFF_FINDER_VERSION:-}" ]; then
 fi
 export TAKEOFF_FINDER_VERSION
 
+# ── THE OPT-IN THAT MAKES local: PLANS READABLE IN A BUILT SERVER ──
+#
+# `next start` always sets NODE_ENV=production, and `localPlanFile.ts` refused
+# a production build outright until 2026-10-20 — so BUILT=1 produced a server
+# that loaded every page and could not open a single DRAWING. Eighteen sheets
+# failed that way while a check that only looked at the page reported them
+# fine.
+#
+# This variable exists for nothing else and no deployment sets it. It is one
+# of four conditions; the others are the loopback bind above, the plan
+# directory, and the absence of any VERCEL variable.
+ALLOW_LOCAL_PLANS=1
+export ALLOW_LOCAL_PLANS
+
 echo "plans from : $PLANS"
 echo "labels to  : $LABELS"
 echo "port       : $PORT"
 echo "database   : $HOST"
+echo "bind       : $HOSTNAME (loopback is required for local plans)"
 echo "finder     : $TAKEOFF_FINDER_VERSION"
 echo "mode       : $([ "$MODE" = "1" ] && echo 'production build — no recompiles' || echo 'next dev — recompiles on every edit')"
 echo "sheets stay on this machine; nothing is uploaded"
@@ -105,6 +163,7 @@ if [ "$MODE" = "1" ]; then
   TAKEOFF_LOCAL_PLAN_DIR="$PLANS" \
   TAKEOFF_LABEL_DIR="$LABELS" \
   TAKEOFF_FINDER_VERSION="$TAKEOFF_FINDER_VERSION" \
+  ALLOW_LOCAL_PLANS="$ALLOW_LOCAL_PLANS" \
     npx next build
 fi
 
@@ -113,4 +172,5 @@ DIRECT_URL="$LOCAL_DB" \
 TAKEOFF_LOCAL_PLAN_DIR="$PLANS" \
 TAKEOFF_LABEL_DIR="$LABELS" \
 TAKEOFF_FINDER_VERSION="$TAKEOFF_FINDER_VERSION" \
-  exec npx next "$([ "$MODE" = "1" ] && echo start || echo dev)" -p "$PORT"
+ALLOW_LOCAL_PLANS="$ALLOW_LOCAL_PLANS" \
+  exec npx next "$([ "$MODE" = "1" ] && echo start || echo dev)" -p "$PORT" -H "$HOSTNAME"

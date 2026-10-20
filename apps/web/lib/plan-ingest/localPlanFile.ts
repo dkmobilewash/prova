@@ -18,14 +18,39 @@ import { isAbsolute, resolve, sep } from "node:path";
  *
  * 1. `TAKEOFF_LOCAL_PLAN_DIR` must be set. Unset — which is every deployment —
  *    and this returns null before looking at anything.
- * 2. A production build refuses outright, whatever the variable says. A server
- *    that can be told to read its own filesystem by a value in the database is
- *    the shape of a file-disclosure bug, and the only thing standing between
- *    those two states is an environment variable somebody could set by
- *    accident.
+ * 2. A production build refuses unless ALL FOUR conditions below hold. A
+ *    server that can be told to read its own filesystem by a value in the
+ *    database is the shape of a file-disclosure bug, and the only thing
+ *    standing between those two states is an environment variable somebody
+ *    could set by accident.
  * 3. The resolved path must sit INSIDE the configured directory. `..` is
  *    resolved first and the result compared by prefix, so a crafted `fileUrl`
  *    cannot climb out of it.
+ *
+ * ── WHY A PRODUCTION BUILD IS NO LONGER AN OUTRIGHT NO ──
+ *
+ * It was, and that made the protected labelling mode impossible: `next start`
+ * always sets `NODE_ENV=production`, so the no-recompile server this
+ * programme runs on could never serve a `local:` plan. On 2026-10-20 every
+ * one of eighteen sheets opened to "That drawing couldn't be opened" — the
+ * page rendering, the scale showing, no drawing — while the session that had
+ * switched to that mode reported all of them loading, because it was checking
+ * that the PAGE rendered rather than that the DRAWING did.
+ *
+ * The fix is not to drop the refusal but to name what a deployment can never
+ * satisfy. All four, each asked separately:
+ *
+ *   a. `TAKEOFF_LOCAL_PLAN_DIR` is set and absolute, as for a dev build.
+ *   b. `ALLOW_LOCAL_PLANS=1` — an opt-in that exists for nothing else, set by
+ *      `dev-local-plans.sh` and by no deployment.
+ *   c. the server is bound to LOOPBACK. `HOSTNAME` drives both this check and
+ *      the `-H` that `next start` binds, so the two cannot disagree: a server
+ *      reachable from the network fails this whatever else is set.
+ *   d. no `VERCEL` variable AT ALL — not `VERCEL === "1"`. Any value means a
+ *      Vercel runtime, and this has no business running on one.
+ *
+ * A real deployment fails (b), (c) and (d) independently. The path-escape
+ * check is unchanged and applies in every mode.
  *
  * It does NOT touch `isBlobStorageUrl`. That guard is what stops the server
  * fetching an arbitrary address a caller once chose, and weakening it to make
@@ -38,6 +63,33 @@ export const LOCAL_PLAN_SCHEME = "local:";
 
 export type LocalPlanProblem = { ok: false; error: string };
 export type LocalPlanBytes = { ok: true; bytes: Buffer };
+
+/**
+ * The hostnames that mean "this machine only".
+ *
+ * `0.0.0.0` is deliberately absent: it is every interface, which is the one
+ * case this check exists to refuse.
+ */
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+
+/**
+ * Whether a PRODUCTION build may read local plan files.
+ *
+ * Exported for its own test. Each condition is asked separately so a test can
+ * remove one at a time and watch the whole thing refuse — a gate tested only
+ * as a whole is a gate where three of four conditions could be dead.
+ */
+export function productionLocalPlansAllowed(
+  env: Readonly<Record<string, string | undefined>>,
+): boolean {
+  // Any VERCEL variable at all, not just "1".
+  if (env.VERCEL !== undefined) return false;
+  if (env.ALLOW_LOCAL_PLANS !== "1") return false;
+  const bind = (env.HOSTNAME ?? "").trim().toLowerCase();
+  if (!LOOPBACK.has(bind)) return false;
+  const dir = env.TAKEOFF_LOCAL_PLAN_DIR ?? "";
+  return dir !== "" && isAbsolute(dir);
+}
 
 /** Whether a stored `fileUrl` is asking for a file on this machine. */
 export function isLocalPlanUrl(fileUrl: string): boolean {
@@ -52,8 +104,10 @@ export function isLocalPlanUrl(fileUrl: string): boolean {
  */
 export function localPlanPath(fileUrl: string, env: NodeJS.ProcessEnv): string | null {
   if (!isLocalPlanUrl(fileUrl)) return null;
-  // A production build never reads from disk, whatever is configured.
-  if (env.NODE_ENV === "production" || env.VERCEL === "1") return null;
+  // Never on Vercel, in any mode, whatever else is configured.
+  if (env.VERCEL !== undefined) return null;
+  // A production build reads from disk only under the four conditions above.
+  if (env.NODE_ENV === "production" && !productionLocalPlansAllowed(env)) return null;
   const dir = env.TAKEOFF_LOCAL_PLAN_DIR ?? "";
   if (dir === "" || !isAbsolute(dir)) return null;
 
