@@ -11,7 +11,8 @@ import { gridText, tableRowsFromPage } from "../../plan-ingest/scheduleTable";
 import { joinOpeningsToSchedule, widthAndHeight, type PlacedMark } from "../openingMarks";
 import { openingsInWalls } from "../openings";
 import { sheetStrokes } from "../sheetStrokes";
-import { tagSymbols } from "../tagSymbols";
+import { shapeFromLegend, tagSymbols } from "../tagSymbols";
+import { findWallsOnSheet } from "../findWallsOnSheet";
 
 /**
  * ── THE REAL SCHEDULE READ, AND DOOR MARKS FOUND BY THEIR SYMBOLS ──
@@ -108,9 +109,30 @@ describe.skipIf(DIR === "" || CACHE === "")("joining a read door schedule to a p
     );
 
     const symbols = tagSymbols({ segments: planRead.segments, text: items, unitsPerPaperInch: 72 });
+    // ── THE DOOR MARK'S SHAPE IS REPORTED, NOT USED TO FILTER ──
+    //
+    // A door schedule is a table and draws no symbol beside its marks, so the
+    // shape cannot come from it, and the plan prints every mark TWICE — in a
+    // pill at the door and in a box under the room name — so "the shape most
+    // marks are drawn in" flips between the two with the count. Measured:
+    // filtering on the learned shape placed 29 rows on one run and 24 on the
+    // next, for the same drawing. What separates the door's printing from the
+    // room's is where it sits, and the join already decides that — nearest a
+    // detected gap, else nearest a wall — so every symbol holding a scheduled
+    // mark is offered and geometry picks.
+    const scheduleMarks = read.rows.map((r) => r.mark);
+    const markShape = shapeFromLegend(symbols, { codes: scheduleMarks });
     const symbolMarks: PlacedMark[] = symbols
       .filter((s) => s.rejected === null)
       .map((s) => ({ text: s.text, x: s.x / W, y: s.y / W }));
+    const walls = findWallsOnSheet({
+      segments: planRead.segments,
+      textItems: items,
+      pageSize: { widthPt: W, heightPt: planRead.heightPt },
+      feetPerUnit: FEET_PER_UNIT,
+      wallTypes: [],
+      sampledSheets: null,
+    }).walls;
     /** Every mark-shaped string, symbol or not — the old way, for comparison. */
     const looseMarks: PlacedMark[] = items
       .filter((i) => /^(?:[A-Z]{1,3}[-\s]?)?\d{1,4}[A-Z]?$/.test(i.str.trim().toUpperCase()))
@@ -126,37 +148,39 @@ describe.skipIf(DIR === "" || CACHE === "")("joining a read door schedule to a p
       marks: symbolMarks,
       rows,
       feetPerUnit: FEET_PER_UNIT,
+      walls,
     });
     const byText = joinOpeningsToSchedule({
       openings,
       marks: looseMarks,
       rows,
       feetPerUnit: FEET_PER_UNIT,
+      walls,
     });
 
     // eslint-disable-next-line no-console
     console.log(
       `\n2. plan p${PLAN_PAGE}: ${openings.length} openings, ` +
         `${symbols.length} symbols of which ${symbolMarks.length} could be marks, ` +
-        `${looseMarks.length} mark-shaped strings anywhere\n` +
-        `\n   ${"".padEnd(22)}  matched   rate   rows placed   width from schedule   mismatches\n` +
+        `${looseMarks.length} mark-shaped strings anywhere; commonest shape holding a scheduled mark: ${markShape ?? "none"} (reported, not filtered on)\n` +
+        `\n   ${"".padEnd(22)}  matched   rate   rows placed   width from schedule   mismatches   placed by mark\n` +
         `   marks in a SYMBOL     ${String(bySymbol.matched).padStart(7)}  ` +
         `${(bySymbol.matchRate * 100).toFixed(0).padStart(4)}%  ` +
         `${String(bySymbol.rowsPlaced).padStart(11)}   ` +
         `${String(bySymbol.openings.filter((o) => o.widthFrom === "schedule").length).padStart(19)}   ` +
-        `${String(bySymbol.mismatches).padStart(10)}\n` +
+        `${String(bySymbol.mismatches).padStart(10)}   ${String(bySymbol.placedByMark).padStart(14)}\n` +
         `   any mark-shaped text  ${String(byText.matched).padStart(7)}  ` +
         `${(byText.matchRate * 100).toFixed(0).padStart(4)}%  ` +
         `${String(byText.rowsPlaced).padStart(11)}   ` +
         `${String(byText.openings.filter((o) => o.widthFrom === "schedule").length).padStart(19)}   ` +
-        `${String(byText.mismatches).padStart(10)}`,
+        `${String(byText.mismatches).padStart(10)}   ${String(byText.placedByMark).padStart(14)}`,
     );
 
     for (const one of bySymbol.openings.filter((o) => o.mismatch !== null).slice(0, 8)) {
       // eslint-disable-next-line no-console
       console.log(`     ${one.mark}: ${one.mismatch?.why.slice(0, 120)}`);
     }
-    const sample = bySymbol.openings.filter((o) => o.widthFrom === "schedule").slice(0, 8);
+    const sample = bySymbol.openings.filter((o) => o.widthFrom === "schedule" && o.placedBy === "opening").slice(0, 8);
     if (sample.length > 0) {
       // eslint-disable-next-line no-console
       console.log(
@@ -170,6 +194,18 @@ describe.skipIf(DIR === "" || CACHE === "")("joining a read door schedule to a p
             .join("\n"),
       );
     }
+
+    const byMarkOnly = bySymbol.openings.filter((o) => o.placedBy === "mark");
+    if (byMarkOnly.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `\n   placed by their mark on the nearest run, no gap detected there: ` +
+          byMarkOnly.map((o) => o.mark).join(" "),
+      );
+    }
+    const unplaced = rows.filter((r) => !bySymbol.openings.some((o) => o.matched?.mark === r.mark));
+    // eslint-disable-next-line no-console
+    console.log(`   rows still unplaced: ${unplaced.map((r) => r.mark).join(" ") || "none"}`);
 
     expect(openings.length, "no opening was found at all").toBeGreaterThan(0);
     expect(symbols.length, "no symbol was found at all").toBeGreaterThan(0);

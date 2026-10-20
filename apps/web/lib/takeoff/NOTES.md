@@ -1582,3 +1582,88 @@ is the correct behaviour of that rule and the reason these need their own.
     against the runs the pairer returns.
 
 Both are measurements nobody has taken yet. Neither is guessed at here.
+
+## Plan-text reading — tags, legend, door schedule (2026-10-20)
+
+Three readers, each measured on Camp Bow Wow A101 (p8, legend A130 p16,
+schedule A601 p26) and ELEVEN03 A4.B.1 (p119, wall schedule A0.003B p9).
+Nothing here is customer-facing and nothing writes.
+
+| | before | after |
+| --- | --- | --- |
+| CBW wall tags matched to a run | 7 | **16** runs (23 symbols, every one by its leader) |
+| CBW footage with a type | 189 ft | **333 ft** of 2,542 |
+| ELEVEN03 wall tags matched | **0** (all 19 rejected as callouts) | **10** runs, 525 ft of 2,424 |
+| CBW door rows placed, marks in a symbol | 11 of 30 | **29 of 30** (11 by a detected gap, 18 by their mark) |
+| legends read on the 12 new sets | — | 8 of 9 tried, 5–15 cents each |
+
+### What the drawings actually do, which no fixture had
+
+- **A tag is drawn three times.** Camp Bow Wow's diamond, a second diamond
+  a hair inside it, and an axis-aligned masking box around both — on the
+  legend sheet the box is INSIDE the bigger diamond. So "keep the largest"
+  and "keep the smallest" are each wrong on one sheet; a named non-square
+  shape beats a square (`tagSymbols.ts`, the dedupe).
+- **The leader ends on a vertex and is drawn first.** A walk that begins on
+  the stem goes round the diamond and comes back with nowhere to go; the
+  diamond's strokes were spent and only the box was left. The walk now
+  backtracks out of dead ends and keeps the closed cycle inside an open
+  path. On A101 that was 21 of 46 tags.
+- **A split box is a wall tag, not only a callout.** ELEVEN03 writes `MC`
+  over `1 HR`. The halves are kept apart as `parts`, and a half that is a
+  SHEET REFERENCE is what makes a callout. `WT-12` had also read as a sheet
+  reference; the pattern now needs three digits or a dot.
+- **A text item's `y` is its BASELINE.** `planPdf` reports the text origin,
+  so the lettering's centre is `y - height/2`, not `+`. Read the other way,
+  `MC` computed as sitting below its own divider and the halves never
+  separated on a real sheet while the fixture passed. Any code taking
+  `item.y + item.height / 2` as a centre is a line too low.
+- **The legend learns the shape only from symbols holding its codes.** A130
+  numbers its notes in boxes; without the codes the boxes outvoted the five
+  diamonds and the plan's diamonds were "odd shape".
+- **Door marks are found; the gaps are not.** Every one of the 30 scheduled
+  marks is printed in a pill on A101, and for 17 the nearest opening
+  `openingsInWalls` found was 8–37 ft away. That is the gap detector's
+  ceiling, not the join's, and is left for the finder's lane. The join now
+  places a scheduled mark on the nearest run within 2.5 ft when no gap
+  claims it, reported as `placedBy: "mark"` so a reviewer can tell a
+  deduction that rests on geometry from one that rests on lettering. Room
+  numbers share the series (`102` the door, `102` the room), so one door per
+  mark and the printing nearest a wall. Door 114's pill sits farther than
+  that from its wall and stays unplaced. The door mark's SHAPE is reported
+  and not filtered on: every mark is printed twice, pill and box, and "the
+  shape most marks are drawn in" flipped between them with the count —
+  29 rows on one run, 24 on the next, same drawing. Geometry picks.
+- **ELEVEN03 has two legends.** p96 is TAG / UL# / RATING and proposes
+  nothing, correctly. p9 (`A0.003B WALL SCHEDULE`) describes the same codes
+  in words, and the chain completes on it: `ME` → 1-5/8in C-shape studs and
+  track. `WS` is 8in block and stops at coverage, also correctly.
+- **A partition schedule as a table** — Central Bank's `STUD SIZE | 3 5/8"`,
+  `INSULATION THICKNESS | -` — reads through labelled cells now, and a
+  `-` value row is dropped before any word is read out of it: the word
+  INSULATION in that row had proposed batts for all ten types.
+
+### How to run it
+
+```
+REAL_PLAN_DIR=… LEGEND_CACHE=… npx vitest run --config vitest.eval.config.mts \
+  lib/takeoff/realplan/zzTagReport.eval.ts     # every legend-coded symbol and why it did or did not land
+  lib/takeoff/realplan/zzChain2.eval.ts        # tag -> legend -> components -> quantities
+  lib/takeoff/realplan/zzDoorReport.eval.ts    # each schedule row's fate on the plan
+  lib/takeoff/realplan/zzDoorJoin2.eval.ts     # the join, symbol marks against loose text
+  lib/takeoff/realplan/zzLegendRead.eval.ts    # find the legend, read it once, cache it
+# ELEVEN03: CHAIN_SET="2025-03-28_ELEVEN03 PERMIT SET_ARCH.pdf" CHAIN_LEGEND=9 CHAIN_PLAN=119 CHAIN_FPU=288.04
+```
+
+Legend reads are cached under `LEGEND_CACHE` per file, page and prompt
+version; the app side (`readWallLegend`) has no cache of its own yet because
+caching there is a table, which is a schema change.
+
+### Still open
+
+- Six CBW diamonds sit 4–7 ft from any run after their leader; three more
+  fail the clear margin. Not looked at.
+- MHK's wall types are a box on the floor-plan sheet (A1.01) and rank
+  below two notes sheets; two reads found nothing and the eval stops at two.
+- `wallTypeTags` (text-matched tags) and the eval's loose door marks still
+  take `y + height/2` as a centre.

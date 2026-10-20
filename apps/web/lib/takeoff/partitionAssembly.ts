@@ -105,13 +105,55 @@ export function inchesFrom(text: string): number | null {
   return plain === null ? null : Number(plain[1]);
 }
 
+/**
+ * A `LABEL | VALUE` row of a partition SCHEDULE drawn as a table — Central
+ * Bank's: `STUD SIZE | 3 5/8"`, `STUD SPACING (O.C.) | 16"`, `GWB THICKNESS |
+ * 5/8"`, `INSULATION THICKNESS | -`. The legend reader hands a table's cells
+ * through joined with ` | `, so the label and its value arrive on one line.
+ */
+function labelled(line: string, label: RegExp): string | null {
+  const hit = line.match(new RegExp(`^\\s*(?:${label.source})[^|]*\\|\\s*([^|]*)$`, "i"));
+  return hit === null ? null : hit[1].trim();
+}
+
+/** A value cell that says there is none: `-`, `—`, `N/A`, `NONE`. */
+const NO_VALUE = /^(?:-+|—|–|N\/?A|NONE|NA)$/i;
+
+/**
+ * The nominal lumber a `2X` stud is, in inches of actual width. A `2X` with
+ * no number — E Street's `2X WOOD STUD FRAMING` — states no width, and the
+ * component is flagged rather than guessed.
+ */
+const LUMBER_WIDTH: Record<string, number> = { "4": 3.5, "6": 5.5, "8": 7.25, "10": 9.25 };
+
 /** Every distinct stud width the text states, in inches. */
 function studWidths(lines: readonly string[]): { value: number; phrase: string }[] {
   const out: { value: number; phrase: string }[] = [];
   for (const line of lines) {
-    // `3 5/8" MTL. STUD AT 16" O.C.`, `6" METAL STUDS @ 16" O.C.`
-    const re = /((?:\d+\s*[-\s]\s*)?\d+(?:\s*\/\s*\d+)?)\s*"?\s*(?:MTL\.?|METAL|STL\.?|STEEL|WD\.?|WOOD)?\s*STUDS?\b/gi;
+    const cell = labelled(line, /STUD\s+SIZE|STUD\s+WIDTH/);
+    if (cell !== null) {
+      const value = NO_VALUE.test(cell) ? null : inchesFrom(cell);
+      if (value !== null && value > 0 && value <= 24) out.push({ value, phrase: line.trim() });
+      continue;
+    }
+    // Lumber first: `2X4 WOOD STUDS`, `2 X 6 STUDS`. A line that names its
+    // studs as lumber is read as lumber only, or the `4` of `2X4` would also
+    // read as a four-inch metal stud and the two would flag each other.
+    let lumber = false;
+    for (const hit of line.matchAll(/\b2\s*[xX]\s*(4|6|8|10)\b[^.|]{0,24}?\bSTUDS?\b/g)) {
+      out.push({ value: LUMBER_WIDTH[hit[1]], phrase: hit[0].trim() });
+      lumber = true;
+    }
+    if (lumber) continue;
+    // `3 5/8" MTL. STUD AT 16" O.C.`, `6" METAL STUDS @ 16" O.C.`, and the
+    // longer spellings real sets use: Baker's `6", 18 MIL (25GA.), STEEL
+    // STUDS 24" O.C.` and ELEVEN03's `1-5/8X C-SHAPE METAL STUDS`.
+    const re =
+      /((?:\d+\s*[-\s]\s*)?\d+(?:\s*\/\s*\d+)?)\s*"?\s*(?:X\s*)?(?:,\s*)?(?:\d+\s*MIL\.?\s*)?(?:\(\s*\d+\s*GA\.?\s*\)\s*,?\s*)?(?:C-?SHAPED?\s*)?(?:MTL\.?|METAL|STL\.?|STEEL|WD\.?|WOOD)?\s*STUDS?\b/gi;
     for (const hit of line.matchAll(re)) {
+      // `2X WOOD STUD` is lumber with its size left off, not a two-inch stud;
+      // `unsizedLumber` flags it.
+      if (/^2\s*X\b/i.test(hit[0])) continue;
       const value = inchesFrom(hit[1]);
       if (value === null || value <= 0 || value > 24) continue;
       out.push({ value, phrase: hit[0].trim() });
@@ -120,10 +162,25 @@ function studWidths(lines: readonly string[]): { value: number; phrase: string }
   return out;
 }
 
+/** A `2X` stud with no nominal size — a wood wall whose width is not stated. */
+function unsizedLumber(lines: readonly string[]): string | null {
+  for (const line of lines) {
+    const hit = line.match(/\b2\s*[xX]\b(?!\s*\d)[^.|]{0,20}?\bSTUDS?\b/);
+    if (hit !== null) return hit[0].trim();
+  }
+  return null;
+}
+
 /** The on-centre spacing, where the text gives one. */
 function spacings(lines: readonly string[]): { value: number; phrase: string }[] {
   const out: { value: number; phrase: string }[] = [];
   for (const line of lines) {
+    const cell = labelled(line, /STUD\s+SPACING/);
+    if (cell !== null) {
+      const value = NO_VALUE.test(cell) ? null : inchesFrom(cell);
+      if (value !== null && value > 0 && value <= 48) out.push({ value, phrase: line.trim() });
+      continue;
+    }
     const re = /(\d+(?:\s*\/\s*\d+)?)\s*"?\s*(?:O\.?\s*C\.?|ON\s+CENTER)/gi;
     for (const hit of line.matchAll(re)) {
       const value = inchesFrom(hit[1]);
@@ -138,6 +195,12 @@ function spacings(lines: readonly string[]): { value: number; phrase: string }[]
 function boards(lines: readonly string[]): { value: number; phrase: string }[] {
   const out: { value: number; phrase: string }[] = [];
   for (const line of lines) {
+    const cell = labelled(line, /(?:GWB|GYP\.?(?:SUM)?(?:\s+(?:WALL\s*)?(?:BOARD|BD\.?))?)\s+THICKNESS/);
+    if (cell !== null) {
+      const value = NO_VALUE.test(cell) ? null : inchesFrom(cell);
+      if (value !== null && value >= 0.25 && value <= 1.25) out.push({ value, phrase: line.trim() });
+      continue;
+    }
     const re =
       /(\d+(?:\s*\/\s*\d+)?)\s*"?\s*(?:THICK\s*)?(?:PAINTED\s*)?(?:TYPE\s*['"]?X['"]?\s*)?(?:GYP\.?(?:SUM)?|GWB|G\.?W\.?B\.?|DRYWALL|WALL\s*BOARD|BOARD|BD\.?|CEMENTITIOUS\s+BACKER)/gi;
     for (const hit of line.matchAll(re)) {
@@ -187,7 +250,19 @@ export function readPartitionAssembly(input: {
   lines: readonly string[];
   where: string;
 }): PartitionAssembly {
-  const lines = input.lines.map((l) => l.replace(/\s+/g, " ").trim()).filter((l) => l !== "");
+  // ── A TABLE ROW WHOSE VALUE IS "-" SAYS THE THING IS ABSENT ──
+  //
+  // Central Bank's schedule prints `INSULATION THICKNESS | -` on every type
+  // that has no insulation, and the word INSULATION in that row proposed
+  // batts for all ten of them. A labelled row with no value is dropped
+  // before anything reads words out of it.
+  const lines = input.lines
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter((l) => l !== "")
+    .filter((l) => {
+      const hit = l.match(/^[^|]+\|\s*([^|]*)$/);
+      return hit === null || !NO_VALUE.test(hit[1].trim());
+    });
   const where = input.where;
   const components: ProposedComponent[] = [];
   const flags: AssemblyFlag[] = [];
@@ -206,6 +281,14 @@ export function readPartitionAssembly(input: {
     });
   } else if (studValues.length === 1) {
     studWidthIn = studValues[0];
+  } else {
+    const lumber = unsizedLumber(lines);
+    if (lumber !== null) {
+      flags.push({
+        why: "wood studs with no nominal size stated — the width has to come from the wall thickness or a section",
+        phrase: lumber,
+      });
+    }
   }
 
   const spacingFound = spacings(lines);

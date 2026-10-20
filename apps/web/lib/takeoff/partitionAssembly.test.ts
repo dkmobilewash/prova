@@ -205,3 +205,69 @@ describe("the measurements themselves", () => {
     expect(got.read.boardThicknessIn).toBeNull();
   });
 });
+
+
+describe("a partition schedule drawn as a LABEL | VALUE table", () => {
+  /**
+   * Central Bank of the Midwest, A090, read 2026-10-20: ten types, each a
+   * column of labelled cells. The first parser read only the word INSULATION
+   * out of `INSULATION THICKNESS | -` and proposed batts for all ten.
+   */
+  const centralBank = [
+    'BASE PARTITION THICKNESS | 4 7/8"',
+    'STUD SPACING (O.C.) | 16"',
+    'STUD SIZE | 3 5/8"',
+    'GWB THICKNESS | 5/8"',
+    "FIRE RATING (HRS) | -",
+    "INSULATION THICKNESS | -",
+  ];
+
+  it("reads the stud, the spacing and the board from their labelled cells", () => {
+    const got = readPartitionAssembly({ lines: centralBank, where: "test" });
+    expect(got.read.studWidthIn).toBe(3.625);
+    expect(got.read.studSpacingIn).toBe(16);
+    expect(got.read.boardThicknessIn).toBe(0.625);
+    expect(got.components.map((c) => c.description)).toEqual([
+      "3-5/8in metal stud at 16in o.c.",
+      "3-5/8in track, top and bottom",
+      "5/8in gypsum board",
+    ]);
+  });
+
+  it("does NOT propose insulation from a row that says there is none", () => {
+    const got = readPartitionAssembly({ lines: centralBank, where: "test" });
+    expect(got.components.some((c) => c.description.startsWith("cavity insulation"))).toBe(false);
+    const insulated = readPartitionAssembly({
+      lines: [...centralBank.slice(0, 5), 'INSULATION THICKNESS | 3 1/2"'],
+      where: "test",
+    });
+    expect(insulated.components.some((c) => c.description.startsWith("cavity insulation"))).toBe(true);
+  });
+});
+
+describe("the longer stud spellings real sets use", () => {
+  it("reads Baker's gauge-first steel stud", () => {
+    const got = readPartitionAssembly({
+      lines: ['LAYER 5/8" TYPE X GYPSUM WALLBOARD APPLIED PARALLEL TO EACH SIDE OF 6", 18 MIL (25GA.), STEEL STUDS 24" O.C.'],
+      where: "test",
+    });
+    expect(got.read.studWidthIn).toBe(6);
+    expect(got.read.studSpacingIn).toBe(24);
+  });
+
+  it("reads ELEVEN03's C-shape metal stud", () => {
+    const got = readPartitionAssembly({
+      lines: ["- 2 ROWS OF 1-5/8X C-SHAPED STUDS AT 24\" O.C."],
+      where: "test",
+    });
+    expect(got.read.studWidthIn).toBe(1.625);
+  });
+
+  it("reads nominal lumber as its actual width, and flags a 2X with no size", () => {
+    const sized = readPartitionAssembly({ lines: ["2X4 WOOD STUDS AT 16\" O.C."], where: "test" });
+    expect(sized.read.studWidthIn).toBe(3.5);
+    const unsized = readPartitionAssembly({ lines: ["2X WOOD STUD FRAMING"], where: "test" });
+    expect(unsized.read.studWidthIn).toBeNull();
+    expect(unsized.flags.some((f) => /no nominal size/.test(f.why))).toBe(true);
+  });
+});

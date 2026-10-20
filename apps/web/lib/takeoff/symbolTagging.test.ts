@@ -20,7 +20,9 @@ function symbol(text: string, over: Partial<TagSymbol> = {}): TagSymbol {
     corners: 4,
     shape: "square",
     text,
+    parts: [text],
     split: false,
+    leader: null,
     rejected: null,
     ...over,
   };
@@ -103,7 +105,7 @@ describe("turning symbols into wall-type tags", () => {
 
   it("ignores a symbol the detector already rejected", () => {
     const got = tagsFromSymbols({
-      symbols: [symbol("A", { rejected: "split" }), symbol("A", { x: 400, rejected: "sheet-reference" })],
+      symbols: [symbol("A", { rejected: "code-too-long" }), symbol("A", { x: 400, rejected: "sheet-reference" })],
       legendCodes: ["A"],
       shape: "square",
       walls: [],
@@ -167,5 +169,51 @@ describe("turning symbols into wall-type tags", () => {
     expect(symbolTagSentence(got)).toBe(
       "2 symbols, 2 could be tags, 1 name a type the legend defines, 1 were matched to a run.",
     );
+  });
+});
+
+describe("split codes and leaders", () => {
+  it("names the tag by whichever half the legend knows", () => {
+    // ELEVEN03: `MC` over `1 HR` in one box. The legend defines MC.
+    const got = tagsFromSymbols({
+      symbols: [symbol("MC 1 HR", { parts: ["MC", "1 HR"], split: true })],
+      legendCodes: ["MA", "MC", "WS"],
+      shape: null,
+      walls: [runAt(100, 100 + 2.5 * (WIDTH_PT / FEET_PER_UNIT))],
+      feetPerUnit: FEET_PER_UNIT,
+      widthPt: WIDTH_PT,
+    });
+    expect(got.tags.map((t) => t.name)).toEqual(["MC"]);
+    expect(got.counts.matchedToRun).toBe(1);
+  });
+
+  it("anchors a tag at its leader's end, which picks the wall the drafter pointed at", () => {
+    // Two parallel runs, 2.5 ft and 3.5 ft from the symbol's centre — a coin
+    // flip by distance, which the clear-margin rule refuses. The leader lands
+    // on the farther one.
+    const ftPt = WIDTH_PT / FEET_PER_UNIT;
+    const nearRun = runAt(100, 100 - 2.5 * ftPt);
+    const farRun = runAt(100, 100 + 3.5 * ftPt);
+    const without = tagsFromSymbols({
+      symbols: [symbol("A")],
+      legendCodes: ["A"],
+      shape: null,
+      walls: [nearRun, farRun],
+      feetPerUnit: FEET_PER_UNIT,
+      widthPt: WIDTH_PT,
+    });
+    expect(without.counts.matchedToRun).toBe(0);
+    const withLeader = tagsFromSymbols({
+      symbols: [symbol("A", { leader: { x: 100, y: 100 + 3.5 * ftPt } })],
+      legendCodes: ["A"],
+      shape: null,
+      walls: [nearRun, farRun],
+      feetPerUnit: FEET_PER_UNIT,
+      widthPt: WIDTH_PT,
+    });
+    expect(withLeader.counts.matchedToRun).toBe(1);
+    expect(withLeader.byRun.get(farRun)).toBe("A");
+    expect(withLeader.counts.matchedByLeader).toBe(1);
+    expect(symbolTagSentence(withLeader)).toContain("1 by their leader");
   });
 });

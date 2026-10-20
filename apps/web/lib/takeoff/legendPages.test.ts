@@ -84,3 +84,19 @@ describe("finding the sheet that defines the wall types", () => {
     expect(legendPages([page({ page: 1, title: "FLOOR PLAN", lines: ["ROOM 101"] })])).toEqual([]);
   });
 });
+
+describe("two untitled candidates", () => {
+  it("puts the page that says more about assemblies first, whatever its page number", () => {
+    // SLN Terminal: A-001 general notes (12 assembly lines) on page 5, A-002
+    // PARTITION TYPES (21 lines) on page 6, and a title block that carries
+    // the project name rather than the sheet name — so both are rank 1, and
+    // page order sent the one model call to the notes.
+    const assembly = (n: number) => Array.from({ length: n }, (_, i) => `3 5/8" MTL. STUD AT 16" O.C. — line ${i}`);
+    const got = legendPages([
+      { page: 5, title: "SALINA AIRPORT AUTHORITY", lines: assembly(12) },
+      { page: 6, title: "SALINA AIRPORT AUTHORITY", lines: assembly(21) },
+    ]);
+    expect(got.map((c) => c.page)).toEqual([6, 5]);
+    expect(got[0].assemblyLines).toBe(21);
+  });
+});

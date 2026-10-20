@@ -25,10 +25,17 @@ function polygon(cx: number, cy: number, radius: number, sides: number): StrokeS
   return out;
 }
 
-/** Text centred at a point, sized roughly as drawing lettering. */
+/**
+ * Text centred at a point, sized roughly as drawing lettering.
+ *
+ * `y` is the BASELINE, as `planPdf` reports it — so a string centred on `cy`
+ * has its baseline half a height below it. A fixture that put the top edge
+ * at `y` passed every test here while the real sheets read the halves of a
+ * split tag the wrong way round.
+ */
 function label(str: string, cx: number, cy: number): TextForSymbol {
   const width = str.length * 4;
-  return { str, x: cx - width / 2, y: cy - 3, width, height: 6 };
+  return { str, x: cx - width / 2, y: cy + 3, width, height: 6 };
 }
 
 const R = 0.22 * PER_INCH;
@@ -60,12 +67,15 @@ describe("finding the tag symbols on a sheet", () => {
   });
 
   it("tells a diamond from a hexagon, which is how a set's own shape is learned", () => {
+    // `polygon` starts a vertex on the x axis, so four sides is a diamond —
+    // corners on the axes, edges on the diagonals — which is what Camp Bow
+    // Wow draws its wall tags as.
     const got = tagSymbols({
       segments: polygon(100, 100, R, 4),
       text: [label("P2", 100, 100)],
       unitsPerPaperInch: PER_INCH,
     });
-    expect(got[0].shape).toBe("square");
+    expect(got[0].shape).toBe("diamond");
     expect(got[0].corners).toBe(4);
   });
 
@@ -247,5 +257,287 @@ describe("learning a set's own tag shape from its legend", () => {
     });
     const symbols = [...hex(0, "A"), ...hex(1, "B"), ...callouts, ...callouts];
     expect(shapeFromLegend(symbols)).toBe("hexagon");
+  });
+});
+
+/** An axis-aligned square: edges on the axes, corners on the diagonals. */
+function axisSquare(cx: number, cy: number, half: number): StrokeSegment[] {
+  const c = [
+    { x: cx - half, y: cy - half },
+    { x: cx + half, y: cy - half },
+    { x: cx + half, y: cy + half },
+    { x: cx - half, y: cy + half },
+  ];
+  return c.map((a, i) => ({ x1: a.x, y1: a.y, x2: c[(i + 1) % 4].x, y2: c[(i + 1) % 4].y }));
+}
+
+describe("a diamond is not a square, and a split box is not always a callout", () => {
+  /**
+   * ── MEASURED ON CAMP BOW WOW A101 ──
+   *
+   * Wall tags are diamonds, door marks are axis-aligned pills, room numbers
+   * sit in axis-aligned boxes. All three have four corners. Calling them all
+   * "square" meant the legend's shape could not separate a wall tag from a
+   * door mark, which is the one thing the shape is for.
+   */
+  it("calls an axis-aligned four-sided box a square and a cornered one a diamond", () => {
+    const square = tagSymbols({
+      segments: axisSquare(100, 100, R * 0.7),
+      text: [label("102", 100, 100)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    const diamond = tagSymbols({
+      segments: polygon(300, 100, R, 4),
+      text: [label("A", 300, 100)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(square[0].shape).toBe("square");
+    expect(diamond[0].shape).toBe("diamond");
+  });
+
+  /**
+   * ── MEASURED ON ELEVEN03 A4.B.1 ──
+   *
+   * Every wall tag on that sheet is a box split by a line: the type code above
+   * (`MC`) and the fire rating below (`1 HR`). The first version rejected all
+   * nineteen as detail callouts, because a callout is split too. The halves
+   * are what tell them apart — a callout's lower half names a SHEET.
+   */
+  it("keeps a split box whose halves are a code and a rating, with the halves apart", () => {
+    const segments = [
+      ...axisSquare(100, 100, R * 0.8),
+      { x1: 100 - R * 0.8, y1: 100, x2: 100 + R * 0.8, y2: 100 },
+    ];
+    const got = tagSymbols({
+      segments,
+      text: [label("MC", 100, 94), label("1 HR", 100, 106)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(got).toHaveLength(1);
+    expect(got[0].split).toBe(true);
+    expect(got[0].rejected).toBeNull();
+    expect(got[0].parts).toEqual(["MC", "1 HR"]);
+  });
+
+  it("still rejects a split box whose lower half is a sheet reference", () => {
+    const segments = [
+      ...axisSquare(100, 100, R * 0.8),
+      { x1: 100 - R * 0.8, y1: 100, x2: 100 + R * 0.8, y2: 100 },
+    ];
+    const got = tagSymbols({
+      segments,
+      text: [label("3", 100, 94), label("A501", 100, 106)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(got[0].rejected).toBe("sheet-reference");
+  });
+
+  it("rejects a symbol only when EVERY half is too long to be a code", () => {
+    const segments = [
+      ...axisSquare(100, 100, R * 0.8),
+      { x1: 100 - R * 0.8, y1: 100, x2: 100 + R * 0.8, y2: 100 },
+    ];
+    const tag = tagSymbols({
+      segments,
+      text: [label("WT-12", 100, 94), label("2 HR RATED", 100, 106)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(tag[0].rejected).toBeNull();
+    const note = tagSymbols({
+      segments,
+      text: [label("SEE NOTE 4", 100, 94), label("ON SHEET", 100, 106)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(note[0].rejected).toBe("code-too-long");
+  });
+});
+
+describe("one symbol drawn twice, and the leader off its edge", () => {
+  /**
+   * Camp Bow Wow draws each wall tag as a diamond inside a diamond. Both loops
+   * close around one letter, and before this the inner one was reported as a
+   * second, nine-cornered "other" symbol at the same place — which then
+   * counted as an odd-shaped tag the legend did not draw.
+   */
+  it("keeps ONE of concentric symbols holding the same code — the drawn shape, not the mask", () => {
+    // On the plan: a diamond, a diamond inside it, and the masking box AROUND
+    // both. The box is the largest and is not the symbol.
+    const plan = tagSymbols({
+      segments: [...axisSquare(100, 100, R), ...polygon(100, 100, R, 4), ...polygon(100, 100, R * 0.8, 4)],
+      text: [label("A", 100, 100)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(plan).toHaveLength(1);
+    expect(plan[0].shape).toBe("diamond");
+    expect(plan[0].radius).toBeCloseTo(R * 0.8, 5);
+    // On the legend: a bigger diamond with the letter's masking box INSIDE
+    // it. The box is the smallest and is still not the symbol.
+    const legend = tagSymbols({
+      segments: [...polygon(300, 100, R * 1.5, 4), ...axisSquare(300, 100, R * 0.6)],
+      text: [label("A", 300, 100)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(legend).toHaveLength(1);
+    expect(legend[0].shape).toBe("diamond");
+  });
+
+  it("reads a diamond drawn with chamfered corners as a diamond, not an eight-cornered other", () => {
+    // Each vertex arrives as two points 0.3pt apart, which is how the real
+    // export draws it.
+    const pts = [0, 1, 2, 3].map((i) => ({ x: 100 + R * Math.cos((i / 4) * Math.PI * 2), y: 100 + R * Math.sin((i / 4) * Math.PI * 2) }));
+    const segments: StrokeSegment[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      const a = pts[i];
+      const b = pts[(i + 1) % 4];
+      const ux = (b.x - a.x) / Math.hypot(b.x - a.x, b.y - a.y);
+      const uy = (b.y - a.y) / Math.hypot(b.x - a.x, b.y - a.y);
+      segments.push({ x1: a.x + ux * 0.3, y1: a.y + uy * 0.3, x2: b.x - ux * 0.3, y2: b.y - uy * 0.3 });
+      const c = pts[(i + 2) % 4];
+      const vx = (c.x - b.x) / Math.hypot(c.x - b.x, c.y - b.y);
+      const vy = (c.y - b.y) / Math.hypot(c.x - b.x, c.y - b.y);
+      segments.push({ x1: b.x - ux * 0.3, y1: b.y - uy * 0.3, x2: b.x + vx * 0.3, y2: b.y + vy * 0.3 });
+    }
+    const got = tagSymbols({ segments, text: [label("A", 100, 100)], unitsPerPaperInch: PER_INCH });
+    expect(got).toHaveLength(1);
+    expect(got[0].corners).toBe(4);
+    expect(got[0].shape).toBe("diamond");
+  });
+
+  it("does not merge two symbols that merely sit near each other", () => {
+    const got = tagSymbols({
+      segments: [...polygon(100, 100, R, 4), ...polygon(100 + R * 2.5, 100, R * 0.7, 4)],
+      text: [label("A", 100, 100), label("A", 100 + R * 2.5, 100)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(got).toHaveLength(2);
+  });
+
+  it("follows a straight leader from the symbol's edge to its far end", () => {
+    // The stem leaves the diamond's bottom corner and runs 3 radii down.
+    const got = tagSymbols({
+      segments: [...polygon(100, 100, R, 4), { x1: 100, y1: 100 + R, x2: 100, y2: 100 + R * 4 }],
+      text: [label("A", 100, 100)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(got[0].leader).not.toBeNull();
+    expect(got[0].leader?.x).toBeCloseTo(100, 5);
+    expect(got[0].leader?.y).toBeCloseTo(100 + R * 4, 5);
+  });
+
+  it("follows a bent leader to the end of its last stroke", () => {
+    const got = tagSymbols({
+      segments: [
+        ...polygon(100, 100, R, 4),
+        { x1: 100, y1: 100 + R, x2: 100, y2: 100 + R * 3 },
+        { x1: 100, y1: 100 + R * 3, x2: 100 + R * 3, y2: 100 + R * 3 },
+      ],
+      text: [label("A", 100, 100)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(got[0].leader?.x).toBeCloseTo(100 + R * 3, 5);
+    expect(got[0].leader?.y).toBeCloseTo(100 + R * 3, 5);
+  });
+
+  it("does not take a wall passing behind the tag, or a grid line, for a leader", () => {
+    const behind = tagSymbols({
+      segments: [...polygon(100, 100, R, 4), { x1: -900, y1: 100, x2: 900, y2: 100 }],
+      text: [label("A", 100, 100)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(behind[0].leader).toBeNull();
+    // A grid line ends at the bubble and runs the height of the building.
+    const grid = tagSymbols({
+      segments: [...polygon(100, 100, R, 32), { x1: 100, y1: 100 + R, x2: 100, y2: 100 + R * 60 }],
+      text: [label("3", 100, 100)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(grid[0].leader).toBeNull();
+  });
+
+  it("learns the legend's shape from the symbols that hold its codes, not from its note numbers", () => {
+    // A130 numbers its general notes in small boxes; five diamonds carry the
+    // types. Without the codes the boxes outvote the diamonds.
+    const symbols = [
+      ...["A", "B", "C", "D", "E"].flatMap((code, i) =>
+        tagSymbols({
+          segments: polygon(100 + i * 100, 100, R, 4),
+          text: [label(code, 100 + i * 100, 100)],
+          unitsPerPaperInch: PER_INCH,
+        }),
+      ),
+      ...["10.", "11.", "12.", "13.", "14.", "15.", "16.", "17."].flatMap((n, i) =>
+        tagSymbols({
+          segments: axisSquare(100 + i * 60, 400, R * 0.5),
+          text: [label(n, 100 + i * 60, 400)],
+          unitsPerPaperInch: PER_INCH,
+        }),
+      ),
+    ];
+    expect(shapeFromLegend(symbols)).toBe("square");
+    expect(shapeFromLegend(symbols, { codes: ["A", "B", "C", "D", "E"] })).toBe("diamond");
+  });
+});
+
+describe("the shape outranks the size when one symbol is drawn several times", () => {
+  it("keeps the named shape over a smaller unnamed loop at the same place", () => {
+    // A diamond with a stray three-sided loop inside it — a triangle is
+    // "other" and must not become the symbol by being the smallest.
+    const got = tagSymbols({
+      segments: [...polygon(100, 100, R, 4), ...polygon(100, 100, R * 0.6, 3)],
+      text: [label("A", 100, 100)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(got).toHaveLength(1);
+    expect(got[0].shape).toBe("diamond");
+  });
+});
+
+
+describe("a loop the walk goes round twice", () => {
+  it("is read per lap: two coincident diamonds are one four-cornered diamond", () => {
+    // The second diamond is a hair larger and shares its vertex keys with the
+    // first, which is what makes the walk step from one onto the other.
+    const inner = polygon(100, 100, R, 4);
+    const outer = polygon(100, 100, R + 0.05, 4);
+    const got = tagSymbols({
+      segments: [...inner, ...outer],
+      text: [label("A", 100, 100)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(got).toHaveLength(1);
+    expect(got[0].corners).toBe(4);
+    expect(got[0].shape).toBe("diamond");
+  });
+});
+
+describe("a walk that starts on the leader", () => {
+  it("still finds the diamond the leader ends on, when the leader is drawn first", () => {
+    // Camp Bow Wow's export emits the stem before the diamond. The stem ends
+    // exactly on the diamond's lower vertex, so a walk beginning on the stem
+    // goes round the diamond and comes back to that vertex with nowhere to
+    // go — an open path whose cycle is the tag.
+    const diamond = polygon(100, 100, R, 4);
+    // polygon(…, 4) puts a vertex at angle 90°, i.e. (100, 100 + R).
+    const stem = { x1: 100, y1: 100 + R * 4, x2: 100, y2: 100 + R };
+    const got = tagSymbols({
+      segments: [stem, ...diamond],
+      text: [label("A", 100, 100)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(got).toHaveLength(1);
+    expect(got[0].shape).toBe("diamond");
+    expect(got[0].leader?.y).toBeCloseTo(100 + R * 4, 5);
+  });
+});
+
+describe("when the only named shape in a family is a square", () => {
+  it("keeps the square over a smaller unnamed loop at the same place", () => {
+    const got = tagSymbols({
+      segments: [...axisSquare(100, 100, R), ...polygon(100, 100, R * 0.6, 3)],
+      text: [label("102", 100, 100)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(got).toHaveLength(1);
+    expect(got[0].shape).toBe("square");
   });
 });

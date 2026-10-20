@@ -77,6 +77,8 @@ export type LegendCandidate = {
   why: string;
   /** Title first, content second — a titled legend is the better witness. */
   rank: number;
+  /** How many of the page's lines describe an assembly; breaks ties in rank. */
+  assemblyLines: number;
 };
 
 export type PageForLegend = {
@@ -109,6 +111,7 @@ export function legendPages(pages: readonly PageForLegend[]): LegendCandidate[] 
         page: page.page,
         why: `the title says "${titleHit[0]}" and ${assemblyLines} lines describe an assembly`,
         rank: 0,
+        assemblyLines,
       });
       continue;
     }
@@ -117,6 +120,7 @@ export function legendPages(pages: readonly PageForLegend[]): LegendCandidate[] 
         page: page.page,
         why: `${assemblyLines} lines describe an assembly, and the title does not say what the sheet is`,
         rank: 1,
+        assemblyLines,
       });
       continue;
     }
@@ -128,8 +132,16 @@ export function legendPages(pages: readonly PageForLegend[]): LegendCandidate[] 
         page: page.page,
         why: `the title says "${titleHit[0]}" but only ${assemblyLines} lines describe an assembly — probably an index entry`,
         rank: 2,
+        assemblyLines,
       });
     }
   }
-  return out.sort((a, b) => a.rank - b.rank || a.page - b.page);
+  // ── WITHIN A RANK, THE PAGE THAT SAYS MOST ABOUT ASSEMBLIES COMES FIRST ──
+  //
+  // Measured 2026-10-20 on the sets whose title block does not carry the
+  // sheet name: SLN's A-002 PARTITION TYPES (21 lines) sorted behind its
+  // A-001 general notes (12 lines) on page order alone, and the one model
+  // call went to the notes and came back empty. Page order is kept only as
+  // the last tie-break.
+  return out.sort((a, b) => a.rank - b.rank || b.assemblyLines - a.assemblyLines || a.page - b.page);
 }
