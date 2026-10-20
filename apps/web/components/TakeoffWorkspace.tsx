@@ -1,6 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { clearDraft, loadDraft, saveDraft } from "@/lib/takeoff/draftStore";
+import {
+  draftFrom,
+  hasUnsavedWork,
+  keepReview,
+  restoreDraft,
+  restoreOffer,
+} from "@/lib/takeoff/reviewDraft";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Spinner } from "@/components/Spinner";
@@ -70,6 +78,8 @@ type Props = {
   openPage: number;
   /** Open straight into answer-key review, from `?key=1`. */
   openAnswerKey?: boolean;
+  /** The build that drew the candidates — the draft key's third part. */
+  finderVersion?: string;
 };
 
 const KEYS: { keys: string; does: string }[] = [
@@ -143,7 +153,15 @@ function writeStored(key: string, value: string): void {
   }
 }
 
-export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, openAnswerKey }: Props) {
+export function TakeoffWorkspace({
+  jobId,
+  jobName,
+  data,
+  savedAt,
+  openPage,
+  openAnswerKey,
+  finderVersion = "unknown",
+}: Props) {
   // Width is STATE, not only a media query: a drawer needs to know it is a
   // drawer, and a backdrop that exists only in CSS cannot be closed by Escape.
   const [width, setWidth] = useState<number>(() =>
@@ -650,6 +668,139 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
   );
   const [keyOverlays, setKeyOverlays] = useState(true);
 
+  /**
+   * ── AN IN-PROGRESS REVIEW SURVIVES THE TAB ──
+   *
+   * Every other thing a user does on a sheet is written to the database as
+   * they do it — a measurement, an edit, a cutout, the scale, an item. The
+   * answer-key review was the exception, and on 2026-10-20 a tab reset
+   * mid-sheet took Central Bank A101 with it: 37 decisions and 49 TRACES,
+   * each trace a wall the finder missed, found by eye and drawn by hand.
+   *
+   * The draft lives in the reviewer's own browser rather than on the server,
+   * because a half-finished review is not a label file: written to disk it
+   * would be a partial answer key that an audit reads and a training run can
+   * pick up.
+   */
+  const draftSet = data.plan.fileName ?? data.plan.revisionLabel ?? "";
+  const [restorable, setRestorable] = useState<{ page: number; offer: string } | null>(null);
+  const [draftNote, setDraftNote] = useState<string | null>(null);
+
+  // ── WRITTEN AFTER EVERY CHANGE, NOT ON A TIMER ──
+  //
+  // A timer loses whatever happened since it last fired, which on this screen
+  // is exactly the decision somebody just made. `keyState` changes on every
+  // verdict, split and trace, so this effect is the event.
+  useEffect(() => {
+    if (!keyMode || keyState === null || draftSet === "") return;
+    // ── NOT WHILE A DRAFT IS WAITING TO BE RECLAIMED ──
+    //
+    // After a reload the review starts fresh, with the duplicate pre-marking
+    // in place — and this effect would write THAT over the draft holding the
+    // reviewer's work, before they had a chance to press Restore. The offer
+    // still said "11 decisions", because it was read a moment earlier; by the
+    // time the button was pressed the draft behind it held 5.
+    //
+    // Measured, after two wrong fixes: the draft on disk after the click read
+    // `decided: 5`, with the same fingerprint, and no refusal note. The
+    // restore was working perfectly on a draft that had already been
+    // overwritten.
+    if (restorable !== null) return;
+    const draft = draftFrom({ state: keyState, set: draftSet, page, finderVersion });
+    if (draft === null) {
+      // Nothing worth keeping — and clear any older draft for this sheet, so
+      // an undo back to nothing does not leave one behind to offer later.
+      clearDraft(draftSet, page, finderVersion);
+      return;
+    }
+    if (!saveDraft(draft)) {
+      // Storage refused — a private window, blocked site data, or a full
+      // quota. The reviewer is told, because the alternative is believing
+      // their work is being kept when it is not.
+      setDraftNote("This browser will not keep a backup of this review — save often.");
+    }
+  }, [keyMode, keyState, draftSet, page, finderVersion, restorable]);
+
+  // ── OFFERED ON OPENING, NOT RESTORED BEHIND THEIR BACK ──
+  useEffect(() => {
+    if (!keyMode || draftSet === "") return;
+    const draft = loadDraft(draftSet, page, finderVersion);
+    if (draft === null) {
+      setRestorable(null);
+      return;
+    }
+    setRestorable({ page, offer: restoreOffer(draft) });
+  }, [keyMode, draftSet, page, finderVersion]);
+
+  /**
+   * The live review, for handlers.
+   *
+   * ── WHY A REF AND NOT THE STATE ──
+   *
+   * `restoreReview` closed over `keyState`, and the button rendered before
+   * the candidates existed kept the callback from that render — where
+   * `keyState` was still null. Clicking it hit the early return: no restore,
+   * no note, nothing. Measured rather than reasoned about: a trace of the
+   * panel's count every 250 ms after the click read 5 at 0 ms and 5 at
+   * 5,750 ms, so the work was never applied rather than applied and
+   * overwritten. Those two look identical in a single reading taken
+   * afterwards, which is why the first fix went to the wrong place.
+   */
+  const keyStateRef = useRef<ReviewState | null>(null);
+  keyStateRef.current = keyState;
+
+  const restoreReview = useCallback(() => {
+    const draft = loadDraft(draftSet, page, finderVersion);
+    const current = keyStateRef.current;
+    if (draft === null || current === null) {
+      // ── SAY SO, RATHER THAN DOING NOTHING ──
+      //
+      // A button that silently does nothing is worse than one that refuses:
+      // the reviewer presses it, sees their work absent, and concludes the
+      // feature does not work — which is what happened here.
+      setDraftNote(
+        draft === null
+          ? "That backup is no longer in this browser."
+          : "Press Find the walls first, then restore.",
+      );
+      return;
+    }
+    const got = restoreDraft(draft, current);
+    if (!got.ok) {
+      // ── REFUSED, AND SAID ──
+      //
+      // Verdicts are keyed by positional ids, so a draft about a different
+      // candidate list would attach one wall's decision to another's.
+      setDraftNote(`Could not restore: ${got.why}.`);
+      setRestorable(null);
+      return;
+    }
+    setKeyState(got.state);
+    setRestorable(null);
+    setDraftNote(null);
+  }, [draftSet, page, finderVersion, setKeyState]);
+
+  const clearReviewDraft = useCallback(() => {
+    clearDraft(draftSet, page, finderVersion);
+    setRestorable(null);
+  }, [draftSet, page, finderVersion]);
+
+  // ── AND A WARNING BEFORE THE PAGE GOES ──
+  //
+  // The draft covers a crash; this covers the ordinary mistake of closing a
+  // tab. It is armed only when there IS something to lose, because a prompt
+  // on every sheet anybody opens is one people learn to dismiss.
+  useEffect(() => {
+    if (!keyMode || keyState === null || !hasUnsavedWork(keyState)) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [keyMode, keyState]);
+
+
   const itemsPanel = (
     <TakeoffItemsPanel
       jobId={jobId}
@@ -1041,14 +1192,28 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
                       // The scale, so `startReview` can measure duplicates in
                       // FEET. Without it no duplicate is looked for and the
                       // panel silently loses the check.
+                      // ── A RE-DETECT MUST NOT WIPE THE SHEET ──
+                      //
+                      // This assigned `startReview` straight in, so anything
+                      // that made the viewer re-run detection threw away every
+                      // decision and put the duplicate pre-marking back — no
+                      // reload needed, nothing said. `keepReview` keeps the
+                      // verdicts when the candidate list is the same one.
                       onCandidates: (candidates, segments) =>
-                        setKeyState(
-                          startReview(
-                            candidates,
-                            currentSheet?.calibration != null
-                              ? (feetPerPageWidth(currentSheet.calibration) ?? 0)
-                              : 0,
-                            segments,
+                        setKeyStateByPage((prev) =>
+                          setOnThisSheet(
+                            prev,
+                            page,
+                            keepReview(
+                              onThisSheet(prev, page),
+                              startReview(
+                                candidates,
+                                currentSheet?.calibration != null
+                                  ? (feetPerPageWidth(currentSheet.calibration) ?? 0)
+                                  : 0,
+                                segments,
+                              ),
+                            ),
                           ),
                         ),
                       onSplitAt: (id, at) => {
@@ -1123,6 +1288,11 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
               </div>
             ) : (
               <AnswerKeyPanel
+                restoreOffer={restorable?.page === page ? restorable.offer : null}
+                onRestore={restoreReview}
+                onDiscardDraft={clearReviewDraft}
+                onSaved={clearReviewDraft}
+                draftNote={draftNote}
                 tracing={onThisSheet(tracingByPage, page) ?? false}
                 onTracing={(next) =>
                   setTracingByPage((prev) => setOnThisSheet(prev, page, next ? true : null))

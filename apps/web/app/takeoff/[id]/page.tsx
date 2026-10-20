@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { finderVersion } from "@/lib/takeoff/finderVersion";
 
 import { requireCapability } from "@/lib/authz";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
@@ -87,6 +88,13 @@ export default async function TakeoffWorkspacePage({
          rather than remembering to press a toggle that changes what every
          colour on the overlay MEANS. It is off unless the link says so. */
       openAnswerKey={key === "1"}
+      /* ── THE BUILD THAT DREW THE CANDIDATES, FOR THE DRAFT KEY ──
+         An in-progress review is kept in the reviewer's own browser, and a
+         draft is only meaningful for the candidates it was made about: the
+         verdicts are keyed by positional ids, so a different finder means the
+         same id is a different wall. Keying the draft by this build means a
+         rebuild cannot hand one sheet's decisions to another's walls. */
+      finderVersion={finderVersion()}
     />
   );
 }

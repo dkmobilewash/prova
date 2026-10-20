@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { pickOnClick } from "@/lib/takeoff/clickPick";
 import {
   SNAP_RADIUS,
   closesRing,
@@ -3568,7 +3569,33 @@ export function TakeoffPlanViewer({
                           // "shift-click acts on the selection" note there.
                           // Hit-testing it here meant whichever thin line was
                           // on top won, which is the bug this replaced.
-                          answerKey.onFocus(one.id);
+                          //
+                          // ── AND A COVERED TWIN NEEDS A SECOND CLICK ──
+                          //
+                          // Every line is the same few SCREEN pixels wide
+                          // (`non-scaling-stroke`), and a duplicate pair is
+                          // offset by inches of building — nine, on E Street.
+                          // At any sensible zoom they are the same pixels, so
+                          // SVG gives every click to whichever it painted
+                          // last, and a pre-rejected grey candidate could not
+                          // be selected on the drawing at all; only its row in
+                          // the panel worked. Clicking the same place again
+                          // now takes the next candidate under the pointer.
+                          const svg = event.currentTarget.ownerSVGElement;
+                          const box = svg?.getBoundingClientRect();
+                          if (box === undefined || box.width <= 0) {
+                            answerKey.onFocus(one.id);
+                            return;
+                          }
+                          answerKey.onFocus(
+                            pickOnClick({
+                              candidates: answerKey.state.candidates,
+                              x: (event.clientX - box.left) / box.width,
+                              y: (event.clientY - box.top) / box.width,
+                              focusedId: answerKey.focusedId,
+                              clicked: one.id,
+                            }),
+                          );
                         }}
                       />
                     );

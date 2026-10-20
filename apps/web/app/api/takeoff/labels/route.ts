@@ -28,8 +28,36 @@ export async function POST(request: Request) {
   let body: unknown;
   try {
     body = await request.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: "The request body was not JSON." }, { status: 400 });
+  } catch (cause) {
+    // ── SAY WHAT WENT WRONG, AND HOW BIG IT WAS ──
+    //
+    // "The request body was not JSON" is true and useless. On 2026-10-20 it
+    // was the only thing anybody could see while a reviewer's finished sheet
+    // sat in an open tab: the body was 11.27 MB, the middleware TRUNCATED it
+    // at 10 MB, and `request.json()` threw on half a document. Nothing in the
+    // message said size, and the cause was found in a Next log line nobody
+    // was looking at.
+    //
+    // The length and the parser's own complaint go to the server log — not
+    // to the browser, which has no business being told how the server failed
+    // — and the reviewer is told the one thing that helps: their work is
+    // still on the page.
+    const length = request.headers.get("content-length");
+    // eslint-disable-next-line no-console
+    console.error(
+      `[labels] could not parse a save body` +
+        (length === null ? "" : ` of ${(Number(length) / (1024 * 1024)).toFixed(2)} MB`) +
+        `: ${String(cause).slice(0, 200)}`,
+    );
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "The request body could not be read — it may be too large. Nothing was saved, " +
+          "and your decisions are still on this page. The server log has the details.",
+      },
+      { status: 400 },
+    );
   }
 
   const parsed = body as {

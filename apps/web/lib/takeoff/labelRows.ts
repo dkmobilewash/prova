@@ -219,6 +219,17 @@ export function labelRows(
   // reading is false.
   const judged = verdicts.filter((v) => v.verdict !== "traced");
   const unsure = verdicts.filter((v) => v.verdict === "unsure");
+  // ── A TRACED WALL ALSO REMOVES THE PAIRINGS UNDER IT ──
+  //
+  // Same shape as the unsure case above, in the same branch, fixed for one
+  // and not the other. A traced run is excluded from `judged`, so a candidate
+  // lying along one used to fall through to `no-run` and be written as a
+  // CONFIDENT NEGATIVE — the model taught "no wall here" at the one place the
+  // reviewer went out of their way to say there is one.
+  //
+  // It matters most on the held-out buildings, where tracing is the whole
+  // point: their keys must contain the walls the finder missed.
+  const traced = verdicts.filter((v) => v.verdict === "traced");
   const rows: LabelRow[] = [];
   for (const candidate of candidates) {
     // A candidate can lie under more than one run; an ACCEPTED one wins,
@@ -234,6 +245,8 @@ export function labelRows(
       if (!reviewComplete) continue;
       // Nothing judged it, but something UNSURE lies along it: leave it out.
       if (unsure.some((run) => belongsTo(run, candidate, feetPerUnit))) continue;
+      // Or a TRACED wall, which is a positive statement that a wall is here.
+      if (traced.some((run) => belongsTo(run, candidate, feetPerUnit))) continue;
       rows.push({
         features: candidate.features,
         label: 0,
