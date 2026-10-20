@@ -104,6 +104,42 @@ needs its own rewrite on prova-web (`/change-order` ->
 API stay under `/lien-waiver/*`. Check it on a preview before linking it: the
 browser URL would then not start with this app's basePath.
 
+After a send only the sub's company (and, on the send screen, their name and
+email) is kept: the next request starts empty and dated today. An unfinished
+draft survives a reload, but a past date on it moves up to today.
+
+## T&M / extra-work ticket (2026-10-18)
+
+The third free tool, at `/lien-waiver/tm-ticket` (`app/tm-ticket`,
+`components/TmTicketTool.tsx`, `lib/tm-ticket*.ts`). The end-of-day ticket a
+foreman writes for work outside scope: company, project and GC, date of work,
+a one-line description and details, the crew as chips, each person's hours,
+material and equipment (quantities and units), then the GC superintendent
+reads it, signs ON THE SCREEN (a canvas, pointer events, one SVG path, no
+library) and types name, title and email. One email carries the PDF to the
+foreman and the super together (`cc` through `deliverPdf`); each address is
+held to the daily cap, and only the foreman is a lead.
+
+- **No money.** Hours and quantities only; `lib/content.test.ts` fails the
+  build on a `$`, a price/cost/rate/amount word, "paid", "payment" or
+  "approved" in the PDF or the email, and on payment promises anywhere in the
+  tool's files.
+- **Ticket number** `TM-<second, base 32>-<3 random>`, issued by the browser
+  (`issueTicketNumber`). Never repeats within one browser with its storage
+  intact (each number's second is later than the last one issued there);
+  across devices it relies on the random part (1 in 32,768 within the same
+  second). Not globally unique, not sequential, no server counter.
+- **No photo.** The app has no file storage; the work screen says to send
+  photos with the PDF.
+- **"Turn these tickets into a change order"** on the sent screen opens
+  `/change-order?from=tm-ticket`. Only that flag is in the URL: the tickets
+  sent from this browser (kept in `localStorage`, newest 20) are added to the
+  change order as lines with the price EMPTY, listed under Backup, and
+  cleared.
+
+A bare `cstream.ai/tm-ticket` needs its own rewrite on prova-web, like the
+change order request. No new environment variables.
+
 ## Pre-fill links (2026-10-14)
 
 An outreach link can open a waiver that is already started. Every parameter

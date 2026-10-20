@@ -1,18 +1,30 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactElement, type ReactNode } from "react";
-import { forgetEverything, loadChangeOrder, loadContact, loadFields, saveChangeOrder, saveContact, type Contact } from "@/lib/browser-memory";
+import {
+  clearSentTickets,
+  forgetEverything,
+  loadChangeOrder,
+  loadContact,
+  loadFields,
+  loadSentTickets,
+  saveChangeOrder,
+  saveContact,
+  type Contact,
+} from "@/lib/browser-memory";
+import { addTicketsToChangeOrder } from "@/lib/tm-ticket";
 import {
   checkChangeOrder,
   EMPTY_DRAFT,
   EMPTY_LINE,
   formatCents,
+  freshDraft,
   LINE_KINDS,
   LINE_LABELS,
   lineAmount,
   liveTotals,
   PCO_STATUSES,
-  restoreDraft,
+  startDraft,
   STEPS,
   stepErrors,
   type ChangeOrderDraft,
@@ -20,6 +32,7 @@ import {
   type LineKind,
 } from "@/lib/change-order";
 import { isEmail } from "@/lib/email";
+import { localToday } from "@/lib/fills";
 import { BASE_PATH } from "@/lib/site";
 import { Card, INPUT, PRIMARY, SendFields, StepShell } from "./StepShell";
 
@@ -54,15 +67,28 @@ export function ChangeOrderTool() {
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<{ to: string; notConfigured: boolean } | null>(null);
+  const [handedOff, setHandedOff] = useState(0);
 
   // This browser's memory, after mount only: the server has no localStorage.
   useEffect(() => {
     const known = loadContact();
-    const restored = restoreDraft(loadChangeOrder());
     // A sub who made a waiver here already told us their company.
-    if (!restored.companyName) restored.companyName = known?.company || loadFields().companyName || "";
-    if (!restored.date) restored.date = today();
-    setDraft(restored);
+    let start = startDraft(loadChangeOrder(), localToday(), known?.company || loadFields().companyName || "");
+    // "Turn these tickets into a change order" (TmTicketTool): the sent
+    // tickets' hours and quantities are ADDED as lines with no price, and
+    // handed over once. Only the flag is in the URL, never the data.
+    if (new URLSearchParams(window.location.search).get("from") === "tm-ticket") {
+      const tickets = loadSentTickets();
+      start = addTicketsToChangeOrder(start, tickets);
+      // Saved BEFORE the tickets are cleared, so the lines exist in exactly
+      // one place at every moment: an effect run twice (React's dev mode
+      // does) or a tab closed right now cannot lose them.
+      saveChangeOrder(start);
+      clearSentTickets();
+      setHandedOff(tickets.length);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    setDraft(start);
     setContact(known);
     if (known) {
       setName(known.name);
@@ -125,6 +151,12 @@ export function ChangeOrderTool() {
       const saved = { email: email.trim(), name: name.trim(), company: company.trim() };
       saveContact(saved);
       setContact(saved);
+      // Sent: the request is finished, so it is no longer a draft to restore.
+      // Saved here as well as by the effect, so closing the tab right now
+      // cannot leave the sent request behind.
+      const fresh = freshDraft(draft.companyName, localToday());
+      saveChangeOrder(fresh);
+      setDraft(fresh);
       setSentTo({ to: body.sentTo, notConfigured: body.notConfigured === true });
     } catch {
       setSendError("Could not reach the server. Check your signal and try again.");
@@ -170,6 +202,14 @@ export function ChangeOrderTool() {
       total={STEPS.length}
       done={done}
       title={done ? "Check Your Inbox" : step.title}
+      notice={
+        handedOff && !done ? (
+          <p role="status" className="rounded-md bg-warn-ground p-3 font-semibold text-ink">
+            Added the hours and quantities from {handedOff === 1 ? "1 T&M ticket" : `${handedOff} T&M tickets`} as lines. Tickets carry no
+            prices: type a rate on each one.
+          </p>
+        ) : null
+      }
       onBack={index > 0 ? () => go(index - 1) : null}
       busy={busy}
       nextLabel={step.id === "send" ? (busy ? "Sending..." : "Email me the PDF") : step.id === "review" ? "Looks right" : "Next"}
@@ -194,8 +234,8 @@ export function ChangeOrderTool() {
           <button
             type="button"
             onClick={() => {
-              // Same company and job, a new change: the scope, lines and backup start empty.
-              setDraft((existing) => ({ ...EMPTY_DRAFT, companyName: existing.companyName, project: existing.project, projectAddress: existing.projectAddress, gc: existing.gc, date: today() }));
+              // Exactly what coming back fresh gives: your company and today.
+              setDraft((existing) => freshDraft(existing.companyName, localToday()));
               setSentTo(null);
               go(0);
             }}
@@ -204,12 +244,12 @@ export function ChangeOrderTool() {
             Make another change order request
           </button>
           <p className="text-sm text-quiet">
-            This browser remembers your company, job and email for next time.{" "}
+            This browser remembers your company, name and email for next time.{" "}
             <button
               type="button"
               onClick={() => {
                 forgetEverything();
-                setDraft({ ...EMPTY_DRAFT, date: today() });
+                setDraft(freshDraft("", localToday()));
                 setContact(null);
                 setName("");
                 setEmail("");
@@ -352,13 +392,6 @@ export function ChangeOrderTool() {
       )}
     </StepShell>
   );
-}
-
-/** The user's own calendar date, as a date input wants it. Called only in
- * effects and click handlers, never during render (hydration). */
-function today(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function Lines({

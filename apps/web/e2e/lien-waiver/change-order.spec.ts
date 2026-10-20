@@ -113,11 +113,28 @@ test("a change order request, start to inbox, priced to the cent", async ({ page
   expect(posted[0]).toMatchObject({ name: "Pat Sub", email: "pat@example.com", returning: false, website: "" });
   expect(posted[0].order).toMatchObject({ gc: "Acme Builders Inc.", markupPercent: "15", scheduleDays: "2" });
 
-  // A reload keeps the company and job for the next request.
+  // Sent means finished: what this browser keeps is the company and today,
+  // never the last request's job, lines or (old) date. Found by clicking,
+  // 2026-10-18 -- the whole request used to come back and take new typing.
+  const stored = () => page.evaluate(() => JSON.parse(localStorage.getItem("change-order:draft:v1") ?? "null"));
+  const browserToday = await page.evaluate(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  });
+  const fresh = { companyName: "Desert Drywall LLC", project: "", gc: "", title: "", labor: [], material: [], markupPercent: "", scheduleDays: "", backup: "", date: browserToday };
+  expect(await stored()).toMatchObject(fresh);
+
+  // Make another is the same as coming back: company kept, the job is empty.
   await page.getByRole("button", { name: "Make another change order request" }).click();
+  await expect(page.locator("#field-companyName")).toHaveValue("Desert Drywall LLC");
   await page.reload();
   await waitForHydration(page);
   await expect(page.locator("#field-companyName")).toHaveValue("Desert Drywall LLC");
+  await next(page);
+  await expect(heading(page)).toHaveText("Project");
+  await expect(page.locator("#field-project")).toHaveValue("");
+  await expect(page.locator("#field-gc")).toHaveValue("");
+  expect(await stored()).toMatchObject(fresh);
 
   expect(errors).toEqual([]);
 });

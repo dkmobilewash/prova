@@ -167,6 +167,32 @@ export function restoreDraft(raw: Record<string, unknown> | null): ChangeOrderDr
   return draft;
 }
 
+/**
+ * A NEW request: the sub's own company and today's date, nothing else. Used
+ * after a successful send and by "Make another change order request", so
+ * the two cannot drift -- the last request's job, lines, markup and date
+ * must never sit in the boxes waiting to be appended to and re-sent.
+ */
+export function freshDraft(companyName: string, today: string): ChangeOrderDraft {
+  return { ...EMPTY_DRAFT, companyName, date: today };
+}
+
+/**
+ * The draft a visit starts from. An UNFINISHED draft (never sent; a sent one
+ * was replaced by freshDraft) is restored, so a reload on site loses
+ * nothing -- but its date is moved up to today when it is in the past. A
+ * request is dated the day it goes out, and yesterday's date kept silently
+ * is how a stale date reaches a GC. A date later than today was picked on
+ * purpose and is kept. `today` and the dates are both "YYYY-MM-DD", which
+ * compare correctly as strings.
+ */
+export function startDraft(stored: Record<string, unknown> | null, today: string, knownCompany: string): ChangeOrderDraft {
+  const draft = restoreDraft(stored);
+  if (!draft.companyName) draft.companyName = knownCompany;
+  if (!draft.date || draft.date < today) draft.date = today;
+  return draft;
+}
+
 /* ------------------------------------------------------------------ *
  * Checking: shared by the screens and the API, so they cannot disagree.
  * ------------------------------------------------------------------ */
@@ -208,7 +234,10 @@ const MAX_MARKUP_BP = 10_000n;
 
 export type ChangeOrderErrors = Record<string, string>;
 
-function text(errors: ChangeOrderErrors, key: string, label: string, raw: unknown, required: boolean, max = MAX_TEXT): string {
+/** One typed text field, checked for the PDF: whitespace collapsed (newlines
+ * kept), length, and characters the standard fonts can print. Shared with
+ * the T&M ticket (lib/tm-ticket.ts). */
+export function checkText(errors: ChangeOrderErrors, key: string, label: string, raw: unknown, required: boolean, max = MAX_TEXT): string {
   const value = typeof raw === "string" ? raw.replace(/[^\S\n]+/g, " ").trim() : "";
   if (!value) {
     if (required) errors[key] = `${label} is needed.`;
@@ -243,13 +272,13 @@ export function checkChangeOrder(draft: Partial<Record<keyof ChangeOrderDraft, u
   errors: ChangeOrderErrors;
 } {
   const errors: ChangeOrderErrors = {};
-  const companyName = text(errors, "companyName", "Your company name", draft.companyName, true);
-  const project = text(errors, "project", "Project name", draft.project, true);
-  const projectAddress = text(errors, "projectAddress", "Project address", draft.projectAddress, false);
-  const gc = text(errors, "gc", "General contractor", draft.gc, true);
-  const pcoNumber = text(errors, "pcoNumber", "Change order number", draft.pcoNumber, false, 40);
-  const title = text(errors, "title", "Title", draft.title, true);
-  const description = text(errors, "description", "Description of the change", draft.description, true, MAX_DESCRIPTION);
+  const companyName = checkText(errors, "companyName", "Your company name", draft.companyName, true);
+  const project = checkText(errors, "project", "Project name", draft.project, true);
+  const projectAddress = checkText(errors, "projectAddress", "Project address", draft.projectAddress, false);
+  const gc = checkText(errors, "gc", "General contractor", draft.gc, true);
+  const pcoNumber = checkText(errors, "pcoNumber", "Change order number", draft.pcoNumber, false, 40);
+  const title = checkText(errors, "title", "Title", draft.title, true);
+  const description = checkText(errors, "description", "Description of the change", draft.description, true, MAX_DESCRIPTION);
 
   const rawDate = typeof draft.date === "string" ? draft.date : "";
   const date = formatDate(rawDate);
@@ -266,8 +295,8 @@ export function checkChangeOrder(draft: Partial<Record<keyof ChangeOrderDraft, u
       if (isBlankLine(line)) return;
       const key = `${kind}.${index}`;
       const labels = LINE_LABELS[kind];
-      const lineDescription = text(errors, `${key}.description`, "What it is", line.description, true);
-      const unit = text(errors, `${key}.unit`, "Unit", line.unit, false, 12);
+      const lineDescription = checkText(errors, `${key}.description`, "What it is", line.description, true);
+      const unit = checkText(errors, `${key}.unit`, "Unit", line.unit, false, 12);
       const quantity = parseHundredths(typeof line.quantity === "string" ? line.quantity : "");
       if (quantity === null || quantity === 0n) errors[`${key}.quantity`] = `${labels.quantity} should be a number like 8 or 12.5.`;
       const price = parseHundredths(typeof line.unitPrice === "string" ? line.unitPrice : "");

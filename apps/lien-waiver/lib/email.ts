@@ -73,7 +73,9 @@ export function isEmail(value: string): boolean {
 }
 
 export async function sendEmail(
-  message: { to: string; subject: string; text: string; attachments?: Attachment[]; replyTo?: string },
+  /** `cc`: a second person who gets the same email at once (the T&M
+   * ticket's superintendent). Both see each other's address. */
+  message: { to: string; cc?: string; subject: string; text: string; attachments?: Attachment[]; replyTo?: string },
   env: EmailEnv = process.env as EmailEnv,
   fetcher: typeof fetch = fetch,
 ): Promise<SendResult> {
@@ -86,6 +88,7 @@ export async function sendEmail(
     body: JSON.stringify({
       from,
       to: [message.to],
+      cc: message.cc ? [message.cc] : undefined,
       subject: message.subject,
       text: message.text,
       reply_to: message.replyTo,

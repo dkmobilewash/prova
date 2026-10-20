@@ -5,6 +5,10 @@ import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { checkChangeOrder, EMPTY_DRAFT } from "./change-order";
 import { renderChangeOrderPdf } from "./change-order-pdf";
+import { MemoryRateStore } from "./rate-limit";
+import { checkTicket } from "./tm-ticket";
+import { renderTicketPdf } from "./tm-ticket-pdf";
+import { handleTicketRequest } from "./tm-ticket-request";
 
 /**
  * THIS TOOL NEVER SAYS A WAIVER IS SAFE TO SIGN -- the rule C-Stream's own
@@ -92,20 +96,26 @@ const PROMISING = [
   /\bin breach\b/i,
 ];
 
-describe("the change order request promises nothing", () => {
+describe("the change order request and the T&M ticket promise nothing", () => {
   const files = SCANNED_DIRS.flatMap((dir) => walk(join(ROOT, dir))).filter((file) =>
-    /change-order|ChangeOrder|StepShell/.test(relative(ROOT, file)),
+    /change-order|ChangeOrder|StepShell|tm-ticket|TmTicket/.test(relative(ROOT, file)),
   );
 
-  it("is looking at every file of the tool", () => {
+  it("is looking at every file of both tools", () => {
     expect(files.map((file) => relative(ROOT, file)).sort()).toEqual([
       "app/api/change-order/route.ts",
+      "app/api/tm-ticket/route.ts",
       "app/change-order/page.tsx",
+      "app/tm-ticket/page.tsx",
       "components/ChangeOrderTool.tsx",
       "components/StepShell.tsx",
+      "components/TmTicketTool.tsx",
       "lib/change-order-pdf.ts",
       "lib/change-order-request.ts",
       "lib/change-order.ts",
+      "lib/tm-ticket-pdf.ts",
+      "lib/tm-ticket-request.ts",
+      "lib/tm-ticket.ts",
     ]);
   });
 
@@ -145,5 +155,63 @@ describe("the change order request promises nothing", () => {
       for (const item of (await (await doc.getPage(n)).getTextContent()).items) if ("str" in item) pdfText += ` ${item.str}`;
     }
     expect(pdfText).toContain("General contractor acceptance");
+  });
+
+  it.each(PROMISING.map((pattern) => [pattern.source, pattern] as const))("never prints /%s/ on a T&M ticket or its email", async (_source, pattern) => {
+    expect(tm.pdf).not.toMatch(pattern);
+    expect(tm.email).not.toMatch(pattern);
+  });
+
+  /**
+   * A T&M TICKET IS HOURS AND QUANTITIES, NEVER MONEY, AND ITS SIGNATURE IS
+   * NOT A PAYMENT PROMISE (Diego's spec, 2026-10-17). Checked on what the GC
+   * actually reads -- the PDF and the email both people get -- rather than on
+   * the source, whose own copy says "no prices go on a ticket" to the sub.
+   */
+  const NOT_ON_A_TICKET = [/\$/, /\bprice/i, /\bcost/i, /\brate\b/i, /\bamount/i, /\bpaid\b/i, /\bpayment/i, /\bapprov/i, /\bauthori[sz]/i, /\bbill/i, /\binvoice/i];
+  it.each(NOT_ON_A_TICKET.map((pattern) => [pattern.source, pattern] as const))("a T&M ticket never says /%s/", (_source, pattern) => {
+    expect(tm.pdf).not.toMatch(pattern);
+    expect(tm.email).not.toMatch(pattern);
+  });
+
+  const tm = { pdf: "", email: "" };
+  beforeAll(async () => {
+    const draft = {
+      number: "TM-1NQ8K3P-7QX",
+      companyName: "A",
+      project: "B",
+      gc: "C",
+      date: "2026-10-18",
+      summary: "D",
+      details: "E",
+      crew: [{ name: "F", hours: "8" }],
+      material: [{ description: "G", quantity: "1", unit: "" }],
+      equipment: [{ description: "H", quantity: "1", unit: "" }],
+      superName: "J",
+      superTitle: "K",
+      superEmail: "l@example.com",
+      signature: "M10 10 L20 20 L30 30 L40 40",
+    };
+    const standardFontDataUrl = join(dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json")), "standard_fonts") + "/";
+    const doc = await getDocument({ data: await renderTicketPdf(checkTicket(draft).ticket!, "N"), useSystemFonts: false, isEvalSupported: false, standardFontDataUrl }).promise;
+    for (let n = 1; n <= doc.numPages; n += 1) {
+      for (const item of (await (await doc.getPage(n)).getTextContent()).items) if ("str" in item) tm.pdf += ` ${item.str}`;
+    }
+    expect(tm.pdf).toContain("General contractor's superintendent");
+    // The email both people get, through the real handler with a fake send.
+    await handleTicketRequest(
+      { ticket: draft, email: "n@example.com", name: "N" },
+      {
+        env: {},
+        ip: "1",
+        rate: { store: new MemoryRateStore(), salt: "s" },
+        send: async (message) => {
+          if (message.cc) tm.email = `${message.subject}\n${message.text}`;
+          return { status: "sent", id: "x" };
+        },
+        subscribe: async () => ({ status: "sent", id: "c" }),
+      },
+    );
+    expect(tm.email).toContain("TM-1NQ8K3P-7QX");
   });
 });

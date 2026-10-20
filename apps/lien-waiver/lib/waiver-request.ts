@@ -160,6 +160,10 @@ export async function deliverPdf(
     /** Tool-specific lines for the lead note, after Company. Never what was
      * typed into the document -- only what kind of document it was. */
     leadDetails: string[];
+    /** A second recipient of the SAME email, at once (the T&M ticket's
+     * superintendent). Held to the same per-address cap, never added to the
+     * audience and never the lead -- they did not ask us for anything. */
+    cc?: string;
   },
   deps: Pick<WaiverDeps, "env" | "now" | "log"> & {
     rate: { store: RateStore; salt: string };
@@ -169,13 +173,19 @@ export async function deliverPdf(
 ): Promise<WaiverResponse> {
   const { email, name, returning, ref } = input;
   const { send, subscribe } = deps;
-  if (!(await underLimit(deps.rate.store, rateKey("email", email, deps.rate.salt), LIMITS.emailsPerAddressPerDay, DAY))) {
-    return fail(429, input.tooMany);
+  const cc = input.cc && input.cc.toLowerCase() !== email.toLowerCase() ? input.cc : undefined;
+  // Every address this email reaches is held to its day's cap -- a cc'd
+  // address is not a way round it.
+  for (const address of cc ? [email, cc] : [email]) {
+    if (!(await underLimit(deps.rate.store, rateKey("email", address, deps.rate.salt), LIMITS.emailsPerAddressPerDay, DAY))) {
+      return fail(429, input.tooMany);
+    }
   }
 
   const sent = await send(
     {
       to: email,
+      ...(cc ? { cc } : {}),
       subject: input.subject,
       text: [
         ...input.text,
@@ -184,9 +194,13 @@ export async function deliverPdf(
         // way out, and a mailing address. The address is Diego's to supply
         // (LIEN_TOOL_MAILING_ADDRESS); until then the line is left out
         // rather than printing a placeholder to a real person.
-        input.marketingOptIn
-          ? "You asked for this PDF and for occasional email from C-Stream. Reply STOP and we will not email you again."
-          : "You got this because you asked for this PDF. We will not email you again unless you sign up.",
+        // With a cc the same words reach someone who asked for nothing, so
+        // they must be true for both readers.
+        cc
+          ? "You got this because your address was entered on this document when it was filled in. C-Stream will not email you again because of it."
+          : input.marketingOptIn
+            ? "You asked for this PDF and for occasional email from C-Stream. Reply STOP and we will not email you again."
+            : "You got this because you asked for this PDF. We will not email you again unless you sign up.",
         deps.env.LIEN_TOOL_MAILING_ADDRESS?.trim() ? `C-Stream, ${deps.env.LIEN_TOOL_MAILING_ADDRESS.trim()}` : null,
       ]
         .filter((line) => line !== null)
@@ -195,7 +209,9 @@ export async function deliverPdf(
     },
     deps.env,
   );
-  if (sent.status === "rejected") return fail(400, "That email address was rejected. Check it and try again.");
+  if (sent.status === "rejected") {
+    return fail(400, cc ? "One of the two email addresses was rejected. Check both and try again." : "That email address was rejected. Check it and try again.");
+  }
   reportUnlanded(`the ${input.what} email to the person`, sent, deps.env, deps.log);
   // The email is the only way the person gets the PDF, so if it did not go
   // there is nothing to hand over: tell them to try again. Outside
