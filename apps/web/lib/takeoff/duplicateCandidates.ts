@@ -1,3 +1,5 @@
+import { wallSupport } from "./offsetCandidates";
+import type { StrokeSegment } from "./wallVectors";
 import type { Candidate } from "./answerKeyReview";
 
 /**
@@ -53,10 +55,16 @@ export const MOSTLY_OVERLAPPING = 0.7;
 const ROUGHLY_PARALLEL = 0.98;
 
 export type DuplicatePair = {
-  /** The one to keep: the longer, or the thicker when lengths tie. */
+  /** The one to keep: the better supported, else the longer, else the thicker. */
   keep: string;
   /** The one to drop. */
   drop: string;
+  /**
+   * How well each twin's own faces are drawn, when the sheet's lines were
+   * given. Null where they were not — so a reader can tell "they were equal"
+   * from "nobody looked".
+   */
+  support?: { keep: number; drop: number } | null;
   /** How much of the shorter lies along the longer, 0 to 1. */
   share: number;
   /** How far apart their centrelines are, in feet. */
@@ -88,9 +96,82 @@ const overlapOf = (a: Line, b: Line) => {
  * one pair per candidate is returned, so a wall offered three times yields
  * two pairs rather than three and the chain still resolves to one keeper.
  */
+/**
+ * How much better supported a twin must be before support overrides length.
+ *
+ * A fifth of the run. Below that the two readings are the same quality and
+ * the longer one is still the better bet; above it, one of them is sitting on
+ * a wall and the other is not.
+ */
+export const SUPPORT_MARGIN = 0.2;
+
+/**
+ * How different in length two candidates may be before support stops deciding.
+ *
+ * ── SUPPORT PICKS BETWEEN TWINS, NOT BETWEEN A WALL AND A FRAGMENT ──
+ *
+ * `share` is measured against the SHORTER run, so a 3 ft candidate lying
+ * inside a 160 ft wall is a duplicate pair by this file's own definition. For
+ * a pair like that the long one is the wall and the short one is a piece of
+ * it, and length is exactly the right rule.
+ *
+ * Measured before this guard existed: the support rule alone swapped 16
+ * pre-marks across eight labelled sheets, and among them Camp Bow Wow A101
+ * would have kept a 3.5 ft candidate and REJECTED a 160 ft run — 156 ft of
+ * wall thrown away to fix a nine-inch offset. The defect reported was two
+ * twins of near-equal length, one on the wall and one beside it, which is the
+ * case this bound keeps.
+ *
+ * ── 2.5, CHOSEN BY MEASURING WHAT EACH VALUE ADMITS ──
+ *
+ * Swept over the eight labelled sheets, counting the pre-marks that swap and
+ * looking at what each swap would DROP:
+ *
+ *   | bound | swaps | the worst thing it drops |
+ *   | --- | --- | --- |
+ *   | 2 | 3 | a run with support 0.00 |
+ *   | **2.5** | **4** | **a run with support 0.00** |
+ *   | 3 | 5 | a run with support 0.65 — a wall that IS drawn |
+ *
+ * So 2.5 is the widest bound at which every swap rejects a candidate whose
+ * second face is not drawn at all. It is also the value that catches both of
+ * the two twins reported wrong on E Street 421 A2.1; 2 catches one of them.
+ * The number is the edge of the evidence rather than the count somebody
+ * wanted, which is why the sweep is written down.
+ */
+export const SIMILAR_LENGTH = 2.5;
+
+/**
+ * ── WHAT THIS RULE CANNOT SEE ──
+ *
+ * Support separates two twins when the WRONG one is paired with something
+ * short — a shelf, a shelf end, a run of glass — which is every twin the
+ * sweep over the eight labelled sheets swapped: each dropped candidate scored
+ * 0.00, meaning one of its faces was not drawn for its length at all.
+ *
+ * It does NOT separate them when the wrong partner is itself a long,
+ * full-length line. A twin pairing a wall face with a glass wall drawn the
+ * whole length of the room has two fully-drawn faces and scores as well as
+ * the real wall does. Found by writing the fixture that way first and
+ * watching the test fail.
+ *
+ * The remaining signal for that case is the one Diego named second: whether
+ * the THICKNESS matches the wall as drawn. It needs a notion of the sheet's
+ * own thicknesses, which this file does not have, and it is not built — so
+ * the bound is written here rather than left for somebody to discover.
+ */
+
 export function duplicatePairs(
   candidates: readonly Candidate[],
   feetPerUnit: number,
+  /**
+   * The sheet's own lines. Given them, the keeper is the twin whose two faces
+   * are actually DRAWN for its length; without them the rule is length, as it
+   * was. Optional because the review state is built before the geometry is
+   * always to hand, and a missing argument must not silently change which
+   * candidate is rejected.
+   */
+  segments?: readonly StrokeSegment[],
 ): DuplicatePair[] {
   const out: DuplicatePair[] = [];
   const paired = new Set<string>();
@@ -131,15 +212,44 @@ export function duplicatePairs(
       const share = overlapOf(a, b) / Math.min(la, lb);
       if (share < MOSTLY_OVERLAPPING) continue;
 
-      // `a` is the longer by the sort; keep it unless they tie, in which case
-      // the thicker one is the better reading of the wall.
+      // ── WHICH TWIN IS ACTUALLY ON THE WALL ──
+      //
+      // `a` is the longer by the sort, and length alone picked the wrong one
+      // twice on E Street 421 A2.1: the candidate offset nine inches beside
+      // the wall — pairing a wall face with the glass line next to it — was
+      // longer than the one sitting on the wall, so the right answer was
+      // auto-rejected. `wallSupport` asks whether a run's own two faces are
+      // drawn for its whole length, which is what separates them.
+      //
+      // Length still decides when support cannot be measured or when the two
+      // are close: an unreadable sheet must not invert the rule, and two
+      // equally supported readings are a question about length again.
+      const support =
+        segments === undefined
+          ? null
+          : {
+              a: wallSupport({ run: asRun(a), segments, feetPerUnit }).support,
+              b: wallSupport({ run: asRun(b), segments, feetPerUnit }).support,
+            };
       const tie = Math.abs(a.lengthFeet - b.lengthFeet) < 0.01;
-      const keepA = !tie || (a.thicknessIn ?? 0) >= (b.thicknessIn ?? 0);
+      const longer = Math.max(a.lengthFeet, b.lengthFeet);
+      const shorter = Math.min(a.lengthFeet, b.lengthFeet);
+      const comparable = shorter > 0 && longer / shorter <= SIMILAR_LENGTH;
+      const keepA =
+        support !== null &&
+        comparable &&
+        Math.abs(support.a - support.b) >= SUPPORT_MARGIN
+          ? support.a > support.b
+          : !tie || (a.thicknessIn ?? 0) >= (b.thicknessIn ?? 0);
       out.push({
         keep: keepA ? a.id : b.id,
         drop: keepA ? b.id : a.id,
         share,
         apartFeet: apart,
+        support:
+          support === null
+            ? null
+            : { keep: keepA ? support.a : support.b, drop: keepA ? support.b : support.a },
       });
       // ── ONLY THE DROPPED ONE IS CONSUMED, AND THE SCAN CONTINUES ──
       //
@@ -170,4 +280,16 @@ export function duplicateOf(
     if (pair.drop === id) return { other: pair.keep, keeping: false, pair };
   }
   return null;
+}
+
+/** A candidate as `wallSupport` wants it — thickness in FEET, not inches. */
+function asRun(candidate: Candidate) {
+  return {
+    x1: candidate.x1,
+    y1: candidate.y1,
+    x2: candidate.x2,
+    y2: candidate.y2,
+    lengthFeet: candidate.lengthFeet,
+    thicknessFeet: (candidate.thicknessIn ?? 0) / 12,
+  };
 }

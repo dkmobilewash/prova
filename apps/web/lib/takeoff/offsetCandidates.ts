@@ -405,3 +405,56 @@ export function lopsidedPairs(input: {
   findings.sort((x, y) => x.faces.ratio - y.faces.ratio);
   return { findings, examined };
 }
+
+/**
+ * How well a run is supported by the lines actually drawn for it.
+ *
+ * ── THE NUMBER THAT PICKS THE RIGHT TWIN ──
+ *
+ * When the finder offers the same wall twice, one of the two usually sits ON
+ * the wall and the other sits beside it — paired with a glass line, a shelf or
+ * a furring layer nine inches away. Reported from E Street 421 A2.1: the
+ * duplicate pre-marking auto-rejected the one on the wall twice, at the
+ * conference room's east wall and the entry's west glass wall, because the
+ * rule kept the LONGER of the two and the offset twin happened to be longer.
+ *
+ * Length cannot tell them apart and neither can thickness on its own. What
+ * can is whether the run's OWN two faces are drawn for its whole length: a
+ * wall has two faces and both run the length of it, so a candidate sitting on
+ * one reads 1, and a candidate pairing a wall face with something else reads
+ * low on the side that is not a wall.
+ *
+ * Returns 0 when the faces cannot be found at all, which is the same answer as
+ * "nothing supports this" — the caller treats an unmeasurable run as no better
+ * than its twin rather than as worse, because an unreadable sheet must not
+ * silently invert the rule.
+ */
+export function wallSupport(input: {
+  run: Run;
+  segments: readonly StrokeSegment[];
+  feetPerUnit: number;
+}): { support: number; longFeet: number; shortFeet: number } {
+  const { run, segments, feetPerUnit } = input;
+  const halfThick = (run.thicknessFeet ?? 0) / 2 / feetPerUnit;
+  if (!(halfThick > 0) || !(feetPerUnit > 0) || !(run.lengthFeet > 0)) {
+    return { support: 0, longFeet: 0, shortFeet: 0 };
+  }
+  const bands = bandsAlong(run, segments, feetPerUnit);
+  const tolerance = Math.max(halfThick * 0.35, (1 / 12 / feetPerUnit) * 1.5);
+  const near = (want: number) =>
+    bands
+      .filter((b) => Math.abs(b.offset - want) <= tolerance)
+      .sort((a, b) => b.extentFeet - a.extentFeet)[0];
+  const a = near(-halfThick);
+  const b = near(halfThick);
+  if (a === undefined || b === undefined) return { support: 0, longFeet: 0, shortFeet: 0 };
+  const longFeet = Math.max(a.extentFeet, b.extentFeet);
+  const shortFeet = Math.min(a.extentFeet, b.extentFeet);
+  // Against the RUN, not against the other face: a short wall butting into a
+  // long one has a 5 ft face and a 175 ft face and is perfectly ordinary.
+  return {
+    support: Math.min(1, shortFeet / run.lengthFeet),
+    longFeet,
+    shortFeet,
+  };
+}

@@ -1041,13 +1041,14 @@ export function TakeoffWorkspace({ jobId, jobName, data, savedAt, openPage, open
                       // The scale, so `startReview` can measure duplicates in
                       // FEET. Without it no duplicate is looked for and the
                       // panel silently loses the check.
-                      onCandidates: (candidates) =>
+                      onCandidates: (candidates, segments) =>
                         setKeyState(
                           startReview(
                             candidates,
                             currentSheet?.calibration != null
                               ? (feetPerPageWidth(currentSheet.calibration) ?? 0)
                               : 0,
+                            segments,
                           ),
                         ),
                       onSplitAt: (id, at) => {

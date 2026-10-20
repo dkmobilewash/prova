@@ -64,7 +64,29 @@ export type LabelFile = {
   page: number;
   reviewedBy: string;
   reviewedAt: string;
-  /** Seconds of wall-clock the reviewer spent with this sheet open. */
+  /**
+   * Who did the labelling, as a kind rather than a name.
+   *
+   * ── AN AI SESSION'S MINUTES ARE NOT A PERSON'S MINUTES ──
+   *
+   * The panel's clock sums the gaps BETWEEN decisions and drops any gap over
+   * six minutes as idle, which is right for somebody working through a sheet
+   * and wrong for a model: it reads the whole drawing first and then presses
+   * keys in bursts, so the reading is thrown away as idle and the batches are
+   * counted as instants. On E Street 421 it reported 3m26s for a session that
+   * took far longer.
+   *
+   * So the kind is recorded beside the time, and `secondsSpent` from an AI
+   * session is not a measurement of what the work costs. Nothing stops a
+   * reader averaging the two together except knowing which is which, which is
+   * why this field exists rather than a convention about names.
+   */
+  reviewerKind: "human" | "ai";
+  /**
+   * Seconds of wall-clock the reviewer spent with this sheet open.
+   *
+   * Only comparable across sessions of the same `reviewerKind` — see above.
+   */
   secondsSpent: number;
   feetPerUnit: number;
   featureNames: string[];
@@ -241,6 +263,7 @@ export function labelFile(input: {
     page: input.page,
     reviewedBy: input.reviewedBy,
     reviewedAt: new Date().toISOString(),
+    reviewerKind: reviewerKindOf(input.reviewedBy),
     secondsSpent: Math.round(input.secondsSpent),
     feetPerUnit: input.feetPerUnit,
     featureNames: [...FEATURE_NAMES],
@@ -270,4 +293,25 @@ export function labelFile(input: {
       lengthFeet: t.lengthFeet,
     })),
   };
+}
+
+/**
+ * Whether a reviewer name is a person or a model.
+ *
+ * Derived from the name rather than asked for, because the name is what the
+ * panel already collects and a second field would be one more thing to get
+ * wrong at the moment of saving. The names in use are "AI-Claude-Chrome" and
+ * a person's own; anything naming Claude, GPT, a bot or an agent is a model.
+ *
+ * Wrong in the safe direction by design: a person called "Roboto" is recorded
+ * as AI and their time is left out of a cost estimate, which loses one data
+ * point. The other way round puts a model's batched keystrokes into an
+ * estimate of what labelling costs a person, which is a number somebody would
+ * plan with.
+ */
+export function reviewerKindOf(reviewedBy: string): "human" | "ai" {
+  return /\b(?:ai|claude|gpt|llm|bot|agent|automated|robot)\b/i.test(reviewedBy) ||
+    /^ai[-_]/i.test(reviewedBy.trim())
+    ? "ai"
+    : "human";
 }

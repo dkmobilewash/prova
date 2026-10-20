@@ -1,4 +1,5 @@
 import { duplicatePairs, type DuplicatePair } from "./duplicateCandidates";
+import type { StrokeSegment } from "./wallVectors";
 import { type AnswerKey, type KeyWall } from "@/lib/takeoff/answerKey";
 
 /**
@@ -75,6 +76,9 @@ export function startReview(
   /** The sheet's scale, so duplicates can be measured in feet. Omit it and
    *  no duplicate is looked for, which is what every existing caller gets. */
   feetPerUnit?: number,
+  /** The sheet's own lines, in page-width units, so the duplicate rule can ask
+   *  which twin is actually drawn on a wall. Omitted, it falls back to length. */
+  segments?: readonly StrokeSegment[],
 ): ReviewState {
   const verdicts: Record<string, Verdict> = {};
   for (const one of candidates) verdicts[one.id] = "unreviewed";
@@ -94,7 +98,7 @@ export function startReview(
   const duplicates =
     feetPerUnit === undefined || !(feetPerUnit > 0)
       ? []
-      : duplicatePairs(candidates, feetPerUnit);
+      : duplicatePairs(candidates, feetPerUnit, segments);
   for (const pair of duplicates) verdicts[pair.drop] = "not-a-wall";
 
   return { candidates: [...candidates], verdicts, traced: [], duplicates };

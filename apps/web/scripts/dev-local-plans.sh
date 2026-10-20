@@ -54,15 +54,42 @@ fi
 # client's PDFs.
 mkdir -p "$LABELS"
 
+# ── BUILT=1 FOR A LABELLING SESSION, AND THE REASON IS MEASURED ──
+#
+# `next dev` recompiles whenever a source file changes, and a request that
+# lands mid-compile waits for it. On 2026-10-20, while Claude in Chrome
+# laboured through E Street 421, this server compiled FIFTY-SEVEN times —
+# 11s, 19s, 48s, 108s, 126s — because somebody was editing the repo in another
+# window. The labeller saw the plan take about twenty seconds to appear and
+# two requests fail; the slowest response in the log is 63 SECONDS.
+#
+# Nothing in the app was wrong. A production build never recompiles, so a
+# labelling session is immune to whatever anybody is editing:
+#
+#     BUILT=1 PORT=3001 ./scripts/dev-local-plans.sh
+#
+# It costs one build up front and makes the session independent of the tree.
+# Use `next dev` when you are the one changing the code and want it reloaded.
+MODE="${BUILT:-0}"
+
 echo "plans from : $PLANS"
 echo "labels to  : $LABELS"
 echo "port       : $PORT"
 echo "database   : $HOST"
+echo "mode       : $([ "$MODE" = "1" ] && echo 'production build — no recompiles' || echo 'next dev — recompiles on every edit')"
 echo "sheets stay on this machine; nothing is uploaded"
 echo
+
+if [ "$MODE" = "1" ]; then
+  DATABASE_URL="$LOCAL_DB" \
+  DIRECT_URL="$LOCAL_DB" \
+  TAKEOFF_LOCAL_PLAN_DIR="$PLANS" \
+  TAKEOFF_LABEL_DIR="$LABELS" \
+    npx next build
+fi
 
 DATABASE_URL="$LOCAL_DB" \
 DIRECT_URL="$LOCAL_DB" \
 TAKEOFF_LOCAL_PLAN_DIR="$PLANS" \
 TAKEOFF_LABEL_DIR="$LABELS" \
-  exec npx next dev -p "$PORT"
+  exec npx next "$([ "$MODE" = "1" ] && echo start || echo dev)" -p "$PORT"

@@ -444,7 +444,16 @@ export function TakeoffPlanViewer({
      * has run. Derived in here because the raw geometry never leaves this
      * component, and the unpaired lines cannot be found without it.
      */
-    onCandidates?: (candidates: Candidate[]) => void;
+    /**
+     * The runs a reviewer judges, and the sheet's own lines beside them.
+     *
+     * The segments are passed because the duplicate rule needs them: picking
+     * which of two twins to keep is a question about which one's faces are
+     * actually drawn, and without them it falls back to length — which chose
+     * the wrong twin twice on E Street 421. They arrive in PAGE-WIDTH units,
+     * the same units the candidates are in.
+     */
+    onCandidates?: (candidates: Candidate[], segments?: StrokeSegment[]) => void;
     /**
      * Every PAIRING the finder considered, with its feature vector.
      *
@@ -958,7 +967,19 @@ export function TakeoffPlanViewer({
     if (answerKey.state.candidates.length > 0) return;
     const candidates = candidatesFromLastDetect();
     if (candidates !== null && candidates.length > 0) {
-      answerKey.onCandidates(candidates);
+      const W = lastDetect.current?.widthPt ?? 0;
+      answerKey.onCandidates(
+        candidates,
+        W > 0
+          ? lastDetect.current?.segments.map((one) => ({
+              ...one,
+              x1: one.x1 / W,
+              y1: one.y1 / W,
+              x2: one.x2 / W,
+              y2: one.y2 / W,
+            }))
+          : undefined,
+      );
       answerKey.onSetAside?.(setAsideRef.current);
     }
   }, [answerKey, candidatesFromLastDetect]);
@@ -3292,8 +3313,22 @@ export function TakeoffPlanViewer({
           // at least the size of the frame — so a small sheet sits in the
           // middle — and grows past it when the sheet does, which scrolls
           // normally in both directions.
-          <div className={fill ? "flex min-h-full min-w-full items-center justify-center" : ""}>
-          <div className="relative w-fit">
+          // ── CENTRED BY AUTO MARGINS, NOT BY `justify-center` ──
+          //
+          // Reported from an E Street 421 labelling run: above Fit, the left
+          // of the drawing could not be scrolled to — about 600px of it gone
+          // at 50%. `justify-center` on a flex container inside an
+          // `overflow-auto` frame splits the overflow EVENLY between both
+          // ends, and the start-side half is unreachable, because scrollLeft
+          // cannot go below zero. The right-hand overflow scrolls fine, which
+          // is why it reads as half the sheet being missing rather than as a
+          // layout that is wrong.
+          //
+          // `margin: auto` on the ITEM centres it exactly as well when there
+          // is room to spare, and when there is not it leaves the overflow at
+          // the end where the scrollbar can reach it.
+          <div className={fill ? "flex min-h-full min-w-full" : ""}>
+          <div className={`relative w-fit${fill ? " m-auto" : ""}`}>
             <canvas ref={canvasRef} className="block" />
             <svg
               viewBox={`0 0 1 ${aspect}`}
