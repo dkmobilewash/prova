@@ -65,3 +65,21 @@ were run once at the end and reported apart (STEM 35 of 181 runs typed and
 50 → 3, SLN 2 of 93 and 6 → 6), with the caveat that the second pass had
 already looked at them. `readWallLegend`, `tagsFromSymbols` and the door
 join have no caller outside the evals yet; wiring them is the finder's lane.
+
+Fourth pass, feet against the walls a reviewer accepted: on the thirteen
+labelled training sheets, the share of accepted wall FEET that get a type
+is 8–90% where the sheet carries tags (SW 318 of 353, NG Green Bay 313 of
+536, Camp Bow Wow 413 of 738, Baker 245 of 508, E Street 172 of 477,
+ELEVEN03 124–524 of 1,500–1,800 per floor) and zero on the three sheets
+whose tags live elsewhere. `typePropagation.ts` carries a tag along a
+straight wall of one thickness, past T-junctions and across a door-sized
+gap, stopping at a different tag, a turn or a fork; on these sheets, whose
+accepted walls already span their openings, it adds 9–26 ft on four of
+them and a 12-ft gap allowance was measured carrying a type across an open
+passage, so the gap is a double door. No training set has an "all
+partitions type X U.N.O." note, so the default tier is 0 ft everywhere and
+marked `default` where it ever applies. `bareTextTags.ts` accepts text
+that is exactly a legend code or a scheduled mark, outside any symbol and
+within 3 ft of a run: Bunkie's walls 0 → 65 ft and its doors 0 → 6 of 11,
+MHK's doors 1 → 6 of 31, SW +43 ft; a room-number-as-door-mark tier was
+measured, cropped and left out. Held-out sets are closed for this feature.

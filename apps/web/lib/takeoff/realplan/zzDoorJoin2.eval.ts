@@ -9,6 +9,7 @@ import {
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { gridText, tableRowsFromPage } from "../../plan-ingest/scheduleTable";
 import { joinOpeningsToSchedule, widthAndHeight, type PlacedMark } from "../openingMarks";
+import { bareTextTags } from "../bareTextTags";
 import { openingsInWalls } from "../openings";
 import { sheetStrokes } from "../sheetStrokes";
 import { shapeFromLegend, tagSymbols } from "../tagSymbols";
@@ -122,8 +123,10 @@ describe.skipIf(DIR === "" || CACHE === "")("joining a read door schedule to a p
     // mark is offered and geometry picks.
     const scheduleMarks = read.rows.map((r) => r.mark);
     const markShape = shapeFromLegend(symbols, { codes: scheduleMarks });
+    const scheduleSet = new Set(scheduleMarks.map((m) => m.toUpperCase()));
     const symbolMarks: PlacedMark[] = symbols
-      .filter((s) => s.rejected === null)
+      // Bunkie's `E105A` reads as a sheet reference; the schedule says it is a door.
+      .filter((s) => s.rejected === null || (s.rejected === "sheet-reference" && scheduleSet.has(s.text.trim().toUpperCase())))
       .map((s) => ({ text: s.text, x: s.x / W, y: s.y / W }));
     const walls = findWallsOnSheet({
       segments: planRead.segments,
@@ -157,6 +160,85 @@ describe.skipIf(DIR === "" || CACHE === "")("joining a read door schedule to a p
       feetPerUnit: FEET_PER_UNIT,
       walls,
     });
+    // ── BARE TEXT THAT IS EXACTLY A SCHEDULED MARK, BESIDE A WALL ──
+    //
+    // MHK and Bunkie print their marks with no symbol. The schedule is the
+    // vocabulary and the wall is the place; everything else on the sheet
+    // that looks like a mark is not offered.
+    const bare = bareTextTags({
+      text: items,
+      vocabulary: new Set(scheduleMarks.map((m) => m.toUpperCase())),
+      symbols,
+      walls,
+      feetPerUnit: FEET_PER_UNIT,
+      widthPt: W,
+    });
+    const markSet = new Set(scheduleMarks.map((m) => m.toUpperCase()));
+    const placedMarks = new Set(bySymbol.openings.map((o) => o.mark?.toUpperCase()).filter((m): m is string => m !== undefined));
+    const symbolHolding = symbols
+      .filter((sy) => markSet.has(sy.text.trim().toUpperCase()))
+      .map((sy) => {
+        const px = sy.x / W, py = sy.y / W;
+        let d = Infinity;
+        for (const w of walls) {
+          const dx = w.x2 - w.x1, dy = w.y2 - w.y1, len2 = dx * dx + dy * dy;
+          const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - w.x1) * dx + (py - w.y1) * dy) / len2));
+          d = Math.min(d, Math.hypot(px - (w.x1 + t * dx), py - (w.y1 + t * dy)) * FEET_PER_UNIT);
+        }
+        return `${sy.text} ${sy.shape} ${sy.rejected ?? "ok"} ${d === Infinity ? "no wall" : d.toFixed(1) + " ft"}${placedMarks.has(sy.text.trim().toUpperCase()) ? " PLACED" : ""}`;
+      });
+    console.log(`   symbols holding a scheduled mark: ${symbolHolding.join(", ")}`);
+    const bareMisses = items
+      .filter((i) => markSet.has(i.str.trim().toUpperCase()) && !bare.some((b) => b.x === (i.x + i.width / 2) / W))
+      .map((i) => {
+        const px = (i.x + i.width / 2) / W;
+        const py = (i.y - i.height / 2) / W;
+        let d = Infinity;
+        for (const w of walls) {
+          const dx = w.x2 - w.x1, dy = w.y2 - w.y1, len2 = dx * dx + dy * dy;
+          const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - w.x1) * dx + (py - w.y1) * dy) / len2));
+          d = Math.min(d, Math.hypot(px - (w.x1 + t * dx), py - (w.y1 + t * dy)) * FEET_PER_UNIT);
+        }
+        const cx = i.x + i.width / 2, cy = i.y - i.height / 2;
+        const inside = symbols.find((sy) => Math.hypot(sy.x - cx, sy.y - cy) <= sy.radius);
+        return `${i.str.trim()} ${d === Infinity ? "no wall" : d.toFixed(1) + " ft"}${inside ? ` [in ${inside.shape} r${(inside.radius / 72).toFixed(2)}in "${inside.text}" ${inside.rejected ?? "ok"}]` : ""}`;
+      });
+    // ── DOUBTFUL: A SCHEDULED MARK INSIDE A ROOM-NAME BOX ──
+    //
+    // MHK's door 105 is printed nowhere but as the `105` of `OFFICE 105`, and
+    // the schedule's mark IS the room number. Offered as a separate tier and
+    // cropped, because the box is beside the room, not the door.
+    const roomBoxMarks: PlacedMark[] = items
+      .filter((i) => markSet.has(i.str.trim().toUpperCase()))
+      .filter((i) => {
+        const cx = i.x + i.width / 2, cy = i.y - i.height / 2;
+        const inside = symbols.find((sy) => Math.hypot(sy.x - cx, sy.y - cy) <= sy.radius);
+        return inside !== undefined && inside.rejected === "code-too-long";
+      })
+      .map((i) => ({ text: i.str.trim(), x: (i.x + i.width / 2) / W, y: (i.y - i.height / 2) / W }));
+    const byRoomBox = joinOpeningsToSchedule({
+      openings,
+      marks: [...symbolMarks, ...bare.map((b) => ({ text: b.text, x: b.x, y: b.y })), ...roomBoxMarks],
+      rows,
+      feetPerUnit: FEET_PER_UNIT,
+      walls,
+    });
+    if (process.env.CROP_JSON) {
+      const crops = byRoomBox.openings
+        .filter((o) => o.mark !== null && roomBoxMarks.some((m) => m.text === o.mark) && !bare.some((b) => b.text === o.mark) && !symbolMarks.some((m) => m.text === o.mark))
+        .map((o) => {
+          const m = roomBoxMarks.find((r) => r.text === o.mark)!;
+          return { code: o.mark, shape: "room-box", sx: m.x * W, sy: m.y * W, lx: null, ly: null, wall: { x1: o.opening.x1 * W, y1: o.opening.y1 * W, x2: o.opening.x2 * W, y2: o.opening.y2 * W }, distFt: 0 };
+        });
+      writeFileSync(process.env.CROP_JSON, JSON.stringify({ set: SET, page: PLAN_PAGE, widthPt: W, heightPt: planRead.heightPt, feetPerUnit: FEET_PER_UNIT, crops }, null, 1));
+    }
+    const byBare = joinOpeningsToSchedule({
+      openings,
+      marks: [...symbolMarks, ...bare.map((b) => ({ text: b.text, x: b.x, y: b.y }))],
+      rows,
+      feetPerUnit: FEET_PER_UNIT,
+      walls,
+    });
 
     // eslint-disable-next-line no-console
     console.log(
@@ -173,7 +255,13 @@ describe.skipIf(DIR === "" || CACHE === "")("joining a read door schedule to a p
         `${(byText.matchRate * 100).toFixed(0).padStart(4)}%  ` +
         `${String(byText.rowsPlaced).padStart(11)}   ` +
         `${String(byText.openings.filter((o) => o.widthFrom === "schedule").length).padStart(19)}   ` +
-        `${String(byText.mismatches).padStart(10)}   ${String(byText.placedByMark).padStart(14)}`,
+        `${String(byText.mismatches).padStart(10)}   ${String(byText.placedByMark).padStart(14)}\n` +
+        `   symbols + exact bare marks ${String(byBare.matched).padStart(3)}  ` +
+          `${String(Math.round(byBare.matchRate * 100)).padStart(4)}%  ${String(byBare.rowsPlaced).padStart(11)}  ` +
+          `${String(byBare.openings.filter((o) => o.widthFrom === "schedule").length).padStart(20)}  ${String(byBare.mismatches).padStart(11)}  ${String(byBare.placedByMark).padStart(15)}   [${bare.map((b) => b.text).join(" ")}]\n` +
+        `   + room-box marks (doubtful) ${String(byRoomBox.matched).padStart(3)}  ${String(Math.round(byRoomBox.matchRate * 100)).padStart(4)}%  ${String(byRoomBox.rowsPlaced).padStart(11)}  ` +
+          `${String(byRoomBox.openings.filter((o) => o.widthFrom === "schedule").length).padStart(20)}  ${String(byRoomBox.mismatches).padStart(11)}  ${String(byRoomBox.placedByMark).padStart(15)}   [${roomBoxMarks.map((m) => m.text).join(" ")}]\n` +
+        `   exact schedule marks NOT beside a wall (in a symbol, or too far): ${bareMisses.join(", ")}`,
     );
 
     for (const one of bySymbol.openings.filter((o) => o.mismatch !== null).slice(0, 8)) {

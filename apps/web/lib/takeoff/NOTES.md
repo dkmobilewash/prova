@@ -1861,3 +1861,85 @@ first pass; ELEVEN03 not joined.
 Legends on all four read to studs, track and board (Central Bank 10 of 10
 types, Gen BBQ 19, SLN 4, STEM 13 with two layer-count flags and U1's two
 stud sizes flagged).
+
+### Fourth pass: feet against accepted walls, propagation, bare text (2026-10-20, night)
+
+**Held-out sets are closed for this feature.** Central Bank, Gen BBQ, SLN
+and STEM were looked at during the second pass and are not opened again
+for plan-text work; fresh held-out sets are to be chosen later. Everything
+below is the ten training sets, and only the sheets Chrome has labelled
+(`~/Claude Folder/takeoff/labels/`, verdict `wall` = an accepted wall).
+
+**The number an estimator reads** (`zzFeetTyped`, walls = the label
+file's accepted runs, tags = symbols + bare text the legend knows,
+propagation = `typePropagation.ts`, default = `wallNotes`' U.N.O. read):
+
+| sheet | accepted ft | tagged | propagated | default | untyped |
+| --- | --- | --- | --- | --- | --- |
+| SW A110 p5 | 353 | 318 (90%; 43 of it bare text) | 0 | 0 | 35 |
+| NG Green Bay A3.2 p10 | 536 | 313 (58%) | 0 | 0 | 223 |
+| Camp Bow Wow A101 p8 | 738 | 413 (56%) | 0 | 0 | 325 |
+| Baker A101 p13 | 508 | 245 (48%) | 14 (3%) | 0 | 248 |
+| E Street A2.1 p28 | 477 | 172 (36%) | 0 | 0 | 304 |
+| ELEVEN03 A4.B.1 p119 | 1,790 | 524 (29%) | 9 | 0 | 1,257 |
+| Bunkie A100 p31 | 362 | 65 (18%; all bare text) | 0 | 0 | 297 |
+| Crosslines A100 p10 | 1,103 | 137 (12%) | 0 | 0 | 966 |
+| ELEVEN03 A4.B.3 p121 | 1,810 | 205 (11%) | 10 | 0 | 1,595 |
+| ELEVEN03 A4.B.2 p120 | 1,534 | 124 (8%) | 26 (2%) | 0 | 1,384 |
+| MHK A1.01 p32 | 524 | 0 | 0 | 0 | 524 |
+| NG Green Bay A3.1 p9 | 673 | 0 (tags are on A3.2) | 0 | 0 | 673 |
+| Baker A100 p12 | 1,606 | 0 (no tags on the sheet) | 0 | 0 | 1,606 |
+
+So the feet typed on a sheet that carries tags run 8–90%, and the share is
+set by how much of the drawing the drafter tagged, not by the matching:
+the accepted walls are already merged full-length runs, so a wall with no
+tag anywhere on it stays untyped whatever propagation does.
+
+**Propagation** (`propagateTypes`, pure: runs + run-to-code in, run-to-
+{code, source} out; stops at a thickness change, a different tag, a turn,
+or a fork; runs straight past a T; crosses a gap on the same line up to
+`GAP_FEET`). Touching-only adds 9 ft on one sheet across all thirteen,
+because the label walls already span their openings. Crossing a 12-ft gap
+added 43 / 19 / 57 / 24 / 13 / 8 ft on six sheets and carried E Street's
+type 2 across an 8-ft open passage into a storage partition on the same
+line — a corridor is a gap too. At 7 ft (a double door) it adds 14 / 9 /
+26 / 10 ft on four sheets and the E Street error is gone; the ELEVEN03
+runs it adds are the corridor walls continuing past unit doors, which is
+what it is for. Propagation is therefore worth a few percent on these
+sheets and nothing on most of them, and that is reported rather than
+tuned around. A run two tags both reach is left untyped and listed as a
+conflict; none occurred.
+
+**U.N.O. default: no training set has one.** Every page of all ten sets
+was scanned for "ALL (INTERIOR|NEW) PARTITIONS/WALLS … U.N.O." and the
+nearest things are dimensioning notes ("DIMENSIONS ARE TO … FACE OF STUD
+… UNLESS OTHERWISE NOTED") and Baker's "ALL WALLS WILL BE TO DECK ABOVE
+UNLESS OTHERWISE NOTED", which is a height, not a type. The default tier
+exists in the function and in the report and is 0 ft everywhere.
+
+**Bare text as a tag** (`bareTextTags.ts`: exactly a legend code or a
+scheduled mark, not inside a found symbol, within 3 ft of a run). Walls:
+Bunkie 0 → 65 ft (six `P08` and a `P09` beside their walls; three more
+sit 5–6 ft off), SW +43 ft (`A1 A1 A3 A3 A2`), nothing elsewhere. MHK's
+`1`–`4` are only ever its grid bubbles, 9–33 ft from any wall, so its
+walls are untagged on A1.01. Doors, rows placed of rows read (symbols +
+exact bare marks): Bunkie 0 → 6 of 11 (`E105A`/`E105B` are in circles the
+detector had rejected as sheet references — a scheduled mark overrides
+that, as a legend code does for walls — plus `E100 E101 E103 E104` bare),
+MHK 1 → 6 of 31 (`119A`–`119F` bare), E Street 15 → 16 (`12.1`). A third,
+DOUBTFUL tier was measured and not adopted: a scheduled mark that is only
+the number in a room-name box (`OFFICE 105`) placed on the nearest run.
+It would take MHK to 19 of 31 and Bunkie to 7; five crops looked at —
+`115A` and `115C` land on the toilet-room door, `118` plausibly on a hall
+door, `102` and `105` on a run through the room label itself. Reported in
+the door eval as its own row, never counted.
+
+**Cost per training set, model calls** (legend plus door schedule, Opus
+5): Baker 0.20, Bunkie 0.20, Crosslines 0.14, Murray 0.14, MHK 0.24, NG
+Green Bay 0.19, E Street 0.26, SW 0.12; ELEVEN03 0.08 for the legend
+alone, Camp Bow Wow's reads predate cost logging. Nothing in this pass
+made a model call.
+
+Mutation: eight mutants over propagation (collinearity, thickness, fork,
+conflict, default source) and bare text (vocabulary, distance, inside-a-
+symbol), each killed, each file restored by rewriting its own bytes.
