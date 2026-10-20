@@ -10,18 +10,20 @@ import { money } from "@/lib/money";
 import { SendDigestButton } from "@/components/SendDigestButton";
 import { sendMyAlertDigest } from "@/lib/actions/notifications";
 import { viewerToday } from "@/lib/viewerToday";
-import { StatusLine } from "@/components/StatusLine";
+import { Disclosure } from "@/components/Disclosure";
+import { CollapsedForm } from "@/components/CollapsedForm";
 import { alertsStatus } from "@/lib/status-sentences";
+import { SeeAll, seeAllWindow } from "@/components/SeeAll";
 
 export const metadata = { title: "Alerts" };
 
 export default async function AlertsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ show?: string }>;
+  searchParams: Promise<{ show?: string; all?: string }>;
 }) {
   const { company, ...currentUser } = await requireCompanyContext();
-  const { show } = await searchParams;
+  const { show, all } = await searchParams;
   const showSilenced = show === "silenced";
 
   // The day on the READER'S calendar, not the server's. This line was
@@ -51,6 +53,11 @@ export default async function AlertsPage({
   });
 
   const rows = showSilenced ? silenced : visible;
+  // The first 15, worst first, with See all. RENDER slice only: the count in
+  // the heading and the breakdown under it are read off every alert above.
+  const alertWindow = seeAllWindow(all, 15);
+  const shownRows = rows.slice(0, alertWindow.take);
+  const keepShow = showSilenced ? "show=silenced&" : "";
 
   // Nothing derived at all, in either list. Four tiles reading 0, 0, 0 and
   // $0.00 are a summary of nothing, and this page's own point is that it
@@ -65,31 +72,45 @@ export default async function AlertsPage({
       <PageHeader
         route="/alerts"
         subtitle="Everything with a date on it that nobody has dealt with — worst first, then most money first."
+        actions={
+          currentUser.email && (
+            // One small button in the header; the card (who it goes to, the
+            // real send button) opens under it. Density audit #17.
+            <div data-tour="alerts-email" data-alerts="email">
+              <CollapsedForm label="Email these to me" tone="secondary">
+                <SendDigestButton
+                  sendMyAlertDigest={sendMyAlertDigest}
+                  recipientEmail={currentUser.email}
+                />
+              </CollapsedForm>
+            </div>
+          )
+        }
       />
-      <p className="mb-6 text-xs text-ink-muted">
-        Nothing here is stored. Every line is derived from the record it is
-        about, every time this page loads — so fixing the thing removes the
-        alert, and no alert can go stale against the data underneath it.{" "}
-        <span className="text-ink-body">These can now be emailed to you</span>,
-        once per thing per stage — not once a day until you deal with it. Fixing
-        the thing is what stops the reminders.
-      </p>
-
-      <StatusLine report={status} />
-
-      {currentUser.email && (
-        <div className="mb-6" data-tour="alerts-email">
-          <SendDigestButton
-            sendMyAlertDigest={sendMyAlertDigest}
-            recipientEmail={currentUser.email}
-          />
-        </div>
-      )}
+      <Disclosure variant="plain" className="mb-6" summary="How this list works · nothing stored, emailed once per stage">
+        <p className="text-xs text-ink-muted">
+          Nothing here is stored. Every line is derived from the record it is
+          about, every time this page loads — so fixing the thing removes the
+          alert, and no alert can go stale against the data underneath it.{" "}
+          <span className="text-ink-body">These can now be emailed to you</span>,
+          once per thing per stage — not once a day until you deal with it. Fixing
+          the thing is what stops the reminders.
+        </p>
+      </Disclosure>
 
       <div className="mb-3 flex items-center justify-between" data-tour="alerts-silenced">
-        <h2 className="text-sm font-semibold text-ink-label">
-          {rows.length} {showSilenced ? "silenced" : "needing attention"}
-        </h2>
+        <div>
+          <h2 className="text-sm font-semibold text-ink-label">
+            {rows.length} {showSilenced ? "silenced" : "needing attention"}
+          </h2>
+          {/* The breakdown, as plain words beside the count — it was a red
+              banner restating the same list above it (density audit #17). */}
+          {!showSilenced && (
+            <p data-alerts="breakdown" className="text-xs text-ink-muted">
+              {status.problems.length > 0 ? status.problems.map((p) => p.text).join(" ") : status.quiet}
+            </p>
+          )}
+        </div>
         <Link
           href={showSilenced ? "/alerts" : "/alerts?show=silenced"}
           className="inline-flex min-h-11 items-center text-sm text-link mouse:min-h-0"
@@ -120,7 +141,7 @@ export default async function AlertsPage({
               </p>
             }
             actions={[
-              { label: "Record your cover and licence dates", href: "/settings" },
+              { label: "Record your cover and licence dates", href: "/settings?tab=licences" },
               { label: "Go to your jobs", href: "/jobs" },
             ]}
             sources={
@@ -148,11 +169,20 @@ export default async function AlertsPage({
         )
       ) : (
         <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-tour="alerts-list">
-          {rows.map((alert) => (
+          {shownRows.map((alert) => (
             <AlertRow key={alert.key} alert={alert} silenced={showSilenced} />
           ))}
         </ul>
       )}
+      <SeeAll
+        total={rows.length}
+        limit={alertWindow.limit}
+        showingAll={alertWindow.showingAll}
+        order="first"
+        noun={showSilenced ? "silenced alerts" : "alerts"}
+        href={`?${keepShow}all=1`}
+        fewerHref={showSilenced ? "?show=silenced" : "?"}
+      />
     </PageShell>
   );
 }

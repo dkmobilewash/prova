@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActionForm } from "@/components/ActionForm";
+import { Disclosure } from "@/components/Disclosure";
+import { secondaryActionClass } from "@/components/emptyStateStyles";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { createLienWaiver, markLienWaiverSigned, revokeLienWaiver, updateLienWaiver } from "@/lib/actions";
@@ -43,22 +45,29 @@ export function LienWaivers({
   canManage: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // The list is collapsed on the Billing tab (declutter round 2), and the
+  // Paperwork rail, the search palette and /lien-deadlines all link to
+  // `billing#lien-waivers` — a link that lands on a closed list would land on
+  // nothing to read. So that hash opens it. The section carrying the id is
+  // always rendered, so HashLanding still finds it to scroll to.
+  const [listOpen, setListOpen] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      if (window.location.hash === "#lien-waivers") setListOpen(true);
+    };
+    check();
+    window.addEventListener("hashchange", check);
+    return () => window.removeEventListener("hashchange", check);
+  }, []);
 
   return (
     <section id="lien-waivers" className="mb-10 scroll-mt-6">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold text-ink-label">Lien waivers</h2>
-          <p className="mt-1 text-xs text-ink-muted">
-            What you signed away, and what you kept. The exceptions are the part worth reading twice.
-          </p>
-        </div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-ink-label">Lien waivers</h2>
+        {/* Secondary: the Billing summary holds the page's one yellow
+            primary. */}
         {canManage && !open && (
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="shrink-0 rounded-md bg-brand px-3 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
-          >
+          <button type="button" onClick={() => setOpen(true)} className={`shrink-0 ${secondaryActionClass}`}>
             Issue a waiver
           </button>
         )}
@@ -74,11 +83,19 @@ export function LienWaivers({
           issue it here so what you excepted is on the record.
         </p>
       ) : (
-        <ul className="space-y-2">
-          {section.waivers.map((waiver) => (
-            <WaiverRow key={waiver.id} waiver={waiver} canManage={canManage} />
-          ))}
-        </ul>
+        <Disclosure
+          open={listOpen}
+          summary={`${section.waivers.length} ${section.waivers.length === 1 ? "waiver" : "waivers"} on this job`}
+        >
+          <p className="mb-3 text-xs text-ink-muted">
+            What you signed away, and what you kept. The exceptions are the part worth reading twice.
+          </p>
+          <ul className="space-y-2">
+            {section.waivers.map((waiver) => (
+              <WaiverRow key={waiver.id} waiver={waiver} canManage={canManage} />
+            ))}
+          </ul>
+        </Disclosure>
       )}
     </section>
   );

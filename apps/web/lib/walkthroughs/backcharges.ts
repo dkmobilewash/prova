@@ -15,7 +15,7 @@ export const backchargesWalkthrough: Walkthrough = {
       anchor: "backcharges-totals",
       title: "The totals",
       body:
-        "How much is claimed and still open, how many are past the date to object, what settled ones cost you, and what you got taken off. These are a record only — they do not change any invoice.",
+        "One line: how much is claimed and still open, what settled ones cost you, and what you got taken off. It turns red when one is past the date to object. These are a record only — they do not change any invoice.",
     },
     {
       anchor: "backcharges-job-filter",
@@ -32,7 +32,7 @@ export const backchargesWalkthrough: Walkthrough = {
       anchor: "backcharges-list",
       title: "Answer each one",
       body:
-        "Press Object to write down that you disagree, with the date you told them. Press Close out once it is settled, accepted or withdrawn.",
+        "Press a backcharge to open it. Press Object to write down that you disagree, with the date you told them. Press Close out once it is settled, accepted or withdrawn.",
     },
   ],
 };

@@ -116,7 +116,7 @@ export default async function CompliancePage() {
             }
             actions={[
               { label: "Upload a document", opens: "compliance-upload" },
-              { label: "Record your insurance and licence dates", href: "/settings" },
+              { label: "Record your insurance and licence dates", href: "/settings?tab=licences" },
             ]}
             sources={
               <p>

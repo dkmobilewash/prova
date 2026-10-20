@@ -23,6 +23,7 @@ export function PushInvoiceToQuickBooks({
   linkedQboId,
   lastVerifiedAt,
   blockers,
+  shownAbove = [],
 }: {
   invoiceId: string;
   /** Set once this invoice exists in QuickBooks. */
@@ -34,8 +35,13 @@ export function PushInvoiceToQuickBooks({
    * UI, so a button that could not work looked identical to one that
    * could. */
   blockers: string[];
+  /** Blocker sentences the page already states once above the list
+   * ("QuickBooks isn't connected."). Display only: they are left out of the
+   * note under this button, and `blocked` still reads the full `blockers`. */
+  shownAbove?: string[];
 }) {
   const blocked = blockers.length > 0;
+  const ownBlockers = blockers.filter((blocker) => !shownAbove.includes(blocker));
   const [message, setMessage] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -98,8 +104,8 @@ export function PushInvoiceToQuickBooks({
         </button>
       </Hint>
 
-      {blocked && message === null && (
-        <p className="max-w-[18rem] text-right text-xs text-ink-muted">{blockers.join(" ")}</p>
+      {ownBlockers.length > 0 && message === null && (
+        <p className="max-w-[18rem] text-right text-xs text-ink-muted">{ownBlockers.join(" ")}</p>
       )}
 
       {/* Shown when there's no message of its own, so the row always says

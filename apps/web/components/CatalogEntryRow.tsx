@@ -41,8 +41,8 @@ export function CatalogEntryRow({
   }
 
   return (
-    <li className="flex flex-wrap items-start justify-between gap-3 p-4">
-      <div className="min-w-0">{children}</div>
+    <li className="flex flex-wrap items-start justify-between gap-3 px-4 py-1">
+      <div className="min-w-0 flex-1">{children}</div>
 
       <div className="flex flex-col items-end gap-1">
         <RowActions

@@ -20,7 +20,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 const { TimeEntryFields } = await import("./TimeEntryFields");
 const { DispatchSlipForm } = await import("./DispatchSlipForm");
 
-const SETUP_LINK = 'href="/union-compliance#setup"';
+const SETUP_LINK = 'href="/union-compliance?tab=setup#setup"';
 const craft = { id: "c1", label: "IUPAT 9 — Taper journeyman" };
 
 describe("the time-entry craft picker", () => {
@@ -68,7 +68,9 @@ describe("/union-compliance", () => {
     const firstSection = page.indexOf('data-tour="uc-remittance"');
     expect(pointer).toBeGreaterThan(-1);
     expect(pointer).toBeLessThan(firstSection);
-    expect(page).toMatch(/\{crafts\.length === 0 && \(/);
-    expect(page).toContain('href="#setup"');
+    expect(page).toMatch(/\{crafts\.length === 0 && tab !== "setup" && \(/);
+    // Setup is its own tab now, so the pointer names it — a bare #setup
+    // would scroll nowhere on This month.
+    expect(page).toContain('href="/union-compliance?tab=setup#setup"');
   });
 });

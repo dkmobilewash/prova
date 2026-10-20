@@ -25,6 +25,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { EmptyState } from "@/components/EmptyState";
 import { ActionForm } from "@/components/ActionForm";
 import { CollapsedForm } from "@/components/CollapsedForm";
+import { Disclosure } from "@/components/Disclosure";
 
 type CatalogEntryWithLines = {
   id: string;
@@ -255,6 +256,15 @@ function QuoteLine({
   );
 }
 
+/** desc · unit · price · cost · trade — the WHOLE grid (columns and gap),
+ *  shared by the header and each row so the columns line up. The gap lives
+ *  here too: when only the rows carried `gap-x-3`, the header's fixed
+ *  columns packed 2-3rem to the right of their values and "Cost" ran into
+ *  "Trade". Callers add only `grid`/`hidden sm:grid`. A phone gets
+ *  description and price. Literal so Tailwind sees every class. */
+const CATALOG_ROW_GRID =
+  "gap-x-4 grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_5rem_6rem_6rem_9rem]";
+
 export default async function CatalogPage() {
   const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
@@ -344,157 +354,9 @@ export default async function CatalogPage() {
         }
       />
 
-      {/* The template library sits above the catalog it points at: a
-          template is a set of pointers INTO these entries, so reading them
-          in that order is how the two relate. */}
-      <EstimateTemplates
-        templates={estimateTemplates.map(
-          (template): TemplateRow => ({
-            id: template.id,
-            name: template.name,
-            tradeScope: template.tradeScope,
-            description: template.description,
-            items: template.items.map((item) => ({
-              id: item.id,
-              description: item.description,
-              unit: item.unit,
-              defaultQuantity: item.defaultQuantity === null ? null : Number(item.defaultQuantity),
-              catalogEntryId: item.catalogEntryId,
-              catalogEntryDescription: item.catalogEntry?.description ?? null,
-            })),
-          }),
-        )}
-        catalogEntries={entries.map((entry) => ({
-          id: entry.id,
-          description: entry.description,
-          unit: entry.unit,
-        }))}
-      />
-
-      <div className="mb-6" data-tour="catalog-import">
-        <CatalogImport existingDescriptions={entries.map((entry) => entry.description)} canImport={isOwner} />
-      </div>
-
-      <section className="mb-8">
-        {entries.length === 0 ? (
-          <EmptyState
-            data-tour="catalog-empty"
-            title="No catalog entries yet"
-            purpose={
-              <p>
-                Your price book: the things you put on every estimate — a sheet of drywall hung and
-                finished, a day of demo, a door installed — with the unit and what you charge. Save
-                them once and pull them into any estimate in two clicks instead of retyping prices.
-              </p>
-            }
-            actions={[
-              { label: "Add a catalog entry", opens: "catalog-add" },
-              { label: "Import a price list", opens: "catalog-import" },
-            ]}
-            sources={
-              <p>
-                Entries you add below, a price list pasted from a spreadsheet, and any line on a job
-                you save with &ldquo;Save as catalog item&rdquo;.
-              </p>
-            }
-            example={{
-              rows: [
-                { title: "Hang and finish 1/2\" drywall", detail: "sq ft · $2.10/unit", meta: "used on 6 jobs" },
-                { title: "Interior door, prehung, installed", detail: "each · $385.00/unit", meta: "used on 3 jobs" },
-                { title: "Demo and haul-away", detail: "day · $950.00/unit", meta: "used on 4 jobs" },
-              ],
-            }}
-          />
-        ) : (
-          <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-tour="catalog-list">
-            {entries.map((entry) => (
-              <CatalogEntryRow
-                key={entry.id}
-                entryId={entry.id}
-                linkedLineCount={entry.jobLineItems.length}
-              >
-                <>
-                  <p className="font-medium text-ink">{entry.description}</p>
-                  <p className="text-sm text-ink-body">
-                    {entry.unit && <>{entry.unit} · </>}
-                    {entry.defaultUnitPrice != null && <>{money(Number(entry.defaultUnitPrice))}/unit · </>}
-                    {entry.defaultBudgetedUnitCost != null && (
-                      <>{money(Number(entry.defaultBudgetedUnitCost))} cost · </>
-                    )}
-                    {tradeScopeLabel(entry.tradeScope) ?? "No trade tag"}
-                    {entry.craftClassification && (
-                      <>
-                        {" "}
-                        · {entry.craftClassification.unionLocal.parentInternational}{" "}
-                        {entry.craftClassification.unionLocal.localNumber} — {entry.craftClassification.name}
-                      </>
-                    )}
-                    {/* "hrs/line", never a bare "hrs", and deliberately the same
-                        shape as the "/unit" on the price two lines up. The number
-                        is copied onto an added line UNCHANGED — see
-                        `addCatalogLine` and `catalog-line.test.ts`. A reader who
-                        sees "$2.85/unit · 8 hrs" beside each other has no way to
-                        tell that one of them scales with quantity and the other
-                        does not, which is exactly how an estimator read it. */}
-                    {entry.defaultLaborHours != null && (
-                      <> · {entry.defaultLaborHours.toString()} hrs/line</>
-                    )}
-                    {/* "/hr" against the "hrs/line" above, so the two are
-                        distinguishable at a glance — the whole point of the
-                        comment on that line. When BOTH are set the rate is
-                        inert (`estimatedHours()` takes the flat hours), and a
-                        number printed beside the one that beats it reads as
-                        being in use, so it says so rather than sitting there
-                        looking like an assumption the bid was built on. */}
-                    {/* Named on the row because an entry with no cost type
-                        produces lines the recap marks up at NOTHING, and that is
-                        invisible until somebody opens the recap and reads the
-                        warning. #513. */}
-                    {entry.costCategory == null ? (
-                      <> · <span className="text-tag-amber-ink">no cost type — won&apos;t be marked up</span></>
-                    ) : (
-                      <> · {COST_CATEGORY_LABEL[entry.costCategory]}</>
-                    )}
-                    {entry.productionRate != null && (
-                      <>
-                        {" "}
-                        · {entry.productionRate.toString()}
-                        {entry.unit ? ` ${entry.unit}` : ""}/hr
-                        {entry.defaultLaborHours != null && " (unused — hrs/line wins)"}
-                      </>
-                    )}
-                  </p>
-                  <ActualsLine
-                    entry={entry}
-                    fringeSchedulesByCraft={fringeSchedulesByCraft}
-                    employerBurdenRates={employerBurdenRates}
-                    isOwner={isOwner}
-                  />
-                  <QuoteLine
-                    entry={entry}
-                    today={today}
-                    isOwner={isOwner}
-                    quotes={entry.priceQuotes.map((quote) => ({
-                      id: quote.id,
-                      vendorId: quote.vendorId,
-                      vendorName: quote.vendor.name,
-                      catalogEntryId: quote.catalogEntryId,
-                      description: quote.description,
-                      unit: quote.unit,
-                      unitPrice: Number(quote.unitPrice),
-                      quotedOn: quote.quotedOn.toISOString().slice(0, 10),
-                      validUntil: quote.validUntil ? quote.validUntil.toISOString().slice(0, 10) : null,
-                      source: quote.source,
-                      notes: quote.notes,
-                    }))}
-                  />
-                </>
-              </CatalogEntryRow>
-            ))}
-          </ul>
-        )}
-      </section>
-
+      {/* Add and Import lead the page (density audit #24 — Add sat under
+          the whole list). Both are the same collapsed controls as before. */}
+      <div className="mb-6 flex flex-wrap items-start gap-3">
       <section data-tour="catalog-add">
         <CollapsedForm label="Add a catalog entry">
           <div className="rounded-xl border border-line-card bg-surface p-4">
@@ -679,6 +541,185 @@ export default async function CatalogPage() {
           </div>
         </CollapsedForm>
       </section>
+        <div data-tour="catalog-import">
+          <CatalogImport existingDescriptions={entries.map((entry) => entry.description)} canImport={isOwner} />
+        </div>
+      </div>
+
+      <section className="mb-8">
+        {entries.length === 0 ? (
+          <EmptyState
+            data-tour="catalog-empty"
+            title="No catalog entries yet"
+            purpose={
+              <p>
+                Your price book: the things you put on every estimate — a sheet of drywall hung and
+                finished, a day of demo, a door installed — with the unit and what you charge. Save
+                them once and pull them into any estimate in two clicks instead of retyping prices.
+              </p>
+            }
+            actions={[
+              { label: "Add a catalog entry", opens: "catalog-add" },
+              { label: "Import a price list", opens: "catalog-import" },
+            ]}
+            sources={
+              <p>
+                Entries you add below, a price list pasted from a spreadsheet, and any line on a job
+                you save with &ldquo;Save as catalog item&rdquo;.
+              </p>
+            }
+            example={{
+              rows: [
+                { title: "Hang and finish 1/2\" drywall", detail: "sq ft · $2.10/unit", meta: "used on 6 jobs" },
+                { title: "Interior door, prehung, installed", detail: "each · $385.00/unit", meta: "used on 3 jobs" },
+                { title: "Demo and haul-away", detail: "day · $950.00/unit", meta: "used on 4 jobs" },
+              ],
+            }}
+          />
+        ) : (
+          <>
+          <div className={`hidden px-4 pb-1 text-xs text-ink-muted sm:grid ${CATALOG_ROW_GRID} sm:pl-9 sm:pr-24`}>
+            <span>Description</span>
+            <span>Unit</span>
+            <span className="text-right">Price</span>
+            <span className="text-right">Cost</span>
+            <span>Trade</span>
+          </div>
+          <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-tour="catalog-list">
+            {entries.map((entry) => (
+              <CatalogEntryRow
+                key={entry.id}
+                entryId={entry.id}
+                linkedLineCount={entry.jobLineItems.length}
+              >
+                <Disclosure
+                  variant="row"
+                  name="catalog-entry"
+                  summary={
+                    <span className={`grid min-w-0 flex-1 ${CATALOG_ROW_GRID}`}>
+                      <span className="truncate font-medium text-ink">{entry.description}</span>
+                      <span className="hidden text-ink-body sm:block">{entry.unit ?? "—"}</span>
+                      <span className="text-right text-ink-body">
+                        {entry.defaultUnitPrice != null ? money(Number(entry.defaultUnitPrice)) : "—"}
+                      </span>
+                      <span className="hidden text-right text-ink-body sm:block">
+                        {entry.defaultBudgetedUnitCost != null ? money(Number(entry.defaultBudgetedUnitCost)) : "—"}
+                      </span>
+                      <span className="hidden truncate text-ink-body sm:block">
+                        {tradeScopeLabel(entry.tradeScope) ?? "No trade tag"}
+                      </span>
+                    </span>
+                  }
+                >
+                  <p className="text-sm text-ink-body">
+                    {entry.unit && <>{entry.unit} · </>}
+                    {entry.defaultUnitPrice != null && <>{money(Number(entry.defaultUnitPrice))}/unit · </>}
+                    {entry.defaultBudgetedUnitCost != null && (
+                      <>{money(Number(entry.defaultBudgetedUnitCost))} cost · </>
+                    )}
+                    {tradeScopeLabel(entry.tradeScope) ?? "No trade tag"}
+                    {entry.craftClassification && (
+                      <>
+                        {" "}
+                        · {entry.craftClassification.unionLocal.parentInternational}{" "}
+                        {entry.craftClassification.unionLocal.localNumber} — {entry.craftClassification.name}
+                      </>
+                    )}
+                    {/* "hrs/line", never a bare "hrs", and deliberately the same
+                        shape as the "/unit" on the price two lines up. The number
+                        is copied onto an added line UNCHANGED — see
+                        `addCatalogLine` and `catalog-line.test.ts`. A reader who
+                        sees "$2.85/unit · 8 hrs" beside each other has no way to
+                        tell that one of them scales with quantity and the other
+                        does not, which is exactly how an estimator read it. */}
+                    {entry.defaultLaborHours != null && (
+                      <> · {entry.defaultLaborHours.toString()} hrs/line</>
+                    )}
+                    {/* "/hr" against the "hrs/line" above, so the two are
+                        distinguishable at a glance — the whole point of the
+                        comment on that line. When BOTH are set the rate is
+                        inert (`estimatedHours()` takes the flat hours), and a
+                        number printed beside the one that beats it reads as
+                        being in use, so it says so rather than sitting there
+                        looking like an assumption the bid was built on. */}
+                    {/* Named on the row because an entry with no cost type
+                        produces lines the recap marks up at NOTHING, and that is
+                        invisible until somebody opens the recap and reads the
+                        warning. #513. */}
+                    {entry.costCategory == null ? (
+                      <> · <span className="text-tag-amber-ink">no cost type — won&apos;t be marked up</span></>
+                    ) : (
+                      <> · {COST_CATEGORY_LABEL[entry.costCategory]}</>
+                    )}
+                    {entry.productionRate != null && (
+                      <>
+                        {" "}
+                        · {entry.productionRate.toString()}
+                        {entry.unit ? ` ${entry.unit}` : ""}/hr
+                        {entry.defaultLaborHours != null && " (unused — hrs/line wins)"}
+                      </>
+                    )}
+                  </p>
+                  <ActualsLine
+                    entry={entry}
+                    fringeSchedulesByCraft={fringeSchedulesByCraft}
+                    employerBurdenRates={employerBurdenRates}
+                    isOwner={isOwner}
+                  />
+                  <QuoteLine
+                    entry={entry}
+                    today={today}
+                    isOwner={isOwner}
+                    quotes={entry.priceQuotes.map((quote) => ({
+                      id: quote.id,
+                      vendorId: quote.vendorId,
+                      vendorName: quote.vendor.name,
+                      catalogEntryId: quote.catalogEntryId,
+                      description: quote.description,
+                      unit: quote.unit,
+                      unitPrice: Number(quote.unitPrice),
+                      quotedOn: quote.quotedOn.toISOString().slice(0, 10),
+                      validUntil: quote.validUntil ? quote.validUntil.toISOString().slice(0, 10) : null,
+                      source: quote.source,
+                      notes: quote.notes,
+                    }))}
+                  />
+                </Disclosure>
+              </CatalogEntryRow>
+            ))}
+          </ul>
+          </>
+        )}
+      </section>
+
+      {/* Templates are a set of pointers INTO these entries. They used to
+          sit above the price book, explainer and all; they are one click
+          away now (density audit #24). Same component, same props. */}
+      <Disclosure summary={`Estimate templates · ${estimateTemplates.length}`} id="templates">
+      <EstimateTemplates
+        templates={estimateTemplates.map(
+          (template): TemplateRow => ({
+            id: template.id,
+            name: template.name,
+            tradeScope: template.tradeScope,
+            description: template.description,
+            items: template.items.map((item) => ({
+              id: item.id,
+              description: item.description,
+              unit: item.unit,
+              defaultQuantity: item.defaultQuantity === null ? null : Number(item.defaultQuantity),
+              catalogEntryId: item.catalogEntryId,
+              catalogEntryDescription: item.catalogEntry?.description ?? null,
+            })),
+          }),
+        )}
+        catalogEntries={entries.map((entry) => ({
+          id: entry.id,
+          description: entry.description,
+          unit: entry.unit,
+        }))}
+      />
+      </Disclosure>
     </PageShell>
   );
 }

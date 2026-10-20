@@ -6,6 +6,7 @@ import {
   smartleadEventId,
   verifySmartleadRequest,
 } from "@/lib/smartlead-webhook";
+import { handleReply } from "@/lib/replies/handle";
 
 /** Events from the cold-email sequencer (Smartlead): reply, bounce,
  * unsubscribe, category change.
@@ -55,6 +56,7 @@ export async function POST(request: Request) {
 
   const parsed = parseSmartleadEvent(body);
   const vendorEventId = smartleadEventId({ requestId: request.headers.get("x-request-id"), rawBody, parsed });
+  let eventId: string | null;
 
   const lead = parsed.email
     ? await prisma.salesLead.findFirst({
@@ -64,8 +66,9 @@ export async function POST(request: Request) {
     : null;
 
   try {
-    await prisma.$transaction(async (tx) => {
-      await tx.outboundEvent.create({
+    eventId = await prisma.$transaction(async (tx) => {
+      const event = await tx.outboundEvent.create({
+        select: { id: true },
         data: {
           companyId: operator.id,
           leadId: lead?.id ?? null,
@@ -77,7 +80,7 @@ export async function POST(request: Request) {
           occurredAt: parsed.occurredAt,
         },
       });
-      if (!lead) return;
+      if (!lead) return null;
 
       const touch = parsed.occurredAt ? { lastOutboundAt: parsed.occurredAt } : {};
       const effect = parsed.effect;
@@ -116,6 +119,7 @@ export async function POST(request: Request) {
           data: { ...touch, ...(lead.doNotContact ? {} : { outboundStatus: "SEQUENCED" }) },
         });
       }
+      return event.id;
     });
   } catch (error) {
     // `code`, not instanceof — that instanceof is false at runtime here (see
@@ -125,6 +129,17 @@ export async function POST(request: Request) {
       return new Response("Duplicate event", { status: 200 });
     }
     throw error;
+  }
+
+  // The reply agent runs AFTER the event is committed and can never fail the
+  // webhook: a classifier error here would be a 500, a vendor retry, and the
+  // same reply recorded twice. Metadata only in the log — never the reply.
+  if (eventId && parsed.effect.kind === "REPLIED") {
+    try {
+      await handleReply(eventId);
+    } catch (error) {
+      console.error("[outbound] reply agent failed", { eventId, error: error instanceof Error ? error.name : "unknown" });
+    }
   }
 
   return new Response(lead ? "OK" : "OK (no matching lead)", { status: 200 });

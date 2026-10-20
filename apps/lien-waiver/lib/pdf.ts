@@ -78,7 +78,7 @@ interface Piece {
  * it prints -- the next word was placed on top of its last letters. Found by
  * the PDF test, which read "PAYMENT.A" back out of the file.
  */
-function advance(font: PDFFont, text: string, size: number): number {
+export function advance(font: PDFFont, text: string, size: number): number {
   let width = 0;
   for (const char of text) width += font.widthOfTextAtSize(char, size);
   return width;

@@ -5,6 +5,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { requireCompanyContext } from "@/lib/auth";
 import { CancelInviteButton } from "@/components/CancelInviteButton";
 import { CopyLinkButton } from "@/components/CopyLinkButton";
+import { CollapsedForm } from "@/components/CollapsedForm";
+import { Disclosure } from "@/components/Disclosure";
 import { CrewRoster } from "@/components/CrewRoster";
 import { InviteTeamMemberForm } from "@/components/InviteTeamMemberForm";
 import { JobFunctionPicker } from "@/components/JobFunctionPicker";
@@ -109,12 +111,21 @@ export default async function TeamPage() {
           the permissions model — it was the fact that this page holds TWO
           KINDS OF PEOPLE, which is what nothing said and what left a
           contractor with no way to add the fifteen men who do the work. */}
-      <p className="mb-6 max-w-3xl text-sm text-ink-body">
-        Two kinds of people. <span className="text-ink-label">Team members</span> sign in — the
-        office, your PMs, a foreman with a tablet. <span className="text-ink-label">Crew</span> are
-        the hands in the field: no login, no email needed, just their name so you can log their
-        hours and put them on a certified payroll.
+      {/* One line on screen, the rest one click down (declutter final pass:
+          this opened with a two-line paragraph). Still said exactly once —
+          empty-states.test.ts counts "no login, no email needed". */}
+      <p className="text-sm text-ink-body" data-team="kinds">
+        Two kinds of people: <span className="text-ink-label">team members</span> sign in,{" "}
+        <span className="text-ink-label">crew</span> never have to.
       </p>
+      <Disclosure variant="plain" className="mb-6 mt-1" summary="Team members or crew?">
+        <p className="max-w-3xl text-sm text-ink-body">
+          <span className="text-ink-label">Team members</span> sign in — the office, your PMs, a
+          foreman with a tablet. <span className="text-ink-label">Crew</span> are the hands in the
+          field: no login, no email needed, just their name so you can log their hours and put them
+          on a certified payroll.
+        </p>
+      </Disclosure>
 
       <section className="mb-10" data-tour="team-members">
         <h2 className="mb-3 text-sm font-semibold text-ink-label">Team members</h2>
@@ -173,19 +184,24 @@ export default async function TeamPage() {
 
       {isOwner && (
         <>
+          {/* Behind a button, sign-up link included (density audit #20): an
+              invite is a once-in-a-while job, and the form plus the URL sat
+              open at the foot of every visit. Secondary — the crew's add
+              button is this page's one yellow action. */}
           <section className="mb-10" data-tour="team-invite">
-            <h2 className="mb-3 text-sm font-semibold text-ink-label">Invite a teammate</h2>
-            <InviteTeamMemberForm />
-            <p className="mt-2 text-xs text-ink-muted">
-              This doesn&apos;t send an email — share the sign-up link below with them yourself. When
-              they sign up with this email, they&apos;ll join your company automatically.
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <p className="break-all rounded-md bg-canvas px-3 py-2 font-mono text-xs text-link">
-                {signUpUrl}
+            <CollapsedForm label="Invite a teammate" tone="secondary">
+              <InviteTeamMemberForm />
+              <p className="text-xs text-ink-muted">
+                This doesn&apos;t send an email — share the sign-up link below with them yourself.
+                When they sign up with this email, they&apos;ll join your company automatically.
               </p>
-              <CopyLinkButton url={signUpUrl} />
-            </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="break-all rounded-md bg-canvas px-3 py-2 font-mono text-xs text-link">
+                  {signUpUrl}
+                </p>
+                <CopyLinkButton url={signUpUrl} />
+              </div>
+            </CollapsedForm>
           </section>
 
           {invites.length > 0 && (

@@ -125,3 +125,15 @@ describe("every column the schedule declares is handled", () => {
     expect(wipScheduleCell("contractValue", Number.NaN).text).toBe("NaN");
   });
 });
+
+describe("the status column", () => {
+  // Declutter, 2026-10-13: /wip printed the raw enum, `IN_PROGRESS`.
+  it("reads as words, not the enum", () => {
+    expect(wipScheduleCell("status", "IN_PROGRESS").text).toBe("In progress");
+    expect(wipScheduleCell("status", "CONTRACTED").text).toBe("Contracted");
+  });
+
+  it("leaves the totals row blank rather than inventing a label", () => {
+    expect(wipScheduleCell("status", "").text).toBe("");
+  });
+});

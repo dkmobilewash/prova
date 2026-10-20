@@ -18,6 +18,8 @@ import {
 } from "@/components/fieldReportWeeks";
 import { jobPickerLabel, toJobOption } from "@/components/jobLabels";
 import { viewerToday } from "@/lib/viewerToday";
+import { loadReportsManpower } from "@/lib/manpower";
+import { SEE_ALL_DEFAULT, SeeAll, seeAllWindow } from "@/components/SeeAll";
 import {
   fieldReportJobWhere,
   fieldReportsFilterHref,
@@ -28,8 +30,10 @@ export const metadata = { title: "Field reports" };
 
 export const dynamic = "force-dynamic";
 
-/** How many reports this page renders. The query asks for one more, so the
- * page can tell a full history from a cut-off one. */
+/** How many reports this page renders with `?all=1`. The query asks for one
+ * more, so the page can tell a full history from a cut-off one. Without it
+ * the page shows the latest SEE_ALL_DEFAULT (declutter, density audit #8:
+ * up to 400 fully expanded reports on one scroll). */
 const REPORT_LIMIT = 400;
 
 /**
@@ -44,12 +48,14 @@ const REPORT_LIMIT = 400;
 export default async function FieldReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; new?: string }>;
+  searchParams: Promise<{ job?: string; new?: string; all?: string }>;
 }) {
   const { context, allowed } = await requireCapability("MANAGE_FIELD");
   if (!allowed) return <NoAccess capability="MANAGE_FIELD" />;
   const { company, ...currentUser } = context;
-  const { job: jobFilter, new: startNew } = await searchParams;
+  const { job: jobFilter, new: startNew, all } = await searchParams;
+  const { showingAll } = seeAllWindow(all);
+  const limit = showingAll ? REPORT_LIMIT : SEE_ALL_DEFAULT;
 
   // Jobs first, rather than the Promise.all this used to be: the report
   // query's own `where` depends on whether `?job=` names a job this company
@@ -68,8 +74,10 @@ export default async function FieldReportsPage({
   const jobOptions = jobs.map(toJobOption);
   const activeJob = resolveFieldReportJobFilter(jobs, jobFilter);
 
-  const rows = await prisma.dailyFieldReport.findMany({
-    where: { companyId: company.id, ...fieldReportJobWhere(activeJob) },
+  const reportWhere = { companyId: company.id, ...fieldReportJobWhere(activeJob) };
+  const [rows, totalReports] = await Promise.all([
+    prisma.dailyFieldReport.findMany({
+    where: reportWhere,
     include: {
       job: { select: { id: true, name: true } },
       filedBy: { select: { name: true, email: true } },
@@ -79,8 +87,10 @@ export default async function FieldReportsPage({
     // was truncated. Without that it grouped a cut-off set into weeks
     // and named real filed reports as days nobody filed — see knownFrom
     // below.
-    take: REPORT_LIMIT + 1,
-  });
+    take: limit + 1,
+    }),
+    prisma.dailyFieldReport.count({ where: reportWhere }),
+  ]);
 
   // WHICH DAYS ARE OVER — and that is the reader's question, not the
   // server's.
@@ -103,9 +113,13 @@ export default async function FieldReportsPage({
   // counterpart that does not break hydration.
   const today = await viewerToday();
 
-  const truncated = rows.length > REPORT_LIMIT;
-  const shownRows = truncated ? rows.slice(0, REPORT_LIMIT) : rows;
+  const truncated = rows.length > limit;
+  const shownRows = truncated ? rows.slice(0, limit) : rows;
 
+  const manpower = await loadReportsManpower(
+    company.id,
+    shownRows.map((row) => ({ jobId: row.job.id, reportDate: row.reportDate.toISOString().slice(0, 10) })),
+  );
   const reports: ReportData[] = shownRows.map((row) => ({
     id: row.id,
     jobId: row.job.id,
@@ -116,6 +130,7 @@ export default async function FieldReportsPage({
     weather: row.weather,
     delays: row.delays,
     filedByName: row.filedBy?.name ?? row.filedBy?.email ?? null,
+    manpower: manpower.get(`${row.job.id}:${row.reportDate.toISOString().slice(0, 10)}`),
   }));
 
   // The earliest date this page's records are COMPLETE from.
@@ -166,8 +181,11 @@ export default async function FieldReportsPage({
               key={j.id}
               href={fieldReportsFilterHref(j.id)}
               className={chip(activeJob === j.id)}
+              // The chip says the job's name only (declutter: GC + status
+              // wrapped the chips to two rows); the full label stays here.
+              title={jobPickerLabel(j)}
             >
-              {jobPickerLabel(j)}
+              {j.name}
             </Link>
           ))}
         </div>
@@ -250,7 +268,7 @@ export default async function FieldReportsPage({
                       through. Before this said so, its unloaded days were
                       grouped as days nobody filed — reports that exist, on
                       the page a schedule dispute gets argued from. */}
-                  {week.partial && (
+                  {week.partial && showingAll && (
                     <p className="mt-2 rounded bg-rail-hover px-2 py-1.5 text-xs text-ink-body">
                       Only part of this week is loaded — this page shows the most recent{" "}
                       {REPORT_LIMIT} reports. Nothing is claimed about the days before it, and no
@@ -293,6 +311,14 @@ export default async function FieldReportsPage({
               </section>
             );
           })}
+          <SeeAll
+            total={totalReports}
+            limit={SEE_ALL_DEFAULT}
+            showingAll={showingAll}
+            noun="reports"
+            href={fieldReportsFilterHref(activeJob, true)}
+            fewerHref={fieldReportsFilterHref(activeJob)}
+          />
         </div>
       )}
     </PageShell>

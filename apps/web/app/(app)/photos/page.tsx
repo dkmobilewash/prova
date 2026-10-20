@@ -162,6 +162,13 @@ export default async function PhotosPage({
   // "Manage tags", where a zero is the useful signal that the word can go.
   // The active one is kept whatever its count, so the chip you are standing
   // on never vanishes underneath you.
+  // The tag, shared and location rows narrow PHOTOS, so they wait until
+  // there is a photo to narrow (density audit #40: ~250px of chips above an
+  // empty gallery). "No photos yet" already answers what "Not shared" or
+  // "No location" would. Any of them switched on keeps them all, so a
+  // filter that empties the gallery always shows its way back. The job row
+  // stays: it is also how you pick the job a new photo goes on.
+  const showPhotoFilters = total > 0 || Boolean(activeTag) || activeShared !== null || activeLocated !== null;
   const filterableTags = tags.filter((tag) => tag.photoCount > 0 || tag.id === activeTag);
 
   return (
@@ -214,8 +221,11 @@ export default async function PhotosPage({
                   located: activeLocated,
                 })}
                 className={chip(activeJob === job.id)}
+                // Name only on the chip (density audit #40); the full label
+                // stays here.
+                title={jobPickerLabel(job)}
               >
-                {jobPickerLabel(job)}
+                {job.name}
               </Link>
             ))}
           </div>
@@ -223,7 +233,7 @@ export default async function PhotosPage({
           {/* The tag row, beneath the job row rather than beside it. Each
               tag chip keeps whatever job is chosen and each job chip keeps
               whatever tag is chosen, so the two narrow together. */}
-          {filterableTags.length > 0 && (
+          {showPhotoFilters && filterableTags.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2" data-tour="photos-tag-filter">
               <Link
                 href={photosFilterHref({
@@ -278,99 +288,103 @@ export default async function PhotosPage({
               not — two numbers on one row of chips, counting different
               populations, and no room to say which. The gallery's own
               "showing N of M" line already states the filtered total. */}
-          <div className="mb-3 flex flex-wrap gap-2" data-tour="photos-shared-filter">
-            <Link
-              href={photosFilterHref({ job: activeJob, tag: activeTag, located: activeLocated })}
-              className={chip(!activeShared)}
-            >
-              All photos
-            </Link>
-            <Link
-              href={photosFilterHref({
-                job: activeJob,
-                tag: activeTag,
-                shared: "yes",
-                located: activeLocated,
-              })}
-              className={chip(activeShared === "yes")}
-            >
-              {/* "SHARED BY LINK", not "Shared with client", matching the
-                  card's badge and for the customer's reason: the portal
-                  link goes to whoever the sub sends it to, so naming one
-                  audience describes the state too narrowly. The mechanism
-                  is the part that is true of every reader. */}
-              Shared by link
-            </Link>
-            <Link
-              href={photosFilterHref({
-                job: activeJob,
-                tag: activeTag,
-                shared: "no",
-                located: activeLocated,
-              })}
-              className={chip(activeShared === "no")}
-            >
-              Not shared
-            </Link>
-          </div>
+          {showPhotoFilters && (
+            <>
+              <div className="mb-3 flex flex-wrap gap-2" data-tour="photos-shared-filter">
+                <Link
+                  href={photosFilterHref({ job: activeJob, tag: activeTag, located: activeLocated })}
+                  className={chip(!activeShared)}
+                >
+                  All photos
+                </Link>
+                <Link
+                  href={photosFilterHref({
+                    job: activeJob,
+                    tag: activeTag,
+                    shared: "yes",
+                    located: activeLocated,
+                  })}
+                  className={chip(activeShared === "yes")}
+                >
+                  {/* "SHARED BY LINK", not "Shared with client", matching the
+                      card's badge and for the customer's reason: the portal
+                      link goes to whoever the sub sends it to, so naming one
+                      audience describes the state too narrowly. The mechanism
+                      is the part that is true of every reader. */}
+                  Shared by link
+                </Link>
+                <Link
+                  href={photosFilterHref({
+                    job: activeJob,
+                    tag: activeTag,
+                    shared: "no",
+                    located: activeLocated,
+                  })}
+                  className={chip(activeShared === "no")}
+                >
+                  Not shared
+                </Link>
+              </div>
 
-          {/* The location row, fourth and last, because it is the narrowing
-              you reach for once you know which job — and because it is the
-              only one of the four that some captures structurally cannot
-              satisfy.
+              {/* The location row, fourth and last, because it is the narrowing
+                  you reach for once you know which job — and because it is the
+                  only one of the four that some captures structurally cannot
+                  satisfy.
 
-              ALWAYS RENDERED, like the visibility row above it and unlike
-              the tag row. "No location" on a company that has never
-              recorded one is the true and useful answer that nothing is
-              located yet, and a control that disappears when its answer is
-              "none" is a control you cannot use to CHECK that the answer is
-              none.
+                  ALWAYS RENDERED, like the visibility row above it and unlike
+                  the tag row. "No location" on a company that has never
+                  recorded one is the true and useful answer that nothing is
+                  located yet, and a control that disappears when its answer is
+                  "none" is a control you cannot use to CHECK that the answer is
+                  none.
 
-              "ON SITE" IS NOT THE LABEL, and that is deliberate. This app
-              does not know whether a capture was on site: that would mean
-              comparing a coordinate to the job's address, which is derived
-              state this schema refuses to store and a comparison a ±40 m
-              fix cannot support. The chip says what the filter actually
-              tests — whether a position was recorded — because a label
-              claiming more than the query does is how somebody ends up
-              arguing about where a crew was standing.
+                  "ON SITE" IS NOT THE LABEL, and that is deliberate. This app
+                  does not know whether a capture was on site: that would mean
+                  comparing a coordinate to the job's address, which is derived
+                  state this schema refuses to store and a comparison a ±40 m
+                  fix cannot support. The chip says what the filter actually
+                  tests — whether a position was recorded — because a label
+                  claiming more than the query does is how somebody ends up
+                  arguing about where a crew was standing.
 
-              NO COUNTS, matching the visibility chips and for the same
-              reason: a located count only means something relative to the
-              job you are standing on, so an honest one would change with
-              the job chip while the tag counts beside it did not. The
-              gallery's own "showing N of M" line already states the
-              filtered total. */}
-          <div className="mb-3 flex flex-wrap gap-2" data-tour="photos-location-filter">
-            <Link
-              href={photosFilterHref({ job: activeJob, tag: activeTag, shared: activeShared })}
-              className={chip(!activeLocated)}
-            >
-              Anywhere
-            </Link>
-            <Link
-              href={photosFilterHref({
-                job: activeJob,
-                tag: activeTag,
-                shared: activeShared,
-                located: "yes",
-              })}
-              className={chip(activeLocated === "yes")}
-            >
-              Has a location
-            </Link>
-            <Link
-              href={photosFilterHref({
-                job: activeJob,
-                tag: activeTag,
-                shared: activeShared,
-                located: "no",
-              })}
-              className={chip(activeLocated === "no")}
-            >
-              No location
-            </Link>
-          </div>
+                  NO COUNTS, matching the visibility chips and for the same
+                  reason: a located count only means something relative to the
+                  job you are standing on, so an honest one would change with
+                  the job chip while the tag counts beside it did not. The
+                  gallery's own "showing N of M" line already states the
+                  filtered total. */}
+              <div className="mb-3 flex flex-wrap gap-2" data-tour="photos-location-filter">
+                <Link
+                  href={photosFilterHref({ job: activeJob, tag: activeTag, shared: activeShared })}
+                  className={chip(!activeLocated)}
+                >
+                  Anywhere
+                </Link>
+                <Link
+                  href={photosFilterHref({
+                    job: activeJob,
+                    tag: activeTag,
+                    shared: activeShared,
+                    located: "yes",
+                  })}
+                  className={chip(activeLocated === "yes")}
+                >
+                  Has a location
+                </Link>
+                <Link
+                  href={photosFilterHref({
+                    job: activeJob,
+                    tag: activeTag,
+                    shared: activeShared,
+                    located: "no",
+                  })}
+                  className={chip(activeLocated === "no")}
+                >
+                  No location
+                </Link>
+              </div>
+            </>
+          )}
 
           <JobMediaTagManager tags={tags} />
 
@@ -499,9 +513,11 @@ export default async function PhotosPage({
                 )}
                 {!activeShared && !activeTag && !activeLocated && (
                   <span>
+                    {/* No job chosen: the line above the gallery already says
+                        "Pick a job above" (density audit #40 counted it twice). */}
                     {activeJob
                       ? "Add the first one above — a photo of the existing conditions before you start is the one people wish they had."
-                      : "Pick a job above and add the first one."}
+                      : null}
                   </span>
                 )}
               </p>

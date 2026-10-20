@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   assignEquipment,
@@ -37,12 +37,16 @@ export function EquipmentDeploymentControls({
   history,
   today,
   canDelete,
+  lead,
 }: {
   equipmentId: string;
   jobs: JobChoice[];
   history: AssignmentData[];
   today: string;
   canDelete: boolean;
+  /** Left of the buttons on the same line — /equipment's where-and-use line,
+   *  so a piece reads as one row with its actions on it (density audit #33). */
+  lead?: ReactNode;
 }) {
   const [mode, setMode] = useState<"idle" | "send" | "return">("idle");
   const [showHistory, setShowHistory] = useState(false);
@@ -73,35 +77,38 @@ export function EquipmentDeploymentControls({
   const open = history.find((h) => h.returnedOn === null) ?? null;
 
   return (
-    <div className="mt-2">
-      <div className="flex flex-wrap gap-2">
-        {mode === "idle" && !open && jobs.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setMode("send")}
-            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover"
-          >
-            Send out to a job
-          </button>
-        )}
-        {mode === "idle" && open && (
-          <button
-            type="button"
-            onClick={() => setMode("return")}
-            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover"
-          >
-            Bring it back
-          </button>
-        )}
-        {history.length > 0 && mode === "idle" && (
-          <button
-            type="button"
-            onClick={() => setShowHistory((v) => !v)}
-            className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover"
-          >
-            {showHistory ? "Hide history" : `History (${history.length})`}
-          </button>
-        )}
+    <div className="mt-1">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {lead}
+        <div className="flex flex-wrap gap-2">
+          {mode === "idle" && !open && jobs.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setMode("send")}
+              className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover"
+            >
+              Send out to a job
+            </button>
+          )}
+          {mode === "idle" && open && (
+            <button
+              type="button"
+              onClick={() => setMode("return")}
+              className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover"
+            >
+              Bring it back
+            </button>
+          )}
+          {history.length > 0 && mode === "idle" && (
+            <button
+              type="button"
+              onClick={() => setShowHistory((v) => !v)}
+              className="rounded-md border border-line-card px-3 py-2 text-sm text-ink-label hover:bg-rail-hover"
+            >
+              {showHistory ? "Hide history" : `History (${history.length})`}
+            </button>
+          )}
+        </div>
       </div>
 
       {mode === "send" && (

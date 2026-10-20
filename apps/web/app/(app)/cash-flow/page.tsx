@@ -4,6 +4,7 @@ import { PageShell } from "@prova/ui";
 import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
+import { Disclosure } from "@/components/Disclosure";
 import { money } from "@/lib/money";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import { viewerAsOf } from "@/lib/viewerToday";
@@ -155,27 +156,65 @@ export default async function CashFlowPage() {
 
   return (
     <PageShell width="working">
-      <PageHeader route="/cash-flow" title="Cash flow forecast" subtitle="Who owes you, how late, retainage held, and when the money should land." />
+      <PageHeader route="/cash-flow" title="Cash flow forecast" subtitle="Who owes you, how late, retainage held, and when the money should land."
+        actions={
+          <>
+            {/* A plain link, not a button with an onClick: this is a GET that
+                returns a file, so the browser's own download is the whole
+                mechanism and no client component is needed. `download` asks for
+                a save rather than a navigation; the route sets the filename. */}
+            <a
+              href="/api/wip-schedule"
+              download
+              data-tour="cash-flow-wip"
+              className="inline-flex min-h-11 items-center rounded-md border border-line-card bg-surface px-3 text-sm font-medium text-ink hover:bg-rail-hover mouse:min-h-8"
+            >
+              Download WIP schedule (CSV)
+            </a>
+          </>
+        }
+      />
 
-      <section className="mb-6 rounded-xl border border-line-card bg-surface p-4" data-tour="cash-flow-wip">
-        <h2 className="mb-1 font-headline text-xl text-ink">WIP schedule</h2>
-        <p className="mb-3 max-w-2xl text-sm text-ink-muted">
-          Percentage of completion by the cost-to-cost method, one row per contracted or in-progress job, with
-          over- and under-billings split into the two columns a surety or CPA reads them as. Opens in a
-          spreadsheet. A figure whose estimates are mostly missing is left <strong>blank rather than guessed</strong>,
-          and the coverage columns say how much of each job is covered.
-        </p>
-        {/* A plain link, not a button with an onClick: this is a GET that
-            returns a file, so the browser's own download is the whole
-            mechanism and no client component is needed. `download` asks for
-            a save rather than a navigation; the route sets the filename. */}
-        <a
-          href="/api/wip-schedule"
-          download
-          className="inline-flex min-h-11 items-center rounded-md border border-line-card bg-surface px-3 text-sm font-medium text-ink hover:bg-rail-hover mouse:min-h-8"
-        >
-          Download WIP schedule (CSV)
-        </a>
+      <section className="mb-10" data-tour="cash-flow-forecast">
+        <h2 className="mb-3 font-headline text-xl text-ink">Forecast, next {FORECAST_MONTHS_AHEAD} months</h2>
+        {/* `calculateCashFlowForecast` seeds Overdue plus every month in the
+            window whether or not anything lands in them — deliberately, so
+            the table has a stable shape. That makes the length of
+            `forecast.months` useless as a "is there anything here" test: it
+            is seven either way. The money is what has to be checked. */}
+        {!forecastHasMoney ? (
+          <p className="text-sm text-ink-muted">
+            Nothing to project. Every invoice is paid and no retainage is being held, so there is no
+            money with a date on it to put in a month.
+          </p>
+        ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[560px] text-left text-sm">
+            <thead>
+              <tr className="text-xs text-ink-muted">
+                <th className="pb-1 pr-3 font-normal">Month</th>
+                <th className="pb-1 pr-3 text-right font-normal">AR expected</th>
+                <th className="pb-1 pr-3 text-right font-normal">Retainage expected</th>
+                <th className="pb-1 text-right font-normal">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {forecast.months.map((month) => (
+                <tr key={month.key} className="border-t border-line-row">
+                  <td className={`py-1 pr-3 ${month.key === "OVERDUE" ? "text-warn" : "text-ink-label"}`}>
+                    {month.label}
+                  </td>
+                  <td className="py-1 pr-3 text-right text-ink-body">{money(month.arExpected)}</td>
+                  <td className="py-1 pr-3 text-right text-ink-body">{money(month.retainageExpected)}</td>
+                  <td className="py-1 text-right text-ink">
+                    {money(month.arExpected + month.retainageExpected)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        )}
       </section>
 
       <section id="aging" className="mb-10 scroll-mt-4" data-tour="cash-flow-aging">
@@ -205,9 +244,16 @@ export default async function CashFlowPage() {
                 </div>
               ))}
             </div>
-            <p className="mb-3 text-sm text-ink-body">
-              Total outstanding: {money(agingSummary.totalOutstanding)}
-            </p>
+            {/* With one bucket holding everything, the total IS that bucket's
+                figure, and the card printed the same amount twice above the
+                table that printed it a third time (density audit #23). The
+                total is stated only when it adds something. Display only:
+                the figure is the same `totalOutstanding` as before. */}
+            {(Object.keys(AGING_BUCKET_LABELS) as ArAgingBucket[]).filter((b) => agingSummary.byBucket[b] !== 0).length > 1 && (
+              <p className="mb-3 text-sm text-ink-body">
+                Total outstanding: {money(agingSummary.totalOutstanding)}
+              </p>
+            )}
             {/* The coverage caveat this table owes its reader. Balances
                 here are net of retainage — a figure 10% lighter than the
                 invoices it came from, with nothing on screen to say why,
@@ -229,6 +275,11 @@ export default async function CashFlowPage() {
             Nothing outstanding — every invoice raised has been paid in full.
           </p>
         ) : (
+          <Disclosure
+            id="outstanding-invoices"
+            variant="plain"
+            summary={`Outstanding invoices · ${sortedInvoices.length}`}
+          >
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-left text-sm">
               <thead>
@@ -259,6 +310,7 @@ export default async function CashFlowPage() {
               </tbody>
             </table>
           </div>
+          </Disclosure>
         )}
       </section>
 
@@ -303,47 +355,17 @@ export default async function CashFlowPage() {
         )}
       </section>
 
-      <section data-tour="cash-flow-forecast">
-        <h2 className="mb-3 font-headline text-xl text-ink">Forecast, next {FORECAST_MONTHS_AHEAD} months</h2>
-        {/* `calculateCashFlowForecast` seeds Overdue plus every month in the
-            window whether or not anything lands in them — deliberately, so
-            the table has a stable shape. That makes the length of
-            `forecast.months` useless as a "is there anything here" test: it
-            is seven either way. The money is what has to be checked. */}
-        {!forecastHasMoney ? (
-          <p className="text-sm text-ink-muted">
-            Nothing to project. Every invoice is paid and no retainage is being held, so there is no
-            money with a date on it to put in a month.
-          </p>
-        ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-left text-sm">
-            <thead>
-              <tr className="text-xs text-ink-muted">
-                <th className="pb-1 pr-3 font-normal">Month</th>
-                <th className="pb-1 pr-3 text-right font-normal">AR expected</th>
-                <th className="pb-1 pr-3 text-right font-normal">Retainage expected</th>
-                <th className="pb-1 text-right font-normal">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {forecast.months.map((month) => (
-                <tr key={month.key} className="border-t border-line-row">
-                  <td className={`py-1 pr-3 ${month.key === "OVERDUE" ? "text-warn" : "text-ink-label"}`}>
-                    {month.label}
-                  </td>
-                  <td className="py-1 pr-3 text-right text-ink-body">{money(month.arExpected)}</td>
-                  <td className="py-1 pr-3 text-right text-ink-body">{money(month.retainageExpected)}</td>
-                  <td className="py-1 text-right text-ink">
-                    {money(month.arExpected + month.retainageExpected)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        )}
-      </section>
+      {/* The WIP CSV's explainer used to be the page's first card, ahead of
+          the forecast the page is named for (density audit #23). The
+          download is in the header; what it contains waits here. */}
+      <Disclosure variant="plain" summary="What's in the WIP schedule (CSV)">
+        <p className="max-w-2xl text-sm text-ink-muted">
+          Percentage of completion by the cost-to-cost method, one row per contracted or in-progress job, with
+          over- and under-billings split into the two columns a surety or CPA reads them as. Opens in a
+          spreadsheet. A figure whose estimates are mostly missing is left <strong>blank rather than guessed</strong>,
+          and the coverage columns say how much of each job is covered.
+        </p>
+      </Disclosure>
     </PageShell>
   );
 }

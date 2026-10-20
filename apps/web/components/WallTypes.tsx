@@ -13,6 +13,7 @@ import {
 } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
+import { Disclosure } from "@/components/Disclosure";
 import { WALL_BASIS_LABELS, WALL_COMPONENT_BASES, type WallComponentBasis } from "@/lib/wall-assemblies";
 import { DEFAULT_WASTE_PERCENT } from "@/lib/takeoff";
 
@@ -166,72 +167,89 @@ export function WallTypeCard({
   const [isRemoving, startRemove] = useTransition();
   const [removeError, setRemoveError] = useState<string | null>(null);
 
+  // One line until opened (declutter, 2026-10-13): every card was an open
+  // edit form, one per part, and an add-part form — N×(2+parts) forms.
   return (
-    <li className="p-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <form onSubmit={save.onSubmit} className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
-          <WallTypeFields type={type} />
-          <button type="submit" disabled={save.isPending} className={small}>
-            {save.isPending ? (
-              <span className="inline-flex items-center gap-1.5">
-                <Spinner />
-                Saving…
-              </span>
-            ) : (
-              "Save"
-            )}
-          </button>
-          <ErrorLine error={save.error} />
-        </form>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <RowActions
-            className="flex items-center justify-end gap-2"
-            destructive={
-              <ConfirmDelete
-                pinned="end"
-                describe={
-                  type.runCount > 0
-                    ? `Used on ${type.runCount} wall run${type.runCount === 1 ? "" : "s"} — those runs have to go first.`
-                    : "Takes this wall type out of your schedule. No estimate uses it."
-                }
-                label="Remove"
-                confirmLabel="Remove it"
-                pendingLabel="Removing…"
-                pending={isRemoving}
-                onConfirm={() => {
-                  setRemoveError(null);
-                  startRemove(async () => {
-                    const result = await deleteWallType(type.id);
-                    if (!result.ok) setRemoveError(result.error);
-                  });
-                }}
-              />
-            }
-          />
-          {removeError && <p className="max-w-[18rem] text-right text-xs text-tag-amber-ink">{removeError}</p>}
+    <li className="px-4">
+      <Disclosure
+        variant="row"
+        name="wall-type"
+        summary={
+          <span className="min-w-0 break-words">
+            <span className="font-medium text-ink">{type.code}</span>
+            <span className="text-ink-body"> · {type.name}</span>
+            <span className="text-ink-muted">
+              {" "}
+              · {type.components.length} {type.components.length === 1 ? "part" : "parts"}
+            </span>
+          </span>
+        }
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <form onSubmit={save.onSubmit} className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
+            <WallTypeFields type={type} />
+            <button type="submit" disabled={save.isPending} className={small}>
+              {save.isPending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Saving…
+                </span>
+              ) : (
+                "Save"
+              )}
+            </button>
+            <ErrorLine error={save.error} />
+          </form>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <RowActions
+              className="flex items-center justify-end gap-2"
+              destructive={
+                <ConfirmDelete
+                  pinned="end"
+                  describe={
+                    type.runCount > 0
+                      ? `Used on ${type.runCount} wall run${type.runCount === 1 ? "" : "s"} — those runs have to go first.`
+                      : "Takes this wall type out of your schedule. No estimate uses it."
+                  }
+                  label="Remove"
+                  confirmLabel="Remove it"
+                  pendingLabel="Removing…"
+                  pending={isRemoving}
+                  onConfirm={() => {
+                    setRemoveError(null);
+                    startRemove(async () => {
+                      const result = await deleteWallType(type.id);
+                      if (!result.ok) setRemoveError(result.error);
+                    });
+                  }}
+                />
+              }
+            />
+            {removeError && <p className="max-w-[18rem] text-right text-xs text-tag-amber-ink">{removeError}</p>}
+          </div>
         </div>
-      </div>
 
-      {type.notes && <p className="mt-2 text-xs text-ink-muted">{type.notes}</p>}
+        {type.notes && <p className="mt-2 text-xs text-ink-muted">{type.notes}</p>}
 
-      <ul className="mt-3 flex flex-col gap-2 border-t border-line-row pt-3">
-        {type.components.map((component) => (
-          <WallComponentRow
-            key={component.id}
-            component={component}
-            catalog={catalog}
-            crafts={crafts}
-            defaultWastePercent={defaultWastePercent}
-          />
-        ))}
-        {type.components.length === 0 && <li className="text-sm text-ink-body">No parts yet — add the studs, track and board below.</li>}
-      </ul>
-      <NewWallComponentForm
-        wallTypeId={type.id}
-        catalog={catalog}
-        crafts={crafts}
-        defaultWastePercent={defaultWastePercent}
-      />
+        <ul className="mt-3 flex flex-col gap-2 border-t border-line-row pt-3">
+          {type.components.map((component) => (
+            <WallComponentRow
+              key={component.id}
+              component={component}
+              catalog={catalog}
+              crafts={crafts}
+              defaultWastePercent={defaultWastePercent}
+            />
+          ))}
+          {type.components.length === 0 && <li className="text-sm text-ink-body">No parts yet — add the studs, track and board below.</li>}
+        </ul>
+        <NewWallComponentForm
+          wallTypeId={type.id}
+          catalog={catalog}
+          crafts={crafts}
+          defaultWastePercent={defaultWastePercent}
+        />
+      </Disclosure>
     </li>
   );
 }

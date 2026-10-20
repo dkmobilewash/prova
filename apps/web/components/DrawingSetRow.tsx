@@ -23,6 +23,7 @@ import {
 } from "@/components/drawingLabels";
 import { localToday } from "@/components/localToday";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Disclosure } from "@/components/Disclosure";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { Spinner } from "@/components/Spinner";
 
@@ -303,6 +304,98 @@ export function DrawingSetRow({
     );
   }
 
+  const revisionLine = (rev: (typeof ordered)[number]) => {
+    const days = daysToReachUs(rev, today);
+    const isCurrent = current?.id === rev.id;
+    return (
+      <li key={rev.id} className="text-xs text-ink-body">
+        {editingRevisionId === rev.id ? (
+          <RevisionEditForm
+            revision={rev}
+            isPending={isPending}
+            error={error}
+            onSave={(formData, onSaved) => {
+              run(
+                () => updateDrawingRevision(rev.id, formData),
+                () => {
+                  onSaved();
+                  setEditingRevisionId(null);
+                },
+              );
+            }}
+            onCancel={() => setEditingRevisionId(null)}
+          />
+        ) : (
+          <>
+            <span className={isCurrent ? "font-mono text-ink-label" : "font-mono text-ink-muted"}>
+              {rev.label}
+            </span>
+            {` · issued ${rev.issuedOn}`}
+            {rev.receivedOn
+              ? ` · received ${rev.receivedOn}${days !== null ? ` · ${days} day${days === 1 ? "" : "s"} to reach us` : ""}`
+              : ` · NOT RECEIVED${days !== null ? ` · waiting ${days} day${days === 1 ? "" : "s"}` : ""}`}
+            {!isCurrent && " · superseded"}
+            {rev.description && <span className="text-ink-muted"> — {rev.description}</span>}
+            {/* Only the actions go inside RowActions — the
+                revision's own text above stays visible while a
+                delete is armed. The file link and "Mark received"
+                used to stay live next to the armed confirm (issue
+                #152), so a click meant to cancel a remove marked
+                the revision received instead. */}
+            <RowActions
+              as="span"
+              destructive={
+                canDelete ? (
+                  <ConfirmDelete
+                    describe="Removes this revision from the set. Whichever revision is newest afterwards becomes the current one."
+                    label="Remove"
+                    confirmLabel="Confirm remove"
+                    pendingLabel="Removing…"
+                    pending={isPending}
+                    onConfirm={() => run(() => deleteDrawingRevision(rev.id))}
+                    deleteClassName="ml-2 text-ink-muted underline disabled:opacity-50"
+                    cancelClassName="ml-2 text-ink-body underline disabled:opacity-50"
+                    confirmClassName="ml-2 text-danger underline disabled:opacity-50"
+                  />
+                ) : null
+              }
+            >
+              {rev.fileUrl && (
+                <a
+                  href={rev.fileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-2 text-link underline"
+                >
+                  {rev.fileName || "open"}
+                </a>
+              )}
+                {rev.fileUrl && (
+                  // Inside RowActions with the others, so it is
+                  // hidden while a delete is armed -- issue #152's
+                  // rule 1 is about EVERY ordinary action, not just
+                  // the one somebody remembered.
+                  <Link href={`/drawings/${rev.id}`} className="ml-2 text-link underline">
+                    pins
+                  </Link>
+                )}
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => setEditingRevisionId(rev.id)}
+                className="ml-2 text-ink-muted underline disabled:opacity-50"
+              >
+                {rev.receivedOn ? "Edit" : "Mark received"}
+              </button>
+            </RowActions>
+          </>
+        )}
+      </li>
+    );
+  };
+  const inHand = ordered.filter((rev) => rev.id === current?.id || !rev.receivedOn);
+  const earlier = ordered.filter((rev) => !inHand.includes(rev));
+
   const stateChip =
     state === "BEHIND"
       ? "bg-tag-rose text-tag-rose-ink"
@@ -325,98 +418,20 @@ export function DrawingSetRow({
 
         {set.description && <p className="mt-1 text-sm text-ink-label">{set.description}</p>}
 
-        {ordered.length > 0 && (
+        {/* The current revision and any not yet received stay on the row —
+            they carry "Mark received", the file and the pins. Superseded
+            revisions that reached us open on click (density audit #32). */}
+        {inHand.length > 0 && (
           <ul className="mt-2 flex flex-col gap-1 border-l-2 border-line-card pl-3">
-            {ordered.map((rev) => {
-              const days = daysToReachUs(rev, today);
-              const isCurrent = current?.id === rev.id;
-              return (
-                <li key={rev.id} className="text-xs text-ink-body">
-                  {editingRevisionId === rev.id ? (
-                    <RevisionEditForm
-                      revision={rev}
-                      isPending={isPending}
-                      error={error}
-                      onSave={(formData, onSaved) => {
-                        run(
-                          () => updateDrawingRevision(rev.id, formData),
-                          () => {
-                            onSaved();
-                            setEditingRevisionId(null);
-                          },
-                        );
-                      }}
-                      onCancel={() => setEditingRevisionId(null)}
-                    />
-                  ) : (
-                    <>
-                      <span className={isCurrent ? "font-mono text-ink-label" : "font-mono text-ink-muted"}>
-                        {rev.label}
-                      </span>
-                      {` · issued ${rev.issuedOn}`}
-                      {rev.receivedOn
-                        ? ` · received ${rev.receivedOn}${days !== null ? ` · ${days} day${days === 1 ? "" : "s"} to reach us` : ""}`
-                        : ` · NOT RECEIVED${days !== null ? ` · waiting ${days} day${days === 1 ? "" : "s"}` : ""}`}
-                      {!isCurrent && " · superseded"}
-                      {rev.description && <span className="text-ink-muted"> — {rev.description}</span>}
-                      {/* Only the actions go inside RowActions — the
-                          revision's own text above stays visible while a
-                          delete is armed. The file link and "Mark received"
-                          used to stay live next to the armed confirm (issue
-                          #152), so a click meant to cancel a remove marked
-                          the revision received instead. */}
-                      <RowActions
-                        as="span"
-                        destructive={
-                          canDelete ? (
-                            <ConfirmDelete
-                              describe="Removes this revision from the set. Whichever revision is newest afterwards becomes the current one."
-                              label="Remove"
-                              confirmLabel="Confirm remove"
-                              pendingLabel="Removing…"
-                              pending={isPending}
-                              onConfirm={() => run(() => deleteDrawingRevision(rev.id))}
-                              deleteClassName="ml-2 text-ink-muted underline disabled:opacity-50"
-                              cancelClassName="ml-2 text-ink-body underline disabled:opacity-50"
-                              confirmClassName="ml-2 text-danger underline disabled:opacity-50"
-                            />
-                          ) : null
-                        }
-                      >
-                        {rev.fileUrl && (
-                          <a
-                            href={rev.fileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="ml-2 text-link underline"
-                          >
-                            {rev.fileName || "open"}
-                          </a>
-                        )}
-                          {rev.fileUrl && (
-                            // Inside RowActions with the others, so it is
-                            // hidden while a delete is armed -- issue #152's
-                            // rule 1 is about EVERY ordinary action, not just
-                            // the one somebody remembered.
-                            <Link href={`/drawings/${rev.id}`} className="ml-2 text-link underline">
-                              pins
-                            </Link>
-                          )}
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => setEditingRevisionId(rev.id)}
-                          className="ml-2 text-ink-muted underline disabled:opacity-50"
-                        >
-                          {rev.receivedOn ? "Edit" : "Mark received"}
-                        </button>
-                      </RowActions>
-                    </>
-                  )}
-                </li>
-              );
-            })}
+            {inHand.map(revisionLine)}
           </ul>
+        )}
+        {earlier.length > 0 && (
+          <Disclosure variant="plain" className="mt-2" summary={`Earlier revisions · ${earlier.length}`}>
+            <ul className="-mt-2 flex flex-col gap-1 border-l-2 border-line-card pl-3">
+              {earlier.map(revisionLine)}
+            </ul>
+          </Disclosure>
         )}
 
         {showJob && <p className="mt-1 text-xs text-link">{set.jobName}</p>}

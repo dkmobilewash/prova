@@ -910,6 +910,9 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       // row is evidence about a PROSPECT, which a tenant export never holds.
       "OutboundEvent",
       "ConsentRecord",
+      // The reply agent's reading of a prospect's answer and the draft it
+      // sent: operator-only, and correspondence with a PROSPECT.
+      "OutboundReply",
       "BidInvitation",
       // Why a bid was won or lost, entered by a person — the result itself
       // is on the invitation. Lives with the bidding it explains.

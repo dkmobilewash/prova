@@ -37,6 +37,15 @@ afterEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = false;
 });
 
+/** Declutter round 3 (density audit #12): the details render as a read-only
+ *  list and the form opens on "Edit details". Every test below is about the
+ *  form, so it opens it first — and fails here if the button is gone. */
+function openEdit(container: HTMLElement) {
+  const edit = [...container.querySelectorAll("button")].find((b) => b.textContent === "Edit details");
+  if (!edit) throw new Error("no Edit details button");
+  act(() => edit.click());
+}
+
 function submitted(isEstimate: boolean) {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -60,6 +69,7 @@ function submitted(isEstimate: boolean) {
       }),
     );
   });
+  openEdit(container);
   const form = container.querySelector("form");
   if (!form) throw new Error("no form rendered");
   // What a browser would submit: named, enabled controls only.
@@ -72,12 +82,73 @@ function submitted(isEstimate: boolean) {
 }
 
 describe("the job details form", () => {
+  it("reads as a list until Edit details opens the same form in place", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        createElement(JobDetailsForm, {
+          jobId: "job-1",
+          name: "Riverside",
+          scope: "Level 3 drywall",
+          contactId: "contact-1",
+          contacts: [{ id: "contact-1", name: "Acme GC" }],
+          isEstimate: false,
+          canRemove: false,
+          siteAddress: "1 River Rd",
+          grossAreaSqFt: "40000",
+          siteStatus: "found",
+        }),
+      );
+    });
+    expect(container.querySelector("form")).toBeNull();
+    const dl = container.querySelector("dl")!.textContent!;
+    for (const fact of ["Riverside", "Acme GC", "1 River Rd", "40000", "Level 3 drywall"]) expect(dl).toContain(fact);
+    openEdit(container);
+    expect(container.querySelector("form input[name='name']")).not.toBeNull();
+    act(() => root.unmount());
+    container.remove();
+  });
+
   it("still sends the client on a contracted job, where the picker is disabled", () => {
     expect(submitted(false)).toEqual(["contact-1"]);
   });
 
   it("sends the picked client, once, on an estimate", () => {
     expect(submitted(true)).toEqual(["contact-1"]);
+  });
+
+  // Declutter audit, 2026-10-13: an empty site-address box showing
+  // "123 Main St, Portland, OR 97201" was read as the job's address, so the
+  // field reports' "add the site address" hint looked like a bug.
+  it("never shows a sample address that could be read as the job's own", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        createElement(JobDetailsForm, {
+          jobId: "job-1",
+          name: "Riverside",
+          scope: null,
+          contactId: "contact-1",
+          contacts: [{ id: "contact-1", name: "Acme GC" }],
+          isEstimate: false,
+          canRemove: false,
+          siteAddress: null,
+          grossAreaSqFt: null,
+          siteStatus: "none",
+        }),
+      );
+    });
+    openEdit(container);
+    const input = container.querySelector<HTMLInputElement>("input[name='siteAddress']");
+    expect(input, "the field rendered").not.toBeNull();
+    expect(input!.value).toBe("");
+    expect(input!.placeholder).not.toMatch(/\d/);
+    act(() => root.unmount());
+    container.remove();
   });
 });
 
@@ -127,6 +198,7 @@ function renderJobDetails() {
       }),
     );
   });
+  openEdit(container);
   const form = container.querySelector("form")!;
   const field = <T extends HTMLElement>(name: string) => form.querySelector<T>(`[name="${name}"]`)!;
   return {

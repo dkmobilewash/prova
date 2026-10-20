@@ -65,6 +65,23 @@ export const PUBLIC_ROUTES: readonly PublicRoute[] = [
     mustShow: "Your whole job, in one place.",
   },
   {
+    path: "/wall-takeoff",
+    label: "free drawing-set read",
+    pattern: "/wall-takeoff",
+    // A SECTION HEADING FROM THE PART OF THE PAGE THAT RENDERS IN BOTH
+    // STATES, and the "both" is the whole reason this is not the form's own
+    // heading. The offer is CLOSED when this install has no address to
+    // receive a drawing set at (`lib/takeoff-offer-config.ts`), and the
+    // public job has no reason to set one — so "Where should we send it?"
+    // would be absent on exactly the run that walks this page, and a
+    // `mustShow` that is absent for a legitimate reason gets deleted by
+    // whoever debugs it next rather than fixed.
+    //
+    // It is also not a string from the closed state, which is one sentence
+    // and would pass while the whole offer above it failed to render.
+    mustShow: "What you get back",
+  },
+  {
     path: "/lien-waiver",
     label: "lien waiver landing page",
     pattern: "/lien-waiver",

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Disclosure } from "@/components/Disclosure";
 import { prisma } from "@prova/db";
 import { relativeTime } from "@/lib/integrations/relativeTime";
 import { isStale } from "@/lib/acc/feed";
@@ -102,91 +103,96 @@ export function ACCFeedSection({ feed }: { feed: ACCFeed }) {
   const now = new Date();
   const stale = connection?.status === "CONNECTED" && links.some((link) => isStale(link.lastRefreshedAt, now));
   const heading = HEADINGS[kind];
+  const itemCount = links.reduce((n, link) => n + link.items.length, 0);
 
   return (
     <section className="mt-10" data-tour="acc-feed">
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-sm font-semibold text-ink">{heading.title}</h2>
-          <p className="mt-1 max-w-2xl text-sm text-ink-body">
-            The GC&rsquo;s own records, read from Autodesk Construction Cloud. They are theirs: C Stream
-            only reads them, and they are not part of your log above. Open one in ACC to answer or
-            change it.
-          </p>
-        </div>
-        {connection?.status === "CONNECTED" ? (
-          <ACCRefresh jobId={activeJob} stale={stale} />
-        ) : (
-          <p className="max-w-xs text-xs text-ink-muted sm:text-right">
-            ACC isn&rsquo;t connected right now, so this is what was last read. The account owner
-            reconnects on Settings → Integrations.
-          </p>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-4">
-        {links.map((link) => (
-          <div key={link.id} className="rounded-lg border border-dashed border-line-card bg-surface">
-            <div className="flex flex-col gap-1 border-b border-line-row px-4 py-2 sm:flex-row sm:items-baseline sm:justify-between">
-              <span className="text-sm font-medium text-ink">
-                {link.accProjectName}{" "}
-                <span className="font-normal text-ink-muted">
-                  — {link.accAccountName}&rsquo;s project, linked to {link.job.name}
-                </span>
-              </span>
-              <span
-                className={`text-xs ${link.lastRefreshStatus === "FAILURE" ? "text-tag-rose-ink" : "text-ink-muted"}`}
-              >
-                {link.lastRefreshedAt ? `Read ${relativeTime(link.lastRefreshedAt, now)}` : "Not read yet"}
-                {link.lastRefreshStatus === "FAILURE" && link.lastRefreshMessage ? ` — ${link.lastRefreshMessage}` : ""}
-              </span>
-            </div>
-            {link.items.length === 0 ? (
-              <p className="px-4 py-3 text-sm text-ink-muted">{heading.empty}</p>
-            ) : (
-              <ul className="divide-y divide-line-row" data-tour="acc-feed-list">
-                {link.items.slice(0, SHOW).map((item) => (
-                  <li key={item.id} className="flex flex-col gap-1 px-4 py-2 sm:flex-row sm:items-baseline sm:justify-between">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-sm text-ink">
-                        <span className="mr-2 inline-flex items-center rounded-full border border-line-card px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-ink-muted">
-                          GC&rsquo;s
-                        </span>
-                        {item.number ? <span className="mr-1 font-medium">{item.number}</span> : null}
-                        {item.title}
-                      </span>
-                      <span className="text-xs text-ink-muted">
-                        {[
-                          item.status,
-                          item.revision ? `Rev ${item.revision}` : null,
-                          item.discipline,
-                          item.ballInCourt ? `Ball in court: ${item.ballInCourt}` : null,
-                          day(item.dueDate) ? `Due ${day(item.dueDate)}` : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    </div>
-                    <a
-                      href={item.webUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex min-h-11 shrink-0 items-center text-sm text-link sm:min-h-0"
-                    >
-                      Open in ACC ↗
-                    </a>
-                  </li>
-                ))}
-                {link.items.length > SHOW && (
-                  <li className="px-4 py-2 text-xs text-ink-muted">
-                    And {link.items.length - SHOW} more — open the project in ACC to see them all.
-                  </li>
-                )}
-              </ul>
-            )}
+      {/* Collapsed by default (density audit #32): the GC's own records
+          sat open under your log on every visit. The count says whether
+          there is anything to open. */}
+      <Disclosure summary={`${heading.title} · ${itemCount}`}>
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="max-w-2xl text-sm text-ink-body">
+              The GC&rsquo;s own records, read from Autodesk Construction Cloud. They are theirs: C Stream
+              only reads them, and they are not part of your log above. Open one in ACC to answer or
+              change it.
+            </p>
           </div>
-        ))}
-      </div>
+          {connection?.status === "CONNECTED" ? (
+            <ACCRefresh jobId={activeJob} stale={stale} />
+          ) : (
+            <p className="max-w-xs text-xs text-ink-muted sm:text-right">
+              ACC isn&rsquo;t connected right now, so this is what was last read. The account owner
+              reconnects on Settings → Integrations.
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-4">
+          {links.map((link) => (
+            <div key={link.id} className="rounded-lg border border-dashed border-line-card bg-surface">
+              <div className="flex flex-col gap-1 border-b border-line-row px-4 py-2 sm:flex-row sm:items-baseline sm:justify-between">
+                <span className="text-sm font-medium text-ink">
+                  {link.accProjectName}{" "}
+                  <span className="font-normal text-ink-muted">
+                    — {link.accAccountName}&rsquo;s project, linked to {link.job.name}
+                  </span>
+                </span>
+                <span
+                  className={`text-xs ${link.lastRefreshStatus === "FAILURE" ? "text-tag-rose-ink" : "text-ink-muted"}`}
+                >
+                  {link.lastRefreshedAt ? `Read ${relativeTime(link.lastRefreshedAt, now)}` : "Not read yet"}
+                  {link.lastRefreshStatus === "FAILURE" && link.lastRefreshMessage ? ` — ${link.lastRefreshMessage}` : ""}
+                </span>
+              </div>
+              {link.items.length === 0 ? (
+                <p className="px-4 py-3 text-sm text-ink-muted">{heading.empty}</p>
+              ) : (
+                <ul className="divide-y divide-line-row" data-tour="acc-feed-list">
+                  {link.items.slice(0, SHOW).map((item) => (
+                    <li key={item.id} className="flex flex-col gap-1 px-4 py-2 sm:flex-row sm:items-baseline sm:justify-between">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-sm text-ink">
+                          <span className="mr-2 inline-flex items-center rounded-full border border-line-card px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-ink-muted">
+                            GC&rsquo;s
+                          </span>
+                          {item.number ? <span className="mr-1 font-medium">{item.number}</span> : null}
+                          {item.title}
+                        </span>
+                        <span className="text-xs text-ink-muted">
+                          {[
+                            item.status,
+                            item.revision ? `Rev ${item.revision}` : null,
+                            item.discipline,
+                            item.ballInCourt ? `Ball in court: ${item.ballInCourt}` : null,
+                            day(item.dueDate) ? `Due ${day(item.dueDate)}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      </div>
+                      <a
+                        href={item.webUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex min-h-11 shrink-0 items-center text-sm text-link sm:min-h-0"
+                      >
+                        Open in ACC ↗
+                      </a>
+                    </li>
+                  ))}
+                  {link.items.length > SHOW && (
+                    <li className="px-4 py-2 text-xs text-ink-muted">
+                      And {link.items.length - SHOW} more — open the project in ACC to see them all.
+                    </li>
+                  )}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      </Disclosure>
     </section>
   );
 }

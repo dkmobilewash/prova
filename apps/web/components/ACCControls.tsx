@@ -26,9 +26,9 @@ export function ACCControls({ state, startHref }: { state: FeedCardState; startH
 
   if (state === "not-set-up") {
     return (
-      <p className="max-w-[16rem] text-right text-xs text-ink-muted" data-tour="acc-not-set-up">
-        Not set up on this install yet. Whoever runs C Stream for you has to add the Autodesk app keys
-        before this can connect.
+      <p className="text-right text-xs text-ink-muted" data-tour="acc-not-set-up">
+        {/* Said once, at the top of the page (declutter). */}
+        Needs app keys
       </p>
     );
   }

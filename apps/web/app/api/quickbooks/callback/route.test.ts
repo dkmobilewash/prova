@@ -95,6 +95,7 @@ function outcome(response: Response) {
   const location = new URL(response.headers.get("location") ?? "", "https://app.cstream.ai");
   return {
     path: location.pathname,
+    tab: location.searchParams.get("tab"),
     qb: location.searchParams.get("qb"),
     detail: location.searchParams.get("qb_detail"),
   };
@@ -134,7 +135,8 @@ describe("QuickBooks OAuth callback", () => {
 
     const result = outcome(await GET(callback()));
 
-    expect(result).toEqual({ path: "/settings", qb: "connected", detail: null });
+    // /settings is tabbed: the banner and the connection live on QuickBooks.
+    expect(result).toEqual({ path: "/settings", tab: "quickbooks", qb: "connected", detail: null });
     expect(upserted?.where.companyId).toBe("co_owner");
     expect(upserted?.create).toMatchObject({
       companyId: "co_owner",

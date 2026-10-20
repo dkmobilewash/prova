@@ -110,6 +110,8 @@ vi.mock("@/lib/viewerToday", () => ({
 vi.mock("next/navigation", () => ({
   usePathname: () => "/contacts",
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  // /settings' section tabs read the query to light the current one.
+  useSearchParams: () => new URLSearchParams(),
 }));
 // Server actions, imported by these pages only to hand to a form.
 vi.mock("@/lib/actions/notifications", () => ({ sendMyAlertDigest: vi.fn() }));
@@ -216,6 +218,19 @@ describe("/pipeline with no pursuits and no invitations", () => {
     const html = await load();
     expect(html).not.toContain('data-testid="bid-pursuit-form"');
   });
+
+  it("leads with the chase list; the two web lookups are buttons under it, their inputs absent until opened", async () => {
+    const html = await load();
+    const chase = html.indexOf("Nothing on the chase list yet.");
+    const lookup = html.indexOf(">Look up a project<");
+    const leads = html.indexOf('data-pipeline="lead-search-open"');
+    expect(chase, "the chase list rendered").toBeGreaterThan(-1);
+    expect(lookup, "the lookup is a button").toBeGreaterThan(chase);
+    expect(leads, "Find projects out to bid is beside it").toBeGreaterThan(lookup);
+    // Declutter (2026-10-13): the lookup form rendered open on load.
+    expect(html).not.toContain('name="projectName"');
+    expect(html).not.toContain('data-pipeline="project-lookup"');
+  });
 });
 
 describe("/schedule with no jobs", () => {
@@ -258,7 +273,7 @@ describe("/alerts with nothing recorded anywhere", () => {
 
   it("offers the two places a new account can record a date it will watch", async () => {
     const html = await load();
-    expect(html).toContain('href="/settings"');
+    expect(html).toContain('href="/settings?tab=licences"');
     expect(html).toContain('href="/jobs"');
   });
 });
@@ -266,7 +281,7 @@ describe("/alerts with nothing recorded anywhere", () => {
 describe("/closeout with no jobs", () => {
   const load = async () => {
     const { default: Page } = await import("@/app/(app)/closeout/page");
-    return renderToStaticMarkup(await Page());
+    return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
   };
 
   it("renders, and explains what a closeout package is before there is one", async () => {
@@ -290,9 +305,14 @@ describe("/closeout with no jobs", () => {
 });
 
 describe("/settings with nothing filled in", () => {
+  // Tabbed since the declutter: locations are on Company (the bare URL),
+  // licences, insurance and bonding on their own tab. Both renders, joined,
+  // are what this block used to read off one page.
   const load = async () => {
     const { default: Page } = await import("@/app/(app)/settings/page");
-    return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+    const company = renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+    const papers = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tab: "licences" }) }));
+    return company + papers;
   };
 
   it("renders all four compliance sections", async () => {
@@ -359,6 +379,34 @@ describe("/team on a brand-new account with nobody on the crew", () => {
     // The paragraph that was there instead: true, and written for somebody
     // who reads permission models for a living.
     expect(html).not.toContain("leaving it unset gives the full office access");
+  });
+
+  it("opens with ONE line; the full team-vs-crew explainer is one click down", async () => {
+    const html = await load();
+    const lead = html.match(/<p[^>]*data-team="kinds"[^>]*>([\s\S]*?)<\/p>/)?.[1] ?? "";
+    const text = lead.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    expect(text).toMatch(/^Two kinds of people/);
+    expect(text.length).toBeLessThanOrEqual(80);
+    // The detail is inside a closed <details>, not an open paragraph.
+    const details = html.match(/<details(?![^>]*\bopen\b)[^>]*><summary[^>]*>Team members or crew\?<\/summary>([\s\S]*?)<\/details>/);
+    expect(details?.[1]).toContain("no login, no email needed");
+  });
+
+  // Density audit #20: the team-vs-crew explainer appeared three times and
+  // the invite form plus the sign-up URL sat open at the foot of the page.
+  it("explains team vs crew once, and has one Crew heading", async () => {
+    const html = await load();
+    expect(html.split("no login, no email needed").length - 1).toBe(1);
+    expect(html).not.toContain("The people who work the hours");
+    expect(html).not.toContain("goes under Team members above");
+    expect(html.match(/<h[23][^>]*>Crew<\/h[23]>/g) ?? []).toHaveLength(1);
+  });
+
+  it("keeps the invite form and the sign-up link behind Invite a teammate", async () => {
+    const html = await load();
+    expect(html).toMatch(/data-tour="team-invite">(?:<div>)?<button[^>]*>Invite a teammate<\/button>/);
+    expect(html).not.toContain("app.example.com/sign-up");
+    expect(html).not.toContain('name="email"');
   });
 });
 
@@ -621,23 +669,26 @@ describe("an empty state has to offer a way out of being empty", () => {
     [...html.matchAll(/<a[^>]*href="([^"]*)"/g)].map((m) => m[1]);
 
   describe("/prevailing-wage with nothing filed", () => {
-    const load = async () => {
+    // The week check is the default tab; the job mapping is on ?tab=setup
+    // (declutter round 3, density audit #22).
+    const load = async (tab?: string) => {
       const { default: Page } = await import("@/app/(app)/prevailing-wage/page");
-      return renderToStaticMarkup(await Page({ searchParams: noSearchParams() }));
+      return renderToStaticMarkup(await Page({ searchParams: tab ? Promise.resolve({ tab }) : noSearchParams() }));
     };
 
     it("renders both of its empty sections", async () => {
-      const html = await load();
       // Anti-vacuity, twice: these are the two headings the sections below
       // belong to, so a page that failed to render fails here rather than
       // passing the link assertions on an empty string.
-      expect(html).toContain("Check a week against the rules");
-      expect(html).toContain("Which rules apply to which job");
-      expect(html).toContain("No wage determinations recorded yet");
+      expect(await load()).toContain("Check a week against the rules");
+      const setup = await load("setup");
+      expect(setup).toContain("Which rules apply to which job");
+      expect(setup).toContain("No wage determinations recorded yet");
     });
 
     it("gives the reader somewhere to press, not just something to read", async () => {
       expect(wayOut(await load())).toContain("/jobs");
+      expect(wayOut(await load("setup"))).toContain("/jobs");
     });
   });
 

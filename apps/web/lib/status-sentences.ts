@@ -236,6 +236,17 @@ export function alertsStatus(input: {
   return { quiet, problems };
 }
 
+// --------------------------------------------------------- lien deadlines
+
+/** /lien-deadlines — replaces its three tiles (density audit #26). Red for
+ * an overdue unserved deadline (lien rights at risk), amber for one due soon. */
+export function lienDeadlinesStatus(input: { overdueUnserved: number; dueSoon: number; dueSoonDays: number; served: number }): StatusReport {
+  const problems: StatusProblem[] = [];
+  if (input.overdueUnserved > 0) problems.push({ tone: "red", text: `${count(input.overdueUnserved, "deadline")} overdue and not served.` });
+  if (input.dueSoon > 0) problems.push({ tone: "amber", text: `${count(input.dueSoon, "deadline")} due in the next ${input.dueSoonDays} days.` });
+  return { quiet: `Nothing overdue or due in the next ${input.dueSoonDays} days. ${input.served} served.`, problems };
+}
+
 // -------------------------------------------------------------- closeout
 
 export function closeoutStatus(input: {
@@ -275,4 +286,30 @@ export function assistantStatus(input: { proposed: number; done: number; notDone
       ? "No cards in the last 30 days."
       : `${count(input.proposed, "card")} in the last 30 days: ${input.done} done, ${input.notDone} refused by the app when tapped.`;
   return { quiet, problems: [] };
+}
+
+// ----------------------------------------------------------- backcharges
+
+/** Replaces /backcharges' four tiles (density audit #29). Every figure the
+ * tiles showed is in the sentence, so nothing is lost; a backcharge past its
+ * deadline to object is money at risk and the only thing that colours, and
+ * its red line still carries the figures. Money arrives already formatted —
+ * the page sums it, exactly as it did for the tiles. */
+export function backchargesStatus(input: {
+  openCount: number;
+  openClaimed: string;
+  overdue: number;
+  conceded: string;
+  avoided: string;
+  unknownConceded: number;
+}): StatusReport {
+  const unknown = input.unknownConceded
+    ? ` ${input.unknownConceded} settled with no figure recorded, not counted.`
+    : "";
+  const totals = `${count(input.openCount, "unresolved backcharge")}, ${input.openClaimed} claimed. Resolved ones cost us ${input.conceded}; ${input.avoided} argued off or withdrawn.${unknown}`;
+  const problems: StatusProblem[] =
+    input.overdue > 0
+      ? [{ tone: "red", text: `${count(input.overdue, "backcharge")} past the deadline to object. ${totals}` }]
+      : [];
+  return { quiet: totals, problems };
 }

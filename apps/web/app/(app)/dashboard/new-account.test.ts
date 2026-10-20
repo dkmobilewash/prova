@@ -163,15 +163,16 @@ const POPULATED_ORDER = [
   'data-home="greeting"',
   'data-tour="dashboard-ask"',
   'data-tour="dashboard-new-job"',
-  // Concept H: the six area boxes under the greeting.
-  'data-home="areas"',
   'data-home="phone-tiles"',
+  // Declutter (2026-10-13): what needs you and the money lead, directly
+  // under the greeting; the six area boxes moved below them.
   'data-tour="dashboard-needs-attention"',
   'data-tour="dashboard-money"',
   'data-tour="dashboard-field"',
+  'data-home="areas"',
   'id="jobs"',
   'data-tour="dashboard-job-health"',
-  "Accounts receivable",
+  'id="receivables"',
 ];
 
 /** One block's markup, by its tour anchor. */
@@ -339,8 +340,40 @@ describe("/dashboard on a company with jobs", () => {
   it("links shortcuts straight to the one job that fits", async () => {
     const html = await render();
     expect(html).toMatch(/href="\/jobs\/job-1\/crew#log-time"[^>]*><span[^>]*>◷<\/span>Log hours/);
-    expect(html).toMatch(/href="\/jobs\/job-1\/billing"[^>]*><span[^>]*>↗<\/span>Send pay app/);
-    expect(html).toContain('href="/rfis"');
+    expect(html).toMatch(/href="\/field-reports\?new=1&amp;job=job-1"[^>]*><span[^>]*>✎<\/span>Daily report/);
+  });
+
+  it("keeps the shortcuts beside the greeting to four: search, new job, log hours, daily report", async () => {
+    const html = await render();
+    const greetingRow = html.slice(html.indexOf('data-home="greeting"'), html.indexOf('data-home="phone-tiles"'));
+    const chips = greetingRow.match(/rounded-full border/g) ?? [];
+    expect(chips).toHaveLength(4);
+    // The rest are one ⌘K away (lib/search/palette.ts), not gone.
+    expect(greetingRow).not.toContain("Send pay app");
+    expect(greetingRow).not.toContain("Find an RFI");
+    expect(greetingRow).not.toContain("Take a photo");
+  });
+
+  it("leads with Needs you today and Money, above the area boxes", async () => {
+    const html = await render();
+    const needs = html.indexOf('data-tour="dashboard-needs-attention"');
+    const money = html.indexOf('data-tour="dashboard-money"');
+    const areas = html.indexOf('data-home="areas"');
+    expect(needs).toBeGreaterThan(-1);
+    expect(areas, "the area boxes are still on the page").toBeGreaterThan(-1);
+    expect(needs).toBeLessThan(areas);
+    expect(money).toBeLessThan(areas);
+  });
+
+  it("says the overdue total once, in Money — not in an area box or a second list", async () => {
+    const html = await render();
+    // What is on screen: the receivables list sits in a CLOSED <details>, so
+    // its rows are one click away and not part of the count.
+    const onScreen = html.replace(/<details id="receivables"[\s\S]*?<\/details>/, "");
+    expect(onScreen.split("$18,250").length - 1, "the overdue figure appears exactly once").toBe(1);
+    expect(block(html, "dashboard-money")).toContain("$18,250");
+    // Who owes you is one line that opens into the list, not a second card of it.
+    expect(html).toMatch(/<details id="receivables"[^>]*><summary[^>]*>Who owes you → 2 outstanding pay apps</);
   });
 
   it("puts Concept G's three field creates on the phone home, each landing on its open form", async () => {
@@ -366,7 +399,7 @@ describe("/dashboard on a company with jobs", () => {
     state.context.jobFunction = "FIELD";
     const html = await render();
     expect(html).not.toContain('data-tour="dashboard-money"');
-    expect(html).not.toContain("Accounts receivable");
+    expect(html).not.toContain("Who owes you");
     expect(html).not.toContain("/cash-flow");
     expect(html).not.toContain('href="/wip"');
     expect(html).not.toContain("Send pay app");
@@ -401,7 +434,6 @@ describe("/dashboard on a company with jobs", () => {
     for (const line of [
       "1 in progress", // Jobs & bids: a count of jobs...
       "No bids due", // ...and no invitations
-      "$18,250 overdue", // Money: the dashboard's own overdue total
       "1 crew out today", // Crew & field: today's schedule
       "No RFIs waiting", // Paperwork: no SENT RFIs in this fake database
       "1 expired", // Compliance: the expired licence

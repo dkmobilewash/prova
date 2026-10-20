@@ -16,7 +16,7 @@ export function NoCraftsHint({ craftCount }: { craftCount: number }) {
   return (
     <span className="max-w-[16rem] text-xs font-normal text-ink-muted">
       No craft classifications yet. Add your local and its classifications under{" "}
-      <Link href="/union-compliance#setup" className="text-link hover:underline">
+      <Link href="/union-compliance?tab=setup#setup" className="text-link hover:underline">
         Union &amp; fringe
       </Link>
       .

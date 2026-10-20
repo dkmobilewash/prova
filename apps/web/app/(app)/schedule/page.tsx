@@ -18,6 +18,7 @@ import { CrewScheduleBoard, type ScheduleDay } from "@/components/CrewScheduleBo
 import { CrewWeekGrid } from "@/components/CrewWeekGrid";
 import { CalendarSubscribe } from "@/components/CalendarSubscribe";
 import { toJobOption } from "@/components/jobLabels";
+import { SeeAll, seeAllWindow } from "@/components/SeeAll";
 
 export const metadata = { title: "Schedule" };
 
@@ -45,9 +46,9 @@ function toDay(row: Awaited<ReturnType<typeof loadUpcomingSchedule>>[number]): S
 export default async function SchedulePage({
   searchParams,
 }: {
-  searchParams: Promise<{ week?: string; job?: string; add?: string }>;
+  searchParams: Promise<{ week?: string; job?: string; add?: string; all?: string }>;
 }) {
-  const { week: weekParam, job: jobParam, add } = await searchParams;
+  const { week: weekParam, job: jobParam, add, all } = await searchParams;
   const { company, ...user } = await requireCompanyContext();
   // The VIEWER'S day, not the server's. With serverToday a day planned for
   // "today" on a Sunday evening in the US was already "yesterday" in UTC, so
@@ -156,6 +157,23 @@ export default async function SchedulePage({
   const allJobs = [...scheduled, ...unscheduled];
   const pickable = allJobs.filter((job) => schedulableJobs([job]).length > 0 || job.id === jobParam);
 
+  // Job start dates and Unscheduled each show 5, with See all (density audit
+  // #16: both listed every job ever). Sliced here, not with a `take`: the
+  // form above offers every job, and the empty states read the full counts.
+  // Start dates lead with what is coming (soonest first), then what already
+  // started (most recent first) — the query's oldest-first order would have
+  // spent all five rows on finished jobs.
+  const { limit: listLimit, showingAll } = seeAllWindow(all, 5);
+  const byStart = [
+    ...scheduled.filter((job) => job.startDate!.toISOString().slice(0, 10) >= today),
+    ...scheduled.filter((job) => job.startDate!.toISOString().slice(0, 10) < today).reverse(),
+  ];
+  const shownScheduled = showingAll ? byStart : byStart.slice(0, listLimit);
+  const shownUnscheduled = showingAll ? unscheduled : unscheduled.slice(0, listLimit);
+  const keepWeek = weekParam ? `week=${encodeURIComponent(weekParam)}` : "";
+  const seeAllHref = `?${keepWeek ? `${keepWeek}&` : ""}all=1`;
+  const fewerHref = `?${keepWeek}`;
+
   return (
     // `working`: the week board is a 7-column table and wants the width.
     <PageShell width="working">
@@ -165,7 +183,7 @@ export default async function SchedulePage({
           promised "you can see the week a second job wants the same three
           hangers as the first" — and until there was a per-day schedule it
           could not, because JobAssignment carries no date. The job list
-          below is the start-date view and stays exactly as it was. */}
+          below is the start-date view (5 shown, See all for the rest). */}
       <CrewScheduleBoard
         upcoming={upcoming.map(toDay)}
         missingHours={missing.map(toDay)}
@@ -194,7 +212,7 @@ export default async function SchedulePage({
           </p>
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
-            {scheduled.map((job) => (
+            {shownScheduled.map((job) => (
               <li key={job.id} className="p-4">
                 {/* Stacks below sm: a nowrap date range beside a name
                     column left ~140px for the name at 375px. Same
@@ -224,6 +242,14 @@ export default async function SchedulePage({
             ))}
           </ul>
         )}
+        <SeeAll
+          total={scheduled.length}
+          limit={listLimit}
+          showingAll={showingAll}
+          noun="jobs with a start date"
+          href={seeAllHref}
+          fewerHref={fewerHref}
+        />
       </section>
 
       {/* ALWAYS RENDERED once there is a job, where it used to disappear
@@ -236,7 +262,7 @@ export default async function SchedulePage({
           <p className="text-ink-body">Every job has a start date.</p>
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
-            {unscheduled.map((job) => (
+            {shownUnscheduled.map((job) => (
               <li key={job.id} className="p-4">
                 {/* Name + status pill + GC name forced onto one ~295px
                     line was the audit's phone finding; stack below sm. */}
@@ -254,6 +280,14 @@ export default async function SchedulePage({
             ))}
           </ul>
         )}
+        <SeeAll
+          total={unscheduled.length}
+          limit={listLimit}
+          showingAll={showingAll}
+          noun="unscheduled jobs"
+          href={seeAllHref}
+          fewerHref={fewerHref}
+        />
       </section>
     </PageShell>
   );

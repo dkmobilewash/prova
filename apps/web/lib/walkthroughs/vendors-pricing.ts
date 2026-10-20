@@ -19,9 +19,9 @@ export const vendorPricingWalkthrough: Walkthrough = {
     },
     {
       anchor: "vp-items",
-      title: "One box per item",
+      title: "One line per item",
       body:
-        "Each thing you buy gets its own box with every quote for it, newest first. The cheapest current quote is marked.",
+        "Each thing you buy gets one line: the cheapest current price, the range, and which way it moved. Press it for every quote, newest first, with the cheapest marked.",
     },
     {
       anchor: "vp-live-prices",

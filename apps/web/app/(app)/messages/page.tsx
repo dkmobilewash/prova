@@ -147,7 +147,7 @@ export default async function MessagesPage({
         </div>
       )}
 
-      <div className="mb-6">
+      <div className="mb-6 empty:hidden">
         {askDraft.kind === "gone" && <AskDraftNotice what="email" />}
         <MessageComposer jobs={jobs} canSend={setupProblem === null} draft={messageDraft} />
       </div>
@@ -184,12 +184,15 @@ export default async function MessagesPage({
         <>
           {truncated && (
             <p className="mb-2 text-xs text-ink-muted">
-              Showing the most recent {MESSAGE_LIMIT} messages. The line below is counted over those{" "}
+              Showing the most recent {MESSAGE_LIMIT} messages. The counts below are over those{" "}
               {MESSAGE_LIMIT}, not over everything ever sent.
             </p>
           )}
 
-          <StatusLine report={status} />
+          {/* Quiet line only. Its red/amber banner restated the count the
+              "Needs attention (N)" chip carries, and each row shows its own
+              bounce (density audit #34). */}
+          {status.problems.length === 0 && <StatusLine report={status} />}
 
           <div className="mb-4 flex flex-wrap gap-2" data-tour="messages-filter">
             <Link href="/messages" className={chip(!onlyProblems)}>

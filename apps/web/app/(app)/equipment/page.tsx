@@ -145,7 +145,7 @@ export default async function EquipmentPage() {
         ) : (
           <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-tour="equipment-list">
             {items.map(({ item, history, where, use }) => (
-              <li key={item.id} className="p-4">
+              <li key={item.id} className="px-4 py-3">
                 <EquipmentRow
                   canDelete={currentUser.role === "OWNER"}
                   item={{
@@ -156,36 +156,37 @@ export default async function EquipmentPage() {
                     notes: item.notes,
                   }}
                 />
-
-                {/* The ONE place this row says where the piece is. EquipmentRow
-                    printed it too, from the same value, so the card read as if
-                    it were stating two separate facts.
-
-                    ink-body, not ink-muted: the muted level is under the 4.5
-                     floor, and where a thing is is the
-                    reason this page exists. */}
-                <p className="mt-1 text-xs text-ink-body" data-tour="equipment-where">
-                  {where.kind === "out"
-                    ? `${stayLength(where.stay, today)} on ${where.stay.jobName}`
-                    : where.kind === "planned"
-                      ? `In the yard · ${stayLength(where.stay, today)} to ${where.stay.jobName}`
-                      : "In the yard"}
-                  {use.percent === null ? (
-                    <> · too new to say how used it is</>
-                  ) : (
-                    <>
-                      {" "}
-                      · out {use.daysOut} of the last {use.daysTracked} days ({use.percent}%)
-                    </>
-                  )}
-                </p>
-
                 <EquipmentDeploymentControls
                   equipmentId={item.id}
                   jobs={jobOptions}
                   history={history}
                   today={today}
                   canDelete={currentUser.role === "OWNER"}
+                  // Where it is and how used, on the same line as Send out /
+                  // History (density audit #33: a 110px card per piece).
+                  //
+                  // The ONE place this row says where the piece is. EquipmentRow
+                  // printed it too, from the same value, so the card read as if
+                  // it were stating two separate facts. ink-body, not ink-muted:
+                  // the muted level is under the 4.5 floor, and where a thing is
+                  // is the reason this page exists.
+                  lead={
+                    <p className="text-xs text-ink-body" data-tour="equipment-where">
+                      {where.kind === "out"
+                        ? `${stayLength(where.stay, today)} on ${where.stay.jobName}`
+                        : where.kind === "planned"
+                          ? `In the yard · ${stayLength(where.stay, today)} to ${where.stay.jobName}`
+                          : "In the yard"}
+                      {use.percent === null ? (
+                        <> · too new to say how used it is</>
+                      ) : (
+                        <>
+                          {" "}
+                          · out {use.daysOut} of the last {use.daysTracked} days ({use.percent}%)
+                        </>
+                      )}
+                    </p>
+                  }
                 />
               </li>
             ))}

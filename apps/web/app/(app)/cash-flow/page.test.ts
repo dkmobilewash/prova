@@ -104,7 +104,12 @@ describe("/cash-flow on a part-paid invoice, where the aging table is not empty"
   it("ages the amount actually owed now, not that plus the retainage", async () => {
     jobs = jobsWithPaid(30_000);
     const html = await render();
-    expect(html).toContain("Total outstanding: $60,000.00");
+    // The 90+ bucket holds all of it. Since declutter round 3 the
+    // "Total outstanding" line is shown only when more than one bucket
+    // holds money — here it would repeat the bucket — so the bucket is
+    // where the aged figure is read.
+    expect(html).toMatch(/90\+ days<\/p><p class="text-warn">\$60,000\.00<\/p>/);
+    expect(html).not.toContain("Total outstanding: $60,000.00");
     // The number the defect produced. It is a real string on this page
     // under the old rule — the aging total, the 90+ bucket, the row
     // balance and the Overdue forecast row all rendered it.

@@ -25,9 +25,9 @@ export function JobberControls({ state, startHref }: { state: ImportCardState; s
 
   if (state === "not-set-up") {
     return (
-      <p className="max-w-[16rem] text-right text-xs text-ink-muted" data-tour="jobber-not-set-up">
-        Not set up on this install yet. Whoever runs C Stream for you has to add the Jobber app keys
-        before this can connect.
+      <p className="text-right text-xs text-ink-muted" data-tour="jobber-not-set-up">
+        {/* Said once, at the top of the page (declutter). */}
+        Needs app keys
       </p>
     );
   }

@@ -36,18 +36,15 @@ export function MessageComposer({
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
+  // The page's amber setup card already says sending is off; this used to
+  // say it again underneath (density audit #34). Only the Ask-draft sentence
+  // is its own.
   if (!canSend) {
+    if (!draft) return null;
     return (
       <p className="text-sm text-ink-muted">
-        Sending is switched off until the three settings above are in place. Nothing here can
-        send in the meantime — a compose box that always fails would be worse than none.
-        {draft && (
-          <>
-            {" "}
-            The email you started from the Ask box is not lost, but it cannot be sent until that
-            is fixed; ask again afterwards.
-          </>
-        )}
+        The email you started from the Ask box is not lost, but it cannot be sent until sending is
+        set up; ask again afterwards.
       </p>
     );
   }
