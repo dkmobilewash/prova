@@ -83,3 +83,9 @@ that is exactly a legend code or a scheduled mark, outside any symbol and
 within 3 ft of a run: Bunkie's walls 0 → 65 ft and its doors 0 → 6 of 11,
 MHK's doors 1 → 6 of 31, SW +43 ft; a room-number-as-door-mark tier was
 measured, cropped and left out. Held-out sets are closed for this feature.
+
+Brought up to date with `diego/takeoff-audit` by merge (the eval census
+kept both sides' entries), and a wiring plan in `NOTES.md` names the
+three finder-lane call sites — the `regroup` block in `findWallsOnSheet`,
+a legend card from `readWallLegend`, and the door join on `mergeWalls`'
+openings — behind one per-company switch, with what the customer sees.

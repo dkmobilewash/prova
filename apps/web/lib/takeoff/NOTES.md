@@ -1943,3 +1943,82 @@ made a model call.
 Mutation: eight mutants over propagation (collinearity, thickness, fork,
 conflict, default source) and bare text (vocabulary, distance, inside-a-
 symbol), each killed, each file restored by rewriting its own bytes.
+
+### Wiring plan — for the original session, not done here (2026-10-20, night)
+
+Nothing in plan-text reading reaches the takeoff screen yet. Every piece
+is a pure function or a cached model read with an eval, and the one place
+the product already turns tags into groups is the finder, which this lane
+does not edit. The plan below names the call sites; the files belong to
+the finder's lane.
+
+**The switch.** One per-company key in `lib/ai/features.ts`,
+`AI_FEATURE_LABEL` — say `PLAN_TEXT_READ: "Reading wall types and door
+schedules off the drawings"` — checked through `aiGate(companyId,
+"PLAN_TEXT_READ")` in `detectWallsForCalibration.ts` before any of the
+three steps below runs. Off, the takeoff behaves exactly as today: text-
+matched tags against the company's own wall types, thickness groups for
+the rest. The two model calls (legend, schedule) stay behind
+`SCHEDULE_READ` as well, so a company with that off still gets the
+deterministic half.
+
+**1. Wall types on the runs — `findWallsOnSheet.ts`, the `regroup` block
+(`wallTypeTags` → `tagByRun` → `wallGroups`).** Today the tags are text
+items that spell a company wall type. Replace the tag list with the union
+of `tagsFromSymbols(...)` (symbols whose code the SET's legend defines,
+anchored at their leader) and `bareTextTags(...)` (bare codes beside a
+run), both using `legendVocabulary` of the legend read for the set; keep
+`wallTypeTags` for sets with no legend. Then pass `tagByRun`'s map
+through `propagateTypes` before `wallGroups`, and give `GroupSource` a
+fourth kind, `{ kind: "PROPAGATED"; tag; viaFeet }`, beside `TAG`,
+`NOTE` and `REMAINDER`. The vocabulary arrives as a new input to
+`findWallsOnSheet` (`legendCodes: string[]`), read from the cached legend
+— no model call inside the finder.
+
+What the customer sees: on `TakeoffPlanViewer.tsx` where `<ClusterTag>`
+shows a group's tag, a run tagged on the drawing reads `IW-2 · tagged`, a
+run that inherited it reads `IW-2 · same wall as the tag 14 ft away`
+(weaker, like `NOTE` reads today), and the remainder stays `3-5/8in,
+untyped — 223 ft` so the untyped share is a number on screen rather than
+absorbed. Measured on the labelled training sheets: 8–90% of accepted
+feet typed where the sheet carries tags, 0% where it does not.
+
+**2. Assemblies from the legend — `readWallLegend.ts` (exists, uncalled)
+→ a card on the takeoff page.** Call it once per plan set, from the
+ingest that already reads sheet titles (`lib/plan-ingest`, behind
+`SCHEDULE_READ`), cache the `WallLegendRead` on the plan set (a JSON
+column or the existing ingest result store), and surface its
+`proposals` — code, studs, track, board layers, insulation, flags — as
+"The drawings define 10 wall types. Add them to your library?" Accepting
+creates company `WallType` rows with `hasParts` from the proposal, which
+is what step 1's groups then price through the existing estimate path.
+Never a price: `readPartitionAssembly` emits quantities and flags only.
+Cost: 3–9 cents per set, once.
+
+What the customer sees: a list like `IW-2 — 6in 20 ga studs at 16in
+o.c., 5/8in board each side, batts` with any flag in red (`studs at 6in
+o.c. is not a framing module`), each row a checkbox, and after accepting,
+the group panel's `IW-2 · 126 ft` now carries studs, track and board
+lines in the recap.
+
+**3. Doors — `mergeWalls`' `openings` on each run → `joinOpeningsToSchedule`.**
+The finder already records door-sized gaps on runs. Read the door
+schedule once per set with `extractScheduleRows` (behind
+`SCHEDULE_READ`, cached as the evals do), take the marks from
+`tagSymbols` plus `bareTextTags` with the schedule as vocabulary, and
+join. Store the result beside the proposal (`WallProposal` row or a
+sibling table keyed by run) as `{ mark, widthFt, from: "schedule" |
+"drawn", placedBy }`.
+
+What the customer sees: on a run with a door, `door 101A · 3'-0" from
+the schedule` instead of the drawn gap width; a schedule row the plan
+never placed listed under the sheet as "scheduled, not found on this
+sheet: 100A 100B 101", which is the list an estimator checks by hand.
+Measured: every row placed on SW and Camp Bow Wow, 15 of 18 on Baker, 16
+of 19 on E Street, 6 of 11 on Bunkie, 6 of 31 on MHK.
+
+**Order and cost.** Step 1 first — it is deterministic, has the evals,
+and changes what people see most. Step 3 next, since the openings are
+already there. Step 2 last, because it writes to the company's wall-type
+library and wants the accept flow. Each step is one PR in the finder's
+lane; this lane's files are called, not changed.
