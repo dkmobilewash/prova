@@ -5,6 +5,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  /**
+   * ── THE BUILD DIRECTORY IS A VARIABLE SO A SMOKE BUILD CANNOT CLOBBER A
+   *    RUNNING SERVER ──
+   *
+   * `next build` and `next start` share `.next`, and the build wins. The
+   * labelling server on :3001 serves out of it while somebody is working, so
+   * building the commit that is ABOUT to be deployed — which is exactly what
+   * a pre-rebuild smoke test does — would take that server down mid-sheet.
+   *
+   * `scripts/smoke-labeling.sh` sets this to `.next-smoke` and runs its own
+   * server on another port. Unset, everything behaves as before.
+   */
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
   experimental: {
     /**
      * ── A SCANNED TILE DOES NOT FIT IN THE DEFAULT ──

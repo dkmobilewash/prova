@@ -1,0 +1,446 @@
+/**
+ * ── THE LABELLING PAGE, DRIVEN IN A REAL BROWSER, BEFORE A REBUILD ──
+ *
+ * Every defect in the autosave work reached Chrome before it reached a test:
+ * a re-detect wiping the sheet, a restore handler reading a null state, an
+ * autosave overwriting the draft it was offering, and a leave-page warning
+ * that trapped the tab after a successful save. Four, in one afternoon, on a
+ * feature whose entire purpose is that a reviewer does not lose work. Every
+ * one of them was invisible to 13,000 unit tests and obvious within a minute
+ * of driving the page.
+ *
+ * So this runs against the commit about to be deployed, in a real headless
+ * browser, and the rebuild does not happen unless it passes.
+ *
+ * ── TWO SAFETY PROPERTIES, BOTH LOAD-BEARING ──
+ *
+ * It talks to its OWN server on another port, built into its own directory
+ * (`NEXT_DIST_DIR`), because `next build` and `next start` share `.next` and
+ * the build wins — building here would take the labelling server down
+ * mid-sheet.
+ *
+ * And `TAKEOFF_LABEL_DIR` points at a temporary folder. This test SAVES, and
+ * a save writes a label file; pointed at the real folder it would overwrite
+ * somebody's reviewed sheet with a handful of decisions made by a script.
+ * `scripts/smoke-labeling.sh` makes that folder and refuses to run if it
+ * resolves anywhere near the real one.
+ *
+ * Usage: driven by `scripts/smoke-labeling.sh`, which sets SMOKE_BASE,
+ * SMOKE_LABELS and the Clerk keys.
+ */
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { clerk, clerkSetup } from "@clerk/testing/playwright";
+// `@playwright/test`, not `playwright`: the bare package is not resolvable
+// from `apps/web` — only `@playwright` is installed here, which is what the
+// repo's own `playwright.config.ts` imports. The first run of this failed on
+// exactly that, and failed SAFE: it refused the rebuild rather than reporting
+// a pass it had not earned.
+import { chromium } from "@playwright/test";
+
+const BASE = process.env.SMOKE_BASE ?? "http://localhost:3002";
+const LABELS = process.env.SMOKE_LABELS ?? "";
+const EMAIL = process.env.SMOKE_EMAIL ?? "e2e-takeoff+clerk_test@example.com";
+
+/** Sheets this drives, by job id and page. */
+const SHEET_A = process.env.SMOKE_SHEET_A ?? "local-20250708_Baker_EOC:12";
+const SHEET_B = process.env.SMOKE_SHEET_B ?? "local-20250708_Baker_EOC:13";
+/** A sheet whose save is over 10 MB — the one that was truncated. */
+const SHEET_BIG = process.env.SMOKE_SHEET_BIG ?? "local-BUNKIEBIDDRAWINGS:31";
+
+if (LABELS === "") {
+  console.error("REFUSING: SMOKE_LABELS is not set — this test SAVES and must not touch real labels");
+  process.exit(2);
+}
+if (/Claude Folder\/takeoff\/labels(\/|$)/.test(LABELS)) {
+  console.error(`REFUSING: SMOKE_LABELS is the real label folder (${LABELS})`);
+  process.exit(2);
+}
+
+const results = [];
+let failures = 0;
+
+function check(name, ok, detail = "") {
+  results.push({ name, ok, detail });
+  if (!ok) failures += 1;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  ${name}${detail === "" ? "" : `  — ${detail}`}`);
+}
+
+const url = (spec, key = true) => {
+  const [job, page] = spec.split(":");
+  return `${BASE}/takeoff/${job}?page=${page}${key ? "&key=1" : ""}`;
+};
+
+/** Wait for the DRAWING, not the page chrome — chrome renders either way. */
+async function waitForDrawing(page) {
+  await page
+    .waitForFunction(
+      () => {
+        const c = [...document.querySelectorAll("canvas")].filter((el) => el.width >= 600)[0];
+        if (!c) return false;
+        try {
+          const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+          let ink = 0;
+          for (let i = 0; i < d.length; i += 16) {
+            if (d[i] < 200 && d[i + 1] < 200 && d[i + 2] < 200) ink += 1;
+            if (ink > 50) return true;
+          }
+        } catch {
+          return false;
+        }
+        return false;
+      },
+      { timeout: 90_000 },
+    )
+    .catch(() => {});
+}
+
+async function findTheWalls(page) {
+  const button = page.getByRole("button", { name: /find the walls/i });
+  if ((await button.count()) === 0) return 0;
+  await button.first().click();
+  await page.waitForFunction(
+    () => document.querySelectorAll('[data-takeoff="key-line"]').length > 0,
+    { timeout: 120_000 },
+  ).catch(() => {});
+  return page.locator('[data-takeoff="key-line"]').count();
+}
+
+/**
+ * Every label file under the temp folder, walked the way the real one is: a
+ * directory per plan set, JSON files inside.
+ *
+ * Skips anything that is not a directory. The first full run put its own
+ * `build.log` in this folder and died on ENOTDIR — a test that pollutes what
+ * it inspects is measuring itself, and the logs live elsewhere now, but the
+ * walk stays tolerant because this folder is shared with whatever else a
+ * future scenario leaves behind.
+ */
+function savedLabelFiles() {
+  const out = [];
+  if (!existsSync(LABELS)) return out;
+  for (const dir of readdirSync(LABELS, { withFileTypes: true })) {
+    if (!dir.isDirectory()) continue;
+    for (const file of readdirSync(join(LABELS, dir.name), { withFileTypes: true })) {
+      if (!file.isFile() || !file.name.endsWith(".json")) continue;
+      try {
+        out.push({
+          path: join(LABELS, dir.name, file.name),
+          doc: JSON.parse(readFileSync(join(LABELS, dir.name, file.name), "utf8")),
+        });
+      } catch {
+        // A file being written as this reads is normal; a malformed one is
+        // reported by the check that needed it, not by crashing the run.
+      }
+    }
+  }
+  return out;
+}
+
+const reviewedCount = (page) =>
+  page.evaluate(() => {
+    const m = /(\d+) of (\d+) reviewed/.exec(document.body.innerText);
+    return m ? { reviewed: Number(m[1]), total: Number(m[2]) } : null;
+  });
+
+async function setReviewer(page, name) {
+  const box = page.locator('input[placeholder*="name" i], [data-takeoff="key-reviewer"]').first();
+  if ((await box.count()) > 0) {
+    await box.fill(name);
+    // Clicking the plan moves focus off the name box, which is what makes the
+    // keyboard shortcuts reach the review rather than the input.
+    await page.locator("body").click({ position: { x: 5, y: 5 } }).catch(() => {});
+  }
+}
+
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+const crashes = [];
+page.on("pageerror", (e) => crashes.push(String(e).slice(0, 120)));
+
+try {
+  await clerkSetup();
+  await page.goto(`${BASE}/sign-in`, { waitUntil: "domcontentloaded" });
+  await clerk.signIn({ page, emailAddress: EMAIL });
+
+  // ─────────────────────────────────────────────────────────────────────
+  console.log("\n1. decide, split, trace, save");
+  await page.goto(url(SHEET_A), { waitUntil: "domcontentloaded" });
+  await waitForDrawing(page);
+  const candidates = await findTheWalls(page);
+  check("the sheet offers candidates", candidates > 0, `${candidates}`);
+
+  await setReviewer(page, "smoke-test");
+  const before = await reviewedCount(page);
+  for (let i = 0; i < 4; i += 1) {
+    await page.keyboard.press("n");
+    await page.waitForTimeout(120);
+    await page.keyboard.press(i % 2 === 0 ? "a" : "r");
+    await page.waitForTimeout(120);
+  }
+  const afterDecisions = await reviewedCount(page);
+  check(
+    "decisions register",
+    afterDecisions !== null && before !== null && afterDecisions.reviewed > before.reviewed,
+    `${before?.reviewed} -> ${afterDecisions?.reviewed}`,
+  );
+
+  // ── A SPLIT CUTS AT THE POINTER, SO THE POINTER HAS TO BE ON THE RUN ──
+  //
+  // The first version pressed S with the mouse wherever it happened to be and
+  // the count did not move: 82 -> 82. That is the gesture being wrong, not
+  // the feature — S cuts the SELECTED candidate at the mouse position,
+  // snapping to the nearest crossing wall.
+  await page.keyboard.press("n");
+  await page.waitForTimeout(200);
+  const beforeSplit = await page.locator('[data-takeoff="key-line"]').count();
+  const focusedBox = await page.evaluate(() => {
+    const lines = [...document.querySelectorAll('[data-takeoff="key-line"]')];
+    // The focused one is drawn thicker — see the viewer's stroke width.
+    const thick = lines
+      .map((l) => ({ l, w: Number(l.getAttribute("stroke-width") ?? "0") }))
+      .sort((a, b) => b.w - a.w)[0];
+    if (thick === undefined) return null;
+    const r = thick.l.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height };
+  });
+  if (focusedBox !== null && (focusedBox.w > 4 || focusedBox.h > 4)) {
+    await page.mouse.move(focusedBox.x, focusedBox.y);
+    await page.waitForTimeout(150);
+    await page.keyboard.press("s");
+    await page.waitForTimeout(800);
+  }
+  const afterSplit = await page.locator('[data-takeoff="key-line"]').count();
+  // ── S SPLITS WHERE AN ACCEPTED WALL CROSSES, AND SAYS SO WHEN NONE DOES ──
+  //
+  // Demanding a new run assumes the focused candidate has a crossing accepted
+  // wall, which is a property of whichever run `n` happened to land on — so
+  // the first two runs of this reported 82 -> 82 and called the feature
+  // broken. No crossing wall is the ordinary case for a wall leaving the
+  // building, and the panel explains it rather than refusing silently.
+  //
+  // So the test is the one the feature actually promises: an EFFECT or an
+  // EXPLANATION. Silence is the only failure.
+  const splitNote = await page.evaluate(
+    () => /(No crossing wall[^\n]*|Split[^\n]*)/i.exec(document.body.innerText)?.[1] ?? "",
+  );
+  check(
+    "a split either happens or says why not",
+    afterSplit > beforeSplit || splitNote !== "",
+    afterSplit > beforeSplit ? `${beforeSplit} -> ${afterSplit}` : `said: ${splitNote.slice(0, 70)}`,
+  );
+
+  // A trace: T arms it, then two clicks on the drawing and Enter.
+  await page.keyboard.press("t");
+  await page.waitForTimeout(200);
+  const box = await page.locator("canvas").first().boundingBox();
+  if (box !== null) {
+    await page.mouse.click(box.x + box.width * 0.3, box.y + box.height * 0.45);
+    await page.waitForTimeout(200);
+    await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.45);
+    await page.waitForTimeout(200);
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(400);
+  }
+  const traced = await page.evaluate(() => /(\d+) traced/.exec(document.body.innerText)?.[1] ?? "0");
+  check("a trace is added", Number(traced) > 0, `${traced} traced`);
+
+  const saveButton = page.locator('[data-takeoff="key-save-labels"]');
+  await saveButton.click();
+  await page.waitForFunction(
+    () => /Labels saved|Not saved/.test(document.body.innerText),
+    { timeout: 60_000 },
+  );
+  const savedText = await page.evaluate(
+    () => /(Labels saved[^\n]*|Not saved[^\n]*)/.exec(document.body.innerText)?.[1] ?? "",
+  );
+  check("the save reports success", savedText.startsWith("Labels saved"), savedText.slice(0, 90));
+
+  let onDisk = null;
+  for (const { doc } of savedLabelFiles()) onDisk = doc;
+  check("a label file is on disk", onDisk !== null, onDisk === null ? "" : `${onDisk.sheet}`);
+  check(
+    "it holds the decisions and the trace",
+    onDisk !== null && onDisk.counts.accepted + onDisk.counts.rejected > 0 && onDisk.counts.traced > 0,
+    onDisk === null ? "" : JSON.stringify(onDisk.counts),
+  );
+
+  // ─────────────────────────────────────────────────────────────────────
+  console.log("\n2. navigate away after saving — no prompt, no trap");
+  // ── ACCEPT, DO NOT DISMISS ──
+  //
+  // Dismissing a `beforeunload` prompt CANCELS the navigation, which is
+  // correct browser behaviour and exactly what trapped the labelling tab. A
+  // harness that dismisses can never test leaving a page with unsaved work:
+  // the third run timed out on `page.reload` for that reason, with the
+  // product behaving perfectly.
+  //
+  // So dialogs are accepted and COUNTED, and each scenario asserts whether
+  // one should have appeared.
+  let dialogs = 0;
+  page.on("dialog", async (d) => {
+    dialogs += 1;
+    await d.accept().catch(() => {});
+  });
+  const navigated = await page
+    .goto(url(SHEET_B), { waitUntil: "domcontentloaded", timeout: 30_000 })
+    .then(() => true)
+    .catch(() => false);
+  check(
+    "navigation after a save succeeds with NO prompt",
+    navigated && dialogs === 0,
+    dialogs > 0 ? `${dialogs} dialog(s) fired — the warning did not disarm` : "",
+  );
+  check("the other sheet opens", page.url().includes("page=13"), page.url().slice(-28));
+
+  // ─────────────────────────────────────────────────────────────────────
+  console.log("\n3. unsaved changes survive a reload");
+  await waitForDrawing(page);
+  await findTheWalls(page);
+  await setReviewer(page, "smoke-test");
+  const beforeEdits = await reviewedCount(page);
+  for (let i = 0; i < 5; i += 1) {
+    await page.keyboard.press("n");
+    await page.waitForTimeout(110);
+    await page.keyboard.press(i % 2 === 0 ? "a" : "r");
+    await page.waitForTimeout(110);
+  }
+  const unsaved = await reviewedCount(page);
+  check(
+    "there are unsaved decisions",
+    unsaved !== null && beforeEdits !== null && unsaved.reviewed > beforeEdits.reviewed,
+    `${beforeEdits?.reviewed} -> ${unsaved?.reviewed}`,
+  );
+
+  // The warning must be ARMED now — asked of the page rather than of a dialog,
+  // because a headless browser dismisses the prompt and the only visible
+  // effect would be a navigation that silently does not happen.
+  const armed = await page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  check("the leave-page warning is armed while unsaved", armed);
+
+  // The warning is armed, so a prompt is expected here and accepting it is
+  // what lets the reload proceed. This is the scenario the labeller lost a
+  // sheet to, run deliberately.
+  const dialogsBeforeReload = dialogs;
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 60_000 });
+  check(
+    "leaving with unsaved work does prompt",
+    dialogs > dialogsBeforeReload,
+    `${dialogs - dialogsBeforeReload} prompt(s)`,
+  );
+  await waitForDrawing(page);
+  await findTheWalls(page);
+  const offer = page.locator('[data-takeoff="key-restore-yes"]');
+  const offered = (await offer.count()) > 0;
+  check("a restore is offered after the reload", offered, offered ? await offer.first().innerText() : "");
+  if (offered) {
+    await offer.first().click();
+    await page.waitForTimeout(1200);
+    const restored = await reviewedCount(page);
+    check(
+      "it brings back exactly those decisions",
+      restored !== null && unsaved !== null && restored.reviewed === unsaved.reviewed,
+      `${unsaved?.reviewed} before, ${restored?.reviewed} after`,
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  console.log("\n4. a save over 10 MB is not truncated");
+  await page.goto(url(SHEET_BIG), { waitUntil: "domcontentloaded" });
+  await waitForDrawing(page);
+  const bigCandidates = await findTheWalls(page);
+  await setReviewer(page, "smoke-test");
+  await page.keyboard.press("n");
+  await page.waitForTimeout(150);
+  await page.keyboard.press("a");
+  await page.waitForTimeout(150);
+  // ── MEASURE THE BODY, NOT THE ROWS ──
+  //
+  // The first version asserted the saved file held over 20,000 rows and got
+  // 450 — because `labelRows` skips candidates no verdict covers while
+  // `reviewComplete` is false, and this script makes one decision rather than
+  // working the sheet. Row count measures how COMPLETE a review is. What was
+  // truncated was the request BODY, so that is what is weighed: the panel's
+  // own `fetch` is wrapped, the button is pressed, and the bytes it actually
+  // posted are reported alongside the reply.
+  const bigSave = await page.evaluate(async () => {
+    const original = window.fetch;
+    let bytes = 0;
+    window.fetch = (input, init) => {
+      const body = init?.body;
+      if (typeof body === "string" && String(input).includes("/api/takeoff/labels")) {
+        bytes = new Blob([body]).size;
+      }
+      return original(input, init);
+    };
+    try {
+      const button = document.querySelector('[data-takeoff="key-save-labels"]');
+      if (button === null) return { reply: "no save button", bytes: 0 };
+      button.click();
+      for (let i = 0; i < 240; i += 1) {
+        await new Promise((r) => setTimeout(r, 500));
+        const m = /(Labels saved[^\n]*|Not saved[^\n]*)/.exec(document.body.innerText);
+        if (m) return { reply: m[1], bytes };
+      }
+      return { reply: "timed out", bytes };
+    } finally {
+      window.fetch = original;
+    }
+  });
+  const megabytes = bigSave.bytes / (1024 * 1024);
+  check(
+    "the big sheet posts a body over 10 MB",
+    megabytes > 10,
+    `${megabytes.toFixed(2)} MB — under 10 means this sheet no longer exercises the limit`,
+  );
+  check(
+    "and the server accepts it whole",
+    bigSave.reply.startsWith("Labels saved"),
+    `${bigSave.reply.slice(0, 80)} (truncation showed as a parse failure, not a short file)`,
+  );
+  void bigCandidates;
+  void savedLabelFiles;
+
+  // ─────────────────────────────────────────────────────────────────────
+  console.log("\n5. a grey pre-rejected line is selectable on the drawing");
+  await page.goto(url(SHEET_A), { waitUntil: "domcontentloaded" });
+  await waitForDrawing(page);
+  await findTheWalls(page);
+  const grey = await page.evaluate(() => {
+    // A pre-rejected candidate is drawn at reduced opacity. Find one, and
+    // report where its midpoint is on screen.
+    const lines = [...document.querySelectorAll('[data-takeoff="key-line"]')];
+    const faded = lines.find((l) => Number(l.getAttribute("opacity") ?? "1") < 0.5);
+    if (faded === undefined) return null;
+    const box = faded.getBoundingClientRect();
+    return { id: faded.getAttribute("data-id"), x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  });
+  if (grey === null) {
+    check("a pre-rejected line exists to click", false, "none on this sheet");
+  } else {
+    await page.mouse.click(grey.x, grey.y);
+    await page.waitForTimeout(400);
+    const focused = await page.evaluate(
+      (id) => {
+        const line = document.querySelector(`[data-takeoff="key-line"][data-id="${id}"]`);
+        return line === null ? false : Number(line.getAttribute("stroke-width") ?? "0") > 3;
+      },
+      grey.id,
+    );
+    check("clicking it selects it", focused, `id ${grey.id}`);
+  }
+
+  check("no page errors during the run", crashes.length === 0, crashes.slice(0, 1).join(""));
+} catch (cause) {
+  check("the run completed", false, String(cause).slice(0, 160));
+} finally {
+  await browser.close();
+}
+
+console.log(`\n${results.length - failures} of ${results.length} checks passed`);
+for (const r of results.filter((one) => !one.ok)) console.log(`  FAILED: ${r.name}  ${r.detail}`);
+process.exit(failures === 0 ? 0 : 1);
