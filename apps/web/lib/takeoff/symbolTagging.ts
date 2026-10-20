@@ -47,6 +47,9 @@ import type { WallCandidate } from "./wallVectors";
  * loosening the margin for the tags that have none.
  */
 
+/** The share of legend-coded symbols the legend's own shape must hold to be believed. */
+export const LEGEND_SHAPE_FAIR_SHARE = 0.25;
+
 export type SymbolTagReport = {
   /** Symbols whose code the legend knows and whose shape matches the set's. */
   tags: WallTypeTag[];
@@ -59,6 +62,9 @@ export type SymbolTagReport = {
   unknownCodes: { code: string; count: number }[];
   /** Run-to-code, for the runs a tag could be matched to. */
   byRun: Map<WallCandidate, string>;
+  /** The shape tags were required to have, and where that came from. */
+  shape: SymbolShape | null;
+  shapeFrom: "legend" | "plan" | "none";
   counts: {
     symbols: number;
     couldBeTags: number;
@@ -86,22 +92,62 @@ export function tagsFromSymbols(input: {
   /** Page width in points, to put symbol centres in page-width units. */
   widthPt: number;
 }): SymbolTagReport {
-  const { symbols, legendCodes, shape, walls, feetPerUnit, widthPt } = input;
-  const known = new Set(legendCodes.map((c) => c.trim().toUpperCase()).filter((c) => c !== ""));
+  const { symbols, legendCodes, walls, feetPerUnit, widthPt } = input;
+  const known = legendVocabulary(legendCodes);
 
-  const couldBeTags = symbols.filter((s) => s.rejected === null);
+  // ── A CODE THE LEGEND DEFINES IS NOT A SHEET REFERENCE ──
+  //
+  // `tagSymbols` rejects `G4.1` as a detail callout, because a letter, a digit
+  // and a dotted number is what a callout looks like. Central Bank names a
+  // wall type that way. The legend is the better witness: a symbol whose words
+  // the legend knows is read as a tag whatever its spelling suggests.
+  const codeOf = (symbol: TagSymbol): string | undefined => {
+    // The whole text first, then each half — so a one-part symbol and a split
+    // one are both read, and a code that is itself two words still matches.
+    const candidates = [symbol.text, ...symbol.parts].map((p) => p.trim().toUpperCase());
+    for (const c of candidates) {
+      const code = known.get(c);
+      if (code !== undefined) return code;
+    }
+    return undefined;
+  };
+  const couldBeTags = symbols.filter(
+    (s) => s.rejected === null || (s.rejected === "sheet-reference" && codeOf(s) !== undefined),
+  );
   const tags: WallTypeTag[] = [];
   const anchoredByLeader = new Set<WallTypeTag>();
   const oddShape: { code: string; shape: SymbolShape }[] = [];
   const unknown = new Map<string, number>();
 
+  // ── THE LEGEND'S SHAPE, UNLESS THE PLAN HARDLY DRAWS IT ──
+  //
+  // SW Grand Junction legends its types in circles and tags every wall in a
+  // square: 30 squares and 3 circles hold its codes on A110. Required to be
+  // circles, 30 of 33 tags were "odd". But the count alone cannot decide:
+  // Camp Bow Wow's window marks are 39 pentagons lettered B and C beside the
+  // 36 diamonds that are its wall tags, and the legend is right about the
+  // diamond. So the legend's shape is kept while it carries a fair share of
+  // the coded symbols, and a legend shape the plan all but ignores gives way
+  // to the plan's own commonest. A quarter is the measured line: 36 of 93 on
+  // Camp Bow Wow and 76 of 124 on STEM keep theirs; 3 of 33 on SW does not.
+  const byShape = new Map<SymbolShape, number>();
+  let coded = 0;
   for (const symbol of couldBeTags) {
-    // The whole text first, then each half — so a one-part symbol and a split
-    // one are both read, and a code that is itself two words still matches.
-    const candidates = [symbol.text, ...symbol.parts].map((p) => p.trim().toUpperCase());
-    const code = candidates.find((c) => known.has(c));
+    if (codeOf(symbol) === undefined) continue;
+    coded += 1;
+    byShape.set(symbol.shape, (byShape.get(symbol.shape) ?? 0) + 1);
+  }
+  let shape = input.shape;
+  let shapeFrom: SymbolTagReport["shapeFrom"] = shape === null ? "none" : "legend";
+  if (shape !== null && coded > 0 && (byShape.get(shape) ?? 0) < coded * LEGEND_SHAPE_FAIR_SHARE) {
+    shape = [...byShape].sort((a, b) => b[1] - a[1])[0][0];
+    shapeFrom = "plan";
+  }
+
+  for (const symbol of couldBeTags) {
+    const code = codeOf(symbol);
     if (code === undefined) {
-      const whole = candidates[0];
+      const whole = symbol.text.trim().toUpperCase();
       unknown.set(whole, (unknown.get(whole) ?? 0) + 1);
       continue;
     }
@@ -149,6 +195,8 @@ export function tagsFromSymbols(input: {
       .map(([code, count]) => ({ code, count }))
       .sort((a, b) => b.count - a.count),
     byRun,
+    shape,
+    shapeFrom,
     counts: {
       symbols: symbols.length,
       couldBeTags: couldBeTags.length,
@@ -160,6 +208,30 @@ export function tagsFromSymbols(input: {
       ambiguous: Math.max(0, tags.length - byRun.size) + oddShape.length,
     },
   };
+}
+
+/**
+ * What a symbol may say to name each legend type: the code as the legend
+ * spells it, and the code with its label stripped.
+ *
+ * Murray Towers' legend names its types `WALL TYPE 1` and `WALL TYPE 2`, and
+ * its plan tags each wall with a `1` or a `2` in a diamond — nobody draws
+ * `WALL TYPE 1` inside a quarter-inch symbol. STEM's does the same. The tag
+ * keeps the legend's full name, so coverage reports read as the legend does.
+ *
+ * Exported for its own test; a mapping that nobody can see is a mapping
+ * nobody has checked.
+ */
+export function legendVocabulary(legendCodes: readonly string[]): Map<string, string> {
+  const known = new Map<string, string>();
+  for (const raw of legendCodes) {
+    const code = raw.trim().toUpperCase();
+    if (code === "") continue;
+    known.set(code, code);
+    const short = code.replace(/^(?:WALL|PARTITION|PART\.?)\s+TYPE\s+|^TYPE\s+/, "").trim();
+    if (short !== "" && short !== code && !known.has(short)) known.set(short, code);
+  }
+  return known;
 }
 
 /** Page-width units from a point to the nearest point of a run. */

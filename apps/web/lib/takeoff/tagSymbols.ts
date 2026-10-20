@@ -322,14 +322,24 @@ export function tagSymbols(input: {
 
   const grain = minR * 0.05;
   const key = (x: number, y: number) => `${Math.round(x / grain)},${Math.round(y / grain)}`;
-  const startsAt = new Map<string, number[]>();
+  // ── A STROKE IS INDEXED BY BOTH ENDS, BECAUSE IT HAS NO DIRECTION ──
+  //
+  // The first walker followed strokes head to tail: from where one ENDED to
+  // where another STARTED. Gen BBQ A101 draws each wall tag's diamond as four
+  // strokes that do not chain — two leave the left vertex, two arrive at the
+  // right one — so no head-to-tail walk closes, and 0 of its tags were found
+  // on a sheet that prints them beside every wall. Which way a CAD export
+  // happens to emit a polyline's edges is not a property of the drawing, so
+  // the walk treats every stroke as passable in either direction.
+  const touches = new Map<string, number[]>();
   const short: StrokeSegment[] = [];
   for (const s of segments) {
     const length = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
     if (length === 0 || length > longest) continue;
     short.push(s);
-    const k = key(s.x1, s.y1);
-    startsAt.set(k, [...(startsAt.get(k) ?? []), short.length - 1]);
+    for (const k of new Set([key(s.x1, s.y1), key(s.x2, s.y2)])) {
+      touches.set(k, [...(touches.get(k) ?? []), short.length - 1]);
+    }
   }
 
   // ── EVERY SEGMENT, BY WHERE ITS ENDS ARE ──
@@ -361,10 +371,27 @@ export function tagSymbols(input: {
   const found: TagSymbol[] = [];
   const sameVertex = (a: Point, b: Point) => Math.abs(a.x - b.x) <= grain && Math.abs(a.y - b.y) <= grain;
 
-  /** The unwalked strokes that start where this one ends. */
-  const continuations = (from: number): number[] => {
-    const s = short[from];
-    return (startsAt.get(key(s.x2, s.y2)) ?? []).filter((c) => !walked.has(c) && c !== from);
+  /** One stroke, walked from one of its ends to the other. */
+  type Step = { seg: number; reversed: boolean };
+  const entryOf = (st: Step): Point => {
+    const s = short[st.seg];
+    return st.reversed ? { x: s.x2, y: s.y2 } : { x: s.x1, y: s.y1 };
+  };
+  const exitOf = (st: Step): Point => {
+    const s = short[st.seg];
+    return st.reversed ? { x: s.x1, y: s.y1 } : { x: s.x2, y: s.y2 };
+  };
+
+  /** The unwalked strokes that touch where this step ends, entered at that end. */
+  const continuations = (from: Step): Step[] => {
+    const at = exitOf(from);
+    const out: Step[] = [];
+    for (const c of touches.get(key(at.x, at.y)) ?? []) {
+      if (c === from.seg || walked.has(c)) continue;
+      const s = short[c];
+      out.push({ seg: c, reversed: !sameVertex(at, { x: s.x1, y: s.y1 }) });
+    }
+    return out;
   };
 
   /**
@@ -382,36 +409,35 @@ export function tagSymbols(input: {
    * search on a sheet whose strokes all touch.
    */
   const BUDGET = 4000;
-  const walkLoop = (start: number): { cycle: Point[]; used: number[] } | null => {
-    const origin = { x: short[start].x1, y: short[start].y1 };
-    const path: number[] = [start];
+  const walkLoop = (start: Step): { cycle: Point[]; used: number[] } | null => {
+    const origin = entryOf(start);
+    const path: Step[] = [start];
     const pts: Point[] = [origin];
-    const onPath = new Set<number>([start]);
-    const stack: { options: number[]; i: number }[] = [{ options: continuations(start), i: 0 }];
+    const onPath = new Set<number>([start.seg]);
+    const stack: { options: Step[]; i: number }[] = [{ options: continuations(start), i: 0 }];
     let budget = BUDGET;
     while (stack.length > 0 && budget > 0) {
       budget -= 1;
       const top = stack[stack.length - 1];
-      const last = short[path[path.length - 1]];
-      if (path.length >= 3 && sameVertex(origin, { x: last.x2, y: last.y2 })) {
-        return { cycle: pts, used: path };
+      if (path.length >= 3 && sameVertex(origin, exitOf(path[path.length - 1]))) {
+        return { cycle: pts, used: path.map((st) => st.seg) };
       }
-      let next: number | undefined;
+      let next: Step | undefined;
       while (top.i < top.options.length && next === undefined) {
         const candidate = top.options[top.i];
         top.i += 1;
-        if (!onPath.has(candidate)) next = candidate;
+        if (!onPath.has(candidate.seg)) next = candidate;
       }
       if (next === undefined || path.length > 256) {
         stack.pop();
         const dropped = path.pop();
-        if (dropped !== undefined) onPath.delete(dropped);
+        if (dropped !== undefined) onPath.delete(dropped.seg);
         pts.pop();
         continue;
       }
       path.push(next);
-      onPath.add(next);
-      pts.push({ x: short[next].x1, y: short[next].y1 });
+      onPath.add(next.seg);
+      pts.push(entryOf(next));
       stack.push({ options: continuations(next), i: 0 });
     }
     return null;
@@ -419,7 +445,8 @@ export function tagSymbols(input: {
 
   for (let n = 0; n < short.length; n += 1) {
     if (walked.has(n)) continue;
-    const loop = walkLoop(n);
+    // One direction is enough: a loop through this stroke closes either way.
+    const loop = walkLoop({ seg: n, reversed: false });
     // A stroke that leads to no loop is spent either way: trying it again
     // from another start would find the same nothing.
     walked.add(n);

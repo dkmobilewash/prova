@@ -79,6 +79,26 @@ describe("finding the tag symbols on a sheet", () => {
     expect(got[0].corners).toBe(4);
   });
 
+  it("closes a loop whose strokes do not run head to tail", () => {
+    // Gen BBQ A101, read 2026-10-20: each wall tag's diamond is four strokes
+    // emitted as two leaving the left vertex and two arriving at the right —
+    //   (775,846)->(783,837)  (775,846)->(783,854)
+    //   (783,837)->(791,846)  (783,854)->(791,846)
+    // — so no walk from an end to a start ever closes. 0 of 322 symbols on
+    // the sheet carried a legend code, on a plan that tags every wall.
+    const flipped = polygon(100, 100, R, 4).map((s, i) =>
+      i % 2 === 0 ? s : { x1: s.x2, y1: s.y2, x2: s.x1, y2: s.y1 },
+    );
+    const got = tagSymbols({
+      segments: flipped,
+      text: [label("C3", 100, 100)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(got).toHaveLength(1);
+    expect(got[0].shape).toBe("diamond");
+    expect(got[0].text).toBe("C3");
+  });
+
   it("ignores a shape far too big or too small to be a tag", () => {
     const tiny = tagSymbols({
       segments: polygon(100, 100, 0.01 * PER_INCH, 6),

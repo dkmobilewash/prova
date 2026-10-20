@@ -1667,3 +1667,99 @@ caching there is a table, which is a schema change.
   below two notes sheets; two reads found nothing and the eval stops at two.
 - `wallTypeTags` (text-matched tags) and the eval's loose door marks still
   take `y + height/2` as a centre.
+
+### Second pass, the twelve new sets (2026-10-20, later the same day)
+
+The first pass measured two sets. Running the same chain over the twelve
+new sets — twelve architects — found five things that no fixture and
+neither earlier set did. Each is fixed where the measurement says it lives,
+with the number before and after.
+
+**The loop walker was directed, and a CAD export is not.** Gen BBQ A101 draws
+each wall tag's diamond as four strokes: two leave the left vertex, two
+arrive at the right. A walk from where one stroke ENDS to where another
+STARTS never closes it, so 0 of 322 symbols on a sheet that tags every wall
+held a legend code. `tagSymbols` now indexes both ends of every stroke and
+walks it either way (`touches`, `Step`). Gen BBQ A101 goes 0 → 10 coded, 8
+matched; STEM A-1.1 7 → 124 coded, 49 matched; E Street A2.1 15 → 19, 9
+matched where there was 1; Camp Bow Wow A101 and ELEVEN03 unchanged at 23
+and 14 matched.
+
+**A legend's shape is a hint the plan can overrule, by a quarter.** SW Grand
+Junction legends A1–B3 in circles and tags every wall in a square with a
+leader: 30 squares and 3 circles hold its codes on A110, and required to be
+circles 30 of 33 were "odd". Camp Bow Wow is the other way — 39 pentagons
+lettered B and C (window marks) beside 36 diamonds (the wall tags) — so the
+count alone would pick wrong there. `tagsFromSymbols` keeps the legend's
+shape while it holds at least `LEGEND_SHAPE_FAIR_SHARE` (a quarter) of the
+coded symbols and otherwise takes the plan's commonest, and the report says
+which (`shape`, `shapeFrom`). SW 0 → 21 matched; Camp Bow Wow and STEM keep
+their diamond.
+
+**A code the legend defines is not a sheet reference, and `1` is `WALL TYPE
+1`.** Central Bank defines `G4.1`, which `tagSymbols` rejects as a detail
+callout; two of its four coded symbols on A100 were lost that way. Murray
+Towers' legend names `WALL TYPE 1` and `WALL TYPE 2` and the plan draws a
+`1` or `2` in a diamond — 0 of 631 symbols matched. `legendVocabulary`
+accepts the code and the code with its label stripped, the tag keeps the
+legend's full name, and a sheet-reference rejection is overridden when the
+legend knows the words. Central Bank 2 → 3 matched; Murray 0 → 9 coded, 5
+matched.
+
+**A legend drawn as a block on another sheet has a heading, not a title.**
+Bunkie's is on G003 (title block says SECTION VIEW), MHK's on A1.01 FIRST
+FLOOR PLAN, Crosslines' on A001 under the heading `Partiton Types`, spelled
+so. All three ranked below a mechanical schedule or an exterior-detail sheet
+that says STUD more often, and the model was sent to M601 and A314 and came
+back empty, at 4–5 cents a call. `legendPages` now takes a text CELL that is
+exactly a legend heading (rank 1, needs 6 assembly lines; a pointer like
+`REFER TO WALL TYPES` is not a heading and an index line has no assembly
+behind it) and demotes M/P/E/FP/S/C-series sheets below every architectural
+candidate. All eight sets surveyed now put the right page first; Bunkie (5
+types), Crosslines (7) and MHK (4) read on the first call.
+
+**A column-wrapped legend splits `3 5/8" 20 GA. MTL.` from `STUD`.** NG Green
+Bay's types sit in a narrow column beside its dimension plan, and no line
+holds both the size and the word; the reader proposed board and nothing
+else for eight of ten types. Murray spells it `20 GAUGE METAL STUDS` and
+also says `BOTTOM TRACK FASTENED AT 24" O.C.`, which flagged every type for
+two spacings. `readPartitionAssembly` now reads a type's free text as one
+string (a table's `LABEL | VALUE` rows are kept apart — joined, Central
+Bank's `WALL THICKNESS | 4 7/8"` reads as a stud), accepts gauge with or
+without parentheses, refuses a "stud" under 1-1/2in (a board thickness that
+drifted in front of the word), and takes the spacing stated in the same
+breath as the studs over any other. Over the 108 cached types: 16 changed,
+all gained a stud or lost a false flag, none regressed. NG Green Bay 8 of 10
+types now carry studs, track, board and batts.
+
+**Where each set's wall tags actually are**, because two of the twelve put
+them somewhere the chosen sheet is not: NG Green Bay tags walls on A3.2 (the
+critical dimension plan, p10, which also carries the legend) and not on A3.1;
+Gen BBQ on A101 (p26), not the dimensioned plan A100 (p25). On p10 the
+legend's own symbols sit beside their detail drawings, which the finder sees
+as runs, so a share of its 31 "matched" are the legend labelling itself —
+the one case this pass reports rather than fixes.
+
+**Still open**: Bunkie prints `P08` as bare text with a leader and no closed
+symbol around it that the text centre falls inside (0 coded of 244); MHK's
+A1.01 shows `1`–`4` only in grid-edge circles 9–17 ft from any run; STEM's 48
+odd-shape squares are room tags that happen to hold `K1`; the six Camp Bow
+Wow diamonds too far from a run and its seven without a clear margin are as
+they were.
+
+**Doors, eleven schedules read live** (`zzDoorJoin2`, 5–23 cents each, cached
+beside the legends). Rows read → rows placed, symbol marks first and loose
+text as the control: Gen BBQ A101 16 → 16 (1 by a detected gap, 13 by their
+mark), SLN A-101A 6 → 6, SW A110 5 → 5 (the schedule is a block on the plan
+sheet itself; the gap detector found 0 openings there), Baker A101 18 → 15
+(13 by mark), E Street A2.1 19 → 15, STEM A-1.1 45 → 31 (read at LOW
+confidence; 14 unplaced), NG Green Bay A3.1 19 → 7 (12 unplaced), Central
+Bank L1 50 → 3 (the schedule spans three levels and the plan is one; the
+rest are 2xx and basement marks), MHK A1.01 31 → 1 (its marks are bare text
+beside the door, 19 found loose, none in a symbol), Bunkie A100 11 → 0 by
+symbol and 5 by loose text (`E100`-style marks, also bare), Murray p10 is
+not the door schedule (the model read it as OTHER, 0 rows; the survey's
+heading hit was a note). 220 rows read, 97 placed across the eleven; the
+symbol path beats or equals loose text on every set where the marks are
+drawn in one, and the gap detector matched 0–50% of them, which is the
+finder's ceiling as before.

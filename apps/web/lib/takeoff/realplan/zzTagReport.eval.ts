@@ -6,7 +6,8 @@ import type { WallLegendRead } from "@prova/integrations/src/wallLegend";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { findWallsOnSheet } from "../findWallsOnSheet";
 import { sheetStrokes } from "../sheetStrokes";
-import { shapeFromLegend, tagSymbols } from "../tagSymbols";
+import { shapeFromLegend, tagSymbols, type TagSymbol } from "../tagSymbols";
+import { legendVocabulary, tagsFromSymbols } from "../symbolTagging";
 import { TAG_CLEAR_MARGIN, TAG_REACH_FEET } from "../wallTags";
 
 /**
@@ -59,8 +60,14 @@ describe.skipIf(DIR === "" || CACHE === "")("tag report", () => {
     const H = planRead.heightPt;
     const found = findWallsOnSheet({ segments: planRead.segments, textItems: items, pageSize: { widthPt: W, heightPt: H }, feetPerUnit: FEET_PER_UNIT, wallTypes: [], sampledSheets: null });
     const symbols = tagSymbols({ segments: planRead.segments, text: items, unitsPerPaperInch: 72 });
-    const holding = symbols.filter((s) => s.text.trim().toUpperCase().split(/\s+/).some((w) => codes.has(w)));
-    console.log(`\nplan p${PLAN_PAGE}: ${found.walls.length} runs; ${symbols.length} symbols; ${holding.length} hold a legend code (any verdict)\n`);
+    // The same vocabulary and the same shape rule as the chain, so a verdict
+    // here is the chain's verdict and not a second opinion about it.
+    const vocabulary = legendVocabulary([...codes]);
+    const knows = (s: TagSymbol) => [s.text, ...s.parts].some((p) => vocabulary.has(p.trim().toUpperCase()));
+    const tagged = tagsFromSymbols({ symbols, legendCodes: [...codes], shape, walls: found.walls, feetPerUnit: FEET_PER_UNIT, widthPt: W });
+    const holding = symbols.filter(knows);
+    console.log(`\nplan p${PLAN_PAGE}: ${found.walls.length} runs; ${symbols.length} symbols; ${holding.length} hold a legend code (any verdict); ` +
+      `tags required to be ${tagged.shape ?? "any shape"} (${tagged.shapeFrom === "plan" ? "the plan's own, the legend's shape being absent" : tagged.shapeFrom === "legend" ? "the legend's" : "no shape dominated"})\n`);
     console.log("  code     shape    r(in) crn split ldr rej             x     y   near   2nd  verdict");
     const tally = new Map<string, number>();
     for (const s of holding.sort((a, b) => a.text.localeCompare(b.text) || a.x - b.x)) {
@@ -73,8 +80,8 @@ describe.skipIf(DIR === "" || CACHE === "")("tag report", () => {
         if (d < best) { second = best; best = d; } else if (d < second) second = d;
       }
       const verdict =
-        s.rejected !== null ? `REJECTED ${s.rejected}` :
-        shape !== null && s.shape !== shape ? `odd shape (legend ${shape})` :
+        s.rejected !== null && !(s.rejected === "sheet-reference" && knows(s)) ? `REJECTED ${s.rejected}` :
+        tagged.shape !== null && s.shape !== tagged.shape ? `odd shape (${tagged.shapeFrom} ${tagged.shape})` :
         best > TAG_REACH_FEET ? `too far (>${TAG_REACH_FEET} ft)` :
         second < best * TAG_CLEAR_MARGIN ? `no clear margin` : "MATCHED";
       tally.set(verdict, (tally.get(verdict) ?? 0) + 1);

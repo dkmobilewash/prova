@@ -25,3 +25,25 @@ studs and board for ten types instead of batts for all ten.
 Mutation: 34 mutants over the symbol detector, the tagging, the join, the
 assembly parser and the legend finder, each restored by rewriting the file's
 own bytes. The numbers are in `lib/takeoff/NOTES.md`.
+
+Second pass, the twelve new sets (twelve architects): the loop walker
+followed strokes head to tail and a CAD export emits a diamond's edges in no
+particular direction, so Gen BBQ found 0 of its wall tags and STEM 7 of 124
+— every stroke now walks either way. A legend's symbol shape is kept only
+while it holds a quarter of the coded symbols on the plan (SW legends in
+circles and tags in squares: 0 → 21 matched; Camp Bow Wow's pentagon window
+marks still lose to its diamonds). A legend code spelled like a sheet
+reference (`G4.1`) is still a code, and a `1` in a diamond matches `WALL
+TYPE 1` (Murray 0 → 5). A legend drawn as a headed block on a plan or notes
+sheet — Bunkie, MHK, Crosslines, one of them headed `Partiton Types` — now
+ranks above the mechanical schedule and exterior-detail sheets that merely
+say STUD more often, and engineers' M/P/E/S sheets are tried last; all three
+read on the first call. And a column-wrapped legend (`3 5/8" 20 GA. MTL.` on
+one line, `STUD` on the next) is read as one string, with the studs' own
+spacing taken over a track fastener's: 16 of 108 cached types gained a stud
+or lost a false flag, none regressed. Thirteen more mutants, all killed.
+Eleven door schedules read live and joined: 220 rows, 97 placed — all of
+them on Gen BBQ, SLN and SW, most on Baker and E Street, and the misses are
+named per set (bare-text marks on MHK and Bunkie, a three-level schedule
+against a one-level plan on Central Bank, a page that was not the schedule
+on Murray).

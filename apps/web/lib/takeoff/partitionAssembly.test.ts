@@ -263,6 +263,62 @@ describe("the longer stud spellings real sets use", () => {
     expect(got.read.studWidthIn).toBe(1.625);
   });
 
+  it("reads a stud whose size and name wrapped onto separate lines", () => {
+    // NG Green Bay A3.2 p10, read 2026-10-20: the partition types sit in a
+    // narrow column beside the plan, so the model returns the cell's wrapped
+    // lines as they print. No single line holds both `3 5/8"` and `STUD`, and
+    // the first reader proposed board and nothing else for eight of ten types.
+    const got = readPartitionAssembly({
+      lines: ['5/8" GYPSUM', "BOARD, EACH", "SIDE", '3 5/8" 20 GA. MTL.', "STUD", "FRAMING @", '16" O.C.', 'ASSEMBLY WIDTH 4 7/8"'],
+      where: "test",
+    });
+    expect(got.read.studWidthIn).toBe(3.625);
+    expect(got.read.studSpacingIn).toBe(16);
+    expect(got.read.studGauge).toBe(20);
+    expect(got.flags).toEqual([]);
+  });
+
+  it("reads Murray's `20 GAUGE METAL STUDS`, and takes the studs' own spacing over the track fasteners'", () => {
+    // IFBREBID Murray Towers p26, Wall Types detail: the bottom track is
+    // `FASTENED AT 24" O.C.` two lines below `STUDS AT 16" O.C.`. Counting every
+    // O.C. flagged the type as ambiguous when the drawing said which is which.
+    const got = readPartitionAssembly({
+      lines: [
+        "CONTINUOUS 20 GAUGE METAL TOP TRACK",
+        '5/8" THICK TYPE "X" GYPSUM BOARD (BOTH SIDES) ON 3 5/8" 20 GAUGE METAL STUDS AT 16" O.C.',
+        'CONTINUOUS 20 GAUGE METAL BOTTOM TRACK FASTENED AT 24" O.C.',
+      ],
+      where: "test",
+    });
+    expect(got.read.studWidthIn).toBe(3.625);
+    expect(got.read.studSpacingIn).toBe(16);
+    expect(got.flags).toEqual([]);
+  });
+
+  it("never reads a board thickness that precedes the word STUD as a stud", () => {
+    // Joining wrapped lines is what makes this reachable: `5/8" GYP. BD.` ends
+    // one line and `STUDS AT 16" O.C.` begins the next.
+    const got = readPartitionAssembly({
+      lines: ['GYP. BD. 5/8"', 'STUDS AT 16" O.C.'],
+      where: "test",
+    });
+    expect(got.read.studWidthIn).toBeNull();
+    expect(got.components.some((c) => c.basis === "STUDS")).toBe(false);
+  });
+
+  it("does not join a table's rows into one another", () => {
+    // Central Bank's `WALL THICKNESS | 4 7/8"` row sits above `STUD SPACING |
+    // 16"`; joined, that is a 4-7/8in stud beside the 3-5/8in the STUD SIZE
+    // row states, and the type is flagged for a contradiction the sheet does
+    // not contain.
+    const got = readPartitionAssembly({
+      lines: ['WALL THICKNESS | 4 7/8"', 'STUD SPACING (O.C.) | 16"', 'STUD SIZE | 3 5/8"'],
+      where: "test",
+    });
+    expect(got.read.studWidthIn).toBe(3.625);
+    expect(got.flags).toEqual([]);
+  });
+
   it("reads nominal lumber as its actual width, and flags a 2X with no size", () => {
     const sized = readPartitionAssembly({ lines: ["2X4 WOOD STUDS AT 16\" O.C."], where: "test" });
     expect(sized.read.studWidthIn).toBe(3.5);
