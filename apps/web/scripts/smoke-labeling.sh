@@ -98,6 +98,17 @@ cleanup() {
     if [ -f "$KEEP/$(basename "$f")" ]; then cp "$KEEP/$(basename "$f")" "$f"; fi
   done
   rm -rf "$KEEP"
+  # ── AND THE BUILD DIRECTORY GOES ──
+  #
+  # Ignoring it is not enough: several censuses walk the FILESYSTEM and
+  # compare against what the repo reports, so a directory the repo cannot see
+  # is exactly what makes those two disagree. One of them read the compiled
+  # bundles as database writers that skip their counter — a real finding
+  # about generated code nobody wrote.
+  #
+  # It costs a full build each run. Correctness is worth more than a warm
+  # cache, for something whose whole job is to be believed before a deploy.
+  if [ "$DIST" != ".next" ]; then rm -rf "$DIST"; fi
 }
 trap cleanup EXIT
 

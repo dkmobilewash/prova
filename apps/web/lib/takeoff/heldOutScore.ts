@@ -31,6 +31,14 @@ export type ScoredRun = {
   x2: number;
   y2: number;
   lengthFeet: number;
+  /**
+   * How thick the wall is, where that is known.
+   *
+   * A finder candidate has one, because it was built from two faces. A TRACED
+   * wall does not: the reviewer drew one line, and `labelFile` writes zero.
+   * So the band below is driven by whichever of the pair knows.
+   */
+  thicknessFeet?: number;
 };
 
 export type SheetScore = {
@@ -55,6 +63,42 @@ export type SheetScore = {
  * started this, narrower than a corridor or a cavity.
  */
 export const SAME_WALL_FEET = 1.5;
+
+/**
+ * ── A CENTRE LINE AND A FACE ARE THE SAME WALL ──
+ *
+ * The finder proposes a wall's CENTRE LINE, because it builds a run from two
+ * faces. A reviewer tracing a wall the finder missed draws along what they
+ * can see, which on a thick masonry wall is a FACE. The two are half a
+ * thickness apart by construction — not an error by either of them.
+ *
+ * On a 4-inch stud partition that is two inches and the fixed 1.5 ft band
+ * swallowed it. On masonry it does not: Diego read 1 to 2 ft of offset off
+ * the Central Bank overlays, which at half a thickness means walls 2 to 4 ft
+ * thick, and the fixed band scored every one of them as MISSING and EXTRA at
+ * once — the finder punished twice for being right.
+ *
+ * So the band is derived rather than chosen: half the wall's own thickness,
+ * plus a margin for drafting jitter and for the trace not being exactly on
+ * the face. A pair is measured by whichever of the two KNOWS its thickness,
+ * because a traced wall carries none.
+ *
+ * ── THE CAP IS NOT COSMETIC ──
+ *
+ * Widening a band to admit a face costs the ability to tell two walls apart.
+ * A corridor is rarely under 3 ft, so the band is capped there: a thickness
+ * big enough to need more than that is likelier a bad reading than a wall,
+ * and admitting it would let a run claim the wall across the hall.
+ */
+export const FACE_MARGIN_FEET = 0.5;
+export const MAX_BAND_FEET = 3;
+
+/** How far a proposal may sit from a key wall and still be that wall. */
+export function matchBandFeet(a: ScoredRun, b: ScoredRun): number {
+  const thickest = Math.max(a.thicknessFeet ?? 0, b.thicknessFeet ?? 0);
+  const fromThickness = thickest / 2 + FACE_MARGIN_FEET;
+  return Math.min(MAX_BAND_FEET, Math.max(SAME_WALL_FEET, fromThickness));
+}
 
 const len = (r: ScoredRun) => Math.hypot(r.x2 - r.x1, r.y2 - r.y1);
 
@@ -97,11 +141,16 @@ function uncoveredFeet(
   others: readonly ScoredRun[],
   feetPerUnit: number,
 ): number {
-  const band = SAME_WALL_FEET / feetPerUnit;
   const aLen = len(a);
   if (aLen === 0) return 0;
   let covered = 0;
   for (const other of others) {
+    // ── THE BAND IS PER PAIR, BECAUSE THICKNESS IS ──
+    //
+    // A 4-inch partition and a 3-foot masonry wall cannot share one tolerance
+    // without either losing the partition's neighbours or losing the
+    // masonry's own face.
+    const band = matchBandFeet(a, other) / feetPerUnit;
     // Both ends of the other run within the band of a's line, as
     // `duplicateCandidates` requires — a wall crossing at a shallow angle
     // touches the line and is not the same wall.
@@ -180,13 +229,30 @@ export function totalScore(sheets: readonly SheetScore[]): {
  * runs alone looks complete and measures the finder against its own output.
  */
 export function keyFromLabels(saved: {
-  verdicts: ReadonlyArray<{ x1: number; y1: number; x2: number; y2: number; lengthFeet: number; verdict: string }>;
+  verdicts: ReadonlyArray<{
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    lengthFeet: number;
+    thicknessFeet?: number;
+    verdict: string;
+  }>;
 }): { key: ScoredRun[]; fromTracedFeet: number } {
   const key: ScoredRun[] = [];
   let fromTracedFeet = 0;
   for (const v of saved.verdicts) {
     if (v.verdict !== "wall" && v.verdict !== "traced") continue;
-    key.push({ x1: v.x1, y1: v.y1, x2: v.x2, y2: v.y2, lengthFeet: v.lengthFeet });
+    key.push({
+      x1: v.x1,
+      y1: v.y1,
+      x2: v.x2,
+      y2: v.y2,
+      lengthFeet: v.lengthFeet,
+      // Carried through so the band can be derived. A traced wall's is zero,
+      // which is honest: the reviewer drew a line, not a pair of faces.
+      thicknessFeet: v.thicknessFeet,
+    });
     if (v.verdict === "traced") fromTracedFeet += v.lengthFeet;
   }
   return { key, fromTracedFeet };

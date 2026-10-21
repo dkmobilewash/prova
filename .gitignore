@@ -3,6 +3,13 @@ node_modules
 .turbo
 dist
 .next
+# ── THE SMOKE TEST'S BUILD DIRECTORY ──
+#
+# `scripts/smoke-labeling.sh` builds into `.next-smoke` so it cannot clobber
+# the `.next` a running labelling server is serving from. Unignored, three
+# censuses walked its compiled bundles and reported them as database writers
+# that skip their counter — a real finding about generated code nobody wrote.
+.next-smoke
 .expo
 expo-env.d.ts
 out
