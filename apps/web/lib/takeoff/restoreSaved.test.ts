@@ -195,8 +195,17 @@ describe("restoring a saved sheet", () => {
 describe("re-applying the splits the reviewer made", () => {
   // One 40 ft candidate the reviewer cut at 15 ft, judging each half.
   const whole = () => startReview([cand("w0", 10, 0, 40, 6)]);
+  // ── THE HALVES CARRY THE WALL'S OWN THICKNESS ──
+  //
+  // The first version of this fixture left them at 0 while the candidate was
+  // 6 inches, and the strict rule declined it — correctly. A real saved file
+  // records the thickness of every accepted candidate, so a fixture without
+  // one was testing something that does not occur.
+  const HALF_THICKNESS = 0.5; // 6 inches, the candidate's own
   const splitFile = () =>
-    file([sv(10, 0, 15, "wall"), sv(10, 15, 40, "not-wall")], { reviewedBy: "chrome" });
+    file([sv(10, 0, 15, "wall", HALF_THICKNESS), sv(10, 15, 40, "not-wall", HALF_THICKNESS)], {
+      reviewedBy: "chrome",
+    });
 
   it("brings BOTH halves back, which is the bug Chrome hit", () => {
     // ── WHY THIS COULD NOT WORK BEFORE ──
@@ -263,5 +272,86 @@ describe("re-applying the splits the reviewer made", () => {
     expect(got.ok).toBe(true);
     if (!got.ok) return;
     expect(got.reviewedBy).toBeNull();
+  });
+});
+
+
+describe("a RECORDED split is re-applied from the record, not guessed", () => {
+  const whole = () => startReview([cand("w0", 10, 0, 40, 6)]);
+
+  it("re-applies it with no agreement needed from the verdicts", () => {
+    // The record is the fact. Even with ONE verdict in the file, the cut the
+    // reviewer made is re-created, because it was written down.
+    const got = restoreSaved(
+      {
+        ...file([sv(10, 0, 15, "wall", 0.5)]),
+        splits: [
+          {
+            x1: 0,
+            y1: 10 / FPU,
+            x2: 40 / FPU,
+            y2: 10 / FPU,
+            lengthFeet: 40,
+            thicknessIn: 6,
+            cutX: 15 / FPU,
+            cutY: 10 / FPU,
+          },
+        ],
+      },
+      whole(),
+      FPU,
+    );
+    expect(got.ok).toBe(true);
+    if (!got.ok) return;
+    expect(got.splitsReapplied).toBe(1);
+    expect(got.state.candidates).toHaveLength(2);
+  });
+
+  it("DOES NOT INVENT A SPLIT ON AN UNSPLIT SHEET — the MHK A1.01 regression", () => {
+    // ── THE BUG, AS A TEST ──
+    //
+    // Two decisions that are collinear with one candidate but are NOT its
+    // halves: a duplicate and an adjacent run look exactly like this. The
+    // first version split anyway, which on MHK A1.01 left a half undecided
+    // (38 of 39 reviewed), moved accepted footage 524 -> 509, and took the
+    // duplicate box from five pairs to one.
+    const twoRuns = startReview([cand("w0", 10, 0, 40, 6), cand("w1", 10.4, 0, 40, 6)]);
+    const got = restoreSaved(
+      file([sv(10, 0, 40, "wall", 0.5), sv(10.4, 0, 40, "not-wall", 0.5)]),
+      twoRuns,
+      FPU,
+    );
+    expect(got.ok).toBe(true);
+    if (!got.ok) return;
+    expect(got.splitsReapplied).toBe(0);
+    expect(got.state.candidates).toHaveLength(2);
+    expect(got.message).not.toContain("split re-applied");
+  });
+
+  it("declines a pair with a GAP between them", () => {
+    const got = restoreSaved(
+      file([sv(10, 0, 15, "wall", 0.5), sv(10, 22, 40, "not-wall", 0.5)]),
+      whole(),
+      FPU,
+    );
+    if (got.ok) expect(got.splitsReapplied).toBe(0);
+  });
+
+  it("declines a pair whose thicknesses differ", () => {
+    const got = restoreSaved(
+      file([sv(10, 0, 15, "wall", 0.5), sv(10, 15, 40, "not-wall", 1.5)]),
+      whole(),
+      FPU,
+    );
+    if (got.ok) expect(got.splitsReapplied).toBe(0);
+  });
+
+  it("declines a pair that does not reach the candidate's ends", () => {
+    const got = restoreSaved(
+      file([sv(10, 4, 15, "wall", 0.5), sv(10, 15, 34, "not-wall", 0.5)]),
+      whole(),
+      FPU,
+    );
+    if (got.ok) expect(got.splitsReapplied).toBe(0);
   });
 });

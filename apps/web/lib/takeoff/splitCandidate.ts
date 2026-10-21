@@ -170,7 +170,25 @@ export function splitCandidate(
       verdicts,
       // A duplicate pair naming the candidate that no longer exists would
       // leave the panel offering a decision about nothing.
+      //
+      // Worth knowing when a duplicate COUNT changes unexpectedly: this is
+      // why. A spurious split on MHK A1.01 took the box from five pairs to
+      // one, and the cause was here rather than in the finder.
       duplicates: state.duplicates.filter((p) => p.keep !== id && p.drop !== id),
+      // ── RECORDED, SO REOPENING NEED NOT GUESS ──
+      splits: [
+        ...(state.splits ?? []),
+        {
+          x1: target.x1,
+          y1: target.y1,
+          x2: target.x2,
+          y2: target.y2,
+          lengthFeet: target.lengthFeet,
+          thicknessIn: target.thicknessIn,
+          cutX: cut.x,
+          cutY: cut.y,
+        },
+      ],
     },
     halves: [a.id, b.id],
   };

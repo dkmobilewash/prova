@@ -69,6 +69,36 @@ export type ReviewState = {
   duplicates: DuplicatePair[];
   /** What the reviewer has traced by hand, already accepted by definition. */
   traced: Candidate[];
+  /**
+   * ── EVERY SPLIT THE REVIEWER MADE, AS A FACT ──
+   *
+   * A split replaces one candidate with two halves that the finder never
+   * proposed, so reopening a saved sheet cannot re-create them from the
+   * verdicts alone. The first attempt INFERRED them — two collinear saved
+   * verdicts along one candidate — and that fired on MHK A1.01, a sheet
+   * NEVER split: it invented a cut, left a half undecided (38 of 39
+   * reviewed), moved accepted footage from 524 to 509, and dropped four
+   * duplicate pairs, because `splitCandidate` deletes pairs naming the
+   * candidate it replaces.
+   *
+   * Duplicates and adjacent runs are collinear too. So the split is recorded
+   * where it happens and re-applied from the record, never guessed.
+   */
+  splits: SplitRecord[];
+};
+
+/** One split, as the geometry it was made on. */
+export type SplitRecord = {
+  /** The candidate as it was BEFORE the cut. */
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  lengthFeet: number;
+  thicknessIn: number | null;
+  /** Where it was cut. */
+  cutX: number;
+  cutY: number;
 };
 
 export function startReview(
@@ -101,7 +131,7 @@ export function startReview(
       : duplicatePairs(candidates, feetPerUnit, segments);
   for (const pair of duplicates) verdicts[pair.drop] = "not-a-wall";
 
-  return { candidates: [...candidates], verdicts, traced: [], duplicates };
+  return { candidates: [...candidates], verdicts, traced: [], duplicates, splits: [] };
 }
 
 export function setVerdict(state: ReviewState, ids: readonly string[], verdict: Verdict): ReviewState {

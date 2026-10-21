@@ -1,4 +1,5 @@
 import { FEATURE_NAMES } from "./wallFeatures";
+import type { SplitRecord } from "./answerKeyReview";
 import { finderVersion } from "./finderVersion";
 
 /**
@@ -101,6 +102,11 @@ export type LabelFile = {
   secondsSpent: number;
   feetPerUnit: number;
   featureNames: string[];
+  /**
+   * The splits the reviewer made, as geometry — absent on files written
+   * before this existed, which is why the restore has a strict fallback.
+   */
+  splits: readonly SplitRecord[];
   reviewComplete: boolean;
   /** `unsure` is REVIEWED and excluded; `unreviewed` is nobody looked. They
    *  were one field once and the file could not tell them apart. */
@@ -271,6 +277,14 @@ export function labelFile(input: {
   sheet: string;
   page: number;
   reviewedBy: string;
+  /**
+   * The splits the reviewer made, as geometry.
+   *
+   * Without these, reopening a sheet has to GUESS which verdicts are halves
+   * of a candidate — and guessing invented a split on MHK A1.01, a sheet
+   * never split, costing 15 ft of accepted footage and four duplicate pairs.
+   */
+  splits?: readonly SplitRecord[];
   secondsSpent: number;
   /** Overrides the environment; the app leaves it out and gets the build. */
   finderVersion?: string;
@@ -294,6 +308,7 @@ export function labelFile(input: {
     secondsSpent: Math.round(input.secondsSpent),
     feetPerUnit: input.feetPerUnit,
     featureNames: [...FEATURE_NAMES],
+    splits: [...(input.splits ?? [])],
     reviewComplete: input.reviewComplete,
     counts: {
       accepted: input.verdicts.filter((v) => v.verdict === "wall").length,

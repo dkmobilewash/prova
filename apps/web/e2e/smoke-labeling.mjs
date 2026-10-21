@@ -536,6 +536,40 @@ try {
     notice === null ? "no notice shown" : notice.slice(0, 90),
   );
 
+  // ── AN UNSPLIT SHEET RE-APPLIES ZERO SPLITS ──
+  //
+  // The regression this guards, in one line. A heuristic inferred splits from
+  // collinear saved verdicts, and on MHK A1.01 — never split — it invented a
+  // cut: 38 of 39 reviewed with one half left undecided, accepted footage
+  // 524 -> 509 ft, and the duplicate box from five pairs to one, because
+  // `splitCandidate` drops duplicate pairs naming the candidate it replaces.
+  // Four numbers moved at once and every one of them looked like the finder
+  // had changed. None had.
+  //
+  // Nothing in this scenario has been split, so the only correct answer is
+  // zero — and the counts must come back exactly as they were saved.
+  check(
+    "an unsplit sheet re-applies ZERO splits",
+    notice !== null && !/split re-applied/.test(notice),
+    notice === null ? "no notice" : notice.slice(0, 90),
+  );
+
+  let savedOnDisk = null;
+  for (const { doc } of savedLabelFiles()) savedOnDisk = doc;
+  const accepted = (savedOnDisk?.verdicts ?? []).filter((v) => v.verdict === "wall").length;
+  const acceptedFeet = (savedOnDisk?.verdicts ?? [])
+    .filter((v) => v.verdict === "wall")
+    .reduce((a, v) => a + (v.lengthFeet ?? 0), 0);
+  const onScreen = await page.evaluate(() => {
+    const m = /(\d+) walls/.exec(document.body.innerText);
+    return m === null ? null : Number(m[1]);
+  });
+  check(
+    "and the accepted count comes back exactly as saved",
+    savedOnDisk !== null && onScreen !== null && onScreen === accepted,
+    `file says ${accepted} accepted (${acceptedFeet.toFixed(0)} ft), page says ${onScreen ?? "nothing"}`,
+  );
+
   // ── SAVE MUST BE LIVE AFTER A RESTORE, AND THE TRACE MUST REACH THE FILE ──
   //
   // Diego's case, exactly: save, reopen, add a trace, Save must be ENABLED and

@@ -32,6 +32,7 @@ function reviewed(): ReviewState {
     verdicts: { w0: "wall", w1: "not-a-wall" },
     duplicates: [],
     traced: [candidate("t0", 0.8)],
+    splits: [],
   };
 }
 

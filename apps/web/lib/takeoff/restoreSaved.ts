@@ -1,4 +1,4 @@
-import type { Candidate, ReviewState, Verdict } from "./answerKeyReview";
+import type { Candidate, ReviewState, SplitRecord, Verdict } from "./answerKeyReview";
 import { addTraced, setVerdict, tracedWall } from "./answerKeyReview";
 import { splitCandidate } from "./splitCandidate";
 
@@ -59,6 +59,8 @@ export type SavedSheet = {
    *  see the `reviewedBy` note on `RestoreSavedResult`. */
   reviewedBy?: string;
   reviewerKind?: string;
+  /** The splits the reviewer made, when the file is new enough to have them. */
+  splits?: SplitRecord[];
   verdicts?: SavedVerdict[];
 };
 
@@ -177,79 +179,175 @@ export function candidateFor(
 /**
  * ── THE PIECES OF A SPLIT CANDIDATE DO NOT EXIST ON REOPENING ──
  *
- * A reviewer can split a candidate in two and judge each half. The file then
- * holds a verdict for each HALF, and neither half is a candidate the finder
- * proposes: the split happened during the review. So those verdicts matched
- * nothing and were reported as stale — NG Green Bay A3.1 lost 3 that way and
- * Baker EOC A101 lost 2, on sheets where the reviewer had done the extra work
- * of splitting precisely because the finder's run was wrong.
+ * A reviewer can cut a candidate in two and judge each half. The file holds a
+ * verdict per HALF, and neither half is a candidate the finder proposes, so
+ * reopening has to re-create them or those verdicts match nothing.
  *
- * So the splits are re-applied first, from the saved geometry: when two or
- * more saved verdicts lie ALONG one candidate, each shorter than it, and
- * together cover about all of it, that candidate was split at the boundary
- * between them. Splitting there re-creates the halves, and the ordinary
- * geometry match then finds them.
+ * ── THE FIRST VERSION GUESSED, AND GUESSING WAS WRONG ──
  *
- * Done before matching and never after, because a split changes the candidate
- * list that the match reads.
+ * It inferred a split from two collinear saved verdicts lying along one
+ * candidate. Duplicates and adjacent runs are collinear too. On MHK A1.01 —
+ * a sheet NEVER split — it invented a cut: 38 of 39 reviewed with one half
+ * left undecided, accepted footage down from 524 to 509, and the duplicate
+ * box from five pairs to one, because `splitCandidate` drops pairs naming the
+ * candidate it replaces. Every one of those numbers looked like a finder
+ * change and none of them was.
+ *
+ * So splits are RECORDED where they are made (`ReviewState.splits`, written
+ * into the label file) and re-applied from the record.
+ *
+ * ── AND FOR FILES WRITTEN BEFORE THE RECORD EXISTED ──
+ *
+ * Inference is allowed only when it cannot be anything else:
+ *
+ *   - the two pieces ABUT, with no gap and no overlap;
+ *   - they have the SAME thickness, which two different walls rarely do;
+ *   - together they equal exactly ONE current candidate — same length within
+ *     a hand's width, and both outer ends on that candidate's own ends.
+ *
+ * Anything short of that is left alone and counted, so the caller can say how
+ * many verdicts went unmatched instead of a cut being invented to absorb
+ * them. A stale verdict is a number somebody can check; a wrong split is a
+ * sheet that looks right.
  */
+const ABUT_FEET = 0.25;
+const SAME_LENGTH_FEET = 0.5;
+const SAME_THICKNESS_IN = 0.5;
+
 export function reapplySplits(
   saved: readonly SavedVerdict[],
   state: ReviewState,
   feetPerUnit: number,
-): { state: ReviewState; splits: number } {
+  recorded: readonly SplitRecord[] = [],
+): { state: ReviewState; splits: number; declined: number } {
   let working = state;
   let splits = 0;
+  let declined = 0;
 
-  // Bounded: every split adds candidates, so an unbounded loop over a
-  // mis-measured sheet could run forever. Two splits per candidate is the
-  // most any sheet in the training set uses.
-  for (let round = 0; round < 8; round += 1) {
-    let did = false;
-    for (const candidate of working.candidates) {
-      // Only ever split something nothing has judged yet: a candidate that
-      // already carries a verdict is one the match will handle.
-      if ((working.verdicts[candidate.id] ?? "unreviewed") !== "unreviewed") continue;
-
-      const pieces = saved
-        .filter((v) => DECIDED[v.verdict] !== undefined)
-        .filter((v) => parallel(v, candidate))
-        .filter((v) => {
-          const off = Math.max(
-            offLine(candidate, v.x1, v.y1, feetPerUnit),
-            offLine(candidate, v.x2, v.y2, feetPerUnit),
-          );
-          return off <= bandFeet(v, { thicknessFeet: candidate.thicknessIn === null ? 0 : candidate.thicknessIn / 12 });
-        })
-        // A piece is SHORTER than the whole, or it is the whole.
-        .filter((v) => v.lengthFeet < candidate.lengthFeet - 0.5)
-        .map((v) => ({ v, span: along(candidate, v, feetPerUnit) }))
-        .sort((a, b) => a.span.lo - b.span.lo);
-
-      if (pieces.length < 2) continue;
-      const covered = pieces.reduce((a, p) => a + (p.span.hi - p.span.lo), 0);
-      if (covered < candidate.lengthFeet * 0.8) continue;
-
-      // The boundary between the first piece and the next is where the
-      // reviewer cut it.
-      const cutFeet = pieces[0].span.hi;
-      if (cutFeet <= 0.5 || cutFeet >= candidate.lengthFeet - 0.5) continue;
-      const t = cutFeet / Math.max(candidate.lengthFeet, 1e-9);
-      const at = {
-        x: candidate.x1 + (candidate.x2 - candidate.x1) * t,
-        y: candidate.y1 + (candidate.y2 - candidate.y1) * t,
-      };
-      const out = splitCandidate(working, candidate.id, at, feetPerUnit);
-      if (out.halves === null) continue;
-      working = out.state;
-      splits += 1;
-      did = true;
-      break;
+  // ── RECORDED SPLITS FIRST, AND THEY NEED NO AGREEMENT FROM THE VERDICTS ──
+  for (const record of recorded) {
+    const target = working.candidates.find((c) => {
+      if (!parallel(record, c)) return false;
+      if (Math.abs(record.lengthFeet - c.lengthFeet) > SAME_LENGTH_FEET) return false;
+      const off = Math.max(
+        offLine(c, record.x1, record.y1, feetPerUnit),
+        offLine(c, record.x2, record.y2, feetPerUnit),
+      );
+      return off <= 1.5;
+    });
+    if (target === undefined) {
+      declined += 1;
+      continue;
     }
-    if (!did) break;
+    const out = splitCandidate(working, target.id, { x: record.cutX, y: record.cutY }, feetPerUnit);
+    if (out.halves === null) {
+      declined += 1;
+      continue;
+    }
+    working = out.state;
+    splits += 1;
   }
 
-  return { state: working, splits };
+  if (recorded.length > 0) return { state: working, splits, declined };
+
+  // ── NO RECORD: INFER ONLY WHAT CANNOT BE ANYTHING ELSE ──
+  // Why a split was declined, when asked. Off by default: this is a
+  // diagnostic for the strictness, not output anybody needs in the app.
+  const say = (c: Candidate, reason: string) => {
+    if (process.env.RESTORE_WHY !== undefined) {
+      console.log(`      declined on ${c.lengthFeet.toFixed(1)} ft candidate: ${reason}`);
+    }
+  };
+
+  const decided = saved.filter((v) => DECIDED[v.verdict] !== undefined);
+  for (const candidate of working.candidates) {
+    if ((working.verdicts[candidate.id] ?? "unreviewed") !== "unreviewed") continue;
+    const candidateThicknessIn = candidate.thicknessIn;
+
+    const pieces = decided
+      .filter((v) => parallel(v, candidate))
+      .filter((v) => {
+        const off = Math.max(
+          offLine(candidate, v.x1, v.y1, feetPerUnit),
+          offLine(candidate, v.x2, v.y2, feetPerUnit),
+        );
+        return off <= 1.5;
+      })
+      .filter((v) => v.lengthFeet < candidate.lengthFeet - ABUT_FEET)
+      .map((v) => ({ v, span: along(candidate, v, feetPerUnit) }))
+      .sort((a, b) => a.span.lo - b.span.lo);
+
+    if (pieces.length !== 2) {
+      if (pieces.length > 2) {
+        declined += 1;
+        say(candidate, `${pieces.length} collinear pieces, not 2`);
+      }
+      continue;
+    }
+    const [first, second] = pieces;
+
+    // They must ABUT: no gap, no overlap.
+    if (Math.abs(second.span.lo - first.span.hi) > ABUT_FEET) {
+      declined += 1;
+      say(candidate, `gap of ${(second.span.lo - first.span.hi).toFixed(2)} ft between the pieces`);
+      continue;
+    }
+    // Same thickness. A piece recorded with no thickness cannot be compared,
+    // so it is declined rather than assumed to match.
+    const ta = first.v.thicknessFeet;
+    const tb = second.v.thicknessFeet;
+    if (ta === undefined || tb === undefined || Math.abs(ta - tb) * 12 > SAME_THICKNESS_IN) {
+      declined += 1;
+      say(candidate, `piece thicknesses ${((ta ?? 0) * 12).toFixed(1)} vs ${((tb ?? 0) * 12).toFixed(1)} in`);
+      continue;
+    }
+    if (
+      candidateThicknessIn !== null &&
+      Math.abs(ta * 12 - candidateThicknessIn) > SAME_THICKNESS_IN
+    ) {
+      declined += 1;
+      say(candidate, `pieces are ${(ta * 12).toFixed(1)} in, candidate is ${candidateThicknessIn.toFixed(1)} in`);
+      continue;
+    }
+    // Together they must equal exactly this candidate: the right total length,
+    // and both outer ends on its own ends.
+    const total = second.span.hi - first.span.lo;
+    if (Math.abs(total - candidate.lengthFeet) > SAME_LENGTH_FEET) {
+      declined += 1;
+      say(candidate, `pieces total ${total.toFixed(1)} ft, candidate is ${candidate.lengthFeet.toFixed(1)} ft`);
+      continue;
+    }
+    if (Math.abs(first.span.lo) > ABUT_FEET) {
+      declined += 1;
+      say(candidate, `first piece starts ${first.span.lo.toFixed(2)} ft in, not at the end`);
+      continue;
+    }
+    if (Math.abs(second.span.hi - candidate.lengthFeet) > ABUT_FEET) {
+      declined += 1;
+      say(candidate, `second piece ends ${(candidate.lengthFeet - second.span.hi).toFixed(2)} ft short`);
+      continue;
+    }
+
+    const cutFeet = first.span.hi;
+    const t = cutFeet / Math.max(candidate.lengthFeet, 1e-9);
+    const out = splitCandidate(
+      working,
+      candidate.id,
+      {
+        x: candidate.x1 + (candidate.x2 - candidate.x1) * t,
+        y: candidate.y1 + (candidate.y2 - candidate.y1) * t,
+      },
+      feetPerUnit,
+    );
+    if (out.halves === null) {
+      declined += 1;
+      continue;
+    }
+    working = out.state;
+    splits += 1;
+  }
+
+  return { state: working, splits, declined };
 }
 
 export function restoreSaved(
@@ -266,7 +364,7 @@ export function restoreSaved(
   const traces = all.filter((v) => v.verdict === "traced");
 
   // Splits first: they change the candidate list the match reads.
-  const prepared = reapplySplits(all, fresh, feetPerUnit);
+  const prepared = reapplySplits(all, fresh, feetPerUnit, saved.splits ?? []);
 
   const taken = new Set<string>();
   const pairs: { saved: SavedVerdict; candidate: Candidate }[] = [];
@@ -323,6 +421,7 @@ export function restoreSaved(
       `Restored ${pairs.length} saved decision${pairs.length === 1 ? "" : "s"}` +
       (traces.length > 0 ? ` and ${traces.length} trace${traces.length === 1 ? "" : "s"}` : "") +
       (prepared.splits > 0 ? `, ${prepared.splits} split re-applied` : "") +
+      (prepared.declined > 0 ? `, ${prepared.declined} split not re-applied (not provable)` : "") +
       (unmatched > 0 ? `, ${unmatched} no longer matching any candidate` : "") +
       ". Add what is missing and save again.",
   };

@@ -46,7 +46,7 @@ function fresh(ids: string[]): ReviewState {
   const candidates = ids.map((id, at) => candidate(id, 0.2 + at * 0.05));
   const verdicts: Record<string, "unreviewed"> = {};
   for (const one of candidates) verdicts[one.id] = "unreviewed";
-  return { candidates, verdicts, duplicates: [], traced: [] };
+  return { candidates, verdicts, duplicates: [], traced: [], splits: [] };
 }
 
 function reviewed(): ReviewState {
@@ -55,6 +55,7 @@ function reviewed(): ReviewState {
     ...state,
     verdicts: { w0: "wall", w1: "not-a-wall", w2: "unsure" },
     traced: [traced("t0", 0.8), traced("t1", 0.85)],
+    splits: [],
   };
 }
 
