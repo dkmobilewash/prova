@@ -53,6 +53,34 @@ type Saved = {
   }[];
 };
 
+/**
+ * ── WHAT THE "OUTSIDE" FOOTAGE IS, NOT JUST THAT IT IS OUTSIDE ──
+ *
+ * 6,725 ft of the 10,602 landed in one bucket, and a bucket that size is a
+ * question rather than an answer. These sub-kinds come from the sheet's own
+ * printed captions and from where a run sits relative to the main plan, so
+ * the next rule can be aimed at a named thing — another view, the title
+ * block, a schedule — instead of at "outside".
+ */
+type Outside =
+  | "another view (plan/RCP/roof)"
+  | "detail/section/elevation"
+  | "site/landscape/paving"
+  | "title block/border"
+  | "schedule/legend/notes"
+  | "keyplan"
+  | "outside, unattributed";
+
+const OUTSIDES: Outside[] = [
+  "another view (plan/RCP/roof)",
+  "detail/section/elevation",
+  "site/landscape/paving",
+  "title block/border",
+  "schedule/legend/notes",
+  "keyplan",
+  "outside, unattributed",
+];
+
 type Kind =
   | "hatching"
   | "dimension/leader"
@@ -124,6 +152,14 @@ describe.skipIf(DIR === "" || LABELS === "")("what the finder's extra footage IS
     const feet = new Map<Kind, number>(KINDS.map((k) => [k, 0]));
     const counts = new Map<Kind, number>(KINDS.map((k) => [k, 0]));
     const examples: Example[] = [];
+    const outsideFeet = new Map<Outside, number>(OUTSIDES.map((k) => [k, 0]));
+    const outsideRuns = new Map<Outside, number>(OUTSIDES.map((k) => [k, 0]));
+    const outsideExamples: { sheet: string; kind: Outside; feet: number; x1: number; y1: number; x2: number; y2: number }[] = [];
+    const otherFeet = new Map<string, number>();
+    const otherRuns = new Map<string, number>();
+    const otherExamples: { sheet: string; kind: string; feet: number; x1: number; y1: number; x2: number; y2: number }[] = [];
+    let unsureFeet = 0;
+    let unsureRuns = 0;
     const sheetsRead: string[] = [];
     let refused = 0;
 
@@ -176,6 +212,14 @@ describe.skipIf(DIR === "" || LABELS === "")("what the finder's extra footage IS
 
       const fpu = saved.feetPerUnit;
       const realWalls = saved.verdicts.filter((v) => v.verdict === "wall" || v.verdict === "traced");
+      // ── `unsure` IS NOT JUNK AND IS NOT A WALL ──
+      //
+      // 112 candidates across these sheets are marked unsure — the reviewer
+      // declined to call them. They are excluded from the key AND from
+      // training, so footage matching one must not be counted as
+      // reviewer-confirmed junk: a filter that removes it has neither gained
+      // nor lost anything anybody can grade.
+      const unsureWalls = saved.verdicts.filter((v) => v.verdict === "unsure");
       // ── WHY THE FINDER'S OWN STAGES ARE NOT USED HERE ──
       //
       // `everywhere` -> `inBuilding` -> `notLettering` -> `notBorder` ->
@@ -208,6 +252,18 @@ describe.skipIf(DIR === "" || LABELS === "")("what the finder's extra footage IS
       );
       const namedText = near.filter((i) => /^[A-Z(][A-Z\s().\-/&]{3,}$/.test(i.str.trim()));
       const detailText = near.filter((i) => /ELEVATION|DETAIL|SECTION|SCHEDULE|LEGEND/i.test(i.str));
+      const viewText = near.filter((i) =>
+        /FLOOR PLAN|ENLARGED|REFLECTED|CEILING PLAN|ROOF PLAN|RCP\b|DEMO(LITION)? PLAN|FINISH PLAN|SLAB|FOUNDATION/i.test(
+          i.str,
+        ),
+      );
+      const siteText = near.filter((i) =>
+        /SITE PLAN|LANDSCAPE|PAVING|PARKING|CURB|SIDEWALK|GRADING|UTILIT/i.test(i.str),
+      );
+      const sheetNoteText = near.filter((i) =>
+        /SCHEDULE|LEGEND|GENERAL NOTES|KEYNOTE|ABBREVIAT|SYMBOL/i.test(i.str),
+      );
+      const keyplanText = near.filter((i) => /KEY ?PLAN|AREA [A-Z]\b|SCOPE/i.test(i.str));
 
       for (const w of found.walls) {
         // Is this candidate a real wall in the key? If so it is not extra.
@@ -241,8 +297,37 @@ describe.skipIf(DIR === "" || LABELS === "")("what the finder's extra footage IS
           mx < keyBox.x1 - pad || mx > keyBox.x2 + pad || my < keyBox.y1 - pad || my > keyBox.y2 + pad;
 
         let kind: Kind = "other";
+        let outsideKind: Outside | null = null;
         if (outside) {
           kind = "outside the building";
+          // Nearest printed caption wins, within a generous radius, because a
+          // view's title sits well away from its own line work. The ORDER is
+          // the tie-break and is deliberate: a border line near a schedule is
+          // border, and a keyplan near a floor-plan caption is a keyplan.
+          const nearestOf = (list: typeof near, ft: number) => {
+            let best: number | null = null;
+            for (const i of list) {
+              const d = Math.hypot(mx - i.x, my - i.y) * fpu;
+              if (d <= ft && (best === null || d < best)) best = d;
+            }
+            return best;
+          };
+          // The title block is a REGION, not a caption: the right and bottom
+          // margins of a sheet, outside the plan's own box.
+          const inMargin = mx > 0.86 || my > keyBox.y2 + sheetSpan * 0.45;
+          const options: [Outside, number | null][] = [
+            ["keyplan", nearestOf(keyplanText, 40)],
+            ["site/landscape/paving", nearestOf(siteText, 60)],
+            ["schedule/legend/notes", nearestOf(sheetNoteText, 50)],
+            ["detail/section/elevation", nearestOf(detailText, 50)],
+            ["another view (plan/RCP/roof)", nearestOf(viewText, 70)],
+          ];
+          const named = options
+            .filter((o): o is [Outside, number] => o[1] !== null)
+            .sort((a, b) => a[1] - b[1]);
+          if (inMargin) outsideKind = "title block/border";
+          else if (named.length > 0) outsideKind = named[0][0];
+          else outsideKind = "outside, unattributed";
         } else if (axisAligned && len(w) >= sheetSpan * 0.85) {
           // A grid line runs essentially the whole plan.
           kind = "grid line";
@@ -283,6 +368,67 @@ describe.skipIf(DIR === "" || LABELS === "")("what the finder's extra footage IS
           kind = "casework/equipment";
         }
 
+        // Footage the reviewer declined to call is reported on its own line
+        // rather than inside any kind.
+        const isUnsure = unsureWalls.some(
+          (u) =>
+            parallel(w, u) &&
+            Math.max(offLine(w, u.x1, u.y1, fpu), offLine(w, u.x2, u.y2, fpu)) <=
+              Math.min(3, Math.max(1.5, Math.max(w.thicknessFeet, u.thicknessFeet) / 2 + 0.5)),
+        );
+        if (isUnsure) {
+          unsureFeet += w.lengthFeet;
+          unsureRuns += 1;
+          continue;
+        }
+        if (outsideKind !== null) {
+          outsideFeet.set(outsideKind, (outsideFeet.get(outsideKind) ?? 0) + w.lengthFeet);
+          outsideRuns.set(outsideKind, (outsideRuns.get(outsideKind) ?? 0) + 1);
+          if (w.lengthFeet >= 3) {
+            outsideExamples.push({
+              sheet: `${file.dir}/${file.sheet}`,
+              kind: outsideKind,
+              feet: w.lengthFeet,
+              x1: w.x1,
+              y1: w.y1,
+              x2: w.x2,
+              y2: w.y2,
+            });
+          }
+        }
+        // ── AND WHAT "other" IS, SINCE IT IS 1,941 FT ──
+        //
+        // A bucket this size is a question. These sub-kinds use only the
+        // candidate's own shape, since by this point no caption and no key
+        // wall is near it.
+        if (kind === "other") {
+          const thickIn = w.thicknessFeet * 12;
+          const sub =
+            w.thicknessFeet === 0
+              ? "single line, no pair"
+              : thickIn < 2
+                ? "pair under 2in — too thin for a wall"
+                : thickIn > 24
+                  ? "pair over 24in — too thick for a partition"
+                  : w.lengthFeet < 2
+                    ? "under 2 ft long"
+                    : Math.abs(w.y2 - w.y1) > len(w) * 0.05 && Math.abs(w.x2 - w.x1) > len(w) * 0.05
+                      ? "off-orthogonal"
+                      : "plausible wall the key rejected";
+          otherFeet.set(sub, (otherFeet.get(sub) ?? 0) + w.lengthFeet);
+          otherRuns.set(sub, (otherRuns.get(sub) ?? 0) + 1);
+          if (w.lengthFeet >= 3) {
+            otherExamples.push({
+              sheet: `${file.dir}/${file.sheet}`,
+              kind: sub,
+              feet: w.lengthFeet,
+              x1: w.x1,
+              y1: w.y1,
+              x2: w.x2,
+              y2: w.y2,
+            });
+          }
+        }
         feet.set(kind, (feet.get(kind) ?? 0) + w.lengthFeet);
         counts.set(kind, (counts.get(kind) ?? 0) + 1);
         if (w.lengthFeet >= 3) {
@@ -320,6 +466,55 @@ describe.skipIf(DIR === "" || LABELS === "")("what the finder's extra footage IS
         `  ${kind.padEnd(22)} ${ft.toFixed(0).padStart(9)} ${((ft / total) * 100).toFixed(1).padStart(6)}% ` +
           `${String(counts.get(kind) ?? 0).padStart(6)}`,
       );
+    }
+
+    const outsideTotal = [...outsideFeet.values()].reduce((a, b) => a + b, 0);
+    console.log(`\nINSIDE "outside the building" — ${outsideTotal.toFixed(0)} ft`);
+    console.log(`  ${"what it is".padEnd(30)} ${"feet".padStart(9)} ${"share".padStart(7)} ${"runs".padStart(6)}`);
+    for (const [kind, ft] of [...outsideFeet.entries()].sort((a, b) => b[1] - a[1])) {
+      console.log(
+        `  ${kind.padEnd(30)} ${ft.toFixed(0).padStart(9)} ` +
+          `${((ft / Math.max(outsideTotal, 1)) * 100).toFixed(1).padStart(6)}% ` +
+          `${String(outsideRuns.get(kind) ?? 0).padStart(6)}`,
+      );
+    }
+    console.log(
+      `\nreported separately: ${unsureFeet.toFixed(0)} ft over ${unsureRuns} runs matched an UNSURE ` +
+        `candidate — neither junk nor wall, excluded from the key and from training`,
+    );
+
+    const otherTotal = [...otherFeet.values()].reduce((a, b) => a + b, 0);
+    console.log(`\nINSIDE "other" — ${otherTotal.toFixed(0)} ft`);
+    for (const [sub, ft] of [...otherFeet.entries()].sort((a, b) => b[1] - a[1])) {
+      console.log(
+        `  ${sub.padEnd(38)} ${ft.toFixed(0).padStart(8)} ` +
+          `${((ft / Math.max(otherTotal, 1)) * 100).toFixed(1).padStart(6)}% ` +
+          `${String(otherRuns.get(sub) ?? 0).padStart(6)}`,
+      );
+    }
+
+    console.log("\nOTHER CROPS");
+    for (const sub of [...otherFeet.keys()]) {
+      for (const e of otherExamples.filter((x) => x.kind === sub).sort((a, b) => b.feet - a.feet).slice(0, 3)) {
+        console.log(
+          `  ${sub}\t${e.sheet}\t${e.feet.toFixed(1)}\t` +
+            `${e.x1.toFixed(4)}\t${e.y1.toFixed(4)}\t${e.x2.toFixed(4)}\t${e.y2.toFixed(4)}`,
+        );
+      }
+    }
+
+    console.log("\nOUTSIDE CROPS");
+    for (const kind of OUTSIDES) {
+      const mine = outsideExamples
+        .filter((e) => e.kind === kind)
+        .sort((a, b) => b.feet - a.feet)
+        .slice(0, 3);
+      for (const e of mine) {
+        console.log(
+          `  ${kind}\t${e.sheet}\t${e.feet.toFixed(1)}\t` +
+            `${e.x1.toFixed(4)}\t${e.y1.toFixed(4)}\t${e.x2.toFixed(4)}\t${e.y2.toFixed(4)}`,
+        );
+      }
     }
 
     // Examples for the top three, longest first, as crop boxes a renderer can take.
