@@ -5,6 +5,9 @@ import { describe, expect, it } from "vitest";
 import { prisma } from "@prova/db";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { findWallsOnSheet } from "../findWallsOnSheet";
+import { FEATURE_NAMES } from "../wallFeatures";
+import { deciderFor, type WallModel } from "../wallClassifier";
+import type { WallCandidate } from "../wallVectors";
 import { sheetStrokes } from "../sheetStrokes";
 import { heldOutReason } from "../heldOutSets";
 import { keyFromLabels, scoreSheet, totalScore, type SheetScore } from "../heldOutScore";
@@ -35,6 +38,21 @@ import { keyFromLabels, scoreSheet, totalScore, type SheetScore } from "../heldO
 const DIR = process.env.REAL_PLAN_DIR ?? "";
 const LABELS = process.env.TAKEOFF_LABEL_DIR ?? "";
 
+/**
+ * ── THE MODEL ARM, WHICH THIS FILE DID NOT HAVE ──
+ *
+ * `train-wall-run.sh` announces this stage as "the four held-out buildings
+ * (rules, then the model)" and there was no model: this file had ONE test,
+ * the rules. The classifier was trained, written to disk, and scored on the
+ * held-out keys never — so the one question the held-out set exists to answer
+ * could not be asked of it, and the run printed a line saying it had been.
+ *
+ * Off unless KEY_MODEL names a model file, so the rules arm is unchanged and
+ * a run without a model still reports the rules rather than nothing.
+ */
+const MODEL = process.env.KEY_MODEL ?? "";
+const CUT = Number(process.env.KEY_CUT ?? "0.5");
+
 type Saved = {
   set: string;
   sheet: string;
@@ -52,7 +70,7 @@ type Saved = {
 };
 
 describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
-  it("scores the rules against the answer key", { timeout: 7_200_000 }, async () => {
+  it("scores the finder against the answer key — rules, or rules with the model's vetoes", { timeout: 7_200_000 }, async () => {
     const plans = await prisma.takeoffPlan.findMany({ select: { fileName: true, fileUrl: true } });
     const flat = (s: string) => s.replace(/[^a-z0-9]+/gi, "").toUpperCase();
 
@@ -71,6 +89,22 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
       for (const name of names) all.push({ dir, sheet: name.slice(0, -5), path: join(full, name) });
     }
     const held = all.filter((f) => heldOutReason(f.dir) !== null);
+
+    // ── REFUSING BEATS SCORING WITH THE WRONG COLUMNS ──
+    //
+    // A silent fall back to the rules would be reported as the model's own
+    // result, which is the worst available outcome on a test key: a number
+    // that looks like the classifier and is the baseline.
+    let veto: ((f: number[], w: WallCandidate) => boolean) | undefined;
+    if (MODEL !== "") {
+      const loaded = JSON.parse(readFileSync(MODEL, "utf8")) as WallModel;
+      const scorer = deciderFor(loaded, FEATURE_NAMES);
+      expect(scorer, "the model's columns do not match this build's features").not.toBeNull();
+      veto = (f, w) => scorer!(f, w) < CUT;
+      console.log(`veto with ${MODEL} at ${CUT}`);
+    } else {
+      console.log("rules only — no KEY_MODEL given");
+    }
 
     const scores: SheetScore[] = [];
     const notes: string[] = [];
@@ -98,6 +132,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
       const doc = await openPlanPdf(bytes);
       const text = await doc.pageText(saved.page);
       const found = findWallsOnSheet({
+        veto,
         segments: read.segments,
         textItems: text.items.map((i) => ({
           str: i.str,

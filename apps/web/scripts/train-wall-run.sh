@@ -121,15 +121,39 @@ python3 scripts/train-wall-model.py "$ROWS" "$MODEL" "$COLUMNS" 2>&1 | tee "$OUT
 
 echo
 echo "── 4. score ──────────────────────────────────────────────────────────"
-echo "   the four held-out buildings (rules, then the model):"
+# ── BOTH ARMS, BECAUSE THIS LINE USED TO BE A CLAIM ──
+#
+# This stage printed "the four held-out buildings (rules, then the model)" and
+# ran the rules ONCE, passing no model to either held-out eval. The
+# classifier was trained, written to disk and scored on a building it had
+# never seen never — while the log said it had been. `zzKeyScore.eval.ts` had
+# no model arm at all until it was given one, and `zzBim.eval.ts` has had the
+# capability all along and was never handed `BIM_MODEL`.
+#
+# Grep a run for `veto with` before believing any model number from it: the
+# evals print that line when a model is in play and "rules only" when it is
+# not, so a run that scored no model says so.
+echo "   the held-out buildings — RULES:"
 DATABASE_URL="$LOCAL_DB" DIRECT_URL="$LOCAL_DB" \
 REAL_PLAN_DIR="$PLANS" TAKEOFF_LABEL_DIR="$LABELS" \
   $EVAL lib/takeoff/realplan/zzKeyScore.eval.ts 2>&1 | tee "$OUTDIR/04-held-out.log"
 
-echo "   the BIM sheets (test-only, never trained on):"
+echo "   the held-out buildings — RULES + THE MODEL'S VETOES at ${KEY_CUT:-0.5}:"
+DATABASE_URL="$LOCAL_DB" DIRECT_URL="$LOCAL_DB" \
+REAL_PLAN_DIR="$PLANS" TAKEOFF_LABEL_DIR="$LABELS" \
+KEY_MODEL="$MODEL" KEY_CUT="${KEY_CUT:-0.5}" \
+  $EVAL lib/takeoff/realplan/zzKeyScore.eval.ts 2>&1 | tee "$OUTDIR/04-held-out-model.log"
+
+echo "   the BIM sheets (test-only, never trained on) — RULES:"
 BIM_DIR="${BIM_DIR:-$HOME/Claude Folder/takeoff/bim-sheets}" \
   $EVAL lib/takeoff/realplan/zzBim.eval.ts 2>&1 | tee "$OUTDIR/05-bim.log" || \
   echo "   (no BIM eval ran — check BIM_DIR)"
+
+echo "   the BIM sheets — RULES + THE MODEL'S VETOES at ${KEY_CUT:-0.5}:"
+BIM_DIR="${BIM_DIR:-$HOME/Claude Folder/takeoff/bim-sheets}" \
+BIM_MODEL="$MODEL" BIM_CUT="${KEY_CUT:-0.5}" \
+  $EVAL lib/takeoff/realplan/zzBim.eval.ts 2>&1 | tee "$OUTDIR/05-bim-model.log" || \
+  echo "   (no BIM model eval ran — check BIM_DIR)"
 
 echo "   the guards:"
 npx vitest run lib/takeoff/ 2>&1 | tail -4 | tee "$OUTDIR/06-guards.log"
