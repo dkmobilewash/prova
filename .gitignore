@@ -2,6 +2,17 @@ node_modules
 .pnpm-store
 .turbo
 dist
+# ── A BACKUP OF A .env IS STILL A CREDENTIAL ──
+#
+# `.env` is ignored below; `.env.bak-20261020-232737` was NOT, and two of them
+# sat in apps/web/ holding a live API key, where a wildcard add would have
+# swept them into the repo — the scar the "NEVER git add -A" rule in
+# CLAUDE.md exists for. Written by a key-rotation script that backed the file
+# up beside itself, which is the obvious place and the wrong one.
+.env.bak-*
+.env.backup
+.env.save
+
 .next
 # ── THE SMOKE TEST'S BUILD DIRECTORY ──
 #
