@@ -38,20 +38,20 @@ describe("finding the sheet that defines the wall types", () => {
     ]);
     expect(got[0].page, "the real legend comes first").toBe(16);
     const cover = got.find((c) => c.page === 1);
-    expect(cover?.rank).toBe(2);
+    expect(cover?.rank).toBe(3);
     expect(cover?.why).toContain("index entry");
   });
 
   it("never drops the named-but-empty sheet, because a failed text layer looks the same", () => {
     const got = legendPages([page({ page: 7, title: "WALL TYPES", lines: [] })]);
     expect(got).toHaveLength(1);
-    expect(got[0].rank).toBe(2);
+    expect(got[0].rank).toBe(3);
   });
 
   it("finds a legend whose title says nothing, from its content", () => {
     const got = legendPages([page({ page: 30, title: null, lines: assembly(20) })]);
     expect(got).toHaveLength(1);
-    expect(got[0].rank).toBe(1);
+    expect(got[0].rank).toBe(2);
     expect(got[0].why).toContain("the title does not say");
   });
 
@@ -82,5 +82,75 @@ describe("finding the sheet that defines the wall types", () => {
 
   it("says nothing about a set with no legend in it", () => {
     expect(legendPages([page({ page: 1, title: "FLOOR PLAN", lines: ["ROOM 101"] })])).toEqual([]);
+  });
+});
+
+describe("a legend drawn as a block on a sheet titled something else", () => {
+  // Measured 2026-10-20 on the twelve new sets: Bunkie's G003 reads SECTION
+  // VIEW in its title block and carries a block headed WALL TYPES; MHK's is on
+  // A1.01 FIRST FLOOR PLAN; Crosslines' is on its general-notes sheet, headed
+  // "Partiton Types" exactly as the drawing spells it. Each ranked below an
+  // exterior-detail or mechanical sheet that said STUD more often.
+  it("puts a sheet with a WALL TYPES block ahead of a detail sheet with more assembly text", () => {
+    const got = legendPages([
+      page({ page: 45, title: "A314 BID DOCUMENTS", lines: assembly(46) }),
+      page({ page: 4, title: "G003 SECTION VIEW BID DOCUMENTS", lines: ["4 | WALL TYPES", ...assembly(24)] }),
+    ]);
+    expect(got.map((c) => c.page)).toEqual([4, 45]);
+    expect(got[0].rank).toBe(1);
+    expect(got[0].why).toContain('headed "WALL TYPES"');
+  });
+
+  it("reads the heading as the drawing spells it, dropped letter and all", () => {
+    const got = legendPages([
+      page({ page: 30, title: "M601 MECHANICAL SCHEDULES", lines: assembly(25) }),
+      page({ page: 2, title: "A001 Existing Recessed Can Light Fixture", lines: ["Partiton Types", ...assembly(22)] }),
+    ]);
+    expect(got[0].page).toBe(2);
+  });
+
+  it("does not take a pointer to the legend for the legend", () => {
+    // A section sheet saying REFER TO WALL TYPES is telling you where to look.
+    const got = legendPages([
+      page({ page: 41, title: "A310 BID DOCUMENTS", lines: ["NEW SMOKE BARRIER WALL. REFER TO WALL TYPES", ...assembly(16)] }),
+    ]);
+    expect(got[0].rank).toBe(2);
+  });
+
+  it("does not promote a cover sheet's index line on the strength of a heading", () => {
+    const got = legendPages([
+      page({ page: 2, title: "G001 BID DOCUMENTS", lines: ["G003 | WALL TYPES", "G004 | DETAILS", ...assembly(2)] }),
+    ]);
+    expect(got).toHaveLength(0);
+  });
+
+  it("tries an engineer's sheet last, whatever it says about studs", () => {
+    // Crosslines: M601 and P601 describe pipe insulation TYPE 1-6 and out-rank
+    // every architectural sheet on assembly words; MHK's S0.01 does the same.
+    const got = legendPages([
+      page({ page: 30, title: "M601 MECHANICAL SCHEDULES", lines: assembly(25) }),
+      page({ page: 38, title: "P601 PLUMBING SCHEDULES", lines: assembly(22) }),
+      page({ page: 25, title: "S0.01 GENERAL NOTES & SCHEDULES", lines: assembly(16) }),
+      page({ page: 42, title: "A5.05 DETAILS", lines: assembly(14) }),
+    ]);
+    expect(got.map((c) => c.page)).toEqual([42, 30, 38, 25]);
+    expect(got[1].why).toContain("M-series sheet");
+    expect(got[1].rank).toBeGreaterThan(got[0].rank);
+  });
+});
+
+describe("two untitled candidates", () => {
+  it("puts the page that says more about assemblies first, whatever its page number", () => {
+    // SLN Terminal: A-001 general notes (12 assembly lines) on page 5, A-002
+    // PARTITION TYPES (21 lines) on page 6, and a title block that carries
+    // the project name rather than the sheet name — so both are rank 1, and
+    // page order sent the one model call to the notes.
+    const assembly = (n: number) => Array.from({ length: n }, (_, i) => `3 5/8" MTL. STUD AT 16" O.C. — line ${i}`);
+    const got = legendPages([
+      { page: 5, title: "SALINA AIRPORT AUTHORITY", lines: assembly(12) },
+      { page: 6, title: "SALINA AIRPORT AUTHORITY", lines: assembly(21) },
+    ]);
+    expect(got.map((c) => c.page)).toEqual([6, 5]);
+    expect(got[0].assemblyLines).toBe(21);
   });
 });

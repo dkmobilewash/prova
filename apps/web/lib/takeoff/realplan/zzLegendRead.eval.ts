@@ -6,6 +6,7 @@ import { extractWallLegend, type WallLegendRead } from "@prova/integrations/src/
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { legendPages, type PageForLegend } from "../legendPages";
 import { readPartitionAssembly } from "../partitionAssembly";
+import { nameSheet } from "./nameSheet";
 
 /**
  * ── FIND THE LEGEND, READ IT ONCE, CACHE IT, TURN IT INTO COMPONENTS ──
@@ -62,11 +63,17 @@ describe.skipIf(DIR === "" || SET === "")("reading a set's partition legend", ()
     const pages: PageForLegend[] = [];
     for (let page = 1; page <= doc.pageCount; page += 1) {
       const lines = await linesOf(doc, page);
-      // The title is the sheet's own, which no model has read here — so the
-      // first line that looks like a title stands in for it. The content test
-      // is what carries a page whose title says nothing.
-      const title = lines.find((l) => /PARTITION|WALL\s+TYPE|ASSEMBL/i.test(l)) ?? null;
-      pages.push({ page, title, lines });
+      // The title is the sheet's own, read off the title block by glyph size
+      // the way `realSheets.eval.ts` does. An earlier version took the first
+      // LINE anywhere on the page that mentioned a wall type, which made every
+      // floor plan with a "see wall types" note a titled legend: Murray Towers
+      // offered all eight floor plans as rank-0 candidates.
+      const text = await doc.pageText(page);
+      const named = nameSheet(
+        text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, height: i.height })),
+        { widthPt: text.widthPt, heightPt: text.heightPt },
+      );
+      pages.push({ page, title: `${named.number} ${named.title}`.trim() || null, lines });
     }
 
     const candidates = legendPages(pages);
@@ -80,38 +87,51 @@ describe.skipIf(DIR === "" || SET === "")("reading a set's partition legend", ()
     );
     expect(candidates.length, "no page in the set could be a partition legend").toBeGreaterThan(0);
 
-    const best = candidates[0];
-    const lines = pages.find((p) => p.page === best.page)?.lines ?? [];
-    const key = `${SET.replace(/\W+/g, "_")}-p${best.page}-${PROMPT_VERSION}.json`;
-    const cacheAt = CACHE === "" ? null : join(CACHE, key);
-
+    // ── ONE CALL PER SET, AND A SECOND ONLY WHEN THE FIRST SAYS "NOT A LEGEND" ──
+    //
+    // A legend read that returns no types is a real answer about that PAGE —
+    // the candidate was structural notes, or a sheet of wall sections — and
+    // not about the set. So the next candidate gets the second call, and no
+    // more: two empty reads mean the set has no legend this can find.
+    let best = candidates[0];
     let read: WallLegendRead | null = null;
-    if (cacheAt !== null && existsSync(cacheAt)) {
-      read = JSON.parse(readFileSync(cacheAt, "utf8")) as WallLegendRead;
-      // eslint-disable-next-line no-console
-      console.log(`\n   cached: ${cacheAt}`);
-    } else if (LIVE) {
-      let spent = { input: 0, output: 0 };
-      read = await extractWallLegend({
-        lines,
-        pageNumber: best.page,
-        sheetTitle: pages.find((p) => p.page === best.page)?.title ?? null,
-        onUsage: (usage) => {
-          spent = { input: usage.inputTokens, output: usage.outputTokens };
-        },
-      });
-      if (cacheAt !== null) {
-        mkdirSync(CACHE, { recursive: true });
-        writeFileSync(cacheAt, JSON.stringify(read, null, 1), "utf8");
+    for (const candidate of candidates.slice(0, 2)) {
+      best = candidate;
+      const lines = pages.find((p) => p.page === best.page)?.lines ?? [];
+      const key = `${SET.replace(/\W+/g, "_")}-p${best.page}-${PROMPT_VERSION}.json`;
+      const cacheAt = CACHE === "" ? null : join(CACHE, key);
+      if (cacheAt !== null && existsSync(cacheAt)) {
+        read = JSON.parse(readFileSync(cacheAt, "utf8")) as WallLegendRead;
+        // eslint-disable-next-line no-console
+        console.log(`\n   cached: ${cacheAt}`);
+      } else if (LIVE) {
+        let spent = { input: 0, output: 0 };
+        read = await extractWallLegend({
+          lines,
+          pageNumber: best.page,
+          sheetTitle: pages.find((p) => p.page === best.page)?.title ?? null,
+          onUsage: (usage) => {
+            spent = { input: usage.inputTokens, output: usage.outputTokens };
+          },
+        });
+        if (cacheAt !== null) {
+          mkdirSync(CACHE, { recursive: true });
+          writeFileSync(cacheAt, JSON.stringify(read, null, 1), "utf8");
+        }
+        // Opus 5 is $5 per Mtok in and $25 out — printed so the cost of a set is
+        // a number somebody has seen rather than an estimate.
+        const cost = (spent.input / 1e6) * 5 + (spent.output / 1e6) * 25;
+        // eslint-disable-next-line no-console
+        console.log(
+          `\n   LIVE read of p${best.page}: ${spent.input} in, ${spent.output} out, ` +
+            `about $${cost.toFixed(3)}`,
+        );
       }
-      // Opus 5 is $5 per Mtok in and $25 out — printed so the cost of a set is
-      // a number somebody has seen rather than an estimate.
-      const cost = (spent.input / 1e6) * 5 + (spent.output / 1e6) * 25;
-      // eslint-disable-next-line no-console
-      console.log(
-        `\n   LIVE read of p${best.page}: ${spent.input} in, ${spent.output} out, ` +
-          `about $${cost.toFixed(3)}`,
-      );
+      if (read !== null && read.types.length > 0) break;
+      if (read !== null) {
+        // eslint-disable-next-line no-console
+        console.log(`   p${best.page} defines no wall types (${read.reason.slice(0, 120)}) — trying the next candidate`);
+      }
     }
 
     if (read === null) {

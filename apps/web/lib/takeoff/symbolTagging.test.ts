@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { symbolTagSentence, tagsFromSymbols } from "./symbolTagging";
+import { legendVocabulary, symbolTagSentence, tagsFromSymbols } from "./symbolTagging";
 import type { TagSymbol } from "./tagSymbols";
 import type { WallCandidate } from "./wallVectors";
 
@@ -20,7 +20,9 @@ function symbol(text: string, over: Partial<TagSymbol> = {}): TagSymbol {
     corners: 4,
     shape: "square",
     text,
+    parts: [text],
     split: false,
+    leader: null,
     rejected: null,
     ...over,
   };
@@ -74,16 +76,62 @@ describe("turning symbols into wall-type tags", () => {
     // something a reader should see. Filtering it away chooses silence over a
     // question.
     const got = tagsFromSymbols({
-      symbols: [symbol("B", { shape: "hexagon", corners: 6 })],
+      symbols: [symbol("A"), symbol("B", { x: 400, shape: "hexagon", corners: 6 })],
       legendCodes: ["A", "B"],
       shape: "square",
       walls: [],
       feetPerUnit: FEET_PER_UNIT,
       widthPt: WIDTH_PT,
     });
-    expect(got.tags).toHaveLength(0);
+    expect(got.tags.map((t) => t.name)).toEqual(["A"]);
     expect(got.oddShape).toEqual([{ code: "B", shape: "hexagon" }]);
     expect(got.counts.ambiguous).toBeGreaterThan(0);
+    expect(got.shapeFrom).toBe("legend");
+  });
+
+  it("keeps the legend's shape when the plan draws it, however many other shapes carry a code", () => {
+    // Camp Bow Wow A101: 39 pentagons lettered B and C are window marks, and
+    // the 36 diamonds are the wall tags. The legend said diamond; the count
+    // would have said pentagon.
+    // Two diamonds against five pentagons: two of seven is over the quarter.
+    const got = tagsFromSymbols({
+      symbols: [
+        symbol("A", { shape: "diamond" }),
+        symbol("A", { x: 200, shape: "diamond" }),
+        ...Array.from({ length: 5 }, (_, i) => symbol("B", { x: 300 + i * 100, shape: "pentagon", corners: 5 })),
+      ],
+      legendCodes: ["A", "B"],
+      shape: "diamond",
+      walls: [],
+      feetPerUnit: FEET_PER_UNIT,
+      widthPt: WIDTH_PT,
+    });
+    expect(got.shape).toBe("diamond");
+    expect(got.shapeFrom).toBe("legend");
+    expect(got.tags.map((t) => t.name)).toEqual(["A", "A"]);
+    expect(got.oddShape).toHaveLength(5);
+  });
+
+  it("takes the plan's own shape when the legend's holds under a quarter of the coded symbols", () => {
+    // SW Grand Junction legends A1–B3 in circles and tags every wall in a
+    // square with a leader: 30 squares and 3 circles hold its codes on A110.
+    // Required to be circles, 30 of 33 tags were "odd".
+    const got = tagsFromSymbols({
+      symbols: [
+        symbol("A1", { shape: "circle", corners: 12 }),
+        ...Array.from({ length: 5 }, (_, i) => symbol(i % 2 === 0 ? "A1" : "B2", { x: 300 + i * 100 })),
+        symbol("A1", { x: 900, shape: "hexagon", corners: 6 }),
+      ],
+      legendCodes: ["A1", "A2", "B1", "B2"],
+      shape: "circle",
+      walls: [],
+      feetPerUnit: FEET_PER_UNIT,
+      widthPt: WIDTH_PT,
+    });
+    expect(got.shape).toBe("square");
+    expect(got.shapeFrom).toBe("plan");
+    expect(got.tags).toHaveLength(5);
+    expect(got.oddShape.map((o) => o.shape).sort()).toEqual(["circle", "hexagon"]);
   });
 
   it("uses no shape at all when the legend taught none", () => {
@@ -103,7 +151,7 @@ describe("turning symbols into wall-type tags", () => {
 
   it("ignores a symbol the detector already rejected", () => {
     const got = tagsFromSymbols({
-      symbols: [symbol("A", { rejected: "split" }), symbol("A", { x: 400, rejected: "sheet-reference" })],
+      symbols: [symbol("A", { rejected: "code-too-long" }), symbol("A501", { x: 400, rejected: "sheet-reference" })],
       legendCodes: ["A"],
       shape: "square",
       walls: [],
@@ -112,6 +160,47 @@ describe("turning symbols into wall-type tags", () => {
     });
     expect(got.tags).toHaveLength(0);
     expect(got.counts.couldBeTags).toBe(0);
+  });
+
+  it("reads a code the legend defines even when it is spelled like a sheet reference", () => {
+    // Central Bank's A090 defines G4.1 — a letter, a digit and a dotted number,
+    // which is exactly what `tagSymbols` takes for a detail callout. Two of its
+    // four legend-coded symbols on A100 were rejected on that spelling.
+    const got = tagsFromSymbols({
+      symbols: [symbol("G4.1", { rejected: "sheet-reference" }), symbol("A5.1", { x: 400, rejected: "sheet-reference" })],
+      legendCodes: ["G4", "G4.1", "G6"],
+      shape: "square",
+      walls: [],
+      feetPerUnit: FEET_PER_UNIT,
+      widthPt: WIDTH_PT,
+    });
+    expect(got.tags.map((t) => t.name)).toEqual(["G4.1"]);
+    expect(got.counts.couldBeTags).toBe(1);
+  });
+
+  it("matches a bare `1` to a legend type named `WALL TYPE 1`, and names the tag as the legend does", () => {
+    // Murray Towers: the legend's detail is headed WALL TYPE 1 and the plan
+    // draws a `1` in a diamond beside each wall. 0 of 631 symbols matched.
+    const got = tagsFromSymbols({
+      symbols: [symbol("1", { shape: "diamond" }), symbol("2", { x: 400, shape: "diamond" })],
+      legendCodes: ["WALL TYPE 1", "WALL TYPE 2"],
+      shape: null,
+      walls: [],
+      feetPerUnit: FEET_PER_UNIT,
+      widthPt: WIDTH_PT,
+    });
+    expect(got.tags.map((t) => t.name)).toEqual(["WALL TYPE 1", "WALL TYPE 2"]);
+    expect(legendVocabulary(["WALL TYPE 1", "TYPE A", "PARTITION TYPE P2", "B"])).toEqual(
+      new Map([
+        ["WALL TYPE 1", "WALL TYPE 1"],
+        ["1", "WALL TYPE 1"],
+        ["TYPE A", "TYPE A"],
+        ["A", "TYPE A"],
+        ["PARTITION TYPE P2", "PARTITION TYPE P2"],
+        ["P2", "PARTITION TYPE P2"],
+        ["B", "B"],
+      ]),
+    );
   });
 
   it("matches a code case-insensitively", () => {
@@ -167,5 +256,51 @@ describe("turning symbols into wall-type tags", () => {
     expect(symbolTagSentence(got)).toBe(
       "2 symbols, 2 could be tags, 1 name a type the legend defines, 1 were matched to a run.",
     );
+  });
+});
+
+describe("split codes and leaders", () => {
+  it("names the tag by whichever half the legend knows", () => {
+    // ELEVEN03: `MC` over `1 HR` in one box. The legend defines MC.
+    const got = tagsFromSymbols({
+      symbols: [symbol("MC 1 HR", { parts: ["MC", "1 HR"], split: true })],
+      legendCodes: ["MA", "MC", "WS"],
+      shape: null,
+      walls: [runAt(100, 100 + 2.5 * (WIDTH_PT / FEET_PER_UNIT))],
+      feetPerUnit: FEET_PER_UNIT,
+      widthPt: WIDTH_PT,
+    });
+    expect(got.tags.map((t) => t.name)).toEqual(["MC"]);
+    expect(got.counts.matchedToRun).toBe(1);
+  });
+
+  it("anchors a tag at its leader's end, which picks the wall the drafter pointed at", () => {
+    // Two parallel runs, 2.5 ft and 3.5 ft from the symbol's centre — a coin
+    // flip by distance, which the clear-margin rule refuses. The leader lands
+    // on the farther one.
+    const ftPt = WIDTH_PT / FEET_PER_UNIT;
+    const nearRun = runAt(100, 100 - 2.5 * ftPt);
+    const farRun = runAt(100, 100 + 3.5 * ftPt);
+    const without = tagsFromSymbols({
+      symbols: [symbol("A")],
+      legendCodes: ["A"],
+      shape: null,
+      walls: [nearRun, farRun],
+      feetPerUnit: FEET_PER_UNIT,
+      widthPt: WIDTH_PT,
+    });
+    expect(without.counts.matchedToRun).toBe(0);
+    const withLeader = tagsFromSymbols({
+      symbols: [symbol("A", { leader: { x: 100, y: 100 + 3.5 * ftPt } })],
+      legendCodes: ["A"],
+      shape: null,
+      walls: [nearRun, farRun],
+      feetPerUnit: FEET_PER_UNIT,
+      widthPt: WIDTH_PT,
+    });
+    expect(withLeader.counts.matchedToRun).toBe(1);
+    expect(withLeader.byRun.get(farRun)).toBe("A");
+    expect(withLeader.counts.matchedByLeader).toBe(1);
+    expect(symbolTagSentence(withLeader)).toContain("1 by their leader");
   });
 });

@@ -74,8 +74,8 @@ describe.skipIf(DIR === "" || CACHE === "")("one wall type, end to end", () => {
       text: await itemsOf(LEGEND_PAGE),
       unitsPerPaperInch: 72,
     });
-    const shape = shapeFromLegend(legendSymbols);
     const codes = legend.types.map((t) => t.code);
+    const shape = shapeFromLegend(legendSymbols, { codes });
     // eslint-disable-next-line no-console
     console.log(
       `\n1. legend p${LEGEND_PAGE}: ${legend.types.length} types — ${codes.join(", ")}\n` +
@@ -134,7 +134,21 @@ describe.skipIf(DIR === "" || CACHE === "")("one wall type, end to end", () => {
     }
 
     // ── 4. ONE TYPE, PRICED ──
-    const priced = coverage.byType.find((b) => b.source === "tag" && b.code !== null);
+    //
+    // The first tagged type whose legend words yield a framing component. A
+    // set's biggest tagged type can be masonry (ELEVEN03's WS is 8in block,
+    // 430 ft) and that is not a failure of anything — but it is not the type
+    // that shows the chain either, so the next framed one is taken.
+    const ASSEMBLY = /\b(STUDS?|GYP|GWB|BOARD|BATT|INSULATION|TRACK|O\.?\s*C\.?)\b/i;
+    const taggedBuckets = coverage.byType.filter((b) => b.source === "tag" && b.code !== null);
+    const framed = taggedBuckets.find((b) => {
+      const t = legend.types.find((one) => one.code.toUpperCase() === b.code);
+      return (
+        t !== undefined &&
+        readPartitionAssembly({ lines: t.lines, where: "pick" }).components.length > 0
+      );
+    });
+    const priced = framed ?? taggedBuckets[0];
     if (priced === undefined || priced.code === null) {
       // eslint-disable-next-line no-console
       console.log(
@@ -152,6 +166,24 @@ describe.skipIf(DIR === "" || CACHE === "")("one wall type, end to end", () => {
       lines: type.lines,
       where: `${SET.slice(0, 20)} p${LEGEND_PAGE}, type ${type.code}`,
     });
+    // ── A LEGEND BY UL NUMBER STOPS HERE, AND SAYS SO ──
+    //
+    // ELEVEN03's legend is TAG / UL# / RATING and describes no assembly in
+    // words, so there is nothing to propose a component from and nothing
+    // should be. The chain has still done its work — tag, run, coverage — and
+    // the report says where it stopped rather than failing on a legend that
+    // was read correctly.
+    if (assembly.components.length === 0 && !type.lines.some((l) => ASSEMBLY.test(l))) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `\n4. type ${type.code} — ${priced.runs} runs, ${priced.feet.toFixed(0)} ft. The legend's words are\n` +
+          type.lines.map((l) => `     "${l.slice(0, 68)}"`).join("\n") +
+          `\n   NO FRAMING ASSEMBLY IN WORDS: the type is masonry, or specified by UL design ` +
+          `number only, so no component can be proposed from the drawing. The chain stops at coverage.`,
+      );
+      expect(found.walls.length).toBeGreaterThan(0);
+      return;
+    }
     const wallType = {
       id: "proposed",
       code: type.code,

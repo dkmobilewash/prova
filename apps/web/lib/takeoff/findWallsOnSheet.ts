@@ -14,6 +14,7 @@ import { wallsFromBothEngines } from "./wallRuns";
 import { templateFromSheets, withoutTemplate } from "./sheetTemplate";
 import { wallTypeTags, tagByRun } from "./wallTags";
 import { defaultWallTypeFromNotes } from "./wallNotes";
+import { planTextTagByRun, type PlanTextInput } from "./planTextTags";
 import { scaleBarLabels, wallsNotTheScaleBar } from "./scaleBar";
 import { wallsNotDuplicateCoverage } from "./duplicateCoverage";
 import { curvedWalls } from "./curvedWalls";
@@ -133,6 +134,12 @@ export type FindWallsInput = {
    * sheets a position appears on.
    */
   sampledSheets: readonly (readonly StrokeSegment[])[] | null;
+  /**
+   * The set's legend vocabulary, handed in only when `PLAN_TEXT_READ` is on.
+   * Absent, the regroup block below is exactly what it was; see
+   * `planTextTags.ts` for what it does when present.
+   */
+  planText?: PlanTextInput;
 };
 
 /**
@@ -491,13 +498,39 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   const fromNote = defaultWallTypeFromNotes(textItems, wallTypes);
 
   // ONE DEFINITION OF THE PANEL, used now and again after labelling.
+  //
+  // ── WITH THE SET'S OWN VOCABULARY, WHEN THE SWITCH IS ON ──
+  //
+  // `planText` arrives only from `detectWallsForCalibration` with
+  // `PLAN_TEXT_READ=1`. Then the map comes from the drawing's symbols and
+  // bare codes filtered by the legend, carried along each wall; the text tags
+  // above are still offered. Without it, the line below is the one that has
+  // always run — `zzSwitchOff.eval.ts` holds the two outputs equal on the
+  // training sheets.
+  const planText = input.planText;
   const regroup = (runs: WallCandidate[]) =>
-    wallGroups(
-      clusterByThickness(runs),
-      tagByRun(runs, tags, feetPerUnit, wallTypes),
-      wallTypes,
-      fromNote,
-    );
+    planText === undefined
+      ? wallGroups(
+          clusterByThickness(runs),
+          tagByRun(runs, tags, feetPerUnit, wallTypes),
+          wallTypes,
+          fromNote,
+        )
+      : wallGroups(
+          clusterByThickness(runs),
+          planTextTagByRun({
+            segments: input.segments,
+            text: input.textItems,
+            widthPt: pageSize.widthPt,
+            walls: runs,
+            feetPerUnit,
+            legendCodes: planText.legendCodes,
+            textTags: tags,
+            wallTypes,
+          }).byRun,
+          wallTypes,
+          fromNote,
+        );
 
   return {
     inUnits,

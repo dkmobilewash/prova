@@ -269,3 +269,126 @@ describe("the empty cases say nothing confident", () => {
     expect(got.matched).toBe(0);
   });
 });
+
+describe("a scheduled mark with no detected gap", () => {
+  const ftPt = 1 / 288;
+  const run = { x1: 0.1, y1: 0.5, x2: 0.3, y2: 0.5 };
+  const rows = [{ mark: "114", widthFt: 3, heightFt: 7, description: null }];
+
+  it("is placed on the nearest run at the mark, with the schedule's width, and says so", () => {
+    const got = joinOpeningsToSchedule({
+      openings: [],
+      marks: [{ text: "114", x: 0.2, y: 0.5 + 2 * ftPt }],
+      rows,
+      feetPerUnit: 288,
+      walls: [run],
+    });
+    expect(got.placedByMark).toBe(1);
+    expect(got.rowsPlaced).toBe(1);
+    const door = got.openings[0];
+    expect(door.placedBy).toBe("mark");
+    expect(door.widthFrom).toBe("schedule");
+    expect(door.widthFt).toBe(3);
+    expect(door.opening.widthFeet).toBe(3);
+    // Centred where the mark projects onto the run, three feet along it.
+    expect((door.opening.x1 + door.opening.x2) / 2).toBeCloseTo(0.2, 6);
+    expect(door.opening.y1).toBeCloseTo(0.5, 6);
+    expect(Math.hypot(door.opening.x2 - door.opening.x1, door.opening.y2 - door.opening.y1) * 288).toBeCloseTo(3, 6);
+    // The rate over drawn openings is untouched: nothing was drawn.
+    expect(got.matchRate).toBe(0);
+  });
+
+  it("is not placed when the mark is out of reach of every run, or when no runs were given", () => {
+    const far = joinOpeningsToSchedule({
+      openings: [],
+      marks: [{ text: "114", x: 0.2, y: 0.5 + 20 * ftPt }],
+      rows,
+      feetPerUnit: 288,
+      walls: [run],
+    });
+    expect(far.placedByMark).toBe(0);
+    expect(far.openings).toHaveLength(0);
+    const none = joinOpeningsToSchedule({
+      openings: [],
+      marks: [{ text: "114", x: 0.2, y: 0.5 + 2 * ftPt }],
+      rows,
+      feetPerUnit: 288,
+    });
+    expect(none.placedByMark).toBe(0);
+  });
+
+  it("prefers a detected gap: a mark that claimed an opening is not placed twice", () => {
+    const got = joinOpeningsToSchedule({
+      openings: [{ x1: 0.19, y1: 0.5, x2: 0.21, y2: 0.5, widthFeet: 2.6 }],
+      marks: [{ text: "114", x: 0.2, y: 0.5 + 2 * ftPt }],
+      rows,
+      feetPerUnit: 288,
+      walls: [run],
+    });
+    expect(got.openings).toHaveLength(1);
+    expect(got.openings[0].placedBy).toBe("opening");
+    expect(got.placedByMark).toBe(0);
+  });
+
+  it("places the printing nearest a wall and never the room's copy, and never twice", () => {
+    // `109` at the door, 1 ft off the run, and `109` under the room name,
+    // 2 ft off another run. One door, at the first.
+    const other = { x1: 0.1, y1: 0.7, x2: 0.3, y2: 0.7 };
+    const got = joinOpeningsToSchedule({
+      openings: [],
+      marks: [
+        { text: "109", x: 0.25, y: 0.7 - 2 * ftPt },
+        { text: "109", x: 0.15, y: 0.5 + 1 * ftPt },
+      ],
+      rows: [{ mark: "109", widthFt: 3, heightFt: 7, description: null }],
+      feetPerUnit: 288,
+      walls: [run, other],
+    });
+    expect(got.placedByMark).toBe(1);
+    expect(got.openings).toHaveLength(1);
+    expect(got.openings[0].opening.y1).toBeCloseTo(0.5, 6);
+  });
+
+  it("does not place a mark that sits in open floor, farther than a jamb from any run", () => {
+    const got = joinOpeningsToSchedule({
+      openings: [],
+      marks: [{ text: "114", x: 0.2, y: 0.5 + 4 * ftPt }],
+      rows,
+      feetPerUnit: 288,
+      walls: [run],
+    });
+    expect(got.placedByMark).toBe(0);
+  });
+
+  it("cannot place a row whose width the schedule did not give", () => {
+    const got = joinOpeningsToSchedule({
+      openings: [],
+      marks: [{ text: "114", x: 0.2, y: 0.5 + 2 * ftPt }],
+      rows: [{ mark: "114", widthFt: null, heightFt: null, description: null }],
+      feetPerUnit: 288,
+      walls: [run],
+    });
+    expect(got.placedByMark).toBe(0);
+  });
+});
+
+describe("a mark the gap join already used", () => {
+  it("is spent: its second printing near a wall is not placed as another door", () => {
+    const ftPt = 1 / 288;
+    const run = { x1: 0.1, y1: 0.5, x2: 0.3, y2: 0.5 };
+    const other = { x1: 0.1, y1: 0.8, x2: 0.3, y2: 0.8 };
+    const got = joinOpeningsToSchedule({
+      openings: [{ x1: 0.19, y1: 0.5, x2: 0.21, y2: 0.5, widthFeet: 2.6 }],
+      marks: [
+        { text: "102", x: 0.2, y: 0.5 + 2 * ftPt },
+        { text: "102", x: 0.2, y: 0.8 + 1 * ftPt },
+      ],
+      rows: [{ mark: "102", widthFt: 3, heightFt: 7, description: null }],
+      feetPerUnit: 288,
+      walls: [run, other],
+    });
+    expect(got.openings).toHaveLength(1);
+    expect(got.placedByMark).toBe(0);
+    expect(got.rowsPlaced).toBe(1);
+  });
+});

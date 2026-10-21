@@ -40,6 +40,23 @@
  * wins. That is the same shape `wallTags.ts` uses to attach a wall-type tag to
  * its run, and for the same reason.
  *
+ * ── A MARK WITH NO GAP UNDER IT IS STILL A DOOR ──
+ *
+ * Measured on Camp Bow Wow A101 against its schedule on p26 (2026-10-20):
+ * every one of the 30 scheduled marks is printed on the plan inside a pill,
+ * and for 17 of them the nearest opening `openingsInWalls` found is 8 to 37
+ * feet away — the gap detector did not see those doorways at all. The join
+ * can only match what the detector hands it, so 13 of 30 was its ceiling
+ * however the marks were read.
+ *
+ * The schedule says the door exists and the mark says where, and both are
+ * better evidence than the absence of a detected gap. So where a scheduled
+ * mark sits within reach of a RUN but of no opening, the door is placed on
+ * that run at the mark, with the schedule's width — and reported as placed by
+ * its mark rather than by a gap, so a reviewer can see which deductions rest
+ * on the drawing's geometry and which on its lettering. Nothing is invented:
+ * the mark is printed, the row is printed, and the run was found.
+ *
  * ── NO MATCH IS NOT AN ERROR ──
  *
  * The drawn gap is a real measurement and stays the answer when no schedule
@@ -52,6 +69,19 @@
 
 /** How far from an opening a mark may sit and still be that opening's, in feet. */
 export const MARK_REACH_FEET = 6;
+
+/**
+ * How far from a RUN a mark may sit and still place a door there when no gap
+ * was detected, in feet.
+ *
+ * Tighter than `MARK_REACH_FEET` on purpose. A door mark is drawn against the
+ * door it names; a ROOM number is drawn in the room, in the same series, and
+ * on Camp Bow Wow A101 both are axis-aligned boxes. With six feet of reach
+ * the first version of this placed room numbers as doors — `109` twice, once
+ * at its door and once at its room. Two and a half feet is a mark beside a
+ * jamb and is not the middle of any room with a door in it.
+ */
+export const MARK_ON_WALL_FEET = 2.5;
 
 /**
  * How much wider the drawn gap may be than the scheduled door before it is
@@ -105,6 +135,11 @@ export type JoinedOpening = {
    * question about the drawing.
    */
   mismatch: { drawnFeet: number; scheduledFeet: number; why: string } | null;
+  /**
+   * How this door was located: by a detected gap in the line work, or by its
+   * mark alone, placed on the nearest run because no gap was detected there.
+   */
+  placedBy: "opening" | "mark";
 };
 
 export type OpeningJoin = {
@@ -117,6 +152,8 @@ export type OpeningJoin = {
   mismatches: number;
   /** Matched openings as a share of drawn ones, 0..1. */
   matchRate: number;
+  /** Scheduled doors placed on a run by their mark, with no detected gap. */
+  placedByMark: number;
 };
 
 /** The midpoint of an opening, in page-width units. */
@@ -135,8 +172,14 @@ export function joinOpeningsToSchedule(input: {
   marks: readonly PlacedMark[];
   rows: readonly ScheduledOpening[];
   feetPerUnit: number;
+  /**
+   * The sheet's wall runs, in the same page-width units. With them, a
+   * scheduled mark that no detected gap claims is placed on the nearest run
+   * within reach; without them the join is exactly what it was.
+   */
+  walls?: readonly { x1: number; y1: number; x2: number; y2: number }[];
 }): OpeningJoin {
-  const { openings, marks, rows, feetPerUnit } = input;
+  const { openings, marks, rows, feetPerUnit, walls = [] } = input;
   const byMark = new Map<string, ScheduledOpening>();
   for (const row of rows) {
     const key = row.mark.trim().toUpperCase();
@@ -171,6 +214,7 @@ export function joinOpeningsToSchedule(input: {
         widthFt: opening.widthFeet,
         widthFrom: "drawn",
         mismatch: null,
+        placedBy: "opening",
       });
       continue;
     }
@@ -191,6 +235,7 @@ export function joinOpeningsToSchedule(input: {
         widthFt: opening.widthFeet,
         widthFrom: "drawn",
         mismatch: null,
+        placedBy: "opening",
       });
       continue;
     }
@@ -215,7 +260,79 @@ export function joinOpeningsToSchedule(input: {
                   : `the gap drawn is ${drawn.toFixed(1)} ft against a ${scheduled.toFixed(1)} ft door — the drawn gap runs a fifth narrow on this set, but not by this much, so check the size cell was read from the right row`,
             }
           : null,
+      placedBy: "opening",
     });
+  }
+
+  // ── THE DOORS THE GAP DETECTOR MISSED, PLACED BY THEIR MARKS ──
+  //
+  // A mark the schedule knows, that no opening claimed, within reach of a run.
+  // The nearest run takes it, at the point on the run nearest the mark, and
+  // the schedule's width is the opening. A row with no readable width cannot
+  // be placed this way — there is no gap to fall back on — and is left for
+  // the rows-not-placed count.
+  let placedByMark = 0;
+  const onWall = feetPerUnit > 0 ? MARK_ON_WALL_FEET / feetPerUnit : 0;
+  if (walls.length > 0 && onWall > 0) {
+    // ── ONE DOOR PER MARK, AND THE INSTANCE NEAREST A WALL IS THE DOOR ──
+    //
+    // `102` is printed twice: in the pill at the door and in the box under
+    // the room name. A mark the gap join already used, or already placed
+    // here, is spent. Among the rest, the printing nearest a run is the door
+    // mark — the room's copy sits in open floor.
+    const byKey = new Map<string, { row: ScheduledOpening & { widthFt: number }; instances: PlacedMark[] }>();
+    for (const mark of marks) {
+      if (usedMark.has(mark)) continue;
+      const key = mark.text.trim().toUpperCase();
+      if (placed.has(key)) continue;
+      const row = byMark.get(key);
+      // A row with no readable width cannot be placed this way — there is no
+      // gap to fall back on — and stays in the rows-not-placed count.
+      if (row === undefined || row.widthFt === null || !(row.widthFt > 0)) continue;
+      const entry = byKey.get(key) ?? { row: { ...row, widthFt: row.widthFt }, instances: [] };
+      entry.instances.push(mark);
+      byKey.set(key, entry);
+    }
+    for (const [key, { row, instances }] of byKey) {
+      let best: { mark: PlacedMark; wall: (typeof walls)[number]; t: number; distance: number } | null = null;
+      for (const mark of instances) {
+        for (const wall of walls) {
+          const dx = wall.x2 - wall.x1;
+          const dy = wall.y2 - wall.y1;
+          const len2 = dx * dx + dy * dy;
+          if (len2 === 0) continue;
+          const t = Math.max(0, Math.min(1, ((mark.x - wall.x1) * dx + (mark.y - wall.y1) * dy) / len2));
+          const distance = Math.hypot(mark.x - (wall.x1 + t * dx), mark.y - (wall.y1 + t * dy));
+          if (distance <= onWall && (best === null || distance < best.distance)) best = { mark, wall, t, distance };
+        }
+      }
+      if (best === null) continue;
+      usedMark.add(best.mark);
+      placed.add(key);
+      placedByMark += 1;
+      const { mark, wall, t } = best;
+      const dx = wall.x2 - wall.x1;
+      const dy = wall.y2 - wall.y1;
+      const len = Math.hypot(dx, dy);
+      const half = row.widthFt / feetPerUnit / 2;
+      const cx = wall.x1 + t * dx;
+      const cy = wall.y1 + t * dy;
+      joined.push({
+        opening: {
+          x1: cx - (dx / len) * half,
+          y1: cy - (dy / len) * half,
+          x2: cx + (dx / len) * half,
+          y2: cy + (dy / len) * half,
+          widthFeet: row.widthFt,
+        },
+        matched: row,
+        mark: mark.text,
+        widthFt: row.widthFt,
+        widthFrom: "schedule",
+        mismatch: null,
+        placedBy: "mark",
+      });
+    }
   }
 
   const matched = joined.filter((one) => one.matched !== null).length;
@@ -225,7 +342,11 @@ export function joinOpeningsToSchedule(input: {
     rowsPlaced: placed.size,
     rowsTotal: byMark.size,
     mismatches: joined.filter((one) => one.mismatch !== null).length,
-    matchRate: openings.length > 0 ? matched / openings.length : 0,
+    // Over the DRAWN openings, as before: a door placed by its mark is not a
+    // drawn opening that was matched, so it moves `rowsPlaced` and
+    // `placedByMark` and leaves this rate honest about the gap detector.
+    matchRate: openings.length > 0 ? joined.filter((one) => one.matched !== null && one.placedBy === "opening").length / openings.length : 0,
+    placedByMark,
   };
 }
 

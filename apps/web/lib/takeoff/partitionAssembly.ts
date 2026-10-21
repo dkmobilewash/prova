@@ -105,25 +105,132 @@ export function inchesFrom(text: string): number | null {
   return plain === null ? null : Number(plain[1]);
 }
 
+/**
+ * A `LABEL | VALUE` row of a partition SCHEDULE drawn as a table — Central
+ * Bank's: `STUD SIZE | 3 5/8"`, `STUD SPACING (O.C.) | 16"`, `GWB THICKNESS |
+ * 5/8"`, `INSULATION THICKNESS | -`. The legend reader hands a table's cells
+ * through joined with ` | `, so the label and its value arrive on one line.
+ */
+function labelled(line: string, label: RegExp): string | null {
+  const hit = line.match(new RegExp(`^\\s*(?:${label.source})[^|]*\\|\\s*([^|]*)$`, "i"));
+  return hit === null ? null : hit[1].trim();
+}
+
+/** A value cell that says there is none: `-`, `—`, `N/A`, `NONE`. */
+const NO_VALUE = /^(?:-+|—|–|N\/?A|NONE|NA)$/i;
+
+/**
+ * The nominal lumber a `2X` stud is, in inches of actual width. A `2X` with
+ * no number — E Street's `2X WOOD STUD FRAMING` — states no width, and the
+ * component is flagged rather than guessed.
+ */
+const LUMBER_WIDTH: Record<string, number> = { "4": 3.5, "6": 5.5, "8": 7.25, "10": 9.25 };
+
+/**
+ * The narrowest stud anybody frames a partition with, in inches. ELEVEN03's
+ * `1-5/8X C-SHAPE` is the floor; anything under it that lands in front of the
+ * word STUD is a board thickness that drifted there — see below.
+ */
+const NARROWEST_STUD_IN = 1.5;
+/** The narrowest stud spacing a drawing can mean; 12, 16 and 24 are the modules. */
+export const NARROWEST_STUD_SPACING_IN = 12;
+
 /** Every distinct stud width the text states, in inches. */
 function studWidths(lines: readonly string[]): { value: number; phrase: string }[] {
   const out: { value: number; phrase: string }[] = [];
+  const free: string[] = [];
   for (const line of lines) {
-    // `3 5/8" MTL. STUD AT 16" O.C.`, `6" METAL STUDS @ 16" O.C.`
-    const re = /((?:\d+\s*[-\s]\s*)?\d+(?:\s*\/\s*\d+)?)\s*"?\s*(?:MTL\.?|METAL|STL\.?|STEEL|WD\.?|WOOD)?\s*STUDS?\b/gi;
-    for (const hit of line.matchAll(re)) {
+    const cell = labelled(line, /STUD\s+SIZE|STUD\s+WIDTH/);
+    if (cell !== null) {
+      const value = NO_VALUE.test(cell) ? null : inchesFrom(cell);
+      if (value !== null && value > 0 && value <= 24) out.push({ value, phrase: line.trim() });
+      continue;
+    }
+    // Lumber first: `2X4 WOOD STUDS`, `2 X 6 STUDS`. A line that names its
+    // studs as lumber is read as lumber only, or the `4` of `2X4` would also
+    // read as a four-inch metal stud and the two would flag each other.
+    let lumber = false;
+    for (const hit of line.matchAll(/\b2\s*[xX]\s*(4|6|8|10)\b[^.|]{0,24}?\bSTUDS?\b/g)) {
+      out.push({ value: LUMBER_WIDTH[hit[1]], phrase: hit[0].trim() });
+      lumber = true;
+    }
+    if (lumber) continue;
+    free.push(line);
+  }
+  // ── A LEGEND WRAPPED INTO A COLUMN SPLITS THE PHRASE ACROSS LINES ──
+  //
+  // NG Green Bay prints its partition types in a narrow column beside the
+  // plan: `3 5/8" 20 GA. MTL.` on one line and `STUD` on the next, so no line
+  // holds both the size and the word. Read as lines, that type has no studs
+  // at all; read as one string it says what the drafter wrote.
+  //
+  // A table's rows are NOT joined. Central Bank's `WALL THICKNESS | 4 7/8"`
+  // runs straight into `STUD SPACING (O.C.) | 16"` when they are, and reads as
+  // a 4-7/8in stud beside the 3-5/8in one the STUD SIZE row states. A row
+  // with cells is read as its own line, as prose on a row is still prose.
+  //
+  // `3 5/8" MTL. STUD AT 16" O.C.`, `6" METAL STUDS @ 16" O.C.`, and the
+  // longer spellings real sets use: Baker's `6", 18 MIL (25GA.), STEEL STUDS
+  // 24" O.C.`, Murray's `3 5/8" 20 GAUGE METAL STUDS` and ELEVEN03's `1-5/8X
+  // C-SHAPE METAL STUDS`.
+  const re =
+    /((?:\d+\s*[-\s]\s*)?\d+(?:\s*\/\s*\d+)?)\s*"?\s*(?:X\s*)?(?:,\s*)?(?:\d+\s*MIL\.?\s*)?(?:\(?\s*\d+\s*(?:GA\.?|GAUGE)\s*\)?\s*,?\s*)?(?:C-?SHAPED?\s*)?(?:MTL\.?|METAL|STL\.?|STEEL|WD\.?|WOOD)?\s*STUDS?\b/gi;
+  const texts = [free.filter((l) => !l.includes("|")).join(" "), ...free.filter((l) => l.includes("|"))];
+  for (const text of texts) {
+    for (const hit of text.matchAll(re)) {
+      // `2X WOOD STUD` is lumber with its size left off, not a two-inch stud;
+      // `unsizedLumber` flags it.
+      if (/^2\s*X\b/i.test(hit[0])) continue;
       const value = inchesFrom(hit[1]);
-      if (value === null || value <= 0 || value > 24) continue;
+      // Joining lines is what lets `5/8" GYP. BD.` end one line and `STUDS AT
+      // 16" O.C.` start the next; a 5/8in "stud" is that board, not a stud.
+      if (value === null || value < NARROWEST_STUD_IN || value > 24) continue;
       out.push({ value, phrase: hit[0].trim() });
     }
   }
   return out;
 }
 
+/**
+ * The spacing stated in the same breath as the studs — `STUDS AT 16" O.C.` —
+ * which is the one that applies to them.
+ *
+ * Murray Towers' legend also says `BOTTOM TRACK FASTENED AT 24" O.C.` and Camp
+ * Bow Wow's names a 48in bracing spacing; counting every O.C. on the type
+ * flagged both as ambiguous when the drawing was not. Read over the type's
+ * free text as one string, because a column-wrapped legend puts `STUD FRAMING
+ * @` and `16" O.C.` on two lines.
+ */
+function spacingOnStudLine(lines: readonly string[]): { value: number; phrase: string } | null {
+  const text = lines.filter((l) => !l.includes("|")).join(" ");
+  const hit = text.match(
+    /\bSTUDS?\b[^.|]{0,40}?(\d+(?:\s*\/\s*\d+)?)\s*"?\s*(?:O\.?\s*C\.?|ON\s+CENTER)/i,
+  );
+  if (hit === null) return null;
+  const value = inchesFrom(hit[1]);
+  if (value === null || value <= 0 || value > 48) return null;
+  return { value, phrase: hit[0].trim() };
+}
+
+/** A `2X` stud with no nominal size — a wood wall whose width is not stated. */
+function unsizedLumber(lines: readonly string[]): string | null {
+  for (const line of lines) {
+    const hit = line.match(/\b2\s*[xX]\b(?!\s*\d)[^.|]{0,20}?\bSTUDS?\b/);
+    if (hit !== null) return hit[0].trim();
+  }
+  return null;
+}
+
 /** The on-centre spacing, where the text gives one. */
 function spacings(lines: readonly string[]): { value: number; phrase: string }[] {
   const out: { value: number; phrase: string }[] = [];
   for (const line of lines) {
+    const cell = labelled(line, /STUD\s+SPACING/);
+    if (cell !== null) {
+      const value = NO_VALUE.test(cell) ? null : inchesFrom(cell);
+      if (value !== null && value > 0 && value <= 48) out.push({ value, phrase: line.trim() });
+      continue;
+    }
     const re = /(\d+(?:\s*\/\s*\d+)?)\s*"?\s*(?:O\.?\s*C\.?|ON\s+CENTER)/gi;
     for (const hit of line.matchAll(re)) {
       const value = inchesFrom(hit[1]);
@@ -138,6 +245,12 @@ function spacings(lines: readonly string[]): { value: number; phrase: string }[]
 function boards(lines: readonly string[]): { value: number; phrase: string }[] {
   const out: { value: number; phrase: string }[] = [];
   for (const line of lines) {
+    const cell = labelled(line, /(?:GWB|GYP\.?(?:SUM)?(?:\s+(?:WALL\s*)?(?:BOARD|BD\.?))?)\s+THICKNESS/);
+    if (cell !== null) {
+      const value = NO_VALUE.test(cell) ? null : inchesFrom(cell);
+      if (value !== null && value >= 0.25 && value <= 1.25) out.push({ value, phrase: line.trim() });
+      continue;
+    }
     const re =
       /(\d+(?:\s*\/\s*\d+)?)\s*"?\s*(?:THICK\s*)?(?:PAINTED\s*)?(?:TYPE\s*['"]?X['"]?\s*)?(?:GYP\.?(?:SUM)?|GWB|G\.?W\.?B\.?|DRYWALL|WALL\s*BOARD|BOARD|BD\.?|CEMENTITIOUS\s+BACKER)/gi;
     for (const hit of line.matchAll(re)) {
@@ -187,7 +300,19 @@ export function readPartitionAssembly(input: {
   lines: readonly string[];
   where: string;
 }): PartitionAssembly {
-  const lines = input.lines.map((l) => l.replace(/\s+/g, " ").trim()).filter((l) => l !== "");
+  // ── A TABLE ROW WHOSE VALUE IS "-" SAYS THE THING IS ABSENT ──
+  //
+  // Central Bank's schedule prints `INSULATION THICKNESS | -` on every type
+  // that has no insulation, and the word INSULATION in that row proposed
+  // batts for all ten of them. A labelled row with no value is dropped
+  // before anything reads words out of it.
+  const lines = input.lines
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter((l) => l !== "")
+    .filter((l) => {
+      const hit = l.match(/^[^|]+\|\s*([^|]*)$/);
+      return hit === null || !NO_VALUE.test(hit[1].trim());
+    });
   const where = input.where;
   const components: ProposedComponent[] = [];
   const flags: AssemblyFlag[] = [];
@@ -206,12 +331,25 @@ export function readPartitionAssembly(input: {
     });
   } else if (studValues.length === 1) {
     studWidthIn = studValues[0];
+  } else {
+    const lumber = unsizedLumber(lines);
+    if (lumber !== null) {
+      flags.push({
+        why: "wood studs with no nominal size stated — the width has to come from the wall thickness or a section",
+        phrase: lumber,
+      });
+    }
   }
 
   const spacingFound = spacings(lines);
   const spacingValues = distinct(spacingFound);
+  const onStudLine = spacingOnStudLine(lines);
   let studSpacingIn: number | null = null;
-  if (spacingValues.length > 1) {
+  if (onStudLine !== null) {
+    // The drawing said which spacing is the studs'; the others (track
+    // fasteners, bracing) are not a question about the studs.
+    studSpacingIn = onStudLine.value;
+  } else if (spacingValues.length > 1) {
     flags.push({
       why: `two spacings are named and nothing says which applies to the studs (${spacingValues
         .map((v) => `${v}in`)
@@ -220,6 +358,19 @@ export function readPartitionAssembly(input: {
     });
   } else if (spacingValues.length === 1) {
     studSpacingIn = spacingValues[0];
+  }
+  // ── A SPACING UNDER A FOOT IS A DROPPED DIGIT, NOT A MODULE ──
+  //
+  // NG Green Bay's IW-5 reads `6" 20 GA. MTL. STUD FRAMING @ 6" O.C.` on the
+  // drawing itself — almost certainly 16, the digit lost in the cell. Studs
+  // are framed at 12, 16 or 24; a smaller number would double the count on a
+  // quantity, so it is flagged and left unread rather than believed.
+  if (studSpacingIn !== null && studSpacingIn < NARROWEST_STUD_SPACING_IN) {
+    flags.push({
+      why: `studs at ${fraction(studSpacingIn)}in o.c. is not a framing module — the drawing may have dropped a digit`,
+      phrase: onStudLine?.phrase ?? spacingFound.map((s) => s.phrase).join("  ·  "),
+    });
+    studSpacingIn = null;
   }
 
   const gaugeHit = joined.match(/\b(\d{2})\s*(?:GA\.?|GAUGE)\b/i);

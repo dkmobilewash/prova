@@ -1582,3 +1582,555 @@ is the correct behaviour of that rule and the reason these need their own.
     against the runs the pairer returns.
 
 Both are measurements nobody has taken yet. Neither is guessed at here.
+
+## Plan-text reading — tags, legend, door schedule (2026-10-20)
+
+Three readers, each measured on Camp Bow Wow A101 (p8, legend A130 p16,
+schedule A601 p26) and ELEVEN03 A4.B.1 (p119, wall schedule A0.003B p9).
+Nothing here is customer-facing and nothing writes.
+
+| | before | after |
+| --- | --- | --- |
+| CBW wall tags matched to a run | 7 | **16** runs (23 symbols, every one by its leader) |
+| CBW footage with a type | 189 ft | **333 ft** of 2,542 |
+| ELEVEN03 wall tags matched | **0** (all 19 rejected as callouts) | **10** runs, 525 ft of 2,424 |
+| CBW door rows placed, marks in a symbol | 11 of 30 | **29 of 30** (11 by a detected gap, 18 by their mark) |
+| legends read on the 12 new sets | — | 8 of 9 tried, 5–15 cents each |
+
+### What the drawings actually do, which no fixture had
+
+- **A tag is drawn three times.** Camp Bow Wow's diamond, a second diamond
+  a hair inside it, and an axis-aligned masking box around both — on the
+  legend sheet the box is INSIDE the bigger diamond. So "keep the largest"
+  and "keep the smallest" are each wrong on one sheet; a named non-square
+  shape beats a square (`tagSymbols.ts`, the dedupe).
+- **The leader ends on a vertex and is drawn first.** A walk that begins on
+  the stem goes round the diamond and comes back with nowhere to go; the
+  diamond's strokes were spent and only the box was left. The walk now
+  backtracks out of dead ends and keeps the closed cycle inside an open
+  path. On A101 that was 21 of 46 tags.
+- **A split box is a wall tag, not only a callout.** ELEVEN03 writes `MC`
+  over `1 HR`. The halves are kept apart as `parts`, and a half that is a
+  SHEET REFERENCE is what makes a callout. `WT-12` had also read as a sheet
+  reference; the pattern now needs three digits or a dot.
+- **A text item's `y` is its BASELINE.** `planPdf` reports the text origin,
+  so the lettering's centre is `y - height/2`, not `+`. Read the other way,
+  `MC` computed as sitting below its own divider and the halves never
+  separated on a real sheet while the fixture passed. Any code taking
+  `item.y + item.height / 2` as a centre is a line too low.
+- **The legend learns the shape only from symbols holding its codes.** A130
+  numbers its notes in boxes; without the codes the boxes outvoted the five
+  diamonds and the plan's diamonds were "odd shape".
+- **Door marks are found; the gaps are not.** Every one of the 30 scheduled
+  marks is printed in a pill on A101, and for 17 the nearest opening
+  `openingsInWalls` found was 8–37 ft away. That is the gap detector's
+  ceiling, not the join's, and is left for the finder's lane. The join now
+  places a scheduled mark on the nearest run within 2.5 ft when no gap
+  claims it, reported as `placedBy: "mark"` so a reviewer can tell a
+  deduction that rests on geometry from one that rests on lettering. Room
+  numbers share the series (`102` the door, `102` the room), so one door per
+  mark and the printing nearest a wall. Door 114's pill sits farther than
+  that from its wall and stays unplaced. The door mark's SHAPE is reported
+  and not filtered on: every mark is printed twice, pill and box, and "the
+  shape most marks are drawn in" flipped between them with the count —
+  29 rows on one run, 24 on the next, same drawing. Geometry picks.
+- **ELEVEN03 has two legends.** p96 is TAG / UL# / RATING and proposes
+  nothing, correctly. p9 (`A0.003B WALL SCHEDULE`) describes the same codes
+  in words, and the chain completes on it: `ME` → 1-5/8in C-shape studs and
+  track. `WS` is 8in block and stops at coverage, also correctly.
+- **A partition schedule as a table** — Central Bank's `STUD SIZE | 3 5/8"`,
+  `INSULATION THICKNESS | -` — reads through labelled cells now, and a
+  `-` value row is dropped before any word is read out of it: the word
+  INSULATION in that row had proposed batts for all ten types.
+
+### How to run it
+
+```
+REAL_PLAN_DIR=… LEGEND_CACHE=… npx vitest run --config vitest.eval.config.mts \
+  lib/takeoff/realplan/zzTagReport.eval.ts     # every legend-coded symbol and why it did or did not land
+  lib/takeoff/realplan/zzChain2.eval.ts        # tag -> legend -> components -> quantities
+  lib/takeoff/realplan/zzDoorReport.eval.ts    # each schedule row's fate on the plan
+  lib/takeoff/realplan/zzDoorJoin2.eval.ts     # the join, symbol marks against loose text
+  lib/takeoff/realplan/zzLegendRead.eval.ts    # find the legend, read it once, cache it
+# ELEVEN03: CHAIN_SET="2025-03-28_ELEVEN03 PERMIT SET_ARCH.pdf" CHAIN_LEGEND=9 CHAIN_PLAN=119 CHAIN_FPU=288.04
+```
+
+Legend reads are cached under `LEGEND_CACHE` per file, page and prompt
+version; the app side (`readWallLegend`) has no cache of its own yet because
+caching there is a table, which is a schema change.
+
+### Still open
+
+- Six CBW diamonds sit 4–7 ft from any run after their leader; three more
+  fail the clear margin. Not looked at.
+- MHK's wall types are a box on the floor-plan sheet (A1.01) and rank
+  below two notes sheets; two reads found nothing and the eval stops at two.
+- `wallTypeTags` (text-matched tags) and the eval's loose door marks still
+  take `y + height/2` as a centre.
+
+### Second pass, the twelve new sets (2026-10-20, later the same day)
+
+The first pass measured two sets. Running the same chain over the twelve
+new sets — twelve architects — found five things that no fixture and
+neither earlier set did. Each is fixed where the measurement says it lives,
+with the number before and after.
+
+**The loop walker was directed, and a CAD export is not.** Gen BBQ A101 draws
+each wall tag's diamond as four strokes: two leave the left vertex, two
+arrive at the right. A walk from where one stroke ENDS to where another
+STARTS never closes it, so 0 of 322 symbols on a sheet that tags every wall
+held a legend code. `tagSymbols` now indexes both ends of every stroke and
+walks it either way (`touches`, `Step`). Gen BBQ A101 goes 0 → 10 coded, 8
+matched; STEM A-1.1 7 → 124 coded, 49 matched; E Street A2.1 15 → 19, 9
+matched where there was 1; Camp Bow Wow A101 and ELEVEN03 unchanged at 23
+and 14 matched.
+
+**A legend's shape is a hint the plan can overrule, by a quarter.** SW Grand
+Junction legends A1–B3 in circles and tags every wall in a square with a
+leader: 30 squares and 3 circles hold its codes on A110, and required to be
+circles 30 of 33 were "odd". Camp Bow Wow is the other way — 39 pentagons
+lettered B and C (window marks) beside 36 diamonds (the wall tags) — so the
+count alone would pick wrong there. `tagsFromSymbols` keeps the legend's
+shape while it holds at least `LEGEND_SHAPE_FAIR_SHARE` (a quarter) of the
+coded symbols and otherwise takes the plan's commonest, and the report says
+which (`shape`, `shapeFrom`). SW 0 → 21 matched; Camp Bow Wow and STEM keep
+their diamond.
+
+**A code the legend defines is not a sheet reference, and `1` is `WALL TYPE
+1`.** Central Bank defines `G4.1`, which `tagSymbols` rejects as a detail
+callout; two of its four coded symbols on A100 were lost that way. Murray
+Towers' legend names `WALL TYPE 1` and `WALL TYPE 2` and the plan draws a
+`1` or `2` in a diamond — 0 of 631 symbols matched. `legendVocabulary`
+accepts the code and the code with its label stripped, the tag keeps the
+legend's full name, and a sheet-reference rejection is overridden when the
+legend knows the words. Central Bank 2 → 3 matched; Murray 0 → 9 coded, 5
+matched.
+
+**A legend drawn as a block on another sheet has a heading, not a title.**
+Bunkie's is on G003 (title block says SECTION VIEW), MHK's on A1.01 FIRST
+FLOOR PLAN, Crosslines' on A001 under the heading `Partiton Types`, spelled
+so. All three ranked below a mechanical schedule or an exterior-detail sheet
+that says STUD more often, and the model was sent to M601 and A314 and came
+back empty, at 4–5 cents a call. `legendPages` now takes a text CELL that is
+exactly a legend heading (rank 1, needs 6 assembly lines; a pointer like
+`REFER TO WALL TYPES` is not a heading and an index line has no assembly
+behind it) and demotes M/P/E/FP/S/C-series sheets below every architectural
+candidate. All eight sets surveyed now put the right page first; Bunkie (5
+types), Crosslines (7) and MHK (4) read on the first call.
+
+**A column-wrapped legend splits `3 5/8" 20 GA. MTL.` from `STUD`.** NG Green
+Bay's types sit in a narrow column beside its dimension plan, and no line
+holds both the size and the word; the reader proposed board and nothing
+else for eight of ten types. Murray spells it `20 GAUGE METAL STUDS` and
+also says `BOTTOM TRACK FASTENED AT 24" O.C.`, which flagged every type for
+two spacings. `readPartitionAssembly` now reads a type's free text as one
+string (a table's `LABEL | VALUE` rows are kept apart — joined, Central
+Bank's `WALL THICKNESS | 4 7/8"` reads as a stud), accepts gauge with or
+without parentheses, refuses a "stud" under 1-1/2in (a board thickness that
+drifted in front of the word), and takes the spacing stated in the same
+breath as the studs over any other. Over the 108 cached types: 16 changed,
+all gained a stud or lost a false flag, none regressed. NG Green Bay 8 of 10
+types now carry studs, track, board and batts.
+
+**Where each set's wall tags actually are**, because two of the twelve put
+them somewhere the chosen sheet is not: NG Green Bay tags walls on A3.2 (the
+critical dimension plan, p10, which also carries the legend) and not on A3.1;
+Gen BBQ on A101 (p26), not the dimensioned plan A100 (p25). On p10 the
+legend's own symbols sit beside their detail drawings, which the finder sees
+as runs, so a share of its 31 "matched" are the legend labelling itself —
+the one case this pass reports rather than fixes.
+
+**Still open**: Bunkie prints `P08` as bare text with a leader and no closed
+symbol around it that the text centre falls inside (0 coded of 244); MHK's
+A1.01 shows `1`–`4` only in grid-edge circles 9–17 ft from any run; STEM's 48
+odd-shape squares are room tags that happen to hold `K1`; the six Camp Bow
+Wow diamonds too far from a run and its seven without a clear margin are as
+they were.
+
+**Doors, eleven schedules read live** (`zzDoorJoin2`, 5–23 cents each, cached
+beside the legends). Rows read → rows placed, symbol marks first and loose
+text as the control: Gen BBQ A101 16 → 16 (1 by a detected gap, 13 by their
+mark), SLN A-101A 6 → 6, SW A110 5 → 5 (the schedule is a block on the plan
+sheet itself; the gap detector found 0 openings there), Baker A101 18 → 15
+(13 by mark), E Street A2.1 19 → 15, STEM A-1.1 45 → 31 (read at LOW
+confidence; 14 unplaced), NG Green Bay A3.1 19 → 7 (12 unplaced), Central
+Bank L1 50 → 3 (the schedule spans three levels and the plan is one; the
+rest are 2xx and basement marks), MHK A1.01 31 → 1 (its marks are bare text
+beside the door, 19 found loose, none in a symbol), Bunkie A100 11 → 0 by
+symbol and 5 by loose text (`E100`-style marks, also bare), Murray p10 is
+not the door schedule (the model read it as OTHER, 0 rows; the survey's
+heading hit was a note). 220 rows read, 97 placed across the eleven; the
+symbol path beats or equals loose text on every set where the marks are
+drawn in one, and the gap detector matched 0–50% of them, which is the
+finder's ceiling as before.
+
+### Third pass: the numbers the plan asked for, and what is wired (2026-10-20, evening)
+
+**Held-out discipline, stated before the numbers.** The second pass above
+was tuned with Gen BBQ, STEM, Central Bank and SLN in hand (the undirected
+walker, the quarter fair share, `G4.1`, the assembly-line tie-break each
+cite one of them). Those four are the held-out sets, so for the second
+pass's changes they are not a clean held-out. This pass developed on the
+ten training sets only — Baker, Bunkie, Crosslines, Murray, MHK, NG Green
+Bay, Camp Bow Wow, ELEVEN03, E Street, SW — and ran the four once at the
+end. Nothing was adjusted on them; their table is below, apart.
+
+**What is wired and what is eval-only.** `readWallLegend.ts` is app code
+(legend finder → model read → `readPartitionAssembly` → quantity-only
+proposals) and NOTHING CALLS IT yet. `tagsFromSymbols` and
+`joinOpeningsToSchedule` have no caller outside `realplan/*.eval.ts`. All
+three chains are measured below from the evals; none reaches the takeoff
+screen until the finder's lane wires them in.
+
+**Wall tags: share of found runs that get a type, training sets, final
+code** (`zzTagReport`, `walls typed` line; a run is one finder segment, and
+a drawing tags a wall once, not per segment, so the ceiling is well under
+100%):
+
+| set, plan page | runs | coded symbols | matched | runs typed |
+| --- | --- | --- | --- | --- |
+| NG Green Bay A3.2 p10 | 90 | 45 | 31 | 25 (28%) |
+| Baker A101 p13 | 47 | 12 | 10 | 9 (19%) |
+| SW A110 p5 | 110 | 33 | 21 | 16 (15%) |
+| Camp Bow Wow A101 p8 | 137 | 93 | 23 | 16 (12%) |
+| ELEVEN03 A4.B.1 p119 | 224 | 20 | 14 | 10 (4%) |
+| E Street A2.1 p28 | 95 | 19 | 9 | 3 (3%) |
+| MHK A1.01 p32 | 40 | 13 | 1 | 1 (3%) |
+| Murray A2.01 p24 | 160 | 9 | 5 | 3 (2%) |
+| Crosslines p10 | 263 | 8 | 2 | 2 (1%) |
+| Bunkie A100 p31 | 55 | 0 | 0 | 0 |
+
+**Spot check, 15 crops looked at** (rendered with `CROP_JSON=` from the
+eval and a Swift/PDFKit script in the session scratchpad — this Mac has no
+pdftoppm or PIL): 11 pair the tag with the wall the drafter meant (Baker
+C8B and S6A, Camp Bow Wow A, ELEVEN03 MC and WS, E Street 2, Murray 2, NG
+IW-2, SW B2, Crosslines D, MHK 4); 2 are wrong — NG IW-5's leader points
+LEFT to the insulated corridor wall and the detected leader ended on the
+corner where it meets the horizontal wall, which won; Camp Bow Wow B's
+connector runs UP and the detector took a stroke to the left; 2 are
+ambiguous — Camp Bow Wow D's leader ends on a T-junction, SW `A1 ABOVE` is
+a note about a soffit and was matched to the A1 wall beside it. The one
+false positive found — Murray's `3'-0"` dimension box resting on a `2`
+diamond, read as one split symbol and tagged type 2 — is fixed:
+`tagSymbols` rejects any symbol whose text carries a foot or inch mark as
+`dimension`, and `openingMarks` inherits that. Next lever, not taken: a
+leader that ends on a junction should prefer the wall it is perpendicular
+to, and a typed run should hand its type to the collinear runs that
+continue it; both belong with the finder.
+
+**Legend reading, per set** (Opus 5, $5/$25 per Mtok, one call per
+candidate page; the finder's misses are counted, since they were paid for):
+
+| set | pages read | legend $ | door schedule $ | per set |
+| --- | --- | --- | --- | --- |
+| Baker | p24 miss, p25 | 0.109 | 0.090 | 0.20 |
+| Bunkie | p45, p5 misses, p4 | 0.129 | 0.075 | 0.20 |
+| Crosslines | p30, p16 misses, p2 | 0.139 | not found | 0.14 |
+| Murray | p26 | 0.088 | 0.050 (p10 was a note) | 0.14 |
+| MHK | p42, p25 misses, p32 | 0.137 | 0.107 | 0.24 |
+| NG Green Bay | p10 | 0.072 | 0.120 | 0.19 |
+| E Street | p45 | 0.094 | 0.165 | 0.26 |
+| SW | p6 | 0.055 | 0.060 | 0.12 |
+| ELEVEN03 | p9 (p96 read earlier, cost not logged) | 0.078 | — | — |
+| Camp Bow Wow | p1 miss, p16 (earlier, cost not logged) | — | — | — |
+
+The misses are the pre-fix finder's; with the headed-block rule and the
+trade-sheet demotion every surveyed set puts the right page first, so a
+fresh set costs one legend read (3–9 cents) plus one schedule read (5–17
+cents). Cached reads re-run for nothing. One parser change from this pass:
+NG Green Bay's IW-5 says `FRAMING @ 6" O.C.` on the drawing (its eight
+sisters say 16), and a 6 in spacing would double a stud count, so a spacing
+under 12 in is flagged as a dropped digit and left unread.
+
+**Door schedule → openings, training sets** (rows read → placed by a mark
+in a symbol, loose text as the control): Baker 18 → 15, E Street 19 → 15,
+SW 5 → 5, NG Green Bay 19 → 7 (9 loose), Bunkie 11 → 0 (5 loose; marks are
+bare text), MHK 31 → 1 (19 loose; bare text), Murray 0 (p10 is not the
+schedule), Crosslines no schedule page found. Camp Bow Wow 30 → 29 from the
+first pass; ELEVEN03 not joined.
+
+**Held-out, run once with the finished code, nothing adjusted:**
+
+| set | runs | coded | matched | runs typed | doors read → placed | $ per set |
+| --- | --- | --- | --- | --- | --- | --- |
+| STEM A-1.1 p21 | 181 | 124 | 49 | 35 (19%) | 45 → 31 | 0.28 |
+| Gen BBQ A101 p26 | 168 | 10 | 8 | 6 (4%) | 16 → 16 | 0.17 |
+| Central Bank p24 | 102 | 4 | 3 | 2 (2%) | 50 → 3 | 0.37 |
+| SLN A-101A p10 | 93 | 3 | 2 | 2 (2%) | 6 → 6 | 0.18 |
+
+Legends on all four read to studs, track and board (Central Bank 10 of 10
+types, Gen BBQ 19, SLN 4, STEM 13 with two layer-count flags and U1's two
+stud sizes flagged).
+
+### Fourth pass: feet against accepted walls, propagation, bare text (2026-10-20, night)
+
+**Held-out sets are closed for this feature.** Central Bank, Gen BBQ, SLN
+and STEM were looked at during the second pass and are not opened again
+for plan-text work; fresh held-out sets are to be chosen later. Everything
+below is the ten training sets, and only the sheets Chrome has labelled
+(`~/Claude Folder/takeoff/labels/`, verdict `wall` = an accepted wall).
+
+**The number an estimator reads** (`zzFeetTyped`, walls = the label
+file's accepted runs, tags = symbols + bare text the legend knows,
+propagation = `typePropagation.ts`, default = `wallNotes`' U.N.O. read):
+
+| sheet | accepted ft | tagged | propagated | default | untyped |
+| --- | --- | --- | --- | --- | --- |
+| SW A110 p5 | 353 | 318 (90%; 43 of it bare text) | 0 | 0 | 35 |
+| NG Green Bay A3.2 p10 | 536 | 313 (58%) | 0 | 0 | 223 |
+| Camp Bow Wow A101 p8 | 738 | 413 (56%) | 0 | 0 | 325 |
+| Baker A101 p13 | 508 | 245 (48%) | 14 (3%) | 0 | 248 |
+| E Street A2.1 p28 | 477 | 172 (36%) | 0 | 0 | 304 |
+| ELEVEN03 A4.B.1 p119 | 1,790 | 524 (29%) | 9 | 0 | 1,257 |
+| Bunkie A100 p31 | 362 | 65 (18%; all bare text) | 0 | 0 | 297 |
+| Crosslines A100 p10 | 1,103 | 137 (12%) | 0 | 0 | 966 |
+| ELEVEN03 A4.B.3 p121 | 1,810 | 205 (11%) | 10 | 0 | 1,595 |
+| ELEVEN03 A4.B.2 p120 | 1,534 | 124 (8%) | 26 (2%) | 0 | 1,384 |
+| MHK A1.01 p32 | 524 | 0 | 0 | 0 | 524 |
+| NG Green Bay A3.1 p9 | 673 | 0 (tags are on A3.2) | 0 | 0 | 673 |
+| Baker A100 p12 | 1,606 | 0 (no tags on the sheet) | 0 | 0 | 1,606 |
+
+So the feet typed on a sheet that carries tags run 8–90%, and the share is
+set by how much of the drawing the drafter tagged, not by the matching:
+the accepted walls are already merged full-length runs, so a wall with no
+tag anywhere on it stays untyped whatever propagation does.
+
+**Propagation** (`propagateTypes`, pure: runs + run-to-code in, run-to-
+{code, source} out; stops at a thickness change, a different tag, a turn,
+or a fork; runs straight past a T; crosses a gap on the same line up to
+`GAP_FEET`). Touching-only adds 9 ft on one sheet across all thirteen,
+because the label walls already span their openings. Crossing a 12-ft gap
+added 43 / 19 / 57 / 24 / 13 / 8 ft on six sheets and carried E Street's
+type 2 across an 8-ft open passage into a storage partition on the same
+line — a corridor is a gap too. At 7 ft (a double door) it adds 14 / 9 /
+26 / 10 ft on four sheets and the E Street error is gone; the ELEVEN03
+runs it adds are the corridor walls continuing past unit doors, which is
+what it is for. Propagation is therefore worth a few percent on these
+sheets and nothing on most of them, and that is reported rather than
+tuned around. A run two tags both reach is left untyped and listed as a
+conflict; none occurred.
+
+**U.N.O. default: no training set has one.** Every page of all ten sets
+was scanned for "ALL (INTERIOR|NEW) PARTITIONS/WALLS … U.N.O." and the
+nearest things are dimensioning notes ("DIMENSIONS ARE TO … FACE OF STUD
+… UNLESS OTHERWISE NOTED") and Baker's "ALL WALLS WILL BE TO DECK ABOVE
+UNLESS OTHERWISE NOTED", which is a height, not a type. The default tier
+exists in the function and in the report and is 0 ft everywhere.
+
+**Bare text as a tag** (`bareTextTags.ts`: exactly a legend code or a
+scheduled mark, not inside a found symbol, within 3 ft of a run). Walls:
+Bunkie 0 → 65 ft (six `P08` and a `P09` beside their walls; three more
+sit 5–6 ft off), SW +43 ft (`A1 A1 A3 A3 A2`), nothing elsewhere. MHK's
+`1`–`4` are only ever its grid bubbles, 9–33 ft from any wall, so its
+walls are untagged on A1.01. Doors, rows placed of rows read (symbols +
+exact bare marks): Bunkie 0 → 6 of 11 (`E105A`/`E105B` are in circles the
+detector had rejected as sheet references — a scheduled mark overrides
+that, as a legend code does for walls — plus `E100 E101 E103 E104` bare),
+MHK 1 → 6 of 31 (`119A`–`119F` bare), E Street 15 → 16 (`12.1`). A third,
+DOUBTFUL tier was measured and not adopted: a scheduled mark that is only
+the number in a room-name box (`OFFICE 105`) placed on the nearest run.
+It would take MHK to 19 of 31 and Bunkie to 7; five crops looked at —
+`115A` and `115C` land on the toilet-room door, `118` plausibly on a hall
+door, `102` and `105` on a run through the room label itself. Reported in
+the door eval as its own row, never counted.
+
+**Cost per training set, model calls** (legend plus door schedule, Opus
+5): Baker 0.20, Bunkie 0.20, Crosslines 0.14, Murray 0.14, MHK 0.24, NG
+Green Bay 0.19, E Street 0.26, SW 0.12; ELEVEN03 0.08 for the legend
+alone, Camp Bow Wow's reads predate cost logging. Nothing in this pass
+made a model call.
+
+Mutation: eight mutants over propagation (collinearity, thickness, fork,
+conflict, default source) and bare text (vocabulary, distance, inside-a-
+symbol), each killed, each file restored by rewriting its own bytes.
+
+### Wiring plan — for the original session, not done here (2026-10-20, night)
+
+Nothing in plan-text reading reaches the takeoff screen yet. Every piece
+is a pure function or a cached model read with an eval, and the one place
+the product already turns tags into groups is the finder, which this lane
+does not edit. The plan below names the call sites; the files belong to
+the finder's lane.
+
+**The switch.** One per-company key in `lib/ai/features.ts`,
+`AI_FEATURE_LABEL` — say `PLAN_TEXT_READ: "Reading wall types and door
+schedules off the drawings"` — checked through `aiGate(companyId,
+"PLAN_TEXT_READ")` in `detectWallsForCalibration.ts` before any of the
+three steps below runs. Off, the takeoff behaves exactly as today: text-
+matched tags against the company's own wall types, thickness groups for
+the rest. The two model calls (legend, schedule) stay behind
+`SCHEDULE_READ` as well, so a company with that off still gets the
+deterministic half.
+
+**1. Wall types on the runs — `findWallsOnSheet.ts`, the `regroup` block
+(`wallTypeTags` → `tagByRun` → `wallGroups`).** Today the tags are text
+items that spell a company wall type. Replace the tag list with the union
+of `tagsFromSymbols(...)` (symbols whose code the SET's legend defines,
+anchored at their leader) and `bareTextTags(...)` (bare codes beside a
+run), both using `legendVocabulary` of the legend read for the set; keep
+`wallTypeTags` for sets with no legend. Then pass `tagByRun`'s map
+through `propagateTypes` before `wallGroups`, and give `GroupSource` a
+fourth kind, `{ kind: "PROPAGATED"; tag; viaFeet }`, beside `TAG`,
+`NOTE` and `REMAINDER`. The vocabulary arrives as a new input to
+`findWallsOnSheet` (`legendCodes: string[]`), read from the cached legend
+— no model call inside the finder.
+
+What the customer sees: on `TakeoffPlanViewer.tsx` where `<ClusterTag>`
+shows a group's tag, a run tagged on the drawing reads `IW-2 · tagged`, a
+run that inherited it reads `IW-2 · same wall as the tag 14 ft away`
+(weaker, like `NOTE` reads today), and the remainder stays `3-5/8in,
+untyped — 223 ft` so the untyped share is a number on screen rather than
+absorbed. Measured on the labelled training sheets: 8–90% of accepted
+feet typed where the sheet carries tags, 0% where it does not.
+
+**2. Assemblies from the legend — `readWallLegend.ts` (exists, uncalled)
+→ a card on the takeoff page.** Call it once per plan set, from the
+ingest that already reads sheet titles (`lib/plan-ingest`, behind
+`SCHEDULE_READ`), cache the `WallLegendRead` on the plan set (a JSON
+column or the existing ingest result store), and surface its
+`proposals` — code, studs, track, board layers, insulation, flags — as
+"The drawings define 10 wall types. Add them to your library?" Accepting
+creates company `WallType` rows with `hasParts` from the proposal, which
+is what step 1's groups then price through the existing estimate path.
+Never a price: `readPartitionAssembly` emits quantities and flags only.
+Cost: 3–9 cents per set, once.
+
+What the customer sees: a list like `IW-2 — 6in 20 ga studs at 16in
+o.c., 5/8in board each side, batts` with any flag in red (`studs at 6in
+o.c. is not a framing module`), each row a checkbox, and after accepting,
+the group panel's `IW-2 · 126 ft` now carries studs, track and board
+lines in the recap.
+
+**3. Doors — `mergeWalls`' `openings` on each run → `joinOpeningsToSchedule`.**
+The finder already records door-sized gaps on runs. Read the door
+schedule once per set with `extractScheduleRows` (behind
+`SCHEDULE_READ`, cached as the evals do), take the marks from
+`tagSymbols` plus `bareTextTags` with the schedule as vocabulary, and
+join. Store the result beside the proposal (`WallProposal` row or a
+sibling table keyed by run) as `{ mark, widthFt, from: "schedule" |
+"drawn", placedBy }`.
+
+What the customer sees: on a run with a door, `door 101A · 3'-0" from
+the schedule` instead of the drawn gap width; a schedule row the plan
+never placed listed under the sheet as "scheduled, not found on this
+sheet: 100A 100B 101", which is the list an estimator checks by hand.
+Measured: every row placed on SW and Camp Bow Wow, 15 of 18 on Baker, 16
+of 19 on E Street, 6 of 11 on Bunkie, 6 of 31 on MHK.
+
+**Order and cost.** Step 1 first — it is deterministic, has the evals,
+and changes what people see most. Step 3 next, since the openings are
+already there. Step 2 last, because it writes to the company's wall-type
+library and wants the accept flow. Each step is one PR in the finder's
+lane; this lane's files are called, not changed.
+
+### Wired, behind `PLAN_TEXT_READ` (2026-10-20, night; off by default)
+
+The wiring plan above is built, on this branch, inside the files the board
+lent this lane for it. What changed and where:
+
+- **The switch** is `planTextReadEnabled()` in `lib/ai/features.ts`:
+  `PLAN_TEXT_READ=1` in the environment, off otherwise. Not a per-company
+  `AiFeatureKey`, because that is a Postgres enum (`AiFeature`) and the
+  parity census says in as many words that a key with no enum member makes
+  the settings form's write invalid — so a per-company switch is a
+  migration, and this task ran under a no-migrations rule.
+- **`findWallsOnSheet`** takes an optional `planText: { legendCodes }`.
+  Absent, the regroup block is byte-for-byte the call it was (the three
+  source-shape censuses that read that call still pass). Present,
+  `planTextTagByRun` builds the run-to-type map from symbols and bare text
+  filtered by the legend plus today's text tags, and `propagateTypes`
+  carries each along its wall. A propagated run's tag is its code with
+  `PROPAGATED_MARK` (` ≈`) appended — `sameDesignation` strips it, so the
+  group still prices as its code, and the screen reads it back as "same
+  wall". A `PROPAGATED` source kind is the right design and is the enum
+  value plus edits in `wallGroups.ts` and `wallProposal.ts`, listed below.
+- **`detectWallsForCalibration`**, with the switch on: reads the set's
+  legend once (`legendForPlan`: `legendPages` over every page's lines and
+  the ingest's title blocks, `readWallLegend` behind `SCHEDULE_READ`, two
+  candidates at most), hands the codes to the finder, takes the door
+  schedule from `PlanScheduleProposal` where the ingest read one (a
+  database READ) or reads it the same way, joins it to the sheet
+  (`doorsOnSheet`: `openingsInWalls` + symbol marks + bare marks +
+  `joinOpeningsToSchedule`), and writes the sheet's result. Any failure
+  logs and leaves the proposals exactly as they would have been.
+- **Storage** is `planTextCache.ts`: JSON under `PLAN_TEXT_CACHE_DIR`
+  (default the OS temp dir), keyed `legend-<planId>`, `doors-<planId>`,
+  `result-<planId>-p<page>`. Per machine, not durable, not in the
+  database; the tables it stands in for are named in its header.
+- **The screen**: `loadPlanText` (`lib/actions/planTextRead.ts`, a read of
+  the cache after checking the plan is the company's) feeds
+  `PlanTextPanel` under the found-walls list, the group row gains the
+  doors placed on it, and `ClusterTag` shows a carried type's code plain
+  with "same wall" beside it. Off, the action returns null before touching
+  anything and the panel renders nothing.
+
+**Proof the switch changes nothing when off.** `planTextSwitchOff.test.ts`
+runs the finder as it is now, with no `planText`, and the finder as it was
+at `bda8c1a0` (dropped beside it untracked as `zzBaselineFindWalls.ts`)
+on every labelled sheet under `TAKEOFF_LABEL_DIR` read from
+`REAL_PLAN_DIR` at the label's scale, and requires the two JSON results to
+be identical. Seventeen sheets, 0.3 to 37 MB of result each, all the same;
+held-out sets skipped by name. It skips without the drawings or the
+baseline file, so it is not a CI guard — it is the measurement, and it is
+reported here because it was run. `detectWallsForCalibration.test.ts`
+holds the other half: off, the legend, the schedule and the cache are
+never touched.
+
+**What a customer sees with it on**, from the cached reads on four
+training sheets through the same functions the server would call
+(`switchOnDemo.tsx` in the session scratchpad; panel HTML beside it):
+
+| sheet | typed from tags | same wall as a tag | untyped | doors placed / scheduled | legend types offered |
+| --- | --- | --- | --- | --- | --- |
+| Baker A101 | 280 ft | 14 ft | 568 ft | 15 / 18 (100A 100B 101 not found) | 8 |
+| NG Green Bay A3.2 | 635 ft | 0 | 920 ft | 0 / 19 (its marks are on A3.1) | 10 |
+| SW A110 | 334 ft | 19 ft | 1,424 ft | 5 / 5 | 7 |
+| Bunkie A100 | 74 ft | 0 | 794 ft | 6 / 11 (E102 and the K-rows not on this sheet) | 5 |
+
+On Baker the panel reads: "Where the types came from: tagged on the
+drawing 280 ft · same wall as a tag 14 ft · untyped 568 ft"; "Doors from
+the schedule: 111B 3'-0", 104 3'-0", … 108 6'-0"" with "Scheduled, not
+found on this sheet: 100A, 100B, 101"; and "The drawings define 8 wall
+types … S6A — 6in metal stud, 25 ga at 24in o.c.; 6in track, top and
+bottom; 5/8in type X gypsum board, 2 layers per side [Add to your wall
+types]", with S8C's contradiction flag in red. The group rows read
+`11.280 in C8B · 4 runs · 179 ft · doors 105 3'-0", 106C 3'-6", 106B
+3'-0" from the schedule`. The feet are the finder's own runs here, not the
+reviewer's accepted walls, so they differ from the labelled-sheet table
+above; the ratio does not. Nothing anywhere is a price.
+
+**The migration this wants, not run:**
+
+    ALTER TYPE "AiFeature" ADD VALUE 'PLAN_TEXT_READ';
+    ALTER TYPE "TakeoffWallProposalSource" ADD VALUE 'PROPAGATED';
+    CREATE TABLE "PlanLegendProposal" (id, planId → TakeoffPlan, pageNumber,
+      codes text[], proposals jsonb, reason, confidence, model,
+      promptVersion, status, createdAt);
+    CREATE TABLE "TakeoffPlanTextRead" (id, planId → TakeoffPlan, pageNumber,
+      calibrationId → TakeoffScaleCalibration, doors jsonb, typed jsonb,
+      computedAt);
+
+with, in code, `PLAN_TEXT_READ` in `AI_FEATURE_LABEL` and `aiGate` in place
+of the env read; a `{ kind: "PROPAGATED"; tag; viaFeet }` source in
+`wallGroups.ts`/`wallProposal.ts` in place of the marker; `legendForPlan`
+and `doorScheduleForPlan` writing those tables instead of files; and
+`loadPlanText` reading them. The legend read then belongs in the ingest as
+its own stage, which is another enum value (`PlanIngestStage`) and the
+reason it is called from calibration-time detection for now.
+
+Tests added: `planTextTags`, `planTextCache`, `planTextDoors`,
+`planTextView`, `planTextPanel` (render), the two detection cases, and the
+switch-off comparison. Every file this lane touched beyond its own:
+`findWallsOnSheet.ts` (the regroup block and one optional input),
+`detectWallsForCalibration.ts`, `TakeoffPlanViewer.tsx` (imports, one
+effect and memo, the group row's door line, the panel, `ClusterTag`),
+`lib/ai/features.ts` (one function), `detectWallsForCalibration.test.ts` —
+and, because a new Server Action is a decision four censuses make the
+adder record: `lib/actions/index.ts` (the barrel export),
+`lib/action-capability-guards.test.ts` (its `MODULE_IMPORTS` line, so the
+guard is executed rather than assumed; the action asserts
+`VIEW_JOB_COSTS` first and the census proves it refuses before any query),
+and `lib/ask/commands.ts` (an exclusion with its reason: a read that only
+means something with the drawing open). The clock reads the first draft
+had (`readAt`, `computedAt`) were removed rather than registered with
+`viewerDayCensus`; a file's mtime says when it was written.

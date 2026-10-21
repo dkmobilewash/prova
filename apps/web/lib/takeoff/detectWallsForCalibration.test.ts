@@ -32,6 +32,16 @@ vi.mock("@prova/db", () => ({
 // directly, so nothing here needs it — but importing the module must not throw.
 vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
 
+const legendForPlan = vi.fn(async () => null);
+const doorScheduleForPlan = vi.fn(async () => null);
+const writeSheetResult = vi.fn();
+vi.mock("./planTextRead", () => ({
+  legendForPlan: (...args: unknown[]) => legendForPlan(...(args as [])),
+  doorScheduleForPlan: (...args: unknown[]) => doorScheduleForPlan(...(args as [])),
+  doorsOnSheet: () => ({ placed: [], unplaced: [], rowsTotal: 0 }),
+  typedFeetOf: () => ({ taggedFeet: 0, propagatedFeet: 0, noteFeet: 0, untypedFeet: 0 }),
+  writeSheetResult: (result: unknown) => writeSheetResult(result),
+}));
 const { detectWallsForCalibration } = await import("./detectWallsForCalibration");
 
 /** A document that reads instantly and carries nothing. The pages are empty on
@@ -136,5 +146,37 @@ describe("detection stops itself instead of being stopped", () => {
     const outcome = await detectWallsForCalibration({ ...target, pageNumber: 9 }, { now: tickingClock(0), budgetMs: 45_000 });
     expect(outcome).toBe("no-such-page");
     expect(doc.close).toHaveBeenCalled();
+  });
+});
+
+describe("PLAN_TEXT_READ", () => {
+  beforeEach(() => {
+    legendForPlan.mockClear();
+    doorScheduleForPlan.mockClear();
+    writeSheetResult.mockClear();
+    delete process.env.PLAN_TEXT_READ;
+  });
+
+  it("off (the default): reads no legend, no schedule, writes no result — the detection is what it was", async () => {
+    const { doc } = fakeDoc(3);
+    openPlanPdf.mockResolvedValue(doc);
+    await detectWallsForCalibration(target, { now: tickingClock(0), budgetMs: 45_000 });
+    expect(legendForPlan).not.toHaveBeenCalled();
+    expect(doorScheduleForPlan).not.toHaveBeenCalled();
+    expect(writeSheetResult).not.toHaveBeenCalled();
+  });
+
+  it("on: reads the legend once, joins the schedule, and writes the sheet's result", async () => {
+    process.env.PLAN_TEXT_READ = "1";
+    legendForPlan.mockResolvedValueOnce({ page: 25, codes: ["A", "B"] } as never);
+    const { doc } = fakeDoc(3);
+    openPlanPdf.mockResolvedValue(doc);
+    await detectWallsForCalibration(target, { now: tickingClock(0), budgetMs: 45_000 });
+    expect(legendForPlan).toHaveBeenCalledTimes(1);
+    expect(doorScheduleForPlan).toHaveBeenCalledTimes(1);
+    expect(writeSheetResult).toHaveBeenCalledWith(
+      expect.objectContaining({ planId: "plan-1", pageNumber: 1, legend: { page: 25, codes: ["A", "B"] }, doors: null }),
+    );
+    delete process.env.PLAN_TEXT_READ;
   });
 });
