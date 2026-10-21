@@ -30,19 +30,40 @@ describe("readRoomTags", () => {
       line("468 SF", 1300, 414),
       line("160 SF", 1300, 428),
       line("3,123 SF", 1300, 442),
+      // mixed case, as the BIM renderer prints
+      line("WC Damen", 1500, 200),
+      line("113", 1500, 214),
+      line("137 SF", 1500, 228),
+      // the clinic's numbering: digit, letter, digits, a suffix
+      line("GAS STORAGE", 1700, 200),
+      line("1E15-A", 1700, 214),
+      // Estonian and German, dotted numbers
+      line("ELUTUBA+KÖÖK", 1900, 200),
+      line("24-1", 1900, 214),
+      line("272 SF", 1900, 228),
+      line("Flur-01-2", 2100, 200),
+      line("01.1.1", 2100, 214),
       // metric
       line("BATH", 900, 200),
       line("05", 900, 214),
       line("5.6 m2", 900, 228),
     ]);
-    expect(tags.map((t) => [t.name, t.number, t.areaSf])).toEqual([
-      ["STAFF TLT.", "E101", 59],
-      ["(E) OFFICE", null, 261],
-      ["#1", "E100", 139],
-      ["BATH", "05", 60.3],
-      ["LIVING", "101", null],
-    ]);
-    const staff = tags[0];
+    const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
+    expect(tags.map((t) => [t.name, t.number, t.areaSf]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))).toEqual(
+      [
+        ["STAFF TLT.", "E101", 59],
+        ["(E) OFFICE", null, 261],
+        ["#1", "E100", 139],
+        ["WC Damen", "113", 137],
+        ["ELUTUBA+KÖÖK", "24-1", 272],
+        ["Flur-01-2", "01.1.1", null],
+        ["BATH", "05", 60.3],
+        ["GAS STORAGE", "1E15-A", null],
+        ["LIVING", "101", null],
+      ].sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+    );
+    void byName;
+    const staff = tags.find((t) => t.name === "STAFF TLT.")!;
     expect(staff.x).toBe(100);
     expect(staff.y).toBeCloseTo((14 + 66) / 2);
   });

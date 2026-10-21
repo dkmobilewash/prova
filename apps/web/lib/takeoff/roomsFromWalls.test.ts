@@ -1,0 +1,63 @@
+import { describe, expect, it } from "vitest";
+import { roomsFromWalls, type FoundWall } from "./roomsFromWalls";
+
+/**
+ * Two 10x10 ft rooms side by side, 6-inch walls, a 3-ft doorway in the wall
+ * between them. Areas are to the inside faces, so each room is 100 sf and 40
+ * ft round, by arithmetic rather than by measurement.
+ */
+const T = 0.5;
+const W = 100; // feet per page-width unit: the page is 100 ft wide
+const ft = (n: number) => n / W;
+const wall = (x1: number, y1: number, x2: number, y2: number): FoundWall => ({
+  x1: ft(x1),
+  y1: ft(y1),
+  x2: ft(x2),
+  y2: ft(y2),
+  thicknessFeet: T,
+});
+// Centrelines sit half a thickness outside each 10 ft interior.
+const c = T / 2;
+const walls: FoundWall[] = [
+  wall(-c, -c, 20 + 3 * c, -c), // top
+  wall(-c, 10 + c, 20 + 3 * c, 10 + c), // bottom
+  wall(-c, -c, -c, 10 + c), // left
+  wall(20 + 3 * c, -c, 20 + 3 * c, 10 + c), // right
+  wall(10 + c, -c, 10 + c, 3), // shared, above the door
+  wall(10 + c, 6, 10 + c, 10 + c), // shared, below the door
+];
+const text = (str: string, xFt: number, yFt: number) => ({ str, x: xFt * 10 - 20, y: yFt * 10, width: 40, height: 6 });
+
+describe("roomsFromWalls", () => {
+  it("finds both rooms, seals the doorway, measures to the inside face and names them", () => {
+    const { rooms, unplacedTags } = roomsFromWalls({
+      walls,
+      feetPerUnit: W,
+      widthPt: 1000, // 10 points per foot
+      text: [text("OFFICE", 5, 4), text("101", 5, 5), text("STORAGE", 15, 4), text("102", 15, 5), text("OUTSIDE", 40, 40), text("999", 40, 41)],
+    });
+    expect(rooms).toHaveLength(2);
+    for (const room of rooms) {
+      expect(room.squareFeet).toBeGreaterThan(96);
+      expect(room.squareFeet).toBeLessThan(104);
+      expect(room.perimeterFeet).toBeGreaterThan(39);
+      expect(room.perimeterFeet).toBeLessThan(41.5);
+    }
+    expect(rooms.map((r) => r.tag?.name).sort()).toEqual(["OFFICE", "STORAGE"]);
+    expect(unplacedTags.map((t) => t.name)).toEqual(["OUTSIDE"]);
+  });
+
+  it("merges the rooms when the doorway is too wide to be a door, and says which tags merged", () => {
+    const open = walls.slice(0, 4).concat([wall(10 + c, -c, 10 + c, 1)]);
+    const { rooms, mergedTags } = roomsFromWalls({
+      walls: open,
+      feetPerUnit: W,
+      widthPt: 1000,
+      text: [text("OFFICE", 5, 4), text("101", 5, 5), text("STORAGE", 15, 4), text("102", 15, 5)],
+    });
+    expect(rooms).toHaveLength(1);
+    expect(rooms[0].squareFeet).toBeGreaterThan(195);
+    expect(rooms[0].tag).toBeNull();
+    expect(mergedTags.map((t) => t.name).sort()).toEqual(["OFFICE", "STORAGE"]);
+  });
+});

@@ -45,13 +45,16 @@ export type RoomTag = {
 
 /** `93 SF`, `1,337 SF`, `3,780 SQFT`, `178 sq ft`, `32.6 m2`. */
 export const AREA_TEXT = /^\s*(\d[\d,]*(?:\.\d+)?)\s*(SF|S\.F\.|SQ\.?\s*FT\.?|SQFT|m2|m²|SM)\s*$/i;
-/** `101`, `E102`, `K107`, `A-12`. One letter at most, so `P08` still matches — see the header. */
-export const NUMBER_TEXT = /^[A-Z]?-?\d{1,4}[A-Z]?$/;
+/** `101`, `E102`, `K107`, `1A03`, `1E15-A`, `01.1.1`: short, no spaces, at
+ *  least one digit. `P08` matches too — see the header for why that is
+ *  survivable. */
+export const NUMBER_TEXT = /^(?=.*\d)[A-Z0-9.-]{1,8}$/;
 /** `8' - 3"`, `24'-6 1/2"`, `12'-0"`. */
 const DIMENSION_TEXT = /^\d+'\s*-?\s*\d*(?:\s+\d+\/\d+)?"?$/;
-/** At least two letters, upper case, with the punctuation tags carry — or a
- *  bare `#1`, which is how Bunkie names its interview rooms. */
-const NAME_TEXT = /^(?=(?:.*[A-Z]){2})[A-Z0-9 #./&()'-]+$|^#\d+$/;
+/** At least two letters, any case or alphabet (the BIM sheets print `WC
+ *  Damen` and `ELUTUBA+KÖÖK`), with the punctuation tags carry — or a bare
+ *  `#1`, which is how Bunkie names its interview rooms. */
+const NAME_TEXT = /^(?=(?:.*\p{L}){2})[\p{L}0-9 #./&+()'-]+$|^#\d+$/u;
 
 const SQFT_PER_M2 = 10.7639;
 
