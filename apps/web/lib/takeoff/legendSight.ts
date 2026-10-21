@@ -54,6 +54,15 @@ export function assemblyFromSight(type: WallTypeSight, where: string): Partition
   if (!framed) {
     flags.push({ why: `the wall is ${type.studMaterial} — board only; the framing is not this trade's`, phrase: evidence });
   }
+  if (type.fromSheetNote.length > 0) {
+    flags.push({
+      why: `${type.fromSheetNote.join(", ")} came from a general note on the sheet, not this type's own words — check before bidding`,
+      phrase: type.notes.find((n) => /ASSUME|ALL STUDS|ALL PARTITIONS|GENERAL/i.test(n)) ?? evidence,
+    });
+  }
+  if (type.optional.length > 0) {
+    flags.push({ why: `optional on the drawing, not counted: ${type.optional.join("; ")}`, phrase: type.optional.join("; ") });
+  }
   return { ...assembly, flags };
 }
 
@@ -89,30 +98,61 @@ export const CROP_INCHES = { left: 1.0, right: 4.0, above: 3.5, below: 4.5 };
 
 export type CropRect = { code: string; x: number; y: number; width: number; height: number };
 
+/** Words that only appear where an assembly is being described. */
+const ASSEMBLY_WORD = /\bSTUDS?\b|\bGYP|\bBOARD\b|\bBATT|\bINSUL|\bO\.?\s?C\.?\b|\bTRACK\b|\bCMU\b|\bCONCRETE\b|\bLAYERS?\b|\bRATED\b|\bGA\.?\b/i;
+
+/**
+ * ── WHICH PRINTING OF THE CODE IS THE DETAIL'S ──
+ *
+ * `A` is printed on Crosslines' A001 as a partition type, a column-grid
+ * letter and an entry in the electrical symbol legend, and the first rule
+ * — most text nearby — chose the symbol legend, which has the most text of
+ * anything on the sheet. Two things single out the legend's own printing:
+ * it sits inside a closed symbol (the boxed letter under the section), and
+ * the text around it is about an ASSEMBLY — studs, board, batts, o.c. —
+ * rather than about anything. So a printing inside a symbol beats one that
+ * is not, assembly words nearby beat other words, and plain text density is
+ * only the tie-break. `symbols` are the legend page's own, from
+ * `tagSymbols`; without them the second and third rules still apply.
+ */
 export function legendCropRects(input: {
   text: readonly TextForSymbol[];
   codes: readonly string[];
   widthPt: number;
   heightPt: number;
   pointsPerInch?: number;
+  /** Closed symbols on the legend page, so a boxed code outranks a bare one. */
+  symbols?: readonly { x: number; y: number; radius: number }[];
+  /** `density` is the first rule, kept so the miss rate can be compared. */
+  strategy?: "density" | "assembly";
 }): CropRect[] {
   const ppi = input.pointsPerInch ?? 72;
   const out: CropRect[] = [];
+  const strategy = input.strategy ?? "assembly";
   for (const code of input.codes) {
-    const printings = input.text.filter((t) => t.str.trim().toUpperCase() === code.toUpperCase());
+    // `1` is also printed as `WALL TYPE 1` (MHK heads each legend row that
+    // way), so a printing that is the code with its label counts.
+    const printings = input.text.filter((t) => {
+      const s = t.str.trim().toUpperCase();
+      return s === code.toUpperCase() || s.replace(/^(?:WALL|PARTITION|PART\.?)\s+TYPE\s+|^TYPE\s+/, "") === code.toUpperCase();
+    });
     if (printings.length === 0) continue;
     const scored = printings.map((p) => {
       const cx = p.x + p.width / 2;
-      const below = input.text.filter(
+      const cy = p.y - p.height / 2;
+      const near = input.text.filter(
         (t) =>
           t !== p &&
           t.y > p.y - CROP_INCHES.above * ppi &&
           t.y < p.y + CROP_INCHES.below * ppi &&
           Math.abs(t.x + t.width / 2 - cx) < CROP_INCHES.right * ppi,
-      ).length;
-      return { p, below };
+      );
+      const inSymbol = (input.symbols ?? []).some((s) => Math.hypot(s.x - cx, s.y - cy) <= s.radius);
+      const assembly = near.filter((t) => ASSEMBLY_WORD.test(t.str)).length;
+      const score = strategy === "density" ? near.length : (inSymbol ? 1000 : 0) + assembly * 10 + Math.min(near.length, 9);
+      return { p, score };
     });
-    scored.sort((a, b) => b.below - a.below);
+    scored.sort((a, b) => b.score - a.score);
     const p = scored[0].p;
     const cx = p.x + p.width / 2;
     const x = Math.max(0, cx - CROP_INCHES.left * ppi);

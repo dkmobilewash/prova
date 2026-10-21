@@ -7,6 +7,9 @@ import type { WallLegendRead } from "@prova/integrations/src/wallLegend";
 import { extractWallLegendBySight, WALL_LEGEND_SIGHT_PROMPT_VERSION, type WallLegendSightRead } from "@prova/integrations/src/wallLegendSight";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { assemblyFromSight, fullyRead, legendCropRects } from "../legendSight";
+import { tagSymbols } from "../tagSymbols";
+
+const ASSEMBLY_WORD = /\bSTUDS?\b|\bGYP|\bBOARD\b|\bBATT|\bINSUL|\bO\.?\s?C\.?\b|\bTRACK\b|\bCMU\b|\bCONCRETE\b|\bLAYERS?\b|\bRATED\b|\bGA\.?\b/i;
 import { readPartitionAssembly } from "../partitionAssembly";
 import { pageLines } from "../planTextRead";
 
@@ -46,7 +49,16 @@ describe.skipIf(DIR === "" || CACHE === "" || SET === "" || PAGE === 0 || RENDER
     const doc = await openPlanPdf(Buffer.from(readFileSync(pdfPath)));
     const text = await doc.pageText(PAGE);
     const items = text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
-    const rects = legendCropRects({ text: items, codes, widthPt: text.widthPt, heightPt: text.heightPt });
+    const strokes = await doc.pageStrokes(PAGE);
+    const symbols = tagSymbols({ segments: strokes.segments, text: items, unitsPerPaperInch: 72 });
+    const rects = legendCropRects({ text: items, codes, widthPt: text.widthPt, heightPt: text.heightPt, symbols });
+    // ── DID EACH CROP LAND ON ITS DETAIL? ──
+    // A crop that holds fewer than two assembly words holds no detail; the
+    // first placement rule is scored the same way so the change is a number.
+    const hits = (rs: typeof rects) =>
+      rs.filter((r) => items.filter((t) => t.x >= r.x && t.x <= r.x + r.width && t.y >= r.y && t.y <= r.y + r.height && ASSEMBLY_WORD.test(t.str)).length >= 2).length;
+    const byDensity = legendCropRects({ text: items, codes, widthPt: text.widthPt, heightPt: text.heightPt, strategy: "density" });
+    console.log(`  crops on a detail: by text density ${hits(byDensity)} of ${byDensity.length}; by symbol + assembly words ${hits(rects)} of ${rects.length}`);
     const lines = await pageLines(doc, PAGE);
     await doc.close().catch(() => {});
 

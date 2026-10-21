@@ -2270,3 +2270,56 @@ Bow Wow's 48in bracing, NG's two-layer face). Where the legend is a table
 of words, the two agree. Cost is 10 to 28 cents per set, once, cached.
 Contact sheets with every crop beside both readings:
 `~/Claude Folder/takeoff/shots/legend-sight/<set>-p<page>.html`.
+
+### Toward plan-text v1: four fixes and the v4 run (2026-10-21)
+
+Fixes, each from a contact-sheet finding on a training set:
+
+- **Detail numbers are codes.** E Street tags walls with the number of the
+  DETAIL that draws the type (`2` on A9.1), not the title's number; prompt
+  v4 records the detail number as the code and the title as the name. Its
+  four types now pair with the text read's codes.
+- **A sheet-wide note is flagged.** A field filled from a note that applies
+  to every type on the sheet (SW's "all studs assumed to have 5/8in gyp bd on
+  both faces") is named in `fromSheetNote`, and the assembly carries "came
+  from a general note on the sheet, not this type's own words — check
+  before bidding". All seven SW types now show it.
+- **Optional is not counted.** Anything the drawing marks optional,
+  alternate, "or", "where indicated" goes in `optional`, verbatim, and is
+  flagged rather than added: Crosslines' optional blankets, Camp Bow Wow's
+  "cementitious backer in lieu of gypsum" at wet walls, NG Green Bay's
+  "where at an exterior wall, provide full cavity batt".
+- **Crop placement.** A code is printed in more places than its legend
+  cell — Crosslines' `A` is a partition type, a column line and an entry in
+  the electrical symbol legend — and "the printing with the most text near
+  it" chose the symbol legend. A printing inside a closed symbol now wins,
+  then one with assembly words beside it, and text density only breaks
+  ties; a code's labelled printing (`WALL TYPE 1`) counts as the code.
+  Measured as crops holding at least two assembly words, over the ten sets'
+  65 types: **40 of 65 before, 54 of 65 after**. The eleven still missing are
+  MHK's four (its legend is a table on the plan sheet whose row headings
+  the text layer does not print as one item), ELEVEN03's six thumbnail rows
+  (the crop IS on the row; the row has no assembly words), and one SW
+  detail bubble that shares its number with a type.
+
+**The v4 run** stopped at the ninth set on `credit balance is too low`
+(request `req_011CgEnkXMxVZgYmUPEL8Zap`); eight of ten are read under v4,
+ELEVEN03 and MHK are not. $1.68 spent on the eight.
+
+| set | types | text full | sight full | notable | cost |
+| --- | --- | --- | --- | --- | --- |
+| Baker | 8 | 2 | 8 | studs by the tag key; concrete walls board-only | $0.24 |
+| Bunkie | 5 | 3 | 4 | EXT gained 6in stud + board; P08 masonry | $0.15 |
+| Crosslines | 7 | 6 | 6 | optional blankets flagged, no longer counted | $0.21 |
+| Murray | 2 | 2 | 2 | — | $0.15 |
+| NG Green Bay | 10 | 8 | 8 | IW-6 two layers one face; IW-5's 6in o.c. flagged; exterior-wall note flagged optional | $0.24 |
+| E Street | 4 | 0 | 1 | codes now the detail numbers; three are furring on existing masonry | $0.18 |
+| SW | 7 | 0 | 7 | every type flagged "from a general note" | $0.21 |
+| Camp Bow Wow | 5 | 3 | 5 | D's 16in spacing over the text's 48in; backer board flagged optional | $0.18 |
+| MHK, ELEVEN03 | 4, 13 | 2, 0 | not run under v4 (credits) | — | — |
+
+v1 is NOT frozen: freezing waits on those two sets, and the held-out run
+(Lodi, Missouri Pavilion, Nall) waits on v1. `heldoutRun.tsx` in the
+session scratchpad is ready and was smoke-tested on Baker (it reproduces
+the labelled sheet's numbers: 280 tagged, 14 carried, 568 untyped, 15 of
+18 doors) and makes no model call where the caches exist.

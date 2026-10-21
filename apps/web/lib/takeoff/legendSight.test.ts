@@ -18,6 +18,8 @@ const base = {
   heightNote: "SEE NOTE A",
   notes: ["NON-RATED INTERIOR WALL", "2x STEEL FRAMING, SEE STRUCTURAL"],
   fromDrawing: ["studWidthIn"],
+  fromSheetNote: [],
+  optional: [],
   confidence: "MEDIUM" as const,
 };
 
@@ -55,6 +57,20 @@ describe("an assembly from a sight read", () => {
   });
 });
 
+describe("what the reader is warned about", () => {
+  it("names a field that came from a sheet-wide note, and lists optional items without counting them", () => {
+    const got = assemblyFromSight(
+      { ...base, fromDrawing: [], fromSheetNote: ["boardThicknessIn", "layersSideA"], optional: ['2 1/2" sound attenuation blankets (optional)'], notes: ["ALL STUDS ASSUMED TO HAVE 5/8 GYP BD ON BOTH FACES"] },
+      "p",
+    );
+    expect(got.flags.map((f) => f.why)).toEqual([
+      expect.stringContaining("came from a general note on the sheet"),
+      expect.stringContaining("optional on the drawing, not counted: 2 1/2"),
+    ]);
+    expect(got.components.map((c) => c.description)).not.toContainEqual(expect.stringContaining("insulation"));
+  });
+});
+
 describe("the model's answer, parsed", () => {
   it("keeps the fields it understands and drops a type with no code", () => {
     const got = parseSightRead({
@@ -72,7 +88,26 @@ describe("the model's answer, parsed", () => {
 });
 
 describe("where each type's crop is", () => {
-  it("takes the printing with the most text beneath it, and boxes it around the code", () => {
+  it("prefers the printing inside a symbol with assembly words near it over the one with the most text", () => {
+    // Crosslines: `A` in the electrical symbol legend has forty words beside
+    // it; the partition type's `A` sits in a box under a section with four.
+    const text = [
+      { str: "A", x: 100, y: 100, width: 10, height: 8 },
+      ...Array.from({ length: 40 }, (_, i) => ({ str: `SYMBOL ${i}`, x: 120, y: 100 + i * 10, width: 60, height: 8 })),
+      { str: "A", x: 1500, y: 600, width: 10, height: 8 },
+      { str: '5/8" GYPSUM BOARD', x: 1520, y: 560, width: 60, height: 8 },
+      { str: '3 5/8" STL. STUD @ 16" O.C.', x: 1520, y: 580, width: 60, height: 8 },
+    ];
+    const symbols = [{ x: 1505, y: 596, radius: 12 }];
+    const dense = legendCropRects({ text, codes: ["A"], widthPt: 2592, heightPt: 1728, strategy: "density" });
+    expect(dense[0].x).toBeCloseTo(105 - 72, 3);
+    const got = legendCropRects({ text, codes: ["A"], widthPt: 2592, heightPt: 1728, symbols });
+    expect(got[0].x).toBeCloseTo(1505 - 72, 3);
+    const noSymbols = legendCropRects({ text, codes: ["A"], widthPt: 2592, heightPt: 1728 });
+    expect(noSymbols[0].x).toBeCloseTo(1505 - 72, 3);
+  });
+
+  it("boxes the chosen printing around the code", () => {
     const text = [
       { str: "S6B", x: 100, y: 100, width: 20, height: 8 }, // the key, nothing under it
       { str: "S6B", x: 500, y: 300, width: 20, height: 8 }, // the detail

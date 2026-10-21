@@ -122,3 +122,9 @@ masonry walls' material; three text-read fields were corrected by the
 drawing (a bracing spacing, a two-layer face, a 2 HR rating). E Street's
 codes and SW's sheet-wide note are recorded as the two readings not to
 trust yet.
+
+Legend by sight v4: a numbered detail's number is its code, a field from a
+sheet-wide note is flagged, optional items are listed and never counted,
+and a crop is placed by the code's own symbol and assembly words (40 of 65
+types' crops on their detail before, 54 after). Eight of ten training
+sets re-read; the run stopped on credits before ELEVEN03 and MHK.
