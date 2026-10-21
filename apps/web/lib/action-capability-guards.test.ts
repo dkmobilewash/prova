@@ -1951,6 +1951,9 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // walk derives its assertion and executes it as a principal without it,
   // same as the jobs/estimating modules above.
   takeoff: () => import("./actions/takeoff"),
+  // "Find the rooms": the owner's switch (behind /settings) and the save of
+  // a sheet's rooms as areas (behind the takeoff's job-costs gate).
+  roomFinder: () => import("./actions/roomFinder"),
   takeoffItems: () => import("./actions/takeoffItems"),
   takeoffClassify: () => import("./actions/takeoffClassify"),
   takeoffReadSheet: () => import("./actions/takeoffReadSheet"),

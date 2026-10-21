@@ -17,7 +17,8 @@ describe("leakHints", () => {
     const h = hints[0].hint!;
     expect(hints[0].tag.number).toBe("101");
     expect(h.wall).toBe(3);
-    expect(h.lengthFeet).toBe(3);
+    // 3 ft is missing; the probe tries 2, 4, 8, 12 and 4 is the first that reaches.
+    expect(h.lengthFeet).toBe(4);
     expect(h.x).toBeCloseTo(ft(10));
     expect(h.y).toBeCloseTo(ft(7));
     expect(h.dy).toBe(1);

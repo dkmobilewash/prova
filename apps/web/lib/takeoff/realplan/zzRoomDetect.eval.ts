@@ -181,7 +181,7 @@ function dump(name: string, result: ReturnType<typeof roomsFromWalls>, extra: ob
   writeFileSync(join(OUT, `${name}.json`), JSON.stringify({ ...extra, ...result }, null, 1));
 }
 
-describe("rooms from walls, measured", () => {
+describe.skipIf(KEYS === "" || (LABELS === "" && BIM === ""))("rooms from walls, measured", () => {
   it.skipIf(REAL === "" || LABELS === "" || KEYS === "")("labels arm: accepted + traced walls", { timeout: 1_800_000 }, async () => {
     const all: Row[] = [];
     for (const { set, sheet, keys, join: how } of LABELLED) {

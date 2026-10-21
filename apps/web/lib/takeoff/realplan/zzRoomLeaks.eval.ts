@@ -88,6 +88,9 @@ describe.skipIf(DUMPS === "")("missed-wall hints", () => {
     }
     if (OUT) writeFileSync(OUT, lines.join("\n"));
     console.log(lines.join("\n"));
-    expect(hinted).toBeGreaterThanOrEqual(0);
+    expect(SHEETS.length).toBeGreaterThan(0);
+    // A probe that explained nothing is not a result: at least one single
+    // extension must have closed a room, or the table is all "see the crop".
+    expect(hinted).toBeGreaterThan(0);
   });
 });

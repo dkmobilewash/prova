@@ -27,10 +27,18 @@ import { actionFail, actionOk, ownerRefusal, type ActionResult } from "./shared"
  * a room is a proposal from a flood fill, not a trusted input.
  */
 
-const JOB_COSTS_ONLY = "Only people who can see job costs can take off a plan.";
+/** The app's refusal wording — `action-capability-guards.test.ts` recognises a
+ *  refusal by its sentence, so these match `takeoff.ts` and `company.ts`. */
+const JOB_COSTS_ONLY =
+  "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
+const SETTINGS_ONLY =
+  "The company's settings aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 export async function saveRoomFinderSwitch(formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
+  // The same capability the settings page asserts: an action is its own
+  // endpoint and answers whoever posts to it (`action-capability-guards.test.ts`).
+  if (!can(context, "MANAGE_COMPLIANCE")) return actionFail(SETTINGS_ONLY);
   const refusal = ownerRefusal(
     context,
     "Only the account owner can turn room finding on or off — it changes what every estimator sees on the takeoff.",

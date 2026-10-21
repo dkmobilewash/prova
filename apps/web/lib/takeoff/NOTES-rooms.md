@@ -270,3 +270,25 @@ tag; it belongs on the server or in a worker, not on a click), the
 finish-schedule join, and room types. The "draw the missing wall" edit is
 the Line tool plus a re-run rather than a mode of its own — one less thing
 to learn, and the line is a measurement the estimator can keep.
+
+### Seen running, not only tested
+
+- `e2e/specs/takeoff-rooms.spec.ts` on S05, port 3110, throwaway Postgres:
+  switch off → no button; owner turns it on; walls then rooms → **7 rooms,
+  866 sf, all seven named from their tags** (the garage stays open: its
+  16-ft overhead door is wider than anything the seal calls a door); rename,
+  save → 7 Unassigned measurements after a reload. Screenshots in
+  `apps/web/e2e/artifacts/rooms/` (gitignored).
+- `takeoff-rooms-real.spec.ts` on **Baker A101** (page 13 of the set,
+  pulled out with pdf-lib into `~/Claude Folder/takeoff/shots/rooms-app/`,
+  never under the tree), port 3120: Find the walls, Find the rooms →
+  **7 rows, 6 named**; 254, 126, 190, 162, 432, 439, 70 sf against the code
+  plan's 127 (ham radio), 191 (storage), 165 (IDF), 440 (911), 468
+  (conference) — so four of the six named rooms are within 5% in the live
+  app, and the two large open spaces (main operations 1,337 sf, the existing
+  wing) are not closed by the app's own candidate set, which is thinner than
+  the eval's boundary set. Shots `p13-01-walls.png`, `p13-02-rooms.png`.
+- Three things the e2e caught that no unit test could: the first switch
+  form submitted natively when pressed before hydration (now an
+  `ActionForm`); the settings switch lives on the Estimating tab; the real
+  sheet needs its pixels before Find the walls means anything.

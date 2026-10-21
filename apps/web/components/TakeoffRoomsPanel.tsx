@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveRoomMeasurements, type RoomToSave } from "@/lib/actions";
+import { Spinner } from "@/components/Spinner";
 import type { RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 
 /**
@@ -114,20 +115,22 @@ export function TakeoffRoomsPanel({
                 >
                   <td className="py-1 pr-2">
                     <input
+                      name="roomName"
                       aria-label="Room name"
                       value={edited.name}
                       placeholder="unnamed"
                       onChange={(e) => setNames((prev) => ({ ...prev, [room.id]: { ...edited, name: e.target.value } }))}
-                      className="w-36 rounded border border-line-card bg-surface-input px-1 py-0.5 text-xs text-ink-body"
+                      className="w-36 rounded border border-line-card bg-surface px-1 py-0.5 text-xs text-ink-body"
                     />
                   </td>
                   <td className="py-1 pr-2">
                     <input
+                      name="roomNumber"
                       aria-label="Room number"
                       value={edited.number}
                       placeholder="—"
                       onChange={(e) => setNames((prev) => ({ ...prev, [room.id]: { ...edited, number: e.target.value } }))}
-                      className="w-16 rounded border border-line-card bg-surface-input px-1 py-0.5 text-xs text-ink-body"
+                      className="w-16 rounded border border-line-card bg-surface px-1 py-0.5 text-xs text-ink-body"
                     />
                   </td>
                   <td className="py-1 pr-2 text-right tabular-nums text-ink-body" data-takeoff="room-sf">
@@ -166,7 +169,14 @@ export function TakeoffRoomsPanel({
           data-takeoff="save-rooms"
           className="min-h-[36px] rounded-md bg-rail-hover px-3 text-xs font-medium text-ink hover:bg-lift disabled:opacity-50"
         >
-          {isPending ? "Saving…" : `Save ${result.rooms.length === 1 ? "this room" : "these rooms"} as areas`}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : (
+            `Save ${result.rooms.length === 1 ? "this room" : "these rooms"} as areas`
+          )}
         </button>
         <button type="button" onClick={onClear} className="text-xs text-ink-muted underline hover:text-ink-body">
           Clear

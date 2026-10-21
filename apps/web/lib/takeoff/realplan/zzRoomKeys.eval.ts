@@ -78,7 +78,7 @@ function write(key: RoomKey) {
 const toUnits = (tags: RoomTag[], widthPt: number) =>
   tags.map((t) => ({ ...t, at: { x: t.x / widthPt, y: t.y / widthPt } }));
 
-describe("room answer keys", () => {
+describe.skipIf(REAL === "" && BIM === "" && SYN === "")("room answer keys", () => {
   it.skipIf(REAL === "")("printed tags on training pages", { timeout: 600_000 }, async () => {
     let total = 0;
     for (const { file, page, note } of PRINTED) {
@@ -101,6 +101,7 @@ describe("room answer keys", () => {
       console.log(`printed  ${file} p${page}: ${tags.length} rooms with an area (${tags.filter((t) => t.number).length} numbered)`);
       total += tags.length;
     }
+    expect(PRINTED.length).toBeGreaterThan(0);
     expect(total).toBeGreaterThan(0);
   });
 

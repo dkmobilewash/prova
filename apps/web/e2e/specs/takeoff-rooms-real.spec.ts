@@ -112,6 +112,12 @@ test.describe("find the rooms on a real sheet", () => {
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 120_000 });
     await setScaleByClicking(HALF_FEET);
     await page.goto(`/takeoff/${jobId}`);
+    // A real sheet takes seconds to draw; the first run clicked Find the walls
+    // while the port still said "Drawing…" and found nothing. Wait for pixels.
+    await expect
+      .poll(async () => port().locator("canvas").evaluate((n) => (n as HTMLCanvasElement).width), { timeout: 300_000 })
+      .toBeGreaterThan(0);
+    await settledOverlayBox();
     const findWalls = page.locator('[data-takeoff="find-walls"]');
     await expect(findWalls).toBeVisible({ timeout: 120_000 });
     await expect(findWalls, "the sheet never got a scale, so nothing can be found").toBeEnabled({ timeout: 120_000 });
