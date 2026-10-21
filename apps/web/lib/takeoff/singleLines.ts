@@ -51,7 +51,142 @@ export type ClassifyInput = {
   /** The walls that WERE reported, which define the building and its pens. */
   walls: readonly WallCandidate[];
   feetPerUnit: number;
+  /**
+   * ── THE PITCH RULE IS OFF UNLESS SOMEBODY ASKS FOR IT ──
+   *
+   * Treating an evenly-pitched field as the only real hatching recovers
+   * 15,921 ft of the 16,530 ft of confirmed wall this class used to withhold,
+   * and offers 49,419 ft of junk in exchange — about 3 ft of junk per foot of
+   * wall. That is the right trade for LABELLING, where a reviewer judges each
+   * line and a hidden wall is the expensive mistake, and the wrong one for a
+   * customer, who would see that junk presented as walls.
+   *
+   * So it is on for Chrome's labelling server and the offerAll job, and off
+   * for what customers see until the "demote, don't hide" mode exists — then
+   * the recovered walls arrive with the extra junk greyed out instead.
+   *
+   * Defaulted OFF deliberately: a caller has to ask, so customer code cannot
+   * acquire it by forgetting a parameter.
+   */
+  hatchPitchRule?: boolean;
 };
+
+/** The thinnest and thickest thing worth calling one wall, in feet. */
+const THINNEST_WALL_FEET = 0.2;
+const THICKEST_WALL_FEET = 1.5;
+
+/**
+ * ── HATCHING BETWEEN A WALL'S TWO FACES IS A WALL, NOT A HATCHED AREA ──
+ *
+ * `in-a-hatch` is the only set-aside reason that hides real walls, and it
+ * hides a LOT of them: measured against the keys on the eighteen training
+ * sheets, 16,973 ft of confirmed wall — every foot of real wall any reason
+ * withheld. The other five withheld 27,934 ft without a single foot of wall.
+ *
+ * The cause is in the rule's own comment, which says "a wall face has ONE
+ * parallel neighbour, which is its other face". True of a wall drawn as two
+ * empty lines, and false of a wall drawn POCHÉ — masonry, a rated assembly,
+ * anything whose thickness is filled in. That wall has its two faces AND the
+ * fill lines between them, so each face counts the fill as its neighbours and
+ * is withheld as hatching. The wall is hidden BECAUSE it was drawn as solid.
+ *
+ * ── THE DISCRIMINATOR IS WHICH SIDE THE NEIGHBOURS ARE ON ──
+ *
+ * A line inside a field of hatching has neighbours on BOTH sides. A face
+ * bounding a fill has them on ONE side — the fill is inside the wall, and
+ * outside the face is room. So:
+ *
+ *   hatch line    ·  ─ ─ ─ ─ ─ ─ ─   neighbours above AND below
+ *   wall face     ─  ═════════════   neighbours on one side only, and a
+ *                 ·  ─────────────   partner at a wall thickness beyond them
+ *
+ * Requiring the PARTNER is what separates a poché wall from the edge of a
+ * hatched floor area, which also has neighbours on one side: a wall's far
+ * face sits 0.2 to 1.5 ft away, a floor area's far edge does not. Those are
+ * the same bounds `wallVectors` uses to decide two lines are one wall, and
+ * its own comment explains them — 2-1/2in is furring, 18in is a shaft wall.
+ *
+ * Returns the thickness it found, or null when this is hatching after all.
+ */
+function fillBetweenFaces(sides: readonly number[]): number | null {
+  if (sides.length < 3) return null;
+  const above = sides.filter((v) => v > 0);
+  const below = sides.filter((v) => v < 0);
+  // Neighbours on both sides: a line INSIDE the field. Hatching.
+  if (above.length > 0 && below.length > 0) return null;
+  const run = above.length > 0 ? above : below.map((v) => -v);
+  const partner = Math.max(...run);
+  if (partner < THINNEST_WALL_FEET || partner > THICKEST_WALL_FEET) return null;
+  // ── NO INSIDE-COUNT HERE, AND THE REASON IS A SURVIVING MUTATION ──
+  //
+  // This required at least two neighbours strictly inside the pair, on the
+  // grounds that a "fill between faces" needs something filling it. Deleting
+  // that requirement changed no test and no sheet, so by this repo's own rule
+  // it was a case that proves nothing — and the reason is structural rather
+  // than a gap in the fixtures: this function's answer is only consulted when
+  // `evenPitch` has already found a regular pitch on one side, which needs
+  // three distinct gaps, which forces three neighbours inside the pair. The
+  // check could never fire. It is gone rather than kept as reassurance.
+  return partner;
+}
+
+/**
+ * ── A HATCH HAS AN EVEN PITCH; A CROWDED PLAN DOES NOT ──
+ *
+ * The first attempt at this asked which SIDE the parallel neighbours were on,
+ * reasoning that a face bounding its own fill has them on one side only. That
+ * is true of a poché wall in isolation and it is a measured no-op here: it
+ * released three lines and 448 ft of junk and not one foot of wall. The
+ * instrument then said why, which is the only reason this second attempt is
+ * aimed anywhere. Of the 16,530 ft of confirmed wall the hatch class withheld,
+ * ALL of it — 438 lines of 438 — has parallel neighbours on BOTH sides.
+ *
+ * Three feet is a wide window in a dense plan. A real wall face has its own
+ * far face on one side and, on the other, whatever the room contains: the
+ * next wall across a furring space, a jamb, a dimension string, a fixture.
+ * So "neighbours on both sides" describes a busy floor plan at least as well
+ * as it describes hatching, which is why the side test could not separate
+ * them.
+ *
+ * What hatching has and a floor plan does not is a CONSTANT PITCH. A fill is
+ * generated: its lines sit at one spacing, repeated. The parallel company of
+ * a wall face is placed by a person at whatever distances the building needs.
+ * So the question is not where the neighbours are but whether they are evenly
+ * spaced.
+ *
+ * Measured as the spread of the gaps between successive neighbours, relative
+ * to their mean. A generated fill holds that ratio very low; anything a
+ * person placed does not.
+ *
+ * Returns the pitch when the company really is a fill, else null — so a line
+ * is withheld as hatching only when something regular is drawn around it.
+ */
+function evenPitch(sides: readonly number[]): number | null {
+  // ── MEASURED PER SIDE, WHICH THE FIRST VERSION GOT WRONG ──
+  //
+  // Pooling both sides' distances into one sorted list makes a SYMMETRIC
+  // field look ragged: a fill at an even 2in pitch on both sides reads as
+  // 2, 2.1, 4, 4.1, 6, 6.1, whose successive gaps alternate 2 and 0.1 and
+  // whose spread then exceeds any sane bound. The hatch fixture failed
+  // exactly that way, which is the only reason this is per side now.
+  const one = (run: number[]): number | null => {
+    if (run.length < 3) return null;
+    run.sort((a, b) => a - b);
+    const gaps = [run[0]!];
+    for (let i = 1; i < run.length; i += 1) gaps.push(run[i]! - run[i - 1]!);
+    const real = gaps.filter((g) => g > 1e-9);
+    if (real.length < 3) return null;
+    const mean = real.reduce((n, g) => n + g, 0) / real.length;
+    if (mean <= 0) return null;
+    const spread = Math.sqrt(real.reduce((n, g) => n + (g - mean) * (g - mean), 0) / real.length);
+    // A quarter of the mean. A generated fill sits far below it; anything a
+    // person placed does not.
+    return spread / mean <= 0.25 ? mean : null;
+  };
+  // Either side being a regular fill is enough — a wall face against a
+  // hatched floor has the fill on one side and the room on the other.
+  return one(sides.filter((v) => v > 0)) ?? one(sides.filter((v) => v < 0).map((v) => -v));
+}
 
 function lengthOf(s: StrokeSegment): number {
   return Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
@@ -143,14 +278,19 @@ export function classifySingleLines(input: ClassifyInput): ClassifiedLine[] {
     // a wall face has ONE parallel neighbour, which is its other face, and
     // that one is already excluded because these are the unpaired lines.
     let parallelNeighbours = 0;
+    /** Signed perpendicular offsets, in feet — the sign is which side. */
+    const sides: number[] = [];
     for (const other of faces) {
       if (other === line) continue;
       if (Math.abs(angleOf(other) - mine) > 0.05) continue;
-      const gap =
-        Math.abs(
-          (other.x1 - line.x1) * -Math.sin(mine) + (other.y1 - line.y1) * Math.cos(mine),
-        ) * feetPerUnit;
-      if (gap > 0 && gap <= 3) parallelNeighbours += 1;
+      const signed =
+        ((other.x1 - line.x1) * -Math.sin(mine) + (other.y1 - line.y1) * Math.cos(mine)) *
+        feetPerUnit;
+      const gap = Math.abs(signed);
+      if (gap > 0 && gap <= 3) {
+        parallelNeighbours += 1;
+        sides.push(signed);
+      }
     }
 
     const endsOutside =
@@ -178,11 +318,38 @@ export function classifySingleLines(input: ClassifyInput): ClassifiedLine[] {
 
     let kind: SingleLineClass = "unclassified";
     let why = "a single line with no partner, and nothing else to say about it";
+    const sayFilled = (feet: number) =>
+      `a face with its partner ${(feet * 12).toFixed(0)}in away and the fill drawn between them — ` +
+      `a hatched wall, not a hatched area`;
     // Ordered most-telling first: a line can be several of these at once, and
     // the first match is the one a reviewer most needs to know.
-    if (parallelNeighbours >= 3) {
+    const filled = fillBetweenFaces(sides);
+    // Without the rule, ANY three parallel neighbours are a hatch — the
+    // behaviour customers get until the demote mode ships.
+    const pitch = input.hatchPitchRule === true ? evenPitch(sides) : 0;
+    if (parallelNeighbours >= 3 && filled === null && pitch !== null) {
       kind = "in-a-hatch";
-      why = `${parallelNeighbours} parallel lines within 3 ft — a hatch or a fill, not a face`;
+      // WHICH condition ruled out a filled wall, because "a hatch or a fill"
+      // alone cannot be argued with — by a reviewer or by the next person
+      // measuring this rule.
+      const both = sides.some((v) => v > 0) && sides.some((v) => v < 0);
+      const run = sides.map(Math.abs);
+      const nearest = run.length === 0 ? 0 : Math.min(...run);
+      why = both
+        ? `${parallelNeighbours} parallel lines within 3 ft at an even ${((pitch ?? 0) * 12).toFixed(1)}in pitch` +
+          ` — inside a hatch, not a face`
+        : `${parallelNeighbours} parallel lines within 3 ft, all on ONE side, nearest ${(nearest * 12).toFixed(0)}in` +
+          ` — a hatch edge rather than a face with its fill`;
+    } else if (parallelNeighbours >= 3 && pitch === null) {
+      // Crowded, but not by anything regular — so the company is a floor
+      // plan's own geometry and this line is offered like any other.
+      why =
+        `${parallelNeighbours} parallel lines within 3 ft, but unevenly spaced — ` +
+        `crowded by the plan rather than filled by a hatch`;
+    } else if (parallelNeighbours >= 3 && filled !== null) {
+      // Left `unclassified`, which is what gets OFFERED, and says why rather
+      // than falling through to the catch-all.
+      why = sayFilled(filled);
     } else if (pieces >= 4) {
       kind = "dashed";
       why = `${pieces} separate strokes along one line — drawn dashed, so it is shown rather than built`;

@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { prisma } from "@prova/db";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
-import { findWallsOnSheet } from "../findWallsOnSheet";
+import { findWallsOnSheet, inPageWidthUnits } from "../findWallsOnSheet";
+import { detectForSheet, offeredCandidates } from "../offeredCandidates";
+import { pagesToSample } from "../sheetTemplate";
+import type { StrokeSegment } from "../wallVectors";
 import { FEATURE_NAMES } from "../wallFeatures";
 import { deciderFor, type WallModel } from "../wallClassifier";
 import type { WallCandidate } from "../wallVectors";
@@ -107,6 +110,8 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
     }
 
     const scores: SheetScore[] = [];
+    /** One line per sheet saying which pipeline branch it took. */
+    const views: string[] = [];
     const notes: string[] = [];
 
     for (const file of held) {
@@ -131,27 +136,67 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
       }
       const doc = await openPlanPdf(bytes);
       const text = await doc.pageText(saved.page);
-      const found = findWallsOnSheet({
+      // ── SCORED ON WHAT THE APP WOULD OFFER, NOT ON THE FINDER'S RAW OUTPUT ──
+      //
+      // This called `findWallsOnSheet` on the raw page, which is a different
+      // pipeline from the product: the app restricts the strokes to the
+      // drawing, samples other pages to drop repeated geometry, measures a
+      // multi-view sheet per view, and then triages. Every held-out number
+      // this file produced before now described the finder.
+      //
+      // One bound, stated because it is not yet closed: `detectForSheet`
+      // reproduces the app's count within ±6 on SINGLE-view sheets and does
+      // NOT on multi-view ones (Murray 160 against the app's 32). The per
+      // sheet view count is printed so a reader can tell which rows are
+      // affected rather than having to trust this sentence.
+      const textItems = text.items.map((i) => ({
+        str: i.str,
+        x: i.x,
+        y: i.y,
+        width: i.width,
+        height: i.height,
+      }));
+      const sampledSheets: StrokeSegment[][] = [];
+      for (const n of pagesToSample(doc.pageCount, saved.page)) {
+        // FRESH bytes per page: pdf.js detaches the array it is handed.
+        const other =
+          n === saved.page ? read : await sheetStrokes(Buffer.from(readFileSync(join(DIR, pdf))), n);
+        if (other === null) continue;
+        sampledSheets.push(other.segments.map(inPageWidthUnits(other.widthPt || read.widthPt)));
+      }
+      const detected = detectForSheet({
         veto,
         segments: read.segments,
-        textItems: text.items.map((i) => ({
-          str: i.str,
-          x: i.x,
-          y: i.y,
-          width: i.width,
-          height: i.height,
-        })),
+        textItems,
         pageSize: { widthPt: read.widthPt, heightPt: read.heightPt },
         feetPerUnit: saved.feetPerUnit,
-        wallTypes: [],
-        sampledSheets: null,
+        sampledSheets,
       });
+      const found = detected.found;
+      const offered = offeredCandidates({
+        walls: found.walls,
+        segments: found.inUnits.map((one) => ({
+          ...one,
+          x1: one.x1 * read.widthPt,
+          y1: one.y1 * read.widthPt,
+          x2: one.x2 * read.widthPt,
+          y2: one.y2 * read.widthPt,
+        })),
+        widthPt: read.widthPt,
+        feetPerUnit: saved.feetPerUnit,
+        planBoxes: detected.planBoxes,
+      });
+      views.push(
+        `  ${file.dir.slice(0, 26)}/${file.sheet}: views ${detected.views}` +
+          `${detected.views >= 2 ? " — MULTI-VIEW, the app's count is not yet reproduced here" : ""}` +
+          ` · offered ${offered.candidates.length} · paired ${found.walls.length}`,
+      );
       scores.push(
         scoreSheet({
           set: file.dir,
           sheet: file.sheet,
           key,
-          proposed: found.walls.map((w) => ({
+          proposed: offered.candidates.map((w) => ({
             x1: w.x1,
             y1: w.y1,
             x2: w.x2,
@@ -166,7 +211,11 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
             // trace/proposal pair falls back to the 1.5 ft floor and the
             // thickness-aware band never fires on the only case it exists
             // for. Dropped here, the scorer was thickness-aware in name only.
-            thicknessFeet: w.thicknessFeet,
+            //
+            // The offered list measures it in INCHES and leaves it null on a
+            // single line, which has no second face — so the conversion is
+            // explicit and a single keeps no thickness rather than a zero.
+            thicknessFeet: w.thicknessIn === null ? undefined : w.thicknessIn / 12,
           })),
           feetPerUnit: saved.feetPerUnit,
           keyFromTracedFeet: fromTracedFeet,
@@ -174,6 +223,8 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
       );
     }
 
+    console.log("\nWHICH PIPELINE BRANCH EACH SHEET TOOK");
+    for (const line of views) console.log(line);
     const total = totalScore(scores);
     const lines = scores.map(
       (s) =>

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { prisma } from "@prova/db";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
-import { findWallsOnSheet } from "../findWallsOnSheet";
+import { findWallsOnSheet, inPageWidthUnits } from "../findWallsOnSheet";
 import { sheetStrokes } from "../sheetStrokes";
 import { heldOutReason } from "../heldOutSets";
 import { labelRows } from "../labelRows";
@@ -182,15 +182,47 @@ describe.skipIf(DIR === "" || LABELS === "")("the app's candidate list against t
       // not, the extraction is unfaithful and that is worth more than any
       // measurement taken with it.
       // The app's own two steps, in order, through the shared module.
+      // ── THE TEMPLATE SAMPLE IS AN INPUT, AND LEAVING IT OUT IS NOT NEUTRAL ──
+      //
+      // The app reads OTHER PAGES of the set and hands them over so repeated
+      // geometry can be removed. Every eval here passed null, which is why
+      // they saw 160 candidates on a tower sheet where the app offered 32:
+      // levels 3 to 10 of a tower repeat their real walls.
+      const sampledSheets: { x1: number; y1: number; x2: number; y2: number; widthPt?: number }[][] = [];
+      for (const n of pagesToSample(doc.pageCount, saved.page)) {
+        // FRESH bytes per page: pdf.js takes a view of the array it is handed
+        // and detaches it, so reusing `bytes` here throws
+        // "Construct on a detached or out-of-bounds ArrayBuffer".
+        const read =
+          n === saved.page
+            ? strokes
+            : await sheetStrokes(Buffer.from(readFileSync(join(DIR, pdf))), n);
+        sampledSheets.push(
+          read.segments.map(inPageWidthUnits(read.widthPt || strokes.widthPt)),
+        );
+      }
       const detected = detectForSheet({
         segments: strokes.segments,
         textItems,
         pageSize: { widthPt: strokes.widthPt, heightPt: strokes.heightPt },
         feetPerUnit: saved.feetPerUnit,
+        sampledSheets,
       });
       const offered = offeredCandidates({
         walls: detected.found.walls,
-        segments: strokes.segments,
+        // ── THE STROKES THE MEASUREMENT USED, NOT THE PAGE'S ──
+        //
+        // The app hands over `found.inUnits` and says why in its own comment:
+        // "a candidate built from the raw page is a candidate from the title
+        // block as readily as from the plan". Passing the whole page here is
+        // what made this eval see candidates the panel never had.
+        segments: detected.found.inUnits.map((one) => ({
+          ...one,
+          x1: one.x1 * strokes.widthPt,
+          y1: one.y1 * strokes.widthPt,
+          x2: one.x2 * strokes.widthPt,
+          y2: one.y2 * strokes.widthPt,
+        })),
         widthPt: strokes.widthPt,
         feetPerUnit: saved.feetPerUnit,
         planBoxes: detected.planBoxes,

@@ -21,6 +21,10 @@ dist
 # censuses walked its compiled bundles and reported them as database writers
 # that skip their counter — a real finding about generated code nobody wrote.
 .next-smoke
+# Chrome's labelling server builds here, for the same reason: a build
+# directory the repo cannot see is what makes a filesystem-walking census
+# disagree with what git reports.
+.next-chrome
 .expo
 expo-env.d.ts
 out

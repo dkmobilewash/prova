@@ -91,6 +91,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { listGitFiles } from "../test/git-files";
+import { skipDir, skipPath } from "./censusSkipDirs";
 
 /** apps/web. `process.cwd()` under this suite, but resolved from this
  * file so a runner started elsewhere cannot silently change the scope. */
@@ -137,7 +138,6 @@ const { roots, workspaceDeps } = scanRoots();
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx"];
 /** Never source, never tracked, and enormous. */
-const SKIP_DIRS = new Set(["node_modules", ".next", ".turbo", "dist", ".git"]);
 
 function walk(root: string): string[] {
   const found: string[] = [];
@@ -146,7 +146,7 @@ function walk(root: string): string[] {
     const dir = stack.pop() as string;
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
-        if (!SKIP_DIRS.has(entry.name)) stack.push(join(dir, entry.name));
+        if (!skipDir(entry.name)) stack.push(join(dir, entry.name));
       } else if (SOURCE_EXTENSIONS.some((ext) => entry.name.endsWith(ext))) {
         found.push(join(dir, entry.name));
       }

@@ -1,6 +1,7 @@
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "./findWallsOnSheet";
-import { primaryView, sheetViews, wallsPerView } from "./sheetViews";
+import { primaryView, sheetViews, viewRegions, wallsPerView } from "./sheetViews";
+import { drawingRegions, segmentsInRegions } from "./planRegion";
 import { classifySingleLines, worthOffering } from "./singleLines";
 import { oneFacePerLine, wallFromPair, type StrokeSegment, type WallCandidate } from "./wallVectors";
 
@@ -61,6 +62,26 @@ export type OfferedResult = {
   setAside: { kind: string; why: string; n: number }[];
   /** For a measurement: the paired candidates dropped for being off-plan. */
   offPlanPaired: number;
+  /**
+   * The lines the classifier withheld, with their geometry.
+   *
+   * ── COUNTS CANNOT ANSWER WHETHER THE TRIAGE IS WORTH KEEPING ──
+   *
+   * The panel needs counts by reason, and that is all this returned. But
+   * "152 set aside on Murray" says nothing about whether those were junk or
+   * walls — and the miss analysis showed reviewers tracing walls by hand that
+   * the finder had proposed and the classifier had withheld. Answering that
+   * needs the geometry, so it comes out here and the panel keeps ignoring it.
+   */
+  setAsideLines: {
+    kind: string;
+    why: string;
+    lengthFeet: number;
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+  }[];
 };
 
 /** A single line must be at least this long to be worth a reviewer's time. */
@@ -76,7 +97,13 @@ function onAPlan(sheet: DetectedSheet, x1: number, y1: number, x2: number, y2: n
   );
 }
 
-export function offeredCandidates(sheet: DetectedSheet, offerAll = false): OfferedResult {
+export function offeredCandidates(
+  sheet: DetectedSheet,
+  /** Also offer the HATCH-classed set-asides, for a reviewer judging them. */
+  offerAll = false,
+  /** See `ClassifyInput.hatchPitchRule`: on for labelling, off for customers. */
+  hatchPitchRule = false,
+): OfferedResult {
   const faces = oneFacePerLine(sheet.segments, sheet.feetPerUnit / sheet.widthPt).map(
     inPageWidthUnits(sheet.widthPt),
   );
@@ -109,6 +136,7 @@ export function offeredCandidates(sheet: DetectedSheet, offerAll = false): Offer
     segments: sheet.segments.map(inPageWidthUnits(sheet.widthPt)),
     walls: sheet.walls,
     feetPerUnit: sheet.feetPerUnit,
+    hatchPitchRule,
   });
 
   // Counted by reason even when `offerAll` is on, so the sentence the panel
@@ -134,7 +162,14 @@ export function offeredCandidates(sheet: DetectedSheet, offerAll = false): Offer
         thicknessFeet: w.thicknessFeet,
       })),
       singles: classified
-        .filter((one) => offerAll || worthOffering(one.kind))
+        // ── THE OVERRIDE IS HATCH-CLASSED LINES, NOT EVERYTHING ──
+        //
+        // Measured on the training sheets, five of the six set-aside reasons
+        // withheld 27,934 ft across 165 lines without a single foot of
+        // confirmed wall. Offering those spends a reviewer's attention on
+        // what is already known to be junk. `in-a-hatch` is the one reason
+        // that has ever hidden a wall, so it is the one worth a verdict.
+        .filter((one) => worthOffering(one.kind) || (offerAll && one.kind === "in-a-hatch"))
         .map((one) => ({
           line: one.line,
           lengthFeet: one.lengthFeet,
@@ -143,6 +178,17 @@ export function offeredCandidates(sheet: DetectedSheet, offerAll = false): Offer
         })),
     }),
     setAside: [...aside.values()].sort((a, b) => b.n - a.n),
+    setAsideLines: classified
+      .filter((one) => !worthOffering(one.kind))
+      .map((one) => ({
+        kind: one.kind,
+        why: one.why,
+        lengthFeet: one.lengthFeet,
+        x1: one.line.x1,
+        y1: one.line.y1,
+        x2: one.line.x2,
+        y2: one.line.y2,
+      })),
     offPlanPaired: sheet.walls.length - onPlan.length,
   };
 }
@@ -184,6 +230,15 @@ export type SheetDetectInput = {
   feetPerUnit: number;
   wallTypes?: Parameters<typeof findWallsOnSheet>[0]["wallTypes"];
   sampledSheets?: StrokeSegment[][] | null;
+  /**
+   * The model's veto, passed straight through to `findWallsOnSheet`.
+   *
+   * It belongs here rather than at the call site because a score taken on
+   * "the app's candidate list" has to run the veto where the app would run
+   * it — inside detection, before the triage sees anything. Scoring the
+   * veto against a list built without it compares two different pipelines.
+   */
+  veto?: Parameters<typeof findWallsOnSheet>[0]["veto"];
 };
 
 export type SheetDetectResult = {
@@ -204,10 +259,34 @@ export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
     feetPerUnit: input.feetPerUnit,
     wallTypes: [...(input.wallTypes ?? [])],
     sampledSheets: input.sampledSheets ?? null,
+    veto: input.veto,
   };
 
   if (views.length < 2) {
-    return { found: findWallsOnSheet(base), planBoxes: null, views: views.length, primaryName: null };
+    // ── A ONE-DRAWING SHEET STILL HAS A TITLE BLOCK, AND IT MEASURED IT ──
+    //
+    // `viewRegions` separates the title block, the notes and the legend from
+    // the drawing, but a region with no caption joins the nearest — right for
+    // keeping a plan's dimension column with its plan, and it meant a sheet
+    // with one caption measured its own title block and offered its ruled
+    // lines as walls.
+    //
+    // Leaving this branch out of the extraction is what kept the eval at 160
+    // candidates on sheets the app had cut to 32: the raw page, measured
+    // whole. `planRegion.ts` carries why it cannot reintroduce the S05/S07
+    // scar — it keeps the BUSIEST region and whatever is comparable to it.
+    const drawing = drawingRegions(
+      viewRegions(base.segments, input.pageSize),
+      base.segments,
+      input.pageSize.widthPt,
+    );
+    const onTheDrawing = segmentsInRegions(base.segments, drawing, input.pageSize.widthPt);
+    return {
+      found: findWallsOnSheet({ ...base, segments: onTheDrawing }),
+      planBoxes: drawing.length > 0 ? [...drawing] : null,
+      views: views.length,
+      primaryName: null,
+    };
   }
 
   const measured = wallsPerView({ ...base, views });

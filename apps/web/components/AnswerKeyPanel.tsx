@@ -490,7 +490,31 @@ export function AnswerKeyPanel({
           // excluded, unreviewed is nobody looked. The file now carries both
           // and the second has to be the real one.
           unreviewed: Math.max(0, progress.total - progress.reviewed),
-          candidates: pairings,
+          // ── WHICH PAIRINGS THE REVIEWER WAS ACTUALLY SHOWN ──
+          //
+          // `pairings` is EVERY pairing the finder considered, greedy
+          // discards included, because that is what a model is scored on.
+          // The panel offers far fewer: 32 of 305 on Murray A101, 38 of 583
+          // on MHK, 154 of 1,217 on Crosslines. A pairing nobody saw has no
+          // verdict, and `labelRows` used to read that silence as the
+          // reviewer saying "not a wall" — 170, 330 and 934 negatives
+          // respectively that nobody ever judged.
+          //
+          // `labelRows` can now infer this from the counts, but inference is
+          // the weaker form: it can only say HOW MANY were offered, so it
+          // withholds every unmatched pairing on the sheet as soon as one was
+          // withheld. Marking each pairing says WHICH, so a pairing that was
+          // offered and refused stays the honest negative it is.
+          candidates: pairings.map((p) => ({
+            ...p,
+            offered: state.candidates.some(
+              (c) =>
+                Math.abs(c.x1 - p.x1) < 1e-6 &&
+                Math.abs(c.y1 - p.y1) < 1e-6 &&
+                Math.abs(c.x2 - p.x2) < 1e-6 &&
+                Math.abs(c.y2 - p.y2) < 1e-6,
+            ),
+          })),
           verdicts,
           // ── THE MERGE ──
           //
@@ -595,7 +619,7 @@ export function AnswerKeyPanel({
             data-takeoff="key-offer-all"
             className="mt-1 text-[11px] text-link hover:text-link-hover"
           >
-            {offerAll ? "Offer only the unexplained ones" : "Offer these too"}
+            {offerAll ? "Hide the hatched ones again" : "Also judge the hatched ones"}
           </button>
         </div>
       )}

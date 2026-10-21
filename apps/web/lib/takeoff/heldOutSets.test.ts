@@ -28,6 +28,22 @@ const TRAINING_FILES = [
   "20260424_HPL Lighthouse_Bulletin 2.pdf",
 ];
 
+/**
+ * ── THE SETS ADDED 2026-10-21, BY THEIR REAL FILE NAMES ──
+ *
+ * Taken from the folder rather than typed from the request, because a name
+ * that does not match the file refuses nothing and this list is the only
+ * thing standing between a test key and a training run. `OReillys-
+ * Architectural-Drawings.pdf` has no apostrophe on disk; Jefferson City is
+ * `Jefferson-City-Civil.pdf`.
+ */
+const REFUSED_2026_10_21 = [
+  "KSU-Fairchild-Hall.pdf",
+  "Albany-Readiness-Center.pdf",
+  "OReillys-Architectural-Drawings.pdf",
+  "Jefferson-City-Civil.pdf",
+];
+
 describe("the sets that must never reach training", () => {
   it("refuses every held-out set by its real file name", () => {
     for (const file of HELD_OUT_FILES) {
@@ -66,10 +82,44 @@ describe("the sets that must never reach training", () => {
     expect(isHeldOut("")).toBe(false);
   });
 
-  it("covers all four sets held out on 2026-10-20, plus Cedar Hollow", () => {
+  it("refuses the three sets held out on 2026-10-21, and Albany's sibling", () => {
+    // These were added BEFORE a label was written on any of them, which is
+    // the only order that makes a held-out set worth anything: a set held out
+    // after its labels reached a training run is not held out, it is late.
+    for (const file of REFUSED_2026_10_21) {
+      expect(isHeldOut(file), file).toBe(true);
+      expect(heldOutReason(file), file).not.toBeNull();
+    }
+  });
+
+  it("says Jefferson City is a SIBLING rather than an answer key", () => {
+    // It is in the same list because the list is the only thing the training
+    // path consults, and a second mechanism for "keep out of training" is a
+    // second thing to forget. But it is not a test set, and anybody counting
+    // answer keys off this list has to be able to tell.
+    const why = heldOutReason("Jefferson-City-Civil.pdf");
+    expect(why).toContain("SIBLING");
+    expect(why).toContain("not a test key");
+    // And the set it is a sibling of really is held out, or the entry is
+    // protecting nothing.
+    expect(isHeldOut("Albany-Readiness-Center.pdf")).toBe(true);
+  });
+
+  it("matches the new names however they were punctuated", () => {
+    // A label directory is the PDF's name with punctuation replaced, and
+    // O'Reillys is the one most likely to arrive spelled differently — with
+    // the apostrophe a person would write, or underscored as a directory.
+    expect(isHeldOut("O'Reillys Architectural Drawings")).toBe(true);
+    expect(isHeldOut("OReillys_Architectural_Drawings.pdf")).toBe(true);
+    expect(isHeldOut("KSU_Fairchild_Hall")).toBe(true);
+  });
+
+  it("covers the four sets held out 2026-10-20, the three from 2026-10-21, Cedar Hollow and one sibling", () => {
     // A count, pinned, so removing an entry is a deliberate act rather than a
-    // line that vanishes in a refactor.
-    expect(HELD_OUT_SETS).toHaveLength(5);
+    // line that vanishes in a refactor. It moved from 5 to 9 on 2026-10-21:
+    // KSU, Albany and O'Reillys held out, plus Jefferson City kept out as
+    // Albany's sibling.
+    expect(HELD_OUT_SETS).toHaveLength(9);
   });
 });
 

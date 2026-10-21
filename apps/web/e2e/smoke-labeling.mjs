@@ -546,6 +546,55 @@ try {
     notice === null ? "no notice shown" : notice.slice(0, 90),
   );
 
+  // ── THE HATCH OVERRIDE MUST NOT COST THE SAVED WORK ──
+  //
+  // The reviewer turns on "Also judge the hatched ones" to give verdicts to
+  // the one set-aside reason that has ever hidden a wall. That adds
+  // candidates to a sheet which already has decisions and traces restored on
+  // it, and the restore is the fragile part: it matches saved verdicts to the
+  // candidates this build proposes, so CHANGING the candidate list is exactly
+  // the operation that could drop them.
+  //
+  // If this ever goes red, the override is not safe to hand a reviewer — they
+  // would turn it on partway through a sheet and silently lose the morning.
+  console.log("\n1c. turning on the hatch override keeps the restored work");
+  const hatchToggle = page.locator('[data-takeoff="key-offer-all"]');
+  const hasToggle = (await hatchToggle.count()) > 0;
+  check("the override has a button to press", hasToggle, hasToggle ? "" : "no key-offer-all control");
+
+  if (hasToggle) {
+    const beforeOverride = await reviewedCount(page);
+    const tracedPre = await tracedCount(page);
+    await hatchToggle.first().click();
+    await page.waitForTimeout(2500);
+    const afterOverride = await reviewedCount(page);
+    const tracedPost = await tracedCount(page);
+
+    check(
+      "the saved decisions survive the override",
+      beforeOverride !== null &&
+        afterOverride !== null &&
+        afterOverride.reviewed >= beforeOverride.reviewed,
+      `${beforeOverride?.reviewed ?? "?"} -> ${afterOverride?.reviewed ?? "?"} reviewed`,
+    );
+    check(
+      "the traces survive it too",
+      tracedPost >= tracedPre,
+      `${tracedPre} -> ${tracedPost} traced`,
+    );
+    // The point of the override is MORE to judge. Equal totals would mean the
+    // button did nothing, which passes every check above and is a dead
+    // control — the shape this repo keeps paying for.
+    check(
+      "and it actually offers more than before",
+      beforeOverride !== null && afterOverride !== null && afterOverride.total > beforeOverride.total,
+      `${beforeOverride?.total ?? "?"} -> ${afterOverride?.total ?? "?"} offered`,
+    );
+    // Back off, so the checks after this see the sheet as they expect it.
+    await hatchToggle.first().click();
+    await page.waitForTimeout(1500);
+  }
+
   // ── AN UNSPLIT SHEET RE-APPLIES ZERO SPLITS ──
   //
   // The regression this guards, in one line. A heuristic inferred splits from
