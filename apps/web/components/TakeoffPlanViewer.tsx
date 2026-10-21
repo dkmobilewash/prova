@@ -1039,6 +1039,12 @@ export function TakeoffPlanViewer({
       }
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key.toLowerCase() !== "t") return;
+      // ── A FOCUSED BUTTON IS NOT TYPING ──
+      //
+      // Only INPUT, TEXTAREA and contentEditable block this, deliberately:
+      // "T does nothing while the Save button has focus" was reported, and a
+      // guard that skipped any focused element would make it true. After a
+      // click, SOMETHING always has focus.
       event.preventDefault();
       answerKey?.onTracing?.(answerKey?.tracing !== true);
       setTraceFrom(null);
@@ -1073,10 +1079,18 @@ export function TakeoffPlanViewer({
         setTraceTo(null);
         setTraceHover(null);
       } else if (event.key === "Escape") {
+        // ── ESCAPE LEAVES TRACE MODE, NOT JUST THE HALF-DRAWN LINE ──
+        //
+        // This cleared the two points and left the mode ARMED, while the
+        // panel disarmed it from its own handler — so what Escape did
+        // depended on which ran and what the other had changed. Reported as
+        // "Escape doesn't leave trace mode (only T does)". It does both here
+        // now, and the panel has stopped claiming the key.
         event.preventDefault();
         setTraceFrom(null);
         setTraceTo(null);
         setTraceHover(null);
+        answerKey?.onTracing?.(false);
       }
     }
     window.addEventListener("keydown", onKey);

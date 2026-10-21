@@ -372,7 +372,17 @@ try {
   check(
     "Escape leaves trace mode",
     armedBeforeEscape && !(await traceArmed()),
-    armedBeforeEscape ? "was armed, now off" : "NOT ARMED — the check proves nothing",
+    // ── THE DETAIL HAS TO DESCRIBE WHAT HAPPENED, NOT WHAT WAS HOPED ──
+    //
+    // This read "was armed, now off" whenever the mode had been armed —
+    // including when Escape had left it armed, so a mutation run printed
+    // `FAILED: Escape leaves trace mode — was armed, now off`, which reads
+    // like a pass beside the word FAILED.
+    !armedBeforeEscape
+      ? "NOT ARMED — the check proves nothing"
+      : (await traceArmed())
+        ? "was armed and STILL armed — Escape did not leave trace mode"
+        : "was armed, now off",
   );
 
   // Cmd/Ctrl+Z takes the last trace back.

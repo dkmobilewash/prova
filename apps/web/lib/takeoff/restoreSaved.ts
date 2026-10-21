@@ -453,7 +453,18 @@ export function restoreSaved(
       : `Restored ${pairs.length} saved decision${pairs.length === 1 ? "" : "s"}` +
       (traces.length > 0 ? ` and ${traces.length} trace${traces.length === 1 ? "" : "s"}` : "") +
       (prepared.splits > 0 ? `, ${prepared.splits} split re-applied` : "") +
-      (prepared.declined > 0 ? `, ${prepared.declined} split not re-applied (not provable)` : "") +
+      // ── ONLY WORTH SAYING IF SOMETHING IS ACTUALLY MISSING ──
+      //
+      // A decline means "two collinear decisions sat along a candidate and
+      // this would not infer a cut from them", which on an unsplit sheet is
+      // the ordinary state of any wall with a neighbour: Crosslines A100
+      // reported 27 and NG A3.2 eleven, both with ZERO unmatched decisions
+      // and nothing wrong. A line that fires when everything restored
+      // perfectly teaches the reader to ignore it, and then it is worth
+      // nothing on the day it matters.
+      (prepared.declined > 0 && unmatched > 0
+        ? `, ${prepared.declined} possible split not re-applied (not provable)`
+        : "") +
         (unmatched > 0 ? `, ${unmatched} kept but not shown — their candidates moved` : "") +
         ". Add what is missing and save again.",
   };

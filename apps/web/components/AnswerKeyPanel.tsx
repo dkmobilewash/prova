@@ -220,6 +220,12 @@ export function AnswerKeyPanel({
    * driven from one laptop by whoever is sitting at it.
    */
   const [reviewer, setReviewer] = useState("");
+  const [noticeDismissed, setNoticeDismissed] = useState(false);
+  // A new notice is a new thing to read, so dismissing one does not hide the
+  // next.
+  useEffect(() => {
+    setNoticeDismissed(false);
+  }, [savedNotice]);
 
   // ── FILLED ONLY WHEN EMPTY ──
   //
@@ -355,26 +361,23 @@ export function AnswerKeyPanel({
         if (focusedId !== null && state.traced.some((t) => t.id === focusedId)) {
           onState(removeTraced(state, focusedId));
         }
-      } else if (key === "escape") {
-        // ── ESC LEAVES TRACE MODE ──
-        //
-        // T toggles it and did the whole job, which is fine until the mode is
-        // armed and the reviewer wants out: every habit says Escape, and
-        // pressing T again is the thing they have to be told. Reported as
-        // "Esc doesn't reliably leave trace mode (T does)".
-        event.preventDefault();
-        if (tracing) onTracing?.(false);
-        else onFocus(null);
-      } else if (key === "t") {
-        // ── T ARMS TRACING ──
-        //
-        // The one thing a reviewer cannot do by deciding about candidates: a
-        // wall the drawing shows and the finder never proposed has nothing to
-        // accept. Two clicks on the sheet and Enter adds it, already accepted
-        // — see `tracedWall`.
-        event.preventDefault();
-        onTracing?.(!tracing);
       }
+      // ── `t` AND Escape BELONG TO THE VIEWER, NOT HERE ──
+      //
+      // Both components handled both keys. On `t` each called
+      // `onTracing(!tracing)` after reading the SAME current value, so the
+      // two calls happened to agree and the mode toggled once — by luck.
+      // Change either one to a functional update and `t` stops working
+      // altogether, which is the kind of coupling that gets discovered by
+      // somebody pressing a key and nothing happening.
+      //
+      // Escape was worse: the viewer cleared the half-drawn trace and this
+      // disarmed the mode, so what Escape did depended on which handler ran
+      // and what the other one had already changed. Reported as "Escape
+      // doesn't leave trace mode (only T does)".
+      //
+      // The viewer owns the trace points, so it owns both keys. See its
+      // `onKey` effects.
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -902,13 +905,31 @@ export function AnswerKeyPanel({
           deliberately to start again should not have yesterday restored for
           them. */}
       {/* ── WHAT THE SAVED FILE DID, INCLUDING WHEN IT REFUSED ── */}
-      {savedNotice != null && savedNotice !== "" ? (
-        <p
+      {/* ── STAYS UNTIL IT IS DISMISSED ──
+          *
+          * Reported as disappearing after a few seconds. It carries the one
+          * sentence saying which decisions were restored, which were kept but
+          * not shown, and whether this sheet is for tracing — so a reviewer
+          * who looks up from the drawing after a minute needs it to still be
+          * there. It has its own dismiss rather than a timer, because the
+          * reader decides when they have read it.
+          */}
+      {savedNotice != null && savedNotice !== "" && !noticeDismissed ? (
+        <div
           data-takeoff="key-saved-notice"
-          className="rounded-md border border-line-card bg-rail-hover px-2 py-1 text-xs text-ink-label"
+          className="flex items-start justify-between gap-2 rounded-md border border-line-card bg-rail-hover px-2 py-1 text-xs text-ink-label"
         >
-          {savedNotice}
-        </p>
+          <p>{savedNotice}</p>
+          <button
+            type="button"
+            data-takeoff="key-dismiss-notice"
+            onClick={() => setNoticeDismissed(true)}
+            className="shrink-0 rounded border border-line-card px-1 text-ink-muted hover:bg-surface"
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
       ) : null}
 
       {restoreOffer != null && restoreOffer !== "" ? (

@@ -29,6 +29,29 @@ import { finderVersion } from "./finderVersion";
  * and the most common one.
  */
 
+/**
+ * ── A ROW'S IDENTITY IS ITS GEOMETRY ──
+ *
+ * Rows needed an id so a row could be carried beside the verdict it came
+ * from. The obvious route — thread a candidate id down from the panel —
+ * means new plumbing through three components and a new field nobody else
+ * reads.
+ *
+ * The geometry already IS the identity: the whole restore matches saved
+ * verdicts to candidates by it, and a verdict in the same file carries the
+ * same four numbers. So the id is those numbers, rounded hard enough to
+ * survive a round trip through JSON and no further.
+ *
+ * It is NOT stable across finder builds, and must not be used as if it were:
+ * a build that moves a wall by an inch gives it a different id, which is
+ * exactly the drift the geometry match exists to absorb. This links a row to
+ * a verdict WITHIN one file.
+ */
+export function geometryId(at: { x1: number; y1: number; x2: number; y2: number }): string {
+  const n = (v: number) => v.toFixed(5);
+  return `${n(at.x1)},${n(at.y1)},${n(at.x2)},${n(at.y2)}`;
+}
+
 export type LabelCandidate = {
   /** Page-width units, as the finder works in. */
   x1: number;
@@ -52,6 +75,24 @@ export type LabelVerdict = {
 };
 
 export type LabelRow = {
+  /**
+   * The candidate this row was derived from.
+   *
+   * ── WHY A ROW NEEDS AN IDENTITY ──
+   *
+   * A row was `{features, from, label, lengthFt}` — no id and no geometry —
+   * so it could not be matched to the verdict it came from. That made
+   * "keep the features of the decisions this build cannot show" impossible
+   * to honour on a reopen: the only link available was LENGTH, and guessing
+   * by length is what invented a split on MHK A1.01.
+   *
+   * With the id, a later reopen can carry a row beside its verdict instead
+   * of keeping the whole previous block wholesale.
+   *
+   * Optional because every file written before this exists without it, and
+   * those must still read.
+   */
+  id?: string;
   features: number[];
   label: 0 | 1;
   lengthFt: number;
@@ -260,6 +301,7 @@ export function labelRows(
       // Or a TRACED wall, which is a positive statement that a wall is here.
       if (traced.some((run) => belongsTo(run, candidate, feetPerUnit))) continue;
       rows.push({
+        id: geometryId(candidate),
         features: candidate.features,
         label: 0,
         lengthFt: candidate.lengthFeet,
@@ -268,6 +310,7 @@ export function labelRows(
       continue;
     }
     rows.push({
+      id: geometryId(candidate),
       features: candidate.features,
       label: best.verdict === "wall" ? 1 : 0,
       lengthFt: candidate.lengthFeet,
