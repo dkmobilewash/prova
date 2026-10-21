@@ -1433,6 +1433,7 @@ export function TakeoffWorkspace({
               duplicateWallsByPage={data.duplicateWallsByPage}
               sheetLabelByPage={data.sheetLabelByPage}
               wallTypes={data.viewerWallTypes}
+              roomFinder={data.roomFinderOn}
               initialPage={openPage}
               fill
               panelOpen={panelOpen && !phone}

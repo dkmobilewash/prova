@@ -195,6 +195,11 @@ export const notYetRegistered: Exclusion[] = [
   // their own payroll practice. It is read off a form, on the page, by the
   // person whose name goes on it.
   { action: "wh347Statement.*", reason: "The WH-347 Statement of Compliance is certified by a named person under penalty of perjury, and the facts it needs are who signs it and how fringes were paid — neither is a fact C Stream holds or should draft. Page only, always." },
+  {
+    action: "roomFinder.*",
+    reason:
+      "Rooms are found in the browser from the walls on the screen and saved from the Rooms panel; the switch is an owner's settings choice. Neither is a thing to ask for in words.",
+  },
   { action: "sales.*", reason: "Prova-operator-only CRM, unreachable for any contractor tenant; excluded from the agent surface entirely." },
   { action: "emailFinder.*", reason: "Prova-operator-only sales tooling (finds cold-lead emails, spends search and verifier credits); excluded with the rest of the sales CRM." },
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
