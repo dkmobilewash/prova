@@ -36,6 +36,16 @@ export type AnswerKeyPanelProps = {
   /** Which candidate the overlay is highlighting, if any. */
   focusedId: string | null;
   savedNotice?: string | null;
+  /**
+   * The reviewer recorded in the file this sheet was restored from.
+   *
+   * Save is `disabled={savingLabels || reviewer.trim() === ""}`, so a restore
+   * that leaves this box empty reopens the sheet with SAVE DEAD — which is
+   * exactly what happened on MHK A1.01: the review came back, eleven traces
+   * went on, and the button did nothing because a text box three inches away
+   * was blank. Nothing about the review was wrong and nothing said so.
+   */
+  restoredReviewer?: string | null;
   onFocus: (id: string | null) => void;
   /**
    * An unsaved review for this sheet is in the browser — the text to offer.
@@ -119,6 +129,7 @@ export function AnswerKeyPanel({
   focusedId,
   onFocus,
   savedNotice,
+  restoredReviewer,
   restoreOffer,
   onRestore,
   onDiscardDraft,
@@ -181,6 +192,15 @@ export function AnswerKeyPanel({
    * driven from one laptop by whoever is sitting at it.
    */
   const [reviewer, setReviewer] = useState("");
+
+  // ── FILLED ONLY WHEN EMPTY ──
+  //
+  // Never over a name somebody is typing: this exists to stop Save being dead
+  // after a restore, not to decide who the reviewer is.
+  useEffect(() => {
+    if (restoredReviewer == null || restoredReviewer === "") return;
+    setReviewer((current) => (current.trim() === "" ? restoredReviewer : current));
+  }, [restoredReviewer]);
   const progress = progressOf(state);
   // A key with no scale is a list of lengths in nothing, and one with no
   // reviewer is a judgement nobody owns. Neither is worth saving.

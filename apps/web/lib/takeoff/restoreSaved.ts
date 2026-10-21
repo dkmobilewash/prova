@@ -1,5 +1,6 @@
 import type { Candidate, ReviewState, Verdict } from "./answerKeyReview";
 import { addTraced, setVerdict, tracedWall } from "./answerKeyReview";
+import { splitCandidate } from "./splitCandidate";
 
 /**
  * ── REOPENING A SHEET THAT HAS ALREADY BEEN LABELLED ──
@@ -54,6 +55,10 @@ export type SavedSheet = {
   page?: number;
   feetPerUnit?: number;
   finderVersion?: string;
+  /** Who reviewed it. The save writes this; the restore has to give it back —
+   *  see the `reviewedBy` note on `RestoreSavedResult`. */
+  reviewedBy?: string;
+  reviewerKind?: string;
   verdicts?: SavedVerdict[];
 };
 
@@ -61,6 +66,20 @@ export type RestoreSavedResult =
   | {
       ok: true;
       state: ReviewState;
+      /**
+       * ── WHY THE RESTORE HAS TO HAND BACK THE REVIEWER'S NAME ──
+       *
+       * The Save button is `disabled={savingLabels || reviewer.trim() === ""}`.
+       * A restore that leaves the name box empty therefore reopens a sheet
+       * with SAVE DEAD — which is what happened on MHK A1.01: the review came
+       * back cleanly, eleven traces were added, and the button did nothing
+       * because a text box three inches away was blank. Nothing about the
+       * review was wrong and nothing said so.
+       */
+      reviewedBy: string | null;
+      reviewerKind: string | null;
+      /** Splits re-created before matching, so their halves' verdicts fit. */
+      splitsReapplied: number;
       /** For the sentence the page shows: what came back. */
       decisions: number;
       traces: number;
@@ -102,6 +121,21 @@ function bandFeet(a: { thicknessFeet?: number }, b: { thicknessFeet?: number }):
   return Math.min(MAX_BAND_FEET, Math.max(SAME_WALL_FEET, thickest / 2 + FACE_MARGIN_FEET));
 }
 
+/** Where b's ends fall along a, in feet from a's start. */
+function along(
+  a: { x1: number; y1: number; x2: number; y2: number },
+  b: { x1: number; y1: number; x2: number; y2: number },
+  feetPerUnit: number,
+): { lo: number; hi: number } {
+  const L = len(a);
+  if (L === 0) return { lo: 0, hi: 0 };
+  const ux = (a.x2 - a.x1) / L;
+  const uy = (a.y2 - a.y1) / L;
+  const t1 = ((b.x1 - a.x1) * ux + (b.y1 - a.y1) * uy) * feetPerUnit;
+  const t2 = ((b.x2 - a.x1) * ux + (b.y2 - a.y1) * uy) * feetPerUnit;
+  return { lo: Math.min(t1, t2), hi: Math.max(t1, t2) };
+}
+
 const DECIDED: Record<string, Verdict> = {
   wall: "wall",
   "not-wall": "not-a-wall",
@@ -140,6 +174,84 @@ export function candidateFor(
   return best === null ? null : best.candidate;
 }
 
+/**
+ * ── THE PIECES OF A SPLIT CANDIDATE DO NOT EXIST ON REOPENING ──
+ *
+ * A reviewer can split a candidate in two and judge each half. The file then
+ * holds a verdict for each HALF, and neither half is a candidate the finder
+ * proposes: the split happened during the review. So those verdicts matched
+ * nothing and were reported as stale — NG Green Bay A3.1 lost 3 that way and
+ * Baker EOC A101 lost 2, on sheets where the reviewer had done the extra work
+ * of splitting precisely because the finder's run was wrong.
+ *
+ * So the splits are re-applied first, from the saved geometry: when two or
+ * more saved verdicts lie ALONG one candidate, each shorter than it, and
+ * together cover about all of it, that candidate was split at the boundary
+ * between them. Splitting there re-creates the halves, and the ordinary
+ * geometry match then finds them.
+ *
+ * Done before matching and never after, because a split changes the candidate
+ * list that the match reads.
+ */
+export function reapplySplits(
+  saved: readonly SavedVerdict[],
+  state: ReviewState,
+  feetPerUnit: number,
+): { state: ReviewState; splits: number } {
+  let working = state;
+  let splits = 0;
+
+  // Bounded: every split adds candidates, so an unbounded loop over a
+  // mis-measured sheet could run forever. Two splits per candidate is the
+  // most any sheet in the training set uses.
+  for (let round = 0; round < 8; round += 1) {
+    let did = false;
+    for (const candidate of working.candidates) {
+      // Only ever split something nothing has judged yet: a candidate that
+      // already carries a verdict is one the match will handle.
+      if ((working.verdicts[candidate.id] ?? "unreviewed") !== "unreviewed") continue;
+
+      const pieces = saved
+        .filter((v) => DECIDED[v.verdict] !== undefined)
+        .filter((v) => parallel(v, candidate))
+        .filter((v) => {
+          const off = Math.max(
+            offLine(candidate, v.x1, v.y1, feetPerUnit),
+            offLine(candidate, v.x2, v.y2, feetPerUnit),
+          );
+          return off <= bandFeet(v, { thicknessFeet: candidate.thicknessIn === null ? 0 : candidate.thicknessIn / 12 });
+        })
+        // A piece is SHORTER than the whole, or it is the whole.
+        .filter((v) => v.lengthFeet < candidate.lengthFeet - 0.5)
+        .map((v) => ({ v, span: along(candidate, v, feetPerUnit) }))
+        .sort((a, b) => a.span.lo - b.span.lo);
+
+      if (pieces.length < 2) continue;
+      const covered = pieces.reduce((a, p) => a + (p.span.hi - p.span.lo), 0);
+      if (covered < candidate.lengthFeet * 0.8) continue;
+
+      // The boundary between the first piece and the next is where the
+      // reviewer cut it.
+      const cutFeet = pieces[0].span.hi;
+      if (cutFeet <= 0.5 || cutFeet >= candidate.lengthFeet - 0.5) continue;
+      const t = cutFeet / Math.max(candidate.lengthFeet, 1e-9);
+      const at = {
+        x: candidate.x1 + (candidate.x2 - candidate.x1) * t,
+        y: candidate.y1 + (candidate.y2 - candidate.y1) * t,
+      };
+      const out = splitCandidate(working, candidate.id, at, feetPerUnit);
+      if (out.halves === null) continue;
+      working = out.state;
+      splits += 1;
+      did = true;
+      break;
+    }
+    if (!did) break;
+  }
+
+  return { state: working, splits };
+}
+
 export function restoreSaved(
   saved: SavedSheet,
   fresh: ReviewState,
@@ -153,11 +265,14 @@ export function restoreSaved(
   const decisions = all.filter((v) => DECIDED[v.verdict] !== undefined);
   const traces = all.filter((v) => v.verdict === "traced");
 
+  // Splits first: they change the candidate list the match reads.
+  const prepared = reapplySplits(all, fresh, feetPerUnit);
+
   const taken = new Set<string>();
   const pairs: { saved: SavedVerdict; candidate: Candidate }[] = [];
   let unmatched = 0;
   for (const v of decisions) {
-    const hit = candidateFor(v, fresh.candidates, feetPerUnit, taken);
+    const hit = candidateFor(v, prepared.state.candidates, feetPerUnit, taken);
     if (hit === null) {
       unmatched += 1;
       continue;
@@ -180,7 +295,7 @@ export function restoreSaved(
     };
   }
 
-  let state = fresh;
+  let state = prepared.state;
   for (const { saved: v, candidate } of pairs) {
     state = setVerdict(state, [candidate.id], DECIDED[v.verdict]);
   }
@@ -198,12 +313,16 @@ export function restoreSaved(
   return {
     ok: true,
     state,
+    reviewedBy: typeof saved.reviewedBy === "string" && saved.reviewedBy !== "" ? saved.reviewedBy : null,
+    reviewerKind: typeof saved.reviewerKind === "string" && saved.reviewerKind !== "" ? saved.reviewerKind : null,
+    splitsReapplied: prepared.splits,
     decisions: pairs.length,
     traces: traces.length,
     unmatched,
     message:
       `Restored ${pairs.length} saved decision${pairs.length === 1 ? "" : "s"}` +
       (traces.length > 0 ? ` and ${traces.length} trace${traces.length === 1 ? "" : "s"}` : "") +
+      (prepared.splits > 0 ? `, ${prepared.splits} split re-applied` : "") +
       (unmatched > 0 ? `, ${unmatched} no longer matching any candidate` : "") +
       ". Add what is missing and save again.",
   };

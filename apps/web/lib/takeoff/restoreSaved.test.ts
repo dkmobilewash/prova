@@ -190,3 +190,78 @@ describe("restoring a saved sheet", () => {
     expect(MIN_MATCH_SHARE).toBe(0.9);
   });
 });
+
+
+describe("re-applying the splits the reviewer made", () => {
+  // One 40 ft candidate the reviewer cut at 15 ft, judging each half.
+  const whole = () => startReview([cand("w0", 10, 0, 40, 6)]);
+  const splitFile = () =>
+    file([sv(10, 0, 15, "wall"), sv(10, 15, 40, "not-wall")], { reviewedBy: "chrome" });
+
+  it("brings BOTH halves back, which is the bug Chrome hit", () => {
+    // ── WHY THIS COULD NOT WORK BEFORE ──
+    //
+    // Neither half is a candidate the finder proposes: the split happened
+    // during the review. So both verdicts matched nothing and were reported
+    // as stale — NG Green Bay A3.1 lost 3 that way, Baker EOC A101 lost 2,
+    // on sheets where the reviewer had done EXTRA work precisely because the
+    // finder's run was wrong.
+    const got = restoreSaved(splitFile(), whole(), FPU);
+    expect(got.ok).toBe(true);
+    if (!got.ok) return;
+    expect(got.splitsReapplied).toBe(1);
+    expect(got.decisions).toBe(2);
+    expect(got.unmatched).toBe(0);
+    // And the halves carry the verdicts the reviewer gave them, not one
+    // verdict spread over both.
+    const verdicts = Object.values(got.state.verdicts);
+    expect(verdicts).toContain("wall");
+    expect(verdicts).toContain("not-a-wall");
+  });
+
+  it("says so in the message", () => {
+    const got = restoreSaved(splitFile(), whole(), FPU);
+    expect(got.ok).toBe(true);
+    if (!got.ok) return;
+    expect(got.message).toContain("1 split re-applied");
+  });
+
+  it("does NOT split a candidate one saved decision covers whole", () => {
+    // The ordinary case must not be touched: a 40 ft decision on a 40 ft
+    // candidate is a match, not two pieces.
+    const got = restoreSaved(file([sv(10, 0, 40, "wall")]), whole(), FPU);
+    expect(got.ok).toBe(true);
+    if (!got.ok) return;
+    expect(got.splitsReapplied).toBe(0);
+    expect(got.decisions).toBe(1);
+  });
+
+  it("does NOT split for two pieces covering only part of it", () => {
+    // Two short decisions at one end are not a split of the whole run; they
+    // are something else, and splitting there would invent a boundary.
+    const got = restoreSaved(file([sv(10, 0, 5, "wall"), sv(10, 5, 11, "wall")]), whole(), FPU);
+    // Either outcome is correct here and both are worth allowing: the pieces
+    // may simply fail to match (a refusal), or they may match without any
+    // split being invented. What must NOT happen is a split at a boundary the
+    // reviewer never drew, so the assertion is on the split count.
+    if (got.ok) {
+      expect(got.splitsReapplied).toBe(0);
+    } else {
+      expect(got.message).toContain("Nothing was restored");
+    }
+  });
+
+  it("hands back the reviewer's name, so Save is not dead on arrival", () => {
+    const got = restoreSaved(splitFile(), whole(), FPU);
+    expect(got.ok).toBe(true);
+    if (!got.ok) return;
+    expect(got.reviewedBy).toBe("chrome");
+  });
+
+  it("reports no name rather than an empty one", () => {
+    const got = restoreSaved(file([sv(10, 0, 40, "wall")]), whole(), FPU);
+    expect(got.ok).toBe(true);
+    if (!got.ok) return;
+    expect(got.reviewedBy).toBeNull();
+  });
+});

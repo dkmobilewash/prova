@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { clearDraft, loadDraft, saveDraft } from "@/lib/takeoff/draftStore";
+import { clearDraft, loadDraft, otherDrafts, saveDraft } from "@/lib/takeoff/draftStore";
 import {
   draftFrom,
   hasUnsavedWork,
@@ -779,6 +779,7 @@ export function TakeoffWorkspace({
    * reviewer who has started judging has told us they do not want the file.
    */
   const [savedNotice, setSavedNotice] = useState<{ page: number; note: string } | null>(null);
+  const [restoredReviewer, setRestoredReviewer] = useState<string | null>(null);
   const triedSaved = useRef<string>("");
   const baselineDecided = useRef<{ key: string; count: number }>({ key: "", count: 0 });
   useEffect(() => {
@@ -824,6 +825,7 @@ export function TakeoffWorkspace({
         const got = restoreSaved(saved, fresh, scaleFeetPerUnit);
         if (got.ok) {
           setKeyState(got.state);
+          setRestoredReviewer(got.reviewedBy);
           setSavedNotice({ page, note: got.message });
           // ── WHAT CAME OFF DISK IS NOT UNSAVED WORK ──
           //
@@ -849,7 +851,26 @@ export function TakeoffWorkspace({
   // ── OFFERED ON OPENING, NOT RESTORED BEHIND THEIR BACK ──
   useEffect(() => {
     if (!keyMode || draftSet === "") return;
-    const draft = loadDraft(draftSet, page, finderVersion);
+    let draft = loadDraft(draftSet, page, finderVersion);
+    if (draft === null) {
+      // ── A REBUILD MUST NOT DESTROY SOMEBODY'S UNSAVED WORK ──
+      //
+      // `draftKey` ends in the FINDER VERSION, which is the commit SHA — so
+      // every rebuild of this server makes every existing draft unreachable,
+      // silently. `otherDrafts` was written to find the ones saved under a
+      // previous version and was called by NOTHING, which is the
+      // "written, documented, never called" shape this repo keeps paying for.
+      //
+      // Found while answering whether eleven unsaved traces on MHK A1.01
+      // would survive the next rebuild. They would not have.
+      //
+      // `restoreDraft` still checks the fingerprint, so a draft from a build
+      // whose candidate list differs is REFUSED with its reason rather than
+      // applied — offering it costs nothing and withholding it costs the
+      // work.
+      const older = otherDrafts(draftSet, page, finderVersion);
+      draft = older.length === 0 ? null : older[older.length - 1];
+    }
     if (draft === null) {
       setRestorable(null);
       return;
@@ -875,7 +896,14 @@ export function TakeoffWorkspace({
   keyStateRef.current = keyState;
 
   const restoreReview = useCallback(() => {
-    const draft = loadDraft(draftSet, page, finderVersion);
+    // The same fallback as the offer: a button that offers a draft and then
+    // cannot find it is worse than no button.
+    const draft =
+      loadDraft(draftSet, page, finderVersion) ??
+      (() => {
+        const older = otherDrafts(draftSet, page, finderVersion);
+        return older.length === 0 ? null : older[older.length - 1];
+      })();
     const current = keyStateRef.current;
     if (draft === null || current === null) {
       // ── SAY SO, RATHER THAN DOING NOTHING ──
@@ -1414,6 +1442,7 @@ export function TakeoffWorkspace({
             ) : (
               <AnswerKeyPanel
                 savedNotice={savedNotice?.page === page ? savedNotice.note : null}
+                restoredReviewer={restoredReviewer}
                 restoreOffer={restorable?.page === page ? restorable.offer : null}
                 onRestore={restoreReview}
                 onDiscardDraft={clearReviewDraft}

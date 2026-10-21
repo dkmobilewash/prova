@@ -28,7 +28,7 @@
  * Usage: driven by `scripts/smoke-labeling.sh`, which sets SMOKE_BASE,
  * SMOKE_LABELS and the Clerk keys.
  */
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { clerk, clerkSetup } from "@clerk/testing/playwright";
 // `@playwright/test`, not `playwright`: the bare package is not resolvable
@@ -536,17 +536,153 @@ try {
     notice === null ? "no notice shown" : notice.slice(0, 90),
   );
 
-
-  let onDisk = null;
-  for (const { doc } of savedLabelFiles()) onDisk = doc;
-  check("a label file is on disk", onDisk !== null, onDisk === null ? "" : `${onDisk.sheet}`);
+  // ── SAVE MUST BE LIVE AFTER A RESTORE, AND THE TRACE MUST REACH THE FILE ──
+  //
+  // Diego's case, exactly: save, reopen, add a trace, Save must be ENABLED and
+  // the file must then contain the trace.
+  //
+  // On MHK A1.01 the review restored cleanly, eleven traces went on, and
+  // "Save to labels" stayed greyed out — because Save is
+  // `disabled={savingLabels || reviewer.trim() === ""}` and a restore left
+  // the name box blank. Nothing about the review was wrong, and nothing said
+  // so. The restore hands the file's own `reviewedBy` back now.
+  const tracesBeforeAdding = await tracedCount(page);
+  if (!(await traceArmed())) await page.keyboard.press("t");
+  await page.waitForTimeout(200);
+  const boxAfterReopen = await page.locator("canvas").first().boundingBox();
+  if (boxAfterReopen !== null) {
+    await page.mouse.click(boxAfterReopen.x + boxAfterReopen.width * 0.36, boxAfterReopen.y + boxAfterReopen.height * 0.64);
+    await page.waitForTimeout(200);
+    await page.mouse.click(boxAfterReopen.x + boxAfterReopen.width * 0.56, boxAfterReopen.y + boxAfterReopen.height * 0.64);
+    await page.waitForTimeout(200);
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(400);
+  }
+  const tracesAfterAdding = await tracedCount(page);
   check(
-    "it holds the decisions and the trace",
-    onDisk !== null && onDisk.counts.accepted + onDisk.counts.rejected > 0 && onDisk.counts.traced > 0,
-    onDisk === null ? "" : JSON.stringify(onDisk.counts),
+    "a trace can be added to a restored review",
+    tracesAfterAdding > tracesBeforeAdding,
+    `${tracesBeforeAdding} -> ${tracesAfterAdding} traced`,
   );
 
-  // ─────────────────────────────────────────────────────────────────────
+  const saveAfterRestore = page.locator('[data-takeoff="key-save-labels"]');
+  const saveIsDead = await saveAfterRestore.isDisabled();
+  check(
+    "Save is ENABLED after a restore plus a trace",
+    !saveIsDead,
+    saveIsDead ? "still greyed out — the MHK A1.01 bug" : "enabled",
+  );
+
+  if (!saveIsDead) {
+    await saveAfterRestore.click();
+    await page.waitForFunction(() => /Labels saved|Not saved/.test(document.body.innerText), {
+      timeout: 60_000,
+    });
+    // The helper the big-body scenario uses, rather than a new reader.
+    let onDiskNow = null;
+    for (const { doc } of savedLabelFiles()) onDiskNow = doc;
+    check(
+      "and the file now contains the trace",
+      onDiskNow !== null && (onDiskNow.counts?.traced ?? 0) >= tracesAfterAdding,
+      onDiskNow === null
+        ? "no file on disk"
+        : `file says ${onDiskNow.counts?.traced ?? 0} traced, page said ${tracesAfterAdding}`,
+    );
+  }
+
+  // ── A SPLIT SURVIVES THE REOPEN, INCLUDING BOTH HALVES ──
+  //
+  // Diego's second case: split, save, reopen, all decisions back including
+  // both halves.
+  //
+  // Neither half is a candidate the finder proposes — the split happened
+  // during the review — so before this their verdicts matched nothing and
+  // were reported as stale. NG Green Bay A3.1 lost 3 that way and Baker EOC
+  // A101 lost 2, on sheets where the reviewer had done EXTRA work precisely
+  // because the finder's run was wrong.
+  console.log("\n1c. a split survives the reopen, both halves");
+
+  // ── DRIVEN FROM THE FILE, BECAUSE THIS SHEET HAS NO SPLITTABLE RUN ──
+  //
+  // The first version pressed S on up to twenty candidates and never split
+  // anything: S only cuts where a wall CROSSES, and Baker EOC p12 has no such
+  // run — the smoke's own earlier split check reports its reason rather than
+  // splitting, for the same reason. A check that fails because the FIXTURE
+  // cannot exercise it is reporting a sheet limitation as a product fault.
+  //
+  // So the split is written into the saved FILE, which is exactly the input
+  // the bug was about: a file holding a verdict for each HALF of a run, where
+  // neither half is a candidate the finder proposes. Before the fix both
+  // verdicts matched nothing — NG Green Bay A3.1 lost 3 that way and Baker
+  // EOC A101 lost 2.
+  let splitFilePath = null;
+  let splitPieces = 0;
+  for (const { path, doc } of savedLabelFiles()) {
+    const accepted = (doc.verdicts ?? []).findIndex(
+      (v) => v.verdict === "wall" && v.lengthFeet > 6,
+    );
+    if (accepted < 0) continue;
+    const whole = doc.verdicts[accepted];
+    const midX = (whole.x1 + whole.x2) / 2;
+    const midY = (whole.y1 + whole.y2) / 2;
+    // Two halves of that run, judged differently, in place of the whole.
+    doc.verdicts.splice(
+      accepted,
+      1,
+      { ...whole, x2: midX, y2: midY, lengthFeet: whole.lengthFeet / 2, verdict: "wall" },
+      { ...whole, x1: midX, y1: midY, lengthFeet: whole.lengthFeet / 2, verdict: "not-wall" },
+    );
+    doc.counts = {
+      ...(doc.counts ?? {}),
+      accepted: doc.verdicts.filter((v) => v.verdict === "wall").length,
+      rejected: doc.verdicts.filter((v) => v.verdict === "not-wall").length,
+    };
+    writeFileSync(path, `${JSON.stringify(doc, null, 1)}\n`);
+    splitFilePath = path;
+    splitPieces = 2;
+    break;
+  }
+  check(
+    "a saved file with two halves of one run exists to reopen",
+    splitFilePath !== null && splitPieces === 2,
+    splitFilePath === null ? "no accepted run over 6 ft to halve" : "written",
+  );
+
+  if (splitFilePath !== null) {
+    const expected = JSON.parse(readFileSync(splitFilePath, "utf8")).verdicts.filter(
+      (v) => v.verdict === "wall" || v.verdict === "not-wall" || v.verdict === "unsure",
+    ).length;
+
+    await page.evaluate(() => {
+      try {
+        for (const k of Object.keys(localStorage)) {
+          if (k.includes("takeoff-review-draft")) localStorage.removeItem(k);
+        }
+      } catch {
+        // Blocked storage: nothing to clear.
+      }
+    });
+    await page.goto(url(SHEET_A), { waitUntil: "domcontentloaded" });
+    await waitForDrawing(page);
+    await findTheWalls(page);
+    await page.waitForTimeout(3000);
+
+    const splitNotice = await page
+      .locator('[data-takeoff="key-saved-notice"]')
+      .textContent()
+      .catch(() => null);
+    check(
+      "the split is re-applied and every decision comes back",
+      splitNotice !== null && /split re-applied/.test(splitNotice),
+      splitNotice === null ? "no notice" : splitNotice.slice(0, 110),
+    );
+    check(
+      "and nothing is left unmatched",
+      splitNotice !== null && !/no longer matching/.test(splitNotice),
+      `${expected} decisions in the file · ${splitNotice === null ? "no notice" : splitNotice.slice(0, 70)}`,
+    );
+  }
+
   console.log("\n2. navigate away after saving — no prompt, no trap");
   // ── ACCEPT, DO NOT DISMISS ──
   //
