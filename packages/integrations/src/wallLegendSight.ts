@@ -35,8 +35,14 @@ import { reportUsage, type ModelUsageReporter } from "./anthropic";
  * `2`, and the sight read called it "WALL TYPE 1"); a field filled from a
  * sheet-wide note is named as such (SW's seven types got their board from
  * one note on the stud chart); and OPTIONAL items are listed, never counted.
+ * Version 5: a legend entry that is a storefront, curtain wall, glazing,
+ * railing or door says so in `notAPartition` instead of coming back as
+ * nothing (Nall's SF-1 and SF-2 came back as nothing). Version 6 scopes
+ * that to the legend ENTRY: v5 let the model call SW's A1–B3 "stud size
+ * chart" and "door jamb detail" because their crops had landed on detail
+ * bubbles sharing those numbers, and seven read types became none.
  */
-export const WALL_LEGEND_SIGHT_PROMPT_VERSION = "wall-legend-sight.4";
+export const WALL_LEGEND_SIGHT_PROMPT_VERSION = "wall-legend-sight.6";
 
 const TOOL_NAME = "record_wall_types_by_sight";
 
@@ -64,6 +70,12 @@ export type WallTypeSight = {
   fromSheetNote: string[];
   /** Items the drawing marks optional or alternate, verbatim; never counted. */
   optional: string[];
+  /**
+   * Set when the "type" is not a framed or masonry partition at all — a
+   * storefront, curtain wall, glazing, railing, or a door — with the word
+   * the drawing uses. Such a type is reported, never proposed.
+   */
+  notAPartition: string | null;
   confidence: "HIGH" | "MEDIUM" | "LOW";
 };
 
@@ -91,6 +103,8 @@ Rules:
 10. Where a note names a board "EACH SIDE" or "BOTH SIDES", layersSideA and layersSideB are equal; do not count a hatch on one face as the only layer.
 11. THE CODE IS WHAT THE PLANS POINT AT. When the types are numbered DETAILS on a details sheet — a detail bubble with a number and the sheet beneath it, titled "WALL TYPE 1 – NON-RATED" — the plans tag walls with the DETAIL NUMBER, so record that number as the code ("2") and put the title in name. Only where there is no detail number is the title's own code the code.
 12. A note that applies to the WHOLE SHEET — "all studs assumed to have 5/8in gyp bd on both faces", a general note numbered at the margin — is weaker than the type's own words. You may fill a field from it, but name that field in fromSheetNote and quote the note in notes, so the reader sees it was not said of this type.
+14. A legend entry that is not a wall assembly — a STOREFRONT, CURTAIN WALL, GLAZING or WINDOW system, a RAILING, a DOOR — still gets a record, with notAPartition set to the drawing's own word for it ("storefront") and the assembly fields null. It is reported so nobody wonders where it went; it is never proposed as a partition.
+    notAPartition describes what the LEGEND ENTRY is, never what a crop happens to show. A crop is cut around a printing of the code and can land on a detail bubble, a grid line or a chart that shares the code's letters; if the crop shows something that is not the type, ignore the crop, read the type from the page and its text, and leave notAPartition null. Set it only when the legend's own words for that type say it is a storefront, curtain wall, glazing, railing, door, or an existing wall not being built.
 13. Anything the drawing marks OPTIONAL, ALTERNATE, "or", "where indicated", or "if required" — an optional batt, an alternate board — goes in optional, verbatim, and NOT in insulation, boardThicknessIn or the layer counts. An optional item is not part of the assembly.
 
 Record everything through the ${TOOL_NAME} tool. The reason says, in two or three sentences, what the legend looks like and where you had to judge.`;
@@ -157,6 +171,7 @@ export async function extractWallLegendBySight(params: {
                   fromDrawing: { type: "array", items: { type: "string" } },
                   fromSheetNote: { type: "array", items: { type: "string" } },
                   optional: { type: "array", items: { type: "string" } },
+                  notAPartition: { type: ["string", "null"] },
                   confidence: { type: "string", enum: ["HIGH", "MEDIUM", "LOW"] },
                 },
                 required: ["code", "notes", "fromDrawing", "confidence"],
@@ -211,6 +226,7 @@ export function parseSightRead(input: unknown): WallLegendSightRead {
         fromDrawing: strings(t.fromDrawing),
         fromSheetNote: strings(t.fromSheetNote),
         optional: strings(t.optional),
+        notAPartition: str(t.notAPartition),
         confidence: conf(t.confidence),
       };
     })

@@ -392,3 +392,24 @@ describe("a mark the gap join already used", () => {
     expect(got.rowsPlaced).toBe(1);
   });
 });
+
+describe("a door tag in a symbol reaches further than loose text", () => {
+  // FPU 100: 0.01 is a foot. One run along y=0.5 and nothing else near it.
+  const walls = [{ x1: 0.1, y1: 0.5, x2: 0.5, y2: 0.5 }];
+  const rows = [{ mark: "104", widthFt: 3, heightFt: 7, description: null }];
+
+  it("places a symbol mark 4 ft from the only run, and not the same text loose", () => {
+    const inSymbol = joinOpeningsToSchedule({ openings: [], marks: [{ text: "104", x: 0.3, y: 0.54, inSymbol: true }], rows, feetPerUnit: 100, walls });
+    expect(inSymbol.placedByMark).toBe(1);
+    const loose = joinOpeningsToSchedule({ openings: [], marks: [{ text: "104", x: 0.3, y: 0.54 }], rows, feetPerUnit: 100, walls });
+    expect(loose.placedByMark).toBe(0);
+  });
+
+  it("refuses the longer reach when a second run is not clearly further", () => {
+    const two = [...walls, { x1: 0.1, y1: 0.6, x2: 0.5, y2: 0.6 }]; // 6 ft from the mark against 4
+    const got = joinOpeningsToSchedule({ openings: [], marks: [{ text: "104", x: 0.3, y: 0.54, inSymbol: true }], rows, feetPerUnit: 100, walls: two });
+    expect(got.placedByMark).toBe(0);
+    const clear = [...walls, { x1: 0.1, y1: 0.63, x2: 0.5, y2: 0.63 }]; // 9 ft against 4
+    expect(joinOpeningsToSchedule({ openings: [], marks: [{ text: "104", x: 0.3, y: 0.54, inSymbol: true }], rows, feetPerUnit: 100, walls: clear }).placedByMark).toBe(1);
+  });
+});

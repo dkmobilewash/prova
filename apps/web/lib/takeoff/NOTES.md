@@ -2393,3 +2393,162 @@ no held-out page was read twice by a model.
 
 Nothing above was fixed. Model cost for the three sets, $1.07, all
 cached.
+
+### plan-text v2, first pass (2026-10-21): failures 3–7, and two left to the finder's lane
+
+Rebased onto `diego/takeoff-audit` at `2304c5ca`, which holds the wiring
+merge (`94ceec79`); clean, full suite green after one census asked for an
+app-side caller of the new sight integration (below). The tag
+`plan-text-v1` stays on the pre-rebase commit `d9d9f37f`, which is the
+exact code the held-out test ran.
+
+**Not worked on here, on purpose: v2 failures 1 and 2** — plan-page
+selection and per-view scales. The original session is building view
+detection, which answers both (which drawing on a sheet is the plan, and
+at what scale each drawing sits). Nothing in this lane should guess at
+either in the meantime; the held-out runner's title rule and its single-
+scale path are left as they were and are the measurement that view
+detection will be judged against.
+
+**3. Door marks far from any run.** A scheduled mark drawn in a SYMBOL
+(a door tag) may now place on a run up to `MARK_SYMBOL_REACH_FEET` (4.5
+ft) away when that run is clearly the nearest — the next run at least
+twice as far, `TAG_CLEAR_MARGIN`'s rule — while loose text keeps the 2.5
+ft rule. Measured on the training sets with the cached schedules:
+
+| set | placed before | placed after |
+| --- | --- | --- |
+| NG Green Bay A3.1 | 7 of 19 | 8 of 19 |
+| Baker, E Street, SW, Bunkie, MHK | 15, 17, 5, 6, 6 | unchanged |
+
+One door. NG's remaining marks sit 2.9 to 7.2 ft from a run with ANOTHER
+run inside the margin — its plan is dense — so the margin, which is what
+stops a wrong wall, is what stops them. The rule is kept because it is
+the honest one; the gain is small and reported as such. Lodi's five marks
+(2 to 31 ft from any of 51 runs) are a finder problem this cannot reach.
+
+**4. The read whose crop shows the size wins.** `legendMerge.ts`:
+`mergeLegendReads(text, sight)` lets the sight read win a field it
+states, fills a field it left null from the text read, and flags every
+disagreement with both values ("the words say studSpacingIn 48 and the
+drawing shows 16 — the drawing was kept; check it"). The rule follows the
+record: every printed-size disagreement seen on thirteen sets went the
+drawing's way, and the text read's failure was always attribution.
+`readWallLegendBySight` in `readWallLegend.ts` is the app-side, gated
+entry (`SCHEDULE_READ`) that takes the rendered page and crops and returns
+the merged types — the product's door into sight reading, and what the
+feature-gate census asked for. Rendering stays the caller's job (browser
+tiles, as the scanned-sheet read does), because Node here cannot.
+
+**5. Legend codes the plan spells differently.** `prefixlessVocabulary`
+maps `P1`, `P2` to `1`, `2` when every legend code shares one letter
+prefix, and `planTextTagByRun` uses it ONLY when no symbol on the plan
+holds a code as the legend spells it, reporting `shortForm: true` when it
+did. On every training set the plans spell the legend's codes in full, so
+the fallback never fires there and changes nothing; it was written for a
+held-out set and has not been shown to help on one. The report flag is
+the measurement.
+
+**6. Why a wall stayed untyped.** `untypedWhy.ts` gives each untyped run
+one reason — no tag nearby (20 ft), tag too far (past the 4 ft reach), no
+clear margin (a tag within reach but another run inside twice its
+distance), code not in legend (the nearest symbol says something the
+legend does not define) — with feet by reason, and lists the orphan tags:
+legend codes with no run within reach, which are the finder's gaps rather
+than the reader's. The first version asked "what is the nearest symbol"
+and answered "code not in legend" for most feet on every sheet, because
+door marks and room tags outnumber wall tags; it now asks about LEGEND
+tags first (in the sheet's own tag shape), and only with none in sight
+does a short code sitting on the run count as a code the legend lacks.
+`zzTagReport` prints it. On the training sheets, the finder's runs:
+
+| sheet | untyped ft | tag too far | no clear margin | no tag nearby | code not in legend | orphan tags |
+| --- | --- | --- | --- | --- | --- | --- |
+| Baker A101 | 582 | 230 | 42 | 216 | 95 | 0 |
+| NG Green Bay A3.2 | 920 | 465 | 356 | 98 | 0 | 6 |
+| SW A110 | 1,608 | 483 | 196 | 198 | 731 | 2 |
+| Camp Bow Wow A101 | 2,209 | 589 | 203 | 846 | 571 | 6 |
+| ELEVEN03 A4.B.1 | 1,899 | 1,149 | 157 | 522 | 71 | 3 |
+| E Street A2.1 | 894 | 685 | 143 | 58 | 7 | 8 |
+| MHK A1.01 | 958 | 593 | 53 | 185 | 128 | 9 |
+| Murray A2.01 | 2,149 | 472 | 0 | 804 | 873 | 3 |
+| Crosslines A100 | 3,008 | 653 | 151 | 1,432 | 772 | 0 |
+| Bunkie A100 | 868 | 0 | 0 | 304 | 564 | 0 |
+
+What it says, read across the sheets: "tag too far" is the largest single
+reason on six of ten — a legend tag is within 20 ft of the run but past
+the 4 ft reach, which is a run the tag may well mean and the pairing rule
+will not risk; "no tag nearby" is the drafter's doing and is where a
+U.N.O. note would act if any of these sets had one; "code not in legend"
+is Bunkie's `P08` bare text (no symbol, so not a tag here), SW's detail
+bubbles and Murray's keynotes; and the orphan tags are the finder's
+misses. The next lever is therefore the reach, measured against the
+crops, and it is a lever the propagation along the wall already pulls
+part way.
+
+**7. Storefront and curtain wall.** Prompt v5 gave a legend entry that is
+a storefront, curtain wall, glazing, railing or door a `notAPartition`
+word; `assemblyFromSight` returns no components and one flag ("not a
+partition — the legend calls this a storefront") so it is seen and never
+proposed. The ten-set re-run under v5 was the check that nothing else
+moved, and something did: SW went from 7 of 7 to 0 of 7, because its
+crops land on detail bubbles that share the types' numbers and the model
+called A1 a "stud size chart" and B1 a "door jamb detail" — it classified
+the CROP, not the legend entry. Version 6 says in as many words that
+`notAPartition` is about what the legend entry is and a crop that shows
+something else is to be ignored. Under v6:
+
+| set | text full | v4 | v5 | v6 | cost (v6) |
+| --- | --- | --- | --- | --- | --- |
+| Baker | 2 of 8 | 8 | 8 | 8 | $0.24 |
+| Bunkie | 3 of 5 | 4 | 4 | 4 | $0.15 |
+| Crosslines | 6 of 7 | 6 | 6 | 6 | $0.21 |
+| Murray | 2 of 2 | 2 | 2 | 2 | $0.15 |
+| MHK | 2 of 4 | 2 | 2 (type 4, a DIRTT removable wall, named not a partition) | 2 | $0.13 |
+| NG Green Bay | 8 of 10 | 8 | 8 (XW-1, an existing exterior wall, named not a partition) | 8, same | $0.25 |
+| E Street | 0 of 4 | 1 | 0 | 1 | $0.18 |
+| SW | 0 of 7 | 7 | **0** | 7 | $0.22 |
+| Camp Bow Wow | 3 of 5 | 5 | 5 | 5 | $0.17 |
+| ELEVEN03 | 0 of 13 | 5 | 5 | not run: the API credit ran out on the tenth call | — |
+
+So v6 reads what v4 read, and names the two non-partitions the training
+sets do have (MHK's DIRTT wall, NG's existing exterior wall) where v4
+returned them as empty assemblies. $1.90 for the nine under v6; the two
+passes together, with the v5 misstep, $3.80. ELEVEN03's v6 read is one
+call, 30 cents, when credits exist.
+
+**What "Add these wall types to your library" needs before a customer
+sees it** — listed, nothing run:
+
+1. **The per-company switch.** `PLAN_TEXT_READ` is an environment flag.
+   The customer-facing form is a key in `AI_FEATURE_LABEL` and the enum
+   member behind it: `ALTER TYPE "AiFeature" ADD VALUE 'PLAN_TEXT_READ';`
+   then `aiGate(companyId, "PLAN_TEXT_READ")` in place of the env read, and
+   the toggle appears on Settings → Assistant with the others.
+2. **Storing the reads.** Two tables, both additive:
+   `PlanLegendProposal` (planId, pageNumber, legendRead jsonb — the text
+   read, sightRead jsonb nullable, merged jsonb, model, promptVersions,
+   status PROPOSED/ACCEPTED/DISMISSED, acceptedByUserId, createdAt) as a
+   sibling of `PlanScheduleProposal`; and `TakeoffPlanTextRead` (planId,
+   pageNumber, calibrationId, doors jsonb, typed jsonb, computedAt) in
+   place of the file cache. Plus `ALTER TYPE "TakeoffWallProposalSource"
+   ADD VALUE 'PROPAGATED'` so a carried type is a source kind and not a
+   marker in the tag text. The legend read then runs in the ingest as its
+   own stage (`PlanIngestStage` gains `WALL_LEGEND`), which is where a
+   once-per-set read belongs, and the browser renders the legend page and
+   crops for the sight read the way it renders scanned-sheet tiles.
+3. **The review screen.** One page per plan set, not a card under the
+   found walls: each legend type with its crop beside the merged reading,
+   every flag in red (one-sided, from a general note, optional, not a
+   partition, the words say X and the drawing shows Y), the fields
+   editable, and an Add button per type that creates the `WallType` and
+   its components through the existing actions — code, name, sides, stud
+   spacing, and the quantity components (studs, track, board, insulation)
+   as `WallTypeComponent` rows with their basis, never a price. A type
+   already in the library shows as such with a "compare" link. Accepting
+   writes `status = ACCEPTED` on the proposal so the card stops asking.
+4. **Two guards.** The census that every model-calling function has a
+   gated app caller already covers the sight read; the e2e journey needs
+   a step that opens the review screen with a seeded legend proposal and
+   adds one type, so the screen's existence is proved by a browser and not
+   by a render test.

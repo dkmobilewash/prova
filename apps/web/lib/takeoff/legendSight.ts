@@ -15,6 +15,14 @@ import type { TextForSymbol } from "./tagSymbols";
  * as the components' evidence, marked as the model's reading.
  */
 export function assemblyFromSight(type: WallTypeSight, where: string): PartitionAssembly {
+  // ── NOT A PARTITION: SAID, NOT PROPOSED ──
+  if (type.notAPartition !== null) {
+    return {
+      components: [],
+      flags: [{ why: `not a partition — the legend calls this a ${type.notAPartition}; nothing is proposed for it`, phrase: type.notes.join(" ").slice(0, 120) }],
+      read: { studWidthIn: null, studSpacingIn: null, studGauge: null, boardThicknessIn: null, layersPerSide: null, boardIsTypeX: false, insulation: null, hourlyRating: type.hourlyRating },
+    };
+  }
   const lines: string[] = [];
   // A concrete or masonry wall has no studs to count, whatever width the
   // model read off its section: board only, and the flag below says why.

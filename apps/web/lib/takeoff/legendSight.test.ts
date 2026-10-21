@@ -20,6 +20,7 @@ const base = {
   fromDrawing: ["studWidthIn"],
   fromSheetNote: [],
   optional: [],
+  notAPartition: null,
   confidence: "MEDIUM" as const,
 };
 
@@ -68,6 +69,15 @@ describe("what the reader is warned about", () => {
       expect.stringContaining("optional on the drawing, not counted: 2 1/2"),
     ]);
     expect(got.components.map((c) => c.description)).not.toContainEqual(expect.stringContaining("insulation"));
+  });
+});
+
+describe("a legend entry that is not a partition", () => {
+  it("is reported as such and proposes nothing", () => {
+    const got = assemblyFromSight({ ...base, notAPartition: "storefront", studWidthIn: null, boardThicknessIn: null }, "p");
+    expect(got.components).toEqual([]);
+    expect(got.flags.map((f) => f.why)).toEqual([expect.stringContaining("not a partition — the legend calls this a storefront")]);
+    expect(fullyRead(got)).toBe(false);
   });
 });
 

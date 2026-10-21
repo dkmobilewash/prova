@@ -9,6 +9,7 @@ import { sheetStrokes } from "../sheetStrokes";
 import { shapeFromLegend, tagSymbols, type TagSymbol } from "../tagSymbols";
 import { legendVocabulary, tagsFromSymbols } from "../symbolTagging";
 import { TAG_CLEAR_MARGIN, TAG_REACH_FEET } from "../wallTags";
+import { untypedSentence, untypedWhy } from "../untypedWhy";
 
 /**
  * ── EVERY SYMBOL THAT HOLDS A LEGEND CODE, AND WHY IT DID OR DID NOT LAND ──
@@ -95,6 +96,11 @@ describe.skipIf(DIR === "" || CACHE === "")("tag report", () => {
     console.log(
       `  walls typed: ${typed} of ${found.walls.length} runs (${found.walls.length === 0 ? 0 : Math.round((100 * typed) / found.walls.length)}%)`,
     );
+    // ── AND WHY THE REST ARE NOT ──
+    const why = untypedWhy({ walls: found.walls, symbols, vocabulary: new Set(vocabulary.keys()), byRun: tagged.byRun, feetPerUnit: FEET_PER_UNIT, widthPt: W, shape: tagged.shape });
+    const untypedFeet = found.walls.filter((w) => !tagged.byRun.has(w)).reduce((s, w) => s + w.lengthFeet, 0);
+    console.log(`  untyped ${untypedFeet.toFixed(0)} ft because: ${untypedSentence(why)}`);
+    if (why.orphanTags.length > 0) console.log(`  orphan tags (no run within ${TAG_REACH_FEET} ft): ${why.orphanTags.map((t) => `${t.code} ${t.nearestFeet.toFixed(1)} ft`).join(", ")}`);
     // ── CROPS FOR A PERSON TO LOOK AT ──
     //
     // `CROP_JSON=path` writes each MATCHED symbol with the run it was paired to,

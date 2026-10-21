@@ -233,7 +233,7 @@ export function doorsOnSheet(input: {
     // A scheduled mark overrides the sheet-reference rejection, as a legend
     // code does for walls: Bunkie's `E105A` reads as a callout and is a door.
     .filter((s) => s.rejected === null || (s.rejected === "sheet-reference" && markSet.has(s.text.trim().toUpperCase())))
-    .map((s) => ({ text: s.text, x: s.x / widthPt, y: s.y / widthPt }));
+    .map((s) => ({ text: s.text, x: s.x / widthPt, y: s.y / widthPt, inSymbol: true }));
   const bare = bareTextTags({ text, vocabulary: markSet, symbols, walls, feetPerUnit, widthPt }).map((b) => ({
     text: b.text,
     x: b.x,

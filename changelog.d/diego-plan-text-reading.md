@@ -136,3 +136,18 @@ not); 117 of 1,317 ft typed on Lodi's plan, 23 of 814 on Missouri's, no
 feet on Nall's because its plan carries two scales; doors 0 of 5, 2 of 2
 and none placeable. $1.07. Seven failures recorded for v2, the first being
 that the floor plan was found by title on one set of three; nothing fixed.
+
+plan-text-2, first v2 pass on the training sets after rebasing onto the
+wiring merge: a door tag in a symbol may place on a clearly nearest run up
+to 4.5 ft away (NG Green Bay 7 → 8 of 19, nothing else moved); the sight
+read wins a disagreement with the text read and every disagreement is
+flagged with both values, through a gated app-side entry; a legend's
+shared letter prefix is accepted as the plan's spelling only when no
+symbol holds a full code, and reported; each untyped run gets one reason —
+tag too far, no clear margin, no tag nearby, code not in legend — with
+feet by reason and the finder's orphan tags listed; and a storefront,
+curtain wall or existing wall comes back named as not a partition, scoped
+to the legend entry after a first version classified the crop instead and
+lost SW's seven types for one run. Plan-page selection and per-view scales
+are left to view detection. The launch checklist for "Add these wall types
+to your library" is in NOTES.md.

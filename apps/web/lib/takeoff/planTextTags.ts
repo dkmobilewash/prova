@@ -1,5 +1,5 @@
 import { bareTextTags } from "./bareTextTags";
-import { legendVocabulary, tagsFromSymbols } from "./symbolTagging";
+import { legendVocabulary, prefixlessVocabulary, tagsFromSymbols } from "./symbolTagging";
 import { tagSymbols, type SymbolShape, type TextForSymbol } from "./tagSymbols";
 import { propagateTypes } from "./typePropagation";
 import { tagByRun, type WallTypeTag } from "./wallTags";
@@ -73,6 +73,11 @@ export type PlanTextTagReport = {
   conflicts: number;
   /** The symbol shape the tags were required to have, where one dominated. */
   shape: SymbolShape | null;
+  /**
+   * True when no symbol held a legend code as spelled and the codes without
+   * their shared letter prefix were used instead (`P1` tagged as `1`).
+   */
+  shortForm: boolean;
 };
 
 export function planTextTagByRun(input: {
@@ -91,9 +96,17 @@ export function planTextTagByRun(input: {
 }): { byRun: Map<WallCandidate, string>; report: PlanTextTagReport } {
   const { segments, text, widthPt, walls, feetPerUnit, legendCodes, textTags, wallTypes } = input;
   const symbols = tagSymbols({ segments, text, unitsPerPaperInch: 72 });
-  const vocabulary = legendVocabulary(legendCodes);
-  const holdsCode = (s: (typeof symbols)[number]) =>
-    [s.text, ...s.parts].some((p) => vocabulary.has(p.trim().toUpperCase()));
+  const spelled = legendVocabulary(legendCodes);
+  const holds = (vocab: ReadonlyMap<string, string>) => (s: (typeof symbols)[number]) =>
+    [s.text, ...s.parts].some((p) => vocab.has(p.trim().toUpperCase()));
+  // ── THE PLAN'S SPELLING, WHEN IT IS NOT THE LEGEND'S ──
+  // Only when NO symbol holds a code as the legend spells it; see
+  // `prefixlessVocabulary` for why that is the condition and not a default.
+  const short = prefixlessVocabulary(legendCodes);
+  const shortForm = short !== null && !symbols.some(holds(spelled)) && symbols.some(holds(short));
+  const vocabulary = shortForm && short !== null ? short : spelled;
+  const codes = shortForm && short !== null ? [...short.keys()] : legendCodes;
+  const holdsCode = holds(vocabulary);
 
   // ── THE SHAPE IS THE PLAN'S OWN COMMONEST ──
   //
@@ -110,7 +123,7 @@ export function planTextTagByRun(input: {
   }
   const shape = [...byShape].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 
-  const fromSymbols = tagsFromSymbols({ symbols, legendCodes, shape, walls, feetPerUnit, widthPt });
+  const fromSymbols = tagsFromSymbols({ symbols, legendCodes: codes, shape, walls, feetPerUnit, widthPt });
   const bare = bareTextTags({ text, vocabulary: new Set(vocabulary.keys()), symbols, walls, feetPerUnit, widthPt });
   const bareTags: WallTypeTag[] = bare.map((b) => ({
     name: vocabulary.get(b.text.toUpperCase()) ?? b.text.toUpperCase(),
@@ -118,7 +131,9 @@ export function planTextTagByRun(input: {
     y: b.y,
   }));
 
-  const direct = tagByRun(walls, [...fromSymbols.tags, ...bareTags, ...textTags], feetPerUnit, wallTypes);
+  const asLegend = (tag: WallTypeTag): WallTypeTag =>
+    shortForm && short !== null ? { ...tag, name: short.get(tag.name.toUpperCase()) ?? tag.name } : tag;
+  const direct = tagByRun(walls, [...fromSymbols.tags.map(asLegend), ...bareTags, ...textTags], feetPerUnit, wallTypes);
   const carried = propagateTypes({ walls, tagged: direct, feetPerUnit, defaultCode: null });
   const byRun = new Map<WallCandidate, string>(direct);
   let propagated = 0;
@@ -138,6 +153,7 @@ export function planTextTagByRun(input: {
       propagated,
       conflicts: carried.conflicts.length,
       shape,
+      shortForm,
     },
   };
 }

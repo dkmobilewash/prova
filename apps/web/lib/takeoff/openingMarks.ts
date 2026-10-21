@@ -100,7 +100,27 @@ export type PlacedMark = {
   /** Centre of the text, in page-width units. */
   x: number;
   y: number;
+  /**
+   * True when the mark is drawn inside a closed symbol — a door tag — rather
+   * than being loose text. A tag is placed by the drafter beside its door,
+   * often outside the swing, and may sit `MARK_SYMBOL_REACH_FEET` from the
+   * wall; loose text keeps the tighter `MARK_ON_WALL_FEET`.
+   */
+  inSymbol?: boolean;
 };
+
+/**
+ * How far a door TAG — a scheduled mark in its own symbol — may sit from the
+ * run it names, when that run is clearly the nearest.
+ *
+ * Measured on NG Green Bay A3.1 (2026-10-21): twelve scheduled marks sit in
+ * circles 2.9 to 7.2 ft from the wall their door is in, beside the swing,
+ * and `MARK_ON_WALL_FEET` placed seven of nineteen rows. The tag is the
+ * drafter's own placement and it is not ambiguous when the next run is twice
+ * as far, which is `TAG_CLEAR_MARGIN`'s rule for wall tags applied here.
+ */
+export const MARK_SYMBOL_REACH_FEET = 4.5;
+export const MARK_CLEAR_MARGIN = 2;
 
 export type DrawnOpening = {
   x1: number;
@@ -273,6 +293,7 @@ export function joinOpeningsToSchedule(input: {
   // the rows-not-placed count.
   let placedByMark = 0;
   const onWall = feetPerUnit > 0 ? MARK_ON_WALL_FEET / feetPerUnit : 0;
+  const symbolReach = feetPerUnit > 0 ? MARK_SYMBOL_REACH_FEET / feetPerUnit : 0;
   if (walls.length > 0 && onWall > 0) {
     // ── ONE DOOR PER MARK, AND THE INSTANCE NEAREST A WALL IS THE DOOR ──
     //
@@ -296,6 +317,10 @@ export function joinOpeningsToSchedule(input: {
     for (const [key, { row, instances }] of byKey) {
       let best: { mark: PlacedMark; wall: (typeof walls)[number]; t: number; distance: number } | null = null;
       for (const mark of instances) {
+        // Nearest run and the next, so a symbol's longer reach only counts
+        // when the nearest run is clearly the one.
+        let first: { wall: (typeof walls)[number]; t: number; distance: number } | null = null;
+        let second = Infinity;
         for (const wall of walls) {
           const dx = wall.x2 - wall.x1;
           const dy = wall.y2 - wall.y1;
@@ -303,8 +328,16 @@ export function joinOpeningsToSchedule(input: {
           if (len2 === 0) continue;
           const t = Math.max(0, Math.min(1, ((mark.x - wall.x1) * dx + (mark.y - wall.y1) * dy) / len2));
           const distance = Math.hypot(mark.x - (wall.x1 + t * dx), mark.y - (wall.y1 + t * dy));
-          if (distance <= onWall && (best === null || distance < best.distance)) best = { mark, wall, t, distance };
+          if (first === null || distance < first.distance) {
+            second = first?.distance ?? Infinity;
+            first = { wall, t, distance };
+          } else if (distance < second) second = distance;
         }
+        if (first === null) continue;
+        const within =
+          first.distance <= onWall ||
+          (mark.inSymbol === true && first.distance <= symbolReach && second >= first.distance * MARK_CLEAR_MARGIN);
+        if (within && (best === null || first.distance < best.distance)) best = { mark, ...first };
       }
       if (best === null) continue;
       usedMark.add(best.mark);

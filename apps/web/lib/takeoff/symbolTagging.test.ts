@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { legendVocabulary, symbolTagSentence, tagsFromSymbols } from "./symbolTagging";
+import { legendVocabulary, prefixlessVocabulary, symbolTagSentence, tagsFromSymbols } from "./symbolTagging";
 import type { TagSymbol } from "./tagSymbols";
 import type { WallCandidate } from "./wallVectors";
 
@@ -302,5 +302,15 @@ describe("split codes and leaders", () => {
     expect(withLeader.byRun.get(farRun)).toBe("A");
     expect(withLeader.counts.matchedByLeader).toBe(1);
     expect(symbolTagSentence(withLeader)).toContain("1 by their leader");
+  });
+});
+
+describe("the prefix a plan drops", () => {
+  it("maps the codes without their one shared letter prefix, and nothing when the prefixes differ", () => {
+    expect([...prefixlessVocabulary(["P1", "P2"])!]).toEqual([["1", "P1"], ["2", "P2"]]);
+    expect([...prefixlessVocabulary(["IW-1", "IW-2", "IW-3"])!]).toEqual([["1", "IW-1"], ["2", "IW-2"], ["3", "IW-3"]]);
+    expect(prefixlessVocabulary(["IW-1", "XW-1"])).toBeNull();
+    expect(prefixlessVocabulary(["A", "B"])).toBeNull();
+    expect(prefixlessVocabulary(["P1"])).toBeNull();
   });
 });

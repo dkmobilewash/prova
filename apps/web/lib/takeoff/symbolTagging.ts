@@ -234,6 +234,32 @@ export function legendVocabulary(legendCodes: readonly string[]): Map<string, st
   return known;
 }
 
+/**
+ * ── THE PREFIX THE PLAN DROPS ──
+ *
+ * A legend names its types `P1`, `P2` and the plan tags walls `1` and `2`.
+ * Where EVERY legend code shares one letter prefix, the codes without it are
+ * a second spelling of the same vocabulary — but a bare `1` is also a grid
+ * line, a keynote and a door, so this map is offered only as a FALLBACK: the
+ * caller uses it when no symbol on the plan holds a full code, and reports
+ * that it did. It was written for a held-out set and has not been shown to
+ * help on any training set, where every plan spells the legend's codes in
+ * full; the measurement is the report's `shortForm` flag.
+ */
+export function prefixlessVocabulary(legendCodes: readonly string[]): Map<string, string> | null {
+  const codes = legendCodes.map((c) => c.trim().toUpperCase()).filter((c) => c !== "");
+  if (codes.length < 2) return null;
+  const prefixes = new Set(codes.map((c) => c.match(/^([A-Z]+)[-\s]?\d/)?.[1] ?? ""));
+  if (prefixes.size !== 1 || prefixes.has("")) return null;
+  const prefix = [...prefixes][0];
+  const out = new Map<string, string>();
+  for (const code of codes) {
+    const tail = code.slice(prefix.length).replace(/^[-\s]/, "");
+    if (tail !== "" && !out.has(tail)) out.set(tail, code);
+  }
+  return out;
+}
+
 /** Page-width units from a point to the nearest point of a run. */
 function distance(p: { x: number; y: number }, wall: WallCandidate): number {
   const dx = wall.x2 - wall.x1;
