@@ -47,6 +47,27 @@ describe("roomsFromWalls", () => {
     expect(unplacedTags.map((t) => t.name)).toEqual(["OUTSIDE"]);
   });
 
+  it("seals a door hinged in the corner ONLY when asked: wall stands on one side only", () => {
+    // The shared wall stops 3 ft short of the top wall: a door in the corner.
+    const corner = walls.slice(0, 4).concat([wall(10 + c, 3, 10 + c, 10 + c)]);
+    expect(roomsFromWalls({ walls: corner, feetPerUnit: W }).rooms).toHaveLength(1);
+    const { rooms } = roomsFromWalls({ walls: corner, feetPerUnit: W, sealCornerDoors: true });
+    expect(rooms).toHaveLength(2);
+    for (const room of rooms) {
+      expect(room.squareFeet).toBeGreaterThan(96);
+      expect(room.squareFeet).toBeLessThan(104);
+    }
+  });
+
+  it("does not seal a corridor that runs into a room: the gap is bounded by a wall END, not a face", () => {
+    // Two parallel corridor walls end 5 ft short of a room's wall... no: they
+    // end facing OPEN space. The ray from each end hits nothing perpendicular
+    // within a door's width, so nothing is drawn.
+    const corridor = [wall(0, 0, 20, 0), wall(0, 6, 20, 6)];
+    const { rooms } = roomsFromWalls({ walls: corridor, feetPerUnit: W, sealCornerDoors: true });
+    expect(rooms).toHaveLength(0);
+  });
+
   it("merges the rooms when the doorway is too wide to be a door, and says which tags merged", () => {
     const open = walls.slice(0, 4).concat([wall(10 + c, -c, 10 + c, 1)]);
     const { rooms, mergedTags } = roomsFromWalls({

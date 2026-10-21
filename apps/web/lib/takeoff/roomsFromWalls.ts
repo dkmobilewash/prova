@@ -1,4 +1,4 @@
-import { openingsInWalls } from "./openings";
+import { NARROWEST_DOOR_FEET, openingsInWalls } from "./openings";
 import { ringCorners, RING_TOLERANCE_CELLS, traceRing } from "./roomAreas";
 import { readRoomTags, type PositionedText, type RoomTag } from "./roomTags";
 import { gridSizeFor, rasterise, regionsOf, SMALLEST_ROOM_SQFT } from "./rooms";
@@ -18,7 +18,12 @@ import { gridSizeFor, rasterise, regionsOf, SMALLEST_ROOM_SQFT } from "./rooms";
  *      FACE still meets the neighbour's body (that is where the finder's
  *      centrelines stop);
  *   2. door-sized gaps between collinear walls are sealed by
- *      `openingsInWalls`, so a doorway does not merge two rooms into one;
+ *      `openingsInWalls`, so a doorway does not merge two rooms into one.
+ *      A door hinged IN A CORNER — wall on one side of the gap only — is NOT
+ *      sealed by default: `cornerSeals` exists and is measured OFF, see its
+ *      header. The crops (shots/rooms, 2026-10-21) show Bunkie's E100, SW's
+ *      restroom and alcove leaking through exactly such a corner, and the
+ *      rule that closes them costs more rooms than it saves;
  *   3. the enclosed regions are traced into polygons (`traceRing`,
  *      `ringCorners`), measured in square feet and feet of perimeter;
  *   4. the room tag whose position lands inside a region names it
@@ -80,6 +85,8 @@ export function roomsFromWalls(input: {
   text?: readonly PositionedText[];
   widthPt?: number;
   gridCap?: number;
+  /** Also seal corner-hinged doors. Off by default — measured, see `cornerSeals`. */
+  sealCornerDoors?: boolean;
 }): RoomsFromWallsResult {
   const { walls, feetPerUnit } = input;
   const empty = { rooms: [], unplacedTags: [], mergedTags: [], grid: { width: 0, height: 0, feetPerCell: 0 } };
@@ -136,6 +143,9 @@ export function roomsFromWalls(input: {
   }
   const seals = openingsInWalls(faces, feetPerUnit);
   for (const s of seals) bands.push({ x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2 });
+  if (input.sealCornerDoors) {
+    for (const s of cornerSeals(walls.map((w) => ({ ...w, x1: w.x1 - x0, y1: w.y1 - y0, x2: w.x2 - x0, y2: w.y2 - y0 })), feetPerUnit)) bands.push(s);
+  }
 
   const ink = rasterise(bands, size.width, size.height, unitsPerCellX, unitsPerCellY);
   const regions = regionsOf(ink, size.width, size.height);
@@ -206,4 +216,97 @@ export function roomsFromWalls(input: {
     }
   }
   return { rooms, unplacedTags, mergedTags, grid: size };
+}
+
+/**
+ * ── A DOOR IN A CORNER ──
+ *
+ * `openingsInWalls` wants wall on BOTH sides of a gap, along one line. A door
+ * hinged against a perpendicular wall has wall on one side only: the run
+ * stops a door's width short of the wall it would otherwise meet. So for
+ * every wall END, look straight ahead for a wall roughly perpendicular to it
+ * that passes across the line of travel within a door's width, with nothing
+ * collinear filling the gap — and draw the seal from the end to that face.
+ *
+ * A corridor meeting a cross wall does NOT look like this: its side walls
+ * run INTO the through wall with no gap. A corridor crossing a room does not
+ * either: the gap there is bounded by another wall END, not by a face it
+ * would cross. Only a through wall standing across the line, door-width
+ * away, qualifies.
+ *
+ * ── MEASURED, AND OFF BY DEFAULT ──
+ *
+ * 2026-10-21, BIM arm (the key's own walls, 713 tagged rooms), against the
+ * default of no corner seal — 478 measured, median 1.2%, 438 within 5%,
+ * 102 merged through a wall:
+ *
+ *   ceiling 12 ft (`WIDEST_DOOR_FEET`)   673 measured, median 6.9%, 329 within 5%, 6 merged
+ *   ceiling 4.5 ft (one leaf + frame)    478 measured, median 1.2%, 390 within 5%, 102 merged
+ *
+ * The wide version closes the leaks by cutting open-plan rooms to pieces
+ * (46 → 131 regions on one esplanades floor: kitchen returns, balcony walls,
+ * a stub at a column). The narrow version closes almost nothing on the BIM
+ * sheets and still splits 48 rooms past 5%. On the real sheets it closed
+ * nothing either (Bunkie all-candidates 4 → 4 measured, SW 0 → 0). So it
+ * stays available for a caller that KNOWS it has corner doors and is not
+ * wired in — a rule that costs more rooms than it saves is not a default.
+ */
+export const CORNER_DOOR_MAX_FEET = 4.5;
+/** The through wall must carry on at least this far past the hit on both
+ *  sides, or it is a corner, not a face. */
+const THROUGH_WALL_BEYOND_FEET = 1;
+export function cornerSeals(walls: readonly FoundWall[], feetPerUnit: number): { x1: number; y1: number; x2: number; y2: number }[] {
+  const narrowest = NARROWEST_DOOR_FEET / feetPerUnit;
+  const widest = CORNER_DOOR_MAX_FEET / feetPerUnit;
+  const beyond = THROUGH_WALL_BEYOND_FEET / feetPerUnit;
+  const out: { x1: number; y1: number; x2: number; y2: number }[] = [];
+  for (const w of walls) {
+    const len = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+    if (!(len > 0)) continue;
+    const ux = (w.x2 - w.x1) / len;
+    const uy = (w.y2 - w.y1) / len;
+    for (const [ex, ey, dx, dy] of [
+      [w.x2, w.y2, ux, uy],
+      [w.x1, w.y1, -ux, -uy],
+    ] as const) {
+      let best: { t: number; x: number; y: number } | null = null;
+      for (const o of walls) {
+        if (o === w) continue;
+        const olen = Math.hypot(o.x2 - o.x1, o.y2 - o.y1);
+        if (!(olen > 0)) continue;
+        const ox = (o.x2 - o.x1) / olen;
+        const oy = (o.y2 - o.y1) / olen;
+        // roughly perpendicular
+        if (Math.abs(ox * dx + oy * dy) > 0.25) continue;
+        // where the ray from the end crosses o's line
+        const denom = dx * oy - dy * ox;
+        if (Math.abs(denom) < 1e-9) continue;
+        const rx = o.x1 - ex;
+        const ry = o.y1 - ey;
+        const t = (rx * oy - ry * ox) / denom; // along the ray
+        const s = (rx * dy - ry * dx) / denom; // along o, in units
+        if (t < narrowest || t > widest) continue;
+        // the through wall must extend on BOTH sides of the hit — a face, not an end
+        if (s < beyond || s > olen - beyond) continue;
+        if (!best || t < best.t) best = { t, x: ex + dx * t, y: ey + dy * t };
+      }
+      if (!best) continue;
+      // nothing collinear already fills the gap
+      const filled = walls.some((o) => {
+        if (o === w) return false;
+        const olen = Math.hypot(o.x2 - o.x1, o.y2 - o.y1);
+        if (!(olen > 0)) return false;
+        if (Math.abs(((o.x2 - o.x1) / olen) * dx + ((o.y2 - o.y1) / olen) * dy) < 0.97) return false;
+        const mid = { x: ex + (dx * best!.t) / 2, y: ey + (dy * best!.t) / 2 };
+        const px = ((mid.x - o.x1) * (o.x2 - o.x1) + (mid.y - o.y1) * (o.y2 - o.y1)) / (olen * olen);
+        if (px < 0 || px > 1) return false;
+        const cx = o.x1 + px * (o.x2 - o.x1);
+        const cy = o.y1 + px * (o.y2 - o.y1);
+        return Math.hypot(cx - mid.x, cy - mid.y) < narrowest / 2;
+      });
+      if (filled) continue;
+      out.push({ x1: ex, y1: ey, x2: best.x, y2: best.y });
+    }
+  }
+  return out;
 }

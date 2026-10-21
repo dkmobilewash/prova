@@ -148,7 +148,7 @@ describe("rooms from walls, measured", () => {
       const text = await doc.pageText(saved.page);
       await doc.close();
       const result = roomsFromWalls({ walls, feetPerUnit: saved.feetPerUnit, text: text.items, widthPt: text.widthPt });
-      dump(`labels__${set.replace(/\.pdf$/, "")}__${sheet}`, result, { set, sheet, page: saved.page, walls: walls.length });
+      dump(`labels__${set.replace(/\.pdf$/, "")}__${sheet}`, result, { pdf: join(REAL, set), set, sheet, page: saved.page, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit: saved.feetPerUnit, walls });
       all.push(...score(`${set} ${sheet} (${walls.length} accepted+traced walls)`, result.rooms, result.unplacedTags, result.mergedTags, key, how));
       // The same sheet with EVERY candidate the reviewer saw, rejected ones
       // included: if rooms close here and not above, the leak is triage (a real
@@ -158,6 +158,7 @@ describe("rooms from walls, measured", () => {
         ...(saved.traced ?? []).map((t) => ({ x1: t.x1, y1: t.y1, x2: t.x2, y2: t.y2 })),
       ];
       const loose = roomsFromWalls({ walls: every, feetPerUnit: saved.feetPerUnit, text: text.items, widthPt: text.widthPt });
+      dump(`labels-all__${set.replace(/\.pdf$/, "")}__${sheet}`, loose, { pdf: join(REAL, set), set, sheet, page: saved.page, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit: saved.feetPerUnit, walls: every });
       score(`  … same sheet, ALL ${every.length} candidates incl. rejected`, loose.rooms, loose.unplacedTags, loose.mergedTags, key, how);
     }
     expect(all.length).toBeGreaterThan(0);
@@ -172,6 +173,7 @@ describe("rooms from walls, measured", () => {
           file: string;
           page_size_pt: [number, number];
           walls: { centerline_pt: [number, number][]; thickness_in: number; curved: boolean }[];
+          curtain_walls?: { centerline_pt?: [number, number][] }[];
         };
         const [W, H] = k.page_size_pt;
         const walls: FoundWall[] = [];
@@ -181,13 +183,21 @@ describe("rooms from walls, measured", () => {
             walls.push({ x1: pts[i - 1][0] / W, y1: (H - pts[i - 1][1]) / W, x2: pts[i][0] / W, y2: (H - pts[i][1]) / W, thicknessFeet: w.thickness_in / 12 });
           }
         }
+        // A storefront bounds a room as much as a stud wall does: the clinic's
+        // waiting area was OPEN until its curtain wall was drawn.
+        for (const w of k.curtain_walls ?? []) {
+          const pts = w.centerline_pt ?? [];
+          for (let i = 1; i < pts.length; i += 1) {
+            walls.push({ x1: pts[i - 1][0] / W, y1: (H - pts[i - 1][1]) / W, x2: pts[i][0] / W, y2: (H - pts[i][1]) / W, thicknessFeet: 0.5 });
+          }
+        }
         const keyPath = join(KEYS, "bim", `${k.id}__p1.json`);
         const key = JSON.parse(readFileSync(keyPath, "utf8")) as Key & { unitsPerFoot: number };
         const doc = await openPlanPdf(Buffer.from(readFileSync(join(BIM, model.name, k.file))));
         const text = await doc.pageText(1);
         await doc.close();
         const result = roomsFromWalls({ walls, feetPerUnit: 1 / key.unitsPerFoot, text: text.items, widthPt: text.widthPt });
-        dump(`bim__${k.id}`, result, { set: k.id, page: 1, walls: walls.length });
+        dump(`bim__${k.id}`, result, { pdf: join(BIM, model.name, k.file), set: k.id, page: 1, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit: 1 / key.unitsPerFoot, walls });
         all.push(...score(`${k.id} (${walls.length} wall pieces)`, result.rooms, result.unplacedTags, result.mergedTags, key, "number", walls));
       }
     }
