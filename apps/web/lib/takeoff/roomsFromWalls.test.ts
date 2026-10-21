@@ -92,6 +92,29 @@ describe("roomsFromWalls", () => {
     expect(thin.rooms.length).toBeGreaterThan(2);
   });
 
+  it("bridges a drawn sidelight between two wall ends, so the door beside it seals; a counter does not bridge", () => {
+    // Joplin's shape: room A's whole corridor side is a door hinged in the
+    // left corner (0..3.5) and a sidelight (3.5..10.25) to the partition. No
+    // wall on that line at all; room B's bottom wall is intact.
+    const open = walls.filter((_, i) => i !== 1).concat([wall(10 + c, 10 + c, 20 + 3 * c, 10 + c)]);
+    const without = roomsFromWalls({ walls: open, feetPerUnit: W });
+    expect(without.rooms).toHaveLength(1);
+    // The sidelight's glazing line, jamb to corner.
+    const glass = { x1: ft(3.5), y1: ft(10 + c), x2: ft(10 + c), y2: ft(10 + c) };
+    const withGlass = roomsFromWalls({ walls: open, feetPerUnit: W, strokes: [glass], bridgeSidelights: true });
+    expect(withGlass.rooms).toHaveLength(2);
+    // A door leaf drawn open: 3 ft from the jamb (a wall end) into the room, at a right angle. Not a bridge.
+    const leaf = { x1: ft(10 + c), y1: ft(10 + c), x2: ft(10 + c), y2: ft(7) };
+    const withLeaf = roomsFromWalls({ walls: open, feetPerUnit: W, strokes: [glass, leaf], bridgeSidelights: true });
+    expect(withLeaf.rooms).toHaveLength(2);
+    for (const room of withLeaf.rooms) expect(room.squareFeet).toBeGreaterThan(90);
+    // A counter edge 2 ft off the top wall, touching the side walls mid-body: no bridge, still two rooms of ~100 sf.
+    const counter = { x1: ft(0), y1: ft(2), x2: ft(10), y2: ft(2) };
+    const withCounter = roomsFromWalls({ walls, feetPerUnit: W, strokes: [counter], bridgeSidelights: true });
+    expect(withCounter.rooms).toHaveLength(2);
+    for (const room of withCounter.rooms) expect(room.squareFeet).toBeGreaterThan(96);
+  });
+
   it("merges the rooms when the doorway is too wide to be a door, and says which tags merged", () => {
     const open = walls.slice(0, 4).concat([wall(10 + c, -c, 10 + c, 1)]);
     const { rooms, mergedTags } = roomsFromWalls({

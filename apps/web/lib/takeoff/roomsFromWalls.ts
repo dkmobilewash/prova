@@ -96,10 +96,150 @@ export function notStallPartition(w: FoundWall, feetPerUnit: number): boolean {
 /** Paper left around the walls so the outside is open, in feet. */
 const MARGIN_FEET = 2;
 
+/**
+ * ── A SIDELIGHT IS DRAWN, AND IT BRIDGES TWO WALL ENDS ──
+ *
+ * Joplin A-101 (2026-10-22): each resident room's corridor side is a door
+ * plus a glazed sidelight between the two partition ends — no collinear wall
+ * on either side of the gap, so `openingsInWalls` has nothing to anchor on
+ * and the corner rule is off. But the sidelight is DRAWN: its glazing lines
+ * run from the door jamb to the partition's corner. A stroke at least
+ * `BRIDGE_MIN_FEET` long whose BOTH ends sit within `BRIDGE_REACH_FEET` of a
+ * wall END, and which does not lie along a wall it merely duplicates, is a
+ * bridge and is drawn as a thin band. Once it is, the door beside it is a
+ * door-sized gap with wall on each side again, and the door rule seals it.
+ *
+ * Wall ENDS, not wall bodies, on purpose: a counter touches the walls either
+ * side of it mid-wall, a sidelight continues a wall line from one end to
+ * another. Measured with the BIM arm as the control.
+ *
+ * AND THE DOOR BESIDE THE SIDELIGHT IS HINGED IN THE CORNER, so the door rule
+ * still has no collinear wall on its far side. The corner rule was measured
+ * off as a default (it splits open plans); here it is applied ONLY from a
+ * bridge's end: along the bridge's own line, up to one door's width, to the
+ * first wall it meets. A drawn sidelight is the evidence that this gap is a
+ * doorway and not a cased opening.
+ */
+export const BRIDGE_MIN_FEET = 2;
+export const BRIDGE_REACH_FEET = 0.75;
+export const BRIDGE_DOOR_FEET = 4.5;
+const BRIDGE_BAND_FEET = 0.2;
+
+export function bridgingLines(
+  strokes: readonly { x1: number; y1: number; x2: number; y2: number }[],
+  walls: readonly FoundWall[],
+  feetPerUnit: number,
+): FoundWall[] {
+  const reach = BRIDGE_REACH_FEET / feetPerUnit;
+  const minLen = BRIDGE_MIN_FEET / feetPerUnit;
+  const ends = walls.flatMap((w) => [
+    { x: w.x1, y: w.y1 },
+    { x: w.x2, y: w.y2 },
+  ]);
+  const nearAnEnd = (x: number, y: number) => ends.some((e) => Math.hypot(e.x - x, e.y - y) <= reach);
+  // A sidelight CONTINUES the wall whose end it touches: same line, within
+  // 10°. A door leaf, a counter return or a fixture edge leaves a wall end at
+  // an angle and must not bridge — the first BIM run without this test lost
+  // 47 rooms past 5% to in-room lines hung off wall ends.
+  const continuesAWall = (s: { x1: number; y1: number; x2: number; y2: number }) => {
+    const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+    const ux = (s.x2 - s.x1) / len;
+    const uy = (s.y2 - s.y1) / len;
+    return walls.some((w) => {
+      const wl = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+      if (!(wl > 0)) return false;
+      const cos = Math.abs(((w.x2 - w.x1) / wl) * ux + ((w.y2 - w.y1) / wl) * uy);
+      if (cos < Math.cos((10 * Math.PI) / 180)) return false;
+      const endNear = (x: number, y: number) => Math.hypot(w.x1 - x, w.y1 - y) <= reach || Math.hypot(w.x2 - x, w.y2 - y) <= reach;
+      return endNear(s.x1, s.y1) || endNear(s.x2, s.y2);
+    });
+  };
+  const alongAWall = (s: { x1: number; y1: number; x2: number; y2: number }) => {
+    const mx = (s.x1 + s.x2) / 2;
+    const my = (s.y1 + s.y2) / 2;
+    return walls.some((w) => {
+      const dx = w.x2 - w.x1;
+      const dy = w.y2 - w.y1;
+      const len2 = dx * dx + dy * dy;
+      if (!(len2 > 0)) return false;
+      const t = Math.max(0, Math.min(1, ((mx - w.x1) * dx + (my - w.y1) * dy) / len2));
+      const half = (w.thicknessFeet ?? DEFAULT_THICKNESS_FEET) / feetPerUnit / 2;
+      return Math.hypot(mx - (w.x1 + t * dx), my - (w.y1 + t * dy)) <= half + reach;
+    });
+  };
+  // One end at a wall END (the partition's corner); the other end is the door
+  // jamb, which on Joplin is a 4-inch stub the boundary never carries, so it
+  // is not required to touch anything — the door probe below starts there.
+  const out: { b: FoundWall; probeFrom: 1 | 2 | null }[] = [];
+  for (const s of strokes) {
+    if (Math.hypot(s.x2 - s.x1, s.y2 - s.y1) < minLen) continue;
+    const at1 = nearAnEnd(s.x1, s.y1);
+    const at2 = nearAnEnd(s.x2, s.y2);
+    if (!at1 && !at2) continue;
+    if (!continuesAWall(s)) continue;
+    if (alongAWall(s)) continue;
+    out.push({ b: { x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, thicknessFeet: BRIDGE_BAND_FEET }, probeFrom: at1 && at2 ? null : at1 ? 2 : 1 });
+  }
+  // The door beside each bridge: from either end of the bridge, along its own
+  // line, to the first wall within a door's width.
+  const door = BRIDGE_DOOR_FEET / feetPerUnit;
+  const hit = (x: number, y: number, dx: number, dy: number): number | null => {
+    let best: number | null = null;
+    for (const w of walls) {
+      const wx = w.x2 - w.x1;
+      const wy = w.y2 - w.y1;
+      const denom = dx * wy - dy * wx;
+      if (Math.abs(denom) < 1e-12) continue;
+      const rx = w.x1 - x;
+      const ry = w.y1 - y;
+      const t = (rx * wy - ry * wx) / denom;
+      const u = (rx * dy - ry * dx) / denom;
+      const half = (w.thicknessFeet ?? DEFAULT_THICKNESS_FEET) / feetPerUnit / 2;
+      const wlen = Math.hypot(wx, wy);
+      if (t <= reach || t > door) continue;
+      if (u * wlen < -half || u * wlen > wlen + half) continue;
+      if (best === null || t < best) best = t;
+    }
+    return best;
+  };
+  // Probed ONLY from the free end: from a corner the same probe would cross a
+  // 4-ft corridor and seal it.
+  // AND THE PATTERN HAS TO COMPLETE: a bridge with a free end is kept only
+  // when the door probe from that end reaches a wall. A collinear line off a
+  // wall end that leads nowhere is casework or a fixture, not a sidelight —
+  // the second BIM run (collinear, no completion) still lost 26 rooms past 5%
+  // to those, concentrated on the clinic's dense interiors.
+  const kept: FoundWall[] = [];
+  const seals: FoundWall[] = [];
+  for (const { b, probeFrom } of out) {
+    if (probeFrom === null) {
+      kept.push(b);
+      continue;
+    }
+    const len = Math.hypot(b.x2 - b.x1, b.y2 - b.y1);
+    const ux = (b.x2 - b.x1) / len;
+    const uy = (b.y2 - b.y1) / len;
+    const [ex, ey, dx, dy] = probeFrom === 2 ? [b.x2, b.y2, ux, uy] : [b.x1, b.y1, -ux, -uy];
+    const t = hit(ex, ey, dx, dy);
+    if (t === null) continue;
+    kept.push(b);
+    seals.push({ x1: ex, y1: ey, x2: ex + dx * t, y2: ey + dy * t, thicknessFeet: BRIDGE_BAND_FEET });
+  }
+  return [...kept, ...seals];
+}
+
 export function roomsFromWalls(input: {
   walls: readonly FoundWall[];
   /** Feet per page-width unit. */
   feetPerUnit: number;
+  /** The sheet's strokes, page-width units, for `bridgingLines`. Read only
+   *  with `bridgeSidelights` on. */
+  strokes?: readonly { x1: number; y1: number; x2: number; y2: number }[];
+  /** Seal door-plus-sidelight openings from the drawn glazing (`bridgingLines`).
+   *  OFF by default — measured 2026-10-22: it closes real-sheet leaks (Bunkie
+   *  A100 4 → 6 rooms measured) and costs the BIM arm 9 rooms past 5%
+   *  (454 → 445 of 713); see NOTES-rooms.md §11 for the three versions tried. */
+  bridgeSidelights?: boolean;
   /** The page's text, in points, for the tags. */
   text?: readonly PositionedText[];
   widthPt?: number;
@@ -135,6 +275,7 @@ export function roomsFromWalls(input: {
       : [...input.walls]
   ).filter((w) => notStallPartition(w, feetPerUnit));
   if (walls.length === 0) return empty;
+  if (input.bridgeSidelights && input.strokes) walls.push(...bridgingLines(input.strokes, walls, feetPerUnit));
 
   const margin = MARGIN_FEET / feetPerUnit;
   const xs = walls.flatMap((w) => [w.x1, w.x2]);

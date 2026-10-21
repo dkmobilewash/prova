@@ -376,3 +376,95 @@ Every threshold in the room step is already in feet (`RAW_MIN_FEET`,
 limit is the grid cap, 0.28 ft per cell at 1/32", which is not what fails
 here. The unit plans p78–80 (3/32" and 1/4") are the sheets rooms are drawn
 on, and they print no areas.
+
+## 10. What rooms needs from the finder — ranked, for the original session
+
+Every item below is a boundary the room step cannot invent and the finder's
+candidate list does not carry. Ranked by rooms recovered per unit of finder
+work, measured on the training sets (NOTES §5, §8, §9), with the sheet that
+shows it. "Rooms" here means tagged rooms that would close; the room step
+itself is measured at 1.2% median area error once a room closes (§4).
+
+1. **Single-line partitions as candidates.** Topeka G-100b (73 rooms, 0
+   closed): every unit partition is one grey line, never paired, never
+   offered. Joplin's resident rooms and Camp Clark's interiors carry the same
+   thing in places. A single line that joins two paired walls end to end is a
+   wall for room purposes — offer it as a candidate with the default
+   thickness, and let the reviewer judge it. This is the biggest gap and the
+   only one that touches whole sheets.
+2. **The door jamb stubs.** Joplin A-101: the corridor-side pieces beside each
+   door are 4-inch pairs, under every length floor, so the corridor wall of
+   every resident room is absent from the list and the room merges into the
+   hall (54 of 74 merged with hatched walls in). A pair shorter than 2 ft that
+   sits collinear between two openings is a jamb, and the room step can seal
+   from it; today it is dropped before anybody sees it.
+3. **Existing walls as boundaries, flagged.** Bunkie A100 (6 rooms, 0 closed
+   from accepted walls, 4 within 5% with every candidate back in), Baker A101's
+   vestibule, the Supreme Court library (hatched poché, 1 of 7). The reviewer
+   rejects them correctly for the bid; rooms need them anyway. A candidate that
+   survives the finder but is rejected for SCOPE rather than for not being a
+   wall should keep a mark the room step can read, instead of vanishing with
+   the junk. `offerAll` is close to this and is not it.
+4. **Hatched walls under the even-pitch rule, inside the building.** §9: the
+   offered singles under `hatchPitchRule` close rooms the pairer cannot
+   (Joplin 6 → 19) and pull the column grid in unless clipped to the paired
+   walls' extent. Worth offering as a class the room step can take on its own,
+   not as part of "unclassified".
+5. **Storefront and curtain wall as a boundary class.** BIM clinic: 20 rooms
+   open until the key's curtain walls were added (§4). The finder sees
+   storefront as glazing lines; rooms need it as a wall of zero thickness.
+6. **Scale when dimensions decline but agree.** Topeka: 45 dimensions agree on
+   1/32", the product declines at 0.9% against 0.5%, the caption says 1/16".
+   Not a rooms rule, but every page it happens on is unmeasurable for rooms,
+   and the agreed scale was right. Same lane as the queue's printed-scale item.
+
+Not asked for, and said so: corner-door sealing as a default (§4, measured
+off), splitting suites the code plan sums (Camp Clark's showers, §9), and
+anything about rooms the drawing does not wall (SW's sales floors, the BIM
+"no wall" merges).
+
+## 11. Door + sidelight openings (2026-10-22 eve) — built, measured, OFF by default
+
+The shape, from the Joplin crops (`shots/rooms/joplin-doors/`): each resident
+room's corridor side is a door hinged in one corner plus a glazed sidelight
+to the other partition. No collinear wall on either side of the gap, so the
+door rule has nothing to anchor on; the jamb stubs are 4-inch pairs the
+boundary never carries. But the sidelight's glazing lines are drawn, jamb to
+corner. `bridgingLines` (`roomsFromWalls.ts`, option `bridgeSidelights`):
+
+  1. a stroke ≥ 2 ft with one end at a wall END, continuing that wall's line
+     within 10°, not lying along a wall it duplicates — the glazing;
+  2. from its free end, along its own line, a probe up to one door's width
+     (4.5 ft) to the first wall — the door hinged in the corner;
+  3. kept only when the probe completes the pattern, or both ends sit at wall
+     ends.
+
+Three versions, because the BIM arm is the control and each earlier one
+failed it:
+
+| version | BIM measured | within 5% | within 10% | what it did wrong |
+| --- | --- | --- | --- | --- |
+| none (baseline) | 475 | 454 | 457 | — |
+| ends only | 512 | 407 | 424 | door leaves and casework off wall ends carved rooms up |
+| + must continue the wall | 484 | 428 | 436 | collinear casework returns still cut the clinic's rooms |
+| + probe must complete | 478 | **445** | 451 | 9 rooms past 5% on the clinic and kit-office |
+
+With the final version, on the real sheets (every candidate offered, hatched
+singles inside the building):
+
+| sheet | before | after |
+| --- | --- | --- |
+| Joplin A-101 p46 | 19 of 74 closed, 54 merged, 2 open | **26 closed, 47 merged**, 2 open |
+| Joplin p47 | 11 of 78 closed, 2 merged | 16 closed, 4 merged |
+| Bunkie A100 | 4 of 6 measured, median 1.7% | 6 of 6 measured, median 2.4% (E100 and the corridor close) |
+| Baker A101 | 7 of 9, median 2.0% | 7 of 9, median 2.7% |
+| Camp Clark G-101 | 9 of 12, median 5.0% | 9 of 12, median 17.9% (a bridge splits a barracks room) |
+| Supreme Court p6 | 1 of 7 | 1 of 7 |
+
+So it does what it was built for — Joplin's rooms stop merging into the
+corridor, twelve more close, Bunkie completes — and it is not free: 9 BIM
+rooms and a Camp Clark barracks room past 5%. Diego's bar was that BIM must
+not get worse, so the option ships OFF and the numbers stay here. What would
+make it safe is a glazing CLASS from the finder rather than "any collinear
+stroke" (§10, item 5): a line the drawing itself marks as glass cannot be
+casework.

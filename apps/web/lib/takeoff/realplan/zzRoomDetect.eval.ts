@@ -131,6 +131,14 @@ async function hatchedSingles(pdf: string, page: number, feetPerUnit: number): P
     .map((c) => ({ x1: c.x1, y1: c.y1, x2: c.x2, y2: c.y2 }));
 }
 
+/** The sheet's strokes in page-width units, for `bridgingLines`; only with ROOM_BRIDGE=1. */
+async function strokesInUnits(pdf: string, page: number): Promise<{ x1: number; y1: number; x2: number; y2: number }[] | undefined> {
+  if (process.env.ROOM_BRIDGE !== "1") return undefined;
+  const read = await sheetStrokes(Buffer.from(readFileSync(pdf)), page);
+  const w = read.widthPt;
+  return read.segments.map((seg) => ({ x1: seg.x1 / w, y1: seg.y1 / w, x2: seg.x2 / w, y2: seg.y2 / w }));
+}
+
 async function rawCandidates(pdf: string, page: number, feetPerUnit: number): Promise<{ walls: FoundWall[]; strokes: number }> {
   // Fresh bytes for each reader: `openPlanPdf` hands pdfjs a VIEW and pdfjs
   // detaches the buffer behind it (planPdf.ts says so), so a Buffer that has
@@ -306,7 +314,7 @@ describe.skipIf(KEYS === "" || (LABELS === "" && BIM === "" && REAL === ""))("ro
       const raw = await rawCandidates(pdf, page, feetPerUnit);
       const hatched = process.env.ROOM_HATCH === "1" ? await hatchedSingles(pdf, page, feetPerUnit) : [];
       const walls = [...raw.walls, ...hatched];
-      const result = roomsFromWalls({ walls, feetPerUnit, text: text.items, widthPt: text.widthPt });
+      const result = roomsFromWalls({ walls, feetPerUnit, text: text.items, widthPt: text.widthPt, strokes: await strokesInUnits(pdf, page), bridgeSidelights: process.env.ROOM_BRIDGE === "1" });
       dump(`boundary__${set.replace(/\.pdf$/, "")}__p${page}`, result, { pdf, set, sheet: `p${page}`, page, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit, walls });
       const rows = score(`${set} p${page} (${scaleName}, ${raw.walls.length} raw candidates >= ${RAW_MIN_FEET} ft${hatched.length ? ` + ${hatched.length} hatched singles` : ""} of ${raw.strokes} strokes)`, result.rooms, result.unplacedTags, result.mergedTags, key, how);
       joined += rows.length;
@@ -349,7 +357,7 @@ describe.skipIf(KEYS === "" || (LABELS === "" && BIM === "" && REAL === ""))("ro
       // BOUNDARY set: the finder's raw candidates + accepted + traced.
       const raw = await rawCandidates(join(REAL, set), saved.page, saved.feetPerUnit);
       const boundary: FoundWall[] = [...raw.walls, ...every];
-      const bounded = roomsFromWalls({ walls: boundary, feetPerUnit: saved.feetPerUnit, text: text.items, widthPt: text.widthPt });
+      const bounded = roomsFromWalls({ walls: boundary, feetPerUnit: saved.feetPerUnit, text: text.items, widthPt: text.widthPt, strokes: await strokesInUnits(join(REAL, set), saved.page), bridgeSidelights: process.env.ROOM_BRIDGE === "1" });
       dump(`boundary__${set.replace(/\.pdf$/, "")}__${sheet}`, bounded, { pdf: join(REAL, set), set, sheet, page: saved.page, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit: saved.feetPerUnit, walls: boundary });
       all.push(...score(`  … BOUNDARY: ${raw.walls.length} raw finder candidates >= ${RAW_MIN_FEET} ft (${raw.strokes} strokes) + all ${every.length} offered`, bounded.rooms, bounded.unplacedTags, bounded.mergedTags, key, how));
     }
@@ -389,7 +397,7 @@ describe.skipIf(KEYS === "" || (LABELS === "" && BIM === "" && REAL === ""))("ro
         const doc = await openPlanPdf(Buffer.from(readFileSync(join(BIM, model.name, k.file))));
         const text = await doc.pageText(1);
         await doc.close();
-        const result = roomsFromWalls({ walls, feetPerUnit: 1 / key.unitsPerFoot, text: text.items, widthPt: text.widthPt });
+        const result = roomsFromWalls({ walls, feetPerUnit: 1 / key.unitsPerFoot, text: text.items, widthPt: text.widthPt, strokes: await strokesInUnits(join(BIM, model.name, k.file), 1), bridgeSidelights: process.env.ROOM_BRIDGE === "1" });
         dump(`bim__${k.id}`, result, { pdf: join(BIM, model.name, k.file), set: k.id, page: 1, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit: 1 / key.unitsPerFoot, walls });
         all.push(...score(`${k.id} (${walls.length} wall pieces)`, result.rooms, result.unplacedTags, result.mergedTags, key, "number", walls));
         if (process.env.BIM_END_TO_END === "1") {
