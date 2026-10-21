@@ -8,6 +8,7 @@ import { findWallsOnSheet } from "../findWallsOnSheet";
 import { sheetStrokes } from "../sheetStrokes";
 import { heldOutReason } from "../heldOutSets";
 import { labelRows } from "../labelRows";
+import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { pagesToSample } from "../sheetTemplate";
 
 /**
@@ -174,7 +175,29 @@ describe.skipIf(DIR === "" || LABELS === "")("the app's candidate list against t
       const c = saved.counts ?? {};
       const inApp =
         (c.accepted ?? 0) + (c.rejected ?? 0) + (c.unsure ?? 0) + (c.unreviewed ?? 0);
+      // ── THE SHARED PIPELINE, WHICH IS THE POINT OF THIS FILE ──
+      //
+      // `offeredCandidates` is the viewer's own reduction, extracted. If this
+      // eval now agrees with the app, the two really are one path; if it does
+      // not, the extraction is unfaithful and that is worth more than any
+      // measurement taken with it.
+      // The app's own two steps, in order, through the shared module.
+      const detected = detectForSheet({
+        segments: strokes.segments,
+        textItems,
+        pageSize: { widthPt: strokes.widthPt, heightPt: strokes.heightPt },
+        feetPerUnit: saved.feetPerUnit,
+      });
+      const offered = offeredCandidates({
+        walls: detected.found.walls,
+        segments: strokes.segments,
+        widthPt: strokes.widthPt,
+        feetPerUnit: saved.feetPerUnit,
+        planBoxes: detected.planBoxes,
+      });
+
       const inEval = found.walls.length;
+      const inShared = offered.candidates.length;
       const inEvalTemplated = withTemplate.walls.length;
       const gap = inEvalTemplated - inApp;
       worstGap = Math.max(worstGap, Math.abs(gap));
@@ -220,7 +243,10 @@ describe.skipIf(DIR === "" || LABELS === "")("the app's candidate list against t
         `  ${`${file.dir.slice(0, 26)}/${file.sheet}`.padEnd(34)} ` +
           `app ${String(inApp).padStart(4)} · eval ${String(inEval).padStart(4)} · ` +
           `eval+template ${String(inEvalTemplated).padStart(4)} · ` +
-          `APP PATH ${String(asApp.walls.length).padStart(4)} · ` +
+          `SHARED ${String(inShared).padStart(4)} ${inShared === inApp ? "== app" : `vs app ${inShared - inApp >= 0 ? "+" : ""}${inShared - inApp}`} · ` +
+          `views ${detected.views} · primary ${detected.primaryName ?? "none"} · ` +
+          `off-plan paired ${String(offered.offPlanPaired).padStart(4)} · ` +
+          `set aside ${offered.setAside.reduce((n, a) => n + a.n, 0)} · ` +
           `strokes ${strokes.segments.length} vs ${viaPageStrokes.segments.length} (${strokeGap >= 0 ? "+" : ""}${strokeGap}) · ` +
           `${gap === 0 ? "SAME as app" : `${gap > 0 ? "+" : ""}${gap} vs app`} · ` +
           `template removed ${inEval - inEvalTemplated} · ` +

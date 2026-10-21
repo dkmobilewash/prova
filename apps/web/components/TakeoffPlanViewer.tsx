@@ -119,7 +119,7 @@ import {
   type Candidate,
   type ReviewState,
 } from "@/lib/takeoff/answerKeyReview";
-import { classifySingleLines, worthOffering } from "@/lib/takeoff/singleLines";
+import { offeredCandidates } from "@/lib/takeoff/offeredCandidates";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 
 /**
@@ -881,83 +881,26 @@ export function TakeoffPlanViewer({
   const candidatesFromLastDetect = useCallback((): Candidate[] | null => {
     const last = lastDetect.current;
     if (last === null || last.page !== pageNumber) return null;
-    const faces = oneFacePerLine(last.segments, last.feetPerUnit / last.widthPt).map(
-      inPageWidthUnits(last.widthPt),
+    // ── ONE PIPELINE, SHARED WITH EVERY EVAL ──
+    //
+    // This logic lived here, which meant no eval could reach it — so every
+    // measurement in `realplan/` was of the finder's RAW output while the
+    // panel showed something else. The gap reached 128 candidates on Murray
+    // A101 (app 32, eval 160) and produced two wrong conclusions before
+    // anybody checked. `offeredCandidates` is that function, and it says what
+    // reduces the list and by how much.
+    const offered = offeredCandidates(
+      {
+        walls: last.walls,
+        segments: last.segments,
+        widthPt: last.widthPt,
+        feetPerUnit: last.feetPerUnit,
+        planBoxes: last.planBoxes,
+      },
+      offerAll,
     );
-    const covered = (f: StrokeSegment) => {
-      const mx = (f.x1 + f.x2) / 2;
-      const my = (f.y1 + f.y2) / 2;
-      return last.walls.some((w) => {
-        const dx = w.x2 - w.x1;
-        const dy = w.y2 - w.y1;
-        const len2 = dx * dx + dy * dy;
-        const t =
-          len2 === 0 ? 0 : Math.max(0, Math.min(1, ((mx - w.x1) * dx + (my - w.y1) * dy) / len2));
-        return Math.hypot(mx - (w.x1 + t * dx), my - (w.y1 + t * dy)) * last.feetPerUnit <= 1.5;
-      });
-    };
-    const pairOptions = { feetPerPoint: last.feetPerUnit };
-    /** Is this the part of the sheet that was measured? */
-    const onAPlan = (x1: number, y1: number, x2: number, y2: number) => {
-      if (last.planBoxes === null) return true;
-      const mx = (x1 + x2) / 2;
-      const my = (y1 + y2) / 2;
-      return last.planBoxes.some(
-        (box) => mx >= box.from && mx < box.to && my >= box.fromY && my < box.toY,
-      );
-    };
-    const unclaimed = faces.filter(
-      (f) =>
-        Math.hypot(f.x2 - f.x1, f.y2 - f.y1) * last.feetPerUnit >= 12 &&
-        onAPlan(f.x1, f.y1, f.x2, f.y2) &&
-        !covered(f) &&
-        !faces.some((other) => other !== f && wallFromPair(f, other, pairOptions) !== null),
-    );
-    const classified = classifySingleLines({
-      unclaimed,
-      faces,
-      segments: last.segments.map(inPageWidthUnits(last.widthPt)),
-      walls: last.walls,
-      feetPerUnit: last.feetPerUnit,
-    });
-    // Counted by reason, for the panel to report. Computed even when
-    // `offerAll` is on, so the sentence is about the drawing rather than
-    // about the filter's current setting.
-    const aside = new Map<string, { kind: string; why: string; n: number }>();
-    for (const one of classified) {
-      if (worthOffering(one.kind)) continue;
-      const at = aside.get(one.kind) ?? { kind: one.kind, why: one.why, n: 0 };
-      at.n += 1;
-      aside.set(one.kind, at);
-    }
-    setAsideRef.current = [...aside.values()].sort((a, b) => b.n - a.n);
-    return candidatesFromSheet({
-      walls: last.walls
-        .filter((w) => onAPlan(w.x1, w.y1, w.x2, w.y2))
-        .map((w) => ({
-        x1: w.x1,
-        y1: w.y1,
-        x2: w.x2,
-        y2: w.y2,
-        lengthFeet: w.lengthFeet,
-        thicknessFeet: w.thicknessFeet,
-      })),
-      // ── ONLY THE ONES THE CLASSIFIER COULD NOT RULE OUT ──
-      //
-      // `classifySingleLines` has already named each of these a hatch, a grid
-      // line past the building, a dashed line or a symbol — and every one was
-      // offered anyway. On A102 that is 162 hatch lines out of 168. See
-      // `OFFERED_CLASSES`; what is set aside is reported, never dropped in
-      // silence.
-      singles: classified
-        .filter((one) => offerAll || worthOffering(one.kind))
-        .map((one) => ({
-          line: one.line,
-          lengthFeet: one.lengthFeet,
-          kind: one.kind,
-          why: one.why,
-        })),
-    });
+    setAsideRef.current = offered.setAside;
+    return offered.candidates;
   }, [pageNumber, offerAll]);
 
   // ── AND THE MODE CAN BE TURNED ON AFTER A DETECTION ──
