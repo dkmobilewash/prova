@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Spinner } from "@/components/Spinner";
 import { AnswerKeyPanel } from "@/components/AnswerKeyPanel";
 import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
-import { addTraced, startReview, tracedWall, type ReviewState } from "@/lib/takeoff/answerKeyReview";
+import { addTraced, removeTraced, startReview, tracedWall, type ReviewState } from "@/lib/takeoff/answerKeyReview";
 import { crossingPoint, splitCandidate } from "@/lib/takeoff/splitCandidate";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
@@ -415,6 +415,33 @@ export function TakeoffWorkspace({
       // ⌘Z / ⌘⇧Z are the only modified keys this shell claims.
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
+        // ── ONE HANDLER OWNS THIS KEY ──
+        //
+        // Undo was first written as a SECOND window listener inside
+        // AnswerKeyPanel, which is the wrong shape even where it works: this
+        // shell already claims ⌘Z and already calls preventDefault on it, so
+        // two listeners would mean two different ideas of what undo means on
+        // the same screen.
+        //
+        // While a review is open with traces on it, the last trace is what
+        // the reviewer just created and therefore what they mean. Otherwise
+        // it is the measurement stack, unchanged.
+        // ── READ IT OFF THE REF, NOT THE CLOSURE ──
+        //
+        // This handler is memoised, so a direct read of `keyStateByPage` is
+        // whatever it was when the callback was last built — `{}` on the
+        // render that matters, which makes `review` undefined and sends every
+        // ⌘Z to the measurement stack instead. That was the second wrong fix
+        // in a row here: the first was a duplicate listener, this one looked
+        // right and silently did nothing. `keyStateRef` is assigned on every
+        // render and is the only reading of current state that cannot be
+        // stale.
+        const review = keyStateRef.current;
+        const lastTrace = review?.traced[review.traced.length - 1];
+        if (!event.shiftKey && lastTrace !== undefined && review !== null) {
+          setKeyState(removeTraced(review, lastTrace.id));
+          return;
+        }
         void runUndo(event.shiftKey ? "redo" : "undo");
         return;
       }

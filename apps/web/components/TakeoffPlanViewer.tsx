@@ -3601,18 +3601,58 @@ export function TakeoffPlanViewer({
                     );
                   })}
                   {answerKey.state.traced.map((one) => (
+                    // ── A HIT AREA WIDER THAN THE INK ──
+                    //
+                    // The visible trace is 4px. Clicking a 4px diagonal line
+                    // is hard with a mouse and impossible to do reliably in a
+                    // test: the first version of this was selectable in
+                    // principle and unselectable in practice, and the click
+                    // landed on whatever was painted above it. A transparent
+                    // stroke four times as wide underneath takes the click.
+                    // ── A TRACE IS SELECTABLE, BECAUSE IT HAS TO BE DELETABLE ──
+                    //
+                    // These rendered with no click handler and no cursor, and
+                    // `removeTraced` was exported and called by nothing —
+                    // this repo's own "written, documented, never called"
+                    // shape. A reviewer who traced a wall wrongly had no way
+                    // back, and on the held-out sheets that led to CORRECT
+                    // finder candidates being rejected to work around a
+                    // trace, which is a key saying the opposite of what the
+                    // reviewer meant.
+                    <g key={one.id}>
                     <line
-                      key={one.id}
+                      data-takeoff="key-traced-hit"
+                      x1={one.x1}
+                      y1={one.y1}
+                      x2={one.x2}
+                      y2={one.y2}
+                      stroke="transparent"
+                      strokeWidth={STROKE_PX * 16}
+                      vectorEffect="non-scaling-stroke"
+                      style={{ cursor: "pointer" }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        answerKey.onFocus(one.id);
+                      }}
+                    />
+                    <line
                       data-takeoff="key-traced"
+                      data-id={one.id}
                       x1={one.x1}
                       y1={one.y1}
                       x2={one.x2}
                       y2={one.y2}
                       stroke={VERDICT_COLOURS.wall}
-                      strokeWidth={STROKE_PX * 2}
+                      strokeWidth={answerKey.focusedId === one.id ? STROKE_PX * 4 : STROKE_PX * 2}
                       strokeDasharray={`${STROKE_PX * 2} ${STROKE_PX}`}
                       vectorEffect="non-scaling-stroke"
+                      style={{ cursor: "pointer" }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        answerKey.onFocus(one.id);
+                      }}
                     />
+                    </g>
                   ))}
                 </g>
               )}

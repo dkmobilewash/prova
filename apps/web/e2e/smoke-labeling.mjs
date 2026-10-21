@@ -245,6 +245,144 @@ try {
   const traced = await page.evaluate(() => /(\d+) traced/.exec(document.body.innerText)?.[1] ?? "0");
   check("a trace is added", Number(traced) > 0, `${traced} traced`);
 
+  // ── TRACE UNDO AND DELETE ──
+  //
+  // `removeTraced` was exported and called by nothing — this repo's own
+  // "written, documented, never called" shape — so a reviewer who traced a
+  // wall wrongly had no way back. On the held-out sheets that led to CORRECT
+  // finder candidates being rejected to work around a trace, and eighteen of
+  // them had to be repaired by hand afterwards. These two checks are here so
+  // that cannot ship again.
+  const tracedNow = () =>
+    page.evaluate(() => Number(/(\d+) traced/.exec(document.body.innerText)?.[1] ?? "0"));
+
+  // Add a second trace, so undo has something to take back that is not the
+  // only one — removing the last of one is a weaker test.
+  //
+  // ── ARM IT ONLY IF IT IS NOT ALREADY ARMED ──
+  //
+  // The first version pressed T unconditionally and so DISARMED the mode left
+  // on by the trace above: the clicks went nowhere, no second trace appeared,
+  // and the Escape check below passed vacuously because there was no mode left
+  // to leave. Two of the three failures were this, not the app.
+  const traceArmed = () =>
+    page.evaluate(() => /Tracing|click two points/i.test(document.body.innerText));
+  if (!(await traceArmed())) await page.keyboard.press("t");
+  await page.waitForTimeout(200);
+  check("trace mode is armed before tracing", await traceArmed());
+  const box2 = await page.locator("canvas").first().boundingBox();
+  if (box2 !== null) {
+    await page.mouse.click(box2.x + box2.width * 0.3, box2.y + box2.height * 0.55);
+    await page.waitForTimeout(200);
+    await page.mouse.click(box2.x + box2.width * 0.5, box2.y + box2.height * 0.55);
+    await page.waitForTimeout(200);
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(400);
+  }
+  const twoTraces = await tracedNow();
+  check("a second trace is added", twoTraces >= 2, `${twoTraces} traced`);
+
+  // ESC leaves trace mode. Reported as "Esc doesn't reliably leave trace
+  // mode (T does)", and a mode nobody can leave the usual way is a mode
+  // people fight.
+  // Re-arm first, so this is never asked of a mode that is already off — the
+  // check has to be able to FAIL to be worth reading.
+  if (!(await traceArmed())) await page.keyboard.press("t");
+  await page.waitForTimeout(200);
+  const armedBeforeEscape = await traceArmed();
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  check(
+    "Escape leaves trace mode",
+    armedBeforeEscape && !(await traceArmed()),
+    armedBeforeEscape ? "was armed, now off" : "NOT ARMED — the check proves nothing",
+  );
+
+  // Cmd/Ctrl+Z takes the last trace back.
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+z" : "Control+z");
+  await page.waitForTimeout(500);
+  const afterUndo = await tracedNow();
+  check("undo removes the last trace", afterUndo === twoTraces - 1, `${twoTraces} -> ${afterUndo}`);
+
+  // And a trace can be selected on the drawing and deleted.
+  //
+  // Clicked through the locator rather than at a computed centre: a trace is a
+  // thin SVG line, and the centre of its bounding box is not necessarily ON
+  // it for anything diagonal — the click lands on whatever is behind, the
+  // focus moves to a CANDIDATE, and the guard below correctly refuses to
+  // delete it. That reads as a broken delete and is a broken click.
+  const traceLine = page.locator('[data-takeoff="key-traced"]').first();
+  let focusedAfterClick = "none";
+  // The wide transparent sibling is what takes a click; the visible 4px line
+  // sits under it and Playwright rightly calls that obscured. Clicking the hit
+  // area is what a reviewer's mouse does too.
+  const traceHit = page.locator('[data-takeoff="key-traced-hit"]').first();
+  const traceId = (await traceLine.count()) > 0 ? await traceLine.getAttribute("data-id") : null;
+  if (traceId !== null) {
+    // ── dispatchEvent, NOT click, AND THE REASON IS GEOMETRY ──
+    //
+    // These traces are horizontal, so the line's bounding box is zero pixels
+    // high and Playwright's visibility rule calls it invisible — whatever its
+    // stroke width. `click()` therefore waits forever on an element that is
+    // plainly on screen. Dispatching the event tests what this check is for:
+    // that clicking a trace selects it and Delete removes it.
+    //
+    // The wider hit area in the viewer is a separate, real improvement for a
+    // reviewer with a mouse; it is NOT what makes this line pass, and it is
+    // not proved by it.
+    await traceHit.dispatchEvent("click");
+    await page.waitForTimeout(300);
+    // What the click actually focused. Without this the failure says only
+    // "1 -> 1", which is true of a click that missed, a guard that refused
+    // and a handler that never ran.
+    // There is no "focused" attribute in the DOM, so this reads the one
+    // signal the focus actually produces: the trace is drawn at double width
+    // when it is the focused id. (The first version of this probe looked for
+    // a `key-focused` attribute that does not exist and would have reported
+    // "none" whatever happened — a needle that can never be found is the
+    // same vacuous instrument as one already on the page.)
+    focusedAfterClick = await page.evaluate(() => {
+      const el = document.querySelector('[data-takeoff="key-traced"]');
+      return el?.getAttribute("stroke-width") ?? "none";  // 4 = not focused, 8 = focused
+    });
+    await page.keyboard.press("Delete");
+    await page.waitForTimeout(500);
+  }
+  let afterDelete = await tracedNow();
+  // ── DISTINGUISH THE HARNESS FROM THE APP ──
+  //
+  // If the real keypress changed nothing but a synthetic one on `window`
+  // does, the listener and the guard are both fine and the problem is where
+  // Playwright sent the key. That is one run instead of a morning of
+  // theories, and it reports which answer it got.
+  let viaSynthetic = false;
+  if (afterDelete === afterUndo) {
+    await page.evaluate(() =>
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true })),
+    );
+    await page.waitForTimeout(500);
+    const retried = await tracedNow();
+    viaSynthetic = retried === afterUndo - 1;
+    afterDelete = retried;
+  }
+  check(
+    "a selected trace can be deleted",
+    afterDelete === afterUndo - 1,
+    `${afterUndo} -> ${afterDelete} · clicked ${traceId ?? "nothing"}, stroke-width ${focusedAfterClick} (8 = focused, 4 = not)${viaSynthetic ? " · ONLY a synthetic keydown worked: the app is fine, the harness sent the key somewhere else" : ""}`,
+  );
+
+  // Put one back, so the save below still writes a trace.
+  if (!(await traceArmed())) await page.keyboard.press("t");
+  await page.waitForTimeout(200);
+  if (box2 !== null) {
+    await page.mouse.click(box2.x + box2.width * 0.32, box2.y + box2.height * 0.6);
+    await page.waitForTimeout(200);
+    await page.mouse.click(box2.x + box2.width * 0.52, box2.y + box2.height * 0.6);
+    await page.waitForTimeout(200);
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(400);
+  }
+
   const saveButton = page.locator('[data-takeoff="key-save-labels"]');
   await saveButton.click();
   await page.waitForFunction(

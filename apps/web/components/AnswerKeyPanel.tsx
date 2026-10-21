@@ -7,6 +7,7 @@ import {
   keyFromReview,
   nextUnreviewed,
   progressOf,
+  removeTraced,
   setVerdict,
   type ReviewState,
   type Verdict,
@@ -213,8 +214,22 @@ export function AnswerKeyPanel({
       const typing =
         target !== null &&
         (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
-      if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+      // ── THE ONE MODIFIER SHORTCUT, LET THROUGH BY NAME ──
+      //
+      // This guard exists so the single-letter keys below cannot fire while a
+      // browser shortcut is being pressed. Undo is the exception, because
+      // Cmd/Ctrl+Z is the only way anybody expects to spell it.
+      //
+      // Worth reading as a warning rather than a line of code: the undo
+      // branch was written BELOW this guard and was therefore unreachable —
+      // dead on arrival, exactly the "written, documented, never called"
+      // shape it was added to fix. The smoke test caught it on its first run
+      // and nothing else would have.
       const key = event.key.toLowerCase();
+      // ⌘Z is NOT handled here. The workspace shell already claims it and
+      // routes it to the last trace; a second listener for the same key is
+      // two ideas of undo on one screen.
+      if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
       if (key === "a") {
         event.preventDefault();
         decide(focusedId, "wall");
@@ -249,6 +264,30 @@ export function AnswerKeyPanel({
       } else if (key === "h") {
         event.preventDefault();
         onOverlays(!overlaysOn);
+      } else if (key === "delete" || key === "backspace") {
+        // And the selected one, which is what a reviewer reaches for after
+        // clicking the trace they can see is wrong.
+        event.preventDefault();
+        // ── THROUGH `onState`, WHICH THIS PANEL ALREADY HAS ──
+        //
+        // The first version added an `onRemoveTraced` prop and wired it
+        // through the workspace. It did nothing, and chasing why cost four
+        // smoke runs — while `onState` was sitting in the same props object,
+        // is how the split handler and every other state change here already
+        // work, and needed no new wiring at all.
+        if (focusedId !== null && state.traced.some((t) => t.id === focusedId)) {
+          onState(removeTraced(state, focusedId));
+        }
+      } else if (key === "escape") {
+        // ── ESC LEAVES TRACE MODE ──
+        //
+        // T toggles it and did the whole job, which is fine until the mode is
+        // armed and the reviewer wants out: every habit says Escape, and
+        // pressing T again is the thing they have to be told. Reported as
+        // "Esc doesn't reliably leave trace mode (T does)".
+        event.preventDefault();
+        if (tracing) onTracing?.(false);
+        else onFocus(null);
       } else if (key === "t") {
         // ── T ARMS TRACING ──
         //
