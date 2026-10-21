@@ -27,11 +27,11 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { skipDir, skipPath } from "./censusSkipDirs";
 
 const appDir = fileURLToPath(new URL("../", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
-const SKIP_DIRS = new Set(["node_modules", ".next", "dist", ".turbo"]);
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
   let names: string[];
@@ -41,7 +41,7 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
     return out;
   }
   for (const name of names) {
-    if (SKIP_DIRS.has(name)) continue;
+    if (skipDir(name)) continue;
     const full = join(dir, name);
     if (statSync(full).isDirectory()) sourceFiles(full, out);
     else if (/\.tsx?$/.test(name) && !/\.(test|dbtest)\.tsx?$/.test(name)) out.push(full);

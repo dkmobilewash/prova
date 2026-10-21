@@ -666,6 +666,22 @@ export function wallsPerView(input: {
   /** Carried through so a view keeps the set's own frame filter. Clipping to a
    *  band does not move any coordinate, so the template still lines up. */
   sampledSheets?: StrokeSegment[][] | null;
+  /**
+   * ── THE MODEL'S VETO, WHICH THIS FUNCTION DROPPED IN SILENCE ──
+   *
+   * There was no field for it here, so a caller spreading a prepared options
+   * object (`{ ...base, views }`) handed the veto in and TypeScript said
+   * nothing: excess-property checking applies to object LITERALS, not to a
+   * spread variable. The veto fell on the floor and the sheet was measured by
+   * the rules alone.
+   *
+   * The only symptom was a score that did not move. Two of the seven held-out
+   * sheets are multi-view, and both reported byte-identical missing and extra
+   * feet in the rules arm and the model arm — a model being scored on sheets
+   * it had never been applied to, which is this repo's most expensive
+   * recurring shape wearing a type signature.
+   */
+  veto?: Parameters<typeof findWallsOnSheet>[0]["veto"];
 }): ViewWalls[] {
   const bands = input.views
     .map((view) => ({
@@ -744,6 +760,10 @@ export function wallsPerView(input: {
       // labels refused every multi-view sheet with "no pairings were
       // captured", which is most real bid-package sheets.
       onCandidate: input.onCandidate,
+      // The veto, which this call omitted while the type had no field for
+      // it — so a spread caller's model was dropped and the sheet measured
+      // by the rules alone. See the `veto` field above.
+      veto: input.veto,
     });
     return {
       view: band.view,

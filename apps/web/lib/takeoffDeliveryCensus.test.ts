@@ -152,6 +152,7 @@ import { listGitFiles } from "../test/git-files";
  * every test in the file — rather than leaving the scan below looking for a
  * symbol that no longer exists and finding, correctly, nothing. */
 import { deliveryBody, deliverySubjectLine } from "./takeoff-delivery";
+import { skipDir, skipPath } from "./censusSkipDirs";
 
 /** apps/web. Resolved from this file rather than from `process.cwd()`, so a
  *  runner started in another directory cannot silently change the scope. */
@@ -310,7 +311,6 @@ const { roots, globs, problems } = scanRoots();
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx"];
 /** Never source, never tracked, and enormous. */
-const SKIP_DIRS = new Set(["node_modules", ".next", ".turbo", "dist", ".git"]);
 
 function walk(root: string): string[] {
   const found: string[] = [];
@@ -320,7 +320,7 @@ function walk(root: string): string[] {
     if (dir === undefined) break;
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
-        if (!SKIP_DIRS.has(entry.name)) stack.push(join(dir, entry.name));
+        if (!skipDir(entry.name)) stack.push(join(dir, entry.name));
       } else if (SOURCE_EXTENSIONS.some((ext) => entry.name.endsWith(ext))) {
         found.push(join(dir, entry.name));
       }

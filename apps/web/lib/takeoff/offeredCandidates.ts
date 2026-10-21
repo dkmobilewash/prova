@@ -1,6 +1,7 @@
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "./findWallsOnSheet";
-import { primaryView, sheetViews, wallsPerView } from "./sheetViews";
+import { primaryView, sheetViews, viewRegions, wallsPerView } from "./sheetViews";
+import { drawingRegions, segmentsInRegions } from "./planRegion";
 import { classifySingleLines, worthOffering } from "./singleLines";
 import { oneFacePerLine, wallFromPair, type StrokeSegment, type WallCandidate } from "./wallVectors";
 
@@ -215,6 +216,15 @@ export type SheetDetectInput = {
   feetPerUnit: number;
   wallTypes?: Parameters<typeof findWallsOnSheet>[0]["wallTypes"];
   sampledSheets?: StrokeSegment[][] | null;
+  /**
+   * The model's veto, passed straight through to `findWallsOnSheet`.
+   *
+   * It belongs here rather than at the call site because a score taken on
+   * "the app's candidate list" has to run the veto where the app would run
+   * it — inside detection, before the triage sees anything. Scoring the
+   * veto against a list built without it compares two different pipelines.
+   */
+  veto?: Parameters<typeof findWallsOnSheet>[0]["veto"];
 };
 
 export type SheetDetectResult = {
@@ -235,10 +245,34 @@ export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
     feetPerUnit: input.feetPerUnit,
     wallTypes: [...(input.wallTypes ?? [])],
     sampledSheets: input.sampledSheets ?? null,
+    veto: input.veto,
   };
 
   if (views.length < 2) {
-    return { found: findWallsOnSheet(base), planBoxes: null, views: views.length, primaryName: null };
+    // ── A ONE-DRAWING SHEET STILL HAS A TITLE BLOCK, AND IT MEASURED IT ──
+    //
+    // `viewRegions` separates the title block, the notes and the legend from
+    // the drawing, but a region with no caption joins the nearest — right for
+    // keeping a plan's dimension column with its plan, and it meant a sheet
+    // with one caption measured its own title block and offered its ruled
+    // lines as walls.
+    //
+    // Leaving this branch out of the extraction is what kept the eval at 160
+    // candidates on sheets the app had cut to 32: the raw page, measured
+    // whole. `planRegion.ts` carries why it cannot reintroduce the S05/S07
+    // scar — it keeps the BUSIEST region and whatever is comparable to it.
+    const drawing = drawingRegions(
+      viewRegions(base.segments, input.pageSize),
+      base.segments,
+      input.pageSize.widthPt,
+    );
+    const onTheDrawing = segmentsInRegions(base.segments, drawing, input.pageSize.widthPt);
+    return {
+      found: findWallsOnSheet({ ...base, segments: onTheDrawing }),
+      planBoxes: drawing.length > 0 ? [...drawing] : null,
+      views: views.length,
+      primaryName: null,
+    };
   }
 
   const measured = wallsPerView({ ...base, views });
