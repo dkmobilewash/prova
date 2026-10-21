@@ -292,3 +292,37 @@ to learn, and the line is a measurement the estimator can keep.
   form submitted natively when pressed before hydration (now an
   `ActionForm`); the settings switch lives on the Estimating tab; the real
   sheet needs its pixels before Find the walls means anything.
+
+## 8. The 2026-10-22 training sets (queue 1, rewritten)
+
+**What they print.** Of the five, only Camp Clark's code plan (G-101, p3)
+prints room areas — inside each room, no name over them, so the key is
+12 areas by POSITION. Joplin A-101/p47, Topeka G-100b and the Supreme Court
+library print NAME / NUMBER tags and no areas; their keys say which rooms
+exist and where (74, 78, 73, 7 rooms) and nothing about size. The Fairgrounds
+comfort station prints no room tags at all. Topeka's "S.F." figures are unit
+schedules and unit-plan titles, not rooms.
+
+**Scale without a calibration.** Dimensions first (`readSheetScale`), the one
+printed scale on the page second (`scaleFromPrinted`) — never hand-set. Joplin
+A-101 read 1/8" from its dimensions; Camp Clark, Joplin p47 and Topeka have
+their dimensions as line work and read their printed scale; Topeka's
+dimensions agree on 1/32" but no line fits within 1%, and the printed scale
+says 1/16" — the dimensions belong to the enlarged plans, not these.
+
+**Rooms from raw pairings alone (no reviewer, no traces):**
+
+| page | scale | raw pairings ≥ 2 ft | closed / keyed | area error |
+| --- | --- | --- | --- | --- |
+| Camp Clark G-101 p3 | 1/8" printed | 878 | 10 / 12 | median 6.1%, 5 within 5%; showers at half (partitions split them) |
+| Joplin A-101 p46 | 1/8" dims | 1,184 | 6 / 74 | no printed areas |
+| Joplin p47 | 1/8" printed | 940 | 11 / 78 | no printed areas |
+| Topeka G-100b p6 | 1/16" printed | 3,693 | 0 / 73 | no printed areas; 26 regions, none tagged |
+| Supreme Court p6 | 1/8" printed | 39,474 | 0 / 7 | hatched existing plan, no region closes |
+
+So on a sheet nobody has reviewed, the finder's pairings close a tenth of
+the rooms. The room step is not the limit (Camp Clark's big rooms are right);
+the pairing set is — the corridor-side walls with a door and a sidelight,
+and anything at 1/16". Hints for 38 rooms are in
+`coordination/rooms-missed-walls.md`, part 2. Overlays in
+`shots/rooms/boundary__*__p*/`.
