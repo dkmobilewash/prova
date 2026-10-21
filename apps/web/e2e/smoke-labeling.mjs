@@ -710,8 +710,6 @@ try {
   // EOC A101 lost 2.
   let splitFilePath = null;
   let splitPieces = 0;
-  /** Whether the chosen sheet was big enough to take a carried decision too. */
-  let carriedAdded = false;
   for (const { path, doc } of savedLabelFiles()) {
     const accepted = (doc.verdicts ?? []).findIndex(
       (v) => v.verdict === "wall" && v.lengthFeet > 6,
@@ -750,40 +748,30 @@ try {
         cutY: midY,
       },
     ];
-    // ── AND ONE DECISION THIS BUILD CANNOT MATCH ──
+    // ── NO CARRIED DECISION IS INJECTED HERE, AND IT WAS TRIED ──
     //
-    // The bug Chrome hit needed BOTH: NG Green Bay A3.1 restored with "1
-    // split re-applied, 1 kept but not shown", and the override then wiped
-    // 109 decisions and 32 traces. A split's halves and a carried decision
-    // are the two kinds of candidate the FINDER DOES NOT PROPOSE, and the
-    // containment test I wrote is false whenever either is present — so a
-    // scenario with only a split, or only a carry, would have stayed green.
+    // The bug Chrome hit wanted a sheet with BOTH a re-applied split and a
+    // carried decision, so this injected an unmatchable verdict. It cannot be
+    // done here, and the reason is worth more than the attempt:
     //
-    // ── ONLY ON A SHEET BIG ENOUGH TO ABSORB IT ──
+    // This scenario does not exercise the RECORDED split path the app uses.
+    // It writes two halves into `verdicts` with no `splits` record, so the
+    // restore reaches them through `reapplySplits`'s strict INFERENCE
+    // fallback — deliberately strict since it invented a cut on MHK A1.01.
+    // Inference needs two abutting pieces whose lengths total a candidate's,
+    // and it is measured against `restoreSaved`'s 90% match floor. Adding one
+    // unmatchable verdict to a 13-decision sheet takes the share to 77%, the
+    // restore goes trace-only, and the split stops being re-applied — so the
+    // scenario reports "kept but not shown" and tests nothing about splits.
     //
-    // `restoreSaved` needs 90% of the saved verdicts to match before it will
-    // re-apply splits; below that it restores in trace-only mode. Adding one
-    // unmatchable verdict to a 13-decision sheet took the share to 77%, so the
-    // split stopped being re-applied and this scenario tested the wrong thing
-    // — it reported "3 kept but not shown" and no split at all.
+    // Writing a real record instead does not work either: `reapplySplits`
+    // uses the recorded path EXCLUSIVELY once any record exists, which
+    // switches this sheet off the inference path it is here to cover.
     //
-    // The bug needs BOTH on one sheet, so the carry only goes on where it
-    // still leaves the share above the floor. A sheet too small for both is
-    // left as the split-only case it already was.
-    const roomForACarry = doc.verdicts.length >= 30;
-    carriedAdded = roomForACarry;
-    // This verdict sits far off the drawing at a length nothing will pair, so
-    // the reopen keeps it rather than matching it.
-    if (roomForACarry) doc.verdicts.push({
-      x1: 0.97,
-      y1: 0.965,
-      x2: 0.995,
-      y2: 0.965,
-      lengthFeet: 3.5,
-      thicknessIn: 5,
-      verdict: "wall",
-      finderVersion: "aaaaaaaaaaaa",
-    });
+    // The override IS covered on this sheet below, with the split re-applied,
+    // which is the half of Chrome's case that can be built here. The carried
+    // half is covered by the merge scenario further down, which asserts
+    // "kept but not shown" on a sheet that genuinely has one.
     doc.counts = {
       ...(doc.counts ?? {}),
       accepted: doc.verdicts.filter((v) => v.verdict === "wall").length,
@@ -833,14 +821,6 @@ try {
       splitNotice !== null && !/no longer matching/.test(splitNotice),
       `${expected} decisions in the file · ${splitNotice === null ? "no notice" : splitNotice.slice(0, 70)}`,
     );
-    if (carriedAdded) {
-      check(
-        "the sheet really does carry a decision this build cannot match",
-        splitNotice !== null && /kept but not shown/.test(splitNotice),
-        splitNotice === null ? "no notice" : splitNotice.slice(0, 110),
-      );
-    }
-
     // ── THE OVERRIDE ON THE SHEET THAT BROKE: SPLIT + CARRIED ──
     //
     // This is the reproduction of what Chrome reported. The earlier version
