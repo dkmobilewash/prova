@@ -44,7 +44,15 @@ import {
   mergeDictation,
   speechRecognitionFrom,
   type SpeechRecognitionLike,
+  ASK_MAX_LENGTH,
 } from "@/components/speechInput";
+import {
+  CONVERSATION_SILENT_TURNS,
+  readAloudPreference,
+  rememberReadAloud,
+  speakableText,
+  speechSynthesisFrom,
+} from "@/components/speechOutput";
 
 /** The ask box on the dashboard.
  *
@@ -496,7 +504,151 @@ export function AskPanel({
     setListening(false);
   }
 
+  // Replies read aloud, and conversation mode on top of it. Same hydration
+  // rule as the mic: support and the remembered preference are read in an
+  // effect, so the server renders neither. Refs mirror the state because the
+  // stream handler and the speech callbacks run in closures from older
+  // renders. See components/speechOutput.ts.
+  const [canSpeak, setCanSpeak] = useState(false);
+  const [readAloud, setReadAloud] = useState(false);
+  const readAloudRef = useRef(false);
+  const [speaking, setSpeaking] = useState(false);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const [conversing, setConversing] = useState(false);
+  const conversingRef = useRef(false);
+  const silentTurnsRef = useRef(0);
+  // `ask` is declared further down and reads state; the latest one is kept
+  // here so a recognition callback from an earlier render sends with it.
+  const askRef = useRef<(text: string) => void>(() => {});
+
+  useEffect(() => {
+    setCanSpeak(speechSynthesisFrom(window) !== null);
+    const on = readAloudPreference();
+    readAloudRef.current = on;
+    setReadAloud(on);
+  }, []);
+
+  // Closing the panel unmounts it: the voice stops mid-sentence and the
+  // conversation ends. The mic is stopped by the effect above.
+  useEffect(() => {
+    return () => {
+      conversingRef.current = false;
+      utteranceRef.current = null;
+      speechSynthesisFrom(window)?.synth.cancel();
+    };
+  }, []);
+
+  function stopSpeaking() {
+    // Cleared BEFORE cancel: Chrome fires `error` on a cancelled utterance,
+    // and the callback below ignores any utterance that is no longer current.
+    utteranceRef.current = null;
+    speechSynthesisFrom(window)?.synth.cancel();
+    setSpeaking(false);
+  }
+
+  function toggleReadAloud() {
+    const on = !readAloudRef.current;
+    readAloudRef.current = on;
+    setReadAloud(on);
+    rememberReadAloud(on);
+    if (!on) stopSpeaking();
+  }
+
+  function speakReply(text: string) {
+    const speech = speechSynthesisFrom(window);
+    const words = speakableText(text);
+    if (!speech || !words) {
+      afterReply();
+      return;
+    }
+    speech.synth.cancel();
+    const utterance = new speech.Utterance(words);
+    utterance.lang = navigator.language || "en-US";
+    const finished = () => {
+      if (utteranceRef.current !== utterance) return;
+      utteranceRef.current = null;
+      setSpeaking(false);
+      afterReply();
+    };
+    utterance.onend = finished;
+    utterance.onerror = finished;
+    // Held in a ref as well as tracked: Chrome can garbage-collect an
+    // utterance nothing references and never fire its `end`.
+    utteranceRef.current = utterance;
+    setSpeaking(true);
+    speech.synth.speak(utterance);
+  }
+
+  function afterReply() {
+    if (conversingRef.current) listenTurn();
+  }
+
+  /** One turn of conversation mode: listen until the person pauses, then
+   * send what was heard. Nothing heard counts as a silent turn. */
+  function listenTurn() {
+    const Ctor = speechRecognitionFrom(window);
+    if (!Ctor) {
+      endConversation();
+      return;
+    }
+    const recognition = new Ctor();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = navigator.language || "en-US";
+    let heard = "";
+    recognition.onresult = (event) => {
+      heard = `${heard} ${finalTranscript(event)}`.trim();
+    };
+    // A denied mic ends the mode; "no-speech" is just a silent turn, and
+    // `end` follows every error, so it is counted there.
+    recognition.onerror = (event) => {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") endConversation();
+    };
+    recognition.onend = () => {
+      if (recognitionRef.current !== recognition) return;
+      recognitionRef.current = null;
+      setListening(false);
+      if (!conversingRef.current) return;
+      if (heard) {
+        silentTurnsRef.current = 0;
+        askRef.current(heard.slice(0, ASK_MAX_LENGTH));
+        return;
+      }
+      silentTurnsRef.current += 1;
+      if (silentTurnsRef.current >= CONVERSATION_SILENT_TURNS) endConversation();
+      else listenTurn();
+    };
+    recognitionRef.current = recognition;
+    setListening(true);
+    recognition.start();
+  }
+
+  function endConversation() {
+    conversingRef.current = false;
+    setConversing(false);
+    silentTurnsRef.current = 0;
+    stopDictation();
+    stopSpeaking();
+  }
+
+  function toggleConversation() {
+    if (conversingRef.current) {
+      endConversation();
+      return;
+    }
+    stopDictation();
+    stopSpeaking();
+    conversingRef.current = true;
+    setConversing(true);
+    silentTurnsRef.current = 0;
+    listenTurn();
+  }
+
   function toggleDictation() {
+    if (conversingRef.current) {
+      endConversation();
+      return;
+    }
     if (listening) {
       stopDictation();
       return;
@@ -611,6 +763,9 @@ export function AskPanel({
           setProgress("");
         }
         provisionalRef.current = false;
+        // Spoken once whole, never while streaming: a voice that starts on
+        // the first clause cannot take back what the rest of it corrects.
+        if (readAloudRef.current || conversingRef.current) speakReply(answerRef.current);
         // The exchange, recorded now that the answer is whole. Questions and
         // answer TEXT only — no tool results, so nothing here can be quoted
         // as a fact later. See lib/ask/turns.ts.
@@ -777,6 +932,8 @@ export function AskPanel({
     // and the closure that handles the stream would see a stale one.
     askedRef.current = shown;
     answerRef.current = "";
+    // A new question silences the old answer.
+    stopSpeaking();
     // A question already in flight is abandoned rather than blocking this
     // one. Previously the input stayed enabled while the button was
     // disabled, so pressing Return mid-answer did nothing at all — no new
@@ -860,6 +1017,10 @@ export function AskPanel({
       if (abortRef.current === controller) {
         setIsAsking(false);
         setStatus(null);
+        // Conversation mode only continues off a spoken reply. A card, a
+        // clarifying question or an error is something to look at, so the
+        // mode ends rather than sitting "on" with nothing listening.
+        if (conversingRef.current && !utteranceRef.current && !recognitionRef.current) endConversation();
       }
     }
   }
@@ -875,6 +1036,7 @@ export function AskPanel({
     if (ref) clearAttachment();
     void send(ref ? { question: trimmed, attachment: ref } : { question: trimmed }, trimmed);
   }
+  askRef.current = ask;
 
   /** A chip: the same question, with the person's pick, and no model pass. */
   function choose(current: ClarifyView, value: string) {
@@ -1610,9 +1772,63 @@ export function AskPanel({
           dictating is looking at the deck, not at the screen. The truncation
           note outlives the listening state on purpose — it is still true
           after the mic stops, and it is the one thing they must act on. */}
+      {/* Voice out. Rendered only where the browser can speak; the
+          conversation button also needs recognition, so Firefox gets
+          neither it nor the mic. */}
+      {canSpeak && (
+        <div className="mt-2 flex flex-wrap items-center gap-2" data-ask="voice">
+          <button
+            type="button"
+            onClick={toggleReadAloud}
+            aria-pressed={readAloud}
+            className={`inline-flex min-h-11 items-center rounded-md border px-3 text-sm mouse:min-h-8 ${
+              readAloud
+                ? "border-brand bg-brand/10 text-link-hover"
+                : "border-line-card bg-surface text-ink-body hover:text-ink"
+            }`}
+          >
+            Read replies aloud
+          </button>
+          {canDictate && (
+            <button
+              type="button"
+              onClick={toggleConversation}
+              aria-pressed={conversing}
+              className={`inline-flex min-h-11 items-center rounded-md border px-3 text-sm mouse:min-h-8 ${
+                conversing
+                  ? "border-brand bg-brand/10 text-link-hover"
+                  : "border-line-card bg-surface text-ink-body hover:text-ink"
+              }`}
+            >
+              {conversing ? "End conversation" : "Talk it through"}
+            </button>
+          )}
+          {speaking && (
+            <button
+              type="button"
+              // In conversation mode this skips to your turn rather than
+              // leaving the mode on with nothing listening.
+              onClick={() => {
+                stopSpeaking();
+                afterReply();
+              }}
+              className="inline-flex min-h-11 items-center rounded-md border border-line-card bg-surface px-3 text-sm text-ink hover:text-link-hover mouse:min-h-8"
+            >
+              Stop reading
+            </button>
+          )}
+        </div>
+      )}
       {listening && (
         <p role="status" className="mt-2 text-xs text-ink-body">
-          Listening — say it, then tap the mic again.
+          {conversing
+            ? "Listening — just talk. It sends when you pause."
+            : "Listening — say it, then tap the mic again."}
+        </p>
+      )}
+      {conversing && speaking && (
+        <p role="status" className="mt-2 text-xs text-ink-body">
+          Reading the answer — it will listen again when it finishes.
         </p>
       )}
       {dictationNote && (
