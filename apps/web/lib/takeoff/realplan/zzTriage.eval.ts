@@ -95,6 +95,8 @@ describe.skipIf(DIR === "" || LABELS === "")("what the triage sets aside", () =>
     const read: string[] = [];
     const rows: string[] = [];
     const byKind = new Map<string, { real: number; junk: number; n: number }>();
+    /** Real-wall hatch lines grouped by what their reason says. */
+    const realHatchWhy = new Map<string, { ft: number; n: number }>();
     let realTotal = 0;
     let junkTotal = 0;
 
@@ -150,6 +152,17 @@ describe.skipIf(DIR === "" || LABELS === "")("what the triage sets aside", () =>
         const at = byKind.get(line.kind) ?? { real: 0, junk: 0, n: 0 };
         at.n += 1;
         if (onKey) {
+          if (line.kind === "in-a-hatch") {
+            // Bucket the SHAPE of the sentence, not its numbers, or every
+            // line is its own group and the table says nothing.
+            const shape = line.why
+              .replace(/\d+ parallel/, "N parallel")
+              .replace(/nearest \d+in/, "nearest Nin");
+            const at = realHatchWhy.get(shape) ?? { ft: 0, n: 0 };
+            at.ft += line.lengthFeet;
+            at.n += 1;
+            realHatchWhy.set(shape, at);
+          }
           sheetReal += line.lengthFeet;
           at.real += line.lengthFeet;
         } else {
@@ -179,6 +192,19 @@ describe.skipIf(DIR === "" || LABELS === "")("what the triage sets aside", () =>
         `${((realTotal / Math.max(realTotal + junkTotal, 1)) * 100).toFixed(1)}% of set-aside footage is a wall ` +
         `the reviewer later confirmed`,
     );
+
+    // ── WHY THE HATCH CLASS STILL HOLDS EVERY FOOT OF REAL WALL ──
+    //
+    // The "fill between two faces" fix is a measured NO-OP: it released 3
+    // lines and 448 ft of junk and not one foot of wall. So the question is
+    // which of its conditions the real cases fail, and the reason string now
+    // says. Grouped by that sentence, over the hatch-classed lines that lie
+    // along a confirmed wall.
+    console.log("\nTHE REAL WALL INSIDE in-a-hatch, BY WHAT THE REASON SAYS");
+    const byWhy = [...realHatchWhy.entries()].sort((a, b) => b[1].ft - a[1].ft);
+    for (const [why, at] of byWhy) {
+      console.log(`  ${at.ft.toFixed(0).padStart(7)} ft · ${String(at.n).padStart(4)} lines · ${why}`);
+    }
 
     console.log("\nBY REASON");
     console.log(`  ${"kind".padEnd(22)} ${"real ft".padStart(9)} ${"junk ft".padStart(9)} ${"lines".padStart(6)}`);
