@@ -2134,3 +2134,80 @@ and `lib/ask/commands.ts` (an exclusion with its reason: a read that only
 means something with the drawing open). The clock reads the first draft
 had (`readAt`, `computedAt`) were removed rather than registered with
 `viewerDayCensus`; a file's mtime says when it was written.
+
+### plan-text-2: the legend read by sight, and bands by legend thickness (2026-10-21)
+
+**Legend by sight** (`packages/integrations/src/wallLegendSight.ts`,
+`lib/takeoff/legendSight.ts`, `realplan/zzLegendSight.eval.ts`). The page
+is rendered at reading resolution and one crop is cut per type around its
+printed code (`legendCropRects`); the model is given the page, the crops
+and the page's text and asked for FIELDS — stud width, material, gauge,
+spacing, board thickness, layers per face, type X, insulation, rating,
+height note — each marked with whether it came from the picture. The
+fields are written back as the lines a legend prints and parsed by
+`readPartitionAssembly`, so the sight read cannot propose a component the
+text read could not; a concrete or masonry wall gets board only. Node
+cannot rasterise a PDF here (`planPdf.ts`), so the eval renders through a
+Swift/PDFKit script; the product would render in the browser, as the
+scanned-sheet tiles already do, or add `@napi-rs/canvas`.
+
+Measured on the training sets, a type counting as FULLY read when stud,
+board and layers are all known:
+
+| set | types | text read full | sight read full | cost |
+| --- | --- | --- | --- | --- |
+| Baker A601 p25 | 8 | 2 | 2 | $0.19 |
+| Bunkie G003 p4 | 5 | 3 | 3 | $0.14 |
+| Crosslines A001 p2 | 7 | 6 | 6 | $0.16 |
+| Murray, MHK, NG Green Bay, E Street, SW, Camp Bow Wow, ELEVEN03 | — | — | NOT RUN | — |
+
+The seven unread sets failed on `credit balance is too low` from the API
+on the fourth call; their crops are rendered and their contact sheets wait
+on credits (`~/Claude Folder/takeoff/shots/legend-sight/`).
+
+**What the three that ran show, and the crop lesson.** The first Baker
+run, with a 3.5in crop centred on the code, reported 8 of 8 fully read —
+and it had read the stud width out of the code's letters (S6 → 6in),
+because the crop cut the notes off mid-word and showed no section. With
+the crop widened to the right the model correctly reports the stud width
+as NOT STATED for S6B, S8B, S6C and S8C ("2x STEEL FRAMING, SEE
+STRUCTURAL"), and the count went back to 2 of 8. That is the honest
+number: those four types' studs are not on the legend. What sight did add
+to all four is the board — one layer of 5/8in type X per side, one-sided
+on S6C, one and two faces on S8C — where the text read had "no assembly",
+and it flagged C8A/C8B as concrete. The section DRAWING for each Baker
+type sits further right still, past the 5in crop; a wider crop (or the
+whole detail band) is the next thing to try, at 19 cents.
+
+**Bands by legend thickness** (`lib/takeoff/legendBands.ts`, pure, five
+tests): runs within `NOISE_IN` (3/8in) of one legend type's nominal width
+(stud + both faces' board) become one band named for it; two types within
+reach make an AMBIGUOUS band; the tags the runs carry are kept and a band
+holding two different tags is reported. Measured on nine training plan
+sheets against the finder's groups:
+
+| sheet | finder groups | bands | bands with conflicting tags |
+| --- | --- | --- | --- |
+| Baker A101 | 15 | 15 | 1 (an 8-5/8in band tagged S6A, S8C and S8B) |
+| Bunkie A100 | 12 | 13 | 0 (two AMBIGUOUS, P06/P07 and EXT/P08 share a width) |
+| Crosslines A100 | 16 | 18 | 1 |
+| NG Green Bay A3.2 | 15 | 19 | 4 |
+| SW A110 | 22 | 15 | 4 |
+| E Street A2.1 | 16 | 14 | 1 (no legend widths known) |
+| Camp Bow Wow A101 | 16 | 19 | 2 |
+| MHK A1.01 | 10 | 13 | 0 |
+| Murray A2.01 | 16 | 13 | 0 |
+
+**It does not work, and the reason is worth more than the function.** The
+measured thickness of a drawn wall does not sit near its legend's nominal
+width: Camp Bow Wow's B and C are 4-7/8in nominal and the runs tagged B
+and C measure 6-5/8 and 7-3/8in; Baker's one band that matched a type
+(S6A at 8-1/2) held runs tagged three different types; NG Green Bay's
+5-7/8in band carries eight different tags. Drafters draw partitions at a
+generic width and the finder measures what is drawn. So "thickness agrees
+with one legend type" is not a merge rule on these sets — it would merge
+walls of different types and split walls of one — and the count stays
+where it was. Fewer, truer groups have to come from the tags, propagation
+along the wall, and the walls' own connectivity, not from thickness
+against the legend; the function stays, tested, as the measurement that
+says so.

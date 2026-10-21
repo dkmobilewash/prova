@@ -102,3 +102,15 @@ existing action. With the switch off the finder's result is identical on
 all seventeen labelled sheets against the pre-change code, and detection
 touches neither reads nor cache. The migration it wants is written in
 `NOTES.md`. Not merged.
+
+plan-text-2: the legend read BY SIGHT — the page and one crop per type to
+the model, fields back, written as legend lines and parsed by the one
+assembly parser. On the three training sets it ran on before the API
+credit ran out, it matched the text read's fully-read count (Baker 2 of
+8, Bunkie 3 of 5, Crosslines 6 of 7) and added the board to Baker's four
+"no assembly" types, flagging the concrete ones; the first run's 8 of 8
+was the model reading a stud width out of the code's letters from a crop
+that cut off the notes, and is recorded as the reason the crop is wider.
+`legendBands` groups runs by agreement with a legend type's nominal
+width, and the measurement says not to use it: drawn widths sit one to
+two inches off nominal and a band holds runs tagged three types.
