@@ -240,39 +240,25 @@ export function hasUnsavedWork(state: ReviewState, savedSignature?: string): boo
  */
 export function keepReview(existing: ReviewState | null, fresh: ReviewState): ReviewState {
   if (existing === null) return fresh;
-  if (fingerprint(existing.candidates) !== fingerprint(fresh.candidates)) {
-    // ── A LIST THAT ONLY GREW IS NOT A DIFFERENT SHEET ──
-    //
-    // This returned `fresh` for ANY change of fingerprint, which drops the
-    // reviewer's verdicts AND their traces. Right when the finder has
-    // genuinely proposed something else, and wrong for the one operation that
-    // deliberately lengthens the list: the hatch override, which a reviewer
-    // presses PARTWAY THROUGH a sheet to judge the hatched lines as well.
-    // With the all-or-nothing rule that press cost them the morning, silently
-    // — and the only reason that is written here rather than discovered is
-    // that the smoke test's "it actually offers more" check went red first.
-    //
-    // Ids are geometric now, so "every candidate I had is still here" is a
-    // question that can be asked. When it holds, the sheet is the same sheet
-    // with more on offer and the work stands.
-    // SYMMETRIC, because the override is a toggle. Growing is pressing it and
-    // shrinking is pressing it again, and the second direction cost the smoke
-    // test its split scenario: the list got shorter, this fell through to
-    // `fresh`, and every verdict from the preceding steps was gone — so a
-    // later step reported "no accepted run over 6 ft to halve" and looked
-    // like a different bug entirely.
-    //
-    // The question either way is whether the smaller list is contained in the
-    // larger. If it is, this is one sheet with a different amount on offer; a
-    // genuine re-read proposes geometry that was not there before.
-    const now = new Set(fresh.candidates.map((c) => c.id));
-    const had = new Set(existing.candidates.map((c) => c.id));
-    const sameSheet =
-      fresh.candidates.length > existing.candidates.length
-        ? existing.candidates.every((c) => now.has(c.id))
-        : fresh.candidates.every((c) => had.has(c.id));
-    if (!sameSheet) return fresh;
-  }
+  // ── ALL OR NOTHING, AND DELIBERATELY SO ──
+  //
+  // A different candidate list means the finder read the sheet differently,
+  // and keeping verdicts across it attaches one wall's decision to another.
+  //
+  // This briefly tried to tell "the list only grew" from "the sheet was
+  // re-read" by containment, so the hatch override could lengthen a list
+  // mid-sheet. It cost NG Green Bay A3.1 its whole review in Chrome's hands:
+  // a restored sheet holds candidates THE FINDER DOES NOT PROPOSE — a split's
+  // two halves, and a carried decision kept precisely because this build no
+  // longer offers its candidate — so `existing ⊆ fresh` is false on any sheet
+  // that was ever split or carried, and the fallback threw 109 decisions and
+  // 32 traces away.
+  //
+  // Guessing was the mistake rather than the threshold. The CALLER knows
+  // whether the reviewer pressed a button or the finder re-read the page, so
+  // the growth case is `mergeOffered` below and this function went back to
+  // doing one thing.
+  if (fingerprint(existing.candidates) !== fingerprint(fresh.candidates)) return fresh;
   // The duplicate pre-marking comes from `fresh`, and the reviewer's verdicts
   // sit on top — their decision outranks the rule's, which is the same order
   // `restoreDraft` uses.
@@ -281,4 +267,42 @@ export function keepReview(existing: ReviewState | null, fresh: ReviewState): Re
     if (id in verdicts && verdict !== "unreviewed") verdicts[id] = verdict;
   }
   return { ...fresh, verdicts, traced: existing.traced };
+}
+
+/**
+ * ── THE SAME SHEET, WITH MORE ON OFFER ──
+ *
+ * For the one operation that deliberately changes the candidate list without
+ * re-reading the drawing: the reviewer pressing "Also judge the hatched ones"
+ * partway through a sheet.
+ *
+ * `keepReview` cannot serve this, and the attempt to make it do so is the bug
+ * this exists because of. It decides from the LISTS, and the lists cannot tell
+ * the two cases apart: a restored sheet carries split halves and carried
+ * decisions that the finder will never propose, so "every old candidate is
+ * still offered" is false on exactly the sheets with the most work in them.
+ *
+ * Here the caller has already established that nothing was re-read, so the
+ * rule is additive and needs no heuristic:
+ *
+ *   · every existing candidate STAYS, including the ones only the reviewer's
+ *     own actions put there;
+ *   · candidates that are newly offered are appended, unjudged;
+ *   · the reviewer's verdicts, traces and splits are untouched.
+ *
+ * Duplicates come from `existing` rather than `fresh`, because `splitCandidate`
+ * deletes the pairs naming a candidate it replaced — taking the fresh set
+ * would resurrect a duplicate warning for a candidate that is no longer there.
+ */
+export function mergeOffered(existing: ReviewState | null, fresh: ReviewState): ReviewState {
+  if (existing === null) return fresh;
+  const had = new Set(existing.candidates.map((c) => c.id));
+  const added = fresh.candidates.filter((c) => !had.has(c.id));
+  const verdicts: Record<string, Verdict> = { ...existing.verdicts };
+  for (const one of added) verdicts[one.id] = fresh.verdicts[one.id] ?? "unreviewed";
+  return {
+    ...existing,
+    candidates: [...existing.candidates, ...added],
+    verdicts,
+  };
 }

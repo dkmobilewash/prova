@@ -42,7 +42,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { NUMBERED_TABLES } from "../../../packages/db/scripts/numbered-tables.mjs";
-import { skipDir, skipPath } from "./censusSkipDirs";
+import { skipDir } from "./censusSkipDirs";
 
 const libDir = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));

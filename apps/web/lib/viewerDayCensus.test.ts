@@ -91,7 +91,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { listGitFiles } from "../test/git-files";
-import { skipDir, skipPath } from "./censusSkipDirs";
+import { skipDir } from "./censusSkipDirs";
 
 /** apps/web. `process.cwd()` under this suite, but resolved from this
  * file so a runner started elsewhere cannot silently change the scope. */

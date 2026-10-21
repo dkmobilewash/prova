@@ -27,7 +27,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { skipDir, skipPath } from "./censusSkipDirs";
+import { skipDir } from "./censusSkipDirs";
 
 const appDir = fileURLToPath(new URL("../", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));

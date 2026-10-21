@@ -464,7 +464,26 @@ export function TakeoffPlanViewer({
      * the wrong twin twice on E Street 421. They arrive in PAGE-WIDTH units,
      * the same units the candidates are in.
      */
-    onCandidates?: (candidates: Candidate[], segments?: StrokeSegment[]) => void;
+    /**
+     * The candidate list, and WHY it changed: a fresh detection replaces the
+     * review, a change of what is OFFERED adds to it. See `mergeOffered`.
+     */
+    /**
+     * The candidate list, and WHY it changed.
+     *
+     * "detect" is a fresh reading of the drawing and REPLACES the review.
+     * "offer" is the same reading with a different amount offered — the hatch
+     * override — and must ADD to it. The receiver cannot tell these apart from
+     * the lists: a restored sheet holds a split's halves and carried
+     * decisions that the finder never proposes, so "did it only grow" is
+     * false on exactly the sheets with the most work in them. That guess cost
+     * NG Green Bay A3.1 its 109 decisions and 32 traces.
+     */
+    onCandidates?: (
+      candidates: Candidate[],
+      segments?: StrokeSegment[],
+      reason?: "detect" | "offer",
+    ) => void;
     /**
      * Every PAIRING the finder considered, with its feature vector.
      *
@@ -940,6 +959,11 @@ export function TakeoffPlanViewer({
     // `keepReview` is what makes the rebuild safe for work in progress.
     const already = answerKey.state.candidates.length > 0;
     if (already && builtWith.current === offerAll) return;
+    // WHY the list is changing, which the receiver cannot work out from the
+    // lists themselves — a restored sheet holds split halves and carried
+    // decisions the finder never proposes, so "did it only grow" is false on
+    // exactly the sheets with the most work in them. See `mergeOffered`.
+    const reason = already ? "offer" : "detect";
     builtWith.current = offerAll;
     const candidates = candidatesFromLastDetect();
     if (candidates !== null && candidates.length > 0) {
@@ -955,6 +979,7 @@ export function TakeoffPlanViewer({
               y2: one.y2 / W,
             }))
           : undefined,
+        reason,
       );
       answerKey.onSetAside?.(setAsideRef.current);
     }

@@ -6,6 +6,7 @@ import {
   fingerprint,
   hasUnsavedWork,
   keepReview,
+  mergeOffered,
   restoreDraft,
   reviewSignature,
   restoreOffer,
@@ -235,7 +236,7 @@ describe("a re-detect must not wipe the sheet", () => {
   });
 
   it("takes the FRESH review when the sheet really was re-read", () => {
-    // ── THIS CASE USED TO BE WRITTEN AS "ONE MORE CANDIDATE" ──
+    // ── ONE MORE CANDIDATE IS A RE-READ AS FAR AS THIS FUNCTION GOES ──
     //
     // It passed `["w0", "w1", "w2", "w3"]` against a reviewed `w0..w2` and
     // asserted every verdict was dropped, on the stated grounds that "a
@@ -251,22 +252,82 @@ describe("a re-detect must not wipe the sheet", () => {
     //
     // So a real re-read is a list that does not contain what the reviewer
     // judged, which is what this now passes.
-    const got = keepReview(reviewed(), fresh(["wX", "wY", "wZ", "wW"]));
+    const got = keepReview(reviewed(), fresh(["w0", "w1", "w2", "w3"]));
     expect(Object.values(got.verdicts).every((v) => v === "unreviewed")).toBe(true);
     expect(got.traced, "a re-read sheet keeps no traces either").toHaveLength(0);
   });
 
-  it("keeps the work when the list SHRANK, which is the override pressed again", () => {
+  it("keeps the work on a sheet with a SPLIT and a CARRIED decision — NG Green Bay A3.1", () => {
+    // ── THE REPRODUCTION OF WHAT CHROME HIT ──
+    //
+    // NG Green Bay A3.1 restored as "109 saved decisions and 32 traces, 1
+    // split re-applied, 1 kept but not shown", panel reading 121 of 181. One
+    // press of "Also judge the hatched ones" and it read 25 of 185 reviewed,
+    // 0 walls, 0 traces, 0 ft. Nothing had been saved, so the file survived.
+    //
+    // The containment test is why. A restored sheet legitimately holds
+    // candidates THE FINDER DOES NOT PROPOSE, and `SplitRecord`'s own comment
+    // says so: "a split replaces one candidate with two halves that the
+    // finder never proposed". A carried decision is the same shape — it is
+    // kept precisely BECAUSE this build no longer offers its candidate.
+    //
+    // So `existing ⊆ fresh` is false on any sheet that was split or carried,
+    // and the all-or-nothing fallback threw the review away. My smoke covered
+    // a clean sheet, where it holds.
+    const split = { ...candidate("w-half-a", 0.30), lengthFeet: 9 };
+    const other = { ...candidate("w-half-b", 0.32), lengthFeet: 9 };
+    const carried = { ...candidate("w-carried", 0.9), lengthFeet: 14 };
+    const existing: ReviewState = {
+      candidates: [candidate("w0", 0.2), candidate("w1", 0.25), split, other, carried],
+      verdicts: {
+        w0: "wall",
+        w1: "not-a-wall",
+        "w-half-a": "wall",
+        "w-half-b": "unsure",
+        "w-carried": "wall",
+      },
+      duplicates: [],
+      traced: [traced("t0", 0.8), traced("t1", 0.85)],
+      splits: [],
+    };
+    // What the finder proposes once the hatched lines are offered too: the two
+    // ordinary candidates, plus hatch singles. The split halves and the
+    // carried decision are NOT here, and never will be.
+    const offered = fresh(["w0", "w1", "s-hatch-1", "s-hatch-2", "s-hatch-3"]);
+
+    const got = mergeOffered(existing, offered);
+
+    expect(got.verdicts.w0, "the reviewer's own decisions must survive").toBe("wall");
+    expect(got.verdicts.w1).toBe("not-a-wall");
+    expect(got.traced, "and the 32 traces, which were the expensive part").toHaveLength(2);
+    // The split halves and the carried decision must still be ON the sheet.
+    // Dropping them loses work that cannot be recovered from the finder.
+    expect(got.verdicts["w-half-a"], "a split half's verdict").toBe("wall");
+    expect(got.verdicts["w-half-b"]).toBe("unsure");
+    expect(got.verdicts["w-carried"], "a carried decision's verdict").toBe("wall");
+    expect(got.candidates.map((c) => c.id)).toEqual(
+      expect.arrayContaining(["w-half-a", "w-half-b", "w-carried"]),
+    );
+    // And the hatched lines really did arrive, unjudged.
+    expect(got.verdicts["s-hatch-1"]).toBe("unreviewed");
+    expect(got.candidates).toHaveLength(8);
+  });
+
+  it("keeps the work when the override is pressed again and the list shrinks", () => {
     // The toggle goes both ways, and this direction is the one that bit: the
     // list got shorter, the old rule fell through to `fresh`, and the sheet
     // lost every verdict. In the smoke test it surfaced three steps later as
     // "no accepted run over 6 ft to halve", which looks like a different bug.
+    // Pressing it again offers FEWER, and `mergeOffered` is additive — so the
+    // hatched candidates stay on the sheet with whatever verdicts they were
+    // given. That is the right answer: a verdict a reviewer actually recorded
+    // must not vanish because they collapsed a view. The counts the panel
+    // shows come from the candidates it has, and nothing is lost.
     const before = reviewed();
-    const got = keepReview(before, fresh(["w0", "w1"]));
+    const got = mergeOffered(before, fresh(["w0", "w1"]));
 
     expect(got.verdicts.w0).toBe("wall");
     expect(got.verdicts.w1).toBe("not-a-wall");
-    expect(got.candidates).toHaveLength(2);
     expect(got.traced, "and the traces survive the way back too").toHaveLength(2);
   });
 
@@ -277,7 +338,7 @@ describe("a re-detect must not wipe the sheet", () => {
     // what happened before `keepReview` could tell growth from a re-read, and
     // the smoke test is what caught it.
     const before = reviewed();
-    const got = keepReview(before, fresh(["w0", "w1", "w2", "s-hatch-1", "s-hatch-2"]));
+    const got = mergeOffered(before, fresh(["w0", "w1", "w2", "s-hatch-1", "s-hatch-2"]));
 
     expect(got.verdicts.w0).toBe("wall");
     expect(got.verdicts.w1).toBe("not-a-wall");

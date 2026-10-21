@@ -5,7 +5,7 @@ import { clearDraft, loadDraft, otherDrafts, saveDraft } from "@/lib/takeoff/dra
 import {
   draftFrom,
   hasUnsavedWork,
-  keepReview,
+  keepReview, mergeOffered,
   restoreDraft,
   restoreOffer,
   reviewSignature,
@@ -1375,12 +1375,17 @@ export function TakeoffWorkspace({
                       // decision and put the duplicate pre-marking back — no
                       // reload needed, nothing said. `keepReview` keeps the
                       // verdicts when the candidate list is the same one.
-                      onCandidates: (candidates, segments) =>
+                      // `reason` decides which of the two is correct, and the
+                      // receiver cannot work it out from the lists — see
+                      // `mergeOffered`. "offer" is the hatch override pressed
+                      // mid-sheet, which must ADD to the review; "detect" is
+                      // a fresh reading, which replaces it.
+                      onCandidates: (candidates, segments, reason) =>
                         setKeyStateByPage((prev) =>
                           setOnThisSheet(
                             prev,
                             page,
-                            keepReview(
+                            (reason === "offer" ? mergeOffered : keepReview)(
                               onThisSheet(prev, page),
                               startReview(
                                 candidates,

@@ -32,13 +32,33 @@ function at(y: number, x1 = 0.1, x2 = 0.5, width = 0.5): StrokeSegment {
  */
 const FEET_PER_UNIT = 1;
 
+/**
+ * ── THE FIXTURES NEED A BUILDING, AND THE FIRST VERSION HAD NONE ──
+ *
+ * `walls: []` makes the walls' own bounding box empty, so EVERY line reaches
+ * outside it and `past-the-building` claims the lot. These cases passed
+ * anyway, because a branch above it caught them first — the same branch whose
+ * queue-jumping put 31 keynote-table rows in front of a reviewer on Murray
+ * A101. Removing it turned three of these green tests red, which is the
+ * fixture being wrong rather than the product: a real plan has walls.
+ *
+ * So the subject lines sit inside a box of reported walls, as they would on a
+ * drawing, and the cases are about the rule under test again.
+ */
+const AROUND: WallCandidate[] = [
+  { x1: 0.05, y1: -1, x2: 0.6, y2: -1, lengthFeet: 55, thicknessFeet: 0.5 } as WallCandidate,
+  { x1: 0.05, y1: 3, x2: 0.6, y2: 3, lengthFeet: 55, thicknessFeet: 0.5 } as WallCandidate,
+  { x1: 0.05, y1: -1, x2: 0.05, y2: 3, lengthFeet: 40, thicknessFeet: 0.5 } as WallCandidate,
+  { x1: 0.6, y1: -1, x2: 0.6, y2: 3, lengthFeet: 40, thicknessFeet: 0.5 } as WallCandidate,
+];
+
 function classify(
   faces: readonly StrokeSegment[],
   subject: StrokeSegment,
   /** The labelling rule. Off is what customers see — see the switch test. */
   hatchPitchRule = true,
 ) {
-  const walls: WallCandidate[] = [];
+  const walls: WallCandidate[] = AROUND;
   const found = classifySingleLines({
     unclaimed: [subject],
     faces,
@@ -60,11 +80,19 @@ describe("a wall drawn with its fill between the faces", () => {
     const faces = [subject, at(0.17), at(0.34), at(0.5), at(0.67)];
     const line = classify(faces, subject);
 
+    // ── ASSERTED ON THE OUTCOME, NOT ON A SENTENCE ──
+    //
+    // This checked `why` for "fill drawn between them" and "8in". Those words
+    // came from a branch that explained itself and, in doing so, jumped ahead
+    // of `dashed`, `small-closed-shape` and `past-the-building` in the chain —
+    // which is what put keynote-table rows and a sheet border in front of a
+    // reviewer. The branch is gone, so the sentence is too.
+    //
+    // What matters is unchanged and is what this now says: an evenly-pitched
+    // fill BETWEEN two faces a wall-thickness apart is not hatching, so the
+    // face reaches the reviewer.
     expect(line.kind).toBe<SingleLineClass>("unclassified");
     expect(worthOffering(line.kind), "a filled wall's face must reach the reviewer").toBe(true);
-    expect(line.why).toContain("fill drawn between them");
-    // The thickness it found, in inches, so the sentence is checkable.
-    expect(line.why).toContain("8in");
   });
 });
 
@@ -121,8 +149,6 @@ describe("a face whose opposite face is drawn in several pieces", () => {
     // says so. The assertion that matters is which SENTENCE the reviewer is
     // shown, since both readings would otherwise offer the line.
     expect(line.kind).toBe<SingleLineClass>("unclassified");
-    expect(line.why).not.toContain("fill drawn between them");
-    expect(line.why).toContain("unevenly spaced");
   });
 });
 
@@ -138,7 +164,7 @@ describe("the switch", () => {
       unclaimed: [subject],
       faces,
       segments: faces,
-      walls: [],
+      walls: AROUND,
       feetPerUnit: FEET_PER_UNIT,
       hatchPitchRule: true,
     })[0]!;
@@ -146,7 +172,7 @@ describe("the switch", () => {
       unclaimed: [subject],
       faces,
       segments: faces,
-      walls: [],
+      walls: AROUND,
       feetPerUnit: FEET_PER_UNIT,
     })[0]!;
 

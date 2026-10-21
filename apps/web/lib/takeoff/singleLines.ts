@@ -318,15 +318,37 @@ export function classifySingleLines(input: ClassifyInput): ClassifiedLine[] {
 
     let kind: SingleLineClass = "unclassified";
     let why = "a single line with no partner, and nothing else to say about it";
-    const sayFilled = (feet: number) =>
-      `a face with its partner ${(feet * 12).toFixed(0)}in away and the fill drawn between them — ` +
-      `a hatched wall, not a hatched area`;
     // Ordered most-telling first: a line can be several of these at once, and
     // the first match is the one a reviewer most needs to know.
-    const filled = fillBetweenFaces(sides);
-    // Without the rule, ANY three parallel neighbours are a hatch — the
-    // behaviour customers get until the demote mode ships.
-    const pitch = input.hatchPitchRule === true ? evenPitch(sides) : 0;
+    // ── BOTH HALVES OF THE RULE SIT BEHIND THE SWITCH, NOT ONE ──
+    //
+    // `pitch` was gated and `filled` was not, so the customer arm still
+    // exempted a poché face from the hatch class — a behaviour change for
+    // every company, from a flag that was supposed to isolate the whole
+    // thing. It showed up as the smoke's split scenario falling below
+    // `restoreSaved`'s 90% match floor: a different candidate list meant two
+    // saved verdicts matched nothing, the restore went trace-only, and the
+    // split stopped being re-applied three checks later.
+    //
+    // With the switch off, ANY three parallel neighbours are a hatch, exactly
+    // as before this work existed.
+    const rule = input.hatchPitchRule === true;
+    const filled = rule ? fillBetweenFaces(sides) : null;
+    const pitch = rule ? evenPitch(sides) : 0;
+    // ── CROWDED-BUT-IRREGULAR MUST FALL THROUGH, NOT SHORT-CIRCUIT ──
+    //
+    // When the pitch rule declines to call a line hatching, the remaining
+    // classifiers still have everything to say about it, and this chain is
+    // ordered most-telling-first. Two branches here used to CATCH that case
+    // to explain itself in `why`, and in doing so jumped the queue ahead of
+    // `dashed`, `small-closed-shape` and `past-the-building`.
+    //
+    // That is what put 31 keynote-table rows, a view title's underline, the
+    // sheet border and title-block lines in front of a reviewer on Murray
+    // A101 — 32 candidates became 63. Every one of them was already named by
+    // a reason further down, and those five reasons have never withheld a
+    // foot of real wall. A sentence explaining a line is worth less than the
+    // classifier that would have named it.
     if (parallelNeighbours >= 3 && filled === null && pitch !== null) {
       kind = "in-a-hatch";
       // WHICH condition ruled out a filled wall, because "a hatch or a fill"
@@ -340,16 +362,6 @@ export function classifySingleLines(input: ClassifyInput): ClassifiedLine[] {
           ` — inside a hatch, not a face`
         : `${parallelNeighbours} parallel lines within 3 ft, all on ONE side, nearest ${(nearest * 12).toFixed(0)}in` +
           ` — a hatch edge rather than a face with its fill`;
-    } else if (parallelNeighbours >= 3 && pitch === null) {
-      // Crowded, but not by anything regular — so the company is a floor
-      // plan's own geometry and this line is offered like any other.
-      why =
-        `${parallelNeighbours} parallel lines within 3 ft, but unevenly spaced — ` +
-        `crowded by the plan rather than filled by a hatch`;
-    } else if (parallelNeighbours >= 3 && filled !== null) {
-      // Left `unclassified`, which is what gets OFFERED, and says why rather
-      // than falling through to the catch-all.
-      why = sayFilled(filled);
     } else if (pieces >= 4) {
       kind = "dashed";
       why = `${pieces} separate strokes along one line — drawn dashed, so it is shown rather than built`;

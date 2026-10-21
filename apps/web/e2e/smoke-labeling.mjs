@@ -710,6 +710,8 @@ try {
   // EOC A101 lost 2.
   let splitFilePath = null;
   let splitPieces = 0;
+  /** Whether the chosen sheet was big enough to take a carried decision too. */
+  let carriedAdded = false;
   for (const { path, doc } of savedLabelFiles()) {
     const accepted = (doc.verdicts ?? []).findIndex(
       (v) => v.verdict === "wall" && v.lengthFeet > 6,
@@ -725,6 +727,63 @@ try {
       { ...whole, x2: midX, y2: midY, lengthFeet: whole.lengthFeet / 2, verdict: "wall" },
       { ...whole, x1: midX, y1: midY, lengthFeet: whole.lengthFeet / 2, verdict: "not-wall" },
     );
+    // ── AND THE SPLIT RECORD, WITHOUT WHICH THERE IS NO SPLIT ──
+    //
+    // A real split writes one. This fixture wrote the two HALVES into
+    // `verdicts` and left `splits` empty, so `reapplySplits` had nothing to
+    // re-apply and was right to refuse — it stopped INFERRING splits from
+    // collinear verdicts earlier today, after the inference invented a cut on
+    // MHK A1.01. With no record the halves match no candidate, the restore
+    // falls below its 90% floor and goes trace-only, and the scenario reports
+    // "2 saved decisions kept but not shown" instead of testing a split.
+    //
+    // So the fixture now writes what the app writes.
+    doc.splits = [
+      {
+        x1: whole.x1,
+        y1: whole.y1,
+        x2: whole.x2,
+        y2: whole.y2,
+        lengthFeet: whole.lengthFeet,
+        thicknessIn: whole.thicknessIn ?? null,
+        cutX: midX,
+        cutY: midY,
+      },
+    ];
+    // ── AND ONE DECISION THIS BUILD CANNOT MATCH ──
+    //
+    // The bug Chrome hit needed BOTH: NG Green Bay A3.1 restored with "1
+    // split re-applied, 1 kept but not shown", and the override then wiped
+    // 109 decisions and 32 traces. A split's halves and a carried decision
+    // are the two kinds of candidate the FINDER DOES NOT PROPOSE, and the
+    // containment test I wrote is false whenever either is present — so a
+    // scenario with only a split, or only a carry, would have stayed green.
+    //
+    // ── ONLY ON A SHEET BIG ENOUGH TO ABSORB IT ──
+    //
+    // `restoreSaved` needs 90% of the saved verdicts to match before it will
+    // re-apply splits; below that it restores in trace-only mode. Adding one
+    // unmatchable verdict to a 13-decision sheet took the share to 77%, so the
+    // split stopped being re-applied and this scenario tested the wrong thing
+    // — it reported "3 kept but not shown" and no split at all.
+    //
+    // The bug needs BOTH on one sheet, so the carry only goes on where it
+    // still leaves the share above the floor. A sheet too small for both is
+    // left as the split-only case it already was.
+    const roomForACarry = doc.verdicts.length >= 30;
+    carriedAdded = roomForACarry;
+    // This verdict sits far off the drawing at a length nothing will pair, so
+    // the reopen keeps it rather than matching it.
+    if (roomForACarry) doc.verdicts.push({
+      x1: 0.97,
+      y1: 0.965,
+      x2: 0.995,
+      y2: 0.965,
+      lengthFeet: 3.5,
+      thicknessIn: 5,
+      verdict: "wall",
+      finderVersion: "aaaaaaaaaaaa",
+    });
     doc.counts = {
       ...(doc.counts ?? {}),
       accepted: doc.verdicts.filter((v) => v.verdict === "wall").length,
@@ -774,6 +833,47 @@ try {
       splitNotice !== null && !/no longer matching/.test(splitNotice),
       `${expected} decisions in the file · ${splitNotice === null ? "no notice" : splitNotice.slice(0, 70)}`,
     );
+    if (carriedAdded) {
+      check(
+        "the sheet really does carry a decision this build cannot match",
+        splitNotice !== null && /kept but not shown/.test(splitNotice),
+        splitNotice === null ? "no notice" : splitNotice.slice(0, 110),
+      );
+    }
+
+    // ── THE OVERRIDE ON THE SHEET THAT BROKE: SPLIT + CARRIED ──
+    //
+    // This is the reproduction of what Chrome reported. The earlier version
+    // of this check used a CLEAN sheet, where "every old candidate is still
+    // offered" happens to be true, so it passed while the override threw away
+    // 109 decisions and 32 traces on a restored one.
+    const hatch = page.locator('[data-takeoff="key-offer-all"]');
+    if ((await hatch.count()) > 0) {
+      const was = await reviewedCount(page);
+      const tracedWas = await tracedCount(page);
+      await hatch.first().click();
+      await page.waitForTimeout(2500);
+      const now = await reviewedCount(page);
+      const tracedNow = await tracedCount(page);
+      check(
+        "the override keeps every decision on a sheet with a split and a carry",
+        was !== null && now !== null && now.reviewed >= was.reviewed,
+        `${was?.reviewed ?? "?"} of ${was?.total ?? "?"} -> ${now?.reviewed ?? "?"} of ${now?.total ?? "?"} reviewed`,
+      );
+      check(
+        "and keeps the traces",
+        tracedNow >= tracedWas,
+        `${tracedWas} -> ${tracedNow} traced`,
+      );
+      await hatch.first().click();
+      await page.waitForTimeout(1500);
+      const back = await reviewedCount(page);
+      check(
+        "and pressing it again keeps them too",
+        was !== null && back !== null && back.reviewed >= was.reviewed,
+        `${was?.reviewed ?? "?"} -> ${back?.reviewed ?? "?"} reviewed`,
+      );
+    }
   }
 
   // ── A SAVE MUST NOT DROP A DECISION SOMEBODY MADE ──

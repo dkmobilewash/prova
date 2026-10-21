@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { skipDir, skipPath } from "./censusSkipDirs";
+import { skipDir } from "./censusSkipDirs";
 
 /**
  * Issue #101: no date is rendered without saying which zone it is in.

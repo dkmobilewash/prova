@@ -152,7 +152,7 @@ import { listGitFiles } from "../test/git-files";
  * every test in the file — rather than leaving the scan below looking for a
  * symbol that no longer exists and finding, correctly, nothing. */
 import { deliveryBody, deliverySubjectLine } from "./takeoff-delivery";
-import { skipDir, skipPath } from "./censusSkipDirs";
+import { skipDir } from "./censusSkipDirs";
 
 /** apps/web. Resolved from this file rather than from `process.cwd()`, so a
  *  runner started in another directory cannot silently change the scope. */
