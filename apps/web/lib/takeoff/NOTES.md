@@ -2022,3 +2022,115 @@ and changes what people see most. Step 3 next, since the openings are
 already there. Step 2 last, because it writes to the company's wall-type
 library and wants the accept flow. Each step is one PR in the finder's
 lane; this lane's files are called, not changed.
+
+### Wired, behind `PLAN_TEXT_READ` (2026-10-20, night; off by default)
+
+The wiring plan above is built, on this branch, inside the files the board
+lent this lane for it. What changed and where:
+
+- **The switch** is `planTextReadEnabled()` in `lib/ai/features.ts`:
+  `PLAN_TEXT_READ=1` in the environment, off otherwise. Not a per-company
+  `AiFeatureKey`, because that is a Postgres enum (`AiFeature`) and the
+  parity census says in as many words that a key with no enum member makes
+  the settings form's write invalid — so a per-company switch is a
+  migration, and this task ran under a no-migrations rule.
+- **`findWallsOnSheet`** takes an optional `planText: { legendCodes }`.
+  Absent, the regroup block is byte-for-byte the call it was (the three
+  source-shape censuses that read that call still pass). Present,
+  `planTextTagByRun` builds the run-to-type map from symbols and bare text
+  filtered by the legend plus today's text tags, and `propagateTypes`
+  carries each along its wall. A propagated run's tag is its code with
+  `PROPAGATED_MARK` (` ≈`) appended — `sameDesignation` strips it, so the
+  group still prices as its code, and the screen reads it back as "same
+  wall". A `PROPAGATED` source kind is the right design and is the enum
+  value plus edits in `wallGroups.ts` and `wallProposal.ts`, listed below.
+- **`detectWallsForCalibration`**, with the switch on: reads the set's
+  legend once (`legendForPlan`: `legendPages` over every page's lines and
+  the ingest's title blocks, `readWallLegend` behind `SCHEDULE_READ`, two
+  candidates at most), hands the codes to the finder, takes the door
+  schedule from `PlanScheduleProposal` where the ingest read one (a
+  database READ) or reads it the same way, joins it to the sheet
+  (`doorsOnSheet`: `openingsInWalls` + symbol marks + bare marks +
+  `joinOpeningsToSchedule`), and writes the sheet's result. Any failure
+  logs and leaves the proposals exactly as they would have been.
+- **Storage** is `planTextCache.ts`: JSON under `PLAN_TEXT_CACHE_DIR`
+  (default the OS temp dir), keyed `legend-<planId>`, `doors-<planId>`,
+  `result-<planId>-p<page>`. Per machine, not durable, not in the
+  database; the tables it stands in for are named in its header.
+- **The screen**: `loadPlanText` (`lib/actions/planTextRead.ts`, a read of
+  the cache after checking the plan is the company's) feeds
+  `PlanTextPanel` under the found-walls list, the group row gains the
+  doors placed on it, and `ClusterTag` shows a carried type's code plain
+  with "same wall" beside it. Off, the action returns null before touching
+  anything and the panel renders nothing.
+
+**Proof the switch changes nothing when off.** `planTextSwitchOff.test.ts`
+runs the finder as it is now, with no `planText`, and the finder as it was
+at `bda8c1a0` (dropped beside it untracked as `zzBaselineFindWalls.ts`)
+on every labelled sheet under `TAKEOFF_LABEL_DIR` read from
+`REAL_PLAN_DIR` at the label's scale, and requires the two JSON results to
+be identical. Seventeen sheets, 0.3 to 37 MB of result each, all the same;
+held-out sets skipped by name. It skips without the drawings or the
+baseline file, so it is not a CI guard — it is the measurement, and it is
+reported here because it was run. `detectWallsForCalibration.test.ts`
+holds the other half: off, the legend, the schedule and the cache are
+never touched.
+
+**What a customer sees with it on**, from the cached reads on four
+training sheets through the same functions the server would call
+(`switchOnDemo.tsx` in the session scratchpad; panel HTML beside it):
+
+| sheet | typed from tags | same wall as a tag | untyped | doors placed / scheduled | legend types offered |
+| --- | --- | --- | --- | --- | --- |
+| Baker A101 | 280 ft | 14 ft | 568 ft | 15 / 18 (100A 100B 101 not found) | 8 |
+| NG Green Bay A3.2 | 635 ft | 0 | 920 ft | 0 / 19 (its marks are on A3.1) | 10 |
+| SW A110 | 334 ft | 19 ft | 1,424 ft | 5 / 5 | 7 |
+| Bunkie A100 | 74 ft | 0 | 794 ft | 6 / 11 (E102 and the K-rows not on this sheet) | 5 |
+
+On Baker the panel reads: "Where the types came from: tagged on the
+drawing 280 ft · same wall as a tag 14 ft · untyped 568 ft"; "Doors from
+the schedule: 111B 3'-0", 104 3'-0", … 108 6'-0"" with "Scheduled, not
+found on this sheet: 100A, 100B, 101"; and "The drawings define 8 wall
+types … S6A — 6in metal stud, 25 ga at 24in o.c.; 6in track, top and
+bottom; 5/8in type X gypsum board, 2 layers per side [Add to your wall
+types]", with S8C's contradiction flag in red. The group rows read
+`11.280 in C8B · 4 runs · 179 ft · doors 105 3'-0", 106C 3'-6", 106B
+3'-0" from the schedule`. The feet are the finder's own runs here, not the
+reviewer's accepted walls, so they differ from the labelled-sheet table
+above; the ratio does not. Nothing anywhere is a price.
+
+**The migration this wants, not run:**
+
+    ALTER TYPE "AiFeature" ADD VALUE 'PLAN_TEXT_READ';
+    ALTER TYPE "TakeoffWallProposalSource" ADD VALUE 'PROPAGATED';
+    CREATE TABLE "PlanLegendProposal" (id, planId → TakeoffPlan, pageNumber,
+      codes text[], proposals jsonb, reason, confidence, model,
+      promptVersion, status, createdAt);
+    CREATE TABLE "TakeoffPlanTextRead" (id, planId → TakeoffPlan, pageNumber,
+      calibrationId → TakeoffScaleCalibration, doors jsonb, typed jsonb,
+      computedAt);
+
+with, in code, `PLAN_TEXT_READ` in `AI_FEATURE_LABEL` and `aiGate` in place
+of the env read; a `{ kind: "PROPAGATED"; tag; viaFeet }` source in
+`wallGroups.ts`/`wallProposal.ts` in place of the marker; `legendForPlan`
+and `doorScheduleForPlan` writing those tables instead of files; and
+`loadPlanText` reading them. The legend read then belongs in the ingest as
+its own stage, which is another enum value (`PlanIngestStage`) and the
+reason it is called from calibration-time detection for now.
+
+Tests added: `planTextTags`, `planTextCache`, `planTextDoors`,
+`planTextView`, `planTextPanel` (render), the two detection cases, and the
+switch-off comparison. Every file this lane touched beyond its own:
+`findWallsOnSheet.ts` (the regroup block and one optional input),
+`detectWallsForCalibration.ts`, `TakeoffPlanViewer.tsx` (imports, one
+effect and memo, the group row's door line, the panel, `ClusterTag`),
+`lib/ai/features.ts` (one function), `detectWallsForCalibration.test.ts` —
+and, because a new Server Action is a decision four censuses make the
+adder record: `lib/actions/index.ts` (the barrel export),
+`lib/action-capability-guards.test.ts` (its `MODULE_IMPORTS` line, so the
+guard is executed rather than assumed; the action asserts
+`VIEW_JOB_COSTS` first and the census proves it refuses before any query),
+and `lib/ask/commands.ts` (an exclusion with its reason: a read that only
+means something with the drawing open). The clock reads the first draft
+had (`readAt`, `computedAt`) were removed rather than registered with
+`viewerDayCensus`; a file's mtime says when it was written.

@@ -212,3 +212,29 @@ export function aiFeatureRefusal(settings: AiSettings, feature: AiFeatureKey): s
   }
   return null;
 }
+
+/**
+ * ── PLAN_TEXT_READ: WALL TYPES, ASSEMBLIES AND DOOR MATCHES OFF THE DRAWINGS ──
+ *
+ * OFF BY DEFAULT, and read from the environment rather than from the
+ * per-company switch above — deliberately, and for one reason. The per-company
+ * switch is `CompanyAiSettings.disabledFeatures`, an array of the Postgres enum
+ * `AiFeature`, and `aiFeatureEnumParity.test.ts` exists because a key with no
+ * enum member makes the settings form's WRITE invalid. So a per-company key is
+ * a migration (`ALTER TYPE "AiFeature" ADD VALUE 'PLAN_TEXT_READ'`), and the
+ * wiring behind this flag was built under a no-migrations rule.
+ *
+ * With it off, `findWallsOnSheet` is handed no `planText` and takes the path it
+ * always took; `detectWallsForCalibration` reads no legend and no schedule;
+ * nothing is cached and nothing on the takeoff screen changes. With it on, the
+ * two model calls behind it are STILL gated per company by `SCHEDULE_READ`, so
+ * a company that has that off gets only the deterministic half (symbol tags,
+ * bare-text tags, propagation).
+ *
+ * The migration this wants, when it is allowed: the enum value above, the key
+ * in `AI_FEATURE_LABEL` ("Reading wall types and door schedules off the
+ * drawings"), and this function replaced by `aiGate(companyId, "PLAN_TEXT_READ")`.
+ */
+export function planTextReadEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.PLAN_TEXT_READ === "1";
+}

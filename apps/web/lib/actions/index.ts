@@ -105,4 +105,5 @@ export * from "./outboundOptOut";
 export * from "./replies";
 export * from "./takeoffClassify";
 export * from "./takeoffReadSheet";
+export * from "./planTextRead";
 export * from "./takeoffOffer";

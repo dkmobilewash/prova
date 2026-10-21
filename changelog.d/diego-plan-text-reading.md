@@ -89,3 +89,16 @@ kept both sides' entries), and a wiring plan in `NOTES.md` names the
 three finder-lane call sites — the `regroup` block in `findWallsOnSheet`,
 a legend card from `readWallLegend`, and the door join on `mergeWalls`'
 openings — behind one per-company switch, with what the customer sees.
+
+Wired behind `PLAN_TEXT_READ`, off by default: an environment switch
+(a per-company key is a Postgres enum value, so a migration), an optional
+`planText` input to the finder whose absence leaves the regroup call as it
+was, legend and door-schedule reads at calibration-time detection cached
+to files, and a panel under the found walls that says where the typed feet
+came from, which scheduled doors sit on which group with the schedule's
+width, which rows the sheet did not place, and the wall types the legend
+defines as quantity-only assemblies with an Add button through the
+existing action. With the switch off the finder's result is identical on
+all seventeen labelled sheets against the pre-change code, and detection
+touches neither reads nor cache. The migration it wants is written in
+`NOTES.md`. Not merged.

@@ -2093,6 +2093,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // the same capability — `VIEW_JOB_COSTS`, which is what that page is hard-gated
   // on and not the `MANAGE_ESTIMATING` a plan set sounds like it should need.
   planSheets: () => import("./actions/planSheets"),
+  planTextRead: () => import("./actions/planTextRead"),
   // Reading a sub's quote, reachable from /bids alone, which withholds on
   // MANAGE_ESTIMATING. `readBidQuoteDocument` asserts the same — and unlike the
   // plan-ingest entry above, this one was right first time, because the

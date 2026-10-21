@@ -8,6 +8,8 @@ import { SheetTooDenseError, type StrokeSegment } from "./wallVectors";
 import type { MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
 import { matchGroups } from "./proposalMatch";
+import { planTextReadEnabled } from "@/lib/ai/features";
+import { doorScheduleForPlan, doorsOnSheet, legendForPlan, typedFeetOf, writeSheetResult } from "./planTextRead";
 
 /**
  * FINDING THE WALLS THE MOMENT A SCALE IS ACCEPTED, so the groups are waiting
@@ -174,6 +176,27 @@ export async function detectWallsForCalibration(
       }
     }
 
+    // ── PLAN TEXT, BEHIND THE SWITCH ──
+    //
+    // Off (the default), `planText` stays undefined and nothing below this
+    // comment runs. On, the set's legend is read once (cached) and its codes
+    // are what the finder's symbol tags are filtered by; the door schedule and
+    // the per-sheet join follow once the groups exist. A failure in any of it
+    // logs and leaves the detection exactly as it would have been.
+    const planTextOn = planTextReadEnabled();
+    let planText: { legendCodes: string[] } | undefined;
+    let legendPage: number | null = null;
+    if (planTextOn) {
+      try {
+        const legend = await legendForPlan({ companyId: target.companyId, planId: target.planId, doc, outOfTime });
+        if (legend !== null) {
+          planText = { legendCodes: legend.codes };
+          legendPage = legend.page;
+        }
+      } catch (error) {
+        console.error("[takeoff] legend read failed; detecting without it", { planId: target.planId }, error);
+      }
+    }
     const found = findWallsOnSheet({
       segments: strokes.segments,
       textItems,
@@ -181,7 +204,37 @@ export async function detectWallsForCalibration(
       feetPerUnit: target.feetPerUnit,
       wallTypes: target.wallTypes,
       sampledSheets: sampleFailed ? null : sampledSheets,
+      ...(planText === undefined ? {} : { planText }),
     });
+    if (planTextOn) {
+      try {
+        const schedule = await doorScheduleForPlan({ companyId: target.companyId, planId: target.planId, doc, outOfTime });
+        const doors =
+          schedule === null
+            ? null
+            : {
+                schedulePage: schedule.page,
+                ...doorsOnSheet({
+                  segments: strokes.segments,
+                  widthPt: strokes.widthPt,
+                  text: textItems,
+                  walls: found.walls,
+                  feetPerUnit: target.feetPerUnit,
+                  rows: schedule.rows,
+                }),
+              };
+        writeSheetResult({
+          planId: target.planId,
+          pageNumber: target.pageNumber,
+          calibrationId: target.calibrationId,
+          legend: planText === undefined || legendPage === null ? null : { page: legendPage, codes: planText.legendCodes },
+          doors,
+          typed: typedFeetOf(found.groups),
+        });
+      } catch (error) {
+        console.error("[takeoff] door join failed; proposals unaffected", { planId: target.planId }, error);
+      }
+    }
 
     // NOTHING FOUND IS NOT A FAILURE AND WRITES NOTHING. A sheet with no walls
     // on it — a schedule, a detail page, a site plan — is a fact about the

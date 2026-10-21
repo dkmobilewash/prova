@@ -66,6 +66,10 @@ import {
   type StrokeSegment,
 } from "@/lib/takeoff/wallVectors";
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
+import { loadPlanText, type PlanTextView } from "@/lib/actions/planTextRead";
+import { PlanTextPanel } from "@/components/PlanTextPanel";
+import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
+import { doorsByGroup, feetInches } from "@/lib/takeoff/planTextView";
 import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
 import { BLANK_TILE_INK, TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
 import type { WallClassifyLabel } from "@prova/integrations";
@@ -1939,6 +1943,33 @@ export function TakeoffPlanViewer({
    * next render, and that a sheet somebody has already worked through does not
    * refill itself behind them.
    */
+  /**
+   * ── PLAN TEXT FOR THIS SHEET, WHEN THE SWITCH IS ON ──
+   *
+   * One read of the file cache per page view; `null` is the switch being off
+   * or nothing read yet, and both render as nothing. Re-read when the groups
+   * change, because detection writes the result in the same pass that writes
+   * the proposals these groups were loaded from.
+   */
+  const [planText, setPlanText] = useState<PlanTextView | null>(null);
+  useEffect(() => {
+    let live = true;
+    loadPlanText(jobId, planId, pageNumber)
+      .then((result) => {
+        if (live) setPlanText(result.ok ? result.value : null);
+      })
+      .catch(() => {
+        if (live) setPlanText(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [jobId, planId, pageNumber, storedWallsByPage]);
+  const planTextDoors = useMemo(
+    () => doorsByGroup(found ?? [], planText?.sheet?.doors?.placed ?? [], feetPerUnit),
+    [found, planText, feetPerUnit],
+  );
+
   useEffect(() => {
     if (seeded.current.has(pageNumber)) return;
     const stored = storedWallsFor(storedWallsByPage, pageNumber);
@@ -3133,6 +3164,21 @@ export function TakeoffPlanViewer({
                           </span>
                         );
                       })()}
+                      {/* ── THE DOORS THE SCHEDULE NAMES ON THIS WALL ──
+                          Only with PLAN_TEXT_READ on: each door the join placed
+                          on one of this group's runs, with the SCHEDULE's width
+                          rather than the drawn gap's. */}
+                      {(() => {
+                        const doors = planTextDoors.get(index) ?? [];
+                        return doors.length === 0 ? null : (
+                          <span className="text-ink-body" data-takeoff="group-doors">
+                            {" "}
+                            · door{doors.length === 1 ? "" : "s"}{" "}
+                            {doors.map((d) => `${d.mark} ${feetInches(d.widthFt)}`).join(", ")}
+                            {doors.some((d) => d.widthFrom === "schedule") ? " from the schedule" : ""}
+                          </span>
+                        );
+                      })()}
                     </span>
 
                     {/* ── THE ONE QUESTION THIS FEATURE IS ALLOWED TO ASK ──
@@ -3237,6 +3283,7 @@ export function TakeoffPlanViewer({
                   above — there are only {DISTINCT_MARKS}. Hover a row to pick its runs out of the drawing.
                 </p>
               )}
+              <PlanTextPanel view={planText} wallTypes={wallTypes} />
             </>
           )}
           <button
@@ -4195,13 +4242,20 @@ export function SheetPager({
 export function ClusterTag({ names }: { names: readonly string[] }) {
   const sentence = tagSentence(names);
   if (sentence === null) return null;
+  // ── A TYPE CARRIED ALONG THE WALL READS WEAKER THAN ONE PRINTED BESIDE IT ──
+  // `planTextTags.ts` marks a propagated run's tag; the code is shown plain
+  // and the marker becomes words, so an estimator can tell "the drawing says
+  // IW-2 here" from "this is the same wall as the one the drawing tagged".
+  const carried = names.some(isPropagatedTag);
   return (
     <span
       className="rounded bg-tag-slate px-1.5 py-0.5 text-xs font-medium text-tag-slate-ink"
       data-takeoff="cluster-tag"
-      title={sentence}
+      data-carried={carried ? "1" : undefined}
+      title={carried ? "Same wall as a run the drawing tagged — the type was carried along the wall" : sentence}
     >
-      {names.join(" / ")}
+      {names.map(plainTag).join(" / ")}
+      {carried && <span className="ml-1 font-normal text-ink-muted">same wall</span>}
     </span>
   );
 }
