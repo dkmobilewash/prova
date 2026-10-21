@@ -6,17 +6,20 @@ import { storedLegendTypes } from "@/lib/takeoff/legendProposal";
 import { tagSymbols } from "@/lib/takeoff/tagSymbols";
 
 /**
- * Builds `e2e/fixtures/baker-wall-legend.json`: the stored shape of a
- * `PlanLegendProposal` for Baker's A601 legend page, from the two cached
- * model reads (words, and sight under prompt v6) and the crop rectangles the
- * ingest would place from the page's own text and symbols. No model call.
+ * Builds a stored `PlanLegendProposal` for a REAL legend page — Baker's A601 —
+ * from the two cached model reads (words, and sight under prompt v6) and the
+ * crop rectangles the ingest would place from the page's own text and
+ * symbols. No model call. It writes OUTSIDE the repository: the file holds a
+ * client's legend verbatim, and `wall-legend-library.spec.ts` reads it only
+ * when `LEGEND_FIXTURE` names it, beside the drawing in `REAL_PLAN_DIR`. The
+ * committed fixture that spec runs on by default is invented.
  *
- *     REAL_PLAN_DIR=… LEGEND_CACHE=… LEGEND_FIXTURE_OUT=e2e/fixtures/baker-wall-legend.json \
- *       npx vitest run lib/takeoff/realplan/zzLegendFixture.eval.ts
+ *     REAL_PLAN_DIR=… LEGEND_CACHE=… LEGEND_FIXTURE_OUT="$HOME/Claude Folder/takeoff/fixtures/baker-wall-legend.json" \
+ *       npx vitest run --config vitest.eval.config.mts lib/takeoff/realplan/zzLegendFixture.eval.ts
  *
- * Skips without all three, and asserts the page and the reads resolved to
- * something before writing, so a mistyped folder cannot produce an empty
- * fixture that the e2e spec would then seed as a legend with no types.
+ * Skips without all three, refuses an output path inside the repository, and
+ * asserts the page and the reads resolved to something before writing, so a
+ * mistyped folder cannot produce an empty fixture.
  */
 const DIR = process.env.REAL_PLAN_DIR ?? "";
 const CACHE = process.env.LEGEND_CACHE ?? "";
@@ -25,7 +28,8 @@ const SET = "2025.07.08_Baker_EOC_BID.pdf";
 const PAGE = 25;
 
 describe.skipIf(DIR === "" || CACHE === "" || OUT === "")("the Baker legend fixture", () => {
-  it("is built from the cached reads and the page's own crop placement", async () => {
+  it("is built from the cached reads and the page's own crop placement, outside the repository", async () => {
+    expect(/\/prova\//.test(OUT) || !OUT.startsWith("/"), `${OUT} is inside the repository — a client's legend does not get committed`).toBe(false);
     const pdfAt = `${DIR}/${SET}`;
     expect(existsSync(pdfAt), `no drawing at ${pdfAt}`).toBe(true);
     const text = JSON.parse(readFileSync(`${CACHE}/2025_07_08_Baker_EOC_BID_pdf-p25-wall-legend.1.json`, "utf8"));
@@ -43,6 +47,7 @@ describe.skipIf(DIR === "" || CACHE === "" || OUT === "")("the Baker legend fixt
     await doc.close();
     expect(crops.length, "no crop could be placed").toBe(codes.length);
     const fixture = {
+      pdf: SET,
       pageNumber: PAGE,
       pageCount,
       sheetTitle: "ASSEMBLY LEGEND",

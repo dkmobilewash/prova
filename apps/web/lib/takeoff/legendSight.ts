@@ -104,6 +104,23 @@ export function fullyRead(assembly: PartitionAssembly): boolean {
  */
 export const CROP_INCHES = { left: 1.0, right: 4.0, above: 3.5, below: 4.5 };
 
+/**
+ * ── WHERE THE DETAIL IS, ABOVE OR BELOW THE CODE ──
+ *
+ * `above`/`below` split the crop's height around the code's printing, and
+ * the split was fixed at 3.5 in above for the Crosslines shape — a section
+ * drawn above a boxed letter. Baker draws it the other way: the code box
+ * sits ABOVE its section and the rated-assembly notes, so a fixed 3.5 in
+ * above took in the unrelated detail higher on the sheet and cut the type's
+ * own drawing at the bottom. So the window SLIDES: every half-inch split
+ * from 0.5 in above the code to 0.5 in below it is scored by the assembly
+ * words it holds, and the best wins, with the original 3.5 in split as the
+ * tie-break so a legend whose words sit all around the code is placed as
+ * before. The crop's size never changes; only where the code sits in it.
+ */
+const SPLIT_STEP_IN = 0.5;
+const SPLIT_MARGIN_IN = 0.5;
+
 export type CropRect = { code: string; x: number; y: number; width: number; height: number };
 
 /** Words that only appear where an assembly is being described. */
@@ -164,9 +181,21 @@ export function legendCropRects(input: {
     const p = scored[0].p;
     const cx = p.x + p.width / 2;
     const x = Math.max(0, cx - CROP_INCHES.left * ppi);
-    const y = Math.max(0, p.y - p.height - CROP_INCHES.above * ppi);
     const width = Math.min(input.widthPt - x, (CROP_INCHES.left + CROP_INCHES.right) * ppi);
-    const height = Math.min(input.heightPt - y, (CROP_INCHES.above + CROP_INCHES.below) * ppi);
+    const totalIn = CROP_INCHES.above + CROP_INCHES.below;
+    const top = p.y - p.height;
+    let best = { above: CROP_INCHES.above, words: -1 };
+    for (let above = SPLIT_MARGIN_IN; above <= totalIn - SPLIT_MARGIN_IN + 1e-9; above += SPLIT_STEP_IN) {
+      const y0 = top - above * ppi;
+      const y1 = y0 + totalIn * ppi;
+      const words = input.text.filter(
+        (t) => t !== p && t.y >= y0 && t.y <= y1 && t.x + t.width >= x && t.x <= x + width && ASSEMBLY_WORD.test(t.str),
+      ).length;
+      const closer = Math.abs(above - CROP_INCHES.above) < Math.abs(best.above - CROP_INCHES.above);
+      if (words > best.words || (words === best.words && closer)) best = { above, words };
+    }
+    const y = Math.max(0, top - best.above * ppi);
+    const height = Math.min(input.heightPt - y, totalIn * ppi);
     out.push({ code, x, y, width, height });
   }
   return out;

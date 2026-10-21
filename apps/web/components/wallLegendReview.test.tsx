@@ -22,7 +22,7 @@ vi.mock("pdfjs-dist/legacy/build/pdf.mjs", () => ({
   getDocument: () => ({ promise: Promise.reject(new Error("no drawing in a unit test")) }),
 }));
 
-const { WallLegendReview } = await import("./WallLegendReview");
+const { WallLegendReview, shortFlag } = await import("./WallLegendReview");
 
 let host: HTMLDivElement;
 beforeEach(() => {
@@ -100,6 +100,20 @@ describe("the wall legend review screen", () => {
     expect(out.querySelectorAll('[data-legend="in-library"]')).toHaveLength(1);
     expect(out.querySelectorAll('[data-legend="add"]')).toHaveLength(1);
     expect(out.querySelector('[data-legend="type"][data-legend-code="P1"] [data-legend="add"]')).toBeNull();
+  });
+
+  it("keeps each flag to one short line, with the whole reason and the words behind a click", () => {
+    expect(shortFlag("the 6\" stud was decoded from the sheet's tag key, not printed beside the type — check the key")).toBe(
+      "the 6\" stud was decoded from the sheet's tag key, not printed beside the type",
+    );
+    expect(shortFlag("the words say studSpacingIn 48 and the drawing shows 16 — the drawing was kept; check it")).toBe(
+      "the words say studSpacingIn 48 and the drawing shows 16",
+    );
+    expect(shortFlag("x".repeat(120)).length).toBeLessThanOrEqual(96);
+    const out = render(true);
+    const flag = out.querySelector('[data-legend="flags"] summary');
+    expect(flag?.textContent).toBe("one-sided: the words name board on one face only");
+    expect(out.querySelector('[data-legend="flags"] details p')?.textContent).toContain("ONE SIDE");
   });
 
   it("gives every numeric field a decimal keypad and a name", () => {

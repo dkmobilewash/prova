@@ -80,6 +80,12 @@ function editsFor(type: StoredLegendType): Edits {
   };
 }
 
+/** The first clause of a flag's reason, so a row carries one short line per flag. */
+export function shortFlag(why: string): string {
+  const cut = why.split(/\s[—–]\s|;\s/)[0].trim();
+  return cut.length > 96 ? `${cut.slice(0, 93).trimEnd()}…` : cut;
+}
+
 function notAPartition(type: StoredLegendType): string | null {
   const flag = type.assembly.flags.find((f) => f.why.startsWith("not a partition"));
   return flag ? flag.why : null;
@@ -188,7 +194,13 @@ function LegendPageCard({
           {proposal.hasSight ? " · words and drawing" : " · words only"}
         </span>
       </div>
-      <p className="mt-1 text-xs text-ink-body">{proposal.reason}</p>
+      {/* The model's account of the sheet is a paragraph an estimator does not
+          need to read to use the rows; it is here for the one who wants to know
+          why a type was read the way it was, one click away. */}
+      <details className="mt-1 text-xs text-ink-muted" data-legend="how-read">
+        <summary className="cursor-pointer">How this was read</summary>
+        <p className="mt-1 max-w-prose text-ink-body">{proposal.reason}</p>
+      </details>
       {pageError !== null && <p className="mt-2 text-xs text-ink-muted">{pageError}</p>}
       {!proposal.hasSight && (
         <div className="mt-3 flex flex-col items-start gap-1">
@@ -286,8 +298,15 @@ function LegendTypeRow({
           <ul className="flex flex-col gap-1" data-legend="flags">
             {type.assembly.flags.map((flag, index) => (
               <li key={index} className="text-sm text-danger">
-                {flag.why}
-                {flag.phrase && flag.phrase !== flag.why && <span className="text-ink-muted"> — &ldquo;{flag.phrase}&rdquo;</span>}
+                {/* One line: the first clause of the reason. The whole sentence and
+                    the words it came from are a click away, so a row stays a row. */}
+                <details>
+                  <summary className="cursor-pointer">{shortFlag(flag.why)}</summary>
+                  <p className="mt-1 text-xs text-ink-body">
+                    {flag.why}
+                    {flag.phrase && flag.phrase !== flag.why && <span className="text-ink-muted"> — &ldquo;{flag.phrase}&rdquo;</span>}
+                  </p>
+                </details>
               </li>
             ))}
           </ul>

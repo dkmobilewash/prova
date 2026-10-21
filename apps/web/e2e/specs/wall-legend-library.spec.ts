@@ -17,15 +17,21 @@ import { finishWizard, landOnDashboard, startJob } from "../lib/journey";
  * crop beside each, a field can be edited, and Add creates the wall type with
  * its parts and no price — asserted in the database, not off the screen.
  *
- * The proposal is seeded from `fixtures/baker-wall-legend.json`, the stored
- * shape of Baker's A601 legend as the ingest writes it (built by
- * lib/takeoff/realplan/zzLegendFixture.eval.ts from the cached reads). The
- * drawing itself is served from `REAL_PLAN_DIR` when that folder is present,
- * which is what makes the crops real; in CI, where it is not, the one-page
- * fixture PDF stands in and the crop assertion is skipped rather than faked.
+ * The proposal is seeded from `fixtures/wall-legend.json`, an INVENTED legend
+ * in the shape the ingest stores — made-up codes, words and numbers, with one
+ * one-sided type and one words-versus-drawing disagreement so the flags
+ * render. No real drawing's text is in this repository. Optionally, on a
+ * machine that has a client's plans OUTSIDE git, `LEGEND_FIXTURE` names a
+ * stored read of a real legend (built by
+ * lib/takeoff/realplan/zzLegendFixture.eval.ts) and `REAL_PLAN_DIR` the
+ * folder holding the PDF it was read from; the crops are then real and the
+ * spec also checks that the first type's crop is a drawing rather than a
+ * blank. Without them the one-page fixture PDF stands in and that one check
+ * is skipped, not faked.
  */
 
-const FIXTURE = JSON.parse(readFileSync(path.resolve(__dirname, "../fixtures/baker-wall-legend.json"), "utf8")) as {
+type Fixture = {
+  pdf: string;
   pageNumber: number;
   pageCount: number;
   sheetTitle: string;
@@ -40,12 +46,16 @@ const FIXTURE = JSON.parse(readFileSync(path.resolve(__dirname, "../fixtures/bak
   promptVersion: string;
 };
 const PLANS = process.env.REAL_PLAN_DIR ?? "";
-const BAKER = path.join(PLANS, "2025.07.08_Baker_EOC_BID.pdf");
-const REAL = PLANS !== "" && existsSync(BAKER);
+const REAL_FIXTURE = process.env.LEGEND_FIXTURE ?? "";
 const PLAN_FIXTURE = path.resolve(__dirname, "../fixtures/plan-sheet.pdf");
+const INVENTED = path.resolve(__dirname, "../fixtures/wall-legend.json");
+const REAL = REAL_FIXTURE !== "" && existsSync(REAL_FIXTURE) && PLANS !== "";
+const FIXTURE = JSON.parse(readFileSync(REAL ? REAL_FIXTURE : INVENTED, "utf8")) as Fixture;
+const PDF = REAL ? path.join(PLANS, FIXTURE.pdf) : PLAN_FIXTURE;
+if (REAL && !existsSync(PDF)) throw new Error(`LEGEND_FIXTURE names ${FIXTURE.pdf}, which is not in REAL_PLAN_DIR`);
 const SHOTS = process.env.TRACE_SHOTS ?? "";
 const JOB_NAME = "ZZ-E2E Wall legend library";
-const TYPE = "S6B";
+const TYPE = FIXTURE.merged[0].code;
 
 test.describe.configure({ mode: "serial" });
 
@@ -64,7 +74,7 @@ test.describe("a wall legend read off a set becomes wall types in the library", 
   test.beforeAll(async ({ browser }) => {
     page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     monitor = new HealthMonitor(page);
-    const pdf = readFileSync(REAL ? BAKER : PLAN_FIXTURE);
+    const pdf = readFileSync(PDF);
     await page.route("**/api/takeoff/plan/**", async (route) => {
       await route.fulfill({ status: 200, contentType: "application/pdf", body: pdf });
     });
@@ -78,7 +88,7 @@ test.describe("a wall legend read off a set becomes wall types in the library", 
     // The takeoff persona, not a new one: +1 555 555 0123 is already taken on the
     // development instance by a persona on another branch, so a LEGEND persona
     // failed global setup with `form_identifier_exists`. This spec makes its own
-    // job and touches only the Baker codes, so sharing the persona is safe.
+    // job and touches only the fixture's codes, so sharing the persona is safe.
     await signInAs(page, PERSONAS.takeoff.email);
     await landOnDashboard(page, monitor);
     jobId = await startJob(page, monitor, { name: JOB_NAME, gcName: "ZZ-E2E Legend GC" });
@@ -89,7 +99,7 @@ test.describe("a wall legend read off a set becomes wall types in the library", 
     await prisma.wallType.deleteMany({ where: { companyId, code: { in: FIXTURE.merged.map((t) => t.code) } } });
 
     const plan = await prisma.takeoffPlan.create({
-      data: { companyId, jobId, fileUrl: "https://example.invalid/baker.pdf", fileName: "2025.07.08_Baker_EOC_BID.pdf", revisionLabel: "Bid set" },
+      data: { companyId, jobId, fileUrl: "https://example.invalid/plan.pdf", fileName: REAL ? FIXTURE.pdf : "plan-sheet.pdf", revisionLabel: "Bid set" },
       select: { id: true },
     });
     const ingest = await prisma.planIngestJob.create({
@@ -146,13 +156,13 @@ test.describe("a wall legend read off a set becomes wall types in the library", 
     // Nothing is in the library yet, so every row offers Add and none says "in your library".
     await expect(page.locator('[data-legend="in-library"]')).toHaveCount(0);
     await expect(page.locator('[data-legend="add"]')).toHaveCount(FIXTURE.merged.length);
-    await expect(page.locator('[data-legend="flags"] li').first(), "Baker's legend flags its sheet-note height and its one-sided reads").toBeVisible();
+    await expect(page.locator('[data-legend="flags"] li').first(), "the legend's flags render, one line each").toBeVisible();
 
+    // The crops are rendered from the sheet. "drawn" is set only after pdf.js
+    // has painted the rectangle, so this is the browser saying it did.
+    const crops = page.locator('[data-legend="crop"][data-legend-crop-state="drawn"]');
+    await expect(crops, "every crop rendered from the drawing").toHaveCount(FIXTURE.crops.length, { timeout: 60_000 });
     if (REAL) {
-      // The crops are rendered from the actual sheet. "drawn" is set only after
-      // pdf.js has painted the rectangle, so this is the browser saying it did.
-      const crops = page.locator('[data-legend="crop"][data-legend-crop-state="drawn"]');
-      await expect(crops, "every crop rendered from the drawing").toHaveCount(FIXTURE.crops.length, { timeout: 60_000 });
       const painted = await page
         .locator(`[data-legend="type"][data-legend-code="${TYPE}"] canvas`)
         .evaluate((canvas: HTMLCanvasElement) => {
@@ -184,7 +194,7 @@ test.describe("a wall legend read off a set becomes wall types in the library", 
       include: { components: true },
     });
     expect(added.name).toBe("Interior partition, 1 hr");
-    expect(added.thicknessIn === null ? null : Number(added.thicknessIn)).toBeGreaterThan(6);
+    expect(added.thicknessIn === null ? null : Number(added.thicknessIn)).toBeGreaterThan(3);
     expect(added.components.length, "studs, track and board at least").toBeGreaterThanOrEqual(3);
     for (const component of added.components) {
       expect(component.catalogEntryId, `${component.description} carries no price-book entry`).toBeNull();

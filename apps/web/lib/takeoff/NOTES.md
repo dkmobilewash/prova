@@ -2604,11 +2604,29 @@ finder's wiring (wallGroups.ts/wallProposal.ts), in that lane, with its own
 three-line migration; the marker in the tag text stays until then.
 
 **Proved by.** `wall-legend-library.spec.ts` in a real browser against a
-throwaway database: seeds Baker's A601 legend (fixture built by
-`zzLegendFixture.eval.ts` from the cached reads, no model), follows the
-takeoff tab's link, counts eight rows with a rendered crop each (and that
-the S6B crop is a drawing, by its dark pixels), edits a name, presses Add,
-reads the `WallType` and its three components back with no price, and sees
-the row refuse a second Add. The migration applied to a scratch Postgres and
+throwaway database: seeds a legend as a stored proposal, follows the
+takeoff tab's link, counts one row per type with a rendered crop each,
+edits a name, presses Add, reads the `WallType` and its components back
+with no price, and sees the row refuse a second Add. The committed fixture
+(`e2e/fixtures/wall-legend.json`) is INVENTED — made-up codes, words and
+numbers, one one-sided type, one words-versus-drawing disagreement — so no
+client's legend is in the repository. The same spec runs against a real
+legend when `LEGEND_FIXTURE` names a stored read built OUTSIDE the repo by
+`zzLegendFixture.eval.ts` (which refuses a path inside it) and
+`REAL_PLAN_DIR` holds the drawing; that run also checks the first crop is a
+drawing by its dark pixels, and is where the Baker screenshots come from.
+
+**Crop placement slides (2026-10-21).** The crop was a fixed 3.5 in above
+the code and 4.5 in below, the Crosslines shape — a section drawn above a
+boxed letter. Baker draws the code box ABOVE its section and the rated-
+assembly notes, so the fixed split took in the unrelated roof detail above
+and cut the type's own drawing at the bottom. `legendCropRects` now scores
+every half-inch split from 0.5 in above the code to 0.5 in below it by the
+assembly words it holds and keeps the best, the old split as the tie-break
+and the crop's size unchanged. On Baker's eight: the three rated types went
+from 3.5 in above to 0.5 in (the box at the top, the section and its notes
+below); the B and C rows, which have no drawing of their own, now start at
+their column's section so the variant line is read under the section it
+varies; C8B did not move. Rendered and looked at, not inferred. The migration applied to a scratch Postgres and
 `migrate status` named it; `migrate diff` against the schema reports only the
 two pre-existing `ProposalClause.updatedAt` defaults.

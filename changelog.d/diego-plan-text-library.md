@@ -27,12 +27,17 @@ disagreement and each one is flagged with both values. What plan-text
 reading works out between detections now lives in `TakeoffPlanTextRead`
 rather than a file under the OS temp dir, which did not survive a deploy.
 
-The check that proves it: `wall-legend-library.spec.ts` seeds Baker's
-A601 legend as a stored proposal, follows the takeoff tab's link, counts
-eight rows with a rendered crop each, edits a name, presses Add, and reads
-the `WallType` and its three components back out of the database with no
-price on any of them. The migration was applied to a throwaway Postgres
-and `migrate status` names it.
+The check that proves it: `wall-legend-library.spec.ts` seeds an INVENTED
+legend as a stored proposal (no client's drawing text is in the
+repository), follows the takeoff tab's link, counts one row per type with
+a rendered crop each, edits a name, presses Add, and reads the `WallType`
+and its components back out of the database with no price on any of them.
+The same spec runs against a real legend read kept outside git when
+`LEGEND_FIXTURE` names it. The migration was applied to a throwaway
+Postgres and `migrate status` names it. The crop beside each type now
+slides to where the type's assembly words are, so a legend that draws the
+section BELOW its code box shows the section rather than whatever sat
+above.
 
 Not in this migration: the `PROPAGATED` proposal source. `wallProposal.ts`
 narrows that enum to three members, so the value alone breaks the

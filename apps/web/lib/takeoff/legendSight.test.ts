@@ -16,7 +16,7 @@ const base = {
   insulation: null,
   hourlyRating: 0,
   heightNote: "SEE NOTE A",
-  notes: ["NON-RATED INTERIOR WALL", "2x STEEL FRAMING, SEE STRUCTURAL"],
+  notes: ["INTERIOR PARTITION", "STUDS PER STRUCTURAL"],
   fromDrawing: ["studWidthIn"],
   fromSheetNote: [],
   optional: [],
@@ -130,5 +130,34 @@ describe("where each type's crop is", () => {
     expect(got[0].x).toBeCloseTo(510 - 1.0 * 72, 3);
     expect(got[0].y).toBeCloseTo(292 - 3.5 * 72, 3);
     expect(got[0].width).toBeCloseTo(5 * 72, 3);
+  });
+
+  it("slides the crop down when the type's assembly words all sit BELOW the code, and keeps its size", () => {
+    // Baker's shape: the code box above its section, the rated-assembly notes
+    // running 5 in below it, and an unrelated detail's words 3 in above.
+    const text = [
+      { str: "STEEL DECKING, SEE STRUCTURAL", x: 480, y: 300 - 3 * 72, width: 120, height: 8 },
+      { str: "S6A", x: 500, y: 300, width: 20, height: 8 },
+      ...Array.from({ length: 10 }, (_, i) => ({ str: `(2) LAYERS 5/8" TYPE X GYP. BOARD ${i}`, x: 480, y: 300 + 72 + i * 36, width: 120, height: 8 })),
+      { str: '6" STEEL STUDS 24" O.C.', x: 480, y: 300 + 6.5 * 72, width: 120, height: 8 },
+    ];
+    const got = legendCropRects({ text, codes: ["S6A"], widthPt: 2592, heightPt: 1728 });
+    // At most 1 in above the code, so every word of the detail is in and none of the roof's.
+    expect(got[0].y).toBeGreaterThanOrEqual(292 - 1.0 * 72 - 1e-6);
+    // and the roof's word, 3 in above the code, is outside the crop.
+    expect(got[0].y).toBeGreaterThan(300 - 3 * 72);
+    expect(got[0].y + got[0].height).toBeGreaterThan(300 + 6.5 * 72);
+    expect(got[0].height).toBeCloseTo(8 * 72, 3);
+    expect(got[0].width).toBeCloseTo(5 * 72, 3);
+  });
+
+  it("slides it up when the section is drawn above the code, as Crosslines draws it", () => {
+    const text = [
+      { str: "A", x: 1500, y: 600, width: 10, height: 8 },
+      ...Array.from({ length: 6 }, (_, i) => ({ str: `3 5/8" STL. STUD @ 16" O.C. ${i}`, x: 1480, y: 600 - 5 * 72 + i * 30, width: 100, height: 8 })),
+    ];
+    const got = legendCropRects({ text, codes: ["A"], widthPt: 2592, heightPt: 1728 });
+    expect(got[0].y).toBeLessThan(592 - 3.5 * 72);
+    expect(got[0].y + got[0].height).toBeGreaterThan(600);
   });
 });
