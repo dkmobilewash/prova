@@ -61,6 +61,26 @@ export type OfferedResult = {
   setAside: { kind: string; why: string; n: number }[];
   /** For a measurement: the paired candidates dropped for being off-plan. */
   offPlanPaired: number;
+  /**
+   * The lines the classifier withheld, with their geometry.
+   *
+   * ── COUNTS CANNOT ANSWER WHETHER THE TRIAGE IS WORTH KEEPING ──
+   *
+   * The panel needs counts by reason, and that is all this returned. But
+   * "152 set aside on Murray" says nothing about whether those were junk or
+   * walls — and the miss analysis showed reviewers tracing walls by hand that
+   * the finder had proposed and the classifier had withheld. Answering that
+   * needs the geometry, so it comes out here and the panel keeps ignoring it.
+   */
+  setAsideLines: {
+    kind: string;
+    why: string;
+    lengthFeet: number;
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+  }[];
 };
 
 /** A single line must be at least this long to be worth a reviewer's time. */
@@ -143,6 +163,17 @@ export function offeredCandidates(sheet: DetectedSheet, offerAll = false): Offer
         })),
     }),
     setAside: [...aside.values()].sort((a, b) => b.n - a.n),
+    setAsideLines: classified
+      .filter((one) => !worthOffering(one.kind))
+      .map((one) => ({
+        kind: one.kind,
+        why: one.why,
+        lengthFeet: one.lengthFeet,
+        x1: one.line.x1,
+        y1: one.line.y1,
+        x2: one.line.x2,
+        y2: one.line.y2,
+      })),
     offPlanPaired: sheet.walls.length - onPlan.length,
   };
 }
