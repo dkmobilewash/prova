@@ -121,6 +121,9 @@ import {
 } from "@/lib/takeoff/answerKeyReview";
 import { offeredCandidates } from "@/lib/takeoff/offeredCandidates";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
+import { TakeoffRoomsPanel } from "./TakeoffRoomsPanel";
+import { roomBoundary } from "@/lib/takeoff/roomBoundary";
+import { roomsFromWalls, type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 
 /**
  * THE MEASURING SURFACE — a PDF page rendered to a canvas, with an SVG
@@ -258,6 +261,7 @@ export function TakeoffPlanViewer({
   fill = false,
   panelOpen = true,
   readOnly = false,
+  roomFinder = false,
   onMeasurementSaved,
   activeItemId = null,
 }: {
@@ -333,6 +337,13 @@ export function TakeoffPlanViewer({
    * tools there is offering a way to put a wrong line on a real takeoff.
    */
   readOnly?: boolean;
+  /**
+   * "Find the rooms" beside "Find the walls". OFF for every company until the
+   * owner turns it on (Settings → `RoomFinderSwitch`); with it off nothing
+   * about this screen changes and `takeoffRoomFinder.test.tsx` holds the
+   * button absent. See `lib/takeoff/NOTES-rooms.md`.
+   */
+  roomFinder?: boolean;
   /**
    * Told when a measurement has been saved, so a HOST can offer to undo it.
    *
@@ -638,6 +649,15 @@ export function TakeoffPlanViewer({
   // the tags, the schedule and the sheet's general note all live inside it, so
   // re-grouping cannot drift from the grouping that was shown first.
   const runsRef = useRef<WallCandidate[]>([]);
+  // ── FOR THE ROOM STEP ──
+  // Every pairing the last find produced (long ones bound rooms the kept runs
+  // do not — NOTES-rooms.md §5) and the sheet's words (the room tags), kept
+  // from the find so "Find the rooms" costs no second read of the PDF.
+  const pairingsRef = useRef<{ x1: number; y1: number; x2: number; y2: number; lengthFeet: number; thicknessFeet: number }[]>([]);
+  const wordsRef = useRef<{ str: string; x: number; y: number; width: number; height: number }[]>([]);
+  const [rooms, setRooms] = useState<RoomsFromWallsResult | null>(null);
+  const [roomsOnPage, setRoomsOnPage] = useState<number | null>(null);
+  const [hoveredRoom, setHoveredRoom] = useState<number | null>(null);
   /**
    * The answer-key props, readable from inside the detect without putting them
    * in its dependencies.
@@ -2108,12 +2128,32 @@ export function TakeoffPlanViewer({
     !takeoffVerdict.worthMeasuring &&
     onThisSheet(overriddenByPage, pageNumber) === null;
 
+  /**
+   * ── FIND THE ROOMS ──
+   * From what the last find left behind — every pairing, the kept runs — plus
+   * the lines drawn by hand on this sheet, which is how an estimator closes a
+   * room the finder left open. Pure and synchronous; no PDF is re-read.
+   */
+  function onFindRooms() {
+    if (!pageSize || feetPerUnit === null) return;
+    const walls = roomBoundary({
+      pairings: pairingsRef.current,
+      runs: runsRef.current,
+      drawn: sheet?.measurements ?? [],
+    });
+    const result = roomsFromWalls({ walls, feetPerUnit, text: wordsRef.current, widthPt: pageSize.widthPt });
+    setRooms(result);
+    setRoomsOnPage(pageNumber);
+    setHoveredRoom(null);
+  }
+
   async function onFindWalls() {
     const doc = docRef.current;
     if (!doc || !pageSize || feetPerUnit === null) return;
     setFinding(true);
     setFindError(null);
     setFound(null);
+    setRooms(null);
     setChosen({});
     setShowingAll(false);
     try {
@@ -2137,6 +2177,7 @@ export function TakeoffPlanViewer({
       // a word is — which they would, because `planPdf.pageText` stores the
       // baseline and this used to subtract before passing anything on.
       const vectorWords = await pageTextItems(page, pdfjs);
+      wordsRef.current = vectorWords;
       // ── A SCAN'S WORDS ENTER EXACTLY HERE ──
       //
       // A scanned sheet has no text layer, so `pageTextItems` returns nothing
@@ -2226,10 +2267,9 @@ export function TakeoffPlanViewer({
         thicknessFeet: number;
         features: number[];
       }[] = [];
-      const collect =
-        answerKeyRef.current?.onPairings === undefined
-          ? undefined
-          : (features: number[], wall: WallCandidate) => {
+      // Always collected now, not only for the answer key: the room step reads
+      // the same list. A few thousand small objects per find.
+      const collect = (features: number[], wall: WallCandidate) => {
               pairings.push({
                 x1: wall.x1,
                 y1: wall.y1,
@@ -2240,6 +2280,7 @@ export function TakeoffPlanViewer({
                 features: [...features],
               });
             };
+      void collect;
       let otherViews: ViewWalls[] = [];
       let leftOut: ExcludedView[] = [];
       let primaryShown: { name: string; scaleName: string | null } | null = null;
@@ -2341,6 +2382,7 @@ export function TakeoffPlanViewer({
       // Both measuring paths have run by here, so this is the one place that
       // sees every pairing on the sheet whichever one was taken.
       if (pairings.length > 0) answerKeyRef.current?.onPairings?.(pairings);
+      pairingsRef.current = pairings;
       runsRef.current = walls;
       feetAcrossRef.current = feetPerUnit;
       regroupRef.current = regroup;
@@ -2678,6 +2720,23 @@ export function TakeoffPlanViewer({
         >
           {finding ? "Reading the lines…" : "Find the walls"}
         </button>
+        {/* ── FIND THE ROOMS, ONLY WITH THE COMPANY SWITCH ON ──
+            Absent, not disabled, when the switch is off: the feature was
+            measured and switched off once (`takeoffRoomFinder.test.tsx`) and
+            a control that reads as "exists but broken" is what that file
+            exists to prevent. With the switch on it waits for a find. */}
+        {roomFinder && (
+          <button
+            type="button"
+            onClick={onFindRooms}
+            disabled={finding || found === null || found.length === 0 || foundOnPage !== pageNumber}
+            data-takeoff="find-rooms"
+            title={found === null ? "Find the walls first — rooms are what they enclose." : undefined}
+            className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
+          >
+            Find the rooms
+          </button>
+        )}
         {/* ── WHY IT IS GREY, AND A WAY PAST IT ──
             The reason is on the toolbar and not only in a tooltip, because a
             disabled control with a hover explanation is a control that looks
@@ -3243,6 +3302,17 @@ export function TakeoffPlanViewer({
               <PlanTextPanel view={planText} wallTypes={wallTypes} />
             </>
           )}
+          {rooms !== null && roomsOnPage === pageNumber && sheet !== null && feetPerUnit !== null && (
+            <TakeoffRoomsPanel
+              jobId={jobId}
+              pageId={sheet.id}
+              result={rooms}
+              feetPerUnit={feetPerUnit}
+              hovered={hoveredRoom}
+              onHover={setHoveredRoom}
+              onClear={() => setRooms(null)}
+            />
+          )}
           <button
             type="button"
             onClick={() => setFound(null)}
@@ -3795,6 +3865,23 @@ export function TakeoffPlanViewer({
                   together. Nothing is lost, because it was never actionable —
                   only visible. */}
               <FoundWalls clusters={shownGroups} hovered={hovered} />
+              {rooms !== null &&
+                roomsOnPage === pageNumber &&
+                rooms.rooms.map((room) => (
+                  <polygon
+                    key={`room-${room.id}`}
+                    data-takeoff="room"
+                    data-room-named={room.tag ? "1" : "0"}
+                    points={room.xs.map((x, i) => `${x},${room.ys[i]}`).join(" ")}
+                    fill={room.tag ? "#16a34a" : "#f59e0b"}
+                    fillOpacity={hoveredRoom === room.id ? 0.35 : 0.14}
+                    stroke={room.tag ? "#15803d" : "#d97706"}
+                    strokeWidth={STROKE_PX}
+                    vectorEffect="non-scaling-stroke"
+                    onMouseEnter={() => setHoveredRoom(room.id)}
+                    onMouseLeave={() => setHoveredRoom(null)}
+                  />
+                ))}
 
               {draft.xs.length > 0 && (
                 <Shape

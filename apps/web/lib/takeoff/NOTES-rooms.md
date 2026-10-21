@@ -250,3 +250,23 @@ panel and row ↔ polygon highlight; (4) hints as dashed lines; (5) e2e step
 on the synthetic sheets (S05 has nine keyed rooms, areas to 1 sf), and a
 click-list for Cyrus on Baker A101 — seven rooms, expected square feet
 printed above.
+
+## 7. Built (queue 2, night of 2026-10-21) — on the branch, not merged, switch OFF
+
+| piece | file |
+| --- | --- |
+| per-company switch, off by default | `Company.roomFinderOn`; `RoomFinderSwitch.tsx` on Settings (owner saves, everyone sees); `saveRoomFinderSwitch` |
+| the button | `TakeoffPlanViewer.tsx`: "Find the rooms" beside Find the walls, rendered only with the switch on, enabled after a find on this sheet |
+| the boundary | `roomBoundary.ts`: every pairing ≥ 2 ft from the last find + the kept runs + the sheet's hand-drawn LINEAR measurements |
+| the rooms | `roomsFromWalls.ts`, run in the browser, no PDF re-read; polygons on the overlay (green named, amber unnamed) |
+| the panel | `TakeoffRoomsPanel.tsx`: name / number (editable) / sq ft / perimeter; not-enclosed and share-one-room lists; Save as areas |
+| the save | `saveRoomMeasurements`: one transaction of AREA rows, `source: ROOM_FINDER`, `roomName`/`roomNumber`, label = the edited tag |
+| migration | `20261022000000_rooms_from_walls`, applied + read back on a throwaway Postgres only |
+| draw the missing wall | no new tool: draw a Line where the wall is missing, Find the rooms again (the boundary includes LINEAR measurements) |
+| tests | `roomsFromWalls`, `roomTags`, `roomBoundary`, `takeoffRoomFinder.test.tsx` (off → absent; on → present, waiting), `e2e/specs/takeoff-rooms.spec.ts` on S05, `takeoff-rooms-real.spec.ts` for screenshots from a real sheet, gated on env |
+
+Not built, on purpose: leak hints as dashed lines (the probe is seconds per
+tag; it belongs on the server or in a worker, not on a click), the
+finish-schedule join, and room types. The "draw the missing wall" edit is
+the Line tool plus a re-run rather than a mode of its own — one less thing
+to learn, and the line is a measurement the estimator can keep.

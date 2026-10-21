@@ -375,6 +375,15 @@ model TakeoffMeasurement {
   /// `IMPORTED` is reserved and unused today.
   source TakeoffMeasurementSource @default(MANUAL)
 
+  /// THE ROOM TAG THE DRAWING PRINTED, when this area is a room. `label` stays
+  /// whatever the estimator typed; these are what the sheet says, so the
+  /// finish-schedule join and the Rooms panel's sort have something that is
+  /// not free text. Null on every area that is not a room, and on a room whose
+  /// tag could not be read. Perimeter is NOT here: it is the polygon's own
+  /// length at the sheet's calibration — derived, never stored.
+  roomName   String?
+  roomNumber String?
+
   /// The finder's confidence, 0..1. Null unless `source` is `DETECTED` — a
   /// number a person drew has no confidence to report, and defaulting one to
   /// 1 would invent agreement nobody expressed.
@@ -419,6 +428,7 @@ model TakeoffMeasurement {
   @@index([calibrationId])
   @@index([wallRunId])
   @@index([itemId])
+  @@index([pageId, roomNumber])
 }
 
 /// WHERE A FOUND GROUP CAME FROM. Three members, mirroring `GroupSource` in
@@ -615,6 +625,9 @@ enum TakeoffMeasurementSource {
   MANUAL
   DETECTED
   IMPORTED
+  /// An AREA drawn by `roomsFromWalls` from the walls found on the sheet,
+  /// named by the room tag inside it. Editable like any area afterwards.
+  ROOM_FINDER
 }
 
 /// ─────────────────────────────────────────────────────────────────────────
