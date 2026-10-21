@@ -245,6 +245,83 @@ try {
   const traced = await page.evaluate(() => /(\d+) traced/.exec(document.body.innerText)?.[1] ?? "0");
   check("a trace is added", Number(traced) > 0, `${traced} traced`);
 
+  // ── A CANDIDATE'S NUMBER SURVIVES BEING DECIDED ABOUT ──
+  //
+  // The rows carried no number, so anyone referring to one counted down the
+  // visible list — and that list is FILTERED, shrinking by one per decision
+  // while `nextUnreviewed` walks the full order. "The 31st row" meant a
+  // different candidate after every keystroke. Fifteen decisions on STEM
+  // A-1.1 and Central Bank A100 had to be corrected by hand.
+  //
+  // The two checks below are the two halves of that: a number exists and is
+  // stable, and the number on the FOCUSED row is the one the keyboard
+  // actually moved to.
+  const numbersNow = () =>
+    page.$$eval('[data-takeoff="key-candidate"]', (els) =>
+      els.map((e) => ({
+        n: e.getAttribute("data-number"),
+        id: e.getAttribute("data-id"),
+        verdict: e.getAttribute("data-verdict"),
+      })),
+    );
+
+  // ── "UNREVIEWED ONLY" MUST BE ON, OR THIS CHECK PROVES NOTHING ──
+  //
+  // The drift only exists while the list is FILTERED: that is what makes it
+  // shrink as decisions land. With the filter off, a position-derived number
+  // and a stable one are identical — and the first version of this check ran
+  // with it off, so the mutation that restores the old behaviour passed 26 of
+  // 26. The toggle is the whole experiment.
+  await page.locator('[data-takeoff="key-unreviewed-only"]').click();
+  await page.waitForTimeout(300);
+  const filterOn = await page.locator('[data-takeoff="key-unreviewed-only"]').getAttribute("aria-pressed");
+  check("the unreviewed-only filter is on for the numbering check", filterOn === "true", `aria-pressed=${filterOn}`);
+
+  const numbersBefore = await numbersNow();
+  check(
+    "every row carries a number",
+    numbersBefore.length > 0 && numbersBefore.every((r) => /^\d+$/.test(r.n ?? "")),
+    `${numbersBefore.filter((r) => /^\d+$/.test(r.n ?? "")).length} of ${numbersBefore.length}`,
+  );
+
+  // Decide a few, then confirm the SURVIVING rows kept their own numbers.
+  // This is the check that fails on the old behaviour: with the list filtered,
+  // positions shift and a position-derived number would renumber here.
+  const watched = numbersBefore.slice(3, 8).map((r) => ({ id: r.id, n: r.n }));
+  await page.keyboard.press("n");
+  await page.waitForTimeout(150);
+  for (let i = 0; i < 3; i += 1) {
+    await page.keyboard.press("a");
+    await page.waitForTimeout(150);
+    await page.keyboard.press("n");
+    await page.waitForTimeout(150);
+  }
+  const after = await numbersNow();
+  const byId = new Map(after.map((r) => [r.id, r.n]));
+  const moved = watched.filter((w) => byId.has(w.id) && byId.get(w.id) !== w.n);
+  check(
+    "a number does not change when other rows are decided",
+    watched.length > 0 && moved.length === 0,
+    moved.length === 0
+      ? `${watched.length} rows kept their numbers`
+      : `${moved.length} renumbered, e.g. ${moved[0].n} -> ${byId.get(moved[0].id)}`,
+  );
+
+  // And the focused row's number is the one the keyboard moved to: the panel
+  // and the selection agree, which is the defect in one sentence.
+  const focusedNumber = await page.$$eval('[data-takeoff="key-candidate"]', (els) => {
+    const hit = els.find((e) => e.className.includes("border-brand"));
+    return hit === undefined ? null : hit.getAttribute("data-number");
+  });
+  check(
+    "the focused row has a number",
+    focusedNumber !== null && /^\d+$/.test(focusedNumber),
+    `focused #${focusedNumber ?? "none"}`,
+  );
+
+  await page.locator('[data-takeoff="key-unreviewed-only"]').click();
+  await page.waitForTimeout(200);
+
   // ── TRACE UNDO AND DELETE ──
   //
   // `removeTraced` was exported and called by nothing — this repo's own

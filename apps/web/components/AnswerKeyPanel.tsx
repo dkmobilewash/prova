@@ -184,6 +184,33 @@ export function AnswerKeyPanel({
   // reviewer is a judgement nobody owns. Neither is worth saving.
   const canSave = sheet.feetPerUnit > 0 && reviewer.trim() !== "";
 
+  /**
+   * ── EVERY CANDIDATE'S OWN NUMBER, WHICH NOTHING CAN SHIFT ──
+   *
+   * These rows carried NO number. A reviewer — or a browser agent — therefore
+   * referred to them by counting down the visible list, and `shown` is
+   * FILTERED: with "unreviewed only" on it shrinks by one every time a
+   * decision is made, so "the 31st row" means a different candidate after
+   * every keystroke. Meanwhile `nextUnreviewed` walks the FULL
+   * `state.candidates` order, so N lands somewhere the visible count does not
+   * predict.
+   *
+   * That cost real work: on STEM A-1.1 and Central Bank A100 the selection
+   * ran 1-2 candidates off what was being read out, and on SLN A-101A the
+   * panel's numbers sat a consistent +2 from the array index. Fifteen
+   * decisions had to be corrected by hand.
+   *
+   * The number is the candidate's index in `state.candidates`, which is also
+   * the index in the saved file's `verdicts`, so a number quoted off the
+   * screen means the same thing in the label file and in any audit of it.
+   * Filtering the list no longer renumbers anything.
+   */
+  const numberOf = useMemo(() => {
+    const at = new Map<string, number>();
+    state.candidates.forEach((c, index) => at.set(c.id, index + 1));
+    return at;
+  }, [state.candidates]);
+
   const shown = useMemo(
     () =>
       state.candidates.filter(
@@ -887,6 +914,8 @@ export function AnswerKeyPanel({
                 type="button"
                 data-takeoff="key-candidate"
                 data-verdict={verdict}
+                data-number={numberOf.get(one.id) ?? ""}
+                data-id={one.id}
                 onClick={() => onFocus(one.id)}
                 className={`flex w-full items-baseline justify-between gap-2 rounded-md border px-2 py-1 text-left text-xs ${
                   focusedId === one.id
@@ -905,6 +934,12 @@ export function AnswerKeyPanel({
                           : VERDICT_COLOURS[verdict],
                     }}
                   />
+                  <span
+                    data-takeoff="key-candidate-number"
+                    className="w-8 shrink-0 tabular-nums text-ink-muted"
+                  >
+                    #{numberOf.get(one.id) ?? "?"}
+                  </span>
                   <span className="font-medium text-ink">{one.lengthFeet.toFixed(0)} ft</span>
                   <span className="text-ink-muted">
                     {one.from === "pair"

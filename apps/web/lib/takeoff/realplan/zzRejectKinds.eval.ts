@@ -124,7 +124,7 @@ describe.skipIf(DIR === "" || LABELS === "")("what the finder's extra footage IS
     const feet = new Map<Kind, number>(KINDS.map((k) => [k, 0]));
     const counts = new Map<Kind, number>(KINDS.map((k) => [k, 0]));
     const examples: Example[] = [];
-    let sheetsRead = 0;
+    const sheetsRead: string[] = [];
     let refused = 0;
 
     for (const file of files) {
@@ -159,7 +159,7 @@ describe.skipIf(DIR === "" || LABELS === "")("what the finder's extra footage IS
         wallTypes: [],
         sampledSheets: null,
       });
-      sheetsRead += 1;
+      sheetsRead.push(`${file.dir}/${file.sheet}`);
 
       // ── TEXT IS IN POINTS, CANDIDATES ARE NORMALISED BY WIDTH ──
       //
@@ -300,11 +300,17 @@ describe.skipIf(DIR === "" || LABELS === "")("what the finder's extra footage IS
     }
 
     // ── A RUN OVER NO SHEETS IS NOT A RESULT ──
-    expect(sheetsRead, "no training sheets were read — every number below would be zero").toBeGreaterThan(0);
+    // Asserted on a LIST rather than a counter so the shape is the one
+    // `harness.test.ts` recognises for a keyless eval, and so the failure can
+    // say which sheets it did read.
+    expect(
+      sheetsRead.length,
+      "no training sheets were read — every number below would be a clean zero over nothing",
+    ).toBeGreaterThan(0);
 
     const total = [...feet.values()].reduce((a, b) => a + b, 0);
     console.log(
-      `\n${sheetsRead} training sheets (${refused} held-out sheets refused) · ` +
+      `\n${sheetsRead.length} training sheets (${refused} held-out sheets refused) · ` +
         `${total.toFixed(0)} ft of candidates NOT on the key`,
     );
     console.log(`  ${"kind".padEnd(22)} ${"feet".padStart(9)} ${"share".padStart(7)} ${"runs".padStart(6)}`);
