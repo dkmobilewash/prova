@@ -122,6 +122,16 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
             x2: w.x2,
             y2: w.y2,
             lengthFeet: w.lengthFeet,
+            // ── THE THICKNESS IS THE WHOLE POINT OF THE BAND ──
+            //
+            // `WallCandidate`'s own comment says these coordinates are the
+            // CENTRELINE. A reviewer tracing a wall the finder missed draws
+            // along a FACE, half a thickness away, and a traced key wall
+            // carries no thickness of its own — so if this is dropped, every
+            // trace/proposal pair falls back to the 1.5 ft floor and the
+            // thickness-aware band never fires on the only case it exists
+            // for. Dropped here, the scorer was thickness-aware in name only.
+            thicknessFeet: w.thicknessFeet,
           })),
           feetPerUnit: saved.feetPerUnit,
           keyFromTracedFeet: fromTracedFeet,
