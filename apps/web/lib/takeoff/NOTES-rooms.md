@@ -160,3 +160,93 @@ Kept exported, off by default, numbers in its header.
    real sheets.
 3. Rooms on BIM sheets through the FINDER (end-to-end) rather than the key's
    walls — the finder lane's candidates on those 36 sheets.
+
+## 5. Rooms from a BOUNDARY set (queue 1, rewritten, 2026-10-21 evening)
+
+Boundary = the finder's raw pairings (every `onCandidate`, pre-triage) at
+least 2 ft long — 90% of the raw set on Bunkie A100 is 0.67-ft hatch pairs
+that fill the existing building with ink and bound nothing — plus every
+candidate the reviewer was offered, any verdict, plus the traces. A tag's
+own drawn box pairs as a short wall and put the tag in a region too small to
+be a room, so the finder's `wallsNotLettering` runs on the boundary first
+(that one filter took Bunkie from 2 rooms back to 4).
+
+| sheet | accepted+traced | ALL offered | BOUNDARY |
+| --- | --- | --- | --- |
+| Bunkie A100 (6 keyed) | 0 measured | 4, 3 within 10% | **4, all within 5%, median 1.7%**; #1 + corridor open (corner door) |
+| Baker A101 (9 keyed) | 6 within 4% | 4 | **7 within 10%, median 2.0%, no merges**; 911 + vestibule open (existing walls) |
+| SW A110 (7 keyed) | 1 | 1 | 1 (office 105); sales floors have no walls, restroom/alcove/hallway corner doors |
+| Bunkie A104 (2 keyed) | 0 | 0 | 1, wrong by 74% — enlarged plan, sparse candidates |
+| BIM, 713 keyed | — | — | end to end through the finder, no key walls: **206 measured (median 2.4%, 140 within 5%), 264 open, 212 merged** — against 477 from the key's own walls |
+
+So the boundary set is the right input and the room step holds up on it; the
+remaining misses are walls the finder never proposes (existing poché, CMU
+hatch bands, corner doors) — the finder lane's territory, which is what
+queue item 2's hints are for. Overlays: `shots/rooms/boundary__*`.
+
+## 6. The customer view (queue 3) — plan, no code, no migration run
+
+**What the estimator sees.** On a calibrated floor-plan sheet, a **Find the
+rooms** button beside *Find the walls*, enabled once that sheet has found
+walls (the boundary set comes from the same pass). It produces a **Rooms**
+panel: one row per room — name, number, square feet, perimeter feet, and a
+status (*named* / *unnamed* / *open: not enclosed* / *shares a region with
+N*). Clicking a row highlights the polygon on the sheet; hovering the sheet
+highlights the row. Totals at the foot: rooms, square feet, perimeter —
+the ceiling, flooring and paint quantities the panel exists for.
+
+**Editing.** A room is an AREA measurement, so the existing area tools
+apply unchanged: drag a corner, add a cutout (a column, a stair core),
+delete. Two room-specific edits: *rename / renumber* (the tag reader was
+wrong or the tag is missing) and *draw the missing wall* — a one-line trace
+that re-runs the room step for the rooms it touches, which is the
+estimator's version of queue item 2's hint. The hints themselves show as a
+dashed line with "wall missing here? N ft" on open rooms, and clicking one
+turns it into a trace.
+
+**Posting.** Rooms post like any area measurement, to a takeoff item (ACT,
+flooring, paint) with the same `postTakeoffMeasurements`; perimeter posts
+as LINEAR to a base/trim item. Nothing new in the posting path.
+
+**Data: reuse `TakeoffMeasurement` (`kind: AREA`), not a new table.** A
+room IS an area with a polygon, a label, a calibration, cutouts, a source
+and a confidence — every column already exists. What is missing is the
+structured part of the tag, so the finish-schedule join and the panel's
+sort can use it, and a source value that says a machine drew it:
+
+```prisma
+enum TakeoffMeasurementSource {
+  MANUAL
+  DETECTED
+  IMPORTED
+  ROOM_FINDER   // + : drawn by roomsFromWalls, polygon editable like any area
+}
+
+model TakeoffMeasurement {
+  …
+  /// From the room tag inside the polygon, when there is one. Free `label`
+  /// stays what the estimator typed; these are what the drawing printed.
+  roomName   String?
+  roomNumber String?
+  @@index([pageId, roomNumber])
+}
+```
+
+Migration: one `ALTER TYPE … ADD VALUE 'ROOM_FINDER'`, two nullable
+columns, one index — additive, no backfill, nothing reads it until the
+panel ships. Perimeter is NOT stored: derived state (it is the polygon's
+own length at the sheet's calibration), per the derived-state rule. "Open"
+and "merged" are not stored either — an open room is not saved as a
+measurement at all, it is shown as a hint until the estimator closes it.
+
+**Proposed, not run.** The second session's library migration is also
+pending; this one should go in the same window and be announced in
+`#prova-build` before the push, per the working agreement.
+
+**Order of work once approved:** (1) migration + `saveTakeoffMeasurements`
+accepting `ROOM_FINDER` rows with name/number; (2) `roomsFromWalls` wired
+to the viewer's found-walls result with the boundary set; (3) the Rooms
+panel and row ↔ polygon highlight; (4) hints as dashed lines; (5) e2e step
+on the synthetic sheets (S05 has nine keyed rooms, areas to 1 sf), and a
+click-list for Cyrus on Baker A101 — seven rooms, expected square feet
+printed above.
