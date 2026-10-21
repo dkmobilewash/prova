@@ -197,6 +197,9 @@ echo "plans from : $PLANS"
 echo "labels to  : $LABELS"
 echo "port       : $PORT"
 echo "build dir  : $NEXT_DIST_DIR"
+# A NEXT_PUBLIC_ var is inlined at BUILD time, so a reader needs to see which
+# setting this build was made with rather than infer it from inheritance.
+echo "hatch rule : $([ "${NEXT_PUBLIC_TAKEOFF_HATCH_PITCH:-0}" = "1" ] && echo 'even-pitch only — LABELLING' || echo 'any 3 parallel lines — what customers see')"
 echo "database   : $HOST"
 echo "bind       : $HOSTNAME (loopback is required for local plans)"
 echo "finder     : $TAKEOFF_FINDER_VERSION"

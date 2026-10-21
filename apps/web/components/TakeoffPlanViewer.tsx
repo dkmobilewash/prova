@@ -232,6 +232,12 @@ async function pageTextItems(
   });
 }
 
+/**
+ * Whether the evenly-pitched-hatch rule is on. Set only by Chrome's labelling
+ * server; see `ClassifyInput.hatchPitchRule` for the measured trade.
+ */
+const HATCH_PITCH_RULE = process.env.NEXT_PUBLIC_TAKEOFF_HATCH_PITCH === "1";
+
 export function TakeoffPlanViewer({
   jobId,
   planId,
@@ -898,6 +904,14 @@ export function TakeoffPlanViewer({
         planBoxes: last.planBoxes,
       },
       offerAll,
+      // ── ON FOR LABELLING, OFF FOR CUSTOMERS ──
+      //
+      // The pitch rule recovers 15,921 ft of the 16,530 ft of real wall the
+      // hatch class withheld and offers 49,419 ft of junk for it. A reviewer
+      // judging each line wants that; a customer would see the junk as walls.
+      // Chrome's labelling server (:3010) sets this; nothing else does, and
+      // the flag retires when "demote, don't hide" ships.
+      HATCH_PITCH_RULE,
     );
     setAsideRef.current = offered.setAside;
     return offered.candidates;

@@ -97,7 +97,12 @@ function onAPlan(sheet: DetectedSheet, x1: number, y1: number, x2: number, y2: n
   );
 }
 
-export function offeredCandidates(sheet: DetectedSheet, offerAll = false): OfferedResult {
+export function offeredCandidates(
+  sheet: DetectedSheet,
+  offerAll = false,
+  /** See `ClassifyInput.hatchPitchRule`: on for labelling, off for customers. */
+  hatchPitchRule = false,
+): OfferedResult {
   const faces = oneFacePerLine(sheet.segments, sheet.feetPerUnit / sheet.widthPt).map(
     inPageWidthUnits(sheet.widthPt),
   );
@@ -130,6 +135,7 @@ export function offeredCandidates(sheet: DetectedSheet, offerAll = false): Offer
     segments: sheet.segments.map(inPageWidthUnits(sheet.widthPt)),
     walls: sheet.walls,
     feetPerUnit: sheet.feetPerUnit,
+    hatchPitchRule,
   });
 
   // Counted by reason even when `offerAll` is on, so the sentence the panel

@@ -51,6 +51,24 @@ export type ClassifyInput = {
   /** The walls that WERE reported, which define the building and its pens. */
   walls: readonly WallCandidate[];
   feetPerUnit: number;
+  /**
+   * ── THE PITCH RULE IS OFF UNLESS SOMEBODY ASKS FOR IT ──
+   *
+   * Treating an evenly-pitched field as the only real hatching recovers
+   * 15,921 ft of the 16,530 ft of confirmed wall this class used to withhold,
+   * and offers 49,419 ft of junk in exchange — about 3 ft of junk per foot of
+   * wall. That is the right trade for LABELLING, where a reviewer judges each
+   * line and a hidden wall is the expensive mistake, and the wrong one for a
+   * customer, who would see that junk presented as walls.
+   *
+   * So it is on for Chrome's labelling server and the offerAll job, and off
+   * for what customers see until the "demote, don't hide" mode exists — then
+   * the recovered walls arrive with the extra junk greyed out instead.
+   *
+   * Defaulted OFF deliberately: a caller has to ask, so customer code cannot
+   * acquire it by forgetting a parameter.
+   */
+  hatchPitchRule?: boolean;
 };
 
 /** The thinnest and thickest thing worth calling one wall, in feet. */
@@ -306,7 +324,9 @@ export function classifySingleLines(input: ClassifyInput): ClassifiedLine[] {
     // Ordered most-telling first: a line can be several of these at once, and
     // the first match is the one a reviewer most needs to know.
     const filled = fillBetweenFaces(sides);
-    const pitch = evenPitch(sides);
+    // Without the rule, ANY three parallel neighbours are a hatch — the
+    // behaviour customers get until the demote mode ships.
+    const pitch = input.hatchPitchRule === true ? evenPitch(sides) : 0;
     if (parallelNeighbours >= 3 && filled === null && pitch !== null) {
       kind = "in-a-hatch";
       // WHICH condition ruled out a filled wall, because "a hatch or a fill"

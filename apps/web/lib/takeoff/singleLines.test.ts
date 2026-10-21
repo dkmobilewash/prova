@@ -32,7 +32,12 @@ function at(y: number, x1 = 0.1, x2 = 0.5, width = 0.5): StrokeSegment {
  */
 const FEET_PER_UNIT = 1;
 
-function classify(faces: readonly StrokeSegment[], subject: StrokeSegment) {
+function classify(
+  faces: readonly StrokeSegment[],
+  subject: StrokeSegment,
+  /** The labelling rule. Off is what customers see — see the switch test. */
+  hatchPitchRule = true,
+) {
   const walls: WallCandidate[] = [];
   const found = classifySingleLines({
     unclaimed: [subject],
@@ -40,6 +45,7 @@ function classify(faces: readonly StrokeSegment[], subject: StrokeSegment) {
     segments: faces,
     walls,
     feetPerUnit: FEET_PER_UNIT,
+    hatchPitchRule,
   });
   expect(found, "the subject line was not classified at all").toHaveLength(1);
   return found[0]!;
@@ -117,5 +123,34 @@ describe("a face whose opposite face is drawn in several pieces", () => {
     expect(line.kind).toBe<SingleLineClass>("unclassified");
     expect(line.why).not.toContain("fill drawn between them");
     expect(line.why).toContain("unevenly spaced");
+  });
+});
+
+describe("the switch", () => {
+  it("is off by default, so customer code cannot acquire the rule by forgetting it", () => {
+    // The same crowded line the labelling rule offers. With the rule off it is
+    // withheld as hatching, which is what customers see until "demote, don't
+    // hide" ships — and `hatchPitchRule` is absent here rather than false, so
+    // this is the DEFAULT being asserted, not an explicit opt-out.
+    const subject = at(0);
+    const faces = [subject, at(0.4), at(1.1), at(2.2)];
+    const withRule = classifySingleLines({
+      unclaimed: [subject],
+      faces,
+      segments: faces,
+      walls: [],
+      feetPerUnit: FEET_PER_UNIT,
+      hatchPitchRule: true,
+    })[0]!;
+    const asShipped = classifySingleLines({
+      unclaimed: [subject],
+      faces,
+      segments: faces,
+      walls: [],
+      feetPerUnit: FEET_PER_UNIT,
+    })[0]!;
+
+    expect(withRule.kind).toBe<SingleLineClass>("unclassified");
+    expect(asShipped.kind).toBe<SingleLineClass>("in-a-hatch");
   });
 });

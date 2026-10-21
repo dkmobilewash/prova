@@ -32,6 +32,11 @@ import { detectForSheet, offeredCandidates } from "../offeredCandidates";
  * never saw it — counts here as junk, so the real figure is a FLOOR, not an
  * estimate. The queue's `offerAll` job exists to close exactly that gap.
  *
+ * Measured with the LABELLING arm of the hatch switch on (the third argument
+ * to `offeredCandidates`), because that is the behaviour this file exists to
+ * grade. What customers see has the rule off until "demote, don't hide" ships,
+ * and that arm is the one the held-out score uses.
+ *
  * TRAINING SHEETS ONLY.
  */
 const DIR = process.env.REAL_PLAN_DIR ?? "";
@@ -134,7 +139,7 @@ describe.skipIf(DIR === "" || LABELS === "")("what the triage sets aside", () =>
         widthPt: strokes.widthPt,
         feetPerUnit: saved.feetPerUnit,
         planBoxes: detected.planBoxes,
-      });
+      }, false, true);
 
       const fpu = saved.feetPerUnit;
       const keyWalls = (saved.verdicts ?? []).filter(
