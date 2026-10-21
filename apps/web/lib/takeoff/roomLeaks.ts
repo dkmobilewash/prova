@@ -34,7 +34,7 @@ const MIN_WALL_FEET = 2;
 
 export type LeakHint = {
   /** The tag that leaked. */
-  tag: { name: string; number: string | null; x: number; y: number };
+  tag: { name: string; number: string | null; areaSf: number | null; x: number; y: number };
   /** Null when no single wall extension closes it. */
   hint: {
     /** The wall end, page-width units. */
@@ -92,7 +92,7 @@ export function leakHints(input: {
         }
       }
     }
-    out.push({ tag: { name: tag.name, number: tag.number, x: tag.x, y: tag.y }, hint: found });
+    out.push({ tag: { name: tag.name, number: tag.number, areaSf: tag.areaSf, x: tag.x, y: tag.y }, hint: found });
     if (input.onTag) input.onTag(tag, Date.now() - started, window.length);
   }
   return out;

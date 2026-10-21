@@ -47,7 +47,14 @@ describe.skipIf(DUMPS === "")("missed-wall hints", () => {
         feetPerUnit: d.feetPerUnit,
         text: text.items,
         widthPt: d.widthPt,
-        only: (t) => t.number !== null && /(?:[A-Za-z].*){3}/.test(t.name) && !/^\d+\.$/.test(t.name),
+        // a room: numbered, a short name, and not a note, a sheet reference,
+        // a keynote, a "TYP." or a "Sim" — those leak too and are nobody's wall
+        only: (t) =>
+          t.number !== null &&
+          /(?:[A-Za-z].*){3}/.test(t.name) &&
+          t.name.length <= 40 &&
+          !/NOTES|SHEET|PROJECT|DESCRIPTION|\bTYP\b|\bSim\b|ABOVE|\bMark\b|SERIES|\bNEW\b|\bFEC\b/i.test(t.name) &&
+          !/^\d+\.$/.test(t.name),
         onTag: (t, ms, tried) => {
           const line = `  ${d.sheet} ${t.number}: ${ms} ms over ${tried} nearby walls`;
           console.log(line);
@@ -55,17 +62,26 @@ describe.skipIf(DUMPS === "")("missed-wall hints", () => {
         },
       });
       lines.push(`## ${d.set} ${d.sheet} (page ${d.page}, ${d.walls.length} boundary walls)`, "");
-      lines.push("| tag | at (ft from left, top) | hint: wall end (ft from left, top) | direction | length | room then |", "|---|---|---|---|---|---|");
+      lines.push("| tag | at (ft from left, top) | hint: wall end (ft from left, top) | direction | length | room then | printed | read as |", "|---|---|---|---|---|---|---|---|");
       for (const h of hints) {
         const f = (u: number) => (u * d.feetPerUnit).toFixed(1);
         const tagAt = `${f(h.tag.x)}, ${f(h.tag.y)}`;
+        const printed = h.tag.areaSf === null ? "" : `${h.tag.areaSf} sf`;
         if (!h.hint) {
-          lines.push(`| ${h.tag.number} ${h.tag.name} | ${tagAt} | no single extension closes it | | | |`);
+          lines.push(`| ${h.tag.number} ${h.tag.name} | ${tagAt} | no single extension closes it | | | | ${printed} | a whole wall or two gaps — see the crop |`);
           continue;
         }
         hinted += 1;
         const dir = Math.abs(h.hint.dx) > Math.abs(h.hint.dy) ? (h.hint.dx > 0 ? "→ right" : "← left") : h.hint.dy > 0 ? "↓ down" : "↑ up";
-        lines.push(`| ${h.tag.number} ${h.tag.name} | ${tagAt} | ${f(h.hint.x)}, ${f(h.hint.y)} (units ${h.hint.x.toFixed(4)}, ${h.hint.y.toFixed(4)}) | ${dir} | ${h.hint.lengthFeet} ft | ${h.hint.squareFeet.toFixed(0)} sf |`);
+        // A hint that closes a POCKET round the tag rather than the room is
+        // worse than none: it points the finder at the wrong line.
+        const verdict =
+          h.tag.areaSf !== null && Math.abs(h.hint.squareFeet - h.tag.areaSf) / h.tag.areaSf > 0.3
+            ? "SUSPECT: closes a pocket, not the room"
+            : h.tag.areaSf !== null
+              ? "plausible: matches the printed area"
+              : "unverified: no printed area";
+        lines.push(`| ${h.tag.number} ${h.tag.name} | ${tagAt} | ${f(h.hint.x)}, ${f(h.hint.y)} (units ${h.hint.x.toFixed(4)}, ${h.hint.y.toFixed(4)}) | ${dir} | ${h.hint.lengthFeet} ft | ${h.hint.squareFeet.toFixed(0)} sf | ${printed} | ${verdict} |`);
       }
       lines.push("");
       console.log(`${d.set} ${d.sheet}: ${hints.length} leaking room tags, ${hints.filter((h) => h.hint).length} with a single-extension hint`);
