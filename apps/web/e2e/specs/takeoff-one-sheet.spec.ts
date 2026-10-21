@@ -180,6 +180,24 @@ test.describe("a find belongs to the sheet it was run on", () => {
     // bid. A total from one drawing shown against another is the failure
     // worth being loudest about.
     await goToSheet(1);
+    // ── THE SAME PRECONDITION THE TEST ABOVE SKIPS ON ──
+    //
+    // This test counts the groups a FIND produced, and the find is run by
+    // "RUNS FOUND ON SHEET 1 DO NOT APPEAR ON SHEET 2 OR SHEET 3" above. That
+    // test skips when sheet 1 has no scale, because the Find button is
+    // disabled without one — and this one did not, so it ran with nothing
+    // found and reported 0 groups against its own control.
+    //
+    // Which is the control doing its job: zero groups really does mean
+    // nothing could leak. The bug was that the two tests disagreed about
+    // whether the sheet was usable. They share the condition now.
+    //
+    // It surfaced today because the test BEFORE both of them was failing on
+    // an unrelated assertion, so execution never reached here.
+    const find = page.locator('[data-takeoff="find-walls"]');
+    if (!(await find.isEnabled())) {
+      test.skip(true, "sheet 1 has no scale, so no find ran and there are no groups to leak");
+    }
     const groups = page.locator('[data-takeoff="found-group"]');
     // ── THE CONTROL, AGAIN, AND NOT A GUARD ──
     //
