@@ -69,6 +69,41 @@ test.describe("find the rooms", () => {
     await page?.context().close();
   });
 
+  const port = () => page.locator('[data-testid="takeoff-plan-port"]');
+  const overlay = () => port().locator("svg");
+  async function settledOverlayBox(): Promise<{ width: number }> {
+    let previous = -1;
+    let steady = 0;
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const box = await overlay().boundingBox();
+      if (box && box.width > 0 && Math.abs(box.width - previous) < 0.5) {
+        steady += 1;
+        if (steady >= 3) return { width: box.width };
+      } else {
+        steady = 0;
+      }
+      previous = box?.width ?? -1;
+      await page.waitForTimeout(100);
+    }
+    throw new Error("the sheet never stopped resizing, so no click on it can be trusted");
+  }
+  /** Two clicks half a sheet apart and the feet between them — exactly
+   *  `takeoff-workspace.spec.ts`'s `setScaleByClicking`. */
+  async function setScaleByClicking(halfSheetFeet: number): Promise<void> {
+    await expect
+      .poll(async () => port().locator("canvas").evaluate((n) => (n as HTMLCanvasElement).width), { timeout: 60_000 })
+      .toBeGreaterThan(0);
+    await page.getByRole("button", { name: "Set scale", exact: true }).click();
+    const box = await settledOverlayBox();
+    await overlay().click({ position: { x: box.width * 0.2, y: box.width * 0.5 } });
+    await overlay().click({ position: { x: box.width * 0.7, y: box.width * 0.5 } });
+    const form = page.locator("form").filter({ has: page.getByRole("button", { name: "Set the scale" }) });
+    await form.locator('input[name="declaredDistanceFeet"]').fill(String(halfSheetFeet));
+    await form.locator('input[name="pageLabel"]').fill("sheet 1");
+    await form.getByRole("button", { name: "Set the scale" }).click();
+    await expect(page.getByText(/^Scale set/)).toBeVisible({ timeout: 30_000 });
+  }
+
   test("with the switch off, the takeoff offers no room finder", async () => {
     await signInAs(page, PERSONAS.takeoff.email);
     await landOnDashboard(page, monitor);
@@ -80,6 +115,8 @@ test.describe("find the rooms", () => {
     await page.locator('input[type="file"]').setInputFiles(path.join(FIXTURES, "S05.pdf"));
     await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 60_000 });
+    // S05 is 3/16" = 1'-0" on a 24-inch sheet: 128 ft across, so half of it is 64.
+    await setScaleByClicking(64);
     await page.goto(`/takeoff/${jobId}`);
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
     await expect(page.locator('[data-takeoff="find-walls"]')).toBeVisible({ timeout: 60_000 });
@@ -136,11 +173,13 @@ test.describe("find the rooms", () => {
     const rowsBefore = await page.locator('[data-takeoff="room-row"]').count();
     await page.locator('[data-takeoff="save-rooms"]').click();
     await expect(page.locator('[data-takeoff="rooms-panel"]')).toHaveCount(0, { timeout: 60_000 });
-    // The areas are ordinary measurements now: the saved count must have grown
-    // by the number of rooms, and the renamed one is listed by its new name.
+    // The areas are ordinary measurements now: after a reload the items panel
+    // counts them under Unassigned, one per room. The label itself is not
+    // printed anywhere on this screen; that the rename reaches the row is
+    // `lib/actions/roomFinder.dbtest.ts`'s job.
     await page.reload();
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
-    await expect(page.getByText("ZZ RENAMED", { exact: false }).first()).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('[data-takeoff="unassigned"]')).toContainText(`${rowsBefore} measurement`, { timeout: 60_000 });
     await page.screenshot({ path: path.join(SHOTS, "03-rooms-saved.png") });
     expect(rowsBefore).toBeGreaterThanOrEqual(3);
     // The full-screen workspace has no app shell by design, like takeoff-workspace.spec.ts.

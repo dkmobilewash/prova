@@ -22,6 +22,8 @@ import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/jour
 const SET = process.env.REAL_SET_PDF ?? "";
 const PAGE = Number(process.env.REAL_SET_PAGE ?? "0");
 const OUT = process.env.REAL_SHEET_OUT ?? "";
+/** Feet across HALF the sheet's width: 144 for a 36-inch sheet at 1/8" = 1'-0". */
+const HALF_FEET = Number(process.env.REAL_HALF_FEET ?? "144");
 
 test.describe.configure({ mode: "serial" });
 
@@ -54,6 +56,41 @@ test.describe("find the rooms on a real sheet", () => {
     await page?.context().close();
   });
 
+  const port = () => page.locator('[data-testid="takeoff-plan-port"]');
+  const overlay = () => port().locator("svg");
+  async function settledOverlayBox(): Promise<{ width: number }> {
+    let previous = -1;
+    let steady = 0;
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const box = await overlay().boundingBox();
+      if (box && box.width > 0 && Math.abs(box.width - previous) < 0.5) {
+        steady += 1;
+        if (steady >= 3) return { width: box.width };
+      } else {
+        steady = 0;
+      }
+      previous = box?.width ?? -1;
+      await page.waitForTimeout(100);
+    }
+    throw new Error("the sheet never stopped resizing, so no click on it can be trusted");
+  }
+  /** Two clicks half a sheet apart and the feet between them — exactly
+   *  `takeoff-workspace.spec.ts`'s `setScaleByClicking`. */
+  async function setScaleByClicking(halfSheetFeet: number): Promise<void> {
+    await expect
+      .poll(async () => port().locator("canvas").evaluate((n) => (n as HTMLCanvasElement).width), { timeout: 60_000 })
+      .toBeGreaterThan(0);
+    await page.getByRole("button", { name: "Set scale", exact: true }).click();
+    const box = await settledOverlayBox();
+    await overlay().click({ position: { x: box.width * 0.2, y: box.width * 0.5 } });
+    await overlay().click({ position: { x: box.width * 0.7, y: box.width * 0.5 } });
+    const form = page.locator("form").filter({ has: page.getByRole("button", { name: "Set the scale" }) });
+    await form.locator('input[name="declaredDistanceFeet"]').fill(String(halfSheetFeet));
+    await form.locator('input[name="pageLabel"]').fill("sheet 1");
+    await form.getByRole("button", { name: "Set the scale" }).click();
+    await expect(page.getByText(/^Scale set/)).toBeVisible({ timeout: 30_000 });
+  }
+
   test("walls, then rooms, with the panel open", async () => {
     await signInAs(page, PERSONAS.takeoff.email);
     await landOnDashboard(page, monitor);
@@ -73,6 +110,7 @@ test.describe("find the rooms on a real sheet", () => {
     await page.locator('input[type="file"]').setInputFiles(path.join(OUT, `sheet-p${PAGE}.pdf`));
     await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 120_000 });
+    await setScaleByClicking(HALF_FEET);
     await page.goto(`/takeoff/${jobId}`);
     const findWalls = page.locator('[data-takeoff="find-walls"]');
     await expect(findWalls).toBeVisible({ timeout: 120_000 });
