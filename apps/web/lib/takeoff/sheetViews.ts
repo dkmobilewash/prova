@@ -2,6 +2,7 @@ import { findWallsOnSheet, type FoundOnSheet, type SheetTextItem } from "./findW
 import { printedScalesAt } from "./printedScales";
 import { takeoffRank } from "./sheetSuitability";
 import { isPlanView, viewKind } from "./viewKind";
+import { viewClass, viewTitles } from "./viewTitles";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 import type { MatchableWallType } from "./wallTypeMatch";
 
@@ -72,6 +73,10 @@ export type SheetView = {
    * Anything deciding which geometry to MEASURE must use this.
    */
   boxes?: { from: number; to: number; fromY: number; toY: number }[];
+  /** How the drawing was found: by a caption with a scale, or by its title's lettering. */
+  foundBy?: "caption" | "title";
+  /** A heading over notes, a legend or a table: owns only the region it sits in and is never measured. */
+  textBlock?: boolean;
 };
 
 /**
@@ -712,7 +717,7 @@ export function wallsPerView(input: {
     // puts it in the caution by name. Measuring an unrecognised drawing is how
     // this defect happened; dropping it without a word would be the same
     // failure with better manners.
-    .filter((band) => band.segments.length > 0 && isPlanView(band.view.name));
+    .filter((band) => band.segments.length > 0 && band.view.textBlock !== true && isPlanView(band.view.name));
 
   // ── A SHEET WHOSE PLANS PRINT NO SCALE IS NOT A SHEET WITH NO PLANS ──
   //
@@ -971,4 +976,226 @@ export function primaryView(measured: readonly ViewWalls[]): {
     takeoffRank(null, one.view.name).score > takeoffRank(null, pick.view.name).score ? one : pick,
   );
   return { primary: best, others: byFootage.filter((one) => one !== best) };
+}
+
+/**
+ * ── EVERY DRAWING ON THE SHEET, FOUND BY TITLE OR BY CAPTION ──
+ *
+ * Added 2026-10-22. `sheetViews` is scale-limited (see `viewTitles.ts` for the
+ * measurement); this unions it with the drawings whose titles are lettered big
+ * and ruled, which a sheet prints whether or not it prints a scale under each.
+ * A title that already has a caption within one line of lettering is the same
+ * drawing and is not added twice. Each drawing then takes its region from the
+ * sheet's gutters exactly as a captioned view does.
+ *
+ * ── THE SHEET'S OWN TITLE, WHICH IS BIG, RULED, AND NOT A DRAWING ──
+ *
+ * "FLOOR PLAN" in the title block is lettered like a view title. Found as one,
+ * it would own the title-block strip and measure its ruled lines as walls. It
+ * is told apart by WHERE it is lettered and what it owns: a title in the
+ * page's rightmost fifth whose region is no wider than that fifth, or in the
+ * bottom tenth owning no more than that, is the title block's, and is dropped
+ * with its region left to nobody.
+ *
+ * When nothing is found by either route the result is empty, and the caller
+ * measures the sheet whole — the ELEVEN03 fallback.
+ */
+export const TITLE_BLOCK_STRIP = 0.2;
+const TITLE_BLOCK_FOOT = 0.1;
+
+/** One line of lettering, in page-width units — the margin a caption keeps from its own drawing's edge. */
+const CAPTION_MARGIN = 0.02;
+
+type Box = { from: number; to: number; fromY: number; toY: number };
+
+/**
+ * ── A DRAWING SITS ABOVE ITS CAPTION; A HEADING SITS ABOVE ITS WORDS ──
+ *
+ * `viewsInRegions` cuts a shared region at the MIDPOINT between captions,
+ * which is right when captions are centred on their drawings and wrong for
+ * the convention US sets actually follow: the bubble-and-title caption is
+ * lettered at the bottom-left of the drawing it names. Three plans stacked
+ * on Crosslines A100 are captioned at y 0.27, 0.56 and 0.85; the midpoint
+ * cuts at 0.42 and 0.70 put the top half of each lower plan in the drawing
+ * above it. Measured: 1,153 ft of key wall lost on that sheet alone.
+ *
+ * So a shared region is cut just BELOW each caption on the y axis (a
+ * drawing runs from the caption above it down to its own caption), and just
+ * LEFT of each caption on the x axis (a drawing runs from its own caption
+ * across to the next one's). A text block is the mirror: its heading is at
+ * the TOP, so it claims only the region it sits in, and only when no drawing
+ * caption shares that region — it never joins a neighbour and never has a
+ * neighbour joined to it. Orphan regions still join the nearest DRAWING
+ * caption, for the reason `viewsInRegions` records (the S05/S07 dimension
+ * strip).
+ */
+export function placeDrawings(views: readonly SheetView[], regions: readonly Box[]): SheetView[] {
+  if (views.length === 0) return [];
+  const drawings = views.filter((v) => v.textBlock !== true);
+  const blocks = views.filter((v) => v.textBlock === true);
+  const inside = (v: SheetView, r: Box) => v.captionX >= r.from && v.captionX < r.to && v.captionY >= r.fromY && v.captionY < r.toY;
+
+  // Blocks first: a region holding only headings is theirs and leaves the pool.
+  const blockBoxes = new Map<SheetView, Box[]>();
+  const pool: Box[] = [];
+  for (const r of regions) {
+    const heads = blocks.filter((b) => inside(b, r));
+    if (heads.length > 0 && !drawings.some((d) => inside(d, r))) {
+      for (const h of heads) blockBoxes.set(h, [...(blockBoxes.get(h) ?? []), r]);
+    } else {
+      pool.push(r);
+    }
+  }
+
+  // A region holding several drawing captions is cut at their caption lines.
+  const shared: Box[] = [];
+  for (const r of pool) {
+    const here = drawings.filter((d) => inside(d, r));
+    if (here.length < 2) {
+      shared.push(r);
+      continue;
+    }
+    const lines = (values: number[], lo: number, hi: number, side: "below" | "left") => {
+      const sorted = [...new Set(values)].sort((a, b) => a - b);
+      const cuts: number[] = [];
+      for (let i = 0; i < sorted.length; i += 1) {
+        const at = side === "below" ? sorted[i] + CAPTION_MARGIN : sorted[i] - CAPTION_MARGIN;
+        if (at <= lo + CAPTION_MARGIN || at >= hi - CAPTION_MARGIN) continue;
+        if (cuts.length > 0 && at - cuts[cuts.length - 1] <= CAPTION_SAME_LINE) continue;
+        cuts.push(at);
+      }
+      return [lo, ...cuts, hi];
+    };
+    const xs = lines(here.map((d) => d.captionX), r.from, r.to, "left");
+    const ys = lines(here.map((d) => d.captionY), r.fromY, r.toY, "below");
+    for (let i = 0; i < xs.length - 1; i += 1) {
+      for (let j = 0; j < ys.length - 1; j += 1) shared.push({ from: xs[i], to: xs[i + 1], fromY: ys[j], toY: ys[j + 1] });
+    }
+  }
+
+  // Each piece goes to the drawing whose caption it holds, else to the nearest
+  // drawing caption, measured to the caption's own corner of the piece: a
+  // caption BELOW-LEFT of a piece is that piece's, so distance is taken from
+  // the caption to the piece's bottom-left region rather than to its box.
+  const mine = new Map<SheetView, Box[]>();
+  for (const piece of shared) {
+    let at: SheetView | null = null;
+    let bestD = Number.POSITIVE_INFINITY;
+    for (const d of drawings) {
+      const dx = Math.max(piece.from - d.captionX - CAPTION_MARGIN, 0, d.captionX - piece.to);
+      // Above the caption is free; below it costs.
+      const dy = Math.max(piece.fromY - d.captionY - CAPTION_MARGIN, 0, d.captionY - piece.toY);
+      const d2 = Math.hypot(dx, dy);
+      if (d2 < bestD) {
+        bestD = d2;
+        at = d;
+      }
+    }
+    if (at !== null) mine.set(at, [...(mine.get(at) ?? []), piece]);
+  }
+
+  const bounded = (v: SheetView, got: Box[]): SheetView => {
+    if (got.length === 0) return { ...v, from: 0, to: 0, fromY: 0, toY: 0, boxes: [] };
+    return {
+      ...v,
+      boxes: got.map((b) => ({ ...b })),
+      from: Math.min(...got.map((b) => b.from)),
+      to: Math.max(...got.map((b) => b.to)),
+      fromY: Math.min(...got.map((b) => b.fromY)),
+      toY: Math.max(...got.map((b) => b.toY)),
+    };
+  };
+  return views.map((v) => bounded(v, (v.textBlock === true ? blockBoxes.get(v) : mine.get(v)) ?? []));
+}
+
+/**
+ * ── EVERY DRAWING ON THE SHEET, FOUND BY TITLE OR BY CAPTION ──
+ *
+ * Added 2026-10-22. `sheetViews` is scale-limited (see `viewTitles.ts` for the
+ * measurement); this unions it with the drawings whose titles are lettered big
+ * and ruled, which a sheet prints whether or not it prints a scale under each.
+ * A title that already has a caption within one line of lettering is the same
+ * drawing and is not added twice. A title whose words name a notes column, a
+ * legend or a table becomes a TEXT BLOCK — found so its region is kept out of
+ * every drawing, never measured. A title naming nothing recognisable is
+ * dropped unless a scale is printed under it, because the first sweep found
+ * those are an architect's address, "(NO WORK)" over a hatched area, and
+ * fragments of wrapped notes — and each one, kept, took a region off a plan.
+ *
+ * ── THE SHEET'S OWN TITLE, WHICH IS BIG, RULED, AND NOT A DRAWING ──
+ *
+ * "FLOOR PLAN" in the title block is lettered like a view title. It is told
+ * apart by WHERE it is lettered: in the page's rightmost fifth owning no more
+ * than that fifth, or in the bottom tenth owning no more than that.
+ *
+ * When nothing is found by either route the result is empty, and the caller
+ * measures the sheet whole — the ELEVEN03 fallback.
+ */
+export function sheetDrawings(input: {
+  items: readonly { str: string; x: number; y: number; width: number; height: number }[];
+  segments: readonly StrokeSegment[];
+  pageSize: { widthPt: number; heightPt: number };
+  sizeRatio?: number;
+}): SheetView[] {
+  const W = input.pageSize.widthPt;
+  if (!(W > 0)) return [];
+  const captions = sheetViews(input.items, W).map((v) => ({ ...v, foundBy: "caption" as const, textBlock: viewClass(v.name).kind === "text-block" }));
+  const titles = viewTitles({ items: input.items, segments: input.segments, widthPt: W, sizeRatio: input.sizeRatio });
+  const scales = printedScalesAt(input.items);
+  const found: SheetView[] = [...captions];
+  for (const title of titles) {
+    const twin = captions.find((c) => Math.abs(c.captionX - title.x) <= NAME_BESIDE && Math.abs(c.captionY - title.y) <= NAME_ABOVE * 2);
+    if (twin !== undefined) continue;
+    let scale: { name: string; feetPerInch: number } | null = null;
+    let best = Number.POSITIVE_INFINITY;
+    for (const s of scales) {
+      const gap = s.y / W - title.y;
+      if (gap <= 0 || gap > NAME_ABOVE * 2) continue;
+      if (Math.abs(s.x / W - title.x) > NAME_BESIDE * 2) continue;
+      if (gap < best) {
+        best = gap;
+        scale = { name: s.name, feetPerInch: s.feetPerInch };
+      }
+    }
+    const kind = viewClass(title.text).kind;
+    if (kind === "unknown" && scale === null) continue;
+    found.push({
+      name: title.text,
+      scaleName: scale?.name ?? null,
+      feetPerInch: scale?.feetPerInch ?? null,
+      captionX: title.x,
+      captionY: title.y,
+      from: 0,
+      to: 1,
+      fromY: 0,
+      toY: Number.POSITIVE_INFINITY,
+      foundBy: "title",
+      textBlock: kind === "text-block",
+    });
+  }
+  if (found.length === 0) return [];
+  found.sort((a, b) => a.captionX - b.captionX);
+  const H = input.pageSize.heightPt / W;
+  const kept = found.filter((v) => {
+    if (v.foundBy !== "title") return true;
+    const narrowRight = v.captionX >= 1 - TITLE_BLOCK_STRIP;
+    const shallowBottom = v.captionY >= H - TITLE_BLOCK_FOOT;
+    return !(narrowRight || shallowBottom);
+  });
+  return placeDrawings(kept, viewRegions(input.segments, input.pageSize));
+}
+
+/**
+ * How many DRAWINGS a set of views holds — the count a caller should branch
+ * on. A sheet whose only found views are a legend and a keynote list is a
+ * single-drawing sheet with two headings, and the multi-view path would
+ * measure nothing on it: Bunkie A100 lost its whole key that way.
+ */
+export function drawingCount(views: readonly SheetView[]): number {
+  return views.filter((v) => v.textBlock !== true).length;
+}
+
+/** The regions the sheet's text blocks own — a legend, a notes column, a schedule — to keep out of any drawing. */
+export function textBlockBoxes(views: readonly SheetView[]): { from: number; to: number; fromY: number; toY: number }[] {
+  return views.filter((v) => v.textBlock === true).flatMap((v) => v.boxes ?? []);
 }

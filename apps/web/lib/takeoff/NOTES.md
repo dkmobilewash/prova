@@ -2731,3 +2731,74 @@ their column's section so the variant line is read under the section it
 varies; C8B did not move. Rendered and looked at, not inferred. The migration applied to a scratch Postgres and
 `migrate status` named it; `migrate diff` against the schema reports only the
 two pre-existing `ProposalClause.updatedAt` defaults.
+
+### View detection: a drawing's title is big and ruled, and placement follows the caption (2026-10-22)
+
+**Where it started.** Step 1 (2026-10-21) measured that `sheetViews` is
+scale-limited: a view needs a caption AND a printed scale under it, and
+most sheets print one scale, so the detector found one view on sixteen of
+eighteen training sheets. The replacement signal measured there — lettering
+at >= 1.4x the sheet's median text height WITH a rule drawn under it — is
+what `viewTitles.ts` now reads, with one refinement the first sweep forced:
+the rule must be about the title's own length (at most 3x its width), or
+dense line work under a big room name scores as a rule, which is the
+"needle that cannot fail" the step-1 note warned about.
+
+**Three things the first measurement taught, each an afternoon.**
+
+1. *Most big ruled titles are not drawings.* "WALL LEGEND", "KEY NOTES",
+   "GENERAL NOTES", "WALL TYPES", "DOOR SCHEDULE", an architect's address.
+   Treated as views they took regions off the plan beside them: 6,661 ft of
+   key wall lost against 5,263 ft of junk removed. So a title whose words
+   name notes, a legend, a schedule or a table is a TEXT BLOCK: found so its
+   region is kept out of every drawing, measured by nobody, and never joined
+   to a neighbour or given one. A title that names nothing recognisable is
+   dropped unless a scale is printed under it.
+2. *A caption sits BELOW its drawing.* `viewsInRegions` shares a region
+   between captions at their MIDPOINT, and Crosslines A100 stacks three
+   plans captioned at y 0.27, 0.56 and 0.85 — the midpoint cuts put the top
+   half of each lower plan in the drawing above it, 1,014 ft of key lost on
+   that sheet. `placeDrawings` cuts just below each caption on y and just
+   left of it on x instead. The viewer still calls `viewsInRegions`, so the
+   app carries that defect today; the measured fix is in this file and not
+   yet wired.
+3. *A sheet whose only found views are headings is a single-drawing
+   sheet.* Branching on `views.length` sent Bunkie A100 (two legend
+   headings, no caption) down the multi-view path, which measured nothing.
+   `drawingCount` is what to branch on.
+
+**Measured on the app's list** (`realplan/zzViewDetection.eval.ts`, 18
+training sheets, 12 buildings, leave-one-building-out over the size ratio,
+`scoreSheet` against each sheet's accepted + traced key; junk removed =
+the fall in EXTRA feet, real lost = the rise in MISSING feet):
+
+| treatment against | junk removed | real lost |
+| --- | --- | --- |
+| the VIEWER's pipeline (captions placed by `viewsInRegions`) | 622 ft | **0 ft** |
+| `detectForSheet` as shipped (no placement at all) | 3,562 ft | 1,397 ft |
+
+Every fold picked 1.4, and 1.4 through 2.0 give identical numbers; 1.25
+loses 4,319 ft. The 1,397 ft "lost" against the as-shipped function is not
+the title detection: 1,014 ft is Crosslines, where the two plans are
+DIFFERENT FLOORS and `primaryView` keeps one (the product rule written for
+enlarged duplicates, applied to a 1st-floor plan beside a typical-floor
+plan), and 382 ft is HPL p3, whose entire key sits in the FINISH plan — a
+copy of the same floor the product deliberately leaves unmeasured. Both are
+the app's behaviour today, reproduced faithfully. Where the treatment ADDS
+junk against the app: Murray A101 (+134 ft — the keynote tables at the
+bottom-left have small headings and join the plan's region) and Camp Bow
+Wow A120 (+28 ft).
+
+**Two things found on the way that belong to the original's lane.**
+`detectForSheet` never calls `viewsInRegions` and the viewer does
+(`TakeoffPlanViewer.tsx` ~2299), which is the Murray 160-vs-32 gap the log
+has carried since 2026-10-21: the app clips captioned views to regions and
+the extraction does not. And wiring this work in is three lines in that
+function: `sheetDrawings` for `sheetViews` + `viewsInRegions`, `drawingCount`
+for `views.length`, and `textBlockBoxes` subtracted from the single-drawing
+branch's regions — the eval composes exactly that and nothing else.
+
+Crops of every sheet's detected views, outlined on the page (solid =
+measured, dashed = not), are in `shots/views/<set>-<sheet>/` outside git.
+No AI was used on titles: `takeoffRank`'s vocabulary plus the text-block
+words classified every title the training sheets print.
