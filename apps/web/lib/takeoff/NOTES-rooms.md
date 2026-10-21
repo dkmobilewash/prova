@@ -326,3 +326,53 @@ the pairing set is — the corridor-side walls with a door and a sidelight,
 and anything at 1/16". Hints for 38 rooms are in
 `coordination/rooms-missed-walls.md`, part 2. Overlays in
 `shots/rooms/boundary__*__p*/`.
+
+## 9. Hatched walls, stall partitions, small scale (2026-10-22 pm)
+
+Rooms files only; finder output consumed through `detectForSheet` +
+`offeredCandidates(…, hatchPitchRule: true)` after merging the original
+session's branch in. Training sets only.
+
+**1. Hatched walls as boundaries.** The offered single lines under the
+even-pitch rule include the walls drawn as a fill between two faces — and,
+measured on Joplin A-101 the first time, the column grid and the dimension
+strings too (194 "rooms" for 74). Kept only the singles that start and end
+inside the paired walls' extent plus 3 ft. Before / after, rooms closed of
+keyed (tags-only keys, so closed is the measure):
+
+| sheet | raw pairings only | + hatched singles inside the building |
+| --- | --- | --- |
+| Supreme Court library p6 | 0 regions, 0 / 7 | 6 regions, 1 / 7 (41 singles) |
+| Joplin A-101 p46 | 6 / 74, 66 open, 4 merged | 19 / 74, 2 open, **54 merged** (104 singles) |
+| Joplin p47 | 11 / 78 | 11 / 78 (39 singles) |
+| Camp Clark G-101 | 10 / 12, median 6.1% | 9 / 12, median 5.0% (28 singles) |
+
+So the hatched singles turn Joplin's open rooms into merged ones: the
+resident-room walls now reach the corridor wall, and the door-plus-sidelight
+openings on the corridor side merge each room with the hall. The Supreme
+Court library gains one closed room; its plans are existing poché with glass
+stacks, and six of seven rooms stay open. Not a default; an input the finder
+lane can decide to offer.
+
+**2. Toilet partitions.** `notStallPartition` drops a paired run thinner than
+1.8 in and shorter than 7 ft, in feet. On the BIM arm that is +16 rooms within
+5% (438 → 454) for 2 rooms newly merged, labels arm unchanged — kept. **It does
+not touch Camp Clark**, and the crop says why: the dividers inside its 375 sf
+"shower" areas are 6.4-ft runs at 3.7–7.2 in, framed shower-stall walls
+drawn as walls. The code plan's 375 sf is the SUITE (stalls, toilet, H.B.);
+the method measures the walled rooms inside it, 93–185 sf each. That is the
+key disagreeing with the drawing, not a leak, and nothing here should split
+the difference.
+
+**3. Topeka at small scale.** The code plans are captioned 1/16" and their
+45 printed dimensions agree on 1/32": half-size reproductions of the floor
+plans. `readSheetScale` declines at 0.9% against its 0.5% rule, so the
+product shows no scale; measured here at the dimensions' 1/32" and labelled
+as such. Result 0 / 73 either way, before and after hatched singles (132
+regions, 58 open, 22 merged): the unit partitions on these diagrams are
+single grey lines the pairer never pairs and the hatch rule never offers.
+Every threshold in the room step is already in feet (`RAW_MIN_FEET`,
+`SMALLEST_ROOM_SQFT`, the door seals, the stall bounds); the one unit-based
+limit is the grid cap, 0.28 ft per cell at 1/32", which is not what fails
+here. The unit plans p78–80 (3/32" and 1/4") are the sheets rooms are drawn
+on, and they print no areas.

@@ -9,6 +9,7 @@ import { readSheetScale } from "../scaleFromDimensions";
 import { scaleFromPrinted } from "../scaleFromPrinted";
 import { feetPerUnitFrom } from "../sheetScale";
 import { findWallsOnSheet } from "../findWallsOnSheet";
+import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { roomsFromWalls, type FoundWall, type RoomFromWalls } from "../roomsFromWalls";
 import { sheetStrokes } from "../sheetStrokes";
 
@@ -87,6 +88,49 @@ function loadKeys(paths: string[]): Key | null {
  * and bound nothing; the walls that matter are the long pairs.
  */
 const RAW_MIN_FEET = 2;
+/**
+ * THE HATCHED WALLS, from the app's own triage (2026-10-22). `offeredCandidates`
+ * with the original session's `hatchPitchRule` on classifies every unclaimed
+ * single line; the ones it OFFERS (`from: "single"`, kind unclassified) include
+ * the walls drawn as an evenly-pitched fill between two faces — poché, masonry,
+ * rated walls — which the pairer never pairs and the old triage hid as
+ * "in-a-hatch". A single line has no thickness; it is drawn at the default.
+ */
+async function hatchedSingles(pdf: string, page: number, feetPerUnit: number): Promise<FoundWall[]> {
+  const read = await sheetStrokes(Buffer.from(readFileSync(pdf)), page);
+  const doc = await openPlanPdf(Buffer.from(readFileSync(pdf)));
+  const text = await doc.pageText(page);
+  await doc.close();
+  const detected = detectForSheet({
+    segments: read.segments,
+    textItems: text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height })),
+    pageSize: { widthPt: read.widthPt, heightPt: read.heightPt },
+    feetPerUnit,
+  });
+  const offered = offeredCandidates(
+    { walls: detected.found.walls, segments: read.segments, widthPt: read.widthPt, feetPerUnit, planBoxes: detected.planBoxes },
+    false,
+    true,
+  );
+  // INSIDE THE BUILDING ONLY. Measured on Joplin A-101 (2026-10-22): the
+  // offered singles included the column grid and the dimension strings, which
+  // run from margin to margin and cut the plan into a lattice — 194 "rooms"
+  // where there are 74. A wall ends at the building; a grid line does not. So
+  // a single must start and end within the paired walls' extent plus a wall's
+  // worth of slack.
+  const pairs = detected.found.walls;
+  if (pairs.length === 0) return [];
+  const slack = 3 / feetPerUnit;
+  const minX = Math.min(...pairs.flatMap((w) => [w.x1, w.x2])) - slack;
+  const maxX = Math.max(...pairs.flatMap((w) => [w.x1, w.x2])) + slack;
+  const minY = Math.min(...pairs.flatMap((w) => [w.y1, w.y2])) - slack;
+  const maxY = Math.max(...pairs.flatMap((w) => [w.y1, w.y2])) + slack;
+  const inside = (x: number, y: number) => x >= minX && x <= maxX && y >= minY && y <= maxY;
+  return offered.candidates
+    .filter((c) => c.from === "single" && inside(c.x1, c.y1) && inside(c.x2, c.y2))
+    .map((c) => ({ x1: c.x1, y1: c.y1, x2: c.x2, y2: c.y2 }));
+}
+
 async function rawCandidates(pdf: string, page: number, feetPerUnit: number): Promise<{ walls: FoundWall[]; strokes: number }> {
   // Fresh bytes for each reader: `openPlanPdf` hands pdfjs a VIEW and pdfjs
   // detaches the buffer behind it (planPdf.ts says so), so a Buffer that has
@@ -211,9 +255,14 @@ function dump(name: string, result: ReturnType<typeof roomsFromWalls>, extra: ob
  * boundary is the finder's raw pairings alone, and the key is whatever the
  * page prints — areas inside the rooms (Camp Clark) or tags with no area.
  */
-const UNLABELLED: { set: string; page: number; key: string; join: "number" | "name" }[] = [
+const UNLABELLED: { set: string; page: number; key: string; join: "number" | "name"; agreedFeetPerInch?: number }[] = [
   { set: "Camp-Clark-60-Soldier-Barracks.pdf", page: 3, key: "printed/Camp-Clark-60-Soldier-Barracks__p3.json", join: "number" },
-  { set: "Topeka-Senior-Villas.pdf", page: 6, key: "printed/Topeka-Senior-Villas__p6.json", join: "number" },
+  // Topeka G-100b: three code plans captioned 1/16" on a 36-inch sheet whose 45
+  // printed dimensions AGREE on 1/32" — the plans are half-size reproductions
+  // of the floor plans. `readSheetScale` declines because the best line is
+  // 0.9% out against its 0.5% rule, so the product would show no scale here.
+  // Measured at the dimensions' agreed 1/32" for this report, and said so.
+  { set: "Topeka-Senior-Villas.pdf", page: 6, key: "printed/Topeka-Senior-Villas__p6.json", join: "number", agreedFeetPerInch: 32 },
   { set: "Joplin-community-center.pdf", page: 46, key: "printed/Joplin-community-center__p46.json", join: "number" },
   { set: "Joplin-community-center.pdf", page: 47, key: "printed/Joplin-community-center__p47.json", join: "number" },
   { set: "Supreme-Court-of-Missouri-Judiciary-Library.pdf", page: 6, key: "printed/Supreme-Court-of-Missouri-Judiciary-Library__p6.json", join: "number" },
@@ -222,7 +271,7 @@ const UNLABELLED: { set: string; page: number; key: string; join: "number" | "na
 describe.skipIf(KEYS === "" || (LABELS === "" && BIM === "" && REAL === ""))("rooms from walls, measured", () => {
   it.skipIf(REAL === "" || KEYS === "" || process.env.ROOM_UNLABELLED !== "1")("unlabelled arm: raw pairings on the new training pages", { timeout: 3_600_000 }, async () => {
     let joined = 0;
-    for (const { set, page, key: keyFile, join: how } of UNLABELLED) {
+    for (const { set, page, key: keyFile, join: how, agreedFeetPerInch } of UNLABELLED) {
       const pdf = join(REAL, set);
       const key = loadKeys([join(KEYS, keyFile)]);
       if (!existsSync(pdf) || !key) {
@@ -240,6 +289,9 @@ describe.skipIf(KEYS === "" || (LABELS === "" && BIM === "" && REAL === ""))("ro
       if (verdict.ok) {
         feetPerUnit = feetPerUnitFrom(verdict.feetPerInch, text.widthPt);
         scaleName = verdict.scaleName;
+      } else if (agreedFeetPerInch !== undefined) {
+        feetPerUnit = feetPerUnitFrom(agreedFeetPerInch, text.widthPt);
+        scaleName = `1/${agreedFeetPerInch}" = 1'-0" (dimensions agree; product declined: ${verdict.reason.slice(0, 60)}…)`;
       } else {
         // The product's other reader: the ONE scale printed on the page, when
         // there is exactly one. Never a hand-set scale (BOARD.md rule 5).
@@ -252,9 +304,11 @@ describe.skipIf(KEYS === "" || (LABELS === "" && BIM === "" && REAL === ""))("ro
         scaleName = `${printed.scaleName} (printed)`;
       }
       const raw = await rawCandidates(pdf, page, feetPerUnit);
-      const result = roomsFromWalls({ walls: raw.walls, feetPerUnit, text: text.items, widthPt: text.widthPt });
-      dump(`boundary__${set.replace(/\.pdf$/, "")}__p${page}`, result, { pdf, set, sheet: `p${page}`, page, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit, walls: raw.walls });
-      const rows = score(`${set} p${page} (${scaleName}, ${raw.walls.length} raw candidates >= ${RAW_MIN_FEET} ft of ${raw.strokes} strokes)`, result.rooms, result.unplacedTags, result.mergedTags, key, how);
+      const hatched = process.env.ROOM_HATCH === "1" ? await hatchedSingles(pdf, page, feetPerUnit) : [];
+      const walls = [...raw.walls, ...hatched];
+      const result = roomsFromWalls({ walls, feetPerUnit, text: text.items, widthPt: text.widthPt });
+      dump(`boundary__${set.replace(/\.pdf$/, "")}__p${page}`, result, { pdf, set, sheet: `p${page}`, page, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit, walls });
+      const rows = score(`${set} p${page} (${scaleName}, ${raw.walls.length} raw candidates >= ${RAW_MIN_FEET} ft${hatched.length ? ` + ${hatched.length} hatched singles` : ""} of ${raw.strokes} strokes)`, result.rooms, result.unplacedTags, result.mergedTags, key, how);
       joined += rows.length;
     }
     expect(UNLABELLED.length).toBeGreaterThan(0);

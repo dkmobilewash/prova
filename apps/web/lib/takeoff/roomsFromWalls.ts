@@ -75,6 +75,24 @@ export type RoomsFromWallsResult = {
 /** A traced wall carries no thickness; 4-7/8in is the common stud partition. */
 export const DEFAULT_THICKNESS_FEET = 0.40625;
 
+/**
+ * ── A TOILET PARTITION IS NOT A ROOM BOUNDARY ──
+ *
+ * Camp Clark's shower rooms (2026-10-22) closed at 184 sf against 375
+ * printed: the stall partitions — 1-inch panels, four or five feet long,
+ * drawn as pairs — cut each room in half. A wall is at least 2-1/2 in thick
+ * (`THINNEST_WALL_FEET` in rooms.ts, a furring wall); a stall panel is one
+ * inch, and nothing one inch thick and shorter than a stall run encloses a
+ * room. Both bounds are in FEET of building, so they hold at every scale.
+ */
+export const STALL_THICKNESS_FEET = 0.15;
+export const STALL_LENGTH_FEET = 7;
+
+export function notStallPartition(w: FoundWall, feetPerUnit: number): boolean {
+  if (w.thicknessFeet === undefined || w.thicknessFeet >= STALL_THICKNESS_FEET) return true;
+  return Math.hypot(w.x2 - w.x1, w.y2 - w.y1) * feetPerUnit >= STALL_LENGTH_FEET;
+}
+
 /** Paper left around the walls so the outside is open, in feet. */
 const MARGIN_FEET = 2;
 
@@ -98,7 +116,7 @@ export function roomsFromWalls(input: {
   // be a room. Measured on Bunkie A100 (2026-10-21): with the finder's raw
   // pairings in, rooms the offered set had closed came back OPEN, because the
   // tag sat in its own little box. The finder's own lettering rule removes it.
-  const walls: FoundWall[] =
+  const walls: FoundWall[] = (
     input.text && input.widthPt
       ? wallsNotLettering(
           input.walls.map((w) => ({
@@ -114,7 +132,8 @@ export function roomsFromWalls(input: {
           })),
           feetPerUnit,
         )
-      : [...input.walls];
+      : [...input.walls]
+  ).filter((w) => notStallPartition(w, feetPerUnit));
   if (walls.length === 0) return empty;
 
   const margin = MARGIN_FEET / feetPerUnit;

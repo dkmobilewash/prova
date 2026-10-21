@@ -81,6 +81,17 @@ describe("roomsFromWalls", () => {
     expect(rooms.map((r) => r.tag?.name).sort()).toEqual(["OFFICE", "STORAGE"]);
   });
 
+  it("does not let toilet partitions split a room", () => {
+    // Three 1-inch, 5-ft stall panels across the first room.
+    const stalls = [3, 6, 9].map((x) => ({ ...wall(x, 0, x, 5), thicknessFeet: 0.08 }));
+    const { rooms } = roomsFromWalls({ walls: walls.concat(stalls), feetPerUnit: W });
+    expect(rooms).toHaveLength(2);
+    for (const room of rooms) expect(room.squareFeet).toBeGreaterThan(96);
+    // The same panels at a real wall's thickness DO divide it — the rule is thickness, not length alone.
+    const thin = roomsFromWalls({ walls: walls.concat([3, 6, 9].map((x) => wall(x, 0, x, 10 + c))), feetPerUnit: W });
+    expect(thin.rooms.length).toBeGreaterThan(2);
+  });
+
   it("merges the rooms when the doorway is too wide to be a door, and says which tags merged", () => {
     const open = walls.slice(0, 4).concat([wall(10 + c, -c, 10 + c, 1)]);
     const { rooms, mergedTags } = roomsFromWalls({
