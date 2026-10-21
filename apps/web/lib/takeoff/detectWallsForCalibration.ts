@@ -8,7 +8,7 @@ import { SheetTooDenseError, type StrokeSegment } from "./wallVectors";
 import type { MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
 import { matchGroups } from "./proposalMatch";
-import { planTextReadEnabled } from "@/lib/ai/features";
+import { aiGate } from "@/lib/ai/settings";
 import { doorScheduleForPlan, doorsOnSheet, legendForPlan, typedFeetOf, writeSheetResult } from "./planTextRead";
 
 /**
@@ -178,12 +178,12 @@ export async function detectWallsForCalibration(
 
     // ── PLAN TEXT, BEHIND THE SWITCH ──
     //
-    // Off (the default), `planText` stays undefined and nothing below this
-    // comment runs. On, the set's legend is read once (cached) and its codes
+    // Off (the default, per company — `OPT_IN_FEATURES`), `planText` stays
+    // undefined and nothing below this comment runs. On, the set's legend is read once (cached) and its codes
     // are what the finder's symbol tags are filtered by; the door schedule and
     // the per-sheet join follow once the groups exist. A failure in any of it
     // logs and leaves the detection exactly as it would have been.
-    const planTextOn = planTextReadEnabled();
+    const planTextOn = (await aiGate(target.companyId, "PLAN_TEXT_READ")).ok;
     let planText: { legendCodes: string[] } | undefined;
     let legendPage: number | null = null;
     if (planTextOn) {
@@ -223,7 +223,7 @@ export async function detectWallsForCalibration(
                   rows: schedule.rows,
                 }),
               };
-        writeSheetResult({
+        await writeSheetResult({
           planId: target.planId,
           pageNumber: target.pageNumber,
           calibrationId: target.calibrationId,

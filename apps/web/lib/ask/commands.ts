@@ -323,6 +323,11 @@ export const EXCLUSIONS: Exclusion[] = [
       "A READ of what plan-text detection already cached for the sheet somebody is looking at — which runs got a wall type and from where, which scheduled doors sit on which wall, what the legend defines. It takes a plan and a page number that only mean something with the drawing open, and it changes nothing. Ask can report a takeoff's quantities once they reach the estimate; it has no sheet to point at.",
   },
   {
+    action: "wallLegend.*",
+    reason:
+      "The review screen for a set's wall legend. readLegendBySight takes the legend PAGE and one CROP per type as images rendered in the browser — the same no-sentence-makes-a-picture reason as takeoffClassify and takeoffReadSheet. addWallTypeFromLegend takes the fields a person has just checked against that crop and may have edited; the whole point of the screen is that somebody looked, so a command that adds a type nobody has seen would be the review screen with the review taken out. Ask can describe the library once the types are in it.",
+  },
+  {
     action: "takeoffReadSheet.*",
     reason:
       "Reads the writing off a sheet that was SCANNED. Its input is one rendered TILE of the page as an image, and the whole point is that the words exist only as pixels — so there is no sentence a person could say that produces the picture, and nothing for Ask to pass. The same reason as takeoffClassify above, and the same answer: Ask can describe what a sheet says once it has been read; it cannot do the reading.",

@@ -88,6 +88,7 @@ function paint(existing: IngestView | null) {
   act(() => {
     root.render(
       createElement(PlanIngestPanel, {
+        legend: { on: false, reviewHref: "#", typeCount: 0 },
         planId: "plan_1",
         fileName: "set.pdf",
         existing,
@@ -184,6 +185,7 @@ describe("it cannot fire twice", () => {
           StrictMode,
           null,
           createElement(PlanIngestPanel, {
+        legend: { on: false, reviewHref: "#", typeCount: 0 },
             planId: "plan_1",
             fileName: "set.pdf",
             existing: null,

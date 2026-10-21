@@ -4,6 +4,7 @@ import { STAGE_SPENDS } from "./stageCost";
 import { pageInventoryWork } from "./pageInventory";
 import { titleBlockWork } from "./titleBlock";
 import { scheduleRowsWork } from "./scheduleRows";
+import { wallLegendWork } from "./wallLegend";
 
 /**
  * What each stage's per-page work actually is.
@@ -93,6 +94,7 @@ const STAGE_WORK: Record<PlanIngestStage, ((ctx: StageCtx) => StageWork) | null>
   TITLE_BLOCK: titleBlockWork,
   SCHEDULE_ROWS: scheduleRowsWork,
   SHEET_INDEX: null,
+  WALL_LEGEND: wallLegendWork,
 };
 
 export { STAGE_SPENDS };

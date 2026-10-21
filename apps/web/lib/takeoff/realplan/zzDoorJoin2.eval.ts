@@ -127,7 +127,7 @@ describe.skipIf(DIR === "" || CACHE === "")("joining a read door schedule to a p
     const symbolMarks: PlacedMark[] = symbols
       // Bunkie's `E105A` reads as a sheet reference; the schedule says it is a door.
       .filter((s) => s.rejected === null || (s.rejected === "sheet-reference" && scheduleSet.has(s.text.trim().toUpperCase())))
-      .map((s) => ({ text: s.text, x: s.x / W, y: s.y / W }));
+      .map((s) => ({ text: s.text, x: s.x / W, y: s.y / W, inSymbol: true }));
     const walls = findWallsOnSheet({
       segments: planRead.segments,
       textItems: items,

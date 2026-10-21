@@ -67,6 +67,10 @@ export const AI_FEATURES = {
   WALL_CLASSIFY: "wall-classify",
   /** Reading the lettering off a SCANNED sheet, which has no text layer. */
   SHEET_TEXT: "sheet-text",
+  /** Wall types, assemblies and door matches read off the drawings — the
+   *  partition legend (words and, on request, the drawing), the door schedule
+   *  joined to the plan. Opt-in per company. */
+  PLAN_TEXT_READ: "plan-text-read",
 } as const;
 
 export type AiFeatureKey = keyof typeof AI_FEATURES;
@@ -122,6 +126,7 @@ const FEATURE_MODEL: Record<AiFeatureKey, string> = {
   // and nobody has tried. `SHEET_TEXT_MODEL` on the eval is how that would be
   // shown rather than argued.
   SHEET_TEXT: OPUS_5,
+  PLAN_TEXT_READ: OPUS_5,
   // Opus, and the volume argument that bought Haiku above does not reach here.
   // This runs on the sheets that HAVE walls, a handful per plan set and a few
   // crops each, not on three hundred pages — and what it decides is whether a

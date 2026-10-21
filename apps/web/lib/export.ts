@@ -733,8 +733,10 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "and re-reading the drawing is what produces them. What WOULD be worth exporting is a " +
       "reading an estimator has accepted, because that is their own work and it is the door " +
       "schedule as they have agreed it stands — but nothing accepts one yet, and this line " +
-      "exists so that is stated rather than quietly true.",
-    models: ["PlanScheduleProposal"],
+      "exists so that is stated rather than quietly true. The wall-legend read (PlanLegendProposal) " +
+      "is the same shape one step on: a reading of the drawing, held for review, and the wall types " +
+      "an estimator ADDS from it are their own work and ARE exported, with the library.",
+    models: ["PlanScheduleProposal", "PlanLegendProposal"],
   },
   {
     key: "proposal-clause-drafts",
@@ -1100,6 +1102,8 @@ export const EXPORT_COLUMN_OMISSIONS: Record<string, string> = {
 };
 
 export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
+  TakeoffPlanTextRead:
+    "working-out kept between detections — what plan-text reading found on a set (its legend, its door schedule, each sheet's join), recomputable from the drawing at any time; the wall types a person added from it are exported with the library",
   Crew: "picking aid — a saved name for people the schedule form ticks together; the planned days themselves are exported",
   CrewMembership: "picking aid — who a saved crew ticks; the planned days themselves are exported",
   BackchargeCounter: "sequence counter — the numbers it issued are on the rows themselves",

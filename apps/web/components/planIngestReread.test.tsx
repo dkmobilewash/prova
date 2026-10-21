@@ -50,6 +50,7 @@ const STAGES = [
   "TITLE_BLOCK",
   "SCHEDULE_ROWS",
   "SHEET_INDEX",
+  "WALL_LEGEND",
 ] as const satisfies readonly PlanIngestStage[];
 
 const view = (over: Partial<IngestView> = {}): IngestView => ({
@@ -103,6 +104,7 @@ function paint(initial: IngestView, scheduleSheetCount = 0) {
   act(() => {
     root.render(
       createElement(PlanIngestPanel, {
+        legend: { on: false, reviewHref: "#", typeCount: 0 },
         planId: "plan_1",
         fileName: "set.pdf",
         existing: initial,

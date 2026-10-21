@@ -2235,3 +2235,499 @@ Topeka shape included as the refusal case) and the view test, and the first
 real sheet it accepts is the one to look at hard. That is the honest state,
 and it is why the rule is strict rather than the plurality that would have
 "fixed" Topeka.
+
+### plan-text-2: the legend read by sight, and bands by legend thickness (2026-10-21)
+
+**Legend by sight** (`packages/integrations/src/wallLegendSight.ts`,
+`lib/takeoff/legendSight.ts`, `realplan/zzLegendSight.eval.ts`). The page
+is rendered at reading resolution and one crop is cut per type around its
+printed code (`legendCropRects`); the model is given the page, the crops
+and the page's text and asked for FIELDS — stud width, material, gauge,
+spacing, board thickness, layers per face, type X, insulation, rating,
+height note — each marked with whether it came from the picture. The
+fields are written back as the lines a legend prints and parsed by
+`readPartitionAssembly`, so the sight read cannot propose a component the
+text read could not; a concrete or masonry wall gets board only. Node
+cannot rasterise a PDF here (`planPdf.ts`), so the eval renders through a
+Swift/PDFKit script; the product would render in the browser, as the
+scanned-sheet tiles already do, or add `@napi-rs/canvas`.
+
+Measured on the training sets, a type counting as FULLY read when stud,
+board and layers are all known:
+
+| set | types | text read full | sight read full | cost |
+| --- | --- | --- | --- | --- |
+| Baker A601 p25 | 8 | 2 | 2 | $0.19 |
+| Bunkie G003 p4 | 5 | 3 | 3 | $0.14 |
+| Crosslines A001 p2 | 7 | 6 | 6 | $0.16 |
+| Murray, MHK, NG Green Bay, E Street, SW, Camp Bow Wow, ELEVEN03 | — | — | NOT RUN | — |
+
+The seven unread sets failed on `credit balance is too low` from the API
+on the fourth call; their crops are rendered and their contact sheets wait
+on credits (`~/Claude Folder/takeoff/shots/legend-sight/`).
+
+**What the three that ran show, and the crop lesson.** The first Baker
+run, with a 3.5in crop centred on the code, reported 8 of 8 fully read —
+and it had read the stud width out of the code's letters (S6 → 6in),
+because the crop cut the notes off mid-word and showed no section. With
+the crop widened to the right the model correctly reports the stud width
+as NOT STATED for S6B, S8B, S6C and S8C ("2x STEEL FRAMING, SEE
+STRUCTURAL"), and the count went back to 2 of 8. That is the honest
+number: those four types' studs are not on the legend. What sight did add
+to all four is the board — one layer of 5/8in type X per side, one-sided
+on S6C, one and two faces on S8C — where the text read had "no assembly",
+and it flagged C8A/C8B as concrete. The section DRAWING for each Baker
+type sits further right still, past the 5in crop; a wider crop (or the
+whole detail band) is the next thing to try, at 19 cents.
+
+**Bands by legend thickness** (`lib/takeoff/legendBands.ts`, pure, five
+tests): runs within `NOISE_IN` (3/8in) of one legend type's nominal width
+(stud + both faces' board) become one band named for it; two types within
+reach make an AMBIGUOUS band; the tags the runs carry are kept and a band
+holding two different tags is reported. Measured on nine training plan
+sheets against the finder's groups:
+
+| sheet | finder groups | bands | bands with conflicting tags |
+| --- | --- | --- | --- |
+| Baker A101 | 15 | 15 | 1 (an 8-5/8in band tagged S6A, S8C and S8B) |
+| Bunkie A100 | 12 | 13 | 0 (two AMBIGUOUS, P06/P07 and EXT/P08 share a width) |
+| Crosslines A100 | 16 | 18 | 1 |
+| NG Green Bay A3.2 | 15 | 19 | 4 |
+| SW A110 | 22 | 15 | 4 |
+| E Street A2.1 | 16 | 14 | 1 (no legend widths known) |
+| Camp Bow Wow A101 | 16 | 19 | 2 |
+| MHK A1.01 | 10 | 13 | 0 |
+| Murray A2.01 | 16 | 13 | 0 |
+
+**It does not work, and the reason is worth more than the function.** The
+measured thickness of a drawn wall does not sit near its legend's nominal
+width: Camp Bow Wow's B and C are 4-7/8in nominal and the runs tagged B
+and C measure 6-5/8 and 7-3/8in; Baker's one band that matched a type
+(S6A at 8-1/2) held runs tagged three different types; NG Green Bay's
+5-7/8in band carries eight different tags. Drafters draw partitions at a
+generic width and the finder measures what is drawn. So "thickness agrees
+with one legend type" is not a merge rule on these sets — it would merge
+walls of different types and split walls of one — and the count stays
+where it was. Fewer, truer groups have to come from the tags, propagation
+along the wall, and the walls' own connectivity, not from thickness
+against the legend; the function stays, tested, as the measurement that
+says so.
+
+### Legend by sight, prompt v3, all ten training sets (2026-10-21)
+
+Credits restored; the run cost $1.87 for ten sets (10 to 28 cents each).
+Two prompt versions were spent getting here, each from a contact-sheet
+check: v2 taught the model that a TAG KEY on the sheet states a size
+(Baker's `S6` is a 6in steel stud by its own key); v3 told it that a UL or
+GA number states nothing by itself, that a crop shows neighbours whose
+notes are not this type's, that a code may sit under its detail, and that
+"EACH SIDE" means equal layers. The crop is now 1in left, 4in right, 3.5in
+above and 4.5in below the code, because NG Green Bay prints the code
+under the section and the v2 crop showed the model the next type instead.
+
+| set | types | text full | sight full | sight added (fields, over all types) | sight differs from text | cost |
+| --- | --- | --- | --- | --- | --- | --- |
+| Baker A601 | 8 | 2 | 8 | stud (tag key) ×6, board ×4, layers ×1, rating ×4, height ×4 | — | $0.23 |
+| Bunkie G003 | 5 | 3 | 3 | rating ×4, height ×3; P08/EXT are 8in CMU (masonry, board only) | — | $0.17 |
+| Crosslines A001 | 7 | 6 | 6 | insulation ×4, height ×7, F's stud | — | $0.19 |
+| Murray | 2 | 2 | 2 | rating, height | — | $0.14 |
+| MHK A1.01 | 4 | 2 | 2 | rating ×4, height ×4; type 3 is 8in CMU | — | $0.12 |
+| NG Green Bay A3.2 | 10 | 8 | 8 | IW-9 is CMU | IW-6 layers 1 → 2 on the mech-room face (sight is right) | $0.23 |
+| E Street A9.1 | 4 | 0 | 1 | height; see the code note below | insulation wording | $0.17 |
+| SW A111 | 7 | 0 | 7 | board, layers ×7, spacing ×4 — all from ONE sheet note (see below) | — | $0.18 |
+| Camp Bow Wow A130 | 5 | 3 | 5 | D and E's studs, heights | D spacing 48 → 16 (text took the bracing; sight is right) | $0.15 |
+| ELEVEN03 A4.B.1 | 13 | 0 | 5 | board ×10, studs ×5, spacing ×3, insulation ×2, rating | MA spacing 16 → 24, MB1 board 1/2 → 5/8, WD rating 1 → 2 HR (sight right on all three) | $0.28 |
+
+**Spot checks against the crops, stated plainly.** Baker: S6B (6in stud
+by the key, one layer 5/8 type X per side), S8C (one layer inside, two
+outside, flagged) and C8B (concrete core, 5/8 board one side, R-22
+forms) all match their crops. NG Green Bay: IW-6 reads two layers on the
+mech-room face and one opposite, which is what the crop says and the text
+read had wrong; IW-8 reads 5/8 each side and 6in 20 ga at 16, matching;
+IW-9 reads 8in CMU, matching. Crosslines C matches its crop (1/2in type X
+each side, 2-1/2in stud at 16, blankets — the text read had missed the
+blankets). ELEVEN03's studs and board come from the printed WALL SCHEDULE
+bullets on the same page ("1-5/8X C-SHAPED METAL STUDS AT 24" O.C."), which
+the text read had not associated with the types; the crops themselves show
+only tag, thumbnail, UL number and rating, and the model says so.
+
+**Two it got wrong or cannot be trusted.** E Street's plan tags are the
+DETAIL numbers (2, 3, 8, 4 on A9.1) and the text read used those as codes;
+the sight read used the titles ("WALL TYPE 1 – NON-RATED"), and the
+eval's code matching then paired detail 2 with WALL TYPE 2 instead of
+WALL TYPE 1. Its row above is misaligned and its "1 of 4" means nothing
+until the sight read returns the detail number as the code. SW's 0 → 7 is
+not seven legends read: the partition types on A111 state only a stud
+size and whether there are batts, and the board, layers and 16in spacing
+all come from one note on the stud-size chart ("ALL STUDS ARE ASSUMED TO
+HAVE 5/8in GYP BD ON BOTH FACES"); the model named the note, and the
+flag should too before anyone bids off it.
+
+**What this is worth.** Where a legend is drawn as details with notes,
+sight reads what the text read could not associate (Baker's four tag
+types, Camp Bow Wow's D and E, ELEVEN03's schedule bullets, Crosslines'
+insulation) and corrects the text read where a note is ambiguous (Camp
+Bow Wow's 48in bracing, NG's two-layer face). Where the legend is a table
+of words, the two agree. Cost is 10 to 28 cents per set, once, cached.
+Contact sheets with every crop beside both readings:
+`~/Claude Folder/takeoff/shots/legend-sight/<set>-p<page>.html`.
+
+### Toward plan-text v1: four fixes and the v4 run (2026-10-21)
+
+Fixes, each from a contact-sheet finding on a training set:
+
+- **Detail numbers are codes.** E Street tags walls with the number of the
+  DETAIL that draws the type (`2` on A9.1), not the title's number; prompt
+  v4 records the detail number as the code and the title as the name. Its
+  four types now pair with the text read's codes.
+- **A sheet-wide note is flagged.** A field filled from a note that applies
+  to every type on the sheet (SW's "all studs assumed to have 5/8in gyp bd on
+  both faces") is named in `fromSheetNote`, and the assembly carries "came
+  from a general note on the sheet, not this type's own words — check
+  before bidding". All seven SW types now show it.
+- **Optional is not counted.** Anything the drawing marks optional,
+  alternate, "or", "where indicated" goes in `optional`, verbatim, and is
+  flagged rather than added: Crosslines' optional blankets, Camp Bow Wow's
+  "cementitious backer in lieu of gypsum" at wet walls, NG Green Bay's
+  "where at an exterior wall, provide full cavity batt".
+- **Crop placement.** A code is printed in more places than its legend
+  cell — Crosslines' `A` is a partition type, a column line and an entry in
+  the electrical symbol legend — and "the printing with the most text near
+  it" chose the symbol legend. A printing inside a closed symbol now wins,
+  then one with assembly words beside it, and text density only breaks
+  ties; a code's labelled printing (`WALL TYPE 1`) counts as the code.
+  Measured as crops holding at least two assembly words, over the ten sets'
+  65 types: **40 of 65 before, 54 of 65 after**. The eleven still missing are
+  MHK's four (its legend is a table on the plan sheet whose row headings
+  the text layer does not print as one item), ELEVEN03's six thumbnail rows
+  (the crop IS on the row; the row has no assembly words), and one SW
+  detail bubble that shares its number with a type.
+
+**The v4 run** stopped at the ninth set on `credit balance is too low`
+(request `req_011CgEnkXMxVZgYmUPEL8Zap`); eight of ten are read under v4,
+ELEVEN03 and MHK are not. $1.68 spent on the eight.
+
+| set | types | text full | sight full | notable | cost |
+| --- | --- | --- | --- | --- | --- |
+| Baker | 8 | 2 | 8 | studs by the tag key; concrete walls board-only | $0.24 |
+| Bunkie | 5 | 3 | 4 | EXT gained 6in stud + board; P08 masonry | $0.15 |
+| Crosslines | 7 | 6 | 6 | optional blankets flagged, no longer counted | $0.21 |
+| Murray | 2 | 2 | 2 | — | $0.15 |
+| NG Green Bay | 10 | 8 | 8 | IW-6 two layers one face; IW-5's 6in o.c. flagged; exterior-wall note flagged optional | $0.24 |
+| E Street | 4 | 0 | 1 | codes now the detail numbers; three are furring on existing masonry | $0.18 |
+| SW | 7 | 0 | 7 | every type flagged "from a general note" | $0.21 |
+| Camp Bow Wow | 5 | 3 | 5 | D's 16in spacing over the text's 48in; backer board flagged optional | $0.18 |
+| MHK | 4 | 2 | 2 | type 1 one-sided; type 3 is 8in CMU | $0.13 |
+| ELEVEN03 | 13 | 0 | 5 | studs, board and spacing from the sheet's own schedule bullets; MB1/MB2 optional sound insulation flagged, not counted; WD 2 HR | $0.29 |
+
+Ten of ten under v4, $2.10 in all. **Frozen as `plan-text-v1`** (the tag on
+this commit); the held-out run below is on this code and nothing is
+changed after it. `heldoutRun.tsx` in the
+session scratchpad is ready and was smoke-tested on Baker (it reproduces
+the labelled sheet's numbers: 280 tagged, 14 carried, 568 untyped, 15 of
+18 doors) and makes no model call where the caches exist.
+
+### The honest test: plan-text v1 on Lodi, Missouri Pavilion, Nall — once (2026-10-21)
+
+Run on `plan-text-v1` (`d9d9f37f`) with the scratch runner `heldoutRun.tsx`
+(legend page by `legendPages`, legend read by text then by sight, door
+schedule by heading, floor plans by title, scale by the sheet's own
+dimensions or printed scale — never by hand, per the board). Nothing in
+the method was changed after; two harness-only interventions are named
+below because they are part of the result. Contact sheets:
+`~/Claude Folder/takeoff/shots/legend-sight-heldout/<set>-p<page>.html`.
+
+| set | legend | types full: text → sight | plan sheet | wall ft tagged / carried / untyped | doors placed of scheduled | cost |
+| --- | --- | --- | --- | --- | --- | --- |
+| Lodi Memorial Library | A601 p11 | 6 → 6 of 6 | A101 (1/8in by dimensions, 11 agree) | 117 / 0 / 1,200 of 1,317 | 0 of 5 | $0.28 |
+| | | | A102 mezzanine (printed 1/8in) | 0 / 0 / 1,665 | 0 of 5 | |
+| Missouri Pavilion | A-300 p12 | 0 → 2 of 2 | A-100 (1/4in by dimensions, 6 agree) | 23 / 0 / 791 of 814 | 2 of 2 | $0.30 |
+| Nall Wealth | A0 cover p1 | 0 → 11 of 13 | A2 construction plan: NO SCALE (two scales on the sheet) | — | 15 scheduled, none placeable | $0.49 |
+
+Checked against the crops: on Lodi the TEXT read had K06 and N21's
+studs swapped (8in and 3-5/8in); the sight read has them the right way
+round, and the crops show it. Missouri's two types are full-height
+sections on A-300 with no partition block, found by the headed-block
+rule, and read right by sight. Nall's partition types are on the COVER
+sheet, found by the content-only rule; SF-1 and SF-2 are storefront
+types the sight read left out.
+
+**Harness interventions, both named because the title rule is part of
+what was tested:** the floor-plan-by-title rule found Lodi's two plans
+and nothing on Missouri (A-100's title line reads "FLOOR PLAN … COLUMN
+PLAN DETAIL" and the word DETAIL excluded it) or Nall (its plan is titled
+"Construction Plans"; the rule picked the demolition plan and a details
+sheet instead). The measurement was then run on the pages the earlier
+text-only inventory had named, with the same frozen code. And the runner
+first ran without the app's `.env`, made no model call, and was re-run;
+no held-out page was read twice by a model.
+
+**Failures, for v2, in the order they cost the most:**
+
+1. **Plan-page selection.** Title words alone miss "Construction Plans"
+   and exclude a floor plan whose title line also carries a detail's name.
+   Use the sheet number series and the page's own geometry (runs found,
+   room names) with the title, not instead of it.
+2. **Per-view scales.** Nall A2 carries a 3/16in plan and a 1in detail;
+   the product's `sheetScale` VIEWS path handles that and the runner does
+   not, so the set's walls have no feet. The chain needs the per-view
+   calibration before a sheet like this measures at all.
+3. **Door marks far from any run.** Lodi's five marks are all in symbols
+   and all 2 to 31 ft from a found run; the finder returned 51 runs on a
+   sheet with far more wall. Where the finder is thin the join has nothing
+   to place on; the join should also accept a mark inside a door swing arc
+   or a jamb gap it can see itself.
+4. **Text read misattribution.** Lodi's text read put N21's 8in stud on
+   K06 and vice versa; sight was right. Where the two reads disagree on a
+   printed size, prefer the one whose crop shows it, and say so.
+5. **Legend codes the plan does not spell the same way.** Missouri's
+   legend says P1 and P2; its plan's commonest symbol code is `1`
+   (seventeen printings). `legendVocabulary` strips WALL TYPE and TYPE
+   but not a letter prefix, so 23 ft typed of 814 is partly a vocabulary
+   gap — and partly `1` being something else. To be measured, not assumed.
+6. **Low typed share even where tags pair.** Lodi A101 has K-coded
+   hexagons on the plan and the legend's codes match them, yet 117 of
+   1,317 ft typed: the tag report will say whether it is reach, margin or
+   missing runs.
+7. **Storefront and non-partition types** (Nall SF-1, SF-2) come back
+   unread; they should come back as "not a partition" rather than silence.
+
+Nothing above was fixed. Model cost for the three sets, $1.07, all
+cached.
+
+### plan-text v2, first pass (2026-10-21): failures 3–7, and two left to the finder's lane
+
+Rebased onto `diego/takeoff-audit` at `2304c5ca`, which holds the wiring
+merge (`94ceec79`); clean, full suite green after one census asked for an
+app-side caller of the new sight integration (below). The tag
+`plan-text-v1` stays on the pre-rebase commit `d9d9f37f`, which is the
+exact code the held-out test ran.
+
+**Not worked on here, on purpose: v2 failures 1 and 2** — plan-page
+selection and per-view scales. The original session is building view
+detection, which answers both (which drawing on a sheet is the plan, and
+at what scale each drawing sits). Nothing in this lane should guess at
+either in the meantime; the held-out runner's title rule and its single-
+scale path are left as they were and are the measurement that view
+detection will be judged against.
+
+**3. Door marks far from any run.** A scheduled mark drawn in a SYMBOL
+(a door tag) may now place on a run up to `MARK_SYMBOL_REACH_FEET` (4.5
+ft) away when that run is clearly the nearest — the next run at least
+twice as far, `TAG_CLEAR_MARGIN`'s rule — while loose text keeps the 2.5
+ft rule. Measured on the training sets with the cached schedules:
+
+| set | placed before | placed after |
+| --- | --- | --- |
+| NG Green Bay A3.1 | 7 of 19 | 8 of 19 |
+| Baker, E Street, SW, Bunkie, MHK | 15, 17, 5, 6, 6 | unchanged |
+
+One door. NG's remaining marks sit 2.9 to 7.2 ft from a run with ANOTHER
+run inside the margin — its plan is dense — so the margin, which is what
+stops a wrong wall, is what stops them. The rule is kept because it is
+the honest one; the gain is small and reported as such. Lodi's five marks
+(2 to 31 ft from any of 51 runs) are a finder problem this cannot reach.
+
+**4. The read whose crop shows the size wins.** `legendMerge.ts`:
+`mergeLegendReads(text, sight)` lets the sight read win a field it
+states, fills a field it left null from the text read, and flags every
+disagreement with both values ("the words say studSpacingIn 48 and the
+drawing shows 16 — the drawing was kept; check it"). The rule follows the
+record: every printed-size disagreement seen on thirteen sets went the
+drawing's way, and the text read's failure was always attribution.
+`readWallLegendBySight` in `readWallLegend.ts` is the app-side, gated
+entry (`SCHEDULE_READ`) that takes the rendered page and crops and returns
+the merged types — the product's door into sight reading, and what the
+feature-gate census asked for. Rendering stays the caller's job (browser
+tiles, as the scanned-sheet read does), because Node here cannot.
+
+**5. Legend codes the plan spells differently.** `prefixlessVocabulary`
+maps `P1`, `P2` to `1`, `2` when every legend code shares one letter
+prefix, and `planTextTagByRun` uses it ONLY when no symbol on the plan
+holds a code as the legend spells it, reporting `shortForm: true` when it
+did. On every training set the plans spell the legend's codes in full, so
+the fallback never fires there and changes nothing; it was written for a
+held-out set and has not been shown to help on one. The report flag is
+the measurement.
+
+**6. Why a wall stayed untyped.** `untypedWhy.ts` gives each untyped run
+one reason — no tag nearby (20 ft), tag too far (past the 4 ft reach), no
+clear margin (a tag within reach but another run inside twice its
+distance), code not in legend (the nearest symbol says something the
+legend does not define) — with feet by reason, and lists the orphan tags:
+legend codes with no run within reach, which are the finder's gaps rather
+than the reader's. The first version asked "what is the nearest symbol"
+and answered "code not in legend" for most feet on every sheet, because
+door marks and room tags outnumber wall tags; it now asks about LEGEND
+tags first (in the sheet's own tag shape), and only with none in sight
+does a short code sitting on the run count as a code the legend lacks.
+`zzTagReport` prints it. On the training sheets, the finder's runs:
+
+| sheet | untyped ft | tag too far | no clear margin | no tag nearby | code not in legend | orphan tags |
+| --- | --- | --- | --- | --- | --- | --- |
+| Baker A101 | 582 | 230 | 42 | 216 | 95 | 0 |
+| NG Green Bay A3.2 | 920 | 465 | 356 | 98 | 0 | 6 |
+| SW A110 | 1,608 | 483 | 196 | 198 | 731 | 2 |
+| Camp Bow Wow A101 | 2,209 | 589 | 203 | 846 | 571 | 6 |
+| ELEVEN03 A4.B.1 | 1,899 | 1,149 | 157 | 522 | 71 | 3 |
+| E Street A2.1 | 894 | 685 | 143 | 58 | 7 | 8 |
+| MHK A1.01 | 958 | 593 | 53 | 185 | 128 | 9 |
+| Murray A2.01 | 2,149 | 472 | 0 | 804 | 873 | 3 |
+| Crosslines A100 | 3,008 | 653 | 151 | 1,432 | 772 | 0 |
+| Bunkie A100 | 868 | 0 | 0 | 304 | 564 | 0 |
+
+What it says, read across the sheets: "tag too far" is the largest single
+reason on six of ten — a legend tag is within 20 ft of the run but past
+the 4 ft reach, which is a run the tag may well mean and the pairing rule
+will not risk; "no tag nearby" is the drafter's doing and is where a
+U.N.O. note would act if any of these sets had one; "code not in legend"
+is Bunkie's `P08` bare text (no symbol, so not a tag here), SW's detail
+bubbles and Murray's keynotes; and the orphan tags are the finder's
+misses. The next lever is therefore the reach, measured against the
+crops, and it is a lever the propagation along the wall already pulls
+part way.
+
+**7. Storefront and curtain wall.** Prompt v5 gave a legend entry that is
+a storefront, curtain wall, glazing, railing or door a `notAPartition`
+word; `assemblyFromSight` returns no components and one flag ("not a
+partition — the legend calls this a storefront") so it is seen and never
+proposed. The ten-set re-run under v5 was the check that nothing else
+moved, and something did: SW went from 7 of 7 to 0 of 7, because its
+crops land on detail bubbles that share the types' numbers and the model
+called A1 a "stud size chart" and B1 a "door jamb detail" — it classified
+the CROP, not the legend entry. Version 6 says in as many words that
+`notAPartition` is about what the legend entry is and a crop that shows
+something else is to be ignored. Under v6:
+
+| set | text full | v4 | v5 | v6 | cost (v6) |
+| --- | --- | --- | --- | --- | --- |
+| Baker | 2 of 8 | 8 | 8 | 8 | $0.24 |
+| Bunkie | 3 of 5 | 4 | 4 | 4 | $0.15 |
+| Crosslines | 6 of 7 | 6 | 6 | 6 | $0.21 |
+| Murray | 2 of 2 | 2 | 2 | 2 | $0.15 |
+| MHK | 2 of 4 | 2 | 2 (type 4, a DIRTT removable wall, named not a partition) | 2 | $0.13 |
+| NG Green Bay | 8 of 10 | 8 | 8 (XW-1, an existing exterior wall, named not a partition) | 8, same | $0.25 |
+| E Street | 0 of 4 | 1 | 0 | 1 | $0.18 |
+| SW | 0 of 7 | 7 | **0** | 7 | $0.22 |
+| Camp Bow Wow | 3 of 5 | 5 | 5 | 5 | $0.17 |
+| ELEVEN03 | 0 of 13 | 5 | 5 | not run: the API credit ran out on the tenth call | — |
+
+So v6 reads what v4 read, and names the two non-partitions the training
+sets do have (MHK's DIRTT wall, NG's existing exterior wall) where v4
+returned them as empty assemblies. $1.90 for the nine under v6; the two
+passes together, with the v5 misstep, $3.80. ELEVEN03's v6 read is one
+call, 30 cents, when credits exist.
+
+**What "Add these wall types to your library" needs before a customer
+sees it** — listed, nothing run:
+
+1. **The per-company switch.** `PLAN_TEXT_READ` is an environment flag.
+   The customer-facing form is a key in `AI_FEATURE_LABEL` and the enum
+   member behind it: `ALTER TYPE "AiFeature" ADD VALUE 'PLAN_TEXT_READ';`
+   then `aiGate(companyId, "PLAN_TEXT_READ")` in place of the env read, and
+   the toggle appears on Settings → Assistant with the others.
+2. **Storing the reads.** Two tables, both additive:
+   `PlanLegendProposal` (planId, pageNumber, legendRead jsonb — the text
+   read, sightRead jsonb nullable, merged jsonb, model, promptVersions,
+   status PROPOSED/ACCEPTED/DISMISSED, acceptedByUserId, createdAt) as a
+   sibling of `PlanScheduleProposal`; and `TakeoffPlanTextRead` (planId,
+   pageNumber, calibrationId, doors jsonb, typed jsonb, computedAt) in
+   place of the file cache. Plus `ALTER TYPE "TakeoffWallProposalSource"
+   ADD VALUE 'PROPAGATED'` so a carried type is a source kind and not a
+   marker in the tag text. The legend read then runs in the ingest as its
+   own stage (`PlanIngestStage` gains `WALL_LEGEND`), which is where a
+   once-per-set read belongs, and the browser renders the legend page and
+   crops for the sight read the way it renders scanned-sheet tiles.
+3. **The review screen.** One page per plan set, not a card under the
+   found walls: each legend type with its crop beside the merged reading,
+   every flag in red (one-sided, from a general note, optional, not a
+   partition, the words say X and the drawing shows Y), the fields
+   editable, and an Add button per type that creates the `WallType` and
+   its components through the existing actions — code, name, sides, stud
+   spacing, and the quantity components (studs, track, board, insulation)
+   as `WallTypeComponent` rows with their basis, never a price. A type
+   already in the library shows as such with a "compare" link. Accepting
+   writes `status = ACCEPTED` on the proposal so the card stops asking.
+4. **Two guards.** The census that every model-calling function has a
+   gated app caller already covers the sight read; the e2e journey needs
+   a step that opens the review screen with a seeded legend proposal and
+   adds one type, so the screen's existence is proved by a browser and not
+   by a render test.
+
+### "Add these wall types to your library" (2026-10-21): built, off by default
+
+What the launch checklist above asked for, built on `diego/plan-text-library`
+off `diego/plan-text-2`. The shape, and the three decisions worth reading
+before changing it:
+
+**The switch is an opt-in, which this product had not had before.** Every
+other AI feature is on unless a company turns it off, because nobody should
+have to opt in to a feature before it works. This one writes proposals a
+person is asked to review, so it is OFF until the owner ticks it:
+`OPT_IN_FEATURES` in `lib/ai/features.ts`, stored as
+`CompanyAiSettings.optedInFeatures`, refused by `aiFeatureRefusal` in a
+sentence that says where the switch is. The settings form shows it with
+"new — off until you turn it on"; the ingest panel shows the sentence in
+place of the button when it is off, so the control is discoverable. The
+environment flag `PLAN_TEXT_READ=1` is gone. A feature leaves the opt-in set
+when it has earned the default, and the stored list then does nothing.
+
+**The ingest reads the words; the browser reads the drawing.** Stage
+`WALL_LEGEND` (`lib/plan-ingest/wallLegend.ts`) runs one task per page and
+spends a model call only where `legendPages` ranks the page 0–2 on its own
+text — a titled legend, a headed block, or a dozen assembly lines — so a
+sixty-page set costs one or two reads. It stores the text read, the merged
+view (`storedLegendTypes`, sight null) and the crop rectangle per type
+(`legendCropRects`, from the page's text and symbols) in
+`PlanLegendProposal`. The sight read cannot run there — Node has no
+rasteriser — so the review screen's "Check these against the drawing"
+renders the page (≤2000px, ≤100dpi) and each crop (200dpi) with pdf.js, the
+same scales the eval validated, and posts them to `readLegendBySight`, which
+re-merges and stores. `detectWallsForCalibration` reads the ingest's legend
+FIRST (`legendFromProposal`), so the finder and the person look at the same
+legend; what it works out otherwise is kept in `TakeoffPlanTextRead`.
+
+**Add rebuilds the parts from the fields, not from the stored read.** The
+review screen's inputs are what `addWallTypeFromLegend` hands to
+`assemblyFromSight`, so an edited spacing changes the stud rule and an
+edited layer count changes the board. It creates the `WallType` (code,
+name, thickness from the fields or the nominal, spacing, two sides, the
+legend's lines in `notes`) with its components (`WallTypeComponent`:
+description, basis, factor, waste, roundUp) and nothing else — no catalog
+entry, no cost category, no production rate. "In your library" is derived
+from the company's codes at render time, never stored; `status`/`acceptedBy`
+record who took the legend in, which is not derivable.
+
+**Not done, and why.** `PROPAGATED` as a `TakeoffWallProposalSource`:
+`wallProposal.ts` narrows the enum to three members in `ProposalRow`, so the
+value alone fails typecheck in `workspaceLoad.ts`. It belongs with the
+finder's wiring (wallGroups.ts/wallProposal.ts), in that lane, with its own
+three-line migration; the marker in the tag text stays until then.
+
+**Proved by.** `wall-legend-library.spec.ts` in a real browser against a
+throwaway database: seeds a legend as a stored proposal, follows the
+takeoff tab's link, counts one row per type with a rendered crop each,
+edits a name, presses Add, reads the `WallType` and its components back
+with no price, and sees the row refuse a second Add. The committed fixture
+(`e2e/fixtures/wall-legend.json`) is INVENTED — made-up codes, words and
+numbers, one one-sided type, one words-versus-drawing disagreement — so no
+client's legend is in the repository. The same spec runs against a real
+legend when `LEGEND_FIXTURE` names a stored read built OUTSIDE the repo by
+`zzLegendFixture.eval.ts` (which refuses a path inside it) and
+`REAL_PLAN_DIR` holds the drawing; that run also checks the first crop is a
+drawing by its dark pixels, and is where the Baker screenshots come from.
+
+**Crop placement slides (2026-10-21).** The crop was a fixed 3.5 in above
+the code and 4.5 in below, the Crosslines shape — a section drawn above a
+boxed letter. Baker draws the code box ABOVE its section and the rated-
+assembly notes, so the fixed split took in the unrelated roof detail above
+and cut the type's own drawing at the bottom. `legendCropRects` now scores
+every half-inch split from 0.5 in above the code to 0.5 in below it by the
+assembly words it holds and keeps the best, the old split as the tie-break
+and the crop's size unchanged. On Baker's eight: the three rated types went
+from 3.5 in above to 0.5 in (the box at the top, the section and its notes
+below); the B and C rows, which have no drawing of their own, now start at
+their column's section so the variant line is read under the section it
+varies; C8B did not move. Rendered and looked at, not inferred. The migration applied to a scratch Postgres and
+`migrate status` named it; `migrate diff` against the schema reports only the
+two pre-existing `ProposalClause.updatedAt` defaults.

@@ -1,4 +1,6 @@
-import { extractWallLegend, type WallLegendRead } from "@prova/integrations";
+import { extractWallLegend, extractWallLegendBySight, type WallLegendRead, type WallLegendSightRead } from "@prova/integrations";
+import type { ModelUsageReporter } from "@prova/integrations/src/anthropic";
+import { mergeLegendReads, type MergedType } from "./legendMerge";
 import { aiGate } from "@/lib/ai/settings";
 import { readPartitionAssembly, type PartitionAssembly } from "./partitionAssembly";
 
@@ -53,7 +55,7 @@ export async function readWallLegend(input: {
   sheetTitle?: string | null;
   where: string;
 }): Promise<WallLegendResult> {
-  const gate = await aiGate(input.companyId, "SCHEDULE_READ");
+  const gate = await aiGate(input.companyId, "PLAN_TEXT_READ");
   if (!gate.ok) return { ok: false, error: gate.error };
 
   let read: WallLegendRead;
@@ -89,4 +91,49 @@ export async function readWallLegend(input: {
     reason: read.reason,
     confidence: read.confidence,
   };
+}
+
+/**
+ * ── THE LEGEND READ BY SIGHT, BEHIND THE SAME SWITCH ──
+ *
+ * The text read above, plus the drawing: the legend page and one crop per
+ * type as images (rendered by the caller — in the browser, as the scanned-
+ * sheet tiles are, since Node here has no rasteriser), read by
+ * `extractWallLegendBySight` and merged with the text read by
+ * `mergeLegendReads`, where the drawing wins a disagreement and every
+ * disagreement is flagged. Gated per company by `SCHEDULE_READ` exactly as
+ * the text read is; nothing here is a price.
+ */
+export type WallLegendSightResult =
+  | { ok: true; types: MergedType[]; sight: WallLegendSightRead; reason: string; confidence: WallLegendSightRead["confidence"] }
+  | { ok: false; error: string };
+
+export async function readWallLegendBySight(input: {
+  companyId: string;
+  text: WallLegendRead;
+  page: { imageBase64: string; mediaType: "image/png" | "image/jpeg" };
+  crops: { code: string; imageBase64: string; mediaType: "image/png" | "image/jpeg" }[];
+  lines: readonly string[];
+  pageNumber: number;
+  sheetTitle?: string | null;
+  where: string;
+  onUsage?: ModelUsageReporter;
+}): Promise<WallLegendSightResult> {
+  const gate = await aiGate(input.companyId, "PLAN_TEXT_READ");
+  if (!gate.ok) return { ok: false, error: gate.error };
+  let sight: WallLegendSightRead;
+  try {
+    sight = await extractWallLegendBySight({
+      page: input.page,
+      crops: input.crops,
+      lines: input.lines,
+      pageNumber: input.pageNumber,
+      sheetTitle: input.sheetTitle ?? null,
+      model: gate.model,
+      onUsage: input.onUsage,
+    });
+  } catch {
+    return { ok: false, error: `The wall legend on page ${input.pageNumber} could not be read from the drawing. Nothing was changed.` };
+  }
+  return { ok: true, types: mergeLegendReads({ text: input.text, sight, where: input.where }), sight, reason: sight.reason, confidence: sight.confidence };
 }

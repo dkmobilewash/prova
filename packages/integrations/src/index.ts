@@ -18,6 +18,7 @@ export * from "./wallClassify";
 export * from "./replyClassify";
 export * from "./scheduleRows";
 export * from "./wallLegend";
+export * from "./wallLegendSight";
 /** The symbol-counting INSTRUMENT, not a feature — nothing calls it but an eval.
  *  `symbols.ts`'s header says why it exists and why it is not wired up. */
 export * from "./symbols";

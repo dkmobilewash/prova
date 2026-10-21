@@ -78,6 +78,10 @@ enum PlanIngestStage {
   /// set, or need a one-task job whose `pageCount` disagreed with its task count
   /// by design. See `lib/plan-ingest/sheetIndex.ts`.
   SHEET_INDEX
+  /// The set's partition legend, read once per set into `PlanLegendProposal`:
+  /// one task per page, a model call only on the page or two that legend the
+  /// walls. Behind the PLAN_TEXT_READ opt-in.
+  WALL_LEGEND
 }
 
 /// One ingestion run over one uploaded plan set.
@@ -143,6 +147,7 @@ model PlanIngestJob {
   /// depend on which run read it.
   sheetProposals    PlanSheetProposal[]
   scheduleProposals PlanScheduleProposal[]
+  legendProposals   PlanLegendProposal[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -739,4 +744,58 @@ model PlanScheduleProposal {
   @@unique([ingestJobId, pageNumber])
   @@index([planId, pageNumber, createdAt])
   @@index([planId, status])
+}
+
+/// ── THE WALL LEGEND, READ OFF THE SET AND HELD FOR REVIEW ──
+///
+/// One row per legend page per run, the sibling of `PlanScheduleProposal`.
+/// `textRead` is the model's reading of the page's words (the legend's own
+/// lines per type); `sightRead` is the reading of the drawing — the page and
+/// one crop per type as images, rendered in the browser since the server has
+/// no rasteriser — and is null until somebody asks for it; `merged` is what the
+/// review screen shows, the drawing winning a disagreement and every
+/// disagreement flagged (lib/takeoff/legendMerge.ts). `crops` holds the crop
+/// rectangle per code in page points, so the screen can cut the same crop the
+/// model saw. Nothing here is a price.
+///
+/// Whether a type is already in the company's library is NOT stored: it is
+/// derived from `WallType.code` at render time, so a type added by hand shows
+/// as in the library too. `status`/`acceptedBy` record WHO took the legend
+/// into the library, which is not derivable.
+model PlanLegendProposal {
+  id String @id @default(cuid())
+
+  ingestJobId String
+  ingestJob   PlanIngestJob @relation(fields: [ingestJobId], references: [id], onDelete: Cascade)
+
+  planId String
+  plan   TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  pageNumber Int
+  sheetTitle String?
+
+  textRead  Json
+  sightRead Json?
+  merged    Json
+  crops     Json
+
+  reason     String
+  confidence PlanSheetConfidence
+
+  model         String
+  promptVersion String
+
+  status PlanSheetProposalStatus @default(PROPOSED)
+
+  acceptedByUserId String?
+  acceptedBy       User?     @relation("PlanLegendProposalAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  acceptedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([ingestJobId, pageNumber])
+  @@index([planId, pageNumber, createdAt])
+  @@index([planId, status])
+  @@index([acceptedByUserId])
 }
