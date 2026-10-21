@@ -96,6 +96,7 @@ vi.mock("@/lib/auth", () => ({
   }),
 }));
 vi.mock("@/components/SpreadsheetImport", () => ({
+  AnyFileImport: () => null,
   SpreadsheetImport: (props: Record<string, unknown>) => {
     state.props.push(props);
     return null;

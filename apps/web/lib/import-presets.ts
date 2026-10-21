@@ -4,13 +4,12 @@ import {
   normaliseHeader,
   type ImportKind,
 } from "./spreadsheet-import";
-import type { ColumnMapping } from "./import-mapping";
 
 /**
- * Named presets for known accounting-system exports: a preset pre-fills the
- * column mapping when a file's headers look like that vendor's, with a
- * "detected: looks like X" note a person can freely override — it is never
- * trusted the way a person's own mapping choice is; see
+ * Named presets for known accounting-system exports: when a file's headers
+ * look like that vendor's, the review screen says "Looks like a X". The
+ * columns themselves are placed by lib/import-smart-map.ts, whose
+ * dictionary carries these same headers; see
  * components/SpreadsheetImport.tsx.
  *
  * Presets are DATA, not a code path: this table is the only place vendor
@@ -110,20 +109,7 @@ export function matchPreset(kind: ImportKind, header: string[]): ImportPreset | 
   return best?.preset ?? null;
 }
 
-/** A preset's field headers, resolved against this file's actual header
- * row into the same `{ field: columnIndex }` shape a person's own mapping
- * choices take — so applying a preset and overriding it by hand are the
- * same code path from here on. A header the preset names but this file
- * doesn't have is simply left out, the same as a person leaving a field
- * unmapped. */
-export function presetMapping<F extends string>(preset: ImportPreset<F>, header: string[]): ColumnMapping<F> {
-  const normalised = header.map(normaliseHeader);
-  const mapping: ColumnMapping<F> = {};
-  for (const field of Object.keys(preset.fieldHeaders) as F[]) {
-    const text = preset.fieldHeaders[field];
-    if (text === undefined) continue;
-    const index = normalised.indexOf(normaliseHeader(text));
-    if (index !== -1) mapping[field] = index;
-  }
-  return mapping;
-}
+// `presetMapping` lived here until the smart mapper (lib/import-smart-map.ts)
+// took over placing columns; a preset now only names the vendor in the
+// banner, and import-presets.test.ts pins that the mapper places every
+// preset header on the preset's field.

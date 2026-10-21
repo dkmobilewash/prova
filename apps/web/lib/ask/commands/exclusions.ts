@@ -165,6 +165,7 @@ export const notYetRegistered: Exclusion[] = [
   // which rows have problems — before anything is written. A command that
   // confirmed one would skip the only step the screen exists for.
   { action: "spreadsheetImport.*", reason: ADMIN + " Bulk import from a pasted file: the preview is the human judgement, so it is page only." },
+  { action: "importSuggest.*", reason: ADMIN + " Proposes column matches for a file on the import review screen; it needs that screen's file and writes nothing." },
   { action: "quickbooksImport.*", reason: ADMIN + " Importing customers, vendors and products from QuickBooks: a preview a person reads before confirming, so it is page only." },
   // Procore: linking is an OAuth-backed owner decision made against a live
   // project list, and the refresh is a button on the page it refreshes.

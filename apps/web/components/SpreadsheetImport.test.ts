@@ -21,9 +21,11 @@ vi.mock("@/lib/actions", () => ({
   importJobs: vi.fn(),
   importCrew: vi.fn(),
   importVcfContacts: vi.fn(),
+  importPhaseCodes: vi.fn(),
+  suggestImportColumnFields: vi.fn(),
 }));
 
-const { EstimateNotice } = await import("./SpreadsheetImport");
+const { AnyFileImport, EstimateNotice } = await import("./SpreadsheetImport");
 
 function notice(csv: string): string {
   const plan = planJobImport(csv, [], []);
@@ -62,18 +64,66 @@ describe("EstimateNotice", () => {
   });
 });
 
-describe("column mapping — a person's own pick always wins over a guess", () => {
-  // There is no DOM test environment in this repo (vitest.config.mts runs
-  // "node") to click a <select> and watch state change, so this pins the
-  // one line the guarantee actually lives on — the spread ORDER in
-  // `effectiveMapping`, where `overrides` (this person's choices) must be
-  // spread LAST, after `baseMapping` (the preset or word-matching guess).
-  // Reversed, a person's explicit "Not in this file" (undefined) would be
-  // silently overwritten by the guess it was meant to clear, and nothing
-  // downstream — the plan, the preview table, Confirm — could tell.
-  it("spreads overrides after baseMapping, not before", () => {
+// "A person's own pick always wins" used to be pinned here as a spread order;
+// it now lives in `resolveColumns` (lib/import-smart-map.ts) and is tested
+// there as behaviour rather than as source text.
+
+describe("the review screen writes nothing before Import", () => {
+  // No DOM environment here (vitest runs "node"), so the review is rendered
+  // statically from a file already chosen — which is the whole screen, with
+  // its counts and preview — and every write path is a spy that must stay
+  // untouched.
+  const csv = "Job#,Job Name,Cust. Name,Open Balance\n1001,Tower,Acme Builders,$5\n1002,Harbor,Zenith GC,$0\n1003,,Acme Builders,";
+
+  it("renders the per-column review, counts and preview from the file, calling no action", async () => {
+    const actions = await import("@/lib/actions");
+    const html = renderToStaticMarkup(
+      createElement(AnyFileImport, {
+        existingContactNames: ["Acme Builders"],
+        existingPeople: [],
+        existingJobs: [],
+        existingCrew: [],
+        existingPhaseCodeCodes: [],
+        initialFile: { name: "sage-jobs.csv", text: csv },
+      }),
+    );
+    // The kind was guessed, and said so.
+    expect(html).toContain("Guessed from the column names in sage-jobs.csv");
+    // Each column, with its confidence.
+    expect(html).toContain("Exact name");
+    expect(html).toContain("Similar name");
+    expect(html).toContain("Skipped");
+    // How many import, how many are skipped, and why.
+    expect(html).toContain("2 will be added");
+    expect(html).toContain("1 with problems — skipped");
+    expect(html).toContain("No job name — skipped.");
+    expect(html).toContain("Import 2 jobs");
+    // The preview reads Job Name, not the job number.
+    expect(html).toContain("Tower");
+    expect(html).not.toMatch(/<td[^>]*>1001<\/td>/);
+    for (const name of ["importClients", "importJobs", "importCrew", "importVcfContacts", "importPhaseCodes", "suggestImportColumnFields"] as const) {
+      expect(actions[name], name).not.toHaveBeenCalled();
+    }
+  });
+
+  it("asks for the kind when the headers don't say", () => {
+    const html = renderToStaticMarkup(
+      createElement(AnyFileImport, {
+        existingContactNames: [],
+        existingPeople: [],
+        existingJobs: [],
+        existingCrew: [],
+        existingPhaseCodeCodes: [],
+        initialFile: { name: "x.csv", text: "Open Balance,Attachments\n1,2" },
+      }),
+    );
+    expect(html).toContain("Couldn&#x27;t tell from the column names in x.csv");
+  });
+
+  it("calls an import action in exactly one place, the Import button's handler", () => {
     const source = readFileSync(new URL("./SpreadsheetImport.tsx", import.meta.url), "utf8");
-    expect(source).toContain("{ ...baseMapping, ...overrides }");
-    expect(source).not.toContain("{ ...overrides, ...baseMapping }");
+    expect(source.match(/await action\(formData\)/g)).toHaveLength(1);
+    const confirm = source.slice(source.indexOf("function confirm()"), source.indexOf("if (!open)"));
+    expect(confirm).toContain("await action(formData)");
   });
 });

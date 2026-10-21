@@ -70,6 +70,7 @@ export * from "./ask";
 export * from "./phase-codes";
 export * from "./help";
 export * from "./spreadsheetImport";
+export * from "./importSuggest";
 export * from "./payrollRegister";
 export * from "./wh347Statement";
 export * from "./jobber";

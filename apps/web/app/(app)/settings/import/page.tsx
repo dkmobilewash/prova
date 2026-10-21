@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { SpreadsheetImport } from "@/components/SpreadsheetImport";
+import { AnyFileImport, SpreadsheetImport } from "@/components/SpreadsheetImport";
 import { MyCoiImport } from "@/components/MyCoiImport";
 import { PayrollRegisterImport } from "@/components/PayrollRegisterImport";
 import { toIsoDate } from "@/lib/compliance-expiry";
@@ -200,8 +200,8 @@ export default async function ImportPage() {
         or an export from Sage 100 Contractor, Foundation, QuickBooks or any other system —
         instead of adding them one at a time. Excel files (.xlsx) work as-is — no saving as CSV
         first — and the Clients box also takes the contacts file your phone exports (.vcf).
-        Headers that don&apos;t match a name C Stream recognises can be mapped by hand, column by
-        column, so any export is importable, not only the ones it guesses.
+        Each column is matched for you — by name, by the names other systems use, or (if you ask)
+        by the assistant — and you can change any of them before you import.
       </p>
       <p className="mb-2 text-sm text-ink-body" data-tour="import-jobber">
         Use Jobber?{" "}
@@ -219,13 +219,20 @@ export default async function ImportPage() {
         QuickBooks.
       </p>
       <p className="mb-6 text-sm text-ink-body">
-        Nothing is saved until you press Confirm. First you see what will be added, what is
+        Nothing is saved until you press Import. First you see what will be added, what is
         already in C Stream (matched by name, so importing the same file twice adds nothing the
         second time), and any rows that have a problem, with the line number. Up to 500 rows at a
         time. Clients first is easiest, but a jobs file can add its own clients too.
       </p>
 
       <div className="mb-8 flex flex-col gap-6">
+        <AnyFileImport
+          existingContactNames={contactNames}
+          existingPeople={contactPeople.map((person) => ({ contactName: person.contact.name, name: person.name }))}
+          existingJobs={jobs.map((job) => ({ name: job.name, clientName: job.contact.name }))}
+          existingCrew={crew}
+          existingPhaseCodeCodes={phaseCodes.map((row) => row.code)}
+        />
         <div data-tour="import-clients">
           <SpreadsheetImport
             kind="clients"
