@@ -16,7 +16,9 @@
  *     8'-3" / E101`), so dimensions are stepped over rather than ending the
  *     stack;
  *   - Baker's code plan prints NAME / SF with no number at all;
- *   - the synthetic sheets print NAME / NUMBER with no area.
+ *   - the synthetic sheets print NAME / NUMBER with no area;
+ *   - SW's construction plan prints the NUMBER ABOVE the name (`104` over
+ *     `RESTROOM`), so a bare number with no name above it is read downward.
  *
  * ponytail: a stack walker with three regexes. If a set prints tags in a box
  * beside the name rather than under it, add a horizontal walk then, not now.
@@ -151,6 +153,43 @@ export function readRoomTags(items: readonly PositionedText[]): RoomTag[] {
     const before = out.length;
     readStack(i, null);
     if (out.length > before) out[out.length - 1].number = i.str;
+  }
+  // And NUMBER / NAME, the other way up: a number nobody used with a name
+  // directly BELOW it.
+  const below = (from: PositionedText): PositionedText | null => {
+    let best: PositionedText | null = null;
+    for (const i of trimmed) {
+      if (i === from || used.has(i)) continue;
+      const gap = i.y - (from.y + from.height);
+      if (gap < -0.5 * i.height || gap > STACK_GAP * Math.max(i.height, from.height)) continue;
+      if (Math.abs(centre(i) - centre(from)) > Math.max(i.width, from.width) / 2 + 0.5 * from.height) continue;
+      if (!best || i.y < best.y) best = i;
+    }
+    return best;
+  };
+  for (const i of trimmed) {
+    if (used.has(i) || !NUMBER_TEXT.test(i.str)) continue;
+    const names: PositionedText[] = [];
+    let at = i;
+    for (let guard = 0; guard < 3; guard += 1) {
+      const next = below(at);
+      if (!next || !NAME_TEXT.test(next.str) || NUMBER_TEXT.test(next.str) || AREA_TEXT.test(next.str)) break;
+      names.push(next);
+      at = next;
+    }
+    if (names.length === 0) continue;
+    used.add(i);
+    for (const n of names) used.add(n);
+    const stack = [i, ...names];
+    const xs = stack.flatMap((t) => [t.x, t.x + t.width]);
+    const ys = stack.flatMap((t) => [t.y, t.y + t.height]);
+    out.push({
+      name: names.map((n) => n.str).join(" "),
+      number: i.str,
+      areaSf: null,
+      x: (Math.min(...xs) + Math.max(...xs)) / 2,
+      y: (Math.min(...ys) + Math.max(...ys)) / 2,
+    });
   }
   return out;
 }

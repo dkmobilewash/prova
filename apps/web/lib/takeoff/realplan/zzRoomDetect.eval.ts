@@ -3,7 +3,9 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
+import { findWallsOnSheet } from "../findWallsOnSheet";
 import { roomsFromWalls, type FoundWall, type RoomFromWalls } from "../roomsFromWalls";
+import { sheetStrokes } from "../sheetStrokes";
 
 /**
  * ── AREA ERROR PER ROOM, AGAINST THE KEYS ──
@@ -17,6 +19,13 @@ import { roomsFromWalls, type FoundWall, type RoomFromWalls } from "../roomsFrom
  *   bim      walls = the BIM key's own centrelines, on the 18 r1-section
  *            sheets. Perfect walls, so this isolates the ROOM step: a
  *            miss here is mine, not the finder's.
+ *
+ * And, from the rewritten queue (2026-10-21 evening), a BOUNDARY variant of
+ * each: a room is bounded by every wall there is, not only the sub's, so the
+ * walls are the finder's RAW candidates — every pairing `onCandidate` sees,
+ * before triage and before the reviewer judged scope — plus the accepted and
+ * traced ones. On the BIM sheets that is the finder end to end, with no help
+ * from the key.
  *
  * Each detected room is named by the tag inside it; the tag's number (or
  * name, where the set prints no numbers) joins it to the key, and the error
@@ -45,12 +54,56 @@ type Saved = {
 };
 
 /** Labelled sheet → the key that prints its rooms' areas, and how to join. */
-const LABELLED: { set: string; sheet: string; key: string; join: "number" | "name" }[] = [
-  { set: "BUNKIE-BID-DRAWINGS.pdf", sheet: "A100", key: "printed/BUNKIE-BID-DRAWINGS__p32.json", join: "number" },
-  { set: "2025.07.08_Baker_EOC_BID.pdf", sheet: "A100", key: "printed/2025.07.08_Baker_EOC_BID__p4.json", join: "name" },
-  { set: "2025.07.08_Baker_EOC_BID.pdf", sheet: "A101", key: "printed/2025.07.08_Baker_EOC_BID__p4.json", join: "name" },
-  { set: "SW-Grand-Junction-CO.pdf", sheet: "A110", key: "printed/SW-Grand-Junction-CO__p43.json", join: "number" },
+const LABELLED: { set: string; sheet: string; keys: string[]; join: "number" | "name" }[] = [
+  { set: "BUNKIE-BID-DRAWINGS.pdf", sheet: "A100", keys: ["printed/BUNKIE-BID-DRAWINGS__p32.json"], join: "number" },
+  { set: "BUNKIE-BID-DRAWINGS.pdf", sheet: "A104", keys: ["printed/BUNKIE-BID-DRAWINGS__p35.json", "printed/BUNKIE-BID-DRAWINGS__p46.json"], join: "number" },
+  { set: "2025.07.08_Baker_EOC_BID.pdf", sheet: "A101", keys: ["printed/2025.07.08_Baker_EOC_BID__p4.json"], join: "name" },
+  { set: "SW-Grand-Junction-CO.pdf", sheet: "A110", keys: ["printed/SW-Grand-Junction-CO__p43.json"], join: "number" },
 ];
+
+/** Several key files, one room per number (a finish-schedule page repeats a toilet per elevation). */
+function loadKeys(paths: string[]): Key | null {
+  const rooms: Key["rooms"] = [];
+  for (const p of paths) {
+    if (!existsSync(p)) return null;
+    for (const r of (JSON.parse(readFileSync(p, "utf8")) as Key).rooms) {
+      if (r.number && rooms.some((k) => k.number === r.number)) continue;
+      rooms.push(r);
+    }
+  }
+  return { rooms };
+}
+
+/**
+ * The finder's raw candidates: every pairing `onCandidate` sees, pre-triage,
+ * minus the ones shorter than `RAW_MIN_FEET`. Measured on Bunkie A100
+ * (2026-10-21): 39,952 raw pairings, 90% of them 0.67 ft — the existing
+ * building's hatch, paired line by line. Those fill the hatched area with ink
+ * and bound nothing; the walls that matter are the long pairs.
+ */
+const RAW_MIN_FEET = 2;
+async function rawCandidates(pdf: string, page: number, feetPerUnit: number): Promise<{ walls: FoundWall[]; strokes: number }> {
+  // Fresh bytes for each reader: `openPlanPdf` hands pdfjs a VIEW and pdfjs
+  // detaches the buffer behind it (planPdf.ts says so), so a Buffer that has
+  // been through it once throws on the next use.
+  const read = await sheetStrokes(Buffer.from(readFileSync(pdf)), page);
+  const doc = await openPlanPdf(Buffer.from(readFileSync(pdf)));
+  const text = await doc.pageText(page);
+  await doc.close();
+  const walls: FoundWall[] = [];
+  findWallsOnSheet({
+    segments: read.segments,
+    textItems: text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height })),
+    pageSize: { widthPt: read.widthPt, heightPt: read.heightPt },
+    feetPerUnit,
+    wallTypes: [],
+    sampledSheets: null,
+    onCandidate: (_features, w) => {
+      if (w.lengthFeet >= RAW_MIN_FEET) walls.push({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, thicknessFeet: w.thicknessFeet });
+    },
+  });
+  return { walls, strokes: read.segments.length };
+}
 
 const norm = (s: string | null | undefined) => (s ?? "").toUpperCase().replace(/[^A-Z0-9#]+/g, " ").trim();
 
@@ -131,20 +184,20 @@ function dump(name: string, result: ReturnType<typeof roomsFromWalls>, extra: ob
 describe("rooms from walls, measured", () => {
   it.skipIf(REAL === "" || LABELS === "" || KEYS === "")("labels arm: accepted + traced walls", { timeout: 1_800_000 }, async () => {
     const all: Row[] = [];
-    for (const { set, sheet, key: keyFile, join: how } of LABELLED) {
+    for (const { set, sheet, keys, join: how } of LABELLED) {
       const labelPath = join(LABELS, set, `${sheet}.json`);
-      const keyPath = join(KEYS, keyFile);
-      if (!existsSync(labelPath) || !existsSync(keyPath)) {
+      const key = loadKeys(keys.map((k) => join(KEYS, k)));
+      if (!existsSync(labelPath) || !key) {
         console.log(`${set} ${sheet}: missing ${existsSync(labelPath) ? "key" : "label"}`);
         continue;
       }
       const saved = JSON.parse(readFileSync(labelPath, "utf8")) as Saved;
-      const key = JSON.parse(readFileSync(keyPath, "utf8")) as Key;
       const walls: FoundWall[] = [
         ...saved.verdicts.filter((v) => v.verdict === "wall").map((v) => ({ x1: v.x1, y1: v.y1, x2: v.x2, y2: v.y2, thicknessFeet: v.thicknessFeet })),
         ...(saved.traced ?? []).map((t) => ({ x1: t.x1, y1: t.y1, x2: t.x2, y2: t.y2 })),
       ];
-      const doc = await openPlanPdf(Buffer.from(readFileSync(join(REAL, set))));
+      const bytes = Buffer.from(readFileSync(join(REAL, set)));
+      const doc = await openPlanPdf(bytes);
       const text = await doc.pageText(saved.page);
       await doc.close();
       const result = roomsFromWalls({ walls, feetPerUnit: saved.feetPerUnit, text: text.items, widthPt: text.widthPt });
@@ -160,12 +213,19 @@ describe("rooms from walls, measured", () => {
       const loose = roomsFromWalls({ walls: every, feetPerUnit: saved.feetPerUnit, text: text.items, widthPt: text.widthPt });
       dump(`labels-all__${set.replace(/\.pdf$/, "")}__${sheet}`, loose, { pdf: join(REAL, set), set, sheet, page: saved.page, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit: saved.feetPerUnit, walls: every });
       score(`  … same sheet, ALL ${every.length} candidates incl. rejected`, loose.rooms, loose.unplacedTags, loose.mergedTags, key, how);
+      // BOUNDARY set: the finder's raw candidates + accepted + traced.
+      const raw = await rawCandidates(join(REAL, set), saved.page, saved.feetPerUnit);
+      const boundary: FoundWall[] = [...raw.walls, ...every];
+      const bounded = roomsFromWalls({ walls: boundary, feetPerUnit: saved.feetPerUnit, text: text.items, widthPt: text.widthPt });
+      dump(`boundary__${set.replace(/\.pdf$/, "")}__${sheet}`, bounded, { pdf: join(REAL, set), set, sheet, page: saved.page, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit: saved.feetPerUnit, walls: boundary });
+      all.push(...score(`  … BOUNDARY: ${raw.walls.length} raw finder candidates >= ${RAW_MIN_FEET} ft (${raw.strokes} strokes) + all ${every.length} offered`, bounded.rooms, bounded.unplacedTags, bounded.mergedTags, key, how));
     }
     expect(all.length).toBeGreaterThan(0);
   });
 
-  it.skipIf(BIM === "" || KEYS === "")("bim arm: the key's own centrelines", { timeout: 1_800_000 }, async () => {
+  it.skipIf(BIM === "" || KEYS === "")("bim arm: the key's own centrelines", { timeout: 7_200_000 }, async () => {
     const all: Row[] = [];
+    const endToEnd: Row[] = [];
     for (const model of readdirSync(BIM, { withFileTypes: true }).filter((d) => d.isDirectory())) {
       for (const name of readdirSync(join(BIM, model.name)).filter((f) => f.endsWith("r1-section.json")).sort()) {
         const k = JSON.parse(readFileSync(join(BIM, model.name, name), "utf8")) as {
@@ -199,6 +259,12 @@ describe("rooms from walls, measured", () => {
         const result = roomsFromWalls({ walls, feetPerUnit: 1 / key.unitsPerFoot, text: text.items, widthPt: text.widthPt });
         dump(`bim__${k.id}`, result, { pdf: join(BIM, model.name, k.file), set: k.id, page: 1, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit: 1 / key.unitsPerFoot, walls });
         all.push(...score(`${k.id} (${walls.length} wall pieces)`, result.rooms, result.unplacedTags, result.mergedTags, key, "number", walls));
+        if (process.env.BIM_END_TO_END === "1") {
+          const raw = await rawCandidates(join(BIM, model.name, k.file), 1, 1 / key.unitsPerFoot);
+          const e2e = roomsFromWalls({ walls: raw.walls, feetPerUnit: 1 / key.unitsPerFoot, text: text.items, widthPt: text.widthPt });
+          dump(`boundary__${k.id}`, e2e, { pdf: join(BIM, model.name, k.file), set: k.id, page: 1, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit: 1 / key.unitsPerFoot, walls: raw.walls });
+          endToEnd.push(...score(`  … END TO END: ${raw.walls.length} raw finder candidates, no key walls`, e2e.rooms, e2e.unplacedTags, e2e.mergedTags, key, "number", walls));
+        }
       }
     }
     const errs = all.filter((r) => r.gotSf !== null).map((r) => Math.abs((r.gotSf as number) - r.keySf) / r.keySf).sort((a, b) => a - b);
@@ -206,6 +272,14 @@ describe("rooms from walls, measured", () => {
       `\nBIM TOTAL: ${all.length} key rooms joined, ${errs.length} measured, ${all.filter((r) => r.why === "OPEN").length} open, ${all.filter((r) => r.why === "MERGED").length} merged through a wall (a leak), ${all.filter((r) => r.why === "MERGED-NO-WALL").length} merged with no wall in the model; ` +
         `median ${(errs[Math.floor(errs.length / 2)] * 100).toFixed(1)}%, within 5%: ${errs.filter((e) => e <= 0.05).length}, within 10%: ${errs.filter((e) => e <= 0.1).length}`,
     );
+    if (endToEnd.length) {
+      const e = endToEnd.filter((r) => r.gotSf !== null).map((r) => Math.abs((r.gotSf as number) - r.keySf) / r.keySf).sort((a, b) => a - b);
+      console.log(
+        `BIM END TO END (finder raw, no key walls): ${endToEnd.length} joined, ${e.length} measured, ${endToEnd.filter((r) => r.why === "OPEN").length} open, ` +
+          `${endToEnd.filter((r) => r.why === "MERGED").length} merged through a wall, ${endToEnd.filter((r) => r.why === "MERGED-NO-WALL").length} merged no wall; ` +
+          `median ${e.length ? (e[Math.floor(e.length / 2)] * 100).toFixed(1) : "—"}%, within 5%: ${e.filter((x) => x <= 0.05).length}, within 10%: ${e.filter((x) => x <= 0.1).length}`,
+      );
+    }
     expect(all.length).toBeGreaterThan(0);
   });
 });

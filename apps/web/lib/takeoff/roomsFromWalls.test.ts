@@ -68,6 +68,19 @@ describe("roomsFromWalls", () => {
     expect(rooms).toHaveLength(0);
   });
 
+  it("ignores the little box drawn round a tag, so the tag still names its room", () => {
+    // A 1.5 ft box round the number "101", as a tag symbol is drawn.
+    const b = [wall(4.25, 4.75, 5.75, 4.75), wall(5.75, 4.75, 5.75, 5.75), wall(5.75, 5.75, 4.25, 5.75), wall(4.25, 5.75, 4.25, 4.75)].map((w) => ({ ...w, thicknessFeet: 0.05 }));
+    const { rooms, unplacedTags } = roomsFromWalls({
+      walls: walls.concat(b),
+      feetPerUnit: W,
+      widthPt: 1000,
+      text: [text("OFFICE", 5, 4), text("101", 5, 5), text("STORAGE", 15, 4), text("102", 15, 5)],
+    });
+    expect(unplacedTags).toEqual([]);
+    expect(rooms.map((r) => r.tag?.name).sort()).toEqual(["OFFICE", "STORAGE"]);
+  });
+
   it("merges the rooms when the doorway is too wide to be a door, and says which tags merged", () => {
     const open = walls.slice(0, 4).concat([wall(10 + c, -c, 10 + c, 1)]);
     const { rooms, mergedTags } = roomsFromWalls({

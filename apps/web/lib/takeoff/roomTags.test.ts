@@ -68,6 +68,14 @@ describe("readRoomTags", () => {
     expect(staff.y).toBeCloseTo((14 + 66) / 2);
   });
 
+  it("reads NUMBER over NAME, the way SW prints its construction plan", () => {
+    const tags = readRoomTags([line("104", 100, 0), line("RESTROOM", 100, 14), line("101", 300, 0), line("RETAIL SALES", 300, 14), line("A3", 500, 0)]);
+    expect(tags.map((t) => [t.name, t.number]).sort()).toEqual([
+      ["RESTROOM", "104"],
+      ["RETAIL SALES", "101"],
+    ]);
+  });
+
   it("does not join two tags printed side by side", () => {
     const tags = readRoomTags([line("OFFICE", 100, 0), line("101", 100, 14), line("STORAGE", 160, 0), line("102", 160, 14)]);
     expect(tags.map((t) => t.name).sort()).toEqual(["OFFICE", "STORAGE"]);

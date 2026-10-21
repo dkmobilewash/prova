@@ -2,6 +2,7 @@ import { NARROWEST_DOOR_FEET, openingsInWalls } from "./openings";
 import { ringCorners, RING_TOLERANCE_CELLS, traceRing } from "./roomAreas";
 import { readRoomTags, type PositionedText, type RoomTag } from "./roomTags";
 import { gridSizeFor, rasterise, regionsOf, SMALLEST_ROOM_SQFT } from "./rooms";
+import { wallsNotLettering } from "./wallVectors";
 
 /**
  * ── ROOMS FROM THE WALLS THAT WERE FOUND, NOT FROM EVERY STROKE ──
@@ -88,9 +89,33 @@ export function roomsFromWalls(input: {
   /** Also seal corner-hinged doors. Off by default — measured, see `cornerSeals`. */
   sealCornerDoors?: boolean;
 }): RoomsFromWallsResult {
-  const { walls, feetPerUnit } = input;
+  const { feetPerUnit } = input;
   const empty = { rooms: [], unplacedTags: [], mergedTags: [], grid: { width: 0, height: 0, feetPerCell: 0 } };
-  if (!(feetPerUnit > 0) || walls.length === 0) return empty;
+  if (!(feetPerUnit > 0) || input.walls.length === 0) return empty;
+
+  // A tag's own box — the rectangle drawn round `E102` — pairs as a short
+  // wall, and a short wall round a tag puts the tag in a region too small to
+  // be a room. Measured on Bunkie A100 (2026-10-21): with the finder's raw
+  // pairings in, rooms the offered set had closed came back OPEN, because the
+  // tag sat in its own little box. The finder's own lettering rule removes it.
+  const walls: FoundWall[] =
+    input.text && input.widthPt
+      ? wallsNotLettering(
+          input.walls.map((w) => ({
+            ...w,
+            thicknessFeet: w.thicknessFeet ?? DEFAULT_THICKNESS_FEET,
+            lengthFeet: Math.hypot(w.x2 - w.x1, w.y2 - w.y1) * feetPerUnit,
+          })),
+          input.text.map((t) => ({
+            x: t.x / (input.widthPt as number),
+            y: t.y / (input.widthPt as number),
+            width: t.width / (input.widthPt as number),
+            height: t.height / (input.widthPt as number),
+          })),
+          feetPerUnit,
+        )
+      : [...input.walls];
+  if (walls.length === 0) return empty;
 
   const margin = MARGIN_FEET / feetPerUnit;
   const xs = walls.flatMap((w) => [w.x1, w.x2]);

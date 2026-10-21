@@ -43,6 +43,8 @@ const PRINTED: { file: string; page: number; note: string }[] = [
   { file: "2025.07.08_Baker_EOC_BID.pdf", page: 4, note: "code/area plan, NAME over SF, no numbers; same building as A100/A101" },
   { file: "BUNKIE-BID-DRAWINGS.pdf", page: 31, note: "A100, a labelled sheet" },
   { file: "BUNKIE-BID-DRAWINGS.pdf", page: 32, note: "the sheet after A100, tags with corridor and toilet" },
+  { file: "BUNKIE-BID-DRAWINGS.pdf", page: 35, note: "A104, a labelled sheet: one tag prints an area" },
+  { file: "BUNKIE-BID-DRAWINGS.pdf", page: 46, note: "finish-schedule page; prints the staff toilets' areas (K107, E101)" },
   { file: "SW-Grand-Junction-CO.pdf", page: 43, note: "NAME / NUMBER / SF tags" },
 ];
 
