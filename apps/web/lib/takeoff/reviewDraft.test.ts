@@ -235,10 +235,56 @@ describe("a re-detect must not wipe the sheet", () => {
   });
 
   it("takes the FRESH review when the sheet really was re-read", () => {
-    // A different candidate list is a different set of walls, and keeping
-    // verdicts across it would attach them to the wrong ones.
-    const got = keepReview(reviewed(), fresh(["w0", "w1", "w2", "w3"]));
+    // ── THIS CASE USED TO BE WRITTEN AS "ONE MORE CANDIDATE" ──
+    //
+    // It passed `["w0", "w1", "w2", "w3"]` against a reviewed `w0..w2` and
+    // asserted every verdict was dropped, on the stated grounds that "a
+    // different candidate list is a different set of walls". That was exactly
+    // right while ids were POSITIONAL, where `w0` in a three-list and `w0` in
+    // a four-list could be different walls.
+    //
+    // Ids are geometric now — `candidatesFromSheet` builds them from the
+    // coordinates, the same thing a saved file matches on — so an id appearing
+    // in both lists IS the same wall, and a longer list containing all of the
+    // old ones is the same sheet with more on offer. The hatch override
+    // produces exactly that, deliberately.
+    //
+    // So a real re-read is a list that does not contain what the reviewer
+    // judged, which is what this now passes.
+    const got = keepReview(reviewed(), fresh(["wX", "wY", "wZ", "wW"]));
     expect(Object.values(got.verdicts).every((v) => v === "unreviewed")).toBe(true);
+    expect(got.traced, "a re-read sheet keeps no traces either").toHaveLength(0);
+  });
+
+  it("keeps the work when the list SHRANK, which is the override pressed again", () => {
+    // The toggle goes both ways, and this direction is the one that bit: the
+    // list got shorter, the old rule fell through to `fresh`, and the sheet
+    // lost every verdict. In the smoke test it surfaced three steps later as
+    // "no accepted run over 6 ft to halve", which looks like a different bug.
+    const before = reviewed();
+    const got = keepReview(before, fresh(["w0", "w1"]));
+
+    expect(got.verdicts.w0).toBe("wall");
+    expect(got.verdicts.w1).toBe("not-a-wall");
+    expect(got.candidates).toHaveLength(2);
+    expect(got.traced, "and the traces survive the way back too").toHaveLength(2);
+  });
+
+  it("keeps the work when the list only GREW, as the hatch override makes it", () => {
+    // The override offers the hatch-classed lines as well, mid-sheet. Every
+    // candidate the reviewer already judged is still there, so dropping their
+    // verdicts would cost them the morning for pressing a button — which is
+    // what happened before `keepReview` could tell growth from a re-read, and
+    // the smoke test is what caught it.
+    const before = reviewed();
+    const got = keepReview(before, fresh(["w0", "w1", "w2", "s-hatch-1", "s-hatch-2"]));
+
+    expect(got.verdicts.w0).toBe("wall");
+    expect(got.verdicts.w1).toBe("not-a-wall");
+    expect(got.verdicts.w2).toBe("unsure");
+    expect(got.verdicts["s-hatch-1"], "the new ones arrive unjudged").toBe("unreviewed");
+    expect(got.candidates).toHaveLength(5);
+    expect(got.traced, "and the traces are still there").toHaveLength(2);
   });
 
   it("takes the fresh review when there was nothing before", () => {

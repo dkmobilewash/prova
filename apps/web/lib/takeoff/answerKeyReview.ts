@@ -338,9 +338,23 @@ export function candidatesFromSheet(input: {
   }[];
 }): Candidate[] {
   const out: Candidate[] = [];
-  input.walls.forEach((wall, at) => {
+  // ── AN ID FROM THE GEOMETRY, BECAUSE THE LIST CAN GROW ──
+  //
+  // These were `w0`, `w1`, `s0`, `s1` — the index in this array. A verdict is
+  // keyed by id, so any change to the LIST re-pointed every verdict after the
+  // insertion at a different line. That was safe only while the list could
+  // never change mid-sheet, and the hatch override changes it on purpose:
+  // offering the hatched lines inserts singles among the existing ones.
+  //
+  // The geometry is what a verdict is actually about, and it is what the
+  // saved file matches on when a sheet is reopened. So the id says the same
+  // thing the file does, and adding candidates leaves every existing verdict
+  // pointing at the line it was given for.
+  const idOf = (prefix: string, a: { x1: number; y1: number; x2: number; y2: number }) =>
+    `${prefix}${a.x1.toFixed(5)},${a.y1.toFixed(5)},${a.x2.toFixed(5)},${a.y2.toFixed(5)}`;
+  input.walls.forEach((wall) => {
     out.push({
-      id: `w${at}`,
+      id: idOf("w", wall),
       x1: wall.x1,
       y1: wall.y1,
       x2: wall.x2,
@@ -351,9 +365,9 @@ export function candidatesFromSheet(input: {
       note: "detected",
     });
   });
-  input.singles.forEach((single, at) => {
+  input.singles.forEach((single) => {
     out.push({
-      id: `s${at}`,
+      id: idOf("s", single.line),
       x1: single.line.x1,
       y1: single.line.y1,
       x2: single.line.x2,

@@ -99,6 +99,7 @@ function onAPlan(sheet: DetectedSheet, x1: number, y1: number, x2: number, y2: n
 
 export function offeredCandidates(
   sheet: DetectedSheet,
+  /** Also offer the HATCH-classed set-asides, for a reviewer judging them. */
   offerAll = false,
   /** See `ClassifyInput.hatchPitchRule`: on for labelling, off for customers. */
   hatchPitchRule = false,
@@ -161,7 +162,14 @@ export function offeredCandidates(
         thicknessFeet: w.thicknessFeet,
       })),
       singles: classified
-        .filter((one) => offerAll || worthOffering(one.kind))
+        // ── THE OVERRIDE IS HATCH-CLASSED LINES, NOT EVERYTHING ──
+        //
+        // Measured on the training sheets, five of the six set-aside reasons
+        // withheld 27,934 ft across 165 lines without a single foot of
+        // confirmed wall. Offering those spends a reviewer's attention on
+        // what is already known to be junk. `in-a-hatch` is the one reason
+        // that has ever hidden a wall, so it is the one worth a verdict.
+        .filter((one) => worthOffering(one.kind) || (offerAll && one.kind === "in-a-hatch"))
         .map((one) => ({
           line: one.line,
           lengthFeet: one.lengthFeet,

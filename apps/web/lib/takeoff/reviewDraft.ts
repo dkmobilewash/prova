@@ -240,7 +240,39 @@ export function hasUnsavedWork(state: ReviewState, savedSignature?: string): boo
  */
 export function keepReview(existing: ReviewState | null, fresh: ReviewState): ReviewState {
   if (existing === null) return fresh;
-  if (fingerprint(existing.candidates) !== fingerprint(fresh.candidates)) return fresh;
+  if (fingerprint(existing.candidates) !== fingerprint(fresh.candidates)) {
+    // ── A LIST THAT ONLY GREW IS NOT A DIFFERENT SHEET ──
+    //
+    // This returned `fresh` for ANY change of fingerprint, which drops the
+    // reviewer's verdicts AND their traces. Right when the finder has
+    // genuinely proposed something else, and wrong for the one operation that
+    // deliberately lengthens the list: the hatch override, which a reviewer
+    // presses PARTWAY THROUGH a sheet to judge the hatched lines as well.
+    // With the all-or-nothing rule that press cost them the morning, silently
+    // — and the only reason that is written here rather than discovered is
+    // that the smoke test's "it actually offers more" check went red first.
+    //
+    // Ids are geometric now, so "every candidate I had is still here" is a
+    // question that can be asked. When it holds, the sheet is the same sheet
+    // with more on offer and the work stands.
+    // SYMMETRIC, because the override is a toggle. Growing is pressing it and
+    // shrinking is pressing it again, and the second direction cost the smoke
+    // test its split scenario: the list got shorter, this fell through to
+    // `fresh`, and every verdict from the preceding steps was gone — so a
+    // later step reported "no accepted run over 6 ft to halve" and looked
+    // like a different bug entirely.
+    //
+    // The question either way is whether the smaller list is contained in the
+    // larger. If it is, this is one sheet with a different amount on offer; a
+    // genuine re-read proposes geometry that was not there before.
+    const now = new Set(fresh.candidates.map((c) => c.id));
+    const had = new Set(existing.candidates.map((c) => c.id));
+    const sameSheet =
+      fresh.candidates.length > existing.candidates.length
+        ? existing.candidates.every((c) => now.has(c.id))
+        : fresh.candidates.every((c) => had.has(c.id));
+    if (!sameSheet) return fresh;
+  }
   // The duplicate pre-marking comes from `fresh`, and the reviewer's verdicts
   // sit on top — their decision outranks the rule's, which is the same order
   // `restoreDraft` uses.

@@ -924,9 +924,23 @@ export function TakeoffPlanViewer({
   // it in a browser, which is the only instrument that could have: every unit
   // test here passed, because each one calls the mode the way the mode wants
   // to be called.
+  /** The `offerAll` the current candidate list was built with. */
+  const builtWith = useRef<boolean | null>(null);
   useEffect(() => {
     if (!answerKey?.onCandidates) return;
-    if (answerKey.state.candidates.length > 0) return;
+    // ── THE OVERRIDE HAS TO BE ABLE TO LENGTHEN AN EXISTING LIST ──
+    //
+    // This returned as soon as a list existed, which is right for every
+    // ordinary re-render and made the hatch override a DEAD CONTROL: the
+    // reviewer pressed it, the callback was rebuilt, this effect re-ran and
+    // returned immediately. The smoke test caught it as "82 -> 82 offered".
+    //
+    // So the guard asks the real question — is the list already built with
+    // the setting now in force — rather than merely whether one exists.
+    // `keepReview` is what makes the rebuild safe for work in progress.
+    const already = answerKey.state.candidates.length > 0;
+    if (already && builtWith.current === offerAll) return;
+    builtWith.current = offerAll;
     const candidates = candidatesFromLastDetect();
     if (candidates !== null && candidates.length > 0) {
       const W = lastDetect.current?.widthPt ?? 0;
