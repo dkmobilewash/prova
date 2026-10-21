@@ -107,6 +107,12 @@ export type LabelFile = {
    * before this existed, which is why the restore has a strict fallback.
    */
   splits: readonly SplitRecord[];
+  /**
+   * The previous file's training rows, kept whole under the build that made
+   * them, because a row carries no id or geometry and so cannot be matched to
+   * the verdict it came from. One generation only.
+   */
+  carriedRows: { finderVersion: string | null; rows: readonly unknown[] } | null;
   reviewComplete: boolean;
   /** `unsure` is REVIEWED and excluded; `unreviewed` is nobody looked. They
    *  were one field once and the file could not tell them apart. */
@@ -285,6 +291,36 @@ export function labelFile(input: {
    * never split, costing 15 ft of accepted footage and four duplicate pairs.
    */
   splits?: readonly SplitRecord[];
+  /**
+   * ── VERDICTS FROM AN EARLIER BUILD, KEPT RATHER THAN DROPPED ──
+   *
+   * A reopen matches saved verdicts to the candidates the finder proposes
+   * NOW, and the files on this machine span seven finder builds — so some
+   * decisions fit nothing any more. Writing the file without them would
+   * destroy reviewed work silently, every time somebody added one trace to an
+   * older sheet.
+   *
+   * They are written back exactly as they were, each tagged with the build
+   * that produced the candidate it judged, so a later reader can tell which
+   * geometry it can trust against which finder.
+   */
+  carried?: readonly (LabelVerdict & { finderVersion?: string })[];
+  /**
+   * The previous file's training rows.
+   *
+   * ── WHY WHOLESALE AND NOT PER VERDICT ──
+   *
+   * A row is `{features, from, label, lengthFt}` — no id and no geometry — so
+   * a row CANNOT be matched to the verdict it came from. Carrying "the rows
+   * for the unmatched verdicts" is therefore not expressible in this format,
+   * and pretending otherwise would mean guessing by length, which is the kind
+   * of inference that invented a split on MHK A1.01.
+   *
+   * So the previous file's rows are kept whole, under the build that made
+   * them, and the current build's rows are written as usual. One generation
+   * only: a sheet reopened ten times must not accumulate ten copies.
+   */
+  carriedRows?: { finderVersion: string | null; rows: readonly unknown[] } | null;
   secondsSpent: number;
   /** Overrides the environment; the app leaves it out and gets the build. */
   finderVersion?: string;
@@ -296,6 +332,12 @@ export function labelFile(input: {
 }): LabelFile {
   const rows = labelRows(input.candidates, input.verdicts, input.feetPerUnit, input.reviewComplete);
   const traced = input.verdicts.filter((v) => v.verdict === "traced");
+  // Carried verdicts go in beside the new work. They are NOT given to
+  // `labelRows`: there is no candidate for them on this build, so no feature
+  // row can honestly be derived — see `carriedRows`.
+  const carried = (input.carried ?? []).map((v) => ({ ...v }));
+  /** New work and carried work together: what the file will actually hold. */
+  const everything = [...input.verdicts, ...carried];
   return {
     format: "takeoff-labels-v1",
     set: input.set,
@@ -309,24 +351,55 @@ export function labelFile(input: {
     feetPerUnit: input.feetPerUnit,
     featureNames: [...FEATURE_NAMES],
     splits: [...(input.splits ?? [])],
+    carriedRows: input.carriedRows ?? null,
     reviewComplete: input.reviewComplete,
     counts: {
-      accepted: input.verdicts.filter((v) => v.verdict === "wall").length,
-      rejected: input.verdicts.filter((v) => v.verdict === "not-wall").length,
-      traced: traced.length,
-      unsure: input.verdicts.filter((v) => v.verdict === "unsure").length,
+      // ── COUNTED WITH THE CARRIED ONES ──
+      //
+      // A file whose `counts` ignore the verdicts it also contains is a file
+      // that argues with itself, and every census here reads the counts.
+      // ── ONE LIST, COUNTED ONCE ──
+      //
+      // The first version of this added `carried` to `accepted` and left the
+      // other three counting the new work alone, so a file could hold a
+      // carried rejection and report zero rejections. Every census here reads
+      // `counts`, and a file that argues with itself is worse than one that
+      // is merely incomplete. Counted off a single array so they cannot drift
+      // apart again.
+      accepted: everything.filter((v) => v.verdict === "wall").length,
+      rejected: everything.filter((v) => v.verdict === "not-wall").length,
+      traced: everything.filter((v) => v.verdict === "traced").length,
+      unsure: everything.filter((v) => v.verdict === "unsure").length,
       unreviewed: input.unreviewed,
     },
     rows,
-    verdicts: input.verdicts.map((v) => ({
-      x1: v.x1,
-      y1: v.y1,
-      x2: v.x2,
-      y2: v.y2,
-      lengthFeet: v.lengthFeet,
-      thicknessFeet: v.thicknessFeet,
-      verdict: v.verdict,
-    })),
+    verdicts: [
+      ...input.verdicts.map((v) => ({
+        x1: v.x1,
+        y1: v.y1,
+        x2: v.x2,
+        y2: v.y2,
+        lengthFeet: v.lengthFeet,
+        thicknessFeet: v.thicknessFeet,
+        verdict: v.verdict,
+      })),
+      // ── CARRIED FROM AN EARLIER BUILD, TAGGED WITH IT ──
+      //
+      // Written back exactly as they were read, each naming the build whose
+      // candidate it judged, so a later reader can tell which geometry it can
+      // trust against which finder. Dropping them is how one added trace
+      // would destroy an hour of somebody's decisions.
+      ...carried.map((v) => ({
+        x1: v.x1,
+        y1: v.y1,
+        x2: v.x2,
+        y2: v.y2,
+        lengthFeet: v.lengthFeet,
+        thicknessFeet: v.thicknessFeet,
+        verdict: v.verdict,
+        finderVersion: v.finderVersion,
+      })),
+    ],
     traced: traced.map((t) => ({
       x1: t.x1,
       y1: t.y1,

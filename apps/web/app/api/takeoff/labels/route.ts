@@ -1,6 +1,7 @@
 import { requireCompanyContext } from "@/lib/auth";
 import { LABEL_DIR_VAR, readLabels, writeLabels } from "@/lib/plan-ingest/labelStore";
 import { labelFile, type LabelCandidate, type LabelVerdict } from "@/lib/takeoff/labelRows";
+import type { SplitRecord } from "@/lib/takeoff/answerKeyReview";
 import { NextResponse } from "next/server";
 
 /**
@@ -147,6 +148,21 @@ export async function POST(request: Request) {
     replacing?: boolean;
     candidates: LabelCandidate[];
     verdicts?: LabelVerdict[];
+    /**
+     * ── THE MERGE: WHAT THE REOPEN COULD NOT SHOW ──
+     *
+     * Saved decisions whose candidates this build no longer proposes. They
+     * are written back exactly as they came, each naming the build that
+     * produced the candidate it judged. Without this, adding one trace to a
+     * sheet labelled on an older finder would delete every decision that no
+     * longer matches — which is the same accident the guard below was written
+     * for, arriving through a different door.
+     */
+    carried?: (LabelVerdict & { finderVersion?: string })[];
+    /** Splits the reviewer made, as geometry, so a reopen need not guess. */
+    splits?: SplitRecord[];
+    /** The previous file's rows, kept whole for one generation. */
+    carriedRows?: { finderVersion: string | null; rows: readonly unknown[] } | null;
   };
   const file = labelFile({
     set: input.set,
@@ -159,6 +175,9 @@ export async function POST(request: Request) {
     candidates: input.candidates,
     verdicts: input.verdicts ?? [],
     unreviewed: input.unreviewed ?? 0,
+    carried: input.carried ?? [],
+    splits: input.splits ?? [],
+    carriedRows: input.carriedRows ?? null,
   });
   // ── A SAVE MUST NOT QUIETLY REPLACE A BIGGER REVIEW ──
   //
@@ -168,9 +187,11 @@ export async function POST(request: Request) {
   // second pass over the same sheet, saved, and about twenty-four minutes of
   // somebody's work gone with no warning and no copy.
   //
-  // Until a sheet's labels can be loaded back in, this refuses the shape of
-  // that accident: a save carrying far fewer verdicts than the file already
-  // holds. It does not refuse a smaller save outright — a reviewer may
+  // A sheet's labels CAN be loaded back in now (`restoreSaved`), and a save
+  // merges in every verdict the reopen could not show — so the ordinary path
+  // no longer shrinks a file at all. This stays as the backstop it always
+  // was: it refuses the SHAPE of that accident, a save carrying far fewer
+  // verdicts than the file already holds, whatever produced it. It does not refuse a smaller save outright — a reviewer may
   // legitimately redo a sheet — it refuses an UNACKNOWLEDGED one, and says
   // exactly what it is protecting so the answer is obvious.
   const existing = await readLabels(parsed.set, parsed.sheet, process.env);

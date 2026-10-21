@@ -780,6 +780,13 @@ export function TakeoffWorkspace({
    */
   const [savedNotice, setSavedNotice] = useState<{ page: number; note: string } | null>(null);
   const [restoredReviewer, setRestoredReviewer] = useState<string | null>(null);
+  const [carriedFromFile, setCarriedFromFile] = useState<{
+    page: number;
+    carried: SavedSheet["verdicts"];
+    splits: unknown[];
+    rows: { finderVersion: string | null; rows: readonly unknown[] } | null;
+    sourceFinderVersion: string | null;
+  } | null>(null);
   const triedSaved = useRef<string>("");
   const baselineDecided = useRef<{ key: string; count: number }>({ key: "", count: 0 });
   useEffect(() => {
@@ -826,6 +833,22 @@ export function TakeoffWorkspace({
         if (got.ok) {
           setKeyState(got.state);
           setRestoredReviewer(got.reviewedBy);
+          setCarriedFromFile({
+            page,
+            carried: got.carried,
+            splits: got.carriedSplits,
+            // The rows this file already held, kept whole for one generation:
+            // a row has no id or geometry, so it cannot be matched to the
+            // verdict it came from.
+            rows:
+              got.carried.length === 0
+                ? null
+                : {
+                    finderVersion: got.sourceFinderVersion,
+                    rows: (saved as { rows?: readonly unknown[] }).rows ?? [],
+                  },
+            sourceFinderVersion: got.sourceFinderVersion,
+          });
           setSavedNotice({ page, note: got.message });
           // ── WHAT CAME OFF DISK IS NOT UNSAVED WORK ──
           //
@@ -1443,6 +1466,12 @@ export function TakeoffWorkspace({
               <AnswerKeyPanel
                 savedNotice={savedNotice?.page === page ? savedNotice.note : null}
                 restoredReviewer={restoredReviewer}
+                carried={carriedFromFile?.page === page ? carriedFromFile.carried : undefined}
+                carriedSplits={carriedFromFile?.page === page ? carriedFromFile.splits : undefined}
+                carriedRows={carriedFromFile?.page === page ? carriedFromFile.rows : null}
+                sourceFinderVersion={
+                  carriedFromFile?.page === page ? carriedFromFile.sourceFinderVersion : null
+                }
                 restoreOffer={restorable?.page === page ? restorable.offer : null}
                 onRestore={restoreReview}
                 onDiscardDraft={clearReviewDraft}

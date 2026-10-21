@@ -151,7 +151,9 @@ describe.skipIf(DIR === "" || LABELS === "")("reopening every labelled sheet", (
           `${String(got.decisions).padStart(4)}/${String(savedDecisions).padEnd(4)} decisions · ` +
           `${String(got.unmatched).padStart(3)} unmatched · ` +
           `${String(got.traces).padStart(3)}/${String(savedTraces).padEnd(3)} traces · ` +
-          `${got.splitsReapplied} split${got.splitsReapplied === 1 ? "" : "s"} re-applied`,
+          `${got.splitsReapplied} split${got.splitsReapplied === 1 ? "" : "s"} re-applied` +
+          `${got.traceOnly ? "  ← TRACE-ONLY" : ""}` +
+          `${got.carried.length > 0 ? `, ${got.carried.length} carried` : ""}`,
       );
     }
 

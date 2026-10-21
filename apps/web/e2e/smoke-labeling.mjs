@@ -717,6 +717,118 @@ try {
     );
   }
 
+  // ── A SAVE MUST NOT DROP A DECISION SOMEBODY MADE ──
+  //
+  // Diego's case: reopen a sheet with unmatched decisions, add a trace, save,
+  // and the file must contain every original verdict plus the trace.
+  //
+  // The reopen matches saved verdicts to the candidates THIS build proposes,
+  // and the label files on this machine span seven finder builds — so on an
+  // older sheet some decisions fit nothing. Writing the file without them
+  // means one added trace deletes an hour of reviewed work. That accident has
+  // already happened once through another door: Camp Bow Wow A101's 143
+  // verdicts became 15.
+  //
+  // The unmatched decisions are MANUFACTURED here, by moving two of the saved
+  // ones somewhere the finder proposes nothing. That is the only way to get a
+  // guaranteed mismatch on a sheet whose candidates are stable — and the
+  // mismatch is the whole subject of the test.
+  console.log("\n1d. a save keeps the decisions the reopen could not show");
+
+  let mergePath = null;
+  let movedCount = 0;
+  let verdictsBefore = 0;
+  for (const { path, doc } of savedLabelFiles()) {
+    const decided = (doc.verdicts ?? []).filter(
+      (v) => v.verdict === "wall" || v.verdict === "not-wall" || v.verdict === "unsure",
+    );
+    if (decided.length < 4) continue;
+    verdictsBefore = (doc.verdicts ?? []).length;
+    // Park two of them far off the sheet, where nothing is drawn.
+    for (const v of decided.slice(0, 2)) {
+      v.y1 = 0.97;
+      v.y2 = 0.97;
+      v.x1 = 0.02;
+      v.x2 = 0.09;
+      v.lengthFeet = 7;
+      movedCount += 1;
+    }
+    writeFileSync(path, `${JSON.stringify(doc, null, 1)}\n`);
+    mergePath = path;
+    break;
+  }
+  check(
+    "a file with unmatchable decisions exists to reopen",
+    mergePath !== null && movedCount === 2,
+    mergePath === null ? "no file with 4+ decisions" : `${movedCount} moved out of reach`,
+  );
+
+  if (mergePath !== null) {
+    await page.evaluate(() => {
+      try {
+        for (const k of Object.keys(localStorage)) {
+          if (k.includes("takeoff-review-draft")) localStorage.removeItem(k);
+        }
+      } catch {
+        // Blocked storage: nothing to clear.
+      }
+    });
+    await page.goto(url(SHEET_A), { waitUntil: "domcontentloaded" });
+    await waitForDrawing(page);
+    await findTheWalls(page);
+    await page.waitForTimeout(3000);
+
+    const mergeNotice = await page
+      .locator('[data-takeoff="key-saved-notice"]')
+      .textContent()
+      .catch(() => null);
+    check(
+      "the page says the unmatched decisions are KEPT, not lost",
+      mergeNotice !== null && /kept but not shown/.test(mergeNotice),
+      mergeNotice === null ? "no notice" : mergeNotice.slice(0, 110),
+    );
+
+    // Add a trace, then save.
+    if (!(await traceArmed())) await page.keyboard.press("t");
+    await page.waitForTimeout(200);
+    const mergeBox = await page.locator("canvas").first().boundingBox();
+    if (mergeBox !== null) {
+      await page.mouse.click(mergeBox.x + mergeBox.width * 0.3, mergeBox.y + mergeBox.height * 0.7);
+      await page.waitForTimeout(200);
+      await page.mouse.click(mergeBox.x + mergeBox.width * 0.5, mergeBox.y + mergeBox.height * 0.7);
+      await page.waitForTimeout(200);
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(400);
+    }
+
+    const mergeSave = page.locator('[data-takeoff="key-save-labels"]');
+    const mergeDead = await mergeSave.isDisabled();
+    check("Save is live on a trace-only reopen", !mergeDead, mergeDead ? "greyed out" : "enabled");
+    if (!mergeDead) {
+      await mergeSave.click();
+      await page.waitForFunction(() => /Labels saved|Not saved/.test(document.body.innerText), {
+        timeout: 60_000,
+      });
+      const after = JSON.parse(readFileSync(mergePath, "utf8"));
+      const afterDecided = (after.verdicts ?? []).filter(
+        (v) => v.verdict === "wall" || v.verdict === "not-wall" || v.verdict === "unsure",
+      ).length;
+      const afterTraced = (after.verdicts ?? []).filter((v) => v.verdict === "traced").length;
+      const tagged = (after.verdicts ?? []).filter((v) => v.finderVersion !== undefined).length;
+      check(
+        "every original verdict is still in the file",
+        (after.verdicts ?? []).length >= verdictsBefore,
+        `${verdictsBefore} before -> ${(after.verdicts ?? []).length} after ` +
+          `(${afterDecided} decided, ${afterTraced} traced)`,
+      );
+      check(
+        "and the carried ones name the build they came from",
+        tagged >= movedCount,
+        `${tagged} verdict(s) tagged with a finder build, ${movedCount} were moved out of reach`,
+      );
+    }
+  }
+
   console.log("\n2. navigate away after saving — no prompt, no trap");
   // ── ACCEPT, DO NOT DISMISS ──
   //

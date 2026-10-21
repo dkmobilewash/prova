@@ -139,7 +139,15 @@ describe("restoring a saved sheet", () => {
     expect(got.traces).toBe(1);
   });
 
-  it("REFUSES rather than restore half a review", () => {
+  it("below the floor it is TRACE-ONLY, and carries what it cannot show", () => {
+    // ── THIS USED TO REFUSE, AND REFUSING WAS RIGHT AT THE TIME ──
+    //
+    // While a save would have DROPPED the verdicts that did not match,
+    // refusing was the only safe answer: a partial restore saved back over
+    // the good file would have destroyed them. The save merges now — every
+    // carried verdict is written again, verbatim, with the build it came from
+    // — so refusing costs the reviewer the matched work and protects nothing.
+    //
     // Three of four decisions land nowhere: 25% matched, far under the floor.
     const got = restoreSaved(
       file([sv(10, 0, 40, "wall"), sv(60, 0, 40, "wall"), sv(70, 0, 40, "wall"), sv(80, 0, 40, "wall")], {
@@ -148,12 +156,16 @@ describe("restoring a saved sheet", () => {
       fresh(),
       FPU,
     );
-    expect(got.ok).toBe(false);
-    if (got.ok) return;
-    expect(got.message).toContain("1 of 4");
+    expect(got.ok).toBe(true);
+    if (!got.ok) return;
+    expect(got.traceOnly).toBe(true);
+    expect(got.carried).toHaveLength(3);
     // The message has to name the build, or nobody can tell which it was.
     expect(got.message).toContain("deadbeefcafe");
-    expect(got.message).toContain("Nothing was restored");
+    expect(got.message).toContain("kept but not shown");
+    expect(got.message).toContain("TRACING");
+    // And it must not say the work is gone, because it is not.
+    expect(got.message).not.toContain("Nothing was restored");
   });
 
   it("says so when the file holds nothing", () => {
@@ -182,7 +194,8 @@ describe("restoring a saved sheet", () => {
     if (!got.ok) return;
     expect(got.decisions).toBe(19);
     expect(got.unmatched).toBe(1);
-    expect(got.message).toContain("1 no longer matching");
+    expect(got.carried).toHaveLength(1);
+    expect(got.message).toContain("1 kept but not shown");
   });
 
   it("holds the floor where it is set", () => {

@@ -46,6 +46,30 @@ export type AnswerKeyPanelProps = {
    * was blank. Nothing about the review was wrong and nothing said so.
    */
   restoredReviewer?: string | null;
+  /**
+   * ── WHAT A REOPEN COULD NOT SHOW, SO THE SAVE CAN KEEP IT ──
+   *
+   * Saved decisions whose candidates the finder no longer proposes. They are
+   * not on screen and cannot be judged, and writing the file without them
+   * would destroy reviewed work silently — one added trace costing an hour of
+   * somebody's decisions. They go back into the file verbatim, with the build
+   * that produced the candidate each judged.
+   */
+  carried?: readonly {
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    lengthFeet: number;
+    thicknessFeet?: number;
+    verdict: string;
+  }[];
+  /** The splits the file recorded, so a save keeps them. */
+  carriedSplits?: readonly unknown[];
+  /** The previous file's rows and the build that made them. */
+  carriedRows?: { finderVersion: string | null; rows: readonly unknown[] } | null;
+  /** The build that wrote the file these came from. */
+  sourceFinderVersion?: string | null;
   onFocus: (id: string | null) => void;
   /**
    * An unsaved review for this sheet is in the browser — the text to offer.
@@ -130,6 +154,10 @@ export function AnswerKeyPanel({
   onFocus,
   savedNotice,
   restoredReviewer,
+  carried,
+  carriedSplits,
+  carriedRows,
+  sourceFinderVersion,
   restoreOffer,
   onRestore,
   onDiscardDraft,
@@ -461,6 +489,23 @@ export function AnswerKeyPanel({
           unreviewed: Math.max(0, progress.total - progress.reviewed),
           candidates: pairings,
           verdicts,
+          // ── THE MERGE ──
+          //
+          // Everything the reopen could not show, written back as it was.
+          // Each one names the build whose candidate it judged, because the
+          // geometry is only meaningful against that finder.
+          carried: (carried ?? []).map((v) => ({
+            x1: v.x1,
+            y1: v.y1,
+            x2: v.x2,
+            y2: v.y2,
+            lengthFeet: v.lengthFeet,
+            thicknessFeet: v.thicknessFeet ?? 0,
+            verdict: v.verdict,
+            finderVersion: sourceFinderVersion ?? undefined,
+          })),
+          splits: [...(state.splits ?? []), ...(carriedSplits ?? [])],
+          carriedRows: carriedRows ?? null,
         }),
       });
       const body = (await response.json()) as { ok: boolean; error?: string; path?: string; rows?: number };

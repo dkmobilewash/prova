@@ -82,6 +82,31 @@ export type RestoreSavedResult =
       reviewerKind: string | null;
       /** Splits re-created before matching, so their halves' verdicts fit. */
       splitsReapplied: number;
+      /**
+       * ── THE SAVED VERDICTS THAT MATCHED NOTHING, KEPT VERBATIM ──
+       *
+       * These are decisions a person made that no current candidate fits:
+       * the finder has moved since the file was written, and the label files
+       * on this machine span SEVEN finder builds. Dropping them on the next
+       * save would destroy reviewed work silently, which is the one outcome
+       * worse than refusing to restore.
+       *
+       * So they come back out here, exactly as they went in, and the save
+       * writes them again beside the new work with the build they came from.
+       */
+      carried: SavedVerdict[];
+      /** The splits the file recorded, passed through so a save keeps them. */
+      carriedSplits: SplitRecord[];
+      /** The build that wrote the file these came from. */
+      sourceFinderVersion: string | null;
+      /**
+       * Below `MIN_MATCH_SHARE` the review is restored anyway, but as a
+       * TRACE-ONLY sheet: too few decisions fit to judge candidates against,
+       * so the reviewer adds traces and the save merges. The page must say so
+       * — a partial restore that looks complete is the thing the floor was
+       * protecting against.
+       */
+      traceOnly: boolean;
       /** For the sentence the page shows: what came back. */
       decisions: number;
       traces: number;
@@ -379,19 +404,13 @@ export function restoreSaved(
     pairs.push({ saved: v, candidate: hit });
   }
 
-  // ── ALL OR NOTHING ──
-  if (decisions.length > 0 && pairs.length / decisions.length < MIN_MATCH_SHARE) {
-    return {
-      ok: false,
-      message:
-        `The saved review does not fit this sheet any more: ${pairs.length} of ${decisions.length} ` +
-        `saved decisions still match a candidate the finder proposes now` +
-        (saved.finderVersion === undefined
-          ? ""
-          : `. It was saved by finder ${saved.finderVersion.slice(0, 12)}`) +
-        `. Nothing was restored — re-review the sheet, or label it on the build that saved it.`,
-    };
-  }
+  // ── BELOW THE FLOOR IS TRACE-ONLY, NOT NOTHING ──
+  //
+  // This refused outright, which was right while a save would have DROPPED
+  // the verdicts that did not match. Now the save keeps them verbatim, so
+  // refusing costs the reviewer the matched work for no gain. The sheet comes
+  // back with what fits, says what does not, and is for tracing.
+  const traceOnly = decisions.length > 0 && pairs.length / decisions.length < MIN_MATCH_SHARE;
 
   let state = prepared.state;
   for (const { saved: v, candidate } of pairs) {
@@ -408,21 +427,34 @@ export function restoreSaved(
     );
   });
 
+  const carried = decisions.filter((v) => !pairs.some((p) => p.saved === v));
+
   return {
     ok: true,
     state,
+    carried,
+    carriedSplits: [...(saved.splits ?? [])],
+    sourceFinderVersion: typeof saved.finderVersion === "string" ? saved.finderVersion : null,
+    traceOnly,
     reviewedBy: typeof saved.reviewedBy === "string" && saved.reviewedBy !== "" ? saved.reviewedBy : null,
     reviewerKind: typeof saved.reviewerKind === "string" && saved.reviewerKind !== "" ? saved.reviewerKind : null,
     splitsReapplied: prepared.splits,
     decisions: pairs.length,
     traces: traces.length,
     unmatched,
-    message:
-      `Restored ${pairs.length} saved decision${pairs.length === 1 ? "" : "s"}` +
+    message: traceOnly
+      ? `${carried.length} saved decision${carried.length === 1 ? "" : "s"} kept but not shown: ` +
+        `the candidates they were about have moved` +
+        (saved.finderVersion === undefined
+          ? ""
+          : ` since finder ${saved.finderVersion.slice(0, 12)}`) +
+        `. ${pairs.length} of ${decisions.length} still fit, so this sheet is for TRACING — ` +
+        `add what the finder missed and save; nothing already decided is lost.`
+      : `Restored ${pairs.length} saved decision${pairs.length === 1 ? "" : "s"}` +
       (traces.length > 0 ? ` and ${traces.length} trace${traces.length === 1 ? "" : "s"}` : "") +
       (prepared.splits > 0 ? `, ${prepared.splits} split re-applied` : "") +
       (prepared.declined > 0 ? `, ${prepared.declined} split not re-applied (not provable)` : "") +
-      (unmatched > 0 ? `, ${unmatched} no longer matching any candidate` : "") +
-      ". Add what is missing and save again.",
+        (unmatched > 0 ? `, ${unmatched} kept but not shown — their candidates moved` : "") +
+        ". Add what is missing and save again.",
   };
 }
