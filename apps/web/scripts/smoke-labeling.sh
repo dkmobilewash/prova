@@ -77,8 +77,27 @@ echo "labels to  : $SMOKE_LABELS  (temporary)"
 echo "logs to    : $SMOKE_LOGS"
 echo
 
+# ── NEXT REWRITES TWO FILES ON EVERY BUILD, AND THEY ARE TRACKED ──
+#
+# `next build` rewrites `next-env.d.ts` to reference its distDir and
+# reformats `tsconfig.json`. With a distDir of `.next-smoke` that leaves the
+# checkout pointing at the SMOKE build: the tree goes dirty, the next real
+# rebuild stamps `-dirty` into every label file it writes, and a typecheck
+# resolves route types from a directory that belongs to a throwaway server.
+#
+# Found by checking the tree before a rebuild rather than after, which is the
+# only time it is cheap. They are copied aside and put back however this
+# exits.
+TOUCHED="next-env.d.ts tsconfig.json"
+KEEP="$(mktemp -d "${TMPDIR:-/tmp}/smoke-keep-XXXXXX")"
+for f in $TOUCHED; do cp "$f" "$KEEP/$(basename "$f")"; done
+
 cleanup() {
   if [ -n "${SERVER_PID:-}" ]; then kill "$SERVER_PID" 2>/dev/null || true; fi
+  for f in $TOUCHED; do
+    if [ -f "$KEEP/$(basename "$f")" ]; then cp "$KEEP/$(basename "$f")" "$f"; fi
+  done
+  rm -rf "$KEEP"
 }
 trap cleanup EXIT
 
