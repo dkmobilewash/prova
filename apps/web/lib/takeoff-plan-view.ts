@@ -14,6 +14,8 @@
 import type { MeasurementKind, StoredCalibration } from "@/lib/takeoff-plan";
 import type { ZoneNotice } from "@/lib/takeoff-zones";
 import { reducedPrint, setSheetWidth, printedScaleForSheet } from "./takeoff/reducedPrint";
+import { REPRODUCTION_SOURCE, reproductionCaution } from "./takeoff/reproductionScale";
+import { ARCHITECTURAL_SCALES } from "./takeoff/scaleFromDimensions";
 
 /** A calibration as the viewer needs it: the drawn line plus the distance it
  * was declared to be, with the Decimal already turned into a number by the
@@ -249,7 +251,14 @@ export function scalePrefillsFromReadings(
     let scaleName = row.scaleName;
     let declaredFeet = feet;
     let reducedPrintCaution: string | undefined;
-    if (unconfirmed) {
+    if (row.source === REPRODUCTION_SOURCE) {
+      // Already corrected by the dimensions; the sheet-width check below is
+      // for a printed scale and must not correct it twice. The caution is
+      // DERIVED from the two names the row holds, never stored.
+      const printedFpi = ARCHITECTURAL_SCALES.find((s) => s.name === row.declaredText)?.feetPerInch;
+      const factor = printedFpi !== undefined && feet > 0 && widthByPage[row.pageNumber] ? ((feet / (widthByPage[row.pageNumber] as number)) * 72) / printedFpi : 2;
+      reducedPrintCaution = reproductionCaution(row.declaredText ?? "the printed scale", row.scaleName, factor < 1 ? 0.5 : 2);
+    } else     if (unconfirmed) {
       const print = reducedPrint(widthByPage[row.pageNumber] ?? 0, setWidth);
       if (print.factor !== 1) {
         // The printed row's own line IS the sheet width and its distance is the

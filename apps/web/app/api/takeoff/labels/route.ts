@@ -1,5 +1,5 @@
 import { requireCompanyContext } from "@/lib/auth";
-import { LABEL_DIR_VAR, readLabels, writeLabels } from "@/lib/plan-ingest/labelStore";
+import { LABEL_DIR_VAR, labellingAllowed, readLabels, writeLabels } from "@/lib/plan-ingest/labelStore";
 import { labelFile, type LabelCandidate, type LabelVerdict } from "@/lib/takeoff/labelRows";
 import type { SplitRecord } from "@/lib/takeoff/answerKeyReview";
 import { NextResponse } from "next/server";
@@ -36,6 +36,14 @@ import { NextResponse } from "next/server";
  * on a production build, and on any path escape, so this is inert in every
  * deployment. A signed-in user is required here as it is for the POST.
  */
+/** The same answer for a read and a write, and the same one a customer's
+ *  deployment gives for an unknown route: labelling is not a thing here. The
+ *  refusal's reason is logged by the store, never sent — a server's
+ *  environment has no business in a response. */
+function notHere() {
+  return NextResponse.json({ ok: false, error: "Labelling is off here." }, { status: 404 });
+}
+
 export async function GET(request: Request) {
   await requireCompanyContext();
 
@@ -48,12 +56,7 @@ export async function GET(request: Request) {
       { status: 400 },
     );
   }
-  if (process.env[LABEL_DIR_VAR] === undefined) {
-    return NextResponse.json(
-      { ok: false, error: `Labelling is off here: ${LABEL_DIR_VAR} is not set.` },
-      { status: 404 },
-    );
-  }
+  if (!labellingAllowed(process.env)) return notHere();
 
   const saved = await readLabels(set, sheet);
   if (saved === null) {
@@ -69,6 +72,7 @@ export async function POST(request: Request) {
   // `labelStore`, but an unauthenticated write endpoint is not a thing to
   // leave lying about even behind one.
   await requireCompanyContext();
+  if (!labellingAllowed(process.env)) return notHere();
 
   let body: unknown;
   try {

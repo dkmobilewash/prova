@@ -6,6 +6,8 @@ import { readSheetScale } from "../takeoff/scaleFromDimensions";
 import { sheetScale, type StoredViewScales } from "../takeoff/sheetScale";
 import type { StrokeSegment } from "../takeoff/wallVectors";
 import { scaleFromPrinted } from "../takeoff/scaleFromPrinted";
+import { REPRODUCTION_SOURCE, reproductionReading } from "../takeoff/reproductionScale";
+import { ARCHITECTURAL_SCALES } from "../takeoff/scaleFromDimensions";
 import { printedScalesOnPage } from "../takeoff/scaleAudit";
 import type { StageCtx, StageWork } from "./stages";
 
@@ -259,6 +261,39 @@ async function readScaleFromSheet(
     // real sheet, leaving the estimator unable to finish. See `minLinePoints`.
     const verdict = readSheetScale(page, strokes.segments, labels, {}, metric);
     if (!verdict.ok) {
+      // ── A REPRODUCTION: THE DIMENSIONS SAY TWICE OR HALF WHAT THE TITLE BLOCK PRINTS ──
+      //
+      // Read BEFORE the printed fallback, because the printed scale is exactly
+      // the wrong answer on such a sheet. The dimensions' own vote is taken,
+      // only when it is a clean factor of two off the one printed scale and a
+      // majority of the labels that measured — `reproductionScale.ts` has the
+      // rule and the sweep that found no training sheet meeting it.
+      const printedNames = printedScalesOnPage(page.items);
+      const printedOne = printedNames.length === 1 ? ARCHITECTURAL_SCALES.find((s) => s.name === printedNames[0]) ?? null : null;
+      const reproduction = reproductionReading({ verdict, printed: printedOne === null ? null : { name: printedOne.name, feetPerInch: printedOne.feetPerInch } });
+      if (reproduction !== null) {
+        const paperInches = page.widthPt / 72;
+        return {
+          planId,
+          pageNumber,
+          scaleName: reproduction.scaleName,
+          source: REPRODUCTION_SOURCE,
+          // The sheet's own width at the dimensions' scale, as the printed
+          // fallback stores it: two facts about the file, nothing invented.
+          x1: 0,
+          y1: page.heightPt / page.widthPt / 2,
+          x2: 1,
+          y2: page.heightPt / page.widthPt / 2,
+          declaredDistanceFeet: paperInches * reproduction.feetPerInch,
+          // The characters the title block printed, so the screen can say
+          // what it disagreed with; the agreeing dimensions are the evidence.
+          declaredText: reproduction.printedScaleName,
+          agreedText: reproduction.agreed.join("\n"),
+          consideredCount: verdict.considered,
+          inheritedError: null,
+          declineReason: null,
+        };
+      }
       // ── THE PRINTED SCALE, AND ONLY HERE ──
       //
       // A FALLBACK and never a first choice: a reading off a dimension printed

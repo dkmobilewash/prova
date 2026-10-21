@@ -2134,3 +2134,104 @@ and `lib/ask/commands.ts` (an exclusion with its reason: a read that only
 means something with the drawing open). The clock reads the first draft
 had (`readAt`, `computedAt`) were removed rather than registered with
 `viewerDayCensus`; a file's mtime says when it was written.
+
+### Pre-production review follow-ups (2026-10-22, second session, temporary ownership)
+
+**Answer-key mode is staff-only now.** There is no staff role in this app,
+so "staff" means the machine: `labellingRefusal(env)` in
+`plan-ingest/labelStore.ts` is the local-plans gate (no `VERCEL`, and on a
+production build `ALLOW_LOCAL_PLANS=1` + loopback `HOSTNAME`) plus an
+absolute `TAKEOFF_LABEL_DIR`. `labelPath` refuses by it (as before), and now
+so do the workspace page's `?key=1` switch, the "Answer key" button (not
+rendered at all when the server cannot label) and both label routes, which
+answer a plain 404 that names no environment variable. `answer-key-gate
+.spec.ts` signs in a customer who can see job costs and asserts no button,
+no panel on `?key=1`, and 404 on read and write.
+
+**The items backfill (`20261016210000_takeoff_items`), what it does to a
+customer's data — proposed, not changed.** It touches two things on existing
+rows. `TakeoffPlan.updatedAt` is backfilled from `createdAt` and made NOT
+NULL — harmless and required. And every UNPOSTED measurement gains an item:
+one `TakeoffItem` per (job, kind, packageLabel), named from the label or
+"Linear takeoff" / "Area takeoff" / "Count", coloured by a hash of the key;
+posted measurements keep `itemId` NULL, so nothing that already became a
+wall run or a line item is counted twice. No measurement's geometry,
+length, area, scale or posted state is written. So no customer-visible
+NUMBER changes — a quantity is still the sum of the same measurements under
+the same grouping the package label gave — but the takeoff tab now shows
+those groups as named, coloured items, and posted history under
+"Unassigned". It is reversible in one statement, because the item foreign
+key is `ON DELETE SET NULL`: `DELETE FROM "TakeoffItem" WHERE "id" LIKE
+'tki_%'` returns every measurement to `itemId NULL` with nothing else
+touched. What it is NOT is a no-op, and the migration cannot be made one
+without losing its point (existing work landing inside the new model rather
+than in an Unassigned pile). The proposal: keep the backfill, run it on the
+demo project first and read the items panel there, and verify production
+with two counts before and after — `SUM(lengthFeet) GROUP BY jobId, kind`
+over unposted measurements must be identical, and `COUNT(*) WHERE postedAt
+IS NOT NULL AND itemId IS NOT NULL` must be zero. Diego's call.
+
+Verified rather than argued, on a throwaway Postgres with all 179
+migrations applied and four seeded measurements (two unposted `LINEAR`
+labelled "Partitions", one unposted `AREA` with no label, one posted
+`LINEAR`): running the migration's two backfill statements left every
+measurement's kind, label, geometry, posted date, source and cutouts
+byte-identical; created exactly two items ("Partitions" LINEAR, "Area
+takeoff" AREA); put both "Partitions" rows under the one item; left the
+posted row's `itemId` NULL; and the one-statement reversal returned every
+`itemId` to NULL with nothing else touched and no item left.
+
+**Migration count reconciled.** `origin/main` holds 175 migrations; the
+last successful `Migrate` run on production (2026-10-20, at main's tip
+`fa9aa2cc`) printed "175 migrations found" and verified the database up to
+date, so production equals main. The dry-run tree adds exactly six:
+four on `takeoff-audit` (`takeoff_items`, `assemblies_for_items`,
+`detection_into_items`, `view_scales`), one on `plan-text-library`
+(`wall_legend_library`), one on `rooms-areas` (`rooms_from_walls`). The
+"35" is not a count of pending migrations: `takeoff-audit` carries 38
+migrations dated October, which is the count of everything since the branch
+family began, most of it merged to main and applied weeks ago. Six is what
+will run.
+
+**`/Users/diego` is out of the specs**: the two real-plan specs default
+their folders to the empty string and skip, and the audit note no longer
+names a home directory.
+
+### Reproductions: dimensions at exactly twice or half the printed scale (2026-10-22)
+
+**The premise, measured first.** The ask was Topeka G-100b, "prints 1/16"
+but 45 dimensions agree on exactly half". They do not. The product's own
+vote on that sheet is `1/32"` × 10, `1/8"` × 5, `1/16"` × 3, out of 45
+labels — a plurality for the half scale, backed by 22% of what measured,
+on a code plan whose "dimensions" are mostly travel distances. Swept over
+all sixteen training sets with `realplan/zzHalfSize.ts` (one printed scale,
+≥3 labels, the dimension candidates measured against it): **no sheet has a
+majority of its labels at a clean 2× or 0.5×**. The nearest are Topeka
+G-100b (8 of 45 at 2×, 4 at 0.5×, 3 at 1×) and Fairgrounds A-101 (11 of 60
+at 2×, 8 at 1× — a base-bid plan and an alternate on one sheet, which the
+vote rightly calls two scales). `reducedPrint.ts` already records why
+counting candidates against the printed name is dangerous; this sweep is
+that warning measured again.
+
+**What was built, and what it refuses.** `reproductionScale.ts`: when the
+dimension vote has a winner and declines only afterwards (too short a line,
+an off line, an engineering scale), the decline now carries the vote; the
+reading takes it only when the vote is within 2% of exactly 2× or 0.5× the
+ONE scale printed on the sheet, meets the vote's own minimum, and holds a
+MAJORITY of every label that measured. It is read before the printed
+fallback, because the printed scale is exactly the wrong answer on such a
+sheet. The row stores the sheet's own width at the dimensions' scale (as
+the printed fallback does), the printed name in `declaredText`, the agreeing
+dimensions as evidence, and the source `DIMENSIONS_REPRODUCTION`; the
+screen composes the caution from those two names at render time — "This
+sheet appears to be printed at half size; scale taken from its dimensions.
+The title block says 1/16" = 1'-0", but the dimensions on the sheet measure
+at 1/32" = 1'-0"…" — the same amber line the sheet-width reduction uses.
+Nothing is set by hand and nothing fires without the dimensions agreeing.
+
+**It has never fired on a real drawing.** Every training sheet fails the
+majority test, so the rule is proved on synthetic votes (unit tests, the
+Topeka shape included as the refusal case) and the view test, and the first
+real sheet it accepts is the one to look at hard. That is the honest state,
+and it is why the rule is strict rather than the plurality that would have
+"fixed" Topeka.
