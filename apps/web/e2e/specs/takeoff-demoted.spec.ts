@@ -23,6 +23,13 @@ import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/jour
  * against the found count BEFORE and AFTER, so a replay that silently did
  * nothing cannot pass (the vacuous-green rule).
  *
+ * THE TRAINED MODEL IS AN INVENTED ONE: `TAKEOFF_WALL_MODEL` must name
+ * `e2e/fixtures/wall-model.invented.json` for this run — one stump on
+ * lengthPercentile, so the shortest runs of the fixture score 0.119 and the
+ * rest 0.88, against the default cut of 0.3. It proves the wiring (a model
+ * file is read, runs are scored at Find time, the panel and the total
+ * follow), not that any trained model is right about anything.
+ *
  * NOT COVERED HERE: `?key=1` labelling mode. The workspace enters it only
  * when the server says labelling is available (`labellingAvailable`, the
  * labelling server's own build), which the e2e build never does — a first
@@ -44,6 +51,12 @@ const VERDICT = {
   missing: [],
   model: "replayed-in-e2e",
 };
+/** Every run in view called a wall (ids past the last run are ignored by the viewer). */
+const ALL_WALLS = {
+  labels: Array.from({ length: 200 }, (_, i) => ({ id: i + 1, label: "WALL", reason: "a wall" })),
+  missing: [],
+  model: "replayed-in-e2e",
+};
 
 test.describe.configure({ mode: "serial" });
 
@@ -59,12 +72,18 @@ async function hydrated(page: Page, selector: string): Promise<void> {
 const isActionPost = (r: Response) => r.request().method() === "POST" && r.request().headers()["next-action"] !== undefined;
 
 test.describe("demote, don't hide", () => {
+  // The first step is the whole journey — sign-in, a job, an upload, a scale,
+  // a find — and on a cold build it passed Playwright's 30s default by a few
+  // seconds once. The real-sheet spec beside this one sets the same.
+  test.setTimeout(240_000);
   let page: Page;
   let monitor: HealthMonitor;
   const servedPdf = readFileSync(path.join(FIXTURES, "S05.pdf"));
   let jobId = "";
   /** The real refusal's body and content type, captured once and replayed with the verdict swapped in. */
   let captured: { body: string; contentType: string } | null = null;
+  /** Found with the switch OFF: every paired run, nothing demoted. The invariant below is found + demoted = this. */
+  let baseline = 0;
 
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -128,14 +147,15 @@ test.describe("demote, don't hide", () => {
     return foundCount();
   }
   /** Route every later check through the captured refusal with the verdict swapped in. */
-  async function replayVerdict(): Promise<void> {
+  async function replayVerdict(verdict: object = VERDICT): Promise<void> {
+    await page.unroute(() => true);
     expect(captured, "the real check's response was never captured").not.toBeNull();
     const { body, contentType } = captured!;
     const at = body.indexOf('{"ok":false');
     expect(at, `no refusal row in the captured response: ${body.slice(0, 200)}`).toBeGreaterThanOrEqual(0);
     const end = body.indexOf("\n", at);
     const replaced =
-      body.slice(0, at) + JSON.stringify({ ok: true, value: VERDICT }) + (end === -1 ? "" : body.slice(end));
+      body.slice(0, at) + JSON.stringify({ ok: true, value: verdict }) + (end === -1 ? "" : body.slice(end));
     await page.route(
       (url) => url.pathname.startsWith("/takeoff/"),
       async (route) => {
@@ -165,6 +185,8 @@ test.describe("demote, don't hide", () => {
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
     const before = await findTheWalls();
     expect(before, "S05 should pair more than two runs").toBeGreaterThan(2);
+    baseline = before;
+    expect(await page.locator('[data-takeoff="demoted"]').count(), "the switch is off, yet the model demoted at find").toBe(0);
     const [response] = await Promise.all([
       page.waitForResponse(isActionPost, { timeout: 60_000 }),
       page.locator('[data-takeoff="check-runs"]').click(),
@@ -206,32 +228,52 @@ test.describe("demote, don't hide", () => {
     await expectHealthy(page, "settings after the switch", { monitor });
   });
 
-  test("switch on, the same verdict: the runs stay, greyed, out of the total, one click back", async () => {
+  test("switch on: Find the walls demotes by the model at once, no check pressed", async () => {
     await page.goto(`/takeoff/${jobId}`);
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
     await page.route("**/api/takeoff/plan/**", async (route) => {
       await route.fulfill({ status: 200, contentType: "application/pdf", body: servedPdf });
     });
-    const before = await findTheWalls();
+    const found = await findTheWalls();
+    const demoted = page.locator('[data-takeoff="demoted"]');
+    await expect(demoted, "the model demoted nothing on the fixture, so the wiring is unproved").toBeVisible({ timeout: 30_000 });
+    await expect(demoted).toContainText("the wall model doubts this one (score 0.11)");
+    const rows = await page.locator('[data-takeoff="demoted-row"]').count();
+    expect(rows).toBeGreaterThanOrEqual(1);
+    expect(rows, "the invented model must leave some runs standing").toBeLessThan(baseline);
+    expect(await page.locator('[data-takeoff="demoted-wall"]').count(), "rows without grey lines on the drawing").toBe(rows);
+    expect(found, "found + demoted must equal the switch-off count").toBe(baseline - rows);
+    expect(await page.locator('[data-takeoff="check-error"]').count(), "no check ran, so no check error").toBe(0);
+    await page.screenshot({ path: path.join(SHOTS, "03-model-demoted-at-find.png") });
+    await expectHealthy(page, "model demotion at find", { monitor, signedIn: false });
+  });
+
+  test("the check is the second opinion: its verdicts join the list, and one click puts a run back", async () => {
     await replayVerdict();
     await page.locator('[data-takeoff="check-runs"]').click();
     const demoted = page.locator('[data-takeoff="demoted"]');
-    await expect(demoted).toBeVisible({ timeout: 30_000 });
-    await expect(demoted).toContainText("2 runs probably not walls");
-    await expect(demoted).toContainText("not in the total");
-    await expect(demoted).toContainText("casework: a counter");
+    await expect(demoted).toContainText("casework: a counter", { timeout: 30_000 });
     await expect(demoted).toContainText("reference line: a dimension line");
-    expect(await page.locator('[data-takeoff="demoted-row"]').count()).toBe(2);
-    expect(await page.locator('[data-takeoff="demoted-wall"]').count(), "rows without grey lines on the drawing").toBe(2);
-    expect(await foundCount(), "a demoted run is still in the total").toBe(before - 2);
-    await page.screenshot({ path: path.join(SHOTS, "03-switch-on-demoted.png") });
+    const rows = await page.locator('[data-takeoff="demoted-row"]').count();
+    expect(await page.locator('[data-takeoff="demoted-wall"]').count()).toBe(rows);
+    expect(await foundCount(), "found + demoted must equal the switch-off count").toBe(baseline - rows);
+    await page.screenshot({ path: path.join(SHOTS, "04-model-and-check-demoted.png") });
 
     await page.locator('[data-takeoff="accept-demoted"]').first().click();
-    await expect(page.locator('[data-takeoff="demoted-row"]')).toHaveCount(1);
-    expect(await page.locator('[data-takeoff="demoted-wall"]').count()).toBe(1);
-    expect(await foundCount(), "accepting did not put the run back in the total").toBe(before - 1);
-    await expect(demoted).toContainText("1 run probably not a wall");
-    await page.screenshot({ path: path.join(SHOTS, "04-one-accepted.png") });
+    await expect(page.locator('[data-takeoff="demoted-row"]')).toHaveCount(rows - 1);
+    expect(await page.locator('[data-takeoff="demoted-wall"]').count()).toBe(rows - 1);
+    expect(await foundCount(), "accepting did not put the run back in the total").toBe(baseline - rows + 1);
+    await page.screenshot({ path: path.join(SHOTS, "05-one-accepted.png") });
     await expectHealthy(page, "verdict, switch on", { monitor, signedIn: false });
+  });
+
+  test("a check that calls every run a wall overrides the model: nothing left demoted", async () => {
+    await replayVerdict(ALL_WALLS);
+    await page.locator('[data-takeoff="check-runs"]').click();
+    await expect(page.locator('[data-takeoff="check-done"]')).toContainText("Every run checked looks like a wall", { timeout: 30_000 });
+    expect(await page.locator('[data-takeoff="demoted"]').count()).toBe(0);
+    expect(await page.locator('[data-takeoff="demoted-wall"]').count()).toBe(0);
+    expect(await foundCount(), "with every run a wall, the total is the switch-off count again").toBe(baseline);
+    await expectHealthy(page, "all walls", { monitor, signedIn: false });
   });
 });

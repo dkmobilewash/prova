@@ -15,7 +15,12 @@ import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/jour
  * into `REAL_SHEET_OUT` (also outside) and served in place of the upload.
  * Same harness as `takeoff-rooms-real.spec.ts`.
  *
- * THE VERDICT IS INVENTED. The e2e runner strips the model key, so the real
+ * With `TAKEOFF_WALL_MODEL` naming a TRAINED model (outside the repository)
+ * the first screenshot is the real product behaviour: what the model demotes
+ * at Find time on this sheet, at its cut, with no model call. The sheet is a
+ * training sheet, so that picture says nothing about a held-out score.
+ *
+ * THE CHECK'S VERDICT IS INVENTED. The e2e runner strips the model key, so the real
  * check refuses; its response is captured once and replayed with the first
  * `REAL_DEMOTE_N` runs in view (default 3) marked casework/reference. The
  * screenshots show what the panel and the drawing look like with runs
@@ -129,8 +134,16 @@ test.describe("demote, don't hide, on a real sheet", () => {
     await expect(findWalls, "the sheet never got a scale, so nothing can be found").toBeEnabled({ timeout: 120_000 });
     await findWalls.click();
     await expect(findWalls).toHaveText("Find the walls", { timeout: 540_000 });
-    const before = await foundCount();
-    await page.screenshot({ path: path.join(OUT, `p${PAGE}-01-walls-found.png`) });
+    const standing = await foundCount();
+    const byModel = await page.locator('[data-takeoff="demoted-row"]').count();
+    const before = standing + byModel;
+    await page.screenshot({ path: path.join(OUT, `p${PAGE}-01-walls-found-model-demoted-${byModel}.png`) });
+    if (byModel > 0) {
+      await page.locator('[data-takeoff="demoted-row"]').first().hover();
+      await page.screenshot({ path: path.join(OUT, `p${PAGE}-01b-model-demoted-row-hovered.png`) });
+      const reasons = await page.locator('[data-takeoff="demoted-row"]').allTextContents();
+      writeFileSync(path.join(OUT, `p${PAGE}-model-demoted.txt`), reasons.join("\n") + "\n");
+    }
 
     // The real check, refused (no key in e2e): captured for the replay.
     const check = page.locator('[data-takeoff="check-runs"]');
@@ -174,12 +187,13 @@ test.describe("demote, don't hide, on a real sheet", () => {
     await expect(page.locator('[data-takeoff="demoted-row"]')).toHaveCount(rows - 1);
     const accepted = await foundCount();
     await page.screenshot({ path: path.join(OUT, `p${PAGE}-04-one-taken-back-INVENTED-verdict.png`) });
-    const note = `p${PAGE}: found ${before} runs; replayed verdict demoted ${rows} (grey lines ${lines}); total ${before} -> ${after}; one taken back -> ${accepted}\n`;
+    const model = process.env.TAKEOFF_WALL_MODEL ? path.basename(path.dirname(process.env.TAKEOFF_WALL_MODEL)) : "none";
+    const note = `p${PAGE}: ${before} paired runs; the model (${model}, cut ${process.env.TAKEOFF_WALL_MODEL_CUT ?? "default"}) demoted ${byModel} at find; with the replayed check ${rows} demoted (grey lines ${lines}); total ${standing} -> ${after}; one taken back -> ${accepted}\n`;
     console.log(note);
     writeFileSync(path.join(OUT, `p${PAGE}-demoted.txt`), note);
-    expect(rows).toBe(DEMOTE_N);
-    expect(lines).toBe(DEMOTE_N);
-    expect(after).toBe(before - DEMOTE_N);
-    expect(accepted).toBe(before - DEMOTE_N + 1);
+    expect(rows).toBeGreaterThanOrEqual(1);
+    expect(lines).toBe(rows);
+    expect(after).toBe(before - rows);
+    expect(accepted).toBe(before - rows + 1);
   });
 });

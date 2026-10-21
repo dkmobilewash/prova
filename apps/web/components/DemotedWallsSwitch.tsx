@@ -31,10 +31,11 @@ export function DemotedWallsSwitch({ on, isOwner }: { on: boolean; isOwner: bool
             <span className="font-medium text-ink">Keep doubtful runs on the sheet</span>
             <span className="ml-2 text-xs text-ink-muted">new — off until you turn it on</span>
             <span className="mt-1 block text-xs text-ink-muted">
-              When &ldquo;Check these are walls&rdquo; decides a run is a countertop, a fixture or a reference line, it
-              stays on the drawing greyed out and marked &ldquo;probably not a wall&rdquo;, left out of the total, with
-              one click to put it back. Off, those runs are taken off the sheet and only Find the walls brings them
-              back.
+              A run the wall model doubts when the walls are found, or one &ldquo;Check these are walls&rdquo;
+              decides is a countertop, a fixture or a reference line, stays on the drawing greyed out and marked
+              &ldquo;probably not a wall&rdquo; with the reason, left out of the total, with one click to put it back.
+              Off, the model is not consulted and the check takes such runs off the sheet; only Find the walls brings
+              them back.
             </span>
           </span>
         </label>

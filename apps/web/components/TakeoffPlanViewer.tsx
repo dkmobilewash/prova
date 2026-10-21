@@ -72,7 +72,8 @@ import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
 import { doorsByGroup, feetInches } from "@/lib/takeoff/planTextView";
 import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
 import { BLANK_TILE_INK, TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
-import { demotedRuns, demotedSentence, demotedWord, demotes, type RunVerdict } from "@/lib/takeoff/demotedRuns";
+import { demotedRuns, demotedSentence, demotedWord, demotes, modelVerdicts, type RunVerdict } from "@/lib/takeoff/demotedRuns";
+import type { WallModel } from "@/lib/takeoff/wallClassifier";
 import { pagesToSample } from "@/lib/takeoff/sheetTemplate";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "@/lib/takeoff/findWallsOnSheet";
 import { SheetTooDenseError, oneFacePerLine, wallFromPair } from "@/lib/takeoff/wallVectors";
@@ -269,6 +270,7 @@ export function TakeoffPlanViewer({
   readOnly = false,
   roomFinder = false,
   demotedWalls = false,
+  wallModel = null,
   onMeasurementSaved,
   activeItemId = null,
 }: {
@@ -358,6 +360,13 @@ export function TakeoffPlanViewer({
    * labelling mode. See `lib/takeoff/demotedRuns.ts`.
    */
   demotedWalls?: boolean;
+  /**
+   * The trained wall classifier and its cut, read from the file
+   * `TAKEOFF_WALL_MODEL` names (`lib/takeoff/wallModelFile.ts`). With the
+   * switch on, a run it scores below the cut is demoted at Find time, with
+   * no model call. Null when no file is configured; inert with the switch off.
+   */
+  wallModel?: { model: WallModel; cut: number } | null;
   /**
    * Told when a measurement has been saved, so a HOST can offer to undo it.
    *
@@ -1969,6 +1978,9 @@ export function TakeoffPlanViewer({
    */
   const demote = demotedWalls && answerKey === undefined;
   const demoted = demote ? demotedRuns(labels, runsRef.current) : [];
+  /** The model the find scores with — a ref, so the find callback need not re-bind on it. */
+  const wallModelRef = useRef<{ model: WallModel; cut: number } | null>(null);
+  wallModelRef.current = demote ? wallModel : null;
   const [hoveredDemoted, setHoveredDemoted] = useState<number | null>(null);
   /**
    * Taking a run back is its verdict becoming WALL, then the list rebuilt from
@@ -2502,7 +2514,17 @@ export function TakeoffPlanViewer({
       runsRef.current = walls;
       feetAcrossRef.current = feetPerUnit;
       regroupRef.current = regroup;
-      setLabels(null);
+      // ── THE MODEL'S FIRST OPINION, AT FIND TIME ──
+      // Null unless the switch is on, a model file is configured and this is
+      // not labelling mode, in which case every run scoring below the cut
+      // leaves the list demoted — the same walls the finder's veto would have
+      // dropped, kept on screen instead. See `modelVerdicts`.
+      const byModel =
+        wallModelRef.current !== null
+          ? modelVerdicts(wallModelRef.current.model, wallModelRef.current.cut, walls, pairings, feetPerUnit)
+          : null;
+      const doubted = byModel !== null && byModel.size > 0 ? byModel : null;
+      setLabels(doubted);
       setMissed([]);
       setCheckError(null);
       // `found.groups` IS `regroup(walls)`, computed once inside the pipeline
@@ -2510,7 +2532,7 @@ export function TakeoffPlanViewer({
       // next line went with it: `clusterByThickness` was called, assigned and
       // then deliberately discarded, because the real clustering happens inside
       // `regroup`. The pipeline still returns it for the bench.
-      setFound(found.groups);
+      setFound(doubted !== null ? regroup(walls.filter((_, at) => !doubted.has(at))) : found.groups);
 
       // ── AND, FOR A REVIEWER, EVERYTHING THE DETECTOR COULD NOT REACH ──
       //
@@ -2990,8 +3012,9 @@ export function TakeoffPlanViewer({
                 >
                   <span className="text-ink-body">{feetInches(d.lengthFeet)}</span>
                   <span>
-                    probably not a wall — {demotedWord(d.label)}
-                    {d.reason ? `: ${d.reason}` : ""}
+                    {demotedWord(d.label) === null
+                      ? `probably not a wall — ${d.reason}`
+                      : `probably not a wall — ${demotedWord(d.label)}${d.reason ? `: ${d.reason}` : ""}`}
                   </span>
                   <button
                     type="button"

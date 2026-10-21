@@ -1,3 +1,4 @@
+import { loadWallModel } from "@/lib/takeoff/wallModelFile";
 import { prisma } from "@prova/db";
 
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
@@ -556,6 +557,9 @@ export async function loadTakeoffWorkspace(
     sheets,
     roomFinderOn: roomFinder?.roomFinderOn ?? false,
     demotedWallsOn: roomFinder?.demotedWallsOn ?? false,
+    // The trained wall model, only for a company whose switch is on: ~80 KB
+    // of trees that nobody else's page should carry.
+    wallModel: roomFinder?.demotedWallsOn ? loadWallModel(process.env) : null,
     allWallTypes,
     postableWallTypes,
     printedScaleByPage,
