@@ -35,6 +35,7 @@ export type AnswerKeyPanelProps = {
   onState: (next: ReviewState) => void;
   /** Which candidate the overlay is highlighting, if any. */
   focusedId: string | null;
+  savedNotice?: string | null;
   onFocus: (id: string | null) => void;
   /**
    * An unsaved review for this sheet is in the browser — the text to offer.
@@ -117,6 +118,7 @@ export function AnswerKeyPanel({
   onState,
   focusedId,
   onFocus,
+  savedNotice,
   restoreOffer,
   onRestore,
   onDiscardDraft,
@@ -834,6 +836,16 @@ export function AnswerKeyPanel({
           front of them. Offered rather than applied: somebody who came back
           deliberately to start again should not have yesterday restored for
           them. */}
+      {/* ── WHAT THE SAVED FILE DID, INCLUDING WHEN IT REFUSED ── */}
+      {savedNotice != null && savedNotice !== "" ? (
+        <p
+          data-takeoff="key-saved-notice"
+          className="rounded-md border border-line-card bg-rail-hover px-2 py-1 text-xs text-ink-label"
+        >
+          {savedNotice}
+        </p>
+      ) : null}
+
       {restoreOffer != null && restoreOffer !== "" ? (
         <div
           className="rounded-md border border-brand/60 bg-brand/10 p-2"

@@ -19,6 +19,50 @@ import { NextResponse } from "next/server";
  * machine we set up, and it is inert anywhere `TAKEOFF_LABEL_DIR` is not set,
  * which is every deployment.
  */
+/**
+ * ── READING A SAVED SHEET BACK ──
+ *
+ * This route had a POST and no GET, so a sheet could be labelled and never
+ * reopened: coming back to add a few traces meant deciding every candidate
+ * again. Nothing was broken — the capability was simply absent, and the
+ * labelling page had no way to ask.
+ *
+ * Returns the saved file as it sits on disk. The page matches its verdicts to
+ * the candidates the finder produces NOW, by geometry, and refuses rather than
+ * restore half a review — `lib/takeoff/restoreSaved.ts` says why at length.
+ *
+ * Same gate as the write: `labelStore.ts` refuses when the variable is unset,
+ * on a production build, and on any path escape, so this is inert in every
+ * deployment. A signed-in user is required here as it is for the POST.
+ */
+export async function GET(request: Request) {
+  await requireCompanyContext();
+
+  const url = new URL(request.url);
+  const set = url.searchParams.get("set") ?? "";
+  const sheet = url.searchParams.get("sheet") ?? "";
+  if (set === "" || sheet === "") {
+    return NextResponse.json(
+      { ok: false, error: "Ask for a set and a sheet." },
+      { status: 400 },
+    );
+  }
+  if (process.env[LABEL_DIR_VAR] === undefined) {
+    return NextResponse.json(
+      { ok: false, error: `Labelling is off here: ${LABEL_DIR_VAR} is not set.` },
+      { status: 404 },
+    );
+  }
+
+  const saved = await readLabels(set, sheet);
+  if (saved === null) {
+    // NOT an error: a sheet nobody has labelled is the ordinary case, and the
+    // page needs to tell the two apart without reading a message.
+    return NextResponse.json({ ok: true, saved: null });
+  }
+  return NextResponse.json({ ok: true, saved });
+}
+
 export async function POST(request: Request) {
   // Signed in, because this writes a file. The gate that matters is in
   // `labelStore`, but an unauthenticated write endpoint is not a thing to

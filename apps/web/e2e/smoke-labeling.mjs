@@ -471,6 +471,72 @@ try {
   );
   check("the save reports success", savedText.startsWith("Labels saved"), savedText.slice(0, 90));
 
+  // ── REOPENING A LABELLED SHEET BRINGS THE WORK BACK ──
+  //
+  // There was a POST to write a label file and NO GET to read one, so a sheet
+  // could be labelled and never reopened: coming back to add a trace meant
+  // deciding every candidate again. Nothing was broken — the capability was
+  // absent, and the page had no way to ask.
+  //
+  // ── WHY IT RUNS HERE, DIRECTLY AFTER THE SAVE ──
+  //
+  // The first version sat after scenario 3, which reloads the page and
+  // restores the localStorage DRAFT. That left the review with decisions
+  // already in it, so the saved-file load correctly declined — reopening must
+  // never overwrite work in progress. The check was measuring its own
+  // placement. Here the file has just been written and the draft is cleared,
+  // so the only thing that can bring the work back is the file.
+  console.log("\n1b. reopening the sheet restores the saved decisions and traces");
+  const tracedCount = (p) =>
+    p.evaluate(() => Number(/(\d+) traced/.exec(document.body.innerText)?.[1] ?? "0"));
+
+  const savedBefore = await reviewedCount(page);
+  const tracedBefore = await tracedCount(page);
+  check(
+    "there is saved work to come back to",
+    savedBefore !== null && savedBefore.reviewed > 0 && tracedBefore > 0,
+    `${savedBefore === null ? "no counter" : `${savedBefore.reviewed} of ${savedBefore.total}`} reviewed, ${tracedBefore} traced`,
+  );
+
+  // The draft would restore the same work and make this prove nothing.
+  await page.evaluate(() => {
+    try {
+      for (const k of Object.keys(localStorage)) {
+        if (k.includes("takeoff-review-draft")) localStorage.removeItem(k);
+      }
+    } catch {
+      // Private mode or blocked storage: nothing to clear.
+    }
+  });
+
+  await page.goto(url(SHEET_A), { waitUntil: "domcontentloaded" });
+  await waitForDrawing(page);
+  await findTheWalls(page);
+  await page.waitForTimeout(3000);
+
+  const notice = await page
+    .locator('[data-takeoff="key-saved-notice"]')
+    .textContent()
+    .catch(() => null);
+  const savedAfter = await reviewedCount(page);
+  const tracedAfter = await tracedCount(page);
+  check(
+    "the saved decisions come back on their own",
+    savedBefore !== null && savedAfter !== null && savedAfter.reviewed >= savedBefore.reviewed,
+    `${savedBefore?.reviewed ?? "?"} -> ${savedAfter?.reviewed ?? "?"} reviewed`,
+  );
+  check(
+    "the saved TRACES come back too",
+    tracedBefore > 0 && tracedAfter >= tracedBefore,
+    `${tracedBefore} -> ${tracedAfter} traced`,
+  );
+  check(
+    "and the page says what it did",
+    notice !== null && /Restored|does not fit/.test(notice),
+    notice === null ? "no notice shown" : notice.slice(0, 90),
+  );
+
+
   let onDisk = null;
   for (const { doc } of savedLabelFiles()) onDisk = doc;
   check("a label file is on disk", onDisk !== null, onDisk === null ? "" : `${onDisk.sheet}`);
@@ -564,6 +630,7 @@ try {
   }
 
   // ─────────────────────────────────────────────────────────────────────
+
   console.log("\n4. a save over 10 MB is not truncated");
   await page.goto(url(SHEET_BIG), { waitUntil: "domcontentloaded" });
   await waitForDrawing(page);

@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Spinner } from "@/components/Spinner";
 import { AnswerKeyPanel } from "@/components/AnswerKeyPanel";
 import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
+import { restoreSaved, type SavedSheet } from "@/lib/takeoff/restoreSaved";
 import { addTraced, removeTraced, startReview, tracedWall, type ReviewState } from "@/lib/takeoff/answerKeyReview";
 import { crossingPoint, splitCandidate } from "@/lib/takeoff/splitCandidate";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
@@ -764,6 +765,87 @@ export function TakeoffWorkspace({
     }
   }, [keyMode, keyState, draftSet, page, finderVersion, restorable, savedSignature]);
 
+  /**
+   * ── A SAVED SHEET LOADS ITSELF, UNLIKE A DRAFT ──
+   *
+   * The draft below is OFFERED, because unsaved work the reviewer may not
+   * want back should not appear without being asked for. A saved label file
+   * is the opposite: it is the committed state of that sheet, and the whole
+   * reason to reopen a sheet is to carry on from it. So it loads.
+   *
+   * Two guards. It runs once per sheet (`triedSaved`), because a second run
+   * would re-add every trace. And it only loads into a review with NO
+   * decisions yet — reopening must never overwrite work in progress, and a
+   * reviewer who has started judging has told us they do not want the file.
+   */
+  const [savedNotice, setSavedNotice] = useState<{ page: number; note: string } | null>(null);
+  const triedSaved = useRef<string>("");
+  const baselineDecided = useRef<{ key: string; count: number }>({ key: "", count: 0 });
+  useEffect(() => {
+    // The sheet's own number, and the scale the calibration gives — the same
+    // two the save uses, so a file written on this sheet is read back for it.
+    const sheetNumber = data.sheetLabelByPage[page] ?? readNumberByPage[page] ?? `p${page}`;
+    const scaleFeetPerUnit =
+      currentSheet?.calibration != null ? (feetPerPageWidth(currentSheet.calibration) ?? 0) : 0;
+    const sheetKey = `${draftSet}#${page}`;
+    if (!keyMode || draftSet === "" || triedSaved.current === sheetKey) return;
+    const current = keyStateRef.current;
+    if (current === null || current.candidates.length === 0) return;
+
+    // ── "UNTOUCHED" IS NOT "NO DECISIONS" ──
+    //
+    // The finder PRE-MARKS candidates on opening — the grey pre-rejected
+    // lines — so a freshly opened sheet already carries verdicts, and a guard
+    // of `decided > 0` skipped the restore on every sheet in existence. It
+    // looked like a cautious guard and was an off switch.
+    //
+    // The baseline is whatever the sheet opened with, captured once. A review
+    // is untouched while it still equals that, which is what must never be
+    // overwritten.
+    const decided = Object.keys(current.verdicts).length + current.traced.length;
+    if (baselineDecided.current.key !== sheetKey) {
+      baselineDecided.current = { key: sheetKey, count: decided };
+    }
+    if (decided > baselineDecided.current.count) return;
+    triedSaved.current = sheetKey;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/takeoff/labels?set=${encodeURIComponent(draftSet)}&sheet=${encodeURIComponent(sheetNumber)}`,
+          { cache: "no-store" },
+        );
+        if (!response.ok) return;
+        const body = (await response.json()) as { ok?: boolean; saved?: SavedSheet | null };
+        const saved = body.saved;
+        if (cancelled || saved === null || saved === undefined) return;
+        const fresh = keyStateRef.current;
+        if (fresh === null) return;
+        const got = restoreSaved(saved, fresh, scaleFeetPerUnit);
+        if (got.ok) {
+          setKeyState(got.state);
+          setSavedNotice({ page, note: got.message });
+          // ── WHAT CAME OFF DISK IS NOT UNSAVED WORK ──
+          //
+          // Without this the leave-page warning arms the moment a sheet is
+          // reopened: the state differs from "nothing", so it reads as
+          // unsaved — and the reviewer is asked to confirm leaving a page
+          // they have not changed. The restored review IS the file.
+          setSavedSigByPage((prev) => setOnThisSheet(prev, page, reviewSignature(got.state)));
+        } else {
+          // A refusal is the point, not a failure to report: the reviewer has
+          // to know the file was NOT loaded before they start saving over it.
+          setSavedNotice({ page, note: got.message });
+        }
+      } catch {
+        // No saved file and no network is the same thing here: start fresh.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [keyMode, draftSet, page, data, readNumberByPage, currentSheet, keyState]);
+
   // ── OFFERED ON OPENING, NOT RESTORED BEHIND THEIR BACK ──
   useEffect(() => {
     if (!keyMode || draftSet === "") return;
@@ -1331,6 +1413,7 @@ export function TakeoffWorkspace({
               </div>
             ) : (
               <AnswerKeyPanel
+                savedNotice={savedNotice?.page === page ? savedNotice.note : null}
                 restoreOffer={restorable?.page === page ? restorable.offer : null}
                 onRestore={restoreReview}
                 onDiscardDraft={clearReviewDraft}
