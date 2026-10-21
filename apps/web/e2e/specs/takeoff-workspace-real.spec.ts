@@ -57,14 +57,40 @@ test.describe("the workspace on a real sheet", () => {
 
     let page: Page;
     let monitor: HealthMonitor;
-    let servedPdf: Buffer = readFileSync(path.join(DIR, present[0]?.file ?? SHEETS[0].file));
+    // ── READ IN `beforeAll`, NOT HERE, AND THE SKIP ABOVE IS WHY ──
+    //
+    // This was initialised at this line, which runs when the describe BODY is
+    // evaluated — and that happens while Playwright is merely LISTING tests,
+    // before any `test.skip` can take effect. So on every CI runner, where
+    // these client drawings do not exist, the fallback `SHEETS[0].file`
+    // resolved to a path under `/Users/diego/` and threw ENOENT during
+    // collection.
+    //
+    // The cost was not a failed test. It was `Total: 0 tests in 0 files` —
+    // one spec throwing at collection takes the WHOLE signed-in suite with
+    // it, so the e2e job stopped running the pilot journey entirely and the
+    // count step is the only reason anybody noticed. The skip one line above
+    // was correct and simply could not be honoured in time, which is this
+    // repo's recurring shape: a guard that is present and a framework that
+    // does not reach it.
+    let servedPdf: Buffer | null = null;
 
     test.beforeAll(async ({ browser }) => {
+      // The first sheet that is actually here. Reading it at this point
+      // rather than at module scope is what keeps a CI runner's missing
+      // drawings from emptying the entire suite — see `servedPdf` above.
+      servedPdf = readFileSync(path.join(DIR, (present[0] ?? SHEETS[0]).file));
       const context = await browser.newContext({ viewport: DESKTOP });
       page = await context.newPage();
       monitor = new HealthMonitor(page);
       await page.route("**/api/takeoff/plan/**", async (route) => {
-        await route.fulfill({ status: 200, contentType: "application/pdf", body: servedPdf });
+        // Non-null by here: `beforeAll` reads it, and `beforeAll` does not run
+        // when the describe is skipped.
+        await route.fulfill({
+          status: 200,
+          contentType: "application/pdf",
+          body: servedPdf ?? Buffer.alloc(0),
+        });
       });
       mkdirSync(OUT, { recursive: true });
       await signInAs(page, PERSONAS.takeoff.email);
