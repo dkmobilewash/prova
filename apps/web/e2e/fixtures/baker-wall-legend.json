@@ -1,0 +1,1148 @@
+{
+ "pageNumber": 25,
+ "pageCount": 65,
+ "sheetTitle": "ASSEMBLY LEGEND",
+ "sheetNumber": "A601",
+ "textRead": {
+  "types": [
+   {
+    "code": "S6A",
+    "name": null,
+    "lines": [
+     "RATING:",
+     "2 HR",
+     "UL LISTING:",
+     "U411",
+     "WALL HEIGHT:",
+     "SEE NOTE A",
+     "SOUND RATING:",
+     "45 | - | 49 STC",
+     "WP 1616: RATED ASSEMBLY INSTALL INFORMATION",
+     "BASE:",
+     "LAYER 5/8\" TYPE X GYPSUM",
+     "WALLBOARD OR GYPSUM VENEER BASE",
+     "APPLIED PARALLEL TO EACH SIDE OF 6\", 18 MIL",
+     "(25GA.), STEEL STUDS 24\" O.C. WITH 1\" TYPE S",
+     "DRYWALL SCREWS 8\" O.C. AT VERTICAL",
+     "JOINTS AND 12\" O.C. AT INTERMEDIATE STUDS.",
+     "FACE:",
+     "LAYER 5/8\" PLAIN OR PREDECORATED",
+     "TYPE X GYPSUM WALLBOARD OR GYPSUM",
+     "VENEER BASE APPLIED PARALLEL TO EACH",
+     "SIDE WITH LAMINATING COMPOUND COMBED",
+     "OVER ENTIRE SURFACE. METAL BASE AND",
+     "TOP RETAINER CHANNELS.",
+     "JOINTS STAGGERED 24\" EACH LAYER AND",
+     "SIDE. (NLB)",
+     "(2) LAYERS 5/8\" TYPE \"X\"",
+     "GYP. BOARD, CONT. TO",
+     "ROOF DECKING TYP.",
+     "2x STEEL FRAMING,",
+     "SEE STRUCTURAL"
+    ]
+   },
+   {
+    "code": "S8A",
+    "name": null,
+    "lines": [
+     "RATING:",
+     "2 HR",
+     "UL LISTING:",
+     "U411",
+     "WALL HEIGHT:",
+     "SEE NOTE A",
+     "SOUND RATING:",
+     "45 | - | 49 STC",
+     "WP 1616: RATED ASSEMBLY INSTALL INFORMATION",
+     "BASE:",
+     "LAYER 5/8\" TYPE X GYPSUM",
+     "WALLBOARD OR GYPSUM VENEER BASE",
+     "APPLIED PARALLEL TO EACH SIDE OF 8\", 18 MIL",
+     "(25GA.), STEEL STUDS 24\" O.C. WITH 1\" TYPE S",
+     "DRYWALL SCREWS 8\" O.C. AT VERTICAL",
+     "JOINTS AND 12\" O.C. AT INTERMEDIATE STUDS.",
+     "FACE:",
+     "LAYER 5/8\" PLAIN OR PREDECORATED",
+     "TYPE X GYPSUM WALLBOARD OR GYPSUM",
+     "VENEER BASE APPLIED PARALLEL TO EACH",
+     "SIDE WITH LAMINATING COMPOUND COMBED",
+     "OVER ENTIRE SURFACE. METAL BASE AND",
+     "TOP RETAINER CHANNELS.",
+     "JOINTS STAGGERED 24\" EACH LAYER AND",
+     "SIDE. (NLB)",
+     "(2) LAYERS 5/8\" TYPE \"X\"",
+     "GYP. BOARD, CONT. TO",
+     "ROOF DECKING TYP.",
+     "2x STEEL FRAMING,",
+     "SEE STRUCTURAL"
+    ]
+   },
+   {
+    "code": "C8A",
+    "name": null,
+    "lines": [
+     "RATING:",
+     "UL LISTING:",
+     "WALL HEIGHT:",
+     "SEE NOTE A",
+     "SOUND RATING:",
+     "EXTERIOR SYNTHETIC",
+     "STUCCO SIDING | -",
+     "FINISH TO MATCH",
+     "EXISTING",
+     "(R | - | 22) INSULATED",
+     "CONCRETE FORMS",
+     "W/ CONCRETE CORE,",
+     "SEE STRUCTURAL",
+     "5/8 GYP. BOARD"
+    ]
+   },
+   {
+    "code": "S6B",
+    "name": null,
+    "lines": [
+     "NON | - | RATED INTERIOR WALL",
+     "1 LAYER GYP. PER SIDE",
+     "SINGLE LAYER 5/8\"",
+     "TYPE \"X\" GYP. BOARD",
+     "2x STEEL FRAMING,",
+     "SEE STRUCTURAL"
+    ]
+   },
+   {
+    "code": "S8B",
+    "name": null,
+    "lines": [
+     "NON | - | RATED INTERIOR WALL",
+     "1 LAYER GYP. PER SIDE",
+     "SINGLE LAYER 5/8\"",
+     "TYPE \"X\" GYP. BOARD",
+     "2x STEEL FRAMING,",
+     "SEE STRUCTURAL"
+    ]
+   },
+   {
+    "code": "C8B",
+    "name": null,
+    "lines": [
+     "RATING:",
+     "UL LISTING:",
+     "WALL HEIGHT:",
+     "SEE NOTE A",
+     "SOUND RATING:",
+     "EXTERIOR SYNTHETIC",
+     "STUCCO SIDING | -",
+     "FINISH TO MATCH",
+     "EXISTING",
+     "1\" RIGID",
+     "INSULATION",
+     "(R | - | 22) INSULATED",
+     "CONCRETE FORMS W/",
+     "CONCRETE CORE, SEE",
+     "STRUCTURAL",
+     "5/8\" GYP. BOARD"
+    ]
+   },
+   {
+    "code": "S6C",
+    "name": null,
+    "lines": [
+     "NON | - | RATED INTERIOR WALL",
+     "1 LAYER GYP. @ INTERIOR SIDE",
+     "SINGLE LAYER 5/8\" TYPE \"X\"",
+     "GYP. BOARD",
+     "2x STEEL FRAMING,",
+     "SEE STRUCTURAL"
+    ]
+   },
+   {
+    "code": "S8C",
+    "name": null,
+    "lines": [
+     "NON | - | RATED INTERIOR WALL",
+     "1 LAYER GYP. INTERIOR W/",
+     "2 LAYER GYP. EXTERIOR",
+     "DOUBLE LAYER 5/8\"",
+     "TYPE \"X\" GYP. BOARD",
+     "2x STEEL FRAMING,",
+     "SEE STRUCTURAL"
+    ]
+   }
+  ],
+  "reason": "Read from the \"WALL TYPES\" detail (3) band of this A601 sheet, where six wall-section details (S6A, S8A, C8A, S6B, S8B, C8B, S6C, S8C) interleave line-by-line with the roof/ceiling/floor details, the wall tag legend key, and the general notes; attribution was judgmental because the S6/S8 UL U411 text is duplicated across columns and several cells (stucco siding, insulated concrete forms) sit between the C-series and note column.",
+  "confidence": "LOW"
+ },
+ "sightRead": {
+  "types": [
+   {
+    "code": "S6A",
+    "name": null,
+    "studWidthIn": 6,
+    "studMaterial": "metal",
+    "studGauge": 25,
+    "studSpacingIn": 24,
+    "boardThicknessIn": 0.625,
+    "layersSideA": 2,
+    "layersSideB": 2,
+    "boardIsTypeX": true,
+    "insulation": null,
+    "hourlyRating": 2,
+    "heightNote": "SEE NOTE A",
+    "notes": [
+     "RATING: 2 HR",
+     "UL LISTING: U411",
+     "WALL HEIGHT: SEE NOTE A",
+     "SOUND RATING: 45-49 STC",
+     "(2) LAYERS 5/8\" TYPE \"X\" GYP. BOARD, CONT. TO ROOF DECKING TYP.",
+     "2x STEEL FRAMING, SEE STRUCTURAL",
+     "(2) LAYERS 5/8\" TYPE \"X\" GYP. BOARD, CONT. TO ROOF DECKING TYP.",
+     "WP 1616: RATED ASSEMBLY INSTALL INFORMATION",
+     "BASE: LAYER 5/8\" TYPE X GYPSUM WALLBOARD OR GYPSUM VENEER BASE APPLIED PARALLEL TO EACH SIDE OF 6\", 18 MIL (25GA.), STEEL STUDS 24\" O.C. WITH 1\" TYPE S DRYWALL SCREWS 8\" O.C. AT VERTICAL JOINTS AND 12\" O.C. AT INTERMEDIATE STUDS.",
+     "FACE: LAYER 5/8\" PLAIN OR PREDECORATED TYPE X GYPSUM WALLBOARD OR GYPSUM VENEER BASE APPLIED PARALLEL TO EACH SIDE WITH LAMINATING COMPOUND COMBED OVER ENTIRE SURFACE. METAL BASE AND TOP RETAINER CHANNELS.",
+     "JOINTS STAGGERED 24\" EACH LAYER AND SIDE. (NLB)"
+    ],
+    "fromDrawing": [
+     "tagKey",
+     "studMaterial",
+     "studWidthIn"
+    ],
+    "fromSheetNote": [
+     "heightNote"
+    ],
+    "optional": [],
+    "notAPartition": null,
+    "confidence": "HIGH"
+   },
+   {
+    "code": "S8A",
+    "name": null,
+    "studWidthIn": 8,
+    "studMaterial": "metal",
+    "studGauge": 25,
+    "studSpacingIn": 24,
+    "boardThicknessIn": 0.625,
+    "layersSideA": 2,
+    "layersSideB": 2,
+    "boardIsTypeX": true,
+    "insulation": null,
+    "hourlyRating": 2,
+    "heightNote": "SEE NOTE A",
+    "notes": [
+     "RATING: 2 HR",
+     "UL LISTING: U411",
+     "WALL HEIGHT: SEE NOTE A",
+     "SOUND RATING: 45-49 STC",
+     "(2) LAYERS 5/8\" TYPE \"X\" GYP. BOARD, CONT. TO ROOF DECKING TYP.",
+     "2x STEEL FRAMING, SEE STRUCTURAL",
+     "(2) LAYERS 5/8\" TYPE \"X\" GYP. BOARD, CONT. TO ROOF DECKING TYP.",
+     "WP 1616: RATED ASSEMBLY INSTALL INFORMATION",
+     "BASE: LAYER 5/8\" TYPE X GYPSUM WALLBOARD OR GYPSUM VENEER BASE APPLIED PARALLEL TO EACH SIDE OF 8\", 18 MIL (25GA.), STEEL STUDS 24\" O.C. WITH 1\" TYPE S DRYWALL SCREWS 8\" O.C. AT VERTICAL JOINTS AND 12\" O.C. AT INTERMEDIATE STUDS.",
+     "FACE: LAYER 5/8\" PLAIN OR PREDECORATED TYPE X GYPSUM WALLBOARD OR GYPSUM VENEER BASE APPLIED PARALLEL TO EACH SIDE WITH LAMINATING COMPOUND COMBED OVER ENTIRE SURFACE. METAL BASE AND TOP RETAINER CHANNELS.",
+     "JOINTS STAGGERED 24\" EACH LAYER AND SIDE. (NLB)"
+    ],
+    "fromDrawing": [
+     "tagKey",
+     "studMaterial",
+     "studWidthIn"
+    ],
+    "fromSheetNote": [
+     "heightNote"
+    ],
+    "optional": [],
+    "notAPartition": null,
+    "confidence": "HIGH"
+   },
+   {
+    "code": "C8A",
+    "name": null,
+    "studWidthIn": 8,
+    "studMaterial": "concrete",
+    "studGauge": null,
+    "studSpacingIn": null,
+    "boardThicknessIn": 0.625,
+    "layersSideA": 1,
+    "layersSideB": 0,
+    "boardIsTypeX": null,
+    "insulation": "(R-22) INSULATED CONCRETE FORMS W/ CONCRETE CORE",
+    "hourlyRating": null,
+    "heightNote": "SEE NOTE A",
+    "notes": [
+     "RATING:",
+     "UL LISTING:",
+     "WALL HEIGHT: SEE NOTE A",
+     "SOUND RATING:",
+     "EXTERIOR SYNTHETIC STUCCO SIDING-FINISH TO MATCH EXISTING",
+     "(R-22) INSULATED CONCRETE FORMS W/ CONCRETE CORE, SEE STRUCTURAL",
+     "5/8 GYP. BOARD"
+    ],
+    "fromDrawing": [
+     "tagKey",
+     "studMaterial",
+     "studWidthIn",
+     "layers"
+    ],
+    "fromSheetNote": [
+     "heightNote"
+    ],
+    "optional": [],
+    "notAPartition": null,
+    "confidence": "MEDIUM"
+   },
+   {
+    "code": "S6B",
+    "name": "NON-RATED INTERIOR WALL",
+    "studWidthIn": 6,
+    "studMaterial": "metal",
+    "studGauge": null,
+    "studSpacingIn": null,
+    "boardThicknessIn": 0.625,
+    "layersSideA": 1,
+    "layersSideB": 1,
+    "boardIsTypeX": true,
+    "insulation": null,
+    "hourlyRating": 0,
+    "heightNote": null,
+    "notes": [
+     "NON-RATED INTERIOR WALL",
+     "1 LAYER GYP. PER SIDE",
+     "SINGLE LAYER 5/8\" TYPE \"X\" GYP. BOARD",
+     "2x STEEL FRAMING, SEE STRUCTURAL"
+    ],
+    "fromDrawing": [
+     "tagKey",
+     "studMaterial",
+     "studWidthIn"
+    ],
+    "fromSheetNote": [],
+    "optional": [],
+    "notAPartition": null,
+    "confidence": "MEDIUM"
+   },
+   {
+    "code": "S8B",
+    "name": "NON-RATED INTERIOR WALL",
+    "studWidthIn": 8,
+    "studMaterial": "metal",
+    "studGauge": null,
+    "studSpacingIn": null,
+    "boardThicknessIn": 0.625,
+    "layersSideA": 1,
+    "layersSideB": 1,
+    "boardIsTypeX": true,
+    "insulation": null,
+    "hourlyRating": 0,
+    "heightNote": null,
+    "notes": [
+     "NON-RATED INTERIOR WALL",
+     "1 LAYER GYP. PER SIDE",
+     "SINGLE LAYER 5/8\" TYPE \"X\" GYP. BOARD",
+     "2x STEEL FRAMING, SEE STRUCTURAL"
+    ],
+    "fromDrawing": [
+     "tagKey",
+     "studMaterial",
+     "studWidthIn"
+    ],
+    "fromSheetNote": [],
+    "optional": [],
+    "notAPartition": null,
+    "confidence": "MEDIUM"
+   },
+   {
+    "code": "C8B",
+    "name": null,
+    "studWidthIn": 8,
+    "studMaterial": "concrete",
+    "studGauge": null,
+    "studSpacingIn": null,
+    "boardThicknessIn": 0.625,
+    "layersSideA": 1,
+    "layersSideB": 0,
+    "boardIsTypeX": null,
+    "insulation": "1\" RIGID INSULATION; (R-22) INSULATED CONCRETE FORMS W/ CONCRETE CORE",
+    "hourlyRating": null,
+    "heightNote": "SEE NOTE A",
+    "notes": [
+     "RATING:",
+     "UL LISTING:",
+     "WALL HEIGHT: SEE NOTE A",
+     "SOUND RATING:",
+     "EXTERIOR SYNTHETIC STUCCO SIDING-FINISH TO MATCH EXISTING",
+     "1\" RIGID INSULATION",
+     "(R-22) INSULATED CONCRETE FORMS W/ CONCRETE CORE, SEE STRUCTURAL",
+     "5/8\" GYP. BOARD"
+    ],
+    "fromDrawing": [
+     "tagKey",
+     "studMaterial",
+     "studWidthIn",
+     "layers"
+    ],
+    "fromSheetNote": [
+     "heightNote"
+    ],
+    "optional": [],
+    "notAPartition": null,
+    "confidence": "MEDIUM"
+   },
+   {
+    "code": "S6C",
+    "name": "NON-RATED INTERIOR WALL",
+    "studWidthIn": 6,
+    "studMaterial": "metal",
+    "studGauge": null,
+    "studSpacingIn": null,
+    "boardThicknessIn": 0.625,
+    "layersSideA": 1,
+    "layersSideB": 0,
+    "boardIsTypeX": true,
+    "insulation": null,
+    "hourlyRating": 0,
+    "heightNote": null,
+    "notes": [
+     "NON-RATED INTERIOR WALL",
+     "1 LAYER GYP. @ INTERIOR SIDE",
+     "2x STEEL FRAMING, SEE STRUCTURAL",
+     "SINGLE LAYER 5/8\" TYPE \"X\" GYP. BOARD"
+    ],
+    "fromDrawing": [
+     "tagKey",
+     "studMaterial",
+     "studWidthIn"
+    ],
+    "fromSheetNote": [],
+    "optional": [],
+    "notAPartition": null,
+    "confidence": "MEDIUM"
+   },
+   {
+    "code": "S8C",
+    "name": "NON-RATED INTERIOR WALL",
+    "studWidthIn": 8,
+    "studMaterial": "metal",
+    "studGauge": null,
+    "studSpacingIn": null,
+    "boardThicknessIn": 0.625,
+    "layersSideA": 1,
+    "layersSideB": 2,
+    "boardIsTypeX": true,
+    "insulation": null,
+    "hourlyRating": 0,
+    "heightNote": null,
+    "notes": [
+     "NON-RATED INTERIOR WALL",
+     "1 LAYER GYP. INTERIOR W/ 2 LAYER GYP. EXTERIOR",
+     "SINGLE LAYER 5/8\" TYPE \"X\" GYP. BOARD",
+     "2x STEEL FRAMING, SEE STRUCTURAL",
+     "DOUBLE LAYER 5/8\" TYPE \"X\" GYP. BOARD"
+    ],
+    "fromDrawing": [
+     "tagKey",
+     "studMaterial",
+     "studWidthIn"
+    ],
+    "fromSheetNote": [],
+    "optional": [],
+    "notAPartition": null,
+    "confidence": "MEDIUM"
+   }
+  ],
+  "reason": "The sheet is a Cole Architects assembly legend (A601) with a WALL TAG LEGEND key decoding XC#A tags (C = core material: S = steel stud, C = concrete; # = core size: 6 = 6\" steel stud, 8 = 8\" steel stud / 8\" concrete; 'X' prefix = rated, omitted when non-rated), so stud material and width for S6x/S8x are decoded through the tagKey and confirmed for S6A/S8A by the WP 1616 install text (\"EACH SIDE OF 6\", 18 MIL (25GA.), STEEL STUDS 24\" O.C.\"). The rated types S6A/S8A are full tabular details with rating, UL listing, sound rating and leader notes; the B and C types are small tag boxes with one-line descriptions and an adjoining thumbnail section, so layer counts come from their own printed words. C8A/C8B are 8\" insulated concrete form walls (not stud framing) with blank rating rows — nothing printed states a rating, so hourlyRating is left null there; \"NON-RATED INTERIOR WALL\" on the B/C types is recorded as 0 hours. For C8B the \"1\" RIGID INSULATION\" and \"(R-22) INSULATED CONCRETE FORMS\" notes point into its own section, and its gyp is a single printed 5/8\" board on the interior face only.",
+  "confidence": "MEDIUM"
+ },
+ "merged": [
+  {
+   "code": "S6A",
+   "name": null,
+   "lines": [
+    "RATING:",
+    "2 HR",
+    "UL LISTING:",
+    "U411",
+    "WALL HEIGHT:",
+    "SEE NOTE A",
+    "SOUND RATING:",
+    "45 | - | 49 STC",
+    "WP 1616: RATED ASSEMBLY INSTALL INFORMATION",
+    "BASE:",
+    "LAYER 5/8\" TYPE X GYPSUM",
+    "WALLBOARD OR GYPSUM VENEER BASE",
+    "APPLIED PARALLEL TO EACH SIDE OF 6\", 18 MIL",
+    "(25GA.), STEEL STUDS 24\" O.C. WITH 1\" TYPE S",
+    "DRYWALL SCREWS 8\" O.C. AT VERTICAL",
+    "JOINTS AND 12\" O.C. AT INTERMEDIATE STUDS.",
+    "FACE:",
+    "LAYER 5/8\" PLAIN OR PREDECORATED",
+    "TYPE X GYPSUM WALLBOARD OR GYPSUM",
+    "VENEER BASE APPLIED PARALLEL TO EACH",
+    "SIDE WITH LAMINATING COMPOUND COMBED",
+    "OVER ENTIRE SURFACE. METAL BASE AND",
+    "TOP RETAINER CHANNELS.",
+    "JOINTS STAGGERED 24\" EACH LAYER AND",
+    "SIDE. (NLB)",
+    "(2) LAYERS 5/8\" TYPE \"X\"",
+    "GYP. BOARD, CONT. TO",
+    "ROOF DECKING TYP.",
+    "2x STEEL FRAMING,",
+    "SEE STRUCTURAL"
+   ],
+   "assembly": {
+    "components": [
+     {
+      "description": "6in metal stud, 25 ga at 24in o.c.",
+      "unit": "EA",
+      "basis": "STUDS",
+      "factor": 1,
+      "wastePercent": 0,
+      "roundUp": true,
+      "from": {
+       "phrase": "6\" METAL STUDS",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S6A, read by sight"
+      }
+     },
+     {
+      "description": "6in track, top and bottom",
+      "unit": "LF",
+      "basis": "LINEAR_FT",
+      "factor": 2,
+      "wastePercent": 0,
+      "roundUp": false,
+      "from": {
+       "phrase": "6\" METAL STUDS",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S6A, read by sight"
+      }
+     },
+     {
+      "description": "5/8in type X gypsum board, 2 layers per side",
+      "unit": "SF",
+      "basis": "BOARDED_SQFT",
+      "factor": 2,
+      "wastePercent": 0,
+      "roundUp": false,
+      "from": {
+       "phrase": "5/8\" TYPE \"X\" GYP.",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S6A, read by sight"
+      }
+     }
+    ],
+    "flags": [
+     {
+      "why": "the 6\" stud was decoded from the sheet's tag key, not printed beside the type — check the key",
+      "phrase": "RATING: 2 HR UL LISTING: U411 WALL HEIGHT: SEE NOTE A SOUND RATING: 45-49 STC (2) LAYERS 5/8\" TYPE \"X\" GYP. BOARD, CONT."
+     },
+     {
+      "why": "heightNote came from a general note on the sheet, not this type's own words — check before bidding",
+      "phrase": "RATING: 2 HR UL LISTING: U411 WALL HEIGHT: SEE NOTE A SOUND RATING: 45-49 STC (2) LAYERS 5/8\" TYPE \"X\" GYP. BOARD, CONT."
+     }
+    ],
+    "read": {
+     "studWidthIn": 6,
+     "studSpacingIn": 24,
+     "studGauge": 25,
+     "boardThicknessIn": 0.625,
+     "layersPerSide": 2,
+     "boardIsTypeX": true,
+     "insulation": null,
+     "hourlyRating": 2
+    }
+   },
+   "from": "sight",
+   "disagreements": []
+  },
+  {
+   "code": "S8A",
+   "name": null,
+   "lines": [
+    "RATING:",
+    "2 HR",
+    "UL LISTING:",
+    "U411",
+    "WALL HEIGHT:",
+    "SEE NOTE A",
+    "SOUND RATING:",
+    "45 | - | 49 STC",
+    "WP 1616: RATED ASSEMBLY INSTALL INFORMATION",
+    "BASE:",
+    "LAYER 5/8\" TYPE X GYPSUM",
+    "WALLBOARD OR GYPSUM VENEER BASE",
+    "APPLIED PARALLEL TO EACH SIDE OF 8\", 18 MIL",
+    "(25GA.), STEEL STUDS 24\" O.C. WITH 1\" TYPE S",
+    "DRYWALL SCREWS 8\" O.C. AT VERTICAL",
+    "JOINTS AND 12\" O.C. AT INTERMEDIATE STUDS.",
+    "FACE:",
+    "LAYER 5/8\" PLAIN OR PREDECORATED",
+    "TYPE X GYPSUM WALLBOARD OR GYPSUM",
+    "VENEER BASE APPLIED PARALLEL TO EACH",
+    "SIDE WITH LAMINATING COMPOUND COMBED",
+    "OVER ENTIRE SURFACE. METAL BASE AND",
+    "TOP RETAINER CHANNELS.",
+    "JOINTS STAGGERED 24\" EACH LAYER AND",
+    "SIDE. (NLB)",
+    "(2) LAYERS 5/8\" TYPE \"X\"",
+    "GYP. BOARD, CONT. TO",
+    "ROOF DECKING TYP.",
+    "2x STEEL FRAMING,",
+    "SEE STRUCTURAL"
+   ],
+   "assembly": {
+    "components": [
+     {
+      "description": "8in metal stud, 25 ga at 24in o.c.",
+      "unit": "EA",
+      "basis": "STUDS",
+      "factor": 1,
+      "wastePercent": 0,
+      "roundUp": true,
+      "from": {
+       "phrase": "8\" METAL STUDS",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S8A, read by sight"
+      }
+     },
+     {
+      "description": "8in track, top and bottom",
+      "unit": "LF",
+      "basis": "LINEAR_FT",
+      "factor": 2,
+      "wastePercent": 0,
+      "roundUp": false,
+      "from": {
+       "phrase": "8\" METAL STUDS",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S8A, read by sight"
+      }
+     },
+     {
+      "description": "5/8in type X gypsum board, 2 layers per side",
+      "unit": "SF",
+      "basis": "BOARDED_SQFT",
+      "factor": 2,
+      "wastePercent": 0,
+      "roundUp": false,
+      "from": {
+       "phrase": "5/8\" TYPE \"X\" GYP.",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S8A, read by sight"
+      }
+     }
+    ],
+    "flags": [
+     {
+      "why": "the 8\" stud was decoded from the sheet's tag key, not printed beside the type — check the key",
+      "phrase": "RATING: 2 HR UL LISTING: U411 WALL HEIGHT: SEE NOTE A SOUND RATING: 45-49 STC (2) LAYERS 5/8\" TYPE \"X\" GYP. BOARD, CONT."
+     },
+     {
+      "why": "heightNote came from a general note on the sheet, not this type's own words — check before bidding",
+      "phrase": "RATING: 2 HR UL LISTING: U411 WALL HEIGHT: SEE NOTE A SOUND RATING: 45-49 STC (2) LAYERS 5/8\" TYPE \"X\" GYP. BOARD, CONT."
+     }
+    ],
+    "read": {
+     "studWidthIn": 8,
+     "studSpacingIn": 24,
+     "studGauge": 25,
+     "boardThicknessIn": 0.625,
+     "layersPerSide": 2,
+     "boardIsTypeX": true,
+     "insulation": null,
+     "hourlyRating": 2
+    }
+   },
+   "from": "sight",
+   "disagreements": []
+  },
+  {
+   "code": "C8A",
+   "name": null,
+   "lines": [
+    "RATING:",
+    "UL LISTING:",
+    "WALL HEIGHT:",
+    "SEE NOTE A",
+    "SOUND RATING:",
+    "EXTERIOR SYNTHETIC",
+    "STUCCO SIDING | -",
+    "FINISH TO MATCH",
+    "EXISTING",
+    "(R | - | 22) INSULATED",
+    "CONCRETE FORMS",
+    "W/ CONCRETE CORE,",
+    "SEE STRUCTURAL",
+    "5/8 GYP. BOARD"
+   ],
+   "assembly": {
+    "components": [
+     {
+      "description": "5/8in gypsum board",
+      "unit": "SF",
+      "basis": "BOARDED_SQFT",
+      "factor": 1,
+      "wastePercent": 0,
+      "roundUp": false,
+      "from": {
+       "phrase": "5/8\" GYP.",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type C8A, read by sight"
+      }
+     }
+    ],
+    "flags": [
+     {
+      "why": "the board is on one side only — set the wall type's sides to 1 before accepting, because the quantity counts sides itself",
+      "phrase": "ONE SIDE ONLY"
+     },
+     {
+      "why": "the 8\" stud was decoded from the sheet's tag key, not printed beside the type — check the key",
+      "phrase": "RATING: UL LISTING: WALL HEIGHT: SEE NOTE A SOUND RATING: EXTERIOR SYNTHETIC STUCCO SIDING-FINISH TO MATCH EXISTING (R-2"
+     },
+     {
+      "why": "the wall is concrete — board only; the framing is not this trade's",
+      "phrase": "RATING: UL LISTING: WALL HEIGHT: SEE NOTE A SOUND RATING: EXTERIOR SYNTHETIC STUCCO SIDING-FINISH TO MATCH EXISTING (R-2"
+     },
+     {
+      "why": "heightNote came from a general note on the sheet, not this type's own words — check before bidding",
+      "phrase": "RATING: UL LISTING: WALL HEIGHT: SEE NOTE A SOUND RATING: EXTERIOR SYNTHETIC STUCCO SIDING-FINISH TO MATCH EXISTING (R-2"
+     }
+    ],
+    "read": {
+     "studWidthIn": 8,
+     "studSpacingIn": null,
+     "studGauge": null,
+     "boardThicknessIn": 0.625,
+     "layersPerSide": 1,
+     "boardIsTypeX": false,
+     "insulation": null,
+     "hourlyRating": null
+    }
+   },
+   "from": "sight",
+   "disagreements": []
+  },
+  {
+   "code": "S6B",
+   "name": "NON-RATED INTERIOR WALL",
+   "lines": [
+    "NON | - | RATED INTERIOR WALL",
+    "1 LAYER GYP. PER SIDE",
+    "SINGLE LAYER 5/8\"",
+    "TYPE \"X\" GYP. BOARD",
+    "2x STEEL FRAMING,",
+    "SEE STRUCTURAL"
+   ],
+   "assembly": {
+    "components": [
+     {
+      "description": "6in metal stud",
+      "unit": "EA",
+      "basis": "STUDS",
+      "factor": 1,
+      "wastePercent": 0,
+      "roundUp": true,
+      "from": {
+       "phrase": "6\" METAL STUDS",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S6B, read by sight"
+      }
+     },
+     {
+      "description": "6in track, top and bottom",
+      "unit": "LF",
+      "basis": "LINEAR_FT",
+      "factor": 2,
+      "wastePercent": 0,
+      "roundUp": false,
+      "from": {
+       "phrase": "6\" METAL STUDS",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S6B, read by sight"
+      }
+     },
+     {
+      "description": "5/8in type X gypsum board",
+      "unit": "SF",
+      "basis": "BOARDED_SQFT",
+      "factor": 1,
+      "wastePercent": 0,
+      "roundUp": false,
+      "from": {
+       "phrase": "5/8\" TYPE \"X\" GYP.",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S6B, read by sight"
+      }
+     }
+    ],
+    "flags": [
+     {
+      "why": "the 6\" stud was decoded from the sheet's tag key, not printed beside the type — check the key",
+      "phrase": "NON-RATED INTERIOR WALL 1 LAYER GYP. PER SIDE SINGLE LAYER 5/8\" TYPE \"X\" GYP. BOARD 2x STEEL FRAMING, SEE STRUCTURAL"
+     }
+    ],
+    "read": {
+     "studWidthIn": 6,
+     "studSpacingIn": null,
+     "studGauge": null,
+     "boardThicknessIn": 0.625,
+     "layersPerSide": 1,
+     "boardIsTypeX": true,
+     "insulation": null,
+     "hourlyRating": 0
+    }
+   },
+   "from": "sight",
+   "disagreements": []
+  },
+  {
+   "code": "S8B",
+   "name": "NON-RATED INTERIOR WALL",
+   "lines": [
+    "NON | - | RATED INTERIOR WALL",
+    "1 LAYER GYP. PER SIDE",
+    "SINGLE LAYER 5/8\"",
+    "TYPE \"X\" GYP. BOARD",
+    "2x STEEL FRAMING,",
+    "SEE STRUCTURAL"
+   ],
+   "assembly": {
+    "components": [
+     {
+      "description": "8in metal stud",
+      "unit": "EA",
+      "basis": "STUDS",
+      "factor": 1,
+      "wastePercent": 0,
+      "roundUp": true,
+      "from": {
+       "phrase": "8\" METAL STUDS",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S8B, read by sight"
+      }
+     },
+     {
+      "description": "8in track, top and bottom",
+      "unit": "LF",
+      "basis": "LINEAR_FT",
+      "factor": 2,
+      "wastePercent": 0,
+      "roundUp": false,
+      "from": {
+       "phrase": "8\" METAL STUDS",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S8B, read by sight"
+      }
+     },
+     {
+      "description": "5/8in type X gypsum board",
+      "unit": "SF",
+      "basis": "BOARDED_SQFT",
+      "factor": 1,
+      "wastePercent": 0,
+      "roundUp": false,
+      "from": {
+       "phrase": "5/8\" TYPE \"X\" GYP.",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S8B, read by sight"
+      }
+     }
+    ],
+    "flags": [
+     {
+      "why": "the 8\" stud was decoded from the sheet's tag key, not printed beside the type — check the key",
+      "phrase": "NON-RATED INTERIOR WALL 1 LAYER GYP. PER SIDE SINGLE LAYER 5/8\" TYPE \"X\" GYP. BOARD 2x STEEL FRAMING, SEE STRUCTURAL"
+     }
+    ],
+    "read": {
+     "studWidthIn": 8,
+     "studSpacingIn": null,
+     "studGauge": null,
+     "boardThicknessIn": 0.625,
+     "layersPerSide": 1,
+     "boardIsTypeX": true,
+     "insulation": null,
+     "hourlyRating": 0
+    }
+   },
+   "from": "sight",
+   "disagreements": []
+  },
+  {
+   "code": "C8B",
+   "name": null,
+   "lines": [
+    "RATING:",
+    "UL LISTING:",
+    "WALL HEIGHT:",
+    "SEE NOTE A",
+    "SOUND RATING:",
+    "EXTERIOR SYNTHETIC",
+    "STUCCO SIDING | -",
+    "FINISH TO MATCH",
+    "EXISTING",
+    "1\" RIGID",
+    "INSULATION",
+    "(R | - | 22) INSULATED",
+    "CONCRETE FORMS W/",
+    "CONCRETE CORE, SEE",
+    "STRUCTURAL",
+    "5/8\" GYP. BOARD"
+   ],
+   "assembly": {
+    "components": [
+     {
+      "description": "5/8in gypsum board",
+      "unit": "SF",
+      "basis": "BOARDED_SQFT",
+      "factor": 1,
+      "wastePercent": 0,
+      "roundUp": false,
+      "from": {
+       "phrase": "5/8\" GYP.",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type C8B, read by sight"
+      }
+     },
+     {
+      "description": "cavity insulation, R-22",
+      "unit": "SF",
+      "basis": "FACE_SQFT",
+      "factor": 1,
+      "wastePercent": 0,
+      "roundUp": false,
+      "from": {
+       "phrase": "INSULATION",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type C8B, read by sight"
+      }
+     }
+    ],
+    "flags": [
+     {
+      "why": "the board is on one side only — set the wall type's sides to 1 before accepting, because the quantity counts sides itself",
+      "phrase": "ONE SIDE ONLY"
+     },
+     {
+      "why": "the 8\" stud was decoded from the sheet's tag key, not printed beside the type — check the key",
+      "phrase": "RATING: UL LISTING: WALL HEIGHT: SEE NOTE A SOUND RATING: EXTERIOR SYNTHETIC STUCCO SIDING-FINISH TO MATCH EXISTING 1\" R"
+     },
+     {
+      "why": "the wall is concrete — board only; the framing is not this trade's",
+      "phrase": "RATING: UL LISTING: WALL HEIGHT: SEE NOTE A SOUND RATING: EXTERIOR SYNTHETIC STUCCO SIDING-FINISH TO MATCH EXISTING 1\" R"
+     },
+     {
+      "why": "heightNote came from a general note on the sheet, not this type's own words — check before bidding",
+      "phrase": "RATING: UL LISTING: WALL HEIGHT: SEE NOTE A SOUND RATING: EXTERIOR SYNTHETIC STUCCO SIDING-FINISH TO MATCH EXISTING 1\" R"
+     }
+    ],
+    "read": {
+     "studWidthIn": 8,
+     "studSpacingIn": null,
+     "studGauge": null,
+     "boardThicknessIn": 0.625,
+     "layersPerSide": 1,
+     "boardIsTypeX": false,
+     "insulation": "INSULATION",
+     "hourlyRating": null
+    }
+   },
+   "from": "sight",
+   "disagreements": []
+  },
+  {
+   "code": "S6C",
+   "name": "NON-RATED INTERIOR WALL",
+   "lines": [
+    "NON | - | RATED INTERIOR WALL",
+    "1 LAYER GYP. @ INTERIOR SIDE",
+    "SINGLE LAYER 5/8\" TYPE \"X\"",
+    "GYP. BOARD",
+    "2x STEEL FRAMING,",
+    "SEE STRUCTURAL"
+   ],
+   "assembly": {
+    "components": [
+     {
+      "description": "6in metal stud",
+      "unit": "EA",
+      "basis": "STUDS",
+      "factor": 1,
+      "wastePercent": 0,
+      "roundUp": true,
+      "from": {
+       "phrase": "6\" METAL STUDS",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S6C, read by sight"
+      }
+     },
+     {
+      "description": "6in track, top and bottom",
+      "unit": "LF",
+      "basis": "LINEAR_FT",
+      "factor": 2,
+      "wastePercent": 0,
+      "roundUp": false,
+      "from": {
+       "phrase": "6\" METAL STUDS",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S6C, read by sight"
+      }
+     },
+     {
+      "description": "5/8in type X gypsum board",
+      "unit": "SF",
+      "basis": "BOARDED_SQFT",
+      "factor": 1,
+      "wastePercent": 0,
+      "roundUp": false,
+      "from": {
+       "phrase": "5/8\" TYPE \"X\" GYP.",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S6C, read by sight"
+      }
+     }
+    ],
+    "flags": [
+     {
+      "why": "the board is on one side only — set the wall type's sides to 1 before accepting, because the quantity counts sides itself",
+      "phrase": "ONE SIDE ONLY"
+     },
+     {
+      "why": "the 6\" stud was decoded from the sheet's tag key, not printed beside the type — check the key",
+      "phrase": "NON-RATED INTERIOR WALL 1 LAYER GYP. @ INTERIOR SIDE 2x STEEL FRAMING, SEE STRUCTURAL SINGLE LAYER 5/8\" TYPE \"X\" GYP. BO"
+     }
+    ],
+    "read": {
+     "studWidthIn": 6,
+     "studSpacingIn": null,
+     "studGauge": null,
+     "boardThicknessIn": 0.625,
+     "layersPerSide": 1,
+     "boardIsTypeX": true,
+     "insulation": null,
+     "hourlyRating": 0
+    }
+   },
+   "from": "sight",
+   "disagreements": []
+  },
+  {
+   "code": "S8C",
+   "name": "NON-RATED INTERIOR WALL",
+   "lines": [
+    "NON | - | RATED INTERIOR WALL",
+    "1 LAYER GYP. INTERIOR W/",
+    "2 LAYER GYP. EXTERIOR",
+    "DOUBLE LAYER 5/8\"",
+    "TYPE \"X\" GYP. BOARD",
+    "2x STEEL FRAMING,",
+    "SEE STRUCTURAL"
+   ],
+   "assembly": {
+    "components": [
+     {
+      "description": "8in metal stud",
+      "unit": "EA",
+      "basis": "STUDS",
+      "factor": 1,
+      "wastePercent": 0,
+      "roundUp": true,
+      "from": {
+       "phrase": "8\" METAL STUDS",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S8C, read by sight"
+      }
+     },
+     {
+      "description": "8in track, top and bottom",
+      "unit": "LF",
+      "basis": "LINEAR_FT",
+      "factor": 2,
+      "wastePercent": 0,
+      "roundUp": false,
+      "from": {
+       "phrase": "8\" METAL STUDS",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S8C, read by sight"
+      }
+     },
+     {
+      "description": "5/8in type X gypsum board, 2 layers per side",
+      "unit": "SF",
+      "basis": "BOARDED_SQFT",
+      "factor": 2,
+      "wastePercent": 0,
+      "roundUp": false,
+      "from": {
+       "phrase": "5/8\" TYPE \"X\" GYP.",
+       "where": "A601 ASSEMBLY LEGEND (page 25), type S8C, read by sight"
+      }
+     }
+    ],
+    "flags": [
+     {
+      "why": "the 8\" stud was decoded from the sheet's tag key, not printed beside the type — check the key",
+      "phrase": "NON-RATED INTERIOR WALL 1 LAYER GYP. INTERIOR W/ 2 LAYER GYP. EXTERIOR SINGLE LAYER 5/8\" TYPE \"X\" GYP. BOARD 2x STEEL FR"
+     },
+     {
+      "why": "the two faces carry different layer counts (1 and 2); the quantity uses 2 per side — check the drawing",
+      "phrase": "NON-RATED INTERIOR WALL 1 LAYER GYP. INTERIOR W/ 2 LAYER GYP. EXTERIOR SINGLE LAYER 5/8\" TYPE \"X\" GYP. BOARD 2x STEEL FR"
+     }
+    ],
+    "read": {
+     "studWidthIn": 8,
+     "studSpacingIn": null,
+     "studGauge": null,
+     "boardThicknessIn": 0.625,
+     "layersPerSide": 2,
+     "boardIsTypeX": true,
+     "insulation": null,
+     "hourlyRating": 0
+    }
+   },
+   "from": "sight",
+   "disagreements": []
+  }
+ ],
+ "crops": [
+  {
+   "code": "S6A",
+   "x": 394.73400860570985,
+   "y": 252.98948920440017,
+   "width": 360,
+   "height": 576
+  },
+  {
+   "code": "S8A",
+   "x": 979.9737452351014,
+   "y": 253.22948910840006,
+   "width": 360,
+   "height": 576
+  },
+  {
+   "code": "C8A",
+   "x": 1567.5535240576937,
+   "y": 253.22948910840006,
+   "width": 360,
+   "height": 576
+  },
+  {
+   "code": "S6B",
+   "x": 362.0865733993755,
+   "y": 589.4693546123999,
+   "width": 360,
+   "height": 576
+  },
+  {
+   "code": "S8B",
+   "x": 945.6463399753754,
+   "y": 585.9893560044,
+   "width": 360,
+   "height": 576
+  },
+  {
+   "code": "C8B",
+   "x": 1567.1875580092271,
+   "y": 591.0293539884,
+   "width": 360,
+   "height": 576
+  },
+  {
+   "code": "S6C",
+   "x": 362.0865733993755,
+   "y": 737.3092954763999,
+   "width": 360,
+   "height": 576
+  },
+  {
+   "code": "S8C",
+   "x": 945.6463399753754,
+   "y": 737.3092954763999,
+   "width": 360,
+   "height": 576
+  }
+ ],
+ "reason": "The sheet is a Cole Architects assembly legend (A601) with a WALL TAG LEGEND key decoding XC#A tags (C = core material: S = steel stud, C = concrete; # = core size: 6 = 6\" steel stud, 8 = 8\" steel stud / 8\" concrete; 'X' prefix = rated, omitted when non-rated), so stud material and width for S6x/S8x are decoded through the tagKey and confirmed for S6A/S8A by the WP 1616 install text (\"EACH SIDE OF 6\", 18 MIL (25GA.), STEEL STUDS 24\" O.C.\"). The rated types S6A/S8A are full tabular details with rating, UL listing, sound rating and leader notes; the B and C types are small tag boxes with one-line descriptions and an adjoining thumbnail section, so layer counts come from their own printed words. C8A/C8B are 8\" insulated concrete form walls (not stud framing) with blank rating rows — nothing printed states a rating, so hourlyRating is left null there; \"NON-RATED INTERIOR WALL\" on the B/C types is recorded as 0 hours. For C8B the \"1\" RIGID INSULATION\" and \"(R-22) INSULATED CONCRETE FORMS\" notes point into its own section, and its gyp is a single printed 5/8\" board on the interior face only.",
+ "confidence": "MEDIUM",
+ "model": "fixture — the cached reads of 2026-10-21",
+ "promptVersion": "wall-legend-sight.6"
+}

@@ -133,6 +133,8 @@ model TakeoffPlan {
   sheetScaleReadings PlanSheetScaleReading[]
   sheetProposals    PlanSheetProposal[]
   scheduleProposals PlanScheduleProposal[]
+  legendProposals   PlanLegendProposal[]
+  planTextReads     TakeoffPlanTextRead[]
 
   /// AND ONE MORE CHILD THAT DOES NOT HANG OFF THIS MODEL: the walls found on a
   /// sheet are `TakeoffWallProposal`, keyed on the PAGE and its CALIBRATION
@@ -694,4 +696,30 @@ model TakeoffItem {
   @@index([jobId, sortOrder])
   @@index([companyId])
   @@index([wallTypeId])
+}
+
+/// ── WHAT PLAN-TEXT READING WORKED OUT FOR A SET, KEPT BETWEEN DETECTIONS ──
+///
+/// The detection pass reads the set's legend and door schedule once and joins
+/// them to each sheet's walls; this holds those results so the next sheet and
+/// the next page load do not pay for them again. `pageNumber` 0 is the set
+/// (`kind` `legend` or `doors`); a sheet's own join is `kind` `result` on its
+/// page. `value` is the JSON the reader wrote, read back by the same module
+/// (lib/takeoff/planTextRead.ts). It replaced a file cache under the OS temp
+/// dir, which did not survive a deploy and could not be seen from a second
+/// server. Not evidence: a row here can be recomputed from the drawing at any
+/// time, which is why it has no `updatedBy` and may be deleted freely.
+model TakeoffPlanTextRead {
+  id String @id @default(cuid())
+
+  planId String
+  plan   TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  pageNumber Int
+  kind       String
+  value      Json
+
+  computedAt DateTime @default(now())
+
+  @@unique([planId, pageNumber, kind])
 }

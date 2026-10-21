@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma, type AiFeature } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { AI_FEATURE_KEYS } from "@/lib/ai/settings";
+import { AI_FEATURE_KEYS, OPT_IN_FEATURES } from "@/lib/ai/settings";
 import { KNOWN_MODELS } from "@prova/integrations/src/models";
 import { actionFail, actionOk, ownerRefusal, runAction, type ActionResult } from "./shared";
 
@@ -70,7 +70,12 @@ export async function saveCompanyAiSettings(formData: FormData): Promise<ActionR
     const aiEnabled = formData.get("aiEnabled") !== null;
 
     const disabledFeatures: AiFeature[] = AI_FEATURE_KEYS.filter(
-      (feature) => formData.get(`feature:${feature}`) === null,
+      (feature) => !OPT_IN_FEATURES.has(feature) && formData.get(`feature:${feature}`) === null,
+    ) as AiFeature[];
+    // The opt-in list reads the other way: a ticked box is the signal, and an
+    // unticked one leaves the feature at its default, which is off.
+    const optedInFeatures: AiFeature[] = AI_FEATURE_KEYS.filter(
+      (feature) => OPT_IN_FEATURES.has(feature) && formData.get(`feature:${feature}`) !== null,
     ) as AiFeature[];
 
     const overrideRaw = String(formData.get("modelOverride") ?? "").trim();
@@ -83,7 +88,7 @@ export async function saveCompanyAiSettings(formData: FormData): Promise<ActionR
     }
     const modelOverride = overrideRaw || null;
 
-    const settings = { aiEnabled, disabledFeatures, modelOverride, updatedByUserId };
+    const settings = { aiEnabled, disabledFeatures, optedInFeatures, modelOverride, updatedByUserId };
     await prisma.companyAiSettings.upsert({
       where: { companyId },
       // `planSheetsPerMonth` is absent from BOTH branches, so a create takes

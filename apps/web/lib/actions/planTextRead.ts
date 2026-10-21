@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@prova/db";
-import { planTextReadEnabled } from "@/lib/ai/features";
+import { aiGate } from "@/lib/ai/settings";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { readLegend, readSheetResult, type PlanTextLegend, type PlanTextSheetResult } from "@/lib/takeoff/planTextRead";
@@ -34,11 +34,11 @@ export async function loadPlanText(
 ): Promise<ActionResultWith<PlanTextView | null>> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return { ok: false, error: JOB_COSTS_ONLY };
-  if (!planTextReadEnabled()) return { ok: true, value: null };
+  if (!(await aiGate(context.company.id, "PLAN_TEXT_READ")).ok) return { ok: true, value: null };
   const plan = await prisma.takeoffPlan.findFirst({
     where: { id: planId, jobId, job: { companyId: context.company.id } },
     select: { id: true },
   });
   if (plan === null) return { ok: true, value: null };
-  return { ok: true, value: { sheet: readSheetResult(planId, pageNumber), legend: readLegend(planId) } };
+  return { ok: true, value: { sheet: await readSheetResult(planId, pageNumber), legend: await readLegend(planId) } };
 }

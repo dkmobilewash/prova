@@ -1,0 +1,209 @@
+import path from "node:path";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { test, expect, type Page } from "@playwright/test";
+import { prisma } from "@prova/db";
+import { signInAs } from "../lib/signIn";
+import { PERSONAS } from "../lib/personas";
+import { HealthMonitor } from "../lib/health";
+import { expectHealthy } from "../lib/health";
+import { finishWizard, landOnDashboard, startJob } from "../lib/journey";
+
+/**
+ * ── "ADD THESE WALL TYPES TO YOUR LIBRARY", DRIVEN IN A BROWSER ──
+ *
+ * The legend READ needs a model and is not run here. What this proves is the
+ * half a customer touches: a legend read stored on a job shows up as a link
+ * on the takeoff tab, the review screen opens with one row per type and the
+ * crop beside each, a field can be edited, and Add creates the wall type with
+ * its parts and no price — asserted in the database, not off the screen.
+ *
+ * The proposal is seeded from `fixtures/baker-wall-legend.json`, the stored
+ * shape of Baker's A601 legend as the ingest writes it (built by
+ * lib/takeoff/realplan/zzLegendFixture.eval.ts from the cached reads). The
+ * drawing itself is served from `REAL_PLAN_DIR` when that folder is present,
+ * which is what makes the crops real; in CI, where it is not, the one-page
+ * fixture PDF stands in and the crop assertion is skipped rather than faked.
+ */
+
+const FIXTURE = JSON.parse(readFileSync(path.resolve(__dirname, "../fixtures/baker-wall-legend.json"), "utf8")) as {
+  pageNumber: number;
+  pageCount: number;
+  sheetTitle: string;
+  sheetNumber: string;
+  textRead: unknown;
+  sightRead: unknown;
+  merged: { code: string }[];
+  crops: unknown[];
+  reason: string;
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+  model: string;
+  promptVersion: string;
+};
+const PLANS = process.env.REAL_PLAN_DIR ?? "";
+const BAKER = path.join(PLANS, "2025.07.08_Baker_EOC_BID.pdf");
+const REAL = PLANS !== "" && existsSync(BAKER);
+const PLAN_FIXTURE = path.resolve(__dirname, "../fixtures/plan-sheet.pdf");
+const SHOTS = process.env.TRACE_SHOTS ?? "";
+const JOB_NAME = "ZZ-E2E Wall legend library";
+const TYPE = "S6B";
+
+test.describe.configure({ mode: "serial" });
+
+test.describe("a wall legend read off a set becomes wall types in the library", () => {
+  let page: Page;
+  let monitor: HealthMonitor;
+  let jobId = "";
+  let companyId = "";
+
+  const shot = async (name: string) => {
+    if (SHOTS === "") return;
+    mkdirSync(SHOTS, { recursive: true });
+    await page.screenshot({ path: path.join(SHOTS, `legend-${name}.png`), fullPage: true });
+  };
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    monitor = new HealthMonitor(page);
+    const pdf = readFileSync(REAL ? BAKER : PLAN_FIXTURE);
+    await page.route("**/api/takeoff/plan/**", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/pdf", body: pdf });
+    });
+  });
+
+  test.afterAll(async () => {
+    await page?.close();
+  });
+
+  test("1. a job with a stored legend read links to the review screen from the takeoff tab", async () => {
+    // The takeoff persona, not a new one: +1 555 555 0123 is already taken on the
+    // development instance by a persona on another branch, so a LEGEND persona
+    // failed global setup with `form_identifier_exists`. This spec makes its own
+    // job and touches only the Baker codes, so sharing the persona is safe.
+    await signInAs(page, PERSONAS.takeoff.email);
+    await landOnDashboard(page, monitor);
+    jobId = await startJob(page, monitor, { name: JOB_NAME, gcName: "ZZ-E2E Legend GC" });
+    await finishWizard(page, monitor, jobId);
+    const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId }, select: { companyId: true } });
+    companyId = job.companyId;
+    // A clean library, so "in your library" below is this run's doing.
+    await prisma.wallType.deleteMany({ where: { companyId, code: { in: FIXTURE.merged.map((t) => t.code) } } });
+
+    const plan = await prisma.takeoffPlan.create({
+      data: { companyId, jobId, fileUrl: "https://example.invalid/baker.pdf", fileName: "2025.07.08_Baker_EOC_BID.pdf", revisionLabel: "Bid set" },
+      select: { id: true },
+    });
+    const ingest = await prisma.planIngestJob.create({
+      data: { planId: plan.id, companyId, stage: "WALL_LEGEND", pageCount: FIXTURE.pageCount, startedAt: new Date(), finishedAt: new Date() },
+      select: { id: true },
+    });
+    await prisma.planSheetProposal.create({
+      data: {
+        ingestJobId: ingest.id,
+        planId: plan.id,
+        pageNumber: FIXTURE.pageNumber,
+        proposedSheetNumber: FIXTURE.sheetNumber,
+        proposedTitle: FIXTURE.sheetTitle,
+        proposedReason: "seeded",
+        proposedConfidence: "HIGH",
+        model: "seed",
+        promptVersion: "n/a",
+      },
+    });
+    await prisma.planLegendProposal.create({
+      data: {
+        ingestJobId: ingest.id,
+        planId: plan.id,
+        pageNumber: FIXTURE.pageNumber,
+        sheetTitle: FIXTURE.sheetTitle,
+        textRead: FIXTURE.textRead as never,
+        sightRead: FIXTURE.sightRead as never,
+        merged: FIXTURE.merged as never,
+        crops: FIXTURE.crops as never,
+        reason: FIXTURE.reason,
+        confidence: FIXTURE.confidence,
+        model: FIXTURE.model,
+        promptVersion: FIXTURE.promptVersion,
+      },
+    });
+
+    await page.goto(`/jobs/${jobId}/takeoff`);
+    await expectHealthy(page, "takeoff tab with a legend read stored", { monitor });
+    const link = page.locator('[data-plan-ingest="legend-review"] a');
+    await expect(link, "the takeoff tab offers the review screen").toHaveCount(1);
+    await expect(link).toContainText(`${FIXTURE.merged.length} wall types`);
+    await shot("takeoff-tab-link");
+    await link.click();
+    await page.waitForURL(new RegExp(`/jobs/${jobId}/takeoff/legend$`));
+  });
+
+  test("2. the review screen shows one row per type, the crop beside each, and the flags in red", async () => {
+    await expectHealthy(page, "wall legend review", { monitor });
+    const rows = page.locator('[data-legend="type"]');
+    await expect(rows).toHaveCount(FIXTURE.merged.length);
+    for (const type of FIXTURE.merged) {
+      await expect(page.locator(`[data-legend="type"][data-legend-code="${type.code}"]`)).toHaveCount(1);
+    }
+    // Nothing is in the library yet, so every row offers Add and none says "in your library".
+    await expect(page.locator('[data-legend="in-library"]')).toHaveCount(0);
+    await expect(page.locator('[data-legend="add"]')).toHaveCount(FIXTURE.merged.length);
+    await expect(page.locator('[data-legend="flags"] li').first(), "Baker's legend flags its sheet-note height and its one-sided reads").toBeVisible();
+
+    if (REAL) {
+      // The crops are rendered from the actual sheet. "drawn" is set only after
+      // pdf.js has painted the rectangle, so this is the browser saying it did.
+      const crops = page.locator('[data-legend="crop"][data-legend-crop-state="drawn"]');
+      await expect(crops, "every crop rendered from the drawing").toHaveCount(FIXTURE.crops.length, { timeout: 60_000 });
+      const painted = await page
+        .locator(`[data-legend="type"][data-legend-code="${TYPE}"] canvas`)
+        .evaluate((canvas: HTMLCanvasElement) => {
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return 0;
+          const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+          let dark = 0;
+          for (let i = 0; i < data.length; i += 4) if (data[i] < 128) dark += 1;
+          return dark;
+        });
+      expect(painted, "the crop is a drawing, not a blank canvas").toBeGreaterThan(200);
+    }
+    await shot("review-screen");
+  });
+
+  test("3. Add creates the wall type with its parts and no price, from the fields as edited", async () => {
+    const row = page.locator(`[data-legend="type"][data-legend-code="${TYPE}"]`);
+    await row.scrollIntoViewIfNeeded();
+    const name = row.getByLabel("Name");
+    await name.fill("Interior partition, 1 hr");
+    await shot("row-before-add");
+    await row.locator('[data-legend="add"]').click();
+    await expect(row.locator('[data-legend="message"]')).toContainText(`Added ${TYPE}`);
+    await expect(row.locator('[data-legend="in-library"]')).toHaveCount(1);
+    await shot("row-after-add");
+
+    const added = await prisma.wallType.findUniqueOrThrow({
+      where: { companyId_code: { companyId, code: TYPE } },
+      include: { components: true },
+    });
+    expect(added.name).toBe("Interior partition, 1 hr");
+    expect(added.thicknessIn === null ? null : Number(added.thicknessIn)).toBeGreaterThan(6);
+    expect(added.components.length, "studs, track and board at least").toBeGreaterThanOrEqual(3);
+    for (const component of added.components) {
+      expect(component.catalogEntryId, `${component.description} carries no price-book entry`).toBeNull();
+      expect(component.costCategory, `${component.description} carries no cost category`).toBeNull();
+    }
+    const proposal = await prisma.planLegendProposal.findFirstOrThrow({ where: { plan: { jobId } }, select: { status: true, acceptedByUserId: true } });
+    expect(proposal.status).toBe("ACCEPTED");
+    expect(proposal.acceptedByUserId).not.toBeNull();
+
+    // The library page shows it, which is where the person is sent next.
+    await page.goto("/wall-types");
+    await expectHealthy(page, "wall types after adding from the legend", { monitor });
+    await expect(page.getByText(TYPE, { exact: true }).first()).toBeVisible();
+    await shot("wall-types");
+
+    // A second Add of the same code is refused in words, not with a crash.
+    await page.goto(`/jobs/${jobId}/takeoff/legend`);
+    await expectHealthy(page, "review screen after one add", { monitor });
+    await expect(page.locator(`[data-legend="type"][data-legend-code="${TYPE}"] [data-legend="in-library"]`)).toHaveCount(1);
+    await expect(page.locator(`[data-legend="type"][data-legend-code="${TYPE}"] [data-legend="add"]`)).toHaveCount(0);
+  });
+});

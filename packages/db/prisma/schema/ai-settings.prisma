@@ -171,6 +171,11 @@ enum AiFeature {
   /// With it off, a scanned sheet behaves as it does today: recognised as a
   /// scan and set aside.
   SHEET_TEXT
+  /// Wall types, assemblies and door matches read off the drawings
+  /// themselves (the partition legend, the door schedule, the tags on the
+  /// plan). OPT-IN: off until the account owner turns it on, because it is
+  /// new and it writes proposals a person is asked to review.
+  PLAN_TEXT_READ
 }
 
 /// One row per company. Absent means every default below.
@@ -208,6 +213,12 @@ model CompanyAiSettings {
   /// before it works. The cost is that a company cannot pre-refuse a feature
   /// that does not exist yet, which is the right way round.
   disabledFeatures AiFeature[]
+
+  /// The opposite list, for features that are OFF until chosen. A feature
+  /// shipped later is on unless somebody turned it off (`disabledFeatures`);
+  /// one named in `OPT_IN_FEATURES` (lib/ai/features.ts) is off unless it is
+  /// here. Empty for every company until an owner ticks one.
+  optedInFeatures AiFeature[] @default([])
 
   /// Plan sheets included per calendar month, metered by
   /// `AskAllowancePeriod.planSheetsUsed` — which `claimPlanSheet` in

@@ -64,11 +64,17 @@ export type PlanIngestPanelProps = {
    * them, which is the same division `existing` follows.
    */
   scheduleSheetCount: number;
+  /**
+   * The wall-legend read: whether the company has the PLAN_TEXT_READ opt-in on
+   * (the block is shown either way, so the switch is discoverable), where its
+   * review screen is, and how many wall types the newest reads define.
+   */
+  legend: { on: boolean; reviewHref: string; typeCount: number };
 };
 
 type Failure = { pageNumber: number; attempts: number; error: string | null };
 
-export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIngestPanelProps) {
+export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }: PlanIngestPanelProps) {
   const [view, setView] = useState<IngestView | null>(existing);
   const [error, setError] = useState<string | null>(null);
   const [failures, setFailures] = useState<Failure[]>([]);
@@ -217,6 +223,19 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
     });
   }
 
+  /** THE FOURTH STAGE: the partition legend, read once per set for review. */
+  function onStartLegend() {
+    setError(null);
+    startTransition(async () => {
+      const started = await startPlanIngest(planId, "WALL_LEGEND");
+      if (!started.ok) return setError(started.error);
+      setView(started.value);
+      setFailures([]);
+      setRunning(true);
+      void pump(started.value.jobId, 0);
+    });
+  }
+
   function onRetry(pageNumber: number) {
     if (!view) return;
     setError(null);
@@ -276,6 +295,13 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
 
   return (
     <section className="rounded-lg border border-line-card bg-surface p-4" data-plan-ingest="panel">
+      {legend.typeCount > 0 && (
+        <p className="mb-3 text-sm text-ink-body" data-plan-ingest="legend-review">
+          <a href={legend.reviewHref} className="font-medium text-link underline-offset-2 hover:underline">
+            Review the {legend.typeCount} wall {legend.typeCount === 1 ? "type" : "types"} read off this set \u2192
+          </a>
+        </p>
+      )}
       <h3 className="mb-1 text-sm font-semibold text-ink">Reading the sheets</h3>
 
       {!view && (
@@ -463,6 +489,39 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount }: PlanIn
                   ? "None of the title blocks on this set named a schedule. If you know a sheet carries one, correct its page type on the review list above and this will pick it up."
                   : "Reads the door, window, finish or partition schedules into rows for you to check. The table is rebuilt from the sheet's own text positions, so the rows and columns are not guessed at \u2014 only what each column means is."}
               </p>
+            </div>
+          )}
+          {/* ── THE WALL LEGEND, FOR THE LIBRARY ──
+              Shown whenever a run has finished, switch on or off: a person who
+              cannot see a control cannot ask for it to be turned on. Off, the
+              button is replaced by the sentence that says where the switch is.
+              The review link stands on its own once anything has been read, so
+              a legend read last week is one click away without re-running. */}
+          {view.complete && !running && (
+            <div className="mt-1 border-t border-line-card pt-3" data-plan-ingest="legend-stage">
+              {legend.on ? (
+                <button
+                  type="button"
+                  onClick={onStartLegend}
+                  disabled={isPending}
+                  className="min-h-[48px] rounded-md bg-rail-hover px-4 text-sm font-medium text-ink hover:bg-lift disabled:opacity-50"
+                >
+                  {isPending ? "Starting\u2026" : "Read the wall legend"}
+                </button>
+              ) : (
+                <p className="text-sm text-ink-body">
+                  <span className="font-medium text-ink">Wall types from the drawings</span> is off for your company. The account
+                  owner can turn it on under Settings \u2192 Assistant; it reads the set\u2019s partition legend and proposes each
+                  wall type and its parts for your library.
+                </p>
+              )}
+              {legend.on && (
+                <p className="mt-2 text-sm text-ink-muted">
+                  Reads the sheet or two that legend the walls \u2014 each type\u2019s studs, board, layers, insulation and rating \u2014
+                  into a review screen where you can check each one against its crop of the drawing and add it to your
+                  library. Uses one sheet per legend page. Nothing it proposes is a price.
+                </p>
+              )}
             </div>
           )}
 

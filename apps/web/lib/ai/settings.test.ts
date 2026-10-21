@@ -20,12 +20,13 @@ import { HAIKU_4_5, OPUS_5 } from "@prova/integrations/src/models";
 const findUnique = vi.fn();
 vi.mock("@prova/db", () => ({ prisma: { companyAiSettings: { findUnique } } }));
 
-const { AI_FEATURE_KEYS, AI_FEATURE_LABEL, AI_SETTINGS_DEFAULTS, aiFeatureRefusal, aiGate, aiSettingsFor } =
+const { AI_FEATURE_KEYS, AI_FEATURE_LABEL, AI_SETTINGS_DEFAULTS, OPT_IN_FEATURES, aiFeatureRefusal, aiGate, aiSettingsFor } =
   await import("./settings");
 
-const row = (over: Partial<{ aiEnabled: boolean; disabledFeatures: string[]; planSheetsPerMonth: number; modelOverride: string | null }> = {}) => ({
+const row = (over: Partial<{ aiEnabled: boolean; disabledFeatures: string[]; optedInFeatures: string[]; planSheetsPerMonth: number; modelOverride: string | null }> = {}) => ({
   aiEnabled: true,
   disabledFeatures: [] as string[],
+  optedInFeatures: [] as string[],
   planSheetsPerMonth: 1500,
   modelOverride: null as string | null,
   ...over,
@@ -49,11 +50,26 @@ describe("a company with no settings row", () => {
     expect(AI_SETTINGS_DEFAULTS.disabledFeatures).toEqual([]);
   });
 
-  it("passes every feature, so the migration cannot switch the product off", async () => {
+  it("passes every feature, so the migration cannot switch the product off — except the opt-ins, which are off until chosen", async () => {
     findUnique.mockResolvedValue(null);
     for (const feature of AI_FEATURE_KEYS) {
       const gate = await aiGate("co-1", feature);
-      expect(gate.ok, `${feature} refused for a company with no row`).toBe(true);
+      if (OPT_IN_FEATURES.has(feature)) {
+        expect(gate.ok, `${feature} is an opt-in and must be OFF for a company with no row`).toBe(false);
+        if (!gate.ok) expect(gate.error).toContain(AI_FEATURE_LABEL[feature]);
+      } else {
+        expect(gate.ok, `${feature} refused for a company with no row`).toBe(true);
+      }
+    }
+  });
+
+  it("an opt-in feature passes once the company has chosen it, and nothing else changes", async () => {
+    const [optIn] = [...OPT_IN_FEATURES];
+    expect(optIn, "the opt-in set is empty, so this test is about nothing — delete it").toBeDefined();
+    findUnique.mockResolvedValue(row({ optedInFeatures: [optIn] }));
+    expect((await aiGate("co-1", optIn)).ok).toBe(true);
+    for (const feature of AI_FEATURE_KEYS.filter((key) => !OPT_IN_FEATURES.has(key))) {
+      expect((await aiGate("co-1", feature)).ok, feature).toBe(true);
     }
   });
 });
@@ -87,7 +103,7 @@ describe("one feature at a time", () => {
     }
     // And everything else still runs — a list rather than one flag is the
     // point: a company may want the assistant and not want its drawings read.
-    for (const feature of AI_FEATURE_KEYS.filter((key) => key !== "COMPLIANCE_EXTRACT")) {
+    for (const feature of AI_FEATURE_KEYS.filter((key) => key !== "COMPLIANCE_EXTRACT" && !OPT_IN_FEATURES.has(key))) {
       expect((await aiGate("co-1", feature)).ok, feature).toBe(true);
     }
   });

@@ -10,6 +10,8 @@ import { TakeoffPlanUploader } from "@/components/TakeoffPlanUploader";
 import { PlanIngestPanel } from "@/components/PlanIngestPanel";
 import { ScheduleProposals } from "@/components/ScheduleProposals";
 import { loadScheduleProposals, scheduleSheetCountFor } from "@/lib/plan-ingest/scheduleProposalsQuery";
+import { legendTypeCountFor } from "@/lib/plan-ingest/legendProposalsQuery";
+import { aiGate } from "@/lib/ai/settings";
 import { PlanSheetReview } from "@/components/PlanSheetReview";
 import { levelsByPage } from "@/lib/plan-ingest/sheetLevel";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
@@ -291,6 +293,11 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           planId={plan.id}
           existing={await latestIngestFor(plan.id)}
           scheduleSheetCount={scheduleSheetCount}
+          legend={{
+            on: (await aiGate(company.id, "PLAN_TEXT_READ")).ok,
+            reviewHref: `/jobs/${job.id}/takeoff/legend`,
+            typeCount: await legendTypeCountFor(plan.id),
+          }}
         />
       )}
 

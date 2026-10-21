@@ -245,6 +245,10 @@ const sourceFor = (route: string) => {
  * never "does it have brackets in it".
  */
 const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
+  // The wall-legend review screen: the takeoff tab's capability, reached from
+  // the takeoff tab's own link. Adding a type to the library is a separate
+  // action gated on MANAGE_ESTIMATING (action-capability-guards.test.ts).
+  "/jobs/[id]/takeoff/legend": "VIEW_JOB_COSTS",
   // The regret letter — the polite decline that keeps a sub on a GC's bid
   // list. MANAGE_ESTIMATING because it hangs off a bid invitation and
   // /bids itself takes the same capability: a page that reads a bid's

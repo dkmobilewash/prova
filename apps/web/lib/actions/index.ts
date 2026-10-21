@@ -106,4 +106,5 @@ export * from "./replies";
 export * from "./takeoffClassify";
 export * from "./takeoffReadSheet";
 export * from "./planTextRead";
+export * from "./wallLegend";
 export * from "./takeoffOffer";

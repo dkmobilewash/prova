@@ -84,7 +84,7 @@ export async function extractWallLegend(params: {
   const client = new Anthropic(AI_CLIENT_OPTIONS);
   const body = params.lines.join("\n");
   const response = await client.messages.create({
-    model: params.model ?? modelFor("SCHEDULE_READ").model,
+    model: params.model ?? modelFor("PLAN_TEXT_READ").model,
     // A legend holds few types but many lines each, and the lines are copied
     // verbatim — so the output is roughly the size of the part of the page
     // that matters. Truncation here drops a type's last line, which reads as

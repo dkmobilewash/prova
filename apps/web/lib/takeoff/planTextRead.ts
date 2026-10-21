@@ -9,7 +9,7 @@ import { inPageWidthUnits } from "./findWallsOnSheet";
 import { legendPages, type PageForLegend } from "./legendPages";
 import { openingsInWalls } from "./openings";
 import { joinOpeningsToSchedule, widthAndHeight, type PlacedMark } from "./openingMarks";
-import { planTextKeys, readPlanTextCache, writePlanTextCache } from "./planTextCache";
+import { storedLegendTypesFromJson } from "./legendProposal";
 import { isPropagatedTag } from "./planTextTags";
 import { readWallLegend, type WallLegendProposal } from "./readWallLegend";
 import { tagSymbols, type TextForSymbol } from "./tagSymbols";
@@ -29,11 +29,55 @@ import type { StrokeSegment, WallCandidate } from "./wallVectors";
  *   - the join of that schedule to the sheet's openings and marks, which is
  *     the per-sheet result the screen shows.
  *
- * None of it writes to the database. The results go to `planTextCache`; the
- * tables they want are named there.
+ * What it works out is kept in `TakeoffPlanTextRead` (page 0 for the set's
+ * legend and door schedule, the sheet's own page for its join), so the next
+ * sheet and the next page load do not pay for it again. The ingest's
+ * `WALL_LEGEND` stage stores its read in `PlanLegendProposal` for review, and
+ * a detection that follows it reads THAT legend first, so the finder and the
+ * person are looking at the same one.
  */
 
 type PlanDoc = Awaited<ReturnType<typeof openPlanPdf>>;
+
+// ── WHAT WAS WORKED OUT, KEPT IN `TakeoffPlanTextRead` ──
+// A row is recomputable from the drawing, so a miss costs a read and never an
+// answer.
+const SET_PAGE = 0;
+async function readStored<T>(planId: string, pageNumber: number, kind: string): Promise<T | null> {
+  const row = await prisma.takeoffPlanTextRead.findUnique({
+    where: { planId_pageNumber_kind: { planId, pageNumber, kind } },
+    select: { value: true },
+  });
+  return row === null ? null : (row.value as T);
+}
+async function writeStored(planId: string, pageNumber: number, kind: string, value: unknown): Promise<void> {
+  const json = JSON.parse(JSON.stringify(value));
+  await prisma.takeoffPlanTextRead.upsert({
+    where: { planId_pageNumber_kind: { planId, pageNumber, kind } },
+    create: { planId, pageNumber, kind, value: json },
+    update: { value: json, computedAt: new Date() },
+  });
+}
+
+/** The legend the ingest stored for review, as the detection's legend — or null when none has been read. */
+async function legendFromProposal(planId: string): Promise<PlanTextLegend | null> {
+  const proposal = await prisma.planLegendProposal.findFirst({
+    where: { planId },
+    orderBy: { createdAt: "desc" },
+    select: { pageNumber: true, sheetTitle: true, merged: true, reason: true, confidence: true },
+  });
+  if (proposal === null) return null;
+  const types = storedLegendTypesFromJson(proposal.merged);
+  if (types.length === 0) return null;
+  return {
+    page: proposal.pageNumber,
+    title: proposal.sheetTitle,
+    codes: types.map((t) => t.code.toUpperCase()),
+    proposals: types.map((t) => ({ code: t.code, name: t.name, lines: t.lines, assembly: t.assembly })),
+    reason: proposal.reason,
+    confidence: proposal.confidence,
+  };
+}
 
 export type PlanTextLegend = {
   page: number;
@@ -110,8 +154,14 @@ export async function legendForPlan(input: {
   doc: PlanDoc;
   outOfTime: () => boolean;
 }): Promise<PlanTextLegend | null> {
-  const key = planTextKeys.legend(input.planId);
-  const cached = readPlanTextCache<PlanTextLegend>(key);
+  // ── THE INGEST'S READ FIRST ──
+  // The WALL_LEGEND stage stores what it read for review; a detection that
+  // follows it must see the same legend the person was shown, so that is the
+  // first place looked, then the kept result of an earlier detection, and only
+  // then the model.
+  const fromIngest = await legendFromProposal(input.planId);
+  if (fromIngest !== null) return fromIngest;
+  const cached = await readStored<PlanTextLegend>(input.planId, SET_PAGE, "legend");
   if (cached !== null) return cached;
 
   const titles = await titlesFor(input.planId);
@@ -143,7 +193,7 @@ export async function legendForPlan(input: {
       reason: read.reason,
       confidence: read.confidence,
     };
-    writePlanTextCache(key, legend);
+    await writeStored(input.planId, SET_PAGE, "legend", legend);
     return legend;
   }
   return null;
@@ -168,8 +218,7 @@ export async function doorScheduleForPlan(input: {
     if (rows.length > 0) return { page: fromIngest.pageNumber, rows, from: "ingest" };
   }
 
-  const key = planTextKeys.doors(input.planId);
-  const cached = readPlanTextCache<PlanTextDoors>(key);
+  const cached = await readStored<PlanTextDoors>(input.planId, SET_PAGE, "doors");
   if (cached !== null) return cached;
 
   const titles = await titlesFor(input.planId);
@@ -184,6 +233,9 @@ export async function doorScheduleForPlan(input: {
   }
   if (candidates.length === 0) return null;
   if (input.outOfTime()) return null;
+  // The schedule reader's own switch: this path only runs once PLAN_TEXT_READ
+  // has passed upstream, and a company that switched schedule reading off has
+  // said no to exactly this call.
   const gate = await aiGate(input.companyId, "SCHEDULE_READ");
   if (!gate.ok) return null;
   const page = candidates[0];
@@ -205,7 +257,7 @@ export async function doorScheduleForPlan(input: {
     rows: read.rows.map((r) => ({ mark: r.mark, size: r.size ?? null, description: r.description ?? null })),
     from: "model",
   };
-  writePlanTextCache(key, doors);
+  await writeStored(input.planId, SET_PAGE, "doors", doors);
   return doors;
 }
 
@@ -273,14 +325,15 @@ export function typedFeetOf(groups: readonly WallGroup[]): PlanTextSheetResult["
   return typed;
 }
 
-export function writeSheetResult(result: PlanTextSheetResult): void {
-  writePlanTextCache(planTextKeys.result(result.planId, result.pageNumber), result);
+export async function writeSheetResult(result: PlanTextSheetResult): Promise<void> {
+  await writeStored(result.planId, result.pageNumber, "result", result);
 }
 
-export function readSheetResult(planId: string, pageNumber: number): PlanTextSheetResult | null {
-  return readPlanTextCache<PlanTextSheetResult>(planTextKeys.result(planId, pageNumber));
+export async function readSheetResult(planId: string, pageNumber: number): Promise<PlanTextSheetResult | null> {
+  return readStored<PlanTextSheetResult>(planId, pageNumber, "result");
 }
 
-export function readLegend(planId: string): PlanTextLegend | null {
-  return readPlanTextCache<PlanTextLegend>(planTextKeys.legend(planId));
+/** The legend as the last detection saw it: the ingest's read where one exists, else the kept model read. */
+export async function readLegend(planId: string): Promise<PlanTextLegend | null> {
+  return (await legendFromProposal(planId)) ?? readStored<PlanTextLegend>(planId, SET_PAGE, "legend");
 }

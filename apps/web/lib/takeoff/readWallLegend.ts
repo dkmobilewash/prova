@@ -1,4 +1,5 @@
 import { extractWallLegend, extractWallLegendBySight, type WallLegendRead, type WallLegendSightRead } from "@prova/integrations";
+import type { ModelUsageReporter } from "@prova/integrations/src/anthropic";
 import { mergeLegendReads, type MergedType } from "./legendMerge";
 import { aiGate } from "@/lib/ai/settings";
 import { readPartitionAssembly, type PartitionAssembly } from "./partitionAssembly";
@@ -54,7 +55,7 @@ export async function readWallLegend(input: {
   sheetTitle?: string | null;
   where: string;
 }): Promise<WallLegendResult> {
-  const gate = await aiGate(input.companyId, "SCHEDULE_READ");
+  const gate = await aiGate(input.companyId, "PLAN_TEXT_READ");
   if (!gate.ok) return { ok: false, error: gate.error };
 
   let read: WallLegendRead;
@@ -104,7 +105,7 @@ export async function readWallLegend(input: {
  * the text read is; nothing here is a price.
  */
 export type WallLegendSightResult =
-  | { ok: true; types: MergedType[]; reason: string; confidence: WallLegendSightRead["confidence"] }
+  | { ok: true; types: MergedType[]; sight: WallLegendSightRead; reason: string; confidence: WallLegendSightRead["confidence"] }
   | { ok: false; error: string };
 
 export async function readWallLegendBySight(input: {
@@ -116,8 +117,9 @@ export async function readWallLegendBySight(input: {
   pageNumber: number;
   sheetTitle?: string | null;
   where: string;
+  onUsage?: ModelUsageReporter;
 }): Promise<WallLegendSightResult> {
-  const gate = await aiGate(input.companyId, "SCHEDULE_READ");
+  const gate = await aiGate(input.companyId, "PLAN_TEXT_READ");
   if (!gate.ok) return { ok: false, error: gate.error };
   let sight: WallLegendSightRead;
   try {
@@ -128,9 +130,10 @@ export async function readWallLegendBySight(input: {
       pageNumber: input.pageNumber,
       sheetTitle: input.sheetTitle ?? null,
       model: gate.model,
+      onUsage: input.onUsage,
     });
   } catch {
     return { ok: false, error: `The wall legend on page ${input.pageNumber} could not be read from the drawing. Nothing was changed.` };
   }
-  return { ok: true, types: mergeLegendReads({ text: input.text, sight, where: input.where }), reason: sight.reason, confidence: sight.confidence };
+  return { ok: true, types: mergeLegendReads({ text: input.text, sight, where: input.where }), sight, reason: sight.reason, confidence: sight.confidence };
 }

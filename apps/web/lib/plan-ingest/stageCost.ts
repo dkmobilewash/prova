@@ -53,5 +53,8 @@ export const STAGE_SPENDS: Record<PlanIngestStage, boolean> = {
   SCHEDULE_ROWS: true,
   // Not built, and would be pure computation over rows if it were.
   SHEET_INDEX: false,
+  // Reads the partition legend with a model call on the page or two that
+  // carry one; every other page is a text parse and free.
+  WALL_LEGEND: true,
 };
 

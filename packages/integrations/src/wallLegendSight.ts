@@ -139,7 +139,7 @@ export async function extractWallLegendBySight(params: {
   content.push({ type: "text", text: `The page's text, in reading order:\n\n${params.lines.join("\n")}` });
 
   const response = await client.messages.create({
-    model: params.model ?? modelFor("SCHEDULE_READ").model,
+    model: params.model ?? modelFor("PLAN_TEXT_READ").model,
     max_tokens: 8192,
     system: SYSTEM_PROMPT,
     tools: [

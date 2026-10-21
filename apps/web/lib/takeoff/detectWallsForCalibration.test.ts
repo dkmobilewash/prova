@@ -31,6 +31,12 @@ vi.mock("@prova/db", () => ({
 // `detectWallsAfterResponse` relies on. These tests call the inner function
 // directly, so nothing here needs it — but importing the module must not throw.
 vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
+// The per-company switch. Off is the default for every company (an opt-in),
+// so the test turns it on by hand for the one case that needs it.
+const planTextOn = { value: false };
+vi.mock("@/lib/ai/settings", () => ({
+  aiGate: async () => (planTextOn.value ? { ok: true, model: "test-model" } : { ok: false, error: "off" }),
+}));
 
 const legendForPlan = vi.fn(async () => null);
 const doorScheduleForPlan = vi.fn(async () => null);
@@ -149,12 +155,12 @@ describe("detection stops itself instead of being stopped", () => {
   });
 });
 
-describe("PLAN_TEXT_READ", () => {
+describe("PLAN_TEXT_READ (the per-company opt-in)", () => {
   beforeEach(() => {
     legendForPlan.mockClear();
     doorScheduleForPlan.mockClear();
     writeSheetResult.mockClear();
-    delete process.env.PLAN_TEXT_READ;
+    planTextOn.value = false;
   });
 
   it("off (the default): reads no legend, no schedule, writes no result — the detection is what it was", async () => {
@@ -167,7 +173,7 @@ describe("PLAN_TEXT_READ", () => {
   });
 
   it("on: reads the legend once, joins the schedule, and writes the sheet's result", async () => {
-    process.env.PLAN_TEXT_READ = "1";
+    planTextOn.value = true;
     legendForPlan.mockResolvedValueOnce({ page: 25, codes: ["A", "B"] } as never);
     const { doc } = fakeDoc(3);
     openPlanPdf.mockResolvedValue(doc);
@@ -177,6 +183,5 @@ describe("PLAN_TEXT_READ", () => {
     expect(writeSheetResult).toHaveBeenCalledWith(
       expect.objectContaining({ planId: "plan-1", pageNumber: 1, legend: { page: 25, codes: ["A", "B"] }, doors: null }),
     );
-    delete process.env.PLAN_TEXT_READ;
   });
 });

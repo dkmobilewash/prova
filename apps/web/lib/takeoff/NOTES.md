@@ -2552,3 +2552,63 @@ sees it** — listed, nothing run:
    a step that opens the review screen with a seeded legend proposal and
    adds one type, so the screen's existence is proved by a browser and not
    by a render test.
+
+### "Add these wall types to your library" (2026-10-21): built, off by default
+
+What the launch checklist above asked for, built on `diego/plan-text-library`
+off `diego/plan-text-2`. The shape, and the three decisions worth reading
+before changing it:
+
+**The switch is an opt-in, which this product had not had before.** Every
+other AI feature is on unless a company turns it off, because nobody should
+have to opt in to a feature before it works. This one writes proposals a
+person is asked to review, so it is OFF until the owner ticks it:
+`OPT_IN_FEATURES` in `lib/ai/features.ts`, stored as
+`CompanyAiSettings.optedInFeatures`, refused by `aiFeatureRefusal` in a
+sentence that says where the switch is. The settings form shows it with
+"new — off until you turn it on"; the ingest panel shows the sentence in
+place of the button when it is off, so the control is discoverable. The
+environment flag `PLAN_TEXT_READ=1` is gone. A feature leaves the opt-in set
+when it has earned the default, and the stored list then does nothing.
+
+**The ingest reads the words; the browser reads the drawing.** Stage
+`WALL_LEGEND` (`lib/plan-ingest/wallLegend.ts`) runs one task per page and
+spends a model call only where `legendPages` ranks the page 0–2 on its own
+text — a titled legend, a headed block, or a dozen assembly lines — so a
+sixty-page set costs one or two reads. It stores the text read, the merged
+view (`storedLegendTypes`, sight null) and the crop rectangle per type
+(`legendCropRects`, from the page's text and symbols) in
+`PlanLegendProposal`. The sight read cannot run there — Node has no
+rasteriser — so the review screen's "Check these against the drawing"
+renders the page (≤2000px, ≤100dpi) and each crop (200dpi) with pdf.js, the
+same scales the eval validated, and posts them to `readLegendBySight`, which
+re-merges and stores. `detectWallsForCalibration` reads the ingest's legend
+FIRST (`legendFromProposal`), so the finder and the person look at the same
+legend; what it works out otherwise is kept in `TakeoffPlanTextRead`.
+
+**Add rebuilds the parts from the fields, not from the stored read.** The
+review screen's inputs are what `addWallTypeFromLegend` hands to
+`assemblyFromSight`, so an edited spacing changes the stud rule and an
+edited layer count changes the board. It creates the `WallType` (code,
+name, thickness from the fields or the nominal, spacing, two sides, the
+legend's lines in `notes`) with its components (`WallTypeComponent`:
+description, basis, factor, waste, roundUp) and nothing else — no catalog
+entry, no cost category, no production rate. "In your library" is derived
+from the company's codes at render time, never stored; `status`/`acceptedBy`
+record who took the legend in, which is not derivable.
+
+**Not done, and why.** `PROPAGATED` as a `TakeoffWallProposalSource`:
+`wallProposal.ts` narrows the enum to three members in `ProposalRow`, so the
+value alone fails typecheck in `workspaceLoad.ts`. It belongs with the
+finder's wiring (wallGroups.ts/wallProposal.ts), in that lane, with its own
+three-line migration; the marker in the tag text stays until then.
+
+**Proved by.** `wall-legend-library.spec.ts` in a real browser against a
+throwaway database: seeds Baker's A601 legend (fixture built by
+`zzLegendFixture.eval.ts` from the cached reads, no model), follows the
+takeoff tab's link, counts eight rows with a rendered crop each (and that
+the S6B crop is a drawing, by its dark pixels), edits a name, presses Add,
+reads the `WallType` and its three components back with no price, and sees
+the row refuse a second Add. The migration applied to a scratch Postgres and
+`migrate status` named it; `migrate diff` against the schema reports only the
+two pre-existing `ProposalClause.updatedAt` defaults.
