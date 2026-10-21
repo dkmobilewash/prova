@@ -23,6 +23,19 @@ LABELS="${TAKEOFF_LABEL_DIR:-$HOME/Claude Folder/takeoff/labels}"
 # reported it dead — three separate "it keeps dying" diagnoses, a rebuilt
 # .next, and an afternoon, for a port nobody had written down.
 PORT="${PORT:-3000}"
+
+# ── A SECOND SERVER NEEDS A SECOND BUILD DIRECTORY ──
+#
+# `next build` and `next start` share `.next`, and so did two servers started
+# from this script: rebuilding one made the other throw
+# `Cannot find module … segment-explorer-node.js` on every route — the trap
+# already recorded in CLAUDE.md, now reachable by running two labelling
+# servers instead of a build beside a dev server.
+#
+# `next.config.mjs` reads `NEXT_DIST_DIR`, so naming one per server is the
+# whole fix. Chrome's server uses `.next-chrome`; :3001 keeps `.next`.
+NEXT_DIST_DIR="${NEXT_DIST_DIR:-.next}"
+export NEXT_DIST_DIR
 # ── LOOPBACK, AND THE SAME VALUE REACHES THE GUARD AND THE BIND ──
 #
 # `localPlanFile.ts` lets a PRODUCTION build read local plan files only when
@@ -183,6 +196,7 @@ export ALLOW_LOCAL_PLANS
 echo "plans from : $PLANS"
 echo "labels to  : $LABELS"
 echo "port       : $PORT"
+echo "build dir  : $NEXT_DIST_DIR"
 echo "database   : $HOST"
 echo "bind       : $HOSTNAME (loopback is required for local plans)"
 echo "finder     : $TAKEOFF_FINDER_VERSION"

@@ -49,11 +49,20 @@ SMOKE_LOGS="${SMOKE_LOGS:-$(mktemp -d "${TMPDIR:-/tmp}/smoke-logs-XXXXXX")}"
 
 # ── REFUSALS, BEFORE ANYTHING IS BUILT OR STARTED ──
 if [ "$PORT" = "3001" ]; then
-  echo "REFUSING: :3001 is the labelling server. Use another port." >&2
+  echo "REFUSING: :3001 is the original session's server. Use another port." >&2
   exit 1
 fi
-if [ "$DIST" = ".next" ]; then
-  echo "REFUSING: building into .next would take the running server down mid-sheet." >&2
+# ── :3010 IS CHROME'S, AND IT IS THE ONE WITH SOMEBODY ON IT ──
+#
+# The lock guards :3010 now. A smoke run that seized that port would take a
+# labelling round down mid-sheet, which is the whole reason the two servers
+# were separated.
+if [ "$PORT" = "3010" ]; then
+  echo "REFUSING: :3010 is Chrome's labelling server. Use another port." >&2
+  exit 1
+fi
+if [ "$DIST" = ".next" ] || [ "$DIST" = ".next-chrome" ]; then
+  echo "REFUSING: building into $DIST would take a running server down mid-sheet." >&2
   exit 1
 fi
 case "$SMOKE_LABELS" in
@@ -71,7 +80,7 @@ mkdir -p "$SMOKE_LABELS"
 
 COMMIT=$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 echo "commit     : $COMMIT"
-echo "port       : $PORT  (the labelling server on 3001 is not touched)"
+echo "port       : $PORT  (neither :3001 nor Chrome's :3010 is touched)"
 echo "build dir  : $DIST"
 echo "labels to  : $SMOKE_LABELS  (temporary)"
 echo "logs to    : $SMOKE_LOGS"
