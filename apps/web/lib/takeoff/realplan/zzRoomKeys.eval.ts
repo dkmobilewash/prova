@@ -36,10 +36,33 @@ const BIM = process.env.BIM_DIR ?? "";
 const SYN = process.env.PLANS_ONLY_DIR ?? "";
 const OUT = process.env.ROOM_KEYS_OUT ?? "";
 
-const HELD_OUT = ["central-bank", "gen-bbq", "sln-terminal", "stem-bid", "lodi-memorial", "missouri-new", "nall-wealth"];
+/** BOARD.md rules 3, 4 and 5: the wall and plan-text held-outs, plus Jefferson
+ *  City, which is kept out of everything as Albany's twin. Matched on the file
+ *  name, so a held-out set is never even opened. */
+const HELD_OUT = [
+  "central-bank", "gen-bbq", "sln-terminal", "stem-bid",
+  "lodi-memorial", "missouri-new", "nall-wealth",
+  "ksu-fairchild", "albany-readiness", "oreillys", "jefferson-city",
+];
 
-/** The pages the inventory found, by hand, 2026-10-21. */
-const PRINTED: { file: string; page: number; note: string }[] = [
+/**
+ * The pages the inventory found, by hand, 2026-10-21 and 2026-10-22.
+ *
+ * `bareAreas`: the page prints an area INSIDE each room with no name stacked
+ * over it (Camp Clark's code plan: `375 SF` sitting in the room, the name
+ * elsewhere). Those become rooms with no name and no number, joined to a
+ * detected region by POSITION. `tagsOnly`: the page prints NAME / NUMBER tags
+ * and no areas at all (Joplin, Topeka, the Supreme Court library — none of
+ * the 2026-10-22 training sets prints room areas on its plans); the key then
+ * says which rooms exist and where, so closed / open / merged can be counted,
+ * and nothing about their size.
+ */
+const PRINTED: { file: string; page: number; note: string; bareAreas?: boolean; tagsOnly?: boolean }[] = [
+  { file: "Camp-Clark-60-Soldier-Barracks.pdf", page: 3, note: "code plan: areas printed inside the rooms, no name over them", bareAreas: true },
+  { file: "Topeka-Senior-Villas.pdf", page: 6, note: "code plan, NAME / NUMBER tags, no areas", tagsOnly: true },
+  { file: "Joplin-community-center.pdf", page: 46, note: "A-101, NAME / NUMBER tags, no areas", tagsOnly: true },
+  { file: "Joplin-community-center.pdf", page: 47, note: "the sheet after A-101, NAME / NUMBER tags, no areas", tagsOnly: true },
+  { file: "Supreme-Court-of-Missouri-Judiciary-Library.pdf", page: 6, note: "floor plan, NAME / NUMBER tags, no areas", tagsOnly: true },
   { file: "2025.07.08_Baker_EOC_BID.pdf", page: 4, note: "code/area plan, NAME over SF, no numbers; same building as A100/A101" },
   { file: "BUNKIE-BID-DRAWINGS.pdf", page: 31, note: "A100, a labelled sheet" },
   { file: "BUNKIE-BID-DRAWINGS.pdf", page: 32, note: "the sheet after A100, tags with corridor and toilet" },
@@ -61,7 +84,8 @@ export type RoomKey = {
   rooms: {
     name: string;
     number: string | null;
-    areaSf: number;
+    /** Null on a tags-only key: the room exists and is here; its size is unknown. */
+    areaSf: number | null;
     perimeterLf: number | null;
     /** Page-width units, y from the top; null when the key has no position. */
     at: { x: number; y: number } | null;
@@ -81,11 +105,26 @@ const toUnits = (tags: RoomTag[], widthPt: number) =>
 describe.skipIf(REAL === "" && BIM === "" && SYN === "")("room answer keys", () => {
   it.skipIf(REAL === "")("printed tags on training pages", { timeout: 600_000 }, async () => {
     let total = 0;
-    for (const { file, page, note } of PRINTED) {
+    for (const { file, page, note, bareAreas, tagsOnly } of PRINTED) {
       if (HELD_OUT.some((h) => file.toLowerCase().includes(h))) throw new Error(`held-out: ${file}`);
+      if (!existsSync(join(REAL, file))) {
+        console.log(`printed  ${file}: not on disk, skipped`);
+        continue;
+      }
       const doc = await openPlanPdf(Buffer.from(readFileSync(join(REAL, file))));
       const text = await doc.pageText(page);
-      const tags = toUnits(readRoomTags(text.items), text.widthPt).filter((t) => t.areaSf !== null);
+      let tags = toUnits(readRoomTags(text.items), text.widthPt).filter((t) => tagsOnly ? t.number !== null && /(?:[A-Za-z].*){3}/.test(t.name) && t.name.length <= 40 : t.areaSf !== null);
+      if (bareAreas) {
+        // Every `N SF` on the page that is not a tally column and not a
+        // building total (`SQ. FT.`), at its own position.
+        const AREA = /^\s*(\d[\d,]*(?:\.\d+)?)\s*SF\s*$/i;
+        const items = text.items.filter((i) => AREA.test(i.str));
+        const inColumn = (a: typeof items[number]) =>
+          items.some((o) => o !== a && Math.abs(o.x + o.width / 2 - (a.x + a.width / 2)) < Math.max(o.width, a.width) / 2 && Math.abs(o.y - a.y) > a.height * 0.5 && Math.abs(o.y - a.y) <= a.height * 1.8);
+        tags = items
+          .filter((i) => !inColumn(i))
+          .map((i) => ({ name: "", number: null, areaSf: Number(i.str.replace(/[^\d.]/g, "")), x: (i.x + i.width / 2) / text.widthPt, y: (i.y + i.height / 2) / text.widthPt, at: { x: (i.x + i.width / 2) / text.widthPt, y: (i.y + i.height / 2) / text.widthPt } }));
+      }
       await doc.close();
       write({
         format: "room-keys-v1",
@@ -96,9 +135,9 @@ describe.skipIf(REAL === "" && BIM === "" && SYN === "")("room answer keys", () 
         widthPt: text.widthPt,
         heightPt: text.heightPt,
         unitsPerFoot: null,
-        rooms: tags.map((t) => ({ name: t.name, number: t.number, areaSf: t.areaSf as number, perimeterLf: null, at: t.at })),
+        rooms: tags.map((t) => ({ name: t.name, number: t.number, areaSf: t.areaSf, perimeterLf: null, at: t.at })),
       });
-      console.log(`printed  ${file} p${page}: ${tags.length} rooms with an area (${tags.filter((t) => t.number).length} numbered)`);
+      console.log(`printed  ${file} p${page}: ${tags.length} rooms (${tags.filter((t) => t.areaSf !== null).length} with an area, ${tags.filter((t) => t.number).length} numbered)`);
       total += tags.length;
     }
     expect(PRINTED.length).toBeGreaterThan(0);

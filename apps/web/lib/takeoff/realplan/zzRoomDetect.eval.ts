@@ -2,7 +2,12 @@ import { Buffer } from "node:buffer";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { dimensionLabels, metricDimensionLabels } from "../../plan-ingest/dimensionLabels";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
+import { printedScalesOnPage } from "../printedScales";
+import { readSheetScale } from "../scaleFromDimensions";
+import { scaleFromPrinted } from "../scaleFromPrinted";
+import { feetPerUnitFrom } from "../sheetScale";
 import { findWallsOnSheet } from "../findWallsOnSheet";
 import { roomsFromWalls, type FoundWall, type RoomFromWalls } from "../roomsFromWalls";
 import { sheetStrokes } from "../sheetStrokes";
@@ -45,7 +50,7 @@ const BIM = process.env.BIM_DIR ?? "";
 const KEYS = process.env.ROOM_KEYS ?? "";
 const OUT = process.env.ROOM_DETECT_OUT ?? "";
 
-type Key = { rooms: { name: string; number: string | null; areaSf: number; at: { x: number; y: number } | null }[] };
+type Key = { rooms: { name: string; number: string | null; areaSf: number | null; at: { x: number; y: number } | null }[] };
 type Saved = {
   page: number;
   feetPerUnit: number;
@@ -107,7 +112,8 @@ async function rawCandidates(pdf: string, page: number, feetPerUnit: number): Pr
 
 const norm = (s: string | null | undefined) => (s ?? "").toUpperCase().replace(/[^A-Z0-9#]+/g, " ").trim();
 
-type Row = { id: string; keySf: number; gotSf: number | null; why?: "OPEN" | "MERGED" | "MERGED-NO-WALL" };
+/** `keySf` null = a tags-only key: the room's existence and place are known, its size is not. */
+type Row = { id: string; keySf: number | null; gotSf: number | null; why?: "OPEN" | "MERGED" | "MERGED-NO-WALL" };
 
 function score(
   title: string,
@@ -132,6 +138,23 @@ function score(
     seen.add(k);
     rows.push({ id: k.number ?? `#${key.rooms.indexOf(k)}`, keySf: k.areaSf, gotSf: room.squareFeet });
   }
+  // A key room with no name and no number (an area printed inside the room,
+  // nothing over it) joins by POSITION: the detected room whose polygon holds
+  // its point. Inside no closed room = open.
+  const inside = (p: { x: number; y: number }, r: RoomFromWalls) => {
+    let hit = false;
+    for (let i = 0, j = r.xs.length - 1; i < r.xs.length; j = i, i += 1) {
+      const yi = r.ys[i], yj = r.ys[j], xi = r.xs[i], xj = r.xs[j];
+      if (yi > p.y !== yj > p.y && p.x < ((xj - xi) * (p.y - yi)) / (yj - yi) + xi) hit = !hit;
+    }
+    return hit;
+  };
+  for (const k of key.rooms) {
+    if (seen.has(k) || k.name !== "" || k.number !== null || k.at === null) continue;
+    seen.add(k);
+    const room = rooms.find((r) => inside(k.at as { x: number; y: number }, r));
+    rows.push({ id: `@${(k.at.x * 100).toFixed(0)},${(k.at.y * 100).toFixed(0)}`, keySf: k.areaSf, gotSf: room ? room.squareFeet : null, why: room ? undefined : "OPEN" });
+  }
   for (const t of unplaced) {
     const k = keyOf(t);
     if (!k || seen.has(k)) continue;
@@ -154,22 +177,23 @@ function score(
     const wallBetween = partner ? keyWalls.some((w) => crosses(t, partner, w)) : true;
     rows.push({ id: k.number ?? `#${key.rooms.indexOf(k)}`, keySf: k.areaSf, gotSf: null, why: keyWalls.length && !wallBetween ? "MERGED-NO-WALL" : "MERGED" });
   }
-  const errs = rows.filter((r) => r.gotSf !== null).map((r) => Math.abs((r.gotSf as number) - r.keySf) / r.keySf);
+  const errs = rows.filter((r) => r.gotSf !== null && r.keySf !== null).map((r) => Math.abs((r.gotSf as number) - (r.keySf as number)) / (r.keySf as number));
   errs.sort((a, b) => a - b);
   const median = errs.length ? errs[Math.floor(errs.length / 2)] : null;
   const within10 = errs.filter((e) => e <= 0.1).length;
-  const signed = rows.filter((r) => r.gotSf !== null).map((r) => ((r.gotSf as number) - r.keySf) / r.keySf);
+  const signed = rows.filter((r) => r.gotSf !== null && r.keySf !== null).map((r) => ((r.gotSf as number) - (r.keySf as number)) / (r.keySf as number));
+  const closedNoSize = rows.filter((r) => r.gotSf !== null && r.keySf === null).length;
   const mean = signed.length ? signed.reduce((a, b) => a + b, 0) / signed.length : null;
   console.log(
     `${title}: ${rooms.length} regions, ${rooms.filter((r) => r.tag).length} tagged, ${unplaced.length} tags open, ${merged.length} merged; ` +
-      `key rooms ${key.rooms.length}, joined ${rows.length}, measured ${errs.length}, within 5%: ${errs.filter((e) => e <= 0.05).length}, within 10%: ${within10}, ` +
+      `key rooms ${key.rooms.length}, joined ${rows.length}, measured ${errs.length}${closedNoSize ? ` (+${closedNoSize} closed, size unknown)` : ""}, within 5%: ${errs.filter((e) => e <= 0.05).length}, within 10%: ${within10}, ` +
       `median |err| ${median === null ? "—" : (median * 100).toFixed(1) + "%"}, mean signed ${mean === null ? "—" : (mean * 100).toFixed(1) + "%"}`,
   );
   for (const r of rows) {
-    if (r.gotSf !== null && Math.abs(r.gotSf - r.keySf) / r.keySf <= 0.1) continue;
+    if (r.gotSf !== null && (r.keySf === null || Math.abs(r.gotSf - r.keySf) / r.keySf <= 0.1)) continue;
     console.log(
-      `    ${r.id.padEnd(7)} key ${r.keySf.toFixed(0).padStart(6)} sf  got ${r.gotSf === null ? `  ${r.why}` : r.gotSf.toFixed(0).padStart(8)}` +
-        (r.gotSf === null ? "" : `  ${(((r.gotSf - r.keySf) / r.keySf) * 100).toFixed(1).padStart(7)}%`),
+      `    ${r.id.padEnd(7)} key ${r.keySf === null ? "     ?" : r.keySf.toFixed(0).padStart(6)} sf  got ${r.gotSf === null ? `  ${r.why}` : r.gotSf.toFixed(0).padStart(8)}` +
+        (r.gotSf === null || r.keySf === null ? "" : `  ${(((r.gotSf - r.keySf) / r.keySf) * 100).toFixed(1).padStart(7)}%`),
     );
   }
   return rows;
@@ -181,7 +205,62 @@ function dump(name: string, result: ReturnType<typeof roomsFromWalls>, extra: ob
   writeFileSync(join(OUT, `${name}.json`), JSON.stringify({ ...extra, ...result }, null, 1));
 }
 
-describe.skipIf(KEYS === "" || (LABELS === "" && BIM === ""))("rooms from walls, measured", () => {
+/**
+ * Training pages with NO label file (2026-10-22 sets): the scale is read off
+ * the page's own dimension strings (`readSheetScale`, the product's path), the
+ * boundary is the finder's raw pairings alone, and the key is whatever the
+ * page prints — areas inside the rooms (Camp Clark) or tags with no area.
+ */
+const UNLABELLED: { set: string; page: number; key: string; join: "number" | "name" }[] = [
+  { set: "Camp-Clark-60-Soldier-Barracks.pdf", page: 3, key: "printed/Camp-Clark-60-Soldier-Barracks__p3.json", join: "number" },
+  { set: "Topeka-Senior-Villas.pdf", page: 6, key: "printed/Topeka-Senior-Villas__p6.json", join: "number" },
+  { set: "Joplin-community-center.pdf", page: 46, key: "printed/Joplin-community-center__p46.json", join: "number" },
+  { set: "Joplin-community-center.pdf", page: 47, key: "printed/Joplin-community-center__p47.json", join: "number" },
+  { set: "Supreme-Court-of-Missouri-Judiciary-Library.pdf", page: 6, key: "printed/Supreme-Court-of-Missouri-Judiciary-Library__p6.json", join: "number" },
+];
+
+describe.skipIf(KEYS === "" || (LABELS === "" && BIM === "" && REAL === ""))("rooms from walls, measured", () => {
+  it.skipIf(REAL === "" || KEYS === "" || process.env.ROOM_UNLABELLED !== "1")("unlabelled arm: raw pairings on the new training pages", { timeout: 3_600_000 }, async () => {
+    let joined = 0;
+    for (const { set, page, key: keyFile, join: how } of UNLABELLED) {
+      const pdf = join(REAL, set);
+      const key = loadKeys([join(KEYS, keyFile)]);
+      if (!existsSync(pdf) || !key) {
+        console.log(`${set} p${page}: missing ${existsSync(pdf) ? "key" : "set"}`);
+        continue;
+      }
+      const doc = await openPlanPdf(Buffer.from(readFileSync(pdf)));
+      const text = await doc.pageText(page);
+      const strokes = await doc.pageStrokes(page);
+      await doc.close();
+      const segments = strokes.segments as Parameters<typeof readSheetScale>[1];
+      const verdict = readSheetScale(text, segments, dimensionLabels(text), {}, metricDimensionLabels(text));
+      let feetPerUnit: number;
+      let scaleName: string;
+      if (verdict.ok) {
+        feetPerUnit = feetPerUnitFrom(verdict.feetPerInch, text.widthPt);
+        scaleName = verdict.scaleName;
+      } else {
+        // The product's other reader: the ONE scale printed on the page, when
+        // there is exactly one. Never a hand-set scale (BOARD.md rule 5).
+        const printed = scaleFromPrinted(printedScalesOnPage(text.items), text.widthPt, text.heightPt);
+        if (!printed) {
+          console.log(`${set} p${page}: NO SCALE — dimensions: ${verdict.reason.slice(0, 90)}…; printed: ${printedScalesOnPage(text.items).join(" / ") || "none"} — not measured`);
+          continue;
+        }
+        feetPerUnit = printed.declaredDistanceFeet / Math.abs(printed.x2 - printed.x1);
+        scaleName = `${printed.scaleName} (printed)`;
+      }
+      const raw = await rawCandidates(pdf, page, feetPerUnit);
+      const result = roomsFromWalls({ walls: raw.walls, feetPerUnit, text: text.items, widthPt: text.widthPt });
+      dump(`boundary__${set.replace(/\.pdf$/, "")}__p${page}`, result, { pdf, set, sheet: `p${page}`, page, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit, walls: raw.walls });
+      const rows = score(`${set} p${page} (${scaleName}, ${raw.walls.length} raw candidates >= ${RAW_MIN_FEET} ft of ${raw.strokes} strokes)`, result.rooms, result.unplacedTags, result.mergedTags, key, how);
+      joined += rows.length;
+    }
+    expect(UNLABELLED.length).toBeGreaterThan(0);
+    expect(joined).toBeGreaterThan(0);
+  });
+
   it.skipIf(REAL === "" || LABELS === "" || KEYS === "")("labels arm: accepted + traced walls", { timeout: 1_800_000 }, async () => {
     const all: Row[] = [];
     for (const { set, sheet, keys, join: how } of LABELLED) {
@@ -267,13 +346,13 @@ describe.skipIf(KEYS === "" || (LABELS === "" && BIM === ""))("rooms from walls,
         }
       }
     }
-    const errs = all.filter((r) => r.gotSf !== null).map((r) => Math.abs((r.gotSf as number) - r.keySf) / r.keySf).sort((a, b) => a - b);
+    const errs = all.filter((r) => r.gotSf !== null && r.keySf !== null).map((r) => Math.abs((r.gotSf as number) - (r.keySf as number)) / (r.keySf as number)).sort((a, b) => a - b);
     console.log(
       `\nBIM TOTAL: ${all.length} key rooms joined, ${errs.length} measured, ${all.filter((r) => r.why === "OPEN").length} open, ${all.filter((r) => r.why === "MERGED").length} merged through a wall (a leak), ${all.filter((r) => r.why === "MERGED-NO-WALL").length} merged with no wall in the model; ` +
         `median ${(errs[Math.floor(errs.length / 2)] * 100).toFixed(1)}%, within 5%: ${errs.filter((e) => e <= 0.05).length}, within 10%: ${errs.filter((e) => e <= 0.1).length}`,
     );
     if (endToEnd.length) {
-      const e = endToEnd.filter((r) => r.gotSf !== null).map((r) => Math.abs((r.gotSf as number) - r.keySf) / r.keySf).sort((a, b) => a - b);
+      const e = endToEnd.filter((r) => r.gotSf !== null && r.keySf !== null).map((r) => Math.abs((r.gotSf as number) - (r.keySf as number)) / (r.keySf as number)).sort((a, b) => a - b);
       console.log(
         `BIM END TO END (finder raw, no key walls): ${endToEnd.length} joined, ${e.length} measured, ${endToEnd.filter((r) => r.why === "OPEN").length} open, ` +
           `${endToEnd.filter((r) => r.why === "MERGED").length} merged through a wall, ${endToEnd.filter((r) => r.why === "MERGED-NO-WALL").length} merged no wall; ` +

@@ -22,16 +22,26 @@ const DIR = process.env.REAL_PLAN_DIR ?? "";
 const OUT = process.env.ROOM_INVENTORY_OUT ?? "";
 
 /** BOARD.md rules 3 and 4. Matched case-insensitively on the file name. */
-const HELD_OUT = ["central-bank", "gen-bbq", "sln-terminal", "stem-bid", "lodi-memorial", "missouri-new", "nall-wealth"];
+/** BOARD.md rules 3, 4 and 5: the wall and plan-text held-outs, plus Jefferson
+ *  City, which is kept out of everything as Albany's twin. Matched on the file
+ *  name, so a held-out set is never even opened. */
+const HELD_OUT = [
+  "central-bank", "gen-bbq", "sln-terminal", "stem-bid",
+  "lodi-memorial", "missouri-new", "nall-wealth",
+  "ksu-fairchild", "albany-readiness", "oreillys", "jefferson-city",
+];
 
 const AREA = /^\s*(\d[\d,]*(?:\.\d+)?)\s*(SF|S\.F\.|SQ\.?\s*FT\.?|SQFT|m2|m²|SM)\s*$/i;
 const FINISH = /ROOM\s+FINISH|FINISH\s+SCHEDULE|ROOM\s+SCHEDULE/i;
 
 describe.skipIf(DIR === "")("room-area inventory of the training sets", () => {
   it("counts printed areas per page", { timeout: 3_600_000 }, async () => {
+    /** ROOM_INVENTORY_SETS="camp-clark,joplin" narrows the scan to the sets named. */
+    const only = (process.env.ROOM_INVENTORY_SETS ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
     const files = readdirSync(DIR)
       .filter((f) => f.toLowerCase().endsWith(".pdf"))
       .filter((f) => !HELD_OUT.some((h) => f.toLowerCase().includes(h)))
+      .filter((f) => only.length === 0 || only.some((o) => f.toLowerCase().includes(o)))
       .sort();
     const lines: string[] = [];
     const say = (s: string) => {
