@@ -2196,3 +2196,42 @@ will run.
 **`/Users/diego` is out of the specs**: the two real-plan specs default
 their folders to the empty string and skip, and the audit note no longer
 names a home directory.
+
+### Reproductions: dimensions at exactly twice or half the printed scale (2026-10-22)
+
+**The premise, measured first.** The ask was Topeka G-100b, "prints 1/16"
+but 45 dimensions agree on exactly half". They do not. The product's own
+vote on that sheet is `1/32"` × 10, `1/8"` × 5, `1/16"` × 3, out of 45
+labels — a plurality for the half scale, backed by 22% of what measured,
+on a code plan whose "dimensions" are mostly travel distances. Swept over
+all sixteen training sets with `realplan/zzHalfSize.ts` (one printed scale,
+≥3 labels, the dimension candidates measured against it): **no sheet has a
+majority of its labels at a clean 2× or 0.5×**. The nearest are Topeka
+G-100b (8 of 45 at 2×, 4 at 0.5×, 3 at 1×) and Fairgrounds A-101 (11 of 60
+at 2×, 8 at 1× — a base-bid plan and an alternate on one sheet, which the
+vote rightly calls two scales). `reducedPrint.ts` already records why
+counting candidates against the printed name is dangerous; this sweep is
+that warning measured again.
+
+**What was built, and what it refuses.** `reproductionScale.ts`: when the
+dimension vote has a winner and declines only afterwards (too short a line,
+an off line, an engineering scale), the decline now carries the vote; the
+reading takes it only when the vote is within 2% of exactly 2× or 0.5× the
+ONE scale printed on the sheet, meets the vote's own minimum, and holds a
+MAJORITY of every label that measured. It is read before the printed
+fallback, because the printed scale is exactly the wrong answer on such a
+sheet. The row stores the sheet's own width at the dimensions' scale (as
+the printed fallback does), the printed name in `declaredText`, the agreeing
+dimensions as evidence, and the source `DIMENSIONS_REPRODUCTION`; the
+screen composes the caution from those two names at render time — "This
+sheet appears to be printed at half size; scale taken from its dimensions.
+The title block says 1/16" = 1'-0", but the dimensions on the sheet measure
+at 1/32" = 1'-0"…" — the same amber line the sheet-width reduction uses.
+Nothing is set by hand and nothing fires without the dimensions agreeing.
+
+**It has never fired on a real drawing.** Every training sheet fails the
+majority test, so the rule is proved on synthetic votes (unit tests, the
+Topeka shape included as the refusal case) and the view test, and the first
+real sheet it accepts is the one to look at hard. That is the honest state,
+and it is why the rule is strict rather than the plurality that would have
+"fixed" Topeka.

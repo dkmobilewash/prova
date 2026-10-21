@@ -21,3 +21,12 @@ the takeoff-items backfill was run against seeded measurements on a
 throwaway Postgres and its reversal checked — the findings and the
 migration-count reconciliation (six pending, not thirty-five) are in
 `lib/takeoff/NOTES.md`. Nothing in the migration was changed.
+
+A sheet whose dimensions measure at exactly twice or half the scale its
+title block prints — a reproduction — now gets the dimensions' scale, with
+an amber line saying so, but only when the dimension vote wins at that
+factor by a majority of every label that measured. Swept over sixteen
+training sets, no sheet qualifies: Topeka's G-100b, the sheet that prompted
+it, votes 1/32" with 10 of 45 labels against a printed 1/16", a plurality
+and not a majority, and the rule refuses it. The vote is now carried on a
+post-winner decline so the rule can read it.
