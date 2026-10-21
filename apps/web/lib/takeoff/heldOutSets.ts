@@ -31,7 +31,14 @@
  * either.
  */
 
-/** Every set whose labels are a test answer key. */
+/**
+ * Every set the training path must refuse.
+ *
+ * Mostly answer keys, and one sibling: see the `Jefferson-City` entry, which
+ * is not a test set and must still never be trained on. Each `why` says which
+ * kind it is, because "held out" and "kept out" are different claims and a
+ * reader counting answer keys off this list would otherwise get it wrong.
+ */
 export const HELD_OUT_SETS: readonly { readonly match: string; readonly why: string }[] = [
   {
     match: "CENTRAL-BANK-OF-THE-MIDWEST",
@@ -48,6 +55,32 @@ export const HELD_OUT_SETS: readonly { readonly match: string; readonly why: str
   {
     match: "stem-bid-drawings",
     why: "Garrett College STEM building — held out 2026-10-20",
+  },
+  {
+    match: "KSU-Fairchild-Hall",
+    why: "university teaching building — held out 2026-10-21, before a label was written",
+  },
+  {
+    match: "Albany-Readiness-Center",
+    why: "National Guard readiness centre — held out 2026-10-21, before a label was written",
+  },
+  {
+    match: "OReillys-Architectural",
+    why: "retail shell — held out 2026-10-21, before a label was written",
+  },
+  {
+    // ── NOT HELD OUT, AND KEPT OUT OF TRAINING ANYWAY ──
+    //
+    // Jefferson City is Albany Readiness Center's SIBLING: the same program
+    // from the same source, so a model trained on this one has effectively
+    // seen the test. Diego's call, 2026-10-21.
+    //
+    // It sits in the same list because this list is the only thing the
+    // training path consults, and a second mechanism for "keep out of
+    // training" is a second thing to forget. The `why` says which kind it is,
+    // so a reader is not left believing there is a fourth answer key.
+    match: "Jefferson-City",
+    why: "SIBLING of the held-out Albany Readiness Center — kept out of training, not a test key",
   },
   {
     // Spelled without the hyphen deliberately. `flatten` strips punctuation
