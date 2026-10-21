@@ -72,7 +72,7 @@ import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
 import { doorsByGroup, feetInches } from "@/lib/takeoff/planTextView";
 import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
 import { BLANK_TILE_INK, TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
-import type { WallClassifyLabel } from "@prova/integrations";
+import { demotedRuns, demotedSentence, demotedWord, demotes, type RunVerdict } from "@/lib/takeoff/demotedRuns";
 import { pagesToSample } from "@/lib/takeoff/sheetTemplate";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "@/lib/takeoff/findWallsOnSheet";
 import { SheetTooDenseError, oneFacePerLine, wallFromPair } from "@/lib/takeoff/wallVectors";
@@ -268,6 +268,7 @@ export function TakeoffPlanViewer({
   panelOpen = true,
   readOnly = false,
   roomFinder = false,
+  demotedWalls = false,
   onMeasurementSaved,
   activeItemId = null,
 }: {
@@ -350,6 +351,13 @@ export function TakeoffPlanViewer({
    * button absent. See `lib/takeoff/NOTES-rooms.md`.
    */
   roomFinder?: boolean;
+  /**
+   * "Demote, don't hide": a run the check labels casework or reference stays
+   * on the sheet greyed, out of the total, one click to take back. Read from
+   * `Company.demotedWallsOn`, false for everyone until chosen; never in
+   * labelling mode. See `lib/takeoff/demotedRuns.ts`.
+   */
+  demotedWalls?: boolean;
   /**
    * Told when a measurement has been saved, so a HOST can offer to undo it.
    *
@@ -712,11 +720,11 @@ export function TakeoffPlanViewer({
    * it away.
    */
   const [labelsByPage, setLabelsByPage] = useState<
-    Record<number, Map<number, WallClassifyLabel>>
+    Record<number, Map<number, RunVerdict>>
   >({});
   const labels = onThisSheet(labelsByPage, pageNumber);
   const setLabels = useCallback(
-    (next: Map<number, WallClassifyLabel> | null) =>
+    (next: Map<number, RunVerdict> | null) =>
       setLabelsByPage((prev) => setOnThisSheet(prev, pageNumber, next)),
     [pageNumber],
   );
@@ -1933,7 +1941,7 @@ export function TakeoffPlanViewer({
         const run = inView[one.id - 1];
         if (!run) continue;
         const at = runsRef.current.indexOf(run);
-        if (at >= 0) next.set(at, one.label);
+        if (at >= 0) next.set(at, { label: one.label, reason: one.reason });
       }
       setLabels(next);
       setMissed(result.value.missing);
@@ -1943,8 +1951,8 @@ export function TakeoffPlanViewer({
       setFound(
         regroup(
           runsRef.current.filter((_, at) => {
-            const label = next.get(at);
-            return label === undefined || label === "WALL" || label === "UNSURE";
+            const verdict = next.get(at);
+            return verdict === undefined || !demotes(verdict.label);
           }),
         ),
       );
@@ -1954,6 +1962,38 @@ export function TakeoffPlanViewer({
       setChecking(false);
     }
   }, [labels]);
+  /**
+   * The demoted runs, for the panel and the overlay — only with the company's
+   * switch on and outside labelling mode. Empty otherwise, so nothing below
+   * renders and the switch-off behaviour is byte-for-byte what it was.
+   */
+  const demote = demotedWalls && answerKey === undefined;
+  const demoted = demote ? demotedRuns(labels, runsRef.current) : [];
+  const [hoveredDemoted, setHoveredDemoted] = useState<number | null>(null);
+  /**
+   * Taking a run back is its verdict becoming WALL, then the list rebuilt from
+   * every run the way the check builds it. Same rule as the check: a run the
+   * estimator removed by hand after checking comes back too, because the
+   * verdicts are the only record kept and removal is not one of them.
+   */
+  const onAcceptDemoted = useCallback(
+    (at: number) => {
+      const regroup = regroupRef.current;
+      if (!regroup || labels === null) return;
+      const next = new Map(labels);
+      next.set(at, { label: "WALL", reason: "you put it back" });
+      setLabels(next);
+      setFound(
+        regroup(
+          runsRef.current.filter((_, i) => {
+            const verdict = next.get(i);
+            return verdict === undefined || !demotes(verdict.label);
+          }),
+        ),
+      );
+    },
+    [labels, setLabels],
+  );
 
   /**
    * ── THE WALLS FOUND EARLIER, PUT BACK ON THE SHEET ──
@@ -2917,11 +2957,54 @@ export function TakeoffPlanViewer({
             {checkError}
           </p>
         )}
-        {labels !== null && checkError === null && (
+        {labels !== null && checkError === null && !demote && (
           <p data-takeoff="check-done" className="text-xs text-ink-muted">
-            {[...labels.values()].filter((one) => one !== "WALL" && one !== "UNSURE").length} run(s)
+            {[...labels.values()].filter((one) => demotes(one.label)).length} run(s)
             set aside as casework or reference. Press Find the walls again to start over.
           </p>
+        )}
+        {/* ── DEMOTE, DON'T HIDE ──
+            With the switch on, a set-aside run keeps its row and its line:
+            greyed, with the model's reason, out of the total, one press to
+            take back. The total above this never includes one, which is the
+            "excluded by default" half; the row is the "visible" half. */}
+        {demote && labels !== null && checkError === null && demoted.length === 0 && (
+          <p data-takeoff="check-done" className="text-xs text-ink-muted">
+            Every run checked looks like a wall.
+          </p>
+        )}
+        {demote && labels !== null && checkError === null && demoted.length > 0 && (
+          <div data-takeoff="demoted" className="w-full rounded-md border border-line-card bg-surface p-3">
+            <p className="text-xs font-medium text-ink">{demotedSentence(demoted)}</p>
+            <p className="text-xs text-ink-muted">
+              Greyed on the drawing. If one is a wall, put it back — it rejoins the list and the total.
+            </p>
+            <ul className="mt-2 flex flex-col gap-1">
+              {demoted.map((d) => (
+                <li
+                  key={d.at}
+                  data-takeoff="demoted-row"
+                  onMouseEnter={() => setHoveredDemoted(d.at)}
+                  onMouseLeave={() => setHoveredDemoted(null)}
+                  className="flex flex-wrap items-center gap-2 text-xs text-ink-muted"
+                >
+                  <span className="text-ink-body">{feetInches(d.lengthFeet)}</span>
+                  <span>
+                    probably not a wall — {demotedWord(d.label)}
+                    {d.reason ? `: ${d.reason}` : ""}
+                  </span>
+                  <button
+                    type="button"
+                    data-takeoff="accept-demoted"
+                    onClick={() => onAcceptDemoted(d.at)}
+                    className="ml-auto min-h-[36px] rounded-md border border-line-card px-3 text-xs font-medium text-ink-body hover:bg-rail-hover"
+                  >
+                    It is a wall
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
         {/* ── AND WHAT IT SAYS IS MISSING ──
             The other half of the question, and the half nothing else in this
@@ -3941,6 +4024,26 @@ export function TakeoffPlanViewer({
                   together. Nothing is lost, because it was never actionable —
                   only visible. */}
               <FoundWalls clusters={shownGroups} hovered={hovered} />
+              {/* The demoted runs: grey and dashed so nobody reads one as found. */}
+              {demoted.map((d) => {
+                const run = runsRef.current[d.at];
+                return run === undefined ? null : (
+                  <line
+                    key={`demoted-${d.at}`}
+                    data-takeoff="demoted-wall"
+                    className="text-ink-muted"
+                    x1={run.x1}
+                    y1={run.y1}
+                    x2={run.x2}
+                    y2={run.y2}
+                    stroke="currentColor"
+                    strokeWidth={hoveredDemoted === d.at ? STROKE_PX * 2.5 : STROKE_PX}
+                    strokeDasharray="6 4"
+                    strokeOpacity={hoveredDemoted === null || hoveredDemoted === d.at ? 0.9 : 0.35}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                );
+              })}
               {rooms !== null &&
                 roomsOnPage === pageNumber &&
                 rooms.rooms.map((room) => (

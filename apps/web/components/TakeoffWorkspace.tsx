@@ -1434,6 +1434,7 @@ export function TakeoffWorkspace({
               sheetLabelByPage={data.sheetLabelByPage}
               wallTypes={data.viewerWallTypes}
               roomFinder={data.roomFinderOn}
+              demotedWalls={data.demotedWallsOn}
               initialPage={openPage}
               fill
               panelOpen={panelOpen && !phone}

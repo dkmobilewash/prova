@@ -32,6 +32,7 @@ import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
 import { BusinessScopeSettingsForm } from "@/components/BusinessScopeSettingsForm";
 import { OpeningDeductionForm } from "@/components/OpeningDeductionForm";
 import { RoomFinderSwitch } from "@/components/RoomFinderSwitch";
+import { DemotedWallsSwitch } from "@/components/DemotedWallsSwitch";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
 import { QuickBooksReconcile } from "@/components/QuickBooksReconcile";
@@ -172,8 +173,12 @@ export default async function SettingsPage({
   const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
   if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;
   const { company, ...currentUser } = context;
-  const roomFinderOn =
-    (await prisma.company.findUnique({ where: { id: company.id }, select: { roomFinderOn: true } }))?.roomFinderOn ?? false;
+  const switches = await prisma.company.findUnique({
+    where: { id: company.id },
+    select: { roomFinderOn: true, demotedWallsOn: true },
+  });
+  const roomFinderOn = switches?.roomFinderOn ?? false;
+  const demotedWallsOn = switches?.demotedWallsOn ?? false;
   const { qb, qb_detail, tab: tabParam } = await searchParams;
   // The same rule PageTabs highlights by, so the tab lit is the group shown.
   const tab =
@@ -604,6 +609,9 @@ export default async function SettingsPage({
                 owner only. See `lib/takeoff/NOTES-rooms.md`. */}
             <div className="mt-4">
               <RoomFinderSwitch on={roomFinderOn} isOwner={currentUser.role === "OWNER"} />
+            </div>
+            <div className="mt-4">
+              <DemotedWallsSwitch on={demotedWallsOn} isOwner={currentUser.role === "OWNER"} />
             </div>
           </section>
 

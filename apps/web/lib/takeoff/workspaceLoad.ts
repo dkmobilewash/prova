@@ -546,12 +546,16 @@ export async function loadTakeoffWorkspace(
   // "Find the rooms" is off until the owner turns it on (Settings). Read here
   // rather than from the viewer so the button's presence is decided by the
   // same load that decides everything else on the screen.
-  const roomFinder = await prisma.company.findUnique({ where: { id: company.id }, select: { roomFinderOn: true } });
+  const roomFinder = await prisma.company.findUnique({
+    where: { id: company.id },
+    select: { roomFinderOn: true, demotedWallsOn: true },
+  });
 
   return {
     plan,
     sheets,
     roomFinderOn: roomFinder?.roomFinderOn ?? false,
+    demotedWallsOn: roomFinder?.demotedWallsOn ?? false,
     allWallTypes,
     postableWallTypes,
     printedScaleByPage,
