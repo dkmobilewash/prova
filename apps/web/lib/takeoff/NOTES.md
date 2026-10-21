@@ -2211,3 +2211,62 @@ where it was. Fewer, truer groups have to come from the tags, propagation
 along the wall, and the walls' own connectivity, not from thickness
 against the legend; the function stays, tested, as the measurement that
 says so.
+
+### Legend by sight, prompt v3, all ten training sets (2026-10-21)
+
+Credits restored; the run cost $1.87 for ten sets (10 to 28 cents each).
+Two prompt versions were spent getting here, each from a contact-sheet
+check: v2 taught the model that a TAG KEY on the sheet states a size
+(Baker's `S6` is a 6in steel stud by its own key); v3 told it that a UL or
+GA number states nothing by itself, that a crop shows neighbours whose
+notes are not this type's, that a code may sit under its detail, and that
+"EACH SIDE" means equal layers. The crop is now 1in left, 4in right, 3.5in
+above and 4.5in below the code, because NG Green Bay prints the code
+under the section and the v2 crop showed the model the next type instead.
+
+| set | types | text full | sight full | sight added (fields, over all types) | sight differs from text | cost |
+| --- | --- | --- | --- | --- | --- | --- |
+| Baker A601 | 8 | 2 | 8 | stud (tag key) ×6, board ×4, layers ×1, rating ×4, height ×4 | — | $0.23 |
+| Bunkie G003 | 5 | 3 | 3 | rating ×4, height ×3; P08/EXT are 8in CMU (masonry, board only) | — | $0.17 |
+| Crosslines A001 | 7 | 6 | 6 | insulation ×4, height ×7, F's stud | — | $0.19 |
+| Murray | 2 | 2 | 2 | rating, height | — | $0.14 |
+| MHK A1.01 | 4 | 2 | 2 | rating ×4, height ×4; type 3 is 8in CMU | — | $0.12 |
+| NG Green Bay A3.2 | 10 | 8 | 8 | IW-9 is CMU | IW-6 layers 1 → 2 on the mech-room face (sight is right) | $0.23 |
+| E Street A9.1 | 4 | 0 | 1 | height; see the code note below | insulation wording | $0.17 |
+| SW A111 | 7 | 0 | 7 | board, layers ×7, spacing ×4 — all from ONE sheet note (see below) | — | $0.18 |
+| Camp Bow Wow A130 | 5 | 3 | 5 | D and E's studs, heights | D spacing 48 → 16 (text took the bracing; sight is right) | $0.15 |
+| ELEVEN03 A4.B.1 | 13 | 0 | 5 | board ×10, studs ×5, spacing ×3, insulation ×2, rating | MA spacing 16 → 24, MB1 board 1/2 → 5/8, WD rating 1 → 2 HR (sight right on all three) | $0.28 |
+
+**Spot checks against the crops, stated plainly.** Baker: S6B (6in stud
+by the key, one layer 5/8 type X per side), S8C (one layer inside, two
+outside, flagged) and C8B (concrete core, 5/8 board one side, R-22
+forms) all match their crops. NG Green Bay: IW-6 reads two layers on the
+mech-room face and one opposite, which is what the crop says and the text
+read had wrong; IW-8 reads 5/8 each side and 6in 20 ga at 16, matching;
+IW-9 reads 8in CMU, matching. Crosslines C matches its crop (1/2in type X
+each side, 2-1/2in stud at 16, blankets — the text read had missed the
+blankets). ELEVEN03's studs and board come from the printed WALL SCHEDULE
+bullets on the same page ("1-5/8X C-SHAPED METAL STUDS AT 24" O.C."), which
+the text read had not associated with the types; the crops themselves show
+only tag, thumbnail, UL number and rating, and the model says so.
+
+**Two it got wrong or cannot be trusted.** E Street's plan tags are the
+DETAIL numbers (2, 3, 8, 4 on A9.1) and the text read used those as codes;
+the sight read used the titles ("WALL TYPE 1 – NON-RATED"), and the
+eval's code matching then paired detail 2 with WALL TYPE 2 instead of
+WALL TYPE 1. Its row above is misaligned and its "1 of 4" means nothing
+until the sight read returns the detail number as the code. SW's 0 → 7 is
+not seven legends read: the partition types on A111 state only a stud
+size and whether there are batts, and the board, layers and 16in spacing
+all come from one note on the stud-size chart ("ALL STUDS ARE ASSUMED TO
+HAVE 5/8in GYP BD ON BOTH FACES"); the model named the note, and the
+flag should too before anyone bids off it.
+
+**What this is worth.** Where a legend is drawn as details with notes,
+sight reads what the text read could not associate (Baker's four tag
+types, Camp Bow Wow's D and E, ELEVEN03's schedule bullets, Crosslines'
+insulation) and corrects the text read where a note is ambiguous (Camp
+Bow Wow's 48in bracing, NG's two-layer face). Where the legend is a table
+of words, the two agree. Cost is 10 to 28 cents per set, once, cached.
+Contact sheets with every crop beside both readings:
+`~/Claude Folder/takeoff/shots/legend-sight/<set>-p<page>.html`.

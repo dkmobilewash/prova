@@ -83,7 +83,7 @@ describe("where each type's crop is", () => {
     expect(got).toHaveLength(1);
     expect(got[0].code).toBe("S6B");
     expect(got[0].x).toBeCloseTo(510 - 1.0 * 72, 3);
-    expect(got[0].y).toBeCloseTo(292 - 0.6 * 72, 3);
+    expect(got[0].y).toBeCloseTo(292 - 3.5 * 72, 3);
     expect(got[0].width).toBeCloseTo(5 * 72, 3);
   });
 });

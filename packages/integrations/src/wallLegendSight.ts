@@ -25,8 +25,14 @@ import { reportUsage, type ModelUsageReporter } from "./anthropic";
  * in the key rather than the detail. Version 1, shown a crop that cut the
  * notes off, read it from the letters and could not say why; shown the
  * notes, it said "not stated". Both were wrong about where the answer was.
+ * Version 3 added three rules from the v2 contact sheets: ELEVEN03's legend
+ * is a table of tag, thumbnail, UL number and rating, and the model filled in
+ * studs and board from what it knows U465 contains; NG Green Bay prints each
+ * code UNDER its detail, so a crop cut below the code showed the next type's
+ * section and the model read that; Crosslines' crops took in the neighbouring
+ * detail's batts and four types gained insulation they do not have.
  */
-export const WALL_LEGEND_SIGHT_PROMPT_VERSION = "wall-legend-sight.2";
+export const WALL_LEGEND_SIGHT_PROMPT_VERSION = "wall-legend-sight.3";
 
 const TOOL_NAME = "record_wall_types_by_sight";
 
@@ -72,6 +78,9 @@ Rules:
 5. notes are the type's own words, verbatim, in reading order, as they appear in its crop — not the whole page.
 6. Never invent a price, a product name that is not printed, or a height; heightNote is the printed words about height ("TO DECK", "SEE NOTE A", "10'-0\\"") or null.
 7. insulation is the printed words ("R-13 BATT", "SOUND ATTENUATION BATTS") or null. hourlyRating is the number of hours (0 for a printed NON-RATED), or null when nothing says.
+8. A UL or GA design number (U465, WP 1070) states NOTHING about studs, board or insulation by itself. Do not fill fields from what you know such a design contains; a legend that gives only a tag, a thumbnail and a UL number has stated only the rating. Leave the rest null and say so in the reason.
+9. A crop is cut around the type's printed code and may show parts of NEIGHBOURING types above, below or beside it. Use only the notes whose leaders point into THIS type's own section, and the words on its own title line. The code may be printed above its detail or below it; find the detail the code labels before reading anything.
+10. Where a note names a board "EACH SIDE" or "BOTH SIDES", layersSideA and layersSideB are equal; do not count a hatch on one face as the only layer.
 
 Record everything through the ${TOOL_NAME} tool. The reason says, in two or three sentences, what the legend looks like and where you had to judge.`;
 

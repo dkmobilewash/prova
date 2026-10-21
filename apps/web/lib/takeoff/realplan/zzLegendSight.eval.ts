@@ -89,7 +89,8 @@ describe.skipIf(DIR === "" || CACHE === "" || SET === "" || PAGE === 0 || RENDER
     const html: string[] = [];
     for (const t of textRead.types) {
       const before = readPartitionAssembly({ lines: t.lines, where: "text" });
-      const sight = read.types.find((s) => s.code.toUpperCase() === t.code.toUpperCase());
+      // `WALL TYPE 1` and `1` are one code; the vocabulary maps the short form.
+      const sight = read.types.find((s) => sameCode(s.code, t.code));
       const after = sight === undefined ? null : assemblyFromSight(sight, "sight");
       const bf = fullyRead(before);
       const af = after !== null && fullyRead(after);
@@ -97,8 +98,14 @@ describe.skipIf(DIR === "" || CACHE === "" || SET === "" || PAGE === 0 || RENDER
       afterFull += af ? 1 : 0;
       const line = (a: typeof before | null) =>
         a === null ? "— not read —" : a.components.map((c) => c.description).join("; ") || "no assembly";
+      // What sight added beyond the text, and where the two disagree, field by field.
+      const fields: (keyof typeof before.read)[] = ["studWidthIn", "studGauge", "studSpacingIn", "boardThicknessIn", "layersPerSide", "insulation", "hourlyRating"];
+      const added = after === null ? [] : fields.filter((f) => before.read[f] === null && after.read[f] !== null);
+      const differs = after === null ? [] : fields.filter((f) => before.read[f] !== null && after.read[f] !== null && String(before.read[f]) !== String(after.read[f]));
+      if (sight !== undefined && sight.heightNote !== null) added.push("heightNote" as keyof typeof before.read);
       rows.push(
-        `  ${t.code.padEnd(12)} text ${bf ? "FULL" : "part"}: ${line(before)}\n` +
+        `  ${t.code.padEnd(12)} added: ${added.join(", ") || "nothing"}${differs.length ? `; DIFFERS: ${differs.map((f) => `${f} ${String(before.read[f])}→${String(after!.read[f])}`).join(", ")}` : ""}\n` +
+          `  ${t.code.padEnd(12)} text ${bf ? "FULL" : "part"}: ${line(before)}\n` +
           `  ${"".padEnd(12)} sight ${af ? "FULL" : "part"}: ${line(after)}` +
           (after !== null && after.flags.length > 0 ? `  ⚠ ${after.flags.map((f) => f.why).join("; ")}` : "") +
           (sight !== undefined ? `  [from drawing: ${sight.fromDrawing.join(", ") || "nothing"}; ${sight.confidence}]` : ""),
@@ -126,6 +133,12 @@ describe.skipIf(DIR === "" || CACHE === "" || SET === "" || PAGE === 0 || RENDER
     expect(read.types.length).toBeGreaterThan(0);
   });
 });
+
+function sameCode(a: string, b: string): boolean {
+  const short = (c: string) =>
+    c.trim().toUpperCase().replace(/^(?:WALL|PARTITION|PART\.?)\s+TYPE\s+|^TYPE\s+/, "").replace(/\s+-.*$/, "").trim();
+  return short(a) === short(b) || a.trim().toUpperCase() === b.trim().toUpperCase();
+}
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

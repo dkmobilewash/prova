@@ -114,3 +114,11 @@ that cut off the notes, and is recorded as the reason the crop is wider.
 `legendBands` groups runs by agreement with a legend type's nominal
 width, and the measurement says not to use it: drawn widths sit one to
 two inches off nominal and a band holds runs tagged three types.
+
+Legend by sight ran on all ten training sets under prompt v3 ($1.87):
+Baker 2 → 8 of 8 fully read, Camp Bow Wow 3 → 5 of 5, ELEVEN03 0 → 5 of
+13, the rest unchanged in count but gaining ratings, heights and the
+masonry walls' material; three text-read fields were corrected by the
+drawing (a bracing spacing, a two-layer face, a 2 HR rating). E Street's
+codes and SW's sheet-wide note are recorded as the two readings not to
+trust yet.

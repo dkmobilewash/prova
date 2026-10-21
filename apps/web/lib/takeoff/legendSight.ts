@@ -76,13 +76,16 @@ export function fullyRead(assembly: PartitionAssembly): boolean {
  * text, a little above it, well to the right of it, and tall enough to take
  * in a section and its notes. Measured on Baker A601: a crop centred on the
  * code cut its notes off mid-word, and the model then read the stud width
- * out of the code's letters. Points, page coordinates, `y` down.
+ * out of the code's letters. And NG Green Bay A3.2 prints each code UNDER
+ * its detail, so the crop reaches as far above the code as below it, at the
+ * cost of a neighbour showing at the top on sets that print it above.
+ * Points, page coordinates, `y` down.
  *
  * Where a code is printed more than once (a key, a note), the printing with
  * the most other text beneath it is taken: that is the detail, the others
  * are mentions.
  */
-export const CROP_INCHES = { left: 1.0, right: 4.0, above: 0.6, below: 4.5 };
+export const CROP_INCHES = { left: 1.0, right: 4.0, above: 3.5, below: 4.5 };
 
 export type CropRect = { code: string; x: number; y: number; width: number; height: number };
 
@@ -101,7 +104,11 @@ export function legendCropRects(input: {
     const scored = printings.map((p) => {
       const cx = p.x + p.width / 2;
       const below = input.text.filter(
-        (t) => t !== p && t.y > p.y && t.y < p.y + CROP_INCHES.below * ppi && Math.abs(t.x + t.width / 2 - cx) < CROP_INCHES.right * ppi,
+        (t) =>
+          t !== p &&
+          t.y > p.y - CROP_INCHES.above * ppi &&
+          t.y < p.y + CROP_INCHES.below * ppi &&
+          Math.abs(t.x + t.width / 2 - cx) < CROP_INCHES.right * ppi,
       ).length;
       return { p, below };
     });
