@@ -156,3 +156,56 @@ describe("carrying a verdict from a run back to its pairings", () => {
     expect(file.featureNames).toEqual([...FEATURE_NAMES]);
   });
 });
+
+
+describe("a candidate nobody was shown is not a negative", () => {
+  /**
+   * ── THE THIRD TIME THIS SHAPE HAS COST SOMETHING ──
+   *
+   * `labelRows` already refuses to write a negative for a candidate under an
+   * UNSURE run, and again for one under a TRACED run, each after it had cost
+   * real training data. A candidate the viewer SET ASIDE is the same case: it
+   * was never shown, so "the reviewer saw it and did not call it a wall" is
+   * false — and the sheet is still complete, because the reviewer judged
+   * every candidate they were offered.
+   *
+   * Measured across the nine traced training sheets: 217 of 464 negatives
+   * were `no-run`, against 247 real rejections. On Murray A101 the reviewer
+   * rejected ONE candidate and the rows carried 100 machine-made negatives.
+   */
+  it("drops a no-run negative for a candidate marked not offered", () => {
+    const orphan = [{ ...candidate(0, 0.5, 0.3, 0.5), offered: false }];
+    expect(labelRows(orphan, [run(0, 0, 0.3, 0, "wall")], FPU, true)).toHaveLength(0);
+  });
+
+  it("keeps it when the candidate says it WAS offered", () => {
+    const orphan = [{ ...candidate(0, 0.5, 0.3, 0.5), offered: true }];
+    const rows = labelRows(orphan, [run(0, 0, 0.3, 0, "wall")], FPU, true);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].from).toBe("no-run");
+    expect(rows[0].label).toBe(0);
+  });
+
+  it("drops every no-run negative on an OLDER file that withheld some", () => {
+    // No per-candidate flag, but the counts say the panel offered one while
+    // the finder produced two — so one was withheld and the file cannot say
+    // which. Neither is safe.
+    const two = [candidate(0, 0.5, 0.3, 0.5), candidate(0, 0.7, 0.3, 0.7)];
+    expect(labelRows(two, [run(0, 0, 0.3, 0, "wall")], FPU, true, 1)).toHaveLength(0);
+  });
+
+  it("keeps them on an older file that withheld nothing", () => {
+    // Offered count equals the candidate count: every one was shown, so a
+    // candidate with no verdict really was passed over.
+    const two = [candidate(0, 0.5, 0.3, 0.5), candidate(0, 0.7, 0.3, 0.7)];
+    expect(labelRows(two, [run(0, 0, 0.3, 0, "wall")], FPU, true, 2)).toHaveLength(2);
+  });
+
+  it("still writes the verdicts it DOES have", () => {
+    // The fix must not throw away real rejections with the unverified ones.
+    const judged = [{ ...candidate(0, 0, 0.3, 0), offered: false }];
+    const rows = labelRows(judged, [run(0, 0, 0.3, 0, "not-wall")], FPU, true, 0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].from).toBe("rejected-run");
+  });
+});

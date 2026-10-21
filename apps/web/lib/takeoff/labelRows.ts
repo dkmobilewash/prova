@@ -61,6 +61,27 @@ export type LabelCandidate = {
   lengthFeet: number;
   thicknessFeet: number;
   features: number[];
+  /**
+   * Was this candidate OFFERED to the reviewer?
+   *
+   * ── "NOT SHOWN" IS NOT "REJECTED" ──
+   *
+   * The viewer triages candidates before the panel lists them: its own
+   * contract says "only unclassified lines are offered, which took A102 from
+   * 168 blue candidates to 2". A candidate it sets aside is never seen, so it
+   * carries no verdict — and the `no-run` branch below writes a candidate
+   * with no verdict as a CONFIDENT NEGATIVE as soon as the sheet is complete.
+   * The sheet IS complete: the reviewer judged every candidate they were
+   * offered.
+   *
+   * Measured on the nine training sheets with traces: 217 of 464 negatives
+   * were `no-run`, against 247 real rejections. On Murray A101 the reviewer
+   * rejected ONE candidate and the rows carried 100 machine-made negatives.
+   *
+   * Absent on every file written before this existed, which `labelRows`
+   * handles separately — see `offeredCount`.
+   */
+  offered?: boolean;
 };
 
 export type LabelVerdict = {
@@ -251,12 +272,31 @@ function belongsTo(run: LabelVerdict, candidate: LabelCandidate, feetPerUnit: nu
  * `feetPerUnit` converts the geometry's units to feet; everything else is in
  * the units the finder produced.
  */
+/**
+ * ── WHY AN OLDER FILE NEEDS A COUNT RATHER THAN A FLAG ──
+ *
+ * A file written before `offered` existed cannot say WHICH candidates were
+ * shown. But it records how many were: `counts.accepted + rejected + unsure +
+ * unreviewed` is the size of the list the panel worked through. When that is
+ * smaller than the number of pairings, some were set aside and there is no
+ * way to tell which — so no `no-run` negative from that sheet is safe, and
+ * all of them are dropped.
+ *
+ * Conservative in the direction that matters: a dropped negative costs the
+ * model one unverified example, and a kept one teaches it that a wall a
+ * reviewer never saw is not a wall.
+ */
 export function labelRows(
   candidates: readonly LabelCandidate[],
   verdicts: readonly LabelVerdict[],
   feetPerUnit: number,
   reviewComplete: boolean,
+  /** How many candidates the panel offered, where the file records it. */
+  offeredCount?: number,
 ): LabelRow[] {
+  // Some candidates were withheld and the file cannot say which: then no
+  // `no-run` negative from this sheet can be trusted.
+  const someWithheld = offeredCount !== undefined && offeredCount < candidates.length;
   // ── AN UNSURE RUN REMOVES ITS PAIRINGS FROM THE FILE ──
   //
   // It is not a negative and it is not a positive. The first version of this
@@ -296,6 +336,9 @@ export function labelRows(
     }
     if (best === null) {
       if (!reviewComplete) continue;
+      // ── NEVER OFFERED, SO NEVER REJECTED ──
+      if (candidate.offered === false) continue;
+      if (candidate.offered === undefined && someWithheld) continue;
       // Nothing judged it, but something UNSURE lies along it: leave it out.
       if (unsure.some((run) => belongsTo(run, candidate, feetPerUnit))) continue;
       // Or a TRACED wall, which is a positive statement that a wall is here.

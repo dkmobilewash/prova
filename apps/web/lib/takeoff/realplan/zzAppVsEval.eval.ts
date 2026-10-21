@@ -7,6 +7,7 @@ import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { findWallsOnSheet } from "../findWallsOnSheet";
 import { sheetStrokes } from "../sheetStrokes";
 import { heldOutReason } from "../heldOutSets";
+import { labelRows } from "../labelRows";
 import { pagesToSample } from "../sheetTemplate";
 
 /**
@@ -46,7 +47,15 @@ type Saved = {
   feetPerUnit: number;
   finderVersion?: string;
   counts?: { accepted?: number; rejected?: number; unsure?: number; unreviewed?: number; traced?: number };
-  verdicts: { verdict: string }[];
+  verdicts: {
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    lengthFeet: number;
+    thicknessFeet: number;
+    verdict: string;
+  }[];
 };
 
 describe.skipIf(DIR === "" || LABELS === "")("the app's candidate list against this eval's", () => {
@@ -66,6 +75,8 @@ describe.skipIf(DIR === "" || LABELS === "")("the app's candidate list against t
     const read: string[] = [];
     const rows: string[] = [];
     let worstGap = 0;
+    const fromCounts = { noRun: 0, rejected: 0, accepted: 0 };
+    const rowBreakdown: string[] = [];
 
     for (const file of files.sort((a, b) => `${a.dir}`.localeCompare(`${b.dir}`))) {
       if (heldOutReason(file.dir) !== null) continue;
@@ -167,6 +178,43 @@ describe.skipIf(DIR === "" || LABELS === "")("the app's candidate list against t
       const inEvalTemplated = withTemplate.walls.length;
       const gap = inEvalTemplated - inApp;
       worstGap = Math.max(worstGap, Math.abs(gap));
+      // ── WHERE DO THE TRAINING NEGATIVES COME FROM? ──
+      //
+      // A candidate the viewer SET ASIDE was never shown to the reviewer, so
+      // it carries no verdict — and `labelRows`' `no-run` branch writes a
+      // candidate with no verdict as a CONFIDENT NEGATIVE whenever the sheet
+      // is complete. The sheet IS complete: the reviewer judged every
+      // candidate they were offered.
+      //
+      // The file already documents this exact reasoning twice, for `unsure`
+      // and for `traced`, each after it had cost something. This is the third
+      // case of the same shape, and the split below is its size.
+      const asRows = labelRows(
+        found.walls.map((w) => ({
+          x1: w.x1,
+          y1: w.y1,
+          x2: w.x2,
+          y2: w.y2,
+          lengthFeet: w.lengthFeet,
+          thicknessFeet: w.thicknessFeet,
+          features: [],
+        })),
+        (saved.verdicts ?? []) as unknown as Parameters<typeof labelRows>[1],
+        saved.feetPerUnit,
+        true,
+      );
+      const noRun = asRows.filter((r) => r.from === "no-run").length;
+      const rejected = asRows.filter((r) => r.from === "rejected-run").length;
+      const accepted = asRows.filter((r) => r.from === "accepted-run").length;
+      fromCounts.noRun += noRun;
+      fromCounts.rejected += rejected;
+      fromCounts.accepted += accepted;
+      rowBreakdown.push(
+        `  ${`${file.dir.slice(0, 26)}/${file.sheet}`.padEnd(34)} ` +
+          `no-run ${String(noRun).padStart(4)} · rejected-run ${String(rejected).padStart(4)} · ` +
+          `accepted-run ${String(accepted).padStart(4)} · app offered ${String(inApp).padStart(4)}`,
+      );
+
       read.push(`${file.dir}/${file.sheet}`);
       rows.push(
         `  ${`${file.dir.slice(0, 26)}/${file.sheet}`.padEnd(34)} ` +
@@ -184,6 +232,13 @@ describe.skipIf(DIR === "" || LABELS === "")("the app's candidate list against t
 
     console.log(`\n${read.length} training sheets with traces\n`);
     for (const row of rows) console.log(row);
+    console.log("\nWHERE THE TRAINING ROWS COME FROM");
+    for (const row of rowBreakdown) console.log(row);
+    console.log(
+      `  TOTAL no-run ${fromCounts.noRun} (negatives about candidates NOBODY JUDGED) · ` +
+        `rejected-run ${fromCounts.rejected} · accepted-run ${fromCounts.accepted}`,
+    );
+
     console.log(
       `\nworst difference: ${worstGap} candidates. A difference means the eval and the app ` +
         `are not running the same finder on the same sheet, which would make every measurement ` +

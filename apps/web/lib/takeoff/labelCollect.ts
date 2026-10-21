@@ -55,6 +55,18 @@ export type CollectedSheet = {
  */
 export function collectSheet(
   saved: Pick<LabelFile, "set" | "sheet" | "feetPerUnit" | "reviewComplete" | "verdicts"> & {
+    /**
+     * What the panel offered, where the file records it.
+     *
+     * ── NOT SHOWN IS NOT REJECTED ──
+     *
+     * The viewer sets candidates aside before the panel lists them, so a
+     * complete sheet can still hold candidates nobody saw. Passed through so
+     * `labelRows` can refuse to write those as negatives: measured at 217 of
+     * 464 negatives across the nine traced training sheets, and 100 against
+     * ONE real rejection on Murray A101.
+     */
+    counts?: { accepted?: number; rejected?: number; unsure?: number; unreviewed?: number };
     finderVersion?: string;
     /** Only its LENGTH is read — the rows themselves are rebuilt, not reused. */
     rows: readonly unknown[];
@@ -62,7 +74,18 @@ export function collectSheet(
   candidates: readonly LabelCandidate[],
   nowFinder: string,
 ): CollectedSheet {
-  const rows = labelRows(candidates, saved.verdicts, saved.feetPerUnit, saved.reviewComplete);
+  const c = saved.counts;
+  const offeredCount =
+    c === undefined
+      ? undefined
+      : (c.accepted ?? 0) + (c.rejected ?? 0) + (c.unsure ?? 0) + (c.unreviewed ?? 0);
+  const rows = labelRows(
+    candidates,
+    saved.verdicts,
+    saved.feetPerUnit,
+    saved.reviewComplete,
+    offeredCount,
+  );
   const savedFinder = saved.finderVersion ?? UNKNOWN_FINDER;
   return {
     sheet: {
