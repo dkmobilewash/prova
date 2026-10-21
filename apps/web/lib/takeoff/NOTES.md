@@ -2325,3 +2325,71 @@ changed after it. `heldoutRun.tsx` in the
 session scratchpad is ready and was smoke-tested on Baker (it reproduces
 the labelled sheet's numbers: 280 tagged, 14 carried, 568 untyped, 15 of
 18 doors) and makes no model call where the caches exist.
+
+### The honest test: plan-text v1 on Lodi, Missouri Pavilion, Nall — once (2026-10-21)
+
+Run on `plan-text-v1` (`d9d9f37f`) with the scratch runner `heldoutRun.tsx`
+(legend page by `legendPages`, legend read by text then by sight, door
+schedule by heading, floor plans by title, scale by the sheet's own
+dimensions or printed scale — never by hand, per the board). Nothing in
+the method was changed after; two harness-only interventions are named
+below because they are part of the result. Contact sheets:
+`~/Claude Folder/takeoff/shots/legend-sight-heldout/<set>-p<page>.html`.
+
+| set | legend | types full: text → sight | plan sheet | wall ft tagged / carried / untyped | doors placed of scheduled | cost |
+| --- | --- | --- | --- | --- | --- | --- |
+| Lodi Memorial Library | A601 p11 | 6 → 6 of 6 | A101 (1/8in by dimensions, 11 agree) | 117 / 0 / 1,200 of 1,317 | 0 of 5 | $0.28 |
+| | | | A102 mezzanine (printed 1/8in) | 0 / 0 / 1,665 | 0 of 5 | |
+| Missouri Pavilion | A-300 p12 | 0 → 2 of 2 | A-100 (1/4in by dimensions, 6 agree) | 23 / 0 / 791 of 814 | 2 of 2 | $0.30 |
+| Nall Wealth | A0 cover p1 | 0 → 11 of 13 | A2 construction plan: NO SCALE (two scales on the sheet) | — | 15 scheduled, none placeable | $0.49 |
+
+Checked against the crops: on Lodi the TEXT read had K06 and N21's
+studs swapped (8in and 3-5/8in); the sight read has them the right way
+round, and the crops show it. Missouri's two types are full-height
+sections on A-300 with no partition block, found by the headed-block
+rule, and read right by sight. Nall's partition types are on the COVER
+sheet, found by the content-only rule; SF-1 and SF-2 are storefront
+types the sight read left out.
+
+**Harness interventions, both named because the title rule is part of
+what was tested:** the floor-plan-by-title rule found Lodi's two plans
+and nothing on Missouri (A-100's title line reads "FLOOR PLAN … COLUMN
+PLAN DETAIL" and the word DETAIL excluded it) or Nall (its plan is titled
+"Construction Plans"; the rule picked the demolition plan and a details
+sheet instead). The measurement was then run on the pages the earlier
+text-only inventory had named, with the same frozen code. And the runner
+first ran without the app's `.env`, made no model call, and was re-run;
+no held-out page was read twice by a model.
+
+**Failures, for v2, in the order they cost the most:**
+
+1. **Plan-page selection.** Title words alone miss "Construction Plans"
+   and exclude a floor plan whose title line also carries a detail's name.
+   Use the sheet number series and the page's own geometry (runs found,
+   room names) with the title, not instead of it.
+2. **Per-view scales.** Nall A2 carries a 3/16in plan and a 1in detail;
+   the product's `sheetScale` VIEWS path handles that and the runner does
+   not, so the set's walls have no feet. The chain needs the per-view
+   calibration before a sheet like this measures at all.
+3. **Door marks far from any run.** Lodi's five marks are all in symbols
+   and all 2 to 31 ft from a found run; the finder returned 51 runs on a
+   sheet with far more wall. Where the finder is thin the join has nothing
+   to place on; the join should also accept a mark inside a door swing arc
+   or a jamb gap it can see itself.
+4. **Text read misattribution.** Lodi's text read put N21's 8in stud on
+   K06 and vice versa; sight was right. Where the two reads disagree on a
+   printed size, prefer the one whose crop shows it, and say so.
+5. **Legend codes the plan does not spell the same way.** Missouri's
+   legend says P1 and P2; its plan's commonest symbol code is `1`
+   (seventeen printings). `legendVocabulary` strips WALL TYPE and TYPE
+   but not a letter prefix, so 23 ft typed of 814 is partly a vocabulary
+   gap — and partly `1` being something else. To be measured, not assumed.
+6. **Low typed share even where tags pair.** Lodi A101 has K-coded
+   hexagons on the plan and the legend's codes match them, yet 117 of
+   1,317 ft typed: the tag report will say whether it is reach, margin or
+   missing runs.
+7. **Storefront and non-partition types** (Nall SF-1, SF-2) come back
+   unread; they should come back as "not a partition" rather than silence.
+
+Nothing above was fixed. Model cost for the three sets, $1.07, all
+cached.

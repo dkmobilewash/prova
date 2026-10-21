@@ -128,3 +128,11 @@ sheet-wide note is flagged, optional items are listed and never counted,
 and a crop is placed by the code's own symbol and assembly words (40 of 65
 types' crops on their detail before, 54 after). Eight of ten training
 sets re-read; the run stopped on credits before ELEVEN03 and MHK.
+
+The honest test on plan-text v1, once, on Lodi Memorial Library, Missouri
+Pavilion and Nall Wealth: legends 6 of 6, 2 of 2 and 11 of 13 types fully
+read by sight (the text read had swapped two of Lodi's studs; sight did
+not); 117 of 1,317 ft typed on Lodi's plan, 23 of 814 on Missouri's, no
+feet on Nall's because its plan carries two scales; doors 0 of 5, 2 of 2
+and none placeable. $1.07. Seven failures recorded for v2, the first being
+that the floor plan was found by title on one set of three; nothing fixed.
