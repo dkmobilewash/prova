@@ -2316,10 +2316,12 @@ ELEVEN03 and MHK are not. $1.68 spent on the eight.
 | E Street | 4 | 0 | 1 | codes now the detail numbers; three are furring on existing masonry | $0.18 |
 | SW | 7 | 0 | 7 | every type flagged "from a general note" | $0.21 |
 | Camp Bow Wow | 5 | 3 | 5 | D's 16in spacing over the text's 48in; backer board flagged optional | $0.18 |
-| MHK, ELEVEN03 | 4, 13 | 2, 0 | not run under v4 (credits) | — | — |
+| MHK | 4 | 2 | 2 | type 1 one-sided; type 3 is 8in CMU | $0.13 |
+| ELEVEN03 | 13 | 0 | 5 | studs, board and spacing from the sheet's own schedule bullets; MB1/MB2 optional sound insulation flagged, not counted; WD 2 HR | $0.29 |
 
-v1 is NOT frozen: freezing waits on those two sets, and the held-out run
-(Lodi, Missouri Pavilion, Nall) waits on v1. `heldoutRun.tsx` in the
+Ten of ten under v4, $2.10 in all. **Frozen as `plan-text-v1`** (the tag on
+this commit); the held-out run below is on this code and nothing is
+changed after it. `heldoutRun.tsx` in the
 session scratchpad is ready and was smoke-tested on Baker (it reproduces
 the labelled sheet's numbers: 280 tagged, 14 carried, 568 untyped, 15 of
 18 doors) and makes no model call where the caches exist.
