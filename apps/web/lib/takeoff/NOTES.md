@@ -2134,3 +2134,65 @@ and `lib/ask/commands.ts` (an exclusion with its reason: a read that only
 means something with the drawing open). The clock reads the first draft
 had (`readAt`, `computedAt`) were removed rather than registered with
 `viewerDayCensus`; a file's mtime says when it was written.
+
+### Pre-production review follow-ups (2026-10-22, second session, temporary ownership)
+
+**Answer-key mode is staff-only now.** There is no staff role in this app,
+so "staff" means the machine: `labellingRefusal(env)` in
+`plan-ingest/labelStore.ts` is the local-plans gate (no `VERCEL`, and on a
+production build `ALLOW_LOCAL_PLANS=1` + loopback `HOSTNAME`) plus an
+absolute `TAKEOFF_LABEL_DIR`. `labelPath` refuses by it (as before), and now
+so do the workspace page's `?key=1` switch, the "Answer key" button (not
+rendered at all when the server cannot label) and both label routes, which
+answer a plain 404 that names no environment variable. `answer-key-gate
+.spec.ts` signs in a customer who can see job costs and asserts no button,
+no panel on `?key=1`, and 404 on read and write.
+
+**The items backfill (`20261016210000_takeoff_items`), what it does to a
+customer's data — proposed, not changed.** It touches two things on existing
+rows. `TakeoffPlan.updatedAt` is backfilled from `createdAt` and made NOT
+NULL — harmless and required. And every UNPOSTED measurement gains an item:
+one `TakeoffItem` per (job, kind, packageLabel), named from the label or
+"Linear takeoff" / "Area takeoff" / "Count", coloured by a hash of the key;
+posted measurements keep `itemId` NULL, so nothing that already became a
+wall run or a line item is counted twice. No measurement's geometry,
+length, area, scale or posted state is written. So no customer-visible
+NUMBER changes — a quantity is still the sum of the same measurements under
+the same grouping the package label gave — but the takeoff tab now shows
+those groups as named, coloured items, and posted history under
+"Unassigned". It is reversible in one statement, because the item foreign
+key is `ON DELETE SET NULL`: `DELETE FROM "TakeoffItem" WHERE "id" LIKE
+'tki_%'` returns every measurement to `itemId NULL` with nothing else
+touched. What it is NOT is a no-op, and the migration cannot be made one
+without losing its point (existing work landing inside the new model rather
+than in an Unassigned pile). The proposal: keep the backfill, run it on the
+demo project first and read the items panel there, and verify production
+with two counts before and after — `SUM(lengthFeet) GROUP BY jobId, kind`
+over unposted measurements must be identical, and `COUNT(*) WHERE postedAt
+IS NOT NULL AND itemId IS NOT NULL` must be zero. Diego's call.
+
+Verified rather than argued, on a throwaway Postgres with all 179
+migrations applied and four seeded measurements (two unposted `LINEAR`
+labelled "Partitions", one unposted `AREA` with no label, one posted
+`LINEAR`): running the migration's two backfill statements left every
+measurement's kind, label, geometry, posted date, source and cutouts
+byte-identical; created exactly two items ("Partitions" LINEAR, "Area
+takeoff" AREA); put both "Partitions" rows under the one item; left the
+posted row's `itemId` NULL; and the one-statement reversal returned every
+`itemId` to NULL with nothing else touched and no item left.
+
+**Migration count reconciled.** `origin/main` holds 175 migrations; the
+last successful `Migrate` run on production (2026-10-20, at main's tip
+`fa9aa2cc`) printed "175 migrations found" and verified the database up to
+date, so production equals main. The dry-run tree adds exactly six:
+four on `takeoff-audit` (`takeoff_items`, `assemblies_for_items`,
+`detection_into_items`, `view_scales`), one on `plan-text-library`
+(`wall_legend_library`), one on `rooms-areas` (`rooms_from_walls`). The
+"35" is not a count of pending migrations: `takeoff-audit` carries 38
+migrations dated October, which is the count of everything since the branch
+family began, most of it merged to main and applied weeks ago. Six is what
+will run.
+
+**`/Users/diego` is out of the specs**: the two real-plan specs default
+their folders to the empty string and skip, and the audit note no longer
+names a home directory.

@@ -29,9 +29,9 @@ import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/jour
  * of a set has to be pulled out first.
  */
 const DIR =
-  process.env.REAL_SHEET_DIR ?? "/Users/diego/Claude Folder/takeoff/workspace-shots/sheets";
+  process.env.REAL_SHEET_DIR ?? "";
 const OUT =
-  process.env.REAL_SHEET_OUT ?? "/Users/diego/Claude Folder/takeoff/workspace-shots";
+  process.env.REAL_SHEET_OUT ?? "";
 
 const SHEETS = [
   { file: "campbowwow-A102.pdf", label: "campbowwow-A102", halfSheetFeet: 144 },

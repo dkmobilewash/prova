@@ -50,39 +50,62 @@ let saidWhy = false;
  * Exported for its own test: the refusals are the whole value here, and a path
  * that is never checked is a path that is wrong on the day it matters.
  */
+/**
+ * ── WHETHER LABELLING IS ON HERE AT ALL, AND IF NOT, WHY ──
+ *
+ * Staff-only, by machine rather than by role: there is no staff role in this
+ * app, and the one place answer keys are made is a developer's laptop with
+ * the client's drawings on its own disk. So the gate is the local-plans one
+ * (`localPlanFile.ts`), imported rather than restated — two copies of a
+ * security gate is how one of them quietly stops matching the other — plus
+ * the label folder itself. A real deployment fails the opt-in, the loopback
+ * bind and the Vercel test independently, so it refuses whatever else is set.
+ *
+ * This is what the workspace page, the "Answer key" button and the label
+ * routes ask before showing or doing anything (2026-10-22). Before that only
+ * the WRITE was gated: `/takeoff/<id>?key=1` opened the labelling panel for
+ * any customer who could see the job's costs, and the read route answered
+ * "nothing labelled" instead of "not here".
+ *
+ * `next start` always sets NODE_ENV=production, so a flat refusal on
+ * production made the no-recompile labelling server unable to SAVE — found on
+ * 2026-10-20 with a finished sheet sitting in an open tab with nowhere to go.
+ * That is why a production build is asked the four conditions rather than
+ * refused outright.
+ */
+export function labellingRefusal(env: NodeJS.ProcessEnv): string | null {
+  if (env.VERCEL !== undefined) return "VERCEL is set — labelling never runs on Vercel";
+  if (env.NODE_ENV === "production") {
+    const why = productionLocalPlansRefusal(env);
+    if (why !== null) return why;
+  }
+  const dir = env[LABEL_DIR_VAR];
+  if (dir === undefined || dir.trim() === "") return `${LABEL_DIR_VAR} is not set`;
+  // The RAW value: `resolve` would make any relative path absolute, which is
+  // the opposite of the question.
+  if (!isAbsolute(dir.trim())) return `${LABEL_DIR_VAR} is not an absolute path`;
+  return null;
+}
+
+export function labellingAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+  return labellingRefusal(env) === null;
+}
+
 export function labelPath(
   set: string,
   sheet: string,
   env: NodeJS.ProcessEnv,
 ): string | null {
-  // ── THE SAME OPT-IN AS LOCAL PLAN FILES, FOR THE SAME REASON ──
-  //
-  // `next start` always sets NODE_ENV=production, so a flat refusal here made
-  // the no-recompile labelling server unable to SAVE — which is worse than
-  // being unable to load, because the reviewer finds out after doing the
-  // sheet. On 2026-10-20 a finished sheet sat in an open tab with nowhere to
-  // go: "Labels are not being saved: TAKEOFF_LABEL_DIR is not set, or this is
-  // a production build."
-  //
-  // The conditions are `localPlanFile.ts`'s, imported rather than restated —
-  // two copies of a security gate is how one of them quietly stops matching
-  // the other. A real deployment fails the opt-in, the loopback bind and the
-  // Vercel test independently, so it still refuses.
-  if (env.NODE_ENV === "production") {
-    const why = productionLocalPlansRefusal(env);
-    if (why !== null) {
-      if (!saidWhy) {
-        saidWhy = true;
-        // eslint-disable-next-line no-console
-        console.warn(`[local-labels] refusing to write label files: ${why}`);
-      }
-      return null;
+  const why = labellingRefusal(env);
+  if (why !== null) {
+    if (!saidWhy && env.NODE_ENV === "production") {
+      saidWhy = true;
+      // eslint-disable-next-line no-console
+      console.warn(`[local-labels] refusing to write label files: ${why}`);
     }
+    return null;
   }
-  const dir = env[LABEL_DIR_VAR];
-  if (dir === undefined || dir.trim() === "") return null;
-  const root = resolve(dir.trim());
-  if (!isAbsolute(root)) return null;
+  const root = resolve((env[LABEL_DIR_VAR] as string).trim());
   const full = resolve(join(root, safeName(set), `${safeName(sheet)}.json`));
   // Prefix comparison with the separator appended, so `/labels-other` cannot
   // pass as being inside `/labels`.

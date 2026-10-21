@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { labellingAllowed } from "@/lib/plan-ingest/labelStore";
 import { finderVersion } from "@/lib/takeoff/finderVersion";
 
 import { requireCapability } from "@/lib/authz";
@@ -87,7 +88,11 @@ export default async function TakeoffWorkspacePage({
          So a review session can be opened on the right sheet in one link,
          rather than remembering to press a toggle that changes what every
          colour on the overlay MEANS. It is off unless the link says so. */
-      openAnswerKey={key === "1"}
+      openAnswerKey={key === "1" && labellingAllowed(process.env)}
+      /* ── AND THE BUTTON FOR IT, ONLY WHERE LABELLING CAN HAPPEN ──
+         A customer's deployment fails every condition of the gate, so the
+         workspace never shows the mode at all; the link above is inert too. */
+      labellingAvailable={labellingAllowed(process.env)}
       /* ── THE BUILD THAT DREW THE CANDIDATES, FOR THE DRAFT KEY ──
          An in-progress review is kept in the reviewer's own browser, and a
          draft is only meaningful for the candidates it was made about: the

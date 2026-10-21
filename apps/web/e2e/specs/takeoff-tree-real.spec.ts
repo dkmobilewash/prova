@@ -42,8 +42,9 @@ import { nameSheet } from "../../lib/takeoff/realplan/nameSheet";
  * both outside the repository. Nothing is committed and no fixture is derived.
  * The file SKIPS when the folder is absent, which is every CI run.
  */
-const DIR = process.env.REAL_PLAN_DIR ?? "/Users/diego/Claude Folder/takeoff/real-plans";
-const OUT = process.env.REAL_SHEET_OUT ?? "/Users/diego/Claude Folder/takeoff/workspace-shots";
+// No default: a plans folder is a developer's own, named by the environment or the spec skips.
+const DIR = process.env.REAL_PLAN_DIR ?? "";
+const OUT = process.env.REAL_SHEET_OUT ?? "";
 
 const SETS = [
   { label: "campbowwow", file: "Camp Bow Wow - 100% CD_ARCH (2) (1).pdf" },
@@ -72,7 +73,7 @@ type SheetName = { page: number; number: string; title: string };
  * comfortably. Producer and consumer.
  */
 const NAMES_JSON =
-  process.env.REAL_SHEET_NAMES ?? "/Users/diego/Claude Folder/takeoff/tree-report/sheet-names.json";
+  process.env.REAL_SHEET_NAMES ?? "";
 
 /** See NAMES_JSON for why the cache is preferred over reading the PDF here. */
 async function readSheetNames(file: string): Promise<SheetName[]> {

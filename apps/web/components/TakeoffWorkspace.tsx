@@ -80,6 +80,9 @@ type Props = {
   openPage: number;
   /** Open straight into answer-key review, from `?key=1`. */
   openAnswerKey?: boolean;
+  /** Whether this server can label at all (`labellingAllowed`). False on every
+   *  deployment, so neither the mode nor its button exists for a customer. */
+  labellingAvailable?: boolean;
   /** The build that drew the candidates — the draft key's third part. */
   finderVersion?: string;
 };
@@ -162,6 +165,7 @@ export function TakeoffWorkspace({
   savedAt,
   openPage,
   openAnswerKey,
+  labellingAvailable = false,
   finderVersion = "unknown",
 }: Props) {
   // Width is STATE, not only a media query: a drawer needs to know it is a
@@ -617,7 +621,7 @@ export function TakeoffWorkspace({
   // finding becomes a question — so it must never be the state a workspace
   // opens in. The candidates arrive from the VIEWER, which is the only place
   // holding the raw geometry the unpaired lines are found in.
-  const [keyMode, setKeyMode] = useState(openAnswerKey ?? false);
+  const [keyMode, setKeyMode] = useState(labellingAvailable && (openAnswerKey ?? false));
   /**
    * ── THE REVIEW BELONGS TO ONE SHEET, AND THIS HELD IT FOR THE WHOLE JOB ──
    *
@@ -1163,6 +1167,7 @@ export function TakeoffWorkspace({
                   wearing an icon. Turning it ON clears any previous review,
                   because a key half-made on one sheet must not leak into
                   another. */}
+              {labellingAvailable && (
               <button
                 type="button"
                 onClick={() => {
@@ -1195,6 +1200,7 @@ export function TakeoffWorkspace({
               >
                 Answer key
               </button>
+              )}
             </>
           )}
           <Link

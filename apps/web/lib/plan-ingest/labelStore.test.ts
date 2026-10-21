@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LABEL_DIR_VAR, labelPath } from "./labelStore";
+import { LABEL_DIR_VAR, labelPath, labellingAllowed, labellingRefusal } from "./labelStore";
 
 /**
  * The refusals are the whole value of this module, so they are what is tested.
@@ -134,5 +134,40 @@ describe("where a label file is allowed to go", () => {
     expect(labelPath("ELEVEN03 PERMIT SET", "A4.B-Y2", env())).toBe(
       `${dir}/ELEVEN03_PERMIT_SET/A4.B-Y2.json`,
     );
+  });
+});
+
+/**
+ * The gate as the page and the routes ask it — the same function `labelPath`
+ * refuses by, so the button, the URL switch, the read and the write cannot
+ * disagree about whether labelling exists on this server.
+ */
+describe("whether labelling exists here at all", () => {
+  const dir = "/tmp/prova-labels";
+  const dev = (extra: Record<string, string | undefined> = {}) =>
+    ({ [LABEL_DIR_VAR]: dir, NODE_ENV: "development", ...extra }) as unknown as NodeJS.ProcessEnv;
+  const built = (extra: Record<string, string | undefined> = {}) =>
+    dev({ NODE_ENV: "production", ALLOW_LOCAL_PLANS: "1", HOSTNAME: "localhost", TAKEOFF_LOCAL_PLAN_DIR: "/plans", ...extra });
+
+  it("is on for a dev build with the folder set, and on a production build only with every local-plans condition", () => {
+    expect(labellingRefusal(dev())).toBeNull();
+    expect(labellingRefusal(built())).toBeNull();
+    expect(labellingAllowed(built())).toBe(true);
+  });
+
+  it("is OFF on every deployment, each condition on its own, and says which", () => {
+    // A customer's deployment: no folder, Vercel, network-bound, no opt-in.
+    expect(labellingRefusal({ NODE_ENV: "production" } as NodeJS.ProcessEnv)).not.toBeNull();
+    expect(labellingRefusal(dev({ [LABEL_DIR_VAR]: undefined }))).toMatch(/TAKEOFF_LABEL_DIR/);
+    expect(labellingRefusal(dev({ [LABEL_DIR_VAR]: "labels" }))).toMatch(/absolute/);
+    expect(labellingRefusal(dev({ VERCEL: "1" }))).toMatch(/VERCEL/);
+    expect(labellingRefusal(dev({ VERCEL: "" }))).toMatch(/VERCEL/);
+    expect(labellingRefusal(built({ ALLOW_LOCAL_PLANS: undefined }))).toMatch(/ALLOW_LOCAL_PLANS/);
+    expect(labellingRefusal(built({ HOSTNAME: "0.0.0.0" }))).toMatch(/HOSTNAME/);
+    expect(labellingRefusal(built({ VERCEL: "1" }))).toMatch(/VERCEL/);
+    for (const env of [dev({ [LABEL_DIR_VAR]: undefined }), built({ ALLOW_LOCAL_PLANS: "0" }), built({ HOSTNAME: "0.0.0.0" })]) {
+      expect(labellingAllowed(env)).toBe(false);
+      expect(labelPath("set", "A101", env), "the write refuses exactly when the gate does").toBeNull();
+    }
   });
 });

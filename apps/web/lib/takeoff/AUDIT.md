@@ -217,7 +217,7 @@ Present, as bench variants, and included in the failing bars above:
 
 ## Step 3 — A real plan
 
-**Cannot be run today. `/Users/diego/Downloads` is empty** (`ls` → 0 files);
+**Cannot be run today. The Downloads folder is empty** (`ls` → 0 files);
 the real sets used earlier in this session are gone. `realPlan.eval.ts` needs
 `REAL_PLAN_PDF` and has nothing to point at. Marked **Unverified**.
 
