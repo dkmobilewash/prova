@@ -99,7 +99,7 @@ describe.skipIf(DIR === "" || LABELS === "")("what the triage sets aside", () =>
 
     const read: string[] = [];
     const rows: string[] = [];
-    const byKind = new Map<string, { real: number; junk: number; n: number }>();
+    const byKind = new Map<string, { real: number; junk: number; counted: number; n: number }>();
     /** Real-wall hatch lines grouped by what their reason says. */
     const realHatchWhy = new Map<string, { ft: number; n: number }>();
     let realTotal = 0;
@@ -142,20 +142,41 @@ describe.skipIf(DIR === "" || LABELS === "")("what the triage sets aside", () =>
       }, false, true);
 
       const fpu = saved.feetPerUnit;
-      const keyWalls = (saved.verdicts ?? []).filter(
-        (v) => v.verdict === "wall" || v.verdict === "traced",
-      );
+      // ── "NEAR A REAL WALL" IS TWO DIFFERENT ANSWERS, NOT ONE ──
+      //
+      // This counted a set-aside line as REAL when it lay along any confirmed
+      // wall, accepted or traced, and reported the total as footage the
+      // triage hides. That is wrong for half of it, and the half it is wrong
+      // about is the larger one.
+      //
+      // A line beside an ACCEPTED wall is a line whose footage is ALREADY
+      // COUNTED — the second face of a wall the finder paired, or a dashed
+      // companion drawn next to it. Withholding it costs nothing, and
+      // offering it invites the reviewer to accept the same wall twice. That
+      // is the triage working, not failing.
+      //
+      // A line along a TRACED wall is the opposite and is a real loss: the
+      // reviewer drew that wall BY HAND, which means the finder had proposed
+      // something there and the triage withheld it. Every one of those is
+      // work the triage created.
+      const accepted = (saved.verdicts ?? []).filter((v) => v.verdict === "wall");
+      const tracedWalls = (saved.verdicts ?? []).filter((v) => v.verdict === "traced");
 
       let sheetReal = 0;
       let sheetJunk = 0;
+      const along = (k: { x1: number; y1: number; x2: number; y2: number }, line: typeof offered.setAsideLines[number]) =>
+        parallel(line, k) &&
+        Math.max(offLine(k, line.x1, line.y1, fpu), offLine(k, line.x2, line.y2, fpu)) <= 2.5;
+
       for (const line of offered.setAsideLines) {
-        const onKey = keyWalls.some(
-          (k) =>
-            parallel(line, k) &&
-            Math.max(offLine(k, line.x1, line.y1, fpu), offLine(k, line.x2, line.y2, fpu)) <= 2.5,
-        );
-        const at = byKind.get(line.kind) ?? { real: 0, junk: 0, n: 0 };
+        const onTrace = tracedWalls.some((k) => along(k, line));
+        const onAccepted = accepted.some((k) => along(k, line));
+        // A line along BOTH is already counted by the accepted wall, so the
+        // trace beside it is not evidence that this line was needed.
+        const onKey = onTrace && !onAccepted;
+        const at = byKind.get(line.kind) ?? { real: 0, junk: 0, counted: 0, n: 0 };
         at.n += 1;
+        if (onAccepted) at.counted += line.lengthFeet;
         if (onKey) {
           if (line.kind === "in-a-hatch") {
             // Bucket the SHAPE of the sentence, not its numbers, or every
@@ -212,13 +233,22 @@ describe.skipIf(DIR === "" || LABELS === "")("what the triage sets aside", () =>
     }
 
     console.log("\nBY REASON");
-    console.log(`  ${"kind".padEnd(22)} ${"real ft".padStart(9)} ${"junk ft".padStart(9)} ${"lines".padStart(6)}`);
+    console.log(
+      `  ${"kind".padEnd(22)} ${"HIDDEN ft".padStart(10)} ${"counted ft".padStart(11)} ${"junk ft".padStart(9)} ${"lines".padStart(6)}`,
+    );
     for (const [kind, at] of [...byKind.entries()].sort((a, b) => b[1].real - a[1].real)) {
       console.log(
-        `  ${kind.padEnd(22)} ${at.real.toFixed(0).padStart(9)} ${at.junk.toFixed(0).padStart(9)} ` +
-          `${String(at.n).padStart(6)}`,
+        `  ${kind.padEnd(22)} ${at.real.toFixed(0).padStart(10)} ${at.counted.toFixed(0).padStart(11)} ` +
+          `${at.junk.toFixed(0).padStart(9)} ${String(at.n).padStart(6)}`,
       );
     }
+    console.log(
+      "\n  HIDDEN  = along a TRACED wall and NOT along an accepted one: the reviewer drew by hand\n" +
+        "            what the triage withheld, so every foot is work the triage created.\n" +
+        "  counted = along an ACCEPTED wall: the footage is in the takeoff already, so withholding\n" +
+        "            the line costs nothing and offering it invites counting one wall twice.\n" +
+        "  junk    = along neither.",
+    );
     console.log(
       "\nthe real figure is a FLOOR: a set-aside wall the reviewer never saw, and so never traced, " +
         "counts as junk here",

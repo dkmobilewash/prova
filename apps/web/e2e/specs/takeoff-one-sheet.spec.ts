@@ -125,7 +125,15 @@ test.describe("a find belongs to the sheet it was run on", () => {
       page.locator('[data-takeoff="sheet-picker"]'),
       "a three-page set rendered no pager, so this spec would prove nothing",
     ).toBeVisible({ timeout: 60_000 });
-    await expectHealthy(page, "workspace, three-sheet set", { monitor });
+    // `signedIn: false` because `/takeoff/[id]` is authenticated and
+    // deliberately OUTSIDE the `(app)` route group — it has no sidebar and no
+    // top bar, so that the drawing gets every pixel. `health.ts` documents
+    // the exemption and every other workspace assertion in the suite passes
+    // it; this one call omitted it and looked for a main navigation the route
+    // is designed not to have. Everything else the check does — crash
+    // markers, uncaught exceptions, the rendered-next-to-nothing floor —
+    // still applies, which is what makes it safe to pass.
+    await expectHealthy(page, "workspace, three-sheet set", { monitor, signedIn: false });
   });
 
   test("RUNS FOUND ON SHEET 1 DO NOT APPEAR ON SHEET 2 OR SHEET 3", async () => {
