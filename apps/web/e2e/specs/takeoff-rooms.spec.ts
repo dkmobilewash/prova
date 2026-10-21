@@ -31,6 +31,24 @@ const JOB = "ZZ-E2E Rooms — S05";
 
 test.describe.configure({ mode: "serial" });
 
+/**
+ * WAIT FOR HYDRATION BEFORE PRESSING ANYTHING ON A FORM. The first run of
+ * this spec clicked Save 100 ms after the settings page's HTML arrived, before
+ * React had attached the submit handler, so the browser submitted the form
+ * NATIVELY — a page POST, a navigation, every fetch on the page aborted
+ * (`net::ERR_NETWORK_IO_SUSPENDED`) and the error boundary. The proof of
+ * hydration is the one CLAUDE.md's #510 entry uses: a `__reactFiber$` key on
+ * the element.
+ */
+async function hydrated(page: Page, selector: string): Promise<void> {
+  await expect
+    .poll(
+      () => page.locator(selector).first().evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactFiber$"))),
+      { timeout: 30_000, message: `${selector} never hydrated` },
+    )
+    .toBe(true);
+}
+
 test.describe("find the rooms", () => {
   let page: Page;
   let monitor: HealthMonitor;
@@ -66,13 +84,15 @@ test.describe("find the rooms", () => {
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
     await expect(page.locator('[data-takeoff="find-walls"]')).toBeVisible({ timeout: 60_000 });
     expect(await page.locator('[data-takeoff="find-rooms"]').count(), "the room finder showed with the switch off").toBe(0);
-    await expectHealthy(page, "takeoff with rooms off", { monitor });
+    // The full-screen workspace has no app shell by design, like takeoff-workspace.spec.ts.
+    await expectHealthy(page, "takeoff with rooms off", { monitor, signedIn: false });
   });
 
   test("the owner turns it on under Settings", async () => {
-    await page.goto("/settings");
+    await page.goto("/settings?tab=estimating");
     const form = page.locator('[data-settings="room-finder"]');
     await expect(form).toBeVisible();
+    await hydrated(page, '[data-settings="room-finder"]');
     const box = form.locator('input[name="roomFinderOn"]');
     expect(await box.isEnabled(), "the takeoff persona is not an owner, so this spec cannot flip the switch").toBe(true);
     await box.check();
@@ -88,6 +108,7 @@ test.describe("find the rooms", () => {
     await page.goto(`/takeoff/${jobId}`);
     const findWalls = page.locator('[data-takeoff="find-walls"]');
     await expect(findWalls).toBeVisible({ timeout: 60_000 });
+    await hydrated(page, '[data-takeoff="find-walls"]');
     const findRooms = page.locator('[data-takeoff="find-rooms"]');
     await expect(findRooms, "switch on, button absent").toBeVisible();
     await expect(findRooms, "rooms cannot be found before walls").toBeDisabled();
@@ -105,7 +126,8 @@ test.describe("find the rooms", () => {
     expect(sf.every((t) => Number(t.replace(/,/g, "")) > 9), `a room under 9 sf: ${sf.join(", ")}`).toBe(true);
     expect(await page.locator('[data-takeoff="room"]').count(), "rows without polygons on the drawing").toBe(await rows.count());
     await page.screenshot({ path: path.join(SHOTS, "02-rooms-found.png") });
-    await expectHealthy(page, "rooms found", { monitor });
+    // The full-screen workspace has no app shell by design, like takeoff-workspace.spec.ts.
+    await expectHealthy(page, "rooms found", { monitor, signedIn: false });
   });
 
   test("rename one, save: the rooms are areas on the sheet", async () => {
@@ -121,6 +143,7 @@ test.describe("find the rooms", () => {
     await expect(page.getByText("ZZ RENAMED", { exact: false }).first()).toBeVisible({ timeout: 60_000 });
     await page.screenshot({ path: path.join(SHOTS, "03-rooms-saved.png") });
     expect(rowsBefore).toBeGreaterThanOrEqual(3);
-    await expectHealthy(page, "rooms saved", { monitor });
+    // The full-screen workspace has no app shell by design, like takeoff-workspace.spec.ts.
+    await expectHealthy(page, "rooms saved", { monitor, signedIn: false });
   });
 });

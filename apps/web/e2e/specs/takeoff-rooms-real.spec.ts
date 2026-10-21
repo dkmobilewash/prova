@@ -59,8 +59,11 @@ test.describe("find the rooms on a real sheet", () => {
     await landOnDashboard(page, monitor);
     const jobId = await startJob(page, monitor, { name: `ZZ-E2E Rooms real p${PAGE}`, gcName: "ZZ-E2E Rooms real GC" });
     await finishWizard(page, monitor, jobId);
-    await page.goto("/settings");
+    await page.goto("/settings?tab=estimating");
     const form = page.locator('[data-settings="room-finder"]');
+    await expect
+      .poll(() => form.evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactFiber$"))), { timeout: 30_000 })
+      .toBe(true);
     await form.locator('input[name="roomFinderOn"]').check();
     await form.getByRole("button", { name: "Save" }).click();
     await expect(form.getByText("Saved.")).toBeVisible({ timeout: 30_000 });
