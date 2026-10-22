@@ -188,23 +188,25 @@ test.describe("find the rooms", () => {
     await expect(findRooms, "switch on, button absent").toBeVisible();
     await expect(findRooms, "rooms cannot be found before walls").toBeDisabled();
     expect(await findWalls.isEnabled(), "S05 prints its scale, so Find the walls should be enabled").toBe(true);
-    // ── THE SHEET MUST HAVE RENDERED BEFORE THE CLICK ──
+    // ── WAIT FOR THE SHEET TO SAY IT IS READY, NOT FOR IT TO LOOK DRAWN ──
     //
-    // The button is enabled as soon as the sheet has a SCALE, which can be
-    // before its PDF has finished loading — and the find needs the document.
-    // Pressing inside that window used to do nothing at all; it now says so,
-    // and either way the press is wasted. A canvas with a real width is the
-    // signal that the page is actually there.
+    // This waited on the canvas having a width, and CI then refused the find
+    // naming "document, page size". Both of those reset when the viewer
+    // remounts and reloads the PDF — which setting the scale, a save that
+    // revalidates, can cause — while the canvas painted BEFORE the remount
+    // still measures a real width. So the old wait passed during exactly the
+    // window it existed to exclude.
     //
-    // This is what the spec was missing, and CI is where it mattered: a
-    // runner loads the PDF more slowly than a laptop, so the click landed
-    // early there and never here.
+    // data-sheet-ready is the viewer's own answer, and it is the same two
+    // conditions the find itself checks.
+    // Polled rather than asserted on the locator, because the port arrives a
+    // moment after the toolbar does and a poll retries through its absence.
     await expect
-      .poll(
-        async () => port().locator("canvas").evaluate((n) => (n as HTMLCanvasElement).width),
-        { timeout: 60_000, message: "the sheet never rendered, so the find had no document" },
-      )
-      .toBeGreaterThan(0);
+      .poll(async () => await port().getAttribute("data-sheet-ready").catch(() => null), {
+        timeout: 60_000,
+        message: "the sheet never became ready, so the find had nothing to read",
+      })
+      .toBe("true");
     await findWalls.click();
     // ── EITHER STILL RUNNING OR ALREADY DONE, BECAUSE BOTH ARE FINE ──
     //
@@ -222,18 +224,32 @@ test.describe("find the rooms", () => {
     // So this waits on a condition true in both worlds — running, or already
     // finished. Neither a fast find nor a slow one can fail it, and a find
     // that genuinely never runs still does.
+    // ── IF THE FIND REFUSES, SAY WHAT IT WAS MISSING ──
+    //
+    // "The find neither started nor produced a result" was true and useless.
+    // CI produced it on a sheet that was VISIBLY DRAWN, with a scale line
+    // reading a figure computed from the very value the refusal blames — so
+    // the screenshot contradicted every branch of the guard and reading it
+    // went in circles. The viewer now names the missing piece on its error
+    // element, and this reports it, so the next failure arrives as a fact.
+    const refusal = page.locator('[data-takeoff="find-error"]');
     await expect
       .poll(
         async () => {
-          if (await findRooms.isEnabled()) return true;
-          return (await findWalls.innerText()).includes("Reading the lines");
+          if (await findRooms.isEnabled()) return "started";
+          if ((await findWalls.innerText()).includes("Reading the lines")) return "started";
+          if (await refusal.isVisible()) {
+            const missing = (await refusal.getAttribute("data-missing")) ?? "(not said)";
+            return `the find refused, missing: ${missing}`;
+          }
+          return "nothing happened";
         },
         {
           timeout: 180_000,
           message: "the find neither started nor produced a result",
         },
       )
-      .toBe(true);
+      .toBe("started");
     await expect(findWalls, "the find started and never finished").toHaveText("Find the walls", {
       timeout: 180_000,
     });
