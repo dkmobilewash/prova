@@ -66,6 +66,44 @@ test.describe("find the rooms", () => {
   });
 
   test.afterAll(async () => {
+    // ── PUT THE COMPANY-WIDE SWITCH BACK ──
+    //
+    // This file turns `roomFinderOn` ON for a whole company and shares that
+    // company with `takeoff-workspace.spec.ts`, which signs in as the same
+    // persona. Leaving it on changed what every later spec rendered, and
+    // produced three failures that looked unrelated:
+    //
+    //   · the workspace's chrome budget — the extra "Find the rooms" button
+    //     put 176px above the canvas against a 170px budget at 1280 with the
+    //     items rail open;
+    //   · this file's own first test, "with the switch off", failing on a
+    //     RETRY, because a retry re-runs the file from the start and by then
+    //     the test below has turned the switch on;
+    //   · and both of those appearing in some runs and not others, which is
+    //     the spec ORDER rather than anything about the code.
+    //
+    // Best effort: a cleanup that throws would fail the file for a reason
+    // that has nothing to do with rooms, and the state it is restoring is
+    // the default every other spec expects anyway.
+    try {
+      if (page !== undefined && !page.isClosed()) {
+        await page.goto("/settings?tab=estimating");
+        const box = page.locator('[data-settings="room-finder"] input[name="roomFinderOn"]');
+        if (await box.isVisible()) {
+          if (await box.isChecked()) await box.uncheck();
+          await page
+            .locator('[data-settings="room-finder"]')
+            .getByRole("button", { name: "Save" })
+            .click();
+          await page
+            .locator('[data-settings="room-finder"]')
+            .getByText("Saved.")
+            .waitFor({ timeout: 30_000 });
+        }
+      }
+    } catch {
+      // Already closed, already off, or the settings page did not load.
+    }
     await page?.context().close();
   });
 
