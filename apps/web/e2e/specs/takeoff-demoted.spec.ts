@@ -140,6 +140,10 @@ test.describe("demote, don't hide", () => {
   async function findTheWalls(): Promise<number> {
     const findWalls = page.locator('[data-takeoff="find-walls"]');
     await expect(findWalls).toBeVisible({ timeout: 60_000 });
+    // The button is enabled before the sheet has rendered, and a click then is
+    // answered "The sheet is still loading" — wait for the drawing itself.
+    await expect.poll(async () => port().locator("canvas").evaluate((n) => (n as HTMLCanvasElement).width), { timeout: 60_000 }).toBeGreaterThan(0);
+    await settledOverlayBox();
     await hydrated(page, '[data-takeoff="find-walls"]');
     await findWalls.click();
     await expect(findWalls).toHaveText("Find the walls", { timeout: 180_000 });
@@ -229,11 +233,14 @@ test.describe("demote, don't hide", () => {
   });
 
   test("switch on: Find the walls demotes by the model at once, no check pressed", async () => {
-    await page.goto(`/takeoff/${jobId}`);
-    await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
+    // The PDF stub goes back BEFORE the navigation: `replayVerdict` unroutes
+    // everything, and a viewer that fetches the sheet before the stub is
+    // re-installed says "The sheet is still loading" to the click that follows.
     await page.route("**/api/takeoff/plan/**", async (route) => {
       await route.fulfill({ status: 200, contentType: "application/pdf", body: servedPdf });
     });
+    await page.goto(`/takeoff/${jobId}`);
+    await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
     const found = await findTheWalls();
     const demoted = page.locator('[data-takeoff="demoted"]');
     await expect(demoted, "the model demoted nothing on the fixture, so the wiring is unproved").toBeVisible({ timeout: 30_000 });
