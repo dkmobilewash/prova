@@ -187,7 +187,10 @@ test.describe("find the rooms", () => {
     const findRooms = page.locator('[data-takeoff="find-rooms"]');
     await expect(findRooms, "switch on, button absent").toBeVisible();
     await expect(findRooms, "rooms cannot be found before walls").toBeDisabled();
-    expect(await findWalls.isEnabled(), "S05 prints its scale, so Find the walls should be enabled").toBe(true);
+    // The button now waits for the sheet itself (the comment below describes
+    // the race it used to lose), so "enabled" is a thing to wait for, not to
+    // read off the first paint.
+    await expect(findWalls, "S05 prints its scale, so Find the walls should be enabled once the sheet has rendered").toBeEnabled({ timeout: 60_000 });
     // ── THE SHEET MUST HAVE RENDERED BEFORE THE CLICK ──
     //
     // The button is enabled as soon as the sheet has a SCALE, which can be
