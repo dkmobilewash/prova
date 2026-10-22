@@ -785,8 +785,8 @@ own gate for heights and the U.N.O. offer):
   a second row per room with the same outline (one row belongs to one item;
   a floor and a ceiling are two things priced). The ceiling columns ride on
   the ceiling row only, so the panel's job summary counts each once.
-- seeds ACT2 and GYPC1; studs on items behind `TAKEOFF_ITEM_STUDS`
-  (`coordination/item-studs-impact.md` says what it would change).
+- seeds ACT2 and GYPC1; studs on items ON (Diego's production query on
+  2026-10-22 found 0 measured items with a STUDS part, so the flag went).
 
 Not done: openings on item walls (door schedule reads exist as evals only);
 per-run heights from a room's ceiling height.

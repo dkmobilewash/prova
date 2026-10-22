@@ -49,20 +49,18 @@ export type ItemForLines = {
   measurements: ItemMeasurement[];
   wallTypeId: string | null;
   /**
-   * The assembly's stud spacing, in inches — ONLY when `TAKEOFF_ITEM_STUDS`
-   * is on. With it, a traced wall counts its studs the way a wall run does
-   * (`studsRequired`); without it, `studs` stays at zero and a STUDS part on
-   * an item prices nothing, which is what every customer's estimate shows
-   * today. The flag exists so turning it on is a decision somebody makes
-   * after reading what it changes, not a side effect of a deploy.
+   * The assembly's stud spacing, in inches. With it, a traced wall counts its
+   * studs the way a wall run does (`studsRequired`); without one, `studs`
+   * stays at zero and a STUDS part prices nothing rather than guessing 16".
+   *
+   * This shipped behind a flag first, because every partition starter and
+   * every legend-made type carries a STUDS part and this used to hard-code
+   * zero. Diego ran the impact query against production on 2026-10-22: ZERO
+   * measured items were linked to an assembly with a STUDS part, so no
+   * existing estimate changes, and the flag came out the same day.
    */
   studSpacingIn?: number | null;
 };
-
-/** `TAKEOFF_ITEM_STUDS=1` lets a takeoff item count studs off its assembly's spacing. OFF until Diego says. */
-export function itemStudsOn(env: Record<string, string | undefined> = process.env): boolean {
-  return env.TAKEOFF_ITEM_STUDS === "1";
-}
 
 export type ItemLineSummary = {
   created: number;
@@ -110,10 +108,9 @@ export function itemGeometry(item: ItemForLines): RunGeometry {
     faceSqFt: quantity.linearFt * heightFt,
     boardedSqFt: quantity.linearFt * heightFt * sides,
     // An item has no stud spacing of its own; the assembly's `studSpacingIn`
-    // is what `runGeometry` uses for a wall run, and it is handed in here
-    // only behind `TAKEOFF_ITEM_STUDS` (see `ItemForLines`). Without it:
-    // zero rather than a guess, because a guessed stud count is a number
-    // that looks right and gets bid.
+    // is handed in (see `ItemForLines`). Without one: zero rather than a
+    // guess, because a guessed stud count is a number that looks right and
+    // gets bid.
     studs:
       item.studSpacingIn !== undefined && item.studSpacingIn !== null && item.studSpacingIn > 0 && quantity.linearFt > 0
         ? studsRequired(quantity.linearFt, { spacingFt: item.studSpacingIn / 12 })
@@ -242,7 +239,7 @@ export async function syncTakeoffItemLines(
       wastePercent: num(item.wastePercent),
       depthIn: num(item.depthIn),
       wallTypeId: item.wallTypeId,
-      studSpacingIn: itemStudsOn() ? num(assembly.studSpacingIn) : null,
+      studSpacingIn: num(assembly.studSpacingIn),
       measurements: item.measurements.map((m) => ({
         id: m.id,
         pageNumber: m.page.pageNumber,

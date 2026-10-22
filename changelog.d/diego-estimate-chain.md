@@ -25,9 +25,11 @@ fix that closes it:
   board on hat and carrying channel). Quantities only; prices are the
   company's.
 
-And one built but OFF, for Diego to decide: `TAKEOFF_ITEM_STUDS=1` lets a
-takeoff item count studs off its assembly's spacing the way a wall run
-does. Today a STUDS part on an item prices nothing.
+- **Studs on the item path.** A takeoff item now counts studs off its
+  assembly's stud spacing the way a wall run does; a STUDS part on an item
+  used to price nothing. Shipped behind a flag first; production impact
+  checked 2026-10-22: 0 measured items linked to an assembly with a STUDS
+  part, so no existing estimate changes, and the flag is gone.
 
 The check: room finder on, starters added, find the walls and rooms on a
 floor plan, give two rooms a ceiling type, save — the items rail shows
