@@ -677,6 +677,18 @@ export async function saveTakeoffMeasurement(
 export async function saveTakeoffMeasurements(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  // The priced path parses a typed height before anything is written, and a
+  // parser that refuses throws InputError — `runAction` turns that into the
+  // readable refusal this action promises (actionErrorBoundaryCensus). The
+  // capability check stays up here, where the guard census reads it.
+  return runAction(() => saveTakeoffMeasurementsFor(context, jobId, formData));
+}
+
+async function saveTakeoffMeasurementsFor(
+  context: Awaited<ReturnType<typeof requireCompanyContext>>,
+  jobId: string,
+  formData: FormData,
+): Promise<ActionResult> {
   const { company, id: userId } = context;
 
   const pageId = String(formData.get("pageId") ?? "");
@@ -747,6 +759,30 @@ export async function saveTakeoffMeasurements(jobId: string, formData: FormData)
   // `createManyAndReturn` rather than `createMany`, because an optional
   // `wallTypeId` turns this into the priced path and that needs the ids. The
   // ordinary path ignores them, so nothing is paid for it.
+  // ── A PRICED ADD THAT CANNOT BE PRICED WRITES NOTHING ──
+  //
+  // The runs used to be written first and posted second, so a refusal from
+  // the posting ("W1 has no default height…") left them on the sheet as
+  // loose measurements — and every retry of the same click wrote them again.
+  // Baker's A101 ended with 120 of them, 90 from one group clicked thirty
+  // times against one refusal. The plan is checked first now, by the same
+  // rule the posting applies, and a refusal is the whole answer.
+  const wallTypeId = String(formData.get("wallTypeId") ?? "").trim();
+  if (wallTypeId !== "") {
+    const wallType = await prisma.wallType.findFirst({
+      where: { id: wallTypeId, companyId: company.id },
+      select: { id: true, code: true, defaultHeightFt: true, sides: true },
+    });
+    if (!wallType) return actionFail(WALL_TYPE_GONE);
+    const plan = planMeasuredWallRun({
+      wallType: { code: wallType.code, defaultHeightFt: wallType.defaultHeightFt != null ? wallType.defaultHeightFt.toNumber() : null, sides: wallType.sides },
+      layerCount: await prisma.wallTypeComponent.count({ where: { wallTypeId: wallType.id } }),
+      typedHeightFt: optionalNumberFromForm(formData, "heightFt", { min: 0.01 })?.n ?? null,
+      label,
+    });
+    if (!plan.ok) return actionFail(plan.error);
+  }
+
   const created = await prisma.takeoffMeasurement.createManyAndReturn({
     data: shapes.map((shape) => ({
       pageId: page.id,
@@ -775,7 +811,6 @@ export async function saveTakeoffMeasurements(jobId: string, formData: FormData)
   // height, a contracted job. Writing a second path here would be a second
   // authority on what a priced wall run is, which is the trap this file's
   // neighbours keep recording.
-  const wallTypeId = String(formData.get("wallTypeId") ?? "").trim();
   if (wallTypeId !== "") {
     const stored: StoredMeasurement[] = created.map((row) => ({
       kind: row.kind,

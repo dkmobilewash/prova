@@ -386,6 +386,18 @@ model TakeoffMeasurement {
   roomName   String?
   roomNumber String?
 
+  /// The ceiling over a ROOM_FINDER area, read from the reflected ceiling
+  /// plan, a finish schedule, the drawn pattern or a sheet note, or typed by
+  /// the estimator. Null on every measurement that is not a room, and on a
+  /// room nothing said anything about. `ceilingFrom` names the source —
+  /// tag, pattern, schedule, note, prefix, estimator — and `ceilingGuess`
+  /// is true only for a prefix guess the estimator has not confirmed.
+  ceilingFamily     String?
+  ceilingCode       String?
+  ceilingHeightFeet Float?
+  ceilingFrom       String?
+  ceilingGuess      Boolean @default(false)
+
   /// The finder's confidence, 0..1. Null unless `source` is `DETECTED` — a
   /// number a person drew has no confidence to report, and defaulting one to
   /// 1 would invent agreement nobody expressed.

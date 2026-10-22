@@ -14,6 +14,8 @@ import { sameCode } from "@/lib/takeoff/legendMerge";
 import { storedLegendTypes, storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
 import { assemblyFromSight } from "@/lib/takeoff/legendSight";
 import { pageLines } from "@/lib/takeoff/planTextRead";
+import { legendHeightOf, legendHeightsFor, type LegendHeightResult } from "@/lib/takeoff/legendHeights";
+import { sightFieldsFor } from "@/lib/takeoff/legendProposal";
 import { readWallLegendBySight } from "@/lib/takeoff/readWallLegend";
 import { actionFail, isUniqueConstraintError, type ActionResultWith } from "./shared";
 
@@ -72,14 +74,14 @@ export async function addWallTypeFromLegend(
   jobId: string,
   proposalId: string,
   edits: LegendTypeEdits,
-): Promise<ActionResultWith<{ code: string; componentCount: number }>> {
+): Promise<ActionResultWith<{ code: string; componentCount: number; height: LegendHeightResult }>> {
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_ESTIMATING")) return actionFail(NO_ESTIMATING) as ActionResultWith<never>;
   const companyId = context.company.id;
 
   const proposal = await prisma.planLegendProposal.findFirst({
     where: { id: proposalId, plan: { job: { id: jobId, companyId } } },
-    select: { id: true, pageNumber: true, sheetTitle: true, merged: true, status: true },
+    select: { id: true, planId: true, pageNumber: true, sheetTitle: true, merged: true, sightRead: true, status: true },
   });
   if (proposal === null) return actionFail(NO_PROPOSAL) as ActionResultWith<never>;
 
@@ -103,14 +105,21 @@ export async function addWallTypeFromLegend(
   const fields = checked as { [K in keyof typeof checked]: number | null };
   const insulation = edits.insulation === null ? null : String(edits.insulation).trim().slice(0, INSULATION_MAX) || null;
 
-  // The parts, from what the person agreed to rather than from the stored read.
+  // The parts, from what the person agreed to rather than from the stored read —
+  // and the material from the SIGHT read, which the merged view drops.
+  const sight = sightFieldsFor(proposal.sightRead, code);
   const where = proposal.sheetTitle ? `${proposal.sheetTitle} (page ${proposal.pageNumber})` : `page ${proposal.pageNumber}`;
   const assembly = assemblyFromSight(
     {
       code,
       name,
       studWidthIn: fields.studWidthIn,
-      studMaterial: null,
+      // THE MATERIAL COMES FROM THE SIGHT READ, not from a null that reads as
+      // metal: C8A and C8B on Baker are insulated concrete forms, and this
+      // used to write "8in metal stud + track" on them. `assemblyFromSight`
+      // gives a concrete or masonry wall board and insulation only, and says
+      // so in a flag.
+      studMaterial: sight.studMaterial,
       studGauge: original.assembly.read.studGauge,
       studSpacingIn: fields.studSpacingIn,
       boardThicknessIn: fields.boardThicknessIn,
@@ -133,7 +142,23 @@ export async function addWallTypeFromLegend(
     fields.thicknessIn ??
     (fields.studWidthIn === null ? null : fields.studWidthIn + 2 * (fields.layersPerSide ?? 1) * (fields.boardThicknessIn ?? 0));
 
-  const notes = [`Read off ${where} of the plan set. Check against the drawing before pricing.`, ...original.lines]
+  // ── THE HEIGHT, FROM THE SET — the chain and its confidence go in the notes ──
+  //
+  // A legend says where a wall STOPS; the feet are on a section forty pages
+  // away. `setHeightFacts` walks the set for them and `resolveHeight` names
+  // the one it used. Nothing is guessed: a type whose words resolve to no
+  // printed figure gets NO default height and a note saying why, and a
+  // height that rests on a sheet-wide note alone is written LOW so the
+  // estimator checks it before a run is priced at it. A set that cannot be
+  // read leaves the height blank rather than failing the add.
+  const height =
+    (await legendHeightsFor({ planId: proposal.planId, companyId, legendPage: proposal.pageNumber, types: [{ code, lines: original.lines, heightNote: sight.heightNote }] })).get(code.toUpperCase()) ??
+    legendHeightOf({ code, lines: original.lines, heightNote: sight.heightNote }, null, "no reading");
+  const notes = [
+    `Read off ${where} of the plan set. Check against the drawing before pricing.`,
+    height.sentence,
+    ...original.lines,
+  ]
     .join("\n")
     .slice(0, NOTES_MAX);
   const sortFrom = await prisma.wallType.count({ where: { companyId } });
@@ -145,6 +170,7 @@ export async function addWallTypeFromLegend(
           code,
           name,
           thicknessIn: thicknessIn === null ? null : thicknessIn.toFixed(2),
+          defaultHeightFt: height.heightFt === null ? null : height.heightFt.toFixed(2),
           sides: 2,
           studSpacingIn: (fields.studSpacingIn ?? 16).toFixed(2),
           sortOrder: sortFrom,
@@ -178,8 +204,9 @@ export async function addWallTypeFromLegend(
   revalidatePath("/wall-types");
   revalidatePath(`/jobs/${jobId}/takeoff/legend`);
   revalidatePath(`/jobs/${jobId}/takeoff`);
-  return { ok: true, value: { code, componentCount: assembly.components.length } };
+  return { ok: true, value: { code, componentCount: assembly.components.length, height } };
 }
+
 
 const PAGE_IMAGE_MAX = 3_500_000;
 const CROP_IMAGE_MAX = 1_500_000;

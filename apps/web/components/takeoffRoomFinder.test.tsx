@@ -128,7 +128,10 @@ describe("the room finder is off the toolbar (the default: switch off)", () => {
     const el = paint([sheet()]);
     const walls = el.querySelector('[data-takeoff="find-walls"]') as HTMLButtonElement | null;
     expect(walls).not.toBeNull();
-    expect(walls?.disabled).toBe(false);
+    // Held only by the sheet's rendering (happy-dom draws no PDF), never by
+    // the room finder's switch: the title names the sheet, not the switch.
+    expect(walls?.disabled).toBe(true);
+    expect(walls?.getAttribute("title")).toBe("The sheet is still loading.");
   });
 
   it("leaves the manual measuring tools alone", () => {
