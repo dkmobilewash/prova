@@ -574,7 +574,7 @@ const ANGLE_BUCKETS = Math.max(3, Math.ceil(Math.PI / ANGLE_BUCKET));
  * `SAME_FACE_GAP_FEET` so that two walls on one grid line stay two faces.
  */
 /**
- * ── THE SAME DRAWING IN ANY ORDER IS THE SAME DRAWING — AT THE FACES ──
+ * ── THE SAME DRAWING IN ANY ORDER IS THE SAME DRAWING — AT THE FACES AND THE ARCS ──
  *
  * The finder's stages are each deterministic, and several are first-wins: a
  * stroke joins the first face within tolerance, a face takes the first
@@ -602,16 +602,17 @@ const ANGLE_BUCKETS = Math.max(3, Math.ceil(Math.PI / ANGLE_BUCKET));
  *     door sort, by angle         3,524 / 16,705
  *     FACES ONLY, reading order   2,506 / 12,397   ← this
  *
- * A stroke sequence is information upstream of here: `gridBubbles.ts` walks a
- * bubble through the first unwalked piece at each endpoint, and
- * `curvedWalls.ts` says in its header that a flattened arc "arrives as a run
- * of pieces" and is greedy on purpose. Sort those and the bubbles and arcs
- * come apart. So the order the PDF stores — which the app and Node read
- * identically, proved by digest — is kept at the door, and full order
- * independence needs those two stages to continue a chain by geometry rather
- * than by sequence. That is their owner's change, and `zzFinderArms.eval.ts`
- * measures it: reversed 4,908 missing against 2,506 as read, with the faces
- * sorted.
+ * `curvedWalls.ts` now assembles an arc by geometry (least turn at the joint,
+ * nearest chain across an opening) from pieces in this order, and that costs
+ * nothing against the keys (2,506 / 12,392 with it). `gridBubbles.ts` does
+ * not: a bubble walker that continues by geometry, or a sort at the finder's
+ * door, both make the stage order-independent and both cost 2,300–2,550 ft
+ * of missing key, for a reason that is not the walk — see that file's own
+ * comment. So the order the PDF stores, which the app and Node read
+ * identically (proved by digest), is kept at the door, and the finder is
+ * deterministic for a given FILE but not yet for a given drawing. Reversed
+ * strokes still cost 2,400 ft (`zzFinderArms.eval.ts`), and all of it is the
+ * bubble stage.
  */
 export function canonicalStrokeOrder<T extends StrokeSegment>(segments: readonly T[]): T[] {
   const keyed = segments.map((s) => ({

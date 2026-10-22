@@ -2979,3 +2979,50 @@ saved `rows` are already treated as stale. One consequence worth knowing: a
 verdict given on a candidate only the old hook path produced now stands as
 a key wall with no candidate under it, which scores as missing rather than
 vanishing — that is the +66 ft.
+
+### Finder determinism, finished as far as it honestly goes (2026-10-22)
+
+**Is the whole finder order-independent? No, and the stage that is not is
+named.** Hooks observe only (fixed above). Faces and pairing are built in
+reading order (fixed above). The arc assembler now continues a chain by
+geometry — least turn at the joint, nearest chain across an opening — and
+that is FREE against the training keys (2,506 / 12,392 with it, 2,506 /
+12,397 without). The whole-finder shuffled test holds `findWallsOnSheet` to
+the same walls under reversal and three shuffles on a sheet with arcs.
+
+The grid-bubble walker is still first-wins in file order, on purpose. A
+walker that continues by geometry was built, and a sort at the finder's
+door was tried, and each was switched on and off independently with the
+baseline as its own control (`zzFinderArms.eval.ts`, missing / extra ft over
+the 23 training sheets, every arm):
+
+| configuration | missing | extra | arms differ |
+| --- | --- | --- | --- |
+| control: old walkers, door as stored | 2,506 | 12,397 | 22 of 23 |
+| old walkers, door sorted | 4,824 | 15,648 | 0 |
+| new bubble walker alone | 5,057 | 15,256 | 4 of 23 |
+| new arc assembler alone | 2,506 | 12,392 | 22 of 23 |
+| both new, door sorted | 5,016 | 15,245 | 0 |
+
+**The step is the bubble stage and the why is its acceptance, not its
+walk.** It accepts any closed round chain from 0.06in across as a column
+bubble — a floor its own comment calls fitted to one generator — and never
+asks for the grid line that defines one; then `linesIntoBubbles` drops
+every line ending within TWO radii of it. What an order-independent walk
+additionally completes are symbol and outlined-glyph loops (Baker A101: 71
+loops as read, 88 by geometry, 111 reversed; Murray drops 34,863 of 104,000
+lines), and each one takes wall faces with it. File order masks the defect
+by consuming most such loops into longer chains that fail roundness.
+
+Six drop rules were measured to see whether the defect could be fixed in
+place: requiring a grid line of 1, 2 or 4 in to enter a bubble, dropping
+only lines over 2 in, tightening the reach to one radius, and a size split
+where a loop under 0.25in clears only strokes under 0.5, 1 or 2 in. Every
+one lowers missing feet (to 1,654 at best) and raises extra feet to between
+15,800 and 22,900, because the tiny loops' indiscriminate dropping is also
+the finder's only filter for outlined text and symbols, which have no text
+items for `wallsNotLettering` to see. So the bubble stage needs splitting
+into what it actually does — a grid-bubble detector that requires an
+entering line, and a symbol/outlined-glyph filter that is its own stage —
+before its walk can be made honest without bidding 2,000 ft of wall short.
+That is the finder owner's change; the arms eval measures it.

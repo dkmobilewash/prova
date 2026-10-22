@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { findWallsOnSheet } from "./findWallsOnSheet";
 import { wallsFromStrokes, type StrokeSegment, type WallCandidate } from "./wallVectors";
 
 /**
@@ -111,6 +112,76 @@ describe("the finder's answer does not depend on the order the strokes are store
     it(`seed ${seed}: shuffled, three ways`, () => {
       for (const shuffle of [1, 2, 3]) {
         expect(digest(wallsFromStrokes(shuffled(strokes, shuffle * 7919), options)), `shuffle ${shuffle}`).toEqual(plain);
+      }
+    });
+  }
+});
+
+/**
+ * ── THE WHOLE FINDER, WITH ARCS IN THE DRAWING ──
+ *
+ * `wallsFromStrokes` is the pairer. The sheet finder runs the curved-wall
+ * assembler before it, and that used to read the strokes' sequence: an arc
+ * was a run of pieces in file order. So the invented sheet carries two
+ * concentric flattened arcs a wall apart and the rooms from above, and the
+ * assertion is on `findWallsOnSheet`, shuffled.
+ *
+ * NO COLUMN BUBBLES, DELIBERATELY. The grid-bubble walker is still first-wins
+ * in file order, and `gridBubbles.ts` says why it was left so after a
+ * geometric walker was built and measured: the stage's acceptance and reach
+ * are the defect, and an honest order costs 2,300 ft of key until they are
+ * fixed. A bubble in this drawing would make this test red for that reason,
+ * which is a true statement about the finder and not a regression to catch
+ * here; the arms eval carries the number.
+ */
+function sheet(seed: number): StrokeSegment[] {
+  const out = drawing(seed).map((s) => ({ ...s }));
+  // Two concentric arcs a 6in wall apart, each flattened into pieces under a foot.
+  for (const radius of [120, 125]) {
+    const pieces = 40;
+    for (let k = 0; k < pieces; k += 1) {
+      const a1 = Math.PI + (k / pieces) * Math.PI;
+      const a2 = Math.PI + ((k + 1) / pieces) * Math.PI;
+      out.push(seg(400 + radius * Math.cos(a1), 300 + radius * Math.sin(a1), 400 + radius * Math.cos(a2), 300 + radius * Math.sin(a2)));
+    }
+  }
+  return out;
+}
+
+const PAGE = { widthPt: 1000, heightPt: 700 };
+const run = (segments: readonly StrokeSegment[]) =>
+  findWallsOnSheet({
+    segments: [...segments],
+    textItems: [],
+    pageSize: PAGE,
+    // 10 ft per point on a 1000pt sheet: 10,000 ft per page width.
+    feetPerUnit: FEET_PER_POINT * PAGE.widthPt,
+    wallTypes: [],
+    sampledSheets: null,
+  });
+const stages = (found: ReturnType<typeof run>) =>
+  `${found.gridDropped}/${found.hatchDropped}/${found.duplicateDropped}/${found.walls.length}`;
+
+describe("the whole sheet finder does not depend on the order the strokes are stored in", () => {
+  for (const seed of SEEDS) {
+    const strokes = sheet(seed);
+    const plain = run(strokes);
+
+    it(`seed ${seed}: the drawing exercises the arc stage`, () => {
+      expect(plain.walls.some((w) => w.curved === true), "no curved wall was found, so the arc assembler was never exercised").toBe(true);
+    });
+
+    it(`seed ${seed}: reversed, same walls and same stage counts`, () => {
+      const reversed = run([...strokes].reverse());
+      expect(stages(reversed)).toBe(stages(plain));
+      expect(digest(reversed.walls)).toEqual(digest(plain.walls));
+    });
+
+    it(`seed ${seed}: shuffled three ways, same walls and same stage counts`, () => {
+      for (const shuffle of [1, 2, 3]) {
+        const mixed = run(shuffled(strokes, shuffle * 7919));
+        expect(stages(mixed), `shuffle ${shuffle}`).toBe(stages(plain));
+        expect(digest(mixed.walls), `shuffle ${shuffle}`).toEqual(digest(plain.walls));
       }
     });
   }
