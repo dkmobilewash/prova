@@ -2,6 +2,7 @@ import type { Prisma } from "@prova/db";
 
 import { componentRunQuantity, type RunGeometry, type WallComponentBasis } from "@/lib/wall-assemblies";
 import { itemQuantity, type ItemMeasurement, type ItemProperties } from "@/lib/takeoff/itemQuantities";
+import { studsRequired } from "@/lib/takeoff";
 
 /**
  * ── A TAKEOFF ITEM'S SHARE OF THE ESTIMATE ──
@@ -47,7 +48,21 @@ export type ItemForLines = {
   depthIn: number | null;
   measurements: ItemMeasurement[];
   wallTypeId: string | null;
+  /**
+   * The assembly's stud spacing, in inches — ONLY when `TAKEOFF_ITEM_STUDS`
+   * is on. With it, a traced wall counts its studs the way a wall run does
+   * (`studsRequired`); without it, `studs` stays at zero and a STUDS part on
+   * an item prices nothing, which is what every customer's estimate shows
+   * today. The flag exists so turning it on is a decision somebody makes
+   * after reading what it changes, not a side effect of a deploy.
+   */
+  studSpacingIn?: number | null;
 };
+
+/** `TAKEOFF_ITEM_STUDS=1` lets a takeoff item count studs off its assembly's spacing. OFF until Diego says. */
+export function itemStudsOn(env: Record<string, string | undefined> = process.env): boolean {
+  return env.TAKEOFF_ITEM_STUDS === "1";
+}
 
 export type ItemLineSummary = {
   created: number;
@@ -94,12 +109,15 @@ export function itemGeometry(item: ItemForLines): RunGeometry {
     heightFt,
     faceSqFt: quantity.linearFt * heightFt,
     boardedSqFt: quantity.linearFt * heightFt * sides,
-    // An item has no stud spacing of its own in the geometry; the assembly's
-    // own `studSpacingIn` is what `runGeometry` uses for a wall run, and a
-    // part that wants studs off an item should price them per foot instead.
-    // Zero rather than a guess: a guessed stud count is a number that looks
-    // right and gets bid.
-    studs: 0,
+    // An item has no stud spacing of its own; the assembly's `studSpacingIn`
+    // is what `runGeometry` uses for a wall run, and it is handed in here
+    // only behind `TAKEOFF_ITEM_STUDS` (see `ItemForLines`). Without it:
+    // zero rather than a guess, because a guessed stud count is a number
+    // that looks right and gets bid.
+    studs:
+      item.studSpacingIn !== undefined && item.studSpacingIn !== null && item.studSpacingIn > 0 && quantity.linearFt > 0
+        ? studsRequired(quantity.linearFt, { spacingFt: item.studSpacingIn / 12 })
+        : 0,
     areaSqFt: quantity.areaSqFt,
     // ── PERIMETER ONLY FROM AN `AREA_WITH_PERIMETER` ITEM ──
     //
@@ -224,6 +242,7 @@ export async function syncTakeoffItemLines(
       wastePercent: num(item.wastePercent),
       depthIn: num(item.depthIn),
       wallTypeId: item.wallTypeId,
+      studSpacingIn: itemStudsOn() ? num(assembly.studSpacingIn) : null,
       measurements: item.measurements.map((m) => ({
         id: m.id,
         pageNumber: m.page.pageNumber,

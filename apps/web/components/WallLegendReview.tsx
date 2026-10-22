@@ -270,8 +270,13 @@ function LegendTypeRow({
       const result = await addWallTypeFromLegend(jobId, proposalId, edits);
       if (!result.ok) return setMessage(result.error);
       setAdded(true);
+      const h = result.value.height;
+      const height =
+        h.heightFt === null
+          ? ` ${h.sentence}`
+          : ` Height ${h.heightFt} ft (${h.confidence}${h.generalNoteOnly ? " — general note only, check the sheet" : ""}).`;
       setMessage(
-        `Added ${result.value.code} with ${result.value.componentCount} ${result.value.componentCount === 1 ? "part" : "parts"}. Open Wall types to put prices and crews on it.`,
+        `Added ${result.value.code} with ${result.value.componentCount} ${result.value.componentCount === 1 ? "part" : "parts"}. Open Wall types to put prices and crews on it.${height}`,
       );
       router.refresh();
     });

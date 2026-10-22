@@ -173,17 +173,23 @@ export function wallGroups(
 
     out.push(...tagged);
     if (untagged.length > 0) {
-      // ── THE GENERAL NOTE, BUT ONLY WHERE THE THICKNESS AGREES ──
+      // ── THE GENERAL NOTE'S TYPE IS OFFERED FIRST — NEVER APPLIED ──
       //
       // "ALL PARTITIONS TYPE A1 U.N.O." covers whatever the architect did not
-      // tag. It does NOT cover a wall of a different thickness: the 6-5/8"
+      // tag, and this used to price the group as A1 with nothing to click.
+      // Now A1 LEADS the picker (`verdictFor` returns ASK with it as
+      // `suggested`) and the group is priced only once a person picks it.
+      //
+      // It still does NOT reach a wall of a different thickness: the 6-5/8"
       // exterior runs and the 10-1/4" chase on School-01's A-101 are untagged
-      // too, and a different thickness IS a notation. Without this test the
-      // note would swallow them and price the building's shell as a partition.
+      // too, and a different thickness IS a notation — the note's own
+      // "unless noted otherwise". A type with NO recorded thickness is offered,
+      // because offering is not applying.
       const noteCovers =
         fromNote !== null &&
-        fromNote.type.thicknessIn !== null &&
-        Math.abs(fromNote.type.thicknessIn - cluster.inches) <= THICKNESS_SLACK_IN;
+        (fromNote.type.thicknessIn === null ||
+          Math.abs(fromNote.type.thicknessIn - cluster.inches) <= THICKNESS_SLACK_IN);
+      const atThickness = typesAtThickness(cluster.inches, wallTypes);
       out.push({
         inches: cluster.inches,
         runs: untagged,
@@ -191,7 +197,9 @@ export function wallGroups(
         source:
           noteCovers && fromNote ? { kind: "GENERAL_NOTE", note: fromNote.note } : { kind: "REMAINDER" },
         candidates:
-          noteCovers && fromNote ? [fromNote.type] : typesAtThickness(cluster.inches, wallTypes),
+          noteCovers && fromNote
+            ? [fromNote.type, ...atThickness.filter((t) => t.id !== fromNote.type.id)]
+            : atThickness,
       });
     }
   }
@@ -215,9 +223,6 @@ function feetOf(runs: readonly WallCandidate[]): number {
 export type GroupVerdict =
   /** One type, and the drawing named it. Price it. */
   | { state: "NAMED"; type: MatchableWallType; tag: string }
-  /** No tag beside these, but the sheet's general notes name a default for
-   *  everything untagged and these measure like it. See `GroupSource`. */
-  | { state: "BY_GENERAL_NOTE"; type: MatchableWallType; note: string }
   /**
    * The drawing names a type this company HAS, and the wall is not the
    * thickness that type is recorded as. Two sources disagree; neither is
@@ -226,8 +231,10 @@ export type GroupVerdict =
   | { state: "TAG_DISAGREES"; type: MatchableWallType; tag: string }
   /** One type, from the thickness alone, because nothing named these. */
   | { state: "ONLY_ONE_THAT_THICK"; type: MatchableWallType }
-  /** Several types are this thick. Only a person can say which. */
-  | { state: "ASK"; types: MatchableWallType[] }
+  /** Several types are this thick, or the sheet's general notes name a
+   *  default for everything untagged (`suggested`, listed first, with the
+   *  `note` quoted). Only a person can say which. */
+  | { state: "ASK"; types: MatchableWallType[]; suggested?: MatchableWallType; note?: string }
   /** The drawing names a type this company does not have. */
   | { state: "NO_SUCH_TYPE"; tag: string }
   /** Nothing named them and nothing in the library is that thick. */
@@ -269,8 +276,8 @@ export function verdictFor(group: WallGroup): GroupVerdict {
   // THE SHEET'S OWN DEFAULT, which is a named answer rather than an inference
   // from thickness — and a weaker one than a tag, which is why it is its own
   // state and gets its own sentence.
-  if (group.source.kind === "GENERAL_NOTE" && group.candidates.length === 1) {
-    return { state: "BY_GENERAL_NOTE", type: group.candidates[0], note: group.source.note };
+  if (group.source.kind === "GENERAL_NOTE" && group.candidates.length >= 1) {
+    return { state: "ASK", types: group.candidates, suggested: group.candidates[0], note: group.source.note };
   }
   if (group.candidates.length === 1) return { state: "ONLY_ONE_THAT_THICK", type: group.candidates[0] };
   if (group.candidates.length > 1) return { state: "ASK", types: group.candidates };
@@ -340,16 +347,6 @@ export function groupSentence(group: WallGroup, verdict: GroupVerdict): string |
         : `The drawing tags these ${verdict.tag}, which is your ${verdict.type.code} — ${verdict.type.name}. ` +
           `It has no parts on it yet, so these can be added as measurements but not priced — put the studs, ` +
           `track and board on ${verdict.type.code} under Wall types and they will price themselves.`;
-    case "BY_GENERAL_NOTE":
-      // THE NOTE IS QUOTED, not summarised. It is the whole of the evidence and
-      // it covers more footage than any tag on the sheet — 577 ft of A-101 —
-      // so an estimator gets to read the sentence the architect wrote and judge
-      // it, rather than being told the app concluded something.
-      return (
-        `Nothing is tagged beside these, but this sheet's general notes say ` +
-        `“${verdict.note}”, and they measure ${inchLabel(group.inches)} like your ${verdict.type.code}. ` +
-        `Priced as ${verdict.type.code} unless you say otherwise — check a few against the drawing.`
-      );
     case "ONLY_ONE_THAT_THICK":
       return (
         `Nothing on the drawing names these. They measure ${inchLabel(group.inches)}, and the only ` +
@@ -357,6 +354,17 @@ export function groupSentence(group: WallGroup, verdict: GroupVerdict): string |
         `would be priced as — check one against the drawing first.`
       );
     case "ASK":
+      // THE NOTE IS QUOTED, not summarised. It is the whole of the evidence and
+      // it covers more footage than any tag on the sheet — 577 ft of A-101 —
+      // so an estimator reads the sentence the architect wrote and judges it,
+      // and the app offers rather than concludes.
+      if (verdict.suggested && verdict.note) {
+        return (
+          `Nothing is tagged beside these, but this sheet's general notes say ` +
+          `“${verdict.note}” — so ${verdict.suggested.code} is offered first. ` +
+          `Pick it to price them that way, or another type; nothing is priced until you do.`
+        );
+      }
       return (
         `Nothing on the drawing names these. They measure ${inchLabel(group.inches)}, and you have ` +
         `${verdict.types.length} wall types near that: ` +

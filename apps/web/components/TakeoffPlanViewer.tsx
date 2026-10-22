@@ -2627,14 +2627,10 @@ export function TakeoffPlanViewer({
    */
   function namedTypeFor(group: WallGroup, pick: string | undefined): MatchableWallType | null {
     const verdict = verdictFor(group);
-    // A SHEET NOTE IS AN ANSWER, not a question. It names one type for
-    // everything untagged, and the group only reaches this state when its
-    // measured thickness agrees — see `wallGroups`.
-    if (
-      verdict.state === "NAMED" ||
-      verdict.state === "BY_GENERAL_NOTE" ||
-      verdict.state === "ONLY_ONE_THAT_THICK"
-    ) {
+    // A SHEET NOTE IS AN OFFER, not an answer: its type leads the ASK picker
+    // (`verdict.suggested`) and the group is priced only once a person picks
+    // it — see `wallGroups`.
+    if (verdict.state === "NAMED" || verdict.state === "ONLY_ONE_THAT_THICK") {
       return verdict.type;
     }
     // An ASK is priced only once a PERSON has answered it. No default, no
@@ -3334,8 +3330,13 @@ export function TakeoffPlanViewer({
                       >
                         <option value="">Which type?</option>
                         {verdict.types.map((type) => (
-                          <option key={type.id} value={type.id}>
+                          <option
+                            key={type.id}
+                            value={type.id}
+                            data-takeoff={verdict.suggested?.id === type.id ? "uno-option" : undefined}
+                          >
                             {type.code} — {type.name}
+                            {verdict.suggested?.id === type.id ? " · the sheet's note names this" : ""}
                           </option>
                         ))}
                       </select>

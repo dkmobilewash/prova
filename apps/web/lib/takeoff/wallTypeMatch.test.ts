@@ -227,10 +227,11 @@ describe("the call site, because no test here can open a PDF", () => {
     expect(flat(text)).toMatch(/wallGroups\(\s*clusterByThickness\(runs\), tagByRun\(runs, tags, feetPerUnit, wallTypes\), wallTypes, fromNote,?\s*\)/);
   });
 
-  it("PRICES A GROUP THE NOTE NAMED, so the answer reaches the button", () => {
-    // Reading the note and then refusing to act on it would be the same group
-    // with a longer sentence.
-    expect(viewer()).toMatch(/verdict\.state === "BY_GENERAL_NOTE"/);
+  it("OFFERS THE NOTE'S TYPE IN THE PICKER, marked, so the sheet's note reaches the estimator without being applied", () => {
+    // Reading the note and then hiding it would be the same group with a
+    // longer sentence; applying it silently was the version before this.
+    expect(viewer()).toMatch(/verdict\.suggested\?\.id === type\.id \? "uno-option"/);
+    expect(viewer()).not.toMatch(/BY_GENERAL_NOTE/);
   });
 
   it("HANDS THE TAGGER THE WALL TYPES, which is the half of the evidence it used to drop", () => {

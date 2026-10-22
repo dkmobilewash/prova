@@ -42,6 +42,9 @@ afterAll(async () => {
   await prisma.takeoffScaleCalibration.deleteMany({ where: { page: { plan: { jobId } } } });
   await prisma.takeoffPlanPage.deleteMany({ where: { plan: { jobId } } });
   await prisma.takeoffPlan.deleteMany({ where: { jobId } });
+  // The save now creates "Rooms" and "Ceiling — …" items, RESTRICT children of
+  // the job (the `InvoiceCounter` shape in CLAUDE.md): delete them first.
+  await prisma.takeoffItem.deleteMany({ where: { jobId } });
   await prisma.job.deleteMany({ where: { companyId } });
   await prisma.contact.deleteMany({ where: { companyId } });
   await prisma.user.deleteMany({ where: { companyId } });
@@ -130,13 +133,25 @@ describe("saveRoomMeasurements with ceilings", () => {
       ]),
     );
     expect(good.ok).toBe(true);
-    const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId, roomNumber: { in: ["106", "011B"] } }, orderBy: { roomNumber: "asc" } });
-    expect(rows.map((r) => [r.roomNumber, r.ceilingFamily, r.ceilingCode, r.ceilingHeightFeet, r.ceilingFrom, r.ceilingGuess])).toEqual([
-      ["011B", "ACT", "AC01", 11, "prefix", true],
-      ["106", "GYP", "GB", 10, "tag", false],
+    // ── EVERY ROOM LANDS IN "Rooms"; A ROOM WITH A CEILING ALSO LANDS IN ITS FAMILY'S ITEM ──
+    const items = await prisma.takeoffItem.findMany({ where: { jobId }, select: { id: true, name: true, type: true } });
+    const byName = new Map(items.map((i) => [i.name, i]));
+    expect([...byName.keys()].sort()).toEqual(["Ceiling — ACT", "Ceiling — GYP", "Rooms"]);
+    expect(items.every((i) => i.type === "AREA_WITH_PERIMETER")).toBe(true);
+    const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId, roomNumber: { in: ["106", "011B"] } }, orderBy: [{ roomNumber: "asc" }, { label: "asc" }] });
+    expect(rows.map((r) => [r.roomNumber, r.label, r.itemId === byName.get("Rooms")?.id ? "Rooms" : items.find((i) => i.id === r.itemId)?.name, r.ceilingFamily, r.ceilingCode, r.ceilingHeightFeet, r.ceilingFrom, r.ceilingGuess])).toEqual([
+      ["011B", "ELEC 011B", "Rooms", null, null, null, null, false],
+      ["011B", "ELEC 011B ceiling", "Ceiling — ACT", "ACT", "AC01", 11, "prefix", true],
+      ["106", "STORAGE 106", "Rooms", null, null, null, null, false],
+      ["106", "STORAGE 106 ceiling", "Ceiling — GYP", "GYP", "GB", 10, "tag", false],
     ]);
-    const hall = await prisma.takeoffMeasurement.findFirst({ where: { pageId, roomName: "HALL" } });
-    expect(hall?.ceilingFamily ?? null).toBeNull();
-    expect(hall?.ceilingGuess).toBe(false);
+    const hall = await prisma.takeoffMeasurement.findMany({ where: { pageId, roomName: "HALL" } });
+    expect(hall.length, "a room with no ceiling gets one row, in Rooms").toBe(1);
+    expect(hall[0].itemId).toBe(byName.get("Rooms")?.id);
+    expect(hall[0].ceilingFamily).toBeNull();
+    // Saving a second sheet's rooms joins the SAME items rather than making "Rooms (2)".
+    const again = await saveRoomMeasurements(jobId, body([{ ...square(0.2, 0.2, 0.05), label: "LOBBY", roomName: "LOBBY", roomNumber: "100", ceiling: { family: "ACT", code: null, heightFeet: null, from: "estimator", guess: false } }]));
+    expect(again.ok).toBe(true);
+    expect((await prisma.takeoffItem.count({ where: { jobId } }))).toBe(3);
   });
 });

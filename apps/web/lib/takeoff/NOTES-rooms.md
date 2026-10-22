@@ -768,3 +768,25 @@ says it is a ceiling plan too (Murray's combined sheet) — the first run read
 CALL CENTER 111 where its ceiling plan says 911 CALL CENTER, so a room joins
 by one name containing the other (four letters or more) when the number is
 not printed on the ceiling side.
+
+## 18. The estimate end of the chain (2026-10-22) — diego/estimate-chain off main
+
+The audit (`coordination/takeoff-to-estimate-audit.md`) found four things
+measured and never priced. Fixed, smallest form each, all behind the switches
+that already gate them (room finder for rooms/ceilings; the legend library's
+own gate for heights and the U.N.O. offer):
+
+- heights: `addWallTypeFromLegend` → `setHeightFacts` (sections, ceiling
+  plans, lettered and general notes, up to 120 pages) → `resolveHeight` →
+  `defaultHeightFt` + the chain in notes; LOW when only a general note.
+- U.N.O.: `wallGroups` keeps the GENERAL_NOTE source but the verdict is ASK
+  with `suggested` first; `BY_GENERAL_NOTE` is gone from the union.
+- rooms → "Rooms" item; ceilings → one AREA_WITH_PERIMETER item per family,
+  a second row per room with the same outline (one row belongs to one item;
+  a floor and a ceiling are two things priced). The ceiling columns ride on
+  the ceiling row only, so the panel's job summary counts each once.
+- seeds ACT2 and GYPC1; studs on items behind `TAKEOFF_ITEM_STUDS`
+  (`coordination/item-studs-impact.md` says what it would change).
+
+Not done: openings on item walls (door schedule reads exist as evals only);
+per-run heights from a room's ceiling height.

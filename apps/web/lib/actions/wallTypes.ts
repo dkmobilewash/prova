@@ -338,6 +338,38 @@ const STARTER_TYPES: { code: string; name: string; parts: StarterPart[] }[] = [
     ],
   },
   {
+    code: "ACT2",
+    name: "Acoustic ceiling — 2x2 lay-in grid and tile, each tee on its own line",
+    parts: [
+      // QUANTITY FACTORS FOR A 2x2 LAYOUT, per square foot of ceiling: mains
+      // at 4' o.c. (0.25 lf/sf), 4' cross tees at 2' o.c. between them
+      // (0.5 lf/sf), 2' cross tees closing each 2x2 cell (0.25 lf/sf), and
+      // one hanger wire per 4x4 (1/16 per sf). Wall angle is the room's
+      // perimeter, which is why this prices a TAKEOFF ITEM traced as an
+      // area WITH a perimeter — the Rooms panel saves ceilings that way.
+      { description: "2x2 acoustic tile", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "5" },
+      { description: "Main tee, 4' o.c.", unit: "lin ft", basis: "AREA_SQFT", factor: "0.25", wastePercent: "5" },
+      { description: "4' cross tee", unit: "lin ft", basis: "AREA_SQFT", factor: "0.5", wastePercent: "5" },
+      { description: "2' cross tee", unit: "lin ft", basis: "AREA_SQFT", factor: "0.25", wastePercent: "5" },
+      { description: "Hanger wire, one per 4x4", unit: "ea", basis: "AREA_SQFT", factor: "0.0625", roundUp: true },
+      { description: "Wall angle", unit: "lin ft", basis: "PERIMETER_FT", factor: "1", wastePercent: "5" },
+      { description: "Hang grid and lay tile", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+    ],
+  },
+  {
+    code: "GYPC1",
+    name: "Gypsum board ceiling — ⅝″ board on hat channel at 16″ o.c.",
+    parts: [
+      // Priced off the item's AREA, not a boarded wall face: a ceiling item
+      // has no height or sides, so BOARDED_SQFT would be zero on it.
+      { description: "⅝″ board, 4x8 sheets", unit: "sheets", basis: "AREA_SQFT", factor: "0.03125", wastePercent: "10", roundUp: true },
+      { description: "⅞″ hat channel at 16″ o.c.", unit: "lin ft", basis: "AREA_SQFT", factor: "0.75", wastePercent: "5" },
+      { description: "1½″ carrying channel at 4' o.c.", unit: "lin ft", basis: "AREA_SQFT", factor: "0.25", wastePercent: "5" },
+      { description: "Hanger wire, one per 4x4", unit: "ea", basis: "AREA_SQFT", factor: "0.0625", roundUp: true },
+      { description: "Hang, tape and finish ⅝″ ceiling board", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+    ],
+  },
+  {
     code: "FLR1",
     name: "Flooring — underlayment, finish floor and base",
     parts: [

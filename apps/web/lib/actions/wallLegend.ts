@@ -14,6 +14,7 @@ import { sameCode } from "@/lib/takeoff/legendMerge";
 import { storedLegendTypes, storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
 import { assemblyFromSight } from "@/lib/takeoff/legendSight";
 import { pageLines } from "@/lib/takeoff/planTextRead";
+import { heightOfLegendType, heightSentence, setHeightFacts } from "@/lib/takeoff/setHeightFacts";
 import { readWallLegendBySight } from "@/lib/takeoff/readWallLegend";
 import { actionFail, isUniqueConstraintError, type ActionResultWith } from "./shared";
 
@@ -68,18 +69,27 @@ function numberIn(value: unknown, label: string, min: number, max: number): numb
   return n;
 }
 
+/** What the library learned about a type's height, for the row's message. */
+export type LegendHeightResult = {
+  heightFt: number | null;
+  confidence: "HIGH" | "MEDIUM" | "LOW" | null;
+  generalNoteOnly: boolean;
+  /** The chain, or why there is none — the same sentence the notes keep. */
+  sentence: string;
+};
+
 export async function addWallTypeFromLegend(
   jobId: string,
   proposalId: string,
   edits: LegendTypeEdits,
-): Promise<ActionResultWith<{ code: string; componentCount: number }>> {
+): Promise<ActionResultWith<{ code: string; componentCount: number; height: LegendHeightResult }>> {
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_ESTIMATING")) return actionFail(NO_ESTIMATING) as ActionResultWith<never>;
   const companyId = context.company.id;
 
   const proposal = await prisma.planLegendProposal.findFirst({
     where: { id: proposalId, plan: { job: { id: jobId, companyId } } },
-    select: { id: true, pageNumber: true, sheetTitle: true, merged: true, status: true },
+    select: { id: true, planId: true, pageNumber: true, sheetTitle: true, merged: true, sightRead: true, status: true },
   });
   if (proposal === null) return actionFail(NO_PROPOSAL) as ActionResultWith<never>;
 
@@ -133,7 +143,21 @@ export async function addWallTypeFromLegend(
     fields.thicknessIn ??
     (fields.studWidthIn === null ? null : fields.studWidthIn + 2 * (fields.layersPerSide ?? 1) * (fields.boardThicknessIn ?? 0));
 
-  const notes = [`Read off ${where} of the plan set. Check against the drawing before pricing.`, ...original.lines]
+  // ── THE HEIGHT, FROM THE SET — the chain and its confidence go in the notes ──
+  //
+  // A legend says where a wall STOPS; the feet are on a section forty pages
+  // away. `setHeightFacts` walks the set for them and `resolveHeight` names
+  // the one it used. Nothing is guessed: a type whose words resolve to no
+  // printed figure gets NO default height and a note saying why, and a
+  // height that rests on a sheet-wide note alone is written LOW so the
+  // estimator checks it before a run is priced at it. A set that cannot be
+  // read leaves the height blank rather than failing the add.
+  const height = await legendHeight(proposal.planId, companyId, proposal.pageNumber, { code, lines: original.lines, sightRead: proposal.sightRead });
+  const notes = [
+    `Read off ${where} of the plan set. Check against the drawing before pricing.`,
+    height.sentence,
+    ...original.lines,
+  ]
     .join("\n")
     .slice(0, NOTES_MAX);
   const sortFrom = await prisma.wallType.count({ where: { companyId } });
@@ -145,6 +169,7 @@ export async function addWallTypeFromLegend(
           code,
           name,
           thicknessIn: thicknessIn === null ? null : thicknessIn.toFixed(2),
+          defaultHeightFt: height.heightFt === null ? null : height.heightFt.toFixed(2),
           sides: 2,
           studSpacingIn: (fields.studSpacingIn ?? 16).toFixed(2),
           sortOrder: sortFrom,
@@ -178,7 +203,40 @@ export async function addWallTypeFromLegend(
   revalidatePath("/wall-types");
   revalidatePath(`/jobs/${jobId}/takeoff/legend`);
   revalidatePath(`/jobs/${jobId}/takeoff`);
-  return { ok: true, value: { code, componentCount: assembly.components.length } };
+  return { ok: true, value: { code, componentCount: assembly.components.length, height } };
+}
+
+/** The type's height from the set, or a blank with its reason; never a throw, because the add must not fail on a sheet that will not read. */
+async function legendHeight(
+  planId: string,
+  companyId: string,
+  legendPage: number,
+  type: { code: string; lines: string[]; sightRead: unknown },
+): Promise<LegendHeightResult> {
+  const sight = (type.sightRead as { types?: { code?: unknown; heightNote?: unknown }[] } | null)?.types ?? [];
+  const own = sight.find((t) => typeof t.code === "string" && sameCode(t.code, type.code));
+  const heightNote = typeof own?.heightNote === "string" ? own.heightNote : null;
+  const legendType = { code: type.code, heightNote, lines: type.lines };
+  let set: Awaited<ReturnType<typeof setHeightFacts>> | null = null;
+  let unread: string | null = null;
+  try {
+    const bytes = await readPlanBytes(planId, companyId);
+    if (!bytes.ok) throw new Error(bytes.error);
+    const pdf = await openPlanPdf(bytes.bytes);
+    try {
+      set = await setHeightFacts(pdf, { legendPage });
+    } finally {
+      await pdf.close();
+    }
+  } catch (err) {
+    unread = err instanceof Error ? err.message : String(err);
+  }
+  // A figure printed on the legend itself needs no other sheet, so the type's
+  // own words are read even when the set would not open; only a "to deck" or
+  // "to ceiling" basis is left waiting on a section, and the note says so.
+  const reading = heightOfLegendType(legendType, set ?? { facts: [], generalNote: null, factSheets: [] });
+  const sentence = unread === null || reading.feet !== null ? heightSentence(reading) : `No height read: ${reading.why} The set could not be read for one (${unread.slice(0, 120)}). Type it on the wall type.`;
+  return { heightFt: reading.feet, confidence: reading.feet === null ? null : reading.confidence, generalNoteOnly: reading.generalNoteOnly, sentence };
 }
 
 const PAGE_IMAGE_MAX = 3_500_000;

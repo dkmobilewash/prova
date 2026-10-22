@@ -6,6 +6,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { ringSelfIntersects } from "@/lib/sheet-geometry";
 import { verticesProblem } from "@/lib/takeoff-plan";
+import { nextItemColor } from "@/lib/takeoff/itemColors";
 import { actionFail, actionOk, ownerRefusal, type ActionResult } from "./shared";
 
 /**
@@ -80,6 +81,59 @@ function ceilingColumns(
   return { ok: true, cols: { ceilingFamily: family, ceilingCode: c.code ? String(c.code).slice(0, 40) : null, ceilingHeightFeet: height, ceilingFrom: from, ceilingGuess: c.guess === true } };
 }
 
+/**
+ * ── THE ITEMS A SAVED ROOM LANDS IN, so its square feet reach the estimate ──
+ *
+ * A measurement reaches an estimate line only through a TAKEOFF ITEM with an
+ * assembly on it (`syncTakeoffItemLines`). Rooms used to save with no item
+ * and sat in "Unassigned" — 1,675 sf of floor and 872 sf of acoustic ceiling
+ * on the panel and nowhere else (the audit of 2026-10-22). So every room row
+ * goes into a "Rooms" item, and a room whose ceiling is known gets a SECOND
+ * row, the same outline, in "Ceiling — ACT" / "Ceiling — GYP" / …, each an
+ * AREA_WITH_PERIMETER item: the area prices tile and board, the perimeter
+ * prices wall angle and base. Two rows because one row belongs to one item,
+ * and a floor and a ceiling are two things an estimator prices.
+ *
+ * Found or created by NAME within the job, so a second sheet's rooms join
+ * the same items rather than making "Rooms (2)". The assembly is left for
+ * the estimator to pick — the library is theirs — except that a ceiling item
+ * takes a starter it can recognise when the company has one (ACT2 / GYPC1),
+ * so the common case prices itself and the uncommon one says it is unpriced.
+ */
+const ROOMS_ITEM = "Rooms";
+const CEILING_ITEM: Record<string, { name: string; starter: string | null }> = {
+  ACT: { name: "Ceiling — ACT", starter: "ACT2" },
+  GYP: { name: "Ceiling — GYP", starter: "GYPC1" },
+  OPEN: { name: "Ceiling — open to structure", starter: null },
+  OTHER: { name: "Ceiling — other", starter: null },
+};
+
+async function itemNamed(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  jobId: string,
+  name: string,
+  starterCode: string | null,
+): Promise<string> {
+  const found = await tx.takeoffItem.findFirst({ where: { jobId, companyId, name }, select: { id: true } });
+  if (found) return found.id;
+  const existing = await tx.takeoffItem.findMany({ where: { jobId }, select: { colorHex: true, sortOrder: true }, orderBy: { sortOrder: "desc" } });
+  const starter = starterCode === null ? null : await tx.wallType.findFirst({ where: { companyId, code: starterCode }, select: { id: true } });
+  const item = await tx.takeoffItem.create({
+    data: {
+      companyId,
+      jobId,
+      name,
+      type: "AREA_WITH_PERIMETER",
+      colorHex: nextItemColor(existing.map((i) => i.colorHex)),
+      sortOrder: (existing[0]?.sortOrder ?? -1) + 1,
+      wallTypeId: starter?.id ?? null,
+    },
+    select: { id: true },
+  });
+  return item.id;
+}
+
 export async function saveRoomMeasurements(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
@@ -103,7 +157,7 @@ export async function saveRoomMeasurements(jobId: string, formData: FormData): P
     return actionFail("The rooms didn't come through. Find them again.");
   }
   if (!Array.isArray(rooms) || rooms.length === 0) return actionFail("No rooms to save.");
-  const rows: Prisma.TakeoffMeasurementCreateManyInput[] = [];
+  const rows: (Prisma.TakeoffMeasurementCreateManyInput & { ceilingItem: string | null })[] = [];
   for (const [i, room] of rooms.entries()) {
     const xs = Array.isArray(room.xs) ? room.xs.map(Number) : [];
     const ys = Array.isArray(room.ys) ? room.ys.map(Number) : [];
@@ -125,10 +179,25 @@ export async function saveRoomMeasurements(jobId: string, formData: FormData): P
       ...ceiling.cols,
       source: "ROOM_FINDER" as const,
       createdByUserId: userId,
+      ceilingItem: ceiling.cols.ceilingFamily !== null && CEILING_ITEM[ceiling.cols.ceilingFamily] ? ceiling.cols.ceilingFamily : null,
     });
   }
   await prisma.$transaction(async (tx) => {
-    await tx.takeoffMeasurement.createMany({ data: rows });
+    const roomsItem = await itemNamed(tx, company.id, jobId, ROOMS_ITEM, null);
+    const ceilingItems = new Map<string, string>();
+    for (const family of new Set(rows.map((r) => r.ceilingItem).filter((f): f is string => f !== null))) {
+      ceilingItems.set(family, await itemNamed(tx, company.id, jobId, CEILING_ITEM[family].name, CEILING_ITEM[family].starter));
+    }
+    const data: Prisma.TakeoffMeasurementCreateManyInput[] = [];
+    for (const { ceilingItem, ...row } of rows) {
+      // The ROOM row carries the tag and goes to "Rooms"; the ceiling columns
+      // ride on the CEILING row only, so the job summary counts each once.
+      data.push({ ...row, itemId: roomsItem, ceilingFamily: null, ceilingCode: null, ceilingHeightFeet: null, ceilingFrom: null, ceilingGuess: false });
+      if (ceilingItem !== null) {
+        data.push({ ...row, itemId: ceilingItems.get(ceilingItem) ?? null, label: `${row.label ?? "Room"} ceiling` });
+      }
+    }
+    await tx.takeoffMeasurement.createMany({ data });
   });
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
