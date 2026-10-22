@@ -69,7 +69,7 @@ import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
 import { loadPlanText, type PlanTextView } from "@/lib/actions/planTextRead";
 import { PlanTextPanel } from "@/components/PlanTextPanel";
 import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
-import { doorsByGroup, feetInches } from "@/lib/takeoff/planTextView";
+import { doorsByGroup, doorText, feetInches, openingsFromDoors } from "@/lib/takeoff/planTextView";
 import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
 import { BLANK_TILE_INK, TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
 import { demotedRuns, demotedSentence, demotedWord, demotes, modelVerdicts, type RunVerdict } from "@/lib/takeoff/demotedRuns";
@@ -2061,10 +2061,22 @@ export function TakeoffPlanViewer({
       live = false;
     };
   }, [jobId, planId, pageNumber, storedWallsByPage]);
-  const planTextDoors = useMemo(
-    () => doorsByGroup(found ?? [], planText?.sheet?.doors?.placed ?? [], feetPerUnit),
-    [found, planText, feetPerUnit],
-  );
+  /**
+   * ── A DOOR IS POSTED ONCE, with the group it sat on ──
+   *
+   * `doorsByGroup` puts each placed door on its nearest group among the
+   * groups STILL LISTED. Once a group is added it leaves the list, and a door
+   * that sat on it would land on the next-nearest group within reach — and
+   * be deducted a second time with that one. Baker's 109 and 112 did exactly
+   * that. So the marks already posted are kept here and left out of the
+   * next assignment; a fresh Find starts the list again.
+   */
+  const [postedDoorMarks, setPostedDoorMarks] = useState<string[]>([]);
+  const planTextDoors = useMemo(() => {
+    const posted = new Set(postedDoorMarks.map((m) => m.trim().toUpperCase()));
+    const placed = (planText?.sheet?.doors?.placed ?? []).filter((d) => !posted.has(d.mark.trim().toUpperCase()));
+    return doorsByGroup(found ?? [], placed, feetPerUnit);
+  }, [found, planText, feetPerUnit, postedDoorMarks]);
 
   useEffect(() => {
     if (seeded.current.has(pageNumber)) return;
@@ -2331,6 +2343,7 @@ export function TakeoffPlanViewer({
     setFound(null);
     setRooms(null);
     setChosen({});
+    setPostedDoorMarks([]);
     setShowingAll(false);
     try {
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -2668,6 +2681,15 @@ export function TakeoffPlanViewer({
     // The height the panel asked for, when the type has none of its own.
     const typedHeight = Number(groupHeight[index] ?? "");
     if (priced && priced.defaultHeightFt == null && typedHeight > 0) body.set("heightFt", String(typedHeight));
+    // ── THE SCHEDULE'S DOORS RIDE ALONG AS THE RUN'S OPENINGS ──
+    // Width and height from the door schedule, placed on this group's runs
+    // by the plan-text read; `boardedArea` deducts them or not by the
+    // company's own rule (`openingThresholdSqFt`). A door with no height in
+    // the schedule is left out and the row says so.
+    for (const opening of openingsFromDoors(planTextDoors.get(index) ?? []).openings) {
+      body.append("openingWidth", String(opening.widthFt));
+      body.append("openingHeight", String(opening.heightFt));
+    }
     // ── THE LABEL CARRIES THE DRAWING'S OWN WORD WHERE THERE IS ONE ──
     //
     // `4⅞" wall` is what the app measured; `W1 wall` is what the drawing calls
@@ -2690,6 +2712,7 @@ export function TakeoffPlanViewer({
     // Only the accepted group leaves the list. The rest stay on screen, because
     // an estimator works through them one at a time and re-running the finder
     // to get back to where they were would be a punishment for accepting one.
+    setPostedDoorMarks((current) => [...current, ...(planTextDoors.get(index) ?? []).map((d) => d.mark)]);
     setFound((current) => (current ?? []).filter((_, i) => i !== index));
   }
 
@@ -3436,8 +3459,12 @@ export function TakeoffPlanViewer({
                           <span className="text-ink-body" data-takeoff="group-doors">
                             {" "}
                             · door{doors.length === 1 ? "" : "s"}{" "}
-                            {doors.map((d) => `${d.mark} ${feetInches(d.widthFt)}`).join(", ")}
+                            {doors.map((d) => doorText(d)).join(", ")}
                             {doors.some((d) => d.widthFrom === "schedule") ? " from the schedule" : ""}
+                            {(() => {
+                              const missing = openingsFromDoors(doors).withoutHeight;
+                              return missing.length === 0 ? "" : ` (no height in the schedule for ${missing.join(", ")}, so not deducted)`;
+                            })()}
                           </span>
                         );
                       })()}
@@ -3583,6 +3610,21 @@ export function TakeoffPlanViewer({
                   {Math.round(found.slice(SHOWN_AT_FIRST).reduce((f, c) => f + c.feet, 0)).toLocaleString()} ft
                 </button>
               )}
+              {/* ── THE SCHEDULE'S DOORS THAT NO RUN ON THIS SHEET CARRIES ──
+                  A door schedule covers the building; this sheet is one floor
+                  plan. A row placed nowhere here is either on another sheet or
+                  a mark the join could not find — either way an estimator
+                  deducting openings wants the list, not a silent shortfall. */}
+              {(() => {
+                const doors = planText?.sheet?.doors ?? null;
+                if (doors === null || doors.unplaced.length === 0) return null;
+                return (
+                  <p className="mt-2 text-xs text-ink-muted" data-takeoff="doors-unplaced">
+                    Scheduled, not found on this sheet: {doors.unplaced.join(", ")} ({doors.unplaced.length} of {doors.rowsTotal} rows
+                    in the door schedule on page {doors.schedulePage}).
+                  </p>
+                );
+              })()}
               {/* ── WHERE THE MARKS RUN OUT, SAID OUT LOUD ──
                   Eighteen distinct marks is not an arbitrary number of groups,
                   and a panel that quietly reuses one is how a reviewer

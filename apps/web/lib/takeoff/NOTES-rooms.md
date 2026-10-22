@@ -831,3 +831,21 @@ Diego picked, and where each landed:
    is a check figure (`roomItems.ts`), reported as square feet of floor.
 6. **Find the walls answered a click before the sheet rendered** — the
    button is disabled on `!pageSize` and its title says so.
+
+## 20. Door openings into the estimate (2026-10-22) — diego/door-openings
+
+Walkthrough finding #12. The second session's reader and join
+(`doorScheduleForPlan`, `doorsOnSheet` → `joinOpeningsToSchedule`) already
+placed scheduled doors on the runs and the viewer showed them; what was
+missing was the height, the hand-off to the posting, and the leftovers.
+`PlacedDoor.heightFt` now rides from the schedule row; `openingsFromDoors`
+turns a group's doors into the `openingWidth`/`openingHeight` fields the
+by-hand form posts, so `boardedArea` applies the company's
+`openingThresholdSqFt` unchanged; `doorText` prints "mark · w × h"; the
+unplaced rows print under the groups. Nothing new deducts anything: the rule
+and the arithmetic are the ones the wall schedule has always used.
+
+Baker (A101, schedule on p26, 18 rows, every door 3'-0" or 6'-0" × 7'-0"):
+see `shots/doors-baker/` — three runs of `takeoff-doors-real.spec.ts`, no
+doors / doors at the default rule / doors with ALL, and the board square feet
+on the estimate from each.

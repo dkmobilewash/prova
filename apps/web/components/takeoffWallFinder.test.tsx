@@ -956,4 +956,21 @@ describe("the caution on a sheet that carries two drawings", () => {
     expect(viewer).toMatch(/data-takeoff="group-height"/);
     expect(viewer).toMatch(/body\.set\("heightFt", String\(typedHeight\)\)/);
   });
+
+  it("POSTS THE SCHEDULE'S DOORS AS THE RUN'S OPENINGS, and lists the rows no run here carries", () => {
+    // The plan-text read places scheduled doors on a group's runs; adding the
+    // group sends each one's width and height as the openings the posting
+    // deducts by the company's rule. A door the schedule gives no height is
+    // left out and named. The unplaced rows are listed under the groups.
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    expect(viewer).toMatch(/openingsFromDoors\(planTextDoors\.get\(index\) \?\? \[\]\)\.openings/);
+    expect(viewer).toMatch(/body\.append\("openingWidth", String\(opening\.widthFt\)\)/);
+    expect(viewer).toMatch(/body\.append\("openingHeight", String\(opening\.heightFt\)\)/);
+    expect(viewer).toMatch(/data-takeoff="doors-unplaced"/);
+    expect(viewer).toMatch(/doorText\(d\)/);
+    // A posted door leaves the assignment, so it cannot land on the next
+    // group and be deducted twice — Baker's 109 and 112 did, before this.
+    expect(viewer).toMatch(/filter\(\(d\) => !posted\.has\(d\.mark\.trim\(\)\.toUpperCase\(\)\)\)/);
+    expect(viewer).toMatch(/setPostedDoorMarks\(\(current\) => \[\.\.\.current, \.\.\.\(planTextDoors\.get\(index\) \?\? \[\]\)\.map\(\(d\) => d\.mark\)\]\)/);
+  });
 });
