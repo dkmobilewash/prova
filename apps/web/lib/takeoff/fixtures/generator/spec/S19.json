@@ -1,0 +1,8 @@
+{
+ "id": "S19",
+ "raster_of": "S08",
+ "dpi": 150,
+ "rotate_deg": 1.2,
+ "noise": 0.012,
+ "notes": "Raster copy of S08 at 150 DPI, rotated 1.2 degrees, speckle noise and blur. Image only."
+}

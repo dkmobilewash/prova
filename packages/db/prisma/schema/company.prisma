@@ -88,6 +88,11 @@ model Company {
   /// in this schema with no source to derive it from.
   isProvaOperator Boolean @default(false)
 
+  /// "Find the rooms" on the takeoff: OFF for every company until the owner
+  /// turns it on under Settings, like the plan-text opt-in. Not an AI feature
+  /// (no model is called), so not in `CompanyAiSettings`.
+  roomFinderOn Boolean @default(false)
+
   /// The unguessable half of this company's inbound intake address:
   /// `docs-<token>@<INTAKE_INBOUND_DOMAIN>`. The token IS the routing — an
   /// email to an address whose token matches no row is dropped — so it is
@@ -144,6 +149,7 @@ model Company {
   dailyFieldReports         DailyFieldReport[]
   jobMedia                  JobMedia[]
   takeoffPlans              TakeoffPlan[]
+  takeoffItems              TakeoffItem[]
   planIngestJobs            PlanIngestJob[]
   bidQuotes                 BidQuote[]
   bidLines                  BidLine[]
@@ -339,6 +345,7 @@ model User {
   takeoffPlansUploaded                 TakeoffPlan[]                 @relation("TakeoffPlanUploadedBy")
   planSheetProposalsAccepted           PlanSheetProposal[]           @relation("PlanSheetProposalAcceptedBy")
   planScheduleProposalsAccepted        PlanScheduleProposal[]        @relation("PlanScheduleProposalAcceptedBy")
+  planLegendProposalsAccepted          PlanLegendProposal[]          @relation("PlanLegendProposalAcceptedBy")
   proposalClauseDraftsAccepted         ProposalClauseDraft[]         @relation("ProposalClauseDraftAcceptedBy")
   bidAddendumReadingsStarted           BidAddendumReading[]
   bidSpecReadingsStarted               BidSpecReading[]

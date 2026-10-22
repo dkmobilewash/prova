@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+#
+# ── THE PRE-REBUILD SMOKE TEST ──
+#
+#     ./scripts/smoke-labeling.sh
+#
+# Builds the commit that is about to be deployed, runs it on its OWN port, and
+# drives the labelling page in a real browser. The rebuild of the labelling
+# server does not happen unless this passes.
+#
+# ── WHY IT EXISTS ──
+#
+# Every defect in the autosave work reached the person labelling before it
+# reached a test: a re-detect wiping the sheet, a restore handler reading a
+# null state, an autosave overwriting the draft it was offering, and a
+# leave-page warning that trapped the tab after a successful save. Four in one
+# afternoon, on a feature whose whole purpose is that a reviewer does not lose
+# work. All four were invisible to 13,000 unit tests and obvious within a
+# minute of driving the page.
+#
+# ── THE TWO THINGS THAT MAKE IT SAFE TO RUN WHILE SOMEBODY IS LABELLING ──
+#
+# 1. ITS OWN BUILD DIRECTORY. `next build` and `next start` share `.next` and
+#    the build wins, so building here would take the labelling server down
+#    mid-sheet. `NEXT_DIST_DIR` sends this build to `.next-smoke`.
+# 2. ITS OWN LABEL FOLDER. This test SAVES, and a save writes a label file.
+#    Pointed at the real folder it would overwrite a reviewed sheet with a
+#    handful of decisions made by a script. The refusals below are not
+#    ceremony: that folder holds work nobody can redo.
+#
+set -e
+set -o pipefail
+
+cd "$(dirname "$0")/.."
+
+PORT="${SMOKE_PORT:-3002}"
+DIST="${NEXT_DIST_DIR:-.next-smoke}"
+PLANS="${TAKEOFF_LOCAL_PLAN_DIR:-$HOME/Claude Folder/takeoff/real-plans}"
+LOCAL_DB="${LOCAL_DATABASE_URL:-postgresql://${PGUSER:-$USER}@127.0.0.1:5432/prova_dev}"
+REAL_LABELS="$HOME/Claude Folder/takeoff/labels"
+SMOKE_LABELS="${SMOKE_LABELS:-$(mktemp -d "${TMPDIR:-/tmp}/smoke-labels-XXXXXX")}"
+# ── THE LOGS DO NOT LIVE IN THE LABEL FOLDER ──
+#
+# The driver walks that folder the way the real one is walked — a directory
+# per plan set — and a `build.log` sitting in it is not a directory. The first
+# full run died on ENOTDIR scanning its own output. A test that pollutes what
+# it inspects is measuring itself.
+SMOKE_LOGS="${SMOKE_LOGS:-$(mktemp -d "${TMPDIR:-/tmp}/smoke-logs-XXXXXX")}"
+
+# ── REFUSALS, BEFORE ANYTHING IS BUILT OR STARTED ──
+if [ "$PORT" = "3001" ]; then
+  echo "REFUSING: :3001 is the original session's server. Use another port." >&2
+  exit 1
+fi
+# ── :3010 IS CHROME'S, AND IT IS THE ONE WITH SOMEBODY ON IT ──
+#
+# The lock guards :3010 now. A smoke run that seized that port would take a
+# labelling round down mid-sheet, which is the whole reason the two servers
+# were separated.
+if [ "$PORT" = "3010" ]; then
+  echo "REFUSING: :3010 is Chrome's labelling server. Use another port." >&2
+  exit 1
+fi
+if [ "$DIST" = ".next" ] || [ "$DIST" = ".next-chrome" ]; then
+  echo "REFUSING: building into $DIST would take a running server down mid-sheet." >&2
+  exit 1
+fi
+case "$SMOKE_LABELS" in
+  "$REAL_LABELS"|"$REAL_LABELS"/*)
+    echo "REFUSING: SMOKE_LABELS is inside the real label folder ($SMOKE_LABELS)." >&2
+    echo "  This test SAVES. That folder holds work nobody can redo." >&2
+    exit 1
+    ;;
+esac
+if [ ! -d "$PLANS" ]; then
+  echo "REFUSING: no plan directory at $PLANS" >&2
+  exit 1
+fi
+mkdir -p "$SMOKE_LABELS"
+
+COMMIT=$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
+echo "commit     : $COMMIT"
+echo "port       : $PORT  (neither :3001 nor Chrome's :3010 is touched)"
+echo "build dir  : $DIST"
+echo "labels to  : $SMOKE_LABELS  (temporary)"
+echo "logs to    : $SMOKE_LOGS"
+echo
+
+# ── NEXT REWRITES TWO FILES ON EVERY BUILD, AND THEY ARE TRACKED ──
+#
+# `next build` rewrites `next-env.d.ts` to reference its distDir and
+# reformats `tsconfig.json`. With a distDir of `.next-smoke` that leaves the
+# checkout pointing at the SMOKE build: the tree goes dirty, the next real
+# rebuild stamps `-dirty` into every label file it writes, and a typecheck
+# resolves route types from a directory that belongs to a throwaway server.
+#
+# Found by checking the tree before a rebuild rather than after, which is the
+# only time it is cheap. They are copied aside and put back however this
+# exits.
+TOUCHED="next-env.d.ts tsconfig.json"
+KEEP="$(mktemp -d "${TMPDIR:-/tmp}/smoke-keep-XXXXXX")"
+for f in $TOUCHED; do cp "$f" "$KEEP/$(basename "$f")"; done
+
+cleanup() {
+  if [ -n "${SERVER_PID:-}" ]; then kill "$SERVER_PID" 2>/dev/null || true; fi
+  for f in $TOUCHED; do
+    if [ -f "$KEEP/$(basename "$f")" ]; then cp "$KEEP/$(basename "$f")" "$f"; fi
+  done
+  rm -rf "$KEEP"
+  # ── AND THE BUILD DIRECTORY GOES ──
+  #
+  # Ignoring it is not enough: several censuses walk the FILESYSTEM and
+  # compare against what the repo reports, so a directory the repo cannot see
+  # is exactly what makes those two disagree. One of them read the compiled
+  # bundles as database writers that skip their counter — a real finding
+  # about generated code nobody wrote.
+  #
+  # It costs a full build each run. Correctness is worth more than a warm
+  # cache, for something whose whole job is to be believed before a deploy.
+  if [ "$DIST" != ".next" ]; then rm -rf "$DIST"; fi
+}
+trap cleanup EXIT
+
+echo "── building ──"
+NEXT_DIST_DIR="$DIST" \
+DATABASE_URL="$LOCAL_DB" DIRECT_URL="$LOCAL_DB" \
+TAKEOFF_LOCAL_PLAN_DIR="$PLANS" TAKEOFF_LABEL_DIR="$SMOKE_LABELS" \
+  npx next build > "$SMOKE_LOGS/build.log" 2>&1 || {
+    echo "BUILD FAILED — see $SMOKE_LABELS/build.log" >&2
+    tail -20 "$SMOKE_LOGS/build.log" >&2
+    exit 1
+  }
+
+echo "── starting on :$PORT ──"
+NEXT_DIST_DIR="$DIST" \
+DATABASE_URL="$LOCAL_DB" DIRECT_URL="$LOCAL_DB" \
+TAKEOFF_LOCAL_PLAN_DIR="$PLANS" TAKEOFF_LABEL_DIR="$SMOKE_LABELS" \
+ALLOW_LOCAL_PLANS=1 HOSTNAME=localhost TAKEOFF_FINDER_VERSION="$COMMIT-smoke" \
+  npx next start -p "$PORT" -H localhost > "$SMOKE_LOGS/server.log" 2>&1 &
+SERVER_PID=$!
+
+for _ in $(seq 1 60); do
+  if curl -sf -o /dev/null "http://localhost:$PORT/sign-in"; then break; fi
+  sleep 2
+done
+if ! curl -sf -o /dev/null "http://localhost:$PORT/sign-in"; then
+  echo "SERVER DID NOT START — see $SMOKE_LABELS/server.log" >&2
+  tail -20 "$SMOKE_LOGS/server.log" >&2
+  exit 1
+fi
+
+echo "── driving the labelling page ──"
+set +e
+SMOKE_BASE="http://localhost:$PORT" SMOKE_LABELS="$SMOKE_LABELS" \
+  node e2e/smoke-labeling.mjs
+STATUS=$?
+set -e
+
+echo
+if [ "$STATUS" -eq 0 ]; then
+  echo "SMOKE PASSED on $COMMIT — safe to rebuild :3001"
+else
+  echo "SMOKE FAILED on $COMMIT — do NOT rebuild :3001" >&2
+  echo "  server log: $SMOKE_LABELS/server.log" >&2
+fi
+exit "$STATUS"

@@ -32,7 +32,17 @@ import type { PlanSheet } from "@/lib/takeoff-plan-view";
  * enclose one of their own. See its header and `wallsNotLettering` for the
  * filtering the wall finder has and this does not.
  *
- * When the numbers say it is fit to use, this file flips back.
+ * ── 2026-10-21: THE NUMBERS SAY IT IS FIT TO USE, BEHIND A SWITCH ──
+ *
+ * `roomsFromWalls.ts` feeds the ring geometry the WALLS that were found (plus
+ * every long pairing and the lines drawn by hand), not every stroke, and
+ * measured a 1.2% median area error on 477 BIM rooms and 4 of Bunkie A100's
+ * 6 within 5% (`lib/takeoff/NOTES-rooms.md`). So the button is back — for a
+ * company whose owner turned it on. The `roomFinder` prop is that switch,
+ * read from `Company.roomFinderOn`, false for everyone until chosen.
+ *
+ * The first describe below is unchanged and still the default: with the
+ * switch off this screen offers no room finder, exactly as before.
  */
 
 const sheet = (over: Partial<PlanSheet> = {}): PlanSheet =>
@@ -69,7 +79,7 @@ afterEach(() => {
   host.remove();
 });
 
-function paint(sheets: PlanSheet[]) {
+function paint(sheets: PlanSheet[], extra: Record<string, unknown> = {}) {
   act(() => {
     root.render(
       createElement(TakeoffPlanViewer, {
@@ -80,13 +90,25 @@ function paint(sheets: PlanSheet[]) {
         // No page here is a scan; these cases are not about the scan reader.
         scannedPages: [],
         scalePrefillByPage: {},
+        ...extra,
       } as never),
     );
   });
   return host;
 }
 
-describe("the room finder is off the toolbar", () => {
+describe("with the company switch on, the room finder waits for a find", () => {
+  it("offers the button beside Find the walls, disabled until walls have been found", () => {
+    const el = paint([sheet()], { roomFinder: true });
+    const rooms = el.querySelector('[data-takeoff="find-rooms"]') as HTMLButtonElement | null;
+    expect(rooms).not.toBeNull();
+    expect(rooms?.disabled).toBe(true);
+    expect(rooms?.title).toContain("Find the walls first");
+    expect(el.querySelector('[data-takeoff="rooms-panel"]')).toBeNull();
+  });
+});
+
+describe("the room finder is off the toolbar (the default: switch off)", () => {
   it("OFFERS NO BUTTON, so nobody can take a wrong number off it", () => {
     const el = paint([sheet()]);
     expect(el.querySelector('[data-takeoff="find-rooms"]')).toBeNull();

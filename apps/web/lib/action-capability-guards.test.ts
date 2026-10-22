@@ -787,6 +787,13 @@ const STRICTER_THAN_ITS_PAGE: Record<
   string,
   { capability: Capability; pageCapability: Capability; hiddenBy: string; reason: string }
 > = {
+  "wallLegend.addWallTypeFromLegend": {
+    capability: "MANAGE_ESTIMATING",
+    pageCapability: "VIEW_JOB_COSTS",
+    hiddenBy: "components/wallLegendReview.test.tsx",
+    reason:
+      "Pressed on /jobs/[id]/takeoff/legend, which withholds VIEW_JOB_COSTS, and writes a WallType and its components — the company library, MANAGE_ESTIMATING, which outlives the job whose legend was read. Same shape as addWallTypesFromSchedule above: WallLegendReview renders the Add button only for `canAdd`, which the page computes as can(context, \"MANAGE_ESTIMATING\").",
+  },
   "wallTypes.addWallTypesFromSchedule": {
     capability: "MANAGE_ESTIMATING",
     pageCapability: "VIEW_JOB_COSTS",
@@ -1951,6 +1958,10 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // walk derives its assertion and executes it as a principal without it,
   // same as the jobs/estimating modules above.
   takeoff: () => import("./actions/takeoff"),
+  // "Find the rooms": the owner's switch (behind /settings) and the save of
+  // a sheet's rooms as areas (behind the takeoff's job-costs gate).
+  roomFinder: () => import("./actions/roomFinder"),
+  takeoffItems: () => import("./actions/takeoffItems"),
   takeoffClassify: () => import("./actions/takeoffClassify"),
   takeoffReadSheet: () => import("./actions/takeoffReadSheet"),
   // Crew & time. Five of the seven actions here are decided per SECTION
@@ -2055,6 +2066,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // which withholds on VIEW_JOB_COSTS. The walk derives each and executes
   // it as a principal without its capability.
   wallTypes: () => import("./actions/wallTypes"),
+  wallLegend: () => import("./actions/wallLegend"),
   // The bid recap. The rates, the cost types and a line's budgeted cost are
   // reachable only from the Estimate tab, which withholds on VIEW_JOB_COSTS;
   // the company defaults only from /settings. Each is executed below as a
@@ -2092,6 +2104,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // the same capability — `VIEW_JOB_COSTS`, which is what that page is hard-gated
   // on and not the `MANAGE_ESTIMATING` a plan set sounds like it should need.
   planSheets: () => import("./actions/planSheets"),
+  planTextRead: () => import("./actions/planTextRead"),
   // Reading a sub's quote, reachable from /bids alone, which withholds on
   // MANAGE_ESTIMATING. `readBidQuoteDocument` asserts the same — and unlike the
   // plan-ingest entry above, this one was right first time, because the

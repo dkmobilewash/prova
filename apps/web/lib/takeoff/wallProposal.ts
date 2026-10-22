@@ -71,6 +71,17 @@ export function storedRunsOf(group: WallGroup): StoredRun[] {
  * resolved to — which the caller has while it still has the sheet, and nothing
  * reading the table ever will.
  */
+/**
+ * The designation the drawing printed beside this group, or null.
+ *
+ * One derivation, so the row written to the database and the match computed
+ * before writing it cannot disagree about what the sheet said — which is the
+ * second-list shape this repo keeps paying for.
+ */
+export function namedCodeOf(group: WallGroup): string | null {
+  return evidenceOf(group).namedCode;
+}
+
 export function evidenceOf(group: WallGroup): {
   source: "TAG" | "REMAINDER" | "GENERAL_NOTE";
   sourceLabel: string | null;
@@ -181,17 +192,26 @@ export type NewProposalRow = {
 export function proposalRowsFor(
   groups: readonly WallGroup[],
   at: { pageId: string; calibrationId: string },
+  /**
+   * Which takeoff item each group proposes into, keyed by its index.
+   *
+   * Optional, and absent on every job that has no items — which is every job
+   * until somebody names a condition. A group with no entry keeps a null and
+   * shows as "Unassigned walls", which is recoverable rather than a guess.
+   */
+  intoItems?: ReadonlyMap<number, string>,
 ): NewProposalRow[] {
   // AN EMPTY DETECTION WRITES NOTHING, and it is a decision rather than a
   // shortcut. A sheet with no walls on it — a schedule, a detail page, a site
   // plan — is a fact about the drawing, and a row recording "none" would be
   // indistinguishable from never having looked.
-  return groups.map((group) => ({
+  return groups.map((group, index) => ({
     pageId: at.pageId,
     calibrationId: at.calibrationId,
     thicknessInches: group.inches,
     ...evidenceOf(group),
     runs: storedRunsOf(group),
+    itemId: intoItems?.get(index) ?? null,
   }));
 }
 
@@ -202,6 +222,8 @@ export type ProposalRow = {
   sourceLabel: string | null;
   /** The designation the evidence names — see the column's own comment. */
   namedCode: string | null;
+  /** The item detection matched, or null for a group nobody has placed. */
+  itemId?: string | null;
   runs: unknown;
 };
 
@@ -263,6 +285,7 @@ export function groupsFromProposals(
         inches: row.thicknessInches,
         runs: candidates,
         feet,
+        itemId: row.itemId ?? null,
         source: { kind: "TAG", tag },
         candidates: wallTypes.filter((type) => sameDesignation(type.code, code)),
       });
@@ -282,6 +305,7 @@ export function groupsFromProposals(
         inches: row.thicknessInches,
         runs: candidates,
         feet,
+        itemId: row.itemId ?? null,
         source: { kind: "GENERAL_NOTE", note },
         candidates: wallTypes.filter((type) => sameDesignation(type.code, code)),
       });
@@ -292,6 +316,7 @@ export function groupsFromProposals(
       inches: row.thicknessInches,
       runs: candidates,
       feet,
+      itemId: row.itemId ?? null,
       source: { kind: "REMAINDER" },
       candidates: typesAtThickness(row.thicknessInches, wallTypes),
     });

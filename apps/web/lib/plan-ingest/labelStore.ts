@@ -1,0 +1,170 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { productionLocalPlansRefusal } from "./localPlanFile";
+import { isAbsolute, join, resolve, sep } from "node:path";
+
+/**
+ * ── WHERE A REVIEWED SHEET'S LABELS GO, AND WHY NOT INTO THE DATABASE ──
+ *
+ * A reviewed sheet is training data: the feature vector of every candidate the
+ * finder produced, with the reviewer's verdict on it. That is the bottleneck
+ * for the whole hybrid plan — synthetic training was measured and lost, so
+ * real labelled sheets are the only way forward.
+ *
+ * It is written to a folder on this machine rather than to the database or to
+ * blob storage, for the same reason the plans themselves are read from one:
+ * **these are a client's issued drawings**. A feature vector is twenty-four
+ * numbers and cannot reconstruct a drawing, but the file names a sheet in a
+ * client's set, and that is enough to keep it off shared storage.
+ *
+ * ── THE GATE, WHICH IS `localPlanFile.ts`'s, FOR ITS REASONS ──
+ *
+ * 1. `TAKEOFF_LABEL_DIR` must be set. Unset — which is every deployment — and
+ *    this refuses before touching anything.
+ * 2. A production build refuses outright whatever the variable says. A server
+ *    that can be told to write to its own filesystem by a value in a request
+ *    is the shape of a file-write bug, and an environment variable is one
+ *    accident away from being set.
+ * 3. The resolved path must sit INSIDE the configured directory, with `..`
+ *    resolved first and the result compared by prefix, so a crafted sheet name
+ *    cannot climb out of it.
+ */
+export const LABEL_DIR_VAR = "TAKEOFF_LABEL_DIR";
+
+export type LabelWriteProblem = { ok: false; error: string };
+export type LabelWritten = { ok: true; path: string };
+
+/** Anything that is not a letter, digit, dash, dot or underscore becomes one
+ *  underscore. Applied to both the set and the sheet, so neither can contain a
+ *  separator and neither can be `..`. */
+function safeName(raw: string): string {
+  const cleaned = raw.trim().replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^\.+/, "");
+  return cleaned === "" ? "unnamed" : cleaned.slice(0, 120);
+}
+
+/** Said once per cold start, not once per save. */
+let saidWhy = false;
+
+/**
+ * Where a label file resolves to, or null when it must not be written.
+ *
+ * Exported for its own test: the refusals are the whole value here, and a path
+ * that is never checked is a path that is wrong on the day it matters.
+ */
+/**
+ * ── WHETHER LABELLING IS ON HERE AT ALL, AND IF NOT, WHY ──
+ *
+ * Staff-only, by machine rather than by role: there is no staff role in this
+ * app, and the one place answer keys are made is a developer's laptop with
+ * the client's drawings on its own disk. So the gate is the local-plans one
+ * (`localPlanFile.ts`), imported rather than restated — two copies of a
+ * security gate is how one of them quietly stops matching the other — plus
+ * the label folder itself. A real deployment fails the opt-in, the loopback
+ * bind and the Vercel test independently, so it refuses whatever else is set.
+ *
+ * This is what the workspace page, the "Answer key" button and the label
+ * routes ask before showing or doing anything (2026-10-22). Before that only
+ * the WRITE was gated: `/takeoff/<id>?key=1` opened the labelling panel for
+ * any customer who could see the job's costs, and the read route answered
+ * "nothing labelled" instead of "not here".
+ *
+ * `next start` always sets NODE_ENV=production, so a flat refusal on
+ * production made the no-recompile labelling server unable to SAVE — found on
+ * 2026-10-20 with a finished sheet sitting in an open tab with nowhere to go.
+ * That is why a production build is asked the four conditions rather than
+ * refused outright.
+ */
+export function labellingRefusal(env: NodeJS.ProcessEnv): string | null {
+  if (env.VERCEL !== undefined) return "VERCEL is set — labelling never runs on Vercel";
+  if (env.NODE_ENV === "production") {
+    const why = productionLocalPlansRefusal(env);
+    if (why !== null) return why;
+  }
+  const dir = env[LABEL_DIR_VAR];
+  if (dir === undefined || dir.trim() === "") return `${LABEL_DIR_VAR} is not set`;
+  // The RAW value: `resolve` would make any relative path absolute, which is
+  // the opposite of the question.
+  if (!isAbsolute(dir.trim())) return `${LABEL_DIR_VAR} is not an absolute path`;
+  return null;
+}
+
+export function labellingAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+  return labellingRefusal(env) === null;
+}
+
+export function labelPath(
+  set: string,
+  sheet: string,
+  env: NodeJS.ProcessEnv,
+): string | null {
+  const why = labellingRefusal(env);
+  if (why !== null) {
+    if (!saidWhy && env.NODE_ENV === "production") {
+      saidWhy = true;
+      // eslint-disable-next-line no-console
+      console.warn(`[local-labels] refusing to write label files: ${why}`);
+    }
+    return null;
+  }
+  const root = resolve((env[LABEL_DIR_VAR] as string).trim());
+  const full = resolve(join(root, safeName(set), `${safeName(sheet)}.json`));
+  // Prefix comparison with the separator appended, so `/labels-other` cannot
+  // pass as being inside `/labels`.
+  //
+  // UNREACHABLE TODAY and kept anyway: `safeName` has already removed every
+  // separator and leading dot, so `full` is always one level inside `root`.
+  // Mutating this line leaves the tests green, which is recorded here rather
+  // than papered over with a contrived case — it guards the day `safeName`
+  // is relaxed, which is exactly when nobody will be looking at this line.
+  if (full !== root && !full.startsWith(root.endsWith(sep) ? root : root + sep)) return null;
+  return full;
+}
+
+/** Writes one sheet's labels, creating the set's folder. */
+/**
+ * Reads a sheet's saved labels, or null when there are none.
+ *
+ * Exists so a save can see what it is about to replace. Camp Bow Wow A101's
+ * 143 verdicts were overwritten by a 15-verdict second pass with no warning,
+ * because nothing on this path ever looked at the file it was writing over.
+ *
+ * Deliberately forgiving: an unreadable or malformed file reads as "nothing
+ * there", because this informs a guard rather than being one. A reviewer
+ * whose save is refused by a parse error has lost the sheet just as surely.
+ */
+export async function readLabels(
+  set: string,
+  sheet: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ verdicts?: unknown[]; rows?: unknown[] } | null> {
+  const path = labelPath(set, sheet, env);
+  if (path === null) return null;
+  try {
+    return JSON.parse(await readFile(path, "utf8")) as { verdicts?: unknown[] };
+  } catch {
+    return null;
+  }
+}
+
+export async function writeLabels(
+  set: string,
+  sheet: string,
+  body: unknown,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<LabelWritten | LabelWriteProblem> {
+  const path = labelPath(set, sheet, env);
+  if (path === null) {
+    return {
+      ok: false,
+      error:
+        `Labels are not being saved: ${LABEL_DIR_VAR} is not set, or this is a ` +
+        `production build. Nothing was written.`,
+    };
+  }
+  try {
+    await mkdir(path.slice(0, path.lastIndexOf(sep)), { recursive: true });
+    await writeFile(path, `${JSON.stringify(body, null, 1)}\n`, "utf8");
+    return { ok: true, path };
+  } catch (cause) {
+    return { ok: false, error: `Could not write ${path}: ${String(cause)}` };
+  }
+}

@@ -1,0 +1,769 @@
+{
+ "id": "S14",
+ "title": "OPEN OFFICE FLOOR",
+ "units": "imperial",
+ "scale_ratio": 96,
+ "scale_text": "1/8\" = 1'-0\"",
+ "scale_text_printed": "1/8\" = 1'-0\"",
+ "page": "ARCH_D",
+ "wall_style": "pairs",
+ "clutter": "hard",
+ "ceiling_height_ft": 10.0,
+ "walls": [
+  {
+   "id": "W1",
+   "a": [
+    0.0,
+    0.0
+   ],
+   "b": [
+    96.0,
+    0.0
+   ],
+   "type": "CMU-8",
+   "thickness_in": 8.0,
+   "exterior": true
+  },
+  {
+   "id": "W2",
+   "a": [
+    96.0,
+    0.0
+   ],
+   "b": [
+    96.0,
+    60.0
+   ],
+   "type": "CMU-8",
+   "thickness_in": 8.0,
+   "exterior": true
+  },
+  {
+   "id": "W3",
+   "a": [
+    96.0,
+    60.0
+   ],
+   "b": [
+    0.0,
+    60.0
+   ],
+   "type": "CMU-8",
+   "thickness_in": 8.0,
+   "exterior": true
+  },
+  {
+   "id": "W4",
+   "a": [
+    0.0,
+    60.0
+   ],
+   "b": [
+    0.0,
+    0.0
+   ],
+   "type": "CMU-8",
+   "thickness_in": 8.0,
+   "exterior": true
+  },
+  {
+   "id": "W5",
+   "a": [
+    0.0,
+    44.0
+   ],
+   "b": [
+    96.0,
+    44.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W6",
+   "a": [
+    10.0,
+    44.0
+   ],
+   "b": [
+    10.0,
+    60.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W7",
+   "a": [
+    20.0,
+    44.0
+   ],
+   "b": [
+    20.0,
+    60.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W8",
+   "a": [
+    28.0,
+    44.0
+   ],
+   "b": [
+    28.0,
+    60.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W9",
+   "a": [
+    36.0,
+    44.0
+   ],
+   "b": [
+    36.0,
+    60.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W10",
+   "a": [
+    54.0,
+    44.0
+   ],
+   "b": [
+    54.0,
+    60.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W11",
+   "a": [
+    76.0,
+    44.0
+   ],
+   "b": [
+    76.0,
+    60.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W12",
+   "a": [
+    86.0,
+    44.0
+   ],
+   "b": [
+    86.0,
+    60.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false
+  },
+  {
+   "id": "W13",
+   "a": [
+    20.0,
+    14.0
+   ],
+   "b": [
+    40.0,
+    14.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false,
+   "height_ft": 4.0
+  },
+  {
+   "id": "W14",
+   "a": [
+    56.0,
+    14.0
+   ],
+   "b": [
+    76.0,
+    14.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false,
+   "height_ft": 4.0
+  },
+  {
+   "id": "W15",
+   "a": [
+    48.0,
+    0.0
+   ],
+   "b": [
+    48.0,
+    10.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false,
+   "height_ft": 4.0
+  },
+  {
+   "id": "W16",
+   "a": [
+    30.0,
+    30.0
+   ],
+   "b": [
+    30.0,
+    44.0
+   ],
+   "type": "INT-2x4",
+   "thickness_in": 4.5,
+   "exterior": false,
+   "height_ft": 4.0
+  }
+ ],
+ "openings": [
+  {
+   "id": "D1",
+   "kind": "door",
+   "subtype": "double",
+   "wall": "W1",
+   "at_ft": 64.0,
+   "width_ft": 6.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D2",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W5",
+   "at_ft": 5.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D3",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W5",
+   "at_ft": 15.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D4",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W5",
+   "at_ft": 24.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D5",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W5",
+   "at_ft": 32.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D6",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W5",
+   "at_ft": 45.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D7",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W5",
+   "at_ft": 65.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D8",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W5",
+   "at_ft": 81.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "D9",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W5",
+   "at_ft": 91.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN1",
+   "kind": "window",
+   "subtype": "fixed",
+   "wall": "W1",
+   "at_ft": 10.0,
+   "width_ft": 6.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN2",
+   "kind": "window",
+   "subtype": "fixed",
+   "wall": "W1",
+   "at_ft": 30.0,
+   "width_ft": 6.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN3",
+   "kind": "window",
+   "subtype": "fixed",
+   "wall": "W1",
+   "at_ft": 80.0,
+   "width_ft": 6.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN4",
+   "kind": "window",
+   "subtype": "fixed",
+   "wall": "W2",
+   "at_ft": 22.0,
+   "width_ft": 6.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN5",
+   "kind": "window",
+   "subtype": "fixed",
+   "wall": "W4",
+   "at_ft": 38.0,
+   "width_ft": 6.0,
+   "side": 1,
+   "hinge": 0
+  }
+ ],
+ "rooms": [
+  {
+   "id": "R101",
+   "label": "OPEN OFFICE 101",
+   "name": "OPEN OFFICE",
+   "number": "101",
+   "type": "open_office",
+   "label_at": [
+    60.0,
+    28.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R102",
+   "label": "MEN 102",
+   "name": "MEN",
+   "number": "102",
+   "type": "restroom",
+   "label_at": [
+    5.0,
+    52.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R103",
+   "label": "WOMEN 103",
+   "name": "WOMEN",
+   "number": "103",
+   "type": "restroom",
+   "label_at": [
+    15.0,
+    52.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R104",
+   "label": "MECH 104",
+   "name": "MECH",
+   "number": "104",
+   "type": "mechanical",
+   "label_at": [
+    24.0,
+    52.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R105",
+   "label": "STORAGE 105",
+   "name": "STORAGE",
+   "number": "105",
+   "type": "storage",
+   "label_at": [
+    32.0,
+    52.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R106",
+   "label": "BREAK 106",
+   "name": "BREAK",
+   "number": "106",
+   "type": "break_room",
+   "label_at": [
+    45.0,
+    52.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R107",
+   "label": "CONFERENCE 107",
+   "name": "CONFERENCE",
+   "number": "107",
+   "type": "conference",
+   "label_at": [
+    65.0,
+    52.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R108",
+   "label": "OFFICE 108",
+   "name": "OFFICE",
+   "number": "108",
+   "type": "office",
+   "label_at": [
+    81.0,
+    52.0
+   ],
+   "show_area": false
+  },
+  {
+   "id": "R109",
+   "label": "OFFICE 109",
+   "name": "OFFICE",
+   "number": "109",
+   "type": "office",
+   "label_at": [
+    91.0,
+    52.0
+   ],
+   "show_area": false
+  }
+ ],
+ "notes": "One large open office with partial-height (4'-0\") stub walls: two free-standing and two attached at one end. Stub walls carve the open-office floor but enclose nothing; their wall area uses their own height.",
+ "scale_bar": false,
+ "grid": {
+  "x": [
+   0,
+   32,
+   64,
+   96
+  ],
+  "y": [
+   0,
+   30,
+   60
+  ]
+ },
+ "views": [],
+ "placement": {
+  "page_size_pt": [
+   2592,
+   1728
+  ],
+  "views": [
+   {
+    "name": "FLOOR PLAN",
+    "origin_pt": [
+     783.0,
+     613.0
+    ],
+    "pt_per_ft": 9.0,
+    "scale_ratio": 96,
+    "box_ft": [
+     -0.3333333333333333,
+     -0.3333333333333333,
+     96.33333333333333,
+     60.333333333333336
+    ]
+   }
+  ],
+  "dims": [
+   {
+    "p1_ft": [
+     -0.333333,
+     -0.3333333333333333
+    ],
+    "p2_ft": [
+     96.333333,
+     -0.3333333333333333
+    ],
+    "text": "96'-8\"",
+    "distance_ft": 96.66666599999999,
+    "line_pt": [
+     [
+      780.000003,
+      577.6
+     ],
+     [
+      1649.999997,
+      577.6
+     ]
+    ],
+    "text_pt": [
+     1215.0,
+     580.1
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.3333333333333333,
+     -0.3333333333333333
+    ],
+    "p2_ft": [
+     96.33333333333333,
+     -0.3333333333333333
+    ],
+    "text": "96'-8\"",
+    "distance_ft": 96.66666666666666,
+    "line_pt": [
+     [
+      780.0,
+      548.8
+     ],
+     [
+      1650.0,
+      548.8
+     ]
+    ],
+    "text_pt": [
+     1215.0,
+     551.3
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.3333333333333333,
+     -0.333333
+    ],
+    "p2_ft": [
+     -0.3333333333333333,
+     44.0
+    ],
+    "text": "44'-4\"",
+    "distance_ft": 44.333333,
+    "line_pt": [
+     [
+      747.6,
+      610.000003
+     ],
+     [
+      747.6,
+      1009.0
+     ]
+    ],
+    "text_pt": [
+     745.1,
+     809.5000015
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.3333333333333333,
+     44.0
+    ],
+    "p2_ft": [
+     -0.3333333333333333,
+     60.333333
+    ],
+    "text": "16'-4\"",
+    "distance_ft": 16.333333000000003,
+    "line_pt": [
+     [
+      747.6,
+      1009.0
+     ],
+     [
+      747.6,
+      1155.999997
+     ]
+    ],
+    "text_pt": [
+     745.1,
+     1082.4999985
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.3333333333333333,
+     -0.3333333333333333
+    ],
+    "p2_ft": [
+     -0.3333333333333333,
+     60.333333333333336
+    ],
+    "text": "60'-8\"",
+    "distance_ft": 60.66666666666667,
+    "line_pt": [
+     [
+      718.8,
+      610.0
+     ],
+     [
+      718.8,
+      1156.0
+     ]
+    ],
+    "text_pt": [
+     716.3,
+     883.0
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.3333333333333333,
+     60.333333333333336
+    ],
+    "p2_ft": [
+     96.33333333333333,
+     60.333333333333336
+    ],
+    "text": "96'-8\"",
+    "distance_ft": 96.66666666666666,
+    "line_pt": [
+     [
+      780.0,
+      1188.4
+     ],
+     [
+      1650.0,
+      1188.4
+     ]
+    ],
+    "text_pt": [
+     1215.0,
+     1190.9
+    ]
+   },
+   {
+    "p1_ft": [
+     96.33333333333333,
+     -0.3333333333333333
+    ],
+    "p2_ft": [
+     96.33333333333333,
+     60.333333333333336
+    ],
+    "text": "60'-8\"",
+    "distance_ft": 60.66666666666667,
+    "line_pt": [
+     [
+      1682.4,
+      610.0
+     ],
+     [
+      1682.4,
+      1156.0
+     ]
+    ],
+    "text_pt": [
+     1679.9,
+     883.0
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.3333333333333333,
+     32.870000000000005
+    ],
+    "p2_ft": [
+     30.0,
+     32.870000000000005
+    ],
+    "text": "30'-4\"",
+    "distance_ft": 30.333333333333332,
+    "line_pt": [
+     [
+      780.0,
+      908.83
+     ],
+     [
+      1053.0,
+      908.83
+     ]
+    ],
+    "text_pt": [
+     916.5,
+     911.33
+    ]
+   },
+   {
+    "p1_ft": [
+     30.0,
+     32.870000000000005
+    ],
+    "p2_ft": [
+     96.33333333333333,
+     32.870000000000005
+    ],
+    "text": "66'-4\"",
+    "distance_ft": 66.33333333333333,
+    "line_pt": [
+     [
+      1053.0,
+      908.83
+     ],
+     [
+      1650.0,
+      908.83
+     ]
+    ],
+    "text_pt": [
+     1351.5,
+     911.33
+    ]
+   }
+  ]
+ }
+}

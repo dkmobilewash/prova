@@ -33,6 +33,7 @@ import {
   optionalNumberFromForm,
   runAction,
   type ActionResult,
+  type ActionResultWith,
 } from "./shared";
 import { optionalDateFromString } from "@/lib/bid-pursuits";
 import { deleteDocument } from "@/lib/blob";
@@ -552,7 +553,22 @@ export async function saveTakeoffCalibration(jobId: string, formData: FormData):
 }
 
 /** Saves one traced shape against the sheet's current scale. */
-export async function saveTakeoffMeasurement(jobId: string, formData: FormData): Promise<ActionResult> {
+/**
+ * ── RETURNS THE NEW MEASUREMENT'S ID, so the workspace can UNDO the save ──
+ *
+ * Widened 2026-10-16 from a bare `actionOk`. The full-screen workspace's undo
+ * stack reverses a save by deleting what it created, and the id is the only
+ * thing it cannot work out for itself — it already has the geometry, because
+ * it drew it.
+ *
+ * `ActionResultWith` rather than a second action: `{ ok: true, value }` still
+ * satisfies every existing caller's `ActionResult`, so nothing that ignores
+ * the value had to change. A caller that WANTS the id types it.
+ */
+export async function saveTakeoffMeasurement(
+  jobId: string,
+  formData: FormData,
+): Promise<ActionResultWith<{ id: string }>> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company, id: userId } = context;
@@ -596,8 +612,27 @@ export async function saveTakeoffMeasurement(jobId: string, formData: FormData):
     return actionFail("That outline crosses itself, so it has no area. Draw it again without the crossing.");
   }
 
-  await prisma.takeoffMeasurement.create({
+  /**
+   * WHICH ITEM THIS BELONGS TO, when the workspace has one selected.
+   *
+   * Scoped to the job rather than trusted: an id arriving in a form is a
+   * claim, and one that is not this job's would attach a measurement to
+   * another company's condition. A blank is legitimate and means Unassigned —
+   * the tools work with nothing selected and the geometry is recoverable.
+   */
+  const itemId = String(formData.get("itemId") ?? "").trim();
+  if (itemId !== "") {
+    const item = await prisma.takeoffItem.findFirst({
+      where: { id: itemId, jobId, companyId: company.id },
+      select: { id: true },
+    });
+    if (!item) return actionFail("That takeoff item is no longer on this job. Reload the page.");
+  }
+
+  const created = await prisma.takeoffMeasurement.create({
+    select: { id: true },
     data: {
+      itemId: itemId === "" ? null : itemId,
       pageId: page.id,
       calibrationId: calibration.id,
       kind,
@@ -610,7 +645,7 @@ export async function saveTakeoffMeasurement(jobId: string, formData: FormData):
   });
 
   revalidatePath(`/jobs/${jobId}/takeoff`);
-  return actionOk;
+  return { ok: true, value: { id: created.id } };
 }
 
 /**

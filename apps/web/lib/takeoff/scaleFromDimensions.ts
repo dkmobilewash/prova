@@ -248,6 +248,13 @@ export type ScaleVerdict =
       /** Why, in words an estimator can act on. FALSE IS A FACT, NOT A FAILURE. */
       reason: string;
       considered: number;
+      /**
+       * The scale the dimensions VOTED for, where the decline came after a
+       * winner was found — too short a line, an engineering scale, a line too
+       * far off. Absent when no scale won at all. `reproductionScale.ts` reads
+       * it to tell a half-size reproduction from a sheet with no scale.
+       */
+      vote?: { scaleName: string; feetPerInch: number; votes: number; agreed: string[]; measured: number };
     };
 
 /**
@@ -660,6 +667,15 @@ export function scaleFromDimensions(
     };
   }
 
+  // The winner, for a decline that comes after one was found. `measured` is
+  // how many labels sat beside a line at all, so a majority can be judged.
+  const vote = {
+    scaleName: winner.name,
+    feetPerInch: (options.scales ?? ARCHITECTURAL_SCALES).find((s) => s.name === winner.name)?.feetPerInch ?? 0,
+    votes: winner.votes,
+    agreed: winner.agreed,
+    measured: new Set(candidates.map((c) => c.labelKey)).size,
+  };
   const best = bestPerScale.get(winner.name);
   if (best === undefined) {
     // REACHABLE, and this is the case the span floor creates. The vote counts
@@ -673,6 +689,7 @@ export function scaleFromDimensions(
     // dimension by hand, and the readback will confirm this scale.
     return {
       ok: false,
+      vote,
       reason:
         `This sheet reads ${winner.name} from ${winner.votes} printed dimension` +
         `${winner.votes === 1 ? "" : "s"}, but every one of them is too short a line to set a scale from — ` +
@@ -685,6 +702,7 @@ export function scaleFromDimensions(
   if (nearEngineeringScale(best.feetPerInch)) {
     return {
       ok: false,
+      vote,
       reason:
         "This sheet reads at an engineering scale, which is a site or civil drawing rather than one to take " +
         "off. Set the scale by hand if that is wrong.",
@@ -707,6 +725,7 @@ export function scaleFromDimensions(
   if (inheritedError > MAX_INHERITED_ERROR) {
     return {
       ok: false,
+      vote,
       reason:
         `The dimensions on this sheet agree on ${winner.name}, but the best line to set it from is ` +
         `${(inheritedError * 100).toFixed(1)}% out — enough to move every quantity. Set the scale by hand ` +

@@ -29,6 +29,8 @@ import type { AiFeatureKey } from "@prova/integrations/src/models";
 export type AiSettings = {
   aiEnabled: boolean;
   disabledFeatures: AiFeature[];
+  /** The opt-in list: a feature in `OPT_IN_FEATURES` is off unless it is here. */
+  optedInFeatures: AiFeature[];
   planSheetsPerMonth: number;
   addendumPagesPerMonth: number;
   specPagesPerMonth: number;
@@ -50,6 +52,7 @@ export type AiSettings = {
 export const AI_SETTINGS_DEFAULTS: AiSettings = {
   aiEnabled: true,
   disabledFeatures: [],
+  optedInFeatures: [],
   planSheetsPerMonth: 1500,
   addendumPagesPerMonth: 600,
   // 1,800 is Diego's figure, and it was 600 for about an hour until the page
@@ -90,6 +93,7 @@ export const AI_FEATURE_LABEL: Record<AiFeatureKey, string> = {
   AI_AGENTS: "Background agents",
   WALL_CLASSIFY: "Checking which runs on a plan are walls",
   SHEET_TEXT: "Reading the writing on a scanned sheet",
+  PLAN_TEXT_READ: "Wall types from the drawings",
 };
 
 /**
@@ -170,6 +174,8 @@ export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
     "Looking at a part of a floor plan and saying which of the runs the wall finder measured are walls, and which are countertops, fixtures, cabinets or reference lines \u2014 the one thing measuring cannot tell you, since a countertop is also two parallel lines. ONE OF TWO FEATURES HERE THAT SEND A PICTURE OF YOUR DRAWING, the other being reading a scanned sheet; every other one sends text the file already contains. It never changes a length or a thickness; those are measured from the drawing's own geometry either way, and you can accept or reject any run yourself. With this off the runs are still found and still measured \u2014 you just sort them by hand.",
   SHEET_TEXT:
     "Reading the room names, dimensions and scale note off a sheet that was SCANNED rather than exported \u2014 a scan is a picture, so there is no writing in the file to read and nothing else in this app can get at it. ONE OF TWO FEATURES HERE THAT SEND A PICTURE OF YOUR DRAWING, the other being checking which runs are walls. It reads the writing only: the lines are found by measuring the picture, in code, and every length and quantity is still worked out from that geometry rather than from anything the model says. With this off, a scanned sheet behaves as it does today \u2014 it is recognised as a scan and set aside, and you take it off by hand.",
+  PLAN_TEXT_READ:
+    "Reads the partition legend off a plan set and proposes each wall type and its parts for your library, with the legend crop beside the reading. New: off until you turn it on. Nothing it proposes is a price.",
 };
 
 /**
@@ -191,6 +197,18 @@ export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
 export const AI_FEATURE_KEYS = Object.keys(AI_FEATURE_LABEL) as AiFeatureKey[];
 
 /**
+ * ── OFF UNTIL CHOSEN ──
+ *
+ * Every other feature is on unless somebody turned it off, so nobody has to
+ * opt in to a feature before it works (`saveCompanyAiSettings` says why). A
+ * feature here is the other way round: off for every company until the owner
+ * ticks it, because it is new and it writes proposals a person is asked to
+ * review. Stored as `CompanyAiSettings.optedInFeatures`; a feature leaves this
+ * set when it has earned the default, and the stored list then does nothing.
+ */
+export const OPT_IN_FEATURES: ReadonlySet<AiFeatureKey> = new Set<AiFeatureKey>(["PLAN_TEXT_READ"]);
+
+/**
  * The refusal for a feature that is switched off, or null when it may run.
  *
  * RETURNS A SENTENCE, NEVER THROWS. Production redacts a thrown Server Action
@@ -207,8 +225,23 @@ export function aiFeatureRefusal(settings: AiSettings, feature: AiFeatureKey): s
   if (!settings.aiEnabled) {
     return "AI is switched off for your company. The account owner can turn it back on under Settings → Assistant.";
   }
+  if (OPT_IN_FEATURES.has(feature) && !(settings.optedInFeatures ?? []).includes(aiFeatureEnum(feature))) {
+    return `${AI_FEATURE_LABEL[feature]} is new and off until your company turns it on. The account owner can switch it on under Settings → Assistant.`;
+  }
   if (settings.disabledFeatures.includes(aiFeatureEnum(feature))) {
     return `${AI_FEATURE_LABEL[feature]} is switched off for your company. The account owner can turn it back on under Settings → Assistant.`;
   }
   return null;
 }
+
+/**
+ * ── PLAN_TEXT_READ IS A PER-COMPANY OPT-IN NOW ──
+ *
+ * This file read it from the environment (`PLAN_TEXT_READ=1`) while the
+ * feature was being measured, because the per-company switch needed a
+ * migration. The migration has landed (`20261021150000_wall_legend_library`):
+ * the key is `AI_FEATURES.PLAN_TEXT_READ`, it is in `OPT_IN_FEATURES` above so
+ * it is OFF for every company until the owner ticks it on Settings →
+ * Assistant, and every caller goes through `aiGate(companyId,
+ * "PLAN_TEXT_READ")`. There is no environment flag any more.
+ */

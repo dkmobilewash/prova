@@ -31,6 +31,7 @@ export {
   AI_FEATURE_KEYS,
   AI_FEATURE_LABEL,
   AI_SETTINGS_DEFAULTS,
+  OPT_IN_FEATURES,
   aiFeatureEnum,
   aiFeatureRefusal,
   type AiSettings,
@@ -43,6 +44,7 @@ export async function aiSettingsFor(companyId: string): Promise<AiSettings> {
     select: {
       aiEnabled: true,
       disabledFeatures: true,
+      optedInFeatures: true,
       planSheetsPerMonth: true,
       addendumPagesPerMonth: true,
       specPagesPerMonth: true,

@@ -47,6 +47,25 @@ export function polylineLength(xs: number[], ys: number[]): number {
   return total;
 }
 
+/**
+ * Distance all the way round a closed ring, in page-width units.
+ *
+ * `polylineLength` plus the closing edge, which is the whole difference and
+ * the reason this is not just the same function: a room's base, wall angle
+ * and edge trim follow every wall including the one back to the start, and
+ * leaving it out under-measures a rectangle by a quarter.
+ *
+ * NO SELF-INTERSECTION CHECK, unlike `ringArea` below. A perimeter is a sum of
+ * edge lengths and stays meaningful on a bowtie — it is the AREA that becomes
+ * plausible-and-wrong when the lobes cancel. Refusing a number here would deny
+ * a figure that is still correct.
+ */
+export function ringPerimeter(xs: number[], ys: number[]): number | null {
+  if (xs.length < 3) return null;
+  const last = xs.length - 1;
+  return polylineLength(xs, ys) + Math.hypot(xs[0] - xs[last], ys[0] - ys[last]);
+}
+
 /** Do segments `a`-`b` and `c`-`d` properly cross? Shared endpoints do not
  * count: consecutive edges of a ring always touch. */
 function segmentsCross(

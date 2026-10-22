@@ -114,6 +114,11 @@ export const HANDLED_MODELS = [
   // from this row, so deleting the plan reaches all of them, and none of
   // them carries a jobId for clean-test-jobs.mjs to count.
   "TakeoffPlan",
+  // A takeoff ITEM — the named condition measurements belong to. Keyed on
+  // jobId and RESTRICT on Job, so deleting the plan does NOT reach it and it
+  // blocks the job delete on its own. The InvoiceCounter shape exactly, which
+  // is why it is here AND in both scripts' del() order.
+  "TakeoffItem",
   "JobAssignment",
   "EquipmentAssignment",
   "EstimateVersion",

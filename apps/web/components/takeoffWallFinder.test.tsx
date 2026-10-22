@@ -450,7 +450,35 @@ describe("the ghost lines over the sheet", () => {
     // the answer is not.
     const viewer = readFileSync(resolve(process.cwd(), "lib/takeoff/findWallsOnSheet.ts"), "utf8");
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code).toMatch(/wallsInTheBuilding\(\s*everywhere\s*,\s*feetPerUnit\s*\)/);
+    // ── THE ORDER REVERSED, AND THAT IS THE FIX RATHER THAN AN ACCIDENT ──
+    //
+    // This asserted `wallsInTheBuilding(everywhere, …)` — grouping FIRST,
+    // filtering after. That order is what made a run count necessary: with
+    // the title block still a candidate when groups are formed, it can be the
+    // biggest group on a sheet with no plan on it, and the only thing
+    // stopping it reaching an estimator was "reject any group under ten
+    // runs". A one-room building is four runs, so S01, S10 and S11 returned
+    // nothing.
+    //
+    // Now the noise comes out first and the building is looked for in what is
+    // left, with no minimum size.
+    //
+    // ── PINNED ON THE ORDER, NOT ON WHICH FILTER COMES LAST ──
+    //
+    // This named `notScaleBar` as the argument and broke the day another
+    // filter was inserted ahead of the building step — `wallsNotIsolatedStubs`,
+    // which drops furniture. The order it exists to protect was intact; only
+    // the name of the last filter had moved, and the next filter would have
+    // moved it again.
+    //
+    // What matters is that the building is found in the FILTERED set rather
+    // than the raw one, so that is what this asks: `everywhere` is the raw
+    // candidates, and it must not be what the building step is handed.
+    expect(code).toMatch(/wallsInTheBuilding\(/);
+    expect(
+      code,
+      "the building is grouped from the RAW candidates, so the title block can win",
+    ).not.toMatch(/wallsInTheBuilding\(\s*everywhere\s*,/);
     // And that what gets grouped is the FILTERED set, not the raw one.
     expect(code).toMatch(/clusterByThickness\(walls\)/);
     expect(code).not.toMatch(/clusterByThickness\(everywhere\)/);
@@ -468,7 +496,16 @@ describe("the ghost lines over the sheet", () => {
     // the answer is not.
     const viewer = readFileSync(resolve(process.cwd(), "lib/takeoff/findWallsOnSheet.ts"), "utf8");
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code).toMatch(/wallsNotLettering\(\s*inBuilding\s*,\s*textBoxes\s*,\s*feetPerUnit\s*\)/);
+    // THE INPUT WIDENED, 2026-10-16: assembled curves are candidates too, and
+    // a curved stroke can be lettering as easily as a straight one — S07's bay
+    // is 202 straight pieces that no filter had ever seen. The assertion that
+    // matters is unchanged and is the one below: what gets grouped is the
+    // FILTERED set. This one only has to see that the lettering filter is
+    // still on the path, with `everywhere` reaching it.
+    expect(code).toMatch(
+      /wallsNotLettering\(\s*\[\s*\.\.\.everywhere\s*,\s*\.\.\.curves\s*\]\s*,\s*textBoxes\s*,\s*feetPerUnit\s*\)/,
+    );
+    expect(code, "curves must not bypass the filters").toMatch(/const curves = curvedWalls\(/);
     expect(code).toMatch(/clusterByThickness\(walls\)/);
     expect(code).not.toMatch(/clusterByThickness\(inBuilding\)/);
     // And that Fit is computed by the tested function rather than inline again.
@@ -513,6 +550,11 @@ describe("the ghost lines over the sheet", () => {
     // height and not against 1, which is the thing that was wrong.
     expect(code).toMatch(/const aspect = pageSize\.heightPt \/ pageSize\.widthPt;/);
     expect(code).toMatch(/wallsNotTheSheetBorder\(\s*notLettering\s*,\s*1\s*,\s*aspect\s*\)/);
+    // AND THE GROUPING IS LAST, which is the property that replaced the count.
+    expect(
+      code.indexOf("wallsNotTheSheetBorder("),
+      "the building must be found AFTER the noise is removed, or the count comes back",
+    ).toBeLessThan(code.indexOf("wallsInTheBuilding("));
     expect(code).toMatch(/clusterByThickness\(walls\)/);
     expect(code).not.toMatch(/clusterByThickness\(notLettering\)/);
   });
@@ -840,5 +882,54 @@ describe("the caution on a sheet that would double-count", () => {
     expect(host.querySelector('[data-testid="takeoff-plan-port"]')).not.toBeNull();
     await act(async () => root.unmount());
     host.remove();
+  });
+});
+
+describe("the caution on a sheet that carries two drawings", () => {
+  /**
+   * ── A CENSUS HERE, AND THE FILE BESIDE IT IS A RENDER TEST, SO READ WHY ──
+   *
+   * The double-count caution above is driven by a PROP, so a render test can
+   * hand it a value and look at the screen. This one cannot be: it is read in
+   * the BROWSER from the page's own text, in the same effect that reads the
+   * sheet number, because it has to work on sets the ingest stage never
+   * reached. There is no prop to drive and no PDF in happy-dom to read.
+   *
+   * So this asserts the WIRING, and the limit is real and is this repo's own
+   * expo-router lesson: a census can tell you the code is there, never that a
+   * framework honours it. What makes the gap narrow rather than open is that
+   * the last link is already proved by the render tests above — they show the
+   * slot renders whatever `cautionToShow` returns. The unproved link is one
+   * effect running in a real browser, and that belongs on the click-list.
+   */
+  const code = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+
+  it("READS THE SHEET'S OWN CAPTIONS, not a model's answer", () => {
+    // `printedScalesOnPage` is what decides a caption IS a scale — it already
+    // refuses metric, AS NOTED and NTS — and reusing it is why this fires on
+    // exactly one of the twenty fixtures.
+    expect(code).toMatch(/multiScaleCaution\(\s*printedScalesOnPage\(items\)/);
+  });
+
+  it("names the scale the measurement actually used, not the first one printed", () => {
+    // Passing the wrong thing here would still produce a caution, and it would
+    // tell an estimator to check against a scale nothing was measured at.
+    expect(code).toMatch(/scalePrefillByPage\[pageNumber\]\?\.scaleName/);
+  });
+
+  it("PUTS IT IN THE ONE SLOT, which is the only way it reaches a screen", () => {
+    // The render tests above prove the slot shows whatever `cautionToShow`
+    // returns, so this is the link between the two.
+    expect(code).toMatch(/cautionToShow\([\s\S]{0,200}scaleCautionByPage\[pageNumber\]/);
+  });
+
+  it("re-reads when the scale changes, or it would caution with a stale scale", () => {
+    // The effect names the scale in use, so the prefill has to be a dependency
+    // of it. Without this the sentence keeps the scale the page first had.
+    const effectDeps = code.match(/\}, \[found, pageNumber, duplicateWallsByPage, pageSize[^\]]*\]\);/);
+    expect(effectDeps, "the sheet-reading effect's dependency array moved").not.toBeNull();
+    expect(effectDeps?.[0]).toContain("scalePrefillByPage");
   });
 });

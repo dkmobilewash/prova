@@ -241,6 +241,24 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: playwright-${{ runner.os }}-
 
+      # ── THE RUNNER NEEDS A UI FONT, OR IT MEASURES A DIFFERENT PAGE ──
+      #
+      # The app's body text is Tailwind's default stack, which begins
+      # `ui-sans-serif, system-ui`. That resolves to the operating system's
+      # own UI face: SF Pro on a Mac, Segoe UI on Windows. A bare Ubuntu
+      # runner has neither, so fontconfig falls back to whatever is installed
+      # — and a wider fallback makes every button wider, which is how the
+      # takeoff workspace's toolbar came to sit 176px above the canvas in CI
+      # against a 170px budget it passes locally.
+      #
+      # Liberation is the standard answer: it is metric-compatible with
+      # Arial, so text occupies the width a Windows or Mac user's browser
+      # gives it rather than a wider substitute. `playwright install
+      # --with-deps` installs what the BROWSER needs to run, which is not the
+      # same question.
+      - name: Install UI fonts, so layout is measured against a real face
+        run: sudo apt-get install -y --no-install-recommends fonts-liberation fonts-dejavu-core
+
       - name: Install Chromium
         run: pnpm --filter @prova/web exec playwright install --with-deps chromium
 
@@ -459,6 +477,24 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: playwright-${{ runner.os }}-
+
+      # ── THE RUNNER NEEDS A UI FONT, OR IT MEASURES A DIFFERENT PAGE ──
+      #
+      # The app's body text is Tailwind's default stack, which begins
+      # `ui-sans-serif, system-ui`. That resolves to the operating system's
+      # own UI face: SF Pro on a Mac, Segoe UI on Windows. A bare Ubuntu
+      # runner has neither, so fontconfig falls back to whatever is installed
+      # — and a wider fallback makes every button wider, which is how the
+      # takeoff workspace's toolbar came to sit 176px above the canvas in CI
+      # against a 170px budget it passes locally.
+      #
+      # Liberation is the standard answer: it is metric-compatible with
+      # Arial, so text occupies the width a Windows or Mac user's browser
+      # gives it rather than a wider substitute. `playwright install
+      # --with-deps` installs what the BROWSER needs to run, which is not the
+      # same question.
+      - name: Install UI fonts, so layout is measured against a real face
+        run: sudo apt-get install -y --no-install-recommends fonts-liberation fonts-dejavu-core
 
       - name: Install Chromium
         run: pnpm --filter @prova/web exec playwright install --with-deps chromium

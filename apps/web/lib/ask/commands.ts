@@ -308,9 +308,24 @@ export const EXCLUSIONS: Exclusion[] = [
   ...messageExclusions,
   ...contactExclusions,
   {
+    action: "takeoffItems.*",
+    reason:
+      "Naming, colouring, reordering and deleting the CONDITIONS an estimator draws with. Every one of these is a decision about a drawing somebody is looking at — which colour tells two wall types apart on this sheet, which order the rail reads in, whether this item is the 6in or the 8in partition. There is no sentence a person could say to Ask that carries the drawing, and an item created blind would be an empty condition in a list nobody asked for. Ask can already REPORT what a takeoff came to, because the quantities reach it as estimate lines; it has no business inventing the categories. assignMeasurementsToItem is the sharpest case: its argument is a list of measurement ids that only exist as shapes on a sheet, so there is nothing for a person to name.",
+  },
+  {
     action: "takeoffClassify.*",
     reason:
       "Says which of the runs on a sheet are walls and which are countertops or reference lines. It takes an IMAGE of the part of the drawing on screen, with the runs drawn and numbered on it, and there is no sentence a person could say that produces one — the whole input is the picture. Ask can describe a takeoff; it cannot look at a sheet.",
+  },
+  {
+    action: "planTextRead.*",
+    reason:
+      "A READ of what plan-text detection already cached for the sheet somebody is looking at — which runs got a wall type and from where, which scheduled doors sit on which wall, what the legend defines. It takes a plan and a page number that only mean something with the drawing open, and it changes nothing. Ask can report a takeoff's quantities once they reach the estimate; it has no sheet to point at.",
+  },
+  {
+    action: "wallLegend.*",
+    reason:
+      "The review screen for a set's wall legend. readLegendBySight takes the legend PAGE and one CROP per type as images rendered in the browser — the same no-sentence-makes-a-picture reason as takeoffClassify and takeoffReadSheet. addWallTypeFromLegend takes the fields a person has just checked against that crop and may have edited; the whole point of the screen is that somebody looked, so a command that adds a type nobody has seen would be the review screen with the review taken out. Ask can describe the library once the types are in it.",
   },
   {
     action: "takeoffReadSheet.*",

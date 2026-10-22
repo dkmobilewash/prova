@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { mergeWalls } from "./mergeWalls";
-import type { WallCandidate } from "./wallVectors";
+import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /**
  * THE SAME WALL, FOUND TWICE, REPORTED ONCE.
@@ -332,6 +332,82 @@ describe("a corridor is not a doorway, and is NARROWER than a double door", () =
     }
   });
 
+  /**
+   * ── THE SAME CORRIDOR, WITH THE DRAWING UNDER IT ──
+   *
+   * Everything above hands `mergeWalls` walls and no strokes, so a rule that
+   * reads the drawing to decide whether a gap is a doorway is not exercised by
+   * any of it. That is not hypothetical: such a rule was built on 2026-10-17,
+   * passed all 42 tests in this file including every corridor case, and took
+   * the bench from 111 missed walls to 271 by bridging corridors 253 times.
+   *
+   * These two scenes are the drawing the rule has to be wrong about. They pass
+   * today because a bounded gap is refused outright and the strokes are
+   * ignored; they exist for the day something reads them.
+   */
+  /** A flattened quarter-circle: the shape a door swing arrives as. */
+  const swing = (
+    cx: number,
+    cy: number,
+    radius: number,
+    fromDeg: number,
+    pieces = 12,
+  ): StrokeSegment[] => {
+    const out: StrokeSegment[] = [];
+    for (let i = 0; i < pieces; i += 1) {
+      const a = ((fromDeg + (i * 90) / pieces) * Math.PI) / 180;
+      const b = ((fromDeg + ((i + 1) * 90) / pieces) * Math.PI) / 180;
+      out.push({
+        x1: cx + radius * Math.cos(a),
+        y1: cy + radius * Math.sin(a),
+        x2: cx + radius * Math.cos(b),
+        y2: cy + radius * Math.sin(b),
+        width: 0.5,
+        curved: true,
+      });
+    }
+    return out;
+  };
+
+  // PROVEN AGAINST THE REVERTED RULE: re-applying it turns the mouth scene
+  // below RED and leaves this one green. So this scene is a legitimate
+  // regression case and is NOT yet known to distinguish a wrong rule from a
+  // right one — the swing sits far enough from the gap that the reverted rule
+  // ignored it anyway. Kept rather than tuned until it bites, because a
+  // fixture adjusted until one particular wrong rule fails it is fitted to
+  // that rule rather than to the hazard.
+  it("REFUSES THE CORRIDOR EVEN WITH A DOOR SWING DRAWN BESIDE IT", () => {
+    // A door in the corridor's south wall, hinged at (62,20) and swinging into
+    // the room below. It is near the corridor gap and has nothing to do with
+    // it — which is exactly the arc a careless rule reads as "a door is drawn
+    // in this gap".
+    const merged = mergeWalls(corridorScene(), 1, undefined, [
+      ...swing(62, 20, 3, 180),
+      ...swing(62, 20, 3, 180).map((one) => ({ ...one, y1: one.y1, y2: one.y2 })),
+    ]);
+    const vertical = merged.filter((m) => Math.abs(m.x2 - m.x1) < 0.01);
+    expect(vertical, "a swing beside the corridor opened it").toHaveLength(2);
+  });
+
+  // THIS IS THE ONE THAT BITES. Re-applying the reverted door-evidence rule
+  // turns it red: 1 failed, 43 passed. It is the scene that makes this whole
+  // block non-vacuous.
+  it("REFUSES A CORRIDOR WITH A DOOR AT ITS MOUTH", () => {
+    // The dangerous case named when the reverted rule was written: a door at
+    // the END of a corridor is hinged at the corridor's own end and swings a
+    // leaf about as wide as the corridor, so a rule asking only "is there an
+    // arc hinged near one end of this gap, about this wide" says yes.
+    //
+    // The corridor gap runs (50,20) to (50,25.58) — 5.58 ft. This door is
+    // hinged at (50,20), the gap's own end, with a 5.5 ft leaf.
+    const merged = mergeWalls(corridorScene(), 1, undefined, swing(50, 20, 5.5, 0));
+    const vertical = merged.filter((m) => Math.abs(m.x2 - m.x1) < 0.01);
+    expect(vertical, "a door at the corridor mouth opened the corridor").toHaveLength(2);
+    for (const run of vertical) {
+      expect(run.lengthFeet, "a run spans the corridor").toBeLessThan(25);
+    }
+  });
+
   it("STILL JOINS A DOORWAY in a wall with no corridor crossing it", () => {
     // The same geometry with the corridor walls taken away is a door, and the
     // whole point of this change is that it joins. Without this the fix would
@@ -443,5 +519,84 @@ describe("a corridor is not a doorway, and is NARROWER than a double door", () =
     const merged = mergeWalls(scene, 4);
     const vertical = merged.filter((m) => Math.abs(m.x2 - m.x1) < 0.01);
     expect(vertical).toHaveLength(2);
+  });
+});
+
+/**
+ * ── TWO PIECES OF ONE WALL MUST AGREE ABOUT ITS LINE, TO WITHIN A QUARTER OF
+ *    ITS THICKNESS ──
+ *
+ * Bridging a gap used to allow a flat inch and a half whatever the wall.
+ * Measured on a held-out library plan by logging every gap decision on the
+ * sheet: 150 gaps bridged, and a 78 ft wall lost 7.68 ft because its pieces
+ * were **1.60 inches** apart against the 1.50 allowed. Seven and a half feet
+ * of wall to a tenth of an inch.
+ *
+ * The same sheet is why it cannot simply be widened. Two other pairs on that
+ * wall sit 3.96 inches apart, and the wall is 8 inches thick — so 3.96 is HALF
+ * A THICKNESS, which is one piece measured on the centreline and the other on
+ * a face. Merging those would put the wall half a thickness off its own line.
+ *
+ * A quarter of the thickness sits between the two with room on both sides, and
+ * being a share rather than a length is what makes it a rule: the same
+ * sentence gives a 4 inch partition an inch and a 12 inch block wall three.
+ */
+describe("how far two pieces may disagree about their shared line", () => {
+  // An 8 inch wall, the thickness the measurements above were taken on.
+  const EIGHT = 8 / 12;
+  const inches = (n: number) => n / 12;
+
+  /** Two pieces of one wall with a 4 ft doorway between them, the second
+   *  offset across the line by `offIn` inches. */
+  const twoPieces = (offIn: number) => [
+    wall(0, 20, 18, 20, EIGHT),
+    wall(22, 20 + inches(offIn), 33, 20 + inches(offIn), EIGHT),
+  ];
+
+  it("BRIDGES AT 1.60 INCHES — the wall the old bound lost", () => {
+    const merged = mergeWalls(twoPieces(1.6), 1);
+    expect(merged, "the two pieces did not join").toHaveLength(1);
+    // Gross: the doorway is part of the wall, so 0 to 33.
+    expect(merged[0].lengthFeet).toBeCloseTo(33, 1);
+  });
+
+  it("REFUSES AT 3.96 INCHES — half a thickness is a different line", () => {
+    expect(mergeWalls(twoPieces(3.96), 1), "a face was merged with a centreline").toHaveLength(2);
+  });
+
+  it("scales with the wall: a thin partition gets a thin tolerance", () => {
+    // 1.60 inches is fine on an 8 inch wall and is half the thickness of a
+    // 3 inch one, so the same offset must be refused there. This is the whole
+    // point of a share rather than a length, and a fixed 1.5 inch bound could
+    // not express it.
+    const thin = [
+      wall(0, 20, 18, 20, inches(3)),
+      wall(22, 20 + inches(1.6), 33, 20 + inches(1.6), inches(3)),
+    ];
+    expect(mergeWalls(thin, 1), "a 3 inch partition took an 8 inch wall's slack").toHaveLength(2);
+  });
+
+  it("NEVER TIGHTENS: a thin wall keeps the old inch and a half", () => {
+    // A quarter of a 4 inch partition is one inch, which would be TIGHTER than
+    // the flat bound this replaced — so the old bound stays as a floor and
+    // this change can only ever bridge more, never less. Without the floor
+    // this 1.2 inch offset would be refused and a wall that merged before
+    // would stop merging, which is a regression wearing an improvement's
+    // clothes.
+    const partition = [
+      wall(0, 20, 18, 20, inches(4)),
+      wall(22, 20 + inches(1.2), 33, 20 + inches(1.2), inches(4)),
+    ];
+    expect(mergeWalls(partition, 1), "a thin wall lost tolerance it used to have").toHaveLength(1);
+  });
+
+  it("still bridges a thick wall whose pieces are further apart in inches", () => {
+    // A 16 inch block wall gets 4 inches of slack, so an offset that a
+    // partition must refuse is nothing on this.
+    const thick = [
+      wall(0, 20, 18, 20, inches(16)),
+      wall(22, 20 + inches(3.2), 33, 20 + inches(3.2), inches(16)),
+    ];
+    expect(mergeWalls(thick, 1)).toHaveLength(1);
   });
 });

@@ -45,6 +45,12 @@ const ROOTS = [join(WEB, "lib"), join(WEB, "app")];
  * to SURVIVE the response or to STOP — `after()` is wrong for the latter.
  */
 const DELIBERATE: Record<string, string> = {
+  // Surfaced by merging three branches: a census from one met a file from
+  // another. Not server code at all — a standalone script with `void main()`
+  // as its entry point, which is the correct idiom for one, and nothing in
+  // the app imports it. `after()` has no meaning outside a request.
+  "lib/takeoff/realplan/zzHalfSize.ts":
+    "a CLI script's own `void main()` entry point — it is run by hand with node, has no request to outlive, and is imported by nothing",
   "app/api/ask/route.ts":
     "a stream cancel() handler ending an abandoned generator — it is stopping work, not asking for it to outlive the response, and after() would be the opposite of what it means",
 };

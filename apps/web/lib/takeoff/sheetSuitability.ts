@@ -161,7 +161,104 @@ export function duplicateWallsCaution(suitability: SheetSuitability, sheetNumber
 }
 
 /**
- * Which of the two cautions a sheet shows — and there is only ever one slot.
+ * ── MORE THAN ONE DRAWING, AT MORE THAN ONE SCALE, ON ONE SHEET ──
+ *
+ * A plan with an enlarged detail beside it prints TWO scales and both are
+ * correct. Every length this app reports comes from ONE of them, because a
+ * sheet has one calibration — so a quantity taken off the other drawing is out
+ * by the ratio between them, silently, and a 1/4in plan beside a 1/2in detail
+ * puts that at DOUBLE.
+ *
+ * Nothing here protects against that today and one thing accidentally does:
+ * `wallsInTheBuilding` keeps only the biggest connected group, so on S15 the
+ * enlarged bath is dropped because it is SMALLER, not because anybody noticed
+ * it was drawn at a different scale. That is the right answer for the wrong
+ * reason, and it inverts the moment the detail is the bigger drawing.
+ *
+ * So this says it rather than fixing it, for the reason this whole file says
+ * things rather than fixing them: the measurement is not wrong — it is right
+ * about one drawing — and an estimator who is TOLD which one can act on it in
+ * a second, where an app that silently measured the other cannot be caught at
+ * all.
+ *
+ * `printedScalesOnPage` is what finds them, and it already refuses metric
+ * (`1:100`), `AS NOTED` and `NTS`, so this fires on a genuine second
+ * ARCHITECTURAL scale and nothing else. Measured across the 20-sheet fixture
+ * set: exactly one sheet — S15, the one that has two — and no other sheet
+ * produces more than one.
+ */
+export function multiScaleCaution(printedScales: readonly string[], usedScaleName: string | null): string {
+  const distinct = [...new Set(printedScales.map((one) => one.trim()).filter(Boolean))];
+  if (distinct.length < 2) return "";
+  const used = usedScaleName?.trim() ?? "";
+  // THE ONE IN USE NAMED SEPARATELY, and the others listed — an estimator
+  // checks "which drawing did this come off" against a caption on the sheet,
+  // so the sentence has to carry the caption's own words.
+  const others = distinct.filter((one) => one !== used);
+  const list = distinct.join(" and ");
+  if (used === "" || others.length === distinct.length) {
+    return (
+      `This sheet prints more than one scale — ${list}. Every length here was measured at a single ` +
+      `scale, so anything taken off the other drawing is out by the ratio between them. Check which ` +
+      `drawing a quantity came from before you bid it.`
+    );
+  }
+  return (
+    `This sheet prints more than one scale — ${list}. Every length here was measured at ${used}, which ` +
+    `is the one captioned under the main drawing. A quantity read off ${others.join(" or ")} would be out ` +
+    `by the ratio between them. Check which drawing a quantity came from before you bid it.`
+  );
+}
+
+/**
+ * The sentence for a sheet that was SPLIT into views and measured per view.
+ *
+ * It replaces `multiScaleCaution`'s warning with a RESULT. That one says "this
+ * sheet prints two scales, check which drawing a quantity came from", which is
+ * the best that can be said before the sheet has been split. Once each view has
+ * been measured at its own scale there is something better to say: here is the
+ * other drawing, here is its scale, here is what it measures, and it is NOT in
+ * your total.
+ *
+ * Why the footage rather than just the name: "there is an enlarged bath plan"
+ * invites a person to go and check whether it was counted. "28 ft, not added"
+ * answers that, and an estimator who disagrees can act on the number.
+ *
+ * Not added, because an ENLARGED view is the same construction drawn larger —
+ * see `primaryView`. Summing them would bid that bathroom twice.
+ */
+export function viewsMeasuredCaution(
+  primary: { name: string; scaleName: string | null } | null,
+  others: readonly { name: string; scaleName: string | null; lengthFeet: number }[],
+  excluded: readonly { name: string; reason: string }[] = [],
+): string {
+  // AN EXCLUDED DRAWING IS ENOUGH ON ITS OWN to need a sentence. A sheet with
+  // one plan and one NTS detail has no second MEASURED view, and the detail
+  // still has to be named — which is the case the first version silently
+  // skipped, because it returned early on `others.length === 0`.
+  if (primary === null || (others.length === 0 && excluded.length === 0)) return "";
+  const measured = others
+    .map((one) => `${one.name} at ${one.scaleName ?? "an unstated scale"} measures ${Math.round(one.lengthFeet)} ft`)
+    .join("; ");
+  const left = excluded.map((one) => `${one.name} — ${one.reason}`).join("; ");
+
+  const head =
+    `This sheet carries more than one drawing. The quantities here are ${primary.name} at ` +
+    `${primary.scaleName ?? "an unstated scale"}.`;
+  const alsoMeasured =
+    measured === ""
+      ? ""
+      : ` Also on the sheet: ${measured} — measured at its own scale and NOT included, because an ` +
+        `enlarged view is usually the same construction drawn larger. Add it only if it is a different ` +
+        `part of the building.`;
+  // NAMED EVEN THOUGH THERE IS NO FIGURE, which is the point of it: a drawing
+  // with no scale has nothing to report EXCEPT that it was left out.
+  const alsoLeft = left === "" ? "" : ` Left out of the quantities: ${left}.`;
+  return head + alsoMeasured + alsoLeft;
+}
+
+/**
+ * Which of the three cautions a sheet shows — and there is only ever one slot.
  *
  * ── THE SERVER'S ANSWER WINS, AND THAT IS THE WHOLE RULE ──
  *
@@ -186,6 +283,192 @@ export function duplicateWallsCaution(suitability: SheetSuitability, sheetNumber
  * which it was looking at. A named function makes the precedence a thing a test
  * can hold still, and leaves the markup with one name in it.
  */
-export function cautionToShow(fromServer: string | undefined, fromDrawing: string | undefined): string {
-  return (fromServer ?? "").trim() || (fromDrawing ?? "").trim() || "";
+export function cautionToShow(
+  fromServer: string | undefined,
+  fromDrawing: string | undefined,
+  fromScales: string | undefined = undefined,
+): string {
+  // ── AND THE SCALE ONE OUTRANKS BOTH, WHICH IS A DIFFERENT RULE FROM THE ONE
+  // ABOVE AND NEEDS ITS OWN REASON ──
+  //
+  // The two readings above answer the same question (what kind of sheet is
+  // this), so the better-sourced one wins and the other is redundant. The scale
+  // caution answers a DIFFERENT question, and it is the more expensive one to
+  // get wrong: a duplicate-walls caution is about a correct quantity in the
+  // wrong place, which an estimator can still recognise on screen, while a
+  // wrong scale makes every number here meaningless by a factor of two and
+  // looks exactly like a right one.
+  //
+  // It is first rather than additional because the slot is still one slot —
+  // stacking sentences above a drawing is how both of them stop being read.
+  return (fromScales ?? "").trim() || (fromServer ?? "").trim() || (fromDrawing ?? "").trim() || "";
+}
+
+
+/**
+ * ── WHICH SHEETS TO TAKE OFF FIRST, AND WHY STROKE COUNT IS THE WRONG ANSWER ──
+ *
+ * `sheetSuitability` answers "is this sheet a double count" — a yes or no about
+ * ONE sheet. This answers a different question: given a set, which sheets would
+ * an estimator actually price?
+ *
+ * It exists because the real-plan report was ranking by STROKE COUNT, and on
+ * the ELEVEN03 set that picked four LIFE SAFETY plans and dropped every
+ * architectural floor plan. It is not a close call either: a life-safety plan
+ * is DENSER than the plan it is drawn over, because it carries the egress
+ * paths, the occupancy tags and the rated-wall hatching ON TOP of the same
+ * walls. Ranking by how much is drawn therefore prefers exactly the sheets that
+ * repeat the plan, which is the opposite of what is wanted.
+ *
+ * ── THE RULES ARE ABOUT WORDS, NOT ABOUT ONE SET'S SHEET NUMBERS ──
+ *
+ * A drafter writes what a drawing IS across the bottom of it. That caption is
+ * the most reliable thing on the sheet — more reliable than the number, which
+ * is an office convention, and more than anything a model infers. So the rules
+ * read the title, and the discipline letter only breaks ties.
+ *
+ * Scores are coarse on purpose. The point is to separate "price this" from
+ * "do not price this", not to put two floor plans in a defensible order.
+ */
+export type SheetRank = {
+  /** Higher is more worth taking off. Negative means do not. */
+  score: number;
+  /** The rule that decided it, in the estimator's own words. */
+  why: string;
+};
+
+/**
+ * Titles that name the drawing an estimator prices.
+ *
+ * `PARTITION` is here with the floor plans rather than above them: a partition
+ * plan IS the wall drawing, and some offices call it that instead.
+ */
+const WORTH_PRICING: ReadonlyArray<readonly [RegExp, number, string]> = [
+  [/\bDIMENSION(AL|ED)?\b[^.]*\bFLOOR\s+PLAN\b/i, 100, "a dimensioned floor plan"],
+  [/\bFLOOR\s+PLAN\b/i, 90, "a floor plan"],
+  [/\bPARTITION\b[^.]*\bPLAN\b/i, 90, "a partition plan"],
+  [/\bENLARGED\b[^.]*\bPLAN\b/i, 70, "an enlarged plan"],
+  [/\bPLAN\b/i, 40, "a plan of some kind"],
+];
+
+/**
+ * Titles that say the drawing is ABOUT something else, even where it shows the
+ * same walls.
+ *
+ * Every one of these was seen on a real set being preferred over the plan it is
+ * drawn over, or is the same shape as one that was. The weights are large
+ * enough to sink a sheet that also says PLAN, because all of these do: "LIFE
+ * SAFETY & OCCUPANCY PLAN", "UNIT NUMBERING PLAN", "REFLECTED CEILING PLAN".
+ * That is the whole difficulty — the word PLAN does not separate them.
+ */
+const NOT_WHAT_YOU_PRICE: ReadonlyArray<readonly [RegExp, number, string]> = [
+  [/\bLIFE\s+SAFETY\b/i, -200, "a life-safety plan"],
+  [/\bOCCUPANC(Y|IES)\b/i, -200, "an occupancy plan"],
+  [/\bEGRESS\b/i, -200, "an egress plan"],
+  [/\bUNIT\s+NUMBERING\b/i, -200, "a unit-numbering plan"],
+  [/\bKEY\s+PLAN\b/i, -150, "a key plan"],
+  [/\bFURNITURE\b/i, -200, "a furniture plan"],
+  [/\bEQUIPMENT\b/i, -150, "an equipment plan"],
+  [/\bREFLECTED\s+CEILING\b/i, -200, "a reflected ceiling plan"],
+  [/\bRCP\b/i, -200, "a reflected ceiling plan"],
+  [/\bFINISH(ES)?\b/i, -150, "a finish plan"],
+  // Found on HPL p3, which carries four views of the same floor. LIGHTING
+  // was in neither list, so it scored 40 as "a plan of some kind" and won
+  // the sheet on footage — a decorative lighting layout measured as
+  // partitions. POWER rode along: the `ELECTRICAL` entry below catches a
+  // sheet TITLED electrical, but a view captioned POWER PLAN on an
+  // architectural sheet says nothing about electricity.
+  [/\bLIGHTING\b/i, -200, "a lighting plan"],
+  [/\bPOWER\b/i, -200, "a power plan"],
+  // ── THE ABBREVIATIONS, WHICH A VIEW CAPTION USES AND A SHEET TITLE DOES NOT ──
+  //
+  // A title block has room for "INTERIOR ELEVATIONS". The caption under a
+  // drawing does not, and a drafter writes `RR 105 - EAST ELEV.` — which is
+  // what all eight of Camp Bow Wow A120's interior elevations are captioned,
+  // and why not one of them was recognised as a view. The sheet was then one
+  // view, captioned as a plan, and the plan's region grew to cover the whole
+  // page including the elevations and the accessories schedule.
+  //
+  // `\bELEV\b` cannot match ELEVATOR — there is no word boundary before the
+  // R — so an elevator lobby plan is still a plan.
+  [/\bDETAIL(S)?\b/i, -150, "a details sheet"],
+  [/\bDET\.?\b/i, -150, "a detail"],
+  [/\bSECTION(S)?\b/i, -200, "a sections sheet"],
+  [/\bSECT\.?\b/i, -200, "a section"],
+  [/\bELEVATION(S)?\b/i, -200, "an elevations sheet"],
+  [/\bELEV\.?\b/i, -200, "an elevation"],
+  // A SCHEDULE AND A DIAGRAM ARE NOT DRAWINGS YOU MEASURE, and both appear as
+  // captioned views on a mixed sheet: A120 carries a TOILET ACCESSORIES
+  // SCHEDULE, which is a ruled table of text. Demoted for sheet ranking too,
+  // which is right — a door schedule sheet is not the sheet to price.
+  [/\bSCHEDULE(S)?\b/i, -200, "a schedule"],
+  [/\bSCHED\.?\b/i, -200, "a schedule"],
+  [/\bDIAGRAM(S)?\b/i, -200, "a diagram"],
+  [/\bSITE\b/i, -200, "a site plan"],
+  [/\bROOF\b/i, -200, "a roof plan"],
+];
+
+/** The architectural discipline, which is where partitions are drawn. */
+const ARCHITECTURAL = /^A[-\s.]?\d/i;
+
+export function takeoffRank(
+  sheetNumber: string | null | undefined,
+  title: string | null | undefined,
+): SheetRank {
+  const number = (sheetNumber ?? "").trim();
+  const name = (title ?? "").trim();
+
+  // ── A DEMOTION WINS OVER A PROMOTION, BECAUSE ALL OF THEM SAY "PLAN" ──
+  //
+  // "LIFE SAFETY & OCCUPANCY PLAN LEVEL 3" matches both lists. Taking the
+  // worst match rather than the best is what stops a sheet arguing its way up
+  // on a word it shares with the drawing it is covering.
+  let worst: readonly [RegExp, number, string] | null = null;
+  for (const rule of NOT_WHAT_YOU_PRICE) {
+    if (rule[0].test(name) && (worst === null || rule[1] < worst[1])) worst = rule;
+  }
+
+  let best: readonly [RegExp, number, string] | null = null;
+  for (const rule of WORTH_PRICING) {
+    if (rule[0].test(name) && (best === null || rule[1] > best[1])) best = rule;
+  }
+
+  // The discipline letter BREAKS TIES and never decides. An office that numbers
+  // its ceiling plans in the A series is common; one that writes FLOOR PLAN on
+  // an elevation is not.
+  const discipline = ARCHITECTURAL.test(number) ? 5 : 0;
+
+  // And the duplicate judgement this file already makes, folded in: a sheet
+  // that repeats the architectural plan under its own work is not the one to
+  // price, whatever its title says.
+  const repeats = sheetSuitability(number, name, null);
+
+  if (worst !== null) {
+    return { score: worst[1] + discipline, why: worst[2] };
+  }
+  if (repeats.likelyDuplicate) {
+    return { score: -100 + discipline, why: repeats.kind };
+  }
+  if (best !== null) {
+    return { score: best[1] + discipline, why: best[2] };
+  }
+  // No opinion. Below every plan and above everything named as something else,
+  // because a title nobody recognises is a weaker signal than a title that
+  // names itself as a section.
+  return { score: discipline, why: "nothing in the title says what it is" };
+}
+
+/**
+ * The sheets of a set, best first.
+ *
+ * Ties keep the input order, which is page order — so a set that numbers its
+ * plans in sequence reads in sequence.
+ */
+export function rankSheetsForTakeoff<T extends { number: string | null; title: string | null }>(
+  sheets: readonly T[],
+): { sheet: T; rank: SheetRank }[] {
+  return sheets
+    .map((sheet, at) => ({ sheet, rank: takeoffRank(sheet.number, sheet.title), at }))
+    .sort((a, b) => b.rank.score - a.rank.score || a.at - b.at)
+    .map(({ sheet, rank }) => ({ sheet, rank }));
 }

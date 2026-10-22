@@ -426,3 +426,34 @@ describe("a sheet that is a reduced print", () => {
     expect(prefill.reducedPrintCaution).toBeUndefined();
   });
 });
+
+describe("a reproduction read from its dimensions", () => {
+  it("offers the dimensions' scale as unconfirmed, with the caution composed from the two names the row holds", () => {
+    // Topeka's shape, had it qualified: the title block prints 1/16", the
+    // dimensions vote 1/32", the line is the 36in sheet's width at 32 ft/in.
+    const byPage = scalePrefillsFromReadings(
+      [
+        row({
+          scaleName: '1/32" = 1\'-0"',
+          source: "DIMENSIONS_REPRODUCTION",
+          x1: 0,
+          y1: 0.333,
+          x2: 1,
+          y2: 0.333,
+          declaredDistanceFeet: "1152.0000",
+          declaredText: '1/16" = 1\'-0"',
+          agreedText: "20' - 0\"\n12' - 6\"",
+        }),
+      ],
+      { 1: 2592 },
+    );
+    const prefill = byPage[1]!;
+    expect(prefill.scaleName).toBe('1/32" = 1\'-0"');
+    expect(prefill.unconfirmed).toBe(true);
+    expect(prefill.declaredFeet).toBe(1152);
+    expect(prefill.reducedPrintCaution).toContain("printed at half size; scale taken from its dimensions");
+    expect(prefill.reducedPrintCaution).toContain('1/16" = 1\'-0"');
+    expect(prefill.reducedPrintCaution).toContain('1/32" = 1\'-0"');
+    expect(prefill.agreed).toEqual(["20' - 0\"", "12' - 6\""]);
+  });
+});

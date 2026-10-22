@@ -1177,7 +1177,26 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
               <Link href={`/jobs/${job.id}/takeoff`} className="text-link hover:text-link-hover">
                 Measure off a plan
               </Link>{" "}
-              — set the scale on a sheet and trace what you&rsquo;re taking off.
+              — set the scale on a sheet and trace what you&rsquo;re taking off. Or{" "}
+              {/* A REAL LINK to the full-screen workspace, so Cmd-click and
+                  right-click open it in a tab of its own. An estimator
+                  comparing a bid against a drawing wants both on screen, which
+                  a `window.open` or a `router.push` on a button cannot give
+                  them.
+
+                  KEPT THROUGH THE MERGE DELIBERATELY. The incoming rewrite of
+                  this section dropped it, and `e2e/specs/takeoff-workspace.spec.ts`
+                  clicks `open-takeoff-workspace` — so taking either side whole
+                  would have been wrong: theirs loses a tested route, mine loses
+                  the new line-item list. */}
+              <Link
+                href={`/takeoff/${job.id}`}
+                className="text-link hover:text-link-hover"
+                data-estimate="open-takeoff-workspace"
+              >
+                open the takeoff workspace
+              </Link>{" "}
+              — the plan full screen, with the sheet list and quantities beside it.
             </p>
             </div>
           </section>

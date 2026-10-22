@@ -1,0 +1,146 @@
+{
+  "id": "S01",
+  "file": "plan.pdf",
+  "page": 1,
+  "kind": "vector",
+  "units": "imperial",
+  "scale_text": "1/4\" = 1'-0\"",
+  "scale_ratio": 48,
+  "sheet_type": "floor_plan",
+  "ceiling_height_ft": 9.0,
+  "totals": {
+    "wall_lf_gross": 80.0,
+    "wall_lf_net": 68.0,
+    "wall_lf_exterior_gross": 80.0,
+    "wall_lf_interior_gross": 0.0,
+    "wall_sf_exterior_net": 612.0,
+    "wall_sf_interior_net": 0.0,
+    "gross_building_area_sf": 407.49,
+    "room_count": 1,
+    "door_count": 1,
+    "window_count": 2
+  },
+  "walls": [
+    {
+      "id": "W1",
+      "start_ft": [
+        0.0,
+        0.0
+      ],
+      "end_ft": [
+        24.0,
+        0.0
+      ],
+      "length_ft": 24.0,
+      "net_length_ft": 21.0,
+      "thickness_in": 6.5,
+      "type": "EXT-2x6",
+      "exterior": true,
+      "height_ft": 9.0,
+      "wall_sf_net": 189.0
+    },
+    {
+      "id": "W2",
+      "start_ft": [
+        24.0,
+        0.0
+      ],
+      "end_ft": [
+        24.0,
+        16.0
+      ],
+      "length_ft": 16.0,
+      "net_length_ft": 12.0,
+      "thickness_in": 6.5,
+      "type": "EXT-2x6",
+      "exterior": true,
+      "height_ft": 9.0,
+      "wall_sf_net": 108.0
+    },
+    {
+      "id": "W3",
+      "start_ft": [
+        24.0,
+        16.0
+      ],
+      "end_ft": [
+        0.0,
+        16.0
+      ],
+      "length_ft": 24.0,
+      "net_length_ft": 19.0,
+      "thickness_in": 8.0,
+      "type": "CMU-8",
+      "exterior": true,
+      "height_ft": 9.0,
+      "wall_sf_net": 171.0
+    },
+    {
+      "id": "W4",
+      "start_ft": [
+        0.0,
+        16.0
+      ],
+      "end_ft": [
+        0.0,
+        0.0
+      ],
+      "length_ft": 16.0,
+      "net_length_ft": 16.0,
+      "thickness_in": 6.5,
+      "type": "EXT-2x6",
+      "exterior": true,
+      "height_ft": 9.0,
+      "wall_sf_net": 144.0
+    }
+  ],
+  "openings": [
+    {
+      "id": "D1",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W1",
+      "width_ft": 3.0,
+      "center_ft": [
+        6.0,
+        0.0
+      ]
+    },
+    {
+      "id": "WN1",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W2",
+      "width_ft": 4.0,
+      "center_ft": [
+        24.0,
+        8.0
+      ]
+    },
+    {
+      "id": "WN2",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W3",
+      "width_ft": 5.0,
+      "center_ft": [
+        12.0,
+        16.0
+      ]
+    }
+  ],
+  "rooms": [
+    {
+      "id": "R101",
+      "label": "OFFICE 101",
+      "type": "office",
+      "area_sf": 361.16,
+      "perimeter_lf": 77.71,
+      "centroid_ft": [
+        12.0,
+        7.97
+      ]
+    }
+  ],
+  "notes": "Baseline: one rectangular room, two wall types (2x6 and an 8\" CMU north wall), one door, two windows."
+}

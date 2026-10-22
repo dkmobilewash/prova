@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { skipDir, skipPath } from "./censusSkipDirs";
 
 /**
  * No hours figure reaches a screen without going through
@@ -50,7 +51,6 @@ import { describe, expect, it } from "vitest";
 
 const WEB_ROOT = resolve(__dirname, "..");
 const REPO_ROOT = resolve(WEB_ROOT, "../..");
-const SKIP_DIRS = new Set(["node_modules", ".next", ".turbo", "dist", "coverage"]);
 
 /** The one module every rendered hours figure must go through. */
 const FORMATTER_MODULE = "lib/render-hours.ts";
@@ -180,7 +180,7 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) {
-      if (!SKIP_DIRS.has(entry)) sourceFiles(full, out);
+      if (!skipDir(entry)) sourceFiles(full, out);
     } else if (/\.tsx?$/.test(entry) && !/\.(test|dbtest)\.tsx?$/.test(entry)) {
       out.push(full);
     }
@@ -199,7 +199,7 @@ function sourceFilesByGit(): string[] {
   return out
     .split("\n")
     .filter((path) => /\.tsx?$/.test(path) && !/\.(test|dbtest)\.tsx?$/.test(path))
-    .filter((path) => ![...SKIP_DIRS].some((dir) => path.includes(`/${dir}/`)));
+    .filter((path) => !skipPath(path));
 }
 
 /**

@@ -839,7 +839,24 @@ describe("the destructive-form census", () => {
    * no exception at all. The map stays because the next reported gap wants
    * a named, argued line here rather than a silent allowance.
    */
-  const CALLBACK_EXCEPTIONS: Record<string, string> = {};
+  const CALLBACK_EXCEPTIONS: Record<string, string> = {
+    /* UNDO, 2026-10-16, and it is the one place a confirm would INVERT this
+       rule rather than serve it.
+       The removal here is the inverse of a measurement the same person drew
+       seconds earlier in this same tab. The stack is per-tab, it is cleared on
+       reload, and it cannot reach anything older than the session — see
+       `lib/takeoff/undoStack.ts`, which argues the per-tab choice.
+       A confirm exists so that an unintended action cannot destroy something.
+       Undo IS the recovery from an unintended action, so a confirm in front of
+       ⌘Z asks somebody to confirm the un-doing of their own mistake, and makes
+       the cheapest safety net in the product cost two clicks.
+       What this census is really asking for is present by another route: the
+       control is labelled, its title names what it will reverse, a failed undo
+       leaves the stack untouched so it can be retried, and the result is
+       reported in a toast either way. */
+    "components/TakeoffWorkspace.tsx":
+      "undo — reverses this tab's own session; a confirm on ⌘Z inverts the rule",
+  };
 
   it("keeps a confirm in every component that calls a removal from a callback", () => {
     const offenders = tsxFiles(appDir)

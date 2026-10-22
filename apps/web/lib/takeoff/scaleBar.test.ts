@@ -186,7 +186,24 @@ describe("the call site, because no test here can open a PDF", () => {
     // Calling it and discarding the answer is the same defect wearing a call.
     // `walls` is what `clusterByThickness` is handed, so this pins the filter's
     // output to that name rather than merely to an expression somewhere.
-    expect(viewer).toMatch(/const walls = wallsNotTheScaleBar\(/);
+    // ── THE CHAIN, NOT ONE SPELLING OF IT ──
+    //
+    // This asserted `wallsInTheBuilding(notScaleBar,` literally, and broke the
+    // day a stage was inserted between the two — `wallsNotIsolatedStubs`,
+    // which drops furniture. Nothing about the scale bar had changed: its
+    // result still carried on down the chain, which is the whole of what this
+    // file cares about.
+    //
+    // A census that pins the next function's NAME is pinning the pipeline's
+    // shape, which is not its business and which every later filter will break
+    // again. So it pins the thing that actually matters: the filter's output
+    // is CONSUMED by name, by something, rather than computed and dropped.
+    expect(viewer).toMatch(/const notScaleBar = wallsNotTheScaleBar\(/);
+    const consumed = viewer.match(/\bnotScaleBar\b/g) ?? [];
+    expect(
+      consumed.length,
+      "notScaleBar is computed and never read — the filter runs and is discarded",
+    ).toBeGreaterThan(1);
     expect(viewer).toContain("clusterByThickness(walls)");
   });
 

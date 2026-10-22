@@ -977,6 +977,122 @@ function clipToView(prims: Prim[], view: View): Prim[] {
   return out;
 }
 
+/**
+ * A sheet of the two things that look most like curved wall and are not:
+ * hatched fill, and a stair.
+ *
+ * ── READ THIS BEFORE TRUSTING IT: IT DOES NOT CATCH THE DEFECT IT WAS WRITTEN
+ *    FOR ──
+ *
+ * It was added after joining curved pieces across openings put 19 phantom runs
+ * — 176 ft — onto a real forming plan, on hatched bands and a stair break
+ * line. The sheet reproduces that drawing's SHAPE, and it was then checked the
+ * only way worth checking: the bench was run with the fix removed. **The
+ * zero-wall bar passed both times.** Whatever makes the real sheet chain into
+ * walls is not reproduced here — most likely the strokes, at 1/8 inch, are
+ * finer than anything this generator emits.
+ *
+ * So this sheet is honest extra content for the zero-wall bar and NOT a
+ * regression test for that bug. The regression test is
+ * `curvedWalls.test.ts`'s hatch-band case, which is pinned by mutation: 6.4 ft
+ * with the rule, 16.3 ft without.
+ *
+ * It is written down rather than quietly deleted because the next person to
+ * look for cover against curved phantoms will find this sheet and reasonably
+ * assume it provides some. Making it reproduce the defect means matching the
+ * real sheet's stroke lengths and spacing against a drawing nobody here can
+ * commit, and that work has not been done.
+ *
+ * ── WHY THIS SHEET EXISTS ──
+ *
+ * The bench already drew a stair and already drew CMU hatch, and neither
+ * caught the defect that prompted it: joining curved pieces across openings
+ * put 19 phantom runs — 176 ft — onto a real forming plan whose hatched bands
+ * and stair break line chained into things long enough to pair as walls. Every
+ * bar on this bench stayed exactly where it was.
+ *
+ * The shape that matters is not "hatching" in general. It is hatch drawn so
+ * the strokes' ENDS line up into a band that DRIFTS, with a second band a
+ * wall's width away and an opening-sized hole in both — which is what a
+ * poché'd slab edge with blocking in it looks like. That is three conditions,
+ * and the bench's 45-degree CMU fill satisfies none of them.
+ *
+ * Nothing here is a wall, so anything found is a phantom and the zero-wall bar
+ * is the assertion. The sheet is named as a plan on purpose: `sheetSuitability`
+ * cautions about elevations, ceiling plans, framing and schedules, and a
+ * cautioned sheet is excluded from that bar, which would make this sheet
+ * decorative.
+ */
+function stairAndHatchSheet(): Sheet {
+  const view: View = {
+    name: "STAIR 1 AND SLAB EDGE",
+    origin: PLAN_ORIGIN,
+    ptPerFt: 9,
+    scaleName: SCALE_18,
+    box: [-2, -2, 70, 40],
+    wallsAreScope: false,
+  };
+  const b = new Builder(view);
+  const o = { w: 0.3, role: "hatch" as Role, layer: "A-FLOR-PATT" };
+
+  // ── Poche bands: short strokes whose ends form a drifting line ──
+  //
+  // Two bands a 6" wall apart, each in two runs with a 3 ft hole between —
+  // the geometry `curvedWalls.test.ts` pins at unit scale, drawn here at 1/8".
+  for (const band of [0, 0.5]) {
+    for (const startX of [10, 19]) {
+      let x = startX;
+      let y = 20 + band;
+      for (let i = 0; i < 22; i += 1) {
+        const dy = (i * 0.01) / 2;
+        b.line(b.P({ x, y }), b.P({ x: x + 0.35, y: y + dy }), o);
+        x += 0.35;
+        y += dy;
+      }
+    }
+  }
+
+  // ── Blocking symbols, evenly spaced: the I-shapes that read as studs ──
+  for (let i = 0; i < 9; i += 1) {
+    const x = 11 + i * 3;
+    b.line(b.P({ x, y: 26 }), b.P({ x, y: 27.5 }), o);
+    b.line(b.P({ x: x - 0.4, y: 26 }), b.P({ x: x + 0.4, y: 26 }), o);
+    b.line(b.P({ x: x - 0.4, y: 27.5 }), b.P({ x: x + 0.4, y: 27.5 }), o);
+  }
+
+  // ── A stair: treads, stringers, and the diagonal break line ──
+  const so = { w: 0.25, role: "stair" as Role, layer: "A-FLOR-STRS" };
+  const sx = 40;
+  const sy = 8;
+  for (let i = 0; i < 14; i += 1) {
+    const y = sy + (i * 11) / 12;
+    b.line(b.P({ x: sx, y }), b.P({ x: sx + 10, y }), so);
+  }
+  b.line(b.P({ x: sx, y: sy }), b.P({ x: sx + 10, y: sy + 13 }), so);
+  for (const off of [0.1875, 10 - 0.1875]) {
+    b.line(b.P({ x: sx + off, y: sy - 1 }), b.P({ x: sx + off, y: sy + 14 }), so);
+  }
+  b.text(b.P({ x: sx + 1, y: sy + 15 }), "UP", 7, { role: "text", layer: "A-ANNO-TEXT" });
+
+  viewTitle(b, b.P({ x: 8, y: 4 }), "STAIR 1 AND SLAB EDGE", SCALE_18);
+  titleBlock(b, "A-131", "STAIR AND SHAFT PLAN", SCALE_18);
+  return {
+    id: "A-131",
+    title: "STAIR AND SHAFT PLAN",
+    widthPt: ARCH_D.w,
+    heightPt: ARCH_D.h,
+    prims: b.prims,
+    views: [view],
+    printedScale: SCALE_18,
+    traps: [
+      "poche bands whose stroke ends drift into a line, 6in apart, with a 3 ft hole",
+      "blocking symbols evenly spaced along the band",
+      "stair treads 11in apart with a diagonal break line across them",
+    ],
+    expectWalls: false,
+  };
+}
+
 function partitionLegend(): Sheet {
   const b = new Builder();
   const ptPerFt = 216; // 3" = 1'-0"
@@ -1267,6 +1383,7 @@ export function bidSet(): Sheet[] {
     elevationSheet(),
     enlargedSheet(),
     partitionLegend(),
+    stairAndHatchSheet(),
     scheduleSheet(),
     framingSheet(),
     mechanicalSheet(),
@@ -1274,6 +1391,6 @@ export function bidSet(): Sheet[] {
   ];
 }
 
-export const sheetBuilders = { coverSheet, planSheetL1, floorPlanSheet, rcpSheet, elevationSheet, enlargedSheet, partitionLegend, scheduleSheet, framingSheet, mechanicalSheet };
+export const sheetBuilders = { coverSheet, planSheetL1, floorPlanSheet, rcpSheet, elevationSheet, enlargedSheet, partitionLegend, stairAndHatchSheet, scheduleSheet, framingSheet, mechanicalSheet };
 export { Builder, drawWalls, dim, grid, columns, rooms, titleBlock, planDims, typeTags, viewTitle, planView };
 export const SCALES = { SCALE_18, SCALE_14, SCALE_12, SCALE_3 };

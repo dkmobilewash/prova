@@ -1,0 +1,249 @@
+{
+ "id": "S01",
+ "title": "STUDIO OFFICE",
+ "units": "imperial",
+ "scale_ratio": 48,
+ "scale_text": "1/4\" = 1'-0\"",
+ "scale_text_printed": "1/4\" = 1'-0\"",
+ "page": "ANSI_B",
+ "wall_style": "pairs",
+ "clutter": "easy",
+ "ceiling_height_ft": 9.0,
+ "walls": [
+  {
+   "id": "W1",
+   "a": [
+    0.0,
+    0.0
+   ],
+   "b": [
+    24.0,
+    0.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W2",
+   "a": [
+    24.0,
+    0.0
+   ],
+   "b": [
+    24.0,
+    16.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  },
+  {
+   "id": "W3",
+   "a": [
+    24.0,
+    16.0
+   ],
+   "b": [
+    0.0,
+    16.0
+   ],
+   "type": "CMU-8",
+   "thickness_in": 8.0,
+   "exterior": true
+  },
+  {
+   "id": "W4",
+   "a": [
+    0.0,
+    16.0
+   ],
+   "b": [
+    0.0,
+    0.0
+   ],
+   "type": "EXT-2x6",
+   "thickness_in": 6.5,
+   "exterior": true
+  }
+ ],
+ "openings": [
+  {
+   "id": "D1",
+   "kind": "door",
+   "subtype": "single_swing",
+   "wall": "W1",
+   "at_ft": 6.0,
+   "width_ft": 3.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN1",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W2",
+   "at_ft": 8.0,
+   "width_ft": 4.0,
+   "side": 1,
+   "hinge": 0
+  },
+  {
+   "id": "WN2",
+   "kind": "window",
+   "subtype": "sliding",
+   "wall": "W3",
+   "at_ft": 12.0,
+   "width_ft": 5.0,
+   "side": 1,
+   "hinge": 0
+  }
+ ],
+ "rooms": [
+  {
+   "id": "R101",
+   "label": "OFFICE 101",
+   "name": "OFFICE",
+   "number": "101",
+   "type": "office",
+   "label_at": [
+    12.0,
+    8.0
+   ],
+   "show_area": true
+  }
+ ],
+ "notes": "Baseline: one rectangular room, two wall types (2x6 and an 8\" CMU north wall), one door, two windows.",
+ "scale_bar": false,
+ "grid": null,
+ "views": [],
+ "placement": {
+  "page_size_pt": [
+   1224,
+   792
+  ],
+  "views": [
+   {
+    "name": "FLOOR PLAN",
+    "origin_pt": [
+     315.0,
+     270.4375
+    ],
+    "pt_per_ft": 18.0,
+    "scale_ratio": 48,
+    "box_ft": [
+     -0.2708333333333333,
+     -0.2708333333333333,
+     24.270833333333332,
+     16.333333333333332
+    ]
+   }
+  ],
+  "dims": [
+   {
+    "p1_ft": [
+     -0.270833,
+     -0.2708333333333333
+    ],
+    "p2_ft": [
+     24.270833,
+     -0.2708333333333333
+    ],
+    "text": "24'-6 1/2\"",
+    "distance_ft": 24.541666,
+    "line_pt": [
+     [
+      310.125006,
+      233.1625
+     ],
+     [
+      751.874994,
+      233.1625
+     ]
+    ],
+    "text_pt": [
+     531.0,
+     235.6625
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     -0.2708333333333333
+    ],
+    "p2_ft": [
+     24.270833333333332,
+     -0.2708333333333333
+    ],
+    "text": "24'-6 1/2\"",
+    "distance_ft": 24.541666666666664,
+    "line_pt": [
+     [
+      310.125,
+      204.3625
+     ],
+     [
+      751.875,
+      204.3625
+     ]
+    ],
+    "text_pt": [
+     531.0,
+     206.8625
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     -0.270833
+    ],
+    "p2_ft": [
+     -0.2708333333333333,
+     16.333333
+    ],
+    "text": "16'-7 1/4\"",
+    "distance_ft": 16.604166,
+    "line_pt": [
+     [
+      277.725,
+      265.562506
+     ],
+     [
+      277.725,
+      564.437494
+     ]
+    ],
+    "text_pt": [
+     275.225,
+     415.0
+    ]
+   },
+   {
+    "p1_ft": [
+     -0.2708333333333333,
+     -0.2708333333333333
+    ],
+    "p2_ft": [
+     -0.2708333333333333,
+     16.333333333333332
+    ],
+    "text": "16'-7 1/4\"",
+    "distance_ft": 16.604166666666664,
+    "line_pt": [
+     [
+      248.925,
+      265.5625
+     ],
+     [
+      248.925,
+      564.4375
+     ]
+    ],
+    "text_pt": [
+     246.425,
+     415.0
+    ]
+   }
+  ]
+ }
+}

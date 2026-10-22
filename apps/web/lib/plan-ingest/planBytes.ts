@@ -1,5 +1,6 @@
 import { prisma } from "@prova/db";
 import { documentUrlProblem } from "@/lib/document-uploads";
+import { isLocalPlanUrl, readLocalPlan } from "@/lib/plan-ingest/localPlanFile";
 
 /**
  * THE PLAN SET'S BYTES, fetched server-side and proved to belong to the caller's
@@ -28,6 +29,17 @@ export async function readPlanBytes(planId: string, companyId: string): Promise<
     select: { fileUrl: true, jobId: true },
   });
   if (!plan) return { ok: false, error: "That plan set is no longer on file, so nothing was read." };
+
+  // ── A PLAN HELD ON THIS MACHINE, FOR CONFIDENTIAL DRAWINGS ──
+  //
+  // Checked BEFORE the blob guard and never instead of it: a `local:` URL is
+  // a different scheme that the blob path never sees, and everything else
+  // still goes through `documentUrlProblem` exactly as before. See
+  // `localPlanFile.ts` for the gate and why it refuses in production.
+  if (isLocalPlanUrl(plan.fileUrl)) {
+    const local = await readLocalPlan(plan.fileUrl, process.env);
+    return local.ok ? { ok: true, bytes: local.bytes } : { ok: false, error: local.error };
+  }
 
   const problem = documentUrlProblem(plan.fileUrl, "plan-takeoff", plan.jobId, process.env);
   if (problem) return { ok: false, error: problem };

@@ -2,16 +2,25 @@ import {
   type WallCandidate,
   type WallCluster,
   type StrokeSegment,
+  type WallFinderOptions,
   clusterByThickness,
   wallsInTheBuilding,
   wallsNotLettering,
   wallsNotTheSheetBorder,
 } from "./wallVectors";
+import { gridBubbles, linesIntoBubbles } from "./gridBubbles";
+import { joinAtCorners } from "./joinCorners";
 import { wallsFromBothEngines } from "./wallRuns";
 import { templateFromSheets, withoutTemplate } from "./sheetTemplate";
 import { wallTypeTags, tagByRun } from "./wallTags";
 import { defaultWallTypeFromNotes } from "./wallNotes";
+import { planTextTagByRun, type PlanTextInput } from "./planTextTags";
 import { scaleBarLabels, wallsNotTheScaleBar } from "./scaleBar";
+import { wallsNotDuplicateCoverage } from "./duplicateCoverage";
+import { curvedWalls } from "./curvedWalls";
+import { wallsNotIsolatedStubs } from "./isolatedStubs";
+import { wallsActuallyDrawn } from "./drawnCoverage";
+import { DEFAULTS } from "./wallVectors";
 import { wallGroups, type WallGroup } from "./wallGroups";
 import { withoutNonWallLayers, type LayerDrop } from "./layerNames";
 import type { MatchableWallType } from "./wallTypeMatch";
@@ -94,6 +103,27 @@ export type FindWallsInput = {
   /** The company's wall types. Used three ways — see below. */
   wallTypes: readonly MatchableWallType[];
   /**
+   * Told about every candidate pairing with its feature vector, and optionally
+   * asked to score one — see `WallFinderOptions`. Extraction and the trained
+   * classifier both arrive through here; with neither set nothing changes.
+   */
+  onCandidate?: WallFinderOptions["onCandidate"];
+  decide?: WallFinderOptions["decide"];
+  /** Removes a wall the rules chose, and nothing else — see `WallFinderOptions.veto`. */
+  veto?: WallFinderOptions["veto"];
+  /**
+   * Called with each stage's name and how long it took, when a caller wants
+   * to know. Optional and unset everywhere in the product.
+   *
+   * ── IT EXISTS BECAUSE GUESSING WAS COSTING MORE THAN MEASURING ──
+   *
+   * `AUDIT.md` recorded this function at 102 seconds on a real sheet and said
+   * the first thing to do was profile it, in as many words: "Everything below
+   * is speculation until that exists." A hook is how the profile names a
+   * stage without this file importing a timer or a logger.
+   */
+  onStage?: (stage: string, ms: number) => void;
+  /**
    * Other sheets of the same set, each already in ITS OWN page-width units, for
    * the template pass. Null when the caller could not read them, which is not
    * an error: the geometric filters still run and the sheet gets exactly what
@@ -104,6 +134,12 @@ export type FindWallsInput = {
    * sheets a position appears on.
    */
   sampledSheets: readonly (readonly StrokeSegment[])[] | null;
+  /**
+   * The set's legend vocabulary, handed in only when `PLAN_TEXT_READ` is on.
+   * Absent, the regroup block below is exactly what it was; see
+   * `planTextTags.ts` for what it does when present.
+   */
+  planText?: PlanTextInput;
 };
 
 /**
@@ -117,6 +153,17 @@ export type FindWallsInput = {
 export type FoundOnSheet = {
   /** In page-width units, after the template pass. */
   inUnits: StrokeSegment[];
+  /** Segments removed for being column-grid lines running into a bubble.
+   *  Reported rather than silent: a sheet whose grid was mistaken for walls
+   *  and a sheet with no grid both drop zero, and only this tells them apart. */
+  gridDropped: number;
+  /** Runs refused because nothing is drawn along them — see `drawnCoverage.ts`. */
+  hatchDropped: number;
+  /** Candidates removed for claiming footage another candidate already
+   *  claimed. Reported for the same reason as `gridDropped`: a sheet whose
+   *  dimension strings were sold as walls and a sheet with none both drop
+   *  zero, and only this tells them apart. */
+  duplicateDropped: number;
   everywhere: WallCandidate[];
   inBuilding: WallCandidate[];
   notLettering: WallCandidate[];
@@ -206,6 +253,15 @@ export function fromBaseline(item: SheetTextItem): SheetTextItem {
 export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   const { pageSize, feetPerUnit, wallTypes } = input;
 
+  // Reports nothing and costs one comparison per stage when nobody is asking.
+  let stageStart = Date.now();
+  const stage = (name: string) => {
+    if (!input.onStage) return;
+    const now = Date.now();
+    input.onStage(name, now - stageStart);
+    stageStart = now;
+  };
+
   // THE SHIFT, ONCE — see `fromBaseline`, which is a named function precisely
   // so this can be tested rather than trusted.
   const textItems = input.textItems.map(fromBaseline);
@@ -236,6 +292,7 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   // series test requires, and both arms returned the same number: on inputs
   // that simple the geometric filters already cope. P16 therefore asserts only
   // what it can see — the line never reaches the pairer — and says so.
+  stage("layers");
   const onWallLayers = withoutNonWallLayers(input.segments);
   const allInUnits = onWallLayers.kept.map(inPageWidthUnits(pageSize.widthPt));
 
@@ -265,6 +322,43 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
     }
   }
 
+  // ── THE COLUMN GRID, REMOVED BEFORE THE PAIRER EVER SEES IT ──
+  //
+  // A grid line is two things at once: a line a wall-thickness from a real
+  // wall face, and the one thing on a floor plan that ENDS IN A BUBBLE.
+  // `gridBubbles.ts` was written for this — measured against a 60-page key,
+  // where 1,849 ft came back in a 12.4in band matching no assembly, and the
+  // offender was a 115 ft line running past the building at both ends — and
+  // then nothing ever called it.
+  //
+  // It belongs HERE, on raw segments, rather than after pairing: a grid line
+  // that has already been paired with a real wall face has corrupted that
+  // wall's thickness, and no later filter can tell which of the two faces was
+  // the wrong one.
+  //
+  // A bubble is a PAPER size (3/8in to 5/8in) because it has to hold a
+  // readable character at any drawing scale. These coordinates are page-WIDTH
+  // units, so one paper inch is 72 points over the sheet's own width.
+  const unitsPerPaperInch = 72 / pageSize.widthPt;
+  //
+  // ── AND ONLY THE LINES THAT ACTUALLY TOUCH A BUBBLE ──
+  //
+  // `gridLineSegments` was tried here first and it is too strong for this
+  // position: it extends from a bubble to every COLLINEAR segment, and
+  // architects draw column grids ON WALL CENTRELINES, so a wall sharing a
+  // grid's line goes with it. Measured on the bench — missed walls went from
+  // 115 to 263, the holdout total from -2.3% to -6.4%, and one whole wall
+  // type on A-101__revit read -100%: every D1 wall gone.
+  //
+  // `linesIntoBubbles` is the seed set alone — a segment with an END inside a
+  // bubble. That is the property a grid line has and a wall does not, and it
+  // cannot take a wall that merely lies along the same line.
+  const bubbles = gridBubbles(inUnits, unitsPerPaperInch);
+  stage("grid");
+  const gridIndices = linesIntoBubbles(inUnits, bubbles);
+  const gridDropped = gridIndices.size;
+  if (gridDropped > 0) inUnits = inUnits.filter((_, i) => !gridIndices.has(i));
+
   // BOTH ENGINES, MERGED. Pairing asks "are these two lines a wall" and needs no
   // room to close; the room engine asks which enclosed regions are thin AND
   // separate two different spaces. Opposite blind spots, so neither wins alone.
@@ -280,43 +374,169 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   const everywhere = wallsFromBothEngines(inUnits, 1, aspect, {
     feetPerPoint: feetPerUnit,
     knownThicknessesIn: scheduleIn,
+    onCandidate: input.onCandidate,
+    decide: input.decide,
+    veto: input.veto,
   });
-  // ONLY THE ONES IN THE BUILDING — without this the title block, the notes
-  // column, the sheet border and any detail drawn above the plan all come back.
-  const inBuilding = wallsInTheBuilding(everywhere, feetPerUnit);
-  // AND NOT THE LETTERING. A stroked glyph is two parallel lines and the pairer
-  // takes it.
-  const notLettering = wallsNotLettering(inBuilding, textBoxes, feetPerUnit);
-  // AND NOT THE SHEET'S OWN BORDER, which a real set offered as a 114ft wall.
+  // ── THE NOISE COMES OUT BEFORE THE BUILDING IS LOOKED FOR ──
+  //
+  // These four filters used to run AFTER `wallsInTheBuilding`, and that order
+  // is what made a run COUNT necessary. Grouping first means the title block,
+  // the lettering and the sheet border are all still candidates when the
+  // groups are formed — so on a sheet with no plan on it the title block can
+  // be the biggest group, and the only thing standing between an estimator
+  // and "the walls of this building are the title block" was `NOT_A_BOX`:
+  // reject any group under ten runs.
+  //
+  // That count could not tell a title block from a ONE-ROOM BUILDING, because
+  // both are four runs. It discarded S01 (one room), S10 and S11 (ordinary
+  // small houses, thin double-line walls, perfectly axis-aligned) — the easy
+  // case — while never actually asking the question it stood in for.
+  //
+  // Filtering first asks it directly. Lettering, the sheet border and the
+  // scale bar are recognised by what they ARE, each by a rule that already
+  // existed and was already justified; a title block is mostly lettering
+  // against the sheet edge, so it leaves on its own. What remains is the
+  // drawing, and the biggest connected group of THAT needs no minimum size.
+  //
+  // Measured on the fixtures: the biggest group spans 25-52% of the sheet
+  // width on all seventeen vector sheets, the five that used to return
+  // nothing included. There was never a size that separated them.
+  // ── AND THE CURVES, WHICH THE PAIRER CANNOT ASSEMBLE ──
+  //
+  // The pairer owns curved strokes (see `StrokeSegment.curved`) and does pair
+  // them face to face, but it pairs each 8-inch chord with the chord opposite
+  // and `mergeWalls` cannot join the results: consecutive pieces of an arc
+  // turn 3.2 degrees at every joint against a 2.9 degree tolerance. S07's bay
+  // contributed nothing at all because of it.
+  //
+  // Added to the same candidate list so every filter below applies to them
+  // too — a curved stroke can be lettering or a scale bar's arc as easily as
+  // a straight one can. `curvedWalls.ts` has the geometry and why the mean of
+  // two faces' path lengths IS the centreline arc.
+  stage("both-engines");
+  let curvesRefused: number | null = null;
+  const curves = curvedWalls(inUnits, {
+    onCount: (pieces) => input.onStage?.(`curve-pieces=${pieces}`, 0),
+    onRefused: (pieces) => {
+      curvesRefused = pieces;
+      input.onStage?.(`curves-refused=${pieces}`, 0);
+    },
+    feetPerUnit,
+    minThicknessFeet: DEFAULTS.minThicknessFeet,
+    maxThicknessFeet: DEFAULTS.maxThicknessFeet,
+  });
+
+  stage("curves");
+  const notLettering = wallsNotLettering([...everywhere, ...curves], textBoxes, feetPerUnit);
   const notBorder = wallsNotTheSheetBorder(notLettering, 1, aspect);
-  // AND NOT THE GRAPHIC SCALE BAR, which is two parallel lines a wall-thickness
-  // apart and 32 ft long — a textbook wall by every measurement, and the one
-  // thing on the sheet that is literally a ruler. The bench's copy had no such
-  // filter, which is the other half of why this file exists.
-  const walls = wallsNotTheScaleBar(
+  // THE GRAPHIC SCALE BAR is two parallel lines a wall-thickness apart and
+  // 32 ft long — a textbook wall by every measurement, and the one thing on
+  // the sheet that is literally a ruler.
+  const notScaleBar = wallsNotTheScaleBar(
     notBorder,
     scaleBarLabels(textItems, pageSize.widthPt),
     feetPerUnit,
   );
+  // AND ONLY THEN, WHERE THE BUILDING IS. A floor plan is one connected
+  // thing; whatever is left over after the filters above is either part of it
+  // or is somewhere else on the sheet.
+  stage("noise-filters");
+  // ── AND THE THINGS STANDING INSIDE THE BUILDING THAT ARE NOT IT ──
+  //
+  // Before `wallsInTheBuilding` and not after, because that one joins at
+  // TWENTY feet to keep a plan together across its gaps — so a bench in a
+  // lobby is comfortably part of the building by its measure and survives.
+  // This asks the tighter question first: does this short run touch anything
+  // at all? See `isolatedStubs.ts` for the measurement on two real sheets.
+  const notStubs = wallsNotIsolatedStubs(notScaleBar, feetPerUnit);
+  // ── AND THE RUNS WITH NOTHING ACTUALLY DRAWN ALONG THEM ──
+  //
+  // Hatching, including diagonal hatching, whose ticks `oneFacePerLine` has
+  // assembled into two long "faces" a plausible thickness apart. On Camp Bow
+  // Wow A120 that was 29 runs and 176 ft of ±60° X patterns across an enlarged
+  // restroom plan, every one of them a textbook partition by thickness.
+  //
+  // BEFORE `wallsInTheBuilding`, with the other noise filters, and for the
+  // reason this block already gives: the X's cover the middle of the plan, so
+  // they are comfortably part of the biggest connected group and grouping
+  // cannot refuse them. `drawnCoverage.ts` carries the measurement, why
+  // counting the lines BETWEEN the faces does not work, and why the rule is
+  // deliberately blind to a run's angle.
+  const notHatch = wallsActuallyDrawn(notStubs, inUnits, feetPerUnit);
+  const hatchDropped = notStubs.length - notHatch.length;
+  const inBuilding = wallsInTheBuilding(notHatch, feetPerUnit);
+  // ── AND THEIR ENDS PUT BACK ON THE CORNERS ──
+  //
+  // Last, because it needs the final set: a wall can only be joined to one
+  // that survived every filter, and joining to a sheet-border line or a grid
+  // stub would drag an end somewhere no building is. See `joinCorners.ts` for
+  // the half-thickness this recovers at every corner, and the generator's own
+  // rule that it implements.
+  // ── TWO WALLS CANNOT OCCUPY THE SAME FOOTAGE ──
+  //
+  // Last of the candidate filters, and after `wallsInTheBuilding` on purpose:
+  // the thing it removes is a SECOND claim on footage another candidate has
+  // already made, so every candidate that is going to survive must be present
+  // for the comparison to be right. Before the corner join, because that
+  // extends ends and would move the centrelines being compared.
+  //
+  // `duplicateCoverage.ts` has the measurements and the three discriminators
+  // that do NOT work, including two that were built and reverted.
+  stage("in-building");
+  const noDuplicates = wallsNotDuplicateCoverage(inBuilding, scheduleIn);
+
+  stage("duplicates");
+  const walls = joinAtCorners(noDuplicates.kept, feetPerUnit);
 
   // ── WHAT THE DRAWING CALLS THESE, where it says so ──
   //
   // ONE PASS OVER THE TEXT for the tags, the scale bar and the general note:
   // the items are read once above and every reader works from them.
+  stage("join-corners");
   const tags = wallTypeTags(textItems, pageSize.widthPt);
   const fromNote = defaultWallTypeFromNotes(textItems, wallTypes);
 
   // ONE DEFINITION OF THE PANEL, used now and again after labelling.
+  //
+  // ── WITH THE SET'S OWN VOCABULARY, WHEN THE SWITCH IS ON ──
+  //
+  // `planText` arrives only from `detectWallsForCalibration` with
+  // `PLAN_TEXT_READ=1`. Then the map comes from the drawing's symbols and
+  // bare codes filtered by the legend, carried along each wall; the text tags
+  // above are still offered. Without it, the line below is the one that has
+  // always run — `zzSwitchOff.eval.ts` holds the two outputs equal on the
+  // training sheets.
+  const planText = input.planText;
   const regroup = (runs: WallCandidate[]) =>
-    wallGroups(
-      clusterByThickness(runs),
-      tagByRun(runs, tags, feetPerUnit, wallTypes),
-      wallTypes,
-      fromNote,
-    );
+    planText === undefined
+      ? wallGroups(
+          clusterByThickness(runs),
+          tagByRun(runs, tags, feetPerUnit, wallTypes),
+          wallTypes,
+          fromNote,
+        )
+      : wallGroups(
+          clusterByThickness(runs),
+          planTextTagByRun({
+            segments: input.segments,
+            text: input.textItems,
+            widthPt: pageSize.widthPt,
+            walls: runs,
+            feetPerUnit,
+            legendCodes: planText.legendCodes,
+            textTags: tags,
+            wallTypes,
+          }).byRun,
+          wallTypes,
+          fromNote,
+        );
 
   return {
     inUnits,
+    gridDropped,
+    hatchDropped,
+    duplicateDropped: noDuplicates.dropped,
     everywhere,
     inBuilding,
     notLettering,

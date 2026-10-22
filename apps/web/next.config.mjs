@@ -5,6 +5,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  /**
+   * ── THE BUILD DIRECTORY IS A VARIABLE SO A SMOKE BUILD CANNOT CLOBBER A
+   *    RUNNING SERVER ──
+   *
+   * `next build` and `next start` share `.next`, and the build wins. The
+   * labelling server on :3001 serves out of it while somebody is working, so
+   * building the commit that is ABOUT to be deployed — which is exactly what
+   * a pre-rebuild smoke test does — would take that server down mid-sheet.
+   *
+   * `scripts/smoke-labeling.sh` sets this to `.next-smoke` and runs its own
+   * server on another port. Unset, everything behaves as before.
+   */
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
   experimental: {
     /**
      * ── A SCANNED TILE DOES NOT FIT IN THE DEFAULT ──
@@ -22,6 +35,40 @@ const nextConfig = {
      * sending an image knows what the ceiling is and that it was chosen.
      */
     serverActions: { bodySizeLimit: "4mb" },
+
+    /**
+     * ── A LABELLED SHEET SENDS EVERY PAIRING, NOT EVERY WALL ──
+     *
+     * A ROUTE HANDLER's body is capped at 10 MB by the middleware, separately
+     * from the Server Action limit above, and the overflow is TRUNCATED
+     * rather than refused — so `request.json()` throws on a half-written
+     * body and the route reports the only thing it can see: "the request body
+     * was not JSON". That message is honest and says nothing about size.
+     *
+     * Bunkie A100 hit it on 2026-10-20 with a reviewer's finished sheet in an
+     * open tab. Measured rather than guessed, by rebuilding that sheet with
+     * the finder (`zzPayload.eval.ts`):
+     *
+     *     runs shown to the reviewer :      56
+     *     PAIRINGS sent with the save :  39,952
+     *     body                        :   11.27 MB
+     *
+     * The gap between those first two numbers is the whole thing. A reviewer
+     * judges RUNS; a model decides about PAIRINGS, and `labelRows` carries one
+     * to the other — so every pairing travels with its 24-number feature
+     * vector. A hatch-heavy sheet has hundreds of pairings per run, and
+     * nothing on screen suggests it.
+     *
+     * 64 MB is about six times the worst case seen, which is the headroom a
+     * sheet five times denser than Bunkie would need. It is a LOCAL labelling
+     * route — `labelStore.ts` refuses to write at all without the loopback
+     * opt-in — so this is not a limit a deployment is relying on.
+     *
+     * The better fix is to stop sending pairings the server already has, and
+     * it is not this one: it changes what the CLIENT sends, and the tab that
+     * needed it could not be reloaded without losing the sheet.
+     */
+    middlewareClientMaxBodySize: "64mb",
   },
   transpilePackages: ["@prova/ui", "@prova/db"],
   // `@napi-rs/canvas` ships a NATIVE `.node` binary. webpack follows the

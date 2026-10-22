@@ -78,6 +78,14 @@ export type WallGroup = {
   /** The company's types this group could be. One is an answer; several is a
    *  question; none is a plain measurement. */
   candidates: MatchableWallType[];
+  /**
+   * The takeoff item this group proposes into, when detection matched one.
+   *
+   * Optional, and null on everything `wallGroups` builds fresh — a group being
+   * found and a group being ASSIGNED are two different moments, and only the
+   * stored row knows about the second. A null shows under "Unassigned walls".
+   */
+  itemId?: string | null;
 };
 
 /**

@@ -1,0 +1,384 @@
+{
+  "id": "S07",
+  "file": "plan.pdf",
+  "page": 1,
+  "kind": "vector",
+  "units": "imperial",
+  "scale_text": "1/4\" = 1'-0\"",
+  "scale_ratio": 48,
+  "sheet_type": "floor_plan",
+  "ceiling_height_ft": 9.0,
+  "totals": {
+    "wall_lf_gross": 200.17,
+    "wall_lf_net": 163.67,
+    "wall_lf_exterior_gross": 126.17,
+    "wall_lf_interior_gross": 74.0,
+    "wall_sf_exterior_net": 928.57,
+    "wall_sf_interior_net": 544.5,
+    "gross_building_area_sf": 997.56,
+    "room_count": 5,
+    "door_count": 5,
+    "window_count": 5
+  },
+  "walls": [
+    {
+      "id": "W1",
+      "start_ft": [
+        0.0,
+        0.0
+      ],
+      "end_ft": [
+        12.0,
+        0.0
+      ],
+      "length_ft": 12.0,
+      "net_length_ft": 9.0,
+      "thickness_in": 6.5,
+      "type": "EXT-2x6",
+      "exterior": true,
+      "height_ft": 9.0,
+      "wall_sf_net": 81.0
+    },
+    {
+      "id": "W2",
+      "start_ft": [
+        12.0,
+        -0.0
+      ],
+      "end_ft": [
+        24.0,
+        0.0
+      ],
+      "length_ft": 14.17,
+      "net_length_ft": 14.17,
+      "thickness_in": 6.5,
+      "type": "EXT-2x6",
+      "exterior": true,
+      "height_ft": 9.0,
+      "wall_sf_net": 127.57,
+      "arc": {
+        "center": [
+          18.0,
+          4.0
+        ],
+        "radius": 7.211102550927979,
+        "start_deg": -146.30993247402023,
+        "end_deg": -33.690067525979785
+      }
+    },
+    {
+      "id": "W3",
+      "start_ft": [
+        24.0,
+        0.0
+      ],
+      "end_ft": [
+        36.0,
+        0.0
+      ],
+      "length_ft": 12.0,
+      "net_length_ft": 8.0,
+      "thickness_in": 6.5,
+      "type": "EXT-2x6",
+      "exterior": true,
+      "height_ft": 9.0,
+      "wall_sf_net": 72.0
+    },
+    {
+      "id": "W4",
+      "start_ft": [
+        36.0,
+        0.0
+      ],
+      "end_ft": [
+        36.0,
+        26.0
+      ],
+      "length_ft": 26.0,
+      "net_length_ft": 23.0,
+      "thickness_in": 6.5,
+      "type": "EXT-2x6",
+      "exterior": true,
+      "height_ft": 9.0,
+      "wall_sf_net": 207.0
+    },
+    {
+      "id": "W5",
+      "start_ft": [
+        36.0,
+        26.0
+      ],
+      "end_ft": [
+        0.0,
+        26.0
+      ],
+      "length_ft": 36.0,
+      "net_length_ft": 28.0,
+      "thickness_in": 6.5,
+      "type": "EXT-2x6",
+      "exterior": true,
+      "height_ft": 9.0,
+      "wall_sf_net": 252.0
+    },
+    {
+      "id": "W6",
+      "start_ft": [
+        0.0,
+        26.0
+      ],
+      "end_ft": [
+        0.0,
+        0.0
+      ],
+      "length_ft": 26.0,
+      "net_length_ft": 21.0,
+      "thickness_in": 6.5,
+      "type": "EXT-2x6",
+      "exterior": true,
+      "height_ft": 9.0,
+      "wall_sf_net": 189.0
+    },
+    {
+      "id": "W7",
+      "start_ft": [
+        0.0,
+        14.0
+      ],
+      "end_ft": [
+        36.0,
+        14.0
+      ],
+      "length_ft": 36.0,
+      "net_length_ft": 27.5,
+      "thickness_in": 4.5,
+      "type": "INT-2x4",
+      "exterior": false,
+      "height_ft": 9.0,
+      "wall_sf_net": 247.5
+    },
+    {
+      "id": "W8",
+      "start_ft": [
+        25.0,
+        0.0
+      ],
+      "end_ft": [
+        25.0,
+        14.0
+      ],
+      "length_ft": 14.0,
+      "net_length_ft": 9.0,
+      "thickness_in": 4.5,
+      "type": "INT-2x4",
+      "exterior": false,
+      "height_ft": 9.0,
+      "wall_sf_net": 81.0
+    },
+    {
+      "id": "W9",
+      "start_ft": [
+        18.0,
+        14.0
+      ],
+      "end_ft": [
+        18.0,
+        26.0
+      ],
+      "length_ft": 12.0,
+      "net_length_ft": 12.0,
+      "thickness_in": 4.5,
+      "type": "INT-2x4",
+      "exterior": false,
+      "height_ft": 9.0,
+      "wall_sf_net": 108.0
+    },
+    {
+      "id": "W10",
+      "start_ft": [
+        26.0,
+        14.0
+      ],
+      "end_ft": [
+        26.0,
+        26.0
+      ],
+      "length_ft": 12.0,
+      "net_length_ft": 12.0,
+      "thickness_in": 4.5,
+      "type": "INT-2x4",
+      "exterior": false,
+      "height_ft": 9.0,
+      "wall_sf_net": 108.0
+    }
+  ],
+  "openings": [
+    {
+      "id": "D1",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W4",
+      "width_ft": 3.0,
+      "center_ft": [
+        36.0,
+        7.0
+      ]
+    },
+    {
+      "id": "D2",
+      "kind": "door",
+      "subtype": "cased",
+      "wall": "W8",
+      "width_ft": 5.0,
+      "center_ft": [
+        25.0,
+        7.0
+      ]
+    },
+    {
+      "id": "D3",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W7",
+      "width_ft": 3.0,
+      "center_ft": [
+        9.0,
+        14.0
+      ]
+    },
+    {
+      "id": "D4",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W7",
+      "width_ft": 2.5,
+      "center_ft": [
+        22.0,
+        14.0
+      ]
+    },
+    {
+      "id": "D5",
+      "kind": "door",
+      "subtype": "single_swing",
+      "wall": "W7",
+      "width_ft": 3.0,
+      "center_ft": [
+        31.0,
+        14.0
+      ]
+    },
+    {
+      "id": "WN1",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W5",
+      "width_ft": 4.0,
+      "center_ft": [
+        9.0,
+        26.0
+      ]
+    },
+    {
+      "id": "WN2",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W5",
+      "width_ft": 4.0,
+      "center_ft": [
+        31.0,
+        26.0
+      ]
+    },
+    {
+      "id": "WN3",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W6",
+      "width_ft": 5.0,
+      "center_ft": [
+        0.0,
+        7.0
+      ]
+    },
+    {
+      "id": "WN4",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W1",
+      "width_ft": 3.0,
+      "center_ft": [
+        6.0,
+        0.0
+      ]
+    },
+    {
+      "id": "WN5",
+      "kind": "window",
+      "subtype": "sliding",
+      "wall": "W3",
+      "width_ft": 4.0,
+      "center_ft": [
+        30.0,
+        0.0
+      ]
+    }
+  ],
+  "rooms": [
+    {
+      "id": "R101",
+      "label": "LIVING 101",
+      "type": "living",
+      "area_sf": 358.84,
+      "perimeter_lf": 78.93,
+      "centroid_ft": [
+        12.94,
+        6.44
+      ]
+    },
+    {
+      "id": "R102",
+      "label": "KITCHEN 102",
+      "type": "kitchen",
+      "area_sf": 142.75,
+      "perimeter_lf": 48.17,
+      "centroid_ft": [
+        30.46,
+        7.04
+      ]
+    },
+    {
+      "id": "R103",
+      "label": "BEDROOM 103",
+      "type": "bedroom",
+      "area_sf": 202.46,
+      "perimeter_lf": 58.17,
+      "centroid_ft": [
+        9.04,
+        19.96
+      ]
+    },
+    {
+      "id": "R104",
+      "label": "BATH 104",
+      "type": "bathroom",
+      "area_sf": 88.01,
+      "perimeter_lf": 38.33,
+      "centroid_ft": [
+        22.0,
+        19.96
+      ]
+    },
+    {
+      "id": "R105",
+      "label": "BEDROOM 105",
+      "type": "bedroom",
+      "area_sf": 110.13,
+      "perimeter_lf": 42.17,
+      "centroid_ft": [
+        30.96,
+        19.96
+      ]
+    }
+  ],
+  "notes": "A curved bay wall: arc of radius 7.21' from (12,0) to (24,0); arc length is the centerline length."
+}

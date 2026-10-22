@@ -227,6 +227,36 @@ export const PERSONAS = {
     username: "e2e_takeoff",
     phone: "+15555550117",
   },
+  /**
+   * ── ROOMS GETS ITS OWN COMPANY, BECAUSE IT FLIPS A COMPANY-WIDE SWITCH ──
+   *
+   * `takeoff-rooms.spec.ts` turns `Company.roomFinderOn` on. Twelve spec
+   * files share the `takeoff` persona, so on that persona the switch reached
+   * all of them — and the takeoff workspace renders an extra toolbar button
+   * when it is on, which put 176px of chrome above the canvas against a
+   * 170px budget.
+   *
+   * It was INTERMITTENT, which is what made it expensive: the files run in
+   * parallel workers, so whether the workspace measured before or after the
+   * switch was flipped came down to timing. It failed on one commit and
+   * passed on the next with no relevant change between them, and I spent two
+   * wrong theories on it — "the merge did it" and "the runner's fonts" —
+   * before noticing the run-to-run flip.
+   *
+   * Restoring the switch in an `afterAll` is not enough on its own: that
+   * helps once the rooms file FINISHES and does nothing about the overlap
+   * while it runs. A company of its own is what actually isolates it.
+   */
+  rooms: {
+    email: "e2e-rooms+clerk_test@example.com",
+    label: "ROOMS",
+    username: "e2e_rooms",
+    // Well clear of the 0110-0122 block: 0123 was already taken on the
+    // development Clerk instance by an account this suite did not create,
+    // and Clerk refuses a duplicate phone with a 422 that blocks the WHOLE
+    // signed-in suite — nothing is seeded, so no spec runs.
+    phone: "+15555550191",
+  },
   bidDesk: {
     email: "e2e-biddesk+clerk_test@example.com",
     label: "BID_DESK",

@@ -177,6 +177,21 @@ model Job {
   dailyFieldReports              DailyFieldReport[]
   media                          JobMedia[]
   takeoffPlans                   TakeoffPlan[]
+  takeoffItems                   TakeoffItem[]
+
+  /// ── WHEN THIS JOB'S ASSEMBLIES WERE FROZEN, or null ──
+  ///
+  /// The design doc's answer to "copy the company library into the project":
+  /// don't. A line's PRICE is already written once at creation and never
+  /// re-synced, and `EstimateVersion` snapshots the whole estimate — so a
+  /// later price change cannot alter a submitted bid, and a project-level copy
+  /// would only add a third place for a price to live.
+  ///
+  /// What a copy would genuinely protect against is narrower: a part ADDED to
+  /// an assembly after this job used it appears on this estimate the next time
+  /// the expander runs. Set this and parts created after it are ignored for
+  /// this job. One nullable column instead of a duplicated library.
+  assemblyLibraryPinnedAt        DateTime?
   /// The bid this job came from, when one was linked. See estimating.prisma.
   wonFromBid                     BidInvitation? @relation("BidInvitationWonJob")
   /// Documents dropped into `/intake` and filed against this job. Optional
@@ -406,6 +421,23 @@ model JobLineItem {
   wallTypeComponentId String?
   wallTypeComponent   WallTypeComponent? @relation(fields: [wallTypeComponentId], references: [id], onDelete: SetNull)
 
+  /// ── WHICH TAKEOFF ITEM PRODUCED THIS LINE, or null ──
+  ///
+  /// Set together with `wallTypeComponentId` on a line the takeoff expander
+  /// wrote, so the pair identifies it: this item's share of this part.
+  ///
+  /// IT IS ALSO WHAT KEEPS THE TWO EXPANDERS APART. `syncWallScheduleLines`
+  /// retires any line whose component has left the WALL SCHEDULE, and a
+  /// takeoff line's component is usually not in one — so without a way to tell
+  /// them apart it would delete every line the takeoff wrote, on the next
+  /// write to any wall run. That function now ignores lines that carry this.
+  ///
+  /// `SetNull`, like the component link: deleting an item must not delete
+  /// money that has been quoted. The line survives as a hand-kept one, which
+  /// is what it has effectively become.
+  takeoffItemId String?
+  takeoffItem   TakeoffItem? @relation(fields: [takeoffItemId], references: [id], onDelete: SetNull)
+
   /// Set only when this row was created BY a change order (added scope).
   /// Null for line items that were part of the original estimate.
   originChangeOrderId String?
@@ -429,6 +461,8 @@ model JobLineItem {
   @@index([sourceCatalogEntryId])
   @@index([phaseCodeId])
   @@index([wallTypeComponentId])
+  /// The takeoff expander's hot read: every line one item wrote for this job.
+  @@index([takeoffItemId])
 }
 
 /// A change order groups: (a) newly added JobLineItems (via

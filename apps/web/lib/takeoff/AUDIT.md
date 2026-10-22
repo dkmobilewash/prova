@@ -1,0 +1,1515 @@
+# Takeoff audit — 2026-10-15
+
+Read-only. Nothing was changed, fixed or committed to produce this. Every
+status below cites the command that produced it; where something could not be
+run, it says **Unverified** rather than guessing.
+
+Audited at `main` = `8b82f6e5`.
+
+**CORRECTED after the overlays were generated and read.** The first version of
+this file rated two wall capabilities from code and stage counts, and gave one
+cause for five failing sheets. Opening the pictures changed one rating
+(C13 Unverified → Missing), sharpened two (C12, C20) and split the zero-wall
+explanation into three separate failures. **The overall score is unchanged at
+50.3%** — what changed is what the work actually is. The corrections are
+marked in place rather than quietly applied; the mistake is the kind this file
+criticises elsewhere, made by its own author, and hiding it would make the
+document less useful.
+
+---
+
+## Step 1 — Inventory
+
+### The path a plan takes
+
+```
+  upload  →  PlanIngest stages (background)            →  takeoff tab (UI)
+             ├ PAGE_INVENTORY  pageInventory.ts            TakeoffPlanViewer.tsx
+             │   ├ planPdf.ts        text layer?           ├ "Find the walls"
+             │   ├ titleBlock.ts     sheet number/title    ├ "Check these are walls" (AI)
+             │   ├ dimensionLabels   imperial + metric     ├ "Read this sheet"      (AI)
+             │   ├ scaleFromDimensions.ts  THE SCALE       ├ Move / Set scale
+             │   └ scaleFromPrinted.ts     fallback        └ Line / Area / Count (manual)
+             └ … other stages                                        │
+                                                                     ▼
+   sheetStrokes.ts ──► findWallsOnSheet.ts ──► wallGroups ──► postTakeoffMeasurements()
+   (vector geometry)    wallsFromBothEngines                          │
+                        wallsInTheBuilding                            ▼
+                        wallsNotLettering                     estimating line items
+                        wallsNotTheSheetBorder
+```
+
+- **Engine**: `apps/web/lib/takeoff/` — 35 non-test modules.
+- **Entry from UI**: `components/TakeoffPlanViewer.tsx`, `app/(app)/jobs/[id]/(tabs)/takeoff/page.tsx`.
+- **Server actions**: `lib/actions/takeoff.ts` (measurements, calibration, posting),
+  `takeoffClassify.ts` (AI wall labels), `takeoffReadSheet.ts` (AI scan OCR).
+- **Ingest**: `lib/plan-ingest/` — staged background work.
+- **Evidence**: `ls apps/web/lib/takeoff/*.ts`; grep for module imports from
+  `app components lib/actions lib/plan-ingest`.
+
+### AI calls in the takeoff path
+
+| call | file | what it does | produces geometry? |
+| --- | --- | --- | --- |
+| `labelWallCandidates` | `wallClassify.ts` | labels found runs WALL / CASEWORK / REFERENCE | **no** — a label per run id |
+| `readSheetTextTile` | `sheetText.ts` | reads lettering off a SCANNED tile | **coordinates — see flag** |
+| `countSymbols` | `symbols.ts` | counts fixtures in a crop | no — a count |
+| `classifyPlanSheets` | `planSheets.ts` | sheet kind from title-block TEXT | no |
+| `readScheduleRows` | `scheduleRows.ts` | schedule tables from text | no |
+
+**FLAG, and it is a real one.** `readSheetTextTile` returns `{text, x, y,
+width, height}` — the model IS producing coordinates. The defence, and the
+reader should judge it rather than take it: they are the positions of
+LETTERING, not of walls; no length, area or quantity is derived from them; a
+dimension's *value* comes from the model and the *line* it is paired with is
+measured by code, so the scale is a quotient of one model-read number and one
+code-measured one. Every other AI call is strictly label-or-count.
+
+### Fixtures, scorer, overlay
+
+| thing | exists | runs |
+| --- | --- | --- |
+| `fixtures/plans/S01–S20.pdf` | yes, committed | — |
+| `fixtures/expected/S01–S20.json` | yes, committed | — |
+| `fixtures/score.eval.ts` (scorer) | yes | **yes** — 3.2s |
+| `fixtures/overlay.eval.ts` | yes | **yes** — 5.1s, 20 PNGs; see Step 2.2 |
+| `fixtures/stages.eval.ts` | yes | yes (earlier in session) |
+| `reports/takeoff-bench` (2nd set, wall LF truth) | yes | **yes** — `pnpm takeoff:bench` |
+
+### Does the engine read the answer keys?
+
+**No.** `bash` over the 35 engine modules:
+
+- references to `fixtures/expected` / `answerKey` / `expected.json` — **none**
+- fixture ids `S01`–`S20` hard-coded — **none**
+- imports from `./fixtures` or `./bench` — **none**
+- fixture/bench PATHS — **2 hits, both COMMENTS** (`sheetStrokes.ts:386`,
+  `wallVectors.ts:647`) naming the bench in prose
+- special-cased page sizes — 1 hit, a COMMENT about float precision
+  (`reducedPrint.ts:117`)
+
+Clean.
+
+---
+
+## Step 2 — The scorer
+
+### `score.eval.ts`, all 20 fixtures
+
+```
+id   scale     how         printed         rooms   strokes  runs  groups   wall ft
+S01  ✓         dimensions  1/4" = 1'-0"       —/1       86     0       0        0
+S02  ✓         dimensions  1/4" = 1'-0"       —/6      183    10       2      223
+S03  ✓         dimensions  1/8" = 1'-0"       —/6      176    10       2      223
+S04  ✓         dimensions  1/4" = 1'-0"      —/10      382    19       5      364
+S05  ✓         dimensions  3/16" = 1'-0"      —/9      309    20       5      275
+S06  ✓         dimensions  1/4" = 1'-0"       —/4      190     0       0        0
+S07  ✓         dimensions  1/4" = 1'-0"       —/5      427    11       4      162
+S08  ✓         dimensions  1/4" = 1'-0"      —/13      733    28       8      406
+S09  ✓         dimensions  1/4" = 1'-0"       —/9      341    14       4      300
+S10  —         dimensions  none               —/5      161     0       0        0
+S11  conflict  dimensions  1/8" = 1'-0"       —/5      153     0       0        0
+S12  —         dimensions  none              —/10      375    16       5      387
+S13  ✓         dimensions  1/8" = 1'-0"      —/12      641    20       4      555
+S14  ✓         dimensions  1/8" = 1'-0"       —/9      541    24       4      608
+S15  ✓         dimensions  1/4" = 1'-0"       —/5      302     0       0        0
+S16  ✓         dimensions  1:100              —/7      182    10       3      223
+S17  ✓         dimensions  1:50               —/6      250    10       4      181
+S18  declined  raster      none                          0     —       —        —
+S19  declined  raster      none                          0     —       —        —
+S20  declined  raster      none                          0     —       —        —
+```
+
+**SCALE: 14 of 14 scored correct. 3 correctly declined. 1 conflict (correct —
+the sheet contradicts its own title block and the dimensions were followed).**
+
+**AND HERE IS THE PROBLEM WITH THIS TABLE.** The scorer's own last two lines:
+
+```
+WALL FOOTAGE: reported, NOT SCORED — no sheet in this set prints one.
+ROOMS: key has 122 tagged rooms; the pipeline does not yet report a room list here.
+```
+
+So the headline number this fixture set produces is **a scale score and
+nothing else**. There is no wall LF error, no room count, no room area, no
+room type, no door/window count and no gross area in it — not because they
+score badly, but because **the set cannot ask**. The answer keys were
+deliberately limited to what a drawing PRINTS, and these drawings print a
+scale and room tags, not wall footage.
+
+Anyone reading "14 of 14" as a takeoff accuracy figure is reading a scale
+figure.
+
+**5 of 15 vector sheets return ZERO walls** (S01, S06, S10, S11, S15).
+
+**THE FIRST VERSION OF THIS AUDIT GAVE ONE CAUSE FOR ALL FIVE AND THAT WAS
+WRONG.** It said `NOT_A_BOX = 10` discards buildings of fewer than ten runs,
+full stop — written from stage counts without opening the pictures. The
+overlays say there are at least three different failures here, and the fix for
+one does not touch the others:
+
+| sheet | what the drawing is | why it returns nothing |
+| --- | --- | --- |
+| S01 | STUDIO OFFICE — **one room, four walls** | far under `NOT_A_BOX`; nothing could save it but a lower floor |
+| S10 | GARDEN COTTAGE — ordinary thin double-line walls, axis-aligned, 5 rooms | under `NOT_A_BOX` |
+| S11 | GUEST HOUSE — same shape, 5 rooms | under `NOT_A_BOX` |
+| S15 | BUNGALOW **plus an ENLARGED BATH PLAN at a second scale on the same sheet** | thin walls; and capability A5 (multi-view sheets) is Missing |
+| S06 | **HOUSE WITH ANGLED WING — walls drawn as SOLID FILLED POCHÉ, one wing at 45°** | **not the threshold at all** — poché and angled geometry |
+
+So S10 and S11 are the honest `NOT_A_BOX` cases, S01 is under any plausible
+floor, **S15 points at multi-view sheets**, and **S06 is a different bug
+entirely**. The work plan's step 2 (an enclosure test instead of `NOT_A_BOX`)
+would fix S10 and S11 and **would not fix S06**.
+
+### `reports/takeoff-bench` — the only set with wall footage truth
+
+`TAKEOFF_BENCH=1 pnpm takeoff:bench`. **All four quality bars FAIL:**
+
+| bar | result |
+| --- | --- |
+| Scale 100% correct or honestly undetermined | ❌ 63/70 correct or declined; **7 wrong-but-confident** (half-size sheets: `A-101__half-11x17`, `A-101__half-archB-outlines`, `A-401__clean`, …) |
+| In-scope wall LF within 2% per type | ❌ **28 of 60 type-totals outside ±2%**; worst `A-101__clean/D1` **31.3%** |
+| Zero-wall sheets: 0 phantom LF | ❌ **11 of 36** produced walls — `A-111__clean` **2,314 ft**, `__autocad` 2,406 ft |
+| No wall over 10 ft missed entirely | ❌ **27 cases** miss at least one; **115 walls** in total |
+
+Probes: **11 pass, 7 fail** (P6 furring under the thickness floor, P9 clip
+path, P10 dashed demo walls, P11/P12 half-size scale guard, P14 thickness
+clustering, P15 one-run-per-group stud count).
+
+Holdout set: **31,913 of 32,655 ft, −2.3% overall, 0 wrong-but-confident
+scales.** That total is close, and it is close *because errors cancel* — the
+per-type table above is the honest read.
+
+### The overlays — what is visibly wrong
+
+`overlay.eval.ts` → 20 PNGs in `fixtures/overlays/` (not committed). Read, not
+skimmed. **These corrected two ratings and one explanation below.**
+
+- **S06** — walls are **solid filled poché**, one wing at **45°**. Nothing
+  found. This is the sheet that disproves "all five are the threshold".
+- **S10, S11** — textbook small plans, thin parallel-line walls, perfectly
+  axis-aligned, nothing found. **More damning than S06**: these are the easy
+  case and the pipeline returns zero on them.
+- **S01** — a single room, four walls. Zero is arithmetic, not a bug.
+- **S15** — two views at different scales on one sheet (FLOOR PLAN 1/4",
+  ENLARGED BATH PLAN at another). Nothing found.
+- **S13** (20 runs, 555 ft) — **largely correct**: exterior, corridor and
+  every office partition traced. Two over-detections: red stubs continuing
+  **past the building at gridlines A and C**, and marks around the washroom
+  **fixtures**.
+- **S08** (28 runs, 406 ft) — exterior and all four bedroom partitions
+  correct, and **the living-room sofa is traced as a wall**, plus marks at the
+  kitchen counter and bath fixtures. This is capability 20 failing in the
+  picture rather than in a number.
+
+### Robustness
+
+Present, as bench variants, and included in the failing bars above:
+`rotate`, `half-11x17`, `half-archB`, `half-archB-outlines`, `clip`, `dashed`,
+`ocg`, `layers`, `shx`, `plot-black`, `overridden-dims`, `scan`,
+`autocad-flat`, `revit`, `skia`. **Shuffled drawing order: not present.**
+
+### Unit tests
+
+`npx vitest run` in `apps/web`: **763 files, 11,969 tests, all passing.**
+
+---
+
+## Step 3 — A real plan
+
+**Cannot be run today. The Downloads folder is empty** (`ls` → 0 files);
+the real sets used earlier in this session are gone. `realPlan.eval.ts` needs
+`REAL_PLAN_PDF` and has nothing to point at. Marked **Unverified**.
+
+**What WAS measured against real sets earlier today**, recorded here because
+it is the only real-plan evidence that exists and it is unflattering:
+
+- **Room finder on West Herr**: reported 46 rooms / 4,555 sf for a building
+  ~290 ft across, missing Showroom 101, Sales 103, Hospitality 105, New Car
+  Delivery 140 and an entire wing, while outlining a parked car and the gaps
+  between dimension strings. The BUTTON WAS REMOVED as a result and
+  `takeoffRoomFinder.test.tsx` asserts it stays absent.
+- **Layer coverage**: of 5 real sets, 2 name their layers (West Herr 47
+  layers, Comfort Inn 177); 3 name none.
+- **Scanned pages**: of 11 real sets, 5 carry image-only pages and 1 is
+  scanned end to end.
+
+---
+
+## Step 4 — Capability scorecard
+
+Status key: **Done** = works end to end, reachable, verified by a run ·
+**Partial** · **Engine only** = code+tests, not reachable · **Stub** ·
+**Missing** · **Unverified**.
+
+### A. Plan intake
+
+| # | capability | status | evidence | missing | effort |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Upload multi-page sets | **Done** | `planIngest.ts`, staged background work; 52–175pp sets ingested today | — | — |
+| 2 | Vector vs scanned detection | **Done** | `hasTextLayer` in `sheetIndexQuery`; drives the "Read this sheet" button | — | — |
+| 3 | Classify sheets | **Partial** | `planSheets.ts` (AI, from title text); `sheetSuitability.ts` wired | not graded; no eval | M |
+| 4 | Sheet number/title from title block | **Done** | `titleBlock.ts`; School 01 shows 60/60 sheets, 5 unreadable (scans) | — | — |
+| 5 | Split multi-view sheets, per-view scale | **Done** | `sheetViews.ts` — finds each drawing by its CAPTION NAME, reads the scale on the line below, and cuts the page on its GUTTERS (empty paper no geometry crosses) on BOTH axes, so stacked and side-by-side separate by the same rule. Each view is measured at its own scale; a view captioned NTS owns its region and is never measured. Wired in `onFindWalls`, gated to >= 2 views. S15 → FLOOR PLAN 1/4" 167 ft + ENLARGED BATH 1/2" 28 ft; the bench's A-401 → RESTROOM 1/4", STAIR 1/2", HEAD OF WALL DETAIL excluded. `sheetViews.eval.ts` + `benchMultiView.eval.ts`; 8 mutations red | per-view ACCURACY is the wall finder's, not this. Re-measured 2026-10-16: A-401 splits into RESTROOM 1/4" (16 runs, 647 ft) and STAIR 1/2" (10 runs, 386 ft) against a whole-sheet baseline of 20 runs at 716 ft. **And the BENCH does not use this path** — `harness.ts` calls `readSheetScale` per page, so the scorecard still reports A-401 as `SCALE WRONG_CONFIDENT` and scores the stair at 2.00× the truth. The app does split it (`TakeoffPlanViewer.tsx`); the bench understates what an estimator sees | M |
+
+### B. Scale
+
+| # | capability | status | evidence | missing | effort |
+| --- | --- | --- | --- | --- | --- |
+| 6 | Printed scale notes, imperial + metric | **Done** | `scaleFromPrinted.ts` wired via `pageInventory.ts`; metric `METRIC_SCALES`; S16 1:100, S17 1:50 | — | — |
+| 7 | Graphic scale bars | **Engine only** | `scaleBar.ts`, `scaleFromBar.ts` exist, tested; **no caller** in app/actions/ingest | wiring | S |
+| 8 | Scale from dimension strings | **Done** | `scaleFromDimensions.ts`; 14/14 scored on fixtures | — | — |
+| 9 | Flag wrong/missing scale | **Partial** | `calibrationNotices`, S11 conflict reported correctly; a sheet printing TWO scales now says so (`multiScaleCaution`, 2026-10-15) | **7 wrong-but-confident on half-size sheets** (bench P11/P12) | M |
+| 10 | Manual calibration | **Done** | "Set scale" in toolbar; `saveTakeoffCalibration` | — | — |
+
+### C. Walls
+
+| # | capability | status | evidence | missing | effort |
+| --- | --- | --- | --- | --- | --- |
+| 11 | Parallel line pairs | **Partial** | bench P1–P5 pass; **17/60 type totals outside 2%** (28 → 26 → 20 → 17); the twenty score 13 of 17 within ±2% of the generator's own geometry (was 1) | accuracy | L |
+| 12 | Filled/hatched walls | **Partial** | raster path emits faces (85–91% of the drawing's own footage). **The "vector poché is unread" line was NOT verified and is wrong about S06**: its solid bottom wall has BOTH faces stroked (53.47% and 54.52% of page width) and the reader returns them. What blocked it was the 12in thickness cap, measured. True filled-polygon poché remains untested — no fixture has one | a fixture with real filled poché | M |
+| 13 | Angled walls | **Partial** | **RE-RATED 2026-10-15, and the Missing was my own error.** It read *"the S06 overlay shows a 45° wing returning nothing"* — true, and the wing returned nothing because `NOT_A_BOX` was discarding the WHOLE SHEET (item 11's lane), not because 45° fails. With that removed the wing returns 5 of 9 runs at 45°/135°, thicknesses 4.5–6.5in. A symptom of another defect, read as a capability gap | accuracy ungraded — no fixture prints a wall length | M |
+| 14 | Curved walls | **Partial** | **RE-RATED 2026-10-16, 0 → 50.** `curvedWalls.ts` assembles a polygonised arc into a chain and measures the CENTRELINE ARC — the mean of the two faces' path lengths, which is an identity for concentric faces, so no arc is fitted. S07's bay (chord 12.0 ft, arc 14.17) went from contributing NOTHING to the sheet scoring −1.8%. The discriminator is SHAPE, not the `curved` flag: that flag records a Bézier THIS renderer flattened, and S07's bay is 202 straight 0.15 ft pieces with the flag on none of them — filtering on it found every arc on the page except the wall. 12 tests, 8 mutations, 7 red and the eighth noted as unproven | **not Done:** `MAX_PIECE_FEET` (1.5 ft) excludes coarsely-flattened arcs — the bench's lobby arc is 2.5 ft pieces and still goes through the pairer at 22.8 ft. Filled curved poché is untested; no fixture has one | M |
+| 15 | Corners / T-junctions | **Partial** | bench P5 passes (one-face-one-use) | **P15 fails** — a group collapses to ONE run, so stud counts are wrong | M |
+| 16 | Exterior vs interior | **Missing** | no module, no field | everything | M |
+| 17 | Type/thickness grouping | **Partial** | `clusterByThickness`, `wallTypeMatch` wired | **P14 fails** — 4-7/8" and 4-3/4" merge into one group | S |
+| 18 | LF gross and net of openings | **Partial** | gross only; `openings.ts` is **engine only** | net | M |
+| 19 | Wall area (LF × height) | **Missing** | no height source, no area field | everything | M |
+| 20 | Ignore clutter | **Partial** | filters exist; the S08 sofa and the S13 grid stubs are GONE (`gridBubbles` wired in, 2026-10-15) and both overlays are clean; still Partial because no fixture scores footage, so completeness is unproven. Originally: S13 traces washroom fixtures and runs past the building at two gridlines | **0 of 36 zero-wall sheets produce walls UNFLAGGED** now (was 11/36 at up to 2,406 ft); 31 more produce walls on sheets `sheetSuitability` cautions about, which is the bar being met rather than cleared | L |
+
+### D. Openings
+
+| # | capability | status | evidence | missing | effort |
+| --- | --- | --- | --- | --- | --- |
+| 21 | Doors with widths | **Engine only** | `openings.ts` imported only by `roomAreas.ts`/`wallRuns.ts`; no UI, no action | wiring + grading | M |
+| 22 | Windows with widths | **Engine only** | same | same | M |
+| 23 | Link to schedules/tags | **Partial** | `scheduleRows.ts` (AI) reads schedule tables; **not joined to openings** | the join | M |
+
+### E. Rooms
+
+| # | capability | status | evidence | missing | effort |
+| --- | --- | --- | --- | --- | --- |
+| 24 | Detect enclosed rooms | **Engine only — deliberately disabled** | `roomAreas.ts` + tests kept; button REMOVED after the West Herr result; `takeoffRoomFinder.test.tsx` asserts absence | the filters the wall finder has and the room finder lacks | L |
+| 25 | Room area / perimeter | **Engine only** | same module | same | L |
+| 26 | Read room labels | **Partial** | `roomsFromWords` in the fixture key reads 122 tags; **the pipeline does not report a room list** | wiring | M |
+| 27 | Classify room types | **Missing** | no module | everything | M |
+| 28 | Check area vs printed tag | **Missing** | `AREA_PRINTED` parsed in the KEY only | everything | S |
+| 29 | Gross building area | **Missing** | — | everything | M |
+| 30 | Open-plan / stub walls | **Unverified** | no probe | grading | M |
+
+### F. Scanned plans
+
+| # | capability | status | evidence | missing | effort |
+| --- | --- | --- | --- | --- | --- |
+| 31 | Deskew / clean up | **Missing** | no deskew anywhere | everything | M |
+| 32 | OCR text with positions | **Partial** | `rasterText.ts` + `takeoffReadSheet.ts` wired, gated, metered; **101/101 read, 98% placed on fixtures**; on the live app the last run returned 0 words from blank tiles — fix merged in #808, **unverified in production** | a green production run | S |
+| 33 | Wall/room detection on scans | **Engine only** | `rasterStrokes.ts` grades 85–91% of the drawing's own footage; **no caller** — the viewer does not feed raster strokes to the wall finder | wiring | M |
+
+### G. Beyond walls and rooms *(extras — excluded from the score)*
+
+| # | capability | status | evidence | effort |
+| --- | --- | --- | --- | --- |
+| 34 | Symbol/fixture counting | **Engine only** | `symbols.ts` + `symbolCount.eval.ts`; `symbolCases.ts` engine only; no UI | M |
+| 35 | Flooring/finish areas by room | **Missing** | depends on rooms | L |
+| 36 | RCP ceiling areas | **Missing** | — | L |
+| 37 | Revision comparison | **Partial** | `recordTakeoffPlanRevision` stores revisions; no diff/compare view | L |
+
+### H. Review and editing UI
+
+| # | capability | status | evidence | missing | effort |
+| --- | --- | --- | --- | --- | --- |
+| 38 | One-click "run takeoff" | **Missing** | there is "Find the walls" PER SHEET, after a scale is set per sheet. No set-level one-click | the whole flow | L |
+| 39 | Viewer with overlay | **Done** | `TakeoffPlanViewer.tsx`, `FoundWalls` SVG overlay | — | — |
+| 40 | Low-confidence highlighted | **Partial** | `duplicate-walls-caution`, `reduced-print-caution`, `no-walls`, `check-missing` | no per-item confidence | M |
+| 41 | Edit walls / rooms | **Partial** | accept/reject per run and per group; **no move/add/delete of a wall**, no room editing | geometry editing | L |
+| 42 | Live recalculation | **Done** | accept/reject updates totals before posting | — | — |
+| 43 | Manual tools (linear/area/count) | **Done** | Line / Area / Count in the toolbar; `saveTakeoffMeasurement(s)` | — | — |
+| 44 | Corrections saved and reusable as tests | **Partial** | accepted walls persist (`takeoff-found-walls.dbtest.ts`); **not harvested into fixtures** | the harvest | M |
+
+### I. Output and integration
+
+| # | capability | status | evidence | missing | effort |
+| --- | --- | --- | --- | --- | --- |
+| 45 | Quantities → estimating lines | **Done** | `postTakeoffMeasurements()` in `lib/actions/takeoff.ts` | — | — |
+| 46 | Confidence + source per quantity | **Partial** | SOURCE is carried (measurement vs found wall); **no confidence band** — `wallVectors.ts:785` says so explicitly | confidence | M |
+| 47 | Export CSV/Excel/PDF | **Unverified** | `app/api/takeoff/plan/[planId]/route.ts` exists; not exercised in this audit | — | S |
+| 48 | Saved per project, reloadable | **Done** | `TakeoffMeasurement`, `PlanSheet*` models; reload verified by the tester reopening sheets | — | — |
+
+### J. Production readiness
+
+| # | capability | status | evidence | missing | effort |
+| --- | --- | --- | --- | --- | --- |
+| 49 | Background job + progress + errors | **Partial** | `plan-ingest/stages.ts` staged work; wall finding is FOREGROUND in the browser | background wall finding | M |
+| 50 | Per-sheet runtime | **Partial** | vector: ~3.2s for 20 fixtures (scorer). Scanned: **44s per sheet, 15 model calls** (live run) | a target | — |
+| 51 | AI calls cached/logged/validated | **Partial** | tool-use schemas + `readTextBoxes`/`readWallLabels` validate and DROP bad rows; usage metered (`recordAskUsage`); allowance claimed per call; **no caching**, no retry | cache + retry | M |
+| 52 | Dependencies and licences | **Done** | `pdfjs-dist` Apache-2.0, `tesseract.js` + core Apache-2.0 (dev only), `@napi-rs/canvas` MIT. **No AGPL in the takeoff path** | — | — |
+| 53 | Automated tests passing | **Done** | 11,969 tests green; 2 fixture sets; 15 evals | — | — |
+
+---
+
+## Step 5 — The bottom line
+
+### 1. Overall completion — the arithmetic
+
+Done = 100, Engine only = 60, Partial = 50, Stub/Missing/Unverified = 0.
+
+| group | weight | items | sum | group % | contribution |
+| --- | ---: | --- | ---: | ---: | ---: |
+| **Scale** (6–10) | 15% | 100 + 60 + 100 + 50 + 100 | 410/5 | **82.0%** | 12.30 |
+| **Walls** (11–20) | 25% | 50+50+50+**50**+50+0+50+50+0+50 | 400/10 | **40.0%** | 10.00 |
+| **Openings** (21–23) | 10% | 60 + 60 + 50 | 170/3 | **56.7%** | 5.67 |
+| **Rooms** (24–30) | 15% | 60+60+50+0+0+0+0 | 170/7 | **24.3%** | 3.64 |
+| **Review UI** (38–44) | 15% | 0+100+50+50+100+100+50 | 450/7 | **64.3%** | 9.64 |
+| **Integration** (45–48) | 10% | 100 + 50 + 0 + 100 | 250/4 | **62.5%** | 6.25 |
+| **Intake** (1–5) | 5% | 100+100+50+100+**100** | 450/5 | **90.0%** | 4.50 |
+| **Scanned** (31–33) | 5% | 0 + 50 + 60 | 110/3 | **36.7%** | 1.83 |
+
+**TOTAL = 53.8%** (50.3% at the audit → 51.6% after Steps 1–3 → 52.1% after Step 4 → 52.6% with the view split → **53.8%** with curved walls, 2026-10-16. FOUR ratings have moved in seven steps: item 13 from 0 to 50, item 5 from 0 to 50 to 100, item 14 from 0 to 50. Everything else sat INSIDE items already scored Partial, which is a property of a 0/50/60/100 scale rather than a measure of the work: the twenty went from 1 of 17 within ±2% to 13 of 17 and the bench's type-totals from 28/60 outside to 17/60, and neither moved a single rating. `reports/takeoff-bench/SCORECARD.md` is the finer instrument, and the fixture evals finer still.)
+
+---
+
+## Five general fixes, 2026-10-16
+
+Measured on BOTH sets after each one, because a fix that helps one and hurts
+the other is not a fix. Re-run `truthScore.eval.ts` and `pnpm takeoff:bench`
+rather than trusting this table.
+
+| | the twenty, within ±2% | bench type-totals outside ±2% | bench walls missed | holdout |
+| --- | ---: | ---: | ---: | ---: |
+| start of the day | 1 of 17 | 26 of 60 | 113 | −2.1% |
+| hatch series needs two members | 9 of 17 | 17 of 60 | 111 | −0.5% |
+| inclusive opening cap | 10 of 17 | 17 of 60 | 111 | −0.5% |
+| rule 5 removed (scale) | 12 of 17 | 17 of 60 | 111 | −0.5% |
+| duplicate coverage | 12 of 17 | 17 of 60 | 111 | −0.5% |
+| curved walls | **13 of 17** | **17 of 60** | **111** | **−0.5%** |
+
+### Where the twenty stand
+
+| id | found | key | err | | id | found | key | err |
+| --- | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: |
+| S01 | 80 | 80 | +0.0 ✅ | | S10 | 188 | 188 | +0.0 ✅ |
+| S02 | 237 | 240 | −1.2 ✅ | | S11 | 161 | 166 | −3.0 |
+| S03 | 237 | 240 | −1.3 ✅ | | S12 | 457 | 468 | −2.3 |
+| S04 | 396 | 396 | +0.0 ✅ | | S13 | 576 | 576 | +0.0 ✅ |
+| S05 | 307 | 310 | −0.9 ✅ | | S14 | 611 | 584 | +4.7 |
+| S06 | 188 | 188 | +0.0 ✅ | | S15 | 206 | 206 | +0.0 ✅ |
+| S07 | 196 | 200 | −1.8 ✅ | | S16 | 238 | 241 | −1.2 ✅ |
+| S08 | 475 | 464 | +2.3 | | S17 | 251 | 251 | +0.0 ✅ |
+| S09 | 356 | 356 | +0.0 ✅ | | S18–20 | — | — | NOT SUPPORTED |
+
+S18–20 are scans and count as NOT SUPPORTED, never as a pass — group J's
+scanned items carry that, and `truthScore.eval.ts` prints them that way.
+
+### The four that still fail, diagnosed
+
+All four are the SAME remaining defect plus one outlier, and the numbers come
+from the eval's own opening tally rather than from reading overlays:
+
+- **S08 +2.3%** — bridges 16 of 28 openings, 53 of 106 ft. Its 8.40in phantom
+  is gone; two orphan clusters remain (3.60in over 6 ft, 2.40in over 2 ft),
+  which are window GLAZING lines pairing with each other inside an opening.
+- **S11 −3.0%** — bridges 4 of 8 openings. W7 is a 14 ft wall with a 2.5 ft
+  and a 4.0 ft door, read as 9.0 ft.
+- **S12 −2.3%** — bridges 10 of 16. W13 is the outlier: a 16 ft wall with NO
+  openings, read as 8.7 ft, so it is not an opening problem.
+- **S14 +4.7%** — bridges 9 of 14, and its orphan clusters (3.38in over 112 ft,
+  16.88in over 27 ft) are REAL wall measured at the wrong thickness. See
+  `duplicateCoverage.ts`: 160 + 112 is exactly the 272 ft of 4.5in its key
+  declares, which is why dropping an orphan thickness costs 19%.
+
+**Window glazing is the next lever and it is worth about 50 ft on S08 alone.**
+A window is drawn with three lines across its opening; two of them are 0.32 ft
+apart, which is 3.8in and inside the partition window, so each window yields a
+phantom run AND leaves the real wall's pieces unbridged. Not attempted here.
+
+---
+
+## Two attempts that were built, measured and reverted, 2026-10-16
+
+Both are recorded because each one cost a day's worth of measurement and each
+one is the obvious next thing to try. Neither is in the tree.
+
+### The glazing lever — it works, and it costs 21 bench walls
+
+**What a window is, measured rather than assumed.** S02's 6-1/2in exterior wall
+with a 4 ft and a 5 ft window in it:
+
+    y -49.22   wall face    19.6-25.5   33.0-49.0   54.0-63.8
+    y -49.10   glazing                  25.5-29.5   49.0-54.0
+    y -48.94   glazing                  25.5-29.5   49.0-54.0
+    y -48.78   glazing                  25.5-29.5   49.0-54.0
+    y -48.68   wall face    23.8-25.5   33.0-49.0   54.0-63.2
+
+The outer two glazing lines are 0.32 ft apart — 3.84in, squarely inside the
+partition window — so they PAIR, and their centre lands 0.01 ft from the real
+wall's centre, so `mergeWalls` reads the phantom as the same line and FILLS the
+window instead of bridging it. Gross comes out about right, which is why it
+hid; no opening is recorded, which is the half a bid prices.
+
+**"Two or three thin lines" is NOT the test**, and that was the first thing
+tried. S11's 12in wall carries a 5 ft window drawn with ONE line:
+
+    y -10.44   wall face    15.0-20.0   25.0-44.0
+    y -10.24   glazing                  20.0-25.0
+
+What holds on both, and counts nothing: the glass lies STRICTLY BETWEEN the
+two faces, and it is CONFINED TO THE GAP. The second is what separates it from
+a wall CENTRELINE, which also sits between the faces and also covers the gap —
+but runs the whole wall.
+
+**THREE BUGS WORTH KEEPING, because any future attempt hits all three.**
+
+1. **Confinement is per SPAN, not per LINE.** Asking whether the glazing line
+   has coverage outside this gap is wrong: one glazing line serves EVERY window
+   on its wall. S08's spans four, so each window disqualified the other three
+   and the sheet with 28 openings reported ZERO windows.
+2. **The window cap must BE `MAX_OPENING_FEET`, not a number of its own.** The
+   point of removing the glass is to leave a gap `mergeWalls` will bridge, and
+   it refuses anything wider than that cap — so above it the glass goes and the
+   wall still does not bridge. At 12 ft this called a 9.8 ft span on S17 a
+   window and took the sheet from +0.0% to -3.9%.
+3. **The two line families must actually BE one wall.** Any two parallel lines
+   a partition apart satisfy the search, and a dense sheet has many — a
+   detail's hatching against a section line, two walls across a thin closet.
+   The "gap" between such a pair is not an opening, and a real face between
+   them was deleted as its glass.
+
+**WHAT IT BOUGHT, and it is a lot.** Openings bridged across the seventeen:
+
+    | | openings | by width |
+    | baseline | 130 of 218 | 417 of 862 ft |
+    | with glazing removed | **205 of 218** | **795 of 862 ft** |
+    | …plus the lineweight test | 182 of 218 | 656 of 862 ft |
+
+S08 alone went from 16 of 28 openings (53 ft) to 27 of 28 (103 ft). Gross did
+not move: 13 of 17 throughout.
+
+**WHAT IT COST, and why it is not in the tree.** The 60-page bench:
+
+    | | type-totals outside 2% | walls missed |
+    | baseline | 17 of 60 | 111 |
+    | with glazing removed | 21 of 60 | 132 |
+    | …plus the lineweight test | 19 of 60 | 125 |
+
+Twenty-one real walls on the adversarial set, fourteen with lineweight added.
+That fails the standing rule — a fix must improve or hold both sets — so it was
+reverted whole rather than argued down. Trading gross accuracy, which is what a
+quantity rests on, for net accuracy is the wrong direction even at this ratio.
+
+**LINEWEIGHT IS CONFIRMED AS A REAL SIGNAL THAT IS NOT SUFFICIENT.** Measured:
+S08 draws wall faces at 0.80pt and glazing at 0.25-0.35pt, a 2.3-3.2x gap. As a
+second requirement it recovered 7 of the 21 lost walls. It cannot be the
+discriminator, because S13 draws some wall faces at 0.35pt — the same pen as
+S08's glass. `StrokeSegment.width`'s own comment says whether it discriminates
+was being measured rather than assumed; this is the measurement, and the answer
+is "partly".
+
+**WHAT THE NEXT ATTEMPT NEEDS:** which bench lines are being eaten. That was
+not established — the bench attributes missed walls by cause, but no cause
+names this path, so identifying them means instrumenting the 21 and reading
+them one at a time.
+
+### Wiring the view split into the bench — the key is whole-sheet
+
+The scorecard reports A-401 as `SCALE WRONG_CONFIDENT` and says its ENLARGED
+STAIR PLAN would be measured at 2.00x the truth, while the app splits that
+sheet correctly. So the bench grades a worse pipeline than the one that ships —
+the same drift `harness.ts`'s own header was written about.
+
+Wiring `wallsPerView`/`primaryView` into `findWalls`, gated at two or more
+views exactly as `TakeoffPlanViewer.tsx` gates it, made the grading WORSE:
+
+    | | A-401__clean walls | A-401 LF | bench walls missed |
+    | whole sheet | 11 found / 1 missed of 12 | 367 of 370, -1.0% | 111 |
+    | split | 5 found / 2 partial / 5 missed | 538 of 370, **+45.5%** | 139 |
+
+**The cause is structural, not a bug in the wiring: the bench's A-401 key is
+WHOLE-SHEET.** Scoring a primary-view measurement against a key that covers
+every in-scope wall on the page compares two different quantities, and no
+amount of care in the split fixes that.
+
+So the choice is between two things, and it is not mine to make:
+
+  - **report** the split alongside the whole-sheet score, so the scale verdict
+    stops reading as a flat WRONG when the app reads both views — cheap, and
+    leaves the LF column measuring what it measures today;
+  - **build per-view keys** for A-401, which makes the split scoreable and is
+    the only version that answers "is the stair measured correctly".
+
+Reverted meanwhile. `benchMultiView.eval.ts` already prints the per-view
+figures (RESTROOM 1/4" 647 ft, STAIR 1/2" 386 ft, all six variants identical),
+so the numbers exist today without the scorecard claiming to grade them.
+
+---
+
+## Step 6 — the real-plan check, 2026-10-16
+
+### THERE ARE NO REAL PLANS IN THIS REPO, AND THAT BOUNDS EVERYTHING ABOVE
+### — SUPERSEDED THE SAME DAY BY STEP 7, WHICH RAN ON FIVE OF THEM —
+
+Kept because the sentence was true when written and because its last paragraph
+asked what a real set would test that neither fixture set does. Step 7 answers
+that, and the answer was worse than this section guessed: a real sheet reported
+2,324,222 ft of wall. Read step 7 for the measurements; read this for what was
+believed before anybody had any.
+
+Asked for directly, so it is answered directly. Every PDF in the repo is in
+one of four places and none of them is a real drawing:
+
+| where | what | provenance |
+| --- | --- | --- |
+| `lib/takeoff/fixtures/plans` | the twenty, S01–S20 | generated by `fixtures/generator/generate.py` |
+| `reports/takeoff-bench/fixtures/pdf` | 90 files, A-101 … S-101 | generated by `bench/writers.ts` |
+| `apps/web/e2e/fixtures` | `wide-sheet.pdf` and friends | written by the e2e harness |
+| `apps/lien-waiver/statutes/raw` | statutes | not drawings |
+
+The real-plan evals (`realplan/layers.eval.ts`, `realplan/sheetTemplate.eval.ts`)
+read `REAL_PLAN_PDF`, which points OUTSIDE the repo and is unset here. So every
+figure in this file is measured on drawings a program wrote, and the one honest
+sentence about carry-over is that nobody has checked it.
+
+Two things make that less bad than it sounds, and neither makes it good. The
+bench's 90 files come from a DIFFERENT generator than the twenty, through four
+writers (clean, AutoCAD, Revit, Skia) with clip paths, dash patterns, optional
+content, SHX text, rotation and half-size reductions — so a fix that holds on
+both sets has survived two independent idea of what a drawing looks like. And
+the fixture keys are the generator's own geometry rather than a measurement,
+so they cannot flatter the detector.
+
+What a real set would test that neither does: line weights that mean something,
+hand-added revision clouds, xref'd backgrounds, text as outlines, arcs
+polygonised by someone else's tolerance, and the pure volume of annotation a
+60-page issue carries.
+
+### A-401, the nearest thing to a real sheet
+
+The bench's multi-view sheet, read through the same pipeline. Wall footage is
+good and the phantoms are the story — and because this fixture carries CAD
+layer names, the bench can say exactly what each phantom is:
+
+| | A-401__clean |
+| --- | --- |
+| in-scope LF | **367 of 370 centreline = −1.0%** |
+| walls | 11 found, 0 partial, 1 missed of 12 |
+| phantom | **7 runs, 120 ft** — detail (`A-DETL`) 65 ft, stair (`A-FLOR-STRS`) 34 ft, dimension (`A-ANNO-DIMS`) 18 ft |
+| missed | 49 ft over 2 walls to `inAHatchSeries`; 2 ft under the run floor |
+| scale | names 1/4" for the page; ENLARGED STAIR is 1/2", so that view reads 2.00× |
+
+Three findings, in the order they cost the most:
+
+1. **Detail and stair linework is 99 of the 120 phantom feet.** Neither is a
+   wall and both are wall-shaped. The layer names would settle it outright,
+   and `layerNames` already does on `A-401__layers` — which is why that
+   variant finds 15 runs where `clean` finds 16.
+2. **`inAHatchSeries` is still the largest single cause of missed wall on the
+   bench**, 49 ft on this sheet alone, after two commits spent on it today.
+   The rule is better and it is still the top of this list.
+3. **Dimension lines still become walls, 18 ft here.** `duplicateCoverage`
+   removes a dimension string that DUPLICATES a wall, which is what S08 had.
+   It does nothing about one standing on its own in open paper, and this
+   sheet has 18 ft of exactly that.
+
+### What the split gives on it, and the gap that matters
+
+`benchMultiView.eval.ts`, run today: A-401 splits into three regions and names
+two measurable views —
+
+    ENLARGED RESTROOM PLAN   1/4" = 1'-0"   16 runs   647 ft   (primary)
+    ENLARGED STAIR PLAN      1/2" = 1'-0"   10 runs   386 ft
+
+against a whole-sheet baseline of 20 runs and 716 ft at one scale. All six
+A-401 variants split identically, including the half-size reduction.
+
+**The bench harness does not use that path**, so the scorecard above still
+reports the stair at 2.00× the truth. The app does (`TakeoffPlanViewer.tsx`
+imports `primaryView`, `wallsPerView`, `excludedViews` and the cautions), and
+`e2e/specs/multi-view.spec.ts` clicks it in a real browser. So the bench's
+scale verdict on A-401 understates what an estimator is shown — and the two
+instruments disagreeing is itself worth fixing, because the bench is what
+anybody will read first.
+
+
+---
+
+## THE PHASE 4 PROFILE WAS TAKEN THROUGH A BROKEN HARNESS, AND THE REAL COST WAS SOMEWHERE ELSE
+
+2026-10-17. The entry below — "the 102 seconds were the curve engine" — reached
+the right FIX for the wrong reason, on numbers that were all wrong. Corrected
+here rather than edited there, because the way it went wrong is worth more than
+the numbers.
+
+### The harness bug
+
+`detectProfile.eval.ts` pre-divided every coordinate by `widthPt` before
+calling `findWallsOnSheet`. So does `findWallsOnSheet`, at `allInUnits`. Every
+segment therefore arrived divided TWICE — **2,592 times too small on a 36-inch
+sheet** — and nothing threw, because lengths are still lengths. They were just
+all tiny.
+
+`FindWallsInput` says it in its first line: *"Every stroked segment on this
+sheet, in POINTS"*. The type could not catch it, because both forms are the
+same shape. `realSheets.eval.ts` had it right the whole time, which is why the
+two reports disagreed about A101 — one said 17.5s and 0 groups, the other said
+REFUSED, and that contradiction is what exposed this.
+
+### What the numbers actually are
+
+| | the Phase 4 entry says | measured on points |
+| --- | --- | --- |
+| A102, whole of findWallsOnSheet | 61,330 ms | **6,026 ms** |
+| …of which the pair engines | 479 ms | **5,960 ms** |
+| …of which curve assembly | 58,901 ms (96%) | under 50 ms |
+| curve pieces on A102 | 126,943 of 143,438 (88%) | **92,237** |
+
+**So the pair engines were never exonerated.** At 1/2592 scale everything is
+short, which is why 88% of the sheet looked like arc pieces; and the curve
+engine looked like 96% because the cap was doing its work in both cases. The
+entry's headline — "everybody guessed wrong about the pair test" — is itself
+wrong. AUDIT's original suspicion was right.
+
+### What survives, and it is the fix
+
+`MAX_CURVE_PIECES` is **load-bearing, not inert**. A102 hands the curve engine
+92,237 pieces against a cap of 8,000, so the cap fires — and with it lifted
+that sheet does not finish in **fifteen minutes**. The Phase 4 change was
+necessary and its reasoning was sound; only its evidence was corrupt.
+
+The lesson is narrower than "measure": it is that a profiler is CODE, and a
+profiler that disagrees with another instrument about the same sheet is
+reporting its own bug. Two instruments disagreed for three weeks and the
+disagreement was the finding.
+
+---
+
+## ONE LINEAR SCAN WAS SIXTY SECONDS OF A REAL SHEET
+
+Same day, and the reason A101 could not be measured.
+
+`oneFacePerLine` decides which drawn segments are pieces of the same line. It
+did it with `lines.find(...)` — a scan over every line found so far, once per
+segment. On A101 that is 425,057 segments against a list that grows to
+299,616: about **6e10 comparisons and 60.0 seconds**, which was the whole of
+that sheet's time before it refused.
+
+| sheet | before | after | faces out |
+| --- | --- | --- | --- |
+| A101 | 60,023 ms | **515 ms** | 299,616 -> identical |
+| A102 | 4,998 ms | **155 ms** | 62,954 -> identical |
+
+Indexed on the two things the predicate tests — direction and perpendicular
+offset — with the original predicate still applied to every candidate, so the
+index only decides what is worth testing. Insertion order is preserved by
+taking the lowest INDEX among candidates, because `find` returned the first
+match and which line a piece joins decides what gets merged.
+
+**Nothing is allocated per segment**, and that is deliberate: the spatial index
+written for `curvedWalls` in Phase 4 was TEN TIMES SLOWER than the scan it
+replaced, because it built a Set and sorted an array on every step. Nine bucket
+lookups and a running minimum here.
+
+### The direction wrap, and a test that proved nothing
+
+Directions are folded into a half turn, which puts VERTICAL at both ends of the
+bucket range, so the lookup wraps. The first test written for that was
+**vacuous and passed with the wrap deleted**: one vertical face drawn up and
+one drawn down normalise `ux` to exactly 0, land in the SAME bucket, and never
+reach the wrap.
+
+What reaches it is a pair STRADDLING vertical — 89.5 and 90.5 degrees, one
+degree apart, which the predicate calls parallel and the fold sends to buckets
+31 and -32. And they must share an offset: the fold flips the sign of `uy`, so
+two straddling lines away from the origin get offsets of opposite sign (+499
+and -503, measured) and could never have matched anyway. Through the origin
+both are 0.
+
+It is not a corner case. With the wrap removed, A101 produces **317,924 faces
+instead of 299,616** and A102 70,835 instead of 62,954 — six per cent of them,
+each one a line that failed to meet the rest of itself.
+
+### A101 still refuses, and raising the budget is NOT the fix
+
+With the scan fixed, A101 goes from 47.9s to **2.3s** and then refuses:
+12,179 lines long enough to be walls, against a `MAX_PAIR_TESTS` of 40M.
+
+Raising the budget was tried and **timed out at twenty minutes**. The file's
+own note says why, and it is right: *"This pairer is O(n^2) with
+`inAHatchSeries` scanning inside the inner loop"* — O(n^3), about 1e12 at this
+size. The budget is not a limitation to raise; it is the only thing stopping a
+hang.
+
+What would fix it is the same shape as the fix above: index `order` on
+direction and offset, and use that index BOTH for the partner search and
+inside `inAHatchSeries`, which looks for parallel lines at multiples of one
+offset step. Not attempted here — it is the most delicate function in the
+product, where a subtle change silently reprices walls, and it deserves its
+own pass with the twenty and the bench run at every step.
+
+### Guards
+
+Unchanged across all of it: the twenty fixtures 13 of 17 within 2%; the bench
+63/70 scales, 17/60 type-totals outside 2%, 0 unflagged phantoms, 111 walls
+over 10 ft missed; every real-sheet footage identical. The whole real-plan run
+dropped from 87s to 43s.
+
+---
+
+## SIX REAL VIEWS HAD THEIR SCALE PRINTED BESIDE THEM AND MISSED THE WINDOW BY 0.0002
+
+2026-10-17, step 2. The real-sheet measure went from **2 of 9 floor plans
+measured to 7 of 9**, and the whole of the second half came from one constant.
+
+### What the count was actually made of
+
+Before anything, the measure was understating the PRODUCT, and that is worth
+separating from the capability change:
+
+| | sheets | measured |
+| --- | --- | --- |
+| the eval as it stood | 9 | 2 |
+| after the per-view fallback | 9 | 6 |
+| after `NAME_BESIDE` | 9 | **7** |
+
+**Four of those five were the harness catching up, not new capability.** The
+four ELEVEN03 life-safety sheets each carry exactly ONE printed scale
+(`3/32" = 1'-0"`), so the product's own `scaleFromPrinted` fallback already
+read them — `pageInventory` runs it when the dimensions decline, and the eval
+never did. Measured directly rather than assumed: `printedScalesOnPage` returns
+one name on each of p18-p21 and `scaleFromPrinted` returns it.
+
+The SEVENTH — Camp Bow Wow A140 — is the real one, and the rest of this entry
+is about it.
+
+### The measurement
+
+`sheetViews` found **six views on A140 and gave not one of them a scale**,
+while a scale was plainly printed on the page. Probed rather than reasoned
+about: for every real view on A140 and on A120, the caption sits at the same
+offset from its name.
+
+    dx = +0.0202    dy = +0.0060        (page-width units)
+
+`NAME_ABOVE` is 0.02 and covers the dy with room to spare. **`NAME_BESIDE` was
+0.02, so every one of them cleared it by two ten-thousandths.**
+
+It is a LAYOUT, not a tolerance:
+
+    1   PLAN DETAIL AT PEMB FRAME
+        SCALE: 1" = 1'-0"
+
+The scale line is indented past the bubble number — 52.4pt on a 2592pt sheet,
+where the window allowed 52.0. `NAME_BESIDE` is 0.04 now: the indent a caption
+block can plausibly carry, rather than the 0.0203 that would fit this one
+template and break on the next. A140's views sit about 0.19 apart, so 0.04 is
+a fifth of the gap and a caption still cannot be stolen by the view beside it —
+asserted, with the neighbour case in `viewCaptionScale.test.ts`.
+
+Mutation-tested: at 0.02 four of that file's six tests go red.
+
+### The ordering change, which is what the step was for
+
+`readSheetScale` ran first and the view split only ran `if (verdict.ok)`. That
+is backwards for exactly the sheet the split exists for: a sheet carrying
+several drawings at several scales is a sheet whose printed dimensions do not
+agree with each other, so it declines, so it was never split.
+
+The split runs first now, and `viewsWithOwnScale` measures each captioned view
+at its own ratio — absolutely, because a caption is feet per paper inch and
+needs no anchor. It is still the WEAKER evidence and still runs second: a
+dimension can be checked against the drawing and a caption cannot.
+
+### What this does NOT yet do, said plainly
+
+- **It is the eval, not the app.** `pageInventory` still produces one prefill
+  scale per page, so a user on a multi-scale sheet gets the printed fallback
+  or nothing. Giving the app per-view scales is a data-shape change nobody has
+  made. The `NAME_BESIDE` fix IS product code and does reach the app.
+- **A120, the sheet the brief named, is still not measured by the report** —
+  it is skipped by the harness's own sampling (`PER_SET`, below), not by the
+  pipeline. Its `RESTROOM - ENLARGED PLAN` now reads its `1/2" = 1'-0"`.
+- **A140's 475 ft over 114 runs is a DETAILS sheet** and is very likely mostly
+  phantom — a wall detail is a cross-section, which is parallel lines a
+  wall-thickness apart for its whole height. Counting it as measured is honest
+  about the scale reading and says nothing good about the footage. That is
+  step 3's territory.
+
+### The harness samples four sheets per set, and it is not sampling the right four
+
+`PER_SET = 4` keeps each set's four biggest PLAN-titled sheets by stroke count.
+On ELEVEN03 that selects four LIFE SAFETY plans and drops `A4.B.1`-`A4.B.7`,
+the architectural floor plans — because a life-safety plan is DENSER (egress
+paths, occupancy tags, rated-wall hatching) than the plan it is drawn over.
+
+So stroke count is a bad proxy for "the sheet an estimator would take off".
+Proved by lifting the cap: at `REAL_PLAN_PER_SET=16` the report measures
+`A4.B.2` at 2722 ft and `A4.B.3` at 2538 ft, which are real floor plans and
+were never being looked at.
+
+This explains an earlier report that showed six sheets measured including
+`A4.B.1`-`A4.B.3`: **a selection change, not a regression.** Where those
+sheets are looked at, they measure.
+
+### Guards
+
+Both held across the change: the twenty fixtures 13 of 17 within 2%, the bench
+63/70 scales, 17/60 type-totals outside 2%, 0 unflagged phantoms, 111 walls
+over 10 ft missed.
+
+---
+
+## THE ORANGE DASHED LINE ACROSS THE DRAWING IS THE SCALE, AND IT LOOKED LIKE A WALL BECAUSE OF US
+
+Answered 2026-10-17, from a report of an orange dashed run crossing the whole
+drawing on **two unrelated real sheets** — Camp Bow Wow A102 and Eleven03
+A4.B.1 — at about the same height on each.
+
+**It is neither a detected run nor an overlay fault.** It is the scale
+CALIBRATION: the two points somebody dragged to set the scale, drawn so a
+reviewer can see what the scale was measured from. It crosses the whole drawing
+because a long calibration line is an accurate one, and it sits at about the
+same height on both sheets because that is where a person draws when they are
+measuring the widest thing on the page.
+
+**The confusion was real and it was ours.** Read out of the source rather than
+guessed at:
+
+| | colour | dash |
+| --- | --- | --- |
+| the scale line | `#f0b429` = rgb(240,180,41) | even, `8 5` |
+| `CLUSTER_COLOURS[4]` | `#fbbf24` = rgb(251,191,36) | even, `6 4` |
+
+Those colours are 16 apart in a space whose diagonal is 441 — no difference at
+all — and both were drawn as even dashes. So **on any sheet with five or more
+thickness groups, one group's runs and the scale line were the same mark**, and
+the only way to tell them apart was to remember which one you had drawn. A102
+carries more than five.
+
+**Fixed by shape, not by colour.** The palette is tuned, its own collision
+history is written into `clusterMarks.ts`, and swapping a colour there risks a
+new collision inside it. The scale line is a different KIND of thing from a
+wall run, so it now draws as a **dash-dot** — the drafting convention for a
+reference line, and a shape `markFor` cannot produce at any index, because a
+cluster dash is always exactly two lengths and this is four.
+
+`calibrationMark.test.ts` pins the structural property rather than the colours:
+no cluster dash equals the calibration's, at any index past the point where
+marks repeat, and every cluster dash has two parts. A colour assertion would go
+stale the moment somebody retunes the palette; this will not. Mutation-tested
+by restoring the old even dash — two assertions red, each by name.
+
+**The three measures are unmoved, which is the point for a rendering change:**
+real sheets 2 of 9 measured (A103 29 ft, A102 2255 ft over 163 runs), the
+twenty fixtures 13 of 17 within 2%, the bench 17/60 type-totals outside 2% with
+0 unflagged phantoms and 111 walls over 10 ft missed.
+
+**One thing the before/after screenshots will mislead you about.** The earlier
+shot of A102 says "Found 172 runs" and the new one says 161. That is not this
+change and not a regression — it is the curve-piece cap from the entry below,
+which refuses the curve pass on a sheet this hatched. The shots were taken
+either side of it.
+
+---
+
+## THE 102 SECONDS WERE THE CURVE ENGINE, AND EVERYBODY GUESSED WRONG
+
+Resolved 2026-10-17. The entry below is kept in full because the thing it got
+wrong is the lesson: it named the quadratic pair test as "the obvious suspect
+precisely because `MAX_PAIR_TESTS` exists", and said to profile first because
+"everything below is speculation until that exists". Both halves were right —
+the advice, and the need for it.
+
+**The pair test takes 479 ms.** The curve assembly takes 96%.
+
+    Camp Bow Wow A102, 143,438 segments
+      whole of findWallsOnSheet    61,330 ms
+      …grid bubbles                 1,947 ms
+      …both wall engines              479 ms   ← the suspect
+      …curvedWalls                 58,901 ms   ← 96%
+
+**Why.** `curvedWalls` keeps every stroke under 1.5 ft as a possible arc
+piece, and on a real architectural sheet that is **126,943 of 143,438
+segments — 88%** — because hatching is drawn in tiny strokes. `assemble` then
+scans every piece on every growth step, which is quadratic in that number.
+
+**The fix is a cap, not an index.** `MAX_CURVE_PIECES = 8,000`: above it the
+curve pass is REFUSED and the caller told, while the straight-wall engines
+still run. Measured:
+
+    | sheet | segments | before | after |
+    | A102  | 143,438  |  61,330 ms |  2,470 ms |
+    | A101  | 425,057  | 494,050 ms | 17,540 ms |
+
+A101 did not complete at all before — eight and a quarter minutes. The
+twenty-fixture score held at 13 of 17 within 2% across the change, and no
+fixture comes within an order of magnitude of the cap.
+
+**TWO ATTEMPTS AT AN INDEX MADE IT WORSE, AND THAT IS THE SECOND LESSON.**
+A uniform grid over the endpoints — the textbook fix, and the one the old
+entry's direction 3 recommended — turned 58,901 ms into **624,808 ms**.
+Allocation-free, it was still **196,659 ms**. Both were reverted. The cost was
+not the scan's asymptotics on this data; it was the per-step work, and a
+measurement would have said so before the second attempt as readily as after
+it. Profiling twice is cheaper than optimising twice.
+
+**What is still open.** A sheet over the cap gets no curved walls at all, which
+is a real loss on a hatched sheet that has one. The honest fix is a cheaper
+way to tell a hatch stroke from an arc piece — they are parallel and evenly
+spaced, and they do not join end to end — which is a filter rather than an
+index. Not attempted here. And `grid bubbles` is now the largest remaining
+stage on A101 at 16.7 s, which nobody has looked at.
+
+---
+
+## THE OLD BLOCKER ENTRY, KEPT FOR THE GUESS IT GOT WRONG
+
+*Superseded by the section above, 2026-10-17. Left whole rather than
+corrected in place: it is a good record of what the evidence looked like
+before anybody measured, and its instruction — profile before optimising —
+is what produced the correction.*
+
+### Detection takes 102 seconds on a real sheet
+
+Status check asked for and answered 2026-10-16. **Not fixed, and nothing has
+touched it.** `git diff` over `wallVectors.ts`, `findWallsOnSheet.ts`,
+`curvedWalls.ts`, `mergeWalls.ts` and `joinCorners.ts` since the measurement
+is EMPTY — Phase 1 of the workspace was user interface only, as its brief
+required.
+
+| | Camp Bow Wow A102 | Eleven03 A4.B.1 |
+| --- | ---: | ---: |
+| first render | 501 ms | 386 ms |
+| full resolution | 517 ms | 1,677 ms |
+| **Find the walls** | **102,134 ms** | **14,973 ms** |
+| slowest zoom step | 229 ms | 246 ms |
+| pan | 156 ms | 160 ms |
+
+**And the same quantity from the other side: A101 is REFUSED outright.**
+`MAX_PAIR_TESTS` is 40,000,000 and `SheetTooDenseError` is thrown above it;
+Camp Bow Wow's A101 carries 12,179 wall-length lines and does not get a
+number at all. A102 is just under the bar and takes a minute and a half.
+
+**Why this is a Phase 4 blocker rather than a Phase 2 one.** Phases 2 and 3
+are items, tools and assemblies — a person drawing, and arithmetic over what
+they drew. Neither waits on the wall finder. Phase 4 is where detection
+proposes INTO items, and a feature whose first step is a ninety-second pause
+on the sheet an estimator actually prices is not shippable, however correct
+its output.
+
+**What is NOT yet known, and should be measured before anyone optimises.**
+Nobody has profiled it. The 102 seconds is wall-clock from the button to the
+result, in the browser, on the main thread — it is not known how much is
+pairing, how much is the curve assembly, how much is the duplicate-coverage
+pass, or how much is `clusterByThickness`. The quadratic pair test is the
+obvious suspect precisely because `MAX_PAIR_TESTS` exists, which is a reason
+to measure it rather than a reason to assume it.
+
+Three directions, cheapest first, none of them started:
+
+  1. **Profile it.** One run under the profiler names the stage. Everything
+     below is speculation until that exists.
+  2. **Get it off the main thread.** A worker would not make it faster but
+     would stop it freezing the canvas, which is most of what makes 102
+     seconds feel broken rather than slow.
+  3. **Make the pairing sub-quadratic** — a spatial index over the segments,
+     so a line is only tested against neighbours. That is what would also
+     lift the A101 refusal, since the refusal and the slowness are one
+     problem measured two ways.
+
+---
+
+## The full-screen takeoff workspace, 2026-10-16
+
+`/takeoff/[id]`, outside the `(app)` route group so there is no shell to take
+pixels off the drawing. `components/TakeoffWorkspace.tsx` is the shell;
+`TakeoffPlanViewer` is unchanged except for four props it grew for this host
+(`fill`, `panelOpen`, `readOnly`, `initialPage`), and `loadTakeoffWorkspace`
+loads once for both this page and the takeoff tab.
+
+### A KNOWN SHORTCUT: THE MULTI-TAB NOTICE HAS NO `updatedAt` TO READ
+
+Two tabs on one takeoff is not a corner case — it is how somebody compares two
+levels. The later save already wins, because every write is a server action
+against the same rows. What was missing is that the OTHER tab goes on showing
+numbers that are no longer current with nothing to say so.
+
+**`TakeoffPlan` has no `updatedAt`.** Only `createdAt`, set when the drawing
+was uploaded, so no column moves when a measurement is saved. Rather than add
+one, the signature is DERIVED in `takeoffSavedSignature`: counts and the newest
+`createdAt` across the three tables a save writes — calibrations, measurements
+and wall proposals. A new row moves the date, a delete moves the count, and the
+other tab asks for it on focus rather than polling.
+
+**Why that is a shortcut and not a design.** It is three aggregates where one
+column read would do; it cannot see an UPDATE that changes a row without
+changing a count or a timestamp; and it has no bearing on who wins, so two
+people editing the same sheet still silently overwrite each other — the notice
+only tells the loser afterwards.
+
+**The proper fix is `updatedAt` on `TakeoffPlan`**, touched by every takeoff
+write, and then the notice is one indexed read. It was not done here because a
+migration has to be announced in Slack before the push and reaches production
+on merge, and nothing else wants the column yet — so it would have been a
+schema change carried by a reload notice. Worth doing with the next takeoff
+migration rather than on its own.
+
+### What the layout is measured against, and why it is measured at all
+
+The first build of this screen passed every structural test it had and rendered
+the plan at **18% in a 384px box with half the viewport empty under it**. No
+assertion about a class name can see that. So `takeoff-workspace.spec.ts`
+measures boxes:
+
+  - at Fit the sheet fills >= 90% of the canvas in one dimension and sits
+    fully inside it in the other;
+  - the canvas is >= 85% of viewport height at 1440 AND 1280, with the
+    quantities rail OPEN as well as closed — the open case is the one that
+    broke, and the closed-only version of this test passed while a screenshot
+    showed the drawing at 5%;
+  - at 834 nothing is layered over the canvas with the drawers closed, and the
+    document does not scroll sideways;
+  - zoom in and out change the zoom, the sheet grows, the port scrolls, and
+    the overlay's box still matches the sheet's to within 2px after zooming —
+    an overlay that drifts draws a wall where no wall is, which looks exactly
+    like a correct takeoff.
+
+### What a REAL sheet costs, measured
+
+`takeoff-workspace-real.spec.ts`, which skips unless the sheets are present —
+they are a client's drawings and live outside the repository, as do its
+screenshots.
+
+| | Camp Bow Wow A102 | Eleven03 A4.B.1 |
+| --- | ---: | ---: |
+| first render | 501 ms | 386 ms |
+| full resolution | 517 ms | 1,677 ms |
+| **Find the walls** | **102,134 ms** | **14,973 ms** |
+| zoom step, slowest of four | 229 ms | 246 ms |
+| pan | 156 ms | 160 ms |
+| sheet fills at Fit | 97% | 97% |
+
+**Rendering and navigation are not the problem on a real sheet.** First paint
+is half a second, a zoom step is a fifth of one, panning is immediate.
+
+**Detection is.** A hundred and two seconds, in the browser, on the main
+thread, for one sheet — and that sheet is the one an estimator would actually
+price. It is not a layout problem and no part of this workspace fixes it; it is
+recorded here because this is the first time it has been measured on a drawing
+nobody here generated. The wall finder's own `MAX_PAIR_TESTS` ceiling is the
+same quantity seen from the other side: Camp Bow Wow's A101 is refused outright
+at 12,179 wall-length lines, and A102 is just under the bar and takes a minute
+and a half.
+
+---
+
+## Step 7 — FIVE REAL PLAN SETS, 2026-10-16
+
+The first time this engine has been run on drawings nobody here generated.
+`realplan/realSheets.eval.ts` produced all of it; re-run that rather than
+trusting this. The sets are a client's confidential documents, live outside the
+repository, and nothing was copied in.
+
+### The sets, and which sheets were taken
+
+| set | pages | what it is | floor plans taken |
+| --- | ---: | --- | --- |
+| Camp Bow Wow 100% CD_ARCH | 29 | a complete architectural CD set | A101 FLOOR PLAN, A102 DIMENSIONAL FLOOR PLAN, A120 RESTROOM PLANS |
+| ELEVEN03 PERMIT SET_ARCH | 175 | a permit set, 342 MB | A4.A-Y2 FORMING PLAN, A4.B-Y2/.1/.2/.3 FLOOR PLAN LEVELS |
+| 10-Alden-Green Bid Package | 38 | mostly civil and structural | A103, A103a — EQUIPMENT AND FURNITURE plans |
+| Approved_Eleven03_SP | 29 | a SITE PLAN permit set | C1.01 LEVEL 7 BUILDING FLOOR PLAN |
+| HPL Lighthouse Bulletin 2 | 12 | a bulletin: 3 plan sheets, 4 elevations, 3 schedules | PF-4, PF-16 keynote plans |
+
+**342 MB is not slow.** It read in 0.1s and inventoried all 175 pages in 2.5s,
+because pdf.js parses lazily — page by page was never needed.
+
+**Two sets have no partition plan at all, as expected.** Alden Green's only
+architectural sheets are EQUIPMENT AND FURNITURE plans, which
+`sheetSuitability` classifies as a furniture plan — correctly. Approved_Eleven03
+is civil C0.x-C8.x plus landscape with one architectural site plan.
+
+### THE RESULT: 6 OF 13 SHEETS PRODUCED A NUMBER
+
+| set | sheet | outcome |
+| --- | --- | --- |
+| Camp Bow Wow | A102 DIMENSIONAL FLOOR PLAN | **2,356 ft** over 174 runs |
+| ELEVEN03 | A4.B-Y2 FLOOR PLAN LL2 | **1,458 ft** over 94 runs |
+| ELEVEN03 | A4.B.1 FLOOR PLAN LEVEL 1 | **2,648 ft** over 283 runs |
+| ELEVEN03 | A4.B.2 | **2,793 ft** over 364 runs |
+| ELEVEN03 | A4.B.3 | **2,602 ft** over 355 runs |
+| Alden Green | A103 furniture plan @ 1/16" | 29 ft over 2 runs |
+| Camp Bow Wow | **A101 FLOOR PLAN** | REFUSED — 12,179 wall-length lines of 425,057 strokes |
+| ELEVEN03 | A4.A-Y2 FORMING PLAN | REFUSED — 11,784 wall-length lines |
+| Camp Bow Wow | A120 RESTROOM PLANS | DECLINED — two scales, 1/2" and 3/8" |
+| Approved_Eleven03 | C1.01 LEVEL 7 FLOOR PLAN | DECLINED — two scales, 1/32" and 3/32" |
+| HPL | PF-4 keynote plan | DECLINED — 2 of 4 printed dimensions agree |
+| HPL | PF-16 keynote plan | DECLINED — 2 of 4 agree |
+| Alden Green | A103a | DECLINED — no readable printed dimensions |
+
+### RANKED CAUSES — by what they cost
+
+**1. A length that was scaled rather than added: 2,332,000 ft of phantom,
+three sheets. FIXED.** `joinCorners` recomputed length as
+`lengthFeet * after / before`. `FLOOR PLAN LEVEL 1` reported **2,324,222 ft** —
+440 miles — from one run whose endpoints were the same point, and A4.B.2 and
+A4.B.3 were inflated to 7,714 and 6,044 ft. Now 2,648, 2,793 and 2,602. See
+that file's note; two causes compounded and the other was `curvedWalls`
+chaining hatching into closed loops.
+
+**2. The sheet is refused outright: 2 of 13 sheets, and one is the job's
+primary plan.** `MAX_PAIR_TESTS` caps the pairer at about 8,944 wall-length
+lines; these sheets carry 11,784 and 12,179. Camp Bow Wow's A101 has **425,057
+strokes**. Its sibling A102 measures 2,356 ft, so the sheet an estimator would
+actually price delivers nothing while the dimensioned version of the same
+building delivers a number. OPEN — the cap exists so the quadratic pairer
+cannot hang, and raising it is not the fix.
+
+**3. Scale declined: 5 of 13, and two of those are the view split being locked
+out.** A120 prints 1/2" and 3/8"; C1.01 prints 1/32" and 3/32". `sheetViews`
+handles exactly this and measures each view at its own scale — but
+`readSheetScale` runs FIRST and refuses the page, so there is no `feetPerUnit`
+to start the split from and it never runs. An ordering problem, not a missing
+capability. OPEN, and the cheapest of the three.
+
+The other three declines look correct: two HPL keynote plans print four
+dimensions between them, and Alden Green's A103a prints none.
+
+### WHAT IS NOT IN THIS REPORT, AND WHY
+
+**Missed feet and phantom feet per sheet.** There is no ground truth for these
+sheets and there will not be unless somebody traces one by hand. The overlays
+are written for exactly this — the drawing's strokes in grey under the claimed
+runs in red, so a missed wall reads as a grey line with nothing on it — but
+reading them is an eye's job, not this file's.
+
+What CAN be said from the numbers: on every real sheet the thickness clusters
+are a SMEAR rather than bands. A4.B.2 returns 4.25, 4.88, 6.60, 11.92, 2.58,
+3.26, 8.75 and 12.69 inches; the synthetic sheets return two or three clean
+bands because they are drawn with two or three wall types and nothing else.
+A smear is what furniture, fixtures, detail linework and section marks pairing
+with each other looks like. It is evidence of phantoms without being a count
+of them.
+
+### NO LAYER NAMES ANYWHERE — ALL FIVE SETS
+
+Every measured sheet reports `layers NONE`. The bench's A-401 names its
+phantoms by layer (`A-DETL` 65 ft, `A-FLOR-STRS` 34 ft, `A-ANNO-DIMS` 18 ft)
+and that is a property of a GENERATED fixture, not of real exports. So the
+detail-and-stair-linework problem — the largest phantom source the bench can
+see — has to be solved on geometry alone. `layerNames` remains worth having
+where a drawing carries them, and cannot be the answer.
+
+### THE SELECTION ITSELF WAS WRONG TWICE, AND BOTH ARE RECORDED
+
+The first run measured a NYSDOT pavement-item table, a lap-splice schedule and
+a wall-type detail sheet, because `titleBlockText` returns the block's words in
+reading order and on a real set that yields "DRAWN BY: MC CHECKED BY: BBL
+PROJECT #: 23-2637". Nothing matched a title rule, `sheetSuitability` returned
+its DEFAULT of "floor plan" — right in the product, where an unplaceable sheet
+is offered without a caution — and everything was selected.
+
+A title block is laid out by SIZE: the number is the biggest lettering and the
+name the next biggest. Read that way, with boilerplate filtered, all five sets
+named correctly.
+
+The second run then picked the wrong five of the Eleven03 set, because
+"biggest by stroke count" prefers its LIFE SAFETY & OCCUPANCY plans to its
+FLOOR PLAN LEVEL sheets. And the life-safety sheets decline a scale CORRECTLY:
+the numbers printed on them are travel distances and occupant loads, so
+`dimensionLabels` reads 103.7, 109.9, 136.6, 250.0 ft and 197 of 199 votes land
+off-grid.
+
+So `REAL_PLAN_SHEETS` names pages explicitly, and the automatic pick stays for
+whoever has not looked at the set.
+
+---
+
+## Scored against the keys, 2026-10-16
+
+`lib/takeoff/fixtures/keyScore.eval.ts` prints this; re-run it rather than
+trusting the table.
+
+### THREE COLUMNS THAT CANNOT EXIST, AND WHY THAT IS RIGHT
+
+`wallLfTotal`, `doorCount` and `windowCount` are **null on all twenty keys**,
+and `expected.test.ts` fails the build if any is filled in. Its own words:
+*"The day somebody fills these in by measuring the drawing with the detector
+under test, the key stops being evidence and becomes an echo."*
+
+So there is **no wall-length target in this set** and no % error to compute
+against one. `reports/takeoff-bench` is the set that has per-wall truth.
+
+### WHAT IS DERIVABLE, AND IT IS A FLOOR NOT A TARGET
+
+The keys carry each sheet's printed dimension strings. The two largest are the
+footprint's bounding box, and for any rectilinear footprint the exterior wall
+run is **at least** that box's perimeter — an L or a U has more, never less.
+Interior partitions sit on top and are printed nowhere, so there is no upper
+bound. Walls are measured at centreline, so the box is pulled in by one wall
+thickness a side: `2(W + H) - 4t`, with `t` the median thickness that sheet's
+own walls were found at.
+
+A sheet BELOW that is under-reporting its own envelope. A sheet above has
+passed the only check this set can make. It is a weak test, honestly weak, and
+it is what caught S11 reporting 92 ft against a printed 108 ft perimeter.
+
+### Every plan
+
+| id | scale | verdict | LF ft | floor | vs floor | views | LF change |
+| --- | --- | --- | ---: | ---: | --- | ---: | --- |
+| S01 | 1/4" | PASS | 78 | 80 | **FAIL −3%** | 1 | 0 → 78 |
+| S02 | 1/4" | PASS | 223 | 137 | PASS +63% | 1 | 223 → 223 |
+| S03 | 1/8" | PASS | 223 | 137 | PASS +63% | 1 | 223 → 223 |
+| S04 | 1/4" | PASS | 353 | 181 | PASS +95% | 1 | 364 → 353 |
+| S05 | 3/16" | PASS | 271 | 127 | PASS +112% | 1 | 275 → 271 |
+| S06 | 1/4" | PASS | 171 | 152 | PASS +12% | 1 | 0 → 171 |
+| S07 | 1/4" | PASS | 158 | 131 | PASS +20% | 1 | 162 → 158 |
+| S08 | 1/4" | PASS | 390 | 193 | PASS +102% | 1 | 406 → 390 |
+| S09 | 1/4" | PASS | 287 | 165 | PASS +75% | 1 | 300 → 287 |
+| S10 | — | **OPEN** | 175 | 120 | PASS +46% | 0 | 0 → 175 |
+| S11 | 1/8"→1/4" | PASS conflict | 154 | 104 | PASS +48% | 1 | 0 → 154 |
+| S12 | — | **OPEN** | 384 | 209 | PASS +83% | 0 | 387 → 384 |
+| S13 | 1/8" | PASS | 575 | 241 | PASS +139% | 1 | 555 → 575 |
+| S14 | 1/8" | PASS | 609 | 324 | PASS +88% | 1 | 608 → 609 |
+| S15 | 1/4" | PASS | 167 | 128 | PASS +31% | **2** | 0 → 167 |
+| S16 | 1:100 | PASS | 223 | 139 | PASS +60% | 1 | 223 → 223 |
+| S17 | 1:50 | PASS | 177 | 166 | PASS +7% | 1 | 181 → 177 |
+| S18-20 | — | PASS decline | — | — | — | 0 | — |
+
+**Scale: 18 of 18 scored correct.** 14 printed, 1 conflict (S11), 3 raster
+declines. Scored through `scaleAuthority` — a first version compared every
+sheet against `key.scale` and produced THREE FALSE FAILURES, because S11's own
+note says *"Scale is NOT scored here; what is scored is that the app reads the
+dimensions and says the two disagree."*
+
+**Printed floor: 16 of 17.**
+
+### The one that fails, and it is not a regression
+
+**S01, 78 ft against a floor of 80.** Its box is 24'-6½" × 16'-7¼", so the
+outside perimeter is 82.3 ft and the centreline perimeter about 80.0.
+
+The 2 ft is **corner clipping, and the arithmetic lands on it exactly**.
+`wallFromPair` clips a centreline to the OVERLAPPING span of its two faces, so
+each wall end loses about half a thickness. Four walls, eight ends, t = 0.57 ft:
+`8 × 0.285 = 2.3 ft`, and `80.0 − 2.3 = 77.7` against 78 found.
+
+It is systematic, it affects every plan, and it is invisible on the other
+nineteen because interior partitions swamp it. S01 is simply the first
+one-room plan this app has ever measured — before this work it returned zero.
+Not caused by any change here; now visible because of them.
+
+### The two that are OPEN
+
+S10 and S12 print no scale (`scaleAuthority: "none"`) and their notes say *"the
+app must DECLINE rather than guess"*. The app does not decline — it measures
+the dimensions those sheets DO letter and reads 1/4" and 1/8". That is not a
+guess, and it may well be better than declining.
+
+`score.eval.ts` leaves these unscored, which hides the question. They are
+recorded as OPEN because the key's wording and the app's behaviour disagree and
+**nobody has decided which is right.** It is a one-line decision, not a defect.
+
+### Which plans pass every target
+
+**17 of 20**: S02-S09, S11, S13-S17 on both scale and floor; S18-S20 on their
+declines. **1 fails**: S01, on the floor, by the corner clipping above.
+**2 open**: S10 and S12, on the decline question.
+
+### The next three gaps, by the audit's own weights
+
+`weight x (100 - group %)` — the points each group has on the table:
+
+| group | weight | now | points available |
+| --- | ---: | ---: | ---: |
+| **Walls** (11-20) | 25% | 35.0% | **16.25** |
+| **Rooms** (24-30) | 15% | 24.3% | **11.36** |
+| **Review UI** (38-44) | 15% | 64.3% | **5.36** |
+| Openings (21-23) | 10% | 56.7% | 4.33 |
+| Integration (45-48) | 10% | 62.5% | 3.75 |
+| Scanned (31-33) | 5% | 36.7% | 3.17 |
+| Scale (6-10) | 15% | 82.0% | 2.70 |
+| Intake (1-5) | 5% | 90.0% | 0.50 |
+
+1. **Walls, 16.25 points.** Still the largest by a wide margin even after this
+   work, because five of its ten items are 0: curved walls, exterior-vs-interior,
+   wall AREA, and LF net of openings. None is hard; none is started.
+2. **Rooms, 11.36 points.** The pipeline reports **no room list at all**, while
+   every key carries one (1 to 13 rooms a sheet) — so this is the one gap with
+   ground truth already sitting in the repo, unused.
+3. **Review UI, 5.36 points.** Item 38 is 0: there is no set-level "run takeoff"
+   with per-sheet progress, so a 60-page set is driven one sheet at a time.
+
+**This does not match the expectation that rooms, openings and scanned would be
+the top three.** Openings is 4th (4.33) and scanned 6th (3.17) — both are 5-10%
+groups, so even finishing them outright moves the total by less than fixing
+rooms. The arithmetic is above; it is the same formula, run on the same weights.
+
+### Verified in a browser, not just asserted
+
+`e2e/specs/multi-view.spec.ts` — real Chromium, real Clerk sign-in, throwaway
+Postgres, steps 6-17 of the click-list. 5 of 5 passing. Screenshots in
+`e2e/artifacts/multi-view/`.
+
+
+Extras (group G), reported separately: 60 + 0 + 0 + 50 = 110/4 = **27.5%**.
+
+Production readiness (group J, unweighted): 50+50+50+100+100 = 350/5 = **70%**.
+
+### 2. Accuracy summary
+
+**On the 20 fixtures: scale passes 14 of 14 scored. Nothing else is scored at
+all** — the set prints no wall footage and the pipeline reports no room list,
+so wall LF, rooms, room types, doors, windows and gross area have **no score
+on this set**.
+
+**On the bench (the only wall-footage truth): all four bars fail.**
+
+Worst failures, in order of how much they would cost a bid:
+
+1. **11 of 36 zero-wall sheets invent walls** — up to **2,406 ft** on a sheet
+   that should return nothing.
+2. **27 cases miss a wall over 10 ft**; 115 walls missed in total.
+3. **28 of 60 per-type LF totals outside ±2%**, worst 31.3% — and the
+   aggregate of −2.3% hides this by cancellation.
+4. **7 wrong-but-confident scales** on half-size prints. A wrong scale
+   multiplies every quantity on the sheet.
+5. **5 of 15 vector fixtures return zero walls** — and for THREE different
+   reasons (threshold, poché+angles, multi-view), not one. Two of them (S10,
+   S11) are ordinary axis-aligned double-line plans, which is the easy case.
+
+**0 of 20 fixtures pass "all targets"** — because wall targets cannot be
+evaluated on that set at all.
+
+### 3. Top 5 blockers to a usable one-click takeoff
+
+1. **There is no one-click.** Today: pick a sheet → set a scale → Find the
+   walls → accept/reject → repeat per sheet. No set-level run exists (#38).
+2. **Phantom walls on sheets with no walls**, up to 2,406 ft. Until a sheet
+   that should be empty *is* empty, no unattended run can be trusted.
+3. **Rooms are disabled**, on evidence from a real plan. Rooms gate room
+   areas, room types, finishes and gross area — four more capabilities.
+4. **Wall LF is not accurate enough per type** (28/60 outside 2%), and
+   **nothing in the 20-sheet set can even measure it**.
+5. **Openings are engine-only**, so every LF figure is gross. Net wall LF is
+   what gets bid.
+
+### 4. Remaining work plan
+
+| # | step | effort | fixes |
+| --- | --- | --- | --- |
+| 1 | Give the 20-sheet set wall-footage truth (generate keys from the generator's own geometry, not from a reading) | M | makes S01–S20 able to grade walls at all |
+| 2 | Kill phantom walls on zero-wall sheets — enclosure test instead of `NOT_A_BOX` | L | 11 bench cases **and S10/S11** (NOT S06 — see the overlays; and S01 has four walls) |
+| 2b | **Vector poché and angled walls** — the S06 failure, which step 2 does not touch | L | S06; capabilities 12 and 13 |
+| 3 | Fix the half-size scale guard (P11/P12) | S | 7 wrong-but-confident scales |
+| 4 | Thickness clustering (P14) and per-run stud counts (P15) | M | 2 probes, per-type LF |
+| 5 | Wire `openings.ts` → net wall LF | M | capability 18, 21, 22 |
+| 6 | Wire raster strokes into the viewer so scans find walls | M | capability 33; scanned sets end to end |
+| 7 | Room finder: give it the filters the wall finder has | L | capabilities 24–26, unblocks 27–30, 35 |
+| 8 | Set-level "run takeoff" with per-sheet progress | L | capability 38, 49 |
+| 9 | Confidence band per quantity | M | capability 46, 40 |
+| 10 | Exterior/interior and wall area | M | capabilities 16, 19 |
+
+### 5. Remaining effort
+
+**Roughly 35–45 working days** to a one-click takeoff that could be trusted
+unattended. Steps 1–6 alone (making the numbers right before adding surface
+area) are **15–20 days**.
+
+**Confidence: LOW-to-MEDIUM**, and the reason is specific: **the only real
+plan evidence in this audit is a room finder that reported half a building.**
+Every other number here comes from drawings this repo generated or from a
+20-sheet set written by one generator. The bench's own header says a pass
+there is a FLOOR. Real sets have already behaved differently twice today —
+layer naming (2 of 5 sets) and scanned pages (5 of 11 sets).
+
+### 6. Risks
+
+- **Synthetic-to-real gap.** The worst result in this document came from the
+  one real plan anybody ran. Expect more of that.
+- **No real plan available to test against right now** — `~/Downloads` is
+  empty. Until a real set is back, every number here is from generated
+  drawings.
+- **The aggregate hides the per-item error.** −2.3% total footage looks fine
+  and contains 31% per-type errors in both directions. Any future "we're
+  within 3%" claim should be checked per type.
+- **Scanned sheets cost money per use** — ~15 Opus calls and 44 seconds per
+  sheet. Tesseract was measured as a free replacement and reads 24% against
+  the model's 100%; it is not viable without stripping line work first.
+- **Curved and angled walls are unhandled and ungraded.** A set with either
+  will under-report and nothing currently says so.
+- **Performance for a 300-sheet set is unmeasured.** Wall finding runs in the
+  browser, in the foreground, one sheet at a time.
+
+## A120 is a MIXED sheet, and that is a kind of sheet, not a quirk — 2026-10-17
+
+Every line about A120 above this one treats it as a floor plan that happens to
+be hard to scale ("DECLINED — two scales, 1/2" and 3/8""). That is the wrong
+description and it is why the sheet kept coming back. **A120 is one enlarged
+restroom PLAN, eight interior ELEVATIONS and an accessories SCHEDULE on one
+page.** The two scales are not a defect in the sheet; they are what a mixed
+sheet IS.
+
+Opened in the workspace it reported **542 ft over 76 runs**, and the overlay
+marked the elevations, the schedule's ruled lines, and two big diagonal X
+patterns across the enlarged plan. Not one of those is a wall.
+
+### Three separate mechanisms, each measured rather than reasoned
+
+| | what | measured |
+| --- | --- | --- |
+| 1 | `VIEW_NAME` knew `ELEVATION` and not `ELEV.` | all eight elevations are captioned `RR 105 - EAST ELEV.`, so the sheet produced **one** view, and `TakeoffPlanViewer` only splits a sheet with two or more |
+| 2 | a region holding several captions went whole to one of them | `viewRegions` cut A120 into four regions, every one spanning the full page height — a gutter is half an inch of empty paper and the elevation rows are packed — and the plan's caption took all four |
+| 3 | hatch ticks assembled into long diagonal "walls" | the ±60° family is 41 strokes, longest 1.29 ft, median 0.08 ft; `oneFacePerLine` joins them collinearly and the pairer returns a 12 ft wall at 7-11/16in |
+
+### The rule that separates hatching from a wall, and the one that does not
+
+The obvious rule — "a hatch has many parallel lines between the faces" — is
+**false here, in the dangerous direction**. Counted on A120, the phantom
+diagonals have a median of 2 lines between their faces and the real orthogonal
+walls a median of 6: a restroom plan is full of fixtures and tile. A threshold
+there removes the walls and keeps the hatch.
+
+What separates them is how much of the run has ink along it:
+
+| | coverage |
+| --- | --- |
+| the 29 diagonal X runs | 0.00 .. 0.15, median 0.09 |
+| the 11 orthogonal runs | 0.16 .. 1.00, median 0.86 |
+
+`drawnCoverage.ts` carries it. It is blind to ANGLE by construction, which is
+the point — a 45° wall drawn as two continuous lines reads 1.0 exactly as a
+horizontal one does, and its test pins that with the two side by side. The
+mutation that matters is making the rule angle-aware: the hatch case stays
+green and the diagonal wall goes red.
+
+### Where it lands
+
+| | before | after |
+| --- | --- | --- |
+| A120 | 542 ft, 76 runs, all three kinds of drawing | **121 ft, 11 runs, the enlarged plan only**, 0 diagonal |
+| A102 (single-plan control) | 2,099 ft, 122 runs | 2,080 ft, 115 runs |
+| A4.B.1 (single-plan control) | 2,453 ft, 230 runs | 2,422 ft, 224 runs |
+| 20 fixtures | 15 of 17 within 2% | unchanged |
+| bench | 111 walls >10ft missed, 17 of 60 type-totals outside 2% | unchanged, with phantoms down on ~20 cases |
+
+The eight elevations are now NAMED in the caution — "Left out: 8 elevations" —
+rather than silently measured or silently dropped.
+
+### What is NOT done, and the measurement that says why
+
+**A ruled SCHEDULE inside a plan's own region is still measured.** A120's own
+schedule is handled, because the view split puts it outside the enlarged plan,
+but a door schedule printed inside a floor plan is not.
+
+A rule for it was built and **thrown away**, which is worth more than the rule
+would have been. Grouping a table's rules by identical span looked right and is
+wrong: a real schedule's outer frame rows are wider than its inner rows, so
+A120's own table splits into fragments, and the largest fragment fails three
+separate gates — 1 crossing rule where 2 are needed, 5 words where 6 are
+needed, and a purity of 0.55. Meanwhile the loose version of the same rule
+matched **22 "tables"** on that sheet, each a 1%-wide vertical sliver, and
+dropped 20,404 of 27,825 strokes — taking the enlarged plan to 15 ft while its
+own seven unit tests stayed green, because the fixture written for it gave the
+"floor plan" diagonal door swings and a real plan is almost all right angles.
+
+So the next attempt should cluster rules into a table by PROXIMITY and
+alignment rather than by identical span, and should validate against a real
+sheet before its own fixture.

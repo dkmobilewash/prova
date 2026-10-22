@@ -139,12 +139,22 @@ export function StarterWallTypesButton() {
         onClick={() =>
           startTransition(async () => {
             const result = await addStarterWallTypes();
-            setMessage(result.ok ? `Added ${result.value.added.join(" and ")}. Link each part to your price book.` : result.error);
+            // `join(", ")`, not `" and "`. The starter set was two entries
+            // when this was written and is ten now — "W1 and W2 and W3 and…"
+            // is what that reads as.
+            setMessage(
+              result.ok
+                ? `Added ${result.value.added.join(", ")}. Link each part to your price book — they arrive unpriced on purpose.`
+                : result.error,
+            );
           })
         }
         className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
       >
-        {isPending ? "Adding…" : "Start from two common wall types"}
+        {/* NOT "two common wall types" any more. The set covers partitions,
+            exterior wall, drywall finish, ceilings, flooring, painting, slab
+            and footing — the trades the takeoff workspace can measure. */}
+        {isPending ? "Adding…" : "Start from the common trade assemblies"}
       </button>
       {message && <p className="text-sm text-ink-body">{message}</p>}
     </div>

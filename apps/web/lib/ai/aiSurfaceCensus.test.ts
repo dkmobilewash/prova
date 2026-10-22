@@ -87,6 +87,11 @@ type Control =
  * control, and to be rendered from a page.
  */
 const CONTROLS: Record<AiFeatureKey, Control> = {
+  PLAN_TEXT_READ: {
+    kind: "component",
+    file: "components/PlanIngestPanel.tsx",
+    why: "The 'Read the wall legend' button on the takeoff tab's ingest panel starts the WALL_LEGEND stage; the review screen it leads to adds the types to the library and spends nothing.",
+  },
   ASK: {
     kind: "ask-only",
     why: "It IS the Ask box. Requiring a control elsewhere would be incoherent — and the launcher is on every signed-in page already.",

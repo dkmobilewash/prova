@@ -91,6 +91,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { listGitFiles } from "../test/git-files";
+import { skipDir } from "./censusSkipDirs";
 
 /** apps/web. `process.cwd()` under this suite, but resolved from this
  * file so a runner started elsewhere cannot silently change the scope. */
@@ -137,7 +138,6 @@ const { roots, workspaceDeps } = scanRoots();
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx"];
 /** Never source, never tracked, and enormous. */
-const SKIP_DIRS = new Set(["node_modules", ".next", ".turbo", "dist", ".git"]);
 
 function walk(root: string): string[] {
   const found: string[] = [];
@@ -146,7 +146,7 @@ function walk(root: string): string[] {
     const dir = stack.pop() as string;
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
-        if (!SKIP_DIRS.has(entry.name)) stack.push(join(dir, entry.name));
+        if (!skipDir(entry.name)) stack.push(join(dir, entry.name));
       } else if (SOURCE_EXTENSIONS.some((ext) => entry.name.endsWith(ext))) {
         found.push(join(dir, entry.name));
       }
@@ -537,10 +537,42 @@ describe("the verdict", () => {
     // it at 5pm. Recorded rather than fixed here: it is one line in an
     // integrations component, it changes no stored value, and it is not
     // what this PR is about. Listed by name so the next person finds it.
+    // ── BY FILE AND BY WHAT IT READS, NOT BY LINE NUMBER ──
+    //
+    // This listed `path:line` and broke three times in one session — every
+    // time for an edit ELSEWHERE in `AnswerKeyPanel.tsx` that moved the clock
+    // read down the file. A census that fails for a reason it is not about
+    // teaches people to update the number without reading why, which is the
+    // opposite of what it is for.
+    //
+    // The expression is what the test actually cares about: a clock read that
+    // is not a calendar day. A new one still fails, in a new file or in this
+    // one, because the pair is new.
     const other = scanned
       .filter((f) => !isTestFile(f.path))
-      .flatMap((f) => f.sites.filter((s) => !isCalendarDay(s)).map((s) => `${f.path}:${s.line}`))
+      .flatMap((f) =>
+        f.sites.filter((s) => !isCalendarDay(s)).map((s) => `${f.path}  ${s.text.trim()}`),
+      )
       .sort();
-    expect(other).toEqual(["apps/web/components/QuickBooksReconcile.tsx:59"]);
+    //
+    // `AnswerKeyPanel` is the second, and it is CORRECT rather than tolerated.
+    // An answer key records when somebody reviewed a sheet, and that is an
+    // INSTANT: the file is read on another machine, in another timezone,
+    // months later, to decide whether a key predates a change to the detector.
+    // A calendar day would lose exactly the ordering that question needs.
+    //
+    // Listed here rather than exempted, because the point of this test is that
+    // every clock read in the app is one somebody chose.
+    //
+    // `labelRows` is the third, and correct for the same reason as the first:
+    // a label file records WHEN a sheet was reviewed, and a model trained in
+    // six months needs to know whether a label predates a change to the
+    // feature extractor. That ordering is an instant, and a calendar day
+    // would lose it.
+    expect(other).toEqual([
+      "apps/web/components/AnswerKeyPanel.tsx  new Date().toISOString()",
+      "apps/web/components/QuickBooksReconcile.tsx  new Date().toISOString()",
+      "apps/web/lib/takeoff/labelRows.ts  new Date().toISOString()",
+    ]);
   });
 });

@@ -2,7 +2,7 @@
 
 import { useState, useTransition, type FormEvent } from "react";
 import { saveCompanyAiSettings } from "@/lib/actions";
-import { AI_FEATURE_DESCRIPTION, AI_FEATURE_KEYS, AI_FEATURE_LABEL } from "@/lib/ai/features";
+import { AI_FEATURE_DESCRIPTION, AI_FEATURE_KEYS, AI_FEATURE_LABEL, OPT_IN_FEATURES } from "@/lib/ai/features";
 import { Spinner } from "@/components/Spinner";
 
 /**
@@ -32,6 +32,8 @@ import { Spinner } from "@/components/Spinner";
 export type AiSettingsView = {
   aiEnabled: boolean;
   disabledFeatures: string[];
+  /** Off until ticked; see `OPT_IN_FEATURES`. */
+  optedInFeatures: string[];
   modelOverride: string | null;
   planSheetsPerMonth: number;
 };
@@ -59,6 +61,8 @@ export function AiSettingsForm({ settings }: { settings: AiSettingsView }) {
   const [aiEnabled, setAiEnabled] = useState(settings.aiEnabled);
 
   const disabled = new Set(settings.disabledFeatures);
+  const optedIn = new Set(settings.optedInFeatures);
+  const isOn = (feature: string) => (OPT_IN_FEATURES.has(feature as never) ? optedIn.has(feature) : !disabled.has(feature));
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -106,12 +110,13 @@ export function AiSettingsForm({ settings }: { settings: AiSettingsView }) {
             <input
               type="checkbox"
               name={`feature:${feature}`}
-              defaultChecked={!disabled.has(feature)}
+              defaultChecked={isOn(feature)}
               disabled={!aiEnabled}
               className="mt-0.5 h-5 w-5 shrink-0 rounded border-line-card bg-canvas text-link focus:ring-link disabled:opacity-50"
             />
             <span>
               <span className="font-medium">{AI_FEATURE_LABEL[feature]}</span>
+              {OPT_IN_FEATURES.has(feature) && <span className="ml-2 text-xs text-ink-muted">new — off until you turn it on</span>}
               <span className="block text-xs text-ink-body">{AI_FEATURE_DESCRIPTION[feature]}</span>
             </span>
           </label>
@@ -151,7 +156,7 @@ export function AiSettingsForm({ settings }: { settings: AiSettingsView }) {
           browser does. Do not "simplify" this away; nothing but that spec can
           see it go. */}
       {!aiEnabled &&
-        AI_FEATURE_KEYS.filter((feature) => !disabled.has(feature)).map((feature) => (
+        AI_FEATURE_KEYS.filter(isOn).map((feature) => (
           <input key={feature} type="hidden" name={`feature:${feature}`} value="on" />
         ))}
 

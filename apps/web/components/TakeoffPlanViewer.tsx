@@ -1,9 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { pickOnClick } from "@/lib/takeoff/clickPick";
+import {
+  SNAP_RADIUS,
+  closesRing,
+  moveVertex,
+  nearestOnSegment,
+  pointInRing,
+  vertexAt,
+  extendByLength,
+  lockToAxis,
+  rectanglePoints,
+  snapToGeometry,
+  type SnapTarget,
+} from "@/lib/takeoff/drawTools";
 
 import { ActionForm } from "@/components/ActionForm";
+import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 import { SubmitButton } from "@/components/SubmitButton";
+import { canvasPlan } from "@/lib/takeoff/canvasPlan";
 import { DISTINCT_MARKS, SHOWN_AT_FIRST, markFor } from "@/lib/takeoff/clusterMarks";
 import { formatFeetInches, parseFeetInches } from "@/lib/feet-inches";
 import {
@@ -18,7 +35,14 @@ import {
   type MeasurementKind,
   type StoredCalibration,
 } from "@/lib/takeoff-plan";
-import { saveTakeoffCalibration, saveTakeoffMeasurement, saveTakeoffMeasurements } from "@/lib/actions";
+import {
+  addMeasurementCutout,
+  deleteTakeoffMeasurement,
+  saveTakeoffCalibration,
+  saveTakeoffMeasurement,
+  saveTakeoffMeasurements,
+  updateMeasurementGeometry,
+} from "@/lib/actions";
 import type {
   PlanSheet,
   PrintedScaleByPage,
@@ -30,6 +54,7 @@ import {
   errorBandText,
   evidenceOrder,
   fitZoom,
+  fitWidthZoom,
   stepZoom,
   TOOLS,
   ZOOM_STEPS,
@@ -41,16 +66,37 @@ import {
   type StrokeSegment,
 } from "@/lib/takeoff/wallVectors";
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
+import { loadPlanText, type PlanTextView } from "@/lib/actions/planTextRead";
+import { PlanTextPanel } from "@/components/PlanTextPanel";
+import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
+import { doorsByGroup, feetInches } from "@/lib/takeoff/planTextView";
 import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
 import { BLANK_TILE_INK, TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
 import type { WallClassifyLabel } from "@prova/integrations";
 import { pagesToSample } from "@/lib/takeoff/sheetTemplate";
-import { findWallsOnSheet, inPageWidthUnits } from "@/lib/takeoff/findWallsOnSheet";
-import { SheetTooDenseError } from "@/lib/takeoff/wallVectors";
+import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "@/lib/takeoff/findWallsOnSheet";
+import { SheetTooDenseError, oneFacePerLine, wallFromPair } from "@/lib/takeoff/wallVectors";
 import { layersOf, segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 import { droppedLayersSentence, type LayerDrop } from "@/lib/takeoff/layerNames";
 import { sheetNumberFrom } from "@/lib/plan-ingest/sheetNumber";
-import { cautionToShow, duplicateWallsCaution, sheetSuitability } from "@/lib/takeoff/sheetSuitability";
+import {
+  cautionToShow,
+  duplicateWallsCaution,
+  multiScaleCaution,
+  sheetSuitability,
+  viewsMeasuredCaution,
+} from "@/lib/takeoff/sheetSuitability";
+import { printedScalesOnPage } from "@/lib/takeoff/printedScales";
+import {
+  excludedViews,
+  primaryView,
+  sheetViews,
+  viewRegions,
+  viewsInRegions,
+  wallsPerView,
+  type ExcludedView,
+  type ViewWalls,
+} from "@/lib/takeoff/sheetViews";
 import { tagSentence } from "@/lib/takeoff/wallTags";
 import {
   verdictFor,
@@ -60,7 +106,24 @@ import {
   type WallGroup,
   type GroupVerdict,
 } from "@/lib/takeoff/wallGroups";
+import { proposalSections, showsHeadings } from "@/lib/takeoff/proposalSections";
+import { calibrationForView, type ViewScale } from "@/lib/takeoff/sheetScale";
+import { SINGLE_LINE_COLOUR, VERDICT_COLOURS } from "@/components/AnswerKeyPanel";
+import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
+import { drawingRegions, segmentsInRegions } from "@/lib/takeoff/planRegion";
+import { takeoffSheetVerdict, type TakeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
+import {
+  candidatesFromSheet,
+  candidatesInBox,
+  setVerdict,
+  type Candidate,
+  type ReviewState,
+} from "@/lib/takeoff/answerKeyReview";
+import { offeredCandidates } from "@/lib/takeoff/offeredCandidates";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
+import { TakeoffRoomsPanel } from "./TakeoffRoomsPanel";
+import { roomBoundary } from "@/lib/takeoff/roomBoundary";
+import { roomsFromWalls, type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 
 /**
  * THE MEASURING SURFACE — a PDF page rendered to a canvas, with an SVG
@@ -124,7 +187,24 @@ const BASE_SCALE = 1.5;
  * uselessness on a laptop.
  */
 const FIT = "fit" as const;
-type Zoom = number | typeof FIT;
+/** Fill the width and let the height scroll — see `fitWidthZoom`. */
+const FIT_WIDTH = "fit-width" as const;
+
+/**
+ * How many of a sheet's strokes are kept as snap targets.
+ *
+ * `snapToGeometry` is linear in them and runs on every click, and a real
+ * architectural sheet carries well over a hundred thousand segments — Camp
+ * Bow Wow's A101 has 12,179 wall-length lines alone, and that is after
+ * filtering. The LONGEST are kept, because the long ones are the walls and
+ * grid lines somebody is aiming at; hatching, text outlines and furniture are
+ * short and are exactly what should not pull a click off target.
+ */
+const SNAP_SEGMENT_CAP = 4_000;
+
+/** How close a click has to be to SELECT a shape. See the edit branch. */
+const PICK_RADIUS = 0.016;
+type Zoom = number | typeof FIT | typeof FIT_WIDTH;
 
 /**
  * ── THE WORDS ON A PAGE, IN `planPdf`'s CONVENTION, READ ONCE ──
@@ -155,6 +235,12 @@ async function pageTextItems(
   });
 }
 
+/**
+ * Whether the evenly-pitched-hatch rule is on. Set only by Chrome's labelling
+ * server; see `ClassifyInput.hatchPitchRule` for the measured trade.
+ */
+const HATCH_PITCH_RULE = process.env.NEXT_PUBLIC_TAKEOFF_HATCH_PITCH === "1";
+
 export function TakeoffPlanViewer({
   jobId,
   planId,
@@ -166,12 +252,24 @@ export function TakeoffPlanViewer({
   // which is the failure this prop exists to fix.
   scannedPages = [],
   storedWallsByPage,
+  takeoffItems = [],
   levelByPage,
   wallTypes,
   scalePrefillByPage,
+  viewScalesByPage,
+  answerKey,
   scaleDeclineByPage,
   duplicateWallsByPage = {},
+  onSheetNumber,
   sheetLabelByPage = {},
+  initialPage = 1,
+  onPageChange,
+  fill = false,
+  panelOpen = true,
+  readOnly = false,
+  roomFinder = false,
+  onMeasurementSaved,
+  activeItemId = null,
 }: {
   jobId: string;
   planId: string;
@@ -188,6 +286,86 @@ export function TakeoffPlanViewer({
    * — the only time it has anything to say. See the note in
    * `takeoff-plan-view.ts`.
    */
+  /** The sheet to open on. 1 unless a caller knows better — see the state. */
+  initialPage?: number;
+  /**
+   * Which sheet is on screen, reported whenever it changes.
+   *
+   * ── THERE WERE TWO CURRENT PAGES, AND THEY DISAGREED ──
+   *
+   * This component owns `pageNumber` and its own picker changes it. The
+   * workspace owns `page`, and only the sheet TREE and the overview changed
+   * that — both of which tell this component through a `takeoff-goto` event.
+   * Nothing ever went the other way.
+   *
+   * So picking a sheet from the picker moved the drawing and left the
+   * workspace believing it was still on the old one. Everything the workspace
+   * keys by page then belonged to the wrong sheet: the answer-key candidates
+   * and verdicts, the traced walls, the scale a traced wall is measured at,
+   * and the sheet number a saved key is named after.
+   *
+   * One notion of the current sheet, reported from the component that owns it.
+   */
+  onPageChange?: (page: number) => void;
+  /**
+   * ── FILL THE HOST, RATHER THAN BE AS TALL AS THE CONTENT ──
+   *
+   * False for the takeoff tab, which is every caller that existed before the
+   * full-screen workspace: inside the app shell this component is one section
+   * of a scrolling page, so its height has to come from its content.
+   *
+   * True for a host that has already decided the height — the workspace, where
+   * the whole point is that the drawing gets the viewport. Without it the
+   * frame's height is circular: the box sizes to the canvas and the canvas is
+   * sized from the box, so it settles on the `min-h-[24rem]` floor. That is the
+   * failure the comment above the frame already describes from the other
+   * direction — "a short frame makes a small sheet, so the width beside it went
+   * empty" — measured here at 1440px as a plan at 18% with half the viewport
+   * empty under it.
+   *
+   * It changes three class strings and nothing else. FIT already fits BOTH
+   * dimensions (`fitZoom`), so a frame with a real height is all it needs.
+   */
+  fill?: boolean;
+  /**
+   * Whether the found-walls panel is shown. True for every caller that is not
+   * the workspace, where it is a rail the reviewer opens and closes and the
+   * canvas takes the space it gives up.
+   */
+  panelOpen?: boolean;
+  /**
+   * No tools and no actions — a phone, where the screen is for LOOKING at a
+   * takeoff somebody else made.
+   *
+   * The toolbar's controls all place something on the drawing by clicking it,
+   * and a 390px screen cannot be clicked accurately enough to trace a wall. An
+   * estimator on a phone is checking a number, not measuring; offering the
+   * tools there is offering a way to put a wrong line on a real takeoff.
+   */
+  readOnly?: boolean;
+  /**
+   * "Find the rooms" beside "Find the walls". OFF for every company until the
+   * owner turns it on (Settings → `RoomFinderSwitch`); with it off nothing
+   * about this screen changes and `takeoffRoomFinder.test.tsx` holds the
+   * button absent. See `lib/takeoff/NOTES-rooms.md`.
+   */
+  roomFinder?: boolean;
+  /**
+   * Told when a measurement has been saved, so a HOST can offer to undo it.
+   *
+   * Optional, and the takeoff tab does not pass it — undo belongs to whoever
+   * owns the keyboard, and on the tab that is the browser. The viewer holds no
+   * stack of its own precisely so there cannot be two.
+   */
+  onMeasurementSaved?: (saved: { id: string; kind: MeasurementKind }) => void;
+  /**
+   * The takeoff item new measurements belong to, when a host has one selected.
+   *
+   * The viewer does not OWN this — the items rail does — and does not render
+   * the list. It only needs to stamp what it saves, which is the one thing the
+   * rail cannot do from outside the form.
+   */
+  activeItemId?: string | null;
   printedScaleByPage: PrintedScaleByPage;
   /**
    * Page numbers whose page carries NO TEXT LAYER — that is, scans.
@@ -229,6 +407,15 @@ export function TakeoffPlanViewer({
    * calibration, which is the same thing from the reader's side.
    */
   storedWallsByPage?: Record<number, WallGroup[]>;
+  /**
+   * The job's takeoff items, so detected groups can read under the condition
+   * they propose into rather than as a flat list of thicknesses.
+   *
+   * Names only — the quantities and prices are the items panel's business. An
+   * empty list is the ordinary state of a job nobody has named conditions on,
+   * and the panel then draws no headings at all.
+   */
+  takeoffItems?: readonly { id: string; name: string }[];
   /** Which floor each sheet draws, read off its own title — see
    *  `sheetLevel.ts`. Absent for a sheet whose title names no floor, which is
    *  most of them on a single-storey job. */
@@ -236,6 +423,125 @@ export function TakeoffPlanViewer({
   /** What each sheet said about its own scale, read off the dimensions
    *  printed on it. A PREFILL and never a calibration — see `ScalePrefill`. */
   scalePrefillByPage: ScalePrefillByPage;
+  /**
+   * The drawings on each multi-scale sheet, with the scale captioned under
+   * each. Absent for every page that read a scale of its own, which is most of
+   * them — see `sheetScale.ts` for why a page-wide prefill must NOT be invented
+   * for these.
+   */
+  viewScalesByPage?: Record<number, ViewScale[]>;
+  /**
+   * ── ANSWER-KEY REVIEW ──
+   *
+   * When set, the overlay stops being a list of findings and becomes a list of
+   * QUESTIONS: every candidate is drawn in the colour of its verdict, clicking
+   * one focuses it, and dragging a box decides many at once. See
+   * `AnswerKeyPanel` for why nothing is accepted until it is accepted.
+   */
+  /**
+   * The sheet NUMBER this viewer read off the title block, reported as it is
+   * read.
+   *
+   * ── WHY THE VIEWER IS THE ONE THAT KNOWS ──
+   *
+   * The number on screen comes from a `PlanSheetProposal`, which the ingest's
+   * TITLE_BLOCK stage writes — and that stage calls a model, so a set ingested
+   * without one has no sheet numbers at all. The viewer has the PDF open and
+   * reads the title block itself, with no model, for the duplicate-walls
+   * caution; this hands that reading to the workspace so an answer key is
+   * named `A120.key.json` rather than `p15.key.json`.
+   *
+   * Somebody spent an hour reviewing A120 and then could not find the file,
+   * because nothing had told them it was called p15.
+   */
+  onSheetNumber?: (page: number, sheetNumber: string) => void;
+  answerKey?: {
+    state: ReviewState;
+    onState: (next: ReviewState) => void;
+    focusedId: string | null;
+    onFocus: (id: string | null) => void;
+    overlaysOn: boolean;
+    /**
+     * Called with everything a reviewer has to decide about, once detection
+     * has run. Derived in here because the raw geometry never leaves this
+     * component, and the unpaired lines cannot be found without it.
+     */
+    /**
+     * The runs a reviewer judges, and the sheet's own lines beside them.
+     *
+     * The segments are passed because the duplicate rule needs them: picking
+     * which of two twins to keep is a question about which one's faces are
+     * actually drawn, and without them it falls back to length — which chose
+     * the wrong twin twice on E Street 421. They arrive in PAGE-WIDTH units,
+     * the same units the candidates are in.
+     */
+    /**
+     * The candidate list, and WHY it changed: a fresh detection replaces the
+     * review, a change of what is OFFERED adds to it. See `mergeOffered`.
+     */
+    /**
+     * The candidate list, and WHY it changed.
+     *
+     * "detect" is a fresh reading of the drawing and REPLACES the review.
+     * "offer" is the same reading with a different amount offered — the hatch
+     * override — and must ADD to it. The receiver cannot tell these apart from
+     * the lists: a restored sheet holds a split's halves and carried
+     * decisions that the finder never proposes, so "did it only grow" is
+     * false on exactly the sheets with the most work in them. That guess cost
+     * NG Green Bay A3.1 its 109 decisions and 32 traces.
+     */
+    onCandidates?: (
+      candidates: Candidate[],
+      segments?: StrokeSegment[],
+      reason?: "detect" | "offer",
+    ) => void;
+    /**
+     * Every PAIRING the finder considered, with its feature vector.
+     *
+     * Not the same list as `onCandidates`: that one is the runs a reviewer
+     * judges, and this is what the geometry proposed before merging and
+     * filtering. A reviewed sheet is training data only if both are kept —
+     * `labelRows` carries each verdict from the run back to the pairings it
+     * was made of, and without these there is nothing to carry it to.
+     */
+    /** Cut the candidate at a point on it — the shift-click path, for a
+     *  boundary with no wall on it. In page-width units. */
+    onSplitAt?: (id: string, at: { x: number; y: number }) => void;
+    onPairings?: (
+      pairings: { x1: number; y1: number; x2: number; y2: number; lengthFeet: number; thicknessFeet: number; features: number[] }[],
+    ) => void;
+    /**
+     * What the classifier set aside, counted by its own reason.
+     *
+     * ── NOTHING IS EXCLUDED SILENTLY, AND THIS IS THE HALF THAT KEEPS IT
+     *    TRUE ──
+     *
+     * Only `unclassified` lines are offered, which took A102 from 168 blue
+     * candidates to 2. The other 166 are not gone: they are a hatch, a grid
+     * line past the building or a symbol, each already named as such, and a
+     * reviewer who cannot see that the app decided for them is reviewing the
+     * app's opinion rather than the drawing.
+     */
+    onSetAside?: (counts: { kind: string; why: string; n: number }[]) => void;
+    /** Offer every unpaired line, including the ones the classifier named.
+     *  The reviewer's own override for the filter above. */
+    offerAll?: boolean;
+    /**
+     * Tracing is armed: the next two clicks on the sheet are the ends of a
+     * wall the drawing has no candidate for.
+     *
+     * The panel owns the arming and the shortcut, because that is where the
+     * reviewer's hands are and where every other key in this mode lives.
+     */
+    tracing?: boolean;
+    /** Arm or disarm tracing — the `t` shortcut lives in the viewer, because
+     *  the panel it used to live in is not mounted until candidates exist. */
+    onTracing?: (next: boolean) => void;
+    /** A wall the reviewer drew, ready to go into the key as accepted. */
+    onTraced?: (from: { x: number; y: number }, to: { x: number; y: number }) => void;
+    /** Both ends are down and Enter will commit — for the panel's prompt. */
+    onTraceReady?: (ready: boolean) => void;
+  };
   scaleDeclineByPage?: ScaleDeclineByPage;
   /**
    * Per page, why a wall takeoff here would probably be a DOUBLE COUNT.
@@ -262,7 +568,14 @@ export function TakeoffPlanViewer({
    */
   sheetLabelByPage?: Record<number, string>;
 }) {
-  const [pageNumber, setPageNumber] = useState(1);
+  // ── WHICH SHEET IS OPEN IS PART OF WHERE YOU ARE ──
+  //
+  // Defaulted to 1, which is every caller that existed before the full-screen
+  // workspace. The workspace passes the page out of its own URL, so its sheet
+  // rail can be a list of REAL LINKS: a reviewer can send somebody "look at
+  // A-102" and have them land on it, and Cmd-click opens a second sheet beside
+  // the first. A click handler could not do either.
+  const [pageNumber, setPageNumber] = useState(initialPage);
   const [pageCount, setPageCount] = useState<number | null>(null);
   /** How many strokes the set's own template accounted for, so the panel can
    *  SAY it rather than quietly returning a smaller number. */
@@ -280,6 +593,46 @@ export function TakeoffPlanViewer({
   // somebody opening a drawing wants to see first; they zoom IN to measure.
   const [zoom, setZoom] = useState<Zoom>(FIT);
   const [tool, setTool] = useState<ToolId>("pan");
+
+  /**
+   * ── THE HOST'S KEYBOARD REACHES THE CANVAS HERE ──
+   *
+   * The full-screen workspace owns the keyboard — it is the thing with focus
+   * — but zoom and paging belong to this component, so the shell forwards
+   * them as DOM events rather than reaching into state it does not own.
+   *
+   * **WIRED 2026-10-16, AND IT WAS A REAL BUG THAT IT WAS NOT.** The shell
+   * had been dispatching `takeoff-shortcut` since the workspace shipped and
+   * NOTHING listened: `f`, `j` and `k` did nothing at all while the shortcut
+   * cheat sheet told everybody they worked. The "written, documented and
+   * never called" shape that CLAUDE.md records three instances of — and the
+   * reason the e2e spec now presses these keys and asserts the result rather
+   * than asserting that the cheat sheet lists them.
+   */
+  useEffect(() => {
+    const onShortcut = (event: Event) => {
+      const key = (event as CustomEvent<{ key?: string }>).detail?.key;
+      if (key === "f") setZoom(FIT);
+      // BOUNDED BY THE PDF'S PAGE COUNT, NOT BY `sheets.length`.
+      // `sheets` is the TakeoffPlanPage rows, and a page only gets one once
+      // somebody has saved a calibration on it — so on a fresh set that array
+      // is one entry long while the file has 175 pages. The first version of
+      // this bounded by it and `j` simply refused to move, which is exactly
+      // what the spec caught: the pager was visible and the key did nothing.
+      else if (key === "j") setPageNumber((at) => (pageCount === null ? at : Math.min(pageCount, at + 1)));
+      else if (key === "k") setPageNumber((at) => Math.max(1, at - 1));
+    };
+    const onGoto = (event: Event) => {
+      const page = (event as CustomEvent<{ page?: number }>).detail?.page;
+      if (typeof page === "number" && page >= 1) setPageNumber(page);
+    };
+    document.addEventListener("takeoff-shortcut", onShortcut);
+    document.addEventListener("takeoff-goto", onGoto);
+    return () => {
+      document.removeEventListener("takeoff-shortcut", onShortcut);
+      document.removeEventListener("takeoff-goto", onGoto);
+    };
+  }, [pageCount]);
 
   // ── FOUND WALLS ──
   //
@@ -321,22 +674,128 @@ export function TakeoffPlanViewer({
   // the tags, the schedule and the sheet's general note all live inside it, so
   // re-grouping cannot drift from the grouping that was shown first.
   const runsRef = useRef<WallCandidate[]>([]);
+  // ── FOR THE ROOM STEP ──
+  // Every pairing the last find produced (long ones bound rooms the kept runs
+  // do not — NOTES-rooms.md §5) and the sheet's words (the room tags), kept
+  // from the find so "Find the rooms" costs no second read of the PDF.
+  const pairingsRef = useRef<{ x1: number; y1: number; x2: number; y2: number; lengthFeet: number; thicknessFeet: number }[]>([]);
+  const wordsRef = useRef<{ str: string; x: number; y: number; width: number; height: number }[]>([]);
+  const [rooms, setRooms] = useState<RoomsFromWallsResult | null>(null);
+  const [roomsOnPage, setRoomsOnPage] = useState<number | null>(null);
+  const [hoveredRoom, setHoveredRoom] = useState<number | null>(null);
+  /**
+   * The answer-key props, readable from inside the detect without putting them
+   * in its dependencies.
+   *
+   * The detect is expensive and re-running it because a reviewer pressed a key
+   * would be a different bug; a ref keeps the reporting current without making
+   * the work depend on the review's state.
+   */
+  const answerKeyRef = useRef(answerKey);
+  answerKeyRef.current = answerKey;
   /** Feet across the page width, as the find that produced these runs read it. */
   const feetAcrossRef = useRef<number>(0);
   const regroupRef = useRef<((runs: WallCandidate[]) => WallGroup[]) | null>(null);
-  const [labels, setLabels] = useState<Map<number, WallClassifyLabel> | null>(null);
+  /**
+   * ── EVERYTHING A FIND PRODUCES IS KEPT PER PAGE, WITHOUT EXCEPTION ──
+   *
+   * `wallsOnThisSheet` above fixed the groups by keeping the page beside the
+   * result, and these three were left as plain state — so a check run on A120
+   * put its labels, its missed-wall list and its view name on A130 and A140 as
+   * well. The groups were right and the sentences around them were another
+   * sheet's.
+   *
+   * The lesson is the one that file already states and this did not follow:
+   * the rule has to be in ONE place that every render site reads. A record
+   * keyed by page is that place, it is the idiom the three states below it
+   * already use, and paging away and back keeps the work rather than throwing
+   * it away.
+   */
+  const [labelsByPage, setLabelsByPage] = useState<
+    Record<number, Map<number, WallClassifyLabel>>
+  >({});
+  const labels = onThisSheet(labelsByPage, pageNumber);
+  const setLabels = useCallback(
+    (next: Map<number, WallClassifyLabel> | null) =>
+      setLabelsByPage((prev) => setOnThisSheet(prev, pageNumber, next)),
+    [pageNumber],
+  );
   /** Walls the check says the finder missed. Words, never a quantity — the
    *  estimator traces each one with the measuring tools. */
-  const [missed, setMissed] = useState<{ where: string; why: string }[]>([]);
+  const [missedByPage, setMissedByPage] = useState<
+    Record<number, { where: string; why: string }[]>
+  >({});
+  const missed = onThisSheet(missedByPage, pageNumber) ?? EMPTY_MISSED;
+  const setMissed = useCallback(
+    (next: { where: string; why: string }[]) =>
+      setMissedByPage((prev) => setOnThisSheet(prev, pageNumber, next)),
+    [pageNumber],
+  );
   const [checking, setChecking] = useState(false);
+  /** The multi-scale caution per page, read off the drawing's own captions. */
+  const [scaleCautionByPage, setScaleCautionByPage] = useState<Record<number, string>>({});
+  /** The views NOT quoted, per page — measured, each at its own scale, and
+   *  reported rather than added. See `primaryView`. */
+  const [otherViewsByPage, setOtherViewsByPage] = useState<Record<number, ViewWalls[]>>({});
+  /** The views that could not be measured at all, per page, with the reason.
+   *  Named in the caution rather than dropped — nothing is excluded silently. */
+  const [excludedByPage, setExcludedByPage] = useState<Record<number, ExcludedView[]>>({});
+  /** The view the quantities on screen ARE, so the sentence can name it.
+   *  Per page for the reason `labelsByPage` is: it names the drawing a FIND
+   *  was about, and on any other sheet it names the wrong one. */
+  const [primaryViewByPage, setPrimaryViewByPage] = useState<
+    Record<number, { name: string; scaleName: string | null }>
+  >({});
+  const primaryViewShown = onThisSheet(primaryViewByPage, pageNumber);
+  const setPrimaryViewShown = useCallback(
+    (next: { name: string; scaleName: string | null } | null) =>
+      setPrimaryViewByPage((prev) => setOnThisSheet(prev, pageNumber, next)),
+    [pageNumber],
+  );
   const [checkError, setCheckError] = useState<string | null>(null);
+  /**
+   * Whether each sheet is one with a floor plan on it — read from the title
+   * block and the drawings' own captions. See `takeoffSheet.ts`.
+   */
+  const [takeoffVerdictByPage, setTakeoffVerdictByPage] = useState<
+    Record<number, TakeoffSheetVerdict>
+  >({});
+  /** Sheets where somebody pressed "Run anyway". Per page, because an override
+   *  is a judgement about ONE drawing. */
+  const [overriddenByPage, setOverriddenByPage] = useState<Record<number, true>>({});
+  const askedVerdict = useRef<Set<string>>(new Set());
   /**
    * What this sheet has to show. Every render site reads THIS and not the raw
    * state, which is why the name it kept is the one they were already using.
    */
   const found = wallsOnThisSheet(foundRaw, foundOnPage, pageNumber);
-  // ONE SLOT, and `cautionToShow` owns which of the two fills it.
-  const sheetCaution = cautionToShow(duplicateWallsByPage[pageNumber], readCaution[pageNumber]);
+  // ONE SLOT, and `cautionToShow` owns which of the three fills it.
+  //
+  // THE MEASURED SENTENCE BEATS THE WARNING, and it is the same slot. Before
+  // the walls are found, all that can be said is "this sheet prints two
+  // scales". After, the other drawing has a name, a scale and a figure — so
+  // `multiScaleCaution` is what shows until `onFindWalls` has run, and
+  // `viewsMeasuredCaution` replaces it once there is a result to report.
+  const measuredViews = otherViewsByPage[pageNumber];
+  const leftOutViews = excludedByPage[pageNumber];
+  const viewsSentence =
+    (measuredViews === undefined || measuredViews.length === 0) &&
+    (leftOutViews === undefined || leftOutViews.length === 0)
+      ? undefined
+      : viewsMeasuredCaution(
+          primaryViewShown,
+          (measuredViews ?? []).map((one) => ({
+            name: one.view.name,
+            scaleName: one.view.scaleName,
+            lengthFeet: one.lengthFeet,
+          })),
+          leftOutViews ?? [],
+        );
+  const sheetCaution = cautionToShow(
+    duplicateWallsByPage[pageNumber],
+    readCaution[pageNumber],
+    viewsSentence ?? scaleCautionByPage[pageNumber],
+  );
   /**
    * WHICH TYPE A PERSON PICKED for a group that could be more than one, by
    * group index.
@@ -359,6 +818,31 @@ export function TakeoffPlanViewer({
    *  overlay all key off the same number, and a slice that reordered would
    *  silently hover one group and add another. */
   const shownGroups = showingAll ? (found ?? []) : (found ?? []).slice(0, SHOWN_AT_FIRST);
+  /**
+   * The same groups, read under the condition each proposes into.
+   *
+   * A READING ORDER, NOT A RE-SORT — every entry carries the index it had in
+   * `shownGroups`, because that index is what addresses the group everywhere
+   * else: `ClusterMark index=` picks its colour and dash on the drawing,
+   * `chosen[index]` holds its wall type, and `hovered` lights its runs.
+   * Renumber and the panel's third row highlights the drawing's first.
+   *
+   * `heading` is set on the first entry of each section, so the headings ride
+   * inside the one list rather than needing a list per section — the rows stay
+   * siblings and the gap between them stays even.
+   */
+  const ordered = useMemo(() => {
+    const sections = proposalSections(shownGroups, takeoffItems);
+    const withHeadings = showsHeadings(sections);
+    return sections.flatMap((section) =>
+      section.entries.map((entry, within) => ({
+        ...entry,
+        heading: withHeadings && within === 0 ? section : null,
+        /** How many are under this heading, for the heading's own count. */
+        inSection: section.entries.length,
+      })),
+    );
+  }, [shownGroups, takeoffItems]);
   /** How many strokes the sheet held when it was last read, so an empty result
    *  can say which kind of empty it is. See the message below. */
   const [strokesSeen, setStrokesSeen] = useState(0);
@@ -396,6 +880,268 @@ export function TakeoffPlanViewer({
 
   const sheet = sheets.find((s) => s.pageNumber === pageNumber) ?? null;
   const calibration = sheet?.calibration ?? null;
+  /**
+   * What the last detection on this page was computed FROM.
+   *
+   * Answer-key mode needs the raw geometry to find the lines the detector
+   * could not pair, and that geometry is read inside `onFindWalls` and
+   * discarded. Without this, turning the mode on after a detection showed an
+   * empty rail telling the reviewer to press a button they had already
+   * pressed — found by walking it in a browser, which is the only instrument
+   * that could have.
+   */
+  /** What the classifier set aside on the last find, counted by reason. */
+  const setAsideRef = useRef<{ kind: string; why: string; n: number }[]>([]);
+  const lastDetect = useRef<{
+    page: number;
+    segments: StrokeSegment[];
+    feetPerUnit: number;
+    widthPt: number;
+    walls: WallCandidate[];
+    /**
+     * The parts of the page the measured PLAN views own, or null on a sheet
+     * that was measured whole.
+     *
+     * Answer-key mode offers the unclaimed long lines as possible walls, and
+     * on a mixed sheet most of them are not on a plan at all: A120 carries
+     * eight interior elevations and a schedule, and every long line in those
+     * was offered to the reviewer. Null means "the whole sheet", which is what
+     * a single-view sheet is.
+     */
+    planBoxes: { from: number; to: number; fromY: number; toY: number }[] | null;
+  } | null>(null);
+
+  /**
+   * Everything a reviewer has to decide about on the last-detected page.
+   *
+   * Two populations: what the detector REPORTED, and the long lines it could
+   * not pair at all — 7,694 ft of those on one real sheet, 93% of which
+   * classify as hatching. A key made from the first alone would be a key about
+   * the detector's own output, which is the thing it exists to grade.
+   *
+   * Null when nothing has been detected on this page, which is what the rail's
+   * empty state is for.
+   */
+  const offerAll = answerKey?.offerAll ?? false;
+  const candidatesFromLastDetect = useCallback((): Candidate[] | null => {
+    const last = lastDetect.current;
+    if (last === null || last.page !== pageNumber) return null;
+    // ── ONE PIPELINE, SHARED WITH EVERY EVAL ──
+    //
+    // This logic lived here, which meant no eval could reach it — so every
+    // measurement in `realplan/` was of the finder's RAW output while the
+    // panel showed something else. The gap reached 128 candidates on Murray
+    // A101 (app 32, eval 160) and produced two wrong conclusions before
+    // anybody checked. `offeredCandidates` is that function, and it says what
+    // reduces the list and by how much.
+    const offered = offeredCandidates(
+      {
+        walls: last.walls,
+        segments: last.segments,
+        widthPt: last.widthPt,
+        feetPerUnit: last.feetPerUnit,
+        planBoxes: last.planBoxes,
+      },
+      offerAll,
+      // ── ON FOR LABELLING, OFF FOR CUSTOMERS ──
+      //
+      // The pitch rule recovers 15,921 ft of the 16,530 ft of real wall the
+      // hatch class withheld and offers 49,419 ft of junk for it. A reviewer
+      // judging each line wants that; a customer would see the junk as walls.
+      // Chrome's labelling server (:3010) sets this; nothing else does, and
+      // the flag retires when "demote, don't hide" ships.
+      HATCH_PITCH_RULE,
+    );
+    setAsideRef.current = offered.setAside;
+    return offered.candidates;
+  }, [pageNumber, offerAll]);
+
+  // ── AND THE MODE CAN BE TURNED ON AFTER A DETECTION ──
+  //
+  // Without this, a reviewer who had already pressed Find the walls opened the
+  // rail onto an empty state telling them to press it again. Found by walking
+  // it in a browser, which is the only instrument that could have: every unit
+  // test here passed, because each one calls the mode the way the mode wants
+  // to be called.
+  /** The `offerAll` the current candidate list was built with. */
+  const builtWith = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!answerKey?.onCandidates) return;
+    // ── THE OVERRIDE HAS TO BE ABLE TO LENGTHEN AN EXISTING LIST ──
+    //
+    // This returned as soon as a list existed, which is right for every
+    // ordinary re-render and made the hatch override a DEAD CONTROL: the
+    // reviewer pressed it, the callback was rebuilt, this effect re-ran and
+    // returned immediately. The smoke test caught it as "82 -> 82 offered".
+    //
+    // So the guard asks the real question — is the list already built with
+    // the setting now in force — rather than merely whether one exists.
+    // `keepReview` is what makes the rebuild safe for work in progress.
+    const already = answerKey.state.candidates.length > 0;
+    if (already && builtWith.current === offerAll) return;
+    // WHY the list is changing, which the receiver cannot work out from the
+    // lists themselves — a restored sheet holds split halves and carried
+    // decisions the finder never proposes, so "did it only grow" is false on
+    // exactly the sheets with the most work in them. See `mergeOffered`.
+    const reason = already ? "offer" : "detect";
+    builtWith.current = offerAll;
+    const candidates = candidatesFromLastDetect();
+    if (candidates !== null && candidates.length > 0) {
+      const W = lastDetect.current?.widthPt ?? 0;
+      answerKey.onCandidates(
+        candidates,
+        W > 0
+          ? lastDetect.current?.segments.map((one) => ({
+              ...one,
+              x1: one.x1 / W,
+              y1: one.y1 / W,
+              x2: one.x2 / W,
+              y2: one.y2 / W,
+            }))
+          : undefined,
+        reason,
+      );
+      answerKey.onSetAside?.(setAsideRef.current);
+    }
+  }, [answerKey, candidatesFromLastDetect]);
+
+  /** The ends of the wall being traced in answer-key mode, in page-width
+   *  units. `traceTo` set means both ends are down and Enter will commit. */
+  const [traceFrom, setTraceFrom] = useState<{ x: number; y: number } | null>(null);
+  const [traceTo, setTraceTo] = useState<{ x: number; y: number } | null>(null);
+  /**
+   * Where the next click would land, snapped — redrawn as the pointer moves.
+   *
+   * Without it the first click is blind: a reviewer could not see WHICH line
+   * their click was about to grab, and snapping that cannot be seen reads as a
+   * click that landed in the wrong place.
+   */
+  const [traceHover, setTraceHover] = useState<{ x: number; y: number } | null>(null);
+  /** The wall just added, for a confirmation that says what it measured. */
+  const [traceAdded, setTraceAdded] = useState<string | null>(null);
+
+  /**
+   * ── ENTER COMMITS THE TRACED WALL, ESCAPE ABANDONS IT ──
+   *
+   * Here and not in the panel, although every other key in this mode is the
+   * panel's: these two are about the two points held in THIS component's
+   * state, and routing them through a prop would mean the panel deciding
+   * something it cannot see.
+   *
+   * Only while tracing is armed and both ends are down, so Escape still means
+   * what it means everywhere else in this viewer the rest of the time.
+   */
+  /**
+   * ── T ARMS TRACING, AND IT HAS TO LIVE HERE ──
+   *
+   * It was in `AnswerKeyPanel`, with the other shortcuts, and that panel is
+   * only rendered once there are candidates — so before Find the walls had
+   * run, the key did nothing at all and nothing said why. Reported from the
+   * workspace as "I press t and there is no visual change".
+   *
+   * The viewer is mounted whenever answer-key mode is on, so the shortcut is
+   * too. The panel keeps its button, which is the visible half of the same
+   * affordance.
+   */
+  useEffect(() => {
+    if (answerKey === undefined) return;
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (
+        target !== null &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+      ) {
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key.toLowerCase() !== "t") return;
+      // ── A FOCUSED BUTTON IS NOT TYPING ──
+      //
+      // Only INPUT, TEXTAREA and contentEditable block this, deliberately:
+      // "T does nothing while the Save button has focus" was reported, and a
+      // guard that skipped any focused element would make it true. After a
+      // click, SOMETHING always has focus.
+      event.preventDefault();
+      answerKey?.onTracing?.(answerKey?.tracing !== true);
+      setTraceFrom(null);
+      setTraceTo(null);
+      setTraceHover(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  useEffect(() => {
+    if (answerKey?.tracing !== true) return;
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (
+        target !== null &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+      ) {
+        return;
+      }
+      if (event.key !== "Enter" && event.key !== "Escape") return;
+      if (event.key === "Enter" && traceFrom !== null && traceTo !== null) {
+        event.preventDefault();
+        answerKey?.onTraced?.(traceFrom, traceTo);
+        // SAYS WHAT IT MEASURED, not just that something happened: a wall
+        // added at the wrong length is the failure worth catching in the
+        // second it takes to read, rather than in the key a week later.
+        const feet =
+          Math.hypot(traceTo.x - traceFrom.x, traceTo.y - traceFrom.y) * (feetPerUnit ?? 0);
+        setTraceAdded(feet > 0 ? formatFeetInches(feet) : null);
+        setTraceFrom(null);
+        setTraceTo(null);
+        setTraceHover(null);
+      } else if (event.key === "Escape") {
+        // ── ESCAPE LEAVES TRACE MODE, NOT JUST THE HALF-DRAWN LINE ──
+        //
+        // This cleared the two points and left the mode ARMED, while the
+        // panel disarmed it from its own handler — so what Escape did
+        // depended on which ran and what the other had changed. Reported as
+        // "Escape doesn't leave trace mode (only T does)". It does both here
+        // now, and the panel has stopped claiming the key.
+        event.preventDefault();
+        setTraceFrom(null);
+        setTraceTo(null);
+        setTraceHover(null);
+        answerKey?.onTracing?.(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  // The panel's prompt follows the points, so it says "press Enter" only when
+  // Enter would do something.
+  useEffect(() => {
+    answerKey?.onTraceReady?.(traceFrom !== null && traceTo !== null);
+  }, [traceFrom, traceTo, answerKey]);
+
+  /**
+   * ── THE SHEET ON SCREEN, ANNOUNCED; AND A HALF-DRAWN TRACE ABANDONED ──
+   *
+   * The announcement is the fix for the two-page split above. The clearing is
+   * a smaller leak of the same kind: `traceFrom`/`traceTo` are this
+   * component's own state and were not keyed to a sheet at all, so a trace
+   * begun on one drawing and not finished followed the reviewer to the next
+   * one and could be committed there.
+   */
+  useEffect(() => {
+    onPageChange?.(pageNumber);
+    setTraceFrom(null);
+    setTraceTo(null);
+    setTraceHover(null);
+    setTraceAdded(null);
+  }, [pageNumber, onPageChange]);
+
+  /** The box being dragged in answer-key mode, in page-width units. */
+  const [keyBox, setKeyBox] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(
+    null,
+  );
+  /** Whether Shift was held during the box drag — Shift rejects, plain accepts. */
+  const [keyShift, setKeyShift] = useState(false);
 
   // ── Load the document once ────────────────────────────────────────────
   useEffect(() => {
@@ -465,8 +1211,9 @@ export function TakeoffPlanViewer({
    *  Falls back to the old default until the frame has been measured, so the
    *  first paint is never a divide by zero. */
   const zoomFactor = useMemo(() => {
-    if (zoom !== FIT) return zoom;
+    if (zoom !== FIT && zoom !== FIT_WIDTH) return zoom;
     if (!pageSize || frameWidth === 0) return 1;
+    if (zoom === FIT_WIDTH) return fitWidthZoom({ width: frameWidth }, pageSize, BASE_SCALE);
     // Decided in `fitZoom`, which is pure and tested — see its header for why
     // this fits BOTH dimensions and why that took a second attempt.
     return fitZoom({ width: frameWidth, height: frameHeight }, pageSize, BASE_SCALE);
@@ -495,14 +1242,30 @@ export function TakeoffPlanViewer({
         const unit = page.getViewport({ scale: 1 });
         setPageSize({ widthPt: unit.width, heightPt: unit.height });
 
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        const scale = BASE_SCALE * zoomFactor;
-        const viewport = page.getViewport({ scale: scale * dpr });
-        canvas.width = Math.round(viewport.width);
-        canvas.height = Math.round(viewport.height);
-        canvas.style.width = `${Math.round(viewport.width / dpr)}px`;
-        canvas.style.height = `${Math.round(viewport.height / dpr)}px`;
-        setCssWidth(Math.round(viewport.width / dpr));
+        // ── SIZED WITHIN WHAT A BROWSER WILL ACTUALLY DRAW ──
+        //
+        // This multiplied the page by zoom and by devicePixelRatio and handed
+        // the result straight to the canvas. Past Fit that asks for more
+        // pixels than any browser allocates — 4x on a retina screen wants 645
+        // megapixels of an ARCH-D sheet — and a canvas over the cap does not
+        // throw: it allocates nothing and the page renders BLACK. Zooming in
+        // to look at a line is the commonest thing a reviewer does, so every
+        // customer would have met this. `canvasPlan` holds the limits and the
+        // reasoning.
+        const plan = canvasPlan({
+          pageWidth: unit.width,
+          pageHeight: unit.height,
+          scale: BASE_SCALE * zoomFactor,
+          devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+        });
+        const viewport = page.getViewport({ scale: plan.renderScale });
+        canvas.width = plan.canvasWidth;
+        canvas.height = plan.canvasHeight;
+        // The CSS size is what was asked for and is never reduced, so the
+        // overlay's coordinates and the scroll position do not move.
+        canvas.style.width = `${plan.cssWidth}px`;
+        canvas.style.height = `${plan.cssHeight}px`;
+        setCssWidth(plan.cssWidth);
 
         const canvasContext = canvas.getContext("2d");
         if (!canvasContext) return;
@@ -549,22 +1312,314 @@ export function TakeoffPlanViewer({
   );
 
   const drawing = tool !== "pan";
+
+  /**
+   * ── WHAT A CLICK CAN SNAP TO ──
+   *
+   * The sheet's own strokes, plus the vertices of everything already measured
+   * on it. Two things make this cheap enough to be worth having:
+   *
+   *  1. IT IS LAZY. Nothing is parsed until somebody picks a drawing tool, so
+   *     opening a sheet to look at it costs nothing. `snapPage` is what
+   *     remembers which page the targets belong to, so switching sheets
+   *     re-reads and switching back does not.
+   *  2. IT IS CAPPED. A real sheet carries hundreds of thousands of segments
+   *     and `snapToGeometry` is linear in them — at 150k a click would take
+   *     long enough to feel. The cap keeps the longest ones, which are the
+   *     walls and grid lines people aim at; hatching and text outlines are
+   *     short and are what gets dropped.
+   *
+   * A sheet that will not parse yields NO targets, which is not an error: the
+   * tools work exactly as they did before snapping existed.
+   */
+  const [snapTargets, setSnapTargets] = useState<readonly SnapTarget[]>([]);
+  const snapPage = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!drawing) return;
+    if (snapPage.current === pageNumber) return;
+    snapPage.current = pageNumber;
+    setSnapTargets([]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const doc = docRef.current;
+        if (!doc || !pageSize) return;
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        const page = await doc.getPage(pageNumber);
+        // `layers: null` — optional-content names do not matter for snapping.
+        // A snap target is a place on the paper; which layer drew it is the
+        // wall finder's question, not this one's.
+        const { segments } = await segmentsFromOpenPage(page, pdfjs, pageNumber, null);
+        if (cancelled) return;
+        const raw = segments.map(inPageWidthUnits(pageSize.widthPt));
+        const longest = [...raw]
+          .sort(
+            (a, b) =>
+              Math.hypot(b.x2 - b.x1, b.y2 - b.y1) - Math.hypot(a.x2 - a.x1, a.y2 - a.y1),
+          )
+          .slice(0, SNAP_SEGMENT_CAP);
+        const targets: SnapTarget[] = [];
+        for (const segment of longest) {
+          targets.push({ kind: "segment", ...segment });
+          targets.push({ kind: "vertex", x: segment.x1, y: segment.y1 });
+          targets.push({ kind: "vertex", x: segment.x2, y: segment.y2 });
+        }
+        setSnapTargets(targets);
+      } catch {
+        // No targets. The tools behave exactly as they did before snapping.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [drawing, pageNumber]);
+  /**
+   * A tool's measurement KIND, which is not the same as the tool.
+   *
+   * `rect` stores AREA geometry — it is a faster way to draw the same four
+   * points, not a different thing to measure, so nothing downstream has to
+   * learn about it. `cutout` has no kind at all: it edits an area that is
+   * already saved rather than creating anything.
+   */
   const kindOf = (id: ToolId): MeasurementKind | null =>
-    id === "linear" ? "LINEAR" : id === "area" ? "AREA" : id === "count" ? "COUNT" : null;
+    id === "linear"
+      ? "LINEAR"
+      : id === "area" || id === "rect"
+        ? "AREA"
+        : id === "count"
+          ? "COUNT"
+          : null;
+
+  /**
+   * ── WHERE A CLICK ACTUALLY LANDS ──
+   *
+   * Three corrections, in the order they have to happen:
+   *
+   *  1. SNAP to the drawing's own geometry, so a wall traced over a wall
+   *     starts at the wall rather than near it.
+   *  2. AXIS LOCK while Shift is held, measured from the PREVIOUS point.
+   *  3. …and the lock wins, because somebody holding Shift has said what
+   *     they want more loudly than a corner 3px away has.
+   *
+   * The snap radius is divided by the zoom. A radius that grows as you zoom
+   * in is a snap that fights you exactly when you are being careful.
+   */
+  const placePoint = (
+    raw: { x: number; y: number },
+    from: { x: number; y: number } | null,
+    shift: boolean,
+  ): { x: number; y: number } => {
+    if (shift && from) return lockToAxis(from, raw);
+    const radius = SNAP_RADIUS / Math.max(1, zoomFactor);
+    return snapToGeometry(raw, snapTargets, radius);
+  };
 
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    // ── CLICKING THE PLAN TAKES THE KEYBOARD WITH IT ──
+    //
+    // The shortcut handler ignores keys typed into an INPUT, correctly — a
+    // reviewer typing a filename should not accept a wall with every "a".
+    // But focus stays in the name box after they type it, so the first click
+    // on the drawing moves the highlight and the next N/A/R goes into the
+    // box. The reviewer sees a candidate selected and their verdicts landing
+    // nowhere, with their own name slowly filling up with "nanana".
+    //
+    // Blurring on pointer-down is the whole fix: the plan does not need focus
+    // itself, since the shortcuts listen on the document. It needs the INPUT
+    // not to have it.
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLElement &&
+      (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)
+    ) {
+      active.blur();
+    }
+
+    // ── A DRAG IN REVIEW MODE IS A SELECTION, NOT A DRAWING ──
+    //
+    // Deciding a hundred hatch lines one at a time is the thing that makes a
+    // key cost an afternoon instead of twenty minutes, and hatching arrives in
+    // a block. So a drag takes everything whose midpoint lands inside it.
+    //
+    // Before the `drawing` guard, because review mode is not a drawing tool
+    // and must work with no tool selected.
+    // ── TRACING TAKES THE CLICK BEFORE THE SELECTION BOX DOES ──
+    //
+    // A drag in review mode selects; a click while tracing is armed is one end
+    // of a wall. Tracing is checked first because it is an explicit mode the
+    // reviewer turned on, and a selection box is the default.
+    if (answerKey?.tracing === true && !drawing) {
+      const raw = pointAt(event);
+      if (!raw) return;
+      event.preventDefault();
+      // SNAPPED like every other point this viewer places, so a wall traced
+      // along a drawn one lands on it rather than near it.
+      const point = placePoint(raw, traceFrom, event.shiftKey);
+      if (traceFrom === null) {
+        setTraceFrom(point);
+        setTraceTo(null);
+      } else {
+        setTraceTo(point);
+      }
+      return;
+    }
+    if (answerKey !== undefined && !drawing) {
+      const raw = pointAt(event);
+      if (!raw) return;
+      event.preventDefault();
+      setKeyShift(event.shiftKey);
+      setKeyBox({ x1: raw.x, y1: raw.y, x2: raw.x, y2: raw.y });
+      return;
+    }
     if (!drawing) return;
-    const point = pointAt(event);
-    if (!point) return;
+    const raw = pointAt(event);
+    if (!raw) return;
     event.preventDefault();
+
+    // ── EDIT MODE SELECTS RATHER THAN DRAWS ──
+    //
+    // A click picks the nearest shape whose outline the click is on; a click
+    // on nothing clears the selection, which is how somebody gets out without
+    // hunting for a Cancel. The handles themselves stop propagation, so
+    // grabbing one never re-selects and never clears.
+    if (tool === "edit") {
+      // ── SELECTING IS DELIBERATELY MORE FORGIVING THAN SNAPPING ──
+      //
+      // `SNAP_RADIUS` is about 3px, which is right for deciding WHERE a new
+      // point lands — a snap that reaches further would move points nobody
+      // asked to move. Picking an existing shape is the opposite problem: the
+      // thing being aimed at is a one-pixel line, and a 3px target makes
+      // selecting it a game. `PICK_RADIUS` is about four times that, which is
+      // roughly a fingertip and close to what every drawing tool uses.
+      //
+      // It does not scale with zoom: at 400% a shape is already easy to hit,
+      // and a pick radius that grew would start claiming the shape next to it.
+      const hit = (sheet?.measurements ?? []).find((m) => {
+        if (vertexAt(raw, m.xs, m.ys, PICK_RADIUS) !== null) return true;
+        for (let i = 1; i < m.xs.length; i += 1) {
+          const near = nearestOnSegment(raw, m.xs[i - 1], m.ys[i - 1], m.xs[i], m.ys[i]);
+          if (Math.hypot(near.x - raw.x, near.y - raw.y) <= PICK_RADIUS) return true;
+        }
+        // An AREA is pickable by its INSIDE as well as its edge: a room is a
+        // big obvious target and making somebody find its outline would be
+        // the same game one step harder.
+        if (m.kind === "AREA" && pointInRing(raw.x, raw.y, m.xs, m.ys)) return true;
+        return false;
+      });
+      setEditError(null);
+      setEditingId(hit?.id ?? null);
+      setEditDraft(hit ? { xs: [...hit.xs], ys: [...hit.ys] } : null);
+      return;
+    }
+
     setDraft((current) => {
+      const last =
+        current.xs.length > 0
+          ? { x: current.xs[current.xs.length - 1], y: current.ys[current.ys.length - 1] }
+          : null;
+      const point = placePoint(raw, last, event.shiftKey);
+
       // A calibration is exactly two points: the second click replaces the
       // end rather than extending a polyline.
       if (tool === "calibrate" && current.xs.length >= 2) {
         return { xs: [current.xs[0], point.x], ys: [current.ys[0], point.y] };
       }
+
+      // ── A RECTANGLE IS TWO CLICKS, AND EVERY LATER ONE RE-DRAGS ──
+      //
+      // The opposite corner is always rebuilt from the FIRST click, so the
+      // shape never grows a fifth point however many times somebody clicks.
+      // A third click moves the far corner rather than starting again, which
+      // is the forgiving reading: the Save form is on screen by then, so the
+      // likely intent is "not quite" rather than "start over" — and Clear is
+      // there for the other one.
+      //
+      // (This comment said the opposite for an hour — "a third click starts a
+      // new rectangle" — and the e2e walk written from it failed against the
+      // code. The code was the better behaviour; the sentence was wrong.)
+      if (tool === "rect") {
+        if (current.xs.length === 0) return { xs: [point.x], ys: [point.y] };
+        return rectanglePoints({ x: current.xs[0], y: current.ys[0] }, point);
+      }
+
+      // ── CLICKING THE FIRST POINT CLOSES A RING ──
+      //
+      // Areas and cutouts only. A LINEAR run that ends where it started is a
+      // legitimate loop of wall, and treating that click as "close" would
+      // refuse to measure the last few feet of a room's perimeter.
+      //
+      // Closing is a no-op on the geometry — `ringArea` already treats the
+      // list as closed — so this just stops the click adding a duplicate of
+      // the first vertex, which would read as a zero-length final edge.
+      if ((tool === "area" || tool === "cutout") && closesRing(point, current.xs, current.ys, SNAP_RADIUS / Math.max(1, zoomFactor))) {
+        return current;
+      }
+
       return { xs: [...current.xs, point.x], ys: [...current.ys, point.y] };
     });
+  };
+
+  /**
+   * ── A TYPED LENGTH, which is how a plan's PRINTED dimension gets used ──
+   *
+   * A corridor marked 42'-6" often scales at 42'-2", and the estimator trusts
+   * the figure on the paper. So the direction comes from the last two points
+   * and the distance comes from the keyboard.
+   */
+  const [typedFeet, setTypedFeet] = useState("");
+  /**
+   * ── NO `router.refresh()` AFTER THESE SAVES, AND THAT IS NOT AN OMISSION ──
+   *
+   * CLAUDE.md's #61 entry establishes it from the installed Next source: a
+   * Server Action that calls `revalidatePath` and RETURNS a value has flight
+   * data appended to its own POST response, and the client re-renders from
+   * it. `TakeoffForm` is the control that proves it — no refresh, and it
+   * works.
+   *
+   * The first version of this called `useRouter().refresh()`, which also
+   * broke every unit test that renders this component: `useRouter` throws
+   * "invariant expected app router to be mounted" outside one.
+   */
+
+  /**
+   * ── EDITING A SAVED SHAPE ──
+   *
+   * `editDraft` is the geometry being dragged; the stored row is untouched
+   * until Save. Local-first on purpose: a vertex drag at 60fps against a
+   * server action would be a request per frame, and the thing being moved
+   * would lag the pointer by a round trip.
+   */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<Draft | null>(null);
+  const [draggingVertex, setDraggingVertex] = useState<number | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // A different sheet is a different set of shapes.
+  useEffect(() => {
+    setEditingId(null);
+    setEditDraft(null);
+    setDraggingVertex(null);
+  }, [pageNumber]);
+  const [cuttingOut, setCuttingOut] = useState(false);
+  const [cutoutError, setCutoutError] = useState<string | null>(null);
+  const applyTypedLength = () => {
+    const feet = Number(typedFeet.replace(/,/g, ""));
+    setDraft((current) => {
+      if (current.xs.length < 2) return current;
+      const n = current.xs.length;
+      const from = { x: current.xs[n - 2], y: current.ys[n - 2] };
+      const toward = { x: current.xs[n - 1], y: current.ys[n - 1] };
+      const moved = extendByLength(from, toward, feet, feetPerUnit);
+      if (!moved) return current;
+      const xs = [...current.xs];
+      const ys = [...current.ys];
+      xs[n - 1] = moved.x;
+      ys[n - 1] = moved.y;
+      return { xs, ys };
+    });
+    setTypedFeet("");
   };
 
   const undoPoint = () =>
@@ -918,6 +1973,33 @@ export function TakeoffPlanViewer({
    * next render, and that a sheet somebody has already worked through does not
    * refill itself behind them.
    */
+  /**
+   * ── PLAN TEXT FOR THIS SHEET, WHEN THE SWITCH IS ON ──
+   *
+   * One read of the file cache per page view; `null` is the switch being off
+   * or nothing read yet, and both render as nothing. Re-read when the groups
+   * change, because detection writes the result in the same pass that writes
+   * the proposals these groups were loaded from.
+   */
+  const [planText, setPlanText] = useState<PlanTextView | null>(null);
+  useEffect(() => {
+    let live = true;
+    loadPlanText(jobId, planId, pageNumber)
+      .then((result) => {
+        if (live) setPlanText(result.ok ? result.value : null);
+      })
+      .catch(() => {
+        if (live) setPlanText(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [jobId, planId, pageNumber, storedWallsByPage]);
+  const planTextDoors = useMemo(
+    () => doorsByGroup(found ?? [], planText?.sheet?.doors?.placed ?? [], feetPerUnit),
+    [found, planText, feetPerUnit],
+  );
+
   useEffect(() => {
     if (seeded.current.has(pageNumber)) return;
     const stored = storedWallsFor(storedWallsByPage, pageNumber);
@@ -997,6 +2079,20 @@ export function TakeoffPlanViewer({
           reading.sheetNumber,
         );
         if (!cancelled && caution) setReadCaution((prev) => ({ ...prev, [pageNumber]: caution }));
+        // ── AND WHETHER THIS SHEET CARRIES MORE THAN ONE DRAWING ──
+        //
+        // The same `items` the sheet number was read from, so this costs one
+        // more pass over text already in hand and no extra PDF work. It is read
+        // in the BROWSER for the same reason the sheet number is: it is
+        // available on sets the ingest stage never reached, and it needs no
+        // model.
+        const scaleCaution = multiScaleCaution(
+          printedScalesOnPage(items),
+          scalePrefillByPage[pageNumber]?.scaleName ?? null,
+        );
+        if (!cancelled && scaleCaution) {
+          setScaleCautionByPage((prev) => ({ ...prev, [pageNumber]: scaleCaution }));
+        }
       } catch {
         // Nothing: the sheet keeps the takeoff it already had.
       }
@@ -1004,14 +2100,136 @@ export function TakeoffPlanViewer({
     return () => {
       cancelled = true;
     };
-  }, [found, pageNumber, duplicateWallsByPage, pageSize]);
+  }, [found, pageNumber, duplicateWallsByPage, pageSize, scalePrefillByPage]);
+
+  /**
+   * ── IS THERE A FLOOR PLAN ON THIS SHEET AT ALL? ──
+   *
+   * Read when the sheet opens rather than after a find, which is the whole
+   * point: the caution effect above runs only once walls exist, and the
+   * question here is whether to invite the press in the first place.
+   *
+   * It costs ONE text pass per sheet, over text this file already knows how to
+   * read, and no model. The two sources are the title block — which is what
+   * names A130 PARTITION TYPES — and the captions under the drawings, which
+   * are what name a sheet whose title block says nothing useful.
+   *
+   * IT NEVER THROWS, like the caution beside it: a sheet whose text will not
+   * parse is offered exactly as it was before this existed.
+   */
+  useEffect(() => {
+    const doc = docRef.current;
+    if (!doc || !pageSize) return;
+    // ── ASKED FOR THIS PAGE *AT THIS SIZE*, AND ONLY WHILE IT SUCCEEDS ──
+    //
+    // This was keyed on the page alone and marked before the read, and the
+    // read never completed for any sheet somebody navigated to. Paging sets a
+    // NEW `pageSize` object once the sheet renders, so the effect re-ran, its
+    // cleanup cancelled the in-flight read, and the guard then refused to
+    // start another — the title block was never read, so an answer key saved
+    // on A102 was named `p9.key.json` and the not-a-takeoff-sheet verdict
+    // never arrived either.
+    //
+    // Keyed on the size as well, so the second run is a different question;
+    // and released on the way out, so a cancelled read is retried rather than
+    // remembered as done.
+    const asked = `${pageNumber}:${pageSize.widthPt}x${pageSize.heightPt}`;
+    if (askedVerdict.current.has(asked)) return;
+    askedVerdict.current.add(asked);
+
+    let done = false;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        const page = await doc.getPage(pageNumber);
+        const items = await pageTextItems(page, pdfjs);
+        const reading = sheetNumberFrom({
+          pageNumber,
+          widthPt: pageSize.widthPt,
+          heightPt: pageSize.heightPt,
+          rotation: 0,
+          items,
+        });
+        if (!cancelled && reading.sheetNumber) {
+          onSheetNumber?.(pageNumber, reading.sheetNumber);
+        }
+        const verdict = takeoffSheetVerdict({
+          sheetNumber: reading.sheetNumber,
+          title: reading.regionText,
+          viewNames: sheetViews(items, pageSize.widthPt).map((view) => view.name),
+        });
+        if (!cancelled) {
+          setTakeoffVerdictByPage((prev) => setOnThisSheet(prev, pageNumber, verdict));
+          done = true;
+        }
+      } catch {
+        // The sheet is offered as it always was.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      // Not finished means not asked: the next run does it properly.
+      if (!done) askedVerdict.current.delete(asked);
+    };
+  }, [pageNumber, pageSize, onSheetNumber]);
+
+  /** What this sheet is, and whether somebody has overruled it. */
+  const takeoffVerdict = onThisSheet(takeoffVerdictByPage, pageNumber);
+  const notATakeoffSheet =
+    takeoffVerdict !== null &&
+    !takeoffVerdict.worthMeasuring &&
+    onThisSheet(overriddenByPage, pageNumber) === null;
+
+  /**
+   * ── FIND THE ROOMS ──
+   * From what the last find left behind — every pairing, the kept runs — plus
+   * the lines drawn by hand on this sheet, which is how an estimator closes a
+   * room the finder left open. Pure and synchronous; no PDF is re-read.
+   */
+  function onFindRooms() {
+    if (!pageSize || feetPerUnit === null) return;
+    const walls = roomBoundary({
+      pairings: pairingsRef.current,
+      runs: runsRef.current,
+      drawn: sheet?.measurements ?? [],
+    });
+    const result = roomsFromWalls({ walls, feetPerUnit, text: wordsRef.current, widthPt: pageSize.widthPt });
+    setRooms(result);
+    setRoomsOnPage(pageNumber);
+    setHoveredRoom(null);
+  }
 
   async function onFindWalls() {
     const doc = docRef.current;
-    if (!doc || !pageSize || feetPerUnit === null) return;
+    // ── A CLICK IS NEVER DROPPED IN SILENCE ──
+    //
+    // This returned, and nothing happened: no spinner, no sentence, no
+    // console line. The button is enabled as soon as the sheet has a scale —
+    // which is its documented contract and is asserted by
+    // `components/takeoffFindControl.test.tsx` — but the work ALSO needs the
+    // document and its page box, and on a slow load those arrive later. So
+    // there is a window where the control invites a press and the press does
+    // nothing.
+    //
+    // CI is where it showed: a runner loads the PDF more slowly than this
+    // laptop, the click landed inside that window, and
+    // `takeoff-rooms.spec.ts` waited three minutes for a find that was never
+    // going to start. A person on a slow connection meets the same button,
+    // and the only thing they can do is press it again.
+    //
+    // Saying so is the whole fix. The sheet finishes loading a moment later
+    // and the next press works, which is why this is a sentence rather than
+    // a queued action: a find that starts by itself some seconds after a
+    // click nobody remembers making is worse than one that says "not yet".
+    if (!doc || !pageSize || feetPerUnit === null) {
+      setFindError("The sheet is still loading. Try that again in a moment.");
+      return;
+    }
     setFinding(true);
     setFindError(null);
     setFound(null);
+    setRooms(null);
     setChosen({});
     setShowingAll(false);
     try {
@@ -1035,6 +2253,7 @@ export function TakeoffPlanViewer({
       // a word is — which they would, because `planPdf.pageText` stores the
       // baseline and this used to subtract before passing anything on.
       const vectorWords = await pageTextItems(page, pdfjs);
+      wordsRef.current = vectorWords;
       // ── A SCAN'S WORDS ENTER EXACTLY HERE ──
       //
       // A scanned sheet has no text layer, so `pageTextItems` returns nothing
@@ -1089,19 +2308,157 @@ export function TakeoffPlanViewer({
       // inline here, and the bench's copy of it had silently drifted — no
       // scale-bar filter and a dropped `curved` flag, both of which invent
       // walls. See that file's header.
-      const found = findWallsOnSheet({
-        segments,
-        textItems,
-        pageSize,
-        feetPerUnit,
-        wallTypes,
-        sampledSheets,
-      });
+      // ── ONE SHEET CAN CARRY MORE THAN ONE DRAWING, AT MORE THAN ONE SCALE ──
+      //
+      // Gated on TWO OR MORE views, deliberately. On a single-view sheet this
+      // path would clip to the band starting at that view's own caption, and a
+      // caption sits at the left margin — so anything drawn to the LEFT of it
+      // would be dropped for no gain. 19 of the 20 fixtures are single-view and
+      // take exactly the route they took before this existed.
+      //
+      // `sheetViews.ts` carries why a view must be clipped before it is
+      // re-scaled, and why the captions are used as a RATIO against the
+      // calibration rather than as absolute scales.
+      const views = viewsInRegions(
+        sheetViews(textItems, pageSize.widthPt),
+        viewRegions(segments, pageSize),
+      );
+      let found: FoundOnSheet;
+      /**
+       * Every pairing the finder considered on this sheet, with its feature
+       * vector, for answer-key mode.
+       *
+       * Declared out here because the sheet is measured by one of TWO paths —
+       * `wallsPerView` when the sheet carries several plan views, the single
+       * call below when it carries one — and a reviewed sheet is training data
+       * only if both report. Collecting at just the second one meant Save to
+       * labels refused every multi-view sheet, which is most real ones.
+       */
+      const pairings: {
+        x1: number;
+        y1: number;
+        x2: number;
+        y2: number;
+        lengthFeet: number;
+        thicknessFeet: number;
+        features: number[];
+      }[] = [];
+      // Always collected now, not only for the answer key: the room step reads
+      // the same list. A few thousand small objects per find.
+      const collect = (features: number[], wall: WallCandidate) => {
+              pairings.push({
+                x1: wall.x1,
+                y1: wall.y1,
+                x2: wall.x2,
+                y2: wall.y2,
+                lengthFeet: wall.lengthFeet,
+                thicknessFeet: wall.thicknessFeet,
+                features: [...features],
+              });
+            };
+      void collect;
+      let otherViews: ViewWalls[] = [];
+      let leftOut: ExcludedView[] = [];
+      let primaryShown: { name: string; scaleName: string | null } | null = null;
+      /** The parts of the page the measured PLAN views own — see `lastDetect`. */
+      let planBoxes: { from: number; to: number; fromY: number; toY: number }[] | null = null;
+      if (views.length >= 2) {
+        const measured = wallsPerView({
+          segments,
+          textItems,
+          pageSize,
+          views,
+          wallTypes,
+          feetPerUnit,
+          sampledSheets,
+          onCandidate: collect,
+        });
+        const picked = primaryView(measured);
+        otherViews = picked.others;
+        leftOut = excludedViews(views);
+        // Every view that was actually measured, which after the view-kind
+        // filter is every PLAN on the sheet. `wallsPerView` has already
+        // refused the elevations, the sections and the schedules.
+        planBoxes = measured.flatMap(
+          (one) =>
+            one.view.boxes ?? [
+              {
+                from: one.view.from,
+                to: one.view.to,
+                fromY: one.view.fromY,
+                toY: one.view.toY,
+              },
+            ],
+        );
+        primaryShown = picked.primary
+          ? { name: picked.primary.view.name, scaleName: picked.primary.view.scaleName }
+          : null;
+        // ── A SHEET WITH NO PLAN ON IT MEASURES NOTHING ──
+        //
+        // This used to fall back to measuring the WHOLE SHEET when no view
+        // produced a primary, which is the worst possible answer for the sheet
+        // that most needs a good one: a page of eight interior elevations has
+        // every one of them measured as wall, at an elevation's own scale,
+        // with the caution saying they were left out. `excludedViews` names
+        // what happened and the quantities stay empty, which is the honest
+        // pair.
+        found =
+          picked.primary?.found ??
+          // The real pipeline on NO geometry, rather than a hand-built empty
+          // result: every field of `FoundOnSheet` comes out consistent, and
+          // nothing here has to be kept in step with that type.
+          findWallsOnSheet({
+            segments: [],
+            textItems,
+            pageSize,
+            feetPerUnit,
+            wallTypes,
+            sampledSheets: null,
+          });
+      } else {
+        // ── ONE DRAWING ON THE SHEET STILL IS NOT THE WHOLE SHEET ──
+        //
+        // `viewRegions` has already separated the title block, the notes and
+        // the legend boxes from the drawing; with one caption they were all
+        // handed to it, because a region with no caption joins the nearest.
+        // That rule is right and stays — it is what keeps a plan's dimension
+        // column with its plan — but it meant a one-drawing sheet measured its
+        // own title block, and offered its ruled lines as possible walls.
+        //
+        // `planRegion.ts` carries why this cannot reintroduce the S05/S07
+        // scar: it keeps the BUSIEST region and whatever is comparable to it,
+        // which is where a building is.
+        const drawing = drawingRegions(
+          viewRegions(segments, pageSize),
+          segments,
+          pageSize.widthPt,
+        );
+        const onTheDrawing = segmentsInRegions(segments, drawing, pageSize.widthPt);
+        planBoxes = drawing.length > 0 ? [...drawing] : null;
+        // `onCandidate` fires after the sheet-relative columns are filled, so
+        // what is reported is what a model would be scored on.
+        found = findWallsOnSheet({
+          segments: onTheDrawing,
+          textItems,
+          pageSize,
+          feetPerUnit,
+          wallTypes,
+          sampledSheets,
+          onCandidate: collect,
+        });
+      }
+      setOtherViewsByPage((prev) => ({ ...prev, [pageNumber]: otherViews }));
+      setExcludedByPage((prev) => ({ ...prev, [pageNumber]: leftOut }));
+      setPrimaryViewShown(primaryShown);
       const walls = found.walls;
       const regroup = found.regroup;
       setTemplateStrokes(found.templateDropped);
       setLayerDropped(found.layerDropped);
 
+      // Both measuring paths have run by here, so this is the one place that
+      // sees every pairing on the sheet whichever one was taken.
+      if (pairings.length > 0) answerKeyRef.current?.onPairings?.(pairings);
+      pairingsRef.current = pairings;
       runsRef.current = walls;
       feetAcrossRef.current = feetPerUnit;
       regroupRef.current = regroup;
@@ -1114,6 +2471,43 @@ export function TakeoffPlanViewer({
       // then deliberately discarded, because the real clustering happens inside
       // `regroup`. The pipeline still returns it for the bench.
       setFound(found.groups);
+
+      // ── AND, FOR A REVIEWER, EVERYTHING THE DETECTOR COULD NOT REACH ──
+      //
+      // Derived HERE because this is the only place that holds both the
+      // detection and the raw geometry it came from. The workspace cannot do
+      // it: the segments never leave this component.
+      //
+      // The unpaired long lines are the half of the question the detector has
+      // no opinion about — 7,694 ft of them on one real sheet, 93% of which
+      // classify as hatching. A key made without them would be a key about the
+      // detector's own output, which is the thing it is supposed to be
+      // grading.
+      lastDetect.current = {
+        page: pageNumber,
+        // THE STROKES THE MEASUREMENT USED, not the page's. A candidate built
+        // from the raw page is a candidate from the title block as readily as
+        // from the plan — see `planRegion.ts`.
+        segments: found.inUnits.map((one) => ({
+          ...one,
+          x1: one.x1 * pageSize.widthPt,
+          y1: one.y1 * pageSize.widthPt,
+          x2: one.x2 * pageSize.widthPt,
+          y2: one.y2 * pageSize.widthPt,
+        })),
+        feetPerUnit,
+        widthPt: pageSize.widthPt,
+        walls: [...found.walls],
+        planBoxes,
+      };
+      if (answerKey?.onCandidates) {
+        const candidates = candidatesFromLastDetect();
+        if (candidates !== null) {
+          answerKey.onCandidates(candidates);
+          answerKey.onSetAside?.(setAsideRef.current);
+        }
+      }
+
       // The sheet this answer is about, recorded WITH the answer. `pageNumber`
       // is read here rather than at render, so a result can never be relabelled
       // by paging — see `wallsOnThisSheet`.
@@ -1258,8 +2652,16 @@ export function TakeoffPlanViewer({
   const scaleReading = calibration ? readScale(calibration, sheet?.pageWidthPt ?? null) : null;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className={`flex flex-col gap-3${fill ? " h-full min-h-0" : ""}`}>
       {/* ── Toolbar ───────────────────────────────────────────────── */}
+      {/* NOT RENDERED in read-only, rather than each control disabled. A row of
+          greyed tools is an invitation that does not work; on a phone the row
+          is also most of the screen, and the screen is the point.
+          NOT `hidden={readOnly}` either, which is how this was written first:
+          the attribute's `display: none` comes from the UA stylesheet and
+          Tailwind's own `flex` class beats it, so the row stayed on screen and
+          the phone test caught it. */}
+      {!readOnly && (
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line-card bg-surface-card p-2">
         <div className="flex items-center gap-1">
           {TOOLS.map((entry) => {
@@ -1325,6 +2727,23 @@ export function TakeoffPlanViewer({
           >
             Fit
           </button>
+          {/* ── AND THE WIDTH-ONLY FIT ──
+              `Fit` shows the whole sheet; this fills the width and lets the
+              height scroll, which is what a tall sheet wants. Two buttons
+              rather than one that cycles: a control that changes meaning when
+              you press it cannot be aimed at. */}
+          <button
+            type="button"
+            onClick={() => setZoom(FIT_WIDTH)}
+            className={
+              zoom === FIT_WIDTH
+                ? "rounded-md border border-brand px-2 py-1 text-xs text-brand"
+                : "rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-surface"
+            }
+            data-takeoff="fit-width"
+          >
+            Fit width
+          </button>
         </div>
 
         {pageCount !== null && pageCount > 1 && (
@@ -1364,13 +2783,57 @@ export function TakeoffPlanViewer({
         <button
           type="button"
           onClick={onFindWalls}
-          disabled={finding || !calibration}
+          disabled={finding || !calibration || notATakeoffSheet}
           data-takeoff="find-walls"
-          title={calibration ? undefined : "Set the scale on this sheet first — wall thickness is measured in feet of building."}
+          title={
+            notATakeoffSheet
+              ? (takeoffVerdict?.why ?? undefined)
+              : calibration
+                ? undefined
+                : "Set the scale on this sheet first — wall thickness is measured in feet of building."
+          }
           className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
         >
           {finding ? "Reading the lines…" : "Find the walls"}
         </button>
+        {/* ── FIND THE ROOMS, ONLY WITH THE COMPANY SWITCH ON ──
+            Absent, not disabled, when the switch is off: the feature was
+            measured and switched off once (`takeoffRoomFinder.test.tsx`) and
+            a control that reads as "exists but broken" is what that file
+            exists to prevent. With the switch on it waits for a find. */}
+        {roomFinder && (
+          <button
+            type="button"
+            onClick={onFindRooms}
+            disabled={finding || found === null || found.length === 0 || foundOnPage !== pageNumber}
+            data-takeoff="find-rooms"
+            title={found === null ? "Find the walls first — rooms are what they enclose." : undefined}
+            className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
+          >
+            Find the rooms
+          </button>
+        )}
+        {/* ── WHY IT IS GREY, AND A WAY PAST IT ──
+            The reason is on the toolbar and not only in a tooltip, because a
+            disabled control with a hover explanation is a control that looks
+            broken on a touch screen. And the override is beside it, because a
+            set can caption a floor plan anything at all and the person looking
+            at the drawing knows better than its title block does. */}
+        {notATakeoffSheet && (
+          <>
+            <span className="text-[11px] text-ink-muted" data-takeoff="not-a-takeoff-sheet">
+              {takeoffVerdict?.why}
+            </span>
+            <button
+              type="button"
+              onClick={() => setOverriddenByPage((prev) => ({ ...prev, [pageNumber]: true }))}
+              data-takeoff="run-anyway"
+              className="min-h-[36px] rounded-md border border-line-card bg-surface px-2 text-[11px] text-link hover:text-link-hover"
+            >
+              Run anyway
+            </button>
+          </>
+        )}
 
         {/* ── AND THEN: ARE THEY WALLS? ──
             Only once there is something to check, because a control that can
@@ -1532,6 +2995,7 @@ export function TakeoffPlanViewer({
           )}
         </span>
       </div>
+      )}
 
       {findError && (
         <p className="mt-2 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-tag-amber-ink">
@@ -1572,10 +3036,44 @@ export function TakeoffPlanViewer({
           the only thing that can check it. So on a wide screen they sit side by
           side and the drawing takes what is left, which is most of it. Narrow
           screens keep the stack, where a column each would make both unusable. */}
-      <div className="flex flex-col gap-3 xl:flex-row-reverse xl:items-start">
-      {found !== null && (
+      <div
+        // ── IN ANSWER-KEY MODE THE FOUND LIST GOES UNDER THE PLAN ──
+        //
+        // Measured on a 1600 px window with a sheet open for review: the
+        // sheet rail took 232, the answer-key rail 384, leaving this region
+        // 690 — and the found-walls list then took 368 of THAT, so the canvas
+        // got 268 pixels. A sixth of the screen, to look at a plan on.
+        //
+        // No breakpoint can see that. `xl:` asks how wide the WINDOW is, and
+        // the window was wide; what was narrow was the space left over after
+        // two rails this component knows nothing about. So the rule is the
+        // MODE rather than a width: in answer-key mode the rail is the
+        // working surface and this list is a reference, which belongs under
+        // the drawing rather than beside it.
+        className={`flex gap-3 ${answerKey === undefined ? "xl:flex-row-reverse" : ""}${
+          fill
+            ? // CANVAS FIRST AT EVERY WIDTH, which is the host's whole promise.
+              // Below xl this is a COLUMN and the panel is first in the DOM, so
+              // without the reverse the quantities sit above the drawing and
+              // take the top half of a tablet — measured, and the reason the
+              // spec asserts the canvas's box rather than its classes.
+              // `xl:flex-row-reverse` is on the base string; this must NOT
+              // restate a flex-direction for xl or it wins and the panel
+              // stacks under a 5%-tall drawing — measured at 1440px, and the
+              // reason test 11 now runs with the panel OPEN as well as closed.
+              ` min-h-0 flex-1 flex-col-reverse${answerKey === undefined ? " xl:items-stretch" : ""}`
+            : ` flex-col${answerKey === undefined ? " xl:items-start" : ""}`
+        }`}
+      >
+      {found !== null && panelOpen && (
         <div
-          className="rounded-md border border-line-card bg-surface p-3 xl:w-[23rem] xl:shrink-0 xl:overflow-auto xl:max-h-[calc(var(--shell-port)-11rem)]"
+          className={`rounded-md border border-line-card bg-surface p-3${
+            answerKey === undefined
+              ? " xl:w-[23rem] xl:shrink-0 xl:overflow-auto xl:max-h-[calc(var(--shell-port)-11rem)]"
+              : // Under the plan, and short: it is a reference here, not the
+                // thing being worked on.
+                " max-h-[13rem] shrink-0 overflow-auto"
+          }`}
           data-takeoff="found-walls"
         >
           {/* ABOVE the groups, because a caution under the thing it is about is
@@ -1669,7 +3167,7 @@ export function TakeoffPlanViewer({
                 </p>
               )}
               <ul className="flex flex-col gap-1">
-                {shownGroups.map((group, index) => {
+                {ordered.map(({ group, index, heading, inSection }) => {
                   const verdict = verdictFor(group);
                   const priced = pricedTypeFor(group, chosen[index]);
                   // NAMED BUT NOT PRICEABLE: the drawing's tag matched a type
@@ -1679,8 +3177,33 @@ export function TakeoffPlanViewer({
                   // sent somebody to the wall-types page to find nothing wrong.
                   const namedOnly = priced === null ? namedTypeFor(group, chosen[index]) : null;
                   return (
+                  <Fragment key={`${group.inches}-${index}`}>
+                  {heading !== null && (
+                    /* ── THE CONDITION, OR THE PILE ──
+                       Detection matched this group to a takeoff item, so the
+                       estimator reads "3⅝ interior — 4 groups" instead of four
+                       thicknesses they have to map back to their own conditions
+                       by eye. An unmatched group sits under "Unassigned walls",
+                       which is the recoverable state: `proposalMatch` REFUSES a
+                       tie rather than picking one of two 3⅝" walls, and this is
+                       where that refusal becomes somebody's minute of work. */
+                    <li className="mt-2 flex items-baseline gap-2 px-2 pt-1 first:mt-0 first:pt-0">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                        {heading.name ?? "Unassigned walls"}
+                      </span>
+                      <span className="text-xs text-ink-muted">
+                        {inSection} {inSection === 1 ? "group" : "groups"}
+                      </span>
+                    </li>
+                  )}
                   <li
-                    key={`${group.inches}-${index}`}
+                    /* Machine-readable, so a browser walk can read a group's
+                       thickness instead of parsing "3⅝″" out of the label. The
+                       e2e step that proves these headings appear creates a
+                       condition at a thickness it reads from right here. */
+                    data-takeoff="found-group"
+                    data-inches={group.inches}
+                    data-item={group.itemId ?? ""}
                     className="flex flex-wrap items-center gap-3 rounded-md px-2 py-1 hover:bg-rail-hover"
                     onMouseEnter={() => setHovered(index)}
                     onMouseLeave={() => setHovered(null)}
@@ -1694,7 +3217,21 @@ export function TakeoffPlanViewer({
                         exists to end, so the swatch draws what the overlay
                         draws: same colour, same dash, same function. */}
                     <ClusterMark index={index} />
-                    <span className="text-sm font-medium text-ink">{inchLabel(group.inches)}</span>
+                    {/* ── THE LABEL IS ROUNDED; THE MEASUREMENT IS NOT ──
+                        What is shown is the nearest eighth, because that is
+                        how partitions are drawn and how a wall type is typed
+                        in — and it is the same number the match ran on, so a
+                        condition taking this group is a decision somebody can
+                        check by reading the screen. The measurement itself is
+                        on hover, because an estimator who wants to know why a
+                        group landed on 4-3/8" should be able to find out
+                        without opening a database. */}
+                    <span
+                      className="text-sm font-medium text-ink"
+                      title={`Measured ${group.inches.toFixed(3)} in`}
+                    >
+                      {inchLabel(group.inches)}
+                    </span>
                     {/* THE TAG IS THE GROUP'S NAME NOW, not a list of every name
                         in a bucket. A group either carries one tag or carries
                         none, because the tags are what split it. */}
@@ -1716,6 +3253,21 @@ export function TakeoffPlanViewer({
                           <span className="text-ink-muted">
                             {" "}
                             · includes {openings} opening{openings === 1 ? "" : "s"}, not deducted
+                          </span>
+                        );
+                      })()}
+                      {/* ── THE DOORS THE SCHEDULE NAMES ON THIS WALL ──
+                          Only with PLAN_TEXT_READ on: each door the join placed
+                          on one of this group's runs, with the SCHEDULE's width
+                          rather than the drawn gap's. */}
+                      {(() => {
+                        const doors = planTextDoors.get(index) ?? [];
+                        return doors.length === 0 ? null : (
+                          <span className="text-ink-body" data-takeoff="group-doors">
+                            {" "}
+                            · door{doors.length === 1 ? "" : "s"}{" "}
+                            {doors.map((d) => `${d.mark} ${feetInches(d.widthFt)}`).join(", ")}
+                            {doors.some((d) => d.widthFrom === "schedule") ? " from the schedule" : ""}
                           </span>
                         );
                       })()}
@@ -1787,6 +3339,7 @@ export function TakeoffPlanViewer({
                       <p className="w-full text-xs text-ink-muted">{groupSentence(group, verdict)}</p>
                     )}
                   </li>
+                  </Fragment>
                   );
                 })}
               </ul>
@@ -1822,7 +3375,19 @@ export function TakeoffPlanViewer({
                   above — there are only {DISTINCT_MARKS}. Hover a row to pick its runs out of the drawing.
                 </p>
               )}
+              <PlanTextPanel view={planText} wallTypes={wallTypes} />
             </>
+          )}
+          {rooms !== null && roomsOnPage === pageNumber && sheet !== null && feetPerUnit !== null && (
+            <TakeoffRoomsPanel
+              jobId={jobId}
+              pageId={sheet.id}
+              result={rooms}
+              feetPerUnit={feetPerUnit}
+              hovered={hoveredRoom}
+              onHover={setHoveredRoom}
+              onClear={() => setRooms(null)}
+            />
           )}
           <button
             type="button"
@@ -1847,39 +3412,516 @@ export function TakeoffPlanViewer({
           code shaped like a safeguard is worse than none. */}
       <div
         ref={frameRef}
-        className="relative max-h-[calc(var(--shell-port)-22rem)] min-h-[24rem] overflow-auto rounded-lg border border-line-card bg-rail xl:flex-1 xl:max-h-[calc(var(--shell-port)-11rem)]"
+        className={
+          fill
+            ? // The host has decided the height; take all of it. No max-h and
+              // no min-h, because both would reintroduce the short frame.
+              "relative min-h-0 flex-1 overflow-auto rounded-lg border border-line-card bg-rail"
+            : "relative max-h-[calc(var(--shell-port)-22rem)] min-h-[24rem] overflow-auto rounded-lg border border-line-card bg-rail xl:flex-1 xl:max-h-[calc(var(--shell-port)-11rem)]"
+        }
         data-testid="takeoff-plan-port"
       >
+        {/* ── THE BANNER THAT SAYS TRACING IS ON, AND WHAT TO DO NEXT ──
+
+            Over the plan rather than in the rail, because that is where the
+            eyes are while clicking — and because the whole defect being fixed
+            was a mode with no visible state. It says the NEXT action rather
+            than the current one: a prompt that reads "tracing" leaves somebody
+            wondering what to do with it.
+
+            `pointer-events-none` so it can never swallow a click meant for the
+            drawing underneath it. */}
+        {answerKey?.tracing === true && traceAdded === null && (
+          <div
+            data-takeoff="key-trace-banner"
+            className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-md border border-line-card bg-ink px-3 py-1.5 text-xs font-medium text-canvas shadow-lg"
+          >
+            {traceFrom === null
+              ? "Tracing wall: click the start (Esc to cancel)"
+              : traceTo === null
+                ? "Click the end of the wall (Esc to cancel)"
+                : "Press Enter to add, Esc to cancel"}
+          </div>
+        )}
+        {/* And what the last Enter did, which fades on the next action. */}
+        {answerKey !== undefined && traceAdded !== null && (
+          <div
+            data-takeoff="key-trace-added"
+            className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-md border border-line-card bg-tag-green px-3 py-1.5 text-xs font-medium text-tag-green-ink shadow-lg"
+          >
+            Wall added, {traceAdded}
+          </div>
+        )}
         {loadError ? (
           <p className="p-6 text-sm text-tag-rose-ink">{loadError}</p>
         ) : (
-          <div className="relative w-fit">
+          // ── CENTRED IN THE CANVAS, AND STILL SCROLLABLE WHEN ZOOMED ──
+          //
+          // `min-h-full min-w-full` with centring, rather than `place-content-
+          // center` on the scroll container itself: that centres too, and then
+          // clips the top-left of anything bigger than the box, so a sheet
+          // zoomed in to measure a corner loses the corner. Here the wrapper is
+          // at least the size of the frame — so a small sheet sits in the
+          // middle — and grows past it when the sheet does, which scrolls
+          // normally in both directions.
+          // ── CENTRED BY AUTO MARGINS, NOT BY `justify-center` ──
+          //
+          // Reported from an E Street 421 labelling run: above Fit, the left
+          // of the drawing could not be scrolled to — about 600px of it gone
+          // at 50%. `justify-center` on a flex container inside an
+          // `overflow-auto` frame splits the overflow EVENLY between both
+          // ends, and the start-side half is unreachable, because scrollLeft
+          // cannot go below zero. The right-hand overflow scrolls fine, which
+          // is why it reads as half the sheet being missing rather than as a
+          // layout that is wrong.
+          //
+          // `margin: auto` on the ITEM centres it exactly as well when there
+          // is room to spare, and when there is not it leaves the overflow at
+          // the end where the scrollbar can reach it.
+          <div className={fill ? "flex min-h-full min-w-full" : ""}>
+          <div className={`relative w-fit${fill ? " m-auto" : ""}`}>
             <canvas ref={canvasRef} className="block" />
             <svg
               viewBox={`0 0 1 ${aspect}`}
               preserveAspectRatio="none"
               style={{ width: cssWidth ? `${cssWidth}px` : "100%", height: cssWidth ? `${cssWidth * aspect}px` : "100%" }}
-              className={`absolute left-0 top-0 ${drawing ? "cursor-crosshair touch-none" : "pointer-events-none"}`}
+              className={`absolute left-0 top-0 ${
+                drawing || answerKey !== undefined
+                  ? "cursor-crosshair touch-none"
+                  : "pointer-events-none"
+              }`}
+              data-takeoff={answerKey?.tracing === true ? "tracing-surface" : undefined}
               onPointerDown={onPointerDown}
+              onPointerMove={(event) => {
+                // ── WHERE THE NEXT CLICK WOULD GO ──
+                //
+                // Before the first click this is the only thing on screen, and
+                // it is what makes the snap visible: a reviewer can see the
+                // point jump onto the line it will grab rather than discover
+                // it afterwards.
+                if (answerKey?.tracing === true) {
+                  const raw = pointAt(event);
+                  if (raw) setTraceHover(placePoint(raw, traceFrom, event.shiftKey));
+                  if (traceAdded !== null) setTraceAdded(null);
+                  if (traceTo !== null) return;
+                }
+                if (keyBox !== null) {
+                  const raw = pointAt(event);
+                  if (raw) setKeyBox({ ...keyBox, x2: raw.x, y2: raw.y });
+                  return;
+                }
+                if (draggingVertex === null || !editDraft) return;
+                const raw = pointAt(event);
+                if (!raw) return;
+                // Snapped like a new point, so an edited corner lands on
+                // the drawing as readily as a drawn one — and Shift locks
+                // it against the vertex BEFORE it in the shape.
+                const from =
+                  draggingVertex > 0
+                    ? { x: editDraft.xs[draggingVertex - 1], y: editDraft.ys[draggingVertex - 1] }
+                    : null;
+                const point = placePoint(raw, from, event.shiftKey);
+                setEditDraft(moveVertex(editDraft.xs, editDraft.ys, draggingVertex, point));
+              }}
+              onPointerUp={() => {
+                if (keyBox !== null && answerKey !== undefined) {
+                  // ── SHIFT-CLICK ACTS ON THE SELECTION, NEVER ON WHAT WAS HIT ──
+                  //
+                  // Reported from the ELEVEN03 runs: shift-click to split
+                  // "gets caught by thin non-candidate lines". It did two
+                  // wrong things at once. The split was wired to each
+                  // candidate line's own `onClick`, so on a dense plan the
+                  // element under the cursor decided which run was cut —
+                  // single-line candidates and hairline geometry sit on top of
+                  // the run you are looking at. And every pointer-down in this
+                  // mode opens a selection box, so the same shift-click also
+                  // arrived here as a zero-sized box and ACCEPTED whatever it
+                  // caught. One gesture, a split and a verdict, neither aimed.
+                  //
+                  // So: a shift gesture that did not MOVE cuts the focused
+                  // candidate at the point clicked, and nothing else happens.
+                  // The reviewer has already selected the run they are judging
+                  // — it is the one drawn thick, and the panel is showing its
+                  // length — so the selection is the only unambiguous answer
+                  // to "which run".
+                  const moved = Math.max(
+                    Math.abs(keyBox.x2 - keyBox.x1),
+                    Math.abs(keyBox.y2 - keyBox.y1),
+                  );
+                  if (
+                    keyShift &&
+                    moved <= CLICK_NOT_DRAG &&
+                    answerKey.onSplitAt !== undefined &&
+                    answerKey.focusedId !== null
+                  ) {
+                    answerKey.onSplitAt(answerKey.focusedId, { x: keyBox.x2, y: keyBox.y2 });
+                    setKeyBox(null);
+                    return;
+                  }
+                  const ids = candidatesInBox(answerKey.state, keyBox);
+                  // A box that caught nothing is a CLICK ON NOTHING, which
+                  // clears the focus rather than deciding anything — the same
+                  // way edit mode treats a click on empty paper.
+                  if (ids.length > 0) {
+                    // Shift rejects, plain accepts. Two gestures rather than a
+                    // mode, because a reviewer sweeping hatching wants the
+                    // rejecting one and must not have to remember which mode
+                    // they left it in.
+                    // ── DRAG REJECTS, SHIFT-DRAG ACCEPTS ──
+                    //
+                    // The common case is sweeping a schedule, a stair or a
+                    // field of hatching off the sheet, so the bare gesture is
+                    // the one that does that. Accepting in bulk is rarer and
+                    // riskier — a box of walls usually contains something that
+                    // is not one — so it asks for a modifier.
+                    answerKey.onState(
+                      setVerdict(answerKey.state, ids, keyShift ? "wall" : "not-a-wall"),
+                    );
+                  } else {
+                    answerKey.onFocus(null);
+                  }
+                  setKeyBox(null);
+                  return;
+                }
+                setDraggingVertex(null);
+              }}
+              onPointerLeave={() => setDraggingVertex(null)}
             >
+              {/* ── ANSWER-KEY REVIEW, DRAWN AS QUESTIONS ──
+                  Every candidate in the colour of its verdict: amber for
+                  undecided, green accepted, grey rejected, blue for a single
+                  line nobody has ruled on. Clicking one focuses it; the panel
+                  does the deciding. Hidden entirely when the reviewer presses
+                  H, which is the only way to read the drawing underneath. */}
+              {/* ── TRACING IS AN ACTION, NOT AN OVERLAY OF RESULTS ──
+
+                  Deliberately outside the `overlaysOn` gate below. The old
+                  preview was inside it, so a reviewer who had pressed `h` to
+                  clear the sheet and then started tracing saw nothing at all —
+                  and "nothing at all" is exactly what was reported.
+
+                  EVERY SIZE HERE IS IN SCREEN PIXELS, converted through
+                  `cssWidth`, so a dot stays a dot at 500% zoom. The viewBox is
+                  one unit wide, so one screen pixel is `1 / cssWidth` of it.
+                  Strokes use `vectorEffect` for the same reason. */}
+              {answerKey?.tracing === true &&
+                (() => {
+                  const px = (n: number) => n / Math.max(cssWidth, 1);
+                  const end = traceTo ?? traceHover;
+                  const live =
+                    traceFrom !== null && end !== null
+                      ? Math.hypot(end.x - traceFrom.x, end.y - traceFrom.y) * (feetPerUnit ?? 0)
+                      : null;
+                  return (
+                    <g data-takeoff="key-trace-layer">
+                      {/* Where the next click lands, snapped. */}
+                      {traceFrom === null && traceHover !== null && (
+                        <circle
+                          data-takeoff="key-trace-snap"
+                          cx={traceHover.x}
+                          cy={traceHover.y}
+                          r={px(6)}
+                          fill="none"
+                          stroke={VERDICT_COLOURS.wall}
+                          strokeWidth={STROKE_PX}
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      )}
+                      {/* The rubber band: solid while it follows the pointer,
+                          dashed once both ends are down and Enter is next. */}
+                      {traceFrom !== null && end !== null && (
+                        <line
+                          data-takeoff="key-trace-preview"
+                          x1={traceFrom.x}
+                          y1={traceFrom.y}
+                          x2={end.x}
+                          y2={end.y}
+                          stroke={VERDICT_COLOURS.wall}
+                          strokeWidth={STROKE_PX * 2}
+                          strokeDasharray={traceTo !== null ? "6 4" : undefined}
+                          strokeLinecap="round"
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      )}
+                      {traceFrom !== null && (
+                        <circle
+                          data-takeoff="key-trace-start"
+                          cx={traceFrom.x}
+                          cy={traceFrom.y}
+                          r={px(4)}
+                          fill={VERDICT_COLOURS.wall}
+                        />
+                      )}
+                      {traceTo !== null && (
+                        <circle
+                          cx={traceTo.x}
+                          cy={traceTo.y}
+                          r={px(4)}
+                          fill={VERDICT_COLOURS.wall}
+                        />
+                      )}
+                      {/* The length as it is drawn, in feet and inches —
+                          the number an estimator is actually deciding about. */}
+                      {live !== null && live > 0 && end !== null && (
+                        <>
+                          <rect
+                            x={(traceFrom!.x + end.x) / 2 + px(10)}
+                            y={(traceFrom!.y + end.y) / 2 - px(17)}
+                            width={px(74)}
+                            height={px(19)}
+                            rx={px(3)}
+                            fill="#0f0f0f"
+                            opacity={0.85}
+                          />
+                          <text
+                            data-takeoff="key-trace-length"
+                            x={(traceFrom!.x + end.x) / 2 + px(16)}
+                            y={(traceFrom!.y + end.y) / 2 - px(4)}
+                            fill="#ffffff"
+                            fontSize={px(13)}
+                            fontFamily="ui-sans-serif, system-ui, sans-serif"
+                          >
+                            {formatFeetInches(live)}
+                          </text>
+                        </>
+                      )}
+                    </g>
+                  );
+                })()}
+              {answerKey !== undefined && answerKey.overlaysOn && (
+                <g data-takeoff="key-overlay">
+                  {answerKey.state.candidates.map((one) => {
+                    const verdict = answerKey.state.verdicts[one.id] ?? "unreviewed";
+                    const colour =
+                      one.from === "single" && verdict === "unreviewed"
+                        ? SINGLE_LINE_COLOUR
+                        : VERDICT_COLOURS[verdict];
+                    const focused = answerKey.focusedId === one.id;
+                    return (
+                      <line
+                        key={one.id}
+                        data-takeoff="key-line"
+                        data-id={one.id}
+                        x1={one.x1}
+                        y1={one.y1}
+                        x2={one.x2}
+                        y2={one.y2}
+                        stroke={colour}
+                        strokeWidth={focused ? STROKE_PX * 3 : STROKE_PX * 1.5}
+                        strokeLinecap="round"
+                        opacity={verdict === "not-a-wall" ? 0.35 : 1}
+                        vectorEffect="non-scaling-stroke"
+                        style={{ cursor: "pointer" }}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          // Shift-click is handled on the SVG's pointer-up, as
+                          // a GESTURE on the selected candidate — see the
+                          // "shift-click acts on the selection" note there.
+                          // Hit-testing it here meant whichever thin line was
+                          // on top won, which is the bug this replaced.
+                          //
+                          // ── AND A COVERED TWIN NEEDS A SECOND CLICK ──
+                          //
+                          // Every line is the same few SCREEN pixels wide
+                          // (`non-scaling-stroke`), and a duplicate pair is
+                          // offset by inches of building — nine, on E Street.
+                          // At any sensible zoom they are the same pixels, so
+                          // SVG gives every click to whichever it painted
+                          // last, and a pre-rejected grey candidate could not
+                          // be selected on the drawing at all; only its row in
+                          // the panel worked. Clicking the same place again
+                          // now takes the next candidate under the pointer.
+                          const svg = event.currentTarget.ownerSVGElement;
+                          const box = svg?.getBoundingClientRect();
+                          if (box === undefined || box.width <= 0) {
+                            answerKey.onFocus(one.id);
+                            return;
+                          }
+                          answerKey.onFocus(
+                            pickOnClick({
+                              candidates: answerKey.state.candidates,
+                              x: (event.clientX - box.left) / box.width,
+                              y: (event.clientY - box.top) / box.width,
+                              focusedId: answerKey.focusedId,
+                              clicked: one.id,
+                            }),
+                          );
+                        }}
+                      />
+                    );
+                  })}
+                  {answerKey.state.traced.map((one) => (
+                    // ── A HIT AREA WIDER THAN THE INK ──
+                    //
+                    // The visible trace is 4px. Clicking a 4px diagonal line
+                    // is hard with a mouse and impossible to do reliably in a
+                    // test: the first version of this was selectable in
+                    // principle and unselectable in practice, and the click
+                    // landed on whatever was painted above it. A transparent
+                    // stroke four times as wide underneath takes the click.
+                    // ── A TRACE IS SELECTABLE, BECAUSE IT HAS TO BE DELETABLE ──
+                    //
+                    // These rendered with no click handler and no cursor, and
+                    // `removeTraced` was exported and called by nothing —
+                    // this repo's own "written, documented, never called"
+                    // shape. A reviewer who traced a wall wrongly had no way
+                    // back, and on the held-out sheets that led to CORRECT
+                    // finder candidates being rejected to work around a
+                    // trace, which is a key saying the opposite of what the
+                    // reviewer meant.
+                    <g key={one.id}>
+                    <line
+                      data-takeoff="key-traced-hit"
+                      x1={one.x1}
+                      y1={one.y1}
+                      x2={one.x2}
+                      y2={one.y2}
+                      stroke="transparent"
+                      strokeWidth={STROKE_PX * 16}
+                      vectorEffect="non-scaling-stroke"
+                      style={{ cursor: "pointer" }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        answerKey.onFocus(one.id);
+                      }}
+                    />
+                    <line
+                      data-takeoff="key-traced"
+                      data-id={one.id}
+                      x1={one.x1}
+                      y1={one.y1}
+                      x2={one.x2}
+                      y2={one.y2}
+                      stroke={VERDICT_COLOURS.wall}
+                      strokeWidth={answerKey.focusedId === one.id ? STROKE_PX * 4 : STROKE_PX * 2}
+                      strokeDasharray={`${STROKE_PX * 2} ${STROKE_PX}`}
+                      vectorEffect="non-scaling-stroke"
+                      style={{ cursor: "pointer" }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        answerKey.onFocus(one.id);
+                      }}
+                    />
+                    </g>
+                  ))}
+                </g>
+              )}
+              {/* The box being dragged to decide many at once. */}
+              {keyBox !== null && (
+                <rect
+                  data-takeoff="key-box"
+                  x={Math.min(keyBox.x1, keyBox.x2)}
+                  y={Math.min(keyBox.y1, keyBox.y2)}
+                  width={Math.abs(keyBox.x2 - keyBox.x1)}
+                  height={Math.abs(keyBox.y2 - keyBox.y1)}
+                  fill="#2563eb"
+                  fillOpacity={0.08}
+                  stroke="#2563eb"
+                  strokeWidth={STROKE_PX}
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
               {/* The calibration line, redrawn over the sheet so the scale is
-                  something a reviewer can SEE rather than take on faith. */}
-              {calibration && (
+                  something a reviewer can SEE rather than take on faith.
+
+                  ── EXCEPT IN ANSWER-KEY MODE ──
+
+                  There it is the one mark on the sheet that is NOT a candidate,
+                  and it looks exactly like one: a straight amber line over the
+                  drawing, inside the plan, at a wall-ish length. A reviewer
+                  building a key has to decide about every mark they can see,
+                  and this one is not theirs to decide about. The scale is
+                  already stated in words in the panel. */}
+              {calibration && answerKey === undefined && (
                 <line
                   x1={calibration.x1}
                   y1={calibration.y1}
                   x2={calibration.x2}
                   y2={calibration.y2}
                   stroke="#f0b429"
-                  strokeWidth={STROKE_PX}
-                  strokeDasharray={`${STROKE_PX * 4} ${STROKE_PX * 2.5}`}
+                  strokeWidth={STROKE_PX * 1.5}
+                  /* ── A DASH-DOT, BECAUSE AN EVEN DASH IS WHAT A WALL RUN IS ──
+                     This line was `8 5` amber dashes, and the cluster palette's
+                     fifth colour is `#fbbf24` — rgb(251,191,36) against this
+                     line's rgb(240,180,41), which is no difference at all — drawn
+                     as even dashes too. So on any sheet with five or more
+                     thickness groups the scale line and one group's runs were the
+                     same mark, and the only way to tell them apart was to know
+                     which one you had drawn.
+
+                     It was reported as a bug: an orange dashed run crossing the
+                     whole drawing on two unrelated real sheets at about the same
+                     height. It was the scale line both times, crossing the
+                     drawing because a long calibration is an ACCURATE one.
+
+                     Fixed by shape rather than by colour, because the palette is
+                     tuned and tested and because this line is a different KIND of
+                     thing from a wall run. A cluster dash is always two numbers
+                     (`markFor`: `${on} ${2}`); this is four, which no cluster can
+                     produce — and a dash-dot is what a drafter draws for a
+                     reference line, so it reads correctly to the people who use
+                     this. Pinned by `calibrationMark.test.ts`. */
+                  strokeDasharray={CALIBRATION_DASH}
                   vectorEffect="non-scaling-stroke"
                 />
               )}
 
-              {(sheet?.measurements ?? []).map((m) => (
-                <Shape key={m.id} kind={m.kind} xs={m.xs} ys={m.ys} colour={m.postedAt ? "#6b7280" : "#38bdf8"} />
-              ))}
+              {(sheet?.measurements ?? []).map((m) => {
+                const editing = editingId === m.id;
+                const xs = editing && editDraft ? editDraft.xs : m.xs;
+                const ys = editing && editDraft ? editDraft.ys : m.ys;
+                return (
+                  <g key={m.id}>
+                    <Shape
+                      kind={m.kind}
+                      xs={xs}
+                      ys={ys}
+                      colour={editing ? "#f59e0b" : m.postedAt ? "#6b7280" : "#38bdf8"}
+                    />
+                    {/* ── OPENINGS TAKEN OFF THIS AREA ──
+                        Drawn as their own outlines rather than as a hole in
+                        the fill: an estimator has to be able to SEE what was
+                        deducted, and a gap in a translucent shape reads as a
+                        shape that was drawn wrong. */}
+                    {(m.cutouts ?? []).map((hole, index) => (
+                      <polygon
+                        key={index}
+                        points={hole.xs.map((x, i) => `${x},${hole.ys[i]}`).join(" ")}
+                        fill="#0f172a"
+                        fillOpacity={0.25}
+                        stroke="#0ea5e9"
+                        strokeWidth={STROKE_PX}
+                        strokeDasharray={`${STROKE_PX * 3} ${STROKE_PX * 2}`}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    ))}
+                    {/* ── VERTEX HANDLES, only on the shape being edited ──
+                        Drawing them on every saved shape would cover a busy
+                        sheet in dots and make the drawing unreadable, which is
+                        the thing this whole screen is for. */}
+                    {editing &&
+                      xs.map((x, i) => (
+                        <circle
+                          key={i}
+                          cx={x}
+                          cy={ys[i]}
+                          r={0.007}
+                          fill="#f59e0b"
+                          stroke="#0f172a"
+                          strokeWidth={STROKE_PX / 2}
+                          vectorEffect="non-scaling-stroke"
+                          style={{ cursor: "grab" }}
+                          data-takeoff="vertex-handle"
+                          onPointerDown={(event) => {
+                            event.stopPropagation();
+                            event.preventDefault();
+                            setDraggingVertex(i);
+                          }}
+                        />
+                      ))}
+                  </g>
+                );
+              })}
 
               {/* ── WHAT THE PANEL LISTS, AND NOTHING ELSE ──
                   This was `clusters={found}` and the panel lists `shownGroups`,
@@ -1899,6 +3941,23 @@ export function TakeoffPlanViewer({
                   together. Nothing is lost, because it was never actionable —
                   only visible. */}
               <FoundWalls clusters={shownGroups} hovered={hovered} />
+              {rooms !== null &&
+                roomsOnPage === pageNumber &&
+                rooms.rooms.map((room) => (
+                  <polygon
+                    key={`room-${room.id}`}
+                    data-takeoff="room"
+                    data-room-named={room.tag ? "1" : "0"}
+                    points={room.xs.map((x, i) => `${x},${room.ys[i]}`).join(" ")}
+                    fill={room.tag ? "#16a34a" : "#f59e0b"}
+                    fillOpacity={hoveredRoom === room.id ? 0.35 : 0.14}
+                    stroke={room.tag ? "#15803d" : "#d97706"}
+                    strokeWidth={STROKE_PX}
+                    vectorEffect="non-scaling-stroke"
+                    onMouseEnter={() => setHoveredRoom(room.id)}
+                    onMouseLeave={() => setHoveredRoom(null)}
+                  />
+                ))}
 
               {draft.xs.length > 0 && (
                 <Shape
@@ -1910,6 +3969,7 @@ export function TakeoffPlanViewer({
                 />
               )}
             </svg>
+          </div>
           </div>
         )}
         {isRendering && !loadError && (
@@ -1946,6 +4006,58 @@ export function TakeoffPlanViewer({
                 Clear
               </button>
             )}
+
+            {/* ── TYPE THE LENGTH THE PLAN PRINTS ──
+                A corridor marked 42'-6" often scales at 42'-2", and the
+                estimator trusts the paper. Aim the last segment, type the
+                figure, and the point moves to that distance along the line
+                already aimed. Needs two points, because one has no direction.
+                Disabled rather than hidden with no scale, and the title says
+                why: a typed length against no scale is a number with no
+                length, and a control that vanishes teaches nothing. */}
+            {draft.xs.length >= 2 && tool !== "count" && (
+              <span className="inline-flex items-center gap-1">
+                <input
+                  inputMode="decimal"
+                  value={typedFeet}
+                  onChange={(event) => setTypedFeet(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      applyTypedLength();
+                    }
+                  }}
+                  disabled={feetPerUnit === null}
+                  placeholder="ft"
+                  aria-label="Set the last segment's length in feet"
+                  title={
+                    feetPerUnit === null
+                      ? "Set the scale on this sheet before typing a length."
+                      : "Type what the plan prints, in feet."
+                  }
+                  data-takeoff="typed-length"
+                  className="w-16 rounded-md border border-line-card bg-surface px-1.5 py-1 text-xs text-ink placeholder:text-ink-muted disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={applyTypedLength}
+                  disabled={feetPerUnit === null || typedFeet.trim() === ""}
+                  data-takeoff="apply-length"
+                  className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover disabled:opacity-50"
+                >
+                  Set length
+                </button>
+              </span>
+            )}
+
+            {/* Shift is not discoverable, so the hint says it where the
+                drawing is happening rather than only in a cheat sheet. */}
+            {draft.xs.length > 0 && tool !== "count" && (
+              <span className="text-[11px] text-ink-muted" data-takeoff="shift-hint">
+                Hold Shift to keep it straight
+                {snapTargets.length > 0 ? " · snapping to the drawing" : ""}
+              </span>
+            )}
           </div>
 
           {tool === "calibrate" && (
@@ -1954,6 +4066,7 @@ export function TakeoffPlanViewer({
               planId={planId}
               pageNumber={pageNumber}
               pageWidthPt={pageSize?.widthPt ?? null}
+              viewScales={viewScalesByPage?.[pageNumber] ?? []}
               printedScale={printedScaleByPage[pageNumber] ?? null}
               prefill={scalePrefillByPage[pageNumber] ?? null}
               declineReason={scaleDeclineByPage?.[pageNumber] ?? null}
@@ -1976,18 +4089,144 @@ export function TakeoffPlanViewer({
             />
           )}
 
-          {tool !== "calibrate" && sheet && draft.xs.length > 0 && (
+          {tool !== "calibrate" && tool !== "cutout" && tool !== "edit" && sheet && draft.xs.length > 0 && (
             <MeasurementForm
               jobId={jobId}
               pageId={sheet.id}
               kind={kindOf(tool) ?? "LINEAR"}
               draft={draft}
               reading={draftReading}
-              onSaved={() => setDraft(EMPTY)}
+              activeItemId={activeItemId}
+              onSaved={(saved) => {
+                setDraft(EMPTY);
+                // THE HOST'S UNDO, when there is a host and an id. The viewer
+                // keeps no stack of its own: the workspace owns undo because
+                // it owns the keyboard, and the takeoff TAB passes nothing,
+                // so this is simply inert there.
+                if (saved) onMeasurementSaved?.({ id: saved.id, kind: kindOf(tool) ?? "LINEAR" });
+              }}
             />
           )}
 
-          {tool !== "calibrate" && !sheet && (
+          {/* ── SAVING AN OPENING ──
+              Not a MeasurementForm: a cutout creates nothing, it edits an
+              area that already exists. The room it belongs to is worked out
+              server-side from the geometry — see `addMeasurementCutout` — so
+              there is nothing here to pick and nothing to name. */}
+          {/* ── THE EDIT BAR ──
+              Only while something is selected. Deleting is two steps and the
+              confirm does not land on the delete's pixel — `ConfirmDelete`
+              owns that geometry, including the column it becomes below `sm`. */}
+          {tool === "edit" && editingId && editDraft && (
+            <div className="mt-3 flex flex-wrap items-center gap-2" data-takeoff="edit-bar">
+              <p className="text-xs text-ink-body">
+                Drag a corner. {editDraft.xs.length} point{editDraft.xs.length === 1 ? "" : "s"}.
+              </p>
+              <button
+                type="button"
+                disabled={savingEdit}
+                data-takeoff="save-edit"
+                onClick={() => {
+                  setEditError(null);
+                  setSavingEdit(true);
+                  void updateMeasurementGeometry(jobId, editingId, [...editDraft.xs], [...editDraft.ys])
+                    .then((result) => {
+                      if (result.ok) {
+                        setEditingId(null);
+                        setEditDraft(null);
+                      } else {
+                        setEditError(result.error);
+                      }
+                    })
+                    .finally(() => setSavingEdit(false));
+                }}
+                className="rounded-md border border-line-card bg-brand px-2 py-1 text-xs font-medium text-neutral-900 disabled:opacity-50"
+              >
+                {savingEdit ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Spinner />
+                    Saving…
+                  </span>
+                ) : (
+                  "Save shape"
+                )}
+              </button>
+              <RowActions
+                destructive={
+                  <ConfirmDelete
+                    label="Delete"
+                    describe="Delete this measurement"
+                    onConfirm={() => {
+                      setEditError(null);
+                      void deleteTakeoffMeasurement(jobId, editingId).then((result) => {
+                        if (result.ok) {
+                          setEditingId(null);
+                          setEditDraft(null);
+                        } else {
+                          setEditError(result.error);
+                        }
+                      });
+                    }}
+                  />
+                }
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(null);
+                    setEditDraft(null);
+                  }}
+                  className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-label hover:bg-rail-hover"
+                >
+                  Cancel
+                </button>
+              </RowActions>
+              {editError && (
+                <p className="text-xs text-tag-rose-ink" role="alert" data-takeoff="edit-error">
+                  {editError}
+                </p>
+              )}
+            </div>
+          )}
+
+          {tool === "cutout" && sheet && draft.xs.length >= 3 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2" data-takeoff="cutout-save">
+              <button
+                type="button"
+                disabled={cuttingOut}
+                onClick={() => {
+                  setCutoutError(null);
+                  setCuttingOut(true);
+                  void addMeasurementCutout(jobId, sheet.id, { xs: [...draft.xs], ys: [...draft.ys] })
+                    .then((result) => {
+                      if (result.ok) {
+                        setDraft(EMPTY);
+                      } else {
+                        setCutoutError(result.error);
+                      }
+                    })
+                    .finally(() => setCuttingOut(false));
+                }}
+                className="rounded-md border border-line-card bg-brand px-2 py-1 text-xs font-medium text-neutral-900 disabled:opacity-50"
+              >
+                {cuttingOut ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Spinner />
+                    Taking it off…
+                  </span>
+                ) : (
+                  "Take this opening off the area"
+                )}
+              </button>
+              {cutoutError && (
+                <p className="text-xs text-tag-rose-ink" role="alert" data-takeoff="cutout-error">
+                  {cutoutError}
+                </p>
+              )}
+            </div>
+          )}
+
+          {tool !== "calibrate" && tool !== "cutout" && tool !== "edit" && !sheet && (
             <p className="mt-2 text-xs text-tag-amber-ink">Set the scale on this sheet before measuring it.</p>
           )}
         </div>
@@ -2163,13 +4402,20 @@ export function SheetPager({
 export function ClusterTag({ names }: { names: readonly string[] }) {
   const sentence = tagSentence(names);
   if (sentence === null) return null;
+  // ── A TYPE CARRIED ALONG THE WALL READS WEAKER THAN ONE PRINTED BESIDE IT ──
+  // `planTextTags.ts` marks a propagated run's tag; the code is shown plain
+  // and the marker becomes words, so an estimator can tell "the drawing says
+  // IW-2 here" from "this is the same wall as the one the drawing tagged".
+  const carried = names.some(isPropagatedTag);
   return (
     <span
       className="rounded bg-tag-slate px-1.5 py-0.5 text-xs font-medium text-tag-slate-ink"
       data-takeoff="cluster-tag"
-      title={sentence}
+      data-carried={carried ? "1" : undefined}
+      title={carried ? "Same wall as a run the drawing tagged — the type was carried along the wall" : sentence}
     >
-      {names.join(" / ")}
+      {names.map(plainTag).join(" / ")}
+      {carried && <span className="ml-1 font-normal text-ink-muted">same wall</span>}
     </span>
   );
 }
@@ -2295,6 +4541,64 @@ function Shape({
  * branch and its wording, and it deliberately does NOT claim the panel is
  * navigable — see that file's own note on what it is and is not evidence for.
  */
+/**
+ * ── A SHEET WITH SEVERAL DRAWINGS ON IT, EACH AT ITS OWN SCALE ──
+ *
+ * There is no prefill for these and there must not be: one scale would be
+ * wrong for every drawing but one, and a calibration the estimator accepts is
+ * a calibration they are taken to have checked.
+ *
+ * `scaleFromPrinted` refuses exactly this page — more than one printed scale,
+ * and no way to tell which drawing each belongs to. Reading them per VIEW is
+ * how it can be told, because a caption is read against the region its drawing
+ * occupies. So this offers the drawings themselves and asks which one is being
+ * measured, which is a question the estimator can answer by looking at the
+ * sheet and the app cannot answer at all.
+ *
+ * The scale is still UNCONFIRMED in the sense `ScaleOffer` uses: nothing on the
+ * sheet checks a caption. The line it proposes spans the drawing's own region,
+ * which is at least something to look at — see `calibrationForView`.
+ */
+export function ViewScaleOffer({
+  views,
+  onUse,
+}: {
+  views: readonly ViewScale[];
+  onUse: (view: ViewScale) => void;
+}) {
+  return (
+    <div className="rounded-md border border-line-card bg-surface p-2" data-takeoff="view-scales">
+      <p className="mb-2 text-xs text-ink-body">
+        This sheet carries{" "}
+        <span className="font-semibold text-ink">{views.length} drawings at their own scales</span>, so
+        there is no one scale for the page. Pick the drawing you are measuring.
+      </p>
+      <ul className="flex flex-col gap-1">
+        {views.map((view, index) => (
+          <li key={`${view.name}-${index}`}>
+            <button
+              type="button"
+              data-takeoff="use-view-scale"
+              onClick={() => onUse(view)}
+              className="flex w-full items-baseline justify-between gap-3 rounded-md border border-line-card px-2 py-1.5 text-left text-xs text-ink-label hover:bg-rail-hover"
+            >
+              <span className="font-medium text-ink">{view.name}</span>
+              <span className="shrink-0 text-ink-muted">{view.scaleName}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {/* The same sentence `ScaleOffer` shows for a printed scale, for the same
+          reason: a caption is what somebody typed, and nothing on the drawing
+          confirms it. An estimator accepting this has to know that. */}
+      <p className="mt-2 text-[11px] text-ink-muted">
+        These come from the captions under each drawing. Nothing measurable on the sheet confirms
+        them — check one against a dimension you can read before relying on it.
+      </p>
+    </div>
+  );
+}
+
 export function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => void }) {
   // Both of these are PURE and live in `takeoff-plan-view.ts`, where they are
   // tested — the wording of a measured error and the order of the evidence are
@@ -2440,7 +4744,30 @@ export function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: (
  * Nothing in this repo could have caught it: the screen suite renders in
  * happy-dom, which does no layout.
  */
+/** One empty list, so a page with no missed walls does not hand every
+ *  consumer a new array on each render. */
+const EMPTY_MISSED: { where: string; why: string }[] = [];
+
+/**
+ * How far a pointer may move and still count as a CLICK, in page-width units.
+ *
+ * About eleven pixels on a 2592pt sheet — a hand resting on a trackpad, not a
+ * box anybody drew. It only has to separate "I clicked that run" from "I swept
+ * an area", and the two gestures are nowhere near each other.
+ */
+const CLICK_NOT_DRAG = 0.004;
+
 const STROKE_PX = 2;
+
+/**
+ * The scale line's dash: long, short, dot — the drafting convention for a
+ * reference line, and a shape no cluster mark can take.
+ *
+ * `markFor` builds every cluster dash as exactly TWO lengths. This is four, so
+ * the scale line cannot be mistaken for a wall run however the palette moves.
+ * `calibrationMark.test.ts` asserts that across every index.
+ */
+export const CALIBRATION_DASH = `${STROKE_PX * 7} ${STROKE_PX * 3} ${STROKE_PX} ${STROKE_PX * 3}`;
 
 function CalibrationForm({
   jobId,
@@ -2452,6 +4779,7 @@ function CalibrationForm({
   existingNote,
   draft,
   prefill,
+  viewScales,
   declineReason,
   onUsePrefill,
   onSaved,
@@ -2465,6 +4793,9 @@ function CalibrationForm({
   existingNote: string;
   draft: StoredCalibration | null;
   prefill: ScalePrefill | null;
+  /** The drawings on a multi-scale sheet, each with its own captioned scale.
+   *  Empty on every ordinary sheet. */
+  viewScales: readonly ViewScale[];
   declineReason: string | null;
   onUsePrefill: (xs: readonly [number, number], ys: readonly [number, number]) => void;
   onSaved: () => void;
@@ -2550,6 +4881,27 @@ function CalibrationForm({
           <p className="rounded-md border border-line-card bg-surface px-2 py-1.5 text-[11px] text-ink-muted">
             <span className="text-ink-body">How this sheet&apos;s scale was set:</span> {existingNote}
           </p>
+        )}
+        {/* ── THE PER-VIEW OFFER, WHERE A PAGE-WIDE ONE CANNOT EXIST ──
+            Only when there is no prefill: a sheet that read a scale of its own
+            has one answer and does not need to be asked which drawing. */}
+        {!prefill && pageWidthPt !== null && viewScales.length > 0 && (
+          <ViewScaleOffer
+            views={viewScales}
+            onUse={(view) => {
+              // A page whose width never arrived cannot have a line placed on
+              // it — the ratio has nothing to be a ratio OF. The offer is not
+              // shown in that state; this is the type-level echo of that.
+              if (pageWidthPt === null) return;
+              const line = calibrationForView(view, pageWidthPt);
+              onUsePrefill([line.x1, line.x2], [line.y1, line.y2]);
+              setNote(
+                `From the ${view.scaleName} captioned under ${view.name} on this sheet. ` +
+                  `Nothing measurable on the sheet confirmed it.`,
+              );
+              setTyped(formatFeetInches(line.declaredDistanceFeet));
+            }}
+          />
         )}
         {prefill && (
           <ScaleOffer
@@ -2665,6 +5017,7 @@ function MeasurementForm({
   kind,
   draft,
   reading,
+  activeItemId,
   onSaved,
 }: {
   jobId: string;
@@ -2672,14 +5025,33 @@ function MeasurementForm({
   kind: MeasurementKind;
   draft: Draft;
   reading: string | null;
-  onSaved: () => void;
+  activeItemId: string | null;
+  /** Carries the new row's id, which is what an undo needs to delete it. */
+  onSaved: (saved: { id: string } | null) => void;
 }) {
   const problem = verticesProblem(kind, draft.xs, draft.ys);
   const crosses = kind === "AREA" && !problem && ringSelfIntersects(draft.xs, draft.ys);
 
   return (
-    <ActionForm action={saveTakeoffMeasurement.bind(null, jobId)} className="mt-3 flex flex-col gap-2" onSuccess={onSaved}>
+    <ActionForm
+      action={saveTakeoffMeasurement.bind(null, jobId)}
+      className="mt-3 flex flex-col gap-2"
+      onSuccess={(result) => {
+        // `saveTakeoffMeasurement` returns `ActionResultWith<{ id }>`. Read it
+        // defensively rather than cast: `onSuccess` is typed `unknown` for the
+        // sixty forms whose actions return nothing, and an undo that cannot
+        // find an id must degrade to no undo rather than throw.
+        const value =
+          typeof result === "object" && result !== null && "value" in result
+            ? (result as { value?: { id?: unknown } }).value
+            : null;
+        onSaved(typeof value?.id === "string" ? { id: value.id } : null);
+      }}
+    >
       <input type="hidden" name="pageId" value={pageId} />
+      {/* Blank when nothing is selected, which the action reads as
+          Unassigned rather than as an error. */}
+      <input type="hidden" name="itemId" value={activeItemId ?? ""} />
       <input type="hidden" name="kind" value={kind} />
       <input type="hidden" name="points" value={JSON.stringify(draft)} />
       <div className="flex flex-wrap items-end gap-3">

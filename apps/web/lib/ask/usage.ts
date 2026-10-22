@@ -225,6 +225,9 @@ export type AskUsageFeature =
    *  per TILE rather than per request, so one sheet costs nine of these, and a
    *  bill that could not see that would under-report a scanned set badly. */
   | "sheet-text"
+  /** The plan-text reader: the partition legend by words and by sight, and
+   *  the door schedule joined to the plan. */
+  | "plan-text-read"
   /** Reading a bid addendum (lib/actions/addendumRead.ts). Its own row rather
    *  than folded into `quote-extract`, though both are one whole file into one
    *  request: they are switched separately and they spend DIFFERENT ledgers — a

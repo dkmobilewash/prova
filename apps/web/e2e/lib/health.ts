@@ -171,7 +171,20 @@ export class HealthMonitor {
 export interface HealthOptions {
   /** Attach the page's monitor to also fail on uncaught exceptions. */
   monitor?: HealthMonitor;
-  /** False for pages outside the signed-in shell (/welcome, /sign-in). */
+  /**
+   * False for pages with no app SHELL around them — which is not the same
+   * thing as not signed in, and the name is older than the third case.
+   *
+   * Two kinds of page pass false. The signed-out ones (/welcome, /sign-in),
+   * and a page that is authenticated but deliberately outside the `(app)`
+   * route group: the full-screen takeoff workspace at `/takeoff/[id]`, whose
+   * whole reason for existing is that it has no sidebar and no top bar to
+   * take pixels off the drawing.
+   *
+   * What it switches off is the main-navigation assertion below. Everything
+   * else — the crash markers, the uncaught exceptions, the "rendered next to
+   * nothing" floor — still applies, which is what makes it safe to pass.
+   */
   signedIn?: boolean;
 }
 

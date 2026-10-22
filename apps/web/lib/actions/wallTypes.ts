@@ -241,24 +241,144 @@ export async function removeWallTypeComponent(componentId: string): Promise<Acti
  * company's own number, and inventing one would put a stranger's figure into a
  * bid. Default height is left blank for the same reason: each run says its own.
  */
-const STARTER_TYPES = [
-  {
-    code: "W1",
-    name: "3⅝″ 20ga steel studs at 16″ o.c., one layer ⅝″ Type X each side",
-    extra: [] as { description: string; unit: string; basis: WallComponentBasis; factor: string }[],
-  },
-  {
-    code: "W2",
-    name: "3⅝″ 20ga steel studs at 16″ o.c., one layer ⅝″ Type X each side, R-13 batt",
-    extra: [{ description: "R-13 batt insulation", unit: "sq ft", basis: "FACE_SQFT" as WallComponentBasis, factor: "1" }],
-  },
-];
+/**
+ * ── THE STARTER LIBRARY ──
+ *
+ * Editable DEFAULTS, not a specification. Every factor here is a common
+ * convention rather than anybody's measured productivity, which is why the
+ * screen that offers them says so and why nothing re-applies them: a company
+ * that changes a factor has made a decision, and a later "refresh the
+ * starters" would quietly take it back.
+ *
+ * ── THE WALL TYPES KEEP THEIR OWN SHARED PARTS; THE OTHER TRADES DO NOT ──
+ *
+ * `STARTER_COMPONENTS` is the stud-and-board list every partition shares.
+ * A ceiling, a slab and a coat of paint share nothing with it, so they carry
+ * their parts outright. The alternative — a single list with most rows
+ * switched off per type — is the shape where a row nobody wanted gets priced
+ * because somebody forgot a flag.
+ *
+ * ── NO PRICES ──
+ *
+ * Not one of these carries a unit price, deliberately. A part with no catalog
+ * entry makes an UNPRICED estimate line, which an estimator fills in from
+ * their own supplier — and a seeded price is a number that looks researched,
+ * gets bid, and is nobody's.
+ */
+type StarterPart = {
+  description: string;
+  unit: string;
+  basis: WallComponentBasis;
+  factor: string;
+  wastePercent?: string;
+  roundUp?: boolean;
+};
 
-const STARTER_COMPONENTS: { description: string; unit: string; basis: WallComponentBasis; factor: string; wastePercent?: string; roundUp?: boolean }[] = [
+const STARTER_COMPONENTS: StarterPart[] = [
   { description: "3⅝″ 20ga studs", unit: "ea", basis: "STUDS", factor: "1", roundUp: true },
   { description: "3⅝″ 20ga track, top and bottom", unit: "lin ft", basis: "LINEAR_FT", factor: "2" },
   { description: "⅝″ Type X board, 4x8 sheets", unit: "sheets", basis: "BOARDED_SQFT", factor: "0.03125", wastePercent: "10", roundUp: true },
   { description: "Hang, tape and finish ⅝″ board", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1" },
+];
+
+const STARTER_TYPES: { code: string; name: string; parts: StarterPart[] }[] = [
+  {
+    code: "W1",
+    name: "3⅝″ 20ga steel studs at 16″ o.c., one layer ⅝″ Type X each side",
+    parts: STARTER_COMPONENTS,
+  },
+  {
+    code: "W2",
+    name: "3⅝″ 20ga steel studs at 16″ o.c., one layer ⅝″ Type X each side, R-13 batt",
+    parts: [
+      ...STARTER_COMPONENTS,
+      { description: "R-13 batt insulation", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
+    ],
+  },
+  {
+    code: "W3",
+    name: "2x4 wood studs at 16″ o.c., one layer ½″ board each side",
+    parts: [
+      { description: "2x4 studs", unit: "ea", basis: "STUDS", factor: "1", roundUp: true },
+      { description: "2x4 plate, one bottom and two top", unit: "lin ft", basis: "LINEAR_FT", factor: "3" },
+      { description: "½″ board, 4x8 sheets", unit: "sheets", basis: "BOARDED_SQFT", factor: "0.03125", wastePercent: "10", roundUp: true },
+      { description: "Hang, tape and finish ½″ board", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1" },
+    ],
+  },
+  {
+    code: "EW1",
+    name: "Exterior 6″ 18ga stud wall, sheathed and insulated, board inside",
+    parts: [
+      { description: "6″ 18ga studs", unit: "ea", basis: "STUDS", factor: "1", roundUp: true },
+      { description: "6″ 18ga track, top and bottom", unit: "lin ft", basis: "LINEAR_FT", factor: "2" },
+      { description: "½″ exterior sheathing", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "10" },
+      { description: "R-21 batt insulation", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
+      { description: "⅝″ Type X board, inside face only", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "10" },
+      { description: "Hang, tape and finish inside face", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
+    ],
+  },
+  {
+    code: "FIN5",
+    name: "Drywall finish — Level 5 skim over board already hung",
+    parts: [
+      { description: "Level 5 skim coat", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1" },
+      { description: "Joint compound for skim", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1", wastePercent: "5" },
+    ],
+  },
+  {
+    code: "ACT1",
+    name: "Acoustic ceiling — 2x4 lay-in grid and tile",
+    parts: [
+      // AREA_SQFT and PERIMETER_FT, which a wall run cannot produce at all —
+      // this type exists for a TAKEOFF ITEM traced as an area.
+      { description: "2x4 acoustic tile", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "5" },
+      { description: "Main tee and cross tee", unit: "lin ft", basis: "AREA_SQFT", factor: "1.1" },
+      { description: "Wall angle", unit: "lin ft", basis: "PERIMETER_FT", factor: "1", wastePercent: "5" },
+      { description: "Hang grid and lay tile", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+    ],
+  },
+  {
+    code: "FLR1",
+    name: "Flooring — underlayment, finish floor and base",
+    parts: [
+      { description: "Finish flooring", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "10" },
+      { description: "Underlayment", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "5" },
+      { description: "Base", unit: "lin ft", basis: "PERIMETER_FT", factor: "1", wastePercent: "10" },
+      { description: "Install flooring", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+    ],
+  },
+  {
+    code: "PT1",
+    name: "Painting — one prime and two finish coats",
+    parts: [
+      { description: "Primer", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+      { description: "Finish paint, two coats", unit: "sq ft", basis: "AREA_SQFT", factor: "2" },
+      { description: "Prime and paint", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+    ],
+  },
+  {
+    code: "SLB1",
+    name: "Concrete slab on grade — set the item's depth in inches",
+    parts: [
+      // VOLUME_CY reads the ITEM'S depth: `area × depth ÷ 27`. A slab with no
+      // depth produces nothing rather than a guessed four inches, which is
+      // the rule this whole codebase follows about numbers nobody supplied.
+      { description: "Concrete", unit: "cu yd", basis: "VOLUME_CY", factor: "1", wastePercent: "5", roundUp: true },
+      { description: "Welded wire mesh", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "10" },
+      { description: "Edge form", unit: "lin ft", basis: "PERIMETER_FT", factor: "1" },
+      { description: "Place and finish slab", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+    ],
+  },
+  {
+    code: "FTG1",
+    name: "Concrete footing — set the item's depth in inches",
+    parts: [
+      { description: "Concrete", unit: "cu yd", basis: "VOLUME_CY", factor: "1", wastePercent: "5", roundUp: true },
+      { description: "Form both sides", unit: "sq ft", basis: "LINEAR_FT", factor: "2" },
+      { description: "Rebar", unit: "lin ft", basis: "LINEAR_FT", factor: "3" },
+      { description: "Place and finish footing", unit: "lin ft", basis: "LINEAR_FT", factor: "1" },
+    ],
+  },
 ];
 
 type StarterResult = ActionResultWith<{ added: string[] }>;
@@ -273,7 +393,13 @@ export async function addStarterWallTypes(): Promise<StarterResult> {
   );
   const toAdd = STARTER_TYPES.filter((type) => !taken.has(type.code));
   if (toAdd.length === 0) {
-    return { ok: false, error: "You already have wall types tagged W1 and W2, so nothing was added." };
+    // NAMES WHAT IS ACTUALLY THERE rather than the two it used to seed. The
+    // starter set has ten entries now, and a message naming W1 and W2 would
+    // be wrong for anybody who already has an ACT1.
+    return {
+      ok: false,
+      error: `You already have every starter assembly (${STARTER_TYPES.map((type) => type.code).join(", ")}), so nothing was added.`,
+    };
   }
 
   await prisma.$transaction(async (tx) => {
@@ -288,7 +414,7 @@ export async function addStarterWallTypes(): Promise<StarterResult> {
           sortOrder: index,
           notes: "Starter type — unpriced. Link each part to your price book and add your crew's rate.",
           components: {
-            create: [...STARTER_COMPONENTS, ...type.extra].map((component, order) => ({ ...component, sortOrder: order })),
+            create: type.parts.map((component, order) => ({ ...component, sortOrder: order })),
           },
         },
       });

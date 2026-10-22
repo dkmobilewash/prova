@@ -673,8 +673,18 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "The uploaded drawing, the scale somebody calibrated each sheet to, and the shapes " +
       "they traced on it. Deliberately not exported: these rows are coordinates on a PDF " +
       "this file does not contain, so on their own they measure nothing. The quantities " +
-      "they produced are ordinary estimate line items and ARE in the line items dataset.",
-    models: ["TakeoffPlan", "TakeoffPlanPage", "TakeoffScaleCalibration", "TakeoffMeasurement"],
+      "they produced are ordinary estimate line items and ARE in the line items dataset.\n\n" +
+      "`TakeoffItem` joins them for the same reason and one of its own: it is a NAME and a " +
+      "COLOUR for a group of those coordinates. Its quantity is computed from them on every " +
+      "read and stored nowhere, so a column of item names in a spreadsheet would carry no " +
+      "number at all — and the numbers it does produce reach the export as estimate lines.",
+    models: [
+      "TakeoffPlan",
+      "TakeoffPlanPage",
+      "TakeoffScaleCalibration",
+      "TakeoffMeasurement",
+      "TakeoffItem",
+    ],
   },
   {
     key: "plan-sheet-index",
@@ -723,8 +733,10 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "and re-reading the drawing is what produces them. What WOULD be worth exporting is a " +
       "reading an estimator has accepted, because that is their own work and it is the door " +
       "schedule as they have agreed it stands — but nothing accepts one yet, and this line " +
-      "exists so that is stated rather than quietly true.",
-    models: ["PlanScheduleProposal"],
+      "exists so that is stated rather than quietly true. The wall-legend read (PlanLegendProposal) " +
+      "is the same shape one step on: a reading of the drawing, held for review, and the wall types " +
+      "an estimator ADDS from it are their own work and ARE exported, with the library.",
+    models: ["PlanScheduleProposal", "PlanLegendProposal"],
   },
   {
     key: "proposal-clause-drafts",
@@ -1053,6 +1065,19 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
  * nobody asks for.
  */
 export const EXPORT_COLUMN_OMISSIONS: Record<string, string> = {
+  assemblyLibraryPinnedAt:
+    "when this job stopped following the company assembly library, or null for most jobs. " +
+    "Plumbing for the expander that turns a takeoff into estimate lines: it decides whether a " +
+    "part added to an assembly LAST WEEK belongs on a bid priced LAST MONTH. The lines it " +
+    "produces are ordinary estimate line items and ARE exported, with their quantities and " +
+    "prices; this is the switch behind them, and a date in a spreadsheet column nobody can act " +
+    "on is not the answer to any question a customer has",
+  takeoffItemId:
+    "which takeoff CONDITION produced this estimate line — a join key, not a fact. The line " +
+    "itself carries the description, quantity, unit and price, which is everything the row " +
+    "means; the item's own name is already in the description. It is exported nowhere because " +
+    "`TakeoffItem` is not exported at all, for the reason the plan-takeoff omission gives: its " +
+    "quantity is computed from coordinates on a PDF this file does not contain",
   companyId:
     "every file is already one company's rows — the scope of the export IS this column, " +
     "so a column repeating it on every line carries no information",
@@ -1077,6 +1102,8 @@ export const EXPORT_COLUMN_OMISSIONS: Record<string, string> = {
 };
 
 export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
+  TakeoffPlanTextRead:
+    "working-out kept between detections — what plan-text reading found on a set (its legend, its door schedule, each sheet's join), recomputable from the drawing at any time; the wall types a person added from it are exported with the library",
   Crew: "picking aid — a saved name for people the schedule form ticks together; the planned days themselves are exported",
   CrewMembership: "picking aid — who a saved crew ticks; the planned days themselves are exported",
   BackchargeCounter: "sequence counter — the numbers it issued are on the rows themselves",

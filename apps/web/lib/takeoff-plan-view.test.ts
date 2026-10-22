@@ -23,11 +23,26 @@ import { RECIPES } from "./takeoff-recipes";
 const ids = TOOLS.map((tool) => tool.id);
 
 describe("the takeoff viewer's tool list", () => {
-  it("offers exactly the five tools the ToolId union names", () => {
+  it("offers exactly the tools the ToolId union names, in the order it draws them", () => {
     // Written out rather than derived from TOOLS, so the two have to agree —
     // a list checked against itself is the census that asserts nothing.
-    const expected: ToolId[] = ["pan", "calibrate", "linear", "area", "count"];
+    //
+    // THREE MORE SINCE THIS WAS WRITTEN, and the order on the row is the
+    // order of work: move, scale, then the three that CREATE a measurement,
+    // then the two that change one that already exists.
+    const expected: ToolId[] = ["pan", "calibrate", "linear", "area", "rect", "count", "edit", "cutout"];
     expect(ids).toEqual(expected);
+  });
+
+  it("keeps a kind for every tool that creates a measurement, and none for the two that do not", () => {
+    // `rect` stores AREA geometry — a faster way to draw the same four
+    // points, not a different thing to measure, so nothing downstream learns
+    // about it. `edit` and `cutout` change a measurement that already exists
+    // and create nothing, which is why they have no kind at all.
+    const creates: ToolId[] = ["linear", "area", "rect", "count"];
+    const changes: ToolId[] = ["edit", "cutout"];
+    for (const id of creates) expect(ids, `${id} should be offered`).toContain(id);
+    for (const id of changes) expect(ids, `${id} should be offered`).toContain(id);
   });
 
   it("gives every tool a label and a hint somebody can act on", () => {
@@ -52,11 +67,24 @@ describe("the takeoff viewer's tool list", () => {
     expect(RECIPES.map((recipe) => recipe.id)).toContain("ceiling");
   });
 
-  it("names only the three primitives the capture layer has, plus the two that measure nothing", () => {
-    // `pan` moves and `calibrate` sets the scale; neither produces a
-    // measurement, which is why `kindOf` in the viewer returns null for them.
-    const measuring = ids.filter((id) => id !== "pan" && id !== "calibrate");
-    expect(measuring).toEqual(["linear", "area", "count"]);
+  it("STILL STORES ONLY THE THREE PRIMITIVES, however many tools draw them", () => {
+    // The capture layer has three kinds and this is what keeps it that way.
+    // Four tools create a measurement and only three kinds exist, because
+    // `rect` is a faster way to draw an AREA — a tool is a gesture, a kind is
+    // a row in the database, and growing the first must not grow the second.
+    //
+    // `pan` moves, `calibrate` sets the scale, and `edit` and `cutout` change
+    // what is already there; none of the four produces a new measurement,
+    // which is why `kindOf` in the viewer returns null for all of them.
+    const NO_KIND: ToolId[] = ["pan", "calibrate", "edit", "cutout"];
+    const creating = ids.filter((id) => !NO_KIND.includes(id));
+    expect(creating).toEqual(["linear", "area", "rect", "count"]);
+
+    // And the kinds themselves, which is the claim that matters.
+    const kindOf = (id: ToolId) =>
+      id === "linear" ? "LINEAR" : id === "area" || id === "rect" ? "AREA" : id === "count" ? "COUNT" : null;
+    expect([...new Set(creating.map(kindOf))].sort()).toEqual(["AREA", "COUNT", "LINEAR"]);
+    for (const id of NO_KIND) expect(kindOf(id), `${id} must create nothing`).toBeNull();
   });
 });
 

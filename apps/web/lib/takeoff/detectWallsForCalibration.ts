@@ -6,7 +6,10 @@ import { pagesToSample } from "./sheetTemplate";
 import { findWallsOnSheet, inPageWidthUnits, type SheetTextItem } from "./findWallsOnSheet";
 import { SheetTooDenseError, type StrokeSegment } from "./wallVectors";
 import type { MatchableWallType } from "./wallTypeMatch";
-import { proposalRowsFor } from "./wallProposal";
+import { namedCodeOf, proposalRowsFor } from "./wallProposal";
+import { matchGroups } from "./proposalMatch";
+import { aiGate } from "@/lib/ai/settings";
+import { doorScheduleForPlan, doorsOnSheet, legendForPlan, typedFeetOf, writeSheetResult } from "./planTextRead";
 
 /**
  * FINDING THE WALLS THE MOMENT A SCALE IS ACCEPTED, so the groups are waiting
@@ -173,6 +176,27 @@ export async function detectWallsForCalibration(
       }
     }
 
+    // ── PLAN TEXT, BEHIND THE SWITCH ──
+    //
+    // Off (the default, per company — `OPT_IN_FEATURES`), `planText` stays
+    // undefined and nothing below this comment runs. On, the set's legend is read once (cached) and its codes
+    // are what the finder's symbol tags are filtered by; the door schedule and
+    // the per-sheet join follow once the groups exist. A failure in any of it
+    // logs and leaves the detection exactly as it would have been.
+    const planTextOn = (await aiGate(target.companyId, "PLAN_TEXT_READ")).ok;
+    let planText: { legendCodes: string[] } | undefined;
+    let legendPage: number | null = null;
+    if (planTextOn) {
+      try {
+        const legend = await legendForPlan({ companyId: target.companyId, planId: target.planId, doc, outOfTime });
+        if (legend !== null) {
+          planText = { legendCodes: legend.codes };
+          legendPage = legend.page;
+        }
+      } catch (error) {
+        console.error("[takeoff] legend read failed; detecting without it", { planId: target.planId }, error);
+      }
+    }
     const found = findWallsOnSheet({
       segments: strokes.segments,
       textItems,
@@ -180,7 +204,37 @@ export async function detectWallsForCalibration(
       feetPerUnit: target.feetPerUnit,
       wallTypes: target.wallTypes,
       sampledSheets: sampleFailed ? null : sampledSheets,
+      ...(planText === undefined ? {} : { planText }),
     });
+    if (planTextOn) {
+      try {
+        const schedule = await doorScheduleForPlan({ companyId: target.companyId, planId: target.planId, doc, outOfTime });
+        const doors =
+          schedule === null
+            ? null
+            : {
+                schedulePage: schedule.page,
+                ...doorsOnSheet({
+                  segments: strokes.segments,
+                  widthPt: strokes.widthPt,
+                  text: textItems,
+                  walls: found.walls,
+                  feetPerUnit: target.feetPerUnit,
+                  rows: schedule.rows,
+                }),
+              };
+        await writeSheetResult({
+          planId: target.planId,
+          pageNumber: target.pageNumber,
+          calibrationId: target.calibrationId,
+          legend: planText === undefined || legendPage === null ? null : { page: legendPage, codes: planText.legendCodes },
+          doors,
+          typed: typedFeetOf(found.groups),
+        });
+      } catch (error) {
+        console.error("[takeoff] door join failed; proposals unaffected", { planId: target.planId }, error);
+      }
+    }
 
     // NOTHING FOUND IS NOT A FAILURE AND WRITES NOTHING. A sheet with no walls
     // on it — a schedule, a detail page, a site plan — is a fact about the
@@ -191,11 +245,49 @@ export async function detectWallsForCalibration(
     // APPEND-ONLY, so there is nothing to delete first. A second run under the
     // same calibration writes a second set; the reader takes the newest
     // `createdAt`, and `createMany` gives every row of one run the same one.
+    // ── WHICH CONDITION EACH GROUP PROPOSES INTO ──
+    //
+    // Detection ADDS to an item somebody named rather than landing in a pile
+    // called "Add these". The rules are in `proposalMatch.ts` — the drawing's
+    // own wall tag first, the measured thickness last, and a REFUSAL on a tie
+    // — and a group that matches nothing keeps a null and shows as
+    // "Unassigned walls", which an estimator sorts in a minute.
+    //
+    // A job with no items matches nothing, which is the ordinary state until
+    // somebody names a condition and costs one query to establish.
+    // THE JOB, VIA THE PLAN. `DetectTarget` carries the plan and the company
+    // but not the job — it is keyed on a page, and a page belongs to a plan.
+    // One lookup rather than widening the type, because every other caller of
+    // that type has no use for a job id.
+    const plan = await prisma.takeoffPlan.findUnique({
+      where: { id: target.planId },
+      select: { jobId: true },
+    });
+    const items = plan === null
+      ? []
+      : await prisma.takeoffItem.findMany({
+      where: { jobId: plan.jobId, companyId: target.companyId },
+      select: { id: true, name: true, thicknessIn: true, wallType: { select: { code: true } } },
+    });
+    const { matched } = matchGroups(
+      found.groups.map((group) => ({
+        namedCode: namedCodeOf(group),
+        thicknessInches: group.inches,
+      })),
+      items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        thicknessIn: item.thicknessIn === null ? null : Number(item.thicknessIn),
+        assemblyCode: item.wallType?.code ?? null,
+      })),
+    );
+
     await prisma.takeoffWallProposal.createMany({
-      data: proposalRowsFor(found.groups, {
-        pageId: target.pageId,
-        calibrationId: target.calibrationId,
-      }),
+      data: proposalRowsFor(
+        found.groups,
+        { pageId: target.pageId, calibrationId: target.calibrationId },
+        matched,
+      ),
     });
     return "written";
   } catch (error) {

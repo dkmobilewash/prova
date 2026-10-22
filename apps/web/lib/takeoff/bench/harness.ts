@@ -6,7 +6,7 @@ import { calibrationNotices, calibrationRefusal, feetPerPageWidth, readScale, re
 import { scheduleLines, type WallRunInput, type WallTypeInput } from "../../wall-assemblies";
 import { segmentsFromOpenPage } from "../sheetStrokes";
 import { clusterByThickness, wallFromPair, wallsInTheBuilding, wallsNotLettering, wallsNotTheSheetBorder, type WallCandidate, type WallCluster } from "../wallVectors";
-import { findWallsOnSheet } from "../findWallsOnSheet";
+import { type FindWallsInput, findWallsOnSheet } from "../findWallsOnSheet";
 import { displayMap, type CaseKey, type KeyWall, type Variant } from "./cases";
 import { PARTITION_TYPES, type Pt, type TypeCode } from "./model";
 import type { Prim, Sheet } from "./sheets";
@@ -106,7 +106,17 @@ export type FoundWalls = {
  * It now calls `findWallsOnSheet`, which is the product's path. There is no copy
  * left to drift.
  */
-export async function findWalls(bytes: Buffer, feetPerUnit: number): Promise<FoundWalls> {
+export async function findWalls(
+  bytes: Buffer,
+  feetPerUnit: number,
+  /** Passed through to the finder: extraction and the trained classifier both
+   *  arrive this way, and with neither set nothing about the run changes. */
+  hooks: {
+    onCandidate?: FindWallsInput["onCandidate"];
+    decide?: FindWallsInput["decide"];
+    veto?: FindWallsInput["veto"];
+  } = {},
+): Promise<FoundWalls> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   // @ts-expect-error pdfjs ships no types for the worker build; imported for its side effect.
   await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
@@ -155,6 +165,9 @@ export async function findWalls(bytes: Buffer, feetPerUnit: number): Promise<Fou
       feetPerUnit,
       wallTypes,
       sampledSheets: null,
+      onCandidate: hooks.onCandidate,
+      decide: hooks.decide,
+      veto: hooks.veto,
     });
     page.cleanup();
     return {

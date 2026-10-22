@@ -316,13 +316,41 @@ describe("the call site, because no test here can open a PDF", () => {
  * pilot journey does that — only that it is still wired this way.
  */
 describe("the takeoff page's two wall-type lists", () => {
+    // ── THE QUERY MOVED, THE JSX DID NOT, 2026-10-16 ──
+    //
+    // `loadTakeoffWorkspace` holds everything `TakeoffPlanViewer` needs, so
+    // the full-screen workspace at `/takeoff/[id]` and this tab load it once
+    // and only render differently. A census of the COMPUTATION therefore reads
+    // the loader; a census of a PROP still reads the page that passes it.
+    //
+    // Both halves are kept deliberately. Reading only the loader would stop
+    // noticing a page that computes the value and forgets to hand it over,
+    // which is the defect the prop assertions were written for.
+  /**
+   * ── THE QUERY MOVED, THE JSX DID NOT, 2026-10-16 ──
+   *
+   * `loadTakeoffWorkspace` holds everything `TakeoffPlanViewer` needs, so the
+   * full-screen workspace at `/takeoff/[id]` and this tab load once and differ
+   * only in what they render. A census of the COMPUTATION reads the loader; a
+   * census of a PROP reads the page that passes it.
+   *
+   * Both, deliberately. Reading only the loader would stop noticing a page
+   * that computes a value and forgets to hand it over, which is the defect
+   * these prop assertions exist for — and there are two such pages now.
+   */
+  const loader = readFileSync(resolve(process.cwd(), "lib/takeoff/workspaceLoad.ts"), "utf8");
   const page = () =>
     readFileSync(resolve(process.cwd(), "app/(app)/jobs/[id]/(tabs)/takeoff/page.tsx"), "utf8");
   const code = () =>
     page().replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  /** The QUERY lives in the loader both takeoff pages share — see the note
+   *  above `loader`. Comments stripped for the same reason `code()` strips
+   *  them: this file's own prose quotes the patterns it forbids. */
+  const loaderCode = () =>
+    loader.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
   it("QUERIES EVERY TYPE, so a schedule-imported one is not invisible", () => {
-    const text = code();
+    const text = loaderCode();
     expect(text, "the wall-type query filters by components again").not.toMatch(
       /findMany\(\{\s*where: \{ companyId: company\.id, components:/,
     );
@@ -342,7 +370,7 @@ describe("the takeoff page's two wall-type lists", () => {
   it("STILL GATES POSTING ON LAYERS, which is the guard that was moved not dropped", () => {
     // If this stops filtering, a measurement can be posted against a type that
     // produces no line items — the thing the original query was right about.
-    expect(code()).toMatch(
+    expect(loaderCode()).toMatch(
       /const postableWallTypes = allWallTypes\.filter\(\(type\) => type\._count\.components > 0\);/,
     );
   });
