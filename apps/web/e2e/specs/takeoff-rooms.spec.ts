@@ -188,6 +188,23 @@ test.describe("find the rooms", () => {
     await expect(findRooms, "switch on, button absent").toBeVisible();
     await expect(findRooms, "rooms cannot be found before walls").toBeDisabled();
     expect(await findWalls.isEnabled(), "S05 prints its scale, so Find the walls should be enabled").toBe(true);
+    // ── THE SHEET MUST HAVE RENDERED BEFORE THE CLICK ──
+    //
+    // The button is enabled as soon as the sheet has a SCALE, which can be
+    // before its PDF has finished loading — and the find needs the document.
+    // Pressing inside that window used to do nothing at all; it now says so,
+    // and either way the press is wasted. A canvas with a real width is the
+    // signal that the page is actually there.
+    //
+    // This is what the spec was missing, and CI is where it mattered: a
+    // runner loads the PDF more slowly than a laptop, so the click landed
+    // early there and never here.
+    await expect
+      .poll(
+        async () => port().locator("canvas").evaluate((n) => (n as HTMLCanvasElement).width),
+        { timeout: 60_000, message: "the sheet never rendered, so the find had no document" },
+      )
+      .toBeGreaterThan(0);
     await findWalls.click();
     // ── EITHER STILL RUNNING OR ALREADY DONE, BECAUSE BOTH ARE FINE ──
     //

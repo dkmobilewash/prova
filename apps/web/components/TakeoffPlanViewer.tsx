@@ -2202,7 +2202,30 @@ export function TakeoffPlanViewer({
 
   async function onFindWalls() {
     const doc = docRef.current;
-    if (!doc || !pageSize || feetPerUnit === null) return;
+    // ── A CLICK IS NEVER DROPPED IN SILENCE ──
+    //
+    // This returned, and nothing happened: no spinner, no sentence, no
+    // console line. The button is enabled as soon as the sheet has a scale —
+    // which is its documented contract and is asserted by
+    // `components/takeoffFindControl.test.tsx` — but the work ALSO needs the
+    // document and its page box, and on a slow load those arrive later. So
+    // there is a window where the control invites a press and the press does
+    // nothing.
+    //
+    // CI is where it showed: a runner loads the PDF more slowly than this
+    // laptop, the click landed inside that window, and
+    // `takeoff-rooms.spec.ts` waited three minutes for a find that was never
+    // going to start. A person on a slow connection meets the same button,
+    // and the only thing they can do is press it again.
+    //
+    // Saying so is the whole fix. The sheet finishes loading a moment later
+    // and the next press works, which is why this is a sentence rather than
+    // a queued action: a find that starts by itself some seconds after a
+    // click nobody remembers making is worse than one that says "not yet".
+    if (!doc || !pageSize || feetPerUnit === null) {
+      setFindError("The sheet is still loading. Try that again in a moment.");
+      return;
+    }
     setFinding(true);
     setFindError(null);
     setFound(null);
