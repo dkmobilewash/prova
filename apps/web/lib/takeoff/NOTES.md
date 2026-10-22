@@ -2861,3 +2861,67 @@ Baker A101 −242, Murray +134 from keynote tables with small headings).
 Wiring, still the original's: `detectForSheet` takes `keptPlanViews` +
 `mergeViewWalls` in place of `picked.primary.found`, beside the three lines
 already named. `KEEP_PRIMARY_ONLY=1` on the eval reproduces the app.
+
+### One pipeline: the viewer calls `detectForSheet`, and the proof that it does (2026-10-22)
+
+**The wiring.** `detectForSheet` now runs the view detection measured in the
+two entries above — `sheetDrawings` (titles ∪ captions, text blocks out),
+`drawingCount` for the branch, text blocks subtracted from a single-drawing
+sheet's regions, `keptPlanViews` + `mergeViewWalls` for a sheet with several
+floors — and returns what the viewer shows: the kept views, the others, the
+left-out. `TakeoffPlanViewer`'s inline copy of the detection is gone;
+`onFindWalls` makes one call. The answer-key `onCandidate` hook travels
+through `detectForSheet` to every finder call, whichever branch the sheet
+takes, so answer-key mode still collects pairings on multi-view sheets.
+
+**App = eval, proved in a browser rather than asserted.**
+`e2e/specs/takeoff-app-equals-eval.spec.ts` drives the real app on the real
+sheets on a throwaway stack — serves each PDF through the route stub, sets
+the scale by two clicks, finds the walls, and writes what the panel drew
+and what the finder saw to `APP_EQ_OUT`; `realplan/zzAppEquals.eval.ts`
+computes the same list in Node and holds the two side by side.
+
+| sheet | app | eval | at ft/page width |
+| --- | --- | --- | --- |
+| Murray A101 | 80 | 80 | 288.01 |
+| Crosslines A100 | 258 | 258 | 286.86 |
+| Baker A101 | 33 | 33 | 288.01 |
+| Baker A100 | 82 | 82 | 288.01 |
+
+**It took five browser runs to get there, and the fifth found a defect in
+the finder.** The first comparison differed by 1 to 14 on every sheet. The
+Node side was brought to the viewer's inputs one at a time, each checked by
+a digest the app writes to the plan port in answer-key mode
+(`data-takeoff-detect`): the scale the app STORED rather than the one
+intended (the clicks snap — Crosslines came out at 286.86, not 288); the
+finder's own filtered segments handed to the triage rather than the raw
+strokes; the sheet itself included in the template sample; blank text items
+dropped. After all of that every input matched — segments identical in
+value AND order, text, sample, page size, scale — and every stage count
+matched except `duplicateDropped`, and the walls still differed.
+
+The cause is `wallVectors.ts`'s "classifier seam": with ANY hook set
+(`onCandidate`, `decide`, `veto`) the pairing pass COLLECTS every candidate
+before it awards, and that changes which pairs win. Answer-key mode sets
+`onCandidate`, so the list a reviewer labels is the collecting path, and a
+customer's find — no hook — is the other one:
+
+| sheet | with the hook (answer-key, what was labelled) | without (a customer's find) |
+| --- | --- | --- |
+| Murray A101 | 80 | 81 |
+| Crosslines A100 | 258 | **244** |
+| Baker A101 | 33 | 35 |
+| Baker A100 | 82 | 83 |
+
+Pass the hook in Node and the four sheets match exactly. This is
+finder-lane code and is not changed here. What it means for everyone else:
+every training label and every held-out key was taken on the collecting
+path, and `zzKeyScore`/`zzTriage`, which pass no hook, score the OTHER
+path — so a score "on the app's list" has been on a list a customer does
+not quite see. The finder is also ORDER-sensitive in Node on identical
+inputs (Baker A101: 35 walls as read, 27 reversed, 30 sorted by x; the grid
+stage swings by a thousand), which is the same seam from the other side.
+
+**LOBO on the wired pipeline** (23 training sheets, 17 buildings; NOW =
+`detectForSheet`, BEFORE = the viewer's old inline pipeline): junk removed
+53 ft, real lost 7 ft, real gained 1,641 ft. Every fold picked 1.4.

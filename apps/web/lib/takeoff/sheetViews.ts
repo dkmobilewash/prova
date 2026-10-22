@@ -887,6 +887,16 @@ export type ExcludedView = { name: string; reason: string };
 export function excludedViews(views: readonly SheetView[]): ExcludedView[] {
   const out: ExcludedView[] = [];
   for (const view of views) {
+    if (view.textBlock === true) {
+      out.push({ name: view.name, reason: "notes, a legend or a schedule, not a drawing" });
+      continue;
+    }
+    // "Penthouse Floor": a plan named by its level, measured by `wallsPerView`
+    // and kept by `keptPlanViews` — it must not also be listed as "check it".
+    if (isLevelPlan(view.name)) {
+      if (view.feetPerInch === null) out.push({ name: view.name, reason: "not to scale, not measured" });
+      continue;
+    }
     // ── WHAT KIND IT IS COMES FIRST, BECAUSE IT IS THE MORE USEFUL SENTENCE ──
     //
     // An elevation captioned `3/8" = 1'-0"` has a perfectly readable scale, so

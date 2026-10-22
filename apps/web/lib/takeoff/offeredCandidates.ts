@@ -1,6 +1,18 @@
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "./findWallsOnSheet";
-import { primaryView, sheetViews, viewRegions, viewsInRegions, wallsPerView } from "./sheetViews";
+import {
+  drawingCount,
+  excludedViews,
+  keptPlanViews,
+  mergeViewWalls,
+  sheetDrawings,
+  textBlockBoxes,
+  viewBoxes,
+  viewRegions,
+  wallsPerView,
+  type ExcludedView,
+  type ViewWalls,
+} from "./sheetViews";
 import { drawingRegions, segmentsInRegions } from "./planRegion";
 import { classifySingleLines, worthOffering } from "./singleLines";
 import { oneFacePerLine, wallFromPair, type StrokeSegment, type WallCandidate } from "./wallVectors";
@@ -239,42 +251,51 @@ export type SheetDetectInput = {
    * veto against a list built without it compares two different pipelines.
    */
   veto?: Parameters<typeof findWallsOnSheet>[0]["veto"];
+  /** Every pairing the finder considers, for answer-key mode. Forwarded to
+   *  every finder call this makes, whichever branch the sheet takes. */
+  onCandidate?: Parameters<typeof findWallsOnSheet>[0]["onCandidate"];
+  /** The title size ratio `viewTitles` uses; an eval's knob, left alone by the app. */
+  titleSizeRatio?: number;
 };
 
 export type SheetDetectResult = {
   found: FoundOnSheet;
   planBoxes: { from: number; to: number; fromY: number; toY: number }[] | null;
-  /** How many captioned views the sheet has — under two means measured whole. */
+  /** How many DRAWINGS the sheet was split into — under two means measured whole. */
   views: number;
-  /** The view that was measured, where one was picked. */
+  /** The views whose walls are in `found`, biggest first — one per level named. */
+  kept: { name: string; scaleName: string | null; lengthFeet: number }[];
+  /** `kept[0]`'s name, for callers that still want one. */
   primaryName: string | null;
+  /** Measured plan views NOT in `found` — a floor drawn twice, an enlarged plan. */
+  others: ViewWalls[];
+  /** Drawings and text blocks left out, each with the reason, for the caution. */
+  leftOut: ExcludedView[];
 };
 
+/**
+ * ── THE ONE PIPELINE, FOR THE VIEWER AND THE EVALS ALIKE ──
+ *
+ * The viewer used to carry its own copy of this and `detectForSheet` was an
+ * extraction of it that omitted one call (`viewsInRegions`), which is the
+ * whole of "Murray 160 against the app's 32". A copy drifts; a call cannot.
+ * So the viewer calls this now, and what it shows — the kept views, the
+ * others, the left-out — comes back from here rather than being rebuilt.
+ *
+ * What runs, in order (each step measured in `realplan/zzViewDetection.eval.ts`
+ * and recorded in NOTES.md, 2026-10-22):
+ *
+ *   1. `sheetDrawings`: captions with a scale ∪ titles lettered big and
+ *      ruled, placed from the sheet's gutters with a caption below its
+ *      drawing and a heading above its words; notes, legends and schedules
+ *      are TEXT BLOCKS that own only their region.
+ *   2. Under two DRAWINGS: the sheet is measured whole, less the text blocks,
+ *      by `drawingRegions` — the busiest region and what is comparable.
+ *   3. Two or more: every plan view at its own scale (`wallsPerView`), one
+ *      kept per LEVEL named (`keptPlanViews`), joined (`mergeViewWalls`).
+ */
 export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
-  // ── CAPTIONS BOUND TO THE REGIONS THEY LABEL, WHICH IS THE WHOLE ANSWER ──
-  //
-  // This called `sheetViews` alone, and that is why this module could not
-  // reproduce the app: a caption on its own describes a view with a
-  // WHOLE-PAGE box, so `planBoxes` covered the sheet, `onAPlan` dropped
-  // nothing, and the count came out at the finder's raw output. Murray A101
-  // offered 160 here against the app's 32, and I eliminated every input in
-  // turn — strokes, text, scale, wall types, the template sample, page size —
-  // without finding it, because the difference was never an input. It was a
-  // missing CALL.
-  //
-  // `viewsInRegions` assigns each caption to the drawing region it actually
-  // labels, and cuts a region that holds several captions between them. The
-  // boxes that come out are the drawings rather than the page, so the plan
-  // boxes mean what `onAPlan` assumes they mean.
-  //
-  // Found by the second session. The lesson for the next extraction here is
-  // that a pipeline is its CALLS as much as its inputs, and a faithful copy
-  // has to be read off the caller line by line rather than reconstructed from
-  // what each function appears to need.
-  const views = viewsInRegions(
-    sheetViews(input.textItems, input.pageSize.widthPt),
-    viewRegions([...input.segments], input.pageSize),
-  );
+  const views = sheetDrawings({ items: input.textItems, segments: input.segments, pageSize: input.pageSize, sizeRatio: input.titleSizeRatio });
   const base = {
     segments: [...input.segments],
     textItems: [...input.textItems],
@@ -283,55 +304,53 @@ export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
     wallTypes: [...(input.wallTypes ?? [])],
     sampledSheets: input.sampledSheets ?? null,
     veto: input.veto,
+    onCandidate: input.onCandidate,
   };
+  const leftOut = excludedViews(views);
 
-  if (views.length < 2) {
+  if (drawingCount(views) < 2) {
     // ── A ONE-DRAWING SHEET STILL HAS A TITLE BLOCK, AND IT MEASURED IT ──
     //
     // `viewRegions` separates the title block, the notes and the legend from
-    // the drawing, but a region with no caption joins the nearest — right for
-    // keeping a plan's dimension column with its plan, and it meant a sheet
-    // with one caption measured its own title block and offered its ruled
-    // lines as walls.
-    //
-    // Leaving this branch out of the extraction is what kept the eval at 160
-    // candidates on sheets the app had cut to 32: the raw page, measured
-    // whole. `planRegion.ts` carries why it cannot reintroduce the S05/S07
-    // scar — it keeps the BUSIEST region and whatever is comparable to it.
-    const drawing = drawingRegions(
-      viewRegions(base.segments, input.pageSize),
-      base.segments,
-      input.pageSize.widthPt,
+    // the drawing; `planRegion.ts` keeps the BUSIEST region and whatever is
+    // comparable to it, which is what cannot reintroduce the S05/S07 scar. A
+    // text block whose heading was read is taken out first — Baker A101's
+    // notes column measured as 242 ft of wall before that.
+    const blocks = textBlockBoxes(views);
+    const regions = viewRegions(base.segments, input.pageSize).filter(
+      (r) =>
+        !blocks.some(
+          (b) => r.from >= b.from - 1e-9 && r.to <= b.to + 1e-9 && r.fromY >= b.fromY - 1e-9 && r.toY <= b.toY + 1e-9,
+        ),
     );
+    const drawing = drawingRegions(regions, base.segments, input.pageSize.widthPt);
     const onTheDrawing = segmentsInRegions(base.segments, drawing, input.pageSize.widthPt);
     return {
       found: findWallsOnSheet({ ...base, segments: onTheDrawing }),
       planBoxes: drawing.length > 0 ? [...drawing] : null,
-      views: views.length,
+      views: drawingCount(views),
+      kept: [],
       primaryName: null,
+      others: [],
+      leftOut,
     };
   }
 
   const measured = wallsPerView({ ...base, views });
-  const picked = primaryView(measured);
-  const planBoxes = measured.flatMap(
-    (one) =>
-      one.view.boxes ?? [
-        { from: one.view.from, to: one.view.to, fromY: one.view.fromY, toY: one.view.toY },
-      ],
-  );
+  const { kept, others } = keptPlanViews(measured);
   return {
     // ── A SHEET WITH NO PLAN ON IT MEASURES NOTHING ──
     //
     // The real pipeline on no geometry rather than a hand-built empty result,
-    // so every field of `FoundOnSheet` comes out consistent. The viewer's own
-    // comment explains why falling back to the whole sheet is the worst
-    // available answer for a page of eight interior elevations.
-    found:
-      picked.primary?.found ??
-      findWallsOnSheet({ ...base, segments: [], textItems: [] }),
-    planBoxes,
-    views: views.length,
-    primaryName: picked.primary?.view.name ?? null,
+    // so every field of `FoundOnSheet` comes out consistent. Falling back to
+    // the whole sheet is the worst available answer for a page of eight
+    // interior elevations.
+    found: mergeViewWalls(kept) ?? findWallsOnSheet({ ...base, segments: [], textItems: [] }),
+    planBoxes: measured.flatMap((one) => viewBoxes(one.view)),
+    views: drawingCount(views),
+    kept: kept.map((k) => ({ name: k.view.name, scaleName: k.view.scaleName, lengthFeet: k.lengthFeet })),
+    primaryName: kept[0]?.view.name ?? null,
+    others,
+    leftOut,
   };
 }

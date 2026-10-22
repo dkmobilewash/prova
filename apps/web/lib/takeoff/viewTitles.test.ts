@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keptPlanViews, sheetDrawings, type ViewWalls } from "./sheetViews";
+import { excludedViews, keptPlanViews, sheetDrawings, type ViewWalls } from "./sheetViews";
 import { isLevelPlan, planLevel, viewClass, viewTitles } from "./viewTitles";
 import type { StrokeSegment } from "./wallVectors";
 
@@ -100,6 +100,12 @@ describe("every floor keeps its walls; a floor drawn twice keeps one", () => {
     expect(viewClass("Penthouse Floor (P2)").kind).toBe("floor-plan");
     expect(isLevelPlan("Penthouse Floor (P2)")).toBe(true);
     expect(isLevelPlan("2ND FLOOR FRAMING PLAN")).toBe(false);
+  });
+
+  it("does not list a level-named floor plan as something to check", () => {
+    const view = { name: "Penthouse Floor (P2)", scaleName: '1/8" = 1\'-0"', feetPerInch: 8, captionX: 0, captionY: 0, from: 0, to: 1, fromY: 0, toY: 1 };
+    expect(excludedViews([view])).toEqual([]);
+    expect(excludedViews([{ ...view, name: "WALL LEGEND", textBlock: true }])[0]?.reason).toContain("not a drawing");
   });
 
   it("keeps one view per level and the primary among same-level duplicates", () => {

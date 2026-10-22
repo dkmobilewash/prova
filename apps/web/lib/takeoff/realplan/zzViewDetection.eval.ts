@@ -9,7 +9,7 @@ import { detectForSheet, offeredCandidates, type SheetDetectResult } from "../of
 import { sheetStrokes } from "../sheetStrokes";
 import { findWallsOnSheet } from "../findWallsOnSheet";
 import { drawingRegions, segmentsInRegions } from "../planRegion";
-import { drawingCount, isLevelPlan, keptPlanViews, mergeViewWalls, primaryView, sheetDrawings, sheetViews, textBlockBoxes, viewBoxes, viewRegions, viewsInRegions, wallsPerView, type SheetView } from "../sheetViews";
+import { drawingCount, isLevelPlan, primaryView, sheetDrawings, sheetViews, viewBoxes, viewRegions, viewsInRegions, wallsPerView, type SheetView } from "../sheetViews";
 import { isPlanView } from "../viewKind";
 import { viewClass } from "../viewTitles";
 
@@ -96,46 +96,29 @@ describe.skipIf(DIR === "" || LABELS === "")("view detection on the app's candid
         return { extra: s.extraFeet, missing: s.missingFeet, n: offered.candidates.length, keyFeet: s.keyFeet };
       };
 
-      const baseline = detectForSheet(base);
-      const b = score(baseline);
-      const composed = (views: SheetView[]): SheetDetectResult => {
-        if (drawingCount(views) < 2) {
-          // The single-drawing branch of `detectForSheet`, with the text
-          // blocks' regions taken out of the drawing before it is measured.
-          const blocks = textBlockBoxes(views);
-          if (blocks.length === 0) return baseline;
-          const regions = viewRegions(strokes.segments, pageSize).filter((r) => !blocks.some((b) => r.from >= b.from - 1e-9 && r.to <= b.to + 1e-9 && r.fromY >= b.fromY - 1e-9 && r.toY <= b.toY + 1e-9));
-          const drawing = drawingRegions(regions, strokes.segments, pageSize.widthPt);
-          const onTheDrawing = segmentsInRegions(strokes.segments, drawing, pageSize.widthPt);
-          return { found: findWallsOnSheet({ ...base, segments: onTheDrawing, wallTypes: [], sampledSheets: null }), planBoxes: drawing.length > 0 ? [...drawing] : null, views: views.length, primaryName: null };
+      // BEFORE: the pipeline the viewer carried inline until 2026-10-22 —
+      // captions only, placed by `viewsInRegions`, the primary view alone.
+      const before = ((): SheetDetectResult => {
+        const views = viewsInRegions(sheetViews(textItems, pageSize.widthPt), viewRegions(strokes.segments, pageSize));
+        const empty = { kept: [], others: [], leftOut: [] };
+        if (views.length < 2) {
+          const drawing = drawingRegions(viewRegions(strokes.segments, pageSize), strokes.segments, pageSize.widthPt);
+          return { found: findWallsOnSheet({ ...base, segments: segmentsInRegions(strokes.segments, drawing, pageSize.widthPt), wallTypes: [], sampledSheets: null }), planBoxes: drawing.length > 0 ? [...drawing] : null, views: views.length, primaryName: null, ...empty };
         }
         const measured = wallsPerView({ ...base, views, wallTypes: [], sampledSheets: null });
         const picked = primaryView(measured);
-        // Every floor keeps its walls (`keptPlanViews`); the app today keeps
-        // `picked.primary` alone. KEEP_PRIMARY_ONLY=1 reproduces the app.
-        const kept = process.env.KEEP_PRIMARY_ONLY === "1" ? (picked.primary === null ? [] : [picked.primary]) : keptPlanViews(measured).kept;
-        return {
-          found: mergeViewWalls(kept) ?? { ...baseline.found, walls: [] },
-          planBoxes: measured.flatMap((one) => viewBoxes(one.view)),
-          views: views.length,
-          primaryName: kept.map((k) => k.view.name).join(" + ") || null,
-        };
-      };
-      const appViews = viewsInRegions(sheetViews(textItems, pageSize.widthPt), viewRegions(strokes.segments, pageSize));
-      const appOnly = (views: SheetView[]): SheetDetectResult => {
-        if (views.length < 2) return baseline;
-        const measured = wallsPerView({ ...base, views, wallTypes: [], sampledSheets: null });
-        const picked = primaryView(measured);
-        return { found: picked.primary?.found ?? { ...baseline.found, walls: [] }, planBoxes: measured.flatMap((one) => viewBoxes(one.view)), views: views.length, primaryName: picked.primary?.view.name ?? null };
-      };
-      const a = score(appOnly(appViews));
+        return { found: picked.primary?.found ?? findWallsOnSheet({ ...base, segments: [], textItems: [], wallTypes: [], sampledSheets: null }), planBoxes: measured.flatMap((one) => viewBoxes(one.view)), views: views.length, primaryName: picked.primary?.view.name ?? null, ...empty };
+      })();
+      const baseline = before;
+      const b = score(before);
+      const a = b;
       const byRatio = new Map<number, { extra: number; missing: number; n: number; views: SheetView[]; measured: string[] }>();
       for (const ratio of RATIOS) {
+        // NOW: the one pipeline, as the viewer and every eval call it.
+        const treated = detectForSheet({ ...base, titleSizeRatio: ratio });
         const views = sheetDrawings({ items: textItems, segments: strokes.segments, pageSize, sizeRatio: ratio });
-        const treated = composed(views);
-        const measuredNames = drawingCount(views) < 2 ? [] : wallsPerView({ ...base, views, wallTypes: [], sampledSheets: null }).map((m) => m.view.name);
         const t = score(treated);
-        byRatio.set(ratio, { ...t, views, measured: measuredNames });
+        byRatio.set(ratio, { ...t, views, measured: treated.kept.map((k) => k.name) });
       }
       rows.push({ dir: file.dir, sheet: file.sheet, key, keyFeet: b.keyFeet, base: { ...b, views: baseline.views }, app: a, byRatio });
 
@@ -160,7 +143,7 @@ describe.skipIf(DIR === "" || LABELS === "")("view detection on the app's candid
     };
     let junkRemoved = 0, realLost = 0, realGained = 0, junkApp = 0, lostApp = 0, appJunkVsShip = 0, appLostVsShip = 0;
     console.log(`\n${rows.length} training sheets, ${buildings.length} buildings · ratios ${RATIOS.join("/")} · lost weight ${LOST_WEIGHT}\n`);
-    console.log(`  ${"sheet".padEnd(34)} ${"key".padStart(6)} ${"ship/app/treat n".padStart(16)} ${"ratio".padStart(5)} ${"vs SHIP: junk−".padStart(14)} ${"lost".padStart(6)} ${"vs APP: junk−".padStart(13)} ${"lost".padStart(6)}  views (measured *, T=by title, B=text block)`);
+    console.log(`  ${"sheet".padEnd(34)} ${"key".padStart(6)} ${"before/now n".padStart(16)} ${"ratio".padStart(5)} ${"junk −".padStart(14)} ${"lost".padStart(6)} ${"".padStart(13)} ${"".padStart(6)}  views (kept *, T=by title, B=text block)`);
     for (const b of buildings) {
       const others = rows.filter((r) => r.dir !== b);
       const pick = RATIOS.map((ratio) => ({ ratio, g: others.reduce((n, r) => n + gain(r, ratio), 0) })).sort((x, y) => y.g - x.g)[0].ratio;
@@ -176,12 +159,11 @@ describe.skipIf(DIR === "" || LABELS === "")("view detection on the app's candid
         const keptNames = (t as unknown as { kept?: string }).kept ?? "";
         void keptNames;
         const names = t.views.map((v) => `${isPlanView(v.name) && t.measured.includes(v.name) ? "*" : ""}${v.name.slice(0, 22)}[${viewClass(v.name).kind}${v.foundBy === "title" ? ",T" : ""}${v.textBlock ? ",B" : ""}]`).join(" ");
-        console.log(`  ${`${r.dir.slice(0, 26)}/${r.sheet}`.padEnd(34)} ${r.keyFeet.toFixed(0).padStart(6)} ${`${r.base.n}/${r.app.n}/${t.n}`.padStart(16)} ${pick.toFixed(2).padStart(5)} ${junk.toFixed(0).padStart(14)} ${lost.toFixed(0).padStart(6)} ${junkA.toFixed(0).padStart(13)} ${lostA.toFixed(0).padStart(6)}  ${names.slice(0, 170)}`);
+        console.log(`  ${`${r.dir.slice(0, 26)}/${r.sheet}`.padEnd(34)} ${r.keyFeet.toFixed(0).padStart(6)} ${`${r.base.n}/${t.n}`.padStart(16)} ${pick.toFixed(2).padStart(5)} ${junk.toFixed(0).padStart(14)} ${lost.toFixed(0).padStart(6)} ${"".padStart(13)} ${"".padStart(6)}  ${names.slice(0, 170)}`);
       }
     }
-    console.log(`\n  THE APP vs AS-SHIPPED detectForSheet (no treatment): junk −${appJunkVsShip.toFixed(0)} ft · real lost ${appLostVsShip.toFixed(0)} ft — the viewer clips captioned views to regions and detectForSheet does not`);
-    console.log(`  TREATMENT vs AS-SHIPPED: junk removed ${junkRemoved.toFixed(0)} ft · real lost ${realLost.toFixed(0)} ft · real gained ${realGained.toFixed(0)} ft`);
-    console.log(`  TREATMENT vs THE APP:    junk removed ${junkApp.toFixed(0)} ft · real lost ${lostApp.toFixed(0)} ft   (extra ft that fell, missing ft that rose, by scoreSheet; LOBO ratio)`);
+    void junkApp; void lostApp; void appJunkVsShip; void appLostVsShip;
+    console.log(`  NOW (detectForSheet) vs BEFORE (the viewer's old inline pipeline): junk removed ${junkRemoved.toFixed(0)} ft · real lost ${realLost.toFixed(0)} ft · real gained ${realGained.toFixed(0)} ft   (extra ft that fell, missing ft that rose, by scoreSheet; LOBO ratio)`);
     console.log("\n  PER RATIO, ALL SHEETS (not LOBO):");
     for (const ratio of RATIOS) {
       const j = rows.reduce((n, r) => n + (r.base.extra - r.byRatio.get(ratio)!.extra), 0);
