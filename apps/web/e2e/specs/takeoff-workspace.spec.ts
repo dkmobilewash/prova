@@ -355,13 +355,21 @@ test.describe("the full-screen takeoff workspace", () => {
   }
 
   /** Put a top-bar panel toggle into a known state. */
-  async function setRail(handle: string, open: boolean): Promise<void> {
+  // ── IT SAYS WHAT IT DID, BECAUSE A MISSING HANDLE USED TO BE SILENT ──
+  //
+  // This returned with no word when the toggle was not on the page, so a rail
+  // that was never opened failed twenty seconds later at whatever assertion
+  // came next, with nothing pointing back here. Callers that do not care can
+  // still ignore the answer; the one that fails can quote it.
+  async function setRail(handle: string, open: boolean): Promise<"absent" | "already" | "clicked"> {
     const toggle = page.locator(`[data-takeoff="${handle}"]`);
-    if ((await toggle.count()) === 0) return;
+    if ((await toggle.count()) === 0) return "absent";
     if ((await toggle.getAttribute("aria-expanded")) !== String(open)) {
       await toggle.click();
       await page.waitForTimeout(250);
+      return "clicked";
     }
+    return "already";
   }
 
   /**
@@ -975,10 +983,21 @@ test.describe("the full-screen takeoff workspace", () => {
     // with a height and two sides actually is.
     // Selected by VALUE from the option whose text starts W1, because
     // `selectOption` takes a string label and the option reads "W1 — …".
+    // The option list is read out so a failure NAMES what was on offer. The
+    // assertion above already proves the picker is not empty, so "no W1" means
+    // the library arrived and W1 was not in it — and which entries did arrive
+    // is the whole question. Without this the failure says only that something
+    // is missing from a list it refuses to show.
+    const offered = await picker
+      .locator("option")
+      .evaluateAll((nodes) => nodes.map((n) => n.textContent?.trim() ?? ""));
     const w1 = await picker
       .locator("option")
       .evaluateAll((nodes) => nodes.find((n) => n.textContent?.trim().startsWith("W1"))?.getAttribute("value") ?? "");
-    expect(w1, "the starter library has no W1").not.toBe("");
+    expect(
+      w1,
+      `the starter library has no W1 — the picker offered ${offered.length}: ${offered.join(" | ")}`,
+    ).not.toBe("");
     await picker.selectOption(w1);
 
     // ── AND THE PARTS ARRIVE WITH QUANTITIES ──
@@ -1038,10 +1057,26 @@ test.describe("the full-screen takeoff workspace", () => {
     // The quantities panel is a RAIL here, not always-on furniture — step 5
     // saw it open because nothing had opened Items over it yet. Opening it
     // explicitly is what makes this step independent of the twenty before it.
-    await setRail("toggle-panel", true);
+    const rail = await setRail("toggle-panel", true);
 
     const panel = page.locator('[data-takeoff="found-walls"]');
-    await expect(panel, "no quantities panel on S02").toBeVisible({ timeout: 20_000 });
+    // Waited by hand rather than asserted, so the failure can carry the two
+    // facts that decide it: whether the rail was ever opened, and which
+    // handles the page actually has. "Not visible" on its own cannot tell a
+    // panel that is closed from one that was never rendered.
+    const appeared = await panel
+      .waitFor({ state: "visible", timeout: 20_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!appeared) {
+      const handles = await page
+        .locator("[data-takeoff]")
+        .evaluateAll((nodes) => [...new Set(nodes.map((n) => n.getAttribute("data-takeoff") ?? ""))].sort());
+      throw new Error(
+        `no quantities panel on S02 — setRail("toggle-panel") said "${rail}"; ` +
+          `the page carries ${handles.length} handles: ${handles.join(", ") || "(none)"}`,
+      );
+    }
     const groups = panel.locator('[data-takeoff="found-group"]');
     const before = await groups.count();
     expect(before, "S02 detected no walls, so this step can prove nothing").toBeGreaterThan(0);
