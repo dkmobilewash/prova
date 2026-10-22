@@ -17,3 +17,7 @@ customer sees. Faces are built from strokes in reading order, so the pairing
 is independent of the order a PDF stores its lines; sorting at the finder's
 door was measured and refused (it breaks the bubble and arc stages, which
 read stroke sequence), and that residual is recorded for the finder's owner.
+
+A legend that names its wood studs as `2X` with no size now proposes the
+stud count and the plates from the spacing, with the size flagged as not
+stated on the drawing, instead of leaving the wall as board only.

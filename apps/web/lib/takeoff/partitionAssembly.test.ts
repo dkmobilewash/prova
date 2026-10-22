@@ -338,5 +338,18 @@ describe("the longer stud spellings real sets use", () => {
     const unsized = readPartitionAssembly({ lines: ["2X WOOD STUD FRAMING"], where: "test" });
     expect(unsized.read.studWidthIn).toBeNull();
     expect(unsized.flags.some((f) => /no nominal size/.test(f.why))).toBe(true);
+    // The count and the plates are proposed from the spacing; only the size is missing.
+    expect(unsized.components.some((c) => c.basis === "STUDS")).toBe(true);
+    const unsizedSpaced = readPartitionAssembly({ lines: ["2 ROWS OF 2X STUDS AT 16\" O.C.", "5/8\" GYPSUM BOARD"], where: "test" });
+    const studs = unsizedSpaced.components.find((c) => c.basis === "STUDS");
+    const plates = unsizedSpaced.components.find((c) => c.basis === "LINEAR_FT");
+    expect(studs?.description).toMatch(/size NOT stated on the drawing/);
+    expect(studs?.description).toMatch(/16in o\.c\./);
+    expect(plates?.description).toMatch(/plates.*size NOT stated/);
+    expect(plates?.factor).toBe(3);
+    expect(unsizedSpaced.read.studWidthIn).toBeNull();
+    // Sized lumber is wood too: plates, not track.
+    expect(sized.components.find((c) => c.basis === "LINEAR_FT")?.description).toMatch(/plates/);
+    expect(sized.components.find((c) => c.basis === "STUDS")?.description).toMatch(/wood stud/);
   });
 });
