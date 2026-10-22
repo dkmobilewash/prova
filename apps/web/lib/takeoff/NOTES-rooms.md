@@ -468,3 +468,366 @@ not get worse, so the option ships OFF and the numbers stay here. What would
 make it safe is a glazing CLASS from the finder rather than "any collinear
 stroke" (§10, item 5): a line the drawing itself marks as glass cannot be
 casework.
+
+## 12. Ceilings from the reflected ceiling plan (2026-10-22, branch diego/ceilings) — built, measured, NOT wired
+
+`ceilingTags.ts` + `realplan/zzCeilings.eval.ts`, keys in
+`answer-keys/ceilings/<set>__p<N>.json`, crops in `shots/ceilings/`. Training
+sets only; the held-out lists are the same ones every rooms eval carries.
+
+**What an RCP prints, read from fourteen of them** (`coordination/
+ceiling-tagtext.txt` is the text; `coordination/ceiling-inventory*.txt` the
+page inventory). A ceiling tag is a STACK (Baker: name / `GB` / `10'-0"
+A.F.F.`; Topeka: `C2` / `9' - 0" AFF`), ONE item (Murray `8'-0" ACT`), a
+height ALONE in a hexagon or a box (Joplin, MHK, E Street), a height SPLIT
+over items (NG `9'` + `0" A.F.F.`, Bunkie `10' - 0"` + `A.F.F.`), or a type
+alone (`2X4 ACT`, `OPEN TO ABOVE`). Codes mean what the sheet's CEILING
+LEGEND or FINISH SCHEDULE says (`ES`, `C1`…`C5`, `L=LAY-IN ACOUST. TILE`),
+folded to four families — ACT, GYP, OPEN, OTHER. Five of the thirteen RCPs
+carry the TYPE as a hatch pattern and print only a height (Joplin, MHK,
+Topeka, Bunkie, MO Fairgrounds); nothing in text names it there.
+
+**The room is the printed tag, not the polygon.** An RCP draws its walls
+thin and its ceiling grid heavy: on Baker A111 the rules' finder closes 5
+rooms of 13, and the raw pairings pair the 2x4 grid into 653 "walls". The
+RCP does repeat every room's name and number, so each ceiling tag is
+paired with a room TAG — the name printed over it, the stack above it, the
+polygon it shares with exactly one room tag where one closes, else the
+nearest within 25 ft — and the type and height need no polygon at all.
+Areas still do, and that is the half that is not done: per-family square
+feet below come from the polygons that close on the RCP, which is few.
+The honest source is the floor plan's rooms joined by number, which this
+branch does not wire yet.
+
+**Against the keys, 10 RCPs, 66 rooms transcribed from crops:**
+
+| | right | of |
+| --- | --- | --- |
+| rooms joined to the sheet's own room tag | 59 | 66 |
+| ceiling height | 46 | 55 |
+| ceiling family | 21 | 36 |
+| tags read, where the key counts them | 95 | 102 |
+
+The 7 rooms not joined: Baker's IDF and HALLWAY (the name line over the
+tag is not found), Topeka 1002 (its room tag is not read), and SW's four.
+The 15 missed families are the hatch sheets (Joplin 10, MO Fairgrounds 3,
+MHK 1) and SW, whose boxed codes the room-tag reader takes for room
+numbers and whose schedule reads two of three rows. The 9 missed heights:
+MHK's boxed heights under four toilets (the stack is five line-heights
+tall), Joplin's classroom 123 where the soffit hexagon wins over the
+ceiling hexagon (both bare, the rule takes the higher — and the higher is
+17 ft, two rooms away by the nearest-tag rule), Murray's corridor 110,
+Topeka 1010, Bunkie E103 (nearest-tag errors a closed polygon would
+settle).
+
+**Refusals that mattered.** A legend row counts only under a title that
+says ceiling, and never a one-letter code from a titled block (Murray's
+`G`, `J`, `K` are light fixtures; Camp Clark's `G=GYP. BD.` is inline and
+counts) — the first pass read Murray's keynote table as an 18-row legend.
+A bare height is a tag only when something is drawn on all four sides of
+it and no long line runs through it (Joplin's `8'-0"` dimension strings
+along hall 138 are not tags), or when it is stacked under a room number.
+`D5` over `A-103` is a detail callout. `8'-0"±` is a height.
+
+**For the second session.** `ceilingHeightFacts(sheet, tags)` hands the
+tags back as `HeightFact`s of kind `ceiling-height`, the shape
+`wallHeights.resolveHeight` consumes, with the phrase and sheet — so the
+wall-height chain can take the RCP's figures per ROOM from here rather than
+the sheet-wide commonest A.F.F. that `heightFactsFromText` reads. The
+three height-reader files are on this branch unchanged (dbf7fb18, from
+99b70643) for that import; their NOTES section merges from their branch.
+
+**Not done, in order of what it would buy:** (1) hatch reading per room —
+stipple, grid, diagonal — which is the type on five of thirteen sheets and
+every missed family; (2) areas from the floor plan's rooms by number; (3) a
+second pass on SW's schedule and MHK's deep stacks.
+
+## 13. Ceiling TYPE from the drawn pattern (2026-10-22 eve) — family 22/36 → 33/36
+
+`ceilingPattern.ts` + the pattern arm of `realplan/zzCeilings.eval.ts`;
+crops per room, named by what was read, in `shots/ceilings/pattern__*/`
+(`<room>-<kind>-<family>.png`, from `eval-out-ceilings/crops__*.json`).
+
+**What is read.** The strokes in a window round the room's printed tag —
+not a polygon, since an RCP's rooms rarely close — sorted into lines that
+span the window, tiny strokes, and diagonals. A GRID is four such lines on
+one spacing one way and two the other (or three and three), the spacing
+being the most common gap between any two lines within 1.6–6.5 ft that at
+least three lines sit on as a chain: light fixtures and diffusers put extra
+lines at odd positions, so consecutive gaps are irregular on every real
+grid and the first version saw none. Measured spacings come out 2.0x2.0 and
+4.0x2.0 ft where the sheet says 2x2 and 2x4; Topeka's 2x6 reads 1.7x2.6 at
+its 3/32" caption. STIPPLE is a tiny stroke per three square feet; JOISTS
+five parallel lines at 0.8–2.5 ft with nothing across; DIAGONAL eight
+slanted strokes. The window is at most 8 ft half a side, never past 45% of
+the way to the next room tag, and never under 4 ft; a tag crowded by a
+neighbour's gets a second window stepped away from it, and the one that
+says more wins (that is what reads Joplin's clerical workstations beside
+two toilets).
+
+**The mapping is the sheet's own legend swatches first.** The box beside
+each ceiling-worded legend line is read with the same code and names which
+pattern THIS sheet draws for which family — Joplin's diagonal is "gyp
+board with wood veneer", not open structure. Where a sheet draws no
+swatches the convention applies: grid → ACT, stipple → GYP, joists → OPEN,
+diagonal → nothing. Order per room: a tag's family, then the pattern, then
+the sheet's note.
+
+**Against the same 66-room keys as §12:**
+
+| | before | with the pattern | of |
+| --- | --- | --- | --- |
+| ceiling family right | 22 | **33** | 36 |
+| heights, tags, joins | unchanged | 46/55, 96/102, 59/66 | |
+
+Joplin goes 0 → 9 of 10, MO Fairgrounds 0 → 2 of 3; the three left are
+narrow rooms — Murray's corridor 110, Joplin's hall 138, the Fairgrounds'
+mechanical room 102 — whose 8-ft window takes the neighbours' stipple. A
+closed polygon would clip them, and that is the rooms-on-RCP problem from
+§12 rather than a pattern problem. Nothing was tuned on a held-out set.
+
+**One more tag shape fell out:** MHK's `OPEN TO` / `STRUCTURE` / `ABOVE`
+over three lines, which is the one family that moved in the "before"
+column (21 → 22).
+
+
+## 14. Area per ceiling family, from the floor plan's rooms (2026-10-22 night) — ceilings-v1
+
+The RCP's rooms rarely close, so the area join goes to the FLOOR PLAN of
+the same level: its label walls (accepted + traced) plus the finder's raw
+pairings, rooms by `roomsFromWalls`, joined to the RCP's rooms by printed
+number or name (`floor` in each page spec of `zzCeilings.eval.ts`;
+`ROOM_KEYS` adds the printed areas keyed for the rooms work).
+
+| sheet | RCP rooms joined | sf by family (joined rooms only) |
+| --- | --- | --- |
+| Baker A111 ↔ A101 | 9 of 14 | ACT 1,757 · GYP 1,056 — 6 printed areas, median 2.7%, 6 within 10% |
+| Crosslines ↔ A100 | 11 of 19 | ACT 2,046 (2x4 ACT 1,546) · OPEN 1,366 · GYP 282 |
+| MHK ↔ A1.01 | 13 of 25 | ACT 1,235 (2x2 798) · GYP 64 · unknown 5,033 |
+| Joplin A-103 ↔ A-101 | 11 of 70 | ACT 639 (2x2 464) · GYP 434 · unknown 136 |
+| Camp Clark ↔ A-101 | 5 of 11 | GYP 805 · ACT 343 · OPEN 218 |
+| Bunkie ↔ A100 | 5 of 9 | GYP 354 · ACT 134 — 5 printed areas, median 1.7%, 5 within 10% |
+| Topeka ↔ p74 | 4 of 24 | mostly unknown |
+| Murray, Supreme Court, Fairgrounds, SW, NG, E Street | 0–1 | — |
+
+59 of 248 RCP rooms joined; every one of the 11 with a printed area is
+within 10%. The two reasons a room does not join, counted over the
+thirteen sheets: **the floor room did not close** (50) — the same rooms the
+rooms evals leave open, and the thing that limits this; **no such tag on
+the floor plan** (62) — RCP tags that are keynotes, fixture marks or sheet
+numbers (E Street's `D53.13`, Joplin's `A-103`), which inflate the 248,
+plus real rooms whose floor tag was not read. Murray is its own case: the
+RCP and the floor plan share the sheet and every room number, and the
+room finder places none of the duplicated tags. Supreme Court's floor plan
+is hatch (39,474 raw pairings, 0 rooms).
+
+**Frozen as `ceilings-v1`** (the commit this section lands in), before the
+one held-out look in §15.
+
+## 15. The one held-out look, ceilings-v1 (2026-10-22 night) — type 9/21, height 5/12
+
+Run ONCE on `ceilings-v1` (e61a529f), keys written from the page renders
+and grid crops BEFORE the run (`answer-keys/ceilings-heldout/`, crops in
+`shots/ceilings-heldout/`), nothing changed after. The three buildings'
+ceiling information comes in three different forms, and v1 was built for
+one of them.
+
+| building | where the ceilings are | rooms keyed | joined | family (with pattern) | height | tags read |
+| --- | --- | --- | --- | --- | --- | --- |
+| Albany A-100 | RCP view on the floor-plan sheet, no room tags, one note OPEN TO STRUCTURE | 4 | 0 | 0/4 | — | 1/1 |
+| KSU A150 (ground) | RCP with name/number tags, height over a finish code (AC01, PA01/PA03), NO CEILING, OPEN TO EXIST notes | 17 | 17 | 7/17 | 5/9 | 6/17 |
+| O'Reillys A1.2 | no RCP at all: a finish SCHEDULE by room, C-1…C-4 in a finish legend | 6 | 4 | 2/4 | 0/3 | 0/0 |
+| **all** | | **27** | **21** | **9/21** | **5/12** | **7/18** |
+
+Area per family joined 4 of 39 RCP rooms (KSU only, 177 sf ACT, 308 sf
+GYP); the training figure was 59 of 248. Nothing printed an area on these
+floors to check against.
+
+**Failure list for v2, in order of what it would buy here:**
+
+1. **Finish CODES without a legend on the sheet** (KSU `AC01`, `PA01`,
+   `PA03`): the reader knows ACT/GB/GWB/ES and the sheet's own legend, and
+   KSU's legend is on a finish sheet elsewhere. A prefix rule (`AC` =
+   acoustical, `PA` = paint on what is there, `GB`/`GY` = gypsum) or the
+   finish legend read across sheets. Every KSU family and four of its
+   heights fall to this: the heights were READ (6 with height) but the
+   stack's code was not a type, so the tag paired to nothing in four rooms.
+2. **Two-line notes** (`NO CEILING,` / `OPEN TO EXIST`): the wrap rule
+   takes `OPEN TO` + `STRUCTURE|ABOVE`; `OPEN TO EXIST` and the line above
+   it are a third spelling. Eight of KSU's seventeen rooms.
+3. **An RCP with no room tags, beside its floor plan** (Albany): the rooms
+   and their printed areas are in the other view of the same sheet, at the
+   same scale. Transfer the floor plan's room tags into the RCP view by the
+   views' offset, or take the single building-wide note as every room's
+   answer when the RCP prints one note and nothing else.
+4. **A ceiling SCHEDULE instead of an RCP** (O'Reillys): a table with
+   CEILING TYPE and HEIGHT columns by room number, and the types in a
+   finish legend (`C-1: TYPE: ACOUSTICAL TILE CEILING`). The second
+   session's schedule-table reader is the right tool; this reader never
+   sees a table.
+5. **Pattern on existing construction**: KSU's open-to-existing rooms
+   draw the plaster above as a stipple and read GYP; its painted-plaster
+   fire riser room reads grid. The pattern is right about what is drawn and
+   wrong about what is bid, which only the words settle.
+6. **The view detector did not name Albany's `FIRST FLOOR RCP`** as a
+   ceiling view, so the whole page was read as one.
+
+The number to carry: on buildings whose RCP prints a height-over-code
+stack with room tags (KSU, like Baker and Topeka), v1 joins every room and
+gets the height where it reads the tag; the type is the legend, and the
+legend was not on the sheet.
+
+## 16. Ceilings v2 (2026-10-23) — the held-out failures, fixed on training sets only
+
+KSU, Albany and O'Reillys were used for nothing here. Each fix is measured
+on training sheets; where no training sheet exercises it, that is said.
+
+| fix | where it is measured | result |
+| --- | --- | --- |
+| 1. legend read across the set + prefix guess (`familyFrom: "prefix"`) | SW's own CEILING FINISH SCHEDULE (its rows were misread as column labels) | SW 0 → 4 of 4 rooms joined and right; the set scan reads rows on Baker A601, Murray, Joplin that no RCP needed; **no training RCP uses a prefix-only code, so the guess is unit-tested and unmeasured** |
+| 2. wrapped notes as one phrase | MHK `OPEN TO / STRUCTURE / ABOVE`; Supreme Court `OPEN TO / ABOVE` | reads as one OPEN note; no keyed room changed |
+| 3. ceiling SCHEDULE by room, over `tableRowsFromPage` (second session's, not forked) | Bunkie p51 | 13 rooms with a ceiling column, E101–E104 GYP.BD. 10 ft, matching the Bunkie RCP key's four heights |
+| 4. room tags carried into a tagless RCP view (`viewAlign.ts`, a vote of matching walls) | Murray, pretending its RCP view has no tags | 12 walls agree; 7 of 14 carried tags land within 3 ft of the RCP's own tag of the same number; the rest have no same-number tag in that view |
+| 5. words beat the pattern; KEYNOTES that name a ceiling (`existing`) | E Street A1.3 demolition RCP, 12 rooms keyed | joined 12, family 8 of 12; the 16 rooms flagged existing keep their words whatever the stipple says |
+
+**And one more, found on the way.** `sheetViews` alone gives every view
+the whole page as its box, so v1's "the RCP's own view" never excluded the
+floor plan beside it (Murray's two views both read `[0–1 × 0–∞]`).
+`viewsInRegions` gives the measured regions — and used blindly it was
+WORSE: Joplin's "overall RCP" region kept 0 of 16 keyed rooms, because the
+gutters cut the plan into cells the detail captions claim. So the region
+is used only where it holds at least half the page's room tags (Murray,
+Topeka, Crosslines, Camp Clark, Bunkie), and the whole page otherwise.
+
+**All training keys, 14 pages, 78 rooms (the v1 66 plus E Street's 12):**
+
+| | v1 (§12–13, 66 rooms) | v2, same 66 | v2, all 78 |
+| --- | --- | --- | --- |
+| joined | 59 | 63 | 75 |
+| family right | 33/36 | 36/40 | 44/52 |
+| height right | 46/55 | 47/55 | 48/66 |
+| areas joined | 59/248 | — | 61/250, 11/11 printed within 10% |
+
+E Street's heights (1 of 11) are the nearest-tag pairing again: its `9'-0"`
+marks sit between rooms and go to the wrong tag. Still open from §15: a
+two-level schedule header (O'Reillys' CEILING over TYPE | HEIGHT) is not
+read, since the table rows carry no x positions.
+
+## 17. Ceilings in front of an estimator (2026-10-23) — Rooms panel, OFF behind the room-finder switch
+
+`roomCeilings.ts` (`ceilingsForRooms`, `ceilingSummary`), the Rooms panel's
+three new columns, `Company.roomFinderOn` as the switch (ceilings live in
+the Rooms panel, which only exists with the room finder on, so no second
+switch and no Company migration), and migration `20261023120000_room_ceilings`
+— five additive columns on `TakeoffMeasurement`, applied only to the e2e
+runner's throwaway Postgres and a local `_dbtest` scratch database.
+
+**Where the reading happens: the browser.** The page's words are already
+read from the open PDF for the room tags; the ceiling pages are read the
+same way when Find the rooms is pressed — `ceilingPages` from
+`workspaceLoad` (pages whose stored title block says reflected ceiling
+plan, RCP or finish schedule), or every page of a plan of forty or fewer
+when the index names none, kept if its own text does. Strokes for the
+pattern are the current page's, from the last find. Schedule pages go
+through the second session's `tableRowsFromPage`, unchanged.
+
+**Per room, in order:** a tag on any page that says existing or no
+ceiling; a tag (own sheet or ceiling plan, joined by printed number or
+name — Baker's name-over-code stacks join by name); the schedule row; the
+drawn pattern on this sheet; the sheet's note. The source is shown beside
+each row ("ceiling plan tag p14", "finish schedule", "drawn pattern",
+"sheet note", "guess from the code" with an amber GUESS badge), and an
+estimator's edit replaces it with "typed by you" and clears the guess.
+
+**Proved in a browser**, `e2e/specs/takeoff-ceilings.spec.ts` on the S05
+fixture (no ceiling information, so every row reads "nothing read"): a
+type and a height typed in move the sheet summary at once; saving stores
+them; after a reload and a fresh find, "Saved on this job" reads them back
+within 2% of the room's square feet. `takeoff-ceilings-real.spec.ts` uploads
+Baker's A101 and A111 as one two-page PDF and reads the ceilings off page
+2 for the rooms closed on page 1 — see §17's run notes below.
+
+**Not done.** A two-level schedule header (O'Reillys' CEILING over
+TYPE | HEIGHT) — no training set prints one, so nothing to measure it on;
+noted for later with the fix: the table reader keeps cell geometry, and
+the group heading's span over the sub-columns is what maps it.
+
+**Baker, in the app (A101 + A111 as one two-page upload, scale set by the
+spec's half-sheet click, so the areas are approximate):** 7 rooms closed on
+the floor plan; 5 took family AND height from the ceiling plan's tags on
+page 2 (HAM RADIO/COMM, STORAGE, RR 1 → gypsum board 10 ft; CALL CENTER,
+CONFERENCE → acoustical tile 10 ft); IDF and one unnamed room read nothing.
+Sheet line: acoustical tile 872 sf · gypsum board 387 sf · no ceiling read
+416 sf. Screenshot and the per-room text in `shots/ceilings-app/`.
+
+Two things the first run of that spec taught, both fixed in `roomCeilings.ts`
+and pinned by a test: a FLOOR PLAN's own figures are dimensions, not
+ceiling heights — the sheet the rooms sit on is a tag source only when it
+says it is a ceiling plan too (Murray's combined sheet) — the first run read
+18.5 ft over STORAGE from a dimension string; and Baker's floor plan says
+CALL CENTER 111 where its ceiling plan says 911 CALL CENTER, so a room joins
+by one name containing the other (four letters or more) when the number is
+not printed on the ceiling side.
+
+## 18. The estimate end of the chain (2026-10-22) — diego/estimate-chain off main
+
+The audit (`coordination/takeoff-to-estimate-audit.md`) found four things
+measured and never priced. Fixed, smallest form each, all behind the switches
+that already gate them (room finder for rooms/ceilings; the legend library's
+own gate for heights and the U.N.O. offer):
+
+- heights: `addWallTypeFromLegend` → `setHeightFacts` (sections, ceiling
+  plans, lettered and general notes, up to 120 pages) → `resolveHeight` →
+  `defaultHeightFt` + the chain in notes; LOW when only a general note.
+- U.N.O.: `wallGroups` keeps the GENERAL_NOTE source but the verdict is ASK
+  with `suggested` first; `BY_GENERAL_NOTE` is gone from the union.
+- rooms → "Rooms" item; ceilings → one AREA_WITH_PERIMETER item per family,
+  a second row per room with the same outline (one row belongs to one item;
+  a floor and a ceiling are two things priced). The ceiling columns ride on
+  the ceiling row only, so the panel's job summary counts each once.
+- seeds ACT2 and GYPC1; studs on items ON (Diego's production query on
+  2026-10-22 found 0 measured items with a STUDS part, so the flag went).
+
+Not done: openings on item walls (door schedule reads exist as evals only);
+per-run heights from a room's ceiling height.
+
+**Branches, 2026-10-22.** `diego/estimate-chain` (off main) is the canonical
+ceilings branch: it carries every commit of `diego/ceilings` — the app side
+by three-way apply, the six evals (`realplan/zzCeiling*.eval.ts`,
+`zzWallHeights.eval.ts`) and their key-census exemptions by checkout. The
+two branches differ only in files `diego/ceilings` inherited from its
+`diego/takeoff-audit` base and never touched (`offeredCandidates.ts`,
+`personas.ts`, two specs). `diego/ceilings` is retired: left in place, not
+deleted, not to be built on. It ships with `diego/demote-mode` (rebased onto
+main) as PR B — `20261023000000_demoted_walls` then
+`20261023120000_room_ceilings`.
+
+## 19. What the Baker walkthrough showed, and the six fixes (2026-10-22)
+
+`e2e/specs/estimator-baker.spec.ts` walks the whole takeoff on a real set in
+a throwaway stack (set read from disk, inventory real, legend from the cached
+read) and writes every panel's sentences beside the screenshots. The first
+run's ranked findings are in `shots/estimator-baker/FINDINGS.md`; the six
+Diego picked, and where each landed:
+
+1. **Concrete types got metal studs** — `addWallTypeFromLegend` handed
+   `assemblyFromSight` `studMaterial: null`. Now `sightFieldsFor` reads the
+   sight read's material by code and a concrete or masonry type is written
+   board-and-insulation only (the legend fixture's P6 proves it in Chromium).
+2. **"Add these" wrote loose measurements in silence** — `groupChoices`
+   (`wallGroups.ts`) lists what an unpriced group may become, types first,
+   plain last; the viewer's chooser (`data-takeoff="group-choice"`) must be
+   answered before `add-group` enables; "create" leaves for `/wall-types`
+   with the thickness filled in. The wall-type form gained a thickness
+   field, without which a hand-made type can never be offered for a group.
+3. **S6B / S6C read identically** — `wallTypeSummary` (board one side or
+   both, layers, rating, insulation, wood studs) rides on
+   `MatchableWallType.summary`, in the option label and the ASK sentence.
+4. **Height only after Add** — `legendHeightsFor` (`legendHeights.ts`) is
+   shared by the review page and the action; the row shows
+   `15 ft · LOW — general note only, check the sheet` before Add.
+5. **"Not enclosed" listed the title block and notes** — `looksLikeNoteText`
+   drops title-block vocabulary, sentences and names over six words; "Rooms"
+   is a check figure (`roomItems.ts`), reported as square feet of floor.
+6. **Find the walls answered a click before the sheet rendered** — the
+   button is disabled on `!pageSize` and its title says so.

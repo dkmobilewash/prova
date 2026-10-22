@@ -203,6 +203,11 @@ test.describe("a wall legend read off a set becomes wall types in the library", 
     const proposal = await prisma.planLegendProposal.findFirstOrThrow({ where: { plan: { jobId } }, select: { status: true, acceptedByUserId: true } });
     expect(proposal.status).toBe("ACCEPTED");
     expect(proposal.acceptedByUserId).not.toBeNull();
+    // ── THE HEIGHT, READ OFF THE SET, OR HONESTLY NOT ──
+    // P1 says EXTEND TO DECK and the one-page fixture prints no deck
+    // elevation, so the library gets NO default height and the notes say why.
+    expect(added.defaultHeightFt, "a 'to deck' type with no section must not get a guessed height").toBeNull();
+    expect(added.notes ?? "").toMatch(/No height read: /);
 
     // The library page shows it, which is where the person is sent next.
     await page.goto("/wall-types");
@@ -215,5 +220,33 @@ test.describe("a wall legend read off a set becomes wall types in the library", 
     await expectHealthy(page, "review screen after one add", { monitor });
     await expect(page.locator(`[data-legend="type"][data-legend-code="${TYPE}"] [data-legend="in-library"]`)).toHaveCount(1);
     await expect(page.locator(`[data-legend="type"][data-legend-code="${TYPE}"] [data-legend="add"]`)).toHaveCount(0);
+  });
+
+  test("3b. a type whose legend prints its height lands in the library with that default height, and the row says so", async () => {
+    const FIXED = "P5";
+    const row = page.locator(`[data-legend="type"][data-legend-code="${FIXED}"]`);
+    await row.scrollIntoViewIfNeeded();
+    // ── THE HEIGHT IS ON THE ROW BEFORE ADD ──
+    await expect(row.locator('[data-legend="height"]')).toHaveText("10 ft · HIGH");
+    await expect(page.locator(`[data-legend="type"][data-legend-code="${TYPE}"] [data-legend="height"]`)).toHaveText("no height read");
+    await row.locator('[data-legend="add"]').click();
+    await expect(row.locator('[data-legend="message"]')).toContainText(`Added ${FIXED}`);
+    await expect(row.locator('[data-legend="message"]')).toContainText("Height 10 ft (HIGH)");
+    await shot("row-after-add-with-height");
+    const added = await prisma.wallType.findUniqueOrThrow({ where: { companyId_code: { companyId, code: FIXED } } });
+    expect(added.defaultHeightFt === null ? null : Number(added.defaultHeightFt)).toBe(10);
+    expect(added.notes ?? "").toMatch(/Height 10 ft \(HIGH\)/);
+  });
+
+  test("3c. a masonry type is added with board only — no studs, no track — because the sight read says what it is made of", async () => {
+    const CMU = "P6";
+    const row = page.locator(`[data-legend="type"][data-legend-code="${CMU}"]`);
+    await row.scrollIntoViewIfNeeded();
+    await row.locator('[data-legend="add"]').click();
+    await expect(row.locator('[data-legend="message"]')).toContainText(`Added ${CMU}`);
+    const added = await prisma.wallType.findUniqueOrThrow({ where: { companyId_code: { companyId, code: CMU } }, include: { components: true } });
+    expect(added.components.map((c) => c.basis), "a CMU wall must carry no STUDS part").not.toContain("STUDS");
+    expect(added.components.some((c) => /track/i.test(c.description)), "nor track").toBe(false);
+    expect(added.components.some((c) => c.basis === "BOARDED_SQFT"), "the board it does carry").toBe(true);
   });
 });

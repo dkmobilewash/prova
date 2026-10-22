@@ -51,6 +51,11 @@ export type PlanMeasurementRow = {
    */
   packageLabel: string | null;
   postedAt: string | null;
+  /** A room the room finder closed: its printed name and number. */
+  roomName?: string | null;
+  roomNumber?: string | null;
+  /** The ceiling over that room — see `roomCeilings.ts` for the sources. */
+  ceiling?: { family: string | null; code: string | null; heightFeet: number | null; from: string | null; guess: boolean } | null;
   /** The calibration THIS shape was drawn to, which is not always the
    * sheet's current one — that is the whole point of the FK. */
   calibration: StoredCalibration;
