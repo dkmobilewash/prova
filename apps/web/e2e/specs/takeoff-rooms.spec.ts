@@ -267,7 +267,12 @@ test.describe("find the rooms", () => {
     // `lib/actions/roomFinder.dbtest.ts`'s job.
     await page.reload();
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
-    await expect(page.locator('[data-takeoff="unassigned"]')).toContainText(`${rowsBefore} measurement`, { timeout: 60_000 });
+    // The save lands every room in a "Rooms" item now (and ceilings in their
+    // own), so the rail shows an item with square feet rather than N loose
+    // measurements under Unassigned.
+    const roomsItem = page.locator('[data-takeoff="items-rail"] [data-takeoff="item-row"]').filter({ hasText: "Rooms" });
+    await expect(roomsItem).toHaveCount(1, { timeout: 60_000 });
+    await expect(roomsItem.locator('[data-takeoff="item-total"]')).toContainText(/sq ft/);
     await page.screenshot({ path: path.join(SHOTS, "03-rooms-saved.png") });
     expect(rowsBefore).toBeGreaterThanOrEqual(3);
     // The full-screen workspace has no app shell by design, like takeoff-workspace.spec.ts.
