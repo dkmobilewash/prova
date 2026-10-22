@@ -1,6 +1,6 @@
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "./findWallsOnSheet";
-import { primaryView, sheetViews, viewRegions, wallsPerView } from "./sheetViews";
+import { primaryView, sheetViews, viewRegions, viewsInRegions, wallsPerView } from "./sheetViews";
 import { drawingRegions, segmentsInRegions } from "./planRegion";
 import { classifySingleLines, worthOffering } from "./singleLines";
 import { oneFacePerLine, wallFromPair, type StrokeSegment, type WallCandidate } from "./wallVectors";
@@ -251,7 +251,30 @@ export type SheetDetectResult = {
 };
 
 export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
-  const views = sheetViews(input.textItems, input.pageSize.widthPt);
+  // ── CAPTIONS BOUND TO THE REGIONS THEY LABEL, WHICH IS THE WHOLE ANSWER ──
+  //
+  // This called `sheetViews` alone, and that is why this module could not
+  // reproduce the app: a caption on its own describes a view with a
+  // WHOLE-PAGE box, so `planBoxes` covered the sheet, `onAPlan` dropped
+  // nothing, and the count came out at the finder's raw output. Murray A101
+  // offered 160 here against the app's 32, and I eliminated every input in
+  // turn — strokes, text, scale, wall types, the template sample, page size —
+  // without finding it, because the difference was never an input. It was a
+  // missing CALL.
+  //
+  // `viewsInRegions` assigns each caption to the drawing region it actually
+  // labels, and cuts a region that holds several captions between them. The
+  // boxes that come out are the drawings rather than the page, so the plan
+  // boxes mean what `onAPlan` assumes they mean.
+  //
+  // Found by the second session. The lesson for the next extraction here is
+  // that a pipeline is its CALLS as much as its inputs, and a faithful copy
+  // has to be read off the caller line by line rather than reconstructed from
+  // what each function appears to need.
+  const views = viewsInRegions(
+    sheetViews(input.textItems, input.pageSize.widthPt),
+    viewRegions([...input.segments], input.pageSize),
+  );
   const base = {
     segments: [...input.segments],
     textItems: [...input.textItems],

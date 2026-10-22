@@ -226,7 +226,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the app's candidate list against t
         widthPt: strokes.widthPt,
         feetPerUnit: saved.feetPerUnit,
         planBoxes: detected.planBoxes,
-      });
+      }, false, process.env.APP_HATCH_RULE === "1");
 
       const inEval = found.walls.length;
       const inShared = offered.candidates.length;
