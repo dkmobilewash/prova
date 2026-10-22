@@ -2925,3 +2925,57 @@ stage swings by a thousand), which is the same seam from the other side.
 **LOBO on the wired pipeline** (23 training sheets, 17 buildings; NOW =
 `detectForSheet`, BEFORE = the viewer's old inline pipeline): junk removed
 53 ft, real lost 7 ft, real gained 1,641 ft. Every fold picked 1.4.
+
+### A hook only observes, and the strokes' order is information (2026-10-22)
+
+**Fix 1, shipped: the answer-key list is the customer list.** In
+`wallsFromStrokes` the collecting loop (any of `onCandidate`, `decide`,
+`veto` set) skipped the `used` test so every pairing reached the hook — and
+then ran the award bookkeeping on faces already spent, so a face in one
+wall was handed a second partner. The award now skips a used face exactly
+as the non-collecting loop does, after the hook has seen the pairing.
+`finderDeterminism.test.ts` pins it on three seeded invented drawings
+(searched first: on the old finder every one of 400 seeds differed with a
+hook set); it failed 6 of 6 hook cases before the fix and passes after.
+Against the training keys the labelled list moves to the customer list:
+missing 2,388 → 2,454 ft, extra 12,393 → 12,284 ft — the labelled list had
+been 66 ft better on missing and 109 ft worse on extra than what a customer
+saw. On the real sheets the two arms now agree exactly (Crosslines A100,
+Murray A101, both Baker sheets: hook = no hook, `zzFinderArms.eval.ts`).
+
+**Fix 2, shipped at the faces and measured not to be shippable at the
+door.** `oneFacePerLine` now sorts its strokes into reading order before it
+builds faces, so the face stage and the pairing above it are order-
+independent — the same test holds `wallsFromStrokes` to that under reversal
+and three shuffles, 6 of 6 red before and green after. Cost against the
+keys: +52 ft missing, +113 ft extra over 23 sheets.
+
+Sorting at the finder's DOOR instead — the one-line change that makes the
+whole finder order-independent — was measured on four orders and every one
+is far worse than the order the PDF stores:
+
+| strokes in | missing ft | extra ft | arms differ |
+| --- | --- | --- | --- |
+| the PDF's order (before) | 2,454 | 12,284 | 23 of 23 |
+| door sort, reading order | 4,824 | 15,648 | 0 |
+| door sort, column order | 4,699 | 16,280 | 0 |
+| door sort, by length | 4,500 | 16,506 | 0 |
+| door sort, by angle | 3,524 | 16,705 | 0 |
+| **faces sorted, door as stored (shipped)** | **2,506** | **12,397** | 22 of 23 |
+
+The sequence is information upstream of the faces: `gridBubbles.ts` walks a
+bubble through the first unwalked piece at each endpoint, and
+`curvedWalls.ts` assembles an arc from "a run of pieces", greedily and on
+purpose. Sort the strokes and bubbles and arcs come apart, which is the
+missing-feet column. So full order independence is a change in those two
+stages — continue a chain by geometry rather than by sequence — and it is
+their owner's. Until then the finder is deterministic for a given FILE (the
+app and Node read identical sequences, proved by digest) and not for a
+given drawing: reversed strokes still cost 2,400 ft of key.
+
+**Label files need nothing.** `labelCollect.ts` rebuilds training rows from
+the VERDICTS against whatever finder is running, by geometric matching; the
+saved `rows` are already treated as stale. One consequence worth knowing: a
+verdict given on a candidate only the old hook path produced now stands as
+a key wall with no candidate under it, which scores as missing rather than
+vanishing — that is the +66 ft.
