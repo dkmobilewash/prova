@@ -3443,6 +3443,20 @@ export function TakeoffPlanViewer({
             : "relative max-h-[calc(var(--shell-port)-22rem)] min-h-[24rem] overflow-auto rounded-lg border border-line-card bg-rail xl:flex-1 xl:max-h-[calc(var(--shell-port)-11rem)]"
         }
         data-testid="takeoff-plan-port"
+        // ── THE SHEET SAYS WHEN IT IS ACTUALLY READY TO BE ASKED ──
+        //
+        // A DRAWN CANVAS IS NOT THE SIGNAL. CI refused a find on a sheet that
+        // was visibly drawn, naming "document, page size" — both of which
+        // reset together when this viewer remounts and reloads the PDF, while
+        // the canvas it painted before the remount still measures a real
+        // width. A waiter watching the canvas therefore sees ready, clicks,
+        // and is refused.
+        //
+        // `pageCount` is set in the same breath as `docRef.current`, so it
+        // stands for the document; `pageSize` is the page box. Together they
+        // are exactly what `onFindWalls` requires, minus the scale, which the
+        // button's own `disabled` already covers.
+        data-sheet-ready={pageCount !== null && pageSize !== null ? "true" : "false"}
       >
         {/* ── THE BANNER THAT SAYS TRACING IS ON, AND WHAT TO DO NEXT ──
 
