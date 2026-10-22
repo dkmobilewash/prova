@@ -373,6 +373,7 @@ export function TakeoffPlanViewer({
    * no model call. Null when no file is configured; inert with the switch off.
    */
   wallModel?: { model: WallModel; cut: number } | null;
+  /**
    * The plan's pages whose title block names a reflected ceiling plan or a
    * finish schedule. When the rooms are found, their text is read from the
    * open PDF and each room's ceiling comes from it — see `roomCeilings.ts`.
