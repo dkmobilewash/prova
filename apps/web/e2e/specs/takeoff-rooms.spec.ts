@@ -222,18 +222,32 @@ test.describe("find the rooms", () => {
     // So this waits on a condition true in both worlds — running, or already
     // finished. Neither a fast find nor a slow one can fail it, and a find
     // that genuinely never runs still does.
+    // ── IF THE FIND REFUSES, SAY WHAT IT WAS MISSING ──
+    //
+    // "The find neither started nor produced a result" was true and useless.
+    // CI produced it on a sheet that was VISIBLY DRAWN, with a scale line
+    // reading a figure computed from the very value the refusal blames — so
+    // the screenshot contradicted every branch of the guard and reading it
+    // went in circles. The viewer now names the missing piece on its error
+    // element, and this reports it, so the next failure arrives as a fact.
+    const refusal = page.locator('[data-takeoff="find-error"]');
     await expect
       .poll(
         async () => {
-          if (await findRooms.isEnabled()) return true;
-          return (await findWalls.innerText()).includes("Reading the lines");
+          if (await findRooms.isEnabled()) return "started";
+          if ((await findWalls.innerText()).includes("Reading the lines")) return "started";
+          if (await refusal.isVisible()) {
+            const missing = (await refusal.getAttribute("data-missing")) ?? "(not said)";
+            return `the find refused, missing: ${missing}`;
+          }
+          return "nothing happened";
         },
         {
           timeout: 180_000,
           message: "the find neither started nor produced a result",
         },
       )
-      .toBe(true);
+      .toBe("started");
     await expect(findWalls, "the find started and never finished").toHaveText("Find the walls", {
       timeout: 180_000,
     });

@@ -867,6 +867,9 @@ export function TakeoffPlanViewer({
   /** The page box, straight from the viewer — the ONLY place this number is
    * ever produced. Posted with a calibration so the scale can be named. */
   const [pageSize, setPageSize] = useState<{ widthPt: number; heightPt: number } | null>(null);
+  // Which of the find's three preconditions was missing, for the error
+  // element's `data-missing`. Diagnostic only — never shown as words.
+  const [missingToFind, setMissingToFind] = useState<string>("");
   /** The scrolling box the sheet sits in — measured, so FIT knows what it is
    *  fitting into. */
   const frameRef = useRef<HTMLDivElement | null>(null);
@@ -2223,6 +2226,22 @@ export function TakeoffPlanViewer({
     // a queued action: a find that starts by itself some seconds after a
     // click nobody remembers making is worse than one that says "not yet".
     if (!doc || !pageSize || feetPerUnit === null) {
+      // ── AND THE MESSAGE HAS TO SAY WHICH PIECE IS MISSING ──
+      //
+      // This fired in CI on a sheet that was VISIBLY DRAWN, with the scale
+      // line reading "sheet reads 128 ft across" — a number computed from
+      // `feetPerUnit`, which the guard says is null. The screenshot
+      // contradicts all three conditions at once, so reasoning from it goes
+      // in circles. Naming the missing piece turns the next run into an
+      // answer rather than another theory.
+      //
+      // The person still reads one plain sentence; the detail goes in an
+      // attribute, where a spec can report it and nobody else has to look.
+      setMissingToFind(
+        [!doc && "document", !pageSize && "page size", feetPerUnit === null && "scale"]
+          .filter(Boolean)
+          .join(", "),
+      );
       setFindError("The sheet is still loading. Try that again in a moment.");
       return;
     }
@@ -2998,7 +3017,11 @@ export function TakeoffPlanViewer({
       )}
 
       {findError && (
-        <p className="mt-2 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-tag-amber-ink">
+        <p
+          data-takeoff="find-error"
+          data-missing={missingToFind || undefined}
+          className="mt-2 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-tag-amber-ink"
+        >
           {findError}
         </p>
       )}
