@@ -9,7 +9,7 @@ import { detectForSheet, offeredCandidates, type SheetDetectResult } from "../of
 import { sheetStrokes } from "../sheetStrokes";
 import { findWallsOnSheet } from "../findWallsOnSheet";
 import { drawingRegions, segmentsInRegions } from "../planRegion";
-import { drawingCount, primaryView, sheetDrawings, sheetViews, textBlockBoxes, viewBoxes, viewRegions, viewsInRegions, wallsPerView, type SheetView } from "../sheetViews";
+import { drawingCount, isLevelPlan, keptPlanViews, mergeViewWalls, primaryView, sheetDrawings, sheetViews, textBlockBoxes, viewBoxes, viewRegions, viewsInRegions, wallsPerView, type SheetView } from "../sheetViews";
 import { isPlanView } from "../viewKind";
 import { viewClass } from "../viewTitles";
 
@@ -111,15 +111,24 @@ describe.skipIf(DIR === "" || LABELS === "")("view detection on the app's candid
         }
         const measured = wallsPerView({ ...base, views, wallTypes: [], sampledSheets: null });
         const picked = primaryView(measured);
+        // Every floor keeps its walls (`keptPlanViews`); the app today keeps
+        // `picked.primary` alone. KEEP_PRIMARY_ONLY=1 reproduces the app.
+        const kept = process.env.KEEP_PRIMARY_ONLY === "1" ? (picked.primary === null ? [] : [picked.primary]) : keptPlanViews(measured).kept;
         return {
-          found: picked.primary?.found ?? { ...baseline.found, walls: [] },
+          found: mergeViewWalls(kept) ?? { ...baseline.found, walls: [] },
           planBoxes: measured.flatMap((one) => viewBoxes(one.view)),
           views: views.length,
-          primaryName: picked.primary?.view.name ?? null,
+          primaryName: kept.map((k) => k.view.name).join(" + ") || null,
         };
       };
       const appViews = viewsInRegions(sheetViews(textItems, pageSize.widthPt), viewRegions(strokes.segments, pageSize));
-      const a = score(composed(appViews));
+      const appOnly = (views: SheetView[]): SheetDetectResult => {
+        if (views.length < 2) return baseline;
+        const measured = wallsPerView({ ...base, views, wallTypes: [], sampledSheets: null });
+        const picked = primaryView(measured);
+        return { found: picked.primary?.found ?? { ...baseline.found, walls: [] }, planBoxes: measured.flatMap((one) => viewBoxes(one.view)), views: views.length, primaryName: picked.primary?.view.name ?? null };
+      };
+      const a = score(appOnly(appViews));
       const byRatio = new Map<number, { extra: number; missing: number; n: number; views: SheetView[]; measured: string[] }>();
       for (const ratio of RATIOS) {
         const views = sheetDrawings({ items: textItems, segments: strokes.segments, pageSize, sizeRatio: ratio });
@@ -137,7 +146,7 @@ describe.skipIf(DIR === "" || LABELS === "")("view detection on the app's candid
         mkdirSync(out, { recursive: true });
         writeFileSync(join(out, "views.json"), JSON.stringify({
           pdf, page: saved.page, widthPt: pageSize.widthPt, heightPt: pageSize.heightPt,
-          views: views.map((v) => ({ name: v.name, kind: viewClass(v.name).kind, foundBy: v.foundBy ?? "caption", scale: v.scaleName, measured: isPlanView(v.name) && (v.boxes?.length ?? 1) > 0, boxes: viewBoxes(v) })),
+          views: views.map((v) => ({ name: v.name, kind: viewClass(v.name).kind, foundBy: v.foundBy ?? "caption", scale: v.scaleName, measured: v.textBlock !== true && (isPlanView(v.name) || isLevelPlan(v.name)) && (v.boxes?.length ?? 1) > 0, boxes: viewBoxes(v) })),
         }));
       }
     }
@@ -164,6 +173,8 @@ describe.skipIf(DIR === "" || LABELS === "")("view detection on the app's candid
         const lostA = Math.max(0, t.missing - r.app.missing);
         junkRemoved += junk; realLost += lost; realGained += gained; junkApp += junkA; lostApp += lostA;
         appJunkVsShip += r.base.extra - r.app.extra; appLostVsShip += Math.max(0, r.app.missing - r.base.missing);
+        const keptNames = (t as unknown as { kept?: string }).kept ?? "";
+        void keptNames;
         const names = t.views.map((v) => `${isPlanView(v.name) && t.measured.includes(v.name) ? "*" : ""}${v.name.slice(0, 22)}[${viewClass(v.name).kind}${v.foundBy === "title" ? ",T" : ""}${v.textBlock ? ",B" : ""}]`).join(" ");
         console.log(`  ${`${r.dir.slice(0, 26)}/${r.sheet}`.padEnd(34)} ${r.keyFeet.toFixed(0).padStart(6)} ${`${r.base.n}/${r.app.n}/${t.n}`.padStart(16)} ${pick.toFixed(2).padStart(5)} ${junk.toFixed(0).padStart(14)} ${lost.toFixed(0).padStart(6)} ${junkA.toFixed(0).padStart(13)} ${lostA.toFixed(0).padStart(6)}  ${names.slice(0, 170)}`);
       }

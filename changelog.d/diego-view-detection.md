@@ -9,3 +9,10 @@ drawing. Measured on the app's own candidate list over 18 training sheets,
 leave-one-building-out: 622 ft of junk removed against the viewer's current
 pipeline and no real wall lost. Not yet wired into `detectForSheet`; the
 three-line change is named in NOTES.
+
+A sheet carrying several floors keeps every floor's walls, each measured at
+its own scale: two plan views naming different levels are different floors,
+and a mezzanine beside its level is its own level; views naming the same
+level, or none, still fall to the primary. Crosslines' 1,014 ft and Supreme
+Court's 76 ft of lost key both go to zero, and the only real feet still lost
+against the shipped function are a labelling artefact on one sheet.

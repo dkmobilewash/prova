@@ -2802,3 +2802,62 @@ Crops of every sheet's detected views, outlined on the page (solid =
 measured, dashed = not), are in `shots/views/<set>-<sheet>/` outside git.
 No AI was used on titles: `takeoffRank`'s vocabulary plus the text-block
 words classified every title the training sheets print.
+
+### Every floor keeps its walls; a floor drawn twice keeps one (2026-10-22)
+
+**The rule that lost two floors.** `primaryView` keeps ONE view's
+detection, for a product rule that is right about what it was written for:
+an enlarged plan is the same construction drawn larger, a finish plan over a
+partition plan is the same walls twice, and summing them bids a bathroom
+twice. Crosslines A100 is a 1st-floor plan, a 2nd-9th typical-floor plan
+and a penthouse plan on one sheet, and the rule kept the typical floor:
+1,014 ft of key wall, every run a wall the reviewer accepted, gone.
+
+**The two cases are told apart by the LEVEL the title names.**
+`planLevel` reads "1st", "2nd - 9th", "LEVEL 1", "MAIN LEVEL", "PENTHOUSE",
+and a named level beside a number is part of the name — "LEVEL 2 -
+MEZZANINE" is not level 2, and Supreme Court A111 draws both with the
+mezzanine the bigger drawing, so a level-blind rule kept the mezzanine and
+dropped 76 ft of the level-2 key. `keptPlanViews` keeps one view per level
+named, falling to `primaryView` only among views naming the same level or
+none ("DIMENSION PLAN - WAREHOUSE" beside "FLOOR PLAN - WAREHOUSE" is one
+warehouse), and never adds an enlarged plan to a floor. `mergeViewWalls`
+makes one detection of the kept views, each already measured at its own
+scale by `wallsPerView`. "Penthouse Floor (P2)" has no PLAN in it and
+`takeoffRank` has no opinion; `viewClass` now calls a level-named FLOOR
+title a floor plan.
+
+**Placement had to learn the same convention twice more.** A caption sits
+below and to the left of its drawing, so a caption is DISQUALIFIED from a
+piece wholly below it or wholly left of it (the cell under "Penthouse Roof"
+holds the right end of the floor plans beneath, and plain distance gave it
+to the penthouse); and a block's heading sits ABOVE its words, so a shared
+region is cut just above each heading and the piece that starts at a
+heading goes to that block — only that piece, because a heading at the top
+of a column claiming every cell beneath it took the plan's right end on NG
+A3.2. The right-strip title-block rule is gone: it dropped Crosslines'
+penthouse plans, which are drawn exactly there; the title block's title is
+told apart as a REPEAT of a caption's.
+
+**Measured** (`realplan/zzViewDetection.eval.ts`; 23 training sheets, 17
+buildings now, five label files having arrived during the day; LOBO over
+the size ratio, every fold 1.4):
+
+| treatment against | junk removed | real lost |
+| --- | --- | --- |
+| the viewer's pipeline | 53 ft | 7 ft |
+| `detectForSheet` as shipped | 3,321 ft | 389 ft |
+
+The 389 ft is 382 ft of HPL p3, whose whole key is in the finish plan the
+product leaves unmeasured, and 7 ft of one run on Bunkie A104. Crosslines:
+1,014 ft lost → 0. Supreme Court: 76 → 0. Against the app the two
+multi-floor sheets ADD extra feet (Crosslines +216, Supreme Court +424)
+and that is largely not junk: the key on each was reviewed from the APP's
+list, so a candidate in a floor the app never showed was never judged and
+scores as extra whatever it is. Supreme Court's key is seven accepted walls
+from eleven candidates and no traces. Elsewhere junk falls (NG A3.2 −511,
+Baker A101 −242, Murray +134 from keynote tables with small headings).
+
+Wiring, still the original's: `detectForSheet` takes `keptPlanViews` +
+`mergeViewWalls` in place of `picked.primary.found`, beside the three lines
+already named. `KEEP_PRIMARY_ONLY=1` on the eval reproduces the app.

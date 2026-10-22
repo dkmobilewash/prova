@@ -92,6 +92,9 @@ const TEXT_BLOCK = /\b(NOTES?|LEGENDS?|KEY ?NOTES?|KEYED NOTES?|TYPES|ABBREVIATI
 export function viewClass(title: string): { kind: ViewClass; why: string } {
   if (TEXT_BLOCK.test(title)) return { kind: "text-block", why: "a heading over notes, a legend or a table" };
   const rank = takeoffRank(null, title);
+  // "PENTHOUSE FLOOR (P2)": a level and the word FLOOR with no PLAN after it.
+  // `takeoffRank` has no opinion; it is a plan of that floor, and says so.
+  if (/nothing in the title/.test(rank.why) && isLevelPlan(title)) return { kind: "floor-plan", why: "a floor plan, named by its level" };
   const why = rank.why;
   const kind: ViewClass =
     /dimensioned floor plan|a floor plan|a partition plan/.test(why) ? "floor-plan"
@@ -189,4 +192,37 @@ export function viewTitles(input: {
     out.push({ text, x: left, y, heightPt: line.height, medianPt: median, ruleFrom: rule.from, ruleTo: rule.to });
   }
   return out.sort((a, b) => a.x - b.x || a.y - b.y);
+}
+
+/**
+ * ── THE LEVEL A PLAN TITLE NAMES ──
+ *
+ * "1st Floor Plan", "2nd - 9th Floor Plan", "FLOOR PLAN LEVEL 1", "Penthouse
+ * Floor", "FLOOR PLAN - LEVEL 2 - MEZZANINE". Two plan views naming
+ * different levels are different floors and both are kept; the same level,
+ * or none, is one floor drawn twice. A named level beside a number is part
+ * of the name — a mezzanine of level 2 is not level 2, and Supreme Court
+ * A111 draws both, with the mezzanine the bigger drawing.
+ */
+const LEVEL_NUMBER =
+  /\b(?:(\d{1,2})(?:ST|ND|RD|TH)?(?:\s*(?:-|–|TO|THRU|THROUGH)\s*(\d{1,2})(?:ST|ND|RD|TH)?)?\s+(?:FLOOR|LEVEL|FLR)|(?:FLOOR|LEVEL|FLR)\s*(\d{1,2})(?:\s*(?:-|–|TO|THRU)\s*(\d{1,2}))?)\b/;
+const LEVEL_NAME = /\b(PENTHOUSE|BASEMENT|MEZZANINE|GROUND|MAIN\s+LEVEL|UPPER\s+LEVEL|LOWER\s+LEVEL|CELLAR|ATTIC|LOFT)\b/;
+
+export function planLevel(title: string): string | null {
+  const up = title.toUpperCase();
+  const num = LEVEL_NUMBER.exec(up);
+  const name = LEVEL_NAME.exec(up);
+  const number = num === null ? null : (() => {
+    const from = num[1] ?? num[3];
+    const to = num[2] ?? num[4];
+    return to === undefined ? `${Number(from)}` : `${Number(from)}-${Number(to)}`;
+  })();
+  const named = name === null ? null : name[1].replace(/\s+/g, " ");
+  if (number === null && named === null) return null;
+  return [number, named].filter((x): x is string => x !== null).join(" ");
+}
+
+/** A level and the word FLOOR, and nothing saying it is some other kind of drawing. */
+export function isLevelPlan(title: string): boolean {
+  return planLevel(title) !== null && /\bFLOOR\b/i.test(title) && !/\b(ELEV|ELEVATION|SECTION|SECT|DETAIL|DET|SCHEDULE|FRAMING|FINISH|CEILING|RCP|DEMO|ROOF|NOTES?|LEGEND)\b/i.test(title);
 }

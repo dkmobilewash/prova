@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { sheetDrawings } from "./sheetViews";
-import { viewClass, viewTitles } from "./viewTitles";
+import { keptPlanViews, sheetDrawings, type ViewWalls } from "./sheetViews";
+import { isLevelPlan, planLevel, viewClass, viewTitles } from "./viewTitles";
 import type { StrokeSegment } from "./wallVectors";
 
 /** An invented sheet, 2592pt wide: notes at 8pt, two big ruled titles, one big unruled room name. */
@@ -17,8 +17,8 @@ const items = [
   { str: "EAST ELEVATION", x: 1300, y: 1400, width: 170, height: 14 },
   // Big lettering with no rule: a room name, not a title.
   { str: "LOBBY", x: 600, y: 700, width: 60, height: 14 },
-  // The sheet's own title in the title block, big and ruled.
-  { str: "FLOOR PLAN", x: 2400, y: 1500, width: 120, height: 14 },
+  // The sheet's own title in the title block, big and ruled: a repeat of the drawing's.
+  { str: "FIRST FLOOR PLAN", x: 2400, y: 1500, width: 120, height: 14 },
   // A bubble number beside the first title, big, ruled by the same rule.
   { str: "1", x: 270, y: 1400, width: 10, height: 14 },
 ];
@@ -36,7 +36,7 @@ const segments: StrokeSegment[] = [
 describe("a drawing's title is big AND ruled", () => {
   it("joins split lettering, takes the rule, and drops big text with no rule and bare numbers", () => {
     const got = viewTitles({ items, segments, widthPt: W });
-    expect(got.map((t) => t.text)).toEqual(["1 FIRST FLOOR PLAN", "EAST ELEVATION", "FLOOR PLAN"]);
+    expect(got.map((t) => t.text)).toEqual(["1 FIRST FLOOR PLAN", "EAST ELEVATION", "FIRST FLOOR PLAN"]);
     expect(got[0].heightPt).toBe(14);
     expect(got[0].medianPt).toBe(8);
   });
@@ -69,7 +69,8 @@ describe("the sheet's drawings, by title or by caption", () => {
     const names = got.map((v) => v.name);
     expect(names).toContain("EAST ELEVATION");
     expect(names.some((n) => n.includes("FIRST FLOOR PLAN"))).toBe(true);
-    expect(names).not.toContain("FLOOR PLAN");
+    expect(names).not.toContain("FIRST FLOOR PLAN");
+    expect(names.filter((n) => n.includes("FIRST FLOOR PLAN"))).toHaveLength(1);
     const plan = got.find((v) => v.name.includes("FIRST FLOOR PLAN"))!;
     const elev = got.find((v) => v.name === "EAST ELEVATION")!;
     // The captioned plan keeps its scale; the title-only elevation has none.
@@ -81,5 +82,35 @@ describe("the sheet's drawings, by title or by caption", () => {
 
   it("returns nothing when neither route finds a drawing, so the caller measures the sheet whole", () => {
     expect(sheetDrawings({ items: notes, segments, pageSize: { widthPt: W, heightPt: H } })).toEqual([]);
+  });
+});
+
+describe("every floor keeps its walls; a floor drawn twice keeps one", () => {
+  const vw = (name: string, lengthFeet: number): ViewWalls =>
+    ({ view: { name, scaleName: null, feetPerInch: null, captionX: 0, captionY: 0, from: 0, to: 1, fromY: 0, toY: 1 }, found: {} as ViewWalls["found"], walls: [], lengthFeet }) as ViewWalls;
+
+  it("reads the level a title names", () => {
+    expect(planLevel("1st Floor Plan (P2)")).toBe("1");
+    expect(planLevel("2nd - 9th Floor Plan (P2)")).toBe("2-9");
+    expect(planLevel("BLDG. FLOOR PLAN LEVEL 1")).toBe("1");
+    expect(planLevel("Penthouse Floor (P2)")).toBe("PENTHOUSE");
+    expect(planLevel("CRITICAL DIMENSION PLAN - MAIN LEVEL")).toBe("MAIN LEVEL");
+    expect(planLevel("FLOOR PLAN - WAREHOUSE")).toBeNull();
+    expect(planLevel("FLOOR PLAN - LEVEL 2 - MEZZANINE")).toBe("2 MEZZANINE");
+    expect(viewClass("Penthouse Floor (P2)").kind).toBe("floor-plan");
+    expect(isLevelPlan("Penthouse Floor (P2)")).toBe(true);
+    expect(isLevelPlan("2ND FLOOR FRAMING PLAN")).toBe(false);
+  });
+
+  it("keeps one view per level and the primary among same-level duplicates", () => {
+    const got = keptPlanViews([vw("2nd - 9th Floor Plan (P2)", 900), vw("1st Floor Plan (P2)", 700), vw("Penthouse Floor (P2)", 60)]);
+    expect(got.kept.map((k) => k.view.name)).toEqual(["2nd - 9th Floor Plan (P2)", "1st Floor Plan (P2)", "Penthouse Floor (P2)"]);
+    const twice = keptPlanViews([vw("DIMENSION PLAN - WAREHOUSE", 50), vw("FLOOR PLAN - WAREHOUSE", 40)]);
+    expect(twice.kept.map((k) => k.view.name)).toEqual(["FLOOR PLAN - WAREHOUSE"]);
+    const mezz = keptPlanViews([vw("FLOOR PLAN - LEVEL 2 - MEZZANINE", 282), vw("FLOOR PLAN - LEVEL 2", 233), vw("FLOOR PLAN - LEVEL 3", 96)]);
+    expect(mezz.kept).toHaveLength(3);
+    const enlarged = keptPlanViews([vw("FLOOR PLAN", 400), vw("ENLARGED TOILET PLAN", 90)]);
+    expect(enlarged.kept.map((k) => k.view.name)).toEqual(["FLOOR PLAN"]);
+    expect(keptPlanViews([vw("RESTROOM - ENLARGED PLAN", 16)]).kept).toHaveLength(1);
   });
 });

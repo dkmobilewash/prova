@@ -2,7 +2,9 @@ import { findWallsOnSheet, type FoundOnSheet, type SheetTextItem } from "./findW
 import { printedScalesAt } from "./printedScales";
 import { takeoffRank } from "./sheetSuitability";
 import { isPlanView, viewKind } from "./viewKind";
-import { viewClass, viewTitles } from "./viewTitles";
+import { isLevelPlan, planLevel, viewClass, viewTitles } from "./viewTitles";
+
+export { isLevelPlan, planLevel } from "./viewTitles";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 import type { MatchableWallType } from "./wallTypeMatch";
 
@@ -717,7 +719,7 @@ export function wallsPerView(input: {
     // puts it in the caution by name. Measuring an unrecognised drawing is how
     // this defect happened; dropping it without a word would be the same
     // failure with better manners.
-    .filter((band) => band.segments.length > 0 && band.view.textBlock !== true && isPlanView(band.view.name));
+    .filter((band) => band.segments.length > 0 && band.view.textBlock !== true && (isPlanView(band.view.name) || isLevelPlan(band.view.name)));
 
   // ── A SHEET WHOSE PLANS PRINT NO SCALE IS NOT A SHEET WITH NO PLANS ──
   //
@@ -990,18 +992,22 @@ export function primaryView(measured: readonly ViewWalls[]): {
  *
  * ── THE SHEET'S OWN TITLE, WHICH IS BIG, RULED, AND NOT A DRAWING ──
  *
- * "FLOOR PLAN" in the title block is lettered like a view title. Found as one,
- * it would own the title-block strip and measure its ruled lines as walls. It
- * is told apart by WHERE it is lettered and what it owns: a title in the
- * page's rightmost fifth whose region is no wider than that fifth, or in the
- * bottom tenth owning no more than that, is the title block's, and is dropped
- * with its region left to nobody.
+ * "OVERALL FLOOR PLAN" in the title block is lettered like a view title. It
+ * is told apart by being a REPEAT: the sheet is named after the drawing on
+ * it, so the title block's title duplicates a caption's, bubble number
+ * aside. A title in the bottom tenth of the page is the title block's too.
+ * A rule on the RIGHT strip was tried first and dropped Crosslines' two
+ * penthouse plans, which are drawn exactly there.
  *
  * When nothing is found by either route the result is empty, and the caller
  * measures the sheet whole — the ELEVEN03 fallback.
  */
-export const TITLE_BLOCK_STRIP = 0.2;
 const TITLE_BLOCK_FOOT = 0.1;
+
+/** A title with its bubble number and punctuation stripped, for the repeat test. */
+function titleKey(name: string): string {
+  return name.toUpperCase().replace(/^[\s\dA-Z]{1,2}\b[\s.:-]*/, "").replace(/[^A-Z0-9]+/g, " ").trim();
+}
 
 /** One line of lettering, in page-width units — the margin a caption keeps from its own drawing's edge. */
 const CAPTION_MARGIN = 0.02;
@@ -1047,45 +1053,83 @@ export function placeDrawings(views: readonly SheetView[], regions: readonly Box
     }
   }
 
-  // A region holding several drawing captions is cut at their caption lines.
+  // A region holding several captions is cut at their caption lines — just
+  // below a drawing's caption and just ABOVE a block's heading, since a
+  // heading sits over its words — and just left of either on x. A notes
+  // column that shares a gutter-free region with the plan's caption (NG A3.2)
+  // otherwise leaves its blocks with no pieces and the plan with the column.
   const shared: Box[] = [];
   for (const r of pool) {
     const here = drawings.filter((d) => inside(d, r));
-    if (here.length < 2) {
+    const heads = blocks.filter((b) => inside(b, r));
+    if (here.length + heads.length < 2) {
       shared.push(r);
       continue;
     }
-    const lines = (values: number[], lo: number, hi: number, side: "below" | "left") => {
+    const lines = (values: number[], lo: number, hi: number) => {
       const sorted = [...new Set(values)].sort((a, b) => a - b);
       const cuts: number[] = [];
-      for (let i = 0; i < sorted.length; i += 1) {
-        const at = side === "below" ? sorted[i] + CAPTION_MARGIN : sorted[i] - CAPTION_MARGIN;
+      for (const at of sorted) {
         if (at <= lo + CAPTION_MARGIN || at >= hi - CAPTION_MARGIN) continue;
         if (cuts.length > 0 && at - cuts[cuts.length - 1] <= CAPTION_SAME_LINE) continue;
         cuts.push(at);
       }
       return [lo, ...cuts, hi];
     };
-    const xs = lines(here.map((d) => d.captionX), r.from, r.to, "left");
-    const ys = lines(here.map((d) => d.captionY), r.fromY, r.toY, "below");
+    const xs = lines([...here, ...heads].map((d) => d.captionX - CAPTION_MARGIN), r.from, r.to);
+    const ys = lines([...here.map((d) => d.captionY + CAPTION_MARGIN), ...heads.map((b) => b.captionY - CAPTION_MARGIN)], r.fromY, r.toY);
     for (let i = 0; i < xs.length - 1; i += 1) {
       for (let j = 0; j < ys.length - 1; j += 1) shared.push({ from: xs[i], to: xs[i + 1], fromY: ys[j], toY: ys[j + 1] });
     }
   }
 
-  // Each piece goes to the drawing whose caption it holds, else to the nearest
-  // drawing caption, measured to the caption's own corner of the piece: a
-  // caption BELOW-LEFT of a piece is that piece's, so distance is taken from
-  // the caption to the piece's bottom-left region rather than to its box.
-  const mine = new Map<SheetView, Box[]>();
+  // The piece that STARTS at a block's heading, with no drawing caption in
+  // it, is that block's: the words under "PARTITION TYPES" are not the
+  // plan's. Only that piece — the cuts above put the next caption line at its
+  // bottom — because a heading at the top of a column claiming every cell
+  // beneath it took the plan's right end on NG A3.2.
+  const claimedByBlock = new Set<Box>();
   for (const piece of shared) {
+    if (drawings.some((d) => inside(d, piece))) continue;
     let at: SheetView | null = null;
     let bestD = Number.POSITIVE_INFINITY;
-    for (const d of drawings) {
-      const dx = Math.max(piece.from - d.captionX - CAPTION_MARGIN, 0, d.captionX - piece.to);
-      // Above the caption is free; below it costs.
-      const dy = Math.max(piece.fromY - d.captionY - CAPTION_MARGIN, 0, d.captionY - piece.toY);
-      const d2 = Math.hypot(dx, dy);
+    for (const b of blocks) {
+      const under = Math.abs(piece.fromY - (b.captionY - CAPTION_MARGIN)) <= CAPTION_MARGIN && piece.from <= b.captionX && b.captionX < piece.to + CAPTION_MARGIN;
+      if (!under) continue;
+      const d2 = piece.fromY - b.captionY;
+      if (d2 < bestD) {
+        bestD = d2;
+        at = b;
+      }
+    }
+    if (at !== null) {
+      blockBoxes.set(at, [...(blockBoxes.get(at) ?? []), piece]);
+      claimedByBlock.add(piece);
+    }
+  }
+
+  // Each piece goes to the nearest drawing caption that could OWN it. A
+  // drawing sits above and to the right of its caption, so a caption is
+  // disqualified from any piece wholly below it or wholly to its left — the
+  // cell under Crosslines' "Penthouse Roof" caption holds the right end of
+  // the two floor plans beneath, and plain distance gave it to the penthouse.
+  // Plain distance is the fallback only when no caption qualifies, which is
+  // the orphan dimension strip of the S05/S07 scar.
+  const mine = new Map<SheetView, Box[]>();
+  const qualifies = (d: SheetView, piece: Box) => !(piece.fromY >= d.captionY + CAPTION_MARGIN || piece.to <= d.captionX - CAPTION_MARGIN);
+  const distance = (d: SheetView, piece: Box) => {
+    const dx = Math.max(piece.from - d.captionX - CAPTION_MARGIN, 0, d.captionX - piece.to);
+    const dy = Math.max(piece.fromY - d.captionY - CAPTION_MARGIN, 0, d.captionY - piece.toY);
+    return Math.hypot(dx, dy);
+  };
+  for (const piece of shared) {
+    if (claimedByBlock.has(piece)) continue;
+    const pool2 = drawings.filter((d) => qualifies(d, piece));
+    const candidates = pool2.length > 0 ? pool2 : drawings;
+    let at: SheetView | null = null;
+    let bestD = Number.POSITIVE_INFINITY;
+    for (const d of candidates) {
+      const d2 = distance(d, piece);
       if (d2 < bestD) {
         bestD = d2;
         at = d;
@@ -1178,9 +1222,9 @@ export function sheetDrawings(input: {
   const H = input.pageSize.heightPt / W;
   const kept = found.filter((v) => {
     if (v.foundBy !== "title") return true;
-    const narrowRight = v.captionX >= 1 - TITLE_BLOCK_STRIP;
-    const shallowBottom = v.captionY >= H - TITLE_BLOCK_FOOT;
-    return !(narrowRight || shallowBottom);
+    if (v.captionY >= H - TITLE_BLOCK_FOOT) return false;
+    const repeats = found.some((o) => o !== v && (o.foundBy === "caption" || o.captionX < v.captionX) && titleKey(o.name) === titleKey(v.name));
+    return !repeats;
   });
   return placeDrawings(kept, viewRegions(input.segments, input.pageSize));
 }
@@ -1198,4 +1242,71 @@ export function drawingCount(views: readonly SheetView[]): number {
 /** The regions the sheet's text blocks own — a legend, a notes column, a schedule — to keep out of any drawing. */
 export function textBlockBoxes(views: readonly SheetView[]): { from: number; to: number; fromY: number; toY: number }[] {
   return views.filter((v) => v.textBlock === true).flatMap((v) => v.boxes ?? []);
+}
+
+/**
+ * ── EVERY FLOOR KEEPS ITS WALLS; A FLOOR DRAWN TWICE KEEPS ONE ──
+ *
+ * `primaryView` keeps ONE view's detection, for the product rule it states:
+ * an enlarged plan is the same construction drawn larger, and a finish plan
+ * over a partition plan is the same walls twice. That rule, applied to
+ * Crosslines A100 — a 1st-floor plan, a 2nd-9th typical-floor plan and a
+ * penthouse plan on one sheet — threw away two floors of building: 1,014 ft
+ * of the key, every run of it a wall the reviewer accepted.
+ *
+ * The two cases are told apart by the LEVEL the title names. Two plan views
+ * naming different levels are different floors and both are kept, each at
+ * its own scale as `wallsPerView` measured it. Views naming the same level,
+ * or none — "DIMENSION PLAN - WAREHOUSE" beside "FLOOR PLAN - WAREHOUSE",
+ * which are one warehouse — fall to `primaryView` among themselves, exactly
+ * as before. An enlarged plan is never added to a floor it is part of.
+ */
+/** The measured plan views whose walls the sheet keeps, one per level named, and the rest. */
+export function keptPlanViews(measured: readonly ViewWalls[]): { kept: ViewWalls[]; others: ViewWalls[] } {
+  if (measured.length === 0) return { kept: [], others: [] };
+  const floors = measured.filter((m) => viewClass(m.view.name).kind !== "enlarged-plan");
+  if (floors.length === 0) {
+    const p = primaryView(measured);
+    return { kept: p.primary === null ? [] : [p.primary], others: p.others };
+  }
+  const byLevel = new Map<string, ViewWalls[]>();
+  for (const m of floors) {
+    const level = planLevel(m.view.name) ?? "";
+    byLevel.set(level, [...(byLevel.get(level) ?? []), m]);
+  }
+  const kept: ViewWalls[] = [];
+  for (const group of byLevel.values()) {
+    const p = primaryView(group);
+    if (p.primary !== null) kept.push(p.primary);
+  }
+  kept.sort((a, b) => b.lengthFeet - a.lengthFeet);
+  return { kept, others: measured.filter((m) => !kept.includes(m)).sort((a, b) => b.lengthFeet - a.lengthFeet) };
+}
+
+/**
+ * One detection out of several views' — the walls of every kept floor, each
+ * already measured at its own scale. Counts are summed, lists concatenated,
+ * and `regroup` is the first kept view's, which groups by geometry and so
+ * serves the union as it served the one.
+ */
+export function mergeViewWalls(kept: readonly ViewWalls[]): FoundOnSheet | null {
+  if (kept.length === 0) return null;
+  if (kept.length === 1) return kept[0].found;
+  const [first, ...rest] = kept.map((k) => k.found);
+  return {
+    ...first,
+    inUnits: kept.flatMap((k) => k.found.inUnits),
+    gridDropped: kept.reduce((n, k) => n + k.found.gridDropped, 0),
+    hatchDropped: kept.reduce((n, k) => n + k.found.hatchDropped, 0),
+    duplicateDropped: kept.reduce((n, k) => n + k.found.duplicateDropped, 0),
+    templateDropped: kept.reduce((n, k) => n + k.found.templateDropped, 0),
+    everywhere: kept.flatMap((k) => k.found.everywhere),
+    inBuilding: kept.flatMap((k) => k.found.inBuilding),
+    notLettering: kept.flatMap((k) => k.found.notLettering),
+    notBorder: kept.flatMap((k) => k.found.notBorder),
+    walls: kept.flatMap((k) => k.found.walls),
+    clusters: kept.flatMap((k) => k.found.clusters),
+    groups: kept.flatMap((k) => k.found.groups),
+    layerDropped: [first.layerDropped, ...rest.map((r) => r.layerDropped)].flat(),
+  };
 }
