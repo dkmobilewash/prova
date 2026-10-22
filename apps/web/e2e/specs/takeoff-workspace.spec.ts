@@ -1138,7 +1138,34 @@ test.describe("the full-screen takeoff workspace", () => {
     await onWorkspace(jobOne);
     await findTheWalls("S02 for the answer key");
 
-    await page.locator('[data-takeoff="toggle-answer-key"]').click();
+    // ── SKIPS WHERE LABELLING IS NOT ALLOWED, WHICH IS THIS SUITE ──
+    //
+    // `labellingRefusal` hides answer-key mode entirely unless a label
+    // folder, the local-plans opt-in, a loopback bind and no Vercel all hold.
+    // This suite's server satisfies NONE of that ON PURPOSE —
+    // `answer-key-gate.spec.ts` says so in its header and exists to prove a
+    // customer gets nothing — so the toggle is correctly absent and this test
+    // spent 30 seconds waiting for it.
+    //
+    // I first "fixed" that by giving the suite's server the labelling
+    // environment. That made this test pass and defeated the gate everywhere,
+    // including in the spec written to guard it: the suite stopped resembling
+    // a customer's deployment, which is the one property it has to keep. The
+    // revert is `b6d66318`.
+    //
+    // So this skips instead, and says which condition is missing rather than
+    // vanishing quietly. Answer-key mode is covered on a real labelling
+    // server by `e2e/smoke-labeling.mjs`, which has the environment because
+    // it IS one.
+    const toggle = page.locator('[data-takeoff="toggle-answer-key"]');
+    if ((await toggle.count()) === 0) {
+      test.skip(
+        true,
+        "labelling is not allowed on this server (by design — see answer-key-gate.spec.ts); " +
+          "answer-key mode is covered by e2e/smoke-labeling.mjs",
+      );
+    }
+    await toggle.click();
     const rail = page.locator('[data-takeoff="answer-key-rail"]');
     await expect(rail, "the answer-key rail never opened").toBeVisible({ timeout: 20_000 });
 
