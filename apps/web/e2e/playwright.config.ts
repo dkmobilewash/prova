@@ -2,6 +2,9 @@ import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 import { assertScratchDatabase } from "./lib/assertScratchDatabase";
 import { E2E_FAKE_BLOB_TOKEN } from "./lib/fakeBlobToken.mjs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /**
  * Real browser E2E, chromium-only, kept deliberately separate from
@@ -202,6 +205,35 @@ export default defineConfig({
       ...process.env,
       BLOB_READ_WRITE_TOKEN: E2E_FAKE_BLOB_TOKEN,
       ANTHROPIC_API_KEY: "",
+      // ── ANSWER-KEY MODE NEEDS A LABEL DIRECTORY TO EXIST AT ALL ──
+      //
+      // `labellingRefusal` hides the whole of answer-key mode unless
+      // `TAKEOFF_LABEL_DIR` is set to an absolute path — correctly, because
+      // that mode must never appear in front of a customer. Neither this
+      // config nor `ci.yml` set it, so `takeoff-workspace.spec.ts:1125`
+      // ("ANSWER-KEY MODE: candidates, not answers") waited 30 seconds for a
+      // toggle that the gate was busy refusing to render, and timed out.
+      //
+      // It was invisible in CI because that file is serial: an earlier test
+      // failed, the rest were skipped, and this one never ran. It only
+      // surfaced on a local run of the whole file.
+      //
+      // A THROWAWAY directory, not the real labels folder. The spec saves,
+      // and a suite that wrote into `~/Claude Folder/takeoff/labels` would
+      // put fixture verdicts among the answer keys — which is the one thing
+      // this directory must never contain.
+      TAKEOFF_LABEL_DIR: mkdtempSync(join(tmpdir(), "e2e-labels-")),
+      // The other half of the same gate on a production build, which is what
+      // `next start` serves. Loopback only, so this cannot widen anything
+      // beyond the machine running the suite.
+      ALLOW_LOCAL_PLANS: "1",
+      HOSTNAME: "127.0.0.1",
+      // The gate's fourth condition, which I missed on the first attempt and
+      // which left the toggle hidden exactly as before: it wants a local-plan
+      // directory too, absolute. Throwaway again — the specs upload their own
+      // fixtures through a stubbed route, so nothing is ever read from here;
+      // it exists to satisfy a gate whose whole job is to be hard to satisfy.
+      TAKEOFF_LOCAL_PLAN_DIR: mkdtempSync(join(tmpdir(), "e2e-plans-")),
     },
     timeout: 120_000,
     stdout: "pipe",
