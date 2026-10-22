@@ -65,6 +65,7 @@ function wallTypeFields(formData: FormData) {
     name,
     sides,
     defaultHeightFt: nullableDecimalFromForm(formData, "defaultHeightFt", { label: "Default height", min: 0.5, max: 100 }),
+    thicknessIn: nullableDecimalFromForm(formData, "thicknessIn", { label: "Thickness", min: 0.5, max: 48 }),
     studSpacingIn: decimalFromForm(formData, "studSpacingIn", { label: "Stud spacing", min: 4, max: 48 }),
     notes: text(formData, "notes") || null,
   };

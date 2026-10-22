@@ -288,15 +288,53 @@ test.describe("an estimator's takeoff on a real set", () => {
     for (let i = 0; i < n; i += 1) say(`  group ${i + 1}: ${(await groups.nth(i).innerText()).replace(/\s+/g, " ").slice(0, 600)}`);
     const uno = page.locator('[data-takeoff="uno-option"]');
     say(`U.N.O. option offered in a picker: ${await uno.count()} (this set prints no "ALL PARTITIONS TYPE … U.N.O." note)`);
-    // Add every group the panel lets us, as an estimator clicking down the list.
+    // Add every group as an estimator clicking down the list: a priced or named
+    // button is pressed as it is; a group that ASKS gets the first type the
+    // chooser offers, or plain measurements when it offers no type at all.
     for (let round = 0; round < 40; round += 1) {
-      const add = page.getByRole("button", { name: /^Add these/ }).first();
-      if ((await add.count()) === 0 || !(await add.isEnabled())) break;
-      const row = add.locator("xpath=ancestor::li[1]");
+      const row = page.locator('[data-takeoff="found-group"]').first();
+      if ((await row.count()) === 0) break;
       const before = (await row.innerText({ timeout: 5000 }).catch(() => "")).replace(/\s+/g, " ").slice(0, 160);
+      const chooser = row.locator('[data-takeoff="group-choice"]');
+      let choice = "";
+      if ((await chooser.count()) === 1) {
+        const values = await chooser.locator("option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
+        const labels = await chooser.locator("option").allTextContents();
+        const firstType = values.find((v) => v !== "" && v !== "create" && v !== "plain");
+        choice = firstType ?? "plain";
+        await chooser.selectOption(choice);
+        say(`  chooser offered ${values.length - 1} answers: ${labels.slice(1, 4).join(" | ")}${labels.length > 4 ? " | …" : ""}`);
+      }
+      // A type with no default height asks for one beside the button. An
+      // estimator reads it off the sections; this walkthrough types 15, which
+      // is what A301 prints for this building, and says so.
+      const heightBox = row.locator('[data-takeoff="group-height"]');
+      if ((await heightBox.count()) === 1) {
+        await heightBox.fill("15");
+        say("  the panel asked for a height (the type has no default); typed 15 — A301's T.O. ROOF FRAMING");
+      }
+      const add = row.locator('[data-takeoff="add-group"]');
+      if (!(await add.isEnabled())) {
+        say(`  add stayed disabled on: ${before}`);
+        break;
+      }
+      const label = (await add.innerText()).trim();
+      const headline = before.slice(0, 40);
       await add.click();
-      await page.waitForTimeout(2500);
-      say(`  added: ${before}`);
+      // Success is the row going away (a priced add refreshes the page, so
+      // give it a moment); a refusal is the row staying with the sheet's
+      // sentence at the top.
+      const gone = await expect
+        .poll(async () => !(await page.locator('[data-takeoff="found-group"]').first().innerText({ timeout: 2000 }).catch(() => "")).replace(/\s+/g, " ").startsWith(headline), { timeout: 20_000 })
+        .toBe(true)
+        .then(() => true)
+        .catch(() => false);
+      const error = (await page.locator('[data-takeoff="find-error"]').innerText({ timeout: 1000 }).catch(() => "")).trim();
+      if (!gone) {
+        say(`  REFUSED (${label}): ${before} — the sheet said: ${error || "(nothing)"}`);
+        break;
+      }
+      say(`  added (${label}${choice ? `, chose ${choice === "plain" ? "plain" : "a type"}` : ""}): ${before}`);
     }
     const left = await groups.count();
     say(`groups left unadded (needing a choice or a type): ${left}`);

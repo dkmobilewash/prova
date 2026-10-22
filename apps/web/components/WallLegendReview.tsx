@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addWallTypeFromLegend, readLegendBySight, type LegendTypeEdits } from "@/lib/actions";
+import type { LegendHeightResult } from "@/lib/takeoff/legendHeights";
 import type { LegendProposalView } from "@/lib/plan-ingest/legendProposalsQuery";
 import { sameCode } from "@/lib/takeoff/legendMerge";
 import type { StoredCrop, StoredLegendType } from "@/lib/takeoff/legendProposal";
@@ -96,12 +97,15 @@ export function WallLegendReview({
   proposals,
   plans,
   libraryCodes,
+  heights,
   canAdd,
 }: {
   jobId: string;
   proposals: LegendProposalView[];
   plans: { id: string; label: string }[];
   libraryCodes: string[];
+  /** Per proposal id, per code (upper-cased): the height read off the set, shown before Add. */
+  heights?: Record<string, Record<string, LegendHeightResult>>;
   canAdd: boolean;
 }) {
   return (
@@ -113,6 +117,7 @@ export function WallLegendReview({
           proposal={proposal}
           planLabel={plans.find((p) => p.id === proposal.planId)?.label ?? "this set"}
           libraryCodes={libraryCodes}
+          heights={heights?.[proposal.id] ?? {}}
           canAdd={canAdd}
         />
       ))}
@@ -131,8 +136,10 @@ function LegendPageCard({
   proposal,
   planLabel,
   libraryCodes,
+  heights,
   canAdd,
 }: {
+  heights: Record<string, LegendHeightResult>;
   jobId: string;
   proposal: LegendProposalView;
   planLabel: string;
@@ -230,6 +237,7 @@ function LegendPageCard({
             crop={proposal.crops.find((c) => sameCode(c.code, type.code)) ?? null}
             page={page}
             inLibrary={libraryCodes.some((code) => sameCode(code, type.code))}
+            height={heights[type.code.toUpperCase()] ?? null}
             canAdd={canAdd}
           />
         ))}
@@ -245,6 +253,7 @@ function LegendTypeRow({
   crop,
   page,
   inLibrary,
+  height,
   canAdd,
 }: {
   jobId: string;
@@ -253,6 +262,7 @@ function LegendTypeRow({
   crop: StoredCrop | null;
   page: PdfPage | null;
   inLibrary: boolean;
+  height: LegendHeightResult | null;
   canAdd: boolean;
 }) {
   const router = useRouter();
@@ -293,6 +303,19 @@ function LegendTypeRow({
           <span className="text-base font-semibold text-ink">{type.code}</span>
           {type.name && <span className="text-sm text-ink-body">{type.name}</span>}
           <span className="text-xs text-ink-muted">read from {from}</span>
+          {/* ── THE HEIGHT, BEFORE ADD ── the same reading the library keeps. */}
+          {height !== null && (
+            <span
+              className={`text-xs ${height.heightFt === null ? "text-ink-muted" : height.generalNoteOnly ? "text-tag-amber-ink" : "text-ink-body"}`}
+              data-legend="height"
+              data-legend-height-confidence={height.confidence ?? "none"}
+              title={height.sentence}
+            >
+              {height.heightFt === null
+                ? "no height read"
+                : `${Number(height.heightFt.toFixed(2))} ft · ${height.confidence}${height.generalNoteOnly ? " — general note only, check the sheet" : ""}`}
+            </span>
+          )}
           {(inLibrary || added) && (
             <span className="rounded bg-rail-hover px-2 py-0.5 text-xs font-medium text-ink" data-legend="in-library">
               in your library

@@ -801,3 +801,33 @@ two branches differ only in files `diego/ceilings` inherited from its
 deleted, not to be built on. It ships with `diego/demote-mode` (rebased onto
 main) as PR B — `20261023000000_demoted_walls` then
 `20261023120000_room_ceilings`.
+
+## 19. What the Baker walkthrough showed, and the six fixes (2026-10-22)
+
+`e2e/specs/estimator-baker.spec.ts` walks the whole takeoff on a real set in
+a throwaway stack (set read from disk, inventory real, legend from the cached
+read) and writes every panel's sentences beside the screenshots. The first
+run's ranked findings are in `shots/estimator-baker/FINDINGS.md`; the six
+Diego picked, and where each landed:
+
+1. **Concrete types got metal studs** — `addWallTypeFromLegend` handed
+   `assemblyFromSight` `studMaterial: null`. Now `sightFieldsFor` reads the
+   sight read's material by code and a concrete or masonry type is written
+   board-and-insulation only (the legend fixture's P6 proves it in Chromium).
+2. **"Add these" wrote loose measurements in silence** — `groupChoices`
+   (`wallGroups.ts`) lists what an unpriced group may become, types first,
+   plain last; the viewer's chooser (`data-takeoff="group-choice"`) must be
+   answered before `add-group` enables; "create" leaves for `/wall-types`
+   with the thickness filled in. The wall-type form gained a thickness
+   field, without which a hand-made type can never be offered for a group.
+3. **S6B / S6C read identically** — `wallTypeSummary` (board one side or
+   both, layers, rating, insulation, wood studs) rides on
+   `MatchableWallType.summary`, in the option label and the ASK sentence.
+4. **Height only after Add** — `legendHeightsFor` (`legendHeights.ts`) is
+   shared by the review page and the action; the row shows
+   `15 ft · LOW — general note only, check the sheet` before Add.
+5. **"Not enclosed" listed the title block and notes** — `looksLikeNoteText`
+   drops title-block vocabulary, sentences and names over six words; "Rooms"
+   is a check figure (`roomItems.ts`), reported as square feet of floor.
+6. **Find the walls answered a click before the sheet rendered** — the
+   button is disabled on `!pageSize` and its title says so.

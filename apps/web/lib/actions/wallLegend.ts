@@ -14,7 +14,8 @@ import { sameCode } from "@/lib/takeoff/legendMerge";
 import { storedLegendTypes, storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
 import { assemblyFromSight } from "@/lib/takeoff/legendSight";
 import { pageLines } from "@/lib/takeoff/planTextRead";
-import { heightOfLegendType, heightSentence, setHeightFacts } from "@/lib/takeoff/setHeightFacts";
+import { legendHeightOf, legendHeightsFor, type LegendHeightResult } from "@/lib/takeoff/legendHeights";
+import { sightFieldsFor } from "@/lib/takeoff/legendProposal";
 import { readWallLegendBySight } from "@/lib/takeoff/readWallLegend";
 import { actionFail, isUniqueConstraintError, type ActionResultWith } from "./shared";
 
@@ -69,15 +70,6 @@ function numberIn(value: unknown, label: string, min: number, max: number): numb
   return n;
 }
 
-/** What the library learned about a type's height, for the row's message. */
-export type LegendHeightResult = {
-  heightFt: number | null;
-  confidence: "HIGH" | "MEDIUM" | "LOW" | null;
-  generalNoteOnly: boolean;
-  /** The chain, or why there is none — the same sentence the notes keep. */
-  sentence: string;
-};
-
 export async function addWallTypeFromLegend(
   jobId: string,
   proposalId: string,
@@ -113,14 +105,21 @@ export async function addWallTypeFromLegend(
   const fields = checked as { [K in keyof typeof checked]: number | null };
   const insulation = edits.insulation === null ? null : String(edits.insulation).trim().slice(0, INSULATION_MAX) || null;
 
-  // The parts, from what the person agreed to rather than from the stored read.
+  // The parts, from what the person agreed to rather than from the stored read —
+  // and the material from the SIGHT read, which the merged view drops.
+  const sight = sightFieldsFor(proposal.sightRead, code);
   const where = proposal.sheetTitle ? `${proposal.sheetTitle} (page ${proposal.pageNumber})` : `page ${proposal.pageNumber}`;
   const assembly = assemblyFromSight(
     {
       code,
       name,
       studWidthIn: fields.studWidthIn,
-      studMaterial: null,
+      // THE MATERIAL COMES FROM THE SIGHT READ, not from a null that reads as
+      // metal: C8A and C8B on Baker are insulated concrete forms, and this
+      // used to write "8in metal stud + track" on them. `assemblyFromSight`
+      // gives a concrete or masonry wall board and insulation only, and says
+      // so in a flag.
+      studMaterial: sight.studMaterial,
       studGauge: original.assembly.read.studGauge,
       studSpacingIn: fields.studSpacingIn,
       boardThicknessIn: fields.boardThicknessIn,
@@ -152,7 +151,9 @@ export async function addWallTypeFromLegend(
   // height that rests on a sheet-wide note alone is written LOW so the
   // estimator checks it before a run is priced at it. A set that cannot be
   // read leaves the height blank rather than failing the add.
-  const height = await legendHeight(proposal.planId, companyId, proposal.pageNumber, { code, lines: original.lines, sightRead: proposal.sightRead });
+  const height =
+    (await legendHeightsFor({ planId: proposal.planId, companyId, legendPage: proposal.pageNumber, types: [{ code, lines: original.lines, heightNote: sight.heightNote }] })).get(code.toUpperCase()) ??
+    legendHeightOf({ code, lines: original.lines, heightNote: sight.heightNote }, null, "no reading");
   const notes = [
     `Read off ${where} of the plan set. Check against the drawing before pricing.`,
     height.sentence,
@@ -206,38 +207,6 @@ export async function addWallTypeFromLegend(
   return { ok: true, value: { code, componentCount: assembly.components.length, height } };
 }
 
-/** The type's height from the set, or a blank with its reason; never a throw, because the add must not fail on a sheet that will not read. */
-async function legendHeight(
-  planId: string,
-  companyId: string,
-  legendPage: number,
-  type: { code: string; lines: string[]; sightRead: unknown },
-): Promise<LegendHeightResult> {
-  const sight = (type.sightRead as { types?: { code?: unknown; heightNote?: unknown }[] } | null)?.types ?? [];
-  const own = sight.find((t) => typeof t.code === "string" && sameCode(t.code, type.code));
-  const heightNote = typeof own?.heightNote === "string" ? own.heightNote : null;
-  const legendType = { code: type.code, heightNote, lines: type.lines };
-  let set: Awaited<ReturnType<typeof setHeightFacts>> | null = null;
-  let unread: string | null = null;
-  try {
-    const bytes = await readPlanBytes(planId, companyId);
-    if (!bytes.ok) throw new Error(bytes.error);
-    const pdf = await openPlanPdf(bytes.bytes);
-    try {
-      set = await setHeightFacts(pdf, { legendPage });
-    } finally {
-      await pdf.close();
-    }
-  } catch (err) {
-    unread = err instanceof Error ? err.message : String(err);
-  }
-  // A figure printed on the legend itself needs no other sheet, so the type's
-  // own words are read even when the set would not open; only a "to deck" or
-  // "to ceiling" basis is left waiting on a section, and the note says so.
-  const reading = heightOfLegendType(legendType, set ?? { facts: [], generalNote: null, factSheets: [] });
-  const sentence = unread === null || reading.feet !== null ? heightSentence(reading) : `No height read: ${reading.why} The set could not be read for one (${unread.slice(0, 120)}). Type it on the wall type.`;
-  return { heightFt: reading.feet, confidence: reading.feet === null ? null : reading.confidence, generalNoteOnly: reading.generalNoteOnly, sentence };
-}
 
 const PAGE_IMAGE_MAX = 3_500_000;
 const CROP_IMAGE_MAX = 1_500_000;

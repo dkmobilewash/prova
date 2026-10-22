@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@prova/db";
 import { NoAccess } from "@/components/NoAccess";
 import { WallLegendReview } from "@/components/WallLegendReview";
+import { legendHeightsFor, type LegendHeightResult } from "@/lib/takeoff/legendHeights";
 import { requireCapability } from "@/lib/authz";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
 import { can } from "@/lib/permissions";
@@ -33,6 +34,20 @@ export default async function WallLegendReviewPage({ params }: { params: Promise
   });
   const proposals = (await Promise.all(plans.map((plan) => loadLegendProposals(plan.id)))).flat();
   const library = await prisma.wallType.findMany({ where: { companyId: company.id }, select: { code: true } });
+  // ── EACH TYPE'S HEIGHT, READ OFF THE SET, BEFORE ANYBODY PRESSES ADD ──
+  // The same reading `addWallTypeFromLegend` writes, computed here so the
+  // row can say "15 ft · LOW — general note only" while the estimator still
+  // has the crop in front of them. One pass over the set per legend page.
+  const heights: Record<string, Record<string, LegendHeightResult>> = {};
+  for (const proposal of proposals) {
+    const read = await legendHeightsFor({
+      planId: proposal.planId,
+      companyId: company.id,
+      legendPage: proposal.pageNumber,
+      types: proposal.types.map((t) => ({ code: t.code, lines: t.lines, heightNote: proposal.heightNotes[t.code.toUpperCase()] ?? null })),
+    });
+    heights[proposal.id] = Object.fromEntries(read);
+  }
 
   return (
     <section className="flex flex-col gap-4" data-legend="review">
@@ -60,6 +75,7 @@ export default async function WallLegendReviewPage({ params }: { params: Promise
           proposals={proposals}
           plans={plans.map((plan) => ({ id: plan.id, label: plan.revisionLabel ?? plan.fileName ?? "this set" }))}
           libraryCodes={library.map((type) => type.code)}
+          heights={heights}
           canAdd={can(context, "MANAGE_ESTIMATING")}
         />
       )}

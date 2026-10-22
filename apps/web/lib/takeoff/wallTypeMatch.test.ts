@@ -230,7 +230,7 @@ describe("the call site, because no test here can open a PDF", () => {
   it("OFFERS THE NOTE'S TYPE IN THE PICKER, marked, so the sheet's note reaches the estimator without being applied", () => {
     // Reading the note and then hiding it would be the same group with a
     // longer sentence; applying it silently was the version before this.
-    expect(viewer()).toMatch(/verdict\.suggested\?\.id === type\.id \? "uno-option"/);
+    expect(viewer()).toMatch(/choice\.why === "note" \? "uno-option"/);
     expect(viewer()).not.toMatch(/BY_GENERAL_NOTE/);
   });
 

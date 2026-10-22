@@ -7,6 +7,7 @@ import { can } from "@/lib/permissions";
 import { ringSelfIntersects } from "@/lib/sheet-geometry";
 import { verticesProblem } from "@/lib/takeoff-plan";
 import { nextItemColor } from "@/lib/takeoff/itemColors";
+import { CEILING_ITEM, ROOMS_ITEM } from "@/lib/takeoff/roomItems";
 import { actionFail, actionOk, ownerRefusal, type ActionResult } from "./shared";
 
 /**
@@ -100,13 +101,6 @@ function ceilingColumns(
  * takes a starter it can recognise when the company has one (ACT2 / GYPC1),
  * so the common case prices itself and the uncommon one says it is unpriced.
  */
-const ROOMS_ITEM = "Rooms";
-const CEILING_ITEM: Record<string, { name: string; starter: string | null }> = {
-  ACT: { name: "Ceiling — ACT", starter: "ACT2" },
-  GYP: { name: "Ceiling — GYP", starter: "GYPC1" },
-  OPEN: { name: "Ceiling — open to structure", starter: null },
-  OTHER: { name: "Ceiling — other", starter: null },
-};
 
 async function itemNamed(
   tx: Prisma.TransactionClient,

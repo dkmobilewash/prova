@@ -3,6 +3,7 @@ import type { Prisma } from "@prova/db";
 import { componentRunQuantity, type RunGeometry, type WallComponentBasis } from "@/lib/wall-assemblies";
 import { itemQuantity, type ItemMeasurement, type ItemProperties } from "@/lib/takeoff/itemQuantities";
 import { studsRequired } from "@/lib/takeoff";
+import { isCheckFigureItem } from "@/lib/takeoff/roomItems";
 
 /**
  * ── A TAKEOFF ITEM'S SHARE OF THE ESTIMATE ──
@@ -68,6 +69,12 @@ export type ItemLineSummary = {
   removed: number;
   /** Items with measurements but no assembly — measured, not priced. */
   unpriced: { id: string; name: string }[];
+  /**
+   * Items that are a CHECK FIGURE rather than something this trade prices —
+   * "Rooms", the floor. Reported as square feet instead of as "not priced",
+   * which it said on every Send and was never going to stop saying.
+   */
+  checkFigures: { id: string; name: string; squareFeet: number }[];
   /** Items whose assembly has no parts, so it can produce no lines. */
   emptyAssembly: { id: string; name: string }[];
 };
@@ -200,6 +207,7 @@ export async function syncTakeoffItemLines(
   const assemblyById = new Map(assemblies.map((assembly) => [assembly.id, assembly]));
 
   const unpriced: { id: string; name: string }[] = [];
+  const checkFigures: ItemLineSummary["checkFigures"] = [];
   const emptyAssembly: { id: string; name: string }[] = [];
 
   /** `${itemId}:${componentId}` → the line it should produce. */
@@ -220,7 +228,13 @@ export async function syncTakeoffItemLines(
   for (const item of items) {
     const measured = item.measurements.length > 0;
     if (item.wallTypeId === null) {
-      if (measured) unpriced.push({ id: item.id, name: item.name });
+      if (measured && isCheckFigureItem(item.name)) {
+        const area = itemQuantity(
+          item.measurements.map((m) => ({ id: m.id, pageNumber: m.page.pageNumber, kind: m.kind, xs: m.xs, ys: m.ys, cutouts: [], feetPerPageWidth: feetAcross(m.calibration) })),
+          { type: item.type, heightFt: null, sides: null, wastePercent: 0, depthIn: null },
+        ).areaSqFt;
+        checkFigures.push({ id: item.id, name: item.name, squareFeet: Math.round(area) });
+      } else if (measured) unpriced.push({ id: item.id, name: item.name });
       continue;
     }
     const assembly = assemblyById.get(item.wallTypeId);
@@ -359,7 +373,7 @@ export async function syncTakeoffItemLines(
     removed += 1;
   }
 
-  return { created, updated, removed, unpriced, emptyAssembly };
+  return { created, updated, removed, unpriced, checkFigures, emptyAssembly };
 }
 
 /**

@@ -38,3 +38,23 @@ item, its parts show tile, tees and wall angle with quantities; Send to
 estimate; the estimate lists them. On the legend review, Add a type whose
 legend prints a height: the row says "Height 10 ft (HIGH)" and the library
 shows it.
+
+### Six things the Baker walkthrough showed an estimator, fixed (2026-10-22)
+
+- A concrete or masonry legend type no longer gets metal studs: the sight
+  read's material reaches the library action, and such a type is written
+  with board and insulation only.
+- "Add these" never writes loose measurements by itself. A group nothing
+  prices asks what it is — a type first (the sheet's note, then the
+  verdict's candidates, then every type with parts), a new type from the
+  group with its thickness filled in, or plain measurements, last.
+- The picker says what tells two types apart: board one side or both,
+  layers, rating, insulation — so S6B and S6C are not two identical rows.
+- Each legend type shows its height and confidence on the review row
+  before Add, the same reading the library keeps.
+- "Not enclosed" no longer lists title-block labels or note sentences; and
+  "Rooms" is reported as square feet of floor, a check figure, instead of
+  as an item not priced.
+- Find the walls is disabled, and says so, until the sheet has rendered.
+- The wall-type form gained a thickness field; a hand-made type with none
+  could never be offered for a drawn group.

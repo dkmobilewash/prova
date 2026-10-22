@@ -326,10 +326,49 @@ export function verdictFor(group: WallGroup): GroupVerdict {
  * "they measure 7-3/8"", and never hides a difference the reader could check.
  */
 function named(type: MatchableWallType, groupInches: number): string {
-  if (type.thicknessIn === null) return type.code;
+  const tail = type.summary ? ` (${type.summary})` : "";
+  if (type.thicknessIn === null) return `${type.code}${tail}`;
   const mine = inchLabel(type.thicknessIn);
-  return mine === inchLabel(groupInches) ? type.code : `${type.code} at ${mine}`;
+  return (mine === inchLabel(groupInches) ? type.code : `${type.code} at ${mine}`) + tail;
 }
+
+/** One line for a picker option: code, name, and what tells it from its neighbours. */
+export function typeOptionLabel(type: MatchableWallType): string {
+  return `${type.code} — ${type.name}${type.summary ? ` · ${type.summary}` : ""}`;
+}
+
+/**
+ * ── WHAT AN UNPRICED GROUP MAY BECOME, and the order it is offered in ──
+ *
+ * "Add these" used to write plain measurements with nothing said; 36 of them
+ * on Baker's A101, in Unassigned, and nothing on the estimate. Now a group
+ * with no priced type ASKS, and the first answer is a type: the verdict's own
+ * candidates lead (the sheet's note first when there is one), then every
+ * other type with parts, then "create a type from this group", then plain
+ * measurements — last, because they are the step that prices nothing.
+ */
+export type GroupChoice =
+  | { kind: "type"; type: MatchableWallType; why: "candidate" | "note" | "tag" | "other" }
+  | { kind: "create" }
+  | { kind: "plain" };
+
+export function groupChoices(verdict: GroupVerdict, wallTypes: readonly MatchableWallType[]): GroupChoice[] {
+  const lead: GroupChoice[] = [];
+  const seen = new Set<string>();
+  const push = (type: MatchableWallType, why: "candidate" | "note" | "tag" | "other") => {
+    if (seen.has(type.id)) return;
+    seen.add(type.id);
+    lead.push({ kind: "type", type, why });
+  };
+  if (verdict.state === "ASK") {
+    if (verdict.suggested) push(verdict.suggested, "note");
+    for (const t of verdict.types) push(t, "candidate");
+  }
+  if (verdict.state === "TAG_DISAGREES") push(verdict.type, "tag");
+  for (const t of wallTypes) if (t.hasParts) push(t, "other");
+  return [...lead, { kind: "create" }, { kind: "plain" }];
+}
+
 
 export function groupSentence(group: WallGroup, verdict: GroupVerdict): string | null {
   switch (verdict.state) {

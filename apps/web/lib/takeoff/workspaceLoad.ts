@@ -1,4 +1,5 @@
 import { prisma } from "@prova/db";
+import { wallTypeSummary } from "@/lib/takeoff/wallTypeMatch";
 
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { cutoutsFromJson, type ItemMeasurement, type TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
@@ -84,6 +85,7 @@ export async function loadTakeoffWorkspace(
       sides: true,
       thicknessIn: true,
       studSpacingIn: true,
+      notes: true,
       _count: { select: { components: true } },
       /**
        * THE PARTS, because the assembly panel prices the selected item from
@@ -550,6 +552,8 @@ export async function loadTakeoffWorkspace(
         name: type.name,
         hasParts: type._count.components > 0,
         thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
+        summary: wallTypeSummary({ name: type.name, sides: type.sides, notes: type.notes, components: type.components.map((c) => ({ description: c.description, basis: c.basis, factor: Number(c.factor) })) }),
+        defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt),
       })),
       feetPerUnit,
     );
@@ -628,6 +632,8 @@ export async function loadTakeoffWorkspace(
       name: type.name,
       hasParts: type._count.components > 0,
       thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
+      summary: wallTypeSummary({ name: type.name, sides: type.sides, notes: type.notes, components: type.components.map((c) => ({ description: c.description, basis: c.basis, factor: Number(c.factor) })) }),
+      defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt),
     })),
   };
 }

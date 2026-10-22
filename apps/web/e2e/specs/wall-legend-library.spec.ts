@@ -226,6 +226,9 @@ test.describe("a wall legend read off a set becomes wall types in the library", 
     const FIXED = "P5";
     const row = page.locator(`[data-legend="type"][data-legend-code="${FIXED}"]`);
     await row.scrollIntoViewIfNeeded();
+    // ── THE HEIGHT IS ON THE ROW BEFORE ADD ──
+    await expect(row.locator('[data-legend="height"]')).toHaveText("10 ft · HIGH");
+    await expect(page.locator(`[data-legend="type"][data-legend-code="${TYPE}"] [data-legend="height"]`)).toHaveText("no height read");
     await row.locator('[data-legend="add"]').click();
     await expect(row.locator('[data-legend="message"]')).toContainText(`Added ${FIXED}`);
     await expect(row.locator('[data-legend="message"]')).toContainText("Height 10 ft (HIGH)");
@@ -233,5 +236,17 @@ test.describe("a wall legend read off a set becomes wall types in the library", 
     const added = await prisma.wallType.findUniqueOrThrow({ where: { companyId_code: { companyId, code: FIXED } } });
     expect(added.defaultHeightFt === null ? null : Number(added.defaultHeightFt)).toBe(10);
     expect(added.notes ?? "").toMatch(/Height 10 ft \(HIGH\)/);
+  });
+
+  test("3c. a masonry type is added with board only — no studs, no track — because the sight read says what it is made of", async () => {
+    const CMU = "P6";
+    const row = page.locator(`[data-legend="type"][data-legend-code="${CMU}"]`);
+    await row.scrollIntoViewIfNeeded();
+    await row.locator('[data-legend="add"]').click();
+    await expect(row.locator('[data-legend="message"]')).toContainText(`Added ${CMU}`);
+    const added = await prisma.wallType.findUniqueOrThrow({ where: { companyId_code: { companyId, code: CMU } }, include: { components: true } });
+    expect(added.components.map((c) => c.basis), "a CMU wall must carry no STUDS part").not.toContain("STUDS");
+    expect(added.components.some((c) => /track/i.test(c.description)), "nor track").toBe(false);
+    expect(added.components.some((c) => c.basis === "BOARDED_SQFT"), "the board it does carry").toBe(true);
   });
 });

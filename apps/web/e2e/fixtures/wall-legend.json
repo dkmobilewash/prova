@@ -53,6 +53,15 @@
           "5/8\" GYPSUM BOARD EACH SIDE",
           "HEIGHT: 10'-0\" A.F.F."
         ]
+      },
+      {
+        "code": "P6",
+        "name": "CMU WALL",
+        "lines": [
+          "8\" CMU, GROUT SOLID",
+          "5/8\" GYPSUM BOARD ON 7/8\" HAT CHANNEL, ONE SIDE",
+          "EXTEND TO DECK"
+        ]
       }
     ],
     "reason": "A block headed WALL TYPES on the first sheet lists four partitions, each with its studs, board and rating on its own lines.",
@@ -169,6 +178,30 @@
         "insulation": null,
         "hourlyRating": null,
         "heightNote": "10'-0\" A.F.F.",
+        "notes": [],
+        "fromDrawing": [
+          "studWidthIn",
+          "studSpacingIn"
+        ],
+        "fromSheetNote": [],
+        "optional": [],
+        "notAPartition": null,
+        "confidence": "HIGH"
+      },
+      {
+        "code": "P6",
+        "name": "CMU WALL",
+        "studWidthIn": 8,
+        "studMaterial": "masonry",
+        "studGauge": null,
+        "studSpacingIn": null,
+        "boardThicknessIn": 0.625,
+        "layersSideA": 1,
+        "layersSideB": 0,
+        "boardIsTypeX": false,
+        "insulation": null,
+        "hourlyRating": null,
+        "heightNote": null,
         "notes": [],
         "fromDrawing": [
           "studWidthIn",
@@ -552,6 +585,49 @@
       },
       "from": "sight",
       "disagreements": []
+    },
+    {
+      "code": "P6",
+      "name": "CMU WALL",
+      "lines": [
+        "8\" CMU, GROUT SOLID",
+        "5/8\" GYPSUM BOARD ON 7/8\" HAT CHANNEL, ONE SIDE",
+        "EXTEND TO DECK"
+      ],
+      "assembly": {
+        "components": [
+          {
+            "description": "5/8in type X gypsum board",
+            "unit": "SF",
+            "basis": "BOARDED_SQFT",
+            "factor": 1,
+            "wastePercent": 0,
+            "roundUp": false,
+            "from": {
+              "phrase": "5/8\" TYPE \"X\" GYP.",
+              "where": "A-001 WALL TYPES (page 1), type P6, read by sight"
+            }
+          }
+        ],
+        "flags": [
+          {
+            "why": "the wall is masonry \u2014 board only; the framing is not this trade's",
+            "phrase": "8\" CMU"
+          }
+        ],
+        "read": {
+          "studWidthIn": 8,
+          "studSpacingIn": null,
+          "studGauge": null,
+          "boardThicknessIn": 0.625,
+          "layersPerSide": 1,
+          "boardIsTypeX": false,
+          "insulation": null,
+          "hourlyRating": null
+        }
+      },
+      "from": "sight",
+      "disagreements": []
     }
   ],
   "crops": [
@@ -587,6 +663,13 @@
       "code": "P5",
       "x": 200,
       "y": 0,
+      "width": 100,
+      "height": 100
+    },
+    {
+      "code": "P6",
+      "x": 0,
+      "y": 200,
       "width": 100,
       "height": 100
     }
