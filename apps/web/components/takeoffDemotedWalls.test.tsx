@@ -64,6 +64,9 @@ describe("demote, don't hide — before a check", () => {
     expect(el.querySelector('[data-takeoff="demoted"]')).toBeNull();
     const walls = el.querySelector('[data-takeoff="find-walls"]') as HTMLButtonElement | null;
     expect(walls).not.toBeNull();
-    expect(walls?.disabled).toBe(false);
+    // Held only by the sheet's rendering (happy-dom draws no PDF), never by
+    // the demote switch: the title names the sheet, not the switch.
+    expect(walls?.disabled).toBe(true);
+    expect(walls?.getAttribute("title")).toBe("The sheet is still loading.");
   });
 });
