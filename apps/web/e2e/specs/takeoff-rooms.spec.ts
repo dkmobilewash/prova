@@ -189,7 +189,24 @@ test.describe("find the rooms", () => {
     await expect(findRooms, "rooms cannot be found before walls").toBeDisabled();
     expect(await findWalls.isEnabled(), "S05 prints its scale, so Find the walls should be enabled").toBe(true);
     await findWalls.click();
-    await expect(findWalls).toHaveText("Find the walls", { timeout: 180_000 });
+    // ── WAIT FOR THE FIND TO START, NOT ONLY TO LOOK FINISHED ──
+    //
+    // "Find the walls" is also this button's RESTING text, so waiting for it
+    // can pass before the find has begun — and then `find-rooms` is polled
+    // for 30 seconds while `found` is still null, which is what CI reported:
+    // 63 polls, every one of them against a button whose title still read
+    // "Find the walls first". That tells you the find never produced a
+    // result, and nothing about why.
+    //
+    // "Reading the lines…" is the running state, so this distinguishes the
+    // three cases that look identical from the outside: a find that never
+    // started, one still going, and one that finished.
+    await expect(findWalls, "the find never started").toHaveText("Reading the lines…", {
+      timeout: 60_000,
+    });
+    await expect(findWalls, "the find started and never finished").toHaveText("Find the walls", {
+      timeout: 180_000,
+    });
     await expect(findRooms).toBeEnabled({ timeout: 30_000 });
     await findRooms.click();
     const panel = page.locator('[data-takeoff="rooms-panel"]');
