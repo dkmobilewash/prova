@@ -675,15 +675,20 @@ export async function saveTakeoffMeasurement(
  * opens.
  */
 export async function saveTakeoffMeasurements(jobId: string, formData: FormData): Promise<ActionResult> {
-  // The priced path parses a typed height before anything is written, and a
-  // parser that refuses throws InputError — `runAction` turns that into the
-  // readable refusal this action promises (actionErrorBoundaryCensus).
-  return runAction(() => saveTakeoffMeasurementsUnguarded(jobId, formData));
-}
-
-async function saveTakeoffMeasurementsUnguarded(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  // The priced path parses a typed height before anything is written, and a
+  // parser that refuses throws InputError — `runAction` turns that into the
+  // readable refusal this action promises (actionErrorBoundaryCensus). The
+  // capability check stays up here, where the guard census reads it.
+  return runAction(() => saveTakeoffMeasurementsFor(context, jobId, formData));
+}
+
+async function saveTakeoffMeasurementsFor(
+  context: Awaited<ReturnType<typeof requireCompanyContext>>,
+  jobId: string,
+  formData: FormData,
+): Promise<ActionResult> {
   const { company, id: userId } = context;
 
   const pageId = String(formData.get("pageId") ?? "");
