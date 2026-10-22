@@ -57,7 +57,28 @@ export type RoomToSave = {
   label: string;
   roomName: string | null;
   roomNumber: string | null;
+  /** The ceiling the estimator accepted or typed; null leaves the columns empty. */
+  ceiling?: { family: string | null; code: string | null; heightFeet: number | null; from: string | null; guess: boolean } | null;
 };
+const CEILING_FAMILIES = new Set(["ACT", "GYP", "OPEN", "OTHER"]);
+const CEILING_SOURCES = new Set(["tag", "schedule", "pattern", "note", "prefix", "estimator"]);
+
+/** The five ceiling columns from what the panel sent; a malformed one is a readable refusal, not a guess. */
+function ceilingColumns(
+  c: RoomToSave["ceiling"],
+  i: number,
+  label: string,
+): { ok: true; cols: { ceilingFamily: string | null; ceilingCode: string | null; ceilingHeightFeet: number | null; ceilingFrom: string | null; ceilingGuess: boolean } } | { ok: false; error: string } {
+  if (!c) return { ok: true, cols: { ceilingFamily: null, ceilingCode: null, ceilingHeightFeet: null, ceilingFrom: null, ceilingGuess: false } };
+  const where = `Room ${i + 1}${label ? ` (${label})` : ""}`;
+  const family = c.family === null || c.family === undefined || c.family === "" ? null : String(c.family).toUpperCase();
+  if (family !== null && !CEILING_FAMILIES.has(family)) return { ok: false, error: `${where}: "${c.family}" is not a ceiling type this app knows.` };
+  const height = c.heightFeet === null || c.heightFeet === undefined ? null : Number(c.heightFeet);
+  if (height !== null && !(height > 0 && height < 100)) return { ok: false, error: `${where}: a ceiling height of ${c.heightFeet} ft is not one.` };
+  const from = c.from === null || c.from === undefined || c.from === "" ? null : String(c.from);
+  if (from !== null && !CEILING_SOURCES.has(from)) return { ok: false, error: `${where}: unknown ceiling source "${from}".` };
+  return { ok: true, cols: { ceilingFamily: family, ceilingCode: c.code ? String(c.code).slice(0, 40) : null, ceilingHeightFeet: height, ceilingFrom: from, ceilingGuess: c.guess === true } };
+}
 
 export async function saveRoomMeasurements(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
@@ -90,6 +111,8 @@ export async function saveRoomMeasurements(jobId: string, formData: FormData): P
     if (problem) return actionFail(`Room ${i + 1}${room.label ? ` (${room.label})` : ""}: ${problem}`);
     if (ringSelfIntersects(xs, ys)) return actionFail(`Room ${i + 1}${room.label ? ` (${room.label})` : ""}: its outline crosses itself.`);
     const label = String(room.label ?? "").trim().slice(0, 120);
+    const ceiling = ceilingColumns(room.ceiling, i, label);
+    if (!ceiling.ok) return actionFail(ceiling.error);
     rows.push({
       pageId: page.id,
       calibrationId: calibration.id,
@@ -99,6 +122,7 @@ export async function saveRoomMeasurements(jobId: string, formData: FormData): P
       label: label || null,
       roomName: room.roomName ? String(room.roomName).slice(0, 120) : null,
       roomNumber: room.roomNumber ? String(room.roomNumber).slice(0, 32) : null,
+      ...ceiling.cols,
       source: "ROOM_FINDER" as const,
       createdByUserId: userId,
     });

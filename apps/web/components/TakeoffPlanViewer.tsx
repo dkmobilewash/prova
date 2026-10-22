@@ -73,6 +73,8 @@ import { doorsByGroup, feetInches } from "@/lib/takeoff/planTextView";
 import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
 import { BLANK_TILE_INK, TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
 import type { WallClassifyLabel } from "@prova/integrations";
+import { ceilingsForRooms, type CeilingPageText, type RoomCeiling } from "@/lib/takeoff/roomCeilings";
+import { tableRowsFromPage } from "@/lib/plan-ingest/scheduleTable";
 import { pagesToSample } from "@/lib/takeoff/sheetTemplate";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "@/lib/takeoff/findWallsOnSheet";
 import { SheetTooDenseError, oneFacePerLine, wallFromPair } from "@/lib/takeoff/wallVectors";
@@ -268,6 +270,7 @@ export function TakeoffPlanViewer({
   panelOpen = true,
   readOnly = false,
   roomFinder = false,
+  ceilingPages = [],
   onMeasurementSaved,
   activeItemId = null,
 }: {
@@ -350,6 +353,12 @@ export function TakeoffPlanViewer({
    * button absent. See `lib/takeoff/NOTES-rooms.md`.
    */
   roomFinder?: boolean;
+  /**
+   * The plan's pages whose title block names a reflected ceiling plan or a
+   * finish schedule. When the rooms are found, their text is read from the
+   * open PDF and each room's ceiling comes from it — see `roomCeilings.ts`.
+   */
+  ceilingPages?: number[];
   /**
    * Told when a measurement has been saved, so a HOST can offer to undo it.
    *
@@ -2187,7 +2196,8 @@ export function TakeoffPlanViewer({
    * the lines drawn by hand on this sheet, which is how an estimator closes a
    * room the finder left open. Pure and synchronous; no PDF is re-read.
    */
-  function onFindRooms() {
+  const [roomCeilings, setRoomCeilings] = useState<Map<number, RoomCeiling> | null>(null);
+  async function onFindRooms() {
     if (!pageSize || feetPerUnit === null) return;
     const walls = roomBoundary({
       pairings: pairingsRef.current,
@@ -2198,34 +2208,67 @@ export function TakeoffPlanViewer({
     setRooms(result);
     setRoomsOnPage(pageNumber);
     setHoveredRoom(null);
+    setRoomCeilings(null);
+    // ── THE CEILINGS, FROM THIS SHEET AND THE PLAN'S CEILING PAGES ──
+    // Read from the open PDF here in the browser, the way the words above were;
+    // a page that fails to read is left out rather than failing the rooms.
+    try {
+      const doc = docRef.current as { getPage: (n: number) => Promise<unknown> } | null;
+      const others: CeilingPageText[] = [];
+      if (doc) {
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        // With no stored title block naming a ceiling page, every page of a small plan is
+        // tried by its own text — a two-sheet extract has no index to say which is which.
+        const numPages = (doc as unknown as { numPages?: number }).numPages ?? 0;
+        const candidates =
+          ceilingPages.length > 0 ? ceilingPages : numPages > 0 && numPages <= 40 ? Array.from({ length: numPages }, (_, i) => i + 1) : [];
+        for (const n of candidates.filter((p) => p !== pageNumber).slice(0, 40)) {
+          try {
+            const page = (await doc.getPage(n)) as { getViewport: (o: { scale: number }) => { width: number; height: number } };
+            const items = await pageTextItems(page, pdfjs);
+            if (ceilingPages.length === 0 && !items.some((i) => /REFLECTED\s+CEILING|\bRCP\b|CEILING\s+PLAN|FINISH\s+SCHEDULE|ROOM\s+FINISH/i.test(i.str))) continue;
+            const viewport = page.getViewport({ scale: 1 });
+            const asPage = { items, widthPt: viewport.width, heightPt: viewport.height } as unknown as Parameters<typeof tableRowsFromPage>[0];
+            others.push({ pageNumber: n, items, widthPt: viewport.width, tableRows: tableRowsFromPage(asPage) });
+          } catch {
+            // this page did not read; the others still count
+          }
+        }
+      }
+      const last = lastDetect.current;
+      const strokes =
+        last !== null && last.page === pageNumber && last.widthPt > 0
+          ? last.segments.map((s) => ({ x1: s.x1 / last.widthPt, y1: s.y1 / last.widthPt, x2: s.x2 / last.widthPt, y2: s.y2 / last.widthPt }))
+          : undefined;
+      const here = { items: wordsRef.current, widthPt: pageSize.widthPt, heightPt: pageSize.heightPt } as unknown as Parameters<typeof tableRowsFromPage>[0];
+      setRoomCeilings(
+        ceilingsForRooms({
+          rooms: result.rooms,
+          current: { pageNumber, items: wordsRef.current, widthPt: pageSize.widthPt, tableRows: tableRowsFromPage(here) },
+          strokes,
+          feetPerUnit,
+          others,
+        }),
+      );
+    } catch {
+      setRoomCeilings(new Map());
+    }
   }
+  /** Every saved room on the job with a ceiling, as square feet by family, for the job summary. */
+  const savedRoomCeilings = sheets.flatMap((s) =>
+    s.measurements
+      .filter((m) => m.ceiling !== null && m.ceiling !== undefined && m.kind === "AREA")
+      .map((m) => {
+        const span = Math.hypot(m.calibration.x2 - m.calibration.x1, m.calibration.y2 - m.calibration.y1);
+        const fpu = span > 0 ? m.calibration.declaredDistanceFeet / span : 0;
+        const units = ringArea(m.xs, m.ys) ?? 0;
+        return { pageNumber: s.pageNumber, squareFeet: Math.abs(units) * fpu * fpu, family: m.ceiling!.family, code: m.ceiling!.code };
+      }),
+  );
 
   async function onFindWalls() {
     const doc = docRef.current;
-    // ── A CLICK IS NEVER DROPPED IN SILENCE ──
-    //
-    // This returned, and nothing happened: no spinner, no sentence, no
-    // console line. The button is enabled as soon as the sheet has a scale —
-    // which is its documented contract and is asserted by
-    // `components/takeoffFindControl.test.tsx` — but the work ALSO needs the
-    // document and its page box, and on a slow load those arrive later. So
-    // there is a window where the control invites a press and the press does
-    // nothing.
-    //
-    // CI is where it showed: a runner loads the PDF more slowly than this
-    // laptop, the click landed inside that window, and
-    // `takeoff-rooms.spec.ts` waited three minutes for a find that was never
-    // going to start. A person on a slow connection meets the same button,
-    // and the only thing they can do is press it again.
-    //
-    // Saying so is the whole fix. The sheet finishes loading a moment later
-    // and the next press works, which is why this is a sentence rather than
-    // a queued action: a find that starts by itself some seconds after a
-    // click nobody remembers making is worse than one that says "not yet".
-    if (!doc || !pageSize || feetPerUnit === null) {
-      setFindError("The sheet is still loading. Try that again in a moment.");
-      return;
-    }
+    if (!doc || !pageSize || feetPerUnit === null) return;
     setFinding(true);
     setFindError(null);
     setFound(null);
@@ -3383,6 +3426,8 @@ export function TakeoffPlanViewer({
               jobId={jobId}
               pageId={sheet.id}
               result={rooms}
+              ceilings={roomCeilings}
+              savedRooms={savedRoomCeilings}
               feetPerUnit={feetPerUnit}
               hovered={hoveredRoom}
               onHover={setHoveredRoom}

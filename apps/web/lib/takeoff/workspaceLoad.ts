@@ -47,6 +47,13 @@ import { measurementScaleLabel, zoneNotices, zoneScales } from "@/lib/takeoff-zo
  */
 export type TakeoffWorkspaceData = Awaited<ReturnType<typeof loadTakeoffWorkspace>>;
 
+const CEILING_PAGE_TITLE = /REFLECTED\s+CEILING|\bRCP\b|CEILING\s+PLAN|FINISH\s+SCHEDULE|ROOM\s+FINISH/i;
+/** Page numbers whose stored title block names a reflected ceiling plan or a finish schedule. */
+async function ceilingPagesOf(planId: string): Promise<number[]> {
+  const rows = await prisma.planSheetText.findMany({ where: { planId }, select: { pageNumber: true, titleBlockText: true } });
+  return rows.filter((r) => r.titleBlockText !== null && CEILING_PAGE_TITLE.test(r.titleBlockText)).map((r) => r.pageNumber).sort((a, b) => a - b);
+}
+
 /**
  * What a CLIENT component may be handed — the loader's result with `plan`
  * narrowed by `workspaceForClient`.
@@ -435,6 +442,12 @@ export async function loadTakeoffWorkspace(
         declaredDistanceFeet: m.calibration.declaredDistanceFeet.toNumber(),
       },
       itemId: m.itemId,
+      roomName: m.roomName,
+      roomNumber: m.roomNumber,
+      ceiling:
+        m.source === "ROOM_FINDER"
+          ? { family: m.ceilingFamily, code: m.ceilingCode, heightFeet: m.ceilingHeightFeet, from: m.ceilingFrom, guess: m.ceilingGuess }
+          : null,
       cutouts: cutoutsFromJson(m.cutouts),
       outOfDate: current !== null && m.calibrationId !== current.id,
       scaleLabel: measurementScaleLabel(m.calibrationId, zones, notices),
@@ -552,6 +565,9 @@ export async function loadTakeoffWorkspace(
     plan,
     sheets,
     roomFinderOn: roomFinder?.roomFinderOn ?? false,
+    // The plan's pages whose title block says ceiling plan or finish schedule, for the
+    // room finder's ceilings: the viewer reads those pages' text itself when rooms are found.
+    ceilingPages: roomFinder?.roomFinderOn ? await ceilingPagesOf(plan.id) : [],
     allWallTypes,
     postableWallTypes,
     printedScaleByPage,

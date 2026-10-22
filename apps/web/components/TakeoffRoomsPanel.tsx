@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { saveRoomMeasurements, type RoomToSave } from "@/lib/actions";
 import { Spinner } from "@/components/Spinner";
 import type { RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
+import { ceilingSummary, type RoomCeiling } from "@/lib/takeoff/roomCeilings";
 
 /**
  * ── THE ROOMS PANEL ──
@@ -22,10 +23,22 @@ import type { RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
  *
  * Perimeter is computed here from the polygon and never stored.
  */
+const FAMILY_WORD: Record<string, string> = { ACT: "acoustical tile", GYP: "gypsum board", OPEN: "open to structure", OTHER: "other" };
+const SOURCE_WORD: Record<string, string> = {
+  tag: "ceiling plan tag",
+  schedule: "finish schedule",
+  pattern: "drawn pattern",
+  note: "sheet note",
+  prefix: "guess from the code",
+  estimator: "typed by you",
+};
+
 export function TakeoffRoomsPanel({
   jobId,
   pageId,
   result,
+  ceilings = null,
+  savedRooms = [],
   feetPerUnit,
   hovered,
   onHover,
@@ -34,6 +47,10 @@ export function TakeoffRoomsPanel({
   jobId: string;
   pageId: string;
   result: RoomsFromWallsResult;
+  /** What the drawings say about each room's ceiling (by room id); null while being read. */
+  ceilings?: Map<number, RoomCeiling> | null;
+  /** Every room already saved on the job with a ceiling, for the job summary. */
+  savedRooms?: { pageNumber: number; squareFeet: number; family: string | null; code: string | null }[];
   feetPerUnit: number;
   hovered: number | null;
   onHover: (id: number | null) => void;
@@ -44,6 +61,19 @@ export function TakeoffRoomsPanel({
   const [error, setError] = useState<string | null>(null);
   const [names, setNames] = useState<Record<number, { name: string; number: string }>>({});
   const [saved, setSaved] = useState(false);
+  /** The estimator's edits to a ceiling, over what was read. */
+  const [edits, setEdits] = useState<Record<number, { family?: string; heightFeet?: string }>>({});
+  /** The ceiling a row shows: what was read, overlaid with what the estimator typed. */
+  const ceilingOf = (id: number): { family: string | null; code: string | null; heightFeet: number | null; from: string | null; guess: boolean } => {
+    const read = ceilings?.get(id) ?? null;
+    const e = edits[id] ?? {};
+    const family = e.family !== undefined ? (e.family === "" ? null : e.family) : (read?.family ?? null);
+    const heightFeet = e.heightFeet !== undefined ? (e.heightFeet.trim() === "" ? null : Number(e.heightFeet)) : (read?.heightFeet ?? null);
+    const edited = e.family !== undefined || e.heightFeet !== undefined;
+    return { family, code: edited ? null : (read?.code ?? null), heightFeet: Number.isFinite(heightFeet) ? heightFeet : null, from: edited ? "estimator" : (read?.from ?? null), guess: edited ? false : (read?.guess ?? false) };
+  };
+  const sheetSummary = ceilingSummary(result.rooms.map((r) => ({ family: ceilingOf(r.id).family, squareFeet: r.squareFeet, code: ceilingOf(r.id).code })));
+  const jobSummary = ceilingSummary(savedRooms.map((r) => ({ family: r.family, squareFeet: r.squareFeet, code: r.code })));
 
   const nameOf = (id: number, fallback: { name: string; number: string | null } | null) =>
     names[id] ?? { name: fallback?.name ?? "", number: fallback?.number ?? "" };
@@ -55,12 +85,14 @@ export function TakeoffRoomsPanel({
     const rooms: RoomToSave[] = result.rooms.map((room) => {
       const edited = nameOf(room.id, room.tag);
       const label = [edited.name, edited.number].filter(Boolean).join(" ").trim();
+      const c = ceilingOf(room.id);
       return {
         xs: room.xs,
         ys: room.ys,
         label: label || `Room ${room.id + 1}`,
         roomName: edited.name || null,
         roomNumber: edited.number || null,
+        ceiling: c.family === null && c.heightFeet === null ? null : { family: c.family, code: c.code, heightFeet: c.heightFeet, from: c.from, guess: c.guess },
       };
     });
     const formData = new FormData();
@@ -101,11 +133,13 @@ export function TakeoffRoomsPanel({
               <th className="py-1 text-right font-medium">perim. ft</th>
             </tr>
           </thead>
-          <tbody>
-            {result.rooms.map((room) => {
+          {/* One <tbody> per room: the room's line, then its ceiling on a second
+              line, because the panel is too narrow for seven columns and a
+              ceiling that scrolls sideways is a ceiling nobody checks. */}
+          {result.rooms.map((room) => {
               const edited = nameOf(room.id, room.tag);
               return (
-                <tr
+                <tbody
                   key={room.id}
                   data-takeoff="room-row"
                   data-room-named={room.tag ? "1" : "0"}
@@ -113,6 +147,7 @@ export function TakeoffRoomsPanel({
                   onMouseLeave={() => onHover(null)}
                   className={hovered === room.id ? "bg-rail-hover" : undefined}
                 >
+                <tr>
                   <td className="py-1 pr-2">
                     <input
                       name="roomName"
@@ -138,10 +173,85 @@ export function TakeoffRoomsPanel({
                   </td>
                   <td className="py-1 text-right tabular-nums text-ink-body">{Math.round(room.perimeterFeet).toLocaleString()}</td>
                 </tr>
+                  {/* ── THE CEILING, EDITABLE, WITH WHERE IT CAME FROM ──
+                      What the drawings said is shown as read; a change by the
+                      estimator replaces the source with "typed by you" and drops
+                      the guess flag, since a person has now decided. */}
+                  {(() => {
+                    const c = ceilingOf(room.id);
+                    return (
+                      <tr>
+                        <td colSpan={4} className="pb-2 pl-2 pt-0">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-muted">
+                          <span>ceiling</span>
+                          <select
+                            aria-label="Ceiling type"
+                            value={c.family ?? ""}
+                            data-takeoff="room-ceiling"
+                            data-ceiling-from={c.from ?? ""}
+                            onChange={(e) => setEdits((prev) => ({ ...prev, [room.id]: { ...prev[room.id], family: e.target.value } }))}
+                            className="rounded border border-line-card bg-surface px-1 py-0.5 text-xs text-ink-body"
+                          >
+                            <option value="">—</option>
+                            <option value="ACT">acoustical tile{c.code && c.family === "ACT" ? ` (${c.code})` : ""}</option>
+                            <option value="GYP">gypsum board{c.code && c.family === "GYP" ? ` (${c.code})` : ""}</option>
+                            <option value="OPEN">open to structure</option>
+                            <option value="OTHER">other</option>
+                          </select>
+                          <input
+                            aria-label="Ceiling height in feet"
+                            inputMode="decimal"
+                            value={edits[room.id]?.heightFeet ?? (c.heightFeet === null ? "" : String(+c.heightFeet.toFixed(2)))}
+                            placeholder="—"
+                            data-takeoff="room-ceiling-height"
+                            onChange={(e) => setEdits((prev) => ({ ...prev, [room.id]: { ...prev[room.id], heightFeet: e.target.value } }))}
+                            className="w-14 rounded border border-line-card bg-surface px-1 py-0.5 text-right text-xs tabular-nums text-ink-body"
+                          />
+                          <span>ft</span>
+                          <span data-takeoff="room-ceiling-from" title={ceilings?.get(room.id)?.phrase ?? undefined}>
+                          {ceilings === null && c.from === null ? (
+                            <span className="inline-flex items-center gap-1">
+                              <Spinner /> reading…
+                            </span>
+                          ) : c.from === null ? (
+                            "nothing read"
+                          ) : (
+                            <>
+                              {SOURCE_WORD[c.from] ?? c.from}
+                              {ceilings?.get(room.id)?.page && c.from !== "estimator" ? ` p${ceilings.get(room.id)!.page}` : ""}
+                              {c.guess && (
+                                <span className="ml-1 rounded bg-tag-amber px-1 text-tag-amber-ink" data-takeoff="ceiling-guess">
+                                  guess
+                                </span>
+                              )}
+                            </>
+                          )}
+                          </span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })()}
+                </tbody>
               );
             })}
-          </tbody>
         </table>
+      )}
+      {/* ── CEILINGS BY TYPE: THIS SHEET, THEN THE WHOLE JOB ──
+          The line an estimate needs — square feet per ceiling type — for the
+          rooms on screen as they stand (edits included), and for every room
+          already saved on the job. */}
+      {result.rooms.length > 0 && (
+        <p className="mt-2 text-xs text-ink-body" data-takeoff="ceiling-summary-sheet">
+          <span className="font-medium text-ink-label">Ceilings on this sheet:</span>{" "}
+          {sheetSummary.map((s) => `${s.label}: ${Math.round(s.squareFeet).toLocaleString()} sf`).join(" · ")}
+        </p>
+      )}
+      {jobSummary.length > 0 && (
+        <p className="mt-1 text-xs text-ink-muted" data-takeoff="ceiling-summary-job">
+          <span className="font-medium text-ink-label">Saved on this job:</span>{" "}
+          {jobSummary.map((s) => `${s.label}: ${Math.round(s.squareFeet).toLocaleString()} sf`).join(" · ")}
+        </p>
       )}
       {(result.unplacedTags.length > 0 || result.mergedTags.length > 0) && (
         <p className="mt-2 text-xs text-ink-muted" data-takeoff="rooms-missed">

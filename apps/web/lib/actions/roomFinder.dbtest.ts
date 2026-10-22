@@ -109,3 +109,34 @@ describe("saveRoomMeasurements", () => {
     ]);
   });
 });
+
+describe("saveRoomMeasurements with ceilings", () => {
+  it("stores the five ceiling columns as sent, and refuses a type it does not know, writing nothing", async () => {
+    await prisma.company.update({ where: { id: companyId }, data: { roomFinderOn: true } });
+    const before = await prisma.takeoffMeasurement.count({ where: { pageId } });
+    const bad = await saveRoomMeasurements(
+      jobId,
+      body([{ ...square(0.5, 0.5, 0.05), label: "X", roomName: "X", roomNumber: "9", ceiling: { family: "TIN", code: null, heightFeet: 9, from: "tag", guess: false } }]),
+    );
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.error).toContain("TIN");
+    expect(await prisma.takeoffMeasurement.count({ where: { pageId } })).toBe(before);
+    const good = await saveRoomMeasurements(
+      jobId,
+      body([
+        { ...square(0.5, 0.5, 0.05), label: "STORAGE 106", roomName: "STORAGE", roomNumber: "106", ceiling: { family: "GYP", code: "GB", heightFeet: 10, from: "tag", guess: false } },
+        { ...square(0.7, 0.5, 0.05), label: "ELEC 011B", roomName: "ELEC", roomNumber: "011B", ceiling: { family: "ACT", code: "AC01", heightFeet: 11, from: "prefix", guess: true } },
+        { ...square(0.7, 0.7, 0.05), label: "HALL", roomName: "HALL", roomNumber: null, ceiling: null },
+      ]),
+    );
+    expect(good.ok).toBe(true);
+    const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId, roomNumber: { in: ["106", "011B"] } }, orderBy: { roomNumber: "asc" } });
+    expect(rows.map((r) => [r.roomNumber, r.ceilingFamily, r.ceilingCode, r.ceilingHeightFeet, r.ceilingFrom, r.ceilingGuess])).toEqual([
+      ["011B", "ACT", "AC01", 11, "prefix", true],
+      ["106", "GYP", "GB", 10, "tag", false],
+    ]);
+    const hall = await prisma.takeoffMeasurement.findFirst({ where: { pageId, roomName: "HALL" } });
+    expect(hall?.ceilingFamily ?? null).toBeNull();
+    expect(hall?.ceilingGuess).toBe(false);
+  });
+});
