@@ -245,7 +245,34 @@ test.describe("the full-screen takeoff workspace", () => {
     // The overlay is the viewer's own SVG over the sheet. Its presence is the
     // check; what it contains is `takeoff-plan.spec.ts`'s business.
     await expect(overlay(), "no detection overlay on the workspace canvas").toBeVisible();
-    await expect(page.locator('[data-takeoff="found-walls"]'), "no quantities panel").toBeVisible();
+    // ── OPEN THE RAIL RATHER THAN HOPE IT IS OPEN ──
+    //
+    // The quantities panel is a RAIL, not always-on furniture, and step 21's
+    // own note says so in as many words: "step 5 saw it open because nothing
+    // had opened Items over it yet. Opening it explicitly is what makes this
+    // step independent of the twenty before it." Step 5 is THIS step, and it
+    // never did the opening — it inherited a default and trusted it.
+    //
+    // CI run 39819098956 is what that costs: "no quantities panel", the same
+    // locator step 21 fails on, in a run where the find had plainly worked
+    // because the overlay assertion above it passed. The fix step 21 already
+    // discovered was never applied back here.
+    const rail5 = await setRail("toggle-panel", true);
+    const panel5 = page.locator('[data-takeoff="found-walls"]');
+    const shown5 = await panel5
+      .waitFor({ state: "visible", timeout: 20_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!shown5) {
+      const handles = await page
+        .locator("[data-takeoff]")
+        .evaluateAll((nodes) => [...new Set(nodes.map((n) => n.getAttribute("data-takeoff") ?? ""))].sort());
+      throw new Error(
+        `no quantities panel after a find that drew its overlay — ` +
+          `setRail("toggle-panel") said "${rail5}"; the page carries ${handles.length} handles: ` +
+          `${handles.join(", ") || "(none)"}`,
+      );
+    }
     // `signedIn: false` switches off the main-navigation assertion and nothing
     // else — see its note in `health.ts`. The workspace is signed in and has
     // no shell, which is the whole point of the route; the crash markers and
