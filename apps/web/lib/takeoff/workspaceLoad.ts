@@ -1,3 +1,4 @@
+import { loadWallModel } from "@/lib/takeoff/wallModelFile";
 import { prisma } from "@prova/db";
 
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
@@ -546,12 +547,19 @@ export async function loadTakeoffWorkspace(
   // "Find the rooms" is off until the owner turns it on (Settings). Read here
   // rather than from the viewer so the button's presence is decided by the
   // same load that decides everything else on the screen.
-  const roomFinder = await prisma.company.findUnique({ where: { id: company.id }, select: { roomFinderOn: true } });
+  const roomFinder = await prisma.company.findUnique({
+    where: { id: company.id },
+    select: { roomFinderOn: true, demotedWallsOn: true },
+  });
 
   return {
     plan,
     sheets,
     roomFinderOn: roomFinder?.roomFinderOn ?? false,
+    demotedWallsOn: roomFinder?.demotedWallsOn ?? false,
+    // The trained wall model, only for a company whose switch is on: ~80 KB
+    // of trees that nobody else's page should carry.
+    wallModel: roomFinder?.demotedWallsOn ? loadWallModel(process.env) : null,
     allWallTypes,
     postableWallTypes,
     printedScaleByPage,
