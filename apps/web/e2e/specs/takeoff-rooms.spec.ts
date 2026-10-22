@@ -143,7 +143,7 @@ test.describe("find the rooms", () => {
   }
 
   test("with the switch off, the takeoff offers no room finder", async () => {
-    await signInAs(page, PERSONAS.takeoff.email);
+    await signInAs(page, PERSONAS.rooms.email);
     await landOnDashboard(page, monitor);
     jobId = await startJob(page, monitor, { name: JOB, gcName: GC_NAME });
     await finishWizard(page, monitor, jobId);
