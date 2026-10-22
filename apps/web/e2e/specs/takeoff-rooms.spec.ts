@@ -189,21 +189,34 @@ test.describe("find the rooms", () => {
     await expect(findRooms, "rooms cannot be found before walls").toBeDisabled();
     expect(await findWalls.isEnabled(), "S05 prints its scale, so Find the walls should be enabled").toBe(true);
     await findWalls.click();
-    // ── WAIT FOR THE FIND TO START, NOT ONLY TO LOOK FINISHED ──
+    // ── EITHER STILL RUNNING OR ALREADY DONE, BECAUSE BOTH ARE FINE ──
     //
     // "Find the walls" is also this button's RESTING text, so waiting for it
-    // can pass before the find has begun — and then `find-rooms` is polled
-    // for 30 seconds while `found` is still null, which is what CI reported:
-    // 63 polls, every one of them against a button whose title still read
-    // "Find the walls first". That tells you the find never produced a
-    // result, and nothing about why.
+    // can pass before the find has begun — which is how this spec came to
+    // poll `find-rooms` for 30 seconds against a `found` that was still null.
     //
-    // "Reading the lines…" is the running state, so this distinguishes the
-    // three cases that look identical from the outside: a find that never
-    // started, one still going, and one that finished.
-    await expect(findWalls, "the find never started").toHaveText("Reading the lines…", {
-      timeout: 60_000,
-    });
+    // My first attempt waited for the running state, "Reading the lines…",
+    // and CI answered "the find never started". That may well have been MY
+    // false negative rather than a finding: a find that completes in tens of
+    // milliseconds can have its state batched by React and never paint that
+    // label, and a poll every ~100ms would never catch it. An assertion that
+    // a fast success can fail is not a diagnosis.
+    //
+    // So this waits on a condition true in both worlds — running, or already
+    // finished. Neither a fast find nor a slow one can fail it, and a find
+    // that genuinely never runs still does.
+    await expect
+      .poll(
+        async () => {
+          if (await findRooms.isEnabled()) return true;
+          return (await findWalls.innerText()).includes("Reading the lines");
+        },
+        {
+          timeout: 180_000,
+          message: "the find neither started nor produced a result",
+        },
+      )
+      .toBe(true);
     await expect(findWalls, "the find started and never finished").toHaveText("Find the walls", {
       timeout: 180_000,
     });
