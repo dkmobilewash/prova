@@ -790,3 +790,14 @@ own gate for heights and the U.N.O. offer):
 
 Not done: openings on item walls (door schedule reads exist as evals only);
 per-run heights from a room's ceiling height.
+
+**Branches, 2026-10-22.** `diego/estimate-chain` (off main) is the canonical
+ceilings branch: it carries every commit of `diego/ceilings` — the app side
+by three-way apply, the six evals (`realplan/zzCeiling*.eval.ts`,
+`zzWallHeights.eval.ts`) and their key-census exemptions by checkout. The
+two branches differ only in files `diego/ceilings` inherited from its
+`diego/takeoff-audit` base and never touched (`offeredCandidates.ts`,
+`personas.ts`, two specs). `diego/ceilings` is retired: left in place, not
+deleted, not to be built on. It ships with `diego/demote-mode` (rebased onto
+main) as PR B — `20261023000000_demoted_walls` then
+`20261023120000_room_ceilings`.
