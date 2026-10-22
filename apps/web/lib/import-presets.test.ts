@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { IMPORT_PRESETS, matchPreset, presetMapping } from "./import-presets";
+import { IMPORT_PRESETS, matchPreset } from "./import-presets";
+import { proposeColumns } from "./import-smart-map";
 
 /**
  * Preset DETECTION only — whether a file's headers earn the "looks like
@@ -50,21 +51,20 @@ describe("matchPreset", () => {
   });
 });
 
-describe("presetMapping", () => {
-  it("resolves a preset's known headers to THIS file's actual column indexes", () => {
-    const preset = matchPreset("jobs", ["Contract#", "Client", "Job Name"])!;
-    expect(preset).toBeTruthy();
-    const mapping = presetMapping(preset, ["Contract#", "Client", "Job Name"]);
-    expect(mapping).toEqual({ client: 1, name: 2 });
-  });
-
-  it("leaves out a preset field this particular file doesn't have", () => {
-    const preset = IMPORT_PRESETS.find((p) => p.id === "sage100contractor-jobs")!;
-    // "Job Name" is missing from this header row, even though it's what
-    // triggered detection on a different file.
-    const mapping = presetMapping(preset, ["Client", "Address 1"]);
-    expect(mapping).toEqual({ client: 0 });
-  });
+// `presetMapping` is gone: the smart mapper (lib/import-smart-map.ts) now
+// places every column, and this pins that it places a preset's documented
+// headers exactly where the preset says — so the "looks like X" banner and
+// the mapping under it cannot disagree.
+describe("the smart mapper agrees with every preset", () => {
+  for (const preset of IMPORT_PRESETS) {
+    it(`${preset.id}: each documented header lands on the preset's field`, () => {
+      const entries = Object.entries(preset.fieldHeaders) as [string, string][];
+      // A leading number column, the shape that used to steal the job name.
+      const header = ["Job#", ...entries.map(([, text]) => text)];
+      const proposals = proposeColumns(preset.kind, header);
+      entries.forEach(([field], at) => expect(proposals[at + 1].field).toBe(field));
+    });
+  }
 });
 
 describe("every preset's minMatches is achievable and meaningful", () => {

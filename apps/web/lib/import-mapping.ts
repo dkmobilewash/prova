@@ -36,6 +36,9 @@ import { parseCsvRecords } from "./catalog-import";
 
 export type ColumnMapping<F extends string> = Partial<Record<F, number>>;
 
+/** What a skipped column's header becomes; stripped again for display. */
+export const SKIPPED_PREFIX = "Skipped: ";
+
 /** Quote a field only when the CSV parser would otherwise misread it — the
  * same rule lib/xlsx-import.ts uses, so a rewritten header round-trips
  * through `parseCsvRecords` exactly like a pasted one. */
@@ -73,6 +76,7 @@ export function applyColumnMapping<F extends string>(
   text: string,
   mapping: ColumnMapping<F>,
   labelFor: Record<F, string>,
+  options: { skipUnmapped?: boolean } = {},
 ): string {
   const records = parseCsvRecords(text);
   if (records.length === 0) return text;
@@ -84,7 +88,16 @@ export function applyColumnMapping<F extends string>(
     if (index !== undefined) labelForIndex.set(index, labelFor[field]);
   }
 
-  const newHeader = header.map((original, index) => labelForIndex.get(index) ?? original);
+  // `skipUnmapped`: every column the mapping leaves out is renamed so no
+  // alias can match it — "Skipped: Job#". Without it a column the person
+  // SKIPPED, or one whose field moved to another column, is still read by
+  // `mapColumns` whenever its own header is an alias: a Sage "Job#" column
+  // left of the chosen "Job Name" took the job name back, left to right.
+  const newHeader = header.map(
+    (original, index) =>
+      labelForIndex.get(index) ??
+      (options.skipUnmapped && original.trim() !== "" ? `${SKIPPED_PREFIX}${original}` : original),
+  );
   const headerText = newHeader.map(csvField).join(",");
 
   // Everything after the header's own line break, verbatim — including a
