@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState, useTransition, type FormEvent } from "react";
+import { useMemo, useOptimistic, useState, useTransition, type FormEvent } from "react";
 import { applyBidRecap, saveBidRecap, setLineBudgetedCost, setLineCostCategory } from "@/lib/actions";
 import { money } from "@/lib/money";
-import { EQUIPMENT_SPLIT_NOTE } from "@/lib/cost-category";
+import { isBlank, parseNumericInput } from "@/lib/numeric-input";
+import { asCostCategory, EQUIPMENT_SPLIT_NOTE } from "@/lib/cost-category";
 import { bidMargin, formatMarginRate, underCostWarning } from "@/lib/estimating/bid-margin";
 import {
   bidRecap,
@@ -48,6 +49,56 @@ const RATE_FIELDS = RECAP_RATE_KEYS.map((key) => ({ key, ...RECAP_RATE_FIELDS[ke
 
 export type RecapLineView = RecapLine & { description: string };
 
+/**
+ * One edit a row has sent and the server has not answered yet.
+ *
+ * ── WHY THE PREVIEW CANNOT JUST WAIT FOR THE SERVER — bug A, 2026-10-19 ──
+ *
+ * It did, and on a slow server it showed $0.00 until a reload. Nothing was
+ * missing a revalidation: Next runs Server Actions one at a time in a queue,
+ * every one of these saves is an async transition, and React 19 commits NONE of
+ * their re-renders until the last one in the batch settles. Measured in a real
+ * Chromium against a production build with 2s of latency per request: four
+ * cost boxes typed in a row, four POSTs strictly one after another, and the
+ * direct cost read $0.00 for 8.2 seconds and then jumped to the full figure,
+ * with nothing in between. On the real Estimate tab each of those round trips
+ * is a whole page render.
+ *
+ * The rates were always immediate because the preview reads them from the
+ * form's own `draft`. The lines now get the same treatment: `useOptimistic`
+ * lays each sent edit over the server's lines, the preview runs the SAME pure
+ * `bidRecap` over the result, and the server's lines take over the moment its
+ * re-render commits. A refused save drops its edit at the end of its
+ * transition, so the old figure comes back beside the refusal.
+ *
+ * Nothing about the arithmetic moves. This only decides WHICH lines the
+ * existing preview is computed from.
+ */
+type LineEdit =
+  | { id: string; field: "unitCost"; value: number | null }
+  | { id: string; field: "costCategory"; value: CostCategoryValue | null };
+
+function withEdit(lines: RecapLineView[], edit: LineEdit): RecapLineView[] {
+  return lines.map((line) => (line.id === edit.id ? { ...line, [edit.field]: edit.value } : line));
+}
+
+/**
+ * What the server will store for a typed cost, or `undefined` when it will
+ * refuse it.
+ *
+ * The SAME parser `setLineBudgetedCost` reads with (`nullableDecimalFromForm`
+ * is `parseNumericInput` with a blank-means-null check in front), with the same
+ * floor, so the figure previewed is the figure that gets saved. `undefined`
+ * shows nothing optimistic at all: the save is sent anyway and its refusal is
+ * what the row prints — a preview of a number the server is about to reject
+ * would be the one thing worse than no preview.
+ */
+function previewCost(raw: string): number | null | undefined {
+  if (isBlank(raw)) return null;
+  const parsed = parseNumericInput(raw, { label: "Budgeted cost", min: 0 });
+  return parsed.ok ? parsed.n : undefined;
+}
+
 const field =
   "w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 
@@ -75,6 +126,11 @@ export function BidRecapPanel({
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const [isSaving, startSave] = useTransition();
   const [isApplying, startApply] = useTransition();
+  // The server's lines with every unanswered edit laid over them — see
+  // `LineEdit`. Everything below reads THESE, never `lines` directly, so the
+  // figures and the rows that edit them cannot disagree.
+  const [shownLines, showEdit] = useOptimistic(lines, withEdit);
+  const saving = shownLines !== lines;
 
   const preview = useMemo(() => {
     const parsed: RecapRates = Object.fromEntries(
@@ -84,17 +140,17 @@ export function BidRecapPanel({
         return [f.key, value != null && Number.isFinite(value) ? value : null];
       }),
     );
-    const recap = bidRecap(lines, parsed);
-    const spread = spreadToLines(lines, recap.bidTotal);
+    const recap = bidRecap(shownLines, parsed);
+    const spread = spreadToLines(shownLines, recap.bidTotal);
     // The margin is of the LINE PRICES, so it does not depend on the draft
     // rates at all — but it lives in this memo because it is derived from the
     // same `lines` and nothing should recompute it on a keystroke.
     return {
       recap,
-      landsAt: spread.length > 0 ? spreadTotal(lines, spread) : recap.bidTotal,
-      margin: bidMargin(lines),
+      landsAt: spread.length > 0 ? spreadTotal(shownLines, spread) : recap.bidTotal,
+      margin: bidMargin(shownLines),
     };
-  }, [draft, lines]);
+  }, [draft, shownLines]);
 
   const { recap, landsAt, margin } = preview;
   const roundingGap = Math.round((landsAt - recap.bidTotal) * 100) / 100;
@@ -166,7 +222,21 @@ export function BidRecapPanel({
             {/* True by design since #512 rather than by accident: this is the
                 sum of quantity × budgetedUnitCost, the cost of doing the work.
                 Before #512 the same words sat over a sum of SALE PRICES. */}
-            <td className="py-1 text-ink-label">Direct cost of the work</td>
+            <td className="py-1 text-ink-label">
+              Direct cost of the work
+              {/* The figure beside this already counts every cost typed, and
+                  the saves behind it run one at a time — four boxes can take
+                  four page renders to land. So it says it is still saving:
+                  a figure that looks final while three saves are queued is
+                  how somebody reloads and loses them. `useOptimistic` hands
+                  back the server's own array once nothing is pending. */}
+              {saving && (
+                <span role="status" className="ml-2 inline-flex items-center gap-1 text-xs text-ink-muted">
+                  <Spinner />
+                  Saving…
+                </span>
+              )}
+            </td>
             <td className="py-1 text-right tabular-nums text-ink">{money(recap.direct.total)}</td>
           </tr>
           {recap.steps.map((step) => (
@@ -316,8 +386,8 @@ export function BidRecapPanel({
       <div className="border-t border-line-row pt-3">
         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">Cost and cost type per line</p>
         <ul className="flex flex-col gap-1">
-          {lines.map((line) => (
-            <CostTypeRow key={line.id} jobId={jobId} line={line} />
+          {shownLines.map((line) => (
+            <CostTypeRow key={line.id} jobId={jobId} line={line} onEdit={showEdit} />
           ))}
         </ul>
       </div>
@@ -325,7 +395,18 @@ export function BidRecapPanel({
   );
 }
 
-function CostTypeRow({ jobId, line }: { jobId: string; line: RecapLineView }) {
+function CostTypeRow({
+  jobId,
+  line,
+  onEdit,
+}: {
+  jobId: string;
+  line: RecapLineView;
+  /** Lays the edit over the panel's preview for as long as its save is in
+   * flight. Called INSIDE the transition, which is what `useOptimistic`
+   * requires and what ties the edit's lifetime to the save's. */
+  onEdit: (edit: LineEdit) => void;
+}) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   return (
@@ -362,7 +443,9 @@ function CostTypeRow({ jobId, line }: { jobId: string; line: RecapLineView }) {
             const before = line.unitCost != null ? String(line.unitCost) : "";
             if (next === before) return;
             setError(null);
+            const shown = previewCost(next);
             startTransition(async () => {
+              if (shown !== undefined) onEdit({ id: line.id, field: "unitCost", value: shown });
               const result = await setLineBudgetedCost(jobId, line.id, next);
               if (!result.ok) setError(result.error);
             });
@@ -378,6 +461,11 @@ function CostTypeRow({ jobId, line }: { jobId: string; line: RecapLineView }) {
           const next = event.target.value;
           setError(null);
           startTransition(async () => {
+            // "" is the select's own "No cost type"; anything else narrows
+            // against the one list, and a value it does not know is left to
+            // the server to refuse rather than previewed as a clear.
+            const category = next === "" ? null : asCostCategory(next);
+            if (next === "" || category !== null) onEdit({ id: line.id, field: "costCategory", value: category });
             const result = await setLineCostCategory(jobId, line.id, next);
             if (!result.ok) setError(result.error);
           });
