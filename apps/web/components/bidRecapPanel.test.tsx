@@ -240,3 +240,32 @@ describe("BidRecapPanel — Apply on an estimate with no priced line (bug B)", (
     expect(applyButton().disabled).toBe(true);
   });
 });
+
+/**
+ * BUG C — the header said BID $0.00 above a recap whose Bid total was
+ * $10,249.47. The header is the bid of record (the line prices); the recap total
+ * is what those prices become once applied. The recap now prints the header's
+ * figure as well, through the same `bidTotalOf`, whenever the two differ.
+ */
+describe("BidRecapPanel — the bid on the job, beside the bid the rates make (bug C)", () => {
+  const RATES: Props["rates"] = { overheadPercent: 10, profitPercent: 5 };
+  const bidNowRow = () => [...host.querySelectorAll("tr")].find((tr) => tr.textContent?.includes("Bid on the job now"));
+
+  it("shows the line prices' $0.00 under a marked-up bid nobody has applied", () => {
+    render([{ ...LINES[0], unitCost: 1.25 }], RATES);
+    const row = bidNowRow();
+    expect(row, "the header's figure must be on the recap too").toBeTruthy();
+    expect(row!.querySelectorAll("td")[1].textContent).toBe("$0.00");
+  });
+
+  it("shows a priced job's real bid under a recap that reads $0 for want of costs", () => {
+    render([{ ...LINES[0], unitCost: null, unitPrice: 2 }], RATES);
+    expect(bidNowRow()!.querySelectorAll("td")[1].textContent).toBe("$5,600.00");
+  });
+
+  it("goes away once the prices ARE the bid", () => {
+    // 2800 × 1.25 = 3500; +10% +5% = 4042.50 → 1.44375/unit, stored 1.44 → 4032.
+    render([{ ...LINES[0], unitCost: 1.25, unitPrice: 1.44 }], RATES);
+    expect(bidNowRow()).toBeUndefined();
+  });
+});

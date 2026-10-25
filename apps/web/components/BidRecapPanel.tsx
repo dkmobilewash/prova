@@ -6,6 +6,7 @@ import { money } from "@/lib/money";
 import { isBlank, parseNumericInput } from "@/lib/numeric-input";
 import { asCostCategory, EQUIPMENT_SPLIT_NOTE } from "@/lib/cost-category";
 import { bidMargin, formatMarginRate, underCostWarning } from "@/lib/estimating/bid-margin";
+import { bidTotalOf } from "@/lib/estimating/recap-state";
 import {
   bidRecap,
   COST_CATEGORY_LABELS,
@@ -152,10 +153,13 @@ export function BidRecapPanel({
       margin: bidMargin(shownLines),
       // Bug B: why Apply would write nothing, said BEFORE it is pressed.
       nothing: nothingToSpread(shownLines),
+      // Bug C: the bid of record — what the job header and the proposal print —
+      // from the one function they read. See the row that renders it.
+      bidOnJob: bidTotalOf(shownLines),
     };
   }, [draft, shownLines]);
 
-  const { recap, landsAt, margin, nothing } = preview;
+  const { recap, landsAt, margin, nothing, bidOnJob } = preview;
   const roundingGap = Math.round((landsAt - recap.bidTotal) * 100) / 100;
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -255,6 +259,31 @@ export function BidRecapPanel({
             <td className="py-2 font-medium text-ink">Bid total</td>
             <td className="py-2 text-right font-semibold tabular-nums text-ink">{money(recap.bidTotal)}</td>
           </tr>
+          {/* BUG C, 2026-10-19: the header said BID $0.00 directly above a
+              recap that said $10,249.47, and neither was wrong. The header is
+              the bid OF RECORD — the line prices, which the proposal prints and
+              the contract value becomes — and the total above is what those
+              prices would be once applied. Two true numbers, one word, and
+              nothing on screen saying which was which.
+
+              So the recap shows the header's figure too, read through the SAME
+              `bidTotalOf` that `loadJobSummary` now uses — not a third sum of
+              quantity × price — whenever applying would change it. Once Apply
+              has written the prices the two agree and this row goes away; on a
+              priced job with no costs it is the row that explains a $0 recap
+              under a real bid. */}
+          {Math.round(bidOnJob * 100) !== Math.round(landsAt * 100) && (
+            <tr>
+              <td className="pb-2 text-ink-label">
+                Bid on the job now
+                <span className="block text-xs text-ink-muted">
+                  The line prices — what the job header and the proposal show.
+                  {nothing ? "" : ` Apply to line prices to make it ${money(landsAt)}.`}
+                </span>
+              </td>
+              <td className="pb-2 text-right align-top tabular-nums text-ink-body">{money(bidOnJob)}</td>
+            </tr>
+          )}
           {/* A ROW, NOT A FOURTH NOTICE. This panel already carries three and
               its own rule is that "a permanent notice is noise that teaches
               people to stop reading notices" — so the margin is a figure under
