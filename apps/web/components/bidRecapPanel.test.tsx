@@ -202,3 +202,41 @@ describe("BidRecapPanel — a typed cost reaches the recap before the server ans
     expect(host.textContent).toContain("+$280.00");
   });
 });
+
+/**
+ * BUG B — "Apply to line prices" on an estimate whose every line is cost-only.
+ *
+ * Applying deliberately writes no price to a cost-only line (`spreadToLines`:
+ * "a cost-only line is not a share of the bid"), so on the walk's estimate
+ * there was nothing to write to at all. The button was enabled anyway, and the
+ * walk read the press as doing nothing. The reason now sits beside the button
+ * before anybody presses it, and it says what to do.
+ */
+describe("BidRecapPanel — Apply on an estimate with no priced line (bug B)", () => {
+  const COSTED: Props["lines"] = [
+    { ...LINES[0], unitCost: 1.25 },
+    { ...LINES[1], unitCost: 6.5 },
+  ];
+  const RATES: Props["rates"] = { overheadPercent: 10, profitPercent: 5 };
+  const applyButton = () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent?.includes("Apply to line prices"))!;
+
+  it("says why nothing would be written, and what to do, before the press", () => {
+    render(COSTED, RATES);
+    expect(host.textContent).toContain("every line here is cost-only");
+    expect(host.textContent).toContain("Give each line you sell a unit price");
+    expect(applyButton().disabled).toBe(true);
+  });
+
+  it("says nothing of the kind once a line carries a price, and Apply is live", () => {
+    render([{ ...COSTED[0], unitPrice: 0 }, COSTED[1]], RATES);
+    expect(host.textContent).not.toContain("Apply has no line to put the bid on");
+    expect(applyButton().disabled).toBe(false);
+  });
+
+  it("names the OTHER way to have nothing to write to: priced lines with no cost", () => {
+    render([{ ...LINES[0], unitCost: null, unitPrice: 3 }, { ...LINES[1], unitCost: 6.5 }], RATES);
+    expect(host.textContent).toContain("the lines that carry a unit price have no budgeted cost");
+    expect(applyButton().disabled).toBe(true);
+  });
+});

@@ -10,6 +10,7 @@ import {
   bidRecap,
   COST_CATEGORY_LABELS,
   COST_CATEGORY_VALUES,
+  nothingToSpread,
   spreadToLines,
   spreadTotal,
   RECAP_RATE_FIELDS,
@@ -149,10 +150,12 @@ export function BidRecapPanel({
       recap,
       landsAt: spread.length > 0 ? spreadTotal(shownLines, spread) : recap.bidTotal,
       margin: bidMargin(shownLines),
+      // Bug B: why Apply would write nothing, said BEFORE it is pressed.
+      nothing: nothingToSpread(shownLines),
     };
   }, [draft, shownLines]);
 
-  const { recap, landsAt, margin } = preview;
+  const { recap, landsAt, margin, nothing } = preview;
   const roundingGap = Math.round((landsAt - recap.bidTotal) * 100) / 100;
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -335,7 +338,7 @@ export function BidRecapPanel({
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            disabled={isApplying || recap.addedTotal === 0}
+            disabled={isApplying || recap.addedTotal === 0 || nothing !== null}
             title="Raises each line's unit price so the estimate's lines add up to the bid. Do this once the price is settled."
             onClick={() =>
               startApply(async () => {
@@ -380,6 +383,15 @@ export function BidRecapPanel({
             marked-up cost, not a markup on the current price — so a second press is safe.
           </p>
         )}
+        {/* BUG B, 2026-10-19: on an estimate whose lines are all cost-only,
+            Apply was enabled, pressing it wrote nothing, and the walk read that
+            as silence. The reason is now on screen BEFORE the press, beside a
+            button that is disabled for it — the same sentence `applyBidRecap`
+            returns, from the same `nothingToSpread`. Amber, like the other two
+            things on this panel a person can fix from here. Only when there is
+            a markup to apply: with no rates the button is already disabled and
+            the sentence would be about nothing. */}
+        {recap.addedTotal !== 0 && nothing && <p className="text-sm text-tag-amber-ink">{nothing}</p>}
         {applyMessage && <p className="text-sm text-ink-body">{applyMessage}</p>}
       </div>
 

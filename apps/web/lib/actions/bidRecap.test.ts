@@ -210,6 +210,36 @@ describe("applying the recap to the line prices", () => {
     expect(priceOf("board")).toBe(2);
   });
 
+  /**
+   * Bug B, 2026-10-19: an estimate built entirely from cost, no line priced.
+   * Applying must not invent prices on cost-only lines (`spreadToLines`), and it
+   * must not leave the estimator with "nothing to spread" and no next step: the
+   * refusal is the same sentence the panel shows, and it says what to do.
+   */
+  it("on an estimate with no priced line, writes nothing and says to give the sold lines a price", async () => {
+    const { saveBidRecap, applyBidRecap } = await actions();
+    for (const line of db.jobLineItem) if (line.jobId === "job_1") line.unitPrice = null;
+    await saveBidRecap("job_1", form(RATES));
+
+    const result = await applyBidRecap("job_1");
+    expect(result.ok).toBe(false);
+    expect((result as { error: string }).error).toMatch(/every line here is cost-only/);
+    expect((result as { error: string }).error).toMatch(/Give each line you sell a unit price/);
+    expect(db.jobLineItem.filter((l) => l.jobId === "job_1").map((l) => l.unitPrice)).toEqual([null, null]);
+    expect(db.jobBidRecap[0].appliedAt ?? null).toBeNull();
+  });
+
+  it("a placeholder price is enough — it is replaced by the cost share, not marked up", async () => {
+    const { saveBidRecap, applyBidRecap } = await actions();
+    for (const line of db.jobLineItem) if (line.jobId === "job_1") line.unitPrice = "0";
+    await saveBidRecap("job_1", form(RATES));
+    const result = await applyBidRecap("job_1");
+    expect(result.ok).toBe(true);
+    // The same prices as the worked example above, from a price of 0.
+    expect(priceOf("board")).toBe(2.66);
+    expect(priceOf("hang")).toBe(13.32);
+  });
+
   it("is refused after award, with the prices left alone", async () => {
     const { applyBidRecap } = await actions();
     db.jobBidRecap.push({ id: "r_done", jobId: "job_done", companyId: "co_1", overheadPercent: "10" });

@@ -6,6 +6,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import {
   bidRecap,
+  nothingToSpread,
   spreadToLines,
   spreadTotal,
   RECAP_RATE_FIELDS,
@@ -397,10 +398,13 @@ export async function applyBidRecap(jobId: string): Promise<ActionResultWith<App
         throw new InputError("These rates add nothing to the bid, so the line prices are already the bid.");
       }
 
+      // The SAME sentence the panel prints beside the button before anybody
+      // presses it (bug B) — "nothing to spread the bid across" named the
+      // problem and left out the way out of it.
+      const nothing = nothingToSpread(lines);
+      if (nothing) throw new InputError(nothing);
       const spread = spreadToLines(lines, recap.bidTotal);
-      if (spread.length === 0) {
-        throw new InputError("No line on this estimate carries a price, so there is nothing to spread the bid across.");
-      }
+      if (spread.length === 0) throw new InputError("There is no line on this estimate to put the bid on.");
       for (const next of spread) {
         await tx.jobLineItem.update({ where: { id: next.id }, data: { unitPrice: next.unitPrice } });
       }
