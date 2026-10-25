@@ -1,12 +1,11 @@
-import { prisma } from "@prova/db";
 import { PageHeader } from "@/components/PageHeader";
 import { CollapsedForm } from "@/components/CollapsedForm";
 import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { EmptyState } from "@/components/EmptyState";
-import { NewWallTypeForm, StarterWallTypesButton, WallTypeCard, type WallTypeView } from "@/components/WallTypes";
-import type { WallComponentBasis } from "@/lib/wall-assemblies";
+import { NewWallTypeForm, StarterWallTypesButton, WallTypeCard } from "@/components/WallTypes";
+import { loadWallTypesScreen } from "@/lib/wall-types-view";
 
 /**
  * The company's partition schedule — every wall type it builds, and what each
@@ -18,62 +17,8 @@ export default async function WallTypesPage() {
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
   const { company } = context;
 
-  const [types, catalog, crafts, bidDefaults] = await Promise.all([
-    prisma.wallType.findMany({
-      where: { companyId: company.id },
-      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
-      include: {
-        components: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
-        _count: { select: { runs: true } },
-      },
-    }),
-    prisma.lineItemCatalogEntry.findMany({
-      where: { companyId: company.id },
-      orderBy: { description: "asc" },
-      select: { id: true, description: true, unit: true },
-    }),
-    prisma.craftClassification.findMany({
-      where: { companyId: company.id },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, unionLocal: { select: { parentInternational: true, localNumber: true } } },
-    }),
-    // Only the waste figure. The recap rates on this row have no business on
-    // this page, and selecting the whole thing would invite one of them being
-    // rendered here later by accident.
-    prisma.companyBidDefaults.findUnique({
-      where: { companyId: company.id },
-      select: { defaultWastePercent: true },
-    }),
-  ]);
-
-  const views: WallTypeView[] = types.map((type) => ({
-    id: type.id,
-    code: type.code,
-    name: type.name,
-    sides: type.sides,
-    studSpacingIn: type.studSpacingIn.toString(),
-    defaultHeightFt: type.defaultHeightFt?.toString() ?? null,
-    notes: type.notes,
-    runCount: type._count.runs,
-    components: type.components.map((c) => ({
-      id: c.id,
-      description: c.description,
-      unit: c.unit,
-      basis: c.basis as WallComponentBasis,
-      factor: c.factor.toString(),
-      wastePercent: c.wastePercent.toString(),
-      roundUp: c.roundUp,
-      productionRate: c.productionRate?.toString() ?? null,
-      costCategory: c.costCategory,
-      catalogEntryId: c.catalogEntryId,
-      craftClassificationId: c.craftClassificationId,
-    })),
-  }));
-  const catalogOptions = catalog.map((entry) => ({ id: entry.id, label: entry.unit ? `${entry.description} (${entry.unit})` : entry.description }));
-  const craftOptions = crafts.map((craft) => ({
-    id: craft.id,
-    label: `${craft.unionLocal.parentInternational} ${craft.unionLocal.localNumber} — ${craft.name}`,
-  }));
+  // Shared with C Stream Bid's /bid/wall-types — see lib/wall-types-view.ts.
+  const { views, catalogOptions, craftOptions, defaultWastePercent } = await loadWallTypesScreen(company.id);
 
   return (
     <PageShell width="working">
@@ -111,7 +56,7 @@ export default async function WallTypesPage() {
               type={type}
               catalog={catalogOptions}
               crafts={craftOptions}
-              defaultWastePercent={bidDefaults?.defaultWastePercent?.toString() ?? null}
+              defaultWastePercent={defaultWastePercent}
             />
           ))}
         </ul>

@@ -1,4 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import { decideSurface, parseHostList } from "@/lib/bid/surface";
 
 const isProtectedRoute = createRouteMatcher([
   "/dashboard(.*)",
@@ -202,9 +204,61 @@ const isProtectedRoute = createRouteMatcher([
 // tokens to another company. The cookie now carries CSRF state and a
 // cross-check, nothing that decides access.
 
+// C STREAM BID (bid.cstream.ai) — WHICH PRODUCT THIS REQUEST IS FOR.
+//
+// Every host/path decision is made by `decideSurface` in lib/bid/surface.ts,
+// which is pure and tested against the real host strings; this block only
+// turns its answer into a response. In short: on the Bid host `/<path>` is
+// rewritten to `/bid/<path>` and a CRM route redirects to the Bid home; on the
+// production app host `/bid/*` is a 404; on previews and localhost nothing
+// changes and `/bid/*` is reachable directly. `/sign-in`, `/sign-up`,
+// `/api/*`, `/__clerk/*`, `/privacy`, `/terms` and static files are shared.
+//
+// The protected-route list above is NOT the gate for Bid's pages: on the Bid
+// host the browser's path is `/estimates`, which that list has never heard
+// of. So the decision carries its own `protect`, computed on the path that
+// will actually render, and both are honoured.
+//
+// `BID_HOSTS` (comma-separated) adds hosts beyond the `bid.` first label —
+// read per request so a Vercel env change needs no code change.
+const BID_NOT_FOUND = "/bid-is-not-served-on-this-host";
+
 export default clerkMiddleware(async (auth, req) => {
-  if (isProtectedRoute(req)) {
+  const decision = decideSurface(
+    req.headers.get("host"),
+    req.nextUrl.pathname,
+    parseHostList(process.env.BID_HOSTS),
+  );
+
+  if (decision.kind === "redirect") {
+    // Built on the host the BROWSER asked for, not `req.nextUrl`'s: measured
+    // under `next start` with `Host: bid.cstream.ai`, `req.nextUrl` redirected
+    // to `http://127.0.0.1:3461/` — the address the server was bound to. (A
+    // relative Location is not an option: Next's middleware runtime parses the
+    // header and throws ERR_INVALID_URL on `/`, measured the same way.) The
+    // host is the one this decision was made for, so the redirect cannot leave
+    // the Bid host.
+    const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? req.nextUrl.host;
+    const proto = req.headers.get("x-forwarded-proto") ?? req.nextUrl.protocol.replace(/:$/, "");
+    return NextResponse.redirect(new URL(decision.pathname, `${proto}://${host}`));
+  }
+
+  if (decision.kind === "not-found") {
+    // A rewrite to a path no route answers renders the app's own 404 page
+    // with a 404 status, rather than a bare empty body.
+    const url = req.nextUrl.clone();
+    url.pathname = BID_NOT_FOUND;
+    return NextResponse.rewrite(url, { status: 404 });
+  }
+
+  if (isProtectedRoute(req) || decision.protect) {
     await auth.protect();
+  }
+
+  if (decision.kind === "rewrite") {
+    const url = req.nextUrl.clone();
+    url.pathname = decision.pathname;
+    return NextResponse.rewrite(url);
   }
 });
 

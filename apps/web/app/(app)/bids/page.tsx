@@ -29,7 +29,8 @@ import { outcomeReasonLabel } from "@/components/ai-bid/outcome";
 import { LogBidForm } from "@/components/LogBidForm";
 import { Disclosure } from "@/components/Disclosure";
 import { SeeAll, seeAllWindow } from "@/components/SeeAll";
-import { bidsDueSoon, bidsView, daysLeftLabel } from "@/lib/bids-due-soon";
+import { bidsView, daysLeftLabel } from "@/lib/bids-due-soon";
+import { loadBidsDueSoon } from "@/lib/bids-due-soon-query";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -234,13 +235,8 @@ export default async function BidsPage({
 
   // Read-only over the same rows: what is still to price, soonest first.
   // Its own query because the history filters above must not hide it.
-  const dueSoon = bidsDueSoon(
-    await prisma.bidInvitation.findMany({
-      where: { companyId: company.id, status: "INVITED", dueDate: { gte: new Date(`${today}T00:00:00.000Z`) } },
-      select: { id: true, projectName: true, status: true, dueDate: true, contact: { select: { name: true } } },
-    }),
-    today,
-  );
+  // Shared with C Stream Bid's /bid/bids — lib/bids-due-soon-query.ts.
+  const dueSoon = await loadBidsDueSoon(company.id, today);
   const view = bidsView(viewParam, dueSoon.length, isFiltered);
   const viewTab = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md px-3 text-sm font-medium ${active ? "bg-rail-hover text-ink" : "text-ink-body hover:text-ink"}`;
