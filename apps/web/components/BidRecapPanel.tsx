@@ -11,8 +11,7 @@ import {
   bidRecap,
   COST_CATEGORY_LABELS,
   COST_CATEGORY_VALUES,
-  nothingToSpread,
-  spreadToLines,
+  applyPlan,
   spreadTotal,
   RECAP_RATE_FIELDS,
   RECAP_RATE_KEYS,
@@ -126,6 +125,7 @@ export function BidRecapPanel({
   );
   const [saveError, setSaveError] = useState<string | null>(null);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
+  const [confirmingPrice, setConfirmingPrice] = useState(false);
   const [isSaving, startSave] = useTransition();
   const [isApplying, startApply] = useTransition();
   // The server's lines with every unanswered edit laid over them — see
@@ -143,7 +143,9 @@ export function BidRecapPanel({
       }),
     );
     const recap = bidRecap(shownLines, parsed);
-    const spread = spreadToLines(shownLines, recap.bidTotal);
+    // What Apply would do — the SAME `applyPlan` the server runs on press.
+    const plan = applyPlan(shownLines, recap.bidTotal);
+    const spread = plan.kind === "NOTHING" ? [] : plan.spread;
     // The margin is of the LINE PRICES, so it does not depend on the draft
     // rates at all — but it lives in this memo because it is derived from the
     // same `lines` and nothing should recompute it on a keystroke.
@@ -152,14 +154,20 @@ export function BidRecapPanel({
       landsAt: spread.length > 0 ? spreadTotal(shownLines, spread) : recap.bidTotal,
       margin: bidMargin(shownLines),
       // Bug B: why Apply would write nothing, said BEFORE it is pressed.
-      nothing: nothingToSpread(shownLines),
+      plan,
+      nothing: plan.kind === "NOTHING" ? plan.reason : null,
       // Bug C: the bid of record — what the job header and the proposal print —
       // from the one function they read. See the row that renders it.
       bidOnJob: bidTotalOf(shownLines),
     };
   }, [draft, shownLines]);
 
-  const { recap, landsAt, margin, nothing, bidOnJob } = preview;
+  const { recap, landsAt, margin, plan, nothing, bidOnJob } = preview;
+  // Step one of the two-step confirmation. Only meaningful while the plan is
+  // still "price the unpriced lines": if an edit changes the plan, the confirm
+  // goes away with it rather than confirming a different action.
+  const confirming = confirmingPrice && plan.kind === "PRICE_UNPRICED";
+  const descriptionOf = (id: string) => shownLines.find((l) => l.id === id)?.description ?? "a line";
   const roundingGap = Math.round((landsAt - recap.bidTotal) * 100) / 100;
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -365,24 +373,49 @@ export function BidRecapPanel({
 
       <div className="flex flex-col gap-2 border-t border-line-row pt-3">
         <div className="flex flex-wrap items-center gap-3">
+          {confirming && (
+            // Cancel takes the FIRST slot: this cluster is left-aligned, so the
+            // first slot is the one Apply just vacated, and a hurried second
+            // click lands on Cancel rather than on the write.
+            <button
+              type="button"
+              disabled={isApplying}
+              onClick={() => setConfirmingPrice(false)}
+              className={secondaryActionClass}
+            >
+              Cancel
+            </button>
+          )}
           <button
             type="button"
             disabled={isApplying || recap.addedTotal === 0 || nothing !== null}
             title="Raises each line's unit price so the estimate's lines add up to the bid. Do this once the price is settled."
-            onClick={() =>
+            onClick={() => {
+              // Step one of two when no line has a price: show what will be
+              // written and wait. Never silent.
+              if (plan.kind === "PRICE_UNPRICED" && !confirming) {
+                setApplyMessage(null);
+                setConfirmingPrice(true);
+                return;
+              }
               startApply(async () => {
                 setApplyMessage(null);
-                const result = await applyBidRecap(jobId);
+                const result = await applyBidRecap(jobId, confirming ? { priceUnpriced: true } : {});
+                setConfirmingPrice(false);
                 setApplyMessage(
                   result.ok
                     ? `Applied to ${result.value.lineCount} line${result.value.lineCount === 1 ? "" : "s"} — they now total ${money(result.value.appliedTotal)}.`
                     : result.error,
                 );
-              })
-            }
+              });
+            }}
             className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isApplying ? "Applying…" : "Apply to line prices"}
+            {isApplying
+              ? "Applying…"
+              : confirming
+                ? `Confirm — price ${plan.kind === "PRICE_UNPRICED" ? plan.spread.length : 0} line${plan.kind === "PRICE_UNPRICED" && plan.spread.length === 1 ? "" : "s"}`
+                : "Apply to line prices"}
           </button>
           {roundingGap !== 0 && recap.addedTotal !== 0 && (
             <p className="text-xs text-ink-muted">
@@ -421,6 +454,36 @@ export function BidRecapPanel({
             a markup to apply: with no rates the button is already disabled and
             the sentence would be about nothing. */}
         {recap.addedTotal !== 0 && nothing && <p className="text-sm text-tag-amber-ink">{nothing}</p>}
+        {/* NO LINE HAS A PRICE: Apply offers to price the lines that have a
+            cost, and says exactly what that writes before anyone confirms. */}
+        {confirming && plan.kind === "PRICE_UNPRICED" && (
+          <div role="alert" className="text-sm text-ink-body">
+            <p>
+              This sets a price on {plan.spread.length} line{plan.spread.length === 1 ? "" : "s"} that{" "}
+              {plan.spread.length === 1 ? "has" : "have"} none, totalling {money(landsAt)}. Lines you&apos;ve priced by hand:
+              none.
+            </p>
+            {plan.leftUnpriced.length > 0 && (
+              <p className="mt-1">
+                {plan.leftUnpriced.length} line{plan.leftUnpriced.length === 1 ? " has" : "s have"} no cost, so{" "}
+                {plan.leftUnpriced.length === 1 ? "it stays" : "they stay"} unpriced:{" "}
+                {plan.leftUnpriced.map((l) => descriptionOf(l.id)).join(", ")}.
+              </p>
+            )}
+          </div>
+        )}
+        {!confirming && plan.kind === "PRICE_UNPRICED" && recap.addedTotal !== 0 && (
+          <p className="text-xs text-ink-muted">
+            No line has a unit price yet. Apply will show you the {plan.spread.length} line
+            {plan.spread.length === 1 ? "" : "s"} it would price and ask you to confirm.
+          </p>
+        )}
+        {!confirming && plan.kind === "PRICED" &&plan.costOnlyLeftAlone > 0 && (
+          <p className="text-xs text-ink-muted">
+            {plan.costOnlyLeftAlone} cost-only line{plan.costOnlyLeftAlone === 1 ? " is" : "s are"} left alone — Apply
+            re-prices only the lines that already carry a price.
+          </p>
+        )}
         {applyMessage && <p className="text-sm text-ink-body">{applyMessage}</p>}
       </div>
 

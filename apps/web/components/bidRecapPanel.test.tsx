@@ -47,8 +47,13 @@ const setLineCostCategory = vi.fn(
   () => new Promise<{ ok: true } | { ok: false; error: string }>((resolve) => pending.push(resolve)),
 );
 
+const applyBidRecap = vi.fn<(jobId: string, options?: { priceUnpriced?: boolean }) => Promise<unknown>>(async () => ({
+  ok: true as const,
+  value: { bidTotal: 0, appliedTotal: 0, lineCount: 0 },
+}));
+
 vi.mock("@/lib/actions", () => ({
-  applyBidRecap: vi.fn(),
+  applyBidRecap,
   saveBidRecap: vi.fn(),
   setLineBudgetedCost,
   setLineCostCategory,
@@ -221,11 +226,12 @@ describe("BidRecapPanel — Apply on an estimate with no priced line (bug B)", (
   const applyButton = () =>
     [...host.querySelectorAll("button")].find((b) => b.textContent?.includes("Apply to line prices"))!;
 
-  it("says why nothing would be written, and what to do, before the press", () => {
-    render(COSTED, RATES);
-    expect(host.textContent).toContain("every line here is cost-only");
-    expect(host.textContent).toContain("Give each line you sell a unit price");
+  it("offers nothing when no line has a cost to share the bid by: Apply stays disabled and no confirmation appears", () => {
+    // (No sentence here: with no cost there is no markup either, and the panel
+    // only prints the reason when a markup is waiting to be applied.)
+    render([{ ...LINES[0], unitCost: 0 }, LINES[1]], RATES);
     expect(applyButton().disabled).toBe(true);
+    expect(host.textContent).not.toContain("This sets a price on");
   });
 
   it("says nothing of the kind once a line carries a price, and Apply is live", () => {
@@ -238,6 +244,73 @@ describe("BidRecapPanel — Apply on an estimate with no priced line (bug B)", (
     render([{ ...LINES[0], unitCost: null, unitPrice: 3 }, { ...LINES[1], unitCost: 6.5 }], RATES);
     expect(host.textContent).toContain("the lines that carry a unit price have no budgeted cost");
     expect(applyButton().disabled).toBe(true);
+  });
+
+  /**
+   * THE DECISION: when no line carries a price, Apply offers to price the lines
+   * that have a cost — and never silently. 3,500 + 1,950 of cost, +10% +5% is a
+   * 6,294.75 bid; the unit prices hold two decimals, so the lines land at
+   * 4,032.00 + 2,253.00 = 6,285.00 (the panel already says so beside the bid).
+   */
+  describe("pricing the unpriced lines", () => {
+    const button = (label: string) =>
+      [...host.querySelectorAll("button")].find((b) => b.textContent?.includes(label));
+    const click = async (label: string) => {
+      await act(async () => {
+        button(label)!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+    };
+
+    beforeEach(() => applyBidRecap.mockClear());
+
+    it("is live, and the first press writes NOTHING: it shows what will happen and waits", async () => {
+      render(COSTED, RATES);
+      expect(applyButton().disabled).toBe(false);
+      await click("Apply to line prices");
+      expect(applyBidRecap).not.toHaveBeenCalled();
+      expect(host.textContent).toContain(
+        "This sets a price on 2 lines that have none, totalling $6,285.00. Lines you've priced by hand: none.",
+      );
+      expect(button("Confirm — price 2 lines")).toBeTruthy();
+      expect(button("Cancel")).toBeTruthy();
+    });
+
+    it("writes only on Confirm, sending the second step to the server", async () => {
+      render(COSTED, RATES);
+      await click("Apply to line prices");
+      await click("Confirm — price 2 lines");
+      expect(applyBidRecap).toHaveBeenCalledTimes(1);
+      expect(applyBidRecap).toHaveBeenCalledWith("job-1", { priceUnpriced: true });
+    });
+
+    it("Cancel closes the confirmation and writes nothing", async () => {
+      render(COSTED, RATES);
+      await click("Apply to line prices");
+      await click("Cancel");
+      expect(applyBidRecap).not.toHaveBeenCalled();
+      expect(host.textContent).not.toContain("This sets a price on");
+      expect(button("Apply to line prices")).toBeTruthy();
+    });
+
+    it("names a zero-cost line that stays unpriced", async () => {
+      render([...COSTED, { id: "gc", description: "General conditions", quantity: 1, unitCost: null, unitPrice: null, costCategory: null }], RATES);
+      await click("Apply to line prices");
+      expect(host.textContent).toContain("This sets a price on 2 lines that have none");
+      expect(host.textContent).toContain("1 line has no cost, so it stays unpriced: General conditions.");
+    });
+
+    it("mixed: Apply is the unchanged one-press spread, and one line says cost-only lines are left alone", async () => {
+      render([{ ...COSTED[0], unitPrice: 0 }, COSTED[1]], RATES);
+      expect(host.textContent).toContain("1 cost-only line is left alone");
+      await click("Apply to line prices");
+      expect(applyBidRecap).toHaveBeenCalledWith("job-1", {});
+      expect(host.textContent).not.toContain("This sets a price on");
+    });
+
+    it("says no such thing when every line is priced", () => {
+      render([{ ...COSTED[0], unitPrice: 0 }, { ...COSTED[1], unitPrice: 0 }], RATES);
+      expect(host.textContent).not.toContain("left alone");
+    });
   });
 });
 
