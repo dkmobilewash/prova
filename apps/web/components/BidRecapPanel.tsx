@@ -125,7 +125,7 @@ export function BidRecapPanel({
   );
   const [saveError, setSaveError] = useState<string | null>(null);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
-  const [confirmingPrice, setConfirmingPrice] = useState(false);
+  const [pricePreviewOpen, setPricePreviewOpen] = useState(false);
   const [isSaving, startSave] = useTransition();
   const [isApplying, startApply] = useTransition();
   // The server's lines with every unanswered edit laid over them — see
@@ -166,7 +166,7 @@ export function BidRecapPanel({
   // Step one of the two-step confirmation. Only meaningful while the plan is
   // still "price the unpriced lines": if an edit changes the plan, the confirm
   // goes away with it rather than confirming a different action.
-  const confirming = confirmingPrice && plan.kind === "PRICE_UNPRICED";
+  const previewOpen = pricePreviewOpen && plan.kind === "PRICE_UNPRICED";
   const descriptionOf = (id: string) => shownLines.find((l) => l.id === id)?.description ?? "a line";
   const roundingGap = Math.round((landsAt - recap.bidTotal) * 100) / 100;
 
@@ -373,14 +373,14 @@ export function BidRecapPanel({
 
       <div className="flex flex-col gap-2 border-t border-line-row pt-3">
         <div className="flex flex-wrap items-center gap-3">
-          {confirming && (
+          {previewOpen && (
             // Cancel takes the FIRST slot: this cluster is left-aligned, so the
             // first slot is the one Apply just vacated, and a hurried second
             // click lands on Cancel rather than on the write.
             <button
               type="button"
               disabled={isApplying}
-              onClick={() => setConfirmingPrice(false)}
+              onClick={() => setPricePreviewOpen(false)}
               className={secondaryActionClass}
             >
               Cancel
@@ -393,15 +393,15 @@ export function BidRecapPanel({
             onClick={() => {
               // Step one of two when no line has a price: show what will be
               // written and wait. Never silent.
-              if (plan.kind === "PRICE_UNPRICED" && !confirming) {
+              if (plan.kind === "PRICE_UNPRICED" && !previewOpen) {
                 setApplyMessage(null);
-                setConfirmingPrice(true);
+                setPricePreviewOpen(true);
                 return;
               }
               startApply(async () => {
                 setApplyMessage(null);
-                const result = await applyBidRecap(jobId, confirming ? { priceUnpriced: true } : {});
-                setConfirmingPrice(false);
+                const result = await applyBidRecap(jobId, previewOpen ? { priceUnpriced: true } : {});
+                setPricePreviewOpen(false);
                 setApplyMessage(
                   result.ok
                     ? `Applied to ${result.value.lineCount} line${result.value.lineCount === 1 ? "" : "s"} — they now total ${money(result.value.appliedTotal)}.`
@@ -413,7 +413,7 @@ export function BidRecapPanel({
           >
             {isApplying
               ? "Applying…"
-              : confirming
+              : previewOpen
                 ? `Confirm — price ${plan.kind === "PRICE_UNPRICED" ? plan.spread.length : 0} line${plan.kind === "PRICE_UNPRICED" && plan.spread.length === 1 ? "" : "s"}`
                 : "Apply to line prices"}
           </button>
@@ -456,7 +456,7 @@ export function BidRecapPanel({
         {recap.addedTotal !== 0 && nothing && <p className="text-sm text-tag-amber-ink">{nothing}</p>}
         {/* NO LINE HAS A PRICE: Apply offers to price the lines that have a
             cost, and says exactly what that writes before anyone confirms. */}
-        {confirming && plan.kind === "PRICE_UNPRICED" && (
+        {previewOpen && plan.kind === "PRICE_UNPRICED" && (
           <div role="alert" className="text-sm text-ink-body">
             <p>
               This sets a price on {plan.spread.length} line{plan.spread.length === 1 ? "" : "s"} that{" "}
@@ -472,13 +472,13 @@ export function BidRecapPanel({
             )}
           </div>
         )}
-        {!confirming && plan.kind === "PRICE_UNPRICED" && recap.addedTotal !== 0 && (
+        {!previewOpen && plan.kind === "PRICE_UNPRICED" && recap.addedTotal !== 0 && (
           <p className="text-xs text-ink-muted">
             No line has a unit price yet. Apply will show you the {plan.spread.length} line
             {plan.spread.length === 1 ? "" : "s"} it would price and ask you to confirm.
           </p>
         )}
-        {!confirming && plan.kind === "PRICED" &&plan.costOnlyLeftAlone > 0 && (
+        {!previewOpen && plan.kind === "PRICED" && plan.costOnlyLeftAlone > 0 && (
           <p className="text-xs text-ink-muted">
             {plan.costOnlyLeftAlone} cost-only line{plan.costOnlyLeftAlone === 1 ? " is" : "s are"} left alone — Apply
             re-prices only the lines that already carry a price.
