@@ -480,18 +480,74 @@ export function spreadRecipients(lines: readonly RecapLine[]): RecapLine[] {
  */
 export function nothingToSpread(lines: readonly RecapLine[]): string | null {
   if (spreadRecipients(lines).length > 0) return null;
+  // No line carries a price but some have a cost: Apply OFFERS to price them
+  // (`applyPlan`, PRICE_UNPRICED) — that is not "nothing to spread".
+  if (unpricedRecipients(lines).length > 0) return null;
   const priced = lines.filter((line) => line.unitPrice != null && line.quantity > 0);
   if (priced.length === 0) {
     return (
-      "Apply has no line to put the bid on: every line here is cost-only, with no unit price. " +
-      "Apply re-prices the lines you sell and leaves cost-only lines (general conditions, overhead) unpriced. " +
-      "Give each line you sell a unit price in the line items above — any figure, Apply replaces it — then apply."
+      "Apply has no line to put the bid on: no line has both a quantity and a cost to share the bid by. " +
+      "Set a cost on the lines you sell in the list below, then apply."
     );
   }
   return (
     "Apply has no line to put the bid on: the lines that carry a unit price have no budgeted cost, " +
     "so they have no share of it. Set a cost on each priced line below, then apply."
   );
+}
+
+/**
+ * When NO line on the estimate carries a unit price, the lines Apply may offer
+ * to price: a quantity and a cost.
+ *
+ * It is `spreadRecipients` — the one filter — run as though each unpriced line
+ * held a placeholder price, so "who gets a share" has one definition. Empty
+ * whenever ANY line is priced: that is the mixed case, where cost-only lines
+ * (general conditions) stay unpriced exactly as before.
+ */
+export function unpricedRecipients(lines: readonly RecapLine[]): RecapLine[] {
+  if (lines.some((line) => line.unitPrice != null)) return [];
+  return spreadRecipients(lines.map((line) => ({ ...line, unitPrice: 0 })));
+}
+
+/**
+ * WHAT APPLY WILL DO, decided once — by the panel for its preview and by
+ * `applyBidRecap` for the write, so the two cannot disagree.
+ *
+ *  - `PRICED`: some line carries a price. Today's behaviour, unchanged: the bid
+ *    is spread across the priced lines; `costOnlyLeftAlone` counts the
+ *    cost-only lines that receive nothing.
+ *  - `PRICE_UNPRICED`: no line carries a price (a new wall sub's estimate comes
+ *    in this way). The bid is spread across the lines that have a cost by the
+ *    SAME `spreadToLines` — cost-proportional, largest-remainder cents. A line
+ *    with no cost (or no quantity) cannot take a share and stays unpriced,
+ *    listed in `leftUnpriced`. Whether to write is the caller's to confirm.
+ *  - `NOTHING`: no line can receive a price; `reason` says why and what to do.
+ */
+export type ApplyPlan =
+  | { kind: "PRICED"; spread: SpreadLine[]; costOnlyLeftAlone: number }
+  | { kind: "PRICE_UNPRICED"; spread: SpreadLine[]; leftUnpriced: RecapLine[] }
+  | { kind: "NOTHING"; reason: string };
+
+export function applyPlan(lines: readonly RecapLine[], bidTotal: number): ApplyPlan {
+  const nothing = nothingToSpread(lines);
+  if (nothing) return { kind: "NOTHING", reason: nothing };
+  if (spreadRecipients(lines).length > 0) {
+    return {
+      kind: "PRICED",
+      spread: spreadToLines(lines, bidTotal),
+      costOnlyLeftAlone: lines.filter((line) => line.unitPrice == null).length,
+    };
+  }
+  const recipients = new Set(unpricedRecipients(lines).map((line) => line.id));
+  return {
+    kind: "PRICE_UNPRICED",
+    spread: spreadToLines(
+      lines.map((line) => ({ ...line, unitPrice: 0 })),
+      bidTotal,
+    ),
+    leftUnpriced: lines.filter((line) => !recipients.has(line.id)),
+  };
 }
 
 export function spreadToLines(lines: readonly RecapLine[], bidTotal: number): SpreadLine[] {

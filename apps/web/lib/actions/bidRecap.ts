@@ -6,8 +6,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import {
   bidRecap,
-  nothingToSpread,
-  spreadToLines,
+  applyPlan,
   spreadTotal,
   RECAP_RATE_FIELDS,
   RECAP_RATE_KEYS,
@@ -358,7 +357,10 @@ export type ApplySummary = { bidTotal: number; appliedTotal: number; lineCount: 
  * comes from the request: a browser posts "apply", and what gets written is
  * computed on this side from the job's own lines and its own stored rates.
  */
-export async function applyBidRecap(jobId: string): Promise<ActionResultWith<ApplySummary>> {
+export async function applyBidRecap(
+  jobId: string,
+  options: { priceUnpriced?: boolean } = {},
+): Promise<ActionResultWith<ApplySummary>> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return { ok: false, error: JOB_COSTS_ONLY };
   const companyId = context.company.id;
@@ -398,12 +400,26 @@ export async function applyBidRecap(jobId: string): Promise<ActionResultWith<App
         throw new InputError("These rates add nothing to the bid, so the line prices are already the bid.");
       }
 
-      // The SAME sentence the panel prints beside the button before anybody
-      // presses it (bug B) — "nothing to spread the bid across" named the
-      // problem and left out the way out of it.
-      const nothing = nothingToSpread(lines);
-      if (nothing) throw new InputError(nothing);
-      const spread = spreadToLines(lines, recap.bidTotal);
+      // The SAME plan the panel previews (`applyPlan`), decided here from the
+      // job's own lines. Nothing about it comes from the request except the
+      // second step of the confirmation below.
+      const plan = applyPlan(lines, recap.bidTotal);
+      // The SAME sentence the panel prints beside the button (bug B).
+      if (plan.kind === "NOTHING") throw new InputError(plan.reason);
+      // Pricing lines that have NO price is a decision, not a side effect: it
+      // writes the numbers every invoice and pay app will read. The panel asks
+      // first; the server does not do it for a request that did not.
+      if (plan.kind === "PRICE_UNPRICED" && !options.priceUnpriced) {
+        throw new InputError(
+          `No line on this estimate has a price. Apply would set one on ${plan.spread.length} line${plan.spread.length === 1 ? "" : "s"} — press Apply and confirm to go ahead.`,
+        );
+      }
+      if (plan.kind === "PRICED" && options.priceUnpriced) {
+        throw new InputError(
+          "A line has been priced since you pressed Apply, so pricing the unpriced lines no longer applies. Review the estimate and press Apply again.",
+        );
+      }
+      const spread = plan.spread;
       if (spread.length === 0) throw new InputError("There is no line on this estimate to put the bid on.");
       for (const next of spread) {
         await tx.jobLineItem.update({ where: { id: next.id }, data: { unitPrice: next.unitPrice } });
