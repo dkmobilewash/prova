@@ -246,6 +246,17 @@ export const PERSONAS = {
    * Restoring the switch in an `afterAll` is not enough on its own: that
    * helps once the rooms file FINISHES and does nothing about the overlap
    * while it runs. A company of its own is what actually isolates it.
+   *
+   * ── AND IT ALSO HOSTS `wall-legend-library.spec.ts`, FOR THE SAME REASON ──
+   *
+   * That file writes a wall type (the fixture's P1) into its company's
+   * library, which is company-wide. On TAKEOFF it made the library non-empty,
+   * `/wall-types` stopped offering the starter button, and
+   * `takeoff-workspace.spec.ts` step 20 lost its W1. Nothing on ROOMS reads
+   * the wall-type library, and the room-finder switch does not touch the
+   * legend review screen — so the two files cannot invalidate each other.
+   * A new persona would have been cleaner and costs a Clerk user on the
+   * shared instance, where one refused phone number blocks the whole suite.
    */
   rooms: {
     email: "e2e-rooms+clerk_test@example.com",

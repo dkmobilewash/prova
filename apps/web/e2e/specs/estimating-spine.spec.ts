@@ -56,6 +56,14 @@ test.describe("the estimating desk", () => {
   const JOB_NAME = "ZZ-E2E Estimating — Building D level 2 drywall";
   const GC_NAME = "ZZ-E2E Estimating GC";
   /**
+   * The starter library, in the order `addStarterWallTypes` writes it. Ten
+   * since #809, two before it. Written out rather than imported from the
+   * action — a list checked against itself asserts nothing — and the same
+   * literal `lib/actions/wallTypes.test.ts` pins, so the two cannot disagree
+   * quietly.
+   */
+  const STARTER_CODES = ["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "FLR1", "PT1", "SLB1", "FTG1"];
+  /**
    * 1,000 SF at $2.00 of COST — the only line carrying a cost, so the recap's
    * direct cost is this and nothing else.
    *
@@ -182,7 +190,16 @@ test.describe("the estimating desk", () => {
     await expect(page.getByRole("heading", { name: "Wall types", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "No wall types yet", exact: true })).toBeVisible();
 
-    await page.getByRole("button", { name: "Start from two common wall types" }).click();
+    // ── THE BUTTON WAS RENAMED BY #809, AND THIS LINE WAITED 180s FOR THE OLD ONE ──
+    //
+    // #809 grew the starter set from two partitions to ten trade assemblies
+    // (`STARTER_TYPES` in lib/actions/wallTypes.ts) and relabelled the button
+    // from "Start from two common wall types" to "Start from the common trade
+    // assemblies". A click on a name that no longer exists does not fail, it
+    // WAITS — so this step spent the describe's whole 180s budget here and
+    // skipped steps 4-11, the bid recap among them. `exact`, so the next
+    // rename fails on this line rather than matching a lookalike.
+    await page.getByRole("button", { name: "Start from the common trade assemblies", exact: true }).click();
 
     // ── A COLD ROUTE'S FIRST SERVER ACTION NEEDS MORE THAN TEN SECONDS (#707) ──
     //
@@ -195,7 +212,7 @@ test.describe("the estimating desk", () => {
     //
     // ONLY THE TIMEOUT CHANGES, deliberately. Two wider fixes were considered
     // and are wrong here. Accepting the action's refusal text as well
-    // ("You already have wall types tagged W1 and W2") covers a database that
+    // ("You already have every starter assembly (…)") covers a database that
     // is not fresh — but `run.mjs` creates a throwaway one per run, and the
     // one documented way round that, `E2E_DATABASE_URL`, already fails three
     // lines above on "No wall types yet". So that tolerance would be
@@ -205,7 +222,17 @@ test.describe("the estimating desk", () => {
     //
     // The 30s is the describe's own 180s budget, not a new allowance: it is
     // room for one cold compile, on the one assertion that waits on one.
-    await expect(page.getByText("Added W1 and W2.")).toBeVisible({ timeout: 30_000 });
+    //
+    // The sentence is the action's own, whole: `addStarterWallTypes` returns
+    // the codes it wrote and `StarterWallTypesButton` joins them with ", ".
+    // Written out rather than matched by a prefix, so a starter that silently
+    // stops being written fails here and not three steps later.
+    await expect(
+      page.getByText(
+        `Added ${STARTER_CODES.join(", ")}. Link each part to your price book — they arrive unpriced on purpose.`,
+        { exact: true },
+      ),
+    ).toBeVisible({ timeout: 30_000 });
 
     await page.reload();
     await expectHealthy(page, "/wall-types after the starter types", { monitor });
@@ -213,8 +240,9 @@ test.describe("the estimating desk", () => {
     await expect(list).toBeVisible();
     // Each card is an edit-in-place form, so the tag is an input's value and
     // not page text — read it the way it is rendered.
-    await expect(list.locator('input[name="code"][value="W1"]')).toHaveCount(1);
-    await expect(list.locator('input[name="code"][value="W2"]')).toHaveCount(1);
+    for (const code of STARTER_CODES) {
+      await expect(list.locator(`input[name="code"][value="${code}"]`), `the starter library has no ${code}`).toHaveCount(1);
+    }
   });
 
   test("4. a wall run turns into estimate lines (#467)", async () => {

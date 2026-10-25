@@ -956,10 +956,34 @@ test.describe("the full-screen takeoff workspace", () => {
     // an estimate line. The missing screenshot is what gave it away.
     //
     // So the library is created through the real button on the real page.
+    //
+    // ── GATED ON W1, NOT ON "THE PICKER IS EMPTY" ──
+    //
+    // This used to seed only when the picker held nothing but its placeholder,
+    // which read "any assembly at all" as "the starter library". On every main
+    // run after #809 the only assembly was the P1 that
+    // `wall-legend-library.spec.ts` had written into this same company from the
+    // other worker, so the seeding was skipped and the assertion below failed
+    // naming W1. That file is on its own company now (lib/personas.ts, ROOMS);
+    // this gate asks the question the step actually depends on, so a neighbour
+    // that writes some other type cannot turn it into a skip again.
     const picker = assemblyPanel.locator('[data-takeoff="pick-assembly"]');
-    if ((await picker.locator("option").count()) <= 1) {
+    const optionTexts = () => picker.locator("option").evaluateAll((nodes) => nodes.map((n) => n.textContent?.trim() ?? ""));
+    // Visible first: reading the options of a picker that has not rendered yet
+    // returns an empty list, which would look exactly like "no W1".
+    await expect(picker).toBeVisible();
+    const offered = await optionTexts();
+    if (!offered.some((text) => text.startsWith("W1"))) {
       await page.goto("/wall-types");
-      await page.getByRole("button", { name: /Start from the common trade assemblies/ }).click();
+      // The starter button is offered only on an EMPTY library. If it is not
+      // here, something else wrote a wall type into this company — say so,
+      // rather than spending the step's budget waiting on a click.
+      const starter = page.getByRole("button", { name: "Start from the common trade assemblies", exact: true });
+      await expect(
+        starter,
+        `no W1 and no starter button: the library already holds ${offered.slice(1).join(" | ")}, written into the TAKEOFF company by another spec`,
+      ).toBeVisible();
+      await starter.click();
       await expect(page.getByText(/^Added /)).toBeVisible({ timeout: 60_000 });
       await onWorkspace(jobOne);
       await setRail("toggle-items", true);
