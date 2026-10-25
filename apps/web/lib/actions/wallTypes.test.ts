@@ -338,4 +338,39 @@ describe("starter wall types", () => {
 
     expect(await addStarterWallTypes()).toMatchObject({ ok: false });
   });
+
+  it("on a library that already has types, adds ONLY the missing starters and never touches the company's own (#818)", async () => {
+    // A company that built W1 its own way, has a lower-case `w3` that is a
+    // different wall, and a schedule type of its own. The press must add the
+    // other seven starters and leave all three exactly as they were.
+    db.wallType = db.wallType.filter((t) => t.companyId !== "co_1");
+    db.wallTypeComponent = [];
+    db.wallType.push(
+      { id: "own_w1", companyId: "co_1", code: "W1", name: "Our W1 — 6in 18ga, two layers", sortOrder: 0 },
+      { id: "own_w3", companyId: "co_1", code: "w3", name: "Our w3 — shaft wall", sortOrder: 1 },
+      { id: "own_a1", companyId: "co_1", code: "A1", name: "Schedule type A1", sortOrder: 2 },
+    );
+    db.wallTypeComponent.push({ id: "own_part", wallTypeId: "own_w1", description: "6in 18ga studs" });
+    const before = JSON.stringify(db.wallType.filter((t) => t.id.startsWith("own_")));
+    const { addStarterWallTypes } = await actions();
+
+    const expected = ["W2", "EW1", "FIN5", "ACT1", "FLR1", "PT1", "SLB1", "FTG1"];
+    expect(await addStarterWallTypes()).toEqual({ ok: true, value: { added: expected } });
+
+    const mine = db.wallType.filter((t) => t.companyId === "co_1");
+    // Exactly one of each code, compared the way the action compares them.
+    const codes = mine.map((t) => String(t.code).toUpperCase());
+    expect(new Set(codes).size, `a code was written twice: ${codes.join(", ")}`).toBe(codes.length);
+    expect(mine.map((t) => t.code)).toEqual(["W1", "w3", "A1", ...expected]);
+    // The company's own rows, byte for byte, and their parts.
+    expect(JSON.stringify(db.wallType.filter((t) => t.id.startsWith("own_")))).toBe(before);
+    expect(db.wallTypeComponent.filter((c) => c.wallTypeId === "own_w1").map((c) => c.id)).toEqual(["own_part"]);
+    // After the company's own types in the list, not interleaved with them.
+    const added = mine.filter((t) => !String(t.id).startsWith("own_")).map((t) => t.sortOrder);
+    expect(added).toEqual([3, 4, 5, 6, 7, 8, 9, 10]);
+
+    // And with nothing left to add, a sentence rather than a second copy.
+    expect(await addStarterWallTypes()).toMatchObject({ ok: false });
+    expect(db.wallType.filter((t) => t.companyId === "co_1")).toHaveLength(11);
+  });
 });

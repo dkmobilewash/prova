@@ -193,13 +193,19 @@ test.describe("the estimating desk", () => {
     // ── THE BUTTON WAS RENAMED BY #809, AND THIS LINE WAITED 180s FOR THE OLD ONE ──
     //
     // #809 grew the starter set from two partitions to ten trade assemblies
-    // (`STARTER_TYPES` in lib/actions/wallTypes.ts) and relabelled the button
+    // (`STARTER_TYPES`, now in lib/wall-type-starters.ts) and relabelled the button
     // from "Start from two common wall types" to "Start from the common trade
     // assemblies". A click on a name that no longer exists does not fail, it
     // WAITS — so this step spent the describe's whole 180s budget here and
     // skipped steps 4-11, the bid recap among them. `exact`, so the next
     // rename fails on this line rather than matching a lookalike.
-    await page.getByRole("button", { name: "Start from the common trade assemblies", exact: true }).click();
+    //
+    // AND IT SAYS HOW MANY IT ADDS SINCE #818, so the count is pinned too: a
+    // fresh company is missing all ten, and a button that says otherwise is
+    // counting a library this step has just asserted is empty.
+    await page
+      .getByRole("button", { name: `Start from the common trade assemblies (adds ${STARTER_CODES.length})`, exact: true })
+      .click();
 
     // ── A COLD ROUTE'S FIRST SERVER ACTION NEEDS MORE THAN TEN SECONDS (#707) ──
     //

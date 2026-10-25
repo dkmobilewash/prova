@@ -7,6 +7,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { EmptyState } from "@/components/EmptyState";
 import { NewWallTypeForm, StarterWallTypesButton, WallTypeCard, type WallTypeView } from "@/components/WallTypes";
 import type { WallComponentBasis } from "@/lib/wall-assemblies";
+import { missingStarterTypes } from "@/lib/wall-type-starters";
 
 /**
  * The company's partition schedule — every wall type it builds, and what each
@@ -69,6 +70,13 @@ export default async function WallTypesPage() {
       craftClassificationId: c.craftClassificationId,
     })),
   }));
+  // ── THE STARTERS ARE OFFERED WHILE ANY IS MISSING (#818) ──
+  //
+  // They used to be offered only on an EMPTY library, so a company whose first
+  // type came off a partition schedule could never get W1 or ACT1 without
+  // typing them. `missingStarterTypes` is the same rule `addStarterWallTypes`
+  // writes by, so the count on the button is the count the press adds.
+  const missingStarters = missingStarterTypes(types.map((type) => type.code)).map((type) => type.code);
   const catalogOptions = catalog.map((entry) => ({ id: entry.id, label: entry.unit ? `${entry.description} (${entry.unit})` : entry.description }));
   const craftOptions = crafts.map((craft) => ({
     id: craft.id,
@@ -101,7 +109,6 @@ export default async function WallTypesPage() {
             }
             actions={[{ label: "Open your price book", href: "/catalog" }]}
           />
-          <StarterWallTypesButton />
         </div>
       ) : (
         <ul data-tour="wall-types-list" className="mb-6 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
@@ -116,6 +123,14 @@ export default async function WallTypesPage() {
           ))}
         </ul>
       )}
+
+      {/* OUTSIDE the empty/list branch, deliberately. Pressing it on an empty
+          library swaps that branch from the empty state to the list, and a
+          button rendered inside the branch would unmount with it — taking
+          its "Added …" sentence along before anybody could read it. Here it
+          stays mounted across the swap; with nothing left to add it renders
+          only that sentence, and nothing at all once the page reloads. */}
+      <StarterWallTypesButton missing={missingStarters} hasLibrary={views.length > 0} />
 
       {/* Behind its button (declutter, 2026-10-13: it rendered open). */}
       <div data-tour="wall-types-add">
