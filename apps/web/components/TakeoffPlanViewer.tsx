@@ -110,6 +110,7 @@ import { proposalSections, showsHeadings } from "@/lib/takeoff/proposalSections"
 import { calibrationForView, type ViewScale } from "@/lib/takeoff/sheetScale";
 import { SINGLE_LINE_COLOUR, VERDICT_COLOURS } from "@/components/AnswerKeyPanel";
 import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
+import { noWallsMessage } from "@/lib/takeoff/noWallsMessage";
 import { drawingRegions, segmentsInRegions } from "@/lib/takeoff/planRegion";
 import { takeoffSheetVerdict, type TakeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
 import {
@@ -769,6 +770,23 @@ export function TakeoffPlanViewer({
    * state, which is why the name it kept is the one they were already using.
    */
   const found = wallsOnThisSheet(foundRaw, foundOnPage, pageNumber);
+  /**
+   * HOW MANY GROUPS FROM THE LAST FIND ON EACH SHEET WERE ADDED TO THE
+   * MEASUREMENTS. Accepting a group takes it off the panel, so without this an
+   * emptied panel cannot tell "nothing paired" from "you added all of it" —
+   * and said the first, under walls it had just found (user walk 2026-10-19).
+   * Per page for the reason everything else a find produces is.
+   */
+  const [groupsAddedByPage, setGroupsAddedByPage] = useState<Record<number, number>>({});
+  const groupsAdded = onThisSheet(groupsAddedByPage, pageNumber) ?? 0;
+  const setGroupsAdded = useCallback(
+    (next: number | ((current: number) => number)) =>
+      setGroupsAddedByPage((prev) => {
+        const value = typeof next === "function" ? next(onThisSheet(prev, pageNumber) ?? 0) : next;
+        return setOnThisSheet(prev, pageNumber, value > 0 ? value : null);
+      }),
+    [pageNumber],
+  );
   // ONE SLOT, and `cautionToShow` owns which of the three fills it.
   //
   // THE MEASURED SENTENCE BEATS THE WARNING, and it is the same slot. Before
@@ -2229,6 +2247,7 @@ export function TakeoffPlanViewer({
     setFinding(true);
     setFindError(null);
     setFound(null);
+    setGroupsAdded(0);
     setRooms(null);
     setChosen({});
     setShowingAll(false);
@@ -2571,6 +2590,11 @@ export function TakeoffPlanViewer({
     // an estimator works through them one at a time and re-running the finder
     // to get back to where they were would be a punishment for accepting one.
     setFound((current) => (current ?? []).filter((_, i) => i !== index));
+    // Counted so the panel, once emptied this way, says it is DONE rather than
+    // that nothing was found. See `noWallsMessage`.
+    // An updater, because two groups accepted in quick succession are two
+    // saves in flight reading the same render.
+    setGroupsAdded((current) => current + 1);
   }
 
   /**
@@ -3107,9 +3131,9 @@ export function TakeoffPlanViewer({
                thousand has lines that did not pair, which is a different fact
                and a different thing for an estimator to do about it. */
             <p className="text-sm text-ink-body" data-takeoff="no-walls">
-              {strokesSeen === 0
-                ? "No walls found: this sheet has no line work at all, so it is an image or a scan. There is nothing here to read. Trace them by hand as usual."
-                : `No walls found. This sheet does have line work — ${strokesSeen.toLocaleString()} lines — but none of it paired up as a wall. That happens when walls are drawn as a single line or as solid fill rather than two faces. Trace them by hand as usual.`}
+              {/* AND A THIRD: every group was added, which empties the panel
+                  too. `noWallsMessage` owns all three sentences. */}
+              {noWallsMessage({ strokesSeen, groupsAdded })}
             </p>
           ) : (
             <>
