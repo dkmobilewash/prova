@@ -238,7 +238,10 @@ export default clerkMiddleware(async (auth, req) => {
     // header and throws ERR_INVALID_URL on `/`, measured the same way.) The
     // host is the one this decision was made for, so the redirect cannot leave
     // the Bid host.
-    const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? req.nextUrl.host;
+    // The SAME header the decision read, never `x-forwarded-host`: a redirect
+    // built from a header the decision did not look at could be pointed at a
+    // host this code never classified.
+    const host = req.headers.get("host") ?? req.nextUrl.host;
     const proto = req.headers.get("x-forwarded-proto") ?? req.nextUrl.protocol.replace(/:$/, "");
     return NextResponse.redirect(new URL(decision.pathname, `${proto}://${host}`));
   }
