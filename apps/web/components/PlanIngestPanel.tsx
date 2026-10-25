@@ -104,9 +104,18 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
    * interval fires whether or not the previous slice came back, so a slow slice
    * would overlap the next one and the page would hold several requests open at
    * once. This asks for the next slice only once the last has answered.
+   *
+   * `previous` IS AN ARGUMENT, NOT THE `view` STATE, and the idle guard depends
+   * on it. The recursion below re-calls THIS closure, so a `view` read here is
+   * the one from the render that first called `pump` — `null` on a fresh start,
+   * which made every slice count as "moved" and `MAX_IDLE_SLICES` unreachable,
+   * so a run whose pages were all backing off asked every 400ms forever. On a
+   * stage change it was the PREVIOUS stage's view instead. Each caller passes
+   * the view the first slice should be compared with, and each slice passes on
+   * its own. `planIngestIdle.test.tsx` pins it.
    */
   const pump = useCallback(
-    async (jobId: string, idle: number) => {
+    async (jobId: string, idle: number, previous: IngestView) => {
       if (!alive.current) return;
       const result = await advancePlanIngest(jobId);
       if (!alive.current) return;
@@ -128,7 +137,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
 
       // Nothing settled this slice. Either every page is waiting out its
       // backoff, or another worker is doing them — both mean stop asking.
-      const moved = !view || next.finished + next.exhausted > view.finished + view.exhausted;
+      const moved = next.finished + next.exhausted > previous.finished + previous.exhausted;
       const nextIdle = moved ? 0 : idle + 1;
       if (nextIdle >= MAX_IDLE_SLICES) {
         setRunning(false);
@@ -136,11 +145,9 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
         return;
       }
 
-      setTimeout(() => void pump(jobId, nextIdle), SLICE_GAP_MS);
+      setTimeout(() => void pump(jobId, nextIdle, next), SLICE_GAP_MS);
     },
-    // `view` is read for the moved-or-not comparison; including it is correct
-    // and harmless, because `pump` is only ever called through a fresh closure.
-    [loadFailures, view],
+    [loadFailures],
   );
 
   function onStart() {
@@ -155,7 +162,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
       if (!started.ok) return setError(started.error);
       setView(started.value);
       setRunning(true);
-      void pump(started.value.jobId, 0);
+      void pump(started.value.jobId, 0, started.value);
     });
   }
 
@@ -163,7 +170,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
     if (!view) return;
     setError(null);
     setRunning(true);
-    void pump(view.jobId, 0);
+    void pump(view.jobId, 0, view);
   }
 
   /**
@@ -194,7 +201,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
       setView(started.value);
       setFailures([]);
       setRunning(true);
-      void pump(started.value.jobId, 0);
+      void pump(started.value.jobId, 0, started.value);
     });
   }
 
@@ -219,7 +226,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
       setView(started.value);
       setFailures([]);
       setRunning(true);
-      void pump(started.value.jobId, 0);
+      void pump(started.value.jobId, 0, started.value);
     });
   }
 
@@ -232,7 +239,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
       setView(started.value);
       setFailures([]);
       setRunning(true);
-      void pump(started.value.jobId, 0);
+      void pump(started.value.jobId, 0, started.value);
     });
   }
 
@@ -244,7 +251,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
       if (!result.ok) return setError(result.error);
       setFailures((current) => current.filter((failure) => failure.pageNumber !== pageNumber));
       setRunning(true);
-      void pump(view.jobId, 0);
+      void pump(view.jobId, 0, view);
     });
   }
 
