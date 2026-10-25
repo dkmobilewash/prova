@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useId, useMemo, useState, useTransition } from "react";
 
 import { ActionForm } from "@/components/ActionForm";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
@@ -90,6 +90,31 @@ export function TakeoffMeasurementList({
     () => sheet.measurements.filter((m) => selected.includes(m.id)),
     [sheet.measurements, selected],
   );
+
+  /**
+   * ── WHY THE BUTTON WON'T GO, IN WORDS ──
+   *
+   * The submit has always been disabled with nothing ticked. A user walk on
+   * 2026-10-19 pressed it anyway, got nothing — no message — and then a
+   * "Leave site?" prompt on the way out, because the height they had typed
+   * marks the form dirty. A disabled control with no reason reads as a broken
+   * one, so the reason sits beside it and is the button's description.
+   *
+   * NOT PRE-TICKED. Lines that came from "Find the walls" could have been
+   * ticked for them, but nothing on a measurement row records where it came
+   * from, and this list's rule is that it posts what somebody CHOSE — an
+   * accepted group with a wall type has already gone onto the estimate by
+   * itself, and the rest are here precisely because they still need a type
+   * or a height decided.
+   */
+  const reasonId = useId();
+  const nothingLeft = unposted.length === 0;
+  const notReady =
+    chosen.length > 0
+      ? null
+      : nothingLeft
+        ? "Every line on this sheet is already on the estimate."
+        : "Tick the lines to add — nothing is ticked yet.";
 
   const toggle = (id: string) =>
     setSelected((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
@@ -283,10 +308,16 @@ export function TakeoffMeasurementList({
           <SubmitButton
             type="submit"
             disabled={chosen.length === 0}
+            aria-describedby={notReady ? reasonId : undefined}
             className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-neutral-900 disabled:opacity-50"
           >
             Add {chosen.length === 0 ? "to the estimate" : `${chosen.length} to the estimate`}
           </SubmitButton>
+          {notReady && (
+            <p id={reasonId} data-takeoff="add-needs-lines" className="text-sm font-medium text-tag-amber-ink">
+              {notReady}
+            </p>
+          )}
           <p className="text-xs text-ink-muted">
             Quantities are worked out on the server from the shapes and the sheet&rsquo;s scale — nothing on this
             screen is sent as a number. Lines are added unpriced.
