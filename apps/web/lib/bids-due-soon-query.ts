@@ -14,7 +14,17 @@ export async function loadBidsDueSoon(companyId: string, todayIso: string): Prom
   return bidsDueSoon(
     await prisma.bidInvitation.findMany({
       where: { companyId, status: "INVITED", dueDate: { gte: new Date(`${todayIso}T00:00:00.000Z`) } },
-      select: { id: true, projectName: true, status: true, dueDate: true, contact: { select: { name: true } } },
+      select: {
+        id: true,
+        projectName: true,
+        status: true,
+        dueDate: true,
+        dueMinute: true,
+        walkDate: true,
+        walkMinute: true,
+        rfiCutoffDate: true,
+        contact: { select: { name: true } },
+      },
     }),
     todayIso,
   );
