@@ -1,5 +1,52 @@
 import { prisma } from "@prova/db";
-import { rankGcs, summariseGc, type GcRecord, type PipelineBid } from "./bid-pipeline";
+import {
+  rankGcs,
+  summariseBidLog,
+  summariseGc,
+  type BidLog,
+  type BidLogBid,
+  type GcRecord,
+  type PipelineBid,
+} from "./bid-pipeline";
+
+/**
+ * The bid log (`summariseBidLog`) from real rows: every SUBMITTED, WON or LOST
+ * invitation, and for each the contract value of the job it is linked to.
+ *
+ * THE CONTRACT VALUE IS quantity × unit price over the job's live lines — the
+ * same arithmetic as `calculateLineItemWip`'s `contractValue` and
+ * `moneyRail.ts`'s, written out rather than called: `jobCostCensus.test.ts`
+ * requires every caller of `calculateLineItemWip` to build its COST through
+ * `lineItemCostToDate`, and this needs no cost at all (`bid-wizard.ts` makes
+ * the same choice for the same figure). An unpriced line is $0 of revenue,
+ * the rule `contractValue` uses. Read for every linked bid and USED only for WON
+ * ones (the pure module ignores it otherwise): since 2026-10-04 a link means
+ * "same piece of work", so a LOST bid can be linked to the estimate it was
+ * priced on, and that estimate is not a contract.
+ */
+export async function loadBidLog(companyId: string, today: string): Promise<BidLog> {
+  const rows = await prisma.bidInvitation.findMany({
+    where: { companyId, status: { in: ["SUBMITTED", "WON", "LOST"] } },
+    select: {
+      status: true,
+      bidAmount: true,
+      dueDate: true,
+      wonJob: {
+        select: { lineItems: { where: { isDeleted: false }, select: { quantity: true, unitPrice: true } } },
+      },
+    },
+  });
+  const bids: BidLogBid[] = rows.map((row) => ({
+    status: row.status,
+    bidAmount: row.bidAmount === null ? null : Number(row.bidAmount),
+    dueDate: isoDay(row.dueDate),
+    contractValue:
+      row.wonJob === null
+        ? null
+        : row.wonJob.lineItems.reduce((sum, line) => sum + Number(line.quantity) * Number(line.unitPrice ?? 0), 0),
+  }));
+  return summariseBidLog(bids, today);
+}
 
 /**
  * Assembles the pipeline from real rows.

@@ -22,6 +22,7 @@ vi.mock("@/lib/authz", () => ({ requireCapability: vi.fn(async () => ({ allowed:
 vi.mock("@/lib/viewerToday", () => ({ viewerToday: vi.fn(async () => "2026-09-12") }));
 vi.mock("@/lib/bid-pipeline-query", () => ({
   loadBidPipeline: vi.fn(async () => ({ rows: [{ contactId: "c-1", contactName: "Northside Builders", record }], live })),
+  loadBidLog: vi.fn(async () => (await import("@/lib/bid-pipeline")).summariseBidLog([], "2026-09-12")),
 }));
 vi.mock("@/lib/bid-pursuits-query", () => ({
   loadBidPursuits: vi.fn(async () => []),

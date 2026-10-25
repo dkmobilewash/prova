@@ -21,6 +21,9 @@ import { describe, expect, it, vi } from "vitest";
  *   | layout: loadCompanyFinancials          |  9                  |
  *   | PAGE: the three loaders below          |  3                  |
  *
+ * (2026-10-25: a fourth, `loadBidLog`, one query — the bid log's priced
+ * invitations with their linked jobs' lines nested. Four in all now.)
+ *
  * (The layout's three overlap — `loadActiveJobCostRows`,
  * `renewalSourcesForCompany`, `loadRetainageHeld` and
  * `loadFringeSchedulesByCraft` are `cache()`d, so a real render issues
@@ -49,6 +52,8 @@ const COST: Record<string, { module: string; calls: number }> = {
   loadBidPipeline: { module: "./bid-pipeline-query", calls: 1 },
   loadBidPursuits: { module: "./bid-pursuits-query", calls: 1 },
   loadLinkableInvitations: { module: "./bid-pursuits-query", calls: 1 },
+  // The bid log panel: one findMany, lines nested in the same query.
+  loadBidLog: { module: "./bid-pipeline-query", calls: 1 },
 };
 
 /** Every prisma call the loader made, with the argument it sent. */
@@ -120,6 +125,6 @@ describe("/pipeline's own database cost", () => {
     }
     // The headline number, so the table in this file's header cannot quietly
     // stop being true.
-    expect(total).toBe(3);
+    expect(total).toBe(4);
   });
 });
