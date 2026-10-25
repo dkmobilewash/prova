@@ -39,6 +39,18 @@ test.describe("the full-screen takeoff workspace", () => {
   const JOB_TWO = "ZZ-E2E Workspace — S15";
 
   let servedPdf: Buffer = readFileSync(path.join(FIXTURES, "S02.pdf"));
+  /**
+   * ── EACH JOB'S OWN SHEET, SERVED WHENEVER ITS WORKSPACE OPENS ──
+   *
+   * `servedPdf` is one variable behind a route that answers EVERY plan fetch,
+   * and `jobWithSheet` overwrote it on each upload. After step 6 uploaded S15
+   * it stayed S15, so every later `onWorkspace(jobOne)` (steps 20-22) drew
+   * S15's lines at S02's scale while the spec called them S02. Detection on
+   * that mismatch is data-dependent and no assertion names it: step 21 went
+   * from passing to "S02 detected no walls" (panel up, zero groups) to "no
+   * quantities panel on S02". `onWorkspace` now sets the bytes from this map.
+   */
+  const pdfByJob = new Map<string, Buffer>();
   let page: Page;
   let monitor: HealthMonitor;
   let jobOne = "";
@@ -119,6 +131,9 @@ test.describe("the full-screen takeoff workspace", () => {
    * say WHICH layout it is asserting.
    */
   async function onWorkspace(jobId: string): Promise<void> {
+    const own = pdfByJob.get(jobId);
+    if (own === undefined) throw new Error(`no sheet was recorded for job ${jobId}`);
+    servedPdf = own;
     await page.goto(`/takeoff/${jobId}`);
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
     await expect
@@ -156,6 +171,7 @@ test.describe("the full-screen takeoff workspace", () => {
     await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 60_000 });
     await setScaleByClicking(halfSheetFeet);
+    pdfByJob.set(id, servedPdf);
     return id;
   }
 
