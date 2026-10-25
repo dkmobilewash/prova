@@ -7,13 +7,15 @@ import { can } from "@/lib/permissions";
 import { aiGate } from "@/lib/ai/settings";
 import { recordAskUsage } from "@/lib/ask/usage";
 import { claimAskAllowance, markAskAllowanceFailure } from "@/lib/ask/allowance";
-import { inviteTextProblem, suggestionFromExtraction, type BidInviteSuggestion } from "@/lib/bid-invite-read";
+import { inviteTextProblem, siteFromNotes, suggestionFromExtraction, type BidInviteSuggestion } from "@/lib/bid-invite-read";
+import { findSameJobFromOtherGc, type SameJobMatch } from "@/lib/estimating/bid-invitation";
 import { actionFail, type ActionResultWith } from "./shared";
 
 /**
- * Reading a pasted bid invitation into the "Log a bid" form.
+ * Reading a pasted bid invitation into the "Log a bid" form, and saying when
+ * the same job is already on file from another GC.
  *
- * IT WRITES NOTHING about a bid. The read returns a proposal the
+ * NEITHER ACTION WRITES ANYTHING about a bid. The read returns a proposal the
  * form fills itself with; `createBidInvitation` — unchanged — is the only thing
  * that creates a row, when a person presses "Log invitation". The same
  * arrangement as `quoteRead.ts`, and its own file for the same reason: a reader
@@ -116,3 +118,54 @@ export async function readBidInvitationText(textRaw: string): Promise<ActionResu
   };
 }
 
+export type SameJobCheckInput = {
+  contactId: string | null;
+  projectName: string;
+  /** `YYYY-MM-DD` or empty. */
+  dueDate: string | null;
+  /** The form's notes; a `Site:` line in them is read for the address. */
+  notes: string | null;
+};
+
+/**
+ * The open invitations from OTHER GCs that look like the job being logged.
+ * Read-only and deterministic — no model, no allowance — so the form can ask
+ * as the fields change. See `findSameJobFromOtherGc` for the rules.
+ */
+export async function checkSameJobFromOtherGc(input: SameJobCheckInput): Promise<ActionResultWith<SameJobMatch[]>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(NOT_YOURS) as ActionResultWith<SameJobMatch[]>;
+
+  const projectName = String(input.projectName ?? "").trim();
+  if (!projectName) return { ok: true, value: [] };
+  const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(input.dueDate ?? "") ? input.dueDate : null;
+
+  const open = await prisma.bidInvitation.findMany({
+    where: { companyId: context.company.id, status: { in: ["INVITED", "SUBMITTED"] } },
+    select: {
+      id: true,
+      contactId: true,
+      projectName: true,
+      status: true,
+      dueDate: true,
+      notes: true,
+      contact: { select: { name: true } },
+    },
+  });
+
+  return {
+    ok: true,
+    value: findSameJobFromOtherGc(
+      { contactId: input.contactId || null, projectName, dueDate, site: siteFromNotes(input.notes) },
+      open.map((row) => ({
+        id: row.id,
+        contactId: row.contactId,
+        contactName: row.contact.name,
+        projectName: row.projectName,
+        status: row.status,
+        dueDate: row.dueDate === null ? null : row.dueDate.toISOString().slice(0, 10),
+        site: siteFromNotes(row.notes),
+      })),
+    ),
+  };
+}

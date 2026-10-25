@@ -30,6 +30,28 @@ import { LogBidForm } from "@/components/LogBidForm";
 import { Disclosure } from "@/components/Disclosure";
 import { SeeAll, seeAllWindow } from "@/components/SeeAll";
 import { bidsDueSoon, bidsView, daysLeftLabel } from "@/lib/bids-due-soon";
+import { sameJobFlags, type SameJobMatch } from "@/lib/estimating/bid-invitation";
+import { siteFromNotes } from "@/lib/bid-invite-read";
+
+/** "Same job from another GC?" under an open bid — display only. The rules
+ * are `findSameJobFromOtherGc`'s; nothing is merged or hidden by it. */
+function SameJobNote({ matches }: { matches: SameJobMatch[] | undefined }) {
+  if (!matches || matches.length === 0) return null;
+  return (
+    <p className="mt-1 text-xs text-tag-amber-ink" data-bids="same-job">
+      Same job from another GC?{" "}
+      {matches.map((match, index) => (
+        <span key={match.id}>
+          {index > 0 && "; "}
+          <a href={`/bids?view=all#${match.id}`} className="underline">
+            {match.sentence}
+          </a>
+        </span>
+      ))}
+      .
+    </p>
+  );
+}
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -242,6 +264,35 @@ export default async function BidsPage({
     today,
   );
   const view = bidsView(viewParam, dueSoon.length, isFiltered);
+
+  // ── THE SAME JOB FROM ANOTHER GC ──
+  //
+  // Over EVERY open invitation, not the filtered list: a filter to one trade
+  // must not hide that the same hospital came in from a GC tagged another way.
+  // Its own small read: the fields the rules compare and nothing else.
+  const openForMatching = await prisma.bidInvitation.findMany({
+    where: { companyId: company.id, status: { in: ["INVITED", "SUBMITTED"] } },
+    select: {
+      id: true,
+      contactId: true,
+      projectName: true,
+      status: true,
+      dueDate: true,
+      notes: true,
+      contact: { select: { name: true } },
+    },
+  });
+  const sameJob = sameJobFlags(
+    openForMatching.map((row) => ({
+      id: row.id,
+      contactId: row.contactId,
+      contactName: row.contact.name,
+      projectName: row.projectName,
+      status: row.status,
+      dueDate: day(row.dueDate),
+      site: siteFromNotes(row.notes),
+    })),
+  );
   const viewTab = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md px-3 text-sm font-medium ${active ? "bg-rail-hover text-ink" : "text-ink-body hover:text-ink"}`;
 
@@ -317,6 +368,7 @@ export default async function BidsPage({
                   <p className="text-sm text-ink-body">
                     {bid.gcName} · Due {formatCalendarDate(new Date(`${bid.dueIso}T00:00:00.000Z`), "numeric")}
                   </p>
+                  <SameJobNote matches={sameJob.get(bid.id)} />
                 </div>
                 <span
                   className={`shrink-0 text-sm font-medium tabular-nums ${bid.daysLeft <= 7 ? "text-tag-amber-ink" : "text-ink-label"}`}
@@ -491,6 +543,7 @@ export default async function BidsPage({
                     {bid.tradeScope && <> · {labelFor(TRADE_SCOPE_OPTIONS, bid.tradeScope)}</>}
                     {bid.dueDate && <> · Due {formatCalendarDate(bid.dueDate, "numeric")}</>}
                   </p>
+                  <SameJobNote matches={sameJob.get(bid.id)} />
                 </div>
                 {bid.bidAmount != null && (
                   <p className="text-sm font-medium text-ink">{money(Number(bid.bidAmount))}</p>

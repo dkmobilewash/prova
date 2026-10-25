@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { createBidInvitation, readBidInvitationText } from "@/lib/actions";
+import { checkSameJobFromOtherGc, createBidInvitation, readBidInvitationText } from "@/lib/actions";
 import type { BidInviteReadResult } from "@/lib/actions/bidInviteRead";
+import type { SameJobMatch } from "@/lib/estimating/bid-invitation";
 import { ActionForm } from "@/components/ActionForm";
 import { SubmitButton } from "@/components/SubmitButton";
 import { TRADE_SCOPE_OPTIONS } from "@/lib/trade-scopes";
@@ -22,16 +23,33 @@ const field =
  * Collapsed behind its button like every add-form; `?new=1` (the area card
  * and ⌘K) opens it already.
  *
- * PASTE THE INVITATION, WHICH SAVES NOTHING. The text goes to
- * `readBidInvitationText`, which returns a proposal; the form remounts filled
- * with it (the `formKey` below) and the person checks it and presses "Log
- * invitation" as before. The note and the checks are held HERE, above the
- * remount, for the reason `QuoteReader`'s `note` prop records: state inside
- * the keyed form is thrown away by the very remount that fills it.
+ * TWO THINGS ON TOP OF THE FORM, NEITHER OF WHICH SAVES ANYTHING:
+ *
+ *   - PASTE THE INVITATION. The text goes to `readBidInvitationText`, which
+ *     returns a proposal; the form remounts filled with it (the `formKey`
+ *     below) and the person checks it and presses "Log invitation" as before.
+ *     The note and the checks are held HERE, above the remount, for the reason
+ *     `QuoteReader`'s `note` prop records: state inside the keyed form is
+ *     thrown away by the very remount that fills it.
+ *   - SAME JOB FROM ANOTHER GC. As the GC, name, date or notes change, the
+ *     form asks `checkSameJobFromOtherGc` — deterministic rules, no model, no
+ *     allowance — and says in words which open invitation looks like the same
+ *     job. It warns; it never blocks the save. Four GCs inviting you to one job
+ *     is four invitations, and each is logged.
  */
 /** The picked GC is the action's bound first argument on the contact page;
  * here it rides in the form. */
 export const logBid = (formData: FormData) => createBidInvitation(String(formData.get("contactId") ?? ""), formData);
+
+/** What the same-job check reads off the form. */
+export function sameJobInputFromForm(form: FormData) {
+  return {
+    contactId: String(form.get("contactId") ?? "") || null,
+    projectName: String(form.get("projectName") ?? ""),
+    dueDate: String(form.get("dueDate") ?? "") || null,
+    notes: String(form.get("notes") ?? "") || null,
+  };
+}
 
 export function LogBidForm({ gcs, startOpen = false }: { gcs: { id: string; name: string }[]; startOpen?: boolean }) {
   const [open, setOpen] = useState(startOpen);
@@ -40,6 +58,39 @@ export function LogBidForm({ gcs, startOpen = false }: { gcs: { id: string; name
   const [formKey, setFormKey] = useState(0);
   const [readError, setReadError] = useState<string | null>(null);
   const [isReading, startReading] = useTransition();
+  const [matches, setMatches] = useState<SameJobMatch[]>([]);
+  const formWrap = useRef<HTMLDivElement>(null);
+  const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const checkSeq = useRef(0);
+
+  const runCheck = useCallback(() => {
+    const form = formWrap.current?.querySelector("form");
+    if (!form) return;
+    const input = sameJobInputFromForm(new FormData(form));
+    const seq = ++checkSeq.current;
+    void checkSameJobFromOtherGc(input).then((result) => {
+      // Only the newest answer is shown: an older one arriving late would
+      // describe fields that are no longer on screen.
+      if (seq !== checkSeq.current) return;
+      setMatches(result.ok ? result.value : []);
+    });
+  }, []);
+
+  const scheduleCheck = useCallback(() => {
+    if (checkTimer.current) clearTimeout(checkTimer.current);
+    checkTimer.current = setTimeout(runCheck, 400);
+  }, [runCheck]);
+
+  useEffect(() => () => {
+    if (checkTimer.current) clearTimeout(checkTimer.current);
+  }, []);
+
+  // A filled form is checked as soon as it mounts — the paste is the moment
+  // the duplicate is most likely, and nobody has typed anything to trigger it.
+  useEffect(() => {
+    if (formKey > 0) scheduleCheck();
+  }, [formKey, scheduleCheck]);
+
   function read() {
     setReadError(null);
     startReading(async () => {
@@ -56,6 +107,7 @@ export function LogBidForm({ gcs, startOpen = false }: { gcs: { id: string; name
   function close() {
     setOpen(false);
     setSuggestion(null);
+    setMatches([]);
     setPasted("");
     setReadError(null);
   }
@@ -132,6 +184,28 @@ export function LogBidForm({ gcs, startOpen = false }: { gcs: { id: string; name
             )}
           </div>
 
+          {matches.length > 0 && (
+            <div
+              role="status"
+              className="mb-3 rounded-md border border-transparent bg-tag-amber p-3 text-sm text-tag-amber-ink"
+              data-bids="same-job-warning"
+            >
+              <p className="font-medium">Looks like a job you already have from another GC:</p>
+              <ul className="mt-1 list-disc pl-5">
+                {matches.map((match) => (
+                  <li key={match.id}>
+                    {match.sentence}.{" "}
+                    <a href={`/bids?view=all#${match.id}`} className="underline">
+                      See it
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1">Each GC is still its own invitation — log this one too if it is.</p>
+            </div>
+          )}
+
+          <div ref={formWrap} onChange={scheduleCheck}>
             <ActionForm key={formKey} action={logBid} onSuccess={close} className="flex flex-wrap items-end gap-3">
               <label className="flex flex-col gap-1 text-sm text-ink-label">
                 GC
@@ -182,7 +256,7 @@ export function LogBidForm({ gcs, startOpen = false }: { gcs: { id: string; name
                   name="notes"
                   rows={suggestion?.notes ? Math.min(6, suggestion.notes.split("\n").length + 1) : 2}
                   defaultValue={suggestion?.notes ?? ""}
-                  placeholder="Optional"
+                  placeholder="Optional. A line starting “Site:” (address, city) helps spot the same job from another GC."
                   className={field}
                 />
               </label>
@@ -202,6 +276,7 @@ export function LogBidForm({ gcs, startOpen = false }: { gcs: { id: string; name
                 </button>
               </div>
             </ActionForm>
+          </div>
         </>
       )}
     </section>

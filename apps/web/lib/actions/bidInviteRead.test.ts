@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * `readBidInvitationText` against a mocked model
+ * `readBidInvitationText` and `checkSameJobFromOtherGc` against a mocked model
  * and a fake database. What is pinned:
  *
  *   - the ORDER of the refusals, each a sentence: capability, the paste
@@ -23,6 +23,7 @@ let allowanceOk = true;
 let extractorThrows = false;
 let extraction: Record<string, unknown> = {};
 const calls = { claimed: 0, marked: 0, extracted: 0, usage: [] as Record<string, unknown>[] };
+let openInvitations: unknown[] = [];
 
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("@/lib/permissions", () => ({ can: () => allowed }));
@@ -37,6 +38,7 @@ vi.mock("@prova/db", () => ({
         { id: "baker", name: "Baker Construction" },
       ],
     },
+    bidInvitation: { findMany: async () => openInvitations },
   },
 }));
 vi.mock("@/lib/ai/settings", () => ({
@@ -71,7 +73,7 @@ vi.mock("@prova/integrations", () => ({
   },
 }));
 
-const { readBidInvitationText } = await import("./bidInviteRead");
+const { readBidInvitationText, checkSameJobFromOtherGc } = await import("./bidInviteRead");
 
 const INVITE = `Acme Builders invites you to bid Riverside Medical Office.
 Address: 4500 Brockton Ave, Riverside CA
@@ -86,6 +88,7 @@ beforeEach(() => {
   calls.marked = 0;
   calls.extracted = 0;
   calls.usage = [];
+  openInvitations = [];
   extraction = {
     gcName: "Acme Builders",
     projectName: "Riverside Medical Office",
@@ -172,3 +175,48 @@ describe("readBidInvitationText — a successful read", () => {
   });
 });
 
+describe("checkSameJobFromOtherGc", () => {
+  const row = (over: Record<string, unknown>) => ({
+    id: "inv-1",
+    contactId: "baker",
+    projectName: "Riverside Medical Office",
+    status: "INVITED",
+    dueDate: new Date("2026-11-04T00:00:00.000Z"),
+    notes: null,
+    contact: { name: "Baker Construction" },
+    ...over,
+  });
+
+  it("names an open invitation from another GC, reading dates and the Site line off the rows", async () => {
+    openInvitations = [row({ projectName: "KP clinic", notes: "Job walk: Monday\nSite: 4500 Brockton Avenue, Riverside" })];
+    const result = await checkSameJobFromOtherGc({
+      contactId: "acme",
+      projectName: "Riverside Medical Office",
+      dueDate: "2026-11-04",
+      notes: "Site: 4500 Brockton Ave, Riverside CA",
+    });
+    expect(result).toEqual({
+      ok: true,
+      value: [
+        expect.objectContaining({
+          id: "inv-1",
+          sentence: "Same site address and due date as KP clinic from Baker Construction",
+        }),
+      ],
+    });
+  });
+
+  it("says nothing for the same GC, or before a name is typed, and refuses without estimating", async () => {
+    openInvitations = [row({ contactId: "acme" })];
+    expect(
+      await checkSameJobFromOtherGc({ contactId: "acme", projectName: "Riverside Medical Office", dueDate: "2026-11-04", notes: null }),
+    ).toEqual({ ok: true, value: [] });
+    expect(await checkSameJobFromOtherGc({ contactId: null, projectName: " ", dueDate: null, notes: null })).toEqual({
+      ok: true,
+      value: [],
+    });
+    allowed = false;
+    const refused = await checkSameJobFromOtherGc({ contactId: null, projectName: "x", dueDate: null, notes: null });
+    expect(refused.ok).toBe(false);
+  });
+});
