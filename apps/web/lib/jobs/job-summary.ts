@@ -2,6 +2,7 @@ import { prisma } from "@prova/db";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import { jobLifecycle, type JobLifecycle } from "@/lib/job-lifecycle";
 import { viewerToday } from "@/lib/viewerToday";
+import { bidTotalOf } from "@/lib/estimating/recap-state";
 
 /**
  * The few figures and facts that drive a decision on this job — what the
@@ -103,10 +104,11 @@ export async function loadJobSummary(companyId: string, jobId: string): Promise<
   });
   if (!job || job.companyId !== companyId) return null;
 
-  const contractValue = job.lineItems.reduce(
-    (sum, item) => sum + Number(item.quantity) * Number(item.unitPrice ?? 0),
-    0,
-  );
+  // `bidTotalOf`, not a sum written here (bug C, 2026-10-19). It was the same
+  // arithmetic written a second time, which is how the header's BID and the
+  // estimate's figures came to have nothing tying them together. On a bid this
+  // IS the bid of record; after award the same lines are the contract value.
+  const contractValue = bidTotalOf(job.lineItems);
   const billedToDate = job.invoices.reduce((sum, invoice) => sum + Number(invoice.amount), 0);
   const retainageSummary = calculateRetainageSummary({
     invoiceRetainageWithheld: job.invoices.map((invoice) =>

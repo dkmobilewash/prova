@@ -439,19 +439,64 @@ export type SpreadLine = {
  * Lines with no price stay unpriced: a cost-only line is not a share of the
  * bid, and giving it one would make a general-conditions line look sold.
  */
-export function spreadToLines(lines: readonly RecapLine[], bidTotal: number): SpreadLine[] {
-  // A recipient must be BILLABLE (it carries a price, so raising that price is
-  // meaningful) and must carry COST (so it has a share of the bid to receive).
-  //
-  // Both halves matter and they exclude different lines. A cost-only general
-  // conditions line has cost and no price: it belongs in the cost base and gets
-  // no share back, because general conditions are recovered through the billable
-  // lines. A price-with-no-cost line is the reverse, and excluding it is what
-  // stops the destructive case — with no cost share it would receive $0, and
-  // writing that back as its unit price would WIPE a price somebody set.
-  const priced = lines.filter(
-    (line) => line.unitPrice != null && line.quantity > 0 && extendedCost(line) > 0,
+/**
+ * The lines `spreadToLines` may write a price to.
+ *
+ * A recipient must be BILLABLE (it carries a price, so raising that price is
+ * meaningful) and must carry COST (so it has a share of the bid to receive).
+ *
+ * Both halves matter and they exclude different lines. A cost-only general
+ * conditions line has cost and no price: it belongs in the cost base and gets
+ * no share back, because general conditions are recovered through the billable
+ * lines. A price-with-no-cost line is the reverse, and excluding it is what
+ * stops the destructive case — with no cost share it would receive $0, and
+ * writing that back as its unit price would WIPE a price somebody set.
+ *
+ * Its own function — lifted verbatim out of `spreadToLines` — so that
+ * `nothingToSpread` below explains an empty spread from THE SAME filter rather
+ * than from a second copy of it that could drift.
+ */
+export function spreadRecipients(lines: readonly RecapLine[]): RecapLine[] {
+  return lines.filter((line) => line.unitPrice != null && line.quantity > 0 && extendedCost(line) > 0);
+}
+
+/**
+ * WHY APPLYING WOULD WRITE NOTHING, IN A SENTENCE THAT SAYS WHAT TO DO — or null
+ * when there is a line to write to. Bug B from the 2026-10-19 walk.
+ *
+ * The walk built a whole bid from cost on lines with no unit price (the line
+ * list prints them "cost-only"), pressed Apply, and read it as doing nothing.
+ * Correct by this module's own rule — a cost-only line is not a share of the bid
+ * — and a dead end: the old refusal said there was "nothing to spread the bid
+ * across" and stopped, which names the problem and hides the way out.
+ *
+ * The way out is real and cheap, and the sentence names it: give the lines you
+ * sell a unit price. ANY figure works, because the spread divides the bid by
+ * each recipient's COST share and overwrites the price — so a placeholder is
+ * replaced, not marked up.
+ *
+ * Read by BOTH the panel (before anybody presses) and `applyBidRecap` (if they
+ * press anyway), so the screen and the refusal are one sentence.
+ */
+export function nothingToSpread(lines: readonly RecapLine[]): string | null {
+  if (spreadRecipients(lines).length > 0) return null;
+  const priced = lines.filter((line) => line.unitPrice != null && line.quantity > 0);
+  if (priced.length === 0) {
+    return (
+      "Apply has no line to put the bid on: every line here is cost-only, with no unit price. " +
+      "Apply re-prices the lines you sell and leaves cost-only lines (general conditions, overhead) unpriced. " +
+      "Give each line you sell a unit price in the line items above — any figure, Apply replaces it — then apply."
+    );
+  }
+  return (
+    "Apply has no line to put the bid on: the lines that carry a unit price have no budgeted cost, " +
+    "so they have no share of it. Set a cost on each priced line below, then apply."
   );
+}
+
+export function spreadToLines(lines: readonly RecapLine[], bidTotal: number): SpreadLine[] {
+  // Who may receive a share: see `spreadRecipients`.
+  const priced = spreadRecipients(lines);
   const directTotal = priced.reduce((sum, line) => sum + extendedCost(line), 0);
   if (priced.length === 0 || directTotal <= 0) return [];
 

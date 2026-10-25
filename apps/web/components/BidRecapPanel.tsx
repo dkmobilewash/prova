@@ -1,14 +1,17 @@
 "use client";
 
-import { useMemo, useState, useTransition, type FormEvent } from "react";
+import { useMemo, useOptimistic, useState, useTransition, type FormEvent } from "react";
 import { applyBidRecap, saveBidRecap, setLineBudgetedCost, setLineCostCategory } from "@/lib/actions";
 import { money } from "@/lib/money";
-import { EQUIPMENT_SPLIT_NOTE } from "@/lib/cost-category";
+import { isBlank, parseNumericInput } from "@/lib/numeric-input";
+import { asCostCategory, EQUIPMENT_SPLIT_NOTE } from "@/lib/cost-category";
 import { bidMargin, formatMarginRate, underCostWarning } from "@/lib/estimating/bid-margin";
+import { bidTotalOf } from "@/lib/estimating/recap-state";
 import {
   bidRecap,
   COST_CATEGORY_LABELS,
   COST_CATEGORY_VALUES,
+  nothingToSpread,
   spreadToLines,
   spreadTotal,
   RECAP_RATE_FIELDS,
@@ -48,6 +51,56 @@ const RATE_FIELDS = RECAP_RATE_KEYS.map((key) => ({ key, ...RECAP_RATE_FIELDS[ke
 
 export type RecapLineView = RecapLine & { description: string };
 
+/**
+ * One edit a row has sent and the server has not answered yet.
+ *
+ * ── WHY THE PREVIEW CANNOT JUST WAIT FOR THE SERVER — bug A, 2026-10-19 ──
+ *
+ * It did, and on a slow server it showed $0.00 until a reload. Nothing was
+ * missing a revalidation: Next runs Server Actions one at a time in a queue,
+ * every one of these saves is an async transition, and React 19 commits NONE of
+ * their re-renders until the last one in the batch settles. Measured in a real
+ * Chromium against a production build with 2s of latency per request: four
+ * cost boxes typed in a row, four POSTs strictly one after another, and the
+ * direct cost read $0.00 for 8.2 seconds and then jumped to the full figure,
+ * with nothing in between. On the real Estimate tab each of those round trips
+ * is a whole page render.
+ *
+ * The rates were always immediate because the preview reads them from the
+ * form's own `draft`. The lines now get the same treatment: `useOptimistic`
+ * lays each sent edit over the server's lines, the preview runs the SAME pure
+ * `bidRecap` over the result, and the server's lines take over the moment its
+ * re-render commits. A refused save drops its edit at the end of its
+ * transition, so the old figure comes back beside the refusal.
+ *
+ * Nothing about the arithmetic moves. This only decides WHICH lines the
+ * existing preview is computed from.
+ */
+type LineEdit =
+  | { id: string; field: "unitCost"; value: number | null }
+  | { id: string; field: "costCategory"; value: CostCategoryValue | null };
+
+function withEdit(lines: RecapLineView[], edit: LineEdit): RecapLineView[] {
+  return lines.map((line) => (line.id === edit.id ? { ...line, [edit.field]: edit.value } : line));
+}
+
+/**
+ * What the server will store for a typed cost, or `undefined` when it will
+ * refuse it.
+ *
+ * The SAME parser `setLineBudgetedCost` reads with (`nullableDecimalFromForm`
+ * is `parseNumericInput` with a blank-means-null check in front), with the same
+ * floor, so the figure previewed is the figure that gets saved. `undefined`
+ * shows nothing optimistic at all: the save is sent anyway and its refusal is
+ * what the row prints — a preview of a number the server is about to reject
+ * would be the one thing worse than no preview.
+ */
+function previewCost(raw: string): number | null | undefined {
+  if (isBlank(raw)) return null;
+  const parsed = parseNumericInput(raw, { label: "Budgeted cost", min: 0 });
+  return parsed.ok ? parsed.n : undefined;
+}
+
 const field =
   "w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
 
@@ -75,6 +128,11 @@ export function BidRecapPanel({
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const [isSaving, startSave] = useTransition();
   const [isApplying, startApply] = useTransition();
+  // The server's lines with every unanswered edit laid over them — see
+  // `LineEdit`. Everything below reads THESE, never `lines` directly, so the
+  // figures and the rows that edit them cannot disagree.
+  const [shownLines, showEdit] = useOptimistic(lines, withEdit);
+  const saving = shownLines !== lines;
 
   const preview = useMemo(() => {
     const parsed: RecapRates = Object.fromEntries(
@@ -84,19 +142,24 @@ export function BidRecapPanel({
         return [f.key, value != null && Number.isFinite(value) ? value : null];
       }),
     );
-    const recap = bidRecap(lines, parsed);
-    const spread = spreadToLines(lines, recap.bidTotal);
+    const recap = bidRecap(shownLines, parsed);
+    const spread = spreadToLines(shownLines, recap.bidTotal);
     // The margin is of the LINE PRICES, so it does not depend on the draft
     // rates at all — but it lives in this memo because it is derived from the
     // same `lines` and nothing should recompute it on a keystroke.
     return {
       recap,
-      landsAt: spread.length > 0 ? spreadTotal(lines, spread) : recap.bidTotal,
-      margin: bidMargin(lines),
+      landsAt: spread.length > 0 ? spreadTotal(shownLines, spread) : recap.bidTotal,
+      margin: bidMargin(shownLines),
+      // Bug B: why Apply would write nothing, said BEFORE it is pressed.
+      nothing: nothingToSpread(shownLines),
+      // Bug C: the bid of record — what the job header and the proposal print —
+      // from the one function they read. See the row that renders it.
+      bidOnJob: bidTotalOf(shownLines),
     };
-  }, [draft, lines]);
+  }, [draft, shownLines]);
 
-  const { recap, landsAt, margin } = preview;
+  const { recap, landsAt, margin, nothing, bidOnJob } = preview;
   const roundingGap = Math.round((landsAt - recap.bidTotal) * 100) / 100;
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -166,7 +229,21 @@ export function BidRecapPanel({
             {/* True by design since #512 rather than by accident: this is the
                 sum of quantity × budgetedUnitCost, the cost of doing the work.
                 Before #512 the same words sat over a sum of SALE PRICES. */}
-            <td className="py-1 text-ink-label">Direct cost of the work</td>
+            <td className="py-1 text-ink-label">
+              Direct cost of the work
+              {/* The figure beside this already counts every cost typed, and
+                  the saves behind it run one at a time — four boxes can take
+                  four page renders to land. So it says it is still saving:
+                  a figure that looks final while three saves are queued is
+                  how somebody reloads and loses them. `useOptimistic` hands
+                  back the server's own array once nothing is pending. */}
+              {saving && (
+                <span role="status" className="ml-2 inline-flex items-center gap-1 text-xs text-ink-muted">
+                  <Spinner />
+                  Saving…
+                </span>
+              )}
+            </td>
             <td className="py-1 text-right tabular-nums text-ink">{money(recap.direct.total)}</td>
           </tr>
           {recap.steps.map((step) => (
@@ -182,6 +259,31 @@ export function BidRecapPanel({
             <td className="py-2 font-medium text-ink">Bid total</td>
             <td className="py-2 text-right font-semibold tabular-nums text-ink">{money(recap.bidTotal)}</td>
           </tr>
+          {/* BUG C, 2026-10-19: the header said BID $0.00 directly above a
+              recap that said $10,249.47, and neither was wrong. The header is
+              the bid OF RECORD — the line prices, which the proposal prints and
+              the contract value becomes — and the total above is what those
+              prices would be once applied. Two true numbers, one word, and
+              nothing on screen saying which was which.
+
+              So the recap shows the header's figure too, read through the SAME
+              `bidTotalOf` that `loadJobSummary` now uses — not a third sum of
+              quantity × price — whenever applying would change it. Once Apply
+              has written the prices the two agree and this row goes away; on a
+              priced job with no costs it is the row that explains a $0 recap
+              under a real bid. */}
+          {Math.round(bidOnJob * 100) !== Math.round(landsAt * 100) && (
+            <tr>
+              <td className="pb-2 text-ink-label">
+                Bid on the job now
+                <span className="block text-xs text-ink-muted">
+                  The line prices — what the job header and the proposal show.
+                  {nothing ? "" : ` Apply to line prices to make it ${money(landsAt)}.`}
+                </span>
+              </td>
+              <td className="pb-2 text-right align-top tabular-nums text-ink-body">{money(bidOnJob)}</td>
+            </tr>
+          )}
           {/* A ROW, NOT A FOURTH NOTICE. This panel already carries three and
               its own rule is that "a permanent notice is noise that teaches
               people to stop reading notices" — so the margin is a figure under
@@ -265,7 +367,7 @@ export function BidRecapPanel({
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            disabled={isApplying || recap.addedTotal === 0}
+            disabled={isApplying || recap.addedTotal === 0 || nothing !== null}
             title="Raises each line's unit price so the estimate's lines add up to the bid. Do this once the price is settled."
             onClick={() =>
               startApply(async () => {
@@ -310,14 +412,23 @@ export function BidRecapPanel({
             marked-up cost, not a markup on the current price — so a second press is safe.
           </p>
         )}
+        {/* BUG B, 2026-10-19: on an estimate whose lines are all cost-only,
+            Apply was enabled, pressing it wrote nothing, and the walk read that
+            as silence. The reason is now on screen BEFORE the press, beside a
+            button that is disabled for it — the same sentence `applyBidRecap`
+            returns, from the same `nothingToSpread`. Amber, like the other two
+            things on this panel a person can fix from here. Only when there is
+            a markup to apply: with no rates the button is already disabled and
+            the sentence would be about nothing. */}
+        {recap.addedTotal !== 0 && nothing && <p className="text-sm text-tag-amber-ink">{nothing}</p>}
         {applyMessage && <p className="text-sm text-ink-body">{applyMessage}</p>}
       </div>
 
       <div className="border-t border-line-row pt-3">
         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">Cost and cost type per line</p>
         <ul className="flex flex-col gap-1">
-          {lines.map((line) => (
-            <CostTypeRow key={line.id} jobId={jobId} line={line} />
+          {shownLines.map((line) => (
+            <CostTypeRow key={line.id} jobId={jobId} line={line} onEdit={showEdit} />
           ))}
         </ul>
       </div>
@@ -325,7 +436,18 @@ export function BidRecapPanel({
   );
 }
 
-function CostTypeRow({ jobId, line }: { jobId: string; line: RecapLineView }) {
+function CostTypeRow({
+  jobId,
+  line,
+  onEdit,
+}: {
+  jobId: string;
+  line: RecapLineView;
+  /** Lays the edit over the panel's preview for as long as its save is in
+   * flight. Called INSIDE the transition, which is what `useOptimistic`
+   * requires and what ties the edit's lifetime to the save's. */
+  onEdit: (edit: LineEdit) => void;
+}) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   return (
@@ -362,7 +484,9 @@ function CostTypeRow({ jobId, line }: { jobId: string; line: RecapLineView }) {
             const before = line.unitCost != null ? String(line.unitCost) : "";
             if (next === before) return;
             setError(null);
+            const shown = previewCost(next);
             startTransition(async () => {
+              if (shown !== undefined) onEdit({ id: line.id, field: "unitCost", value: shown });
               const result = await setLineBudgetedCost(jobId, line.id, next);
               if (!result.ok) setError(result.error);
             });
@@ -378,6 +502,11 @@ function CostTypeRow({ jobId, line }: { jobId: string; line: RecapLineView }) {
           const next = event.target.value;
           setError(null);
           startTransition(async () => {
+            // "" is the select's own "No cost type"; anything else narrows
+            // against the one list, and a value it does not know is left to
+            // the server to refuse rather than previewed as a clear.
+            const category = next === "" ? null : asCostCategory(next);
+            if (next === "" || category !== null) onEdit({ id: line.id, field: "costCategory", value: category });
             const result = await setLineCostCategory(jobId, line.id, next);
             if (!result.ok) setError(result.error);
           });

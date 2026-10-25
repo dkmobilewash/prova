@@ -83,8 +83,16 @@ export function recapStateFor(recapRow: RecapRow | null, lines: readonly RecapLi
  * prints with no price and counts $0 toward the bid total, which is the rule
  * the contract value uses everywhere else. Treating it as zero cost rather than
  * zero price would be a different number.
+ *
+ * THE ONE SUM OF QUANTITY × PRICE FOR "THE BID", and since 2026-10-19 (bug C)
+ * that is literally true: the job header (`loadJobSummary`) and the bid recap's
+ * "Bid on the job now" row read it too. The header used to add the lines up
+ * itself, so the screen carried one figure called BID in the header and another
+ * called Bid total in the recap with nothing tying either to the proposal's.
+ * Typed on the two fields it reads, so a caller holding numbers (the recap's
+ * lines) and one holding Prisma decimals (the header's) both pass.
  */
-export function bidTotalOf(lines: readonly RecapLine[]): number {
+export function bidTotalOf(lines: readonly Pick<RecapLine, "quantity" | "unitPrice">[]): number {
   return lines.reduce((sum, line) => {
     const unitPrice = num(line.unitPrice);
     return sum + (unitPrice === null ? 0 : Number(line.quantity) * unitPrice);
