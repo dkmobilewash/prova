@@ -108,6 +108,7 @@ import {
 } from "@/lib/takeoff/wallGroups";
 import { proposalSections, showsHeadings } from "@/lib/takeoff/proposalSections";
 import { calibrationForView, type ViewScale } from "@/lib/takeoff/sheetScale";
+import { PICKABLE_SCALES, isArchitecturalScale, pickedScaleLine, suggestedScalePick } from "@/lib/takeoff-scale-picker";
 import { SINGLE_LINE_COLOUR, VERDICT_COLOURS } from "@/components/AnswerKeyPanel";
 import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
 import { noWallsMessage } from "@/lib/takeoff/noWallsMessage";
@@ -4143,6 +4144,7 @@ export function TakeoffPlanViewer({
               planId={planId}
               pageNumber={pageNumber}
               pageWidthPt={pageSize?.widthPt ?? null}
+              pageHeightPt={pageSize?.heightPt ?? null}
               viewScales={viewScalesByPage?.[pageNumber] ?? []}
               printedScale={printedScaleByPage[pageNumber] ?? null}
               prefill={scalePrefillByPage[pageNumber] ?? null}
@@ -4847,6 +4849,69 @@ const STROKE_PX = 2;
  */
 export const CALIBRATION_DASH = `${STROKE_PX * 7} ${STROKE_PX * 3} ${STROKE_PX} ${STROKE_PX * 3}`;
 
+/**
+ * ── A STANDARD SCALE, PICKED RATHER THAN CALCULATED ──
+ *
+ * For the sheet whose scale the estimator already knows — "architect using
+ * 3/16, the measure tools we're using are 1/8 or quarter, so you need to
+ * calculate." Picking one draws the line it stands for across the sheet and
+ * fills the distance, exactly as the reading offers above do; the person still
+ * presses "Set the scale", and the readback under the form names the scale
+ * back through `readScale` before anything is saved. See
+ * `takeoff-scale-picker.ts` for why no second scale computation exists.
+ *
+ * Pre-selected from what the sheet itself says, when it says one scale on the
+ * list. Never applied by that pre-selection — the press is the decision.
+ */
+export function StandardScalePicker({
+  suggested,
+  onPick,
+}: {
+  suggested: string | null;
+  onPick: (name: string) => void;
+}) {
+  const [chosen, setChosen] = useState(suggested ?? "");
+  const architectural = PICKABLE_SCALES.filter((scale) => isArchitecturalScale(scale.name));
+  const engineering = PICKABLE_SCALES.filter((scale) => !isArchitecturalScale(scale.name));
+  const option = (name: string) => (
+    <option key={name} value={name}>
+      {name}
+      {name === suggested ? " (read off this sheet)" : ""}
+    </option>
+  );
+  return (
+    <div className="rounded-md border border-line-card bg-surface p-2" data-takeoff="scale-picker">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1 text-xs text-ink-label">
+          Or pick the drawing&apos;s scale
+          <select
+            data-takeoff="pick-scale"
+            value={chosen}
+            onChange={(event) => setChosen(event.target.value)}
+            className="rounded-md border border-line-card bg-surface px-2 py-1 text-sm text-ink-body"
+          >
+            <option value="">Choose a scale…</option>
+            <optgroup label="Architectural">{architectural.map((scale) => option(scale.name))}</optgroup>
+            <optgroup label="Engineering">{engineering.map((scale) => option(scale.name))}</optgroup>
+          </select>
+        </label>
+        <button
+          type="button"
+          data-takeoff="use-picked-scale"
+          disabled={chosen === ""}
+          onClick={() => onPick(chosen)}
+          className="rounded-md border border-line-card px-2 py-1 text-xs font-medium text-ink-label hover:bg-rail-hover disabled:opacity-50"
+        >
+          {chosen === "" ? "Use this scale" : `Use ${chosen}`}
+        </button>
+      </div>
+      <p className="mt-1 text-[11px] text-ink-muted">
+        Exact only if this PDF is printed at 100% — check one printed dimension against it before you measure.
+      </p>
+    </div>
+  );
+}
+
 /** What the scale form starts from when a sheet's own reading is used. */
 type PrefillSeed = { typed: string; note: string };
 
@@ -4873,11 +4938,18 @@ function prefillSeed(prefill: ScalePrefill): PrefillSeed {
   };
 }
 
-function CalibrationForm({
+/**
+ * EXPORTED FOR A RENDER TEST (`takeoffScalePicker.test.tsx`), for the reason
+ * `ScaleOffer` is: the whole viewer never learns its page size in happy-dom —
+ * pdf.js does not render there — so the picker, which needs that size, cannot
+ * be reached by mounting the viewer.
+ */
+export function CalibrationForm({
   jobId,
   planId,
   pageNumber,
   pageWidthPt,
+  pageHeightPt = null,
   printedScale,
   existingLabel,
   existingNote,
@@ -4893,6 +4965,9 @@ function CalibrationForm({
   planId: string;
   pageNumber: number;
   pageWidthPt: number | null;
+  /** The page's height in points, from the same pdf.js read as its width —
+   *  only used to place a picked scale's line mid-sheet. */
+  pageHeightPt?: number | null;
   printedScale: string | null;
   existingLabel: string;
   existingNote: string;
@@ -5024,7 +5099,36 @@ function CalibrationForm({
             }}
           />
         )}
-        <p className="text-xs text-ink-muted">Click once at each end of a dimension printed on the drawing.</p>
+        {/* THE VERIFIED PATH STAYS FIRST AND IN BODY INK. A dimension the
+            estimator clicked is checked by looking at it; a picked scale is a
+            ratio taken on trust. The picker below is the shortcut for a sheet
+            somebody already knows the scale of, not the recommended route. */}
+        <p className="text-xs text-ink-body">Click once at each end of a dimension printed on the drawing.</p>
+        {pageWidthPt !== null && pageHeightPt !== null && (
+          <StandardScalePicker
+            // A different sheet, or a reading that arrived, is a different
+            // suggestion — the picker's own choice must not survive it.
+            key={`${pageNumber}:${prefill?.scaleName ?? ""}:${printedScale ?? ""}`}
+            suggested={suggestedScalePick({
+              prefillScale: prefill?.scaleName ?? null,
+              printedScale,
+              viewScales: viewScales.map((view) => view.scaleName),
+            })}
+            onPick={(name) => {
+              const line = pickedScaleLine(name, pageWidthPt, pageHeightPt);
+              if (line === null) return;
+              onUsePrefill(line.xs, line.ys);
+              setNote(
+                `Picked ${name} from the standard scales. Exact only if this PDF is printed at 100%; ` +
+                  `not checked against a printed dimension.`,
+              );
+              // DECIMAL FEET, not `formatFeetInches`: that rounds to the whole
+              // inch, which on a small sheet at 3" = 1'-0" moves the scale by a
+              // third of a percent. Four places is under a thousandth of one.
+              setTyped(String(Number(line.declaredDistanceFeet.toFixed(4))));
+            }}
+          />
+        )}
       </div>
     );
   }
