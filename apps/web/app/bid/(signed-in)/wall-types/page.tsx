@@ -6,6 +6,7 @@ import { CollapsedForm } from "@/components/CollapsedForm";
 import { NewWallTypeForm, StarterWallTypesButton, WallTypeCard } from "@/components/WallTypes";
 import { BidNoAccess } from "@/components/bid/BidNoAccess";
 import { BID_CAPABILITY } from "@/components/bid/bidNav";
+import { missingStarterTypes } from "@/lib/wall-type-starters";
 
 export const metadata = { title: "Wall types" };
 
@@ -26,6 +27,8 @@ export default async function BidWallTypesPage() {
   const { context, allowed } = await requireCapability(BID_CAPABILITY);
   if (!allowed) return <BidNoAccess />;
   const { views, catalogOptions, craftOptions, defaultWastePercent } = await loadWallTypesScreen(context.company.id);
+  // Same rule as the CRM page (#818): offered while any starter is missing.
+  const missingStarters = missingStarterTypes(views.map((type) => type.code)).map((type) => type.code);
 
   return (
     <PageShell width="working">
@@ -51,7 +54,6 @@ export default async function BidWallTypesPage() {
             </Link>
             .
           </p>
-          <StarterWallTypesButton />
         </div>
       ) : (
         <ul className="mb-6 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
@@ -66,6 +68,11 @@ export default async function BidWallTypesPage() {
           ))}
         </ul>
       )}
+
+      {/* Outside the empty/list branch, as on the CRM page: pressing it swaps
+          that branch, and a button inside it would unmount with its "Added …"
+          sentence. */}
+      <StarterWallTypesButton missing={missingStarters} hasLibrary={views.length > 0} />
 
       <CollapsedForm label="Add wall type">
         <NewWallTypeForm />

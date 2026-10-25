@@ -975,16 +975,22 @@ test.describe("the full-screen takeoff workspace", () => {
     const offered = await optionTexts();
     if (!offered.some((text) => text.startsWith("W1"))) {
       await page.goto("/wall-types");
-      // The starter button is offered only on an EMPTY library. If it is not
-      // here, something else wrote a wall type into this company — say so,
-      // rather than spending the step's budget waiting on a click.
-      const starter = page.getByRole("button", { name: "Start from the common trade assemblies", exact: true });
+      // The starter button is offered while ANY starter is missing (#818) —
+      // it used to be offered only on an EMPTY library, which is why this gate
+      // once had to explain a neighbour's wall type. W1 is missing here, so the
+      // button must be up, and it must say it adds at least one. Anchored on
+      // both ends, so a lookalike label cannot match it.
+      const starter = page.getByRole("button", { name: /^Start from the common trade assemblies \(adds [1-9]\d*\)$/ });
       await expect(
         starter,
-        `no W1 and no starter button: the library already holds ${offered.slice(1).join(" | ")}, written into the TAKEOFF company by another spec`,
+        `no W1 and no starter button: the library already holds ${offered.slice(1).join(" | ")}`,
       ).toBeVisible();
       await starter.click();
-      await expect(page.getByText(/^Added /)).toBeVisible({ timeout: 60_000 });
+      // Stricter than the `^Added ` this used to wait for: the sentence must
+      // name W1, the one type this step goes on to need.
+      await expect(page.getByText(/^Added (?:[A-Z0-9]+, )*W1(?:, [A-Z0-9]+)*\. Link each part/)).toBeVisible({
+        timeout: 60_000,
+      });
       await onWorkspace(jobOne);
       await setRail("toggle-items", true);
       await page.locator('[data-takeoff="item-row"]').first().locator('[data-takeoff="pick-item"]').click();

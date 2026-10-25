@@ -128,34 +128,57 @@ export function NewWallTypeForm() {
   );
 }
 
-export function StarterWallTypesButton() {
+export function StarterWallTypesButton({
+  missing,
+  hasLibrary,
+}: {
+  /** The starter codes this company does not have — `missingStarterTypes`,
+   *  the same rule `addStarterWallTypes` writes by. */
+  missing: readonly string[];
+  /** Whether the company already has wall types of its own. */
+  hasLibrary: boolean;
+}) {
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
+  // Nothing to add and nothing to report: the whole control goes. A sentence
+  // from a press that just emptied `missing` stays, so it can be read.
+  if (missing.length === 0 && message === null) return null;
   return (
-    <div className="flex flex-col items-start gap-1">
-      <button
-        type="button"
-        disabled={isPending}
-        onClick={() =>
-          startTransition(async () => {
-            const result = await addStarterWallTypes();
-            // `join(", ")`, not `" and "`. The starter set was two entries
-            // when this was written and is ten now — "W1 and W2 and W3 and…"
-            // is what that reads as.
-            setMessage(
-              result.ok
-                ? `Added ${result.value.added.join(", ")}. Link each part to your price book — they arrive unpriced on purpose.`
-                : result.error,
-            );
-          })
-        }
-        className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
-      >
-        {/* NOT "two common wall types" any more. The set covers partitions,
-            exterior wall, drywall finish, ceilings, flooring, painting, slab
-            and footing — the trades the takeoff workspace can measure. */}
-        {isPending ? "Adding…" : "Start from the common trade assemblies"}
-      </button>
+    <div className="mb-6 flex flex-col items-start gap-1" data-wall-types="starters">
+      {missing.length > 0 && (
+        <button
+          type="button"
+          data-wall-types="add-starters"
+          disabled={isPending}
+          onClick={() =>
+            startTransition(async () => {
+              const result = await addStarterWallTypes();
+              // `join(", ")`, not `" and "`. The starter set was two entries
+              // when this was written and is ten now — "W1 and W2 and W3 and…"
+              // is what that reads as.
+              setMessage(
+                result.ok
+                  ? `Added ${result.value.added.join(", ")}. Link each part to your price book — they arrive unpriced on purpose.`
+                  : result.error,
+              );
+            })
+          }
+          className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
+        >
+          {/* NOT "two common wall types" any more. The set covers partitions,
+              exterior wall, drywall finish, ceilings, flooring, painting, slab
+              and footing — the trades the takeoff workspace can measure.
+              And it says HOW MANY it adds (#818), because beside a library
+              that already has some of them "Start from…" alone would read as
+              an offer to replace what is there. */}
+          {isPending ? "Adding…" : `Start from the common trade assemblies (adds ${missing.length})`}
+        </button>
+      )}
+      {missing.length > 0 && hasLibrary && (
+        <p className="text-sm text-ink-muted">
+          Adds the ones you don&apos;t have yet: {missing.join(", ")}. Wall types you already have are left as they are.
+        </p>
+      )}
       {message && <p className="text-sm text-ink-body">{message}</p>}
     </div>
   );

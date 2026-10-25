@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   advancePlanIngest,
   planIngestFailures,
@@ -80,6 +81,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
   const [failures, setFailures] = useState<Failure[]>([]);
   const [running, setRunning] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
 
   /** Set on unmount so a slice that resolves after the panel is gone does not
    *  set state on a dead component, and does not schedule another slice. */
@@ -123,6 +125,24 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
       if (next.complete) {
         setRunning(false);
         void loadFailures(jobId);
+        // ── ONE REFRESH, WHEN A READ THIS PANEL DROVE HAS FINISHED ──
+        //
+        // The read writes a scale reading per page, and the viewer above
+        // offers it from its toolbar ("Use scale 1/8" = 1'-0"") out of the
+        // page's own props — so on a freshly read set the offer appeared only
+        // after a reload. Nothing here revalidates per slice, for the reason
+        // `startPlanIngest` records: that re-rendered on every slice and lost
+        // the estimator's sheet.
+        //
+        // `router.refresh()` is not that. It re-renders the route's server
+        // components while keeping client state, so the viewer's open sheet
+        // survives it — the same call `TakeoffRoomsPanel` makes from inside
+        // the viewer, and the same root re-render every calibration save
+        // already causes. Once per finished run, never mid-run, never on
+        // mount over a run that finished before the page loaded, and not when
+        // the loop stops short. Where the reading comes from and how it is
+        // trusted are untouched: this only asks for the page that shows it.
+        router.refresh();
         return;
       }
 
@@ -140,7 +160,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
     },
     // `view` is read for the moved-or-not comparison; including it is correct
     // and harmless, because `pump` is only ever called through a fresh closure.
-    [loadFailures, view],
+    [loadFailures, view, router],
   );
 
   function onStart() {

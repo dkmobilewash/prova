@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * /wall-types (declutter, 2026-10-13): the add form waits behind its button,
@@ -10,10 +10,24 @@ import { describe, expect, it, vi } from "vitest";
 
 const dec = (n: number) => ({ toString: () => String(n) });
 
+/** The library the page reads. Each case may replace it; it resets to A1 alone. */
+let extraTypes: { code: string }[] = [];
+
 vi.mock("@prova/db", () => ({
   prisma: {
     wallType: {
       findMany: vi.fn(async () => [
+        ...extraTypes.map((extra, index) => ({
+          id: `wt-extra-${index}`,
+          code: extra.code,
+          name: `Company type ${extra.code}`,
+          sides: 2,
+          studSpacingIn: dec(16),
+          defaultHeightFt: null,
+          notes: null,
+          _count: { runs: 0 },
+          components: [],
+        })),
         {
           id: "wt-1",
           code: "A1",
@@ -78,5 +92,55 @@ describe("/wall-types", () => {
     expect(summary, "no form controls in the closed line").not.toContain("<input");
     // Its edit forms are inside the row, one click away.
     expect(row).toContain("<form");
+  });
+});
+
+/**
+ * ISSUE #818: THE STARTERS STAYED HIDDEN ONCE ANY WALL TYPE EXISTED.
+ *
+ * The button lived only in the empty state, so a company whose first type was
+ * read off a partition schedule (A1 here) could never get W1, ACT1 or FTG1
+ * without typing them. It is offered now while ANY starter is missing, and it
+ * says how many it will add — the count from `missingStarterTypes`, the same
+ * function `addStarterWallTypes` uses to decide what to write.
+ */
+describe("/wall-types starter assemblies (#818)", () => {
+  beforeEach(() => {
+    extraTypes = [];
+  });
+
+  const starterButton = (html: string) =>
+    html.match(/<button[^>]*data-wall-types="add-starters"[^>]*>([^<]*)<\/button>/)?.[1] ?? null;
+
+  it("is still offered beside a library that has types of its own, and says it adds all ten", async () => {
+    const html = renderToStaticMarkup(await WallTypesPage());
+    expect(html, "the library rendered as a list").toContain('data-tour="wall-types-list"');
+    expect(starterButton(html), "no starter button beside a non-empty library").toBe(
+      "Start from the common trade assemblies (adds 10)",
+    );
+  });
+
+  it("counts only the missing ones, case-insensitively, and names them", async () => {
+    extraTypes = [{ code: "W1" }, { code: "w2" }, { code: "ACT1" }];
+    const html = renderToStaticMarkup(await WallTypesPage());
+    expect(starterButton(html)).toBe("Start from the common trade assemblies (adds 7)");
+    expect(html).toContain("W3, EW1, FIN5, FLR1, PT1, SLB1, FTG1");
+    expect(html).toContain("left as they are");
+  });
+
+  it("says one, not ones, for the last missing starter", async () => {
+    extraTypes = ["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "FLR1", "PT1", "SLB1"].map((code) => ({ code }));
+    const html = renderToStaticMarkup(await WallTypesPage());
+    expect(starterButton(html)).toBe("Start from the common trade assemblies (adds 1)");
+  });
+
+  it("is gone once every starter is in the library", async () => {
+    extraTypes = ["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "FLR1", "PT1", "SLB1", "FTG1"].map((code) => ({ code }));
+    const html = renderToStaticMarkup(await WallTypesPage());
+    expect(html).toContain("FTG1");
+    expect(starterButton(html)).toBeNull();
+    expect(html).not.toContain("common trade assemblies");
+    // Not even an empty box where it was.
+    expect(html).not.toContain('data-wall-types="starters"');
   });
 });
