@@ -12,7 +12,9 @@ import {
   ownerRefusal,
   type ActionResult,
 } from "./shared";
+import { deleteDocument } from "@/lib/blob";
 import {
+  JOB_DRAFT_CHILDREN,
   JOB_HISTORY_RELATIONS,
   describeJobHistory,
   jobDetailsFromForm,
@@ -26,8 +28,28 @@ const JOBS_ONLY = "Editing a job isn't part of your job function.";
  *  second time — two copies of this would drift the moment a relation is
  *  added, and the one that drifts is the one nobody looks at. */
 const HISTORY_COUNT_SELECT = Object.fromEntries(
-  JOB_HISTORY_RELATIONS.map((relation) => [relation.key, true]),
+  JOB_HISTORY_RELATIONS.filter((relation) => !relation.single && !relation.throughLineItems).map((relation) => [
+    relation.key,
+    true,
+  ]),
 ) as Record<string, true>;
+
+/** The one-to-one relations `_count` cannot count, selected by id instead. */
+const HISTORY_SINGLE_SELECT = Object.fromEntries(
+  JOB_HISTORY_RELATIONS.filter((relation) => relation.single).map((relation) => [
+    relation.key,
+    { select: { id: true } },
+  ]),
+) as Record<string, { select: { id: true } }>;
+
+/** A Prisma delegate, as far as removing a job needs one. Every model in
+ *  `JOB_DRAFT_CHILDREN` carries a `jobId`, which the census pins. */
+type JobScopedDelegate = { deleteMany(args: { where: { jobId: string } }): Promise<unknown> };
+
+/** Postgres refused a delete because a row still points at it. */
+function isForeignKeyRefusal(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2003";
+}
 
 /**
  * Correct a job's name, scope or client.
@@ -130,10 +152,18 @@ export async function updateJobDetails(jobId: string, formData: FormData): Promi
  * database script — which is what a person's first mistyped job actually
  * cost.
  *
- * So: owner only, estimate stage only, and nothing hanging off it. The
+ * So: owner only, estimate stage only, and no history hanging off it. The
  * refusal names what is holding it, the way `deleteSalesLead` does, because
  * "this cannot be deleted" without a reason is the message people ask you
  * about.
+ *
+ * "No history" is not "no rows". An estimate somebody took off and priced
+ * has a takeoff plan, takeoff items and a saved bid recap, and until
+ * 2026-10-25 every one of those was a RESTRICT foreign key this action did
+ * not know about: "Remove it" threw `TakeoffPlan_jobId_fkey`, then
+ * `JobBidRecap_jobId_fkey`, and production redacted both to "This page
+ * didn't load". Those are the estimate's working papers and now go with it
+ * (`JOB_DRAFT_CHILDREN`); evidence still refuses (`JOB_HISTORY_RELATIONS`).
  */
 export async function deleteEstimateJob(jobId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
@@ -167,6 +197,7 @@ export async function deleteEstimateJob(jobId: string): Promise<ActionResult> {
       companyId: true,
       status: true,
       _count: { select: HISTORY_COUNT_SELECT },
+      ...HISTORY_SINGLE_SELECT,
     },
   });
   if (!job || job.companyId !== context.company.id) return fail("Job not found");
@@ -178,7 +209,14 @@ export async function deleteEstimateJob(jobId: string): Promise<ActionResult> {
     );
   }
 
-  const held = describeJobHistory(job._count as unknown as Record<string, number>);
+  const counts: Record<string, number> = { ...(job._count as unknown as Record<string, number>) };
+  const row = job as unknown as Record<string, unknown>;
+  for (const relation of JOB_HISTORY_RELATIONS) {
+    if (relation.single) counts[relation.key] = row[relation.key] ? 1 : 0;
+  }
+  counts.costEntries = await prisma.costEntry.count({ where: { lineItem: { jobId } } });
+
+  const held = describeJobHistory(counts);
   if (held.length > 0) {
     return fail(
       `${job.name} has ${joinWithConjunction(held)} on file, so its record stays. ` +
@@ -186,13 +224,46 @@ export async function deleteEstimateJob(jobId: string): Promise<ActionResult> {
     );
   }
 
-  // Line items are the estimate itself rather than history, so they go with
-  // it — in one transaction, because a job whose line items were deleted and
-  // whose own delete then failed is worse than either outcome alone.
-  await prisma.$transaction([
-    prisma.jobLineItem.deleteMany({ where: { jobId } }),
-    prisma.job.delete({ where: { id: jobId } }),
-  ]);
+  // Read BEFORE the delete, the way `deleteTakeoffPlan` does: once the rows
+  // are gone there is nothing left to learn the file URLs from.
+  const plans = await prisma.takeoffPlan.findMany({ where: { jobId }, select: { fileUrl: true } });
+
+  // The estimate's working papers go with it — line items, takeoff, bid
+  // recap, proposal text, counters (`JOB_DRAFT_CHILDREN` says why each one)
+  // — in ONE transaction, because a job whose takeoff was deleted and whose
+  // own delete then failed is worse than either outcome alone.
+  //
+  // Driven from the list rather than typed out a second time: a hand-written
+  // copy is how the takeoff plan and the bid recap were missed in the first
+  // place, and `jobRemoval.test.ts` derives the list's completeness from the
+  // migrations.
+  try {
+    await prisma.$transaction(async (tx) => {
+      const delegates = tx as unknown as Record<string, JobScopedDelegate>;
+      for (const child of JOB_DRAFT_CHILDREN) {
+        await delegates[child.model].deleteMany({ where: { jobId } });
+      }
+      await tx.job.delete({ where: { id: jobId } });
+    });
+  } catch (error) {
+    // The census should make this unreachable. If a table is added that
+    // neither list names, the person gets a sentence instead of a redacted
+    // digest, and nothing has been deleted — the transaction rolled back.
+    if (isForeignKeyRefusal(error)) {
+      return fail(
+        `${job.name} still has records attached that Prova does not remove with an estimate, so nothing ` +
+          "was removed. Tell us which job this was and we will look at what is holding it.",
+      );
+    }
+    throw error;
+  }
+
+  // Only once the rows are confirmed gone. `deleteDocument` swallows its own
+  // failures, so a store that will not delete cannot turn a completed
+  // removal into an error.
+  for (const plan of plans) {
+    if (plan.fileUrl) await deleteDocument(plan.fileUrl);
+  }
 
   revalidatePath("/jobs");
   revalidatePath("/dashboard");
