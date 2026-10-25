@@ -90,6 +90,7 @@ export * from "./bluebeam";
 export * from "./wallTypes";
 export * from "./bidRecap";
 export * from "./quoteRead";
+export * from "./bidInviteRead";
 export * from "./addendumRead";
 export * from "./specRead";
 export * from "./proposalDrafts";
