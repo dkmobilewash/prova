@@ -110,6 +110,7 @@ import { proposalSections, showsHeadings } from "@/lib/takeoff/proposalSections"
 import { calibrationForView, type ViewScale } from "@/lib/takeoff/sheetScale";
 import { SINGLE_LINE_COLOUR, VERDICT_COLOURS } from "@/components/AnswerKeyPanel";
 import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
+import { noWallsMessage } from "@/lib/takeoff/noWallsMessage";
 import { drawingRegions, segmentsInRegions } from "@/lib/takeoff/planRegion";
 import { takeoffSheetVerdict, type TakeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
 import {
@@ -593,6 +594,18 @@ export function TakeoffPlanViewer({
   // somebody opening a drawing wants to see first; they zoom IN to measure.
   const [zoom, setZoom] = useState<Zoom>(FIT);
   const [tool, setTool] = useState<ToolId>("pan");
+  /**
+   * ── THE SHEET'S OWN SCALE, ASKED FOR FROM THE TOOLBAR ──
+   *
+   * Set by the toolbar's "Use … scale" shortcut and read in two places: the
+   * tool-change effect below seeds the draft line from it, and `CalibrationForm`
+   * starts its distance and note from it. Held as STATE rather than consumed
+   * from a ref because React runs effects twice in development, and a seed the
+   * first run used up would be cleared by the second.
+   */
+  const [calibrationSeed, setCalibrationSeed] = useState<
+    (PrefillSeed & { page: number; xs: [number, number]; ys: [number, number] }) | null
+  >(null);
 
   /**
    * ── THE HOST'S KEYBOARD REACHES THE CANVAS HERE ──
@@ -769,6 +782,23 @@ export function TakeoffPlanViewer({
    * state, which is why the name it kept is the one they were already using.
    */
   const found = wallsOnThisSheet(foundRaw, foundOnPage, pageNumber);
+  /**
+   * HOW MANY GROUPS FROM THE LAST FIND ON EACH SHEET WERE ADDED TO THE
+   * MEASUREMENTS. Accepting a group takes it off the panel, so without this an
+   * emptied panel cannot tell "nothing paired" from "you added all of it" —
+   * and said the first, under walls it had just found (user walk 2026-10-19).
+   * Per page for the reason everything else a find produces is.
+   */
+  const [groupsAddedByPage, setGroupsAddedByPage] = useState<Record<number, number>>({});
+  const groupsAdded = onThisSheet(groupsAddedByPage, pageNumber) ?? 0;
+  const setGroupsAdded = useCallback(
+    (next: number | ((current: number) => number)) =>
+      setGroupsAddedByPage((prev) => {
+        const value = typeof next === "function" ? next(onThisSheet(prev, pageNumber) ?? 0) : next;
+        return setOnThisSheet(prev, pageNumber, value > 0 ? value : null);
+      }),
+    [pageNumber],
+  );
   // ONE SLOT, and `cautionToShow` owns which of the three fills it.
   //
   // THE MEASURED SENTENCE BEATS THE WARNING, and it is the same slot. Before
@@ -1290,9 +1320,18 @@ export function TakeoffPlanViewer({
 
   // Changing page or tool abandons a half-drawn shape rather than carrying
   // points from one sheet onto another.
+  //
+  // EXCEPT the one shape somebody asked for: the toolbar's "Use … scale" press
+  // switches to the scale tool AND seeds its line, and this effect runs after
+  // that press — so the seed is applied here rather than wiped by it.
   useEffect(() => {
+    if (tool === "calibrate" && calibrationSeed !== null && calibrationSeed.page === pageNumber) {
+      setDraft({ xs: [...calibrationSeed.xs], ys: [...calibrationSeed.ys] });
+      return;
+    }
     setDraft(EMPTY);
-  }, [pageNumber, tool]);
+    if (calibrationSeed !== null) setCalibrationSeed(null);
+  }, [pageNumber, tool, calibrationSeed]);
 
 
   const aspect = pageSize ? pageSize.heightPt / pageSize.widthPt : 1.294;
@@ -2229,6 +2268,7 @@ export function TakeoffPlanViewer({
     setFinding(true);
     setFindError(null);
     setFound(null);
+    setGroupsAdded(0);
     setRooms(null);
     setChosen({});
     setShowingAll(false);
@@ -2571,6 +2611,11 @@ export function TakeoffPlanViewer({
     // an estimator works through them one at a time and re-running the finder
     // to get back to where they were would be a punishment for accepting one.
     setFound((current) => (current ?? []).filter((_, i) => i !== index));
+    // Counted so the panel, once emptied this way, says it is DONE rather than
+    // that nothing was found. See `noWallsMessage`.
+    // An updater, because two groups accepted in quick succession are two
+    // saves in flight reading the same render.
+    setGroupsAdded((current) => current + 1);
   }
 
   /**
@@ -2994,6 +3039,38 @@ export function TakeoffPlanViewer({
             <span className="text-tag-amber-ink">Set the scale on this sheet before measuring.</span>
           )}
         </span>
+        {/* ── THE SCALE THIS SHEET ALREADY READ, WHERE THE SENTENCE ABOVE IS ──
+
+            A user walk on 2026-10-19: fixture S03 prints 1/8" = 1'-0", its
+            reading matched five printed dimensions at that scale, and the
+            toolbar still said only "Set the scale" — because the offer lived
+            inside the Set scale tool and nothing out here said one was waiting.
+
+            A CONFIRMATION, NOT AN APPLY. The press does what the offer's own
+            button does — draws the proposed line on the sheet and fills the
+            distance and the provenance note — and the person still presses
+            "Set the scale". Hidden while the scale tool is open, because the
+            offer itself is on screen then. */}
+        {!calibration && tool !== "calibrate" && scalePrefillByPage[pageNumber] && (
+          <button
+            type="button"
+            data-takeoff="use-sheet-scale"
+            title={
+              scalePrefillByPage[pageNumber].unconfirmed
+                ? "Read off the title block — nothing measurable on the sheet confirms it. Opens the scale for you to check and save."
+                : "Read off the dimensions printed on this sheet. Opens the scale for you to check and save."
+            }
+            onClick={() => {
+              const prefill = scalePrefillByPage[pageNumber];
+              setCalibrationSeed({ page: pageNumber, xs: prefill.xs, ys: prefill.ys, ...prefillSeed(prefill) });
+              setTool("calibrate");
+            }}
+            className="rounded-md border border-line-card px-2 py-1 text-xs font-medium text-ink-label hover:bg-rail-hover"
+          >
+            {scalePrefillByPage[pageNumber].unconfirmed ? "Use printed scale" : "Use scale"}{" "}
+            {scalePrefillByPage[pageNumber].scaleName}
+          </button>
+        )}
       </div>
       )}
 
@@ -3107,9 +3184,9 @@ export function TakeoffPlanViewer({
                thousand has lines that did not pair, which is a different fact
                and a different thing for an estimator to do about it. */
             <p className="text-sm text-ink-body" data-takeoff="no-walls">
-              {strokesSeen === 0
-                ? "No walls found: this sheet has no line work at all, so it is an image or a scan. There is nothing here to read. Trace them by hand as usual."
-                : `No walls found. This sheet does have line work — ${strokesSeen.toLocaleString()} lines — but none of it paired up as a wall. That happens when walls are drawn as a single line or as solid fill rather than two faces. Trace them by hand as usual.`}
+              {/* AND A THIRD: every group was added, which empties the panel
+                  too. `noWallsMessage` owns all three sentences. */}
+              {noWallsMessage({ strokesSeen, groupsAdded })}
             </p>
           ) : (
             <>
@@ -4069,6 +4146,7 @@ export function TakeoffPlanViewer({
               viewScales={viewScalesByPage?.[pageNumber] ?? []}
               printedScale={printedScaleByPage[pageNumber] ?? null}
               prefill={scalePrefillByPage[pageNumber] ?? null}
+              seed={calibrationSeed?.page === pageNumber ? calibrationSeed : null}
               declineReason={scaleDeclineByPage?.[pageNumber] ?? null}
               onUsePrefill={(xs, ys) => {
                 // Seeds the draft so the proposed line DRAWS ON THE SHEET over
@@ -4769,6 +4847,32 @@ const STROKE_PX = 2;
  */
 export const CALIBRATION_DASH = `${STROKE_PX * 7} ${STROKE_PX * 3} ${STROKE_PX} ${STROKE_PX * 3}`;
 
+/** What the scale form starts from when a sheet's own reading is used. */
+type PrefillSeed = { typed: string; note: string };
+
+/**
+ * The distance and the provenance note a reading fills in — ONE function for
+ * the offer inside the scale tool and the toolbar's shortcut to it.
+ */
+function prefillSeed(prefill: ScalePrefill): PrefillSeed {
+  return {
+    // The provenance, in words, so it survives the save — see `note` in
+    // `CalibrationForm` for why that is not cosmetic.
+    note: prefill.unconfirmed
+      ? `From the ${prefill.scaleName} printed on this sheet. Nothing measurable on the sheet confirmed it.`
+      : `Matched ${prefill.agreed.length} printed dimension${prefill.agreed.length === 1 ? "" : "s"}` +
+        ` on this sheet (${prefill.agreed.slice(0, 3).join(", ")}), within ` +
+        `${(prefill.inheritedError * 100).toFixed(2)}%.`,
+    // A PRINTED scale's `declaredText` is the scale NAME, not a distance, so
+    // typing it into the distance box would be nonsense. The figure there is
+    // what the printed scale says the sheet's own width is — see
+    // `scaleFromPrinted`.
+    typed: prefill.unconfirmed
+      ? formatFeetInches(prefill.declaredFeet)
+      : prefill.declaredText || formatFeetInches(prefill.declaredFeet),
+  };
+}
+
 function CalibrationForm({
   jobId,
   planId,
@@ -4779,6 +4883,7 @@ function CalibrationForm({
   existingNote,
   draft,
   prefill,
+  seed = null,
   viewScales,
   declineReason,
   onUsePrefill,
@@ -4793,6 +4898,9 @@ function CalibrationForm({
   existingNote: string;
   draft: StoredCalibration | null;
   prefill: ScalePrefill | null;
+  /** The distance and note to start from, when the toolbar's shortcut opened
+   *  this form with the sheet's own scale already chosen. */
+  seed?: PrefillSeed | null;
   /** The drawings on a multi-scale sheet, each with its own captioned scale.
    *  Empty on every ordinary sheet. */
   viewScales: readonly ViewScale[];
@@ -4800,7 +4908,7 @@ function CalibrationForm({
   onUsePrefill: (xs: readonly [number, number], ys: readonly [number, number]) => void;
   onSaved: () => void;
 }) {
-  const [typed, setTyped] = useState("");
+  const [typed, setTyped] = useState(seed?.typed ?? "");
   /**
    * WHY THIS SCALE IS THE RIGHT ONE, and it has to survive the save.
    *
@@ -4819,7 +4927,7 @@ function CalibrationForm({
    * Still editable, because it is the estimator's own note and they may know
    * more than the app does.
    */
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(seed?.note ?? "");
 
   const preview = useMemo(() => {
     if (!draft) return null;
@@ -4908,25 +5016,11 @@ function CalibrationForm({
             prefill={prefill}
             onUse={() => {
               onUsePrefill(prefill.xs, prefill.ys);
-              // The provenance, in words, so it survives the save — see `note`
-              // above for why that is not cosmetic.
-              setNote(
-                prefill.unconfirmed
-                  ? `From the ${prefill.scaleName} printed on this sheet. Nothing measurable on the sheet ` +
-                    `confirmed it.`
-                  : `Matched ${prefill.agreed.length} printed dimension${prefill.agreed.length === 1 ? "" : "s"}` +
-                    ` on this sheet (${prefill.agreed.slice(0, 3).join(", ")}), within ` +
-                    `${(prefill.inheritedError * 100).toFixed(2)}%.`,
-              );
-              // A PRINTED scale's `declaredText` is the scale NAME, not a
-              // distance, so typing it into the distance box would be nonsense.
-              // The figure there is what the printed scale says the sheet's own
-              // width is — see `scaleFromPrinted`.
-              setTyped(
-                prefill.unconfirmed
-                  ? formatFeetInches(prefill.declaredFeet)
-                  : prefill.declaredText || formatFeetInches(prefill.declaredFeet),
-              );
+              // One helper for this button and the toolbar's shortcut, so the
+              // two cannot seed different figures. See `prefillSeed`.
+              const filled = prefillSeed(prefill);
+              setNote(filled.note);
+              setTyped(filled.typed);
             }}
           />
         )}
