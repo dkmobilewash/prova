@@ -14,7 +14,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { bidAuthHref } from "@/lib/bid/surface";
+import { BID_HOME, bidAuthDestination, bidAuthHref, isBidSignedInPath } from "@/lib/bid/surface";
 
 vi.mock("next/image", () => ({
   default: (props: Record<string, unknown>) => {
@@ -35,9 +35,10 @@ const { default: BidLandingPage } = await import("./page");
 const { BidLanding } = await import("@/components/bid/BidLanding");
 
 describe("/bid", () => {
-  it("sends a signed-in visitor to their bids, not the CRM", async () => {
+  it("sends a signed-in visitor to the Bid home, not the CRM", async () => {
     authUserId = "user_1";
-    await expect(BidLandingPage()).rejects.toThrow("NEXT_REDIRECT: /bid/bids");
+    await expect(BidLandingPage()).rejects.toThrow(`NEXT_REDIRECT: ${BID_HOME}`);
+    expect(BID_HOME).toBe("/bid/home");
   });
 
   it("renders the landing page for a signed-out visitor", async () => {
@@ -61,11 +62,23 @@ describe("BidLanding", () => {
   });
 
   it("its sign-up and sign-in links bring a person back to Bid", () => {
-    const signUp = bidAuthHref("sign-up").replace(/&/g, "&amp;");
-    const signIn = bidAuthHref("sign-in").replace(/&/g, "&amp;");
-    // Header, hero and closing section.
-    expect(html.split(`href="${signUp}"`).length - 1).toBe(3);
-    expect(html).toContain(`href="${signIn}"`);
+    // BidLanding spells its own redirect_url (`%2Fbid%2Fbids`, the bid log) and
+    // is deliberately untouched by the Bid-home change, so it can no longer be
+    // compared with `bidAuthHref` (now `/bid/home`). What it must still do is
+    // send a person to a SIGNED-IN BID PAGE, never the CRM's /dashboard.
+    const hrefs = [...html.matchAll(/href="(\/sign-(?:up|in)\?redirect_url=[^"]+)"/g)].map((m) =>
+      m[1].replace(/&amp;/g, "&"),
+    );
+    // Header sign-in + sign-up, hero, closing section: the same four as before.
+    expect(hrefs.length).toBe(4);
+    expect(hrefs.filter((h) => h.startsWith("/sign-up?")).length).toBe(3);
+    for (const href of hrefs) {
+      const target = decodeURIComponent(href.split("redirect_url=")[1]);
+      expect(isBidSignedInPath(target), href).toBe(true);
+      expect(bidAuthDestination("localhost:3000", target), href).toBe(target);
+    }
+    // And the string the Bid surface itself draws goes to the home.
+    expect(bidAuthHref("sign-up")).toBe("/sign-up?redirect_url=%2Fbid%2Fhome");
     expect(html).not.toMatch(/href="\/sign-up"/);
   });
 
