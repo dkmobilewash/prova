@@ -849,3 +849,61 @@ Baker (A101, schedule on p26, 18 rows, every door 3'-0" or 6'-0" × 7'-0"):
 see `shots/doors-baker/` — three runs of `takeoff-doors-real.spec.ts`, no
 doors / doors at the default rule / doors with ALL, and the board square feet
 on the estimate from each.
+## 21. Sheet names and scales from the list (2026-10-26) — diego/sheet-scale off diego/customer-features
+
+Walkthrough findings 6 and 7 (§19's "still true" list): the rail said "65 need
+a scale", the picker said "Sheet 5", the scale form's name box was blank. All
+three are the same gap — the inventory reads every page's text and scale with
+no model, and nothing customer-facing used what it read until the paid
+title-block step ran. Everything here is OFF until the company turns on the
+plan-text read (`PLAN_TEXT_READ`), the switch the rest of drawing-text reading
+sits behind; with it off, the rail, picker and form are exactly as before.
+
+**Names.** `pageInventoryWork` gained a port, `saveSheetProposal`, and writes a
+`PlanSheetProposal` per readable page whose corner or region yields a
+designation (`sheetNumberFrom`): HIGH from the corner, MEDIUM from the region,
+`model: "keyless title-block reader"`, so the review index can tell it from a
+model's. The title comes from `nameSheet` (the eval-only glyph-height reader,
+now a product dependency) ONLY when its lettering is at least 1.3× the block's
+median height (`distinct`); a title at the block's own size is boilerplate
+until a model reads it — the synthetic fixture proved that the hard way, giving
+"ZZ SYNTHETIC ARCHITECTS PROJECT: … ISSUED: 2026-03-04" as a title. The
+model's later proposal, being newer, still wins where it runs. The scale form's
+name box reads the sheet index's label when the page has none of its own.
+
+**Ranking.** `looksLikeFloorPlan(number, title, discipline)` in `sheetTree.ts`:
+an A-sheet whose title says plan and not a plan of something else (ceiling,
+roof, site, framing, demo, enlarged, life safety…), or an untitled A-1xx.
+`buildSheetTree({ rankPlans })` puts a plan that still needs a scale first in
+its group; the progress line adds "N floor plans to scale, listed first".
+
+**One press.** `printedScaleOffers(groups)` groups every unscaled sheet that
+prints a scale by what it prints; the rail renders one button per scale
+(`data-takeoff="use-printed-scale-everywhere"`). `applyPrintedScales(jobId,
+planId, pages)` (`lib/actions/takeoff.ts`) writes a calibration per page from
+that page's OWN `PlanSheetScaleReading` — its anchored line and declared feet —
+through `calibrationRefusal` like the single form; already-calibrated pages
+and pages with no reading are skipped and named in the status line. No wall
+detection is kicked off (that stays per sheet, on opening it). Excluded from
+Ask's registry with the other scale writes.
+
+**On Baker (training, `shots/estimator-baker-sheet-scale/BEFORE-AFTER.md`).** The
+inventory named 59 of 65 pages, every one HIGH from the corner; the six it
+could not are the civil sheets with no corner designation, which stay "Sheet
+N" until the paid step. 29 pages print a readable scale (4 checked against
+dimensions, 25 printed only). The rail opens on the ARCHITECTURAL group with
+the two floor plans first, "2 floor plans to scale, listed first", and six
+buttons; one press set 18 sheets from their own 1/8" readings and the floor
+plan opened already scaled, at the same scale the per-sheet offer gave on
+the previous run — same 12 groups, same first-group footage. The walkthrough
+spec (`estimator-baker.spec.ts`) no longer seeds proposals; it reads what the
+inventory wrote, presses the first offer, and skips the scale form when the
+sheet's own line (`data-takeoff="sheet-scale-state"`) already says set.
+Known soft spots: a title repeated on two sheets (the RCP reads as its keynote
+legend), drawing titles appended to a sheet title, and a header of six
+buttons on a set with six printed scales.
+
+`applyPrintedScales` is covered by `takeoff-printed-scales.dbtest.ts` on a
+scratch Postgres: two pages with DIFFERENT declared feet each get their own,
+a scaled page and an unread page are skipped and named, the note says
+checked-or-not, and another company's call is refused.

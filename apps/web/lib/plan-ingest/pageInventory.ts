@@ -1,4 +1,7 @@
 import { prisma } from "@prova/db";
+import { sheetNumberFrom } from "./sheetNumber";
+import { aiGate } from "../ai/settings";
+import { nameSheet } from "../takeoff/realplan/nameSheet";
 import { readPlanBytes } from "./planBytes";
 import { hasTextLayer, openPlanPdf, titleBlockText, type PlanPdf, type PlanPageText } from "./planPdf";
 import { dimensionLabels, metricDimensionLabels } from "./dimensionLabels";
@@ -38,6 +41,31 @@ import type { StageCtx, StageWork } from "./stages";
 
 /** Everything this stage touches that is not pure, injected so the stage can be
  *  tested with no network, no database and no PDF. */
+/**
+ * ── WHAT THE KEYLESS TITLE-BLOCK READER PROPOSES FOR A SHEET ──
+ *
+ * The TITLE_BLOCK stage names sheets with a model, one call per page, and
+ * sits behind the company's AI switch; until it runs (or when it never does)
+ * the rail reads "Sheet 5" and the scale form's label box is blank. This
+ * stage already reads every page's text, and `sheetNumberFrom` finds the
+ * designation in the title block's corner with no model at all — so it
+ * proposes the number, and `nameSheet`'s title beside it, with a confidence
+ * that says where the number came from: the CORNER is HIGH, the wider
+ * region MEDIUM. A page with no designation proposes nothing. The model's
+ * later proposal, being newer, still wins where it runs.
+ */
+export type SheetProposalRow = {
+  planId: string;
+  ingestJobId: string;
+  pageNumber: number;
+  sheetNumber: string;
+  title: string | null;
+  /** The printed scale the sheet declares, when one was read — the rail's "confirm" chip. */
+  printedScale: string | null;
+  confidence: "HIGH" | "MEDIUM";
+  reason: string;
+};
+
 export type PageInventoryDeps = {
   /** The plan's bytes, or a sentence saying why not. */
   readPlanBytes: (planId: string, companyId: string) => Promise<ReadPlanBytes>;
@@ -54,6 +82,15 @@ export type PageInventoryDeps = {
    * SUCCESSFULLY, and must not lose the first write to the second.
    */
   saveScaleReading: (row: ScaleReadingRow) => Promise<void>;
+  /** Record the keyless reader's sheet number and title. Idempotent per ingest job and page. */
+  saveSheetProposal: (row: SheetProposalRow) => Promise<void>;
+  /**
+   * Whether this company has opted into reading its drawings' text
+   * (PLAN_TEXT_READ). The keyless names are customer-visible — the rail, the
+   * picker, the scale form's label — so they stay behind the same switch the
+   * rest of plan-text reading sits behind, OFF until the owner turns it on.
+   */
+  planTextReadOn: (companyId: string) => Promise<boolean>;
 };
 
 export type ScaleReadingRow = {
@@ -198,6 +235,27 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
     // be told has still been inventoried, and the sentence saying why is worth
     // storing. See `declineReason`.
     await deps.saveScaleReading(scaleRow);
+
+    // ── THE SHEET'S OWN NAME, WITH NO MODEL ──
+    if (readable && (await deps.planTextReadOn(ctx.companyId))) {
+      const read = sheetNumberFrom(page);
+      if (read.sheetNumber !== null && read.source !== "none") {
+        const named = nameSheet(page.items, { widthPt: page.widthPt, heightPt: page.heightPt });
+        await deps.saveSheetProposal({
+          planId: ctx.planId,
+          ingestJobId: ctx.ingestJobId,
+          pageNumber: task.pageNumber,
+          sheetNumber: read.sheetNumber,
+          title: named.distinct ? named.title.trim() || null : null,
+          printedScale: scaleRow.source === "PRINTED" || scaleRow.source === "DIMENSIONS" ? scaleRow.scaleName : null,
+          confidence: read.source === "corner" ? "HIGH" : "MEDIUM",
+          reason:
+            read.source === "corner"
+              ? "the designation printed in the title block's corner, read without a model"
+              : "the designation found in the title-block region, read without a model — check it",
+        });
+      }
+    }
 
     // SUCCESS EVEN WITH NO TEXT LAYER. A scanned sheet is a fact this stage has
     // just recorded, not a failure of it — see `PlanSheetText.hasTextLayer`. A
@@ -415,4 +473,27 @@ const realDeps: PageInventoryDeps = {
       update: rest,
     });
   },
+
+  planTextReadOn: async (companyId) => (await aiGate(companyId, "PLAN_TEXT_READ")).ok,
+
+  saveSheetProposal: async (row) => {
+    const proposal = {
+      proposedSheetNumber: row.sheetNumber,
+      proposedTitle: row.title,
+      proposedScale: row.printedScale,
+      proposedReason: row.reason,
+      proposedConfidence: row.confidence,
+      model: KEYLESS_MODEL,
+      promptVersion: KEYLESS_PROMPT_VERSION,
+    };
+    await prisma.planSheetProposal.upsert({
+      where: { ingestJobId_pageNumber: { ingestJobId: row.ingestJobId, pageNumber: row.pageNumber } },
+      create: { ingestJobId: row.ingestJobId, planId: row.planId, pageNumber: row.pageNumber, ...proposal },
+      update: proposal,
+    });
+  },
 };
+
+/** What the keyless proposals are filed under — not a model, and said so. */
+export const KEYLESS_MODEL = "keyless title-block reader";
+export const KEYLESS_PROMPT_VERSION = "keyless-title-block.1";

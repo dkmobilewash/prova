@@ -325,6 +325,107 @@ function pointsFromForm(formData: FormData): { xs: number[]; ys: number[] } | nu
  * both halves: that it is OUR store, and that the path is this job's plan
  * prefix. A URL is not proof of anything on its own (#195).
  */
+/**
+ * ── THE SCALE A SHEET PRINTS, APPLIED TO EVERY SHEET THAT PRINTS IT, IN ONE PRESS ──
+ *
+ * Baker's rail said "65 need a scale". The inventory had already read a
+ * printed scale off most of them (`PlanSheetScaleReading`, source PRINTED or
+ * DIMENSIONS), and the viewer offered each one — one sheet at a time. This
+ * takes the pages the rail asked for and writes a calibration on each from
+ * ITS OWN reading: the line the reader anchored, the feet it declared. Never
+ * a figure somebody typed, never one sheet's scale copied onto another; a page
+ * with no reading, or one already calibrated, is skipped and named.
+ *
+ * No wall detection is kicked off here — that is per sheet, on opening it.
+ */
+export async function applyPrintedScales(
+  jobId: string,
+  planId: string,
+  pageNumbers: number[],
+): Promise<ActionResultWith<{ applied: number[]; skipped: { pageNumber: number; why: string }[] }>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY) as ActionResultWith<never>;
+  const { company, id: userId } = context;
+  const plan = await prisma.takeoffPlan.findFirst({ where: planScope(planId, jobId, company.id), select: { id: true } });
+  if (!plan) return actionFail("That plan is no longer on this job. Reload the page.") as ActionResultWith<never>;
+  const wanted = [...new Set(pageNumbers.map((n) => Math.trunc(Number(n))).filter((n) => Number.isFinite(n) && n >= 1))];
+  if (wanted.length === 0) return actionFail("No sheets were named.") as ActionResultWith<never>;
+
+  const readings = await prisma.planSheetScaleReading.findMany({
+    where: { planId: plan.id, pageNumber: { in: wanted } },
+  });
+  const calibrated = new Set(
+    (
+      await prisma.takeoffPlanPage.findMany({
+        where: { planId: plan.id, pageNumber: { in: wanted }, calibrations: { some: {} } },
+        select: { pageNumber: true },
+      })
+    ).map((p) => p.pageNumber),
+  );
+  const labels = new Map(
+    (
+      await prisma.planSheetProposal.findMany({
+        where: { planId: plan.id, pageNumber: { in: wanted } },
+        orderBy: { createdAt: "desc" },
+        select: { pageNumber: true, acceptedSheetNumber: true, proposedSheetNumber: true },
+      })
+    )
+      .reverse()
+      .map((p) => [p.pageNumber, p.acceptedSheetNumber ?? p.proposedSheetNumber ?? null] as const),
+  );
+  const texts = new Map(
+    (await prisma.planSheetText.findMany({ where: { planId: plan.id, pageNumber: { in: wanted } }, select: { pageNumber: true, widthPt: true } })).map(
+      (t) => [t.pageNumber, t.widthPt] as const,
+    ),
+  );
+
+  const applied: number[] = [];
+  const skipped: { pageNumber: number; why: string }[] = [];
+  await prisma.$transaction(async (tx) => {
+    for (const pageNumber of wanted.sort((a, b) => a - b)) {
+      if (calibrated.has(pageNumber)) {
+        skipped.push({ pageNumber, why: "already has a scale" });
+        continue;
+      }
+      const reading = readings.find((r) => r.pageNumber === pageNumber);
+      if (!reading || reading.scaleName === null || reading.x1 === null || reading.y1 === null || reading.x2 === null || reading.y2 === null || reading.declaredDistanceFeet === null) {
+        skipped.push({ pageNumber, why: "no scale was read off this sheet" });
+        continue;
+      }
+      const line = { x1: reading.x1, y1: reading.y1, x2: reading.x2, y2: reading.y2, declaredDistanceFeet: Number(reading.declaredDistanceFeet) };
+      const pageWidthPt = texts.get(pageNumber) ?? null;
+      const refusal = calibrationRefusal(calibrationNotices(line, pageWidthPt, null, null));
+      if (refusal) {
+        skipped.push({ pageNumber, why: refusal });
+        continue;
+      }
+      const label = labels.get(pageNumber) ?? null;
+      const page = await tx.takeoffPlanPage.upsert({
+        where: { planId_pageNumber: { planId: plan.id, pageNumber } },
+        create: { planId: plan.id, pageNumber, label, pageWidthPt },
+        update: { ...(label ? { label } : {}), ...(pageWidthPt === null ? {} : { pageWidthPt }) },
+      });
+      await tx.takeoffScaleCalibration.create({
+        data: {
+          pageId: page.id,
+          x1: line.x1,
+          y1: line.y1,
+          x2: line.x2,
+          y2: line.y2,
+          declaredDistanceFeet: line.declaredDistanceFeet.toFixed(4),
+          note: `From the ${reading.scaleName} this sheet prints (${reading.source === "DIMENSIONS" ? "checked against its dimensions" : "not checked against a dimension"}), applied from the sheet list.`,
+          createdByUserId: userId,
+        },
+      });
+      applied.push(pageNumber);
+    }
+  });
+
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/takeoff/${jobId}`);
+  return { ok: true, value: { applied, skipped } };
+}
+
 export async function recordTakeoffPlan(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
