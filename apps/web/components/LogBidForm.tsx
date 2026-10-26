@@ -25,7 +25,17 @@ const field =
  * here it rides in the form. */
 export const logBid = (formData: FormData) => createBidInvitation(String(formData.get("contactId") ?? ""), formData);
 
-export function LogBidForm({ gcs, startOpen = false }: { gcs: { id: string; name: string }[]; startOpen?: boolean }) {
+export function LogBidForm({
+  gcs,
+  startOpen = false,
+  projectChoices = [],
+}: {
+  gcs: { id: string; name: string }[];
+  startOpen?: boolean;
+  /** Projects already on file, so a second GC's invitation for the same job
+   * can go on the same project instead of a new one. */
+  projectChoices?: { id: string; label: string }[];
+}) {
   const [open, setOpen] = useState(startOpen);
 
   if (!open) {
@@ -92,6 +102,23 @@ export function LogBidForm({ gcs, startOpen = false }: { gcs: { id: string; name
           <label className="flex flex-col gap-1 text-sm text-ink-label">
             Bid $ (if known)
             <input name="bidAmount" type="text" inputMode="decimal" autoComplete="off" placeholder="Optional" className={`w-28 ${field}`} />
+          </label>
+          {projectChoices.length > 0 && (
+            <label className="flex flex-col gap-1 text-sm text-ink-label">
+              Same job as…
+              <select name="bidProjectId" defaultValue="" className={`max-w-xs ${field}`}>
+                <option value="">A new job</option>
+                {projectChoices.map((choice) => (
+                  <option key={choice.id} value={choice.id}>
+                    {choice.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="flex min-h-11 items-center gap-2 text-sm text-ink-label">
+            <input type="checkbox" name="weReachedOut" className="h-5 w-5" />
+            We reached out (they didn&rsquo;t invite us)
           </label>
           <label className="flex min-w-[180px] flex-1 flex-col gap-1 text-sm text-ink-label">
             Notes

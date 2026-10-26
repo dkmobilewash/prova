@@ -2056,6 +2056,10 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // MUST_ASSERT on the day they were added — and each is executed below as
   // a principal without it.
   bidPursuits: () => import("./actions/bidPursuits"),
+  // Bid projects: one piece of work, many GC invitations, one estimate. All
+  // five actions are reachable only from /bids (MANAGE_ESTIMATING) and each
+  // checks that capability first, so the walk puts all five in MUST_ASSERT.
+  bidProjects: () => import("./actions/bidProjects"),
   // Bid proposals. The clause library is reachable only from /proposals
   // and a job's proposal only from /jobs/[id]/proposal — both demand
   // MANAGE_ESTIMATING — so the walk puts all five in MUST_ASSERT and each

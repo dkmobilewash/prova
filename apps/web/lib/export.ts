@@ -899,13 +899,18 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     key: "pipeline",
     title: "The sales pipeline and bidding",
     detail:
-      "Leads, opportunities, bid invitations, the pre-bid chase list on the bid pipeline " +
+      "Leads, opportunities, bid invitations (and the projects that group several GCs' " +
+      "invitations to price the same job), the pre-bid chase list on the bid pipeline " +
       "page (projects being pursued before any GC invited you), vendor price quotes, the " +
       "researched signals behind a prospect and their sources, and the named people and " +
       "call history behind a contact. The contact record itself is exported; the work of " +
       "winning it is not.",
     models: [
       "BidPursuit",
+      // The piece of work behind one or more invitations (which GC invited
+      // you to price the same job, the one estimate, who won the prime). Lives
+      // with the bidding it groups; the estimate itself is in the jobs.
+      "BidProject",
       "SalesLead",
       "SalesOpportunity",
       "SalesActivity",

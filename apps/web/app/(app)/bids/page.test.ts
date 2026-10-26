@@ -82,6 +82,9 @@ vi.mock("@prova/db", () => ({
     // comparison against its own.
     vendor: { findMany: vi.fn(async () => []) },
     contact: { findMany: vi.fn(async () => [{ id: "gc-1", name: "Acme GC" }]) },
+    // The "same job as…" picker (lib/bid-project-query.ts). Empty: the
+    // project panel's own rendering is covered at the end of this file.
+    bidProject: { findMany: vi.fn(async () => []) },
   },
   BidInvitationStatus: {},
   TradeScope: {},

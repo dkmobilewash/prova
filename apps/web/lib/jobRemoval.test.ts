@@ -68,7 +68,7 @@ const IMPLIED_BY_HISTORY: Record<string, string> = {
 
 /** SET NULL children of Job that are deliberately left behind, detached,
  *  when an estimate is removed. Named so a new one forces a decision. */
-const DETACHED_ON_REMOVE = new Set(["BidInvitation", "DocumentIntake", "Equipment"]);
+const DETACHED_ON_REMOVE = new Set(["BidInvitation", "BidProject", "DocumentIntake", "Equipment"]);
 
 describe("foreign keys onto Job, from the migrations", () => {
   it("parses every one the SQL declares, not just the ones the pattern can read", () => {

@@ -699,6 +699,14 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "updateBidPursuit", reason: "Editing a pursuit is done on /pipeline, where the row being changed is visible." },
   { action: "linkBidPursuitToInvitation", reason: "Linking needs the right invitation picked from a list of similarly named projects, and it moves the stage to INVITED in the same write — done on /pipeline where both are visible." },
   { action: "deleteBidPursuit", reason: "Deletes are never commands (T5)." },
+  // Bid projects (lib/actions/bidProjects.ts): one piece of work, several GCs'
+  // invitations, one estimate. All five stay on /bids, where the other GCs on
+  // the job are on screen beside the row being changed.
+  { action: "mergeIntoProject", reason: "Folding two jobs into one decides which estimate prices which GCs, and two GCs name one building differently: a sentence is exactly the fuzzy match the project model refuses to make. Done on /bids with both projects visible, behind a confirm." },
+  { action: "splitFromProject", reason: "Undoes a merge, and refuses while that would orphan an award or a won bid — read on the row it affects." },
+  { action: "startEstimateFromProject", reason: "Starts the one estimate for a project with the first GC as its provisional client; done from the project, where the GCs and the pre-filled name, address and date are visible." },
+  { action: "recordPrimeAward", reason: "An entered fact about who won the prime contract, and it moves the estimate's GC and every other GC's win rate. It comes from a results sheet or a phone call, not from a sentence the model could have misheard." },
+  { action: "saveBidProject", reason: "Editing a project's name, address and dates is done on /bids, where the row being changed is visible." },
   // The conceptual benchmark. A READ, and still not a command: a
   // dollars-per-square-foot figure looks exactly like a measured one, and the
   // whole design of lib/conceptual-estimate.ts is that it is never stated

@@ -22,6 +22,9 @@ import {
 } from "@/components/BidCompliance";
 import { findingsFromJson } from "@/lib/specs/spec-findings";
 import { BidJobLink } from "@/components/BidJobLink";
+import { BidProjectPanel } from "@/components/BidProjectPanel";
+import { bidProjectInclude, loadProjectChoices } from "@/lib/bid-project-query";
+import { projectPanelView } from "@/lib/bid-project-view";
 import { bidRecord, settledSentence } from "@/lib/bid-outcome";
 import { loadBidOutcomes, loadLinkableJobs } from "@/lib/bid-outcome-query";
 import { BidOutcomeForm } from "@/components/BidOutcomeForm";
@@ -95,7 +98,7 @@ export default async function BidsPage({
   // not happened where they were sitting.
   const zone = await viewerTimeZone();
 
-  const [vendors, outcomesByBid, linkableJobs, gcs] = await Promise.all([
+  const [vendors, outcomesByBid, linkableJobs, gcs, projectChoices] = await Promise.all([
     prisma.vendor.findMany({
       where: { companyId: company.id },
       orderBy: { name: "asc" },
@@ -118,6 +121,7 @@ export default async function BidsPage({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    loadProjectChoices(company.id),
   ]);
   // How this company's finished bids have run against what the work cost.
   // Derived here, never stored, and it counts only what has SETTLED — see
@@ -141,6 +145,9 @@ export default async function BidsPage({
       // again, which is how the control came to be gated on WON in the first
       // place. The link is its own fact and is read as one.
       wonJob: { select: { id: true, name: true } },
+      // The piece of work this invitation is for, with the other GCs on it
+      // and the one estimate they share — see components/BidProjectPanel.tsx.
+      bidProject: { include: bidProjectInclude },
       // Why it was won or lost (BidOutcome, ai-agents.prisma) — whether to
       // offer "Record why" below, or say the reason already recorded.
       outcome: { select: { reason: true } },
@@ -253,7 +260,7 @@ export default async function BidsPage({
         subtitle="Every bid invitation from every GC — filter by trade or outcome to see what similar work priced at."
       />
 
-      <LogBidForm gcs={gcs} startOpen={isNew === "1"} />
+      <LogBidForm gcs={gcs} startOpen={isNew === "1"} projectChoices={projectChoices} />
 
       {/* ── THE DECLINE PICTURE, WHEN THERE IS ONE ──
 
@@ -496,6 +503,13 @@ export default async function BidsPage({
                   <p className="text-sm font-medium text-ink">{money(Number(bid.bidAmount))}</p>
                 )}
               </div>
+              {bid.bidProject && (
+                <BidProjectPanel
+                  view={projectPanelView(bid.bidProject, bid, money)}
+                  projectChoices={projectChoices}
+                  gcs={gcs}
+                />
+              )}
               {/* ── THE REGRET LETTER, ON A DECLINED BID ONLY ──
 
                   A page nothing links to is a page nobody uses — #665's lesson,
