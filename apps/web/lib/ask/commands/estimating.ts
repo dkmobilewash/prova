@@ -718,4 +718,7 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "saveEstimateVersion", reason: "A checkpoint is \"remember what we priced this at\" about the lines currently on screen; taking it from the job page is the point. Safe to expose now that #289 gave it a counter — not exposed because nobody has decided it should be." },
   { action: "updateCatalogDefaultsFromActuals", reason: "Owner-only pricing change with its own margin arithmetic; page only." },
   { action: "importCatalogEntries", reason: "Owner-only bulk import of pasted CSV; page only." },
+  { action: "previewEstimatePriceUpdate", reason: "A read that exists only to feed the Update prices panel's two-step confirm; the list is the point and it is on the estimate tab." },
+  { action: "applyEstimatePriceUpdate", reason: "Rewrites many line prices at once and is only safe behind the panel's per-line old-to-new list and its confirm; page only." },
+  { action: "restoreWallLines", reason: "Un-deletes lines at today's prices; pressed from the wall schedule, where the result is shown." },
 ];

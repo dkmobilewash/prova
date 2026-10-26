@@ -542,7 +542,16 @@ export default async function CatalogPage() {
         </CollapsedForm>
       </section>
         <div data-tour="catalog-import">
-          <CatalogImport existingDescriptions={entries.map((entry) => entry.description)} canImport={isOwner} />
+          <CatalogImport
+            existingEntries={entries.map((entry) => ({
+              id: entry.id,
+              description: entry.description,
+              unit: entry.unit,
+              unitPrice: entry.defaultUnitPrice != null ? Number(entry.defaultUnitPrice) : null,
+              budgetedUnitCost: entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
+            }))}
+            canImport={isOwner}
+          />
         </div>
       </div>
 

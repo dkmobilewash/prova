@@ -7,7 +7,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
 import { asCostCategory } from "@/lib/cost-category";
-import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
+import { catalogKey, parseCatalogImport, planImport } from "@/lib/catalog-import";
 import {
   PRODUCTION_RATE_MAX,
   PRODUCTION_RATE_MIN,
@@ -684,11 +684,13 @@ export async function priceCatalogEntryFromQuotes(entryId: string, formData: For
  * the raw text on the server, so a tampered or stale payload can't put
  * numbers into the catalog that nobody saw.
  *
- * Existing entries are never overwritten and never silently duplicated.
- * Re-importing an updated price list is the normal case, and a catalog with
- * two "5/8in Type X board" rows at different prices is worse than one that
- * refused the second. Updating a price stays where it already lives: the
- * entry's own controls, and the actuals loop.
+ * Existing entries are never silently duplicated, and never silently
+ * overwritten. A catalog with two "5/8in Type X board" rows at different
+ * prices is worse than one that refused the second, so a matching description
+ * is the SAME item. Since 2026-10-25 the price (and cost) of a matching entry
+ * can be updated from the file — only when the person ticked "Update prices"
+ * after the preview listed old -> new for each (`updatePrices`), and only
+ * those two figures. Owner-only, as the rest of the import is.
  *
  * RETURNS ITS REFUSALS RATHER THAN THROWING THEM, as of 2026-09-21, and on
  * this action that is the difference between a sentence and a lost
@@ -735,29 +737,83 @@ export async function importCatalogEntries(formData: FormData): Promise<ActionRe
   // line, rounded to 0.01 on the way in), and inverting it blindly is worse
   // in the other direction (600 / 0.012 = 50,000 hours). A refusal costs one
   // click; both fallbacks cost a bid.
-  const labor = laborQuestion(rows);
-  const reading = labor.kind === "ask" ? readingFromForm(formData.get("laborColumn")) : null;
-  if (labor.kind === "ask" && reading === null) {
+  //
+  // ONLY WHEN THERE ARE NEW ROWS: a price-only update writes no labor figure,
+  // so asking what the Hours column means would be a question with no stakes.
+  const existing = await prisma.lineItemCatalogEntry.findMany({
+    where: { companyId: company.id },
+    select: { id: true, description: true, unit: true, defaultUnitPrice: true, defaultBudgetedUnitCost: true },
+  });
+  const plan = planImport(
+    rows,
+    existing.map((entry) => ({
+      id: entry.id,
+      description: entry.description,
+      unit: entry.unit,
+      unitPrice: entry.defaultUnitPrice != null ? Number(entry.defaultUnitPrice) : null,
+      budgetedUnitCost: entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
+    })),
+  );
+  const { fresh } = plan;
+
+  // ── WHAT THE FILE DOES TO ENTRIES ALREADY IN THE CATALOG ──
+  //
+  // Re-importing a supplier's updated list is the normal case, and until
+  // 2026-10-25 it could only ADD: a new price for an item already in the
+  // catalog was skipped, so "board went up 8%" meant editing entries one at a
+  // time. Now the same file also reprices them — but only when the person
+  // ticked "update prices" in the preview, having seen old -> new for each, and
+  // only price and cost (see `planImport`). The plan is re-derived here from
+  // the raw text; `expectedChanges` is the count the preview showed, and a
+  // mismatch means the catalog moved under the preview and nothing is written.
+  const updatePrices = String(formData.get("updatePrices") ?? "") === "on";
+  const changes = updatePrices ? plan.changes : [];
+  if (updatePrices) {
+    // Compared as text on purpose: it is a count the browser echoes back, not a
+    // figure a person typed, so there is nothing for a number parser to read.
+    const expected = String(formData.get("expectedChanges") ?? "").trim();
+    if (expected !== String(plan.changes.length)) {
+      return actionFail(
+        `The catalog has changed since you previewed this list: it now reprices ${plan.changes.length} item${plan.changes.length === 1 ? "" : "s"}, not ${expected || "the number you saw"}. Reload the page and preview it again.`,
+      );
+    }
+  }
+
+  if (fresh.length === 0 && changes.length === 0) {
+    return actionFail(
+      plan.changes.length > 0
+        ? `That list changes the price of ${plan.changes.length} item${plan.changes.length === 1 ? "" : "s"} already in the catalog — tick "Update prices" in the preview to apply them.`
+        : "Every item in that list is already in the catalog at these prices — nothing to add or change.",
+    );
+  }
+
+  const labor = fresh.length > 0 ? laborQuestion(rows) : null;
+  const reading = labor?.kind === "ask" ? readingFromForm(formData.get("laborColumn")) : null;
+  if (labor?.kind === "ask" && reading === null) {
     return actionFail(
       "Say what the Hours column means before importing — the same figure can be hours per unit, units per hour, or flat hours for the line, and they are not interchangeable. Pick one in the preview.",
     );
   }
 
-  const existing = await prisma.lineItemCatalogEntry.findMany({
-    where: { companyId: company.id },
-    select: { description: true },
+  // Only price and cost, only where the file carries a figure. The entry's
+  // unit, trade, labor and description are the estimator's, and every
+  // estimate line already priced from it keeps its numbers — the next
+  // button ("Update prices on this estimate") is the deliberate door.
+  const priceUpdates = changes.map((change) => {
+    const data: { defaultUnitPrice?: string; defaultBudgetedUnitCost?: string } = {};
+    if (change.price) data.defaultUnitPrice = change.price.next.toString();
+    if (change.cost) data.defaultBudgetedUnitCost = change.cost.next.toString();
+    return prisma.lineItemCatalogEntry.updateMany({
+      where: { id: change.entryId, companyId: company.id },
+      data,
+    });
   });
-  const { fresh } = splitAgainstExisting(
-    rows,
-    existing.map((entry) => entry.description),
-  );
-
-  if (fresh.length === 0) {
-    return actionFail("Every item in that list is already in the catalog — nothing to add.");
-  }
-
-  await prisma.lineItemCatalogEntry.createMany({
-    data: fresh.map((row) => ({
+  const additions =
+    fresh.length === 0
+      ? []
+      : [
+          prisma.lineItemCatalogEntry.createMany({
+            data: fresh.map((row) => ({
       companyId: company.id,
       description: row.description,
       unit: row.unit,
@@ -771,8 +827,14 @@ export async function importCatalogEntries(formData: FormData): Promise<ActionRe
       // `estimatedHours` takes the flat hours as the override.
       ...(reading ? laborFieldsFor(row, reading) : { defaultLaborHours: null, productionRate: null }),
       tradeScope: row.tradeScope,
-    })),
-  });
+            })),
+          }),
+        ];
+  // ONE transaction when there is more than one write: a price list that
+  // half-applies is two lists in one catalog.
+  // (A lone createMany is already atomic, and is what this action always was.)
+  if (priceUpdates.length === 0) await Promise.all(additions);
+  else await prisma.$transaction([...priceUpdates, ...additions]);
 
   revalidatePath("/catalog");
   return actionOk;

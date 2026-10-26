@@ -58,6 +58,8 @@ import { ActionForm } from "@/components/ActionForm";
 import { CollapsedForm } from "@/components/CollapsedForm";
 import { Disclosure } from "@/components/Disclosure";
 import { WallSchedule } from "@/components/WallSchedule";
+import { UpdatePricesPanel } from "@/components/UpdatePricesPanel";
+import { capabilitiesFor } from "@/lib/permissions";
 import { estimatedHours, productionBackCheck } from "@/lib/labor-productivity";
 import { openingsFromJson, scheduleLines, type WallComponentBasis, type WallTypeInput } from "@/lib/wall-assemblies";
 import { BidRecapPanel, type RecapLineView } from "@/components/BidRecapPanel";
@@ -117,6 +119,9 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
   const { id } = await params;
   const { company, currentUser, principal, job: jobRef } = await requireJob(id);
   const { showsJobMoney } = jobCapabilities(principal);
+  // Price-book writes answer to MANAGE_ESTIMATING (the actions assert it); the
+  // controls render only for people they would not refuse.
+  const canManageEstimating = capabilitiesFor(principal).has("MANAGE_ESTIMATING");
   if (!showsJobMoney) {
     return (
       <p className="text-sm text-ink-muted">This tab isn&rsquo;t part of your access.</p>
@@ -1201,6 +1206,11 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
             </div>
           </section>
 
+          {/* BEFORE the recap, because the recap marks up the cost this
+              refreshes. Estimate-stage only by construction: this whole branch
+              is, and the action refuses a contracted job on its own. */}
+          {canManageEstimating && <UpdatePricesPanel jobId={job.id} />}
+
           <section className="mb-10" data-tour="job-bid-recap">
             <h2 className="mb-1 text-lg font-semibold text-ink">Bid recap</h2>
             <p className="mb-3 text-sm text-ink-body">
@@ -1278,7 +1288,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                 </>
               }
             >
-              <WallSchedule jobId={job.id} types={wallTypeInputs} runs={wallRunViews} unpricedRunLabels={unpricedWallRuns} />
+              <WallSchedule jobId={job.id} types={wallTypeInputs} runs={wallRunViews} unpricedRunLabels={unpricedWallRuns} canRestore={canManageEstimating} />
             </Disclosure>
           </div>
 

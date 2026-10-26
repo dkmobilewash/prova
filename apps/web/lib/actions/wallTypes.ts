@@ -5,7 +5,7 @@ import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { asCostCategory, type CostCategory } from "@/lib/cost-category";
-import { syncWallScheduleLines, type WallSyncSummary } from "@/lib/estimating/wall-schedule";
+import { restoreRemovedWallLines, syncWallScheduleLines, type WallSyncSummary } from "@/lib/estimating/wall-schedule";
 import { wallTypesFromSchedule, type PartitionScheduleRow } from "@/lib/estimating/partitionTypes";
 import { NOT_ESTIMATE_STAGE } from "@/lib/estimating/draft-lines";
 import { openingsFromJson, WALL_COMPONENT_BASES, type WallComponentBasis } from "@/lib/wall-assemblies";
@@ -553,6 +553,22 @@ export async function deleteWallRun(jobId: string, runId: string): Promise<RunRe
     if (err instanceof InputError) return { ok: false, error: err.message };
     throw err;
   }
+}
+
+/**
+ * Puts back the wall lines a person deleted (typically to reprice them), at
+ * today's price book prices. See `restoreRemovedWallLines`.
+ */
+export async function restoreWallLines(jobId: string): Promise<ActionResultWith<{ restored: number }>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return { ok: false, error: JOB_COSTS_ONLY };
+  if (!can(context, "MANAGE_ESTIMATING")) return { ok: false, error: NO_ESTIMATING };
+  const companyId = context.company.id;
+  const gate = await estimateJob(jobId, companyId);
+  if (!gate.ok) return gate;
+  const { restored } = await prisma.$transaction((tx) => restoreRemovedWallLines(tx, companyId, jobId));
+  revalidateJob(jobId);
+  return { ok: true, value: { restored } };
 }
 
 /**

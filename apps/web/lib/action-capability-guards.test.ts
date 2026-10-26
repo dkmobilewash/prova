@@ -794,6 +794,26 @@ const STRICTER_THAN_ITS_PAGE: Record<
     reason:
       "Pressed on /jobs/[id]/takeoff/legend, which withholds VIEW_JOB_COSTS, and writes a WallType and its components — the company library, MANAGE_ESTIMATING, which outlives the job whose legend was read. Same shape as addWallTypesFromSchedule above: WallLegendReview renders the Add button only for `canAdd`, which the page computes as can(context, \"MANAGE_ESTIMATING\").",
   },
+  "priceRefresh.previewEstimatePriceUpdate": {
+    capability: "MANAGE_ESTIMATING",
+    pageCapability: "VIEW_JOB_COSTS",
+    hiddenBy: "lib/estimating/priceUpdatesGating.test.ts",
+    reason:
+      "Pressed on /jobs/[id]/estimate (VIEW_JOB_COSTS) but it reads and rewrites prices that come from the company price book, which is MANAGE_ESTIMATING's. The estimate page renders the panel only for `capabilitiesFor(principal).has(...)`.",
+  },
+  "priceRefresh.applyEstimatePriceUpdate": {
+    capability: "MANAGE_ESTIMATING",
+    pageCapability: "VIEW_JOB_COSTS",
+    hiddenBy: "lib/estimating/priceUpdatesGating.test.ts",
+    reason: "The write half of the same panel; same gate, same reason.",
+  },
+  "wallTypes.restoreWallLines": {
+    capability: "MANAGE_ESTIMATING",
+    pageCapability: "VIEW_JOB_COSTS",
+    hiddenBy: "lib/estimating/priceUpdatesGating.test.ts",
+    reason:
+      "Un-deletes lines and resets them to price book prices. WallSchedule renders the button only when the page passes `canRestore`, computed from MANAGE_ESTIMATING.",
+  },
   "wallTypes.addWallTypesFromSchedule": {
     capability: "MANAGE_ESTIMATING",
     pageCapability: "VIEW_JOB_COSTS",
@@ -2084,6 +2104,8 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // beside a mechanism, and it drifted while every assertion around it stayed
   // true. Read the action, not this line.
   bidRecap: () => import("./actions/bidRecap"),
+  // "Update prices on this estimate": VIEW_JOB_COSTS, the estimate tab's own.
+  priceRefresh: () => import("./actions/priceRefresh"),
   // The per-company AI switch, reachable from /settings/assistant alone, which
   // demands MANAGE_COMPLIANCE. `saveCompanyAiSettings` asserts that AND owner:
   // turning AI off stops work for every member of the company, and turning it
