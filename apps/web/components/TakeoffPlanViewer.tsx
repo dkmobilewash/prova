@@ -68,6 +68,8 @@ import {
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
 import { loadPlanText, type PlanTextView } from "@/lib/actions/planTextRead";
 import { PlanTextPanel } from "@/components/PlanTextPanel";
+import { ProposedOpenings } from "@/components/ProposedOpenings";
+import { appendOpeningPairs, initialPicks, openingsSentence, type OpeningPick } from "@/lib/takeoff/openingPicks";
 import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
 import { doorsByGroup, feetInches } from "@/lib/takeoff/planTextView";
 import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
@@ -842,6 +844,14 @@ export function TakeoffPlanViewer({
    * with each other, which is a class of bug rather than a tidy-up.
    */
   const [chosen, setChosen] = useState<Record<number, string>>({});
+  /**
+   * The drawn openings a person is confirming, per group. Keyed by the GROUP
+   * OBJECT rather than its index: accepting a group filters it out of `found`,
+   * which renumbers every group after it, and a height typed against "group 4"
+   * must not slide onto the group that becomes group 4. A fresh detection
+   * makes fresh objects, so its groups start with nothing typed.
+   */
+  const [openingPicks, setOpeningPicks] = useState<Map<WallGroup, OpeningPick[]>>(() => new Map());
   /** Whether the groups below the fold are showing. See `SHOWN_AT_FIRST`. */
   const [showingAll, setShowingAll] = useState(false);
   /** The rows on screen. Indexes into this ARE the indexes into `found`,
@@ -2603,6 +2613,18 @@ export function TakeoffPlanViewer({
     // quantities. Null for every unresolved state: this component must not
     // overrule a refusal, and must not price an ASK group nobody answered.
     if (priced) body.set("wallTypeId", priced.id);
+    // ── AND THE DRAWN OPENINGS SOMEBODY GAVE A HEIGHT ──
+    //
+    // Only on a priced accept: that is the path that writes a wall run, and a
+    // wall run is the only thing with openings. The pairs are the measurement
+    // list's own `openingWidth`/`openingHeight` fields, read by the same
+    // `wallOpeningsFromForm`, so the company's deduction rule treats them
+    // exactly like typed ones. A row with a problem stops the accept rather
+    // than being dropped: the estimator typed it and expects it to count.
+    if (priced) {
+      const problems = appendOpeningPairs(body, openingPicks.get(group) ?? []);
+      if (problems.length > 0) return setFindError(problems.join(" "));
+    }
     for (const run of group.runs) {
       body.append("shape", JSON.stringify({ xs: [run.x1, run.x2], ys: [run.y1, run.y2] }));
     }
@@ -3416,6 +3438,26 @@ export function TakeoffPlanViewer({
                     {groupSentence(group, verdict) !== null && (
                       <p className="w-full text-xs text-ink-muted">{groupSentence(group, verdict)}</p>
                     )}
+
+                    {/* ── THE DOORS AND WINDOWS DRAWN IN THESE WALLS ──
+                        Proposed off the drawing (`openingProposals.ts`), width
+                        measured, height left to the person. They go on with
+                        this group's own Add button when it is priced, and
+                        nowhere otherwise — see `ProposedOpenings`. */}
+                    {(() => {
+                      const sentence = openingsSentence(group.runs);
+                      if (sentence === null) return null;
+                      return (
+                        <ProposedOpenings
+                          sentence={sentence}
+                          picks={openingPicks.get(group) ?? initialPicks(group.runs)}
+                          onChange={(next) =>
+                            setOpeningPicks((current) => new Map(current).set(group, next))
+                          }
+                          carried={priced !== null}
+                        />
+                      );
+                    })()}
                   </li>
                   </Fragment>
                   );

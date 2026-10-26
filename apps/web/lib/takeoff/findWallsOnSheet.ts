@@ -10,6 +10,7 @@ import {
 } from "./wallVectors";
 import { gridBubbles, linesIntoBubbles } from "./gridBubbles";
 import { joinAtCorners } from "./joinCorners";
+import { proposedOpenings } from "./openingProposals";
 import { wallsFromBothEngines } from "./wallRuns";
 import { templateFromSheets, withoutTemplate } from "./sheetTemplate";
 import { wallTypeTags, tagByRun } from "./wallTags";
@@ -487,7 +488,28 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   const noDuplicates = wallsNotDuplicateCoverage(inBuilding, scheduleIn);
 
   stage("duplicates");
-  const walls = joinAtCorners(noDuplicates.kept, feetPerUnit);
+  const joined = joinAtCorners(noDuplicates.kept, feetPerUnit);
+
+  // ── AND THE DOORS AND WINDOWS DRAWN IN THEM ──
+  //
+  // AFTER every wall decision, and it changes none: each run keeps its ends,
+  // its thickness and its length, and only gains a list of what is drawn in
+  // its gaps. Read against the sheet's strokes as DRAWN (`input.segments`, not
+  // the filtered `inUnits`): the filters above exist to keep non-walls out of
+  // the pairer, and they remove exactly what this needs to see. Measured on
+  // the bench, a door's TAG circle reads as a grid bubble to `gridBubbles`,
+  // and `linesIntoBubbles` then drops every swing piece with an end inside it
+  // — three of five pieces on the corridor doors it caught, and A-101's
+  // proposed doors went from 23 of 30 to 27 when this read the drawing
+  // instead. The run itself is what
+  // keeps the search on a wall. See `openingProposals.ts`.
+  const drawn = input.segments.map(inPageWidthUnits(pageSize.widthPt));
+  const openingsByRun = proposedOpenings(joined, drawn, feetPerUnit);
+  const walls = joined.map((run, index) => {
+    const found = openingsByRun.get(index);
+    return found ? { ...run, proposedOpenings: found } : run;
+  });
+  stage("openings");
 
   // ── WHAT THE DRAWING CALLS THESE, where it says so ──
   //
