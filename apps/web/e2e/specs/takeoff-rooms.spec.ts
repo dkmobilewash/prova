@@ -205,7 +205,17 @@ test.describe("find the rooms", () => {
         { timeout: 60_000, message: "the sheet never rendered, so the find had no document" },
       )
       .toBeGreaterThan(0);
-    await findWalls.click();
+    // A canvas with pixels is not yet a loaded document with a scale: a press
+    // before then returns early with this sentence and starts nothing (see the
+    // same note in takeoff-workspace.spec.ts). Press again while it shows.
+    const stillLoading = page.getByText("The sheet is still loading. Try that again in a moment.");
+    for (let attempt = 1; ; attempt += 1) {
+      await findWalls.click();
+      await page.waitForTimeout(800);
+      if (!(await stillLoading.isVisible())) break;
+      expect(attempt, "the sheet never finished loading").toBeLessThan(20);
+      await page.waitForTimeout(1_000);
+    }
     // ── EITHER STILL RUNNING OR ALREADY DONE, BECAUSE BOTH ARE FINE ──
     //
     // "Find the walls" is also this button's RESTING text, so waiting for it

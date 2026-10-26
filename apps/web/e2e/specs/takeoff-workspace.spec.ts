@@ -153,9 +153,24 @@ test.describe("the full-screen takeoff workspace", () => {
   async function findTheWalls(label: string): Promise<void> {
     const find = page.locator('[data-takeoff="find-walls"]');
     await expect(find, `Find the walls never became available on ${label}`).toBeEnabled({ timeout: 60_000 });
-    await find.click();
-    await expect(find).toHaveText("Find the walls", { timeout: 180_000 });
-    await page.waitForTimeout(800);
+    // ── A PRESS THAT LANDS BEFORE THE SHEET HAS LOADED DOES NOTHING, AND SAYS SO ──
+    //
+    // `onFindWalls` returns early with "The sheet is still loading" while the
+    // pdf.js document, page size or scale is not ready — the button is enabled
+    // the whole time. "Find the walls" is also the button's RESTING label, so
+    // waiting for it alone passed on a find that never ran, `found` stayed null,
+    // and step 21 failed on "no quantities panel" on some runs and not others.
+    // The app's own sentence is the one signal that cannot be true of a find
+    // that started (it is cleared when one does), so press again while it shows.
+    const stillLoading = page.getByText("The sheet is still loading. Try that again in a moment.");
+    for (let attempt = 1; ; attempt += 1) {
+      await find.click();
+      await expect(find).toHaveText("Find the walls", { timeout: 180_000 });
+      await page.waitForTimeout(800);
+      if (!(await stillLoading.isVisible())) break;
+      expect(attempt, `the sheet never finished loading on ${label}`).toBeLessThan(20);
+      await page.waitForTimeout(1_000);
+    }
   }
 
   /** A job with one sheet uploaded and its scale set, on the takeoff TAB. */
