@@ -74,7 +74,7 @@ import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
 import { BLANK_TILE_INK, TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
 import type { WallClassifyLabel } from "@prova/integrations";
 import { pagesToSample } from "@/lib/takeoff/sheetTemplate";
-import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "@/lib/takeoff/findWallsOnSheet";
+import { inPageWidthUnits, type FoundOnSheet } from "@/lib/takeoff/findWallsOnSheet";
 import { SheetTooDenseError, oneFacePerLine, wallFromPair } from "@/lib/takeoff/wallVectors";
 import { layersOf, segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 import { droppedLayersSentence, type LayerDrop } from "@/lib/takeoff/layerNames";
@@ -88,12 +88,7 @@ import {
 } from "@/lib/takeoff/sheetSuitability";
 import { printedScalesOnPage } from "@/lib/takeoff/printedScales";
 import {
-  excludedViews,
-  primaryView,
   sheetViews,
-  viewRegions,
-  viewsInRegions,
-  wallsPerView,
   type ExcludedView,
   type ViewWalls,
 } from "@/lib/takeoff/sheetViews";
@@ -110,7 +105,6 @@ import { proposalSections, showsHeadings } from "@/lib/takeoff/proposalSections"
 import { calibrationForView, type ViewScale } from "@/lib/takeoff/sheetScale";
 import { SINGLE_LINE_COLOUR, VERDICT_COLOURS } from "@/components/AnswerKeyPanel";
 import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
-import { drawingRegions, segmentsInRegions } from "@/lib/takeoff/planRegion";
 import { takeoffSheetVerdict, type TakeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
 import {
   candidatesFromSheet,
@@ -119,7 +113,7 @@ import {
   type Candidate,
   type ReviewState,
 } from "@/lib/takeoff/answerKeyReview";
-import { offeredCandidates } from "@/lib/takeoff/offeredCandidates";
+import { detectForSheet, offeredCandidates } from "@/lib/takeoff/offeredCandidates";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { TakeoffRoomsPanel } from "./TakeoffRoomsPanel";
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
@@ -846,6 +840,9 @@ export function TakeoffPlanViewer({
   /** How many strokes the sheet held when it was last read, so an empty result
    *  can say which kind of empty it is. See the message below. */
   const [strokesSeen, setStrokesSeen] = useState(0);
+  /** What the finder saw and dropped on the last detection, for the labelling
+   *  harness to read off the DOM and hold against the eval's own numbers. */
+  const [detectSeen, setDetectSeen] = useState<string | null>(null);
   // ── READING A SCANNED SHEET ──
   // `reading` drives the button; `readError` and `wordsRead` are what the
   // estimator is told. The WORDS themselves go in a ref rather than state
@@ -2338,21 +2335,15 @@ export function TakeoffPlanViewer({
       // `sheetViews.ts` carries why a view must be clipped before it is
       // re-scaled, and why the captions are used as a RATIO against the
       // calibration rather than as absolute scales.
-      const views = viewsInRegions(
-        sheetViews(textItems, pageSize.widthPt),
-        viewRegions(segments, pageSize),
-      );
-      let found: FoundOnSheet;
-      /**
-       * Every pairing the finder considered on this sheet, with its feature
-       * vector, for answer-key mode.
-       *
-       * Declared out here because the sheet is measured by one of TWO paths —
-       * `wallsPerView` when the sheet carries several plan views, the single
-       * call below when it carries one — and a reviewed sheet is training data
-       * only if both report. Collecting at just the second one meant Save to
-       * labels refused every multi-view sheet, which is most real ones.
-       */
+      // ── ONE PIPELINE, SHARED WITH EVERY EVAL ──
+      //
+      // This block carried its own copy of the detection — captions, regions,
+      // per-view measurement, the primary pick — and `detectForSheet` was an
+      // extraction of it that omitted one call, which is the whole of "Murray
+      // 160 against the app's 32". A copy drifts; a call cannot. What the
+      // sheet shows (the kept views, the others, the left-out) comes back from
+      // the same function the evals score, so a number measured there is a
+      // number a customer sees.
       const pairings: {
         x1: number;
         y1: number;
@@ -2375,97 +2366,80 @@ export function TakeoffPlanViewer({
                 features: [...features],
               });
             };
-      void collect;
-      let otherViews: ViewWalls[] = [];
-      let leftOut: ExcludedView[] = [];
-      let primaryShown: { name: string; scaleName: string | null } | null = null;
-      /** The parts of the page the measured PLAN views own — see `lastDetect`. */
-      let planBoxes: { from: number; to: number; fromY: number; toY: number }[] | null = null;
-      if (views.length >= 2) {
-        const measured = wallsPerView({
-          segments,
-          textItems,
-          pageSize,
-          views,
-          wallTypes,
-          feetPerUnit,
-          sampledSheets,
-          onCandidate: collect,
-        });
-        const picked = primaryView(measured);
-        otherViews = picked.others;
-        leftOut = excludedViews(views);
-        // Every view that was actually measured, which after the view-kind
-        // filter is every PLAN on the sheet. `wallsPerView` has already
-        // refused the elevations, the sections and the schedules.
-        planBoxes = measured.flatMap(
-          (one) =>
-            one.view.boxes ?? [
-              {
-                from: one.view.from,
-                to: one.view.to,
-                fromY: one.view.fromY,
-                toY: one.view.toY,
-              },
-            ],
-        );
-        primaryShown = picked.primary
-          ? { name: picked.primary.view.name, scaleName: picked.primary.view.scaleName }
-          : null;
-        // ── A SHEET WITH NO PLAN ON IT MEASURES NOTHING ──
-        //
-        // This used to fall back to measuring the WHOLE SHEET when no view
-        // produced a primary, which is the worst possible answer for the sheet
-        // that most needs a good one: a page of eight interior elevations has
-        // every one of them measured as wall, at an elevation's own scale,
-        // with the caution saying they were left out. `excludedViews` names
-        // what happened and the quantities stay empty, which is the honest
-        // pair.
-        found =
-          picked.primary?.found ??
-          // The real pipeline on NO geometry, rather than a hand-built empty
-          // result: every field of `FoundOnSheet` comes out consistent, and
-          // nothing here has to be kept in step with that type.
-          findWallsOnSheet({
-            segments: [],
-            textItems,
-            pageSize,
-            feetPerUnit,
-            wallTypes,
-            sampledSheets: null,
-          });
-      } else {
-        // ── ONE DRAWING ON THE SHEET STILL IS NOT THE WHOLE SHEET ──
-        //
-        // `viewRegions` has already separated the title block, the notes and
-        // the legend boxes from the drawing; with one caption they were all
-        // handed to it, because a region with no caption joins the nearest.
-        // That rule is right and stays — it is what keeps a plan's dimension
-        // column with its plan — but it meant a one-drawing sheet measured its
-        // own title block, and offered its ruled lines as possible walls.
-        //
-        // `planRegion.ts` carries why this cannot reintroduce the S05/S07
-        // scar: it keeps the BUSIEST region and whatever is comparable to it,
-        // which is where a building is.
-        const drawing = drawingRegions(
-          viewRegions(segments, pageSize),
-          segments,
-          pageSize.widthPt,
-        );
-        const onTheDrawing = segmentsInRegions(segments, drawing, pageSize.widthPt);
-        planBoxes = drawing.length > 0 ? [...drawing] : null;
-        // `onCandidate` fires after the sheet-relative columns are filled, so
-        // what is reported is what a model would be scored on.
-        found = findWallsOnSheet({
-          segments: onTheDrawing,
-          textItems,
-          pageSize,
-          feetPerUnit,
-          wallTypes,
-          sampledSheets,
-          onCandidate: collect,
-        });
+      const detected = detectForSheet({
+        segments,
+        textItems,
+        pageSize,
+        feetPerUnit,
+        wallTypes,
+        sampledSheets,
+        onCandidate: collect,
+      });
+      const found: FoundOnSheet = detected.found;
+      // ── WHAT THE FINDER SAW, FOR THE LABELLING HARNESS ONLY ──
+      //
+      // Digests of every input (segments in value and in order, text, the
+      // template sample, the page size, the scale) and the stage counts,
+      // written to the plan port so `e2e/specs/takeoff-app-equals-eval.spec.ts`
+      // can hold the app against `realplan/zzAppEquals.eval.ts` number for
+      // number. That comparison is what found that the finder's answer
+      // depends on whether an answer-key hook is set. Customers never pay
+      // for it: it runs only in answer-key mode.
+      if (answerKey) {
+      let sum = 0;
+      let seq = 2166136261;
+      for (const one of segments) {
+        sum += Math.abs(one.x1) + Math.abs(one.y1) + Math.abs(one.x2) + Math.abs(one.y2);
+        seq = Math.imul(seq ^ Math.round(one.x1 * 10 + one.y1 * 100 + one.x2 * 1000 + one.y2), 16777619) >>> 0;
       }
+
+      const fnv = (seed: number, value: number) => Math.imul(seed ^ Math.round(value * 1000), 16777619) >>> 0;
+      let textHash = 2166136261;
+      for (const t of textItems) textHash = fnv(fnv(fnv(fnv(textHash, t.x), t.y), t.height), t.str.length);
+      let sampleHash = 2166136261;
+      let sampleN = 0;
+      for (const sheet of sampledSheets ?? []) for (const one of sheet) { sampleHash = fnv(fnv(sampleHash, one.x1 + one.y1), one.x2 + one.y2); sampleN += 1; }
+      let wallsHash = 2166136261;
+      for (const wll of detected.found.walls) wallsHash = fnv(fnv(wallsHash, wll.x1 + wll.y1), wll.x2 + wll.y2);
+      setDetectSeen(
+        JSON.stringify({
+          sumAbs: Math.round(sum),
+          seqHash: seq,
+          textHash,
+          sampleHash,
+          sampleN,
+          wallsHash,
+          pageSize: [pageSize.widthPt, pageSize.heightPt],
+          segments: segments.length,
+          text: textItems.length,
+          sampled: sampledSheets?.length ?? 0,
+          wallTypes: wallTypes.length,
+          feetPerUnit,
+          walls: detected.found.walls.length,
+          template: detected.found.templateDropped,
+          grid: detected.found.gridDropped,
+          hatch: detected.found.hatchDropped,
+          dup: detected.found.duplicateDropped,
+          layers: detected.found.layerDropped.length,
+          drawings: detected.views,
+          kept: detected.kept.map((k) => k.name),
+        }),
+      );
+      }
+      const otherViews: ViewWalls[] = detected.others;
+      const leftOut: ExcludedView[] = detected.leftOut;
+      // Several floors kept read as one name for the caution: "1st Floor Plan
+      // + 2nd - 9th Floor Plan", at their common scale or none.
+      const primaryShown: { name: string; scaleName: string | null } | null =
+        detected.kept.length === 0
+          ? null
+          : {
+              name: detected.kept.map((k) => k.name).join(" + "),
+              scaleName: detected.kept.every((k) => k.scaleName === detected.kept[0].scaleName)
+                ? detected.kept[0].scaleName
+                : null,
+            };
+      const planBoxes = detected.planBoxes;
       setOtherViewsByPage((prev) => ({ ...prev, [pageNumber]: otherViews }));
       setExcludedByPage((prev) => ({ ...prev, [pageNumber]: leftOut }));
       setPrimaryViewShown(primaryShown);
@@ -3457,6 +3431,7 @@ export function TakeoffPlanViewer({
         // are exactly what `onFindWalls` requires, minus the scale, which the
         // button's own `disabled` already covers.
         data-sheet-ready={pageCount !== null && pageSize !== null ? "true" : "false"}
+        data-takeoff-detect={detectSeen ?? undefined}
       >
         {/* ── THE BANNER THAT SAYS TRACING IS ON, AND WHAT TO DO NEXT ──
 

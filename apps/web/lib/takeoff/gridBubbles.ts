@@ -98,6 +98,22 @@ export function gridBubbles(
   // pieces that share endpoints exactly, so this is an index lookup rather than
   // a search.
   const key = (x: number, y: number) => `${Math.round(x / (minR * 0.05))},${Math.round(y / (minR * 0.05))}`;
+  // ── WALKED IN THE ORDER THE FILE STORES ITS STROKES, DELIBERATELY ──
+  //
+  // This is first-wins in file order, and the finder's answer depends on it:
+  // the same strokes reversed find more bubbles (Baker A101 71 → 111) and
+  // drop 1,000 more lines as grid. A walker that continues by geometry was
+  // built and measured on 2026-10-22 (`finderDeterminism` work, NOTES): it
+  // makes the stage order-independent and costs 2,300–2,550 ft of key wall
+  // across the 23 training sheets, because what it additionally completes
+  // are symbol and outlined-glyph loops down to 0.06in, and every one of
+  // those drops the lines ending within two radii — wall faces among them.
+  // Six variants of the drop rule were measured and none recovered it. The
+  // defect is the ACCEPTANCE (a bubble is never required to have a grid
+  // line entering it) and the REACH, not the walk; file order masks it by
+  // consuming most such loops into longer chains that fail roundness. Until
+  // the acceptance is fixed, the lucky order is kept rather than a principled
+  // order that bids 2,000 ft of wall short.
   const startsAt = new Map<string, number[]>();
   const short: { i: number; s: StrokeSegment }[] = [];
   for (let i = 0; i < segments.length; i += 1) {
