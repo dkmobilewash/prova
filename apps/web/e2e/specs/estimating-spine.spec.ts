@@ -495,16 +495,30 @@ test.describe("the estimating desk", () => {
     await page.goto(`/jobs/${jobId}/proposal`);
     await expectHealthy(page, "job proposal", { monitor });
     await expect(page.getByRole("heading", { name: `Proposal — ${JOB_NAME}` })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Schedule of values" })).toBeVisible();
-    // The schedule of values is the job's own line items, so every one of them
-    // prints — and the document totals them.
-    // Every one of the job's lines prints, and the row that says "Total bid"
-    // is the row that carries the figure.
+    // ── LUMP SUM IS THE DEFAULT, AND IT SHOWS THE GC NONE OF THE LINES ──
+    //
+    // The proposal is what a GC sees, so by default it prints one price for the
+    // scope and none of the sub's own lines or unit prices (feat/gc-proposal).
+    // The line description NOT being on the page is the assertion that matters:
+    // a default that leaked the lines would pass a visibility check on the price.
+    await expect(page.getByRole("heading", { name: "Price", exact: true })).toBeVisible();
+    await expect(page.getByText("Lump sum for the work described in this proposal")).toBeVisible();
     await expect(
       page.locator("main").getByText(LINE.description, { exact: true }),
-      "the schedule of values is the job's own line items",
+      "the lump-sum proposal leaked a line item to the GC",
+    ).toHaveCount(0);
+    const lumpTotal = (await page.locator("tr").filter({ hasText: "Total bid" }).innerText()).match(/\$[\d,]+\.\d\d/)?.[0];
+    expect(lumpTotal, "the lump-sum proposal carries no Total bid figure").toBeTruthy();
+
+    // ── ITEMIZED STILL PRINTS EVERY LINE, AT THE SAME TOTAL ──
+    await page.goto(`/jobs/${jobId}/proposal?mode=itemized`);
+    await expectHealthy(page, "job proposal, itemized", { monitor });
+    await expect(page.getByRole("heading", { name: "Schedule of values" })).toBeVisible();
+    await expect(
+      page.locator("main").getByText(LINE.description, { exact: true }),
+      "the itemized schedule of values is the job's own line items",
     ).toBeVisible();
-    await expect(page.locator("tr").filter({ hasText: "Total bid" })).toContainText(/\$[\d,]+\.\d\d/);
+    await expect(page.locator("tr").filter({ hasText: "Total bid" })).toContainText(lumpTotal!);
 
     await settleAction(page, () => page.getByRole("button", { name: "Add from library" }).click());
     await page.reload();
