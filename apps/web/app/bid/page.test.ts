@@ -63,7 +63,8 @@ describe("BidLanding", () => {
   it("its sign-up and sign-in links bring a person back to Bid", () => {
     const signUp = bidAuthHref("sign-up").replace(/&/g, "&amp;");
     const signIn = bidAuthHref("sign-in").replace(/&/g, "&amp;");
-    expect(html.split(`href="${signUp}"`).length - 1).toBe(2);
+    // Header, hero and closing section.
+    expect(html.split(`href="${signUp}"`).length - 1).toBe(3);
     expect(html).toContain(`href="${signIn}"`);
     expect(html).not.toMatch(/href="\/sign-up"/);
   });
@@ -72,8 +73,26 @@ describe("BidLanding", () => {
     expect(html).toContain('href="/bid/wall-takeoff"');
   });
 
-  it("makes no pricing claim and quotes no invented statistic", () => {
-    expect(text).not.toMatch(/\$\s?\d|per month|\/mo\b|free trial/i);
-    expect(text).not.toMatch(/\d+%|\d+\s*(minutes?|hours?|days?)\s+(saved|per|of)/i);
+  // THE EXAMPLE JOB is the one place a dollar figure may appear: it draws one
+  // made-up job through the four steps to show the same bid total at the recap
+  // and on the proposal. It must be exactly one marked block and must say
+  // "Example job" on screen; everything OUTSIDE it is held to no figures at all.
+  const examples = html.match(/<figure[^>]*data-bid="example"[\s\S]*?<\/figure>/g) ?? [];
+  const outsideExample = examples.reduce((rest, block) => rest.replace(block, ""), html).replace(/<[^>]+>/g, " ");
+
+  it("has exactly one example job, and it says so on screen", () => {
+    expect(examples).toHaveLength(1);
+    expect(examples[0] ?? "").toContain(">Example job<");
+    // The point of the picture: the same total at the recap and on the proposal.
+    const totals = (examples[0] ?? "").match(/\$78,350\.00/g) ?? [];
+    expect(totals).toHaveLength(2);
+  });
+
+  it("makes no pricing claim and quotes no invented statistic outside the example job", () => {
+    expect(outsideExample.length).toBeGreaterThan(3_000);
+    expect(outsideExample).not.toMatch(/\$\s?\d|per month|\/mo\b|free trial/i);
+    expect(outsideExample).not.toMatch(/\d+%|\d+\s*(minutes?|hours?|days?)\s+(saved|per|of)/i);
+    // And nothing in the example job is a price or a claim about the product.
+    expect(examples[0] ?? "").not.toMatch(/per month|\/mo\b|free trial|\d+%/i);
   });
 });
