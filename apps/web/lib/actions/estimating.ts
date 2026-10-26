@@ -81,7 +81,13 @@ export async function updateBidInvitationDetails(
   bidInvitationId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // The capability /bids itself withholds — a page guard does not cover the
+  // endpoint behind it (`action-capability-guards.test.ts`).
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
   return runAction(async () => {
     const dates = bidDatesFromForm(formData);
     if (!dates.ok) return actionFail(dates.error);
