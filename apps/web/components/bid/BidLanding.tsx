@@ -298,13 +298,13 @@ export function BidLanding() {
           </span>
           <nav aria-label="Account" className="flex items-center gap-2">
             <Link
-              href="/sign-in?redirect_url=%2Fbid%2Fbids"
+              href="/sign-in?redirect_url=%2Fbid%2Fhome"
               className="inline-flex min-h-11 items-center px-2 text-sm font-medium text-link hover:text-link-hover hover:underline"
             >
               Sign in
             </Link>
             <Link
-              href="/sign-up?redirect_url=%2Fbid%2Fbids"
+              href="/sign-up?redirect_url=%2Fbid%2Fhome"
               className="hidden min-h-11 items-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-brand-hover sm:inline-flex"
             >
               Sign up
@@ -325,7 +325,7 @@ export function BidLanding() {
               prices them the way your shop does, and puts the same number on the proposal, so you never type it twice.
             </p>
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-              <Link href="/sign-up?redirect_url=%2Fbid%2Fbids" className={primaryActionClass}>
+              <Link href="/sign-up?redirect_url=%2Fbid%2Fhome" className={primaryActionClass}>
                 Sign up
               </Link>
               <Link href="/bid/wall-takeoff" className={secondaryActionClass}>
@@ -398,7 +398,7 @@ export function BidLanding() {
             <p className="mt-1 text-ink-body">Or send the drawing set first — we read it back to you, free, no account needed.</p>
           </div>
           <div className="flex shrink-0 flex-col gap-3 sm:flex-row">
-            <Link href="/sign-up?redirect_url=%2Fbid%2Fbids" className={primaryActionClass}>
+            <Link href="/sign-up?redirect_url=%2Fbid%2Fhome" className={primaryActionClass}>
               Sign up
             </Link>
             <Link href="/bid/wall-takeoff" className={secondaryActionClass}>

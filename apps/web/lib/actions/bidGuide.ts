@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { applyBidRecap } from "./bidRecap";
+import { usePastPrice as applyPastPrice } from "./bidGuidePastPrice";
 import { actionFail, actionOk, type ActionResult } from "./shared";
 
 /**
@@ -32,8 +33,6 @@ export async function runGuideAction(jobId: string, actionId: string, actionArg?
       "Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.",
     );
   }
-  void actionArg;
-
   switch (actionId) {
     case "applyRecap": {
       const result = await applyBidRecap(jobId);
@@ -43,10 +42,18 @@ export async function runGuideAction(jobId: string, actionId: string, actionArg?
       revalidatePath(`/bid/estimates/${jobId}`, "layout");
       return actionOk;
     }
-    case "usePastPrice":
-      // Built on another branch (lib/bid/guide/pastPrice); named here so the
-      // button exists and says so honestly rather than doing nothing.
-      return actionFail("Not available yet");
+    case "usePastPrice": {
+      // `actionArg` is the suggestion's own `wt:<id>:<token>`; the action
+      // re-derives the suggestion server-side and refuses a stale one, so the
+      // browser chooses WHICH suggestion, never the figures.
+      if (typeof actionArg !== "string" || actionArg.length === 0) {
+        return actionFail("That price suggestion is no longer available. Reload the page.");
+      }
+      const result = await applyPastPrice(jobId, actionArg);
+      if (!result.ok) return actionFail(result.error);
+      revalidatePath(`/bid/estimates/${jobId}`, "layout");
+      return actionOk;
+    }
     default:
       return actionFail("That action isn't one this screen knows how to run.");
   }

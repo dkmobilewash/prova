@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const requireCompanyContext = vi.fn();
 const can = vi.fn();
 const applyBidRecap = vi.fn();
+const applyPastPrice = vi.fn();
 const revalidatePath = vi.fn();
 
 vi.mock("next/cache", () => ({ revalidatePath: (...a: unknown[]) => revalidatePath(...a) }));
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: () => requireCompanyContext() }));
 vi.mock("@/lib/permissions", () => ({ can: (...a: unknown[]) => can(...a) }));
 vi.mock("./bidRecap", () => ({ applyBidRecap: (...a: unknown[]) => applyBidRecap(...a) }));
+vi.mock("./bidGuidePastPrice", () => ({ usePastPrice: (...a: unknown[]) => applyPastPrice(...a) }));
 
 import { runGuideAction } from "./bidGuide";
 
@@ -46,8 +48,22 @@ describe("runGuideAction", () => {
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 
-  it("usePastPrice is not built yet", async () => {
-    expect(await runGuideAction("j1", "usePastPrice", "wt1")).toEqual({ ok: false, error: "Not available yet" });
+  it("usePastPrice passes the suggestion's own arg to the past-price action and revalidates", async () => {
+    applyPastPrice.mockResolvedValue({ ok: true, value: { updated: 2, fromJobName: "Civic", priceHeldForRecap: false } });
+    expect(await runGuideAction("j1", "usePastPrice", "wt:abc:0123abcd")).toEqual({ ok: true });
+    expect(applyPastPrice).toHaveBeenCalledWith("j1", "wt:abc:0123abcd");
+    expect(revalidatePath).toHaveBeenCalledWith("/bid/estimates/j1", "layout");
+  });
+
+  it("usePastPrice passes a stale refusal through, and refuses a missing arg without calling it", async () => {
+    applyPastPrice.mockResolvedValue({ ok: false, error: "That price changed. Reload to see the new one." });
+    expect(await runGuideAction("j1", "usePastPrice", "wt:abc:0123abcd")).toEqual({
+      ok: false,
+      error: "That price changed. Reload to see the new one.",
+    });
+    applyPastPrice.mockClear();
+    expect((await runGuideAction("j1", "usePastPrice")).ok).toBe(false);
+    expect(applyPastPrice).not.toHaveBeenCalled();
   });
 
   it("an unknown id is refused, not trusted", async () => {
