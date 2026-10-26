@@ -6,7 +6,8 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { bidStandings, standingLines } from "@/lib/bid-standing";
 import { bidCrowds, crowdingLines } from "@/lib/bid-crowding";
-import { loadBidPipeline } from "@/lib/bid-pipeline-query";
+import { loadBidLog, loadBidPipeline } from "@/lib/bid-pipeline-query";
+import { BidLogPanel } from "@/components/BidLogPanel";
 import { valueIsPartial, winRateLabel } from "@/lib/bid-pipeline";
 import { money } from "@/lib/money";
 import { loadBidPursuits, loadLinkableInvitations } from "@/lib/bid-pursuits-query";
@@ -50,10 +51,13 @@ export default async function PipelinePage() {
   // and this page held two different answers to what day it is, eight
   // lines apart. The Ask tool it was matching was wrong in the same way.
   const today = await viewerToday();
-  const [{ rows, live }, pursuits, invitations] = await Promise.all([
+  const [{ rows, live }, pursuits, invitations, bidLog] = await Promise.all([
     loadBidPipeline(context.company.id, today),
     loadBidPursuits(context.company.id, today),
     loadLinkableInvitations(context.company.id),
+    // The bid log: bids per month, average bid, win rate and average contract,
+    // derived on every read from the same invitations (lib/bid-pipeline.ts).
+    loadBidLog(context.company.id, today),
   ]);
 
   // ── WHAT EACH LIVE BID NEEDS TODAY ──
@@ -229,6 +233,8 @@ export default async function PipelinePage() {
           </section>
 
           {feeders}
+
+          <BidLogPanel log={bidLog} />
 
           <section data-tour="pipeline-by-gc">
             <h2 className="mb-3 text-sm font-medium text-ink-label">By general contractor</h2>

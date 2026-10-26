@@ -154,7 +154,7 @@ export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
     "Reading an uploaded lien waiver, COI or certified payroll into its fields. Filing a compliance document needs this — with it off, uploads are refused rather than filed blank.",
   DRAFT_ESTIMATE_LINES: "Turning a pasted scope of work into draft line items for you to price and correct.",
   BID_RESEARCH:
-    "Looking up a new project on the web to pre-fill a bid card. The project name and location leave for the search.",
+    "Looking up a new project on the web to pre-fill a bid card (the project name and location leave for the search), and reading an invitation you paste on Log a bid into the form for you to check. With this off you can still type a bid in by hand.",
   LEAD_SEARCH: "Searching the web for projects out to bid in your trades and area.",
   QUOTE_EXTRACT:
     "Reading a quote a sub or supplier sent you, and filling in the amount, date and exclusions for you to check. Nothing is saved until you press save, and with this off you can still type a quote in by hand.",
