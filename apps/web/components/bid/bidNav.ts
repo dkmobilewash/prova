@@ -95,6 +95,8 @@ export type BidRoute = {
 
 export const BID_ROUTES: readonly BidRoute[] = [
   { route: "/bid/bids", twin: "/bids", twinCapability: "MANAGE_ESTIMATING" },
+  { route: "/bid/bids/[id]", twin: "/ai/bids/[id]", twinCapability: "MANAGE_ESTIMATING" },
+  { route: "/bid/bids/[id]/regret", twin: "/bids/[id]/regret", twinCapability: "MANAGE_ESTIMATING" },
   { route: "/bid/estimates", twin: "/jobs?status=ESTIMATE", twinCapability: null },
   { route: "/bid/estimates/new", twin: "/jobs/new", twinCapability: null },
   { route: "/bid/estimates/[id]", twin: "/jobs/[id]", twinCapability: null },

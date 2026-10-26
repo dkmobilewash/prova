@@ -92,9 +92,10 @@ test.describe("C Stream Bid — the bid log, from a logged bid to its estimate",
     await expect(bidRow()).toContainText(GC_NAME);
     await expect(bidRow()).toContainText("Metal framing / drywall");
     await expect(bidRow()).toContainText("Invited");
-    // The GC and the bid's name are words here, not links to CRM screens.
+    // The GC is a word here (Bid has no GC page); the bid's name is a link to
+    // the bid's own page inside Bid, not to the CRM's /ai/bids/<id>.
     await expect(bidRow().getByRole("link", { name: GC_NAME })).toHaveCount(0);
-    await expect(bidRow().getByRole("link", { name: PROJECT })).toHaveCount(0);
+    await expect(bidRow().getByRole("link", { name: PROJECT })).toHaveAttribute("href", /^\/bid\/bids\/[^/]+$/);
   });
 
   test("3. open its project and start the estimate; it lands in /bid/estimates", async () => {
@@ -116,7 +117,8 @@ test.describe("C Stream Bid — the bid log, from a logged bid to its estimate",
   test("4. back on the log: the estimate and the GC's proposal are Bid links", async () => {
     await page.goto("/bid/bids?view=all");
     await expectBidPage("the bid log after starting the estimate");
-    const estimateLink = bidRow().getByRole("link", { name: new RegExp(PROJECT) });
+    // The bid's name now also links to its own page, so name the estimate link by its target.
+    const estimateLink = bidRow().locator(`a[href="/bid/estimates/${estimateId}"]`).first();
     await expect(estimateLink).toHaveAttribute("href", `/bid/estimates/${estimateId}`);
     const proposal = bidRow().getByRole("link", { name: "Proposal" });
     await expect(proposal).toHaveAttribute("href", new RegExp(`^/bid/estimates/${estimateId}/proposal\\?invitation=`));
@@ -137,5 +139,48 @@ test.describe("C Stream Bid — the bid log, from a logged bid to its estimate",
     await page.goto("/bid/bids?view=all");
     await expectBidPage("the bid log at 375px");
     await expectFitsTheViewport(page, "the bid log at 375px");
+  });
+
+  // NOT EXECUTED (see the header): the bid's page and its regret letter, opened
+  // from the log, with every link staying in /bid. The viewport is still 375px
+  // from step 5, so this doubles as the phone check for both new pages.
+  test("6. open the bid's page from the log: its steps load, and every link stays in /bid", async () => {
+    await page.goto("/bid/bids?view=all");
+    await expectBidPage("the bid log, before opening a bid");
+    const bidLink = bidRow().getByRole("link", { name: PROJECT }).first();
+    const href = await bidLink.getAttribute("href");
+    expect(href, "the bid's name links to its own page in Bid").toMatch(/^\/bid\/bids\/[^/]+$/);
+    const bidId = href!.split("/").pop()!;
+
+    await bidLink.click();
+    await page.waitForURL(new RegExp(`/bid/bids/${bidId}$`));
+    await expectBidPage("the bid's page");
+    await expectFitsTheViewport(page, "the bid's page at 375px");
+    await expect(page.getByRole("heading", { name: PROJECT, level: 1 })).toBeVisible();
+    await expect(page.getByRole("link", { name: "← Back to your bids" })).toHaveAttribute("href", "/bid/bids");
+    // Bid has no Ask and no GC page: neither is on the page.
+    await expect(page.getByText("Ask about this bid")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Open the bid" })).toHaveCount(0);
+
+    const steps = page.getByRole("navigation", { name: "Bid steps" });
+    for (const step of ["Estimate", "Addenda", "Decision", "Research"]) {
+      await steps.getByRole("link", { name: new RegExp(`^${step}`) }).click();
+      await expectBidPage(`the bid's ${step} step`);
+      await expectFitsTheViewport(page, `the bid's ${step} step at 375px`);
+    }
+
+    // Back to the log by the page's own link.
+    await page.getByRole("link", { name: "← Back to your bids" }).click();
+    await page.waitForURL(/\/bid\/bids$/);
+    await expectBidPage("the bid log, back from the bid's page");
+
+    // The regret letter: written for any bid (this one is still Invited, so the
+    // sender is told so), and its only link goes back to Bid's log.
+    await page.goto(`/bid/bids/${bidId}/regret`);
+    await expectBidPage("the regret letter");
+    await expectFitsTheViewport(page, "the regret letter at 375px");
+    await expect(page.locator('[data-regret="letter"]')).toContainText(GC_NAME);
+    await expect(page.getByText("This bid is still marked")).toBeVisible();
+    await expect(page.getByRole("link", { name: "← Back to bids" })).toHaveAttribute("href", "/bid/bids");
   });
 });

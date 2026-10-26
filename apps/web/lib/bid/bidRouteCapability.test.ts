@@ -70,8 +70,16 @@ function delegatedCrmPage(source: string): string | null {
 
 describe("the Bid pages, derived from app/bid", () => {
   it("finds them at all (size first, so an empty walk cannot pass)", () => {
-    expect(pages.size).toBeGreaterThanOrEqual(13);
-    for (const must of ["/bid", "/bid/bids", "/bid/estimates", "/bid/estimates/[id]/proposal", "/bid/workspace/[id]"]) {
+    expect(pages.size).toBeGreaterThanOrEqual(15);
+    for (const must of [
+      "/bid",
+      "/bid/bids",
+      "/bid/bids/[id]",
+      "/bid/bids/[id]/regret",
+      "/bid/estimates",
+      "/bid/estimates/[id]/proposal",
+      "/bid/workspace/[id]",
+    ]) {
       expect(pages.has(must), must).toBe(true);
     }
   });
@@ -170,5 +178,27 @@ describe("Bid is never looser than the CRM twin", () => {
       const row = BID_ROUTES.find((r) => r.twin === twin);
       expect(row?.twinCapability, `BID_ROUTES row for ${twin}`).toBe(capability);
     }
+  });
+
+  it("the two per-bid twins are page-gated (not in ROUTE_CAPABILITY), so their own page source is read for the capability", () => {
+    // `/ai/bids/[id]` and `/bids/[id]/regret` are in permissions.test.ts's page
+    // table, not in ROUTE_CAPABILITY, so the check above cannot see them. Read
+    // the twin pages themselves: each must demand exactly what the Bid row says.
+    for (const [route, twinFile] of [
+      ["/bid/bids/[id]", "app/(app)/ai/bids/[id]/page.tsx"],
+      ["/bid/bids/[id]/regret", "app/(app)/bids/[id]/regret/page.tsx"],
+    ] as const) {
+      const row = BID_ROUTES.find((r) => r.route === route);
+      expect(row?.twinCapability, route).toBe("MANAGE_ESTIMATING");
+      expect(code(join(webRoot, twinFile)), twinFile).toContain(`requireCapability("${row?.twinCapability}")`);
+    }
+  });
+
+  it("the Bid bid page scopes by company exactly as its twin does (the loader takes the company id)", () => {
+    const bidPage = code(pages.get("/bid/bids/[id]")!);
+    const crmPage = code(join(webRoot, "app/(app)/ai/bids/[id]/page.tsx"));
+    expect(bidPage).toContain("loadBidWorkspace(id, context.company.id)");
+    expect(crmPage).toContain("loadBidWorkspace(id, context.company.id)");
+    expect(bidPage).toContain("notFound()");
   });
 });

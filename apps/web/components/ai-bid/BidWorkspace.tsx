@@ -9,6 +9,8 @@ import { Card, SeverityDot, SourceChips, calendarDay, moment, sentenceCase } fro
 import type { BidWorkspaceData, FindingRow } from "@/components/ai-bid/types";
 import { money } from "@/lib/money";
 import { tradeScopeLabel } from "@/lib/trade-scopes";
+import { bidLogHrefs, bidPageCrumbs } from "@/lib/bid/bidLogHrefs";
+import type { Surface } from "@/lib/bid/surfaceHrefs";
 
 type RowAction = (id: string) => Promise<ActionResult>;
 export type FindingActions = { dismiss: RowAction; wrong: RowAction };
@@ -54,17 +56,26 @@ export function BidWorkspace({
   zone,
   ask,
   findingActions,
+  surface = "crm",
 }: {
   data: BidWorkspaceData;
   tab: BidTab;
   zone: string;
-  /** The Ask panel and this bid's earlier conversations, built by the page. */
-  ask: ReactNode;
+  /** The Ask panel and this bid's earlier conversations, built by the page.
+   * Omitted in C Stream Bid, which has no Ask: the Decision step is then one
+   * column. */
+  ask?: ReactNode;
   /** Dismiss and "Not right" on each finding — Server Actions handed down
    * by the page, so this file imports no feature module. */
   findingActions?: FindingActions;
+  /** Which product renders this; C Stream Bid passes "bid" (`lib/bid/bidLogHrefs.ts`). */
+  surface?: Surface;
 }) {
   const { bid } = data;
+  const links = bidLogHrefs(surface);
+  const contactHref = links.contact(bid.contactId);
+  // Bid is measured at phone width: bound the source chips (see SourceChips). The CRM keeps its markup.
+  const fit = surface === "bid";
   const status = STATUS[bid.status] ?? { label: sentenceCase(bid.status), tone: "bg-rail-hover text-ink-label" };
   const unread = data.addenda.filter((a) => !a.read).length;
   const counts: Partial<Record<BidTab, { n: number; tone: string }>> = {
@@ -75,12 +86,11 @@ export function BidWorkspace({
   return (
     <div data-bid-workspace>
       <nav aria-label="Breadcrumb" className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-ink-muted">
-        <Link href="/ai" className="hover:text-ink">
-          ← AI
-        </Link>
-        <Link href="/ai/activity" className="hover:text-ink">
-          Agent activity &amp; settings
-        </Link>
+        {bidPageCrumbs(surface).map((crumb) => (
+          <Link key={crumb.href} href={crumb.href} className="hover:text-ink">
+            {crumb.label}
+          </Link>
+        ))}
       </nav>
 
       <header className="mt-2 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -90,9 +100,11 @@ export function BidWorkspace({
             <span className="font-medium text-ink-body">{bid.gcName}</span>
             {bid.tradeScope && <span>· {tradeScopeLabel(bid.tradeScope)}</span>}
             <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${status.tone}`}>{status.label}</span>
-            <Link href={`/contacts/${bid.contactId}`} className="text-sm text-link hover:text-link-hover">
-              Open the bid →
-            </Link>
+            {contactHref && (
+              <Link href={contactHref} className="text-sm text-link hover:text-link-hover">
+                Open the bid →
+              </Link>
+            )}
           </p>
         </div>
         <dl className="flex gap-8 md:text-right">
@@ -138,16 +150,16 @@ export function BidWorkspace({
       </nav>
 
       <div className="mt-5">
-        {tab === "research" && <ResearchTab data={data} zone={zone} actions={findingActions} />}
-        {tab === "estimate" && <EstimateTab data={data} zone={zone} actions={findingActions} />}
-        {tab === "addenda" && <AddendaTab data={data} />}
-        {tab === "decision" && <DecisionTab data={data} zone={zone} ask={ask} />}
+        {tab === "research" && <ResearchTab data={data} zone={zone} actions={findingActions} fit={fit} />}
+        {tab === "estimate" && <EstimateTab data={data} zone={zone} actions={findingActions} fit={fit} />}
+        {tab === "addenda" && <AddendaTab data={data} contactHref={contactHref} />}
+        {tab === "decision" && <DecisionTab data={data} zone={zone} ask={ask} fit={fit} />}
       </div>
     </div>
   );
 }
 
-function Finding({ finding, fix, actions }: { finding: FindingRow; fix: boolean; actions?: FindingActions }) {
+function Finding({ finding, fix, actions, fit }: { finding: FindingRow; fix: boolean; actions?: FindingActions; fit: boolean }) {
   return (
     <li className="border-t border-line-row py-3 first:border-t-0 first:pt-0" data-finding={finding.id}>
       <div className="flex gap-2.5">
@@ -156,7 +168,7 @@ function Finding({ finding, fix, actions }: { finding: FindingRow; fix: boolean;
           <h3 className="break-words font-semibold leading-snug text-ink">{finding.title}</h3>
           <p className="mt-1 whitespace-pre-line break-words text-sm text-ink-body">{finding.body}</p>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
-            <SourceChips sources={finding.sources} />
+            <SourceChips sources={finding.sources} fit={fit} />
             {fix && finding.fixHref && (
               <Link href={finding.fixHref} className="text-sm font-semibold text-link hover:text-link-hover">
                 Fix this →
@@ -175,7 +187,7 @@ function Finding({ finding, fix, actions }: { finding: FindingRow; fix: boolean;
   );
 }
 
-function ResearchTab({ data, zone, actions }: { data: BidWorkspaceData; zone: string; actions?: FindingActions }) {
+function ResearchTab({ data, zone, actions, fit }: { data: BidWorkspaceData; zone: string; actions?: FindingActions; fit: boolean }) {
   const last = lastRun(data, "BID_RESEARCH");
   const run = <RunAgentButton agent="BID_RESEARCH" bidInvitationId={data.bid.id} label={data.research.length > 0 ? "Research again" : "Research this bid"} />;
   return (
@@ -192,7 +204,7 @@ function ResearchTab({ data, zone, actions }: { data: BidWorkspaceData; zone: st
         <>
           <ul>
             {data.research.map((f) => (
-              <Finding key={f.id} finding={f} fix={false} actions={actions} />
+              <Finding key={f.id} finding={f} fix={false} actions={actions} fit={fit} />
             ))}
           </ul>
           <div className="mt-3 border-t border-line-row pt-3">{run}</div>
@@ -202,7 +214,7 @@ function ResearchTab({ data, zone, actions }: { data: BidWorkspaceData; zone: st
   );
 }
 
-function EstimateTab({ data, zone, actions }: { data: BidWorkspaceData; zone: string; actions?: FindingActions }) {
+function EstimateTab({ data, zone, actions, fit }: { data: BidWorkspaceData; zone: string; actions?: FindingActions; fit: boolean }) {
   const last = lastRun(data, "ESTIMATE_CHECK");
   const groups = new Map<string, FindingRow[]>();
   for (const f of data.estimateCheck) groups.set(f.kind, [...(groups.get(f.kind) ?? []), f]);
@@ -227,7 +239,7 @@ function EstimateTab({ data, zone, actions }: { data: BidWorkspaceData; zone: st
               </h3>
               <ul>
                 {rows.map((f) => (
-                  <Finding key={f.id} finding={f} fix actions={actions} />
+                  <Finding key={f.id} finding={f} fix actions={actions} fit={fit} />
                 ))}
               </ul>
             </section>
@@ -239,15 +251,17 @@ function EstimateTab({ data, zone, actions }: { data: BidWorkspaceData; zone: st
   );
 }
 
-function AddendaTab({ data }: { data: BidWorkspaceData }) {
+function AddendaTab({ data, contactHref }: { data: BidWorkspaceData; contactHref: string | null }) {
   return (
     <Card title="Addenda">
       {data.addenda.length === 0 ? (
         <div className="flex flex-col gap-2" data-empty="addenda">
           <p className="text-ink-body">No addenda logged on this bid.</p>
-          <Link href={`/contacts/${data.bid.contactId}`} className="text-sm font-semibold text-link hover:text-link-hover">
-            Log one on the bid →
-          </Link>
+          {contactHref && (
+            <Link href={contactHref} className="text-sm font-semibold text-link hover:text-link-hover">
+              Log one on the bid →
+            </Link>
+          )}
         </div>
       ) : (
         <ul>
@@ -274,10 +288,10 @@ function AddendaTab({ data }: { data: BidWorkspaceData }) {
   );
 }
 
-function DecisionTab({ data, zone, ask }: { data: BidWorkspaceData; zone: string; ask: ReactNode }) {
+function DecisionTab({ data, zone, ask, fit }: { data: BidWorkspaceData; zone: string; ask?: ReactNode; fit: boolean }) {
   const { recommendation, outcome } = data.decision;
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
+    <div className={ask ? "grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]" : "grid gap-5"}>
       <div className="flex min-w-0 flex-col gap-5">
         <Card title="Recommendation" aside="Advice — you decide">
           {recommendation ? (
@@ -294,7 +308,7 @@ function DecisionTab({ data, zone, ask }: { data: BidWorkspaceData; zone: string
               </div>
               <p className="mt-3 whitespace-pre-line text-sm text-ink-body">{recommendation.reason}</p>
               <div className="mt-3">
-                <SourceChips sources={recommendation.sources} />
+                <SourceChips sources={recommendation.sources} fit={fit} />
               </div>
               <p className="mt-3 text-xs text-ink-muted">
                 Updated {moment(recommendation.updatedAt, zone)}. C Stream never submits a bid for you.
@@ -352,9 +366,11 @@ function DecisionTab({ data, zone, ask }: { data: BidWorkspaceData; zone: string
           )}
         </Card>
       </div>
-      <aside aria-label="Ask about this bid" className="min-w-0">
-        {ask}
-      </aside>
+      {ask && (
+        <aside aria-label="Ask about this bid" className="min-w-0">
+          {ask}
+        </aside>
+      )}
     </div>
   );
 }

@@ -8,7 +8,8 @@ import { exportedFunctionSource, exportedFunctionSources, importedBindings, jsxE
 import { isBidPath, isSharedPath } from "./surface";
 import { surfaceHrefs } from "./surfaceHrefs";
 import { JOB_START_RETURNS, estimateStartDestination, jobStartDestination } from "./jobStartDestination";
-import { bidLogHrefs } from "./bidLogHrefs";
+import { bidLogHrefs, bidPageCrumbs, storedHref } from "./bidLogHrefs";
+import { bidPageData, webPage } from "./bidPageData";
 
 /**
  * NOTHING C STREAM BID RENDERS CAN TAKE A PERSON INTO THE CRM.
@@ -141,6 +142,8 @@ const SURFACE_PROP =
   "A prop whose value is chosen by `surface` (lib/bid/surfaceHrefs.ts). The CRM value is today's href; Bid renders this file with `surface=\"bid\"` or a Bid-only wrapper, which the \"rendered as Bid\" section below REQUIRES, and every value `surfaceHrefs(\"bid\", …)` returns is classified in the surfaceHrefs section.";
 const BID_LOG_HREF =
   "A per-row link from `bidLogHrefs(surface)` (lib/bid/bidLogHrefs.ts): the CRM's literal, or `null` on Bid, where the log draws plain text instead of a link. Every value `bidLogHrefs(\"bid\")` returns is classified in its section below.";
+const BID_PAGE_HREF =
+  "Chosen by `surface` for the bid's own page (`bidLogHrefs`, `bidPageCrumbs`) or re-pointed by `bidPageData`/`storedHref` (lib/bid), which the page runs every stored agent link through: a Bid value is a /bid path or null. Every value those return is classified in the \"the bid's own page\" section below, and the Bid page's source is pinned to call `bidPageData`.";
 const BLOB_URL =
   "An object URL from URL.createObjectURL for a file the browser is saving (the anchor has a `download` attribute) — not a page navigation.";
 
@@ -176,6 +179,15 @@ const DYNAMIC_ALLOWED: Record<string, string> = {
   "components/SeeAll.tsx: fewerHref": "Same as `href` above.",
   "components/BidLog.tsx: bidPageHref": BID_LOG_HREF,
   "components/BidLog.tsx: contactHref": BID_LOG_HREF,
+  "app/(app)/bids/[id]/regret/RegretLetter.tsx: backHref":
+    "`bidLogHrefs(surface).list` — \"/bids\" in the CRM, \"/bid/bids\" in Bid; classified in the bidLogHrefs section below. The Bid regret page renders it with surface=\"bid\" (pinned by the \"every use passes the Bid value\" test).",
+  "components/ai-bid/BidWorkspace.tsx: contactHref": BID_LOG_HREF,
+  "components/ai-bid/BidWorkspace.tsx: crumb.href": BID_PAGE_HREF,
+  "components/ai-bid/BidWorkspace.tsx: a.href": BID_PAGE_HREF,
+  "components/ai-bid/BidWorkspace.tsx: finding.fixHref": BID_PAGE_HREF,
+  "components/ai-bid/parts.tsx: s.href": BID_PAGE_HREF,
+  "components/ai-bid/parts.tsx: s.url":
+    "A research citation's own web page (target=_blank, an outside site). `bidPageData` keeps a url only through `webPage()`, which refuses any cstream.ai host — tested in the bid's own page section below.",
   "components/BidLog.tsx: regretHref": BID_LOG_HREF,
   "components/BidProjectPanel.tsx: hrefs.job": SURFACE_PROP,
   "components/LogBidForm.tsx: hrefs.addGc": SURFACE_PROP,
@@ -357,7 +369,7 @@ describe("estimateStartDestination: where \"Start the estimate\" (from a bid pro
 });
 
 describe("bidLogHrefs(\"bid\"): the bid log's per-row links", () => {
-  it("draws NO link where Bid has no such screen, and the CRM value is a CRM door (so the classifier can tell)", () => {
+  it("links only to screens Bid has, draws NO link where it has none, and the CRM value is a CRM door (so the classifier can tell)", () => {
     const bid = bidLogHrefs("bid");
     const crm = bidLogHrefs("crm");
     for (const [name, make] of [["bidPage", "bidPage"], ["contact", "contact"], ["regret", "regret"]] as const) {
@@ -366,6 +378,120 @@ describe("bidLogHrefs(\"bid\"): the bid log's per-row links", () => {
       expect(value === null || classify(value) === "ok", `bidLogHrefs("bid").${name} = ${String(value)}`).toBe(true);
       expect(classify(crm[make]("x1") as string), `bidLogHrefs("crm").${name}`).toBe("crm");
     }
+    // Bid has the bid's own page and the regret letter, and no GC page.
+    expect(bid.bidPage("x1")).toBe("/bid/bids/x1");
+    expect(bid.regret("x1")).toBe("/bid/bids/x1/regret");
+    expect(bid.contact("x1")).toBeNull();
+  });
+});
+
+describe("the bid's own page (/bid/bids/<id>) and the regret letter", () => {
+  // The links the AGENTS store are written as CRM routes in lib/agents, past
+  // this census's sight and already in the database. Derive the set from the
+  // source so a new agent link cannot be missing from the question.
+  const agentsDir = join(webRoot, "lib", "agents");
+  const stored = new Set<string>();
+  let agentFiles = 0;
+  for (const name of readdirSync(agentsDir)) {
+    if (!name.endsWith(".ts") || /\.(test|dbtest)\.ts$/.test(name)) continue;
+    agentFiles++;
+    const text = readFileSync(join(agentsDir, name), "utf8");
+    for (const m of text.matchAll(/\b(?:\w*[hH]ref)\s*[:=]\s*(?:\(\w+(?::\s*\w+)?\)\s*=>\s*)?[`"](\/[^`"]*)[`"]/g)) {
+      stored.add(m[1]!.replace(/\$\{[^}]*\}/g, "x1"));
+    }
+  }
+
+  it("found the agents' stored links (size first: a pattern matching nothing would pass everything)", () => {
+    expect(agentFiles).toBeGreaterThanOrEqual(8);
+    expect(stored.size).toBeGreaterThanOrEqual(8);
+    for (const must of ["/ai/bids/x1", "/contacts/x1", "/jobs/x1/estimate", "/pipeline", "/backcharges", "/jobs/x1"]) {
+      expect([...stored], must).toContain(must);
+    }
+    // And the classifier can tell: the CRM keeps them, and they are CRM doors.
+    expect([...stored].some((h) => classify(storedHref("crm", h) as string) === "crm")).toBe(true);
+  });
+
+  it("every stored link, as Bid draws it, is a /bid path or nothing", () => {
+    const bad = [...stored]
+      .map((h) => ({ h, value: storedHref("bid", h) }))
+      .filter(({ value }) => value !== null && classify(value) !== "ok")
+      .map(({ h, value }) => `${h} -> ${value}`);
+    expect(bad).toEqual([]);
+    // The two it keeps, and the CRM doors it must have dropped.
+    expect(storedHref("bid", "/ai/bids/x1")).toBe("/bid/bids/x1");
+    expect(storedHref("bid", "/contacts/x1")).toBeNull();
+    expect(storedHref("bid", "/pipeline")).toBeNull();
+  });
+
+  it("bidPageData leaves no anchor target that is not /bid, a web page or nothing — on a bid carrying every stored link", () => {
+    const links = [...stored];
+    const row = (id: string, href: string) => ({
+      id,
+      agent: "BID_RESEARCH",
+      kind: "k",
+      severity: "warn",
+      title: "t",
+      body: "b",
+      sources: [
+        { label: "chip", href },
+        { label: "web", url: "https://example.com/x" },
+        { label: "ours", url: "https://app.cstream.ai/jobs/j1" },
+        { label: "mixed", href, url: "https://app.cstream.ai/contacts/c1" },
+      ],
+      fixHref: href,
+      bidInvitationId: "b1",
+      bidProjectName: "P",
+      createdAt: new Date(0),
+      dismissedAt: null,
+      runId: "r1",
+    });
+    const data = {
+      bid: { id: "b1", projectName: "P", gcName: "G", contactId: "c1", dueDate: null, status: "INVITED", bidAmount: null, tradeScope: null },
+      research: links.map((h, i) => row(`r${i}`, h)),
+      estimateCheck: links.map((h, i) => row(`e${i}`, h)),
+      addenda: links.map((h, i) => ({ id: `a${i}`, reference: "A", issuedOn: null, read: false, openDecisions: 0, href: h })),
+      decision: {
+        recommendation: { id: "x", kind: "bid_or_pass", subjectType: "BidInvitation", subjectId: "b1", title: "t", reason: "r", confidence: "high", score: 1, href: "/ai/bids/b1", sources: [{ label: "c", href: "/contacts/c1" }], status: "open", updatedAt: new Date(0) },
+        outcome: null,
+      },
+      lastRuns: [],
+      subject: { type: "BidInvitation" as const, id: "b1" },
+    };
+    const out = bidPageData(data as never);
+    const targets: string[] = [];
+    for (const f of [...out.research, ...out.estimateCheck]) {
+      if (f.fixHref) targets.push(f.fixHref);
+      for (const s of f.sources) targets.push(...[s.href, s.url].filter((v): v is string => !!v));
+    }
+    for (const a of out.addenda) targets.push(a.href);
+    for (const s of out.decision.recommendation?.sources ?? []) targets.push(...[s.href, s.url].filter((v): v is string => !!v));
+    expect(targets.length).toBeGreaterThan(links.length * 2); // it looked at something
+    const bad = targets.filter((t) => classify(t) !== "ok" && !(/^https:\/\/example\.com\//.test(t)));
+    expect(bad).toEqual([]);
+    expect(targets.some((t) => t.startsWith("https://example.com/"))).toBe(true);
+  });
+
+  it("a web page keeps its link only when it is not one of C Stream's own hosts", () => {
+    expect(webPage("https://example.com/a")).toBe("https://example.com/a");
+    for (const own of ["https://app.cstream.ai/jobs/j1", "http://bid.cstream.ai/bid/bids", "https://cstream.ai/", "/jobs/j1", "javascript:alert(1)", undefined]) {
+      expect(webPage(own as string | undefined), String(own)).toBeNull();
+    }
+  });
+
+  it("the breadcrumb and the per-bid links Bid draws stay in Bid", () => {
+    for (const crumb of bidPageCrumbs("bid")) expect(classify(crumb.href), crumb.href).toBe("ok");
+    expect(classify(bidLogHrefs("bid").list)).toBe("ok");
+    expect(classify(bidLogHrefs("crm").list)).toBe("crm");
+    expect(bidPageCrumbs("crm").every((c) => classify(c.href) === "crm")).toBe(true);
+  });
+
+  it("the Bid bid page runs every stored link through bidPageData, and draws no Ask", () => {
+    const source = readFileSync(join(BID_APP, "(signed-in)", "bids", "[id]", "page.tsx"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    expect(source).toMatch(/data=\{bidPageData\(data\)\}/);
+    expect(source).toMatch(/surface="bid"/);
+    expect(source).not.toMatch(/AskPanel|ask=\{/);
   });
 });
 
