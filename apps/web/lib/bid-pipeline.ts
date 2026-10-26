@@ -19,6 +19,17 @@ export interface PipelineBid {
   bidAmount: number | null;
   /** ISO date at UTC midnight, or null when the GC gave no deadline. */
   dueDate: string | null;
+  /**
+   * The project this invitation is on was awarded (the PRIME contract) to a
+   * DIFFERENT GC. Derived by the caller with `primeWentElsewhere`
+   * (lib/bid-projects.ts), never stored. Absent means "no project / no award
+   * recorded", which is NOT the same as true.
+   *
+   * Such a bid is neither a win nor a GC turning our price down, so it is out
+   * of the win-rate denominator and out of "outstanding" / "overdue": nobody
+   * owes us an answer on a job that went to someone else.
+   */
+  primeWentElsewhere?: boolean;
 }
 
 export interface GcRecord {
@@ -30,6 +41,11 @@ export interface GcRecord {
   lost: number;
   /** We chose not to bid. Deliberately NOT counted as a loss. */
   declined: number;
+  /**
+   * Bids on a project whose prime contract went to a different GC. Counted so
+   * the number is visible, and deliberately NOT in `lost` or `winRate`.
+   */
+  primeElsewhere: number;
   /** Still live: INVITED or SUBMITTED. */
   outstanding: number;
   /** Outstanding AND past the date the GC asked for. */
@@ -56,8 +72,8 @@ export interface GcRecord {
 const LIVE: BidStatus[] = ["INVITED", "SUBMITTED"];
 
 /** Whether a bid is still waiting on somebody. */
-export function isLive(bid: { status: BidStatus }): boolean {
-  return LIVE.includes(bid.status);
+export function isLive(bid: { status: BidStatus; primeWentElsewhere?: boolean }): boolean {
+  return LIVE.includes(bid.status) && bid.primeWentElsewhere !== true;
 }
 
 /** Live, and the date the GC asked for has passed. Dates are compared as
@@ -98,15 +114,19 @@ export function summariseGc(bids: PipelineBid[], today: string): GcRecord {
   const count = (s: BidStatus) => bids.filter((b) => b.status === s).length;
 
   const won = count("WON");
-  const lost = count("LOST");
+  // A LOST bid on a project the prime went elsewhere on is not this GC saying
+  // no to our price — it is a job neither of us got.
+  const lost = bids.filter((b) => b.status === "LOST" && b.primeWentElsewhere !== true).length;
+  const lostElsewhere = bids.filter((b) => b.status === "LOST").length - lost;
   const decided = won + lost;
 
   return {
     invited: bids.length,
-    bid: count("SUBMITTED") + won + lost,
+    bid: count("SUBMITTED") + won + lost + lostElsewhere,
     won,
     lost,
     declined: count("DECLINED"),
+    primeElsewhere: bids.filter((b) => b.primeWentElsewhere === true && b.status !== "DECLINED" && b.status !== "WON").length,
     outstanding: bids.filter(isLive).length,
     overdue: bids.filter((b) => isOverdue(b, today)).length,
     winRate: decided === 0 ? null : won / decided,

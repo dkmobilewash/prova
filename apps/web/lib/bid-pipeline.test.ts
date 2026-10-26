@@ -230,3 +230,45 @@ describe("ranking", () => {
     expect(rows).toEqual(before);
   });
 });
+
+describe("a project whose prime contract went to a different GC", () => {
+  // Four GCs invite us to price one hospital; one of them wins the prime. The
+  // three that did not are not three GCs who turned our price down.
+  it("is out of the win-rate denominator: a LOST bid on a job the prime went elsewhere on is not a loss", () => {
+    const record = summariseGc(
+      [bid({ status: "WON" }), bid({ status: "LOST" }), bid({ status: "LOST", primeWentElsewhere: true })],
+      TODAY,
+    );
+    expect(record.lost).toBe(1);
+    expect(record.winRate).toBe(0.5);
+    expect(record.primeElsewhere).toBe(1);
+    // We still put a number in front of them, so it still counts as a bid.
+    expect(record.bid).toBe(3);
+  });
+
+  it("leaves the rate null, not 0%, when the only decided bid went elsewhere", () => {
+    const record = summariseGc([bid({ status: "LOST", primeWentElsewhere: true })], TODAY);
+    expect(record.winRate).toBeNull();
+    expect(winRateLabel(record)).toBe("no decided bids yet");
+  });
+
+  it("is not outstanding or overdue: nobody owes us an answer on a job that went to someone else", () => {
+    const record = summariseGc(
+      [
+        bid({ status: "SUBMITTED", dueDate: "2026-08-01", primeWentElsewhere: true }),
+        bid({ status: "INVITED", dueDate: "2026-08-01", primeWentElsewhere: true }),
+        bid({ status: "SUBMITTED", dueDate: "2026-08-01" }),
+      ],
+      TODAY,
+    );
+    expect(record.outstanding).toBe(1);
+    expect(record.overdue).toBe(1);
+    expect(record.primeElsewhere).toBe(2);
+  });
+
+  it("does not hide a WON bid, whatever the project says", () => {
+    const record = summariseGc([bid({ status: "WON", primeWentElsewhere: true })], TODAY);
+    expect(record.won).toBe(1);
+    expect(record.winRate).toBe(1);
+  });
+});

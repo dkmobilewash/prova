@@ -97,6 +97,7 @@ describe("confirmAskProposal against a real database", () => {
     await prisma.job.deleteMany({ where: { companyId } });
     await prisma.askProposal.deleteMany({ where: { companyId } });
     await prisma.bidInvitation.deleteMany({ where: { companyId } });
+    await prisma.bidProject.deleteMany({ where: { companyId } });
     await prisma.contact.deleteMany({ where: { companyId } });
     await prisma.user.deleteMany({ where: { companyId } });
     await prisma.company.delete({ where: { id: companyId } });

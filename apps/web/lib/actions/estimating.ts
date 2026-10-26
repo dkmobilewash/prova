@@ -34,6 +34,7 @@ import { addCatalogLine } from "@/lib/estimating/catalog-line";
 import { addIndirectLine } from "@/lib/estimating/add-indirect";
 import { isIndirectCostKind } from "@/lib/estimating/indirect-costs";
 import { createBidInvitationRecord } from "@/lib/estimating/bid-invitation";
+import { awardProjectToInvitation, claimProjectEstimate } from "@/lib/estimating/bid-project";
 import { updateBidInvitationDetailsRecord } from "@/lib/estimating/bid-invitation-edit";
 import { bidDatesFromForm } from "@/lib/bid-dates";
 import { runAgentAfterResponse } from "@/lib/agents/onEvent";
@@ -63,6 +64,9 @@ export async function createBidInvitation(contactId: string, formData: FormData)
       notes: notes || null,
       tradeScope,
       bidAmount,
+      // "Same job as…" (another GC's invitation) and "we reached out".
+      bidProjectId: String(formData.get("bidProjectId") ?? "").trim() || null,
+      origin: formData.get("weReachedOut") ? "WE_REACHED_OUT" : "INVITED",
     });
     if (!result.ok) return actionFail(result.error);
 
@@ -151,6 +155,11 @@ export async function updateBidInvitationStatus(
         where: { id: bidInvitationId },
         data: { status, bidAmount, ...declineFields },
       });
+      // WON makes this GC the prime on its project, and hands the project's
+      // estimate to them while it is still an ESTIMATE (bid-project.ts).
+      if (status === "WON" && bid.status !== "WON") {
+        await prisma.$transaction((tx) => awardProjectToInvitation(tx, bidInvitationId));
+      }
       // AI agents: check the estimate when the bid is marked submitted (lib/agents/onEvent.ts).
       if (status === "SUBMITTED" && bid.status !== "SUBMITTED") runAgentAfterResponse({ companyId: company.id, agent: "ESTIMATE_CHECK", bidInvitationId });
 
@@ -1387,6 +1396,9 @@ export async function linkBidToJob(bidInvitationId: string, formData: FormData):
   }
 
   await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { wonJobId: jobId } });
+  // The project's estimate is the same fact one level up: if this bid's project
+  // has none yet, this job becomes it, so the project's other GCs see it too.
+  await claimProjectEstimate(bidInvitationId, jobId);
   revalidatePath("/bids");
   revalidatePath(`/jobs/${jobId}`);
   return actionOk;

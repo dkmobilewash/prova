@@ -134,6 +134,7 @@ model Company {
   bonds                     CompanyBond[]
   locations                 CompanyLocation[]
   bidInvitations            BidInvitation[]
+  bidProjects               BidProject[]
   vendors                   Vendor[]
   equipment                 Equipment[]
   lineItemCatalogEntries    LineItemCatalogEntry[]
@@ -511,6 +512,8 @@ model Contact {
 
   jobs           Job[]
   bidInvitations BidInvitation[]
+  /// Projects this GC won the PRIME contract on — see bid-projects.prisma.
+  bidProjectsAwarded BidProject[] @relation("BidProjectPrimeAward")
   interactions   ContactInteraction[]
   people         ContactPerson[]
 

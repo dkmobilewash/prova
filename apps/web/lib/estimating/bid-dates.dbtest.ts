@@ -64,6 +64,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma.bidInvitation.deleteMany({ where: { companyId: { in: [companyId, otherCompanyId] } } });
+  await prisma.bidProject.deleteMany({ where: { companyId: { in: [companyId, otherCompanyId] } } });
   await prisma.contact.deleteMany({ where: { companyId: { in: [companyId, otherCompanyId] } } });
   await prisma.company.deleteMany({ where: { id: { in: [companyId, otherCompanyId] } } });
 });

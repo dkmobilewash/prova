@@ -1,6 +1,7 @@
 import { prisma, type BidInvitationStatus, type TradeScope } from "@prova/db";
 import { calculatePaymentReliability } from "@/lib/gc-reliability";
 import { summarizeBackcharges } from "@/lib/backcharges";
+import { primeWentElsewhere } from "@/lib/bid-projects";
 
 /**
  * What this company's own records say about a GC and about work like this
@@ -50,6 +51,8 @@ export async function gcHistory(companyId: string, contactId: string): Promise<G
         projectName: true,
         status: true,
         outcome: { select: { result: true, reason: true, note: true, winnerName: true } },
+        // Prime awarded to a different GC: not this GC turning us down.
+        bidProject: { select: { primeAwardedContactId: true, primeAwardedName: true } },
       },
     }),
     prisma.job.findMany({
@@ -73,7 +76,9 @@ export async function gcHistory(companyId: string, contactId: string): Promise<G
 
   const ids = (statuses: BidInvitationStatus[]) => bids.filter((b) => statuses.includes(b.status)).map((b) => b.id);
   const won = ids(["WON"]);
-  const lost = ids(["LOST"]);
+  const lost = bids
+    .filter((b) => b.status === "LOST" && !(b.bidProject && primeWentElsewhere(b.bidProject, contactId)))
+    .map((b) => b.id);
   const decided = won.length + lost.length;
 
   const invoices = jobs.flatMap((job) => job.invoices.map((invoice) => ({ jobId: job.id, invoice })));

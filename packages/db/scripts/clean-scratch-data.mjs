@@ -378,8 +378,26 @@ async function main() {
   // Contact children, before the contact itself. Neither model existed when
   // this script was written; without these the FK blocks contact.deleteMany
   // and the run ends with "FAILED contact" and the scratch data still there.
+  // The projects those invitations sit on, read BEFORE the invitations go.
+  // BidProject's links to Job and Contact are SET NULL so they block nothing;
+  // they are deleted so they are not left behind empty. Only the ones that
+  // are now empty: a project another company-user added invitations to
+  // stays.
+  const bidProjectIds = [
+    ...new Set(
+      (
+        await prisma.bidInvitation.findMany({
+          where: { contactId: { in: contactIds }, bidProjectId: { not: null } },
+          select: { bidProjectId: true },
+        })
+      ).map((i) => i.bidProjectId),
+    ),
+  ];
   await del("bidInvitation", () =>
     prisma.bidInvitation.deleteMany({ where: { contactId: { in: contactIds } } }),
+  );
+  await del("bidProject", () =>
+    prisma.bidProject.deleteMany({ where: { id: { in: bidProjectIds }, invitations: { none: {} } } }),
   );
   await del("contactInteraction", () =>
     prisma.contactInteraction.deleteMany({ where: { contactId: { in: contactIds } } }),
