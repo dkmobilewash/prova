@@ -18,6 +18,14 @@ import { loadProposalFacts } from "@/lib/estimating/proposal-facts-query";
 import { recapLines, recapStateFor } from "@/lib/estimating/recap-state";
 import { proposalPriceState, proposalPriceWarning } from "@/lib/estimating/proposal-recap-currency";
 import { bidMargin, underCostWarning } from "@/lib/estimating/bid-margin";
+import {
+  bidFormSections,
+  parseProposalMode,
+  PROPOSAL_MODE_LABELS,
+  PROPOSAL_MODES,
+  proposalPresentation,
+  type ProposalLineInput,
+} from "@/lib/estimating/proposal-presentation";
 
 /**
  * A job's bid proposal — the scope + price + exclusions document a sub sends
@@ -32,8 +40,19 @@ import { bidMargin, underCostWarning } from "@/lib/estimating/bid-margin";
  * MANAGE_ESTIMATING, the gate /catalog and /bids use: a proposal is a bid,
  * and its clause actions assert the same capability themselves.
  */
-export default async function JobProposalPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function JobProposalPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ mode?: string | string[] }>;
+}) {
   const { id } = await params;
+  // HOW THE PRICE IS PRESENTED. Not stored: a new proposal is a LUMP SUM, and
+  // the choice rides on `?mode=` so the screen and the printed page are one
+  // URL. See `lib/estimating/proposal-presentation.ts` for what each mode may
+  // print — the lump and scope rows have no unit-price field at all.
+  const mode = parseProposalMode((await searchParams).mode);
   const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
   const { company } = context;
@@ -42,7 +61,11 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
     where: { id, companyId: company.id },
     include: {
       contact: { select: { name: true } },
-      lineItems: { where: { isDeleted: false }, orderBy: { createdAt: "asc" } },
+      lineItems: {
+        where: { isDeleted: false },
+        orderBy: { createdAt: "asc" },
+        include: { wallTypeComponent: { select: { wallType: { select: { code: true, name: true } } } } },
+      },
       proposalClauses: {
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         select: { id: true, kind: true, text: true },
@@ -108,13 +131,19 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
 
   // A null unit price is a cost-only line (general conditions, overhead):
   // it prints with no price and counts $0 toward the bid total, the same
-  // rule the contract value uses everywhere else.
-  const lines = job.lineItems.map((line) => {
-    const quantity = Number(line.quantity);
-    const unitPrice = line.unitPrice != null ? Number(line.unitPrice) : null;
-    return { id: line.id, description: line.description, unit: line.unit, quantity, unitPrice, total: unitPrice != null ? quantity * unitPrice : null };
-  });
-  const bidTotal = lines.reduce((sum, line) => sum + (line.total ?? 0), 0);
+  // rule the contract value uses everywhere else. The total itself is
+  // `bidTotalOf` inside `proposalPresentation` — one sum for every mode.
+  const proposalLines: ProposalLineInput[] = job.lineItems.map((item) => ({
+    id: item.id,
+    description: item.description,
+    unit: item.unit,
+    quantity: Number(item.quantity),
+    unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null,
+    wallType: item.wallTypeComponent?.wallType ?? null,
+    tradeScope: item.tradeScope,
+  }));
+  const presentation = proposalPresentation(proposalLines, mode);
+  const bidTotal = presentation.total;
   const groups = groupProposalClauses(job.proposalClauses);
   const timeZone = await viewerTimeZone();
 
@@ -165,8 +194,25 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
    */
   const linkedBid = await prisma.bidInvitation.findFirst({
     where: { wonJobId: job.id, companyId: company.id },
-    include: { contact: { include: { people: true } } },
+    include: {
+      contact: { include: { people: true } },
+      // The GC's bid form: alternates and unit prices, typed on the bid.
+      lines: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+    },
   });
+  const bidForm = linkedBid
+    ? bidFormSections(
+        linkedBid.lines.map((bidLine) => ({
+          kind: bidLine.kind,
+          label: bidLine.label,
+          description: bidLine.description,
+          amount: bidLine.amount != null ? Number(bidLine.amount) : null,
+          unit: bidLine.unit,
+          unitPrice: bidLine.unitPrice != null ? Number(bidLine.unitPrice) : null,
+        })),
+        money,
+      )
+    : null;
 
   let submitTarget: SubmitTarget | undefined;
   if (linkedBid) {
@@ -250,17 +296,45 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
         </section>
       )}
 
+      {/* PRINT:HIDDEN — the sender's choice of how the price reads. Lump sum is
+          the default and shows the GC one number; By scope shows a subtotal per
+          wall type; Itemized is the schedule of values with unit prices. */}
+      <nav aria-label="Price presentation" className="mt-6 flex flex-wrap items-center gap-2 print:hidden">
+        <span className="text-xs text-ink-muted">Show the price as</span>
+        {PROPOSAL_MODES.map((option) => (
+          <Link
+            key={option}
+            href={`/jobs/${job.id}/proposal?mode=${option}`}
+            aria-current={option === mode ? "page" : undefined}
+            className={
+              option === mode
+                ? "rounded-md bg-surface px-3 py-2 text-sm font-semibold text-ink ring-1 ring-line-card"
+                : "rounded-md px-3 py-2 text-sm text-link hover:underline"
+            }
+          >
+            {PROPOSAL_MODE_LABELS[option]}
+          </Link>
+        ))}
+      </nav>
+      {mode === "itemized" && (
+        <p className="mt-2 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink print:hidden">
+          Itemized prints your unit prices for every line to the GC. Most subs send a lump sum or a price by scope.
+        </p>
+      )}
+
       <section className="mt-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-label">Schedule of values</h2>
-        {lines.length === 0 ? (
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-label">
+          {presentation.mode === "itemized" ? "Schedule of values" : "Price"}
+        </h2>
+        {proposalLines.length === 0 ? (
           <p className="mt-1 text-sm text-ink-body print:hidden">
             This job has no line items yet.{" "}
             <Link href={`/jobs/${job.id}/estimate`} className="text-link hover:underline">
               Price it on the estimate page
             </Link>{" "}
-            and the schedule of values fills in here.
+            and the price fills in here.
           </p>
-        ) : (
+        ) : presentation.mode === "itemized" ? (
           <table className="mt-2 w-full text-sm">
             <thead>
               <tr className="border-b border-line-row text-left text-xs text-ink-muted">
@@ -272,13 +346,13 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
               </tr>
             </thead>
             <tbody>
-              {lines.map((line) => (
-                <tr key={line.id} className="border-b border-line-row">
-                  <td className="py-1 pr-2 text-ink">{line.description}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-ink">{line.quantity}</td>
-                  <td className="px-2 py-1 text-ink">{line.unit ?? ""}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-ink">{line.unitPrice != null ? money(line.unitPrice) : "—"}</td>
-                  <td className="py-1 pl-2 text-right tabular-nums text-ink">{line.total != null ? money(line.total) : "—"}</td>
+              {presentation.rows.map((row) => (
+                <tr key={row.id} className="border-b border-line-row">
+                  <td className="py-1 pr-2 text-ink">{row.description}</td>
+                  <td className="px-2 py-1 text-right tabular-nums text-ink">{row.quantity}</td>
+                  <td className="px-2 py-1 text-ink">{row.unit ?? ""}</td>
+                  <td className="px-2 py-1 text-right tabular-nums text-ink">{row.unitPrice != null ? money(row.unitPrice) : "—"}</td>
+                  <td className="py-1 pl-2 text-right tabular-nums text-ink">{row.total != null ? money(row.total) : "—"}</td>
                 </tr>
               ))}
               <tr>
@@ -289,8 +363,80 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
               </tr>
             </tbody>
           </table>
+        ) : (
+          <table className="mt-2 w-full text-sm">
+            <tbody>
+              {presentation.rows.map((row) => (
+                <tr key={row.key} className="border-b border-line-row">
+                  <td className="py-1 pr-2 text-ink">
+                    {presentation.mode === "lump" ? "Lump sum for the work described in this proposal" : row.label}
+                  </td>
+                  <td className="py-1 pl-2 text-right tabular-nums text-ink">{money(row.amountCents / 100)}</td>
+                </tr>
+              ))}
+              {presentation.mode === "scope" && (
+                <tr>
+                  <td className="py-2 pr-2 text-right font-medium text-ink">Total bid</td>
+                  <td className="py-2 pl-2 text-right font-semibold tabular-nums text-ink">{money(bidTotal)}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         )}
       </section>
+
+      {/* THE GC'S OWN BID-FORM LINES, in their own section and only when the
+          job is linked to the bid that holds them. A blank prints as "No bid" —
+          never $0 and never filled from the estimate — and the sender is told
+          above the document, where the GC cannot see it. */}
+      {bidForm === null && (
+        <p className="mt-6 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink print:hidden">
+          This job is not linked to a bid, so the bid form&apos;s alternates and unit prices cannot print here. Link it
+          from the bid, and anything entered there appears on this page.
+        </p>
+      )}
+      {bidForm && bidForm.blankCount > 0 && (
+        <p className="mt-6 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink print:hidden">
+          {bidForm.blankCount} alternate or unit price on the bid form has no figure and prints as &ldquo;No bid&rdquo;.
+          Enter it on the bid before you send.
+        </p>
+      )}
+      {bidForm && bidForm.alternates.length > 0 && (
+        <section className="mt-6">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-label">Alternates</h2>
+          <table className="mt-2 w-full text-sm">
+            <tbody>
+              {bidForm.alternates.map((row) => (
+                <tr key={row.label} className="border-b border-line-row">
+                  <td className="py-1 pr-2 text-ink">
+                    {row.label}
+                    {row.description ? <span className="text-ink-body"> — {row.description}</span> : null}
+                  </td>
+                  <td className="py-1 pl-2 text-right tabular-nums text-ink">{row.price}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+      {bidForm && bidForm.unitPrices.length > 0 && (
+        <section className="mt-6">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-label">Unit prices</h2>
+          <table className="mt-2 w-full text-sm">
+            <tbody>
+              {bidForm.unitPrices.map((row) => (
+                <tr key={row.label} className="border-b border-line-row">
+                  <td className="py-1 pr-2 text-ink">
+                    {row.label}
+                    {row.description ? <span className="text-ink-body"> — {row.description}</span> : null}
+                  </td>
+                  <td className="py-1 pl-2 text-right tabular-nums text-ink">{row.price}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       {groups.map((group) => (
         <section key={group.kind} className="mt-6">
