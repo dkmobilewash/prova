@@ -3,10 +3,14 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PlanIngestPanel } from "./PlanIngestPanel";
 import type { PlanIngestStage } from "@prova/db";
 import type { IngestView } from "@/lib/plan-ingest/runner";
+
+// The panel refreshes the route once a read it drove finishes, and `useRouter`
+// throws outside an app router. See `planIngestRefresh.test.tsx`.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {}, push: () => {} }) }));
 
 /**
  * "READ THE SHEETS AGAIN" MUST BE REACHABLE FROM EVERY COMPLETED STAGE, and

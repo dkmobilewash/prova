@@ -5,7 +5,7 @@ import Link from "next/link";
 import { createBidInvitation } from "@/lib/actions";
 import { ActionForm } from "@/components/ActionForm";
 import { SubmitButton } from "@/components/SubmitButton";
-import { TRADE_SCOPE_OPTIONS } from "@/lib/trade-scopes";
+import { BidDetailsFields } from "@/components/BidDetailsFields";
 
 const field =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-base text-ink placeholder:text-ink-muted focus:border-link focus:outline-none sm:text-sm";
@@ -80,29 +80,7 @@ export function LogBidForm({
               ))}
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-sm text-ink-label">
-            Project name
-            <input name="projectName" required autoComplete="off" placeholder="Downtown office build-out…" className={field} />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-ink-label">
-            Trade
-            <select name="tradeScope" defaultValue="" className={field}>
-              <option value="">No trade tag</option>
-              {TRADE_SCOPE_OPTIONS.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-ink-label">
-            Bid due date
-            <input name="dueDate" type="date" className={field} />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-ink-label">
-            Bid $ (if known)
-            <input name="bidAmount" type="text" inputMode="decimal" autoComplete="off" placeholder="Optional" className={`w-28 ${field}`} />
-          </label>
+          <BidDetailsFields />
           {projectChoices.length > 0 && (
             <label className="flex flex-col gap-1 text-sm text-ink-label">
               Same job as…
@@ -119,10 +97,6 @@ export function LogBidForm({
           <label className="flex min-h-11 items-center gap-2 text-sm text-ink-label">
             <input type="checkbox" name="weReachedOut" className="h-5 w-5" />
             We reached out (they didn&rsquo;t invite us)
-          </label>
-          <label className="flex min-w-[180px] flex-1 flex-col gap-1 text-sm text-ink-label">
-            Notes
-            <input name="notes" autoComplete="off" placeholder="Optional" className={field} />
           </label>
           <div className="flex gap-2">
             <SubmitButton

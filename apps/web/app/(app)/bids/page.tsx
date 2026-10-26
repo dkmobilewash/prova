@@ -32,7 +32,10 @@ import { outcomeReasonLabel } from "@/components/ai-bid/outcome";
 import { LogBidForm } from "@/components/LogBidForm";
 import { Disclosure } from "@/components/Disclosure";
 import { SeeAll, seeAllWindow } from "@/components/SeeAll";
-import { bidsDueSoon, bidsView, daysLeftLabel } from "@/lib/bids-due-soon";
+import { bidsView, daysLeftLabel } from "@/lib/bids-due-soon";
+import { loadBidsDueSoon } from "@/lib/bids-due-soon-query";
+import { dayAndTime, upcomingBidDates } from "@/lib/bid-dates";
+import { BidDetailsEdit } from "@/components/BidDetailsEdit";
 
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
@@ -65,7 +68,7 @@ function labelFor(options: readonly { value: string; label: string }[], value: s
 /** A stored UTC midnight as the YYYY-MM-DD a date input round-trips, or null.
  * Rendered in UTC, never in the viewer's zone — the app-wide rule, and here it
  * is what stops a quote dated Tuesday reading as Monday in California. */
-const day = (value: Date | null) => (value === null ? null : value.toISOString().slice(0, 10));
+const day = (value: Date | null | undefined) => (value == null ? null : value.toISOString().slice(0, 10));
 
 /** All bids shows the latest 20; `?all=1` lifts it (declutter round 2). */
 const BIDS_SHOWN = 20;
@@ -241,13 +244,8 @@ export default async function BidsPage({
 
   // Read-only over the same rows: what is still to price, soonest first.
   // Its own query because the history filters above must not hide it.
-  const dueSoon = bidsDueSoon(
-    await prisma.bidInvitation.findMany({
-      where: { companyId: company.id, status: "INVITED", dueDate: { gte: new Date(`${today}T00:00:00.000Z`) } },
-      select: { id: true, projectName: true, status: true, dueDate: true, contact: { select: { name: true } } },
-    }),
-    today,
-  );
+  // Shared with C Stream Bid's /bid/bids — lib/bids-due-soon-query.ts.
+  const dueSoon = await loadBidsDueSoon(company.id, today);
   const view = bidsView(viewParam, dueSoon.length, isFiltered);
   const viewTab = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md px-3 text-sm font-medium ${active ? "bg-rail-hover text-ink" : "text-ink-body hover:text-ink"}`;
@@ -322,8 +320,14 @@ export default async function BidsPage({
                     {bid.projectName}
                   </Link>
                   <p className="text-sm text-ink-body">
-                    {bid.gcName} · Due {formatCalendarDate(new Date(`${bid.dueIso}T00:00:00.000Z`), "numeric")}
+                    {bid.gcName} · Due {dayAndTime(bid.dueIso, bid.dueMinute)},{" "}
+                    {formatCalendarDate(new Date(`${bid.dueIso}T00:00:00.000Z`), "numeric")}
                   </p>
+                  {bid.upcoming.map((u) => (
+                    <p key={u.kind} className="text-sm font-medium text-tag-amber-ink" data-bids={`upcoming-${u.kind}`}>
+                      {u.label}
+                    </p>
+                  ))}
                 </div>
                 <span
                   className={`shrink-0 text-sm font-medium tabular-nums ${bid.daysLeft <= 7 ? "text-tag-amber-ink" : "text-ink-label"}`}
@@ -496,8 +500,30 @@ export default async function BidsPage({
                       {bid.contact.name}
                     </Link>
                     {bid.tradeScope && <> · {labelFor(TRADE_SCOPE_OPTIONS, bid.tradeScope)}</>}
-                    {bid.dueDate && <> · Due {formatCalendarDate(bid.dueDate, "numeric")}</>}
+                    {bid.dueDate && (
+                      <>
+                        {" "}
+                        · Due {dayAndTime(day(bid.dueDate)!, bid.dueMinute)},{" "}
+                        {formatCalendarDate(bid.dueDate, "numeric")}
+                      </>
+                    )}
+                    {bid.walkDate && (
+                      <>
+                        {" "}
+                        · Job walk {dayAndTime(day(bid.walkDate)!, bid.walkMinute)},{" "}
+                        {formatCalendarDate(bid.walkDate, "numeric")}
+                      </>
+                    )}
+                    {bid.rfiCutoffDate && <> · RFIs close {formatCalendarDate(bid.rfiCutoffDate, "numeric")}</>}
                   </p>
+                  {/* A walk or RFI cutoff inside a week, on a bid still being
+                      priced. A won or lost bid's cutoff is history, not news. */}
+                  {(bid.status === "INVITED" || bid.status === "SUBMITTED") &&
+                    upcomingBidDates(bid, today).map((u) => (
+                      <p key={u.kind} className="text-sm font-medium text-tag-amber-ink" data-bids={`upcoming-${u.kind}`}>
+                        {u.label}
+                      </p>
+                    ))}
                 </div>
                 {bid.bidAmount != null && (
                   <p className="text-sm font-medium text-ink">{money(Number(bid.bidAmount))}</p>
@@ -510,6 +536,27 @@ export default async function BidsPage({
                   gcs={gcs}
                 />
               )}
+              {/* ── CORRECT THE BID AFTER AN ADDENDUM ──
+                  Name, trade, amount, notes and every date. Collapsed behind
+                  its link like every list-page edit. The GC and the status are
+                  not here: the GC is who invited you, and status has its own
+                  form. */}
+              <div className="px-4 pb-2" data-bids="edit-details">
+                <BidDetailsEdit
+                  bidInvitationId={bid.id}
+                  defaults={{
+                    projectName: bid.projectName,
+                    tradeScope: bid.tradeScope,
+                    dueDate: day(bid.dueDate),
+                    dueMinute: bid.dueMinute,
+                    walkDate: day(bid.walkDate),
+                    walkMinute: bid.walkMinute,
+                    rfiCutoffDate: day(bid.rfiCutoffDate),
+                    bidAmount: bid.bidAmount === null ? null : bid.bidAmount.toString(),
+                    notes: bid.notes,
+                  }}
+                />
+              </div>
               {/* ── THE REGRET LETTER, ON A DECLINED BID ONLY ──
 
                   A page nothing links to is a page nobody uses — #665's lesson,

@@ -39,6 +39,18 @@ test.describe("the full-screen takeoff workspace", () => {
   const JOB_TWO = "ZZ-E2E Workspace — S15";
 
   let servedPdf: Buffer = readFileSync(path.join(FIXTURES, "S02.pdf"));
+  /**
+   * ── EACH JOB'S OWN SHEET, SERVED WHENEVER ITS WORKSPACE OPENS ──
+   *
+   * `servedPdf` is one variable behind a route that answers EVERY plan fetch,
+   * and `jobWithSheet` overwrote it on each upload. After step 6 uploaded S15
+   * it stayed S15, so every later `onWorkspace(jobOne)` (steps 20-22) drew
+   * S15's lines at S02's scale while the spec called them S02. Detection on
+   * that mismatch is data-dependent and no assertion names it: step 21 went
+   * from passing to "S02 detected no walls" (panel up, zero groups) to "no
+   * quantities panel on S02". `onWorkspace` now sets the bytes from this map.
+   */
+  const pdfByJob = new Map<string, Buffer>();
   let page: Page;
   let monitor: HealthMonitor;
   let jobOne = "";
@@ -119,6 +131,9 @@ test.describe("the full-screen takeoff workspace", () => {
    * say WHICH layout it is asserting.
    */
   async function onWorkspace(jobId: string): Promise<void> {
+    const own = pdfByJob.get(jobId);
+    if (own === undefined) throw new Error(`no sheet was recorded for job ${jobId}`);
+    servedPdf = own;
     await page.goto(`/takeoff/${jobId}`);
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
     await expect
@@ -156,6 +171,7 @@ test.describe("the full-screen takeoff workspace", () => {
     await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 60_000 });
     await setScaleByClicking(halfSheetFeet);
+    pdfByJob.set(id, servedPdf);
     return id;
   }
 
@@ -975,16 +991,22 @@ test.describe("the full-screen takeoff workspace", () => {
     const offered = await optionTexts();
     if (!offered.some((text) => text.startsWith("W1"))) {
       await page.goto("/wall-types");
-      // The starter button is offered only on an EMPTY library. If it is not
-      // here, something else wrote a wall type into this company — say so,
-      // rather than spending the step's budget waiting on a click.
-      const starter = page.getByRole("button", { name: "Start from the common trade assemblies", exact: true });
+      // The starter button is offered while ANY starter is missing (#818) —
+      // it used to be offered only on an EMPTY library, which is why this gate
+      // once had to explain a neighbour's wall type. W1 is missing here, so the
+      // button must be up, and it must say it adds at least one. Anchored on
+      // both ends, so a lookalike label cannot match it.
+      const starter = page.getByRole("button", { name: /^Start from the common trade assemblies \(adds [1-9]\d*\)$/ });
       await expect(
         starter,
-        `no W1 and no starter button: the library already holds ${offered.slice(1).join(" | ")}, written into the TAKEOFF company by another spec`,
+        `no W1 and no starter button: the library already holds ${offered.slice(1).join(" | ")}`,
       ).toBeVisible();
       await starter.click();
-      await expect(page.getByText(/^Added /)).toBeVisible({ timeout: 60_000 });
+      // Stricter than the `^Added ` this used to wait for: the sentence must
+      // name W1, the one type this step goes on to need.
+      await expect(page.getByText(/^Added (?:[A-Z0-9]+, )*W1(?:, [A-Z0-9]+)*\. Link each part/)).toBeVisible({
+        timeout: 60_000,
+      });
       await onWorkspace(jobOne);
       await setRail("toggle-items", true);
       await page.locator('[data-takeoff="item-row"]').first().locator('[data-takeoff="pick-item"]').click();

@@ -83,6 +83,24 @@ model BidInvitation {
 
   projectName String
   dueDate     DateTime?
+
+  /// The TIME the bid is due on `dueDate`, as minutes after midnight (0-1439)
+  /// on the WALL CLOCK of wherever the invitation says — the GC's "2:00 PM".
+  /// Same representation as `DelayEvent.startMinute`. Deliberately NOT a
+  /// timestamp: the invitation names a local time and no zone, so converting it
+  /// into the reader's zone would be inventing a fact. Rendered as written.
+  /// Null = nobody recorded one; the day alone is then the deadline.
+  dueMinute Int?
+
+  /// The job walk / pre-bid meeting: a calendar day at UTC midnight like every
+  /// date here, plus an optional wall-clock minute. A time with no day is
+  /// refused by the action, not by a constraint.
+  walkDate   DateTime?
+  walkMinute Int?
+
+  /// Last day questions (RFIs) are accepted. A calendar day at UTC midnight.
+  rfiCutoffDate DateTime?
+
   status      BidInvitationStatus @default(INVITED)
 
   /// WHY, when the status is DECLINED. Null means nobody recorded it, which is

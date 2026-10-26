@@ -93,6 +93,23 @@ export const PUBLIC_ROUTES: readonly PublicRoute[] = [
   // the shared PublicDocument chrome links to both pages by name from every
   // page, so "Privacy" and "Terms" are on screen whether or not the document
   // itself rendered.
+  // C Stream Bid's two public pages. Walked at `/bid…` because the suite runs
+  // on localhost, an OPEN host where middleware serves `/bid/*` directly
+  // (lib/bid/surface.ts); on bid.cstream.ai the same pages are `/` and
+  // `/wall-takeoff`. The signed-in Bid pages sit in `app/bid/(signed-in)`,
+  // which the census in publicRoutes.test.ts skips with every other group.
+  {
+    path: "/bid",
+    label: "C Stream Bid landing page",
+    pattern: "/bid",
+    mustShow: "The AI reads. It never does the maths.",
+  },
+  {
+    path: "/bid/wall-takeoff",
+    label: "C Stream Bid free drawing-set read",
+    pattern: "/bid/wall-takeoff",
+    mustShow: "What you get back",
+  },
   { path: "/privacy", label: "privacy policy", pattern: "/privacy", mustShow: "What we keep" },
   { path: "/terms", label: "terms of service", pattern: "/terms", mustShow: "Your account" },
   {

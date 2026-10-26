@@ -6,9 +6,21 @@
  * ux round 4: "which bids are due in the next 30 days" meant reading every
  * row of an unsorted ten-row history, because /bids had no other view.
  */
+import { upcomingBidDates, type UpcomingBidDate } from "@/lib/bid-dates";
+
 export const DUE_SOON_DAYS = 30;
 
-export type DueSoonBid = { id: string; projectName: string; gcName: string; dueIso: string; daysLeft: number };
+export type DueSoonBid = {
+  id: string;
+  projectName: string;
+  gcName: string;
+  dueIso: string;
+  /** Wall-clock minutes after midnight, when the invitation named a time. */
+  dueMinute: number | null;
+  daysLeft: number;
+  /** A job walk or RFI cutoff in the next 7 days — see lib/bid-dates.ts. */
+  upcoming: UpcomingBidDate[];
+};
 
 /** Whole days from `todayIso` to `dueIso`, both YYYY-MM-DD at UTC midnight. */
 const daysFrom = (todayIso: string, dueIso: string) =>
@@ -16,7 +28,17 @@ const daysFrom = (todayIso: string, dueIso: string) =>
 
 /** `todayIso` is the viewer's calendar day (viewerToday()). */
 export function bidsDueSoon(
-  bids: { id: string; projectName: string; status: string; dueDate: Date | null; contact: { name: string } }[],
+  bids: {
+    id: string;
+    projectName: string;
+    status: string;
+    dueDate: Date | null;
+    dueMinute?: number | null;
+    walkDate?: Date | null;
+    walkMinute?: number | null;
+    rfiCutoffDate?: Date | null;
+    contact: { name: string };
+  }[],
   todayIso: string,
 ): DueSoonBid[] {
   return bids
@@ -25,7 +47,20 @@ export function bidsDueSoon(
       const dueIso = bid.dueDate.toISOString().slice(0, 10);
       const daysLeft = daysFrom(todayIso, dueIso);
       return daysLeft >= 0 && daysLeft <= DUE_SOON_DAYS
-        ? [{ id: bid.id, projectName: bid.projectName, gcName: bid.contact.name, dueIso, daysLeft }]
+        ? [
+            {
+              id: bid.id,
+              projectName: bid.projectName,
+              gcName: bid.contact.name,
+              dueIso,
+              dueMinute: bid.dueMinute ?? null,
+              daysLeft,
+              upcoming: upcomingBidDates(
+                { walkDate: bid.walkDate ?? null, walkMinute: bid.walkMinute ?? null, rfiCutoffDate: bid.rfiCutoffDate ?? null },
+                todayIso,
+              ),
+            },
+          ]
         : [];
     })
     .sort((a, b) => a.daysLeft - b.daysLeft);

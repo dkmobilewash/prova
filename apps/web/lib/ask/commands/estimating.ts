@@ -640,6 +640,7 @@ export const estimatingExclusions: Exclusion[] = [
   // in lib/estimating/bid-invitation.ts.
   { action: "priceCatalogEntryFromQuotes", reason: "Setting a catalog default from a supplier quote is a pricing decision made on /catalog, where the vendor, the price, the date and the source are all on screen; it is owner-only and moves a number every future bid reads." },
   { action: "updateBidInvitationStatus", reason: "A won/lost decision is made on the bids page where the bid is visible." },
+  { action: "updateBidInvitationDetails", reason: "Correcting a bid after an addendum moves its dates is done on the bids row, where the old and new values sit side by side; the due date it changes decides what the Due-soon and missed flags say." },
   // Levelling. Not commands: the figure is easy and the EXCLUSIONS are the
   // point, and those are somebody's sentences off a PDF the model has not
   // read. A quote transcribed without them reads as comparable when it is
