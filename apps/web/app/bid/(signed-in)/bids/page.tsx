@@ -19,9 +19,10 @@ export const metadata = { title: "Bids" };
  *
  * What differs by `surface`: "Start the estimate" and every estimate link open
  * Bid's estimate, each GC's Proposal link opens Bid's proposal for that GC, a
- * missing GC is added in Bid's settings, and a name that would open a CRM-only
- * screen (the bid's research page, the GC's contact page, the regret letter) is
- * plain text. The heading and the first-run empty state are this file's, since
+ * missing GC is added in Bid's settings, a bid's name opens its page inside Bid
+ * (`/bid/bids/<id>`) and a declined bid's regret link opens Bid's letter
+ * (`/bid/bids/<id>/regret`); the one name that would open a CRM-only screen, the
+ * GC's contact page, is plain text. The heading and the first-run empty state are this file's, since
  * the CRM's carry links out of Bid.
  */
 export default async function BidLogPage({

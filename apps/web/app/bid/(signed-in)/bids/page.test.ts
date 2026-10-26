@@ -160,13 +160,27 @@ describe("/bid/bids is the full bid log", () => {
     }
   });
 
-  it("draws the GC and the bid name as plain text, and no regret-letter link (Bid has neither screen)", async () => {
+  it("draws the GC as plain text (Bid has no GC page), and links the bid name to Bid's own bid page", async () => {
     bids = [invitation({ id: "d1", status: "DECLINED", projectName: "Declined job", declineReason: null })];
     const html = await render({ view: "all" });
     expect(html).toContain("Declined job");
     expect(html).not.toContain("/contacts/");
     expect(html).not.toContain("/ai/bids/");
-    expect(html).not.toContain("/regret");
+    expect(hrefs(html)).toContain("/bid/bids/d1");
+    // The GC's name is said, and is not a link.
+    expect(html).toContain("Acme GC");
+    expect(html).not.toMatch(/<a [^>]*>Acme GC<\/a>/);
+  });
+
+  it("links the regret letter of a DECLINED bid inside Bid, and of no other bid", async () => {
+    bids = [
+      invitation({ id: "d1", status: "DECLINED", projectName: "Declined job", declineReason: null }),
+      invitation({ id: "s1", status: "SUBMITTED", projectName: "Submitted job" }),
+    ];
+    const links = hrefs(await render({ view: "all" }));
+    expect(links).toContain("/bid/bids/d1/regret");
+    expect(links).not.toContain("/bid/bids/s1/regret");
+    expect(links.some((h) => h.startsWith("/bids/"))).toBe(false);
   });
 
   it("the due-soon view's way out is Bid's own full log", async () => {

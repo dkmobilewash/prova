@@ -1,0 +1,23 @@
+### C Stream Bid: the bid's own page and the regret letter open inside Bid, so a bid's name and its regret link are links again (Cyrus)
+`feat/bid-detail-in-bid`
+
+**Why.** The last wave left two CRM-only screens that `/bid/bids` drew as plain text: the bid's own page (`/ai/bids/<id>` — research, estimate check, addenda, decision) and a declined bid's regret letter (`/bids/<id>/regret`). A person working only in Bid could see a bid and not open it. Both are the CRM's own screens rendered with `surface="bid"`, not copies, the way `feat/bid-estimates` rendered the estimate screens.
+
+**What a person can do now.**
+
+- `/bid/bids/<id>` — the bid's page, with the same four steps (Research, Estimate check, Addenda, Decision), the same "Research this bid" / "Check the estimate" buttons, Dismiss and "Not right" on a finding, and the won/lost form. Same gate as the CRM page (`MANAGE_ESTIMATING`, which is Bid's own) and the same scoping: `loadBidWorkspace(id, company.id)`, so another company's bid is a 404.
+- `/bid/bids/<id>/regret` — the same regret letter, composed by the same `lib/regret-letter.ts`, with the same print-only layout, the same sender-only notes, and shown on a bid that is not yet declined with the same "still marked …" note. Its only link goes back to `/bid/bids`.
+- On `/bid/bids` the bid's name links to its page and a DECLINED bid's "Write the regret letter" links to its letter. The GC's name is still plain text: Bid has no GC page.
+
+**Left out in Bid, deliberately.**
+
+- **Ask.** The Decision step's Ask panel and "Your earlier questions" are not drawn: Bid has no Ask. The step is one column instead of two.
+- **The GC's contact page.** "Open the bid →" (header) and "Log one on the bid →" (empty Addenda) both go to `/contacts/<id>` in the CRM. They are not drawn in Bid.
+- **The breadcrumb.** `← AI` and `Agent activity & settings` become one link, `← Back to your bids`.
+- **Stored agent links.** The agents write their links as CRM routes into rows already in the database (`/ai/bids/<id>`, `/contacts/<id>`, `/jobs/<id>/estimate`, `/pipeline`, `/backcharges`, `/jobs/<id>`), so they cannot be fixed at the source. The Bid page runs every one through `bidPageData` (`lib/bid/bidPageData.ts`, `storedHref` in `lib/bid/bidLogHrefs.ts`): a link to this bid or to an estimate becomes its Bid twin (`/bid/bids/<id>`, `/bid/estimates/<id>/estimate`); anything else is drawn as words, a source chip without a link or a finding without "Fix this". A research citation's web link is kept only if it is not a cstream.ai host.
+
+**How the CRM was left alone.** `BidWorkspace` and the regret page take `surface` (default `"crm"`). `bidLogHrefs` gained `list`, and its Bid half now returns the two new paths (`contact` stays `null`). The CRM breadcrumb and links are the same literals. Proved, not argued: the old and new `BidWorkspace` rendered to static HTML for the CRM on all four tabs, with and without addenda, and the old and new regret page, are byte-for-byte equal (a throwaway test, deleted). `SourceChips` gained a `fit` flag, off by default and on only in Bid: without it the chip list is as wide as its longest unwrapped label, which at 375px made the page 846px wide on a long project name. The CRM page has the same overflow on a phone; it is left alone to keep its markup identical, and is a one-word fix there when somebody wants it.
+
+**Censuses, extended not loosened.** `bidLinkCensus` now reads `BidWorkspace`, `parts.tsx` and the regret page (they joined Bid's import closure) and names each dynamic sink with its reason; it derives every link the agents store from `lib/agents/*.ts` (size asserted first) and requires `storedHref("bid", …)` to return a `/bid` path or nothing for each, runs `bidPageData` over a bid carrying all of them, and pins that the Bid page runs the data through `bidPageData` and draws no Ask. Mutating `storedHref` to return the CRM link fails three tests by name. `bidRouteCapability` has rows for both routes, requires both Bid pages to enforce, and reads the two CRM twin pages for the capability, since neither is in `ROUTE_CAPABILITY`. `surface.test.ts` pins that `/bids/<id>` and `/bids/<id>/regret` rewrite to `/bid/…` on the Bid host and are protected. `BID_SEGMENTS` needed no change: both routes are under the existing `bids` segment.
+
+**Check it.** `e2e/specs/bid-bids.spec.ts` step 6 opens the bid from the log, walks its four steps and the regret letter at 375px, asserting no `a[href]` leaves Bid and the page fits the viewport. Steps 2 and 4 were edited: the bid's name is now a Bid link, and the estimate link is named by its target. It could not be run in the agent container (Clerk's host is denied); CI's `e2e` job is where it is proved.

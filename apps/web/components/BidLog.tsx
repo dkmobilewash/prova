@@ -109,9 +109,10 @@ const BIDS_SHOWN = 20;
  *     (`bidLinkCensus.test.ts` follows imports).
  *
  * `surface` ("crm" by default, which is every character `/bids` always drew)
- * picks the links. On Bid, a name that would open a CRM-only screen (the bid's
- * own research page, the GC's contact page, the regret letter) is plain text,
- * and the estimate / proposal / add-a-GC links go to Bid's twins.
+ * picks the links. On Bid, the bid's name and the regret letter open Bid's own
+ * pages (`/bid/bids/<id>`, `/bid/bids/<id>/regret`), the GC's contact page — a
+ * CRM-only screen — is plain text, and the estimate / proposal / add-a-GC links
+ * go to Bid's twins.
  */
 export async function BidLog({
   searchParams,

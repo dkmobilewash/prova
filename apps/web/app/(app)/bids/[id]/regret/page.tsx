@@ -10,6 +10,8 @@ import { tradeScopeLabel } from "@/lib/trade-scopes";
 import { regretLetter } from "@/lib/regret-letter";
 import { declineLabel } from "@/lib/bid-decline";
 import type { DeclineReason } from "@/lib/bid-decline";
+import { bidLogHrefs } from "@/lib/bid/bidLogHrefs";
+import type { Surface } from "@/lib/bid/surfaceHrefs";
 
 /**
  * ── THE REGRET LETTER ──
@@ -39,11 +41,19 @@ import type { DeclineReason } from "@/lib/bid-decline";
  * growing a sent-state while its sibling has none is the kind of split this
  * repo pays for later.
  */
-export default async function RegretLetterPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function RegretLetterPage({
+  params,
+  surface = "crm",
+}: {
+  params: Promise<{ id: string }>;
+  /** Which product renders this page; C Stream Bid passes "bid" (`lib/bid/bidLogHrefs.ts`). */
+  surface?: Surface;
+}) {
   const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
   const { company } = context;
   const { id } = await params;
+  const backHref = bidLogHrefs(surface).list;
 
   const bid = await prisma.bidInvitation.findFirst({
     where: { id, companyId: company.id },
@@ -69,7 +79,7 @@ export default async function RegretLetterPage({ params }: { params: Promise<{ i
     // the browser's own margins, the way the proposal does.
     <PageShell width="reading" className="print:p-0">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <Link href="/bids" className="text-sm text-link hover:underline">
+        <Link href={backHref} className="text-sm text-link hover:underline">
           ← Back to bids
         </Link>
         <PrintButton />

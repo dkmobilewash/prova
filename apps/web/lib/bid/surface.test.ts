@@ -81,6 +81,9 @@ describe("decideSurface on the Bid host", () => {
 
   it("rewrites every Bid segment under /bid and protects the signed-in ones", () => {
     expect(decideSurface(BID, "/bids")).toEqual({ kind: "rewrite", pathname: "/bid/bids", protect: true });
+    // The bid's own page and its regret letter sit under the same `bids` segment.
+    expect(decideSurface(BID, "/bids/b1")).toEqual({ kind: "rewrite", pathname: "/bid/bids/b1", protect: true });
+    expect(decideSurface(BID, "/bids/b1/regret")).toEqual({ kind: "rewrite", pathname: "/bid/bids/b1/regret", protect: true });
     expect(decideSurface(BID, "/estimates/abc")).toEqual({
       kind: "rewrite",
       pathname: "/bid/estimates/abc",
