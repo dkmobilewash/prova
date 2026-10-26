@@ -63,6 +63,10 @@ export const BID_SEGMENTS = [
   "price-book",
   "settings",
   "wall-takeoff",
+  // The full-screen takeoff workspace: OUTSIDE the signed-in shell (the shell's
+  // header would take the viewport the workspace exists to have), so it is a
+  // segment of its own rather than a child of `estimates`.
+  "workspace",
 ] as const;
 
 /**

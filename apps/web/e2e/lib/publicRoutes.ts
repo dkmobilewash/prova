@@ -165,6 +165,10 @@ export const PUBLIC_ROUTE_EXCLUSIONS: Readonly<Record<string, string>> = {
   // check CLAUDE.md's "watcher whose needle is already on the page" entry
   // is about: it would pass forever and mean nothing. They belong to the
   // Clerk-backed suite, where the widget actually renders.
+  // Bid's full-screen takeoff workspace: it authenticates itself, like the CRM's
+  // /takeoff/[id] (which is in the Clerk-backed suite), and middleware requires a
+  // session for everything under /bid but the landing page and the free read.
+  "/bid/workspace/[id]": "needs a signed-in session and a job id; walked by specs/bid-estimates.spec.ts",
   "/sign-in/[[...sign-in]]": "renders 0 characters without a real Clerk instance; asserting width on it would be vacuous",
   "/sign-up/[[...sign-up]]": "renders 0 characters without a real Clerk instance; asserting width on it would be vacuous",
 };

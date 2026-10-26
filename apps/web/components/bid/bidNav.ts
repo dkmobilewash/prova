@@ -58,3 +58,56 @@ export function activeBidHref(pathname: string): string | null {
   }
   return null;
 }
+
+/**
+ * EVERY SIGNED-IN BID ROUTE AND THE CRM SCREEN IT IS THE TWIN OF — the access
+ * decision for each, written down.
+ *
+ * `lib/permissions.test.ts` enforces "every page has a recorded access decision"
+ * for `app/(app)` only; Bid's pages are outside that group, so without this table
+ * a new Bid page would be a door nobody decided on. `bidRouteCapability.test.ts`
+ * walks `app/bid` and fails a page missing here, and for every row proves:
+ *
+ *   - Bid never admits anyone the twin refuses: for every job function (and
+ *     the owner), holding BID_CAPABILITY implies holding `twinCapability`;
+ *   - the page really enforces: it calls `requireCapability` itself, or renders
+ *     its CRM twin, whose own page source is read for the same capability.
+ *
+ * `twinCapability` is what the CRM twin demands, NOT what Bid demands (Bid's
+ * whole surface demands BID_CAPABILITY — the layout and every page). Rows whose
+ * twin is open to any member (the job list, `/jobs/new`) record `null`: Bid is
+ * deliberately stricter there, because Bid IS estimating.
+ *
+ * `/bid/settings` is the one row with a footnote. Its CRM twin is `/settings`
+ * (MANAGE_COMPLIANCE) for the markup and opening-deduction forms and
+ * `/proposals` (MANAGE_ESTIMATING) for the clause library. The page asks for the
+ * second; the forms from the first keep asserting MANAGE_COMPLIANCE in their own
+ * actions (`saveCompanyBidDefaults`, `saveOpeningDeduction`), exactly as on the
+ * CRM's settings page, and the page says so to a reader who lacks it.
+ */
+export type BidRoute = {
+  route: string;
+  /** The CRM route this is the twin of, for the reader. */
+  twin: string;
+  /** What that twin demands, or null if it is open to any member. */
+  twinCapability: Capability | null;
+};
+
+export const BID_ROUTES: readonly BidRoute[] = [
+  { route: "/bid/bids", twin: "/bids", twinCapability: "MANAGE_ESTIMATING" },
+  { route: "/bid/estimates", twin: "/jobs?status=ESTIMATE", twinCapability: null },
+  { route: "/bid/estimates/new", twin: "/jobs/new", twinCapability: null },
+  { route: "/bid/estimates/[id]", twin: "/jobs/[id]", twinCapability: null },
+  { route: "/bid/estimates/[id]/takeoff", twin: "/jobs/[id]/takeoff", twinCapability: "VIEW_JOB_COSTS" },
+  { route: "/bid/estimates/[id]/takeoff/legend", twin: "/jobs/[id]/takeoff/legend", twinCapability: "VIEW_JOB_COSTS" },
+  { route: "/bid/estimates/[id]/estimate", twin: "/jobs/[id]/estimate", twinCapability: "VIEW_JOB_COSTS" },
+  { route: "/bid/estimates/[id]/recap", twin: "/jobs/[id]/estimate", twinCapability: "VIEW_JOB_COSTS" },
+  { route: "/bid/estimates/[id]/proposal", twin: "/jobs/[id]/proposal", twinCapability: "MANAGE_ESTIMATING" },
+  { route: "/bid/workspace/[id]", twin: "/takeoff/[id]", twinCapability: "VIEW_JOB_COSTS" },
+  { route: "/bid/wall-types", twin: "/wall-types", twinCapability: "MANAGE_ESTIMATING" },
+  { route: "/bid/price-book", twin: "/catalog", twinCapability: "MANAGE_ESTIMATING" },
+  { route: "/bid/settings", twin: "/proposals", twinCapability: "MANAGE_ESTIMATING" },
+];
+
+/** Pages under `app/bid` that need no session at all (see `isBidSignedInPath`). */
+export const BID_PUBLIC_ROUTES: readonly string[] = ["/bid", "/bid/wall-takeoff"];

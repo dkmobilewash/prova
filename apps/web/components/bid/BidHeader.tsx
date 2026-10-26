@@ -28,7 +28,7 @@ export function BidHeader({ companyName }: { companyName: string | null }) {
   const { signOut } = useClerk();
 
   return (
-    <header className="border-b border-line-card bg-rail">
+    <header className="border-b border-line-card bg-rail print:hidden">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
         <Link href="/bid/bids" className="flex min-h-11 items-center gap-2" aria-label="C Stream Bid — your bids">
           <Image
