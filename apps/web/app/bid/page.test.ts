@@ -89,10 +89,17 @@ describe("BidLanding", () => {
   });
 
   it("makes no pricing claim and quotes no invented statistic outside the example job", () => {
-    expect(outsideExample.length).toBeGreaterThan(3_000);
+    // The rest of the page really was read: a broken extraction cannot pass as "no figures".
+    expect(outsideExample.length).toBeGreaterThan(1_000);
+    expect(outsideExample).toContain("so you never type it twice");
+    expect(outsideExample).toContain("The AI reads. It never does the maths.");
     expect(outsideExample).not.toMatch(/\$\s?\d|per month|\/mo\b|free trial/i);
     expect(outsideExample).not.toMatch(/\d+%|\d+\s*(minutes?|hours?|days?)\s+(saved|per|of)/i);
     // And nothing in the example job is a price or a claim about the product.
-    expect(examples[0] ?? "").not.toMatch(/per month|\/mo\b|free trial|\d+%/i);
+    // Its VISIBLE words — the animation's own <style> (keyframe percentages) is
+    // not page text and is stripped first.
+    const exampleText = (examples[0] ?? "").replace(/<style>[\s\S]*?<\/style>/g, "").replace(/<[^>]+>/g, " ");
+    expect(exampleText).toContain("Bid total");
+    expect(exampleText).not.toMatch(/per month|\/mo\b|free trial|\d+%/i);
   });
 });
