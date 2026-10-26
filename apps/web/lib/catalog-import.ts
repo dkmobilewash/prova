@@ -359,3 +359,94 @@ export function splitAgainstExisting(rows: ImportRow[], existingDescriptions: st
 
   return { fresh, duplicatesOfExisting, duplicatesWithinFile };
 }
+
+/* ------------------------------------------------------------------ */
+/* Re-importing an updated list: which existing entries change price   */
+/* ------------------------------------------------------------------ */
+
+/** What the catalog holds for an entry, in the numbers the import compares. */
+export type ExistingEntry = {
+  id: string;
+  description: string;
+  unit: string | null;
+  unitPrice: number | null;
+  budgetedUnitCost: number | null;
+};
+
+/** One figure moving: what the catalog has, what the file says. */
+export type FigureChange = { old: number | null; next: number; percent: number | null };
+
+export type PriceChange = {
+  entryId: string;
+  row: ImportRow;
+  /** Null when the file does not carry that column for this row, or it equals the catalog. */
+  price: FigureChange | null;
+  cost: FigureChange | null;
+};
+
+export type ImportPlan = {
+  fresh: ImportRow[];
+  /** Existing entries whose price and/or cost the file moves. */
+  changes: PriceChange[];
+  /** Existing entries the file agrees with (or says nothing new about). */
+  unchanged: ImportRow[];
+  /** Same description, DIFFERENT unit — a price per LF is not a price per SF. Never updated. */
+  unitMismatch: ImportRow[];
+  duplicatesWithinFile: ImportRow[];
+};
+
+const cents = (n: number) => Math.round(n * 100);
+
+function figureChange(old: number | null, next: number | null): FigureChange | null {
+  // A blank cell in the file never erases a price the catalog already has: the
+  // file saying nothing is not the supplier saying zero.
+  if (next == null) return null;
+  if (old != null && cents(old) === cents(next)) return null;
+  return {
+    old,
+    next,
+    percent: old != null && old !== 0 ? Math.round(((next - old) / old) * 1000) / 10 : null,
+  };
+}
+
+const unitKey = (unit: string | null) => (unit ?? "").trim().toLowerCase();
+
+/**
+ * Splits parsed rows against the catalog AND works out which existing entries
+ * the file reprices. The identity rule is the one the import has always used —
+ * `catalogKey(description)`, there is no SKU column — and the rows are the
+ * server's own re-parse, so a preview is never what decides what is written.
+ *
+ * ONLY PRICE AND COST MOVE. Unit, trade, labor and the description stay as the
+ * estimator set them: a supplier's sheet is authority on what things cost, not
+ * on how this shop produces them. A row whose unit differs from the entry's is
+ * reported and skipped — "per LF" against "per SF" is a different item.
+ */
+export function planImport(rows: ImportRow[], existing: ExistingEntry[]): ImportPlan {
+  const byKey = new Map(existing.map((entry) => [catalogKey(entry.description), entry]));
+  const seenInFile = new Set<string>();
+  const plan: ImportPlan = { fresh: [], changes: [], unchanged: [], unitMismatch: [], duplicatesWithinFile: [] };
+
+  for (const row of rows) {
+    const key = catalogKey(row.description);
+    if (seenInFile.has(key)) {
+      plan.duplicatesWithinFile.push(row);
+      continue;
+    }
+    seenInFile.add(key);
+    const entry = byKey.get(key);
+    if (!entry) {
+      plan.fresh.push(row);
+      continue;
+    }
+    if (row.unit != null && entry.unit != null && unitKey(row.unit) !== unitKey(entry.unit)) {
+      plan.unitMismatch.push(row);
+      continue;
+    }
+    const price = figureChange(entry.unitPrice, row.unitPrice);
+    const cost = figureChange(entry.budgetedUnitCost, row.budgetedUnitCost);
+    if (!price && !cost) plan.unchanged.push(row);
+    else plan.changes.push({ entryId: entry.id, row, price, cost });
+  }
+  return plan;
+}
