@@ -6,7 +6,7 @@ import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/journey";
-import { openPlanPdf, titleBlockText } from "@/lib/plan-ingest/planPdf";
+import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
 import { sheetNumberFrom } from "@/lib/plan-ingest/sheetNumber";
 import { storedLegendTypes } from "@/lib/takeoff/legendProposal";
 import { legendCropRects } from "@/lib/takeoff/legendSight";
@@ -106,6 +106,18 @@ test.describe("an estimator's takeoff on a real set", () => {
       await form.getByRole("button", { name: "Save" }).click();
       await expect(form.getByText("Saved.")).toBeVisible({ timeout: 30_000 });
     }
+    // ── THE PLAN-TEXT READ, OPTED INTO FOR THIS COMPANY ──
+    // The keyless sheet names, the rail's floor-plans-first order and the
+    // "use this printed scale on every sheet that prints it" press all sit
+    // behind it. No model is called in this run.
+    await page.goto("/settings/assistant");
+    const aiOn = page.locator('input[type="checkbox"][name="aiEnabled"]');
+    if (!(await aiOn.isChecked())) await aiOn.check();
+    const planText = page.locator('input[type="checkbox"][name="feature:PLAN_TEXT_READ"]');
+    if (!(await planText.isChecked())) await planText.check();
+    await page.getByRole("button", { name: "Save AI settings" }).click();
+    await page.waitForTimeout(2000);
+    await shot("ai-settings-plan-text-on");
     await page.goto("/wall-types");
     await shot("wall-types-empty");
     const starters = page.getByRole("button", { name: /Start from the common trade assemblies/ });
@@ -143,22 +155,20 @@ test.describe("an estimator's takeoff on a real set", () => {
     const texts = await prisma.planSheetText.count({ where: { planId } });
     say(`sheet text rows written by the inventory: ${texts}`);
 
-    // ── THE TITLE-BLOCK STAGE'S PROPOSALS, FROM THE KEYLESS READER ──
-    const ingest = await prisma.planIngestJob.findFirstOrThrow({ where: { planId, stage: "PAGE_INVENTORY" }, orderBy: { startedAt: "desc" }, select: { id: true } });
+    // ── THE SHEET NAMES THE INVENTORY PROPOSED ITSELF, WITH NO MODEL ──
+    // Before this branch the spec seeded these rows by hand as a stand-in for
+    // the paid title-block stage; now the inventory writes them from the
+    // keyless reader for a company that has opted into plan-text reading.
+    const proposals = await prisma.planSheetProposal.findMany({
+      where: { planId },
+      orderBy: { pageNumber: "asc" },
+      select: { pageNumber: true, proposedSheetNumber: true, proposedTitle: true, proposedConfidence: true, proposedScale: true, model: true },
+    });
     const pdf = await openPlanPdf(readFileSync(PDF));
-    let proposed = 0;
-    for (let n = 1; n <= pdf.pageCount; n += 1) {
-      const t = await pdf.pageText(n);
-      if (t.items.length < 20) continue;
-      const r = sheetNumberFrom(t);
-      if (r.sheetNumber === null) continue;
-      const title = titleBlockText(t).text.replace(/\s+/g, " ").trim().slice(0, 80);
-      await prisma.planSheetProposal.create({
-        data: { ingestJobId: ingest.id, planId, pageNumber: n, proposedSheetNumber: r.sheetNumber, proposedTitle: title, proposedReason: "keyless title-block reader (stand-in for the model stage)", proposedConfidence: "MEDIUM", model: "none", promptVersion: "n/a" },
-      });
-      proposed += 1;
-    }
-    say(`sheet proposals seeded from the keyless reader: ${proposed} of ${pdf.pageCount} pages`);
+    say(`sheet proposals the inventory wrote: ${proposals.length} of ${pdf.pageCount} pages (model: ${[...new Set(proposals.map((p) => p.model))].join(", ") || "none"})`);
+    for (const p of proposals) say(`  p${p.pageNumber}: ${p.proposedSheetNumber} · ${p.proposedTitle ?? "(no title)"} · ${p.proposedConfidence} · prints ${p.proposedScale ?? "—"}`);
+    const readings = await prisma.planSheetScaleReading.findMany({ where: { planId }, select: { pageNumber: true, scaleName: true, source: true } });
+    say(`scale readings: ${readings.filter((r) => r.scaleName !== null).length} of ${readings.length} pages read a scale (${readings.filter((r) => r.scaleName !== null && r.source === "DIMENSIONS").length} checked against dimensions, ${readings.filter((r) => r.scaleName !== null && r.source === "PRINTED").length} printed only)`);
     await page.goto(`/jobs/${jobId}/takeoff`);
     await expectHealthy(page, "takeoff tab with sheet proposals", { monitor });
     const index = page.locator("summary").filter({ hasText: "Sheet index" });
@@ -234,6 +244,33 @@ test.describe("an estimator's takeoff on a real set", () => {
     const options = await picker.locator("option").allTextContents();
     say(`sheet picker offers ${options.length} sheets; first ten: ${options.slice(0, 10).join(" | ")}`);
     await shot("workspace-first-open");
+
+    // ── THE SHEET RAIL: FLOOR PLANS TO SCALE FIRST, AND ONE PRESS FOR EVERY PRINTED SCALE ──
+    const sheetRail = page.locator('[data-takeoff="sheet-rail"]');
+    if (!(await sheetRail.isVisible())) {
+      await page.locator('[data-takeoff="workspace"]').getByRole("button", { name: /Sheets/ }).first().click().catch(() => {});
+    }
+    const railText = async () => (await sheetRail.innerText({ timeout: 10_000 }).catch(() => "(no rail)")).replace(/\s+/g, " ");
+    say(`rail progress: ${(await page.locator('[data-takeoff="tree-progress"]').innerText({ timeout: 10_000 }).catch(() => "(none)")).replace(/\s+/g, " ")}`);
+    const firstRows = page.locator('[data-takeoff="tree-sheet"]');
+    const rowCount = await firstRows.count();
+    for (let i = 0; i < Math.min(rowCount, 8); i += 1) say(`  rail row ${i + 1}: ${(await firstRows.nth(i).innerText()).replace(/\s+/g, " ").slice(0, 120)}`);
+    const everywhere = page.locator('[data-takeoff="use-printed-scale-everywhere"]');
+    const offersCount = await everywhere.count();
+    for (let i = 0; i < offersCount; i += 1) say(`  rail offer ${i + 1}: ${(await everywhere.nth(i).innerText()).replace(/\s+/g, " ")}`);
+    await shot("rail-before-one-press", sheetRail);
+    if (offersCount > 0) {
+      await everywhere.first().click();
+      const status = page.locator('[data-takeoff="printed-scales-applied"]');
+      await expect(status).toBeVisible({ timeout: 120_000 });
+      say(`after the one press: ${(await status.innerText()).replace(/\s+/g, " ")}`);
+      await expect.poll(async () => (await page.locator('[data-takeoff="tree-progress"]').innerText()).replace(/\s+/g, " "), { timeout: 60_000 }).not.toMatch(/^0 of \d+ started · \d+ need a scale · /);
+      say(`rail progress after: ${(await page.locator('[data-takeoff="tree-progress"]').innerText()).replace(/\s+/g, " ")}`);
+      await shot("rail-after-one-press", sheetRail);
+      say(`rail now reads: ${(await railText()).slice(0, 600)}`);
+    } else {
+      say("rail: no printed-scale offer was shown");
+    }
     const values = await picker.locator("option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
     const wanted = values.find((v) => v === String(PLAN_PAGE)) ?? values[PLAN_PAGE - 1];
     await picker.selectOption(wanted);
@@ -243,6 +280,10 @@ test.describe("an estimator's takeoff on a real set", () => {
     say(`sheet facts: ${((await page.locator('[data-takeoff="sheet-facts"]').innerText({ timeout: 5000 }).catch(() => "")) ?? "").replace(/\s+/g, " ").slice(0, 400)}`);
     const toolbar = page.locator('[data-takeoff="workspace"]').getByRole("button", { name: "Set scale", exact: true });
     say(`toolbar before Set scale: ${(await page.locator("main, body").first().innerText({ timeout: 10_000 })).replace(/\s+/g, " ").slice(0, 300)}`);
+    const scaleState = page.locator('[data-takeoff="sheet-scale-state"]');
+    const alreadyScaled = /^Scale set/.test((await scaleState.innerText({ timeout: 10_000 }).catch(() => "")).trim());
+    say(`floor plan already scaled by the rail's one press: ${alreadyScaled}`);
+    if (!alreadyScaled) {
     try {
       await toolbar.first().click({ timeout: 30_000 });
     } catch (err) {
@@ -272,8 +313,9 @@ test.describe("an estimator's takeoff on a real set", () => {
     }
     await shot("set-scale-filled");
     await form.getByRole("button", { name: "Set the scale" }).click();
-    await expect(page.getByText(/^Scale set/)).toBeVisible({ timeout: 60_000 });
-    say(`after setting the scale: ${(await page.getByText(/^Scale set/).first().innerText()).replace(/\s+/g, " ")}`);
+    }
+    await expect(scaleState).toHaveText(/^Scale set/, { timeout: 60_000 });
+    say(`the sheet's own scale line: ${(await scaleState.innerText()).replace(/\s+/g, " ")}`);
     await shot("scale-set");
 
     const findWalls = page.locator('[data-takeoff="find-walls"]');

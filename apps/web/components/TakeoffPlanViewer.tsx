@@ -3154,7 +3154,7 @@ export function TakeoffPlanViewer({
           </span>
         )}
 
-        <span className="ml-auto text-xs text-ink-muted">
+        <span className="ml-auto text-xs text-ink-muted" data-takeoff="sheet-scale-state">
           {calibration ? (
             <>
               Scale set{scaleReading?.name ? `: ${scaleReading.name}` : ""}
@@ -4323,7 +4323,7 @@ export function TakeoffPlanViewer({
                 // quantity on the sheet.
                 setDraft({ xs: [...xs], ys: [...ys] });
               }}
-              existingLabel={sheet?.label ?? ""}
+              existingLabel={sheet?.label ?? sheetLabelByPage[pageNumber]?.replace(" · ", " ") ?? ""}
               existingNote={calibration?.note ?? ""}
               draft={calibrationDraft}
               onSaved={() => {

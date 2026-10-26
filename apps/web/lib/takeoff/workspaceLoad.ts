@@ -1,5 +1,6 @@
 import { loadWallModel } from "@/lib/takeoff/wallModelFile";
 import { prisma } from "@prova/db";
+import { aiGate } from "@/lib/ai/settings";
 import { wallTypeSummary } from "@/lib/takeoff/wallTypeMatch";
 
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
@@ -574,6 +575,11 @@ export async function loadTakeoffWorkspace(
     sheets,
     roomFinderOn: roomFinder?.roomFinderOn ?? false,
     demotedWallsOn: roomFinder?.demotedWallsOn ?? false,
+    // The plan-text opt-in: the rail ranks the floor plans to scale first and
+    // offers every sheet's printed scale in one press only for a company that
+    // has turned plan-text reading on, the same switch the keyless sheet
+    // names sit behind.
+    planTextReadOn: (await aiGate(company.id, "PLAN_TEXT_READ")).ok,
     // The trained wall model, only for a company whose switch is on: ~80 KB
     // of trees that nobody else's page should carry.
     wallModel: roomFinder?.demotedWallsOn ? loadWallModel(process.env) : null,
