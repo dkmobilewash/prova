@@ -152,6 +152,10 @@ const DYNAMIC_ALLOWED: Record<string, string> = {
     "BID_NAV in components/bid/bidNav.ts — every entry is a literal `href:` property, which this census reads as a prop-href sink.",
   "components/bid/BidEstimateTabs.tsx: tab.href":
     "bidEstimateTabs() in components/bid/bidEstimateTabs.ts — every entry is a literal `href:` template starting /bid/estimates/, read here as a prop-href sink.",
+  "components/bid/guide/JobGuideAsk.tsx: action.href":
+    "A guide's ask actions (`JobGuide.ask.actions[].href`, built by the guide engine). JobGuideAsk draws a link only when `isBidPath(href)` holds and drops the action otherwise, so a target outside /bid cannot reach the page by construction; jobGuideScreen.test.tsx also requires every fixture href to start with /bid.",
+  "components/bid/guide/JobGuideRail.tsx: href":
+    "`guideStepLink()` in lib/bid/guide/stepHrefs.ts — every return is a literal /bid/estimates/<id>/(takeoff|estimate|proposal) template; jobGuideScreen.test.tsx renders every fixture and requires each rail href to start with /bid.",
   "app/(app)/jobs/[id]/(tabs)/takeoff/page.tsx: hrefs.workspace": SURFACE_PROP,
   "app/(app)/jobs/[id]/(tabs)/takeoff/page.tsx: hrefs.estimate": SURFACE_PROP,
   "app/(app)/jobs/[id]/(tabs)/takeoff/legend/page.tsx: hrefs.takeoff": SURFACE_PROP,

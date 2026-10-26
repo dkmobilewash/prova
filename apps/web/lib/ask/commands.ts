@@ -308,6 +308,11 @@ export const EXCLUSIONS: Exclusion[] = [
   ...messageExclusions,
   ...contactExclusions,
   {
+    action: "bidGuide.*",
+    reason:
+      "The buttons on a job's guide card (`runGuideAction`): a dispatcher that takes an action ID the SCREEN offered, and runs it. It is the on-screen half of the guide, not a thing a person says — each id it knows (applyRecap, usePastPrice) is the same write as an action that is already reachable on its own terms, and the screen puts a two-step confirm in front of every one. A command here would let Ask run a button nobody has been shown.",
+  },
+  {
     action: "takeoffItems.*",
     reason:
       "Naming, colouring, reordering and deleting the CONDITIONS an estimator draws with. Every one of these is a decision about a drawing somebody is looking at — which colour tells two wall types apart on this sheet, which order the rail reads in, whether this item is the 6in or the 8in partition. There is no sentence a person could say to Ask that carries the drawing, and an item created blind would be an empty condition in a list nobody asked for. Ask can already REPORT what a takeoff came to, because the quantities reach it as estimate lines; it has no business inventing the categories. assignMeasurementsToItem is the sharpest case: its argument is a list of measurement ids that only exist as shapes on a sheet, so there is nothing for a person to name.",

@@ -6,6 +6,8 @@ import { money } from "@/lib/money";
 import { loadBidEstimateHeader } from "@/lib/bid/estimateHeader";
 import { BidEstimateTabs } from "@/components/bid/BidEstimateTabs";
 import { BidNoAccess } from "@/components/bid/BidNoAccess";
+import { JobGuideShell } from "@/components/bid/guide/JobGuideShell";
+import { getJobGuide } from "@/lib/bid/guide";
 import { BID_CAPABILITY } from "@/components/bid/bidNav";
 
 /**
@@ -29,6 +31,12 @@ import { BID_CAPABILITY } from "@/components/bid/bidNav";
  * link anywhere, rather than rendering an estimate screen that would refuse
  * every save.
  *
+ * GUIDED SCREEN. When the job is still an estimate and `getJobGuide` returns a
+ * guide, the page leads with the step rail, the AI headline and the ask card
+ * (`JobGuideShell`), and the four tabs drop to a compact secondary row inside
+ * it. When the guide is null the plain header and tabs below render exactly as
+ * they did before, so the screen never depends on the guide existing.
+ *
  * Per CLAUDE.md the layout is NOT the boundary for the pages beneath it (they
  * render concurrently), so each page below still calls `requireCapability`.
  */
@@ -44,6 +52,15 @@ export default async function BidEstimateLayout({
   if (!allowed) return <BidNoAccess />;
   const header = await loadBidEstimateHeader(context.company.id, id);
   if (!header) notFound();
+
+  const guide = header.status === "ESTIMATE" ? await getJobGuide(context.company.id, id) : null;
+  if (guide) {
+    return (
+      <JobGuideShell guide={guide} tabs={<BidEstimateTabs jobId={id} />}>
+        {children}
+      </JobGuideShell>
+    );
+  }
 
   return (
     <>

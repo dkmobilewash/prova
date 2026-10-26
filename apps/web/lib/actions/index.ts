@@ -13,6 +13,7 @@
 export * from "./jobs";
 export * from "./agents";
 export * from "./bidOutcomes";
+export * from "./bidGuide";
 export * from "./recommendations";
 export * from "./agentFindings";
 export * from "./agentSettings";

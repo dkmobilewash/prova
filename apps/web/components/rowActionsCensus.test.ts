@@ -48,6 +48,8 @@ const appDir = fileURLToPath(new URL("..", import.meta.url));
 const KNOWN_EXCEPTIONS: Record<string, string> = {
   "components/RowActions.tsx":
     "the shared component itself — this is where the arming state is supposed to live",
+  "components/bid/guide/JobGuideAsk.tsx":
+    "arms a WRITE (apply the recap, use a past price), not a delete, and it has no row of ordinary actions beside it to hide — the whole button row is REPLACED by [Cancel][Yes, do it] while armed (jobGuideScreen.test.tsx asserts the ordinary actions are gone and Cancel is first). RowActions wraps a row with a destructive slot; this card has no such row.",
   /* The three sales rows (SalesActivityRow, SalesLeadRow,
      SalesOpportunityRow) sat here from #176 until they became <RowActions>.
      Removing them was tried once before that, when #183 landed, and the
