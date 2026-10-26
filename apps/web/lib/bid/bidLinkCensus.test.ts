@@ -179,7 +179,7 @@ const DYNAMIC_ALLOWED: Record<string, string> = {
   "components/SeeAll.tsx: fewerHref": "Same as `href` above.",
   "components/BidLog.tsx: bidPageHref": BID_LOG_HREF,
   "components/BidLog.tsx: contactHref": BID_LOG_HREF,
-  "app/(app)/bids/[id]/regret/page.tsx: backHref":
+  "app/(app)/bids/[id]/regret/RegretLetter.tsx: backHref":
     "`bidLogHrefs(surface).list` — \"/bids\" in the CRM, \"/bid/bids\" in Bid; classified in the bidLogHrefs section below. The Bid regret page renders it with surface=\"bid\" (pinned by the \"every use passes the Bid value\" test).",
   "components/ai-bid/BidWorkspace.tsx: contactHref": BID_LOG_HREF,
   "components/ai-bid/BidWorkspace.tsx: crumb.href": BID_PAGE_HREF,

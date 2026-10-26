@@ -41,8 +41,16 @@ function invitation(over: Record<string, unknown> = {}) {
 
 async function renderBid(id = "b1") {
   const { default: Page } = await import("@/app/bid/(signed-in)/bids/[id]/regret/page");
-  const element = Page({ params: Promise.resolve(id).then((v) => ({ id: v })) }) as { type: (p: unknown) => Promise<unknown>; props: unknown };
-  return renderToStaticMarkup((await element.type(element.props)) as never);
+  // The page gates, then returns `<RegretLetter surface="bid" …/>` (the census
+  // reads the JSX prop); an async component cannot be rendered by
+  // renderToStaticMarkup, so run it the way Next does: call it, await it.
+  const element = (await Page({ params: Promise.resolve(id).then((v) => ({ id: v })) })) as {
+    type: unknown;
+    props: unknown;
+  };
+  const rendered =
+    typeof element.type === "function" ? await (element.type as (p: unknown) => Promise<unknown>)(element.props) : element;
+  return renderToStaticMarkup(rendered as never);
 }
 
 async function renderCrm(id = "b1") {

@@ -1,4 +1,7 @@
-import RegretLetterPage from "@/app/(app)/bids/[id]/regret/page";
+import { requireCapability } from "@/lib/authz";
+import { BidNoAccess } from "@/components/bid/BidNoAccess";
+import { BID_CAPABILITY } from "@/components/bid/bidNav";
+import { RegretLetter } from "@/app/(app)/bids/[id]/regret/RegretLetter";
 
 export const metadata = { title: "Regret letter" };
 
@@ -16,6 +19,9 @@ export const metadata = { title: "Regret letter" };
  *
  * What differs by `surface`: its one link, back to the bids, is Bid's log.
  */
-export default function BidRegretLetterPage({ params }: { params: Promise<{ id: string }> }) {
-  return <RegretLetterPage params={params} surface="bid" />;
+export default async function BidRegretLetterPage({ params }: { params: Promise<{ id: string }> }) {
+  const { context, allowed } = await requireCapability(BID_CAPABILITY);
+  if (!allowed) return <BidNoAccess />;
+  const { id } = await params;
+  return <RegretLetter id={id} company={context.company} surface="bid" />;
 }
