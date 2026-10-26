@@ -104,10 +104,14 @@ test.describe("C Stream Bid — an estimate, from the list to the proposal", () 
     expect(estimateId, "the new estimate's id is in the URL").not.toBe("new");
 
     await expectBidPage("the new estimate's takeoff");
-    // The slim header: name, GC, total — and none of the CRM job header.
-    await expect(page.getByRole("heading", { name: JOB_NAME, level: 1 })).toBeVisible();
-    await expect(page.getByText(`For ${GC_NAME}`)).toBeVisible();
-    await expect(page.getByText("Bid total")).toBeVisible();
+    // The guide leads (lib/bid/guide): the rail names the job and its GC, shows
+    // the five steps, and the one thing a brand-new estimate needs is its
+    // drawings — and none of the CRM job header.
+    const rail = page.getByRole("complementary", { name: "This bid" });
+    await expect(rail.getByRole("heading", { name: JOB_NAME, level: 1 })).toBeVisible();
+    await expect(rail.getByText(GC_NAME)).toBeVisible();
+    await expect(rail.locator('[data-guide="steps"] > li')).toHaveCount(5);
+    await expect(page.locator('[data-guide="ask"]')).toContainText(`No drawings are uploaded for ${JOB_NAME} yet.`);
     await expect(page.getByRole("navigation", { name: "Job stages" })).toHaveCount(0);
     await expect(page.getByRole("navigation", { name: "Job sections" })).toHaveCount(0);
   });
@@ -138,7 +142,7 @@ test.describe("C Stream Bid — an estimate, from the list to the proposal", () 
     await expectNoCrmLinks(page, "the takeoff workspace", { minLinks: 1 });
   });
 
-  test("5. Estimate: a line goes on, and the header's bid total follows it", async () => {
+  test("5. Estimate: a line goes on, and the rail's bid so far follows it", async () => {
     await page.goto(`/bid/estimates/${estimateId}/takeoff`);
     await estimateTabs().getByRole("link", { name: "Estimate" }).click();
     await page.waitForURL(new RegExp(`/bid/estimates/${estimateId}/estimate$`));
@@ -173,7 +177,9 @@ test.describe("C Stream Bid — an estimate, from the list to the proposal", () 
     await page.reload();
     await expectBidPage("estimate tab after adding a line");
     await expect(page.getByText(LINE.description).first()).toBeVisible();
-    await expect(page.locator("[data-bid='estimate-header']").getByText(LINE_TOTAL)).toBeVisible();
+    // The rail's "Bid so far" (the card from lg up, the inline line below it) is
+    // the same bidTotalOf the old header read.
+    await expect(page.locator('[data-guide^="bid-so-far"]:visible').getByText(LINE_TOTAL)).toBeVisible();
   });
 
   test("6. Bid recap: its own tab, over the same line", async () => {

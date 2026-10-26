@@ -29,7 +29,7 @@ export function JobGuideShell({ guide, tabs, children }: { guide: JobGuide; tabs
       data-guide="shell"
     >
       <JobGuideRail guide={guide} />
-      <main className="mt-4 min-w-0 lg:mt-0 print:mt-0" data-guide="main">
+      <div className="mt-4 min-w-0 lg:mt-0 print:mt-0" data-guide="main">
         <div className="mb-4 flex items-start gap-3 print:hidden" data-guide="headline">
           <span
             aria-hidden="true"
@@ -47,7 +47,7 @@ export function JobGuideShell({ guide, tabs, children }: { guide: JobGuide; tabs
         <div className="mt-6">
           <JobGuideAskBox jobName={guide.name} />
         </div>
-      </main>
+      </div>
     </div>
   );
 }
