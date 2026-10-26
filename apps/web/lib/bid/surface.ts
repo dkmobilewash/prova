@@ -45,8 +45,10 @@
  * `app/bid/`, so on the open and bid hosts this prefix reaches them directly. */
 export const BID_PREFIX = "/bid";
 
-/** Where a signed-in Bid user lands: the bid log, the first link of the chain. */
-export const BID_HOME = "/bid/bids";
+/** Where a signed-in Bid user lands: the home — one box ("What are we bidding
+ * today?"), the open bids and what needs them. The bid log (`/bid/bids`) is
+ * still the first link of the chain, one click away in the nav. */
+export const BID_HOME = "/bid/home";
 
 /** The public landing page. */
 export const BID_LANDING = "/bid";
@@ -57,6 +59,7 @@ export const BID_LANDING = "/bid";
  * the filesystem and requires equality — add a Bid page, add its segment here.
  */
 export const BID_SEGMENTS = [
+  "home",
   "bids",
   "estimates",
   "wall-types",

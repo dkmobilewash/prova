@@ -36,6 +36,7 @@ export type BidNavItem = { href: string; label: string };
 export const BID_NAV: readonly BidNavItem[] = [
   // Plain literals rather than built from BID_PREFIX, so the link census can
   // READ every target instead of having to trust a template.
+  { href: "/bid/home", label: "Home" },
   { href: "/bid/bids", label: "Bids" },
   { href: "/bid/estimates", label: "Estimates" },
   { href: "/bid/wall-types", label: "Wall types" },
@@ -94,6 +95,10 @@ export type BidRoute = {
 };
 
 export const BID_ROUTES: readonly BidRoute[] = [
+  // New in Bid, no CRM twin (`twin` names the nearest: the CRM dashboard). The
+  // page enforces BID_CAPABILITY itself; the CRM dashboard is open to any member,
+  // so Bid is deliberately stricter here, like `/bid/estimates`.
+  { route: "/bid/home", twin: "/dashboard", twinCapability: null },
   { route: "/bid/bids", twin: "/bids", twinCapability: "MANAGE_ESTIMATING" },
   { route: "/bid/bids/[id]", twin: "/ai/bids/[id]", twinCapability: "MANAGE_ESTIMATING" },
   { route: "/bid/bids/[id]/regret", twin: "/bids/[id]/regret", twinCapability: "MANAGE_ESTIMATING" },

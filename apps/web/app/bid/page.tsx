@@ -7,7 +7,7 @@ import { BidLanding } from "@/components/bid/BidLanding";
  * C Stream Bid's public landing page — `bid.cstream.ai/` (rewritten here by
  * middleware) and `/bid` on a preview or localhost. Thin like `app/page.tsx`:
  * the content is components/bid/BidLanding.tsx, and the one thing that needs
- * a request is that a signed-in visitor goes straight to their bids.
+ * a request is that a signed-in visitor goes straight to their Bid home.
  */
 
 export const metadata: Metadata = {
@@ -18,6 +18,7 @@ export const metadata: Metadata = {
 
 export default async function BidLandingPage() {
   const { userId } = await auth();
-  if (userId) redirect("/bid/bids");
+  // A literal, so the link census can read it; app/bid/page.test.ts pins it to BID_HOME.
+  if (userId) redirect("/bid/home");
   return <BidLanding />;
 }

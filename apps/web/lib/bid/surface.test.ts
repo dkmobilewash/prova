@@ -152,6 +152,17 @@ describe("isSharedPath", () => {
 });
 
 describe("bidAuthDestination — where sign-in / sign-up send a person", () => {
+  it("signed-in Bid lands on the home, not the bid log", () => {
+    // The literal, so the constant itself is pinned and not only compared to itself.
+    expect(BID_HOME).toBe("/bid/home");
+    expect(bidAuthDestination(BID, null)).toBe("/bid/home");
+    expect(decodeURIComponent(bidAuthHref("sign-in").split("=")[1])).toBe("/bid/home");
+    expect(decideSurface(BID, "/home")).toEqual({ kind: "rewrite", pathname: "/bid/home", protect: true });
+    expect(decideSurface(BID, "/bid/home")).toEqual({ kind: "pass", protect: true });
+    expect(decideSurface(LOCAL, "/bid/home")).toEqual({ kind: "pass", protect: true });
+    expect(decideSurface(APP, "/bid/home")).toEqual({ kind: "not-found" });
+  });
+
   it("the Bid host always lands in Bid, never on /dashboard", () => {
     expect(bidAuthDestination(BID, null)).toBe(BID_HOME);
     expect(bidAuthDestination(BID, "https://bid.cstream.ai/estimates/abc")).toBe("/bid/estimates/abc");
