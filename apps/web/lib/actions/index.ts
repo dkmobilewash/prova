@@ -39,6 +39,7 @@ export * from "./crews";
 export * from "./lienDeadlines";
 export * from "./lienWaivers";
 export * from "./bidPursuits";
+export * from "./bidProjects";
 export * from "./safety";
 export * from "./rfis";
 export * from "./changeOrders";

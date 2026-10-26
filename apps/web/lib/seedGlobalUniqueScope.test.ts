@@ -295,9 +295,10 @@ function scopeOf(expression: string): "company.id" | "generated id" | "unscoped"
  * EVERY single-field `@unique` on a model this seed writes, with the verdict for
  * each — pinned here rather than derived from the file it checks.
  *
- * Six, and the boring five matter as much as the one that broke: they are the
+ * Seven (a new bid-project link joined on 2026-10-25, never written by the
+ * seed), and the boring ones matter as much as the one that broke: they are the
  * evidence that the intersection was taken rather than a bug being patched where
- * it happened to show. A seventh row appearing — a newly seeded model carrying a
+ * it happened to show. An eighth row appearing — a newly seeded model carrying a
  * globally unique field — fails the first test by name, which is the point. That
  * is a decision somebody must make on purpose, not a set that grows quietly.
  */
@@ -314,6 +315,13 @@ const GLOBALLY_UNIQUE_ON_SEEDED_MODELS: {
     file: "estimating.prisma",
     verdict: "never written",
     why: "the seed's invitations are open or lost; nothing sets the won job, so it stays null",
+  },
+  {
+    model: "BidProject",
+    field: "estimateJobId",
+    file: "bid-projects.prisma",
+    verdict: "never written",
+    why: "the seed makes one project per demo invitation and starts no estimate from it, so the link stays null",
   },
   {
     model: "Contact",

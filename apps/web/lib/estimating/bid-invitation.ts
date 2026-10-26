@@ -1,4 +1,5 @@
-import { prisma, type TradeScope } from "@prova/db";
+import { prisma, type BidInvitationOrigin, type TradeScope } from "@prova/db";
+import { createInvitationOnProject } from "@/lib/estimating/bid-project";
 import type { ActionResultWith } from "@/lib/actions/shared";
 import { runAgentAfterResponse } from "@/lib/agents/onEvent";
 import { bidDatesProblem } from "@/lib/bid-dates";
@@ -55,6 +56,11 @@ export type CreateBidInvitationInput = {
    * Ask card never sends one; see log_bid_invitation's own comment for
    * why that stays true. */
   bidAmount?: string | null;
+  /** Put the invitation on this existing project (another GC's invitation
+   * for the same job). Unset: a project of its own is made with it. */
+  bidProjectId?: string | null;
+  /** Whether we went and asked this GC (default: they invited us). */
+  origin?: BidInvitationOrigin;
 };
 
 export type CreateBidInvitationResult = {
@@ -108,9 +114,9 @@ export async function createBidInvitationRecord(
     }
   }
 
-  const created = await prisma.bidInvitation.create({
-    data: {
-      companyId,
+  const created = await createInvitationOnProject(
+    companyId,
+    {
       contactId: contact.id,
       projectName,
       dueDate: input.dueDate ?? null,
@@ -121,13 +127,15 @@ export async function createBidInvitationRecord(
       notes: input.notes?.trim() || null,
       tradeScope: input.tradeScope ?? null,
       bidAmount: input.bidAmount ?? null,
+      ...(input.origin ? { origin: input.origin } : {}),
     },
-    select: { id: true },
-  });
+    { bidProjectId: input.bidProjectId },
+  );
+  if (!created.ok) return { ok: false, error: created.error };
   // AI agents: research the new bid after the response (lib/agents/onEvent.ts; switch and cap apply).
-  runAgentAfterResponse({ companyId, agent: "BID_RESEARCH", bidInvitationId: created.id });
+  runAgentAfterResponse({ companyId, agent: "BID_RESEARCH", bidInvitationId: created.value.id });
 
-  return { ok: true, value: { bidInvitationId: created.id, contactName: contact.name, alreadyExisted: false } };
+  return { ok: true, value: { bidInvitationId: created.value.id, contactName: contact.name, alreadyExisted: false } };
 }
 
 // ─────────────────────────────────────────────────────────────────────────

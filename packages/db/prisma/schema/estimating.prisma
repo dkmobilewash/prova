@@ -223,11 +223,25 @@ model BidInvitation {
   wonJobId String? @unique
   wonJob   Job?    @relation("BidInvitationWonJob", fields: [wonJobId], references: [id], onDelete: SetNull)
 
+  /// THE PIECE OF WORK THIS INVITATION IS FOR — see bid-projects.prisma. Several
+  /// GCs inviting us to price the same building are several invitations on ONE
+  /// project, which holds the single estimate. Nullable and SET NULL so the
+  /// column can be added without a rewrite (expand, then contract: it becomes
+  /// required in a later PR once every write path sets it). `projectName` above
+  /// stays: it is what THIS GC called the job, and it is evidence.
+  bidProjectId String?
+  bidProject   BidProject? @relation(fields: [bidProjectId], references: [id], onDelete: SetNull)
+
+  /// Who started this conversation. Win rate is a different question for work
+  /// we were asked to price and work we went and asked for.
+  origin BidInvitationOrigin @default(INVITED)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([companyId])
   @@index([contactId])
+  @@index([bidProjectId])
 }
 
 /// A manual checkpoint of a job's line items while it's still an

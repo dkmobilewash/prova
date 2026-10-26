@@ -1,4 +1,5 @@
 import { prisma } from "@prova/db";
+import { primeWentElsewhere } from "./bid-projects";
 import {
   rankGcs,
   summariseBidLog,
@@ -121,6 +122,9 @@ export async function loadBidPipeline(
           status: true,
           dueDate: true,
           bidAmount: true,
+          // Who won the PRIME on this job, if anyone has said. A GC whose
+          // project went to a different prime is not one that turned us down.
+          bidProject: { select: { primeAwardedContactId: true, primeAwardedName: true } },
         },
       },
     },
@@ -142,6 +146,7 @@ export async function loadBidPipeline(
       status: invitation.status,
       bidAmount: invitation.bidAmount === null ? null : Number(invitation.bidAmount),
       dueDate: isoDay(invitation.dueDate),
+      primeWentElsewhere: invitation.bidProject ? primeWentElsewhere(invitation.bidProject, contact.id) : false,
     }));
 
     rows.push({
@@ -152,6 +157,9 @@ export async function loadBidPipeline(
 
     for (const invitation of contact.bidInvitations) {
       if (invitation.status !== "INVITED" && invitation.status !== "SUBMITTED") continue;
+      // The job went to another GC: nothing is owed on it, so it is not live
+      // (and so cannot be MISSED or COLD in bid-standing).
+      if (invitation.bidProject && primeWentElsewhere(invitation.bidProject, contact.id)) continue;
       const dueDate = isoDay(invitation.dueDate);
       live.push({
         id: invitation.id,

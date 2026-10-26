@@ -68,6 +68,10 @@ export const HANDLED_MODELS = [
   // Keyed on jobId, not reached by deleting the invoices, and RESTRICT on
   // Job — so it blocks the job delete however clean the invoices are.
   "InvoiceCounter",
+  // Its links to Job and Contact are SET NULL, so it blocks neither delete;
+  // it is listed so a scratch run removes the (then empty) projects too.
+  // After BidInvitation, which holds the FK to it.
+  "BidProject",
   "RetainageRelease",
   // Before TimeEntry, and not only for foreign-key reasons: while a live
   // sign-off exists, the TimeEntry day-lock trigger refuses to delete that
