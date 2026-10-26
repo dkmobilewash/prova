@@ -43,6 +43,9 @@ const STEPS = [
   { title: "Send the proposal", body: "Lump sum, by scope or itemized — the same number." },
 ] as const;
 
+const GIVE = ["The GC's invite — paste the email", "The drawing set, as a PDF", "Your prices, once, in your price book"] as const;
+const GET = ["Wall footage by type, with the openings", "A priced estimate and bid recap", "The proposal, ready to send"] as const;
+
 // ── THE ANIMATION ──────────────────────────────────────────────────────────
 // One 12-second loop. Percentages are of the loop; everything holds its final
 // frame until 94% and the whole stage fades at the end, so the loop restarts
@@ -160,6 +163,17 @@ function ExampleJob() {
             );
           })}
 
+          {/* Where each step will land, as faint dashed outlines that line up with
+              each card's edge, so the box is never empty while the job is on its
+              way through. Static: under reduced motion the finished job covers them. */}
+          <g aria-hidden="true" fill="none" stroke={C.row} strokeDasharray="5 4">
+            <rect x={8} y={44} width={424} height={58} rx={10} />
+            <rect x={8} y={114} width={252} height={180} rx={10} />
+            <rect x={268} y={114} width={164} height={180} rx={10} />
+            <rect x={8} y={306} width={424} height={94} rx={10} />
+            <rect x={8} y={412} width={424} height={100} rx={10} />
+          </g>
+
           {/* 1 · The invite */}
           <g className="invite">
             <rect x={8} y={44} width={424} height={58} rx={10} fill={C.canvas} stroke={C.row} />
@@ -269,16 +283,16 @@ export function BidLanding() {
     <main className="overflow-x-clip px-4 pb-16 pt-5 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <header className="flex items-center justify-between gap-4">
-          <span className="flex items-center gap-2">
+          <span className="flex items-center gap-2.5 sm:gap-3">
             <Image
               src="/brand/cstream-wordmark.png"
               alt="C Stream"
               width={240}
               height={48}
-              className="logo-on-theme h-8 w-auto sm:h-9"
+              className="logo-on-theme h-10 w-auto sm:h-14"
               priority
             />
-            <span className="rounded bg-brand px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-neutral-900">
+            <span className="rounded-md bg-brand px-2 py-0.5 text-sm font-bold uppercase tracking-wide text-neutral-900 sm:px-2.5 sm:py-1 sm:text-base">
               Bid
             </span>
           </span>
@@ -298,8 +312,8 @@ export function BidLanding() {
           </nav>
         </header>
 
-        <section className="mt-8 grid items-center gap-8 sm:mt-12 lg:grid-cols-[1fr_1.05fr] lg:gap-12">
-          <div>
+        <section className="mt-8 grid items-start gap-8 sm:mt-12 lg:grid-cols-[1fr_1.05fr] lg:gap-12">
+          <div className="lg:pt-4">
             <p className="text-sm font-semibold uppercase tracking-wide text-ink-label">
               For framing, drywall, plaster and EIFS subs
             </p>
@@ -317,6 +331,31 @@ export function BidLanding() {
               <Link href="/bid/wall-takeoff" className={secondaryActionClass}>
                 Send us a drawing set — free read
               </Link>
+            </div>
+            {/* What goes in and what comes out — the whole product in six lines. */}
+            <div className="mt-8 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-line-card bg-surface p-4">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-label">You give it</h2>
+                <ul className="mt-2 space-y-1.5 text-sm text-ink-body">
+                  {GIVE.map((line) => (
+                    <li key={line} className="flex gap-2">
+                      <span aria-hidden="true" className="text-ink-muted">→</span>
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="rounded-xl border border-brand/40 bg-tag-brand-soft p-4">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-label">You get back</h2>
+                <ul className="mt-2 space-y-1.5 text-sm text-ink-body">
+                  {GET.map((line) => (
+                    <li key={line} className="flex gap-2">
+                      <span aria-hidden="true" className="font-bold text-link-hover">✓</span>
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           </div>
           <ExampleJob />
