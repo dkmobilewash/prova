@@ -730,4 +730,5 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "previewEstimatePriceUpdate", reason: "A read that exists only to feed the Update prices panel's two-step confirm; the list is the point and it is on the estimate tab." },
   { action: "applyEstimatePriceUpdate", reason: "Rewrites many line prices at once and is only safe behind the panel's per-line old-to-new list and its confirm; page only." },
   { action: "restoreWallLines", reason: "Un-deletes lines at today's prices; pressed from the wall schedule, where the result is shown." },
+  { action: "usePastPrice", reason: "Writes a price copied from a past job onto a wall type's lines, and is only safe behind the guide's \"you priced this on X in September — use that?\" card, which shows the job, the month and the figures and carries a fingerprint of them. A sentence cannot carry that fingerprint, and a model must not choose which job's price to copy." },
 ];
