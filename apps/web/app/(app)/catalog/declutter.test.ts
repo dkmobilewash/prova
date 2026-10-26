@@ -11,7 +11,35 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const page = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "page.tsx"), "utf8");
+const here = dirname(fileURLToPath(import.meta.url));
+const pageSource = readFileSync(join(here, "page.tsx"), "utf8");
+const partsSource = readFileSync(join(here, "../../../components/CatalogParts.tsx"), "utf8");
+
+/**
+ * The page as it renders: the entry row, the column header and the add form
+ * moved into `components/CatalogParts.tsx` (shared with C Stream Bid's price
+ * book), so the source this file reads is the page with each of those put back
+ * where it is used — the page's own children (actuals, quote) inside the row.
+ */
+function expand(): string {
+  const body = (name: string) => {
+    const chunk = partsSource.split(`export function ${name}(`)[1];
+    const text = chunk.slice(chunk.indexOf("  return (\n") + "  return (\n".length, chunk.indexOf("\n  );\n}"));
+    // The move dedented these by eight columns; put them back so the needles below, which match indentation, still read the page as it was.
+    return text.split("\n").map((l) => (l ? "        " + l : l)).join("\n");
+  };
+  const grid = partsSource.slice(partsSource.indexOf("/** desc · unit"), partsSource.indexOf("type CraftOption")).replace("export const", "const");
+  let out = pageSource;
+  out = out.replace("<CatalogListHeader />", body("CatalogListHeader"));
+  out = out.replace("<CatalogEntryAddForm craftClassifications={craftClassifications} />", body("CatalogEntryAddForm"));
+  const open = out.match(/<CatalogEntryItem [^>]*>/)![0];
+  const start = out.indexOf(open);
+  const end = out.indexOf("</CatalogEntryItem>");
+  const children = out.slice(start + open.length, end);
+  out = out.slice(0, start) + body("CatalogEntryItem").replace("{children}", children) + out.slice(end + "</CatalogEntryItem>".length);
+  return grid + out;
+}
+const page = expand();
 const at = (needle: string, from = 0) => {
   const i = page.indexOf(needle, from);
   expect(i, `missing: ${needle}`).toBeGreaterThan(-1);

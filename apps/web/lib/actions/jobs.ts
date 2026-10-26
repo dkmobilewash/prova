@@ -10,6 +10,7 @@ import { prisma } from "@prova/db";
 import { pushToUser } from "@/lib/push";
 import { issueContractDocumentVersion } from "@/lib/billing/contract-document-version";
 import { createEstimateJob } from "@/lib/estimating/create-job";
+import { jobStartDestination } from "@/lib/bid/jobStartDestination";
 import { draftLinesFromScope } from "@/lib/estimating/draft-lines";
 import { END_BEFORE_START } from "@/lib/estimating/job-schedule";
 import {
@@ -57,6 +58,9 @@ export async function createJob(formData: FormData): Promise<ActionResult> {
   const contactId = String(formData.get("contactId") ?? "").trim();
   const contactName = String(formData.get("contactName") ?? "").trim();
   const contactEmail = String(formData.get("contactEmail") ?? "").trim();
+  // Which product's form this is (`lib/bid/jobStartDestination.ts`). A WORD from
+  // a fixed list, never a URL: anything else is the CRM's stepper.
+  const returnTo = String(formData.get("returnTo") ?? "").trim();
 
   if (!jobName) {
     return actionFail("Give the job a name.", { jobName: "Give the job a name." });
@@ -91,7 +95,7 @@ export async function createJob(formData: FormData): Promise<ActionResult> {
   // this action. The job exists in the database the moment this redirect
   // fires, so leaving the wizard here is never data loss: `/jobs/${id}`
   // still opens the same ESTIMATE-stage job directly, stepper or not.
-  redirect(`/jobs/new/${created.value.jobId}/items`);
+  redirect(jobStartDestination(returnTo, created.value.jobId));
 }
 
 /**

@@ -73,11 +73,16 @@ export function WallSchedule({
   types,
   runs,
   unpricedRunLabels,
+  wallTypesHref = "/wall-types",
 }: {
   jobId: string;
   types: WallTypeInput[];
   runs: WallRunView[];
   unpricedRunLabels: string[];
+  /** Where the wall-type library is. The CRM's own page by default; C Stream
+   * Bid passes its own (`lib/bid/surfaceHrefs.ts`) so this screen draws no link
+   * out of the product it is in. */
+  wallTypesHref?: string;
 }) {
   const [message, setMessage] = useState<string | null>(null);
   const [isRefreshing, startRefresh] = useTransition();
@@ -88,7 +93,7 @@ export function WallSchedule({
       <div className="rounded-lg border border-line-card bg-surface p-4 text-sm text-ink-body">
         Set up your wall types first — what a W1 or a W2 is made of — and each run you enter here turns into studs,
         track and board on this estimate.{" "}
-        <Link href="/wall-types" className="text-link hover:underline">
+        <Link href={wallTypesHref} className="text-link hover:underline">
           Open wall types
         </Link>
       </div>

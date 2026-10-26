@@ -16,7 +16,31 @@ import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-const page = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "page.tsx"), "utf8");
+const here = dirname(fileURLToPath(import.meta.url));
+const pageSource = readFileSync(join(here, "page.tsx"), "utf8");
+const stageSource = readFileSync(join(here, "../../../../../../components/job/EstimateStage.tsx"), "utf8");
+
+/**
+ * The page as it renders: the line items, the recap, the wall schedule and the
+ * versions moved, unchanged, into `components/job/EstimateStage.tsx` (shared
+ * with C Stream Bid), so the source this file reads is the page with each
+ * section put back where the page uses it. The consts the sections share come
+ * along too (the page imports them).
+ */
+function expand(): string {
+  const body = (name: string) => {
+    const chunk = stageSource.split(`export function ${name}(`)[1];
+    const text = chunk.slice(chunk.indexOf("  return (\n") + "  return (\n".length, chunk.indexOf("\n  );\n}"));
+    // The move dedented these by four columns; put them back so the needles below, which match indentation, still read the page as it was.
+    return text.split("\n").map((l) => (l ? "    " + l : l)).join("\n");
+  };
+  let out = pageSource;
+  for (const name of ["EstimateLineItems", "EstimateRecap", "EstimateWallSchedule", "EstimateVersions"]) {
+    out = out.replace(`<${name} data={d} />`, body(name));
+  }
+  return out + "\n" + stageSource.slice(stageSource.indexOf("export const estimateLineGrid"), stageSource.indexOf("/** The estimate's line items"));
+}
+const page = expand();
 const at = (needle: string, from = 0) => {
   const i = page.indexOf(needle, from);
   expect(i, `missing: ${needle}`).toBeGreaterThan(-1);

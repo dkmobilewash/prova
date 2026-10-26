@@ -18,6 +18,7 @@ import { loadProposalFacts } from "@/lib/estimating/proposal-facts-query";
 import { recapLines, recapStateFor } from "@/lib/estimating/recap-state";
 import { proposalPriceState, proposalPriceWarning } from "@/lib/estimating/proposal-recap-currency";
 import { bidMargin, underCostWarning } from "@/lib/estimating/bid-margin";
+import { surfaceHrefs, type Surface } from "@/lib/bid/surfaceHrefs";
 
 /**
  * A job's bid proposal — the scope + price + exclusions document a sub sends
@@ -32,10 +33,18 @@ import { bidMargin, underCostWarning } from "@/lib/estimating/bid-margin";
  * MANAGE_ESTIMATING, the gate /catalog and /bids use: a proposal is a bid,
  * and its clause actions assert the same capability themselves.
  */
-export default async function JobProposalPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function JobProposalPage({
+  params,
+  surface = "crm",
+}: {
+  params: Promise<{ id: string }>;
+  /** Which product renders this page; C Stream Bid passes "bid" (`lib/bid/surfaceHrefs.ts`). */
+  surface?: Surface;
+}) {
   const { id } = await params;
+  const hrefs = surfaceHrefs(surface, id);
   const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
-  if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
+  if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" homeHref={hrefs.home} homeLabel={hrefs.homeLabel} />;
   const { company } = context;
 
   const job = await prisma.job.findFirst({
@@ -197,7 +206,9 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
       findings: findings.map((finding) => ({
         id: finding.id,
         title: finding.title,
-        href: finding.fixHref,
+        // A finding's fix link is built in the agents' lib and names a CRM
+        // screen; a product that is not the CRM draws the finding without it.
+        href: surface === "crm" ? finding.fixHref : null,
       })),
     };
   }
@@ -207,7 +218,7 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
     // the browser's own margins, the way the G702/G703 does.
     <PageShell width="reading" className="print:p-0">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <Link href={`/jobs/${job.id}/estimate`} className="text-sm text-link hover:underline">
+        <Link href={hrefs.estimate} className="text-sm text-link hover:underline">
           ← Back to the estimate
         </Link>
         <PrintButton />
@@ -255,7 +266,7 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
         {lines.length === 0 ? (
           <p className="mt-1 text-sm text-ink-body print:hidden">
             This job has no line items yet.{" "}
-            <Link href={`/jobs/${job.id}/estimate`} className="text-link hover:underline">
+            <Link href={hrefs.estimate} className="text-link hover:underline">
               Price it on the estimate page
             </Link>{" "}
             and the schedule of values fills in here.
@@ -313,7 +324,7 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
           What is in your number, what is not, what it assumes, and what the GC can add. A clause added
           here is a copy — editing your library later does not change this proposal.
         </p>
-        <JobProposalClauseBuilder jobId={job.id} library={library} />
+        <JobProposalClauseBuilder jobId={job.id} library={library} libraryHref={hrefs.clauseLibrary} />
 
       {/* BELOW the clause builder, and `print:hidden` on the section itself:
           this is a working surface, not part of the document a GC receives. */}
@@ -329,7 +340,7 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
           proposal has to exist and be printed before there is a package to
           assemble. `print:hidden` on the section itself — it is a working
           surface, not part of the document the GC receives. */}
-      <BidPackageBuilder projectName={job.name} submit={submitTarget} />
+      <BidPackageBuilder projectName={job.name} submit={submitTarget} messageLogHref={hrefs.messageLog} />
     </PageShell>
   );
 }

@@ -126,11 +126,11 @@ const NOT_AN_HOURS_NUMBER: Record<string, string> = {
     "passes and a shorthand destructure does not.",
 
   // -- already a string by the time it is rendered --
-  "app/(app)/catalog/page.tsx\t{entry.defaultLaborHours.toString()}":
+  "components/CatalogParts.tsx\t{entry.defaultLaborHours.toString()}":
     "Prisma Decimal(8,2) stringified — this reason said (5,2) until 2026-09-25 and the column has " +
     "always been (8,2); the argument is unaffected, which is exactly why nobody noticed. A Decimal " +
     "is exact — it never carries binary float drift, so there is nothing to round.",
-  "app/(app)/catalog/page.tsx\t{entry.defaultLaborHours != null && \" (unused — hrs/line wins)\"}":
+  "components/CatalogParts.tsx\t{entry.defaultLaborHours != null && \" (unused — hrs/line wins)\"}":
     "A SENTENCE, not a number — the same category as the DAS-140 blocking reason below. #514 gave a " +
     "catalog entry a production rate beside its flat hours, and when both are set the rate is inert " +
     "(estimatedHours takes the flat hours as the override), so the row says so where a reader would " +
