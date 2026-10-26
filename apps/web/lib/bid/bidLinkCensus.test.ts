@@ -7,7 +7,8 @@ import { importClosure, navTargetsInFile, navTargetsInSource, resolveImport, typ
 import { exportedFunctionSource, exportedFunctionSources, importedBindings, jsxElements } from "./surfaceCalls";
 import { isBidPath, isSharedPath } from "./surface";
 import { surfaceHrefs } from "./surfaceHrefs";
-import { JOB_START_RETURNS, jobStartDestination } from "./jobStartDestination";
+import { JOB_START_RETURNS, estimateStartDestination, jobStartDestination } from "./jobStartDestination";
+import { bidLogHrefs } from "./bidLogHrefs";
 
 /**
  * NOTHING C STREAM BID RENDERS CAN TAKE A PERSON INTO THE CRM.
@@ -138,6 +139,8 @@ const dynamicTargets = targets.filter((t) => t.dynamic);
  */
 const SURFACE_PROP =
   "A prop whose value is chosen by `surface` (lib/bid/surfaceHrefs.ts). The CRM value is today's href; Bid renders this file with `surface=\"bid\"` or a Bid-only wrapper, which the \"rendered as Bid\" section below REQUIRES, and every value `surfaceHrefs(\"bid\", …)` returns is classified in the surfaceHrefs section.";
+const BID_LOG_HREF =
+  "A per-row link from `bidLogHrefs(surface)` (lib/bid/bidLogHrefs.ts): the CRM's literal, or `null` on Bid, where the log draws plain text instead of a link. Every value `bidLogHrefs(\"bid\")` returns is classified in its section below.";
 const BLOB_URL =
   "An object URL from URL.createObjectURL for a file the browser is saving (the anchor has a `download` attribute) — not a page navigation.";
 
@@ -166,6 +169,16 @@ const DYNAMIC_ALLOWED: Record<string, string> = {
   "components/TakeoffCurrencyBanner.tsx: bidsHref": SURFACE_PROP,
   "components/TakeoffWorkspace.tsx: backHref": SURFACE_PROP,
   "components/WallSchedule.tsx: wallTypesHref": SURFACE_PROP,
+  "components/BidLog.tsx: allHref":
+    "The bid log's \"see all\" / \"show fewer\" links, `${hrefs.bids}?…` — `surfaceHrefs(surface).bids`, classified in its section below, plus a query string. Passed to SeeAll (next entry).",
+  "components/SeeAll.tsx: href":
+    "SeeAll's own prop. Its only caller in Bid's closure is the bid log, which passes `${hrefs.bids}?…` (previous entry); the \"BidLog is rendered as Bid\" tests below pin that the log gets `surface=\"bid\"`.",
+  "components/SeeAll.tsx: fewerHref": "Same as `href` above.",
+  "components/BidLog.tsx: bidPageHref": BID_LOG_HREF,
+  "components/BidLog.tsx: contactHref": BID_LOG_HREF,
+  "components/BidLog.tsx: regretHref": BID_LOG_HREF,
+  "components/BidProjectPanel.tsx: hrefs.job": SURFACE_PROP,
+  "components/LogBidForm.tsx: hrefs.addGc": SURFACE_PROP,
   "components/BidPackageBuilder.tsx: messageLogHref":
     "Bid's `surfaceHrefs` value is null, which draws no link at all; the CRM value is /messages.",
   "components/BidPackageBuilder.tsx: finding.href":
@@ -326,6 +339,36 @@ describe("jobStartDestination: where createJob sends a person", () => {
   });
 });
 
+describe("estimateStartDestination: where \"Start the estimate\" (from a bid project) sends a person", () => {
+  it("every word a form may send lands in Bid, on the estimate itself", () => {
+    expect(JOB_START_RETURNS.length).toBeGreaterThanOrEqual(1);
+    for (const word of JOB_START_RETURNS) {
+      const destination = estimateStartDestination(word, "job_abc");
+      expect(classify(destination), `${word} -> ${destination}`).toBe("ok");
+      expect(destination).toBe("/bid/estimates/job_abc");
+    }
+  });
+
+  it("anything else is the CRM stepper, never an echo of the input (the CRM form binds \"crm\")", () => {
+    for (const hostile of ["crm", undefined, null, "", "BID", "//evil.example", "https://evil.example", "/jobs", "__proto__", new FormData()]) {
+      expect(estimateStartDestination(hostile, "job_abc"), String(hostile)).toBe("/jobs/new/job_abc/items");
+    }
+  });
+});
+
+describe("bidLogHrefs(\"bid\"): the bid log's per-row links", () => {
+  it("draws NO link where Bid has no such screen, and the CRM value is a CRM door (so the classifier can tell)", () => {
+    const bid = bidLogHrefs("bid");
+    const crm = bidLogHrefs("crm");
+    for (const [name, make] of [["bidPage", "bidPage"], ["contact", "contact"], ["regret", "regret"]] as const) {
+      const value = bid[make]("x1");
+      // Null is the safe answer; a string is fine only if it stays in Bid.
+      expect(value === null || classify(value) === "ok", `bidLogHrefs("bid").${name} = ${String(value)}`).toBe(true);
+      expect(classify(crm[make]("x1") as string), `bidLogHrefs("crm").${name}`).toBe("crm");
+    }
+  });
+});
+
 describe("Server Actions Bid calls: the redirects its sight cannot reach", () => {
   const ACTIONS_DIR = join(webRoot, "lib", "actions");
   /** Redirects whose target is computed, each with why it stays in Bid. Keyed
@@ -334,6 +377,8 @@ describe("Server Actions Bid calls: the redirects its sight cannot reach", () =>
   const ACTION_REDIRECTS_ALLOWED: Record<string, string> = {
     "createJob: jobStartDestination(returnTo, created.value.jobId)":
       "lib/bid/jobStartDestination.ts: `returnTo` is a WORD from a fixed list, never a URL, and every word's destination is classified in the jobStartDestination section above.",
+    "startEstimateFromProject: estimateStartDestination(returnTo, started.value.jobId)":
+      "lib/bid/jobStartDestination.ts: the same WORD-from-a-fixed-list rule, with its own destination table (`ESTIMATE_DESTINATIONS`), classified in the estimateStartDestination section above.",
   };
 
   const actionFiles = readdirSync(ACTIONS_DIR)
@@ -405,9 +450,9 @@ describe("shared screens are RENDERED as Bid", () => {
     { marker: "returnTo?: JobStartReturn", prop: "returnTo" },
   ];
 
-  function uses() {
+  function uses(files: string[] = entries) {
     const found: { file: string; line: number; tag: string; prop: string; value: string | true | undefined }[] = [];
-    for (const file of entries) {
+    for (const file of files) {
       const source = readFileSync(file, "utf8");
       const byLocal = new Map(importedBindings(source, file).map((b) => [b.local, b]));
       for (const element of jsxElements(source, file)) {
@@ -430,7 +475,7 @@ describe("shared screens are RENDERED as Bid", () => {
 
   it("finds the uses (a known page and a known section among them)", () => {
     const tags = uses().map((u) => u.tag);
-    for (const must of ["JobTakeoffPage", "JobProposalPage", "TakeoffWorkspacePage", "EstimateLineItems", "NewJobForm"]) {
+    for (const must of ["JobTakeoffPage", "JobProposalPage", "TakeoffWorkspacePage", "EstimateLineItems", "NewJobForm", "BidLog"]) {
       expect(tags, must).toContain(must);
     }
   });
@@ -440,6 +485,28 @@ describe("shared screens are RENDERED as Bid", () => {
       .filter((u) => u.value !== "bid")
       .map((u) => `${u.file}:${u.line} <${u.tag}> has no ${u.prop}="bid"`);
     expect(wrong, "a shared screen rendered without telling it it is in Bid draws CRM links").toEqual([]);
+  });
+
+  it("a shared component that renders another one FORWARDS its own surface (the log's panels cannot fall back to the CRM)", () => {
+    // Everything Bid imports but does not own: BidLog renders LogBidForm and
+    // BidProjectPanel, whose links depend on the `surface` they are handed. The
+    // entry check above stops at the first hop; this follows the closure. A use
+    // passes `surface={surface}` (read as "present, not a string literal") and
+    // only inside a file that itself takes a `surface`; a literal "crm" fails.
+    const inner = closure.files.filter((f) => !entries.includes(f));
+    const nested = uses(inner);
+    expect(nested.map((u) => u.tag), "the log's two surface-aware panels").toEqual(
+      expect.arrayContaining(["LogBidForm", "BidProjectPanel"]),
+    );
+    const wrong = nested
+      .filter((u) => u.prop === "surface")
+      .filter((u) => {
+        if (u.value === "bid") return false;
+        const owner = readFileSync(join(webRoot, u.file), "utf8");
+        return !(u.value === true && /surface\??: Surface/.test(owner));
+      })
+      .map((u) => `${u.file}:${u.line} <${u.tag}> does not forward its surface`);
+    expect(wrong).toEqual([]);
   });
 
   it("the proposal hands no finding link outside the CRM", () => {

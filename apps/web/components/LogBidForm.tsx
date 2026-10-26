@@ -8,6 +8,7 @@ import type { SameJobMatch } from "@/lib/estimating/bid-invitation";
 import { ActionForm } from "@/components/ActionForm";
 import { SubmitButton } from "@/components/SubmitButton";
 import { BidDetailsFields } from "@/components/BidDetailsFields";
+import { surfaceHrefs, type Surface } from "@/lib/bid/surfaceHrefs";
 
 const field =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-base text-ink placeholder:text-ink-muted focus:border-link focus:outline-none sm:text-sm";
@@ -55,13 +56,18 @@ export function LogBidForm({
   gcs,
   startOpen = false,
   projectChoices = [],
+  surface = "crm",
 }: {
   gcs: { id: string; name: string }[];
   startOpen?: boolean;
   /** Projects already on file, so a second GC's invitation for the same job
    * can go on the same project instead of a new one. */
   projectChoices?: { id: string; label: string }[];
+  /** Which product draws it: decides where "Add the GC" and "See it" go.
+   * The default is the CRM, whose markup is unchanged. */
+  surface?: Surface;
 }) {
+  const hrefs = surfaceHrefs(surface, "");
   const [open, setOpen] = useState(startOpen);
   const [pasted, setPasted] = useState("");
   const [suggestion, setSuggestion] = useState<BidInviteReadResult | null>(null);
@@ -140,7 +146,7 @@ export function LogBidForm({
       {gcs.length === 0 ? (
         <p className="text-sm text-ink-body">
           Bids are logged against the GC who invited you, and there are no contacts yet.{" "}
-          <Link href="/contacts" className="text-link hover:underline">
+          <Link href={hrefs.addGc} className="text-link hover:underline">
             Add the GC
           </Link>{" "}
           first, then come back.
@@ -205,7 +211,7 @@ export function LogBidForm({
                 {matches.map((match) => (
                   <li key={match.id}>
                     {match.sentence}.{" "}
-                    <a href={`/bids?view=all#${match.id}`} className="underline">
+                    <a href={`${hrefs.bids}?view=all#${match.id}`} className="underline">
                       See it
                     </a>
                   </li>

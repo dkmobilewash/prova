@@ -144,12 +144,12 @@ const REACHED_FROM: Record<string, Reached> = {
   },
   "/ai/bids/[id]": {
     reason: "Each bid row on /bids opens its AI workspace.",
-    parents: ["apps/web/app/(app)/bids/page.tsx"],
+    parents: ["apps/web/lib/bid/bidLogHrefs.ts"],
     needle: "`/ai/bids/${",
   },
   "/bids/[id]/regret": {
     reason: 'A lost bid\'s "why we lost" link on /bids.',
-    parents: ["apps/web/app/(app)/bids/page.tsx"],
+    parents: ["apps/web/lib/bid/bidLogHrefs.ts"],
     needle: "/regret`",
   },
   "/contacts/[id]": {

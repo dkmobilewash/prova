@@ -48,3 +48,19 @@ export function isJobStartReturn(value: unknown): value is JobStartReturn {
 export function jobStartDestination(returnTo: unknown, jobId: string): string {
   return isJobStartReturn(returnTo) ? START_DESTINATIONS[returnTo](jobId) : crmDestination(jobId);
 }
+
+/**
+ * WHERE "START THE ESTIMATE" (from a bid project) SENDS A PERSON. Same rule as
+ * above — a WORD from a fixed list, never a URL — but a different destination:
+ * the project's estimate already has its name, GC, address and bid date from the
+ * project, so Bid opens the estimate itself (which lands on its takeoff) rather
+ * than the new-job stepper's drawings step. The CRM default is what
+ * `startEstimateFromProject` always did.
+ */
+const ESTIMATE_DESTINATIONS = {
+  bid: (jobId: string) => `/bid/estimates/${jobId}`,
+} as const satisfies Record<JobStartReturn, (jobId: string) => string>;
+
+export function estimateStartDestination(returnTo: unknown, jobId: string): string {
+  return isJobStartReturn(returnTo) ? ESTIMATE_DESTINATIONS[returnTo](jobId) : crmDestination(jobId);
+}

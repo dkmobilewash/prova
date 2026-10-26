@@ -15,6 +15,7 @@ import {
 } from "@/lib/actions";
 import { money } from "@/lib/money";
 import type { ProjectPanelView } from "@/lib/bid-project-view";
+import { surfaceHrefs, type Surface } from "@/lib/bid/surfaceHrefs";
 
 const field =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-base text-ink placeholder:text-ink-muted focus:border-link focus:outline-none sm:text-sm";
@@ -42,16 +43,23 @@ const STATUS_WORD: Record<string, string> = {
  * (folding two jobs into one, splitting one out) are two-step.
  *
  * Nothing here decides that two invitations are the same job. A person picks.
+ *
+ * `surface` chooses where the estimate and per-GC proposal links go (CRM: the
+ * job and its proposal; Bid: the estimate and ITS proposal) and where "Start
+ * the estimate" lands. The default is the CRM, whose markup is unchanged.
  */
 export function BidProjectPanel({
   view,
   projectChoices,
   gcs,
+  surface = "crm",
 }: {
   view: ProjectPanelView;
   projectChoices: { id: string; label: string }[];
   gcs: { id: string; name: string }[];
+  surface?: Surface;
 }) {
+  const hrefs = surfaceHrefs(surface, view.estimate?.jobId ?? "");
   const [merging, setMerging] = useState<string | null>(null);
   const [splitting, setSplitting] = useState(false);
   const others = view.gcs.filter((gc) => !gc.isThis);
@@ -75,7 +83,7 @@ export function BidProjectPanel({
       {view.estimate && (
         <p data-bids="project-estimate">
           <span className="font-medium text-ink-label">Estimate:</span>{" "}
-          <Link href={`/jobs/${view.estimate.jobId}`} className="text-link hover:underline">
+          <Link href={hrefs.job} className="text-link hover:underline">
             {view.estimate.name}
           </Link>
           {others.length > 0 && <span className="text-ink-muted"> — one estimate prices to every GC above</span>}
@@ -129,7 +137,7 @@ export function BidProjectPanel({
                   <td className="px-2 py-1 text-right tabular-nums text-ink-muted">{row.sent ?? "—"}</td>
                   <td className="py-1 pl-2">
                     <Link
-                      href={`/jobs/${view.estimate!.jobId}/proposal?invitation=${encodeURIComponent(row.invitationId)}`}
+                      href={`${hrefs.proposal}?invitation=${encodeURIComponent(row.invitationId)}`}
                       className="text-link hover:underline"
                     >
                       Proposal
@@ -246,7 +254,10 @@ export function BidProjectPanel({
 
           {/* ── the one estimate ── */}
           {!view.estimate && (
-            <ActionForm action={startEstimateFromProject.bind(null, view.projectId)} className="flex flex-wrap items-center gap-3">
+            <ActionForm
+              action={startEstimateFromProject.bind(null, view.projectId, surface)}
+              className="flex flex-wrap items-center gap-3"
+            >
               <SubmitButton type="submit" className={primary} data-bids="start-estimate">
                 Start the estimate
               </SubmitButton>

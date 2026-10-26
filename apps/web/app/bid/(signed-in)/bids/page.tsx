@@ -1,12 +1,5 @@
-import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
-import { formatCalendarDate } from "@/lib/render-date";
-import { viewerToday } from "@/lib/viewerToday";
-import { daysLeftLabel } from "@/lib/bids-due-soon";
-import { loadBidsDueSoon } from "@/lib/bids-due-soon-query";
-import { loadProjectOutcomes } from "@/lib/bid-project-query";
-import { BidProjectOutcomes } from "@/components/BidProjectOutcomes";
-import { BidComingSoon } from "@/components/bid/BidComingSoon";
+import { BidLog } from "@/components/BidLog";
 import { BidNoAccess } from "@/components/bid/BidNoAccess";
 import { BID_CAPABILITY } from "@/components/bid/bidNav";
 
@@ -15,109 +8,53 @@ export const metadata = { title: "Bids" };
 /**
  * C Stream Bid — the bid log. Step 1 of the chain, and the signed-in home.
  *
- * WHAT IS REAL TODAY: the "Due soon" list, read by the SAME query the CRM's
- * bid desk uses (`loadBidsDueSoon`) and labelled by the same `daysLeftLabel`.
- * Rows do not link yet — the bid's own page is not ported (below).
+ * THE CRM'S OWN BID LOG (`components/BidLog.tsx`) rendered with
+ * `surface="bid"`: log a bid (paste an invite, the same-job warning, "Same job
+ * as…", "We reached out"), every invitation grouped under its project with its
+ * status, price and outcome, the editable bid details (due time, walk, RFI
+ * cutoff), the Project panel (merge / split / start the estimate / prime
+ * award), each GC's price and its own proposal, and the lines, addenda, quotes
+ * and job link behind each row. Not a copy: the same component, so a fix to the
+ * log is a fix to both.
  *
- * PORTING BRIEF (wave 2). Source: `app/(app)/bids/page.tsx`. Every href that
- * leaks to a CRM route, found by `lib/bid/navTargets.ts` over its import
- * closure:
- *   - the page itself: `/bids?view=…` (x6, the Due soon / All bids tabs and
- *     "see all" links → `/bid/bids?view=…`); `/ai/bids/${id}` (the row link,
- *     x2 → a Bid bid page); `/contacts/${contactId}` (the GC name → drop, or
- *     a Bid GC page); `/bids/${id}/regret` (the regret letter → port
- *     `app/(app)/bids/[id]/regret/` under `/bid/bids/[id]/regret`); the empty
- *     state's `/contacts` and `/pipeline` actions; `allHref`/`fewerHref`
- *     built from `/bids?…`.
- *   - `components/LogBidForm.tsx:49` links `/contacts` ("add a GC first") —
- *     needs a Bid way to add a GC (a contact create, no CRM page).
- *   - `components/EmptyState.tsx` → `components/EmptyStateButtons.tsx:86`
- *     `router.push("/ask")` (the AskItButton action). EmptyState cannot be
- *     imported into Bid until that push is made optional or Bid gets its own
- *     empty state.
- *   - `components/PageHeader.tsx` (breadcrumb `Home` → `/dashboard`, area
- *     links from `lib/areas.ts`, and it imports `navItems.tsx`) and
- *     `components/NoAccess.tsx` (`/dashboard`) — use `BidNoAccess` and a
- *     Bid heading instead.
- *   - The bid's own page `app/(app)/ai/bids/[id]/page.tsx` →
- *     `components/ai-bid/BidWorkspace.tsx` links `/ai`, `/ai/activity`,
- *     `/contacts/${id}` (x2) and renders agent findings whose `fixHref` is
- *     built in `lib/agents/*` (dynamic, CRM routes); `components/AskPanel.tsx`
- *     links `/ask` and `/intake`. The panels it composes (`BidLines`,
- *     `BidCompliance`, `BidLevelling`, `BidJobLink`, `BidOutcomeForm`) have
- *     no CRM hrefs of their own.
+ * What differs by `surface`: "Start the estimate" and every estimate link open
+ * Bid's estimate, each GC's Proposal link opens Bid's proposal for that GC, a
+ * missing GC is added in Bid's settings, and a name that would open a CRM-only
+ * screen (the bid's research page, the GC's contact page, the regret letter) is
+ * plain text. The heading and the first-run empty state are this file's, since
+ * the CRM's carry links out of Bid.
  */
-export default async function BidLogPage() {
+export default async function BidLogPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ trade?: string; status?: string; new?: string; view?: string; all?: string }>;
+}) {
   const { context, allowed } = await requireCapability(BID_CAPABILITY);
   if (!allowed) return <BidNoAccess />;
-  const today = await viewerToday();
-  const dueSoon = await loadBidsDueSoon(context.company.id, today);
-  const projects = await loadProjectOutcomes(context.company.id);
 
   return (
-    <PageShell width="working">
-      <h1 className="mb-1 font-headline text-3xl font-semibold text-ink">Bids</h1>
-      <p className="mb-6 text-sm text-ink-body">Every job you have been invited to price, soonest due first.</p>
-
-      <section aria-labelledby="bid-due-soon" className="mb-10">
-        <h2 id="bid-due-soon" className="mb-3 text-sm font-semibold text-ink-label">
-          Due soon ({dueSoon.length})
-        </h2>
-        {dueSoon.length === 0 ? (
-          <p className="text-sm text-ink-body">No invited bids due in the next 30 days.</p>
-        ) : (
-          <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-bid="due-soon">
-            {dueSoon.map((bid) => (
-              <li key={bid.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
-                <div className="min-w-0">
-                  <p className="font-medium text-ink">{bid.projectName}</p>
-                  <p className="text-sm text-ink-body">
-                    {bid.gcName} · Due {formatCalendarDate(new Date(`${bid.dueIso}T00:00:00.000Z`), "numeric")}
-                  </p>
-                </div>
-                <span
-                  className={`shrink-0 text-sm font-medium tabular-nums ${bid.daysLeft <= 7 ? "text-tag-amber-ink" : "text-ink-label"}`}
-                >
-                  {daysLeftLabel(bid.daysLeft)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* HOW EACH JOB IS GOING, under the job: one heading per project with the
-          bid date and, for every GC that invited you, its status and the price
-          it is quoted. Read-only and link-free; a project with one GC is one
-          row. The edit surfaces are still to port (the brief above). */}
-      <section aria-labelledby="bid-outcomes" className="mb-10">
-        <h2 id="bid-outcomes" className="mb-3 text-sm font-semibold text-ink-label">
-          Outcomes by project ({projects.length})
-        </h2>
-        {projects.length === 0 ? (
-          <p className="text-sm text-ink-body">No bids logged yet.</p>
-        ) : (
-          <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-bid="outcomes">
-            {projects.map((project) => (
-              <li key={project.id} className="p-4">
-                <BidProjectOutcomes project={project} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <BidComingSoon
-        level={2}
-        title="Log a bid, and every bid you have logged"
-        purpose={
-          <p>
-            Logging an invite (the GC, the project, your trade, the due date), the full history with filters, and
-            each bid&rsquo;s own page — addenda, the bid form&rsquo;s requirements, your quotes side by side, and why
-            you won or lost.
+    <BidLog
+      surface="bid"
+      searchParams={searchParams}
+      company={context.company}
+      header={
+        <>
+          <h1 className="mb-1 font-headline text-3xl font-semibold text-ink">Bids</h1>
+          <p className="mb-6 text-sm text-ink-body">
+            Every job you have been invited to price, soonest due first.
           </p>
-        }
-      />
-    </PageShell>
+        </>
+      }
+      emptyState={
+        <div className="rounded-xl border border-line-card bg-surface p-6" data-bid="bids-empty">
+          <p className="font-medium text-ink">No bids logged yet</p>
+          <p className="mt-1 text-sm text-ink-body">
+            Everything you have been asked to price, who asked, and how it went &mdash; won, lost or still out. Press
+            &ldquo;+ Log a bid&rdquo; above when a GC invites you (you can paste their email and C Stream fills the
+            form in). Once a few are in, filtering by type of work shows what similar jobs went for last time.
+          </p>
+        </div>
+      }
+    />
   );
 }

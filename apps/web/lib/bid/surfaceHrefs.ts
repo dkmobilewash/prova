@@ -49,6 +49,12 @@ export type SurfaceHrefs = {
   clauseLibrary: string;
   /** Where the standing markup, waste and opening-deduction habit are set. */
   estimatingSettings: string;
+  /** The job's own page: CRM, the job; Bid, the estimate (which opens on its
+   * takeoff). Where a bid log sends "the estimate for this project". */
+  job: string;
+  /** Where a GC is added when a bid needs one and the company has none: CRM,
+   * the contacts list; Bid, the GCs section of its settings. */
+  addGc: string;
   /** The log of what the app sent. `null` = this product has no such screen,
    * so a component draws no link rather than a dead one. */
   messageLog: string | null;
@@ -68,6 +74,8 @@ export function surfaceHrefs(surface: Surface, jobId: string): SurfaceHrefs {
       legend: `${base}/takeoff/legend`,
       recap: `${base}/recap`,
       proposal: `${base}/proposal`,
+      job: base,
+      addGc: "/bid/settings#gcs",
       clauseLibrary: "/bid/settings#clauses",
       estimatingSettings: "/bid/settings",
       messageLog: null,
@@ -84,6 +92,8 @@ export function surfaceHrefs(surface: Surface, jobId: string): SurfaceHrefs {
     legend: `/jobs/${jobId}/takeoff/legend`,
     recap: `/jobs/${jobId}/estimate`,
     proposal: `/jobs/${jobId}/proposal`,
+    job: `/jobs/${jobId}`,
+    addGc: "/contacts",
     clauseLibrary: "/proposals",
     estimatingSettings: "/settings?tab=estimating",
     messageLog: "/messages",

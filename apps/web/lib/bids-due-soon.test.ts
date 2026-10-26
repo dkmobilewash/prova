@@ -43,7 +43,7 @@ describe("bids due soon", () => {
   });
 
   it("is what /bids renders", () => {
-    const page = readFileSync(`${process.cwd()}/app/(app)/bids/page.tsx`, "utf8");
+    const page = readFileSync(`${process.cwd()}/components/BidLog.tsx`, "utf8");
     expect(page).toContain("bidsView(viewParam, dueSoon.length, isFiltered)");
     expect(page).toContain('data-bids="due-soon"');
   });

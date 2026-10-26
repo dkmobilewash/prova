@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { parseGcAdjustment } from "@/lib/estimating/gc-price";
+import { estimateStartDestination } from "@/lib/bid/jobStartDestination";
 import {
   mergeBidProjects,
   saveInvitationPriceAdjustment as saveAdjustmentCore,
@@ -49,6 +50,8 @@ function dateOrNull(formData: FormData, key: string): Date | null | "invalid" {
 
 function revalidateBids(): void {
   revalidatePath("/bids");
+  // C Stream Bid's twin of the same log (`app/bid/(signed-in)/bids`).
+  revalidatePath("/bid/bids");
   revalidatePath("/pipeline");
 }
 
@@ -84,8 +87,13 @@ export async function splitFromProject(bidInvitationId: string): Promise<ActionR
  * Starts the project's one estimate, pre-filled, and opens it. On success this
  * REDIRECTS (into the bid stepper's pricing step, as `createJob` does), which
  * never returns; a refusal comes back as a sentence.
+ *
+ * `returnTo` is a WORD from a fixed list ("bid" = C Stream Bid), bound by the
+ * form, never a URL: the destination is built in
+ * `lib/bid/jobStartDestination.ts` from the job just made. Anything else —
+ * including the CRM form, which binds nothing — is the stepper, as before.
  */
-export async function startEstimateFromProject(bidProjectId: string): Promise<ActionResult> {
+export async function startEstimateFromProject(bidProjectId: string, returnTo?: unknown): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_ESTIMATING")) return actionFail(ESTIMATING_ONLY);
 
@@ -95,7 +103,8 @@ export async function startEstimateFromProject(bidProjectId: string): Promise<Ac
   revalidateBids();
   revalidatePath("/dashboard");
   revalidatePath("/jobs");
-  redirect(`/jobs/new/${started.value.jobId}/items`);
+  revalidatePath("/bid/estimates");
+  redirect(estimateStartDestination(returnTo, started.value.jobId));
 }
 
 /** Names the winner of the PRIME contract (an entered fact), or clears it. */

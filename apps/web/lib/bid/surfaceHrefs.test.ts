@@ -26,6 +26,8 @@ describe("surfaceHrefs(\"crm\", id) is what the components used to hard-code", (
       legend: "/jobs/job_1/takeoff/legend",
       recap: "/jobs/job_1/estimate",
       proposal: "/jobs/job_1/proposal",
+      job: "/jobs/job_1",
+      addGc: "/contacts",
       clauseLibrary: "/proposals",
       estimatingSettings: "/settings?tab=estimating",
       messageLog: "/messages",
@@ -58,6 +60,8 @@ describe("surfaceHrefs(\"bid\", id)", () => {
     expect(bid.proposal).toBe("/bid/estimates/job_1/proposal");
     expect(bid.legend).toBe("/bid/estimates/job_1/takeoff/legend");
     expect(bid.workspace).toBe("/bid/workspace/job_1");
+    expect(bid.job).toBe("/bid/estimates/job_1");
+    expect(bid.addGc).toBe("/bid/settings#gcs");
   });
 
   it("has no message log (Bid draws no link rather than a dead one)", () => {

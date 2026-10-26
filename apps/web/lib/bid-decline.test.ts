@@ -234,7 +234,7 @@ describe("the screens' own use of it", () => {
       .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "")
       .replace(/^\s*\/\/.*$/gm, "");
   const read = (rel: string) => strip(readFileSync(resolve(__dirname, rel), "utf8"));
-  const bidsPage = read("../app/(app)/bids/page.tsx");
+  const bidsPage = read("../components/BidLog.tsx");
   const contactPage = read("../app/(app)/contacts/[id]/page.tsx");
   const action = read("./actions/estimating.ts");
 
