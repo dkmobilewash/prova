@@ -1,10 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { importClosure, navTargetsInFile, navTargetsInSource, type NavTarget } from "./navTargets";
+import { importClosure, navTargetsInFile, navTargetsInSource, resolveImport, type NavTarget } from "./navTargets";
+import { exportedFunctionSource, exportedFunctionSources, importedBindings, jsxElements } from "./surfaceCalls";
 import { isBidPath, isSharedPath } from "./surface";
+import { surfaceHrefs } from "./surfaceHrefs";
+import { JOB_START_RETURNS, jobStartDestination } from "./jobStartDestination";
 
 /**
  * NOTHING C STREAM BID RENDERS CAN TAKE A PERSON INTO THE CRM.
@@ -33,10 +36,17 @@ import { isBidPath, isSharedPath } from "./surface";
  * Bid nor shared fails too, since on the Bid host it would redirect home.
  *
  * WHERE ITS SIGHT ENDS, said rather than left silent:
- *   - it stops at `lib/`. A server action's `redirect()` (e.g.
- *     `lib/actions/jobs.ts` `createJob`) and an href built by a lib function
- *     are not seen. `STOPS_AT_LIB` below asserts the boundary exists, so it
- *     cannot move without this sentence being re-read;
+ *   - it stops at `lib/`. `STOPS_AT_LIB` below asserts the boundary exists, so
+ *     it cannot move without this sentence being re-read. What lives past it
+ *     is covered by name instead of by sight:
+ *       * a Server Action's `redirect()` (`createJob` ends in one) — the
+ *         Server Actions section reads the body of every action Bid's files
+ *         import;
+ *       * an href built by `lib/bid/surfaceHrefs.ts` or
+ *         `lib/bid/jobStartDestination.ts` — those are CALLED here, with the
+ *         Bid arguments, and every value returned is classified;
+ *     and what stays unseen is the redirect inside a helper an action calls
+ *     (`ACTION_REDIRECTS_ALLOWED` names the dynamic ones it can see);
  *   - a DYNAMIC sink (`href={item.href}`) has no literal to read. Each one is
  *     named in DYNAMIC_ALLOWED with the reason it is safe, and an entry that
  *     stops existing fails, so the list cannot become scenery.
@@ -126,9 +136,38 @@ const dynamicTargets = targets.filter((t) => t.dynamic);
  * Sinks whose target the parser cannot read, each with why it cannot reach
  * the CRM. Keyed `file: expression`.
  */
+const SURFACE_PROP =
+  "A prop whose value is chosen by `surface` (lib/bid/surfaceHrefs.ts). The CRM value is today's href; Bid renders this file with `surface=\"bid\"` or a Bid-only wrapper, which the \"rendered as Bid\" section below REQUIRES, and every value `surfaceHrefs(\"bid\", …)` returns is classified in the surfaceHrefs section.";
+const BLOB_URL =
+  "An object URL from URL.createObjectURL for a file the browser is saving (the anchor has a `download` attribute) — not a page navigation.";
+
 const DYNAMIC_ALLOWED: Record<string, string> = {
   "components/bid/BidHeader.tsx: item.href":
     "BID_NAV in components/bid/bidNav.ts — every entry is a literal `href:` property, which this census reads as a prop-href sink.",
+  "components/bid/BidEstimateTabs.tsx: tab.href":
+    "bidEstimateTabs() in components/bid/bidEstimateTabs.ts — every entry is a literal `href:` template starting /bid/estimates/, read here as a prop-href sink.",
+  "app/(app)/jobs/[id]/(tabs)/takeoff/page.tsx: hrefs.workspace": SURFACE_PROP,
+  "app/(app)/jobs/[id]/(tabs)/takeoff/page.tsx: hrefs.estimate": SURFACE_PROP,
+  "app/(app)/jobs/[id]/(tabs)/takeoff/legend/page.tsx: hrefs.takeoff": SURFACE_PROP,
+  "app/(app)/jobs/[id]/proposal/page.tsx: hrefs.estimate": SURFACE_PROP,
+  "app/takeoff/[id]/page.tsx: hrefs.takeoff": SURFACE_PROP,
+  "components/job/EstimateStage.tsx: hrefs.takeoff": SURFACE_PROP,
+  "components/job/EstimateStage.tsx: hrefs.workspace": SURFACE_PROP,
+  "components/NoAccess.tsx: homeHref":
+    "NoAccess's one button; pages pass `hrefs.home`. Bid's own pages never render it (BidNoAccess), and the CRM pages Bid renders sit behind a stricter Bid gate first.",
+  "components/PlanIngestPanel.tsx: legend.reviewHref":
+    "The takeoff page passes `hrefs.legend` — `surfaceHrefs` again, classified in its section below.",
+  "components/ProposalClauses.tsx: libraryHref": SURFACE_PROP,
+  "components/TakeoffAssemblyPanel.tsx: wallTypesHref": SURFACE_PROP,
+  "components/TakeoffCurrencyBanner.tsx: bidsHref": SURFACE_PROP,
+  "components/TakeoffWorkspace.tsx: backHref": SURFACE_PROP,
+  "components/WallSchedule.tsx: wallTypesHref": SURFACE_PROP,
+  "components/BidPackageBuilder.tsx: messageLogHref":
+    "Bid's `surfaceHrefs` value is null, which draws no link at all; the CRM value is /messages.",
+  "components/BidPackageBuilder.tsx: finding.href":
+    "An estimate-check finding's fix link, built in lib/agents and naming CRM screens. The proposal page hands it through ONLY when surface is \"crm\" — pinned by the \"hands no finding link\" test below.",
+  "components/BidPackageBuilder.tsx: url": BLOB_URL,
+  "components/AnswerKeyPanel.tsx: url": BLOB_URL,
 };
 
 describe("the CRM route set, derived from app/(app)", () => {
@@ -233,5 +272,174 @@ describe("the sink reader itself", () => {
       ["item.href", true],
       ["target", true],
     ]);
+  });
+});
+
+// ─── what lives past lib/, covered by calling it ────────────────────────────
+
+describe("surfaceHrefs(\"bid\", …): every link a shared screen is told to draw", () => {
+  const bid = surfaceHrefs("bid", "job_abc");
+  const pairs = Object.entries(bid);
+
+  it("is non-empty, and null only where a screen draws NO link", () => {
+    expect(pairs.length).toBeGreaterThanOrEqual(10);
+    expect(Object.keys(bid).sort()).toEqual(Object.keys(surfaceHrefs("crm", "job_abc")).sort());
+    expect(pairs.filter(([, value]) => value === null).map(([key]) => key)).toEqual(["messageLog"]);
+  });
+
+  it("is a /bid path (or shared) for every key", () => {
+    const bad = pairs
+      .filter(([, value]) => value !== null)
+      .map(([key, value]) => ({ key, value: value as string, kind: classify(value as string) }))
+      .filter(({ kind }) => kind !== "ok")
+      .map(({ key, value, kind }) => `surfaceHrefs("bid").${key} = ${JSON.stringify(value)} (${kind})`);
+    expect(bad).toEqual([]);
+  });
+
+  it("the CRM values, which the same classifier DOES call CRM (so it can tell them apart)", () => {
+    const crm = Object.entries(surfaceHrefs("crm", "job_abc"))
+      .filter(([, value]) => value !== null)
+      .map(([key, value]) => ({ key, kind: classify(value as string) }));
+    expect(crm.filter(({ kind }) => kind === "crm").length).toBeGreaterThanOrEqual(10);
+  });
+});
+
+describe("jobStartDestination: where createJob sends a person", () => {
+  it("every word a form may send lands in Bid", () => {
+    expect(JOB_START_RETURNS.length).toBeGreaterThanOrEqual(1);
+    for (const word of JOB_START_RETURNS) {
+      const destination = jobStartDestination(word, "job_abc");
+      expect(classify(destination), `${word} -> ${destination}`).toBe("ok");
+      expect(isBidPath(destination)).toBe(true);
+    }
+  });
+
+  it("anything else is the CRM default, never an echo of the input", () => {
+    for (const hostile of [undefined, null, "", " bid", "BID", "bid ", "//evil.example", "https://evil.example", "/jobs", "/bid/estimates/x", "__proto__", "constructor"]) {
+      const destination = jobStartDestination(hostile, "job_abc");
+      expect(destination, String(hostile)).toBe("/jobs/new/job_abc/items");
+    }
+  });
+});
+
+describe("Server Actions Bid calls: the redirects its sight cannot reach", () => {
+  const ACTIONS_DIR = join(webRoot, "lib", "actions");
+  /** Redirects whose target is computed, each with why it stays in Bid. Keyed
+   * `action: expression`; an entry no action matches fails, so the list cannot
+   * become scenery. */
+  const ACTION_REDIRECTS_ALLOWED: Record<string, string> = {
+    "createJob: jobStartDestination(returnTo, created.value.jobId)":
+      "lib/bid/jobStartDestination.ts: `returnTo` is a WORD from a fixed list, never a URL, and every word's destination is classified in the jobStartDestination section above.",
+  };
+
+  const actionFiles = readdirSync(ACTIONS_DIR)
+    .filter((f) => f.endsWith(".ts") && !/\.(test|dbtest)\.ts$/.test(f) && f !== "index.ts")
+    .map((f) => join(ACTIONS_DIR, f));
+
+  // Every identifier a Bid-closure file imports from the actions barrel (or a
+  // file under lib/actions/).
+  const called = new Map<string, string>(); // action name -> first importing file
+  for (const file of closure.files) {
+    for (const binding of importedBindings(readFileSync(file, "utf8"), file)) {
+      if (binding.specifier === "@/lib/actions" || binding.specifier.startsWith("@/lib/actions/")) {
+        if (!called.has(binding.imported)) called.set(binding.imported, rel(file));
+      }
+    }
+  }
+
+  // Each action file parsed ONCE: name -> where it is and what it says.
+  const bodies = new Map<string, { file: string; text: string }>();
+  for (const file of actionFiles) {
+    for (const [name, text] of exportedFunctionSources(readFileSync(file, "utf8"), file)) {
+      if (!bodies.has(name)) bodies.set(name, { file, text });
+    }
+  }
+  const sourceOf = (name: string) => bodies.get(name) ?? null;
+
+  it("finds the actions (a known one among them) and finds every one's body", () => {
+    expect(called.size).toBeGreaterThan(10);
+    expect([...called.keys()]).toContain("createJob");
+    const unresolved = [...called.keys()].filter((name) => sourceOf(name) === null);
+    expect(unresolved, "an imported action whose body the census cannot find is an unread redirect").toEqual([]);
+  });
+
+  it("no action Bid calls redirects into the CRM, and every computed redirect is named", () => {
+    const literal: string[] = [];
+    const dynamic = new Set<string>();
+    for (const name of called.keys()) {
+      const found = sourceOf(name);
+      if (!found) continue;
+      for (const target of navTargetsInSource(found.text, found.file)) {
+        if (target.dynamic) dynamic.add(`${name}: ${target.text}`);
+        else if (classify(target.text) !== "ok") literal.push(`${name} (${rel(found.file)}) ${target.sink} ${JSON.stringify(target.text)}`);
+      }
+    }
+    expect(literal, "a Server Action Bid calls redirects out of Bid").toEqual([]);
+    expect([...dynamic].sort()).toEqual(Object.keys(ACTION_REDIRECTS_ALLOWED).sort());
+  });
+
+  it("the reader sees a CRM redirect when one is there (it is not reading nothing)", () => {
+    const sample = navTargetsInSource(
+      "export async function sample() { redirect(`/jobs/new/${id}/items`); }",
+      "sample.ts",
+    );
+    expect(sample.map((t) => classify(t.text))).toEqual(["crm"]);
+  });
+});
+
+describe("shared screens are RENDERED as Bid", () => {
+  /**
+   * `href={hrefs.x}` has no literal to read, so the census above can only name
+   * it. What makes it Bid's is the caller: a Bid page that renders the CRM's
+   * takeoff WITHOUT `surface="bid"` draws every CRM link through that sink and
+   * passes every other check here. So: derive which components take a
+   * `surface` (or `returnTo`) from their own source, and require every use
+   * under app/bid and components/bid to pass the Bid value.
+   */
+  const MARKERS: { marker: string; prop: string }[] = [
+    { marker: "surface?: Surface", prop: "surface" },
+    { marker: "returnTo?: JobStartReturn", prop: "returnTo" },
+  ];
+
+  function uses() {
+    const found: { file: string; line: number; tag: string; prop: string; value: string | true | undefined }[] = [];
+    for (const file of entries) {
+      const source = readFileSync(file, "utf8");
+      const byLocal = new Map(importedBindings(source, file).map((b) => [b.local, b]));
+      for (const element of jsxElements(source, file)) {
+        const binding = byLocal.get(element.tag);
+        if (!binding) continue;
+        const target = resolveImport(binding.specifier, file, webRoot);
+        if (!target) continue;
+        // The signature of THAT export, not the whole file: EstimateStage
+        // exports sections that take a `surface` beside sections that do not.
+        const declaration = exportedFunctionSource(readFileSync(target, "utf8"), target, binding.imported);
+        if (!declaration) continue;
+        for (const { marker, prop } of MARKERS) {
+          if (!declaration.includes(marker)) continue;
+          found.push({ file: rel(file), line: element.line, tag: element.tag, prop, value: element.props[prop] });
+        }
+      }
+    }
+    return found;
+  }
+
+  it("finds the uses (a known page and a known section among them)", () => {
+    const tags = uses().map((u) => u.tag);
+    for (const must of ["JobTakeoffPage", "JobProposalPage", "TakeoffWorkspacePage", "EstimateLineItems", "NewJobForm"]) {
+      expect(tags, must).toContain(must);
+    }
+  });
+
+  it("every use passes the Bid value", () => {
+    const wrong = uses()
+      .filter((u) => u.value !== "bid")
+      .map((u) => `${u.file}:${u.line} <${u.tag}> has no ${u.prop}="bid"`);
+    expect(wrong, "a shared screen rendered without telling it it is in Bid draws CRM links").toEqual([]);
+  });
+
+  it("the proposal hands no finding link outside the CRM", () => {
+    const source = readFileSync(join(APP, "(app)", "jobs", "[id]", "proposal", "page.tsx"), "utf8");
+    expect(source).toContain('href: surface === "crm" ? finding.fixHref : null');
   });
 });
