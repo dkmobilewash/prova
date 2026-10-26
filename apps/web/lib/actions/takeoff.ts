@@ -874,14 +874,34 @@ async function saveTakeoffMeasurementsFor(
       where: { id: wallTypeId, companyId: company.id },
       select: { id: true, code: true, defaultHeightFt: true, sides: true },
     });
-    if (!wallType) return actionFail(WALL_TYPE_GONE);
-    const plan = planMeasuredWallRun({
-      wallType: { code: wallType.code, defaultHeightFt: wallType.defaultHeightFt != null ? wallType.defaultHeightFt.toNumber() : null, sides: wallType.sides },
-      layerCount: await prisma.wallTypeComponent.count({ where: { wallTypeId: wallType.id } }),
-      typedHeightFt: optionalNumberFromForm(formData, "heightFt", { min: 0.01 })?.n ?? null,
-      label,
-    });
-    if (!plan.ok) return actionFail(plan.error);
+    // ── A TYPE THAT IS GONE IS REFUSED BELOW, NOT HERE ──
+    //
+    // Refusing here discarded the tracing. `takeoff-wall-run.dbtest.ts` says
+    // why that is the wrong trade, and it says it in the test's own words:
+    // the measurements belong "on the sheet, in the list and postable by
+    // hand — exactly where the old flow left every accepted group", and
+    // "silently discarding a traced group because a type lookup failed would
+    // be the worst of both".
+    //
+    // `postMeasuredWallRun`, after the write, already produces WALL_TYPE_GONE
+    // — that is where this refusal lived before and still lives. Checking it
+    // twice bought nothing and cost the work.
+    //
+    // THE CHECK BELOW STAYS EARLY, because it is the one the Baker
+    // walkthrough was about: a type that EXISTS and cannot be priced ("W1 has
+    // no default height") left loose measurements behind on every retry, 120
+    // of them on A101, 90 from one group clicked thirty times. That case is
+    // retried by a person and must refuse before it writes. A type that is
+    // GONE is not retried the same way — the picker cannot keep offering it.
+    if (wallType) {
+      const plan = planMeasuredWallRun({
+        wallType: { code: wallType.code, defaultHeightFt: wallType.defaultHeightFt != null ? wallType.defaultHeightFt.toNumber() : null, sides: wallType.sides },
+        layerCount: await prisma.wallTypeComponent.count({ where: { wallTypeId: wallType.id } }),
+        typedHeightFt: optionalNumberFromForm(formData, "heightFt", { min: 0.01 })?.n ?? null,
+        label,
+      });
+      if (!plan.ok) return actionFail(plan.error);
+    }
   }
 
   const created = await prisma.takeoffMeasurement.createManyAndReturn({
