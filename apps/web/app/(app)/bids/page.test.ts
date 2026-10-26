@@ -77,6 +77,12 @@ const context = {
 vi.mock("@prova/db", () => ({
   prisma: {
     bidInvitation: { findMany: vi.fn(async () => bids) },
+    // The project's quotes, addenda and spec sections are read in their own
+    // queries now (lib/estimating/bid-papers.ts), by project rather than off the
+    // invitation. Empty: this file's subject is the won-value line.
+    bidQuote: { findMany: vi.fn(async () => []) },
+    bidAddendum: { findMany: vi.fn(async () => []) },
+    bidSpecSection: { findMany: vi.fn(async () => []) },
     // The levelling panel's supplier picker. Empty is the honest stub: these
     // fixtures carry no quotes, and `lib/bid-levelling.test.ts` covers the
     // comparison against its own.

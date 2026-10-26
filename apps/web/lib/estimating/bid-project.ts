@@ -4,6 +4,7 @@ import { mayChangeClient } from "@/lib/job-details";
 import { planMerge, provisionalGc } from "@/lib/bid-projects";
 import { gcPrice, type ParsedAdjustment } from "@/lib/estimating/gc-price";
 import { bidTotalOf } from "@/lib/estimating/recap-state";
+import { carryPapersToProject, refilePapers } from "@/lib/estimating/bid-papers";
 
 /**
  * The writes behind "one project, many GC invitations, one estimate".
@@ -160,10 +161,22 @@ export async function mergeBidProjects(
         bidDueDate: target.bidDueDate ?? source.bidDueDate,
       },
     });
+    const movedIds = (
+      await tx.bidInvitation.findMany({ where: { bidProjectId: source.id }, select: { id: true } })
+    ).map((row) => row.id);
     const moved = await tx.bidInvitation.updateMany({
       where: { bidProjectId: source.id },
       data: { bidProjectId: target.id },
     });
+    // THE PAPERS FOLLOW INTO THE SURVIVING PROJECT — quotes, addenda and spec
+    // sections are about the building, and now the building is one project.
+    // Done BEFORE the source is deleted (its FK is SET NULL, so a paper missed
+    // here would fall back to being read through its filing invitation rather
+    // than vanish, but none should be missed). Each addendum keeps the
+    // acknowledgement of the GC it was filed under and reads "not acknowledged"
+    // on the other GCs' forms until somebody does — see bid-papers.ts
+    // `acknowledgedOnFor`.
+    await carryPapersToProject(tx, source.id, target.id, movedIds);
     await tx.bidProject.delete({ where: { id: source.id } });
     return { ok: true as const, value: { bidProjectId: target.id, moved: moved.count } };
   });
@@ -208,6 +221,16 @@ export async function splitBidInvitation(
         error: "This bid is won and linked to the project's estimate, so it belongs with it. Unlink the estimate first, then split it out.",
       };
     }
+
+    // THE PAPERS STAY WITH THE PROJECT. What the split-off GC keeps is only what
+    // is genuinely its own: its row (name, date, status, price, send record), its
+    // price adjustment, its bid lines and requirements, its decline and outcome,
+    // and its acknowledgement of each addendum (kept as a row, so merging it back
+    // restores it). A supplier quote, addendum or spec section that was FILED
+    // under it is the building's, so it is re-filed onto a sibling that is
+    // staying; it does not leave with the GC. Run BEFORE the invitation changes
+    // project, because the heir is "another invitation of THIS project".
+    await refilePapers(tx, invitation.id, { keepLeaverAcknowledgements: true });
 
     const created = await tx.bidProject.create({
       data: {

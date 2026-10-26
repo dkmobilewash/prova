@@ -1,5 +1,6 @@
 import { prisma } from "@prova/db";
 import { carriedLinePlan } from "@/lib/estimating/carried-quote";
+import { paperWhereForJob } from "@/lib/estimating/bid-papers";
 import type { CrossCheckCarriedQuote, CrossCheckMeasurement } from "@/lib/estimating/estimate-crosschecks";
 
 /**
@@ -23,7 +24,7 @@ export type CrossCheckInputs = {
 };
 
 export async function loadCrossCheckInputs(jobId: string, companyId: string): Promise<CrossCheckInputs> {
-  const [plan, bids] = await Promise.all([
+  const [plan, quotes] = await Promise.all([
     // THE NEWEST PLAN ONLY, which is the same one the takeoff tab shows. An
     // older plan's measurements belong to a drawing nobody is working from,
     // and reporting them as "not on the estimate" would be true and useless.
@@ -41,23 +42,26 @@ export async function loadCrossCheckInputs(jobId: string, companyId: string): Pr
         },
       },
     }),
-    prisma.bidInvitation.findMany({
-      where: { companyId, wonJobId: jobId },
+    // THE QUOTES OF THE JOB'S PROJECT, whichever GC's invitation each was filed
+    // under (bid-papers.ts `paperWhereForJob`). This used to read only the quotes
+    // filed under the ONE invitation linked to the job, so a carried quote filed
+    // under another GC's invitation on the same project never implied a line.
+    prisma.bidQuote.findMany({
+      where: {
+        companyId,
+        ...paperWhereForJob(jobId, companyId),
+        // Carried only. An uncarried quote is a price somebody looked at and
+        // did not choose, and it has no business implying a line.
+        carriedAt: { not: null },
+      },
+      orderBy: { packageLabel: "asc" },
       select: {
-        quotes: {
-          // Carried only. An uncarried quote is a price somebody looked at and
-          // did not choose, and it has no business implying a line.
-          where: { carriedAt: { not: null } },
-          orderBy: { packageLabel: "asc" },
-          select: {
-            id: true,
-            vendorName: true,
-            packageLabel: true,
-            amount: true,
-            declinedAt: true,
-            carriedAt: true,
-          },
-        },
+        id: true,
+        vendorName: true,
+        packageLabel: true,
+        amount: true,
+        declinedAt: true,
+        carriedAt: true,
       },
     }),
   ]);
@@ -82,24 +86,22 @@ export async function loadCrossCheckInputs(jobId: string, companyId: string): Pr
   // reporting it as missing would be telling somebody to do something the app
   // refuses.
   const carried: CrossCheckCarriedQuote[] = [];
-  for (const bid of bids) {
-    for (const quote of bid.quotes) {
-      const plan = carriedLinePlan({
-        id: quote.id,
-        vendorName: quote.vendorName,
-        packageLabel: quote.packageLabel,
-        amount: quote.amount === null ? null : Number(quote.amount),
-        declinedAt: quote.declinedAt,
-        carriedAt: quote.carriedAt,
-      });
-      if (!plan.ok) continue;
-      carried.push({
-        vendorName: quote.vendorName,
-        packageLabel: quote.packageLabel,
-        amount: plan.unitCost,
-        expectedDescription: plan.description,
-      });
-    }
+  for (const quote of quotes) {
+    const plan = carriedLinePlan({
+      id: quote.id,
+      vendorName: quote.vendorName,
+      packageLabel: quote.packageLabel,
+      amount: quote.amount === null ? null : Number(quote.amount),
+      declinedAt: quote.declinedAt,
+      carriedAt: quote.carriedAt,
+    });
+    if (!plan.ok) continue;
+    carried.push({
+      vendorName: quote.vendorName,
+      packageLabel: quote.packageLabel,
+      amount: plan.unitCost,
+      expectedDescription: plan.description,
+    });
   }
 
   return { measurements, carried };

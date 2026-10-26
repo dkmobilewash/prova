@@ -25,6 +25,7 @@ import { BidProjectPanel } from "@/components/BidProjectPanel";
 import { BidProjectOutcomes } from "@/components/BidProjectOutcomes";
 import { groupBidsByProject } from "@/lib/bid-project-groups";
 import { bidProjectInclude, loadProjectChoices } from "@/lib/bid-project-query";
+import { acknowledgedOnFor, filedUnderLabel, paperWhereMany, papersFor } from "@/lib/estimating/bid-papers";
 import { projectPanelView } from "@/lib/bid-project-view";
 import { bidRecord, settledSentence } from "@/lib/bid-outcome";
 import { loadBidOutcomes, loadLinkableJobs } from "@/lib/bid-outcome-query";
@@ -178,7 +179,7 @@ export async function BidLog({
   // `bidRecord`, which returns the excluded count so the sentence can say so.
   const record = bidRecord([...outcomesByBid.values()].map((linked) => linked.outcome));
 
-  const bids = await prisma.bidInvitation.findMany({
+  const invitations = await prisma.bidInvitation.findMany({
     where: {
       companyId: company.id,
       tradeScope: tradeFilter,
@@ -201,37 +202,78 @@ export async function BidLog({
       // Why it was won or lost (BidOutcome, ai-agents.prisma) — whether to
       // offer "Record why" below, or say the reason already recorded.
       outcome: { select: { reason: true } },
-      quotes: { orderBy: [{ packageLabel: "asc" }, { amount: "asc" }] },
       lines: { orderBy: { sortOrder: "asc" } },
+      requirements: { orderBy: { createdAt: "asc" } },
+    },
+  });
+
+  // ── THE PAPERS ABOUT THE BUILDING: QUOTES, ADDENDA AND SPEC SECTIONS ──
+  //
+  // Read by PROJECT, not by the invitation they were filed under, so a supplier
+  // quote filed under GC A's invitation is on GC B's row for the same job. One
+  // query per kind for the whole page (`paperWhereMany`), grouped back onto each
+  // row with `papersFor` — see lib/estimating/bid-papers.ts, which is the only
+  // place that decides which papers an invitation shows.
+  const anchors = invitations.map((one) => ({ id: one.id, bidProjectId: one.bidProjectId }));
+  const [quoteRows, addendumRows, specRows] = await Promise.all([
+    prisma.bidQuote.findMany({
+      where: { companyId: company.id, ...paperWhereMany(anchors) },
+      orderBy: [{ packageLabel: "asc" }, { amount: "asc" }],
+    }),
+    prisma.bidAddendum.findMany({
+      where: { companyId: company.id, ...paperWhereMany(anchors) },
       // Addenda oldest first: they are read as a sequence, and the one you
       // have not acknowledged is usually the newest.
-      addenda: {
-        orderBy: [{ issuedOn: "asc" }, { createdAt: "asc" }],
-        include: {
-          // THE NEWEST READING ONLY. Readings are append-only — a re-read
-          // inserts rather than overwrites, so a proposal an estimator worked
-          // through is never rewritten — and the newest is the current one.
-          // `_count` is what lets the button say how many times this has been
-          // read BEFORE somebody presses it again and is charged again.
-          readings: { orderBy: { createdAt: "desc" }, take: 1 },
-          decisions: { select: { normalisedReference: true, decision: true } },
-          _count: { select: { readings: true } },
-        },
+      orderBy: [{ issuedOn: "asc" }, { createdAt: "asc" }],
+      include: {
+        // THE NEWEST READING ONLY. Readings are append-only — a re-read
+        // inserts rather than overwrites, so a proposal an estimator worked
+        // through is never rewritten — and the newest is the current one.
+        // `_count` is what lets the button say how many times this has been
+        // read BEFORE somebody presses it again and is charged again.
+        readings: { orderBy: { createdAt: "desc" }, take: 1 },
+        decisions: { select: { normalisedReference: true, decision: true } },
+        // Each OTHER GC's acknowledgement: the addendum is the project's, the
+        // acknowledgement is per GC's bid form (`acknowledgedOnFor`).
+        acknowledgements: { select: { bidInvitationId: true, acknowledgedOn: true } },
+        _count: { select: { readings: true } },
       },
-      requirements: { orderBy: { createdAt: "asc" } },
+    }),
+    prisma.bidSpecSection.findMany({
+      where: { bidInvitation: { companyId: company.id }, ...paperWhereMany(anchors) },
       // Spec sections by their own number, which is how a book is ordered and
       // how an estimator asks for one. Same reading shape as the addenda above
       // and for the same two reasons: readings are append-only so the newest is
       // the current one, and `_count` is what lets the button say how many times
       // this has been read BEFORE somebody is charged again.
-      specSections: {
-        orderBy: [{ sectionNumber: "asc" }, { createdAt: "asc" }],
-        include: {
-          readings: { orderBy: { createdAt: "desc" }, take: 1 },
-          _count: { select: { readings: true } },
-        },
+      orderBy: [{ sectionNumber: "asc" }, { createdAt: "asc" }],
+      include: {
+        readings: { orderBy: { createdAt: "desc" }, take: 1 },
+        _count: { select: { readings: true } },
       },
-    },
+    }),
+  ]);
+  // Who each paper first came in with: every GC on a project is on the project's
+  // own `invitations` list, which the row already loads for its project panel.
+  const gcNameByInvitation = new Map<string, string>();
+  for (const one of invitations) {
+    gcNameByInvitation.set(one.id, one.contact.name);
+    for (const sibling of one.bidProject?.invitations ?? []) gcNameByInvitation.set(sibling.id, sibling.contact.name);
+  }
+  const bids = invitations.map((one) => {
+    const anchor = { id: one.id, bidProjectId: one.bidProjectId };
+    const filedUnder = (paper: { bidInvitationId: string }) => filedUnderLabel(paper, one.id, gcNameByInvitation);
+    return {
+      ...one,
+      quotes: papersFor(anchor, quoteRows).map((paper) => ({ ...paper, filedUnder: filedUnder(paper) })),
+      addenda: papersFor(anchor, addendumRows).map((paper) => ({
+        ...paper,
+        filedUnder: filedUnder(paper),
+        // THIS row's GC's acknowledgement, not the addendum's single column.
+        acknowledgedOn: acknowledgedOnFor(paper, one.id),
+      })),
+      specSections: papersFor(anchor, specRows).map((paper) => ({ ...paper, filedUnder: filedUnder(paper) })),
+    };
   });
 
   // #79: a WON bid with no bidAmount used to be dropped from both the sum
@@ -551,6 +593,7 @@ export async function BidLog({
               : null,
             readCount: row._count.readings,
             decisions: row.decisions,
+            filedUnder: row.filedUnder,
           }),
         )}
         requirements={bid.requirements.map(
@@ -592,6 +635,7 @@ export async function BidLog({
                 }
               : null,
             readCount: row._count.readings,
+            filedUnder: row.filedUnder,
           }),
         )}
       />
@@ -643,6 +687,7 @@ export async function BidLog({
             validUntil: day(quote.validUntil),
             exclusions: quote.exclusions,
             notes: quote.notes,
+            filedUnder: quote.filedUnder,
           }),
         )}
       />

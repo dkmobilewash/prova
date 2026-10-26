@@ -459,4 +459,59 @@ test.describe("the bid desk", () => {
     }
     expect(monitor.crashes, "an uncaught exception reached the browser").toEqual([]);
   });
+
+  // UNEXECUTED: written without a browser (the agent container cannot sign in
+  // through Clerk), so CI's `e2e` job is where this step is first proved or not.
+  //
+  // LAST ON PURPOSE. A second GC's row on the same project would also match
+  // `bidRow()`'s `hasText: PROJECT` in steps 3-8, so it is added only after they
+  // have run. Its project NAME deliberately does not contain `PROJECT` either.
+  test("9. a second GC on the same job shows the quotes and addendum filed under the first, and acknowledges the addendum on its own form", async () => {
+    const GC_TWO = "ZZ-E2E Bid Desk GC Two";
+    const PROJECT_TWO = "ZZ-E2E Northside MOB (second GC's name for it)";
+
+    await page.goto("/contacts");
+    await expectHealthy(page, "/contacts before adding the second GC", { monitor });
+    await page.getByRole("button", { name: "Add a contact" }).first().click();
+    const contactForm = page.locator("form").filter({ has: page.getByRole("button", { name: "Save contact" }) });
+    await contactForm.locator('input[name="name"]').fill(GC_TWO);
+    await contactForm.getByRole("button", { name: "Save contact" }).click();
+    await expect(page.getByRole("link", { name: new RegExp(GC_TWO) }).first()).toBeVisible();
+
+    // "Same job as…" joins the first GC's project rather than starting a new one.
+    await page.goto("/bids?view=all");
+    await expectHealthy(page, "/bids before logging the second GC", { monitor });
+    await page.getByRole("button", { name: "+ Log a bid" }).click();
+    const logForm = page.locator("form").filter({ has: page.getByRole("button", { name: "Log invitation" }) });
+    await logForm.locator('select[name="contactId"]').selectOption({ label: GC_TWO });
+    await logForm.locator('input[name="projectName"]').fill(PROJECT_TWO);
+    const joinValue = await logForm.locator('select[name="bidProjectId"] option').filter({ hasText: PROJECT }).first().getAttribute("value");
+    expect(joinValue, "the first GC's project is offered under 'Same job as…'").toBeTruthy();
+    await logForm.locator('select[name="bidProjectId"]').selectOption(joinValue!);
+    await settleAction(page, () => logForm.getByRole("button", { name: "Log invitation" }).click());
+
+    await page.goto("/bids?view=all");
+    await expectHealthy(page, "/bids with two GCs on one job", { monitor });
+    // The second GC's own row: the one under its own name that has the panels.
+    const rowTwo = page.locator("li[id]").filter({ hasText: GC_TWO }).filter({ has: page.locator('details[name="bid"]') }).first();
+    await openDisclosure(rowTwo.locator('details[name="bid"]'));
+
+    // THE QUOTES FILED UNDER THE FIRST GC (step 6) ARE ON THIS ROW, and it says
+    // whose invite they came in with.
+    await expect(rowTwo.getByText(CHEAPEST, { exact: true })).toBeVisible();
+    await expect(rowTwo.getByText(DEAREST, { exact: true })).toBeVisible();
+    await expect(rowTwo.locator('[data-bid="filed-under"]').first()).toContainText(`came in with ${GC_NAME}'s invite`);
+    // The caution about exclusions is computed over the same two quotes.
+    await expect(rowTwo).toContainText("These are not the same bid.");
+
+    // THE ADDENDUM (step 4) IS ON THIS ROW TOO, and the acknowledgement is THIS
+    // GC's: the first GC's row has acknowledged it, this row must not say so.
+    await expect(rowTwo.locator('[data-bid="filed-under"]').filter({ hasText: GC_NAME }).first()).toBeVisible();
+    await expect(rowTwo.getByText("not acknowledged").first()).toBeVisible();
+    await settleAction(page, () => rowTwo.getByRole("button", { name: "Acknowledge" }).first().click());
+    await page.reload();
+    await expectHealthy(page, "/bids after the second GC acknowledged the addendum", { monitor });
+    await openDisclosure(rowTwo.locator('details[name="bid"]'));
+    await expect(rowTwo.getByText(/acknowledged \d{4}-\d{2}-\d{2}/).first()).toBeVisible();
+  });
 });

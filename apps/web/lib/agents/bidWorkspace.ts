@@ -1,6 +1,7 @@
 import { prisma, type AgentKind } from "@prova/db";
 import type { FindingSource } from "./core";
 import { openAddendumItems } from "./estimateCheck";
+import { paperWhere } from "@/lib/estimating/bid-papers";
 import { toRecommendationRow, type RecommendationRow } from "./recommendations-query";
 
 /**
@@ -69,21 +70,24 @@ export async function loadBidWorkspace(bidInvitationId: string, companyId: strin
       tradeScope: true,
       contact: { select: { name: true } },
       outcome: { select: { result: true, reason: true, winningPrice: true, winnerName: true, note: true, decidedOn: true } },
-      addenda: {
-        orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          reference: true,
-          issuedOn: true,
-          readings: { orderBy: { createdAt: "desc" }, take: 1, select: { items: true } },
-          decisions: { select: { normalisedReference: true } },
-        },
-      },
+      bidProjectId: true,
     },
   });
   if (!bid) return null;
 
-  const [findings, recommendation, runs] = await Promise.all([
+  const [addenda, findings, recommendation, runs] = await Promise.all([
+    // The PROJECT's addenda, whichever GC's invitation each was filed under.
+    prisma.bidAddendum.findMany({
+      where: { companyId, ...paperWhere({ id: bid.id, bidProjectId: bid.bidProjectId }) },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        reference: true,
+        issuedOn: true,
+        readings: { orderBy: { createdAt: "desc" }, take: 1, select: { items: true } },
+        decisions: { select: { normalisedReference: true } },
+      },
+    }),
     prisma.agentFinding.findMany({
       where: { companyId, bidInvitationId, agent: { in: ["BID_RESEARCH", "ESTIMATE_CHECK"] }, dismissedAt: null },
       orderBy: { createdAt: "desc" },
@@ -150,7 +154,7 @@ export async function loadBidWorkspace(bidInvitationId: string, companyId: strin
     },
     research: rows.filter((r) => r.agent === "BID_RESEARCH"),
     estimateCheck: rows.filter((r) => r.agent === "ESTIMATE_CHECK"),
-    addenda: bid.addenda.map((a) => ({
+    addenda: addenda.map((a) => ({
       id: a.id,
       reference: a.reference,
       issuedOn: a.issuedOn,

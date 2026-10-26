@@ -31,6 +31,11 @@ const context = {
 let allowed = true;
 let quote: Record<string, unknown> | null;
 let quoteUpdates: { where: unknown; data: Record<string, unknown> }[] = [];
+// The PROJECT's documents (lib/estimating/bid-papers.ts): read by the quote's
+// project, whichever GC's invitation each was filed under.
+let specSections: Record<string, unknown>[] = [];
+let addenda: Record<string, unknown>[] = [];
+let paperQueries: { model: string; where: Record<string, unknown> }[] = [];
 
 const sendEmail = vi.fn();
 const documentUrlProblem = vi.fn(() => null as string | null);
@@ -68,6 +73,18 @@ vi.mock("@prova/db", () => ({
         return {};
       },
     },
+    bidSpecSection: {
+      findMany: async ({ where }: { where: Record<string, unknown> }) => {
+        paperQueries.push({ model: "bidSpecSection", where });
+        return specSections;
+      },
+    },
+    bidAddendum: {
+      findMany: async ({ where }: { where: Record<string, unknown> }) => {
+        paperQueries.push({ model: "bidAddendum", where });
+        return addenda;
+      },
+    },
     outboundMessage: {
       create: async ({ data }: { data: Record<string, unknown> }) => ({ id: "msg_1", ...data }),
       update: async () => ({}),
@@ -101,13 +118,12 @@ beforeEach(() => {
     vendorName: "Alpha Supply",
     requestedOn: null,
     vendor: { id: "v_1", name: "Alpha Supply", contactName: "Jo Patel", email: "jo@alpha.test" },
-    bidInvitation: {
-      id: "bid_1",
-      projectName: "West Herr Jaguar",
-      specSections: [{ id: "s_1", sectionNumber: "09 21 16", fileUrl: SPEC_URL, fileName: "09-21-16.pdf" }],
-      addenda: [{ id: "a_1", reference: "Addendum 2", fileUrl: ADDENDUM_URL, fileName: "add-2.pdf" }],
-    },
+    bidInvitationId: "bid_1",
+    bidProjectId: "proj_1",
   };
+  specSections = [{ id: "s_1", sectionNumber: "09 21 16", fileUrl: SPEC_URL, fileName: "09-21-16.pdf" }];
+  addenda = [{ id: "a_1", reference: "Addendum 2", fileUrl: ADDENDUM_URL, fileName: "add-2.pdf" }];
+  paperQueries = [];
   globalThis.fetch = (async () =>
     new Response(PDF, { status: 200, headers: { "content-type": "application/pdf" } })) as typeof fetch;
 });
@@ -151,6 +167,24 @@ describe("it sends the supplier the pages they need", () => {
     await send(["s_1", "a_1"]);
     expect(documentUrlProblem).toHaveBeenNthCalledWith(1, SPEC_URL, "bid-spec-section", "co_1", process.env);
     expect(documentUrlProblem).toHaveBeenNthCalledWith(2, ADDENDUM_URL, "bid-addendum", "co_1", process.env);
+  });
+
+  it("READS THE DOCUMENTS BY PROJECT, so a spec section filed under another GC's invitation can be attached", async () => {
+    // The documents are the job's, not the one invitation they were filed under
+    // (lib/estimating/bid-papers.ts). Asking by the quote's invitation alone is
+    // the old question and would offer GC B's supplier nothing GC A filed.
+    await send(["s_1"]);
+    const asked = paperQueries.map((q) => q.model).sort();
+    expect(asked).toEqual(["bidAddendum", "bidSpecSection"]);
+    for (const q of paperQueries) {
+      expect(q.where.OR).toEqual([
+        { bidProjectId: { in: ["proj_1"] } },
+        { bidProjectId: null, bidInvitationId: { in: ["bid_1"] } },
+      ]);
+    }
+    // And the section's tenant is still checked, through its invitation.
+    expect(paperQueries.find((q) => q.model === "bidSpecSection")!.where.bidInvitation).toEqual({ companyId: "co_1" });
+    expect(paperQueries.find((q) => q.model === "bidAddendum")!.where.companyId).toBe("co_1");
   });
 
   it("sends with nothing attached when nothing was chosen", async () => {

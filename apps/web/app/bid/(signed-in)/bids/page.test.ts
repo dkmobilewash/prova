@@ -73,6 +73,10 @@ const context = {
 vi.mock("@prova/db", () => ({
   prisma: {
     bidInvitation: { findMany: vi.fn(async () => bids) },
+    // The project's papers are their own queries now (lib/estimating/bid-papers.ts).
+    bidQuote: { findMany: vi.fn(async () => []) },
+    bidAddendum: { findMany: vi.fn(async () => []) },
+    bidSpecSection: { findMany: vi.fn(async () => []) },
     vendor: { findMany: vi.fn(async () => []) },
     contact: { findMany: vi.fn(async () => [{ id: "gc-1", name: "Acme GC" }]) },
     bidProject: { findMany: vi.fn(async () => []) },

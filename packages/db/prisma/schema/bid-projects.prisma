@@ -55,6 +55,14 @@ model BidProject {
 
   invitations BidInvitation[]
 
+  /// THE PAPERS ABOUT THE BUILDING: supplier quotes, addenda and spec sections.
+  /// Each also carries the invitation it was filed under (`bidInvitationId`),
+  /// which is provenance and the cascade, not scope. What stays per-GC instead
+  /// is listed in changelog.d/feat-project-level-bid-papers.md.
+  quotes       BidQuote[]
+  addenda      BidAddendum[]
+  specSections BidSpecSection[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

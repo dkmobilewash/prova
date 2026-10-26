@@ -3,6 +3,7 @@ import { findingsFromJson } from "@/lib/specs/spec-findings";
 import { missingIndirects, type IndirectCatalogEntry } from "@/lib/estimating/indirect-costs";
 import { carriedQuotesMissing, type CrossCheckLine } from "@/lib/estimating/estimate-crosschecks";
 import { carriedLinePlan } from "@/lib/estimating/carried-quote";
+import { paperWhereForJob } from "@/lib/estimating/bid-papers";
 import { uncoveredFacts, type ProposalFact } from "./proposal-facts";
 
 /**
@@ -25,7 +26,7 @@ import { uncoveredFacts, type ProposalFact } from "./proposal-facts";
  * set of spec readings.
  */
 export async function loadProposalFacts(jobId: string, companyId: string): Promise<ProposalFact[]> {
-  const [job, bid, catalogEntries, drafts] = await Promise.all([
+  const [job, specSections, carriedQuotes, addenda, catalogEntries, drafts] = await Promise.all([
     prisma.job.findFirst({
       where: { id: jobId, companyId },
       select: {
@@ -34,40 +35,43 @@ export async function loadProposalFacts(jobId: string, companyId: string): Promi
         },
       },
     }),
-    // Through `wonJobId`, scoped by company — see the header.
-    prisma.bidInvitation.findFirst({
-      where: { companyId, wonJobId: jobId },
+    // THE PAPERS OF THE JOB'S PROJECT, scoped by company — see the header. Read
+    // through the project as well as the linked invitation (`paperWhereForJob`),
+    // so a spec section, carried quote or addendum filed under another GC's
+    // invitation on the same job is a fact the scope letter may be silent about.
+    prisma.bidSpecSection.findMany({
+      where: paperWhereForJob(jobId, companyId),
       select: {
-        specSections: {
-          select: {
-            sectionNumber: true,
-            readings: {
-              // NEWEST READING ONLY. A section re-read is a new row, and the
-              // older answer is history; proposing clauses from both would ask
-              // the estimator the same question twice with different wording.
-              orderBy: { createdAt: "desc" },
-              take: 1,
-              select: { id: true, findings: true },
-            },
-          },
+        sectionNumber: true,
+        readings: {
+          // NEWEST READING ONLY. A section re-read is a new row, and the
+          // older answer is history; proposing clauses from both would ask
+          // the estimator the same question twice with different wording.
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { id: true, findings: true },
         },
-        quotes: {
-          where: { carriedAt: { not: null } },
-          // `carriedLinePlan` takes the WHOLE quote, declines and carry stamp
-          // included, because it is the thing that decides whether a quote may
-          // become a line at all. Handing it a narrowed object would mean
-          // re-deciding that here, as a second authority.
-          select: {
-            id: true,
-            vendorName: true,
-            packageLabel: true,
-            amount: true,
-            declinedAt: true,
-            carriedAt: true,
-          },
-        },
-        addenda: { orderBy: { createdAt: "asc" }, select: { reference: true } },
       },
+    }),
+    prisma.bidQuote.findMany({
+      where: { companyId, ...paperWhereForJob(jobId, companyId), carriedAt: { not: null } },
+      // `carriedLinePlan` takes the WHOLE quote, declines and carry stamp
+      // included, because it is the thing that decides whether a quote may
+      // become a line at all. Handing it a narrowed object would mean
+      // re-deciding that here, as a second authority.
+      select: {
+        id: true,
+        vendorName: true,
+        packageLabel: true,
+        amount: true,
+        declinedAt: true,
+        carriedAt: true,
+      },
+    }),
+    prisma.bidAddendum.findMany({
+      where: { companyId, ...paperWhereForJob(jobId, companyId) },
+      orderBy: { createdAt: "asc" },
+      select: { reference: true },
     }),
     prisma.lineItemCatalogEntry.findMany({
       where: { companyId, indirectKind: { not: null } },
@@ -89,7 +93,7 @@ export async function loadProposalFacts(jobId: string, companyId: string): Promi
   // about whether a package is on the bid. `carriedQuotesMissing` accepts an
   // exact description OR a subcontractor cost to the cent, which is what stops
   // a renamed line being reported as missing.
-  const carried = (bid?.quotes ?? [])
+  const carried = carriedQuotes
     .map((quote) => {
       if (quote.amount === null) return null;
       const amount = quote.amount.toNumber();
@@ -132,7 +136,7 @@ export async function loadProposalFacts(jobId: string, companyId: string): Promi
   }));
 
   return uncoveredFacts({
-    specReadings: (bid?.specSections ?? []).flatMap((section) => {
+    specReadings: specSections.flatMap((section) => {
       const reading = section.readings[0];
       if (reading === undefined) return [];
       return [
@@ -157,10 +161,7 @@ export async function loadProposalFacts(jobId: string, companyId: string): Promi
       covers: indirect.covers,
     })),
     carriedPackages: carriedFacts,
-    addenda:
-      bid === null || bid.addenda.length === 0
-        ? null
-        : { references: bid.addenda.map((addendum) => addendum.reference) },
+    addenda: addenda.length === 0 ? null : { references: addenda.map((addendum) => addendum.reference) },
     // DELIBERATELY NOT WIRED YET. `takeoff-currency.ts` can say which drawing
     // revision the quantities were measured from, and that belongs on the
     // letter — but it answers in terms of plans and revisions rather than one

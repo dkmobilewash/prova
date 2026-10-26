@@ -141,6 +141,11 @@ model BidInvitation {
   /// The quotes this company collected from its own suppliers and subs for
   /// this bid, for levelling — see bid-levelling.prisma. Distinct from
   /// VendorPriceQuote, which is price history and carries no bid.
+  ///
+  /// THESE ARE THE ONES FILED UNDER THIS INVITATION, not the ones this bid shows:
+  /// quotes, addenda and spec sections belong to the PROJECT, so a reader asks
+  /// `lib/estimating/bid-papers.ts` (`paperWhere`) rather than reading this
+  /// relation. It stays for provenance and the cascade.
   quotes BidQuote[]
 
   /// The pre-bid pursuit this invitation came out of, if one was being
@@ -157,6 +162,11 @@ model BidInvitation {
   /// misses one of these is rejected unread, however good the price was.
   addenda      BidAddendum[]
   requirements BidRequirement[]
+
+  /// THIS GC's acknowledgements of addenda filed under ANOTHER GC's invitation on
+  /// the same project. The ones filed under this invitation are the addendum's own
+  /// `acknowledgedOn` — see `BidAddendumAcknowledgement`.
+  addendumAcknowledgements BidAddendumAcknowledgement[]
 
   /// Readings of the addenda on this bid — see bid-addenda.prisma. Reached from
   /// here rather than only through each addendum because the overlap report asks

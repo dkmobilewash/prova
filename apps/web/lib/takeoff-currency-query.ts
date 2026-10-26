@@ -1,4 +1,5 @@
 import { prisma } from "@prova/db";
+import { paperWhereForJob } from "@/lib/estimating/bid-papers";
 
 import {
   takeoffCurrency,
@@ -26,8 +27,10 @@ export type JobTakeoffCurrency = TakeoffCurrency & {
  * `BidAddendum` belongs to a bid invitation and has no `jobId` at all. They
  * are compared by date in the pure module.
  *
- * THE BID SIDE IS REACHED THROUGH `BidInvitation.wonJobId`, the link #491
- * added, and only that way. A bid is connected to a job when somebody said so
+ * THE BID SIDE IS REACHED THROUGH A LINK SOMEBODY MADE, and only that way:
+ * `BidInvitation.wonJobId` (the link #491 added) or the project's
+ * `estimateJobId`, so an addendum filed under any GC's invitation on the job's
+ * project counts (lib/estimating/bid-papers.ts). A bid is connected to a job when somebody said so
  * — names rarely match and one GC sends three invitations per building, so
  * anything fuzzier would attach another project's addenda to this job's
  * measurements and warn about the wrong thing.
@@ -36,7 +39,7 @@ export async function loadTakeoffCurrency(
   companyId: string,
   jobId: string,
 ): Promise<JobTakeoffCurrency> {
-  const [plans, sets, bids] = await Promise.all([
+  const [plans, sets, pricedAddenda] = await Promise.all([
     prisma.takeoffPlan.findMany({
       where: { jobId, companyId },
       select: {
@@ -58,14 +61,12 @@ export async function loadTakeoffCurrency(
     // Only a bid somebody LINKED to this job, and only addenda flagged as
     // changing work that was already priced. An addendum that changed nothing
     // we priced is not a reason to re-check a measurement.
-    prisma.bidInvitation.findMany({
-      where: { companyId, wonJobId: jobId },
-      select: {
-        addenda: {
-          where: { affectsPricedScope: true },
-          select: { id: true, reference: true, issuedOn: true, impactNote: true },
-        },
-      },
+    // Through the job's PROJECT as well as the linked invitation, so an addendum
+    // filed under another GC's invitation on the same job counts too — it is the
+    // building's drawings it changed (bid-papers.ts `paperWhereForJob`).
+    prisma.bidAddendum.findMany({
+      where: { companyId, ...paperWhereForJob(jobId, companyId), affectsPricedScope: true },
+      select: { id: true, reference: true, issuedOn: true, impactNote: true },
     }),
   ]);
 
@@ -88,14 +89,12 @@ export async function loadTakeoffCurrency(
     })),
   );
 
-  const addenda: PricedScopeAddendum[] = bids.flatMap((bid) =>
-    bid.addenda.map((addendum) => ({
-      id: addendum.id,
-      reference: addendum.reference,
-      issuedOn: day(addendum.issuedOn),
-      impactNote: addendum.impactNote,
-    })),
-  );
+  const addenda: PricedScopeAddendum[] = pricedAddenda.map((addendum) => ({
+    id: addendum.id,
+    reference: addendum.reference,
+    issuedOn: day(addendum.issuedOn),
+    impactNote: addendum.impactNote,
+  }));
 
   return {
     ...takeoffCurrency(measured, revisions, addenda),

@@ -91,6 +91,7 @@ import { GETTING_STARTED_HIDDEN_COOKIE, isGettingStartedHidden } from "@/lib/get
 import { loadTakeoffCurrency } from "@/lib/takeoff-currency-query";
 import { openingsFromJson, scheduleLines, type WallComponentBasis, type WallTypeInput } from "@/lib/wall-assemblies";
 import { levelBid, outstandingNote, requestState } from "@/lib/bid-levelling";
+import { acknowledgedOnFor, paperWhereMany, papersFor } from "@/lib/estimating/bid-papers";
 import { bidResponsiveness, responsivenessSentence } from "@/lib/bid-responsiveness";
 import { alternateDirection, bidTotals, type BidLineInput, type BidLineKind } from "@/lib/bid-lines";
 // RECAP_RATE_KEYS is IMPORTED, not declared here. It used to be a local
@@ -5081,30 +5082,38 @@ async function bidLevelling(companyId: string, input: Input): Promise<ToolResult
   // for.
   const today = await viewerToday();
 
-  const bids = await prisma.bidInvitation.findMany({
+  const invitations = await prisma.bidInvitation.findMany({
     where: { companyId, ...bidProjectWhere(input.projectName) },
     select: {
+      id: true,
+      bidProjectId: true,
       projectName: true,
       status: true,
       dueDate: true,
       contact: { select: { name: true } },
-      quotes: {
-        orderBy: [{ packageLabel: "asc" }, { amount: "asc" }],
-        select: {
-          id: true,
-          packageLabel: true,
-          vendorName: true,
-          amount: true,
-          quotedOn: true,
-          requestedOn: true,
-          dueBy: true,
-          declinedAt: true,
-          exclusions: true,
-        },
-      },
     },
     orderBy: { createdAt: "desc" },
   });
+  // The PROJECT's quotes, whichever GC's invitation each was filed under — the
+  // same rows /bids shows on every one of the project's GC rows.
+  const quoteRows = await prisma.bidQuote.findMany({
+    where: { companyId, ...paperWhereMany(invitations) },
+    orderBy: [{ packageLabel: "asc" }, { amount: "asc" }],
+    select: {
+      id: true,
+      bidInvitationId: true,
+      bidProjectId: true,
+      packageLabel: true,
+      vendorName: true,
+      amount: true,
+      quotedOn: true,
+      requestedOn: true,
+      dueBy: true,
+      declinedAt: true,
+      exclusions: true,
+    },
+  });
+  const bids = invitations.map((invitation) => ({ ...invitation, quotes: papersFor(invitation, quoteRows) }));
 
   const levelled = bids
     .filter((bid) => bid.quotes.length > 0)
@@ -5204,9 +5213,11 @@ async function bidCompliance(companyId: string, input: Input): Promise<ToolResul
   const mismatch = await bidProjectMismatch(companyId, input.projectName);
   if (mismatch) return { data: { rows: [] }, citations, unavailable: mismatch };
 
-  const bids = await prisma.bidInvitation.findMany({
+  const invitations = await prisma.bidInvitation.findMany({
     where: { companyId, ...bidProjectWhere(input.projectName) },
     select: {
+      id: true,
+      bidProjectId: true,
       projectName: true,
       status: true,
       dueDate: true,
@@ -5215,12 +5226,6 @@ async function bidCompliance(companyId: string, input: Input): Promise<ToolResul
         orderBy: { sortOrder: "asc" },
         select: { id: true, kind: true, label: true, amount: true, unit: true, unitPrice: true, accepted: true },
       },
-      // Oldest first: addenda are read as a sequence and the unacknowledged
-      // one is usually the newest.
-      addenda: {
-        orderBy: [{ issuedOn: "asc" }, { createdAt: "asc" }],
-        select: { id: true, reference: true, issuedOn: true, acknowledgedOn: true, affectsPricedScope: true, impactNote: true },
-      },
       requirements: {
         orderBy: { createdAt: "asc" },
         select: { id: true, kind: true, label: true, required: true, satisfiedOn: true },
@@ -5228,6 +5233,33 @@ async function bidCompliance(companyId: string, input: Input): Promise<ToolResul
     },
     orderBy: { dueDate: "asc" },
   });
+  // The PROJECT's addenda, oldest first (they are read as a sequence and the
+  // unacknowledged one is usually the newest) — and each one's acknowledgement is
+  // THIS bid's GC's, never another GC's: "responsive" is a claim about one GC's
+  // bid form, and an addendum acknowledged on GC A's would otherwise tell GC B's
+  // form it was in order.
+  const addendumRows = await prisma.bidAddendum.findMany({
+    where: { companyId, ...paperWhereMany(invitations) },
+    orderBy: [{ issuedOn: "asc" }, { createdAt: "asc" }],
+    select: {
+      id: true,
+      bidInvitationId: true,
+      bidProjectId: true,
+      reference: true,
+      issuedOn: true,
+      acknowledgedOn: true,
+      affectsPricedScope: true,
+      impactNote: true,
+      acknowledgements: { select: { bidInvitationId: true, acknowledgedOn: true } },
+    },
+  });
+  const bids = invitations.map((invitation) => ({
+    ...invitation,
+    addenda: papersFor(invitation, addendumRows).map((addendum) => ({
+      ...addendum,
+      acknowledgedOn: acknowledgedOnFor(addendum, invitation.id),
+    })),
+  }));
 
   const judged = bids.map((bid) => ({
     bid,

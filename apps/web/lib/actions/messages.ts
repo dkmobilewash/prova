@@ -16,6 +16,7 @@ import { RFQ_SOURCE_PURPOSE, attachmentsFit, rfqRecipient, type RfqSourceKind } 
 import { can } from "@/lib/permissions";
 import { readSupportAddress } from "@/lib/help-config";
 import { outboundEmailAllowance } from "@/lib/outbound-email-limit";
+import { paperWhere } from "@/lib/estimating/bid-papers";
 import {
   InputError,
   actionFail as fail,
@@ -616,17 +617,24 @@ export async function sendQuoteRequest(
 
     const quote = await prisma.bidQuote.findFirst({
       where: { id: bidQuoteId, companyId: company.id },
-      include: {
-        vendor: true,
-        bidInvitation: {
-          include: {
-            specSections: { select: { id: true, sectionNumber: true, fileUrl: true, fileName: true } },
-            addenda: { select: { id: true, reference: true, fileUrl: true, fileName: true } },
-          },
-        },
-      },
+      include: { vendor: true },
     });
     if (!quote) return fail("That quote request wasn't found");
+
+    // THE DOCUMENTS ARE THE PROJECT'S: a spec section or addendum filed under
+    // another GC's invitation on the same job is on this bid too, and a supplier
+    // pricing the job needs all of them (lib/estimating/bid-papers.ts).
+    const anchor = { id: quote.bidInvitationId, bidProjectId: quote.bidProjectId };
+    const [specSections, addenda] = await Promise.all([
+      prisma.bidSpecSection.findMany({
+        where: { bidInvitation: { companyId: company.id }, ...paperWhere(anchor) },
+        select: { id: true, sectionNumber: true, fileUrl: true, fileName: true },
+      }),
+      prisma.bidAddendum.findMany({
+        where: { companyId: company.id, ...paperWhere(anchor) },
+        select: { id: true, reference: true, fileUrl: true, fileName: true },
+      }),
+    ]);
 
     const to = rfqRecipient({
       quotedVendorName: quote.vendorName,
@@ -643,14 +651,14 @@ export async function sendQuoteRequest(
     // this bid and this company.
     const wanted = new Set(formData.getAll("documentId").map((one) => String(one)));
     const onThisBid: { id: string; kind: RfqSourceKind; label: string; fileUrl: string | null; fileName: string | null }[] = [
-      ...quote.bidInvitation.specSections.map((one) => ({
+      ...specSections.map((one) => ({
         id: one.id,
         kind: "SPEC_SECTION" as RfqSourceKind,
         label: one.sectionNumber,
         fileUrl: one.fileUrl,
         fileName: one.fileName,
       })),
-      ...quote.bidInvitation.addenda.map((one) => ({
+      ...addenda.map((one) => ({
         id: one.id,
         kind: "ADDENDUM" as RfqSourceKind,
         label: one.reference,
