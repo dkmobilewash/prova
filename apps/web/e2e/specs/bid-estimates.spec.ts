@@ -189,6 +189,16 @@ test.describe("C Stream Bid — an estimate, from the list to the proposal", () 
     await page.waitForURL(new RegExp(`/bid/estimates/${estimateId}/proposal$`));
     await expectBidPage("proposal tab");
     await expect(page.getByRole("heading", { name: `Proposal — ${JOB_NAME}` })).toBeVisible();
+    // A proposal is a LUMP SUM until the sender picks otherwise (feat/gc-proposal):
+    // the GC sees one price and none of the sub's own lines.
+    await expect(page.getByText("Lump sum for the work described in this proposal")).toBeVisible();
+    await expect(page.getByText(LINE.description)).toHaveCount(0);
+    // The presentation links stay inside Bid; Itemized brings the schedule of values.
+    const itemized = page.getByRole("navigation", { name: "Price presentation" }).getByRole("link", { name: "Itemized" });
+    await expect(itemized).toHaveAttribute("href", `/bid/estimates/${estimateId}/proposal?mode=itemized`);
+    await itemized.click();
+    await page.waitForURL(new RegExp(`/bid/estimates/${estimateId}/proposal\\?mode=itemized$`));
+    await expectBidPage("proposal tab, itemized");
     await expect(page.getByRole("heading", { name: "Schedule of values" })).toBeVisible();
     await expect(page.getByText(LINE.description).first()).toBeVisible();
 

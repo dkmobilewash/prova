@@ -36,7 +36,8 @@ function expand(): string {
   };
   let out = pageSource;
   for (const name of ["EstimateLineItems", "EstimateRecap", "EstimateWallSchedule", "EstimateVersions"]) {
-    out = out.replace(`<${name} data={d} />`, body(name));
+    // The page may pass the section extra props (`canManageEstimating`), so match the tag, not one spelling of it.
+    out = out.replace(new RegExp(`<${name} data=\\{d\\}[^>]*/>`), () => body(name));
   }
   return out + "\n" + stageSource.slice(stageSource.indexOf("export const estimateLineGrid"), stageSource.indexOf("/** The estimate's line items"));
 }

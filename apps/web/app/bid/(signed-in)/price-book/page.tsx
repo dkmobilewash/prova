@@ -71,7 +71,16 @@ export default async function BidPriceBookPage() {
           </CollapsedForm>
         </section>
         <div data-bid="price-book-import">
-          <CatalogImport existingDescriptions={entries.map((entry) => entry.description)} canImport={isOwner} />
+          <CatalogImport
+            existingEntries={entries.map((entry) => ({
+              id: entry.id,
+              description: entry.description,
+              unit: entry.unit,
+              unitPrice: entry.defaultUnitPrice != null ? Number(entry.defaultUnitPrice) : null,
+              budgetedUnitCost: entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
+            }))}
+            canImport={isOwner}
+          />
         </div>
       </div>
 

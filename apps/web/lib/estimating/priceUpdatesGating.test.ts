@@ -18,11 +18,19 @@ describe("price-update controls are gated like their actions", () => {
   it("derives the flag from MANAGE_ESTIMATING", () => {
     expect(page).toMatch(/canManageEstimating = capabilitiesFor\(principal\).has\("MANAGE_ESTIMATING"\)/);
   });
+  // The sections live in components/job/EstimateStage.tsx (shared with C Stream
+  // Bid); the CRM page hands them the flag it derived, and Bid's pages — which
+  // already refuse anyone without MANAGE_ESTIMATING — pass it as true.
+  const stage = read("components/job/EstimateStage.tsx");
+  it("hands the flag to both sections", () => {
+    expect(page).toMatch(/<EstimateRecap data=\{d\} canManageEstimating=\{canManageEstimating\}/);
+    expect(page).toMatch(/<EstimateWallSchedule data=\{d\} canManageEstimating=\{canManageEstimating\}/);
+  });
   it("renders the panel only behind the flag", () => {
-    expect(page).toMatch(/canManageEstimating && <UpdatePricesPanel/);
+    expect(stage).toMatch(/canManageEstimating && <UpdatePricesPanel/);
   });
   it("passes the flag to the wall schedule, which renders Restore only behind it", () => {
-    expect(page).toMatch(/canRestore=\{canManageEstimating\}/);
+    expect(stage).toMatch(/canRestore=\{canManageEstimating\}/);
     expect(read("components/WallSchedule.tsx")).toMatch(/canRestore && \(\s*<button[\s\S]*?Restore deleted lines/);
   });
 });
