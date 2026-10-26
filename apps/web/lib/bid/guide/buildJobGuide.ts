@@ -243,7 +243,7 @@ function decide(facts: JobGuideFacts, now: Date): Decision {
     const past = pastPriceFor(facts, first);
     const actions: GuideAction[] = [];
     if (past) {
-      actions.push({ label: "Use that price", actionId: "usePastPrice", actionArg: first.code, primary: true });
+      actions.push({ label: "Use that price", actionId: "usePastPrice", actionArg: past.actionArg ?? first.code, primary: true });
       actions.push(open("Add a different price", PRICE_BOOK_HREF));
     } else {
       actions.push(open("Add a price", PRICE_BOOK_HREF, true));

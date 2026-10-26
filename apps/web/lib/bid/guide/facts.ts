@@ -102,6 +102,13 @@ export type PastPriceSuggestion = {
   fromJobName: string;
   /** When, as a phrase that reads after "on {job}": `in September`. */
   whenLabel: string;
+  /**
+   * The action's own argument, when the suggestion came from
+   * `loadPastPriceSuggestions` (`lib/bid/guide/pastPrice.ts`): `wt:<id>:<token>`,
+   * whose token lets the action refuse a price that changed since the screen
+   * was drawn. Preferred over the bare code whenever present.
+   */
+  actionArg?: string;
 };
 
 export type JobGuideFacts = {

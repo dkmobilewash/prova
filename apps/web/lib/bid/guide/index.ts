@@ -1,4 +1,6 @@
-import { loadJobGuideFacts, loadOpenJobGuideFacts, type JobGuideFacts } from "./facts";
+import { prisma } from "@prova/db";
+import { loadJobGuideFacts, loadOpenJobGuideFacts, type JobGuideFacts, type PastPriceSuggestion } from "./facts";
+import { loadPastPriceSuggestions } from "./pastPrice";
 import { buildJobGuide, guideDueMs } from "./buildJobGuide";
 import type { JobGuide } from "./types";
 
@@ -19,11 +21,42 @@ export * from "./types";
 
 export async function getJobGuide(companyId: string, jobId: string, now: Date = new Date()): Promise<JobGuide | null> {
   const facts = await loadJobGuideFacts(companyId, jobId);
-  return facts ? buildJobGuide(facts, now) : null;
+  if (!facts) return null;
+  await attachPastPrices(companyId, [facts], now);
+  return buildJobGuide(facts, now);
 }
 
 export async function getOpenJobGuides(companyId: string, now: Date = new Date()): Promise<JobGuide[]> {
-  return buildGuidesFromFacts(await loadOpenJobGuideFacts(companyId), now);
+  const factsList = await loadOpenJobGuideFacts(companyId);
+  await attachPastPrices(companyId, factsList, now);
+  return buildGuidesFromFacts(factsList, now);
+}
+
+/**
+ * Offer "use the price from your last job" where it applies. Only jobs whose
+ * one ask IS an unpriced wall type are looked up, so a home list of mostly
+ * priced jobs costs no extra queries. The suggestion keeps the action's own
+ * `actionArg` (with its staleness token), which the action re-derives and
+ * compares server-side; nothing the client sends is trusted.
+ */
+async function attachPastPrices(companyId: string, factsList: JobGuideFacts[], now: Date): Promise<void> {
+  const needing = factsList.filter((facts) => buildJobGuide(facts, now).ask?.id === "unpriced-wall-types");
+  await Promise.all(
+    needing.map(async (facts) => {
+      const found = await loadPastPriceSuggestions(prisma, companyId, facts.jobId, now);
+      facts.pastPriceSuggestions = found
+        .filter((s) => s.wallTypeCode !== null)
+        .map(
+          (s): PastPriceSuggestion => ({
+            wallTypeCode: s.wallTypeCode as string,
+            label: s.label,
+            fromJobName: s.fromJobName,
+            whenLabel: `in ${s.whenLabel}`,
+            actionArg: s.actionArg,
+          }),
+        );
+    }),
+  );
 }
 
 /**
