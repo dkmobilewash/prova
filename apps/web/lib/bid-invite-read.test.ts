@@ -3,6 +3,7 @@ import {
   INVITE_TEXT_MAX,
   inviteTextProblem,
   matchGc,
+  printedClockMinute,
   printedIn,
   siteFromNotes,
   suggestionFromExtraction,
@@ -61,12 +62,13 @@ describe("a faithful read of a GC's ITB email", () => {
     expect(suggestion.projectName).toBe("Riverside Medical Office Building");
     expect(suggestion.tradeScope).toBe("METAL_FRAMING_DRYWALL");
     expect(suggestion.dueDate).toBe("2026-11-04");
+    // 2:00 PM, into the due-time column as wall-clock minutes.
+    expect(suggestion.dueMinute).toBe(14 * 60);
   });
 
-  it("puts what has no column into labelled notes lines, the Site line first", () => {
-    expect(suggestion.notes.split("\n")).toEqual([
+  it("puts what has no column into labelled notes parts on one line, the Site part first", () => {
+    expect(suggestion.notes.split(" · ")).toEqual([
       "Site: 4500 Brockton Ave, Riverside, CA 92501",
-      "Bid due time: 2:00 PM PST",
       "Job walk: October 28, 2026 at 10:00 AM, meet at the site trailer. Not mandatory.",
       "Bonding: 5% bid bond required.",
       "Plans: https://app.buildingconnected.com/projects/abc123/files",
@@ -263,7 +265,42 @@ describe("the paste itself", () => {
 
   it("reads the Site line back out of notes whatever its position, and nothing from notes without one", () => {
     expect(siteFromNotes("Job walk: Monday\nsite: 1 Main St, Corona")).toBe("1 Main St, Corona");
+    expect(siteFromNotes("Bonding: none · Site: 1 Main St, Corona · Plans: https://x.test/p")).toBe("1 Main St, Corona");
     expect(siteFromNotes("Called Sarah about the date")).toBeNull();
     expect(siteFromNotes(null)).toBeNull();
+  });
+});
+
+describe("the due time goes into its column only when it is a clear clock time", () => {
+  it("reads the printed shapes an invitation uses", () => {
+    expect(printedClockMinute("2:00 PM PST")).toBe(14 * 60);
+    expect(printedClockMinute("2 pm")).toBe(14 * 60);
+    expect(printedClockMinute("10:30a.m.")).toBe(10 * 60 + 30);
+    expect(printedClockMinute("12:00 PM")).toBe(12 * 60);
+    expect(printedClockMinute("12:15 AM")).toBe(15);
+    expect(printedClockMinute("14:00")).toBe(14 * 60);
+  });
+
+  it("is null for anything it would have to guess at", () => {
+    expect(printedClockMinute("2")).toBeNull();
+    expect(printedClockMinute("noon")).toBeNull();
+    expect(printedClockMinute("13:00 PM")).toBeNull();
+    expect(printedClockMinute("25:00")).toBeNull();
+    expect(printedClockMinute("2 pmt")).toBeNull();
+    expect(printedClockMinute(null)).toBeNull();
+  });
+
+  it("keeps an unclear time in the notes and asks, and sets no time without a day", () => {
+    const text = ITB_EMAIL.replace("2:00 PM PST", "close of business");
+    const unclear = suggestionFromExtraction(text, { ...faithful, bidDueTime: "close of business" }, GCS);
+    expect(unclear.dueMinute).toBeNull();
+    expect(unclear.notes).toContain("Bid due time: close of business");
+    expect(unclear.checks).toContain(
+      'The due time is printed as "close of business", which isn\'t a clear clock time. Set it yourself.',
+    );
+    const noYear = ITB_EMAIL.replace("Tuesday, November 4, 2026", "Tuesday, November 4");
+    const undated = suggestionFromExtraction(noYear, { ...faithful, bidDueText: "Tuesday, November 4" }, GCS);
+    expect(undated.dueDate).toBeNull();
+    expect(undated.dueMinute).toBeNull();
   });
 });

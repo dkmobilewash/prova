@@ -22,11 +22,14 @@ import { TRADE_SCOPE_OPTIONS } from "@/lib/trade-scopes";
  *   - WHICH TRADE. A fixed word list per trade, and null when the words name
  *     none or more than one.
  *
- * There is no address, job-walk, bonding or plan-link column on
- * `BidInvitation`, and this change adds none (no schema change without both
- * founders). So those facts go into the invitation's NOTES, one labelled line
- * each, where the person sees them before saving. The `Site:` line is read back
- * by `siteFromNotes` for the "same job from another GC" check.
+ * The due TIME has a column (`dueMinute`, feat/bid-dates) and is filled when
+ * the printed time parses unambiguously (`printedClockMinute`). There is no
+ * address, bonding or plan-link column, and this change adds none (no schema
+ * change without both founders), and the job walk arrives as prose. So those
+ * facts go into the invitation's NOTES as labelled parts joined by " · " —
+ * the notes box is one line — where the person sees them before saving. The
+ * `Site:` part is read back by `siteFromNotes` for the "same job from another
+ * GC" check.
  */
 
 /** The longest paste accepted. An invitation email is a page or two; a pasted
@@ -122,13 +125,46 @@ export function matchGc(printed: string, gcs: GcOption[]): GcOption | null {
   return hits.length === 1 ? hits[0] : null;
 }
 
+/** What joins the labelled parts in the one-line notes box. */
+export const NOTES_SEPARATOR = " · ";
+
+/**
+ * A printed clock time as wall-clock minutes after midnight, or null.
+ *
+ * Only the unambiguous shapes: "2:00 PM", "2 pm", "10:30a.m.", "14:00". A
+ * bare "2" or "noon-ish" is null, and the person sets it — a deadline an hour
+ * off is worse than one left blank. A trailing zone ("PST") is ignored, as the
+ * column is wall-clock by design (lib/bid-dates.ts).
+ */
+export function printedClockMinute(printed: string | null): number | null {
+  if (!printed) return null;
+  const text = printed.trim().toLowerCase();
+  const twelve = /^(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)(?![a-z])/.exec(text);
+  if (twelve) {
+    const hour = Number(twelve[1]);
+    const minute = twelve[2] === undefined ? 0 : Number(twelve[2]);
+    if (hour < 1 || hour > 12 || minute > 59) return null;
+    const pm = twelve[3].startsWith("p");
+    return ((hour % 12) + (pm ? 12 : 0)) * 60 + minute;
+  }
+  const twentyFour = /^(\d{1,2}):(\d{2})(?![\d:])/.exec(text);
+  if (twentyFour) {
+    const hour = Number(twentyFour[1]);
+    const minute = Number(twentyFour[2]);
+    if (hour > 23 || minute > 59) return null;
+    return hour * 60 + minute;
+  }
+  return null;
+}
+
 /** The label the `Site:` notes line carries. The duplicate check reads it back. */
 export const SITE_LABEL = "Site:";
 
 /** The site line out of an invitation's notes, or null. */
 export function siteFromNotes(notes: string | null | undefined): string | null {
   if (!notes) return null;
-  for (const line of notes.split(/\r?\n/)) {
+  // Lines (typed notes) or " · " parts (a filled form): both are read.
+  for (const line of notes.split(/\r?\n| · /)) {
     const trimmed = line.trim();
     if (trimmed.toLowerCase().startsWith(SITE_LABEL.toLowerCase())) {
       const value = trimmed.slice(SITE_LABEL.length).trim();
@@ -148,6 +184,8 @@ export type BidInviteSuggestion = {
   tradeScope: TradeValue | null;
   /** `YYYY-MM-DD`, or null. */
   dueDate: string | null;
+  /** Wall-clock minutes after midnight on `dueDate`, or null. */
+  dueMinute: number | null;
   notes: string;
   /** Sentences for beside the form: what was read, what was not, and why. */
   checks: string[];
@@ -229,6 +267,12 @@ export function suggestionFromExtraction(
     checks.push(`The due date is printed as "${bidDueText}", which doesn't give a full date. Set it yourself.`);
   }
 
+  // A time only rides with a day: `bidDatesProblem` refuses a time on no date.
+  const dueMinute = dueDate !== null ? printedClockMinute(bidDueTime) : null;
+  if (bidDueTime && dueDate !== null && dueMinute === null) {
+    checks.push(`The due time is printed as "${bidDueTime}", which isn't a clear clock time. Set it yourself.`);
+  }
+
   // The GC: exact name match to one of this company's GCs, or the person picks.
   const gc = gcName ? matchGc(gcName, gcs) : null;
   if (gcName && !gc) {
@@ -253,7 +297,7 @@ export function suggestionFromExtraction(
   const site = [siteAddress, siteCity].filter(Boolean).join(", ");
   const lines = [
     site ? `${SITE_LABEL} ${site}` : null,
-    bidDueTime ? `Bid due time: ${bidDueTime}` : null,
+    bidDueTime && dueMinute === null ? `Bid due time: ${bidDueTime}` : null,
     jobWalk ? `Job walk: ${jobWalk}` : null,
     bonding ? `Bonding: ${bonding}` : null,
     planLink ? `Plans: ${planLink}` : null,
@@ -266,7 +310,8 @@ export function suggestionFromExtraction(
     projectName,
     tradeScope,
     dueDate,
-    notes: lines.join("\n"),
+    dueMinute,
+    notes: lines.join(NOTES_SEPARATOR),
     checks,
     dropped,
   };

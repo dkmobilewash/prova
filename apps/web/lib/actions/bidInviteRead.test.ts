@@ -154,7 +154,8 @@ describe("readBidInvitationText — a successful read", () => {
       projectName: "Riverside Medical Office",
       tradeScope: "METAL_FRAMING_DRYWALL",
       dueDate: "2026-11-04",
-      notes: "Site: 4500 Brockton Ave, Riverside CA\nBid due time: 2 PM",
+      dueMinute: 14 * 60,
+      notes: "Site: 4500 Brockton Ave, Riverside CA",
       checks: [],
     });
     expect(result.value.note).toBe(

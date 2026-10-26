@@ -34,6 +34,8 @@ import { addCatalogLine } from "@/lib/estimating/catalog-line";
 import { addIndirectLine } from "@/lib/estimating/add-indirect";
 import { isIndirectCostKind } from "@/lib/estimating/indirect-costs";
 import { createBidInvitationRecord } from "@/lib/estimating/bid-invitation";
+import { updateBidInvitationDetailsRecord } from "@/lib/estimating/bid-invitation-edit";
+import { bidDatesFromForm } from "@/lib/bid-dates";
 import { runAgentAfterResponse } from "@/lib/agents/onEvent";
 import { issueEstimateVersionNumber } from "@/lib/estimating/estimate-version";
 
@@ -48,7 +50,8 @@ export async function createBidInvitation(contactId: string, formData: FormData)
   const { company } = await requireCompanyContext();
   return runAction(async () => {
     const projectName = String(formData.get("projectName") ?? "").trim();
-    const dueDateRaw = String(formData.get("dueDate") ?? "").trim();
+    const dates = bidDatesFromForm(formData);
+    if (!dates.ok) return actionFail(dates.error);
     const notes = String(formData.get("notes") ?? "").trim();
     const tradeScope = tradeScopeFromForm(formData);
     const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
@@ -56,7 +59,7 @@ export async function createBidInvitation(contactId: string, formData: FormData)
     const result = await createBidInvitationRecord(company.id, {
       contactId,
       projectName,
-      dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
+      ...dates.value,
       notes: notes || null,
       tradeScope,
       bidAmount,
@@ -65,6 +68,41 @@ export async function createBidInvitation(contactId: string, formData: FormData)
 
     revalidatePath(`/contacts/${contactId}`);
     revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+/** Edits a logged bid: project name, trade, amount, notes and the dates
+ * (due day and time, job walk, RFI cutoff). Addenda move these constantly, and
+ * the Due-soon list and the missed / gone-cold flags are derived from them at
+ * read time, so this one write corrects all of them. The GC and the status are
+ * NOT editable here — see lib/estimating/bid-invitation-edit.ts. */
+export async function updateBidInvitationDetails(
+  bidInvitationId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  // The capability /bids itself withholds — a page guard does not cover the
+  // endpoint behind it (`action-capability-guards.test.ts`).
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+  return runAction(async () => {
+    const dates = bidDatesFromForm(formData);
+    if (!dates.ok) return actionFail(dates.error);
+    const result = await updateBidInvitationDetailsRecord(company.id, bidInvitationId, {
+      ...dates.value,
+      projectName: String(formData.get("projectName") ?? ""),
+      tradeScope: tradeScopeFromForm(formData),
+      bidAmount: nullableDecimalFromForm(formData, "bidAmount"),
+      notes: String(formData.get("notes") ?? ""),
+    });
+    if (!result.ok) return actionFail(result.error);
+
+    revalidatePath(`/contacts/${result.value.contactId}`);
+    revalidatePath("/bids");
+    revalidatePath("/pipeline");
     return actionOk;
   });
 }

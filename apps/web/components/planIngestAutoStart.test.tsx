@@ -36,6 +36,10 @@ const startPlanIngest = vi.fn();
 const advancePlanIngest = vi.fn();
 const planIngestFailures = vi.fn(async () => ({ ok: true, value: [] }));
 
+// The panel refreshes the route once a read it drove finishes, and `useRouter`
+// throws outside an app router. See `planIngestRefresh.test.tsx`.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {}, push: () => {} }) }));
+
 vi.mock("@/lib/actions", () => ({
   startPlanIngest: (...a: unknown[]) => startPlanIngest(...a),
   advancePlanIngest: (...a: unknown[]) => advancePlanIngest(...a),

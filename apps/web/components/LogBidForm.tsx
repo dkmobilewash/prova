@@ -7,7 +7,7 @@ import type { BidInviteReadResult } from "@/lib/actions/bidInviteRead";
 import type { SameJobMatch } from "@/lib/estimating/bid-invitation";
 import { ActionForm } from "@/components/ActionForm";
 import { SubmitButton } from "@/components/SubmitButton";
-import { TRADE_SCOPE_OPTIONS } from "@/lib/trade-scopes";
+import { BidDetailsFields } from "@/components/BidDetailsFields";
 
 const field =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-base text-ink placeholder:text-ink-muted focus:border-link focus:outline-none sm:text-sm";
@@ -220,46 +220,15 @@ export function LogBidForm({ gcs, startOpen = false }: { gcs: { id: string; name
                   ))}
                 </select>
               </label>
-              <label className="flex flex-col gap-1 text-sm text-ink-label">
-                Project name
-                <input
-                  name="projectName"
-                  required
-                  autoComplete="off"
-                  defaultValue={suggestion?.projectName ?? ""}
-                  placeholder="Downtown office build-out…"
-                  className={field}
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm text-ink-label">
-                Trade
-                <select name="tradeScope" defaultValue={suggestion?.tradeScope ?? ""} className={field}>
-                  <option value="">No trade tag</option>
-                  {TRADE_SCOPE_OPTIONS.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1 text-sm text-ink-label">
-                Bid due date
-                <input name="dueDate" type="date" defaultValue={suggestion?.dueDate ?? ""} className={field} />
-              </label>
-              <label className="flex flex-col gap-1 text-sm text-ink-label">
-                Bid $ (if known)
-                <input name="bidAmount" type="text" inputMode="decimal" autoComplete="off" placeholder="Optional" className={`w-28 ${field}`} />
-              </label>
-              <label className="flex min-w-[180px] flex-1 basis-full flex-col gap-1 text-sm text-ink-label">
-                Notes
-                <textarea
-                  name="notes"
-                  rows={suggestion?.notes ? Math.min(6, suggestion.notes.split("\n").length + 1) : 2}
-                  defaultValue={suggestion?.notes ?? ""}
-                  placeholder="Optional. A line starting “Site:” (address, city) helps spot the same job from another GC."
-                  className={field}
-                />
-              </label>
+              <BidDetailsFields
+                defaults={{
+                  projectName: suggestion?.projectName ?? "",
+                  tradeScope: suggestion?.tradeScope ?? null,
+                  dueDate: suggestion?.dueDate ?? null,
+                  dueMinute: suggestion?.dueMinute ?? null,
+                  notes: suggestion?.notes ?? null,
+                }}
+              />
               <div className="flex gap-2">
                 <SubmitButton
                   type="submit"

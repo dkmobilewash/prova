@@ -1,6 +1,7 @@
 import { prisma, type TradeScope } from "@prova/db";
 import type { ActionResultWith } from "@/lib/actions/shared";
 import { runAgentAfterResponse } from "@/lib/agents/onEvent";
+import { bidDatesProblem } from "@/lib/bid-dates";
 
 /**
  * The body of "log a bid invitation", lifted out of the Server Action so
@@ -39,6 +40,13 @@ export type CreateBidInvitationInput = {
   projectName: string;
   /** A calendar day at UTC midnight, or unset. */
   dueDate?: Date | null;
+  /** Wall-clock minutes after midnight on `dueDate` — see lib/bid-dates.ts. */
+  dueMinute?: number | null;
+  /** Job walk / pre-bid meeting day (UTC midnight) and optional wall-clock minute. */
+  walkDate?: Date | null;
+  walkMinute?: number | null;
+  /** Last day RFIs are accepted (UTC midnight). */
+  rfiCutoffDate?: Date | null;
   notes?: string | null;
   tradeScope?: TradeScope | null;
   /** Already validated as a decimal string. #133: the contact page's
@@ -70,6 +78,14 @@ export async function createBidInvitationRecord(
   // The action's own rule, in the action's own words, before any read.
   const projectName = input.projectName.trim();
   if (!projectName) return { ok: false, error: PROJECT_NAME_REQUIRED };
+  const datesProblem = bidDatesProblem({
+    dueDate: input.dueDate ?? null,
+    dueMinute: input.dueMinute ?? null,
+    walkDate: input.walkDate ?? null,
+    walkMinute: input.walkMinute ?? null,
+    rfiCutoffDate: input.rfiCutoffDate ?? null,
+  });
+  if (datesProblem) return { ok: false, error: datesProblem };
 
   const contact = await prisma.contact.findFirst({
     where: { id: input.contactId, companyId },
@@ -98,6 +114,10 @@ export async function createBidInvitationRecord(
       contactId: contact.id,
       projectName,
       dueDate: input.dueDate ?? null,
+      dueMinute: input.dueMinute ?? null,
+      walkDate: input.walkDate ?? null,
+      walkMinute: input.walkMinute ?? null,
+      rfiCutoffDate: input.rfiCutoffDate ?? null,
       notes: input.notes?.trim() || null,
       tradeScope: input.tradeScope ?? null,
       bidAmount: input.bidAmount ?? null,
