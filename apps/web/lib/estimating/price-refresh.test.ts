@@ -14,7 +14,7 @@ const line = (over: Partial<RefreshLine> & { id: string }): RefreshLine => ({
   unitPrice: 2.5,
   budgetedUnitCost: 1.75,
   currentEstimatedUnitCost: 1.75,
-  sourceCatalogEntryId: "board",
+  catalogEntryId: "board",
   ...over,
 });
 
@@ -34,7 +34,7 @@ describe("planPriceRefresh", () => {
   });
 
   it("leaves lines with no catalog link alone and says they were set by you", () => {
-    const plan = planPriceRefresh([line({ id: "typed", sourceCatalogEntryId: null })], [board], {
+    const plan = planPriceRefresh([line({ id: "typed", catalogEntryId: null })], [board], {
       recapApplied: false,
     });
     expect(plan.updates).toHaveLength(0);
@@ -44,8 +44,8 @@ describe("planPriceRefresh", () => {
   it("keeps a line whose price book item was deleted, has no price, or is in another unit", () => {
     const plan = planPriceRefresh(
       [
-        line({ id: "gone", sourceCatalogEntryId: "deleted" }),
-        line({ id: "bare", sourceCatalogEntryId: "bare" }),
+        line({ id: "gone", catalogEntryId: "deleted" }),
+        line({ id: "bare", catalogEntryId: "bare" }),
         line({ id: "unit", unit: "LF" }),
       ],
       [board, { id: "bare", unit: "SF", defaultUnitPrice: null, defaultBudgetedUnitCost: null }],

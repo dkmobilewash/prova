@@ -42,7 +42,11 @@ export type RefreshLine = {
   unitPrice: number | null;
   budgetedUnitCost: number | null;
   currentEstimatedUnitCost: number | null;
-  sourceCatalogEntryId: string | null;
+  /** The row's `sourceCatalogEntryId`, under its own name on purpose: this is
+   *  a read-only view, and `catalogLineWriterCensus.test.ts` treats any
+   *  `sourceCatalogEntryId:` key as a row write that must carry the inherited
+   *  fields. Nothing here creates a catalog-sourced line. */
+  catalogEntryId: string | null;
 };
 
 export type RefreshEntry = {
@@ -110,11 +114,11 @@ export function planPriceRefresh(
 
   for (const line of lines) {
     const keep = (reason: KeptReason) => kept.push({ lineId: line.id, description: line.description, reason });
-    if (!line.sourceCatalogEntryId) {
+    if (!line.catalogEntryId) {
       keep("no-link");
       continue;
     }
-    const entry = entryById.get(line.sourceCatalogEntryId);
+    const entry = entryById.get(line.catalogEntryId);
     if (!entry) {
       keep("entry-missing");
       continue;

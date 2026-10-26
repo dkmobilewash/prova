@@ -73,7 +73,7 @@ async function loadPlan(jobId: string, companyId: string) {
     unitPrice: n(row.unitPrice),
     budgetedUnitCost: n(row.budgetedUnitCost),
     currentEstimatedUnitCost: n(row.currentEstimatedUnitCost),
-    sourceCatalogEntryId: row.sourceCatalogEntryId,
+    catalogEntryId: row.sourceCatalogEntryId,
   }));
   const plan = planPriceRefresh(
     lines,
