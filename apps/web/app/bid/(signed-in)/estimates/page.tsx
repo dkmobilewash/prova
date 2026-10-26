@@ -1,83 +1,92 @@
+import Link from "next/link";
 import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
-import { BidComingSoon } from "@/components/bid/BidComingSoon";
+import { loadJobs } from "@/lib/jobs-list";
+import { bidTotalOf } from "@/lib/estimating/recap-state";
+import { money } from "@/lib/money";
 import { BidNoAccess } from "@/components/bid/BidNoAccess";
 import { BID_CAPABILITY } from "@/components/bid/bidNav";
 
 export const metadata = { title: "Estimates" };
 
 /**
- * C Stream Bid — estimates: start a bid, the plan takeoff, the estimate and
- * bid recap, and the proposal. Steps 2-4 of the chain. A STUB in this build.
+ * C Stream Bid — estimates: steps 2-4 of the chain (the plan takeoff, the
+ * estimate and bid recap, the proposal), one row per job still being priced.
  *
  * An estimate is a `Job` at ESTIMATE status (ARCHITECTURE.md: Job/JobLineItem
- * is one unified object), which is what keeps "same account" true — a Bid
- * estimate the company wins later is the CRM job, with every line.
+ * is one unified object), which is what keeps "same account" true — an
+ * estimate the company wins later is the CRM job, with every line. The CRM has
+ * no estimate list of its own (`/estimating` redirects to
+ * `/jobs?status=ESTIMATE`); this is the same read (`loadJobs`) filtered the same
+ * way, with the bid total from `bidTotalOf` — the one sum the CRM header and
+ * the recap use — rather than `jobValue`, a second sum of the same lines.
  *
- * PORTING BRIEF (wave 2). Every CRM href in each screen's import closure, from
- * `lib/bid/navTargets.ts`. The money and takeoff logic is NOT to be copied —
- * render the same components; only the links and the chrome change.
- *
- *   LIST — the CRM has no estimate list page of its own: `/estimating`
- *   redirects to `/jobs?status=ESTIMATE` (`app/(app)/estimating/page.tsx`).
- *   Bid needs a list of ESTIMATE-stage jobs.
- *
- *   START A BID — `app/(app)/jobs/new/page.tsx` (`/jobs` back link, :53) and
- *   `app/(app)/jobs/new/[jobId]/items/page.tsx` (`/jobs/${id}` :42 :92 :113,
- *   `/jobs` :83). `components/BidWizardSteps.tsx:62-63` hard-codes
- *   `/jobs/new` and `/jobs/new/${id}/items` as its step hrefs. AND THE SERVER
- *   ACTION REDIRECTS: `lib/actions/jobs.ts:94` `createJob` ends in
- *   `redirect(`/jobs/new/${jobId}/items`)` — the link census cannot see this
- *   (it stops at lib/), so it needs a `next` parameter or a Bid twin.
- *
- *   THE JOB SHELL — `app/(app)/jobs/[id]/(tabs)/layout.tsx` is the CRM job:
- *   `components/JobSummaryHeader.tsx` (`/jobs` :62, `/jobs/${id}#contract-
- *   signature` :108), `components/job/jobTabs.ts` (every tab, incl. crew,
- *   compliance, billing, retainage, certified payroll), `components/job/
- *   jobStages.ts` (billing, retainage, punch lists, closeout, lien waivers).
- *   Bid needs its own estimate header with three tabs: Takeoff, Estimate,
- *   Proposal. Do NOT reuse the CRM tab layout.
- *
- *   ESTIMATE + RECAP — `app/(app)/jobs/[id]/(tabs)/estimate/page.tsx`:
- *   `/jobs/${id}/proposal` :545, `/settings?tab=estimating` :578,
- *   `/jobs/${id}/takeoff` :1177, `/takeoff/${id}` :1193;
- *   `components/WallSchedule.tsx:91` `/wall-types`;
- *   `components/DocuSignPanel.tsx:282` `/settings/integrations#docusign`
- *   (contract e-sign — post-award, leave it out of Bid). The recap itself,
- *   `components/BidRecapPanel.tsx`, has NO CRM hrefs and ports as-is. The
- *   page is 1,200+ lines and also renders change orders, contract and
- *   billing-stage sections — Bid renders the estimate-stage subset only.
- *
- *   TAKEOFF — `app/(app)/jobs/[id]/(tabs)/takeoff/page.tsx` (`/takeoff/${id}`
- *   :409, `/jobs/${id}/estimate` :420); `components/TakeoffCurrencyBanner.tsx:84`
- *   `/bids`; `components/PlanIngestPanel.tsx:300` `legend.reviewHref`
- *   (dynamic, built in lib). Full-screen workspace `app/takeoff/[id]/page.tsx`
- *   (`/jobs/${id}/takeoff` :59) — OUTSIDE `(app)` and a CRM route on the Bid
- *   host; `components/TakeoffAssemblyPanel.tsx:188,200` `/wall-types`;
- *   `components/TakeoffWorkspace.tsx:1207` `/jobs/${id}/estimate`. Bid needs
- *   `/bid/estimates/[id]/takeoff` and its own full-screen route.
- *
- *   PROPOSAL — `app/(app)/jobs/[id]/proposal/page.tsx` (`/jobs/${id}/estimate`
- *   :210 :258, `finding.fixHref` :200 built in `lib/agents/estimateCheck.ts`);
- *   `components/BidPackageBuilder.tsx:302` `/messages`, `finding.href` :327;
- *   `components/ProposalClauses.tsx:217` `/proposals` (the clause library →
- *   `/bid/settings`).
+ * No `PageHeader` (its breadcrumb is `Home → /dashboard`), no `EmptyState`
+ * (its Ask action pushes `/ask`), no `NoAccess` (its button is `/dashboard`):
+ * each is a door into the CRM, which `bidLinkCensus.test.ts` would fail.
  */
 export default async function BidEstimatesPage() {
-  const { allowed } = await requireCapability(BID_CAPABILITY);
+  const { context, allowed } = await requireCapability(BID_CAPABILITY);
   if (!allowed) return <BidNoAccess />;
+  const jobs = await loadJobs({ companyId: context.company.id, status: "ESTIMATE" });
+  const pipeline = jobs.reduce((sum, job) => sum + bidTotalOf(job.lineItems), 0);
+
   return (
     <PageShell width="working">
-      <BidComingSoon
-        title="Estimates"
-        purpose={
-          <p>
-            Start an estimate from an invite, upload the drawing set and find the walls, price the lines from your
-            wall types and price book, set your markup in the bid recap, and print the proposal — one set of numbers
-            from the drawings to the proposal.
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="font-headline text-3xl font-semibold text-ink">Estimates</h1>
+          <p className="text-sm text-ink-body">
+            {jobs.length === 0
+              ? "The jobs you are pricing — measure the drawing, price the lines, set your markup, send the proposal."
+              : `${money(pipeline)} still being priced across ${jobs.length} ${jobs.length === 1 ? "estimate" : "estimates"}.`}
           </p>
-        }
-      />
+        </div>
+        <Link
+          href="/bid/estimates/new"
+          data-bid="start-estimate"
+          className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-brand-hover"
+        >
+          Start an estimate
+        </Link>
+      </div>
+
+      {jobs.length === 0 ? (
+        <div className="flex max-w-prose flex-col gap-3 rounded-lg border border-line-card bg-surface p-5" data-bid="no-estimates">
+          <h2 className="text-lg font-semibold text-ink">No estimates yet</h2>
+          <p className="text-sm text-ink-body">
+            An estimate is one job you are pricing for one GC. Start one, upload its drawing set, and the walls, the
+            lines and the proposal all hang off it — the same numbers from the drawings to the page you send.
+          </p>
+          <p className="text-sm text-ink-body">
+            Set up your{" "}
+            <Link href="/bid/wall-types" className="text-link hover:underline">
+              wall types
+            </Link>{" "}
+            and{" "}
+            <Link href="/bid/price-book" className="text-link hover:underline">
+              price book
+            </Link>{" "}
+            once and every estimate prices from them.
+          </p>
+        </div>
+      ) : (
+        <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface" data-bid="estimates-list">
+          {jobs.map((job) => (
+            <li key={job.id}>
+              <Link href={`/bid/estimates/${job.id}`} className="block p-4 hover:bg-rail-hover">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <p className="min-w-0 break-words font-medium text-ink">{job.name}</p>
+                  <p className="text-sm font-medium tabular-nums text-ink">{money(bidTotalOf(job.lineItems))}</p>
+                </div>
+                <p className="mt-0.5 text-sm text-ink-body">
+                  {job.contact.name} · {job.lineItems.length} {job.lineItems.length === 1 ? "line" : "lines"}
+                </p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
     </PageShell>
   );
 }

@@ -7,6 +7,7 @@ import { requireJobGivenContext } from "@/lib/jobs/job-access";
 import { NoAccess } from "@/components/NoAccess";
 import { TakeoffWorkspace } from "@/components/TakeoffWorkspace";
 import { loadTakeoffWorkspace, takeoffSavedSignature, workspaceForClient } from "@/lib/takeoff/workspaceLoad";
+import { surfaceHrefs, type Surface } from "@/lib/bid/surfaceHrefs";
 
 /**
  * ── THE FULL-SCREEN TAKEOFF WORKSPACE ──
@@ -31,14 +32,20 @@ import { loadTakeoffWorkspace, takeoffSavedSignature, workspaceForClient } from 
 export default async function TakeoffWorkspacePage({
   params,
   searchParams,
+  surface = "crm",
 }: {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ page?: string; key?: string }>;
+  /** Which product renders this page. Next passes only `params` and
+   * `searchParams`, so a CRM request is always "crm"; C Stream Bid mounts the
+   * same page at its own route with `surface="bid"` (`lib/bid/surfaceHrefs.ts`). */
+  surface?: Surface;
 }) {
   const { id } = await params;
   const { page, key } = await searchParams;
+  const hrefs = surfaceHrefs(surface, id);
   const { context, allowed } = await requireCapability("VIEW_JOB_COSTS");
-  if (!allowed) return <NoAccess capability="VIEW_JOB_COSTS" />;
+  if (!allowed) return <NoAccess capability="VIEW_JOB_COSTS" homeHref={hrefs.home} homeLabel={hrefs.homeLabel} />;
   const { company, job } = await requireJobGivenContext(id, context);
 
   const data = await loadTakeoffWorkspace(company, job);
@@ -56,7 +63,7 @@ export default async function TakeoffWorkspacePage({
           tab first.
         </p>
         <Link
-          href={`/jobs/${job.id}/takeoff`}
+          href={hrefs.takeoff}
           className="rounded-md border border-line-card px-3 py-1.5 text-sm text-link hover:text-link-hover"
         >
           Go to the takeoff tab
@@ -100,6 +107,9 @@ export default async function TakeoffWorkspacePage({
          same id is a different wall. Keying the draft by this build means a
          rebuild cannot hand one sheet's decisions to another's walls. */
       finderVersion={finderVersion()}
+      backHref={hrefs.estimate}
+      backLabel={surface === "bid" ? "Back to the estimate" : undefined}
+      wallTypesHref={hrefs.wallTypes}
     />
   );
 }

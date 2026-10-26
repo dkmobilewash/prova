@@ -79,8 +79,13 @@ export type SubmitTarget = {
 export function BidPackageBuilder({
   projectName,
   submit,
+  messageLogHref = "/messages",
 }: {
   projectName: string;
+  /** The log of what the app sent. The CRM's `/messages` by default; C Stream
+   * Bid has no such screen and passes `null`, which draws no link at all
+   * (`lib/bid/surfaceHrefs.ts`). */
+  messageLogHref?: string | null;
   /**
    * Absent when this job has no bid linked to it, which is most jobs: a
    * `BidInvitation` is company-scoped and only a WON one carries `wonJobId`.
@@ -298,11 +303,18 @@ export function BidPackageBuilder({
             <p className="mt-1 text-xs text-amber-300">{submit.problem}</p>
           ) : sent ? (
             <p className="mt-1 text-xs text-ink-body">
-              Sent to {submit.gcName}. It is on the{" "}
-              <a className="text-link hover:underline" href="/messages">
-                message log
-              </a>{" "}
-              with whatever the provider says about delivery.
+              Sent to {submit.gcName}.{" "}
+              {messageLogHref ? (
+                <>
+                  It is on the{" "}
+                  <a className="text-link hover:underline" href={messageLogHref}>
+                    message log
+                  </a>{" "}
+                  with whatever the provider says about delivery.
+                </>
+              ) : (
+                "The send is recorded against this bid."
+              )}
             </p>
           ) : (
             <form onSubmit={send} className="mt-2 flex flex-col gap-2">

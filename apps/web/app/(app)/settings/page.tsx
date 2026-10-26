@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@prova/db";
 import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
-import { RECAP_RATE_KEYS } from "@/lib/bid-recap";
+import { bidDefaultsView } from "@/lib/estimating/bid-defaults-view";
 import { NoAccess } from "@/components/NoAccess";
 import {
   createBond,
@@ -261,16 +261,7 @@ export default async function SettingsPage({
 
   // Decimal columns crossing into a client component: strings, so the form
   // shows exactly what is stored and no float rounding happens on the way.
-  const bidDefaults = bidDefaultsRow
-    ? Object.fromEntries(
-        (
-          // Shared, not listed again: a key missing here means a stored rate
-          // never reaches the form, which looks exactly like a rate that
-          // failed to save.
-          RECAP_RATE_KEYS
-        ).map((key) => [key, bidDefaultsRow[key]?.toString() ?? null]),
-      )
-    : null;
+  const bidDefaults = bidDefaultsView(bidDefaultsRow);
 
   // Picked field by field rather than spread: this crosses into a client
   // component, and the row also carries `isProvaOperator` and the timestamps,

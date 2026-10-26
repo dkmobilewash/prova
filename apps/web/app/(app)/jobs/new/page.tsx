@@ -1,8 +1,8 @@
-import { prisma } from "@prova/db";
 import { PageShell } from "@prova/ui";
 import { PageHeader } from "@/components/PageHeader";
 import { requireCompanyContext } from "@/lib/auth";
 import { NewJobForm } from "@/components/NewJobForm";
+import { loadGcOptions } from "@/lib/jobs/gc-options";
 import { BidWizardSteps } from "@/components/BidWizardSteps";
 
 /**
@@ -23,25 +23,7 @@ import { BidWizardSteps } from "@/components/BidWizardSteps";
 export default async function NewJobPage() {
   const { company } = await requireCompanyContext();
 
-  const contacts = await prisma.contact.findMany({
-    where: { companyId: company.id },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      _count: { select: { jobs: true } },
-    },
-    orderBy: [{ name: "asc" }],
-  });
-
-  const options = contacts
-    .map((contact) => ({
-      id: contact.id,
-      name: contact.name,
-      email: contact.email,
-      jobCount: contact._count.jobs,
-    }))
-    .sort((a, b) => b.jobCount - a.jobCount || a.name.localeCompare(b.name));
+  const options = await loadGcOptions(company.id);
 
   return (
     <PageShell width="reading">

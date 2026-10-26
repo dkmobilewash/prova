@@ -185,9 +185,13 @@ export function ProposalClauseRow({
 export function JobProposalClauseBuilder({
   jobId,
   library,
+  libraryHref = "/proposals",
 }: {
   jobId: string;
   library: { id: string; kind: ProposalClauseKindValue; text: string }[];
+  /** Where the standing clause library is edited. The CRM's page by default;
+   * C Stream Bid passes its own (`lib/bid/surfaceHrefs.ts`). */
+  libraryHref?: string;
 }) {
   const fromLibrary = useSubmit((formData) => addProposalClauseToJob(jobId, formData));
   const inline = useSubmit((formData) => addProposalClauseToJob(jobId, formData));
@@ -214,7 +218,7 @@ export function JobProposalClauseBuilder({
       ) : (
         <p className="text-sm text-ink-body">
           Your clause library is empty. Clauses you repeat on every bid belong on{" "}
-          <a href="/proposals" className="text-link hover:underline">
+          <a href={libraryHref} className="text-link hover:underline">
             Proposal clauses
           </a>
           ; for now, type this one below.
