@@ -107,46 +107,46 @@ export function BidProjectPanel({
               {money(view.estimateTotal)}
             </span>
           </p>
-          <table className="mt-1 w-full text-left text-sm">
-            <thead>
-              <tr className="text-xs text-ink-muted">
-                <th className="py-1 pr-2 font-medium">GC</th>
-                <th className="px-2 py-1 font-medium">Adjustment</th>
-                <th className="px-2 py-1 text-right font-medium">Price to GC</th>
-                <th className="px-2 py-1 text-right font-medium">Sent</th>
-                <th className="py-1 pl-2 font-medium">
-                  <span className="sr-only">Proposal</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {view.prices.map((row) => (
-                <tr key={row.invitationId} className="border-t border-line-row" data-bids="gc-price-row">
-                  <td className={`py-1 pr-2 ${row.isThis ? "font-medium text-ink" : ""}`}>{row.name}</td>
-                  <td className="px-2 py-1">
-                    {row.adjustment ?? <span className="text-ink-muted">none</span>}
-                    {row.reason && <span className="text-ink-muted"> — {row.reason}</span>}
-                  </td>
-                  <td className="px-2 py-1 text-right tabular-nums text-ink" data-bids="gc-price">
+          {/* A LIST, NOT A TABLE. Five table columns cannot shrink below
+              their content, and at 375px they pushed the whole bid log 27px
+              past the edge of the phone (measured in Chromium against the
+              app's own CSS; `bid-bids.spec.ts` step 5). Each GC is one row
+              that wraps: who and why on the left, the price, what was sent
+              and its proposal on the right. */}
+          <ul className="mt-1 text-sm">
+            {view.prices.map((row) => (
+              <li
+                key={row.invitationId}
+                className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t border-line-row py-1"
+                data-bids="gc-price-row"
+              >
+                <span className="min-w-0 break-words">
+                  <span className={row.isThis ? "font-medium text-ink" : ""}>{row.name}</span>{" "}
+                  <span className="text-ink-muted">
+                    · {row.adjustment ?? "no adjustment"}
+                    {row.reason && <> — {row.reason}</>}
+                  </span>
+                </span>
+                <span className="flex flex-wrap items-baseline gap-x-3">
+                  <span className="text-xs text-ink-muted">Price to GC</span>
+                  <span className="tabular-nums text-ink" data-bids="gc-price">
                     {row.price ?? (
                       <span className="text-tag-amber-ink" title={row.problem ?? undefined}>
                         check adjustment
                       </span>
                     )}
-                  </td>
-                  <td className="px-2 py-1 text-right tabular-nums text-ink-muted">{row.sent ?? "—"}</td>
-                  <td className="py-1 pl-2">
-                    <Link
-                      href={`${hrefs.proposal}?invitation=${encodeURIComponent(row.invitationId)}`}
-                      className="text-link hover:underline"
-                    >
-                      Proposal
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </span>
+                  <span className="tabular-nums text-ink-muted">Sent {row.sent ?? "—"}</span>
+                  <Link
+                    href={`${hrefs.proposal}?invitation=${encodeURIComponent(row.invitationId)}`}
+                    className="inline-flex min-h-11 items-center text-link hover:underline mouse:min-h-0"
+                  >
+                    Proposal
+                  </Link>
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       {view.primeAwarded && (
