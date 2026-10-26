@@ -507,8 +507,12 @@ test.describe("the estimating desk", () => {
       page.locator("main").getByText(LINE.description, { exact: true }),
       "the lump-sum proposal leaked a line item to the GC",
     ).toHaveCount(0);
-    const lumpTotal = (await page.locator("tr").filter({ hasText: "Total bid" }).innerText()).match(/\$[\d,]+\.\d\d/)?.[0];
-    expect(lumpTotal, "the lump-sum proposal carries no Total bid figure").toBeTruthy();
+    // Lump sum is ONE row carrying the amount — it has no separate "Total bid"
+    // row (that is the itemized and by-scope footer), so read it off that row.
+    const lumpRow = page.locator("tr").filter({ hasText: "Lump sum for the work described in this proposal" });
+    await expect(lumpRow).toHaveCount(1);
+    const lumpTotal = (await lumpRow.innerText()).match(/\$[\d,]+\.\d\d/)?.[0];
+    expect(lumpTotal, "the lump-sum row carries no dollar figure").toBeTruthy();
 
     // ── ITEMIZED STILL PRINTS EVERY LINE, AT THE SAME TOTAL ──
     await page.goto(`/jobs/${jobId}/proposal?mode=itemized`);
