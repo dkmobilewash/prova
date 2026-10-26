@@ -10,9 +10,10 @@ The project-level model (`BidProject`) waits for both founders.
 
 **Paste the invitation.** "Log a bid" on /bids has a box for the GC's email
 or a BuildingConnected or Dodge listing. The model reads it into the existing
-form (GC, project, trade, due date), and anything without a column (site
-address, due time, job walk, bonding, plan link) goes into the notes as
-labelled lines. Nothing is saved until the person presses Log invitation.
+form (GC, project, trade, due date, and the due time when it parses
+unambiguously). Anything without a column (site address, the job walk as
+printed, bonding, plan link) goes into the notes as labelled parts joined
+by " · ". Nothing is saved until the person presses Log invitation.
 It follows `quoteRead.ts`. The checks are code, not prompt: any value the
 model returns that is not printed in the pasted text is dropped and named,
 a due date with no printed year is left blank, the GC is matched only by
