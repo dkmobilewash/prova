@@ -109,7 +109,10 @@ test.describe("C Stream Bid — an estimate, from the list to the proposal", () 
     // drawings — and none of the CRM job header.
     const rail = page.getByRole("complementary", { name: "This bid" });
     await expect(rail.getByRole("heading", { name: JOB_NAME, level: 1 })).toBeVisible();
-    await expect(rail.getByText(GC_NAME)).toBeVisible();
+    // The GC is named three times on the rail (under the name, in the "Invite
+    // read" step, and in the phone-only current-step line); the first is the
+    // line under the job name.
+    await expect(rail.getByText(GC_NAME, { exact: true }).first()).toBeVisible();
     await expect(rail.locator('[data-guide="steps"] > li')).toHaveCount(5);
     await expect(page.locator('[data-guide="ask"]')).toContainText(`No drawings are uploaded for ${JOB_NAME} yet.`);
     await expect(page.getByRole("navigation", { name: "Job stages" })).toHaveCount(0);
