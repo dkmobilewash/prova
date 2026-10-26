@@ -27,20 +27,24 @@ export async function bidHrefsOnPage(page: Page): Promise<string[]> {
   );
 }
 
-export function isOutsideBid(href: string, origin: string): boolean {
+/**
+ * `pageUrl` is the address the link sits on. A relative href is resolved
+ * against it exactly as the browser resolves it — `?tab=research` on
+ * `/bid/bids/<id>` IS `/bid/bids/<id>?tab=research` — so a query-only or
+ * relative link is judged by where it actually goes, not by its first
+ * character. (It used to be judged by its text, and called the bid page's own
+ * step tabs "links that leave C Stream Bid".)
+ */
+export function isOutsideBid(href: string, pageUrl: string): boolean {
   if (href === "" || href.startsWith("#") || /^(mailto|tel|blob|data|javascript):/i.test(href)) return false;
-  let path = href;
-  if (/^https?:\/\//i.test(href)) {
-    const url = new URL(href);
-    if (url.origin !== origin) return false; // someone else's site
-    path = url.pathname;
-  }
-  const pathname = path.split(/[?#]/)[0];
-  return !(isBidPath(pathname) || isSharedPath(pathname));
+  const base = new URL(pageUrl);
+  const url = new URL(href, base);
+  if (url.origin !== base.origin) return false; // someone else's site
+  return !(isBidPath(url.pathname) || isSharedPath(url.pathname));
 }
 
 export async function expectNoCrmLinks(page: Page, where: string, options: { minLinks?: number } = {}): Promise<void> {
-  const origin = new URL(page.url()).origin;
+  const pageUrl = page.url();
   const hrefs = await bidHrefsOnPage(page);
   // A page with no anchors at all would pass vacuously. Every page inside the
   // Bid shell has the header's nav (a handful of links) at the least; a page
@@ -50,6 +54,6 @@ export async function expectNoCrmLinks(page: Page, where: string, options: { min
     hrefs.length,
     `${where}: found ${hrefs.length} links, expected at least ${minLinks} — the check read a near-empty page`,
   ).toBeGreaterThanOrEqual(minLinks);
-  const out = [...new Set(hrefs.filter((href) => isOutsideBid(href, origin)))];
+  const out = [...new Set(hrefs.filter((href) => isOutsideBid(href, pageUrl)))];
   expect(out, `${where}: links that leave C Stream Bid`).toEqual([]);
 }
