@@ -86,7 +86,7 @@ export type ItemizedRow = {
 export type ScopeRow = { key: string; label: string; amountCents: number };
 
 export type ProposalPresentation =
-  | { mode: "itemized"; rows: ItemizedRow[]; total: number }
+  | { mode: "itemized"; rows: ItemizedRow[]; total: number; adjustmentCents: number | null }
   | { mode: "scope"; rows: ScopeRow[]; total: number }
   | { mode: "lump"; rows: ScopeRow[]; total: number };
 
@@ -108,8 +108,16 @@ const exactCents = (dollars: number): number => Number((dollars * 100).toFixed(6
  * The bid split into scopes, in whole cents that add up to the bid.
  * A cost-only line (no unit price) is in no scope, as it is in no total.
  */
-export function scopeSubtotals(lines: readonly ProposalLineInput[]): { rows: ScopeRow[]; totalCents: number } {
-  const targetCents = Math.round(exactCents(bidTotalOf(lines)));
+export function scopeSubtotals(
+  lines: readonly ProposalLineInput[],
+  /** A GC's own price, in cents, when it is not the estimate total. The scope
+   * subtotals are then that price split in proportion to each scope's share of
+   * the estimate, by the same largest-remainder rule, so they still add up to
+   * the printed price to the cent. Omitted, they split the estimate itself. */
+  priceCents?: number,
+): { rows: ScopeRow[]; totalCents: number } {
+  const estimateCents = Math.round(exactCents(bidTotalOf(lines)));
+  const targetCents = priceCents ?? estimateCents;
 
   const groups = new Map<string, { label: string; exact: number }>();
   for (const line of lines) {
@@ -118,6 +126,20 @@ export function scopeSubtotals(lines: readonly ProposalLineInput[]): { rows: Sco
     const group = groups.get(key) ?? { label, exact: 0 };
     group.exact += exactCents(line.quantity * line.unitPrice);
     groups.set(key, group);
+  }
+
+  // A price that is not the estimate's own scales every scope's exact share by
+  // price / estimate. An estimate of nothing has no shares to scale, so the
+  // whole price is one "Other work" row rather than a division by zero.
+  if (priceCents !== undefined && priceCents !== estimateCents) {
+    const exactSum = [...groups.values()].reduce((sum, group) => sum + group.exact, 0);
+    if (exactSum > 0) {
+      const factor = priceCents / exactSum;
+      for (const group of groups.values()) group.exact *= factor;
+    } else {
+      groups.clear();
+      groups.set(OTHER_KEY, { label: "Other work", exact: priceCents });
+    }
   }
 
   const shares = [...groups.entries()].map(([key, group]) => {
@@ -141,12 +163,26 @@ export function scopeSubtotals(lines: readonly ProposalLineInput[]): { rows: Sco
   return { rows, totalCents: targetCents };
 }
 
-export function proposalPresentation(lines: readonly ProposalLineInput[], mode: ProposalMode): ProposalPresentation {
-  const total = bidTotalOf(lines);
+export function proposalPresentation(
+  lines: readonly ProposalLineInput[],
+  mode: ProposalMode,
+  /** THIS GC'S PRICE in whole cents (`lib/estimating/gc-price.ts`), when the
+   * proposal is opened for one invitation. Omitted, every figure is the
+   * estimate's own total, exactly as before. */
+  priceCents?: number,
+): ProposalPresentation {
+  const estimateTotal = bidTotalOf(lines);
+  const total = priceCents === undefined ? estimateTotal : priceCents / 100;
   if (mode === "itemized") {
+    // The lines add up to the ESTIMATE; a GC priced differently gets one more
+    // row carrying the difference, so the printed table still adds up to the
+    // printed total. `adjustmentCents` is null on a plain proposal.
+    const adjustmentCents =
+      priceCents === undefined ? null : priceCents - Math.round(exactCents(estimateTotal));
     return {
       mode,
       total,
+      adjustmentCents: adjustmentCents === 0 ? null : adjustmentCents,
       rows: lines.map((line) => ({
         id: line.id,
         description: line.description,
@@ -157,7 +193,7 @@ export function proposalPresentation(lines: readonly ProposalLineInput[], mode: 
       })),
     };
   }
-  const { rows, totalCents } = scopeSubtotals(lines);
+  const { rows, totalCents } = scopeSubtotals(lines, priceCents);
   if (mode === "scope") return { mode, total: totalCents / 100, rows };
   // One price for the whole scope. Same cents as the split above, summed.
   return { mode, total: totalCents / 100, rows: lines.length ? [{ key: "lump", label: "Lump sum", amountCents: totalCents }] : [] };

@@ -5,7 +5,15 @@ import Link from "next/link";
 
 import { ActionForm } from "@/components/ActionForm";
 import { SubmitButton } from "@/components/SubmitButton";
-import { mergeIntoProject, recordPrimeAward, saveBidProject, splitFromProject, startEstimateFromProject } from "@/lib/actions";
+import {
+  mergeIntoProject,
+  recordPrimeAward,
+  saveBidProject,
+  saveGcPriceAdjustment,
+  splitFromProject,
+  startEstimateFromProject,
+} from "@/lib/actions";
+import { money } from "@/lib/money";
 import type { ProjectPanelView } from "@/lib/bid-project-view";
 
 const field =
@@ -78,6 +86,61 @@ export function BidProjectPanel({
           {view.priceSentence}
         </p>
       )}
+      {/* ── ONE ESTIMATE, EACH GC'S PRICE OFF IT ──
+          The estimate total beside what every GC is quoted. Derived on every
+          render from the estimate and each invitation's own adjustment; the
+          price is not a stored column. "Sent" is a different fact (what a person
+          recorded as actually sent) and sits beside it, never in place of it. */}
+      {view.estimate && view.estimateTotal !== null && (
+        <div className="mt-1" data-bids="gc-prices">
+          <p>
+            <span className="font-medium text-ink-label">Estimate total:</span>{" "}
+            <span className="tabular-nums text-ink" data-bids="estimate-total">
+              {money(view.estimateTotal)}
+            </span>
+          </p>
+          <table className="mt-1 w-full text-left text-sm">
+            <thead>
+              <tr className="text-xs text-ink-muted">
+                <th className="py-1 pr-2 font-medium">GC</th>
+                <th className="px-2 py-1 font-medium">Adjustment</th>
+                <th className="px-2 py-1 text-right font-medium">Price to GC</th>
+                <th className="px-2 py-1 text-right font-medium">Sent</th>
+                <th className="py-1 pl-2 font-medium">
+                  <span className="sr-only">Proposal</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {view.prices.map((row) => (
+                <tr key={row.invitationId} className="border-t border-line-row" data-bids="gc-price-row">
+                  <td className={`py-1 pr-2 ${row.isThis ? "font-medium text-ink" : ""}`}>{row.name}</td>
+                  <td className="px-2 py-1">
+                    {row.adjustment ?? <span className="text-ink-muted">none</span>}
+                    {row.reason && <span className="text-ink-muted"> — {row.reason}</span>}
+                  </td>
+                  <td className="px-2 py-1 text-right tabular-nums text-ink" data-bids="gc-price">
+                    {row.price ?? (
+                      <span className="text-tag-amber-ink" title={row.problem ?? undefined}>
+                        check adjustment
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-2 py-1 text-right tabular-nums text-ink-muted">{row.sent ?? "—"}</td>
+                  <td className="py-1 pl-2">
+                    <Link
+                      href={`/jobs/${view.estimate!.jobId}/proposal?invitation=${encodeURIComponent(row.invitationId)}`}
+                      className="text-link hover:underline"
+                    >
+                      Proposal
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       {view.primeAwarded && (
         <p data-bids="project-prime">
           <span className="font-medium text-ink-label">Prime contract:</span> awarded to {view.primeAwarded.name}
@@ -134,6 +197,51 @@ export function BidProjectPanel({
             <SubmitButton type="submit" className={quiet}>
               Save project
             </SubmitButton>
+          </ActionForm>
+
+          {/* ── what THIS GC is quoted, off the one estimate ── */}
+          <ActionForm
+            action={saveGcPriceAdjustment.bind(null, view.gcs.find((gc) => gc.isThis)!.invitationId)}
+            resetOnSuccess={false}
+            className="flex flex-wrap items-end gap-3"
+          >
+            <label className="flex flex-col gap-1 text-sm text-ink-label">
+              Price to {view.gcs.find((gc) => gc.isThis)?.name}
+              <select name="kind" defaultValue={view.thisAdjustment.kind} className={field}>
+                <option value="none">The estimate total, no adjustment</option>
+                <option value="amount">Add or take off a dollar amount</option>
+                <option value="percent">Add or take off a percent</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-sm text-ink-label">
+              Amount or percent
+              <input
+                name="value"
+                inputMode="text"
+                autoComplete="off"
+                placeholder="-2,500 or 4.5"
+                defaultValue={view.thisAdjustment.value}
+                className={field}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm text-ink-label">
+              Why
+              <input
+                name="reason"
+                autoComplete="off"
+                maxLength={200}
+                placeholder="e.g. pays net 60"
+                defaultValue={view.thisAdjustment.reason}
+                className={field}
+              />
+            </label>
+            <SubmitButton type="submit" className={quiet}>
+              Save price
+            </SubmitButton>
+            <p className="w-full text-xs text-ink-muted">
+              A minus takes money off. The price is worked out from the estimate every time, so editing a line moves every
+              GC&apos;s price with it. The reason is for you and never prints on the proposal.
+            </p>
           </ActionForm>
 
           {/* ── the one estimate ── */}

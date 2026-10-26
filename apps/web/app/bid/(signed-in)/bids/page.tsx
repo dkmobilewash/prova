@@ -4,6 +4,8 @@ import { formatCalendarDate } from "@/lib/render-date";
 import { viewerToday } from "@/lib/viewerToday";
 import { daysLeftLabel } from "@/lib/bids-due-soon";
 import { loadBidsDueSoon } from "@/lib/bids-due-soon-query";
+import { loadProjectOutcomes } from "@/lib/bid-project-query";
+import { BidProjectOutcomes } from "@/components/BidProjectOutcomes";
 import { BidComingSoon } from "@/components/bid/BidComingSoon";
 import { BidNoAccess } from "@/components/bid/BidNoAccess";
 import { BID_CAPABILITY } from "@/components/bid/bidNav";
@@ -50,6 +52,7 @@ export default async function BidLogPage() {
   if (!allowed) return <BidNoAccess />;
   const today = await viewerToday();
   const dueSoon = await loadBidsDueSoon(context.company.id, today);
+  const projects = await loadProjectOutcomes(context.company.id);
 
   return (
     <PageShell width="working">
@@ -77,6 +80,27 @@ export default async function BidLogPage() {
                 >
                   {daysLeftLabel(bid.daysLeft)}
                 </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* HOW EACH JOB IS GOING, under the job: one heading per project with the
+          bid date and, for every GC that invited you, its status and the price
+          it is quoted. Read-only and link-free; a project with one GC is one
+          row. The edit surfaces are still to port (the brief above). */}
+      <section aria-labelledby="bid-outcomes" className="mb-10">
+        <h2 id="bid-outcomes" className="mb-3 text-sm font-semibold text-ink-label">
+          Outcomes by project ({projects.length})
+        </h2>
+        {projects.length === 0 ? (
+          <p className="text-sm text-ink-body">No bids logged yet.</p>
+        ) : (
+          <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-bid="outcomes">
+            {projects.map((project) => (
+              <li key={project.id} className="p-4">
+                <BidProjectOutcomes project={project} />
               </li>
             ))}
           </ul>

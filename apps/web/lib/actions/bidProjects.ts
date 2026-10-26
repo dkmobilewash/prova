@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
+import { parseGcAdjustment } from "@/lib/estimating/gc-price";
 import {
   mergeBidProjects,
+  saveInvitationPriceAdjustment as saveAdjustmentCore,
   recordPrimeAward as recordPrimeAwardCore,
   saveBidProjectDetails,
   splitBidInvitation,
@@ -112,6 +114,29 @@ export async function recordPrimeAward(bidProjectId: string, formData: FormData)
   if (!awarded.ok) return actionFail(awarded.error);
   revalidateBids();
   revalidatePath("/jobs");
+  return actionOk;
+}
+
+/**
+ * What this GC is quoted, as a difference from the project's one estimate: a
+ * dollar amount or a percent (signed; minus is a discount) and a short reason,
+ * or "no adjustment" to clear it. The price is never stored — see
+ * `lib/estimating/gc-price.ts`.
+ */
+export async function saveGcPriceAdjustment(bidInvitationId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(ESTIMATING_ONLY);
+
+  const parsed = parseGcAdjustment({
+    kind: text(formData, "kind"),
+    value: text(formData, "value"),
+    reason: text(formData, "reason"),
+  });
+  if (!parsed.ok) return actionFail(parsed.error, { [parsed.field]: parsed.error });
+
+  const saved = await saveAdjustmentCore(context.company.id, bidInvitationId, parsed);
+  if (!saved.ok) return actionFail(saved.error);
+  revalidateBids();
   return actionOk;
 }
 

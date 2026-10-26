@@ -23,6 +23,8 @@ import {
 import { findingsFromJson } from "@/lib/specs/spec-findings";
 import { BidJobLink } from "@/components/BidJobLink";
 import { BidProjectPanel } from "@/components/BidProjectPanel";
+import { BidProjectOutcomes } from "@/components/BidProjectOutcomes";
+import { groupBidsByProject } from "@/lib/bid-project-groups";
 import { bidProjectInclude, loadProjectChoices } from "@/lib/bid-project-query";
 import { projectPanelView } from "@/lib/bid-project-view";
 import { bidRecord, settledSentence } from "@/lib/bid-outcome";
@@ -259,6 +261,9 @@ export default async function BidsPage({
   // aggregate query plus `take` on this one is the upgrade if /bids gets slow.
   const { take, limit, showingAll } = seeAllWindow(all, BIDS_SHOWN);
   const shownBids = take === undefined ? bids : bids.slice(0, take);
+  // GCs on the same piece of work sit under one heading with each GC's status
+  // and price; a project with a single invitation stays a single row.
+  const groups = groupBidsByProject(shownBids);
   const listParams = new URLSearchParams({ view: "all", ...(trade ? { trade } : {}), ...(status ? { status } : {}) });
   const fewerHref = `/bids?${listParams}`;
   listParams.set("all", "1");
@@ -300,6 +305,342 @@ export default async function BidsPage({
   );
   const viewTab = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md px-3 text-sm font-medium ${active ? "bg-rail-hover text-ink" : "text-ink-body hover:text-ink"}`;
+
+  // One bid's row. A function rather than inline JSX so a project with several GCs can
+  // draw the same row under its heading (lib/bid-project-groups.ts).
+  const row = (bid: (typeof shownBids)[number]) => (
+    <li key={bid.id} id={bid.id} className="scroll-mt-24 p-4 target:ring-2 target:ring-inset target:ring-brand">
+      {/* The name opens the bid's own page (Research, Estimate check,
+          Addenda, Decision); the GC's name opens the GC. Two links, not
+          one wrapping the row — a link inside a link is invalid. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href={`/ai/bids/${bid.id}`} className="inline-flex min-h-11 items-center font-medium text-ink hover:underline mouse:min-h-0">
+              {bid.projectName}
+            </Link>
+            <span
+              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[bid.status]}`}
+            >
+              {labelFor(STATUS_OPTIONS, bid.status)}
+            </span>
+          </div>
+          <p className="text-sm text-ink-body">
+            <Link href={`/contacts/${bid.contactId}`} className="hover:underline">
+              {bid.contact.name}
+            </Link>
+            {bid.tradeScope && <> · {labelFor(TRADE_SCOPE_OPTIONS, bid.tradeScope)}</>}
+            {bid.dueDate && (
+              <>
+                {" "}
+                · Due {dayAndTime(day(bid.dueDate)!, bid.dueMinute)},{" "}
+                {formatCalendarDate(bid.dueDate, "numeric")}
+              </>
+            )}
+            {bid.walkDate && (
+              <>
+                {" "}
+                · Job walk {dayAndTime(day(bid.walkDate)!, bid.walkMinute)},{" "}
+                {formatCalendarDate(bid.walkDate, "numeric")}
+              </>
+            )}
+            {bid.rfiCutoffDate && <> · RFIs close {formatCalendarDate(bid.rfiCutoffDate, "numeric")}</>}
+          </p>
+          {/* A walk or RFI cutoff inside a week, on a bid still being
+              priced. A won or lost bid's cutoff is history, not news. */}
+          {(bid.status === "INVITED" || bid.status === "SUBMITTED") &&
+            upcomingBidDates(bid, today).map((u) => (
+              <p key={u.kind} className="text-sm font-medium text-tag-amber-ink" data-bids={`upcoming-${u.kind}`}>
+                {u.label}
+              </p>
+            ))}
+          <SameJobNote matches={sameJob.get(bid.id)} />
+        </div>
+        {bid.bidAmount != null && (
+          <p className="text-sm font-medium text-ink">{money(Number(bid.bidAmount))}</p>
+        )}
+      </div>
+      {bid.bidProject && (
+        <BidProjectPanel
+          view={projectPanelView(bid.bidProject, bid, money)}
+          projectChoices={projectChoices}
+          gcs={gcs}
+        />
+      )}
+      {/* ── CORRECT THE BID AFTER AN ADDENDUM ──
+          Name, trade, amount, notes and every date. Collapsed behind
+          its link like every list-page edit. The GC and the status are
+          not here: the GC is who invited you, and status has its own
+          form. */}
+      <div className="px-4 pb-2" data-bids="edit-details">
+        <BidDetailsEdit
+          bidInvitationId={bid.id}
+          defaults={{
+            projectName: bid.projectName,
+            tradeScope: bid.tradeScope,
+            dueDate: day(bid.dueDate),
+            dueMinute: bid.dueMinute,
+            walkDate: day(bid.walkDate),
+            walkMinute: bid.walkMinute,
+            rfiCutoffDate: day(bid.rfiCutoffDate),
+            bidAmount: bid.bidAmount === null ? null : bid.bidAmount.toString(),
+            notes: bid.notes,
+          }}
+        />
+      </div>
+      {/* ── THE REGRET LETTER, ON A DECLINED BID ONLY ──
+
+          A page nothing links to is a page nobody uses — #665's lesson,
+          and the reason this link exists at all rather than the route
+          being reachable only by typing it.
+
+          Shown only on DECLINED. The letter renders for any bid, on
+          purpose, because somebody may write it before changing the
+          status — but a "decline to bid" link on a bid being actively
+          priced is an invitation to misread the row. */}
+      {bid.status === "DECLINED" && (
+        <div className="px-4 pb-3">
+          <Link
+            href={`/bids/${bid.id}/regret`}
+            data-bids="regret-link"
+            className="text-xs text-link hover:underline"
+          >
+            Write the regret letter →
+          </Link>
+        </div>
+      )}
+      {/* WHY IT WAS WON OR LOST, on a decided bid only — the fact the
+          bid recommendations learn from (BidOutcomeForm). Collapsed
+          behind "Record why", per the list-page convention. */}
+      {(bid.status === "WON" || bid.status === "LOST") && (
+        <div className="pt-2" data-bids="outcome-why">
+          {bid.outcome ? (
+            <p className="text-sm text-ink-muted">Why: {outcomeReasonLabel(bid.outcome.reason)}</p>
+          ) : (
+            <BidOutcomeForm bidInvitationId={bid.id} defaultResult={bid.status} collapsed />
+          )}
+        </div>
+      )}
+      {/* THE ROW'S WORKING PANELS, ONE CLICK DOWN. Lines, compliance,
+          supplier levelling and the job link used to render open under
+          every bid, so a list of 40 bids was 40 mini workspaces. They
+          are unchanged — same components, same props — just behind
+          this row disclosure, one open at a time. /ai/bids/[id] does
+          NOT render these four (BidWorkspace renders only
+          BidOutcomeForm), which is why they live here and not there. */}
+      <Disclosure
+        variant="row"
+        name="bid"
+        className="mt-2"
+        summary={
+          bid.lines.length + bid.addenda.length + bid.quotes.length === 0 && !bid.wonJob ? (
+            // Nothing in it yet: the row still opens (it is how lines,
+            // addenda and quotes get ADDED), but a string of zeros is
+            // noise on every empty row.
+            <span data-bids="row-panels">Add lines, addenda, quotes or link the job</span>
+          ) : (
+            <span data-bids="row-panels">
+              Lines, addenda, quotes and job
+              <span className="text-ink-muted">
+                {" "}
+                · {bid.lines.length} {bid.lines.length === 1 ? "line" : "lines"} · {bid.addenda.length}{" "}
+                {bid.addenda.length === 1 ? "addendum" : "addenda"} · {bid.quotes.length}{" "}
+                {bid.quotes.length === 1 ? "quote" : "quotes"} · {bid.wonJob ? `job: ${bid.wonJob.name}` : "no job linked"}
+              </span>
+            </span>
+          )
+        }
+      >
+      <BidLines
+        bidInvitationId={bid.id}
+        base={bid.bidAmount === null ? null : Number(bid.bidAmount)}
+        lines={bid.lines.map(
+          (line): BidLineRow => ({
+            id: line.id,
+            kind: line.kind,
+            label: line.label,
+            description: line.description,
+            amount: line.amount === null ? null : Number(line.amount),
+            unit: line.unit,
+            unitPrice: line.unitPrice === null ? null : Number(line.unitPrice),
+            accepted: line.accepted,
+          }),
+        )}
+      />
+      <BidCompliance
+        bidInvitationId={bid.id}
+        today={today}
+        // The SAME rows BidLines renders, so the derived checks and
+        // the list a person is looking at cannot disagree about what
+        // is priced. Mapped twice rather than shared because the two
+        // components want different shapes; the source is one query.
+        lines={bid.lines.map((line) => ({
+          id: line.id,
+          kind: line.kind,
+          label: line.label,
+          amount: line.amount === null ? null : Number(line.amount),
+          unit: line.unit,
+          unitPrice: line.unitPrice === null ? null : Number(line.unitPrice),
+          accepted: line.accepted,
+        }))}
+        companyId={company.id}
+        addenda={bid.addenda.map(
+          (row): AddendumRow => ({
+            id: row.id,
+            reference: row.reference,
+            issuedOn: day(row.issuedOn),
+            acknowledgedOn: day(row.acknowledgedOn),
+            affectsPricedScope: row.affectsPricedScope,
+            impactNote: row.impactNote,
+            notes: row.notes,
+            fileName: row.fileName,
+            // The URL itself never reaches the browser: the row only
+            // needs to know whether there IS one, and a public blob
+            // address is not something to hand out with the page.
+            hasFile: row.fileUrl !== null,
+            reading: row.readings[0]
+              ? {
+                  id: row.readings[0].id,
+                  items: (row.readings[0].items ?? []) as AddendumItem[],
+                  readingReason: row.readings[0].readingReason,
+                  proposedIssueDateText: row.readings[0].proposedIssueDateText,
+                  proposedBidDateText: row.readings[0].proposedBidDateText,
+                  // Rendered here, in UTC, like every other date on this
+                  // page — `dateRenderCensus` fails a date the browser
+                  // formats for itself.
+                  readOn: todayInZone(zone, row.readings[0].createdAt),
+                  pagesCharged: row.readings[0].pagesCharged,
+                }
+              : null,
+            readCount: row._count.readings,
+            decisions: row.decisions,
+          }),
+        )}
+        requirements={bid.requirements.map(
+          (row): RequirementRow => ({
+            id: row.id,
+            kind: row.kind,
+            label: row.label,
+            required: row.required,
+            satisfiedOn: day(row.satisfiedOn),
+            notes: row.notes,
+          }),
+        )}
+        specSections={bid.specSections.map(
+          (row): SpecSectionRow => ({
+            id: row.id,
+            sectionNumber: row.sectionNumber,
+            title: row.title,
+            notes: row.notes,
+            fileName: row.fileName,
+            // The URL itself never reaches the browser, for the reason
+            // the addenda mapping gives above: the row only needs to
+            // know whether there IS one, and a public blob address is
+            // not something to hand out with the page.
+            hasFile: row.fileUrl !== null,
+            reading: row.readings[0]
+              ? {
+                  id: row.readings[0].id,
+                  // NARROWED, not cast. `findings` is a `Json` column,
+                  // so a row written by an older prompt version would
+                  // otherwise reach the screen unchecked and render
+                  // "undefined" as a finding's kind on a bid page.
+                  findings: findingsFromJson(row.readings[0].findings),
+                  readingReason: row.readings[0].readingReason,
+                  // Rendered here, in UTC, like every other date on this
+                  // page — `dateRenderCensus` fails a date the browser
+                  // formats for itself.
+                  readOn: todayInZone(zone, row.readings[0].createdAt),
+                  pagesCharged: row.readings[0].pagesCharged,
+                }
+              : null,
+            readCount: row._count.readings,
+          }),
+        )}
+      />
+      <BidLevelling
+        companyId={company.id}
+        bidInvitationId={bid.id}
+        vendors={vendors}
+        companyName={company.name}
+        projectName={bid.projectName}
+        /* ONLY WHAT HAS A FILE. A spec section or addendum logged
+           without its PDF is the normal case, not an error, and
+           offering one that cannot be attached would be a tick box
+           that silently sends nothing. */
+        sendable={[
+          ...bid.specSections
+            .filter((section) => section.fileUrl)
+            .map((section) => ({
+              id: section.id,
+              kind: "SPEC_SECTION" as const,
+              label: section.sectionNumber,
+            })),
+          ...bid.addenda
+            .filter((addendum) => addendum.fileUrl)
+            .map((addendum) => ({
+              id: addendum.id,
+              kind: "ADDENDUM" as const,
+              label: addendum.reference,
+            })),
+        ]}
+        today={today}
+        bidDueDate={day(bid.dueDate)}
+        quotes={bid.quotes.map(
+          (quote): BidQuoteRow => ({
+            id: quote.id,
+            packageLabel: quote.packageLabel,
+            vendorId: quote.vendorId,
+            vendorName: quote.vendorName,
+            // NULL STAYS NULL. `Number(null)` is 0, which would post a
+            // supplier who has not answered as a quote of nothing —
+            // and nothing sorts cheapest.
+            amount: quote.amount === null ? null : Number(quote.amount),
+            // Rendered from the stored UTC midnight as YYYY-MM-DD, the
+            // same string the date input round-trips.
+            quotedOn: day(quote.quotedOn),
+            requestedOn: day(quote.requestedOn),
+            dueBy: day(quote.dueBy),
+            declinedAt: day(quote.declinedAt),
+            carriedAt: day(quote.carriedAt),
+            validUntil: day(quote.validUntil),
+            exclusions: quote.exclusions,
+            notes: quote.notes,
+          }),
+        )}
+      />
+      {/* NOT GATED ON WON, and that is the whole point of the control.
+          A quote is carried, and a job's estimate is built, BEFORE
+          anybody knows whether the bid was won — so a link only
+          offered on a won bid is offered after every decision it
+          exists to serve. `linkBidToJob` dropped its own WON check
+          with #619; this gate stayed and made that unreachable, which
+          no census could see: the action HAS a caller, and
+          reachability of the caller is a different question.
+
+          The comparison inside stays won-only regardless, because
+          `outcome` is null until there is one. */}
+      <BidJobLink
+        bidInvitationId={bid.id}
+        jobs={linkableJobs}
+        linked={
+          bid.wonJob
+            ? {
+                jobId: bid.wonJob.id,
+                jobName: bid.wonJob.name,
+                outcome: outcomesByBid.get(bid.id)?.outcome ?? null,
+              }
+            : null
+        }
+        sentence={
+          outcomesByBid.has(bid.id)
+            ? settledSentence(outcomesByBid.get(bid.id)!.outcome, money)
+            : null
+        }
+      />
+      </Disclosure>
+    </li>
+  );
 
   return (
     <PageShell width="working">
@@ -530,339 +871,18 @@ export default async function BidsPage({
         )
       ) : (
         <ul className="divide-y divide-line-row rounded-xl border border-line-card bg-surface" data-tour="bids-list">
-          {shownBids.map((bid) => (
-            <li key={bid.id} id={bid.id} className="scroll-mt-24 p-4 target:ring-2 target:ring-inset target:ring-brand">
-              {/* The name opens the bid's own page (Research, Estimate check,
-                  Addenda, Decision); the GC's name opens the GC. Two links, not
-                  one wrapping the row — a link inside a link is invalid. */}
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Link href={`/ai/bids/${bid.id}`} className="inline-flex min-h-11 items-center font-medium text-ink hover:underline mouse:min-h-0">
-                      {bid.projectName}
-                    </Link>
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[bid.status]}`}
-                    >
-                      {labelFor(STATUS_OPTIONS, bid.status)}
-                    </span>
-                  </div>
-                  <p className="text-sm text-ink-body">
-                    <Link href={`/contacts/${bid.contactId}`} className="hover:underline">
-                      {bid.contact.name}
-                    </Link>
-                    {bid.tradeScope && <> · {labelFor(TRADE_SCOPE_OPTIONS, bid.tradeScope)}</>}
-                    {bid.dueDate && (
-                      <>
-                        {" "}
-                        · Due {dayAndTime(day(bid.dueDate)!, bid.dueMinute)},{" "}
-                        {formatCalendarDate(bid.dueDate, "numeric")}
-                      </>
-                    )}
-                    {bid.walkDate && (
-                      <>
-                        {" "}
-                        · Job walk {dayAndTime(day(bid.walkDate)!, bid.walkMinute)},{" "}
-                        {formatCalendarDate(bid.walkDate, "numeric")}
-                      </>
-                    )}
-                    {bid.rfiCutoffDate && <> · RFIs close {formatCalendarDate(bid.rfiCutoffDate, "numeric")}</>}
-                  </p>
-                  {/* A walk or RFI cutoff inside a week, on a bid still being
-                      priced. A won or lost bid's cutoff is history, not news. */}
-                  {(bid.status === "INVITED" || bid.status === "SUBMITTED") &&
-                    upcomingBidDates(bid, today).map((u) => (
-                      <p key={u.kind} className="text-sm font-medium text-tag-amber-ink" data-bids={`upcoming-${u.kind}`}>
-                        {u.label}
-                      </p>
-                    ))}
-                  <SameJobNote matches={sameJob.get(bid.id)} />
+          {groups.map((group) =>
+            group.project === null ? (
+              row(group.items[0])
+            ) : (
+              <li key={group.key} className="p-0" data-bids="project-group">
+                <div className="border-b border-line-row bg-canvas p-4">
+                  <BidProjectOutcomes project={group.project} />
                 </div>
-                {bid.bidAmount != null && (
-                  <p className="text-sm font-medium text-ink">{money(Number(bid.bidAmount))}</p>
-                )}
-              </div>
-              {bid.bidProject && (
-                <BidProjectPanel
-                  view={projectPanelView(bid.bidProject, bid, money)}
-                  projectChoices={projectChoices}
-                  gcs={gcs}
-                />
-              )}
-              {/* ── CORRECT THE BID AFTER AN ADDENDUM ──
-                  Name, trade, amount, notes and every date. Collapsed behind
-                  its link like every list-page edit. The GC and the status are
-                  not here: the GC is who invited you, and status has its own
-                  form. */}
-              <div className="px-4 pb-2" data-bids="edit-details">
-                <BidDetailsEdit
-                  bidInvitationId={bid.id}
-                  defaults={{
-                    projectName: bid.projectName,
-                    tradeScope: bid.tradeScope,
-                    dueDate: day(bid.dueDate),
-                    dueMinute: bid.dueMinute,
-                    walkDate: day(bid.walkDate),
-                    walkMinute: bid.walkMinute,
-                    rfiCutoffDate: day(bid.rfiCutoffDate),
-                    bidAmount: bid.bidAmount === null ? null : bid.bidAmount.toString(),
-                    notes: bid.notes,
-                  }}
-                />
-              </div>
-              {/* ── THE REGRET LETTER, ON A DECLINED BID ONLY ──
-
-                  A page nothing links to is a page nobody uses — #665's lesson,
-                  and the reason this link exists at all rather than the route
-                  being reachable only by typing it.
-
-                  Shown only on DECLINED. The letter renders for any bid, on
-                  purpose, because somebody may write it before changing the
-                  status — but a "decline to bid" link on a bid being actively
-                  priced is an invitation to misread the row. */}
-              {bid.status === "DECLINED" && (
-                <div className="px-4 pb-3">
-                  <Link
-                    href={`/bids/${bid.id}/regret`}
-                    data-bids="regret-link"
-                    className="text-xs text-link hover:underline"
-                  >
-                    Write the regret letter →
-                  </Link>
-                </div>
-              )}
-              {/* WHY IT WAS WON OR LOST, on a decided bid only — the fact the
-                  bid recommendations learn from (BidOutcomeForm). Collapsed
-                  behind "Record why", per the list-page convention. */}
-              {(bid.status === "WON" || bid.status === "LOST") && (
-                <div className="pt-2" data-bids="outcome-why">
-                  {bid.outcome ? (
-                    <p className="text-sm text-ink-muted">Why: {outcomeReasonLabel(bid.outcome.reason)}</p>
-                  ) : (
-                    <BidOutcomeForm bidInvitationId={bid.id} defaultResult={bid.status} collapsed />
-                  )}
-                </div>
-              )}
-              {/* THE ROW'S WORKING PANELS, ONE CLICK DOWN. Lines, compliance,
-                  supplier levelling and the job link used to render open under
-                  every bid, so a list of 40 bids was 40 mini workspaces. They
-                  are unchanged — same components, same props — just behind
-                  this row disclosure, one open at a time. /ai/bids/[id] does
-                  NOT render these four (BidWorkspace renders only
-                  BidOutcomeForm), which is why they live here and not there. */}
-              <Disclosure
-                variant="row"
-                name="bid"
-                className="mt-2"
-                summary={
-                  bid.lines.length + bid.addenda.length + bid.quotes.length === 0 && !bid.wonJob ? (
-                    // Nothing in it yet: the row still opens (it is how lines,
-                    // addenda and quotes get ADDED), but a string of zeros is
-                    // noise on every empty row.
-                    <span data-bids="row-panels">Add lines, addenda, quotes or link the job</span>
-                  ) : (
-                    <span data-bids="row-panels">
-                      Lines, addenda, quotes and job
-                      <span className="text-ink-muted">
-                        {" "}
-                        · {bid.lines.length} {bid.lines.length === 1 ? "line" : "lines"} · {bid.addenda.length}{" "}
-                        {bid.addenda.length === 1 ? "addendum" : "addenda"} · {bid.quotes.length}{" "}
-                        {bid.quotes.length === 1 ? "quote" : "quotes"} · {bid.wonJob ? `job: ${bid.wonJob.name}` : "no job linked"}
-                      </span>
-                    </span>
-                  )
-                }
-              >
-              <BidLines
-                bidInvitationId={bid.id}
-                base={bid.bidAmount === null ? null : Number(bid.bidAmount)}
-                lines={bid.lines.map(
-                  (line): BidLineRow => ({
-                    id: line.id,
-                    kind: line.kind,
-                    label: line.label,
-                    description: line.description,
-                    amount: line.amount === null ? null : Number(line.amount),
-                    unit: line.unit,
-                    unitPrice: line.unitPrice === null ? null : Number(line.unitPrice),
-                    accepted: line.accepted,
-                  }),
-                )}
-              />
-              <BidCompliance
-                bidInvitationId={bid.id}
-                today={today}
-                // The SAME rows BidLines renders, so the derived checks and
-                // the list a person is looking at cannot disagree about what
-                // is priced. Mapped twice rather than shared because the two
-                // components want different shapes; the source is one query.
-                lines={bid.lines.map((line) => ({
-                  id: line.id,
-                  kind: line.kind,
-                  label: line.label,
-                  amount: line.amount === null ? null : Number(line.amount),
-                  unit: line.unit,
-                  unitPrice: line.unitPrice === null ? null : Number(line.unitPrice),
-                  accepted: line.accepted,
-                }))}
-                companyId={company.id}
-                addenda={bid.addenda.map(
-                  (row): AddendumRow => ({
-                    id: row.id,
-                    reference: row.reference,
-                    issuedOn: day(row.issuedOn),
-                    acknowledgedOn: day(row.acknowledgedOn),
-                    affectsPricedScope: row.affectsPricedScope,
-                    impactNote: row.impactNote,
-                    notes: row.notes,
-                    fileName: row.fileName,
-                    // The URL itself never reaches the browser: the row only
-                    // needs to know whether there IS one, and a public blob
-                    // address is not something to hand out with the page.
-                    hasFile: row.fileUrl !== null,
-                    reading: row.readings[0]
-                      ? {
-                          id: row.readings[0].id,
-                          items: (row.readings[0].items ?? []) as AddendumItem[],
-                          readingReason: row.readings[0].readingReason,
-                          proposedIssueDateText: row.readings[0].proposedIssueDateText,
-                          proposedBidDateText: row.readings[0].proposedBidDateText,
-                          // Rendered here, in UTC, like every other date on this
-                          // page — `dateRenderCensus` fails a date the browser
-                          // formats for itself.
-                          readOn: todayInZone(zone, row.readings[0].createdAt),
-                          pagesCharged: row.readings[0].pagesCharged,
-                        }
-                      : null,
-                    readCount: row._count.readings,
-                    decisions: row.decisions,
-                  }),
-                )}
-                requirements={bid.requirements.map(
-                  (row): RequirementRow => ({
-                    id: row.id,
-                    kind: row.kind,
-                    label: row.label,
-                    required: row.required,
-                    satisfiedOn: day(row.satisfiedOn),
-                    notes: row.notes,
-                  }),
-                )}
-                specSections={bid.specSections.map(
-                  (row): SpecSectionRow => ({
-                    id: row.id,
-                    sectionNumber: row.sectionNumber,
-                    title: row.title,
-                    notes: row.notes,
-                    fileName: row.fileName,
-                    // The URL itself never reaches the browser, for the reason
-                    // the addenda mapping gives above: the row only needs to
-                    // know whether there IS one, and a public blob address is
-                    // not something to hand out with the page.
-                    hasFile: row.fileUrl !== null,
-                    reading: row.readings[0]
-                      ? {
-                          id: row.readings[0].id,
-                          // NARROWED, not cast. `findings` is a `Json` column,
-                          // so a row written by an older prompt version would
-                          // otherwise reach the screen unchecked and render
-                          // "undefined" as a finding's kind on a bid page.
-                          findings: findingsFromJson(row.readings[0].findings),
-                          readingReason: row.readings[0].readingReason,
-                          // Rendered here, in UTC, like every other date on this
-                          // page — `dateRenderCensus` fails a date the browser
-                          // formats for itself.
-                          readOn: todayInZone(zone, row.readings[0].createdAt),
-                          pagesCharged: row.readings[0].pagesCharged,
-                        }
-                      : null,
-                    readCount: row._count.readings,
-                  }),
-                )}
-              />
-              <BidLevelling
-                companyId={company.id}
-                bidInvitationId={bid.id}
-                vendors={vendors}
-                companyName={company.name}
-                projectName={bid.projectName}
-                /* ONLY WHAT HAS A FILE. A spec section or addendum logged
-                   without its PDF is the normal case, not an error, and
-                   offering one that cannot be attached would be a tick box
-                   that silently sends nothing. */
-                sendable={[
-                  ...bid.specSections
-                    .filter((section) => section.fileUrl)
-                    .map((section) => ({
-                      id: section.id,
-                      kind: "SPEC_SECTION" as const,
-                      label: section.sectionNumber,
-                    })),
-                  ...bid.addenda
-                    .filter((addendum) => addendum.fileUrl)
-                    .map((addendum) => ({
-                      id: addendum.id,
-                      kind: "ADDENDUM" as const,
-                      label: addendum.reference,
-                    })),
-                ]}
-                today={today}
-                bidDueDate={day(bid.dueDate)}
-                quotes={bid.quotes.map(
-                  (quote): BidQuoteRow => ({
-                    id: quote.id,
-                    packageLabel: quote.packageLabel,
-                    vendorId: quote.vendorId,
-                    vendorName: quote.vendorName,
-                    // NULL STAYS NULL. `Number(null)` is 0, which would post a
-                    // supplier who has not answered as a quote of nothing —
-                    // and nothing sorts cheapest.
-                    amount: quote.amount === null ? null : Number(quote.amount),
-                    // Rendered from the stored UTC midnight as YYYY-MM-DD, the
-                    // same string the date input round-trips.
-                    quotedOn: day(quote.quotedOn),
-                    requestedOn: day(quote.requestedOn),
-                    dueBy: day(quote.dueBy),
-                    declinedAt: day(quote.declinedAt),
-                    carriedAt: day(quote.carriedAt),
-                    validUntil: day(quote.validUntil),
-                    exclusions: quote.exclusions,
-                    notes: quote.notes,
-                  }),
-                )}
-              />
-              {/* NOT GATED ON WON, and that is the whole point of the control.
-                  A quote is carried, and a job's estimate is built, BEFORE
-                  anybody knows whether the bid was won — so a link only
-                  offered on a won bid is offered after every decision it
-                  exists to serve. `linkBidToJob` dropped its own WON check
-                  with #619; this gate stayed and made that unreachable, which
-                  no census could see: the action HAS a caller, and
-                  reachability of the caller is a different question.
-
-                  The comparison inside stays won-only regardless, because
-                  `outcome` is null until there is one. */}
-              <BidJobLink
-                bidInvitationId={bid.id}
-                jobs={linkableJobs}
-                linked={
-                  bid.wonJob
-                    ? {
-                        jobId: bid.wonJob.id,
-                        jobName: bid.wonJob.name,
-                        outcome: outcomesByBid.get(bid.id)?.outcome ?? null,
-                      }
-                    : null
-                }
-                sentence={
-                  outcomesByBid.has(bid.id)
-                    ? settledSentence(outcomesByBid.get(bid.id)!.outcome, money)
-                    : null
-                }
-              />
-              </Disclosure>
-            </li>
-          ))}
+                <ul className="divide-y divide-line-row pl-3 sm:pl-6">{group.items.map((bid) => row(bid))}</ul>
+              </li>
+            ),
+          )}
         </ul>
       )}
       {bids.length > 0 && (

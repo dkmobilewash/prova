@@ -2,6 +2,8 @@ import { prisma, type Prisma, type TradeScope } from "@prova/db";
 import type { ActionResultWith } from "@/lib/actions/shared";
 import { mayChangeClient } from "@/lib/job-details";
 import { planMerge, provisionalGc } from "@/lib/bid-projects";
+import { gcPrice, type ParsedAdjustment } from "@/lib/estimating/gc-price";
+import { bidTotalOf } from "@/lib/estimating/recap-state";
 
 /**
  * The writes behind "one project, many GC invitations, one estimate".
@@ -429,5 +431,56 @@ async function handEstimateTo(tx: Tx, bidProjectId: string, contactId: string): 
   });
   await tx.bidInvitation.update({ where: { id: winner.id }, data: { wonJobId: project.estimateJobId } });
   return switched;
+}
+
+// ── one GC's price ────────────────────────────────────────────────────────
+
+/**
+ * Records (or, with both null, clears) what ONE invitation is quoted relative
+ * to the project's estimate. The caller has already parsed the form with
+ * `parseGcAdjustment`; this refuses anything that would leave the GC a price of
+ * nothing, checked against the estimate as it stands NOW. With no estimate yet
+ * the adjustment is saved as entered — there is nothing to price against — and
+ * `gcPrice` re-checks it every time the price is read.
+ *
+ * It writes only the three adjustment columns. The price is never stored, and
+ * `bidAmount` (what was actually sent) is a person's entry this does not touch.
+ */
+export async function saveInvitationPriceAdjustment(
+  companyId: string,
+  bidInvitationId: string,
+  adjustment: Extract<ParsedAdjustment, { ok: true }>,
+): Promise<ActionResultWith<{ bidInvitationId: string }>> {
+  const invitation = await prisma.bidInvitation.findFirst({
+    where: { id: bidInvitationId, companyId },
+    select: {
+      id: true,
+      bidProject: {
+        select: {
+          estimateJob: {
+            select: { lineItems: { where: { isDeleted: false }, select: { quantity: true, unitPrice: true } } },
+          },
+        },
+      },
+    },
+  });
+  if (!invitation) return { ok: false, error: INVITATION_GONE };
+
+  const estimate = invitation.bidProject?.estimateJob ?? null;
+  if (estimate) {
+    const priced = gcPrice(bidTotalOf(estimate.lineItems), adjustment);
+    if (!priced.ok) return { ok: false, error: priced.error };
+  }
+
+  const updated = await prisma.bidInvitation.updateMany({
+    where: { id: bidInvitationId, companyId },
+    data: {
+      priceAdjustAmount: adjustment.amount,
+      priceAdjustPercent: adjustment.percent,
+      priceAdjustReason: adjustment.reason,
+    },
+  });
+  if (updated.count === 0) return { ok: false, error: INVITATION_GONE };
+  return { ok: true, value: { bidInvitationId } };
 }
 

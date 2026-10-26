@@ -18,6 +18,7 @@ vi.mock("@/lib/actions", () => {
     mergeIntoProject: action,
     recordPrimeAward: action,
     saveBidProject: action,
+    saveGcPriceAdjustment: action,
     splitFromProject: action,
     startEstimateFromProject: action,
   };
@@ -109,5 +110,28 @@ describe("the project line on an invitation", () => {
     expect(html).toContain("$412,300 sent to Acme GC; the estimate totals $437,000.");
     // And the start button is gone: there is one estimate and it exists.
     expect(html).not.toContain("Start the estimate");
+  });
+
+  it("with an estimate, puts the estimate total beside every GC's price and links each GC's proposal", () => {
+    const row = project({
+      estimateJob: { id: "job-1", name: "Westside", lineItems: [{ quantity: dec(1000), unitPrice: dec(10) }] },
+    });
+    row.invitations[1].priceAdjustPercent = dec(-5);
+    row.invitations[1].priceAdjustReason = "second job for them";
+    const html = render(row);
+    expect(html).toContain('data-bids="estimate-total">$10,000');
+    const prices = [...html.matchAll(/data-bids="gc-price">([^<]*)</g)].map((m) => m[1]);
+    expect(prices).toEqual(["$10,000", "$9,500"]); // the test formatter has no cents
+    expect(html).toContain("−5%");
+    expect(html).toContain("second job for them");
+    expect(html).toContain('href="/jobs/job-1/proposal?invitation=i1"');
+    expect(html).toContain('href="/jobs/job-1/proposal?invitation=i2"');
+    // The form that sets it, prefilled for THIS invitation (Acme: none).
+    expect(html).toContain("Save price");
+    expect(html).toContain("The estimate total, no adjustment");
+  });
+
+  it("with no estimate there is no price table to show", () => {
+    expect(render(project())).not.toContain('data-bids="gc-prices"');
   });
 });

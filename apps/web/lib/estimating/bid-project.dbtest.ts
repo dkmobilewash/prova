@@ -425,4 +425,129 @@ describe("bid projects against a real database", () => {
     expect(await liveIds()).not.toContain(live.id);
     expect((await row()).outstanding).toBe(0);
   });
+
+  // ── a price for each GC, off the one estimate ────────────────────────────
+
+  it("each GC on a project is quoted its own price off the one estimate, and nothing derived is stored", async () => {
+    const a = await invite("acme", "Gc Price Plaza");
+    const b = await invite("buildco", "Gc Price Plaza (BuildCo)", { bidProjectId: a.projectId });
+    const started = await core.startEstimateFromProject(companyId, a.projectId);
+    if (!started.ok) throw new Error(started.error);
+    const jobId = started.value.jobId;
+    // $11,000.00 = 1,000 SF at $10 + 200 SF at $5; the live lines only.
+    await prisma.jobLineItem.create({ data: { jobId, description: "Board", quantity: "1000", unit: "SF", unitPrice: "10" } });
+    await prisma.jobLineItem.create({ data: { jobId, description: "Tape", quantity: "200", unit: "SF", unitPrice: "5" } });
+    await prisma.jobLineItem.create({ data: { jobId, description: "Struck", quantity: "1", unit: "EA", unitPrice: "99999", isDeleted: true } });
+
+    // Acme: -$2,500 for "pays fast". BuildCo: +4.5%.
+    expect(await actions.saveGcPriceAdjustment(a.id, form({ kind: "amount", value: "-2,500", reason: "pays fast" }))).toEqual({ ok: true });
+    expect(await actions.saveGcPriceAdjustment(b.id, form({ kind: "percent", value: "4.5", reason: "net 60" }))).toEqual({ ok: true });
+
+    const rowA = await prisma.bidInvitation.findUniqueOrThrow({ where: { id: a.id } });
+    const rowB = await prisma.bidInvitation.findUniqueOrThrow({ where: { id: b.id } });
+    expect([rowA.priceAdjustAmount?.toString(), rowA.priceAdjustPercent, rowA.priceAdjustReason]).toEqual(["-2500", null, "pays fast"]);
+    expect([rowB.priceAdjustAmount, rowB.priceAdjustPercent?.toString(), rowB.priceAdjustReason]).toEqual([null, "4.5", "net 60"]);
+    // The price is NOT a column: the sent price is a person's entry and stays untouched.
+    expect(rowA.bidAmount).toBeNull();
+    expect(rowB.bidAmount).toBeNull();
+
+    // What the project panel reads: the same rows the page loads.
+    const { bidProjectInclude } = await import("@/lib/bid-project-query");
+    const { gcPriceViews } = await import("@/lib/bid-project-view");
+    const read = async () => {
+      const project = await prisma.bidProject.findUniqueOrThrow({ where: { id: a.projectId }, include: bidProjectInclude });
+      return gcPriceViews(project, a.id, (n) => n.toFixed(2));
+    };
+    const before = await read();
+    expect(before.estimateTotal).toBe(11000);
+    expect(before.rows.map((r) => r.price)).toEqual(["8500.00", "11495.00"]);
+
+    // Edit a line on the estimate: both prices move with it, nothing re-saved.
+    await prisma.jobLineItem.create({ data: { jobId, description: "More board", quantity: "1000", unit: "SF", unitPrice: "1" } });
+    const after = await read();
+    expect(after.estimateTotal).toBe(12000);
+    expect(after.rows.map((r) => r.price)).toEqual(["9500.00", "12540.00"]);
+
+    // Clearing an adjustment puts that GC back on the estimate's own total.
+    expect(await actions.saveGcPriceAdjustment(a.id, form({ kind: "none" }))).toEqual({ ok: true });
+    expect((await read()).rows.map((r) => r.price)).toEqual(["12000.00", "12540.00"]);
+    const cleared = await prisma.bidInvitation.findUniqueOrThrow({ where: { id: a.id } });
+    expect([cleared.priceAdjustAmount, cleared.priceAdjustPercent, cleared.priceAdjustReason]).toEqual([null, null, null]);
+  });
+
+  it("refuses, in words, an adjustment that leaves no price, a bad number, a missing reason and another company's bid", async () => {
+    const a = await invite("acme", "Gc Price Refusals");
+    const started = await core.startEstimateFromProject(companyId, a.projectId);
+    if (!started.ok) throw new Error(started.error);
+    await prisma.jobLineItem.create({
+      data: { jobId: started.value.jobId, description: "Board", quantity: "100", unit: "SF", unitPrice: "10" },
+    });
+
+    const refusedWith = async (values: Record<string, string>, needle: string) => {
+      const result = await actions.saveGcPriceAdjustment(a.id, form(values));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toContain(needle);
+    };
+    // $1,000 estimate: taking $1,000 or more off leaves nothing.
+    await refusedWith({ kind: "amount", value: "-1000", reason: "x" }, "zero or below");
+    await refusedWith({ kind: "percent", value: "-100", reason: "x" }, "zero or below");
+    await refusedWith({ kind: "amount", value: "lots", reason: "x" }, "Enter the amount");
+    await refusedWith({ kind: "amount", value: "-10", reason: "" }, "Say why");
+    // Nothing was written by any of those.
+    const row = await prisma.bidInvitation.findUniqueOrThrow({ where: { id: a.id } });
+    expect([row.priceAdjustAmount, row.priceAdjustPercent, row.priceAdjustReason]).toEqual([null, null, null]);
+
+    // Another company's invitation is not this company's to price.
+    const foreignProject = await prisma.bidProject.create({ data: { companyId: otherCompanyId, name: "Theirs" } });
+    const foreign = await prisma.bidInvitation.create({
+      data: { companyId: otherCompanyId, contactId: otherContactId, projectName: "Theirs", bidProjectId: foreignProject.id },
+    });
+    const crossed = await actions.saveGcPriceAdjustment(foreign.id, form({ kind: "amount", value: "10", reason: "x" }));
+    expect(crossed.ok).toBe(false);
+    if (!crossed.ok) expect(crossed.error).toContain("no longer on this company");
+    expect((await prisma.bidInvitation.findUniqueOrThrow({ where: { id: foreign.id } })).priceAdjustAmount).toBeNull();
+  });
+
+  it("an adjustment can be recorded before the estimate exists, and the action refuses without the capability", async () => {
+    const a = await invite("acme", "Gc Price Early");
+    expect(await actions.saveGcPriceAdjustment(a.id, form({ kind: "percent", value: "-3", reason: "repeat client" }))).toEqual({ ok: true });
+    expect((await prisma.bidInvitation.findUniqueOrThrow({ where: { id: a.id } })).priceAdjustPercent?.toString()).toBe("-3");
+
+    const { can } = await import("@/lib/permissions");
+    const restricted = JOB_FUNCTIONS.find((f) => !can({ role: "MEMBER", jobFunction: f }, "MANAGE_ESTIMATING"));
+    expect(restricted).toBeDefined();
+    context.role = "MEMBER";
+    context.jobFunction = restricted!;
+    try {
+      const denied = await actions.saveGcPriceAdjustment(a.id, form({ kind: "percent", value: "9", reason: "nope" }));
+      expect(denied).toEqual({ ok: false, error: expect.stringContaining("Estimating isn't part of your job function") });
+    } finally {
+      context.role = "OWNER";
+      context.jobFunction = null;
+    }
+    expect((await prisma.bidInvitation.findUniqueOrThrow({ where: { id: a.id } })).priceAdjustPercent?.toString()).toBe("-3");
+  });
+
+  it("the proposal's invitation lookup finds a GC on this estimate's project and nobody else's", async () => {
+    const a = await invite("acme", "Gc Proposal Scope");
+    const b = await invite("buildco", "Gc Proposal Scope (B)", { bidProjectId: a.projectId });
+    const unrelated = await invite("turner", "Gc Proposal Elsewhere");
+    const started = await core.startEstimateFromProject(companyId, a.projectId);
+    if (!started.ok) throw new Error(started.error);
+    const jobId = started.value.jobId;
+
+    // The exact `where` the proposal page builds (jobs/[id]/proposal/page.tsx).
+    const lookup = (id: string, forCompany = companyId) =>
+      prisma.bidInvitation.findFirst({
+        where: { id, companyId: forCompany, OR: [{ bidProject: { estimateJobId: jobId } }, { wonJobId: jobId }] },
+        select: { id: true },
+      });
+    expect((await lookup(a.id))?.id).toBe(a.id);
+    // The GC that was NOT the one linked by wonJobId is still on the project.
+    expect((await prisma.bidInvitation.findUniqueOrThrow({ where: { id: b.id } })).wonJobId).toBeNull();
+    expect((await lookup(b.id))?.id).toBe(b.id);
+    // A different project's invitation, and another company's view of this one.
+    expect(await lookup(unrelated.id)).toBeNull();
+    expect(await lookup(a.id, otherCompanyId)).toBeNull();
+  });
 });

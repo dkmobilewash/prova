@@ -15,7 +15,9 @@ export const bidProjectInclude = {
       name: true,
       // Quantity and sale price only: the total the "sent vs estimate"
       // sentence compares against. A cost-only line has no price and adds 0.
-      lineItems: { select: { quantity: true, unitPrice: true } },
+      // LIVE lines only - the same rows the proposal and the job header add up,
+      // so a deleted line cannot make this total disagree with them.
+      lineItems: { where: { isDeleted: false }, select: { quantity: true, unitPrice: true } },
     },
   },
   invitations: {
@@ -24,6 +26,9 @@ export const bidProjectInclude = {
       contactId: true,
       status: true,
       bidAmount: true,
+      priceAdjustAmount: true,
+      priceAdjustPercent: true,
+      priceAdjustReason: true,
       contact: { select: { name: true } },
     },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -50,4 +55,19 @@ export async function loadProjectChoices(companyId: string) {
       project.bidDueDate ? ` · due ${project.bidDueDate.toISOString().slice(0, 10)}` : ""
     }`,
   }));
+}
+
+/**
+ * The projects to draw outcomes for in C Stream Bid's bids list: every project
+ * that has at least one invitation, soonest bid date first (undated last), then
+ * newest. Read-only; the same include as /bids so `BidProjectOutcomes` renders
+ * both from one shape.
+ */
+export async function loadProjectOutcomes(companyId: string, take = 25) {
+  return prisma.bidProject.findMany({
+    where: { companyId, invitations: { some: {} } },
+    orderBy: [{ bidDueDate: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
+    take,
+    include: bidProjectInclude,
+  });
 }

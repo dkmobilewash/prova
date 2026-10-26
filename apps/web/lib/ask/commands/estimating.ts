@@ -708,6 +708,7 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "startEstimateFromProject", reason: "Starts the one estimate for a project with the first GC as its provisional client; done from the project, where the GCs and the pre-filled name, address and date are visible." },
   { action: "recordPrimeAward", reason: "An entered fact about who won the prime contract, and it moves the estimate's GC and every other GC's win rate. It comes from a results sheet or a phone call, not from a sentence the model could have misheard." },
   { action: "saveBidProject", reason: "Editing a project's name, address and dates is done on /bids, where the row being changed is visible." },
+  { action: "saveGcPriceAdjustment", reason: "A price quoted to one GC, as a signed dollar amount or percent off the estimate. 'Take five off for Turner' does not say five dollars or five percent, nor which of two Turners, and the number is only safe to set beside the estimate total and every other GC's price, which is how /bids shows it. A misheard sign is a bid sent at the wrong money." },
   // The conceptual benchmark. A READ, and still not a command: a
   // dollars-per-square-foot figure looks exactly like a measured one, and the
   // whole design of lib/conceptual-estimate.ts is that it is never stated

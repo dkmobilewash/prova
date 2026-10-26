@@ -232,6 +232,18 @@ model BidInvitation {
   bidProjectId String?
   bidProject   BidProject? @relation(fields: [bidProjectId], references: [id], onDelete: SetNull)
 
+  /// WHAT THIS GC IS QUOTED, as a DIFFERENCE from the project's one estimate:
+  /// a signed dollar amount OR a signed percent (never both — the action
+  /// refuses it), plus a short reason. The price itself is NOT a column: it is
+  /// `estimate total + this`, recomputed by `lib/estimating/gc-price.ts` every
+  /// time, so editing a line on the estimate moves every GC's price and nothing
+  /// stored can disagree with the lines. `bidAmount` above is a different fact —
+  /// the number that was actually SENT, entered by a person.
+  /// All null = this GC is quoted the estimate total as it stands.
+  priceAdjustAmount  Decimal? @db.Decimal(12, 2)
+  priceAdjustPercent Decimal? @db.Decimal(7, 3)
+  priceAdjustReason  String?
+
   /// Who started this conversation. Win rate is a different question for work
   /// we were asked to price and work we went and asked for.
   origin BidInvitationOrigin @default(INVITED)

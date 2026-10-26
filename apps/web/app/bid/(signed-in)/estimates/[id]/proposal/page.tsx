@@ -20,9 +20,10 @@ export default function BidProposalPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ mode?: string | string[] }>;
+  searchParams: Promise<{ mode?: string | string[]; invitation?: string | string[] }>;
 }) {
-  // `?mode=` (lump sum / by scope / itemized) rides through, and the page's
-  // mode links stay inside Bid (`hrefs.proposal`).
+  // `?mode=` (lump sum / by scope / itemized) and `?invitation=` (the proposal
+  // for one GC) ride through, and the page's mode and GC links stay inside Bid
+  // (`hrefs.proposal`).
   return <JobProposalPage params={params} searchParams={searchParams} surface="bid" />;
 }

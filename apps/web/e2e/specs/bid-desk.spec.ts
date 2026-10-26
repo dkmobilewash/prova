@@ -372,6 +372,53 @@ test.describe("the bid desk", () => {
     await expect(row.getByText(/than it was bid at/)).toHaveCount(0);
   });
 
+  // UNEXECUTED: written without a browser (the agent container cannot reach
+  // Clerk), so CI's `e2e` job is where this step is first proved or not.
+  test("7b. a price for this GC off the estimate, and the proposal opened FOR that GC", async () => {
+    await page.goto("/bids?view=all");
+    await expectHealthy(page, "/bids before pricing the GC", { monitor });
+
+    // The price sits under "Project", one click down like every list-page edit.
+    const controls = bidRow().locator('details[data-bids="project-controls"]');
+    await controls.locator("summary").click();
+    const priceForm = controls.locator("form").filter({ has: page.getByRole("button", { name: "Save price" }) });
+    await priceForm.locator('select[name="kind"]').selectOption("amount");
+    await priceForm.locator('input[name="value"]').fill("5,000");
+    await priceForm.locator('input[name="reason"]').fill("ZZ-E2E pays net 60");
+    await settleAction(page, () => priceForm.getByRole("button", { name: "Save price" }).click());
+
+    // The job has no lines, so the estimate is $0.00 and this GC is quoted
+    // exactly the adjustment: the side-by-side table says so on /bids.
+    await page.reload();
+    await expectHealthy(page, "/bids after pricing the GC", { monitor });
+    await expect(bidRow().locator('[data-bids="estimate-total"]')).toHaveText("$0.00");
+    await expect(bidRow().locator('[data-bids="gc-price"]').first()).toHaveText("$5,000.00");
+
+    // "Proposal" on that GC's line opens the page FOR the invitation.
+    await bidRow().getByRole("link", { name: "Proposal", exact: true }).click();
+    await page.waitForURL(/\/jobs\/[^/]+\/proposal\?invitation=/);
+    await expectHealthy(page, "the proposal for one GC", { monitor });
+    // Addressed by the name ON THE INVITATION, to the GC on it.
+    await expect(page.getByRole("heading", { name: `Proposal — ${PROJECT}` })).toBeVisible();
+    await expect(page.getByText(`to ${GC_NAME}`).first()).toBeVisible();
+    // The sender's note (print:hidden) carries the arithmetic and the reason.
+    const note = page.locator('[data-proposal="gc-price-note"]');
+    await expect(note).toContainText("estimate $0.00");
+    await expect(note).toContainText("+$5,000.00");
+    await expect(note).toContainText("ZZ-E2E pays net 60");
+    await expect(note).toContainText("= $5,000.00");
+
+    // The mode choice keeps the invitation.
+    await page.getByRole("link", { name: "Itemized" }).click();
+    await page.waitForURL(/proposal\?mode=itemized&invitation=/);
+    await expectHealthy(page, "the itemized proposal for one GC", { monitor });
+    await expect(page.locator('[data-proposal="gc-price-note"]')).toContainText("= $5,000.00");
+
+    // A made-up invitation id is a 404, never the generic letter.
+    const bogus = await page.goto(page.url().replace(/invitation=[^&]+/, "invitation=not-a-real-bid"));
+    expect(bogus?.status()).toBe(404);
+  });
+
   test("8. every panel survives a reload together, and nothing crashed the browser", async () => {
     // One row, four features, one query. This is the check that a null in any
     // of them has not taken the page — and /pipeline reads the same bid.
