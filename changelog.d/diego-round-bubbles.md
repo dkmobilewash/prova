@@ -35,3 +35,9 @@ before; A401 reports thirteen drawings, none measurable, each marked
 "check it". The 26 training sheets are unchanged by it. The server-side
 calibration detect measures the same sheet whole at 796 ft and is
 recorded in `NOTES.md` as the open half.
+
+**Measured before anyone builds a junk filter:** the trained classifier's
+veto at 0.3, leave-one-building-out on the 26 training sheets, removes
+2,149 ft of the 14,316 ft of casework the round-bubble test uncovers and
+costs 337 ft of real wall. The junk filter is still needed; the per-sheet
+table is in `NOTES.md`, and `zzLoboVeto.eval.ts` is the instrument.
