@@ -56,9 +56,42 @@ export function plainTag(tag: string): string {
 
 /** What the finder is handed when the switch is on. */
 export type PlanTextInput = {
-  /** The codes the set's partition legend defines, as read once per set. */
+  /**
+   * The vocabulary a symbol has to hold to count as a wall tag: the company's
+   * OWN wall-type codes, plus the set's partition legend where one has been
+   * read. The field keeps its old name because `findWallsOnSheet` reads it —
+   * see `tagVocabulary` for what goes in it now and why.
+   */
   legendCodes: readonly string[];
 };
+
+/**
+ * ── THE TAGS DO NOT NEED THE AI SWITCH; ONLY THE LEGEND READ DOES ──
+ *
+ * A wall tag printed in a hexagon is free geometry. What the symbol reader
+ * needs is a VOCABULARY to tell a wall tag from a door mark, and until now the
+ * only vocabulary was the legend — read by a model, behind PLAN_TEXT_READ, so
+ * every company with the switch off saw no symbol tags at all, and typed its
+ * walls by thickness alone.
+ *
+ * The company's own library is a vocabulary too: an estimator who has S6A and
+ * C8B in it is saying those are the codes this set uses. So the vocabulary is
+ * the library's codes always, and the legend's as well when one has been read.
+ * A library code that is not on the drawing matches nothing; a legend code the
+ * library lacks still tags a group, which `verdictFor` reports as
+ * NO_SUCH_TYPE with the schedule to read — unchanged.
+ */
+export function tagVocabulary(libraryCodes: readonly string[], legendCodes: readonly string[] | null): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of [...(legendCodes ?? []), ...libraryCodes]) {
+    const code = raw.trim();
+    if (code === "" || seen.has(code.toUpperCase())) continue;
+    seen.add(code.toUpperCase());
+    out.push(code);
+  }
+  return out;
+}
 
 export type PlanTextTagReport = {
   symbols: number;

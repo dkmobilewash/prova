@@ -107,6 +107,32 @@ export async function updateWallType(wallTypeId: string, formData: FormData): Pr
   });
 }
 
+/**
+ * ── "UPDATE C8B'S THICKNESS TO WHAT IS DRAWN", ONE PRESS FROM A FOUND GROUP ──
+ *
+ * The found-walls row says the drawing tags a group C8B at 11-1/4" while the
+ * library has C8B at 9-1/4" (a legend's stud-plus-board figure). The tag wins
+ * for pricing either way; this moves the library's figure to the drawn one so
+ * the next untagged 11-1/4" wall can match it. Only the thickness changes.
+ */
+export async function setWallTypeThickness(jobId: string, wallTypeId: string, thicknessIn: number): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  // The takeoff page's own capability, because that is the page this is
+  // pressed from (`action-capability-guards.test.ts`).
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const inches = Number(thicknessIn);
+  if (!Number.isFinite(inches) || inches < 0.5 || inches > 48) return actionFail("A wall thickness has to be between 1/2 and 48 inches.");
+  const updated = await prisma.wallType.updateMany({
+    where: { id: wallTypeId, companyId: context.company.id },
+    data: { thicknessIn: inches.toFixed(2) },
+  });
+  if (updated.count === 0) return actionFail(NO_TYPE);
+  revalidateLibrary();
+  revalidatePath(`/takeoff/${jobId}`);
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  return actionOk;
+}
+
 export async function deleteWallType(wallTypeId: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_ESTIMATING")) return actionFail(NO_ESTIMATING);

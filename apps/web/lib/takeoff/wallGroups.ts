@@ -240,6 +240,24 @@ export type GroupVerdict =
   /** Nothing named them and nothing in the library is that thick. */
   | { state: "UNKNOWN" };
 
+/**
+ * ── THE TYPE A GROUP IS SETTLED AS, WITH NOBODY ASKED ──
+ *
+ * NAMED and ONLY_ONE_THAT_THICK always were. TAG_DISAGREES joins them: the
+ * drawing printed the name, and a legend's thickness (stud plus board) is
+ * routinely not what is drawn — ICF, furring, finishes — so the tag wins and
+ * the disagreement is SAID beside it rather than used to withhold a price.
+ * The sentence carries both numbers and the row offers to move the library's
+ * figure to what is drawn (`setWallTypeThickness`). Only an UNTAGGED group is
+ * ever matched by thickness. One function for the button and the submit, so
+ * the words and the form cannot disagree.
+ */
+export function settledType(verdict: GroupVerdict): MatchableWallType | null {
+  return verdict.state === "NAMED" || verdict.state === "ONLY_ONE_THAT_THICK" || verdict.state === "TAG_DISAGREES"
+    ? verdict.type
+    : null;
+}
+
 export function verdictFor(group: WallGroup): GroupVerdict {
   if (group.source.kind === "TAG") {
     const [type] = group.candidates;
@@ -412,10 +430,11 @@ export function groupSentence(group: WallGroup, verdict: GroupVerdict): string |
       );
     case "TAG_DISAGREES":
       return (
-        `The drawing tags these ${verdict.tag}, but they measure ${inchLabel(group.inches)} and your ` +
-        `${verdict.type.code} is ${inchLabel(verdict.type.thicknessIn ?? 0)}. Either the tag belongs to a different ` +
-        `wall or the thickness on your ${verdict.type.code} is wrong — look at this group on the drawing before ` +
-        `pricing it.`
+        `The drawing tags these ${verdict.tag}, which is your ${verdict.type.code} — ${verdict.type.name}. ` +
+        `They are drawn ${inchLabel(group.inches)} and your ${verdict.type.code} is on file at ` +
+        `${inchLabel(verdict.type.thicknessIn ?? 0)}; the tag wins, so they price as ${verdict.type.code}. ` +
+        `A legend's thickness is the studs and board, and the drawn wall may carry furring or finishes — ` +
+        `or the tag may belong to the wall beside these. Check one on the drawing.`
       );
     case "NO_SUCH_TYPE":
       return (

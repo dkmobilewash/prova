@@ -42,6 +42,7 @@ import {
   saveTakeoffMeasurement,
   saveTakeoffMeasurements,
   updateMeasurementGeometry,
+  setWallTypeThickness,
 } from "@/lib/actions";
 import type {
   PlanSheet,
@@ -64,6 +65,7 @@ import {
   type WallCandidate,
   inchLabel,
   type StrokeSegment,
+  toEighth,
 } from "@/lib/takeoff/wallVectors";
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
 import { loadPlanText, type PlanTextView } from "@/lib/actions/planTextRead";
@@ -111,6 +113,7 @@ import {
   storedWallsFor,
   type WallGroup,
   type GroupVerdict,
+  settledType,
 } from "@/lib/takeoff/wallGroups";
 import { proposalSections, showsHeadings } from "@/lib/takeoff/proposalSections";
 import { calibrationForView, type ViewScale } from "@/lib/takeoff/sheetScale";
@@ -839,6 +842,8 @@ export function TakeoffPlanViewer({
    * tag and its own candidates, so the three can no longer fall out of step
    * with each other, which is a class of bug rather than a tidy-up.
    */
+  const [thicknessBusy, setThicknessBusy] = useState<string | null>(null);
+  const [thicknessNote, setThicknessNote] = useState<string | null>(null);
   const [chosen, setChosen] = useState<Record<number, string>>({});
   /** A height typed for a group whose type has no default — the posting refuses without one. */
   const [groupHeight, setGroupHeight] = useState<Record<number, string>>({});
@@ -2710,14 +2715,16 @@ export function TakeoffPlanViewer({
     // "create" are the chooser's other answers and name nothing.
     if (pick && pick !== "plain" && pick !== "create") {
       const picked = wallTypes.find((type) => type.id === pick);
-      if (picked && verdict.state !== "NAMED" && verdict.state !== "ONLY_ONE_THAT_THICK") return picked;
+      if (picked && settledType(verdict) === null) return picked;
     }
     // A SHEET NOTE IS AN OFFER, not an answer: its type leads the ASK picker
     // (`verdict.suggested`) and the group is priced only once a person picks
     // it — see `wallGroups`.
-    if (verdict.state === "NAMED" || verdict.state === "ONLY_ONE_THAT_THICK") {
-      return verdict.type;
-    }
+    // A TAG WINS OVER THE THICKNESS: a TAG_DISAGREES group is settled as its
+    // tag too, with the disagreement said in its sentence and a one-press fix
+    // for the library's figure beside it — see `settledType`.
+    const settled = settledType(verdict);
+    if (settled !== null) return settled;
     // An ASK is priced only once a PERSON has answered it. No default, no
     // first-in-the-list: that is the guess this whole module refuses to make.
     if (verdict.state === "ASK") return verdict.types.find((type) => type.id === pick) ?? null;
@@ -3559,6 +3566,34 @@ export function TakeoffPlanViewer({
                         pricing a bid is entitled to know which they have. */}
                     {groupSentence(group, verdict) !== null && (
                       <p className="w-full text-xs text-ink-muted">{groupSentence(group, verdict)}</p>
+                    )}
+                    {/* ── THE LIBRARY'S FIGURE, MOVED TO WHAT IS DRAWN, IN ONE PRESS ──
+                        Offered only where the drawing's tag and the library's
+                        thickness disagree. Pricing does not wait on it; it is
+                        there so the next untagged wall this thick can match. */}
+                    {verdict.state === "TAG_DISAGREES" && (
+                      <button
+                        type="button"
+                        data-takeoff="update-thickness"
+                        disabled={thicknessBusy === verdict.type.id}
+                        onClick={() => {
+                          const id = verdict.type.id;
+                          setThicknessBusy(id);
+                          setThicknessNote(null);
+                          void setWallTypeThickness(jobId, id, toEighth(group.inches))
+                            .then((result) => setThicknessNote(result.ok ? `${verdict.type.code} is now ${inchLabel(group.inches)} in your library.` : result.error))
+                            .catch(() => setThicknessNote("The thickness didn't save. Reload and try again."))
+                            .finally(() => setThicknessBusy(null));
+                        }}
+                        className="rounded-md border border-line-card px-2 py-1 text-xs text-link hover:bg-rail-hover disabled:opacity-60"
+                      >
+                        {thicknessBusy === verdict.type.id ? "Updating…" : `Update ${verdict.type.code}'s thickness to ${inchLabel(group.inches)}`}
+                      </button>
+                    )}
+                    {thicknessNote !== null && verdict.state === "TAG_DISAGREES" && (
+                      <span className="text-xs text-ink-body" role="status" data-takeoff="thickness-updated">
+                        {thicknessNote}
+                      </span>
                     )}
                   </li>
                   </Fragment>
