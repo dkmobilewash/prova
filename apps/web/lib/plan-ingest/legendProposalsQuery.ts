@@ -1,5 +1,5 @@
 import { prisma } from "@prova/db";
-import { storedCropsFromJson, storedLegendTypesFromJson, type StoredCrop, type StoredLegendType } from "@/lib/takeoff/legendProposal";
+import { sightFieldsFor, storedCropsFromJson, storedLegendTypesFromJson, type StoredCrop, type StoredLegendType } from "@/lib/takeoff/legendProposal";
 
 /** One legend page's read, as the review screen shows it. */
 export type LegendProposalView = {
@@ -14,6 +14,8 @@ export type LegendProposalView = {
   confidence: "HIGH" | "MEDIUM" | "LOW";
   /** True once the drawing has been read too; the merged types then carry both. */
   hasSight: boolean;
+  /** The sight read's height note per code (upper-cased), for the height reading before Add. */
+  heightNotes: Record<string, string | null>;
   status: "PROPOSED" | "ACCEPTED" | "REJECTED";
 };
 
@@ -60,6 +62,9 @@ export async function loadLegendProposals(planId: string): Promise<LegendProposa
       reason: proposal.reason,
       confidence: proposal.confidence,
       hasSight: proposal.sightRead !== null,
+      heightNotes: Object.fromEntries(
+        storedLegendTypesFromJson(proposal.merged).map((t) => [t.code.toUpperCase(), sightFieldsFor(proposal.sightRead, t.code).heightNote]),
+      ),
       status: proposal.status,
     }));
 }

@@ -120,6 +120,18 @@ describe("nameSheet", () => {
   });
 
   it("returns empty strings rather than guessing when nothing reads", () => {
-    expect(nameSheet([], page)).toEqual({ number: "", title: "" });
+    expect(nameSheet([], page)).toEqual({ number: "", title: "", distinct: false });
+  });
+
+  it("drops a run of underscores from the title and says when the title's lettering stands out", () => {
+    const tall = nameSheet(
+      [inBlock("COVER SHEET", 40), inBlock("__________", 40), inBlock("A101", 30), inBlock("ISSUED FOR BID", 12), inBlock("CHECKED BY", 12), inBlock("DATE", 12)],
+      page,
+    );
+    expect(tall.title).toBe("COVER SHEET");
+    expect(tall.distinct).toBe(true);
+    const flat = nameSheet([inBlock("COVER SHEET", 12), inBlock("A101", 12), inBlock("ISSUED FOR BID", 12), inBlock("CHECKED BY", 12)], page);
+    expect(flat.title).toBe("COVER SHEET");
+    expect(flat.distinct).toBe(false);
   });
 });

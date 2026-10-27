@@ -1,0 +1,61 @@
+{
+ "format": "gbdt-binary-v1",
+ "note": "INVENTED for e2e: one stump on lengthPercentile; short runs score 0.119, long ones 0.88. Not a trained model.",
+ "features": [
+  "thicknessVsCommon",
+  "thicknessPercentile",
+  "lengthPercentile",
+  "lengthToSheetSpan",
+  "scheduledDeltaShare",
+  "hasSchedule",
+  "isScheduled",
+  "faceRatio",
+  "overlapShare",
+  "isCurved",
+  "offOrthogonalDeg",
+  "penDelta",
+  "penPercentile",
+  "hasPenWidths",
+  "layerSaysWall",
+  "layerSaysNotWall",
+  "layerUnknown",
+  "parallelNeighbours",
+  "neighbourSpacingCv",
+  "hasNeighbourSpacing",
+  "nearestNeighbourThicknessRatio",
+  "hasNearestNeighbour",
+  "densityPercentile",
+  "inHatchSeries"
+ ],
+ "learningRate": 1,
+ "init": 0,
+ "trees": [
+  {
+   "left": [
+    1,
+    -1,
+    -1
+   ],
+   "right": [
+    2,
+    -1,
+    -1
+   ],
+   "feature": [
+    2,
+    0,
+    0
+   ],
+   "threshold": [
+    0.3,
+    0,
+    0
+   ],
+   "value": [
+    0,
+    -2,
+    2
+   ]
+  }
+ ]
+}

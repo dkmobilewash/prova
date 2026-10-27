@@ -331,14 +331,19 @@ export function readPartitionAssembly(input: {
     });
   } else if (studValues.length === 1) {
     studWidthIn = studValues[0];
-  } else {
-    const lumber = unsizedLumber(lines);
-    if (lumber !== null) {
-      flags.push({
-        why: "wood studs with no nominal size stated — the width has to come from the wall thickness or a section",
-        phrase: lumber,
-      });
-    }
+  }
+  // ── A `2X` WITH NO SIZE IS STILL A FRAMED WALL ──
+  //
+  // E Street's `2X WOOD STUD FRAMING` and ELEVEN03's `2 ROWS OF 2X STUDS` name
+  // the framing and not its width. The width is not guessed — a stud COUNT
+  // and the plates need only the spacing — so those are proposed, with the
+  // size flagged as not stated, instead of the wall going out as board only.
+  const lumber = studWidthIn === null && studValues.length === 0 ? unsizedLumber(lines) : null;
+  if (lumber !== null) {
+    flags.push({
+      why: "wood studs with no nominal size stated on the drawing — the count and plates are proposed from the spacing; the width has to come from the wall thickness or a section",
+      phrase: lumber,
+    });
   }
 
   const spacingFound = spacings(lines);
@@ -376,41 +381,52 @@ export function readPartitionAssembly(input: {
   const gaugeHit = joined.match(/\b(\d{2})\s*(?:GA\.?|GAUGE)\b/i);
   const studGauge = gaugeHit === null ? null : Number(gaugeHit[1]);
 
+  const wood = /\b(?:WOOD|WD\.?|LUMBER)\b|\b2\s*[xX]\s*\d?/i.test(studs.map((s) => s.phrase).join(" ") + (lumber ?? ""));
   if (studWidthIn !== null) {
     const phrase = studs.find((s) => s.value === studWidthIn)?.phrase ?? `${studWidthIn}in stud`;
     components.push({
       description:
-        `${fraction(studWidthIn)}in metal stud` +
+        `${fraction(studWidthIn)}in ${wood ? "wood" : "metal"} stud` +
         (studGauge === null ? "" : `, ${studGauge} ga`) +
         (studSpacingIn === null ? "" : ` at ${fraction(studSpacingIn)}in o.c.`),
       unit: "EA",
-      // The COUNT comes from `studsRequired`, which reads the type's own
-      // spacing — so this is one stud per stud, not a length.
       basis: "STUDS",
       factor: 1,
       wastePercent: 0,
       roundUp: true,
       from: { phrase, where },
     });
-
-    // ── TRACK ──
-    //
-    // Not stated on any legend measured, and not a guess: a stud wall has a
-    // top and a bottom track by construction, which is why the schema's own
-    // comment gives 2 as the example factor for "top-and-bottom track". It is
-    // proposed from the STUD line and says so.
     components.push({
-      description: `${fraction(studWidthIn)}in track, top and bottom`,
+      // Wood is plated — a bottom plate and a double top plate — where metal is tracked.
+      description: wood ? `${fraction(studWidthIn)}in plates, bottom and double top` : `${fraction(studWidthIn)}in track, top and bottom`,
       unit: "LF",
       basis: "LINEAR_FT",
-      factor: 2,
+      factor: wood ? 3 : 2,
       wastePercent: 0,
       roundUp: false,
       from: { phrase, where },
     });
+  } else if (lumber !== null) {
+    components.push({
+      description: "2X wood stud, size NOT stated on the drawing" + (studSpacingIn === null ? "" : ` at ${fraction(studSpacingIn)}in o.c.`),
+      unit: "EA",
+      basis: "STUDS",
+      factor: 1,
+      wastePercent: 0,
+      roundUp: true,
+      from: { phrase: lumber, where },
+    });
+    components.push({
+      description: "2X plates, bottom and double top, size NOT stated on the drawing",
+      unit: "LF",
+      basis: "LINEAR_FT",
+      factor: 3,
+      wastePercent: 0,
+      roundUp: false,
+      from: { phrase: lumber, where },
+    });
   }
 
-  // ── BOARD ──
   const boardFound = boards(lines);
   const boardValues = distinct(boardFound);
   let boardThicknessIn: number | null = null;
