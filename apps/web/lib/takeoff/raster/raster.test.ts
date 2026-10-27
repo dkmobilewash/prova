@@ -36,9 +36,23 @@ describe("lines off a bitmap", () => {
     const page = blank(400, 200);
     drawLine(page, 50, 100, 350, 100, 12, 230);
     expect(rasterLines(page, { dpi: DPI, fillThreshold: 0 }).length).toBe(0);
-    const lines = rasterLines(page, { dpi: DPI });
-    expect(lines.length).toBe(2);
-    expect(lines.every((l) => l.filled && l.axis === "h")).toBe(true);
+    for (const fills of ["runs", "contour"] as const) {
+      const lines = rasterLines(page, { dpi: DPI, fills }).filter((l) => l.axis === "h");
+      expect(lines.length, fills).toBe(2);
+      expect(lines.every((l) => l.filled)).toBe(true);
+    }
+  });
+
+  it("by contour, a grey room with lettering inside it gives faces on its walls only, and two rooms either side of a wall gap give the wall's two faces", () => {
+    const page = blank(400, 300);
+    for (let y = 40; y < 140; y += 1) drawLine(page, 40, y, 360, y, 1, 230); // room A
+    for (let y = 80; y < 92; y += 1) drawLine(page, 150, y, 250, y, 1, 255); // white lettering inside A
+    for (let y = 150; y < 260; y += 1) drawLine(page, 40, y, 360, y, 1, 230); // room B, a 10 px wall gap below A
+    const faces = rasterLines(page, { dpi: DPI }).filter((l) => l.filled && l.axis === "h" && Math.abs(l.x2 - l.x1) > 200 * 0.72);
+    const ys = [...new Set(faces.map((l) => Math.round(l.y1 / 0.72)))].sort((a, b) => a - b);
+    // A's top and bottom, B's top and bottom — nothing at the lettering rows (80–92).
+    expect(ys.length).toBe(4);
+    expect(ys.every((y) => y < 45 || (y > 135 && y < 155) || y > 255)).toBe(true);
   });
 
   it("a filled band — a poché wall — comes out as its two faces", () => {

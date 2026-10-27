@@ -8,6 +8,7 @@ import { heldOutReason } from "../heldOutSets";
 import { keyFromLabels, scoreSheet, type SheetScore } from "../heldOutScore";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { printedScalesOnPage } from "../printedScales";
+import { grayToCanvas, ocrTiles, openPdf, renderGray } from "../raster/nodeStack";
 import { readPgm, writePgm, type Gray } from "../raster/pgm";
 import { degrade, SCAN_LIKE, skew } from "../raster/rasterDegrade";
 import { estimateSkewDegrees, pageSizeOf, rasterLines } from "../raster/rasterLines";
@@ -26,10 +27,11 @@ import type { StrokeSegment } from "../wallVectors";
  * against the key with `scoreSheet`, beside the vector finder on the same
  * sheet, and time each step.
  *
- * Training sheets only — `heldOutReason` refuses the test buildings. The
- * render and the OCR are Apple frameworks through `scanTool.swift` (built on
- * first use into a temp dir), so this runs on a Mac and nowhere else; that is
- * the research arm, and the report says what production would use instead.
+ * Training sheets only — `heldOutReason` refuses the test buildings. Two
+ * stacks for the render and the OCR: `SCAN_EVAL_STACK=mac` (default) is
+ * Apple's PDFKit and Vision through `scanTool.swift`, the research arm;
+ * `node` is pdf.js with its Node canvas and tesseract.js — nothing a Linux
+ * server lacks — through `raster/nodeStack.ts`.
  *
  *   REAL_PLAN_DIR=… TAKEOFF_LABEL_DIR=… SCAN_EVAL_OUT=… [SCAN_EVAL_ONLY=Baker] [SCAN_EVAL_DPI=150,300] \
  *   node_modules/.bin/vitest run --config vitest.eval.config.mts lib/takeoff/realplan/scanned.eval.ts
@@ -42,6 +44,10 @@ const DPIS = (process.env.SCAN_EVAL_DPI ?? "150,200,300").split(",").map(Number)
 const VARIANTS = (process.env.SCAN_EVAL_VARIANTS ?? "clean,scan").split(",") as ("clean" | "scan")[];
 /** Ink threshold for the raster pass; see `rasterLines`. */
 const THRESHOLD = process.env.SCAN_EVAL_THRESHOLD ? Number(process.env.SCAN_EVAL_THRESHOLD) : undefined;
+/** "mac": PDFKit + Vision through scanTool.swift. "node": pdf.js + tesseract.js, what a Linux server runs. */
+const STACK = (process.env.SCAN_EVAL_STACK ?? "mac") as "mac" | "node";
+/** How fills become faces: "contour" (default) or "runs". */
+const FILLS = (process.env.SCAN_EVAL_FILLS ?? "contour") as "runs" | "contour";
 
 type Saved = {
   set: string;
@@ -90,8 +96,10 @@ const ms = (t: number) => Date.now() - t;
 
 describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () => {
   it("scores the raster path per dpi and variant against the keys, beside the vector path", { timeout: 7_200_000 }, async () => {
-    const bin = tool();
+    const bin = STACK === "mac" ? tool() : "";
     const work = join(tmpdir(), "prova-scan-eval");
+    const tessCache = join(tmpdir(), "prova-tessdata");
+    mkdirSync(tessCache, { recursive: true });
     mkdirSync(work, { recursive: true });
     const labels: { dir: string; sheet: string; path: string }[] = [];
     for (const dir of readdirSync(LABELS)) {
@@ -108,6 +116,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
     }
     const arms: Arm[] = [];
     const notes: string[] = [];
+    const nodeDocs: Awaited<ReturnType<typeof openPdf>>[] = [];
     for (const file of labels) {
       const saved = JSON.parse(readFileSync(file.path, "utf8")) as Saved;
       const { key, fromTracedFeet } = keyFromLabels(saved);
@@ -159,11 +168,20 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
 
       // ── THE RASTER ARMS ──
       for (const dpi of DPIS) {
-        const pgmPath = join(work, `${flat(file.dir)}-${file.sheet}-${dpi}.pgm`);
+        const pgmPath = join(work, `${flat(file.dir)}-${file.sheet}-${dpi}${STACK === "node" ? "-node" : ""}.pgm`);
         const t0 = Date.now();
-        execFileSync(bin, ["render", pdf, String(saved.page), String(dpi), pgmPath], { stdio: "pipe" });
+        let clean: Gray;
+        let nodeDoc: Awaited<ReturnType<typeof openPdf>> | null = null;
+        if (STACK === "mac") {
+          execFileSync(bin, ["render", pdf, String(saved.page), String(dpi), pgmPath], { stdio: "pipe" });
+          clean = readPgm(new Uint8Array(readFileSync(pgmPath)));
+        } else {
+          nodeDoc = await openPdf(new Uint8Array(readFileSync(pdf)));
+          clean = (await renderGray(nodeDoc, saved.page, dpi)).gray;
+          writeFileSync(pgmPath, writePgm(clean));
+        }
+        if (nodeDoc) nodeDocs.push(nodeDoc);
         const renderMs = ms(t0);
-        const clean = readPgm(new Uint8Array(readFileSync(pgmPath)));
         for (const variant of VARIANTS) {
           let gray: Gray = clean;
           let inputPath = pgmPath;
@@ -173,7 +191,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
             writeFileSync(inputPath, writePgm(gray));
           }
           const t1 = Date.now();
-          let lines = rasterLines(gray, { dpi, threshold: THRESHOLD });
+          let lines = rasterLines(gray, { dpi, threshold: THRESHOLD, fills: FILLS });
           // DESKEW: a scan off the glass by a degree is the common case, and
           // the finder pairs faces more happily when they sit on the axes. The
           // tilt is read off the long lines, the bitmap turned back, the lines
@@ -184,13 +202,20 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
             gray = skew(gray, -tilt);
             inputPath = inputPath.replace(/\.pgm$/, "-deskewed.pgm");
             writeFileSync(inputPath, writePgm(gray));
-            lines = rasterLines(gray, { dpi, threshold: THRESHOLD });
+            lines = rasterLines(gray, { dpi, threshold: THRESHOLD, fills: FILLS });
           }
           const linesMs = ms(t1);
           const t2 = Date.now();
-          const ocrPath = inputPath.replace(/\.pgm$/, ".ocr.json");
-          execFileSync(bin, ["ocr", inputPath, ocrPath], { stdio: "pipe" });
-          const ocr = JSON.parse(readFileSync(ocrPath, "utf8")) as { items: OcrItem[] };
+          let ocr: { items: OcrItem[] };
+          if (STACK === "mac") {
+            const ocrPath = inputPath.replace(/\.pgm$/, ".ocr.json");
+            execFileSync(bin, ["ocr", inputPath, ocrPath], { stdio: "pipe" });
+            ocr = JSON.parse(readFileSync(ocrPath, "utf8")) as { items: OcrItem[] };
+          } else {
+            // Tesseract reads the (possibly degraded, deskewed) grey, put back on a canvas.
+            const { canvas, context } = grayToCanvas(nodeDoc!, gray);
+            ocr = await ocrTiles(nodeDoc!, canvas, context, { cachePath: tessCache, dpi });
+          }
           const ocrMs = ms(t2);
           const ptPerPx = 72 / dpi;
           const textItems = ocr.items.map((i) => ({ str: i.str, x: i.x * ptPerPx, y: i.y * ptPerPx, width: i.width * ptPerPx, height: i.height * ptPerPx }));
@@ -227,7 +252,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
             );
           }
           arms.push({
-            arm: `${dpi}dpi-${variant}`,
+            arm: `${dpi}dpi-${variant}${STACK === "node" ? "-node" : ""}`,
             scale: printed ? "ocr" : "key",
             // Scored at the KEY's scale: a candidate's geometry is in page-width
             // units, so a wrong OCR scale shows up as wrong candidates, not as a
@@ -239,6 +264,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
           });
         }
       }
+      if (nodeDocs.length > 0) for (const d of nodeDocs.splice(0)) await d.destroy();
       const mine = arms.filter((a) => a.score.set === file.dir && a.score.sheet === file.sheet);
       console.log(
         `${tag}: ` +

@@ -1,5 +1,6 @@
 import type { StrokeSegment } from "../wallVectors";
 import type { Gray } from "./pgm";
+import { fillEdges } from "./fillContours";
 import { blur3 } from "./rasterDegrade";
 
 /**
@@ -54,6 +55,8 @@ export type RasterLinesOptions = {
   maxLineInches?: number;
   /** Below this grey a pixel of the BLURRED page belongs to a fill. 245 by default; 0 turns the fill pass off. */
   fillThreshold?: number;
+  /** How fills become faces: `"runs"` (bands of the blurred page) or `"contour"` (edges of hole-filled shapes, `fillContours.ts`). Contour by default. */
+  fills?: "runs" | "contour";
 };
 
 type Run = { from: number; to: number };
@@ -167,7 +170,18 @@ export function rasterLines(gray: Gray, options: RasterLinesOptions): RasterLine
     for (const band of bandsFrom(cols)) emit(band, "v", fillsOnly);
   };
   pass(data, threshold, false);
-  if (fillThreshold > 0) pass(blur3(gray).data, fillThreshold, true);
+  if (fillThreshold > 0) {
+    if ((options.fills ?? "contour") === "contour") {
+      // The fill's outline as thin ink, through the same bands; every band
+      // is a face of a fill, so it is marked so.
+      const { edges } = fillEdges(gray, { fillThreshold, dpi: options.dpi });
+      const before = out.length;
+      pass(edges.data, 128, false);
+      for (let i = before; i < out.length; i += 1) out[i].filled = true;
+    } else {
+      pass(blur3(gray).data, fillThreshold, true);
+    }
+  }
   return out;
 }
 
