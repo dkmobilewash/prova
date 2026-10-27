@@ -4,6 +4,7 @@ import { buildGuidesFromFacts } from "./index";
 import { isOpenForGuide, type GuideAddendumFact, type GuideWallTypeFact, type JobGuideFacts } from "./facts";
 import { GUIDE_STEP_KEYS, type GuideStepStatus } from "./types";
 import { WALL_HEIGHT_CHOICES, parseWallHeightArg } from "./wallHeight";
+import { needsYou } from "./homeView";
 import { money } from "@/lib/money";
 
 /**
@@ -594,6 +595,54 @@ describe("once the bid has gone out", () => {
     const facts = ready({ invitations: [{ id: "i", projectName: "p", status: "DECLINED", dueDate: null, dueMinute: null }] });
     expect(buildJobGuide(facts, NOW).ask).not.toBeNull();
     expect(isOpenForGuide(facts)).toBe(false);
+  });
+
+  // ── THE SEND RECORD: an email the app sent for the invitation ──
+  //
+  // `sendBidProposal` marks the bid SUBMITTED too, so the status alone would
+  // do — but the date lives only on the message, and a status set back by hand
+  // must not un-send an email a GC received (facts.ts, "sent").
+  it("an email the app sent counts as sent even while the status still reads INVITED, and the rail names the day", () => {
+    const facts = ready({
+      invitations: [{ id: "i", projectName: "p", status: "INVITED", dueDate: "2026-10-27", dueMinute: 600, proposalSentOn: "2026-10-26" }],
+    });
+    const guide = buildJobGuide(facts, NOW);
+    expect(guide.ask).toBeNull();
+    expect(guide.tone).toBe("working");
+    expect(guide.dueLabel).toBeNull();
+    expect(guide.steps.every((step) => step.status === "done")).toBe(true);
+    expect(guide.steps[4]!.summary).toBe("Sent Oct 26");
+    expect(needsYou([guide])).toEqual([]);
+  });
+
+  it("names the FIRST day it was sent when two GCs were emailed", () => {
+    const facts = ready({
+      invitations: [
+        { id: "a", projectName: "p", status: "SUBMITTED", dueDate: null, dueMinute: null, proposalSentOn: "2026-10-24" },
+        { id: "b", projectName: "p", status: "SUBMITTED", dueDate: null, dueMinute: null, proposalSentOn: "2026-10-22" },
+      ],
+    });
+    expect(buildJobGuide(facts, NOW).steps[4]!.summary).toBe("Sent Oct 22");
+  });
+
+  it("a null or absent send record changes nothing: an INVITED bid that is ready still asks to be sent", () => {
+    for (const proposalSentOn of [null, undefined]) {
+      const facts = ready({
+        invitations: [{ id: "i", projectName: "p", status: "INVITED", dueDate: "2026-10-27", dueMinute: 600, proposalSentOn }],
+      });
+      const guide = buildJobGuide(facts, NOW);
+      expect(guide.ask?.id).toBe("send-due-soon");
+      expect(needsYou([guide])).toHaveLength(1);
+    }
+  });
+
+  it("drops off the home 'Needs you' list once sent", () => {
+    const before = buildJobGuide(ready({ invitations: invited("2026-10-27") }), NOW);
+    const after = buildJobGuide(
+      ready({ invitations: invited("2026-10-27").map((one) => ({ ...one, status: "SUBMITTED" as const, proposalSentOn: "2026-10-26" })) }),
+      NOW,
+    );
+    expect(needsYou([before, after])).toEqual([before]);
   });
 
   it("one GC sent and another still invited counts as sent", () => {

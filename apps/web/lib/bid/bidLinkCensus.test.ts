@@ -171,6 +171,8 @@ const DYNAMIC_ALLOWED: Record<string, string> = {
   "app/(app)/jobs/[id]/proposal/page.tsx: hrefs.estimate": SURFACE_PROP,
   "app/(app)/jobs/[id]/proposal/page.tsx: proposalHref(mode, option.id)":
     "The proposal page's `proposalHref` is `${hrefs.proposal}?mode=…&invitation=…` — `surfaceHrefs(surface, …).proposal` plus a query, classified in its section below. `proposal/page.test.ts` renders it as Bid and requires every link to stay under /bid.",
+  "app/(app)/jobs/[id]/proposal/page.tsx: proposalHref(mode, row.id)":
+    "Same helper, same base: the Bid-only \"Send to <GC>\" links, drawn only when `surface === \"bid\"`, each opening this page for one invitation (`hrefs.proposal` plus `?mode=` and `&invitation=`).",
   "app/(app)/jobs/[id]/proposal/page.tsx: proposalHref(option, invitationId)":
     "Same helper, same base: `hrefs.proposal` plus `?mode=` and `&invitation=`. Pinned by the \"Bid surface keeps its links inside Bid\" test in proposal/page.test.ts.",
   "app/takeoff/[id]/page.tsx: hrefs.takeoff": SURFACE_PROP,

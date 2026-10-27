@@ -2,6 +2,8 @@ import { prisma } from "@prova/db";
 import { bidTotalOf, recapStateFor } from "@/lib/estimating/recap-state";
 import { acknowledgedOnFor, paperWhereMany, papersFor } from "@/lib/estimating/bid-papers";
 import { wallHeightQuestions } from "./wallHeight";
+import { reachedProvider } from "@/components/messageLabels";
+import { BID_INVITATION_RELATED_TYPE } from "@/lib/estimating/proposal-send";
 
 /**
  * THE FACTS A JOB GUIDE IS BUILT FROM — one plain, serialisable snapshot per
@@ -58,14 +60,24 @@ import { wallHeightQuestions } from "./wallHeight";
  *                  `BidAddendumAcknowledgement` row). Only the missing pairs are
  *                  kept. A SENT or DECLINED invitation is not asked about: what
  *                  went out went out.
- *   sent           ONLY `BidInvitation.status`. THE SCHEMA DOES NOT RECORD THAT
- *                  A PROPOSAL WAS GENERATED OR OPENED: the proposal is a
- *                  print-styled page, and the bid package is merged in the
- *                  browser and stores nothing (`bid-package.ts`). Sending the
- *                  package marks the invitation SUBMITTED, so that is the only
- *                  "sent" there is, and "proposal generated" is not a fact the
- *                  guide can know. WON and LOST are past SUBMITTED, so they
- *                  count as sent; DECLINED does not (nothing went out).
+ *   sent           `BidInvitation.status`, OR an email the app sent for the
+ *                  invitation. THE SCHEMA DOES NOT RECORD THAT A PROPOSAL WAS
+ *                  GENERATED OR OPENED: the proposal is a print-styled page,
+ *                  and the bid package is merged in the browser and stores
+ *                  nothing (`bid-package.ts`). What it DOES record is a send:
+ *                  an `OutboundMessage` with `relatedType = "BID_INVITATION"`
+ *                  and `relatedId` = the invitation, written by
+ *                  `sendBidProposal` and `submitBidPackage`, that reached the
+ *                  provider (`reachedProvider` — any event but FAILED, or a
+ *                  provider id). The first such message's day is
+ *                  `proposalSentOn`, which is the only submitted DATE there
+ *                  is: `BidInvitation` has no column for it, and the message
+ *                  is the evidence. Both sends also mark the invitation
+ *                  SUBMITTED, so either answer alone would do; reading the
+ *                  record too means a status somebody set back by hand cannot
+ *                  un-send an email a GC received. WON and LOST are past
+ *                  SUBMITTED, so they count as sent; DECLINED does not
+ *                  (nothing went out) unless a send record says otherwise.
  *
  * DERIVED, NEVER STORED: nothing here is written anywhere.
  */
@@ -87,6 +99,10 @@ export type GuideInvitationFact = {
   walkMinute?: number | null;
   /** The last day questions (RFIs) are accepted, `YYYY-MM-DD`. Absent = none. */
   rfiCutoffDate?: string | null;
+  /** The day the app first emailed this GC the bid (a proposal or a package)
+   *  and the provider took it, `YYYY-MM-DD`. Absent or null = never sent from
+   *  the app. Derived from `OutboundMessage` on every read; see the header. */
+  proposalSentOn?: string | null;
 };
 
 /**
@@ -210,6 +226,12 @@ export function invitationWasSent(status: GuideInvitationStatus): boolean {
   return status === "SUBMITTED" || status === "WON" || status === "LOST";
 }
 
+/** One invitation went out: by its status, or because the app's own record of
+ *  the email says it did (`proposalSentOn`). */
+export function invitationFactWasSent(invitation: Pick<GuideInvitationFact, "status" | "proposalSentOn">): boolean {
+  return invitationWasSent(invitation.status) || !!invitation.proposalSentOn;
+}
+
 /**
  * Is this estimate still being worked, for the home list? An estimate whose
  * every linked invitation has closed one way or another (declined, won, lost)
@@ -320,7 +342,7 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
     }
   }
 
-  const [sheetTexts, proposals, pages, ingests, wallTypes, addenda] = await Promise.all([
+  const [sheetTexts, proposals, pages, ingests, wallTypes, addenda, sends] = await Promise.all([
     planIds.length
       ? prisma.planSheetText.findMany({ where: { planId: { in: planIds } }, select: { planId: true, pageNumber: true } })
       : [],
@@ -363,7 +385,23 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
           },
         })
       : [],
+    // The bid emails the app sent for these invitations, oldest first. One
+    // query for the whole set; only the first that reached the provider counts.
+    anchors.size
+      ? prisma.outboundMessage.findMany({
+          where: { companyId, relatedType: BID_INVITATION_RELATED_TYPE, relatedId: { in: [...anchors.keys()] } },
+          orderBy: { createdAt: "asc" },
+          select: { relatedId: true, createdAt: true, providerMessageId: true, events: { select: { type: true } } },
+        })
+      : [],
   ]);
+
+  const sentOnByInvitation = new Map<string, string>();
+  for (const send of sends) {
+    if (!send.relatedId || sentOnByInvitation.has(send.relatedId)) continue;
+    if (!reachedProvider(send.providerMessageId, send.events)) continue;
+    sentOnByInvitation.set(send.relatedId, day(send.createdAt) as string);
+  }
 
   const typeById = new Map(wallTypes.map((type) => [type.id, type]));
   const typeOfComponent = new Map<string, string>();
@@ -449,6 +487,7 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
         walkDate: day(invitation.walkDate),
         walkMinute: invitation.walkMinute,
         rfiCutoffDate: day(invitation.rfiCutoffDate),
+        proposalSentOn: sentOnByInvitation.get(invitation.id) ?? null,
       });
       if (invitation.status === "INVITED") openAnchors.push({ id: invitation.id, bidProjectId: invitation.bidProjectId, gcName });
     }
