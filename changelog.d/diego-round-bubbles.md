@@ -23,3 +23,15 @@ reason the junk is a separate job are in `lib/takeoff/NOTES.md`.
 Check: `gridBubbles.test.ts` refuses the same 12-piece circle when its
 pieces are straight, a hexagon, an octagon, a curved ellipse and an unclosed
 curved chain, and still finds a flattened circle at any sheet scale.
+
+**And a caption is whatever the drafter wrote over the scale.** Baker A401
+captions twelve interior elevations and an enlarged plan by room and
+direction — "RESTROOM 1 NORTH", "HALLWAY EAST" — with a scale under each,
+and the view finder required a drawing word, so it saw none of them, the
+sheet's notes headings took the drawing region, and the viewer found zero
+walls for the wrong reason. Now the lettering over a readable scale is a
+view whatever it says, with the title block's own scale kept out as
+before; A401 reports thirteen drawings, none measurable, each marked
+"check it". The 26 training sheets are unchanged by it. The server-side
+calibration detect measures the same sheet whole at 796 ft and is
+recorded in `NOTES.md` as the open half.
