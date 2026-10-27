@@ -3135,3 +3135,61 @@ being removed by accident, and the walls under it with it.
 Branch `diego/round-bubbles` off `main`. Unit tests: five new refusals in
 `gridBubbles.test.ts` (straight-pieced 12-gon, hexagon, octagon, curved
 ellipse, unclosed curved chain). No e2e.
+
+### Baker A401: thirteen captions no rule could see, and a server path that measures the sheet whole (2026-10-27)
+
+Reported by the third session from the export eval: "A401: server finds 13
+groups, viewer path (collector) finds none". Reproduced in Node on Baker
+p19 with the export eval's exact inputs. **The candidate hook is not the
+cause** — `detectForSheet` returns zero walls with the hook and without it.
+Two defects and one divergence, in the order they fire:
+
+1. **`sheetViews` required a caption to contain a drawing word** (PLAN,
+   ELEVATION, SECTION, DETAIL …). A401 is twelve interior elevations and
+   one enlarged plan captioned "RESTROOM 1 NORTH", "HALLWAY EAST",
+   "ENLARGED RESTROOMS", each with `SCALE: 1/4" = 1'-0"` printed 0.5% of
+   the page under it. None matched, so the sheet had no captioned view at
+   all. (The title route finds lettering by SIZE; these names are 12.6 pt
+   against a 9.5 pt median and do not qualify.)
+2. **A title-found text block owns the whole gutter region it sits in.**
+   The title route found KEYNOTE LEGEND and GENERAL NOTES, both text
+   blocks; `viewRegions` cuts A401 into two margin strips and one region
+   holding everything else, so each block's box was the drawing region.
+   With `drawingCount` 0 the single-drawing fallback removes every region
+   inside a text-block box, which left the two strips: 19 strokes of
+   212,851. Zero walls, for the wrong reason.
+3. **The server path never calls `detectForSheet`.** Saving a calibration
+   runs `detectWallsAfterResponse` → `detectWallsForCalibration` →
+   `findWallsOnSheet` on the WHOLE sheet — no views, no regions, no text
+   blocks. On A401 that is 88 walls in 12 groups, 796 ft, of interior
+   elevation and fixture line work on a sheet whose only plan is two
+   restrooms. The whole-set WALLS stage (PR D #820) uses the same call and
+   inherits the same answer. The "one pipeline" work of 2026-10-22 made
+   the viewer equal the eval; it did not reach this path.
+
+**Fixed here: (1).** A readable scale with lettering over it is a view
+whatever the lettering says; what KIND it is stays with `viewClass`, and a
+kind nobody recognises is measured by nobody. The guards that keep the old
+trap out: a `LABEL: value` field, a bare title-block label (SCALE, DATE,
+JOB …) and anything in the title-block strip at the right (`CORNER_X`) are
+not names; a line with a drawing word beats a longer one without over the
+same scale; one name per scale, so the drawing number beside the title is
+not a second view; a word-less name over `SCALE: NTS` is still nothing.
+When a joined title twins a split caption, the caption takes the title's
+text. A401 now: 13 views, none measured, each listed as "the caption does
+not say what kind of drawing this is — check it", zero walls for the right
+reason. On the 26 training sheets the change is byte-identical to the run
+before it (1,863 / 27,330, every per-sheet line equal), because no labelled
+sheet captions a drawing without a drawing word. Unit tests in
+`sheetViews.test.ts` cover the room-and-direction caption, the number
+beside it, the three title-block shapes, the two-line name and NTS.
+
+**Not fixed, recorded:** (2) a text block should own its lettering's
+extent, not its region — on A401 it no longer matters because the
+captions now place the drawings, but a sheet with one word-less caption
+and a notes heading would still lose its drawing to the block; and (3) the
+server path, which is a product decision about whether a calibration save
+and the whole-set stage should run `detectForSheet` (views, regions, text
+blocks, kept floors) instead of the raw finder. Until it does, a
+calibration on an elevation sheet or a detail sheet proposes the
+elevations as walls, which is what the third session saw.
