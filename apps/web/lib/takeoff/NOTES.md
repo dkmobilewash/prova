@@ -3173,3 +3173,66 @@ and the whole-set stage should run `detectForSheet` (views, regions, text
 blocks, kept floors) instead of the raw finder. Until it does, a
 calibration on an elevation sheet or a detail sheet proposes the
 elevations as walls, which is what the third session saw.
+
+### The classifier's veto does not take the casework the round-bubble test uncovers (2026-10-27)
+
+Asked before building a unit-plan junk filter: does the trained classifier,
+vetoing at 0.3, already remove the 14,300 ft of junk that deleting only
+genuinely round loops (`23af9453`) makes visible? Measured leave-one-
+building-out on the 26 training sheets with `zzLoboVeto.eval.ts`: rows
+built through `detectForSheet` (the product path, not the raw finder
+`zzTrainRows` collects from), one gradient-boosted model per left-out
+building trained on every other building's real rows plus the synthetic
+rows (HPL has no labelled candidates, so no rows, and is scored with the
+all-rows model — every row of that is already "every other building"),
+then every sheet scored with and without the veto. Shipped rows: 19,347
+real + 130,457 synthetic; round rows: 20,017 + 142,331. The shipped-rules
+arm reproduced the arms eval's 4,391 / 13,014 exactly.
+
+| arm | missing ft | extra ft |
+| --- | --- | --- |
+| shipped bubbles, rules | 4,391 | 13,014 |
+| shipped bubbles + veto 0.3 (LOBO) | 4,973 | 11,852 |
+| round bubbles, rules | 1,863 | 27,330 |
+| round bubbles + veto 0.3 (LOBO) | 2,200 | 25,181 |
+
+**The veto removes 2,149 ft of the 14,316 ft the round test adds, and
+costs 337 ft of real wall doing it.** Round + veto against shipped + veto:
+real recovered 2,773 ft, junk added 13,329 ft. Per sheet, the four arms
+(missing/extra) and the round-plus-veto against shipped-plus-veto trade:
+
+| sheet | shipped rules | shipped+veto | round rules | round+veto | real / junk |
+| --- | --- | --- | --- | --- | --- |
+| Topeka p74 | 1,187/184 | 1,263/131 | 250/1,219 | 319/1,065 | +944 / +934 |
+| Topeka p75 | 36/396 | 73/366 | 30/2,781 | 49/2,577 | +24 / +2,211 |
+| Topeka p76 | 4/275 | 25/265 | 28/2,770 | 37/2,597 | −12 / +2,332 |
+| Joplin A-101 | 464/1,412 | 501/1,284 | 63/1,976 | 67/1,747 | +434 / +463 |
+| ELEVEN03 A4.B.1 | 4/512 | 30/438 | 42/1,807 | 74/1,705 | −44 / +1,267 |
+| ELEVEN03 A4.B.2 | 20/810 | 17/819 | 38/2,857 | 48/2,783 | −31 / +1,964 |
+| ELEVEN03 A4.B.3 | 36/415 | 117/352 | 57/2,280 | 95/2,096 | +22 / +1,744 |
+| Camp Bow Wow A101 | 1/1,756 | 6/1,651 | 4/2,654 | 10/2,500 | −4 / +849 |
+| Camp Bow Wow A120 | 0/116 | 0/116 | 4/91 | 11/83 | −11 / −33 |
+| Crosslines A100 | 908/621 | 980/492 | 310/771 | 325/636 | +655 / +144 |
+| MHK A1.01 | 356/378 | 362/252 | 102/661 | 115/527 | +247 / +275 |
+| Murray A101 | 167/137 | 171/123 | 43/173 | 46/161 | +125 / +38 |
+| NG Green Bay A3.2 | 123/497 | 126/492 | 2/506 | 5/453 | +121 / −39 |
+| Bunkie A100 | 108/500 | 112/301 | 17/601 | 42/405 | +70 / +104 |
+| Supreme Court A111 | 41/436 | 128/445 | 60/896 | 71/848 | +57 / +403 |
+| Baker A101 | 89/32 | 128/27 | 42/38 | 52/30 | +76 / +3 |
+| Baker A100 | 64/304 | 125/284 | 35/333 | 84/322 | +41 / +38 |
+
+On Topeka p75 and p76 the veto takes about 200 ft of 2,200–2,300 ft of new
+junk each; on ELEVEN03 100–180 of 1,300–2,000. The model was trained on
+rows whose negatives include Chrome's "not a wall" verdicts on those
+sheets, and it still passes the casework, which says the feature vector
+does not separate a cabinet run from a partition — both are two parallel
+lines a scheduled thickness apart. A junk filter that reasons about what
+the lines enclose (a closed rectangle of counter depth, a fixture symbol
+inside, a dimension string) is a different instrument, and it is still
+needed. The veto at 0.3 is also not free on shipped: 582 ft more missing
+for 1,162 ft less extra.
+
+Branch `diego/round-bubbles`; `zzLoboVeto.eval.ts` is the reusable
+instrument (`LOBO_ROWS_OUT` to build rows, `LOBO_MODEL_DIR` + `LOBO_CUT` to
+score; per-fold models from a 25-line sklearn script, same parameters as
+`train-wall-model.py`). The held-out sets are refused by `heldOutReason`.
