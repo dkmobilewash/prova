@@ -689,6 +689,13 @@ export function wallsPerView(input: {
    * recurring shape wearing a type signature.
    */
   veto?: Parameters<typeof findWallsOnSheet>[0]["veto"];
+  /**
+   * The symbol-tag vocabulary, declared here for the reason the veto above
+   * is: a caller spreading `{ ...base, views }` would hand it in and
+   * TypeScript would say nothing, and it would be dropped on exactly the
+   * multi-view sheets. Same trap, same cure.
+   */
+  planText?: Parameters<typeof findWallsOnSheet>[0]["planText"];
 }): ViewWalls[] {
   const bands = input.views
     .map((view) => ({
@@ -758,6 +765,7 @@ export function wallsPerView(input: {
       feetPerUnit,
       wallTypes: input.wallTypes,
       sampledSheets: input.sampledSheets ?? null,
+      ...(input.planText === undefined ? {} : { planText: input.planText }),
       // ── WHY THIS IS HERE AND NOT ONLY AT THE VIEWER'S OWN CALL ──
       //
       // A sheet carrying several plan views is measured view by view, and the

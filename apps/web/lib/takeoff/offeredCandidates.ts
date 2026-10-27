@@ -256,6 +256,16 @@ export type SheetDetectInput = {
   onCandidate?: Parameters<typeof findWallsOnSheet>[0]["onCandidate"];
   /** The title size ratio `viewTitles` uses; an eval's knob, left alone by the app. */
   titleSizeRatio?: number;
+  /**
+   * The company's wall-type codes plus the legend's, for symbol tagging.
+   *
+   * `detectWallsForCalibration` has always passed this to `findWallsOnSheet`
+   * directly. There was no field for it here, so the server could not move
+   * onto this pipeline without losing tagging silently — the same shape as
+   * the veto's own scar in `wallsPerView`, which is why it is declared in
+   * both places rather than spread in.
+   */
+  planText?: Parameters<typeof findWallsOnSheet>[0]["planText"];
 };
 
 export type SheetDetectResult = {
@@ -305,6 +315,7 @@ export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
     sampledSheets: input.sampledSheets ?? null,
     veto: input.veto,
     onCandidate: input.onCandidate,
+    planText: input.planText,
   };
   const leftOut = excludedViews(views);
 
