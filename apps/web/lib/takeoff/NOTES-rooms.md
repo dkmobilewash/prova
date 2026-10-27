@@ -907,3 +907,85 @@ buttons on a set with six printed scales.
 scratch Postgres: two pages with DIFFERENT declared feet each get their own,
 a scaled page and an unread page are skipped and named, the note says
 checked-or-not, and another company's call is refused.
+
+## 22. Tags without the AI switch, and the tag over the thickness (2026-10-26) — diego/tag-typing off diego/sheet-scale
+
+Two more walkthrough findings. No browser run on this branch: the shared Clerk
+development instance was rate-limiting every caller that day, so the proof is
+unit tests, a database test on a scratch Postgres, and a keyless eval on the
+training floor plans. The e2e to run when Clerk is quiet is listed at the end.
+
+**Tags.** `findWallsOnSheet` runs the symbol reader only when handed a
+`planText` vocabulary, and `detectWallsForCalibration` handed it one only
+with PLAN_TEXT_READ on — the legend's codes, read by a model. The symbols
+themselves are free geometry. `tagVocabulary(libraryCodes, legendCodes)`
+(`planTextTags.ts`) now builds the vocabulary from the company's own
+wall-type codes always, plus the legend's when read, and detection passes it
+whenever it is non-empty. Nothing in the finder files changed: the field is
+still `legendCodes`, and its doc now says what goes in it. A company with no
+wall types gets exactly the detection it had.
+
+**Tag over thickness.** `settledType(verdict)` (`wallGroups.ts`) is the one
+answer to "is this group settled with nobody asked": NAMED and
+ONLY_ONE_THAT_THICK as before, and now TAG_DISAGREES — the drawing printed
+the name, and a legend's figure is studs plus board where the drawn wall is
+ICF, furring or finishes. The sentence says both numbers, that the tag wins,
+and that the tag may belong to the wall beside. The row offers "Update C8B's
+thickness to 11-1/4"" → `setWallTypeThickness(jobId, typeId, inches)` in
+`lib/actions/wallTypes.ts` (the takeoff page's capability, as the guard
+census requires; only the thickness column moves; dbtest on a scratch
+Postgres). An untagged group is still matched by thickness only, within
+`THICKNESS_SLACK_IN` (a quarter inch, half the cluster width) — unchanged,
+and the eval below says how much that leaves UNKNOWN.
+
+**Measured** with `realplan/tagTyping.eval.ts`: the finder on each training
+set's floor plans (named by the keyless reader, biggest three by strokes),
+library = the set's cached legend types (thickness by the walkthrough's
+studs-plus-board rule) + the eight starters (W1, W2, W3, EW1, FIN5, ACT1,
+ACT2, GYPC1 — the window-mark risk, since a drawing's windows are often W1),
+four conditions: switch off before/after, switch on before/after. Held-out
+sets excluded, including the three plan-text ones the shared list does not
+name (the harness's first run included two of them by that gap; their rows
+were discarded unread and the exclusion added). Figures in
+`shots/tag-typing/all/tag-typing.txt`, outside git.
+
+**What it showed (switch OFF, before → after; the switch ON is identical to
+"after" on every sheet, because a library holding the legend's codes IS the
+legend's vocabulary).** Thirteen training floor plans across five sets with a
+cached legend; one (Murray A402) had no sheet-wide scale and measured nothing.
+
+| sheet | groups tagged | ft tagged | of which TAG_DISAGREES |
+| --- | --- | --- | --- |
+| Baker A101 | 2 → 9 | 50 → 255 of 911 | 1 g 39 ft → 7 g 221 ft |
+| Baker A100 (overall) | 0 → 0 | 0 of 1,997 | — |
+| E Street A2.1 / A3.1 | 0 → 6 / 0 → 4 | 196 of 1,071 / 153 of 658 | none |
+| NG Green Bay A3.2 | 0 → 18 | 634 of 1,483 | 13 g 495 ft |
+| SW Grand Junction A110 | 9 → 11 | 255 → 336 of 1,946 | 4 g 81 ft → 5 g 142 ft |
+| the other seven | 0 → 0 | — | — |
+
+No starter code (W1, W2, W3, EW1…) was ever picked up as a tag on any sheet:
+the window-mark risk did not materialise on these sets. Two cautions. On SW
+A110 the text-tagged C3 group (91 ft, NO_SUCH_TYPE) disappears once symbols
+are read and B2 grows from 13 to 110 ft — a symbol tag outranking a bare text
+tag on a neighbouring run; nobody has looked at that sheet to say which is
+right. And the TAG_DISAGREES footage is the measure of finding 2: before, all
+of it ASKED; after, it prices as its tag (Baker 221 ft, Green Bay 495 ft, SW
+142 ft), with the drawn-vs-library numbers said beside it. Whether every one
+of those tags is on the right run is exactly what the sentence tells the
+estimator to check, and the eval cannot.
+
+The harness's first two runs ALSO measured lodi-memorial-library and the
+Missouri pavilion — plan-text held-out sets the shared `HELD_OUT_SETS` does
+not name — because the edit adding the exclusion failed silently in a
+background shell. Their rows were deleted from both outputs without being
+used for any decision; the exclusion is in the eval now. Recorded so the
+next person does not trust "held-out excluded" on the strength of the
+shared list alone.
+
+**E2E to run when Clerk is quiet** (not run here, by instruction):
+`takeoff-wall-legend.spec.ts` and `estimator-baker.spec.ts` steps 4–5 with
+the plan-text read OFF — the found groups must carry the drawing's tags, a
+TAG_DISAGREES group must show "Add as <code> — priced" and the
+`data-takeoff="update-thickness"` button, and pressing it must change the
+type under /wall-types; then the same with the read ON, which must not
+change the groups.

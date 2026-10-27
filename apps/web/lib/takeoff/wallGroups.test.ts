@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   wallGroups,
+  settledType,
   verdictFor,
   groupSentence,
   typesAtThickness,
@@ -152,20 +153,28 @@ describe("when the drawing's name and the measurement disagree", () => {
     return group;
   };
 
-  it("REFUSES TO PRICE a tagged group that is the wrong thickness for its type", () => {
-    // 3-3/8" of wall tagged B1, where B1 is recorded at 7-3/8". Pricing it as
-    // B1 prices an assembly twice as thick as what was drawn.
+  it("PRICES a tagged group as its tag even where the thickness disagrees, and keeps saying so", () => {
+    // 3-3/8" of wall tagged B1, where B1 is on file at 7-3/8". The drawing
+    // printed the name; the thickness on file is studs plus board and the
+    // drawn wall often is not. The tag wins, the disagreement is reported.
     const verdict = verdictFor(tagged(3.375, type("B1", 7.375)));
-    expect(verdict.state, "a wall was priced as a type it cannot be").toBe("TAG_DISAGREES");
+    expect(verdict.state).toBe("TAG_DISAGREES");
+    expect(settledType(verdict)?.code).toBe("B1");
+    // An untagged group is still matched by thickness only.
+    const a = run(40);
+    const [untagged] = wallGroups([cluster(3.375, [a])], new Map(), [type("B1", 7.375)]);
+    expect(verdictFor(untagged).state).toBe("UNKNOWN");
+    expect(settledType(verdictFor(untagged))).toBeNull();
   });
 
-  it("names BOTH numbers and both possibilities, and resolves neither", () => {
+  it("names BOTH numbers, says the tag wins, and still names the other possibility", () => {
     const group = tagged(3.375, type("B1", 7.375));
     const text = groupSentence(group, verdictFor(group)) ?? "";
     expect(text).toContain('3-3/8"');
+    expect(text).toContain("the tag wins");
     expect(text).toContain('7-3/8"');
-    expect(text).toContain("tag belongs to a different wall");
-    expect(text).toContain("thickness on your B1 is wrong");
+    expect(text).toContain("price as B1");
+    expect(text).toContain("the tag may belong to the wall beside these");
   });
 
   it("still prices a tagged group that AGREES", () => {
