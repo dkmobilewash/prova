@@ -2731,3 +2731,39 @@ their column's section so the variant line is read under the section it
 varies; C8B did not move. Rendered and looked at, not inferred. The migration applied to a scratch Postgres and
 `migrate status` named it; `migrate diff` against the schema reports only the
 two pre-existing `ProposalClause.updatedAt` defaults.
+
+## Viewer speed — 2026-10-27 (third session)
+
+**Instrument.** `scripts/viewer-bench.mts`: a Node server pacing each request
+(`BENCH_LATENCY_MS`, `BENCH_MBPS`) and serving the PDF with Range, the app's
+pdf.js build, a page built like the viewer's surface (overflow frame, canvas
+sized by `canvasPlan`, SVG overlay with non-scaling strokes from a label file),
+driven by Playwright's Chromium with a trace per scenario. `BENCH_HEADED=1`
+uses the GPU. Results in `shots/viewer-speed/*.json` (outside git).
+
+**Pan and zoom, Topeka p74, 95,455 ops, dpr 2.** Headless / headed:
+
+| step | canvas | render | scroll (median of 8) |
+| --- | --- | --- | --- |
+| fit (first draw of the page) | 2700×1800 | 146 / 371 ms | — |
+| 100% | 7776×5184 (40 MP) | 173 / 110 ms | — |
+| 200% | 9797×6531 (64 MP, the cap) | 199 / 51 ms | 33 / 16 ms bare; 33 / 16 ms with 530 lines |
+| 400% | 9797×6531 | 258 / 135 ms | — |
+
+The first draw's extra is `HandlePostMessage` — the operator list crossing from
+the worker, once per page. The real component in happy-dom with 1,562 key-mode
+candidates: mount 90 ms, a focus change 20 ms, a zoom click 17 ms, twenty pointer
+moves while tracing 1 ms. **The reported ~10 s per pan/zoom is not reproduced by
+the viewer's own drawing on this machine**, headed or headless. Left on the
+table, unmeasured: what the labelling Chrome's machine and the extension's
+screenshot path do with a 64 MP (256 MB) canvas; a dev-mode build on :3010
+(it is BUILT, so no); and the `?key=1` panel's 1,562 rows. The one knob if the
+canvas is it: `MAX_CANVAS_AREA` in `canvasPlan.ts`.
+
+**First load.** See `planPdfTransport.ts` for the table. Default transport at
+500 ms/request: 12.1 s to the first page, 77 MB by then and the whole 114 MB
+after; `disableAutoFetch` alone 12.2 s; both fetches off with 1 MB chunks 6.9 s,
+13 requests, 15 MB, then idle. The sheet tree opened a second default-transport
+document for thumbnails — a second full stream — now on the same transport.
+Remaining floor is round trips: 13 × the hop. Fewer would need the route to
+serve a linearized file or the first chunk larger; not done.
