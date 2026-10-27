@@ -1,7 +1,8 @@
 "use server";
 
 import { prisma } from "@prova/db";
-import { BID_INVITE_PROMPT_VERSION, extractBidInvite } from "@prova/integrations";
+import { anthropicIsConfigured, BID_INVITE_PROMPT_VERSION, extractBidInvite } from "@prova/integrations";
+import { INVITE_READ_NOT_CONFIGURED, inviteReadSwitchedOff } from "@/lib/bid/inviteReaderAccess";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { aiGate } from "@/lib/ai/settings";
@@ -62,6 +63,13 @@ export async function readBidInvitationText(textRaw: string): Promise<ActionResu
   if (!can(context, "MANAGE_ESTIMATING")) return actionFail(NOT_YOURS) as ActionResultWith<BidInviteReadResult>;
   const { company, ...user } = context;
 
+  // NO MODEL KEY ON THIS SERVER: say so, and claim nothing. Checked first —
+  // before the paste and before the allowance — because nothing about the
+  // paste can fix it, and a question charged for a call that cannot happen
+  // is the contractor walk's defect (`inviteReaderAccess.ts`). The form
+  // normally says this up front; this is the half that survives a stale page.
+  if (!anthropicIsConfigured()) return { ok: false, error: INVITE_READ_NOT_CONFIGURED };
+
   const text = String(textRaw ?? "").trim();
   const problem = inviteTextProblem(text);
   if (problem) return { ok: false, error: problem };
@@ -69,7 +77,7 @@ export async function readBidInvitationText(textRaw: string): Promise<ActionResu
   // The per-company switch before anything is claimed or sent. Logging a bid
   // by hand still works with it off, so the sentence can say so.
   const gate = await aiGate(company.id, "BID_RESEARCH");
-  if (!gate.ok) return { ok: false, error: `${gate.error} You can still type the invitation in yourself.` };
+  if (!gate.ok) return { ok: false, error: inviteReadSwitchedOff(gate.error) };
 
   const spend = await claimAskAllowance(company.id, { questions: 1, pages: 0 });
   if (!spend.ok) return { ok: false, error: spend.error };

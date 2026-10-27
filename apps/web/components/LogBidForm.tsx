@@ -9,6 +9,7 @@ import { ActionForm } from "@/components/ActionForm";
 import { SubmitButton } from "@/components/SubmitButton";
 import { BidDetailsFields } from "@/components/BidDetailsFields";
 import { surfaceHrefs, type Surface } from "@/lib/bid/surfaceHrefs";
+import type { InviteReaderAccess } from "@/lib/bid/inviteReaderAccess";
 
 const field =
   "rounded-md border border-line-card bg-canvas px-3 py-2 text-base text-ink placeholder:text-ink-muted focus:border-link focus:outline-none sm:text-sm";
@@ -57,8 +58,14 @@ export function LogBidForm({
   startOpen = false,
   projectChoices = [],
   surface = "crm",
+  reader,
 }: {
   gcs: { id: string; name: string }[];
+  /** Whether the paste box can read an invite at all — no model key, or the
+   * company's AI switch off, is said HERE instead of after a paste (contractor
+   * walk, 2026-10-27). Required, so no caller can draw a live-looking box by
+   * forgetting it. See `lib/bid/inviteReaderAccess.ts`. */
+  reader: InviteReaderAccess;
   startOpen?: boolean;
   /** Projects already on file, so a second GC's invitation for the same job
    * can go on the same project instead of a new one. */
@@ -153,6 +160,13 @@ export function LogBidForm({
         </p>
       ) : (
         <>
+          {!reader.available ? (
+            // No reader: one sentence where the paste box would be, and the
+            // form below to type into. Nothing to press, nothing charged.
+            <p className="mb-4 text-sm text-ink-body" data-bids="paste-off">
+              {reader.reason}
+            </p>
+          ) : (
           <div className="mb-4 flex flex-col gap-2" data-bids="paste-invite">
             <label className="flex flex-col gap-1 text-sm text-ink-label">
               Paste the invitation
@@ -199,6 +213,7 @@ export function LogBidForm({
               </div>
             )}
           </div>
+          )}
 
           {matches.length > 0 && (
             <div

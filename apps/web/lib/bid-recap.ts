@@ -550,6 +550,33 @@ export function applyPlan(lines: readonly RecapLine[], bidTotal: number): ApplyP
   };
 }
 
+/**
+ * WHAT PRESSING APPLY PRODUCES, from the rates — the recap, the plan, and the
+ * figure the lines will total afterwards. One function, read by the recap
+ * panel ("Apply to line prices to make it $X"), by `applyBidRecap` for what it
+ * records as `appliedTotal`, and by the job guide's apply-recap ask.
+ *
+ * WHY IT EXISTS (contractor walk, 2026-10-27). The guide's ask said "Applying
+ * it adds $7,385.00 to the bid" — `addedTotal`, the markup over DIRECT COST —
+ * while Apply actually took the typed line prices from $34,915.00 DOWN to
+ * $31,990.50. Two surfaces answering "what does Apply do" from two different
+ * numbers. Now there is one, and it is the one the write uses.
+ *
+ * `landsAt` is `spreadTotal` over the plan's spread — the lines' total AFTER
+ * the unit prices are rounded to the cent, which is not always `bidTotal`
+ * (see `spreadToLines`: on 9,600 SF one cent of unit price is $96). Null when
+ * Apply would write nothing (`plan.kind === "NOTHING"`), so no caller can
+ * promise a figure Apply refuses to produce.
+ */
+export type ApplyOutcome = { recap: BidRecap; plan: ApplyPlan; landsAt: number | null };
+
+export function applyOutcome(lines: readonly RecapLine[], rates: RecapRates): ApplyOutcome {
+  const recap = bidRecap(lines, rates);
+  const plan = applyPlan(lines, recap.bidTotal);
+  const spread = plan.kind === "NOTHING" ? [] : plan.spread;
+  return { recap, plan, landsAt: spread.length > 0 ? spreadTotal(lines, spread) : null };
+}
+
 export function spreadToLines(lines: readonly RecapLine[], bidTotal: number): SpreadLine[] {
   // Who may receive a share: see `spreadRecipients`.
   const priced = spreadRecipients(lines);

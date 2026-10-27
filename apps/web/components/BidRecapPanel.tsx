@@ -8,11 +8,9 @@ import { asCostCategory, EQUIPMENT_SPLIT_NOTE } from "@/lib/cost-category";
 import { bidMargin, formatMarginRate, underCostWarning } from "@/lib/estimating/bid-margin";
 import { bidTotalOf } from "@/lib/estimating/recap-state";
 import {
-  bidRecap,
+  applyOutcome,
   COST_CATEGORY_LABELS,
   COST_CATEGORY_VALUES,
-  applyPlan,
-  spreadTotal,
   RECAP_RATE_FIELDS,
   RECAP_RATE_KEYS,
   type CostCategoryValue,
@@ -142,16 +140,16 @@ export function BidRecapPanel({
         return [f.key, value != null && Number.isFinite(value) ? value : null];
       }),
     );
-    const recap = bidRecap(shownLines, parsed);
-    // What Apply would do — the SAME `applyPlan` the server runs on press.
-    const plan = applyPlan(shownLines, recap.bidTotal);
-    const spread = plan.kind === "NOTHING" ? [] : plan.spread;
+    // What Apply would do — the SAME `applyOutcome` the server runs on press,
+    // and the job guide's apply-recap ask quotes.
+    const outcome = applyOutcome(shownLines, parsed);
+    const { recap, plan } = outcome;
     // The margin is of the LINE PRICES, so it does not depend on the draft
     // rates at all — but it lives in this memo because it is derived from the
     // same `lines` and nothing should recompute it on a keystroke.
     return {
       recap,
-      landsAt: spread.length > 0 ? spreadTotal(shownLines, spread) : recap.bidTotal,
+      landsAt: outcome.landsAt ?? recap.bidTotal,
       margin: bidMargin(shownLines),
       // Bug B: why Apply would write nothing, said BEFORE it is pressed.
       plan,

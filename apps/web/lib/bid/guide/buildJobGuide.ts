@@ -38,15 +38,19 @@ import {
  *                           — both SKIPPED while the bid itself is due inside
  *                           DUE_SOON_HOURS (or past): see "dates that pass" below
  *   1. no-drawings          no plan, nothing measured, no lines at all
- *   2. no-scale             floor-plan sheets with no scale, before any wall is measured
- *   3. no-walls-measured    drawings are in, nothing measured, no lines
+ *   2. no-scale             floor-plan sheets with no scale, before anything is measured
+ *   3. no-walls-measured    drawings are in, nothing measured (no wall run, nothing
+ *                           by hand), no lines
  *  3b. wall-height          a measured wall type has no height, so its runs add nothing
  *  3c. board-layers         a measured wall type's board layers are unanswered, and
  *                           it has a per-layer part, so the answer moves its board
- *   4. walls-not-added      walls are measured but none is in the estimate
+ *   4. walls-not-added      walls are measured but none is in the estimate — or,
+ *                           with no wall run to add, measurements made by hand
+ *                           and an estimate with no lines at all
  *   5. unpriced-wall-types  a used wall type has no price (past-price offer if one exists)
  *   6. unpriced-lines       other lines still have no price (cost-only indirects excepted)
- *   7. apply-recap          the job has a bid recap that was never applied
+ *   7. apply-recap          the job has a bid recap that was never applied; says what
+ *                           Apply does to the line total (lowers/raises/leaves it)
  *  7b. addendum-unacknowledged  an addendum is not acknowledged on a still-open GC's form
  *   8. proposal-ready       priced; read the proposal and send it
  *      send-due-soon        the same moment, but the deadline is inside DUE_SOON_HOURS
@@ -232,6 +236,19 @@ function layerlessWallTypes(facts: JobGuideFacts): Layerless[] {
   );
 }
 
+/**
+ * "Applying it lowers the bid by $2,924.50, from $34,915.00 to $31,990.50." —
+ * the change Apply makes to the line total, compared in cents. With no figure
+ * (`landsAt` null: Apply would write nothing) it promises none.
+ */
+function applyRecapSentence(linesNow: number, landsAt: number | null): string {
+  if (landsAt === null) return "Applying it puts your markup on the line prices.";
+  const change = Math.round(landsAt * 100) - Math.round(linesNow * 100);
+  if (change === 0) return `Applying it leaves the bid at ${money(landsAt)}.`;
+  const by = money(Math.abs(change) / 100);
+  return `Applying it ${change < 0 ? "lowers" : "raises"} the bid by ${by}, from ${money(linesNow)} to ${money(landsAt)}.`;
+}
+
 type DatedItem = UpcomingBidDate & { invitation: GuideInvitationFact };
 
 /**
@@ -329,8 +346,13 @@ function decide(facts: JobGuideFacts, now: Date): Decision {
     };
   }
 
+  // Measured by hand counts as measured (facts.ts, "by hand"): rules 2 and 3
+  // must not tell somebody who has traced 237 LF that nothing is measured.
+  const hand = facts.handMeasurements;
+  const nothingMeasured = facts.wallRunCount === 0 && hand.count === 0;
+
   // 2. Floor-plan sheets with no scale, while nothing has been measured.
-  if (facts.sheetsMissingScale > 0 && facts.wallRunCount === 0 && facts.lineCount === 0) {
+  if (facts.sheetsMissingScale > 0 && nothingMeasured && facts.lineCount === 0) {
     const n = facts.sheetsMissingScale;
     return {
       ask: {
@@ -347,7 +369,7 @@ function decide(facts: JobGuideFacts, now: Date): Decision {
   }
 
   // 3. Drawings but nothing measured and nothing in the estimate.
-  if (facts.hasTakeoffPlan && facts.wallRunCount === 0 && facts.lineCount === 0) {
+  if (facts.hasTakeoffPlan && nothingMeasured && facts.lineCount === 0) {
     const sheets = facts.sheetCount > 0 ? `${plural(facts.sheetCount, "sheet is", "sheets are")} in` : "The drawings are in";
     return {
       ask: {
@@ -467,6 +489,32 @@ function decide(facts: JobGuideFacts, now: Date): Decision {
     };
   }
 
+  // 4, by hand. Measurements with no wall type ("Add as plain measurements —
+  // priced by hand") and an estimate with no lines: the takeoff is done and
+  // none of it is on the estimate. Same id and step as the wall-run case — it
+  // is the same moment of the bid — in words that do not promise wall types.
+  // ONLY while the estimate is empty: a sub who typed the lines in instead of
+  // posting the measurements has priced the job, and asking forever about
+  // measurements the bid no longer needs is the dead end rules 1 and 2 avoid.
+  if (hand.count > 0 && facts.lineCount === 0) {
+    const what =
+      hand.lengthFt > 0
+        ? `${feet(hand.lengthFt)} is measured by hand`
+        : `${plural(hand.count, "measurement is", "measurements are")} on the takeoff`;
+    return {
+      ask: {
+        id: "walls-not-added",
+        step: "walls",
+        title: `${what} but not on the estimate yet.`,
+        body: "Pick them in the takeoff's list of measurements and add them to the estimate as lines to price, or type the lines in on the estimate.",
+        actions: [open("Add them to the estimate", hrefs.takeoff, true), open("Type the lines in", hrefs.estimate)],
+      },
+      headline: "Measured. One thing needs you.",
+      oneLine: lateLine("Measurements not on the estimate"),
+      tone: toneFor("update"),
+    };
+  }
+
   // 5. Wall types with no price.
   const unpriced = unpricedWallTypes(facts);
   if (unpriced.length > 0) {
@@ -518,17 +566,22 @@ function decide(facts: JobGuideFacts, now: Date): Decision {
   }
 
   // 7. A recap that was never applied.
+  //
+  // THE SENTENCE STATES WHAT PRESSING APPLY DOES TO THE BID ON THE LINES: from
+  // `bidTotal` (the lines now) to `landsAt` (what `applyOutcome` — the function
+  // the recap panel previews and `applyBidRecap` writes with — says the lines
+  // will total). It used to quote `addedTotal`, the markup over DIRECT COST,
+  // which is a different number: on the contractor walk (2026-10-27) it said
+  // "adds $7,385.00 to the bid" while Apply took typed prices of $34,915.00
+  // DOWN to $31,990.50. Typed prices above the recap are ordinary, so the
+  // change can go either way and the words say which.
   if (facts.recap && facts.recap.appliedAt === null) {
-    const added = facts.recap.addedTotal;
     return {
       ask: {
         id: "apply-recap",
         step: "price",
         title: "Your markup recap is set up but not on the prices yet.",
-        body:
-          added > 0
-            ? `Applying it adds ${money(added)} to the bid.`
-            : "Applying it puts your markup on the line prices.",
+        body: applyRecapSentence(facts.bidTotal, facts.recap.landsAt),
         actions: [
           { label: "Apply the recap", actionId: "applyRecap", actionArg: facts.jobId, primary: true },
           open("Review the recap", hrefs.recap),
@@ -616,13 +669,27 @@ function summaryFor(key: GuideStepKey, facts: JobGuideFacts, dueLabel: string | 
       return parts.length > 0 ? capitalise(parts.join(" · ")) : null;
     }
     case "walls": {
-      if (facts.wallRunCount > 0) {
-        const parts = [feet(facts.measuredFootageFt)];
+      // Wall runs AND what was measured by hand (facts.ts, "by hand"). The walk
+      // of 2026-10-27 read "✓ Walls measured — Done · 1 sheet, none measured
+      // yet" with 237 LF of plain measurements on that sheet.
+      const hand = facts.handMeasurements;
+      const parts: string[] = [];
+      if (facts.wallRunCount > 0) parts.push(feet(facts.measuredFootageFt));
+      if (hand.lengthFt > 0) parts.push(facts.wallRunCount > 0 ? `${feet(hand.lengthFt)} by hand` : `${feet(hand.lengthFt)} measured by hand`);
+      else if (hand.count > 0) parts.push(`${plural(hand.count, "measurement", "measurements")} by hand`);
+      if (parts.length > 0) {
         if (facts.openingsCount > 0) parts.push(plural(facts.openingsCount, "opening", "openings"));
         if (facts.sheetCount > 0) parts.push(plural(facts.sheetCount, "sheet", "sheets"));
         return parts.join(" · ");
       }
-      if (facts.hasTakeoffPlan) return facts.sheetCount > 0 ? `${plural(facts.sheetCount, "sheet", "sheets")}, none measured yet` : "Drawings uploaded";
+      if (facts.hasTakeoffPlan) {
+        if (facts.sheetCount === 0) return "Drawings uploaded";
+        const sheets = plural(facts.sheetCount, "sheet", "sheets");
+        // The step reads Done once lines exist (`firstUnfinished`), so "none
+        // measured yet" under a tick would contradict itself: say where the
+        // lines came from instead.
+        return facts.lineCount > 0 ? `${sheets} · lines typed in, nothing measured` : `${sheets}, none measured yet`;
+      }
       return null;
     }
     case "price": {

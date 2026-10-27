@@ -93,9 +93,27 @@ function ready(over: Partial<JobGuideFacts> = {}): JobGuideFacts {
     linesWithoutCost: 0,
     bidTotal: 412_300.5,
     recap: null,
+    handMeasurements: NO_HAND,
     ...over,
   };
 }
+
+const NO_HAND: JobGuideFacts["handMeasurements"] = { count: 0, lengthFt: 0 };
+
+/**
+ * The contractor walk's takeoff (2026-10-27): S02 uploaded and scaled, two
+ * groups added with "Add as plain measurements — priced by hand", 237 LF, no
+ * wall type, nothing on the estimate yet.
+ */
+const walkTakeoff = (over: Partial<JobGuideFacts> = {}): JobGuideFacts =>
+  empty({
+    hasTakeoffPlan: true,
+    planCount: 1,
+    sheetCount: 1,
+    sheetsRead: 1,
+    handMeasurements: { count: 14, lengthFt: 237.4 },
+    ...over,
+  });
 
 const empty = (over: Partial<JobGuideFacts> = {}): JobGuideFacts =>
   ready({
@@ -132,7 +150,7 @@ const FIXTURES = {
   }),
   "unpriced-wall-types": ready({ wallTypes: [w1, w2], linesWithoutPrice: 3, lineCount: 8, measuredFootageFt: 1920.4 }),
   "unpriced-lines": ready({ linesWithoutPrice: 2 }),
-  "apply-recap": ready({ recap: { appliedAt: null, addedTotal: 38_250.75 } }),
+  "apply-recap": ready({ recap: { appliedAt: null, addedTotal: 38_250.75, landsAt: 450_551.25 } }),
   "proposal-ready": ready(),
   "send-due-soon": ready({ invitations: invited("2026-10-27", 840) }),
   "wall-height": ready({ wallTypes: [w1, w2NoHeight], wallLineCount: 3 }),
@@ -198,15 +216,38 @@ describe("one fixture per ask", () => {
     expect(buildJobGuide(facts, NOW).ask!.body).toContain("no materials or labor set up");
   });
 
-  it("apply-recap names the action, carries the job id, and says what it adds", () => {
+  it("apply-recap names the action, carries the job id, and says what Apply does to the bid on the lines", () => {
     const ask = buildJobGuide(FIXTURES["apply-recap"], NOW).ask!;
     expect(ask.actions[0]).toEqual({ label: "Apply the recap", actionId: "applyRecap", actionArg: "job_1", primary: true });
-    expect(ask.body).toBe(`Applying it adds ${money(38_250.75)} to the bid.`);
+    expect(ask.body).toBe(`Applying it raises the bid by ${money(38_250.75)}, from ${money(412_300.5)} to ${money(450_551.25)}.`);
     expect(ask.actions[1]).toMatchObject({ href: "/bid/estimates/job_1/recap" });
   });
 
+  // THE CONTRACTOR WALK, 2026-10-27. Typed line prices $34,915.00; the recap's
+  // rates put the bid at $31,917.00 over $24,532.00 of cost; Apply wrote lines
+  // totalling $31,990.50. The ask said "Applying it adds $7,385.00 to the bid"
+  // — the markup over COST — and pressing Apply LOWERED the bid by $2,924.50.
+  it("apply-recap states the real change, from the lines now to what Apply writes — a cut, when the prices were above the recap", () => {
+    const facts = ready({ bidTotal: 34_915, recap: { appliedAt: null, addedTotal: 7_385, landsAt: 31_990.5 } });
+    const ask = buildJobGuide(facts, NOW).ask!;
+    expect(ask.id).toBe("apply-recap");
+    expect(ask.body).toBe("Applying it lowers the bid by $2,924.50, from $34,915.00 to $31,990.50.");
+    expect(ask.body).not.toContain("7,385");
+    expect(ask.body).not.toContain("adds");
+  });
+
+  it("apply-recap says the bid stays put when Apply would land on the same total", () => {
+    const facts = ready({ bidTotal: 31_990.5, recap: { appliedAt: null, addedTotal: 7_385, landsAt: 31_990.5 } });
+    expect(buildJobGuide(facts, NOW).ask!.body).toBe("Applying it leaves the bid at $31,990.50.");
+  });
+
+  it("apply-recap names no figure when Apply would write nothing", () => {
+    const facts = ready({ bidTotal: 500, recap: { appliedAt: null, addedTotal: 40, landsAt: null } });
+    expect(buildJobGuide(facts, NOW).ask!.body).toBe("Applying it puts your markup on the line prices.");
+  });
+
   it("an applied recap asks for nothing", () => {
-    const facts = ready({ recap: { appliedAt: "2026-10-25", addedTotal: 100 } });
+    const facts = ready({ recap: { appliedAt: "2026-10-25", addedTotal: 100, landsAt: null } });
     expect(buildJobGuide(facts, NOW).ask!.id).toBe("proposal-ready");
   });
 
@@ -552,7 +593,7 @@ describe("priority: where the new asks sit", () => {
   });
 
   it("wall-height beats adding the walls, and every price ask", () => {
-    const noLines = ready({ wallTypes: [w2NoHeight], wallLineCount: 0, linesWithoutPrice: 4, recap: { appliedAt: null, addedTotal: 1 } });
+    const noLines = ready({ wallTypes: [w2NoHeight], wallLineCount: 0, linesWithoutPrice: 4, recap: { appliedAt: null, addedTotal: 1, landsAt: null } });
     expect(buildJobGuide(noLines, NOW).ask!.id).toBe("wall-height");
     // with the height answered, the earlier rules take over again in order
     const answered = { ...noLines, wallTypes: [{ ...w2NoHeight, heightless: null }] };
@@ -568,7 +609,7 @@ describe("priority: where the new asks sit", () => {
   });
 
   it("the addendum waits for the pricing, and comes before the proposal and the sending", () => {
-    const base = ready({ unacknowledgedAddenda: [addendum2], linesWithoutPrice: 2, recap: { appliedAt: null, addedTotal: 1 } });
+    const base = ready({ unacknowledgedAddenda: [addendum2], linesWithoutPrice: 2, recap: { appliedAt: null, addedTotal: 1, landsAt: null } });
     expect(buildJobGuide(base, NOW).ask!.id).toBe("unpriced-lines");
     expect(buildJobGuide({ ...base, linesWithoutPrice: 0 }, NOW).ask!.id).toBe("apply-recap");
     expect(buildJobGuide({ ...base, linesWithoutPrice: 0, recap: null }, NOW).ask!.id).toBe("addendum-unacknowledged");
@@ -594,18 +635,18 @@ describe("priority: where the new asks sit", () => {
 
 describe("priority: the earliest missing step wins", () => {
   it("no drawings beats everything", () => {
-    expect(buildJobGuide(empty({ recap: { appliedAt: null, addedTotal: 5 }, linesWithoutPrice: 2 }), NOW).ask!.id).toBe("no-drawings");
+    expect(buildJobGuide(empty({ recap: { appliedAt: null, addedTotal: 5, landsAt: null }, linesWithoutPrice: 2 }), NOW).ask!.id).toBe("no-drawings");
   });
   it("no scale beats unmeasured walls", () => {
     expect(buildJobGuide(FIXTURES["no-scale"], NOW).ask!.id).toBe("no-scale");
     expect(buildJobGuide({ ...FIXTURES["no-scale"], sheetsMissingScale: 0 }, NOW).ask!.id).toBe("no-walls-measured");
   });
   it("walls not in the estimate beat unpriced wall types", () => {
-    const facts = { ...FIXTURES["walls-not-added"], linesWithoutPrice: 1, recap: { appliedAt: null, addedTotal: 1 } };
+    const facts = { ...FIXTURES["walls-not-added"], linesWithoutPrice: 1, recap: { appliedAt: null, addedTotal: 1, landsAt: null } };
     expect(buildJobGuide(facts, NOW).ask!.id).toBe("walls-not-added");
   });
   it("unpriced wall types beat unpriced lines, which beat the recap, which beats the proposal", () => {
-    const base = ready({ wallTypes: [w2], linesWithoutPrice: 3, recap: { appliedAt: null, addedTotal: 1 } });
+    const base = ready({ wallTypes: [w2], linesWithoutPrice: 3, recap: { appliedAt: null, addedTotal: 1, landsAt: null } });
     expect(buildJobGuide(base, NOW).ask!.id).toBe("unpriced-wall-types");
     expect(buildJobGuide({ ...base, wallTypes: [w1] }, NOW).ask!.id).toBe("unpriced-lines");
     expect(buildJobGuide({ ...base, wallTypes: [w1], linesWithoutPrice: 0 }, NOW).ask!.id).toBe("apply-recap");
@@ -621,6 +662,72 @@ describe("priority: the earliest missing step wins", () => {
   });
   it("sheets without a scale stop mattering once a wall is measured", () => {
     expect(buildJobGuide(ready({ sheetsMissingScale: 3 }), NOW).ask!.id).toBe("proposal-ready");
+  });
+});
+
+// THE CONTRACTOR WALK, 2026-10-27. "Add as plain measurements — priced by
+// hand" put 237 LF on the takeoff with no wall type, so no `WallRun` — and the
+// guide counted only wall runs. It kept asking "1 sheet is in, and no walls are
+// measured yet", and once hand-typed lines were priced the rail read
+// "✓ Walls measured — Done · 1 sheet, none measured yet".
+describe("measurements made by hand count as measured", () => {
+  it("the walk's 237 LF of plain measurements is not 'no walls measured'", () => {
+    const guide = buildJobGuide(walkTakeoff(), NOW);
+    expect(guide.ask!.id).not.toBe("no-walls-measured");
+    expect(guide.ask!.title).not.toContain("no walls are measured");
+  });
+
+  it("measured but not on the estimate asks to add them, in footage, and sends them to the takeoff list", () => {
+    const guide = buildJobGuide(walkTakeoff(), NOW);
+    expect(guide.ask!.id).toBe("walls-not-added");
+    expect(guide.ask!.step).toBe("walls");
+    expect(guide.ask!.title).toBe("237 LF is measured by hand but not on the estimate yet.");
+    expect(guide.ask!.actions[0]).toMatchObject({ href: "/bid/estimates/job_1/takeoff", primary: true });
+    expect(guide.oneLine).toBe("Measurements not on the estimate");
+    expect(guide.steps[1]!.summary).toBe("237 LF measured by hand · 1 sheet");
+  });
+
+  it("measurements with no length (areas, counts) are counted rather than called feet", () => {
+    const facts = walkTakeoff({ handMeasurements: { count: 3, lengthFt: 0 } });
+    const guide = buildJobGuide(facts, NOW);
+    expect(guide.ask!.title).toBe("3 measurements are on the takeoff but not on the estimate yet.");
+    expect(guide.steps[1]!.summary).toBe("3 measurements by hand · 1 sheet");
+  });
+
+  it("once lines are priced the walls step is done and its summary says what was measured, not 'none measured yet'", () => {
+    const facts = walkTakeoff({ lineCount: 3, bidTotal: 34_915 });
+    const guide = buildJobGuide(facts, NOW);
+    expect(guide.steps[1]!.status).toBe("done");
+    expect(guide.steps[1]!.summary).toBe("237 LF measured by hand · 1 sheet");
+    expect(guide.steps[1]!.summary).not.toContain("none measured");
+    // Lines typed in place of posting the measurements: not nagged forever.
+    expect(guide.ask!.id).toBe("proposal-ready");
+  });
+
+  it("a takeoff with nothing measured and lines typed in says so, instead of 'none measured yet' under a done step", () => {
+    const facts = walkTakeoff({ handMeasurements: NO_HAND, lineCount: 3, bidTotal: 34_915 });
+    const guide = buildJobGuide(facts, NOW);
+    expect(guide.steps[1]!.status).toBe("done");
+    expect(guide.steps[1]!.summary).toBe("1 sheet · lines typed in, nothing measured");
+  });
+
+  it("before anything is measured it still asks for the walls", () => {
+    expect(buildJobGuide(walkTakeoff({ handMeasurements: NO_HAND }), NOW).ask!.id).toBe("no-walls-measured");
+    expect(buildJobGuide(walkTakeoff({ handMeasurements: NO_HAND }), NOW).steps[1]!.summary).toBe("1 sheet, none measured yet");
+  });
+
+  it("a sheet with no scale stops being asked about once something is measured by hand", () => {
+    expect(buildJobGuide(walkTakeoff({ sheetsMissingScale: 1 }), NOW).ask!.id).toBe("walls-not-added");
+  });
+
+  it("wall runs and hand measurements together are both in the walls summary", () => {
+    const facts = ready({ handMeasurements: { count: 2, lengthFt: 60 } });
+    expect(buildJobGuide(facts, NOW).steps[1]!.summary).toBe("1,240 LF · 60 LF by hand · 9 openings · 6 sheets");
+  });
+
+  it("measured wall runs not on the estimate are asked about first, in their own words", () => {
+    const facts = { ...FIXTURES["walls-not-added"], handMeasurements: { count: 2, lengthFt: 60 } };
+    expect(buildJobGuide(facts, NOW).ask!.title).toBe("1,240 LF of walls are measured but not in the estimate yet.");
   });
 });
 
@@ -662,7 +769,7 @@ describe("once the bid has gone out", () => {
   const sent = (status: "SUBMITTED" | "WON" | "LOST") =>
     ready({
       invitations: [{ id: "i", projectName: "p", status, dueDate: "2026-10-27", dueMinute: 600 }],
-      recap: { appliedAt: null, addedTotal: 9 },
+      recap: { appliedAt: null, addedTotal: 9, landsAt: null },
     });
 
   for (const status of ["SUBMITTED", "WON", "LOST"] as const) {
@@ -770,7 +877,15 @@ describe("the words", () => {
     pastPriceSuggestions: [{ wallTypeCode: "W2", label: "a wall", fromJobName: "Civic Center", whenLabel: "in September" }],
   });
   const sentFacts = ready({ invitations: [{ id: "i", projectName: "p", status: "SUBMITTED", dueDate: null, dueMinute: null }] });
-  const everyFacts = [...Object.values(FIXTURES), manyUnpriced, sentFacts];
+  const everyFacts = [
+    ...Object.values(FIXTURES),
+    manyUnpriced,
+    sentFacts,
+    // the contractor walk's stages: hand measurements, then typed lines, then a recap that cuts the bid
+    walkTakeoff(),
+    walkTakeoff({ lineCount: 3, bidTotal: 34_915 }),
+    ready({ bidTotal: 34_915, recap: { appliedAt: null, addedTotal: 7_385, landsAt: 31_990.5 } }),
+  ];
 
   const sentences = (guide: ReturnType<typeof buildJobGuide>): string[] =>
     [
@@ -815,6 +930,12 @@ describe("the words", () => {
       facts.linesWithoutPrice,
       facts.bidTotal,
       facts.recap?.addedTotal ?? 0,
+      // what Apply writes, and how far that is from the lines now
+      facts.recap?.landsAt ?? 0,
+      facts.recap?.landsAt == null ? 0 : Math.abs(Math.round((facts.recap.landsAt - facts.bidTotal) * 100) / 100),
+      // what was measured by hand
+      facts.handMeasurements.count,
+      facts.handMeasurements.lengthFt,
       facts.wallTypes.filter((type) => type.componentCount === 0 || type.unpricedLineCount > 0).length - 1, // "N more wall types"
       ...facts.wallTypes.map((type) => type.lengthFt),
       // the height question: its runs, their length, how many other types, and the offered answers

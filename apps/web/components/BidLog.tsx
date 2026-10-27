@@ -32,6 +32,7 @@ import { loadBidOutcomes, loadLinkableJobs } from "@/lib/bid-outcome-query";
 import { BidOutcomeForm } from "@/components/BidOutcomeForm";
 import { outcomeReasonLabel } from "@/components/ai-bid/outcome";
 import { LogBidForm } from "@/components/LogBidForm";
+import { loadInviteReaderAccess } from "@/lib/bid/inviteReaderAccessLoad";
 import { Disclosure } from "@/components/Disclosure";
 import { SeeAll, seeAllWindow } from "@/components/SeeAll";
 import { bidsView, daysLeftLabel } from "@/lib/bids-due-soon";
@@ -150,7 +151,7 @@ export async function BidLog({
   // not happened where they were sitting.
   const zone = await viewerTimeZone();
 
-  const [vendors, outcomesByBid, linkableJobs, gcs, projectChoices] = await Promise.all([
+  const [vendors, outcomesByBid, linkableJobs, gcs, projectChoices, inviteReader] = await Promise.all([
     prisma.vendor.findMany({
       where: { companyId: company.id },
       orderBy: { name: "asc" },
@@ -174,6 +175,8 @@ export async function BidLog({
       select: { id: true, name: true },
     }),
     loadProjectChoices(company.id),
+    // Whether "Fill the form from it" can read a paste, said up front (contractor walk, 2026-10-27).
+    loadInviteReaderAccess(company.id),
   ]);
   // How this company's finished bids have run against what the work cost.
   // Derived here, never stored, and it counts only what has SETTLED — see
@@ -730,7 +733,7 @@ export async function BidLog({
     <PageShell width="working">
       {header}
 
-      <LogBidForm gcs={gcs} startOpen={isNew === "1"} projectChoices={projectChoices} surface={surface} />
+      <LogBidForm gcs={gcs} startOpen={isNew === "1"} projectChoices={projectChoices} surface={surface} reader={inviteReader} />
 
       {/* ── THE DECLINE PICTURE, WHEN THERE IS ONE ──
 

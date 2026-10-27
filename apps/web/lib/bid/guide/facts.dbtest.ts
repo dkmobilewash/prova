@@ -168,6 +168,30 @@ describe("job guide facts against a real database", () => {
     // ── 6. past the estimate stage ──
     await newJob("contracted", "Contracted", { status: "CONTRACTED" });
 
+    // ── 7. measured by hand: "Add as plain measurements — priced by hand" ──
+    // The contractor walk (2026-10-27): measurements with no wall type and no
+    // wall run, nothing on the estimate. A calibration of 50 ft across half the
+    // page width is 100 ft per page width.
+    const hand = await newJob("hand", "Hand");
+    const handPlan = await prisma.takeoffPlan.create({ data: { companyId, jobId: hand.id, fileUrl: `https://example.test/${tag}-h.pdf` } });
+    const handPage = await prisma.takeoffPlanPage.create({ data: { planId: handPlan.id, pageNumber: 1 } });
+    const handScale = await prisma.takeoffScaleCalibration.create({
+      data: { pageId: handPage.id, x1: 0, y1: 0, x2: 0.5, y2: 0, declaredDistanceFeet: 50 },
+    });
+    const handW = await prisma.wallType.create({ data: { companyId, code: `WH${tag}`, name: "hand job's type" } });
+    const handRun = await prisma.wallRun.create({ data: { companyId, jobId: hand.id, wallTypeId: handW.id, label: "R1", lengthFt: 30 } });
+    await prisma.takeoffMeasurement.createMany({
+      data: [
+        // 0.2 of the page width = 20 ft, and 0.1 + 0.05 down then across = 15 ft: 35 ft by hand
+        { pageId: handPage.id, calibrationId: handScale.id, kind: "LINEAR", xs: [0.1, 0.3], ys: [0.1, 0.1] },
+        { pageId: handPage.id, calibrationId: handScale.id, kind: "LINEAR", xs: [0.1, 0.1, 0.15], ys: [0.2, 0.3, 0.3] },
+        // an area: counted, no feet
+        { pageId: handPage.id, calibrationId: handScale.id, kind: "AREA", xs: [0.5, 0.6, 0.6], ys: [0.5, 0.5, 0.6] },
+        // part of a wall run: counted through the run, NOT here
+        { pageId: handPage.id, calibrationId: handScale.id, kind: "LINEAR", xs: [0.1, 0.4], ys: [0.8, 0.8], wallRunId: handRun.id },
+      ],
+    });
+
     // ── another company's, with a lot in it ──
     const other = await newJob("other", "Other", { companyId: otherCompanyId, contactId: otherContactId });
     otherJobId = other.id;
@@ -240,13 +264,26 @@ describe("job guide facts against a real database", () => {
     expect(facts.linesWithoutCost).toBe(1); // W2 board has no budgeted cost
     expect(facts.bidTotal).toBeCloseTo(1000 * 2.5 + 2 * 100, 2);
 
-    expect(facts.recap).toEqual({ appliedAt: null, addedTotal: expect.any(Number) });
+    expect(facts.recap).toEqual({ appliedAt: null, addedTotal: expect.any(Number), landsAt: expect.any(Number) });
     expect(facts.recap!.addedTotal).toBeGreaterThan(0);
+    // What Apply writes: 10% overhead on $2,160 of cost is $2,376, spread over
+    // the two lines with both a price and a cost (W1 board and the hand line)
+    // and rounded to cent unit prices — within a dollar of it, never the
+    // $216 `addedTotal`.
+    expect(facts.recap!.landsAt).toBeCloseTo(2_379, 0);
+    expect(facts.handMeasurements).toEqual({ count: 0, lengthFt: 0 });
 
     expect(facts.project).toEqual({ id: expect.any(String), name: `Priced project ${tag}`, bidDueDate: "2026-10-30" });
     expect(facts.invitations.map((invitation) => invitation.status).sort()).toEqual(["INVITED", "SUBMITTED"]);
     expect(facts.invitations.find((invitation) => invitation.status === "INVITED")).toMatchObject({ dueDate: "2026-10-29", dueMinute: 840 });
     expect(new Set(facts.invitations.map((invitation) => invitation.id)).size).toBe(2); // the wonJobId one is not doubled
+  });
+
+  it("measured by hand: plain measurements count, a wall run's own do not", async () => {
+    const facts = (await loadJobGuideFacts(companyId, jobs.hand!))!;
+    expect(facts.handMeasurements.count).toBe(3);
+    expect(facts.handMeasurements.lengthFt).toBeCloseTo(35, 2);
+    expect(facts.measuredFootageFt).toBe(30); // the run's own length, unchanged
   });
 
   it("a job whose bid has gone out has no ask", async () => {
@@ -290,7 +327,7 @@ describe("job guide facts against a real database", () => {
   describe("the open list", () => {
     it("holds open estimate jobs only: not declined, not contracted", async () => {
       const ids = (await loadOpenJobGuideFacts(companyId)).map((facts) => facts.jobId).sort();
-      expect(ids).toEqual([jobs.fresh!, jobs.drawings!, jobs.priced!, jobs.sent!].sort());
+      expect(ids).toEqual([jobs.fresh!, jobs.drawings!, jobs.priced!, jobs.sent!, jobs.hand!].sort());
     });
 
     it("agrees with the single-job loader, job for job", async () => {
