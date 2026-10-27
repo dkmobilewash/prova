@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readRoomTags, type PositionedText } from "./roomTags";
+import { looksLikeNoteText, readRoomTags, type PositionedText } from "./roomTags";
 
 /** A line of text 10pt tall, centred on `cx`. */
 const line = (str: string, cx: number, y: number, width = 40): PositionedText => ({ str, x: cx - width / 2, y, width, height: 10 });
@@ -79,5 +79,17 @@ describe("readRoomTags", () => {
   it("does not join two tags printed side by side", () => {
     const tags = readRoomTags([line("OFFICE", 100, 0), line("101", 100, 14), line("STORAGE", 160, 0), line("102", 160, 14)]);
     expect(tags.map((t) => t.name).sort()).toEqual(["OFFICE", "STORAGE"]);
+  });
+});
+
+describe("looksLikeNoteText — what stacks like a tag and is not one", () => {
+  it("drops title-block labels, sentences and anything longer than a room is called, keeps real tags", () => {
+    expect(looksLikeNoteText("SHEET NUMBER A101")).toBe(true);
+    expect(looksLikeNoteText("TEMPORARY MARKED EXIT ROUTES. REFERENCE WALL ASSEMBLIES AND TAG LEGEND ARE TO BE PROVIDED ON SHEET A601.")).toBe(true);
+    expect(looksLikeNoteText("PROVIDE SOLID BLOCKING IN WALLS FOR ALL WALL HUNG EQUIPMENT")).toBe(true);
+    expect(looksLikeNoteText("DRAWN BY")).toBe(true);
+    for (const tag of ["HAM RADIO/COMM", "DISPATCH SUPERVISOR", "SECURE VESTIBULE", "RR 2", "(E) OFFICE", "STAFF TLT.", "WC Damen", "MAIN OPERATIONS", "NEW 3"]) {
+      expect(looksLikeNoteText(tag), tag).toBe(false);
+    }
   });
 });

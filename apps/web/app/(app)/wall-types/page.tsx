@@ -13,7 +13,11 @@ import { missingStarterTypes } from "@/lib/wall-type-starters";
  * one is made of. A job's wall runs are priced from these; editing one here
  * changes an existing estimate only when that job's schedule is refreshed.
  */
-export default async function WallTypesPage() {
+export default async function WallTypesPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+  // "Create a wall type from this group" on the takeoff lands here with the
+  // measured thickness, so the one number the drawing gave is not retyped.
+  const query = (await searchParams) ?? {};
+  const thicknessFromTakeoff = typeof query.thicknessIn === "string" && Number.isFinite(Number(query.thicknessIn)) ? Number(query.thicknessIn) : null;
   const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
   const { company } = context;
@@ -80,7 +84,7 @@ export default async function WallTypesPage() {
       {/* Behind its button (declutter, 2026-10-13: it rendered open). */}
       <div data-tour="wall-types-add">
         <CollapsedForm label="Add wall type">
-          <NewWallTypeForm />
+          <NewWallTypeForm initial={thicknessFromTakeoff === null ? undefined : { thicknessIn: thicknessFromTakeoff.toFixed(2) }} />
         </CollapsedForm>
       </div>
     </PageShell>

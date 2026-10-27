@@ -62,7 +62,7 @@ test.describe("the estimating desk", () => {
    * literal `lib/actions/wallTypes.test.ts` pins, so the two cannot disagree
    * quietly.
    */
-  const STARTER_CODES = ["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "FLR1", "PT1", "SLB1", "FTG1"];
+  const STARTER_CODES = ["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "ACT2", "GYPC1", "FLR1", "PT1", "SLB1", "FTG1"];
   /**
    * 1,000 SF at $2.00 of COST — the only line carrying a cost, so the recap's
    * direct cost is this and nothing else.

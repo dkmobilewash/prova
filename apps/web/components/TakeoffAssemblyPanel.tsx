@@ -140,12 +140,15 @@ export function TakeoffAssemblyPanel({ jobId, assemblies, item, pinnedAt, readOn
         setError(result.error);
         return;
       }
-      const { created, updated, removed, unpriced: noAssembly } = result.value;
+      const { created, updated, removed, unpriced: noAssembly, checkFigures } = result.value;
       setSent(
         `${created} added, ${updated} updated${removed > 0 ? `, ${removed} removed` : ""}` +
           (noAssembly.length > 0
             ? ` · ${noAssembly.length} item${noAssembly.length === 1 ? "" : "s"} measured but not priced`
-            : ""),
+            : "") +
+          // The floor is a check figure for this trade, not a line: said as
+          // square feet rather than counted as "not priced" on every Send.
+          checkFigures.map((c) => ` · ${c.name}: ${c.squareFeet.toLocaleString()} sf of floor, a check figure, not priced`).join(""),
       );
     });
   }

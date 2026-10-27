@@ -100,6 +100,8 @@ export type PlacedDoor = {
   mark: string;
   widthFt: number;
   widthFrom: "schedule" | "drawn";
+  /** The schedule's height, in feet, or null where the row prints none — a deduction needs both. */
+  heightFt: number | null;
   placedBy: "opening" | "mark";
   /** Midpoint, in page-width units, so the screen can put it on a run. */
   x: number;
@@ -302,6 +304,7 @@ export function doorsOnSheet(input: {
       mark: o.mark as string,
       widthFt: o.widthFt,
       widthFrom: o.widthFrom,
+      heightFt: o.matched?.heightFt ?? null,
       placedBy: o.placedBy,
       x: (o.opening.x1 + o.opening.x2) / 2,
       y: (o.opening.y1 + o.opening.y2) / 2,

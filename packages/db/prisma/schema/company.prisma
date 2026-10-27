@@ -93,6 +93,11 @@ model Company {
   /// (no model is called), so not in `CompanyAiSettings`.
   roomFinderOn Boolean @default(false)
 
+  /// "Demote, don't hide" on the takeoff: runs the wall check labels as
+  /// casework or reference stay on the sheet greyed, out of the total, one
+  /// click to take back. OFF for every company until the owner turns it on.
+  demotedWallsOn Boolean @default(false)
+
   /// The unguessable half of this company's inbound intake address:
   /// `docs-<token>@<INTAKE_INBOUND_DOMAIN>`. The token IS the routing — an
   /// email to an address whose token matches no row is dropped — so it is

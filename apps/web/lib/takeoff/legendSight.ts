@@ -34,6 +34,11 @@ export function assemblyFromSight(type: WallTypeSight, where: string): Partition
         (type.studGauge === null ? "" : ` ${type.studGauge} GA.`) +
         (type.studSpacingIn === null ? "" : ` AT ${inches(type.studSpacingIn)} O.C.`),
     );
+  } else if (type.studWidthIn === null && type.studMaterial === "wood") {
+    // A wood wall whose size the drawing does not state: written as the `2X`
+    // the legend itself prints, so the parser proposes the count and plates
+    // and flags the size, the same as it does for the text read.
+    lines.push("2X WOOD STUDS" + (type.studSpacingIn === null ? "" : ` AT ${inches(type.studSpacingIn)} O.C.`));
   }
   const sides = [type.layersSideA, type.layersSideB].filter((n): n is number => n !== null);
   const layers = sides.length === 0 ? (type.boardThicknessIn === null ? null : 1) : Math.max(...sides);

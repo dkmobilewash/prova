@@ -99,6 +99,18 @@ export type MatchableWallType = {
    */
   hasParts: boolean;
   /**
+   * What tells this type from its neighbours at the same thickness, in a
+   * few words — "board both sides · 2 layers · 2 HR" — built by
+   * `wallTypeSummary` from the sides, the parts and the notes. S6B and S6C on
+   * Baker are both "NON-RATED INTERIOR WALL" at 7-1/4"; the summary is the
+   * only thing on the row that says one is boarded one side and the other
+   * both. Optional, because the stored-proposal read-back has no parts to
+   * build it from.
+   */
+  summary?: string;
+  /** The height a run of this type is priced at when none is typed; null means the panel must ask for one. */
+  defaultHeightFt?: number | null;
+  /**
    * Finish to finish, in inches, where the company has recorded one — #731.
    *
    * NULLABLE AND IT STAYS NULLABLE. A type typed in by hand before that column
@@ -207,4 +219,32 @@ export function matchSentence(match: WallTypeMatch): string | null {
     case "NO_TAG":
       return null;
   }
+}
+
+/**
+ * The words that tell two types apart in a picker: which faces carry board,
+ * how many layers, the rating, insulation. Read off the type's own sides,
+ * its parts and its notes (where a legend-made type keeps "RATING: 2 HR").
+ * Nothing is guessed: a type with no board part says nothing about board.
+ */
+export function wallTypeSummary(type: {
+  name: string;
+  sides: number;
+  notes?: string | null;
+  components: readonly { description: string; basis: string; factor: number }[];
+}): string {
+  const out: string[] = [];
+  const board = type.components.filter((c) => c.basis === "BOARDED_SQFT" || (c.basis === "FACE_SQFT" && /board|gyp|sheath/i.test(c.description)));
+  if (board.length > 0) {
+    const layers = Math.max(...board.map((c) => (Number.isFinite(c.factor) && c.factor > 0 ? Math.round(c.factor) : 1)));
+    out.push(type.sides === 1 ? "board one side" : "board both sides");
+    if (layers > 1) out.push(`${layers} layers`);
+  }
+  const text = `${type.name} ${type.notes ?? ""}`;
+  const rated = /(\d(?:\.\d)?)\s*(?:-\s*)?(?:HR|HOUR)/i.exec(text);
+  if (rated) out.push(`${rated[1]} HR`);
+  else if (/NON-?\s*RATED/i.test(text)) out.push("non-rated");
+  if (type.components.some((c) => /insul|batt/i.test(c.description))) out.push("insulated");
+  if (type.components.some((c) => c.basis === "STUDS") && /\bwood\b|2x[46]/i.test(type.components.map((c) => c.description).join(" "))) out.push("wood studs");
+  return out.join(" · ");
 }

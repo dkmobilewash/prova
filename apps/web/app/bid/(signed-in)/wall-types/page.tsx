@@ -23,7 +23,11 @@ export const metadata = { title: "Wall types" };
  * action pushes `/ask`). The empty state's one action points at Bid's own
  * price book instead of `/catalog`.
  */
-export default async function BidWallTypesPage() {
+export default async function BidWallTypesPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+  // The takeoff's "Create a wall type from this group" lands here with the
+  // measured thickness, as on the CRM page.
+  const query = (await searchParams) ?? {};
+  const thicknessFromTakeoff = typeof query.thicknessIn === "string" && Number.isFinite(Number(query.thicknessIn)) ? Number(query.thicknessIn) : null;
   const { context, allowed } = await requireCapability(BID_CAPABILITY);
   if (!allowed) return <BidNoAccess />;
   const { views, catalogOptions, craftOptions, defaultWastePercent } = await loadWallTypesScreen(context.company.id);
@@ -75,7 +79,7 @@ export default async function BidWallTypesPage() {
       <StarterWallTypesButton missing={missingStarters} hasLibrary={views.length > 0} />
 
       <CollapsedForm label="Add wall type">
-        <NewWallTypeForm />
+        <NewWallTypeForm initial={thicknessFromTakeoff === null ? undefined : { thicknessIn: thicknessFromTakeoff.toFixed(2) }} />
       </CollapsedForm>
     </PageShell>
   );

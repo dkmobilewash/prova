@@ -1,491 +1,681 @@
 {
- "pageNumber": 1,
- "pageCount": 1,
- "sheetTitle": "WALL TYPES",
- "sheetNumber": "A-001",
- "textRead": {
-  "types": [
-   {
-    "code": "P1",
-    "name": "INTERIOR PARTITION",
-    "lines": [
-     "3 5/8\" 25 GA. METAL STUDS AT 16\" O.C.",
-     "5/8\" TYPE X GYPSUM BOARD EACH SIDE",
-     "1 HR RATED",
-     "EXTEND TO DECK"
-    ]
-   },
-   {
-    "code": "P2",
-    "name": "CORRIDOR PARTITION",
-    "lines": [
-     "6\" 20 GA. METAL STUDS AT 16\" O.C.",
-     "(2) LAYERS 5/8\" TYPE X GYPSUM BOARD EACH SIDE",
-     "3 1/2\" SOUND ATTENUATION BATTS",
-     "2 HR RATED",
-     "EXTEND TO DECK"
-    ]
-   },
-   {
-    "code": "P3",
-    "name": "FURRING",
-    "lines": [
-     "1 5/8\" METAL FURRING CHANNELS AT 24\" O.C.",
-     "5/8\" GYPSUM BOARD ONE SIDE",
-     "HEIGHT: TO CEILING"
-    ]
-   },
-   {
-    "code": "P4",
-    "name": "PLUMBING WALL",
-    "lines": [
-     "6\" 20 GA. METAL STUDS AT 16\" O.C.",
-     "5/8\" MOISTURE RESISTANT GYPSUM BOARD EACH SIDE",
-     "BATT INSULATION FULL HEIGHT",
-     "EXTEND TO DECK"
-    ]
-   }
+  "pageNumber": 1,
+  "pageCount": 1,
+  "sheetTitle": "WALL TYPES",
+  "sheetNumber": "A-001",
+  "textRead": {
+    "types": [
+      {
+        "code": "P1",
+        "name": "INTERIOR PARTITION",
+        "lines": [
+          "3 5/8\" 25 GA. METAL STUDS AT 16\" O.C.",
+          "5/8\" TYPE X GYPSUM BOARD EACH SIDE",
+          "1 HR RATED",
+          "EXTEND TO DECK"
+        ]
+      },
+      {
+        "code": "P2",
+        "name": "CORRIDOR PARTITION",
+        "lines": [
+          "6\" 20 GA. METAL STUDS AT 16\" O.C.",
+          "(2) LAYERS 5/8\" TYPE X GYPSUM BOARD EACH SIDE",
+          "3 1/2\" SOUND ATTENUATION BATTS",
+          "2 HR RATED",
+          "EXTEND TO DECK"
+        ]
+      },
+      {
+        "code": "P3",
+        "name": "FURRING",
+        "lines": [
+          "1 5/8\" METAL FURRING CHANNELS AT 24\" O.C.",
+          "5/8\" GYPSUM BOARD ONE SIDE",
+          "HEIGHT: TO CEILING"
+        ]
+      },
+      {
+        "code": "P4",
+        "name": "PLUMBING WALL",
+        "lines": [
+          "6\" 20 GA. METAL STUDS AT 16\" O.C.",
+          "5/8\" MOISTURE RESISTANT GYPSUM BOARD EACH SIDE",
+          "BATT INSULATION FULL HEIGHT",
+          "EXTEND TO DECK"
+        ]
+      },
+      {
+        "code": "P5",
+        "name": "SOFFIT FURRING",
+        "lines": [
+          "3 5/8\" 25 GA. METAL STUDS AT 16\" O.C.",
+          "5/8\" GYPSUM BOARD EACH SIDE",
+          "HEIGHT: 10'-0\" A.F.F."
+        ]
+      },
+      {
+        "code": "P6",
+        "name": "CMU WALL",
+        "lines": [
+          "8\" CMU, GROUT SOLID",
+          "5/8\" GYPSUM BOARD ON 7/8\" HAT CHANNEL, ONE SIDE",
+          "EXTEND TO DECK"
+        ]
+      }
+    ],
+    "reason": "A block headed WALL TYPES on the first sheet lists four partitions, each with its studs, board and rating on its own lines.",
+    "confidence": "HIGH"
+  },
+  "sightRead": {
+    "types": [
+      {
+        "code": "P1",
+        "name": null,
+        "studWidthIn": 3.625,
+        "studMaterial": "metal",
+        "studGauge": 25,
+        "studSpacingIn": 16,
+        "boardThicknessIn": 0.625,
+        "layersSideA": 1,
+        "layersSideB": 1,
+        "boardIsTypeX": true,
+        "insulation": null,
+        "hourlyRating": 1,
+        "heightNote": null,
+        "notes": [],
+        "fromDrawing": [
+          "studWidthIn",
+          "studSpacingIn"
+        ],
+        "fromSheetNote": [],
+        "optional": [],
+        "notAPartition": null,
+        "confidence": "HIGH"
+      },
+      {
+        "code": "P2",
+        "name": null,
+        "studWidthIn": 6,
+        "studMaterial": "metal",
+        "studGauge": 20,
+        "studSpacingIn": 24,
+        "boardThicknessIn": 0.625,
+        "layersSideA": 2,
+        "layersSideB": 2,
+        "boardIsTypeX": true,
+        "insulation": "3 1/2\" SOUND ATTENUATION BATTS",
+        "hourlyRating": 2,
+        "heightNote": null,
+        "notes": [],
+        "fromDrawing": [
+          "studSpacingIn",
+          "layersSideA",
+          "layersSideB"
+        ],
+        "fromSheetNote": [],
+        "optional": [],
+        "notAPartition": null,
+        "confidence": "HIGH"
+      },
+      {
+        "code": "P3",
+        "name": null,
+        "studWidthIn": 1.625,
+        "studMaterial": "metal",
+        "studGauge": null,
+        "studSpacingIn": 24,
+        "boardThicknessIn": 0.625,
+        "layersSideA": 1,
+        "layersSideB": 0,
+        "boardIsTypeX": null,
+        "insulation": null,
+        "hourlyRating": null,
+        "heightNote": "TO CEILING",
+        "notes": [],
+        "fromDrawing": [
+          "layersSideB"
+        ],
+        "fromSheetNote": [],
+        "optional": [],
+        "notAPartition": null,
+        "confidence": "HIGH"
+      },
+      {
+        "code": "P4",
+        "name": null,
+        "studWidthIn": 6,
+        "studMaterial": "metal",
+        "studGauge": 20,
+        "studSpacingIn": 16,
+        "boardThicknessIn": 0.625,
+        "layersSideA": 1,
+        "layersSideB": 1,
+        "boardIsTypeX": null,
+        "insulation": "BATT INSULATION",
+        "hourlyRating": null,
+        "heightNote": null,
+        "notes": [],
+        "fromDrawing": [
+          "studWidthIn"
+        ],
+        "fromSheetNote": [],
+        "optional": [],
+        "notAPartition": null,
+        "confidence": "HIGH"
+      },
+      {
+        "code": "P5",
+        "name": null,
+        "studWidthIn": 3.625,
+        "studMaterial": "metal",
+        "studGauge": 25,
+        "studSpacingIn": 16,
+        "boardThicknessIn": 0.625,
+        "layersSideA": 1,
+        "layersSideB": 1,
+        "boardIsTypeX": false,
+        "insulation": null,
+        "hourlyRating": null,
+        "heightNote": "10'-0\" A.F.F.",
+        "notes": [],
+        "fromDrawing": [
+          "studWidthIn",
+          "studSpacingIn"
+        ],
+        "fromSheetNote": [],
+        "optional": [],
+        "notAPartition": null,
+        "confidence": "HIGH"
+      },
+      {
+        "code": "P6",
+        "name": "CMU WALL",
+        "studWidthIn": 8,
+        "studMaterial": "masonry",
+        "studGauge": null,
+        "studSpacingIn": null,
+        "boardThicknessIn": 0.625,
+        "layersSideA": 1,
+        "layersSideB": 0,
+        "boardIsTypeX": false,
+        "insulation": null,
+        "hourlyRating": null,
+        "heightNote": null,
+        "notes": [],
+        "fromDrawing": [
+          "studWidthIn",
+          "studSpacingIn"
+        ],
+        "fromSheetNote": [],
+        "optional": [],
+        "notAPartition": null,
+        "confidence": "HIGH"
+      }
+    ],
+    "reason": "Each type's crop shows its section: P1 and P4 single-layer on 3 5/8in and 6in studs, P2 two layers each side on 6in studs drawn at 24in centres against the words' 16in, P3 a furring channel boarded on one face only.",
+    "confidence": "HIGH"
+  },
+  "merged": [
+    {
+      "code": "P1",
+      "name": "INTERIOR PARTITION",
+      "lines": [
+        "3 5/8\" 25 GA. METAL STUDS AT 16\" O.C.",
+        "5/8\" TYPE X GYPSUM BOARD EACH SIDE",
+        "1 HR RATED",
+        "EXTEND TO DECK"
+      ],
+      "assembly": {
+        "components": [
+          {
+            "description": "3-5/8in metal stud, 25 ga at 16in o.c.",
+            "unit": "EA",
+            "basis": "STUDS",
+            "factor": 1,
+            "wastePercent": 0,
+            "roundUp": true,
+            "from": {
+              "phrase": "3 5/8\" METAL STUDS",
+              "where": "A-001 WALL TYPES (page 1), type P1, read by sight"
+            }
+          },
+          {
+            "description": "3-5/8in track, top and bottom",
+            "unit": "LF",
+            "basis": "LINEAR_FT",
+            "factor": 2,
+            "wastePercent": 0,
+            "roundUp": false,
+            "from": {
+              "phrase": "3 5/8\" METAL STUDS",
+              "where": "A-001 WALL TYPES (page 1), type P1, read by sight"
+            }
+          },
+          {
+            "description": "5/8in type X gypsum board",
+            "unit": "SF",
+            "basis": "BOARDED_SQFT",
+            "factor": 1,
+            "wastePercent": 0,
+            "roundUp": false,
+            "from": {
+              "phrase": "5/8\" TYPE \"X\" GYP.",
+              "where": "A-001 WALL TYPES (page 1), type P1, read by sight"
+            }
+          }
+        ],
+        "flags": [
+          {
+            "why": "the 3 5/8\" stud was read off the drawing, not a printed size \u2014 check it against the section",
+            "phrase": ""
+          }
+        ],
+        "read": {
+          "studWidthIn": 3.625,
+          "studSpacingIn": 16,
+          "studGauge": 25,
+          "boardThicknessIn": 0.625,
+          "layersPerSide": 1,
+          "boardIsTypeX": true,
+          "insulation": null,
+          "hourlyRating": 1
+        }
+      },
+      "from": "sight",
+      "disagreements": []
+    },
+    {
+      "code": "P2",
+      "name": "CORRIDOR PARTITION",
+      "lines": [
+        "6\" 20 GA. METAL STUDS AT 16\" O.C.",
+        "(2) LAYERS 5/8\" TYPE X GYPSUM BOARD EACH SIDE",
+        "3 1/2\" SOUND ATTENUATION BATTS",
+        "2 HR RATED",
+        "EXTEND TO DECK"
+      ],
+      "assembly": {
+        "components": [
+          {
+            "description": "6in metal stud, 20 ga at 24in o.c.",
+            "unit": "EA",
+            "basis": "STUDS",
+            "factor": 1,
+            "wastePercent": 0,
+            "roundUp": true,
+            "from": {
+              "phrase": "6\" METAL STUDS",
+              "where": "A-001 WALL TYPES (page 1), type P2, read by sight"
+            }
+          },
+          {
+            "description": "6in track, top and bottom",
+            "unit": "LF",
+            "basis": "LINEAR_FT",
+            "factor": 2,
+            "wastePercent": 0,
+            "roundUp": false,
+            "from": {
+              "phrase": "6\" METAL STUDS",
+              "where": "A-001 WALL TYPES (page 1), type P2, read by sight"
+            }
+          },
+          {
+            "description": "5/8in type X gypsum board, 2 layers per side",
+            "unit": "SF",
+            "basis": "BOARDED_SQFT",
+            "factor": 2,
+            "wastePercent": 0,
+            "roundUp": false,
+            "from": {
+              "phrase": "5/8\" TYPE \"X\" GYP.",
+              "where": "A-001 WALL TYPES (page 1), type P2, read by sight"
+            }
+          },
+          {
+            "description": "cavity insulation",
+            "unit": "SF",
+            "basis": "FACE_SQFT",
+            "factor": 1,
+            "wastePercent": 0,
+            "roundUp": false,
+            "from": {
+              "phrase": "BATTS",
+              "where": "A-001 WALL TYPES (page 1), type P2, read by sight"
+            }
+          }
+        ],
+        "flags": [
+          {
+            "why": "the words say studSpacingIn 16 and the drawing shows 24 \u2014 the drawing was kept; check it",
+            "phrase": "6\" 20 GA. METAL STUDS AT 16\" O.C."
+          }
+        ],
+        "read": {
+          "studWidthIn": 6,
+          "studSpacingIn": 24,
+          "studGauge": 20,
+          "boardThicknessIn": 0.625,
+          "layersPerSide": 2,
+          "boardIsTypeX": true,
+          "insulation": "BATTS",
+          "hourlyRating": 2
+        }
+      },
+      "from": "sight",
+      "disagreements": [
+        {
+          "field": "studSpacingIn",
+          "text": "16",
+          "sight": "24"
+        }
+      ]
+    },
+    {
+      "code": "P3",
+      "name": "FURRING",
+      "lines": [
+        "1 5/8\" METAL FURRING CHANNELS AT 24\" O.C.",
+        "5/8\" GYPSUM BOARD ONE SIDE",
+        "HEIGHT: TO CEILING"
+      ],
+      "assembly": {
+        "components": [
+          {
+            "description": "1-5/8in metal stud at 24in o.c.",
+            "unit": "EA",
+            "basis": "STUDS",
+            "factor": 1,
+            "wastePercent": 0,
+            "roundUp": true,
+            "from": {
+              "phrase": "1 5/8\" METAL STUDS",
+              "where": "A-001 WALL TYPES (page 1), type P3, read by sight"
+            }
+          },
+          {
+            "description": "1-5/8in track, top and bottom",
+            "unit": "LF",
+            "basis": "LINEAR_FT",
+            "factor": 2,
+            "wastePercent": 0,
+            "roundUp": false,
+            "from": {
+              "phrase": "1 5/8\" METAL STUDS",
+              "where": "A-001 WALL TYPES (page 1), type P3, read by sight"
+            }
+          },
+          {
+            "description": "5/8in gypsum board",
+            "unit": "SF",
+            "basis": "BOARDED_SQFT",
+            "factor": 1,
+            "wastePercent": 0,
+            "roundUp": false,
+            "from": {
+              "phrase": "5/8\" GYP.",
+              "where": "A-001 WALL TYPES (page 1), type P3, read by sight"
+            }
+          }
+        ],
+        "flags": [
+          {
+            "why": "the board is on one side only \u2014 set the wall type's sides to 1 before accepting, because the quantity counts sides itself",
+            "phrase": "ONE SIDE ONLY"
+          }
+        ],
+        "read": {
+          "studWidthIn": 1.625,
+          "studSpacingIn": 24,
+          "studGauge": null,
+          "boardThicknessIn": 0.625,
+          "layersPerSide": 1,
+          "boardIsTypeX": false,
+          "insulation": null,
+          "hourlyRating": null
+        }
+      },
+      "from": "sight",
+      "disagreements": []
+    },
+    {
+      "code": "P4",
+      "name": "PLUMBING WALL",
+      "lines": [
+        "6\" 20 GA. METAL STUDS AT 16\" O.C.",
+        "5/8\" MOISTURE RESISTANT GYPSUM BOARD EACH SIDE",
+        "BATT INSULATION FULL HEIGHT",
+        "EXTEND TO DECK"
+      ],
+      "assembly": {
+        "components": [
+          {
+            "description": "6in metal stud, 20 ga at 16in o.c.",
+            "unit": "EA",
+            "basis": "STUDS",
+            "factor": 1,
+            "wastePercent": 0,
+            "roundUp": true,
+            "from": {
+              "phrase": "6\" METAL STUDS",
+              "where": "A-001 WALL TYPES (page 1), type P4, read by sight"
+            }
+          },
+          {
+            "description": "6in track, top and bottom",
+            "unit": "LF",
+            "basis": "LINEAR_FT",
+            "factor": 2,
+            "wastePercent": 0,
+            "roundUp": false,
+            "from": {
+              "phrase": "6\" METAL STUDS",
+              "where": "A-001 WALL TYPES (page 1), type P4, read by sight"
+            }
+          },
+          {
+            "description": "5/8in gypsum board",
+            "unit": "SF",
+            "basis": "BOARDED_SQFT",
+            "factor": 1,
+            "wastePercent": 0,
+            "roundUp": false,
+            "from": {
+              "phrase": "5/8\" GYP.",
+              "where": "A-001 WALL TYPES (page 1), type P4, read by sight"
+            }
+          },
+          {
+            "description": "cavity insulation",
+            "unit": "SF",
+            "basis": "FACE_SQFT",
+            "factor": 1,
+            "wastePercent": 0,
+            "roundUp": false,
+            "from": {
+              "phrase": "BATT",
+              "where": "A-001 WALL TYPES (page 1), type P4, read by sight"
+            }
+          }
+        ],
+        "flags": [
+          {
+            "why": "the 6\" stud was read off the drawing, not a printed size \u2014 check it against the section",
+            "phrase": ""
+          }
+        ],
+        "read": {
+          "studWidthIn": 6,
+          "studSpacingIn": 16,
+          "studGauge": 20,
+          "boardThicknessIn": 0.625,
+          "layersPerSide": 1,
+          "boardIsTypeX": false,
+          "insulation": "BATT",
+          "hourlyRating": null
+        }
+      },
+      "from": "sight",
+      "disagreements": []
+    },
+    {
+      "code": "P5",
+      "name": "SOFFIT FURRING",
+      "lines": [
+        "3 5/8\" 25 GA. METAL STUDS AT 16\" O.C.",
+        "5/8\" GYPSUM BOARD EACH SIDE",
+        "HEIGHT: 10'-0\" A.F.F."
+      ],
+      "assembly": {
+        "components": [
+          {
+            "description": "3-5/8in metal stud, 25 ga at 16in o.c.",
+            "unit": "EA",
+            "basis": "STUDS",
+            "factor": 1,
+            "wastePercent": 0,
+            "roundUp": true,
+            "from": {
+              "phrase": "3 5/8\" METAL STUDS",
+              "where": "A-001 WALL TYPES (page 1), type P5, read by sight"
+            }
+          },
+          {
+            "description": "3-5/8in track, top and bottom",
+            "unit": "LF",
+            "basis": "LINEAR_FT",
+            "factor": 2,
+            "wastePercent": 0,
+            "roundUp": false,
+            "from": {
+              "phrase": "3 5/8\" METAL STUDS",
+              "where": "A-001 WALL TYPES (page 1), type P5, read by sight"
+            }
+          },
+          {
+            "description": "5/8in type X gypsum board",
+            "unit": "SF",
+            "basis": "BOARDED_SQFT",
+            "factor": 1,
+            "wastePercent": 0,
+            "roundUp": false,
+            "from": {
+              "phrase": "5/8\" TYPE \"X\" GYP.",
+              "where": "A-001 WALL TYPES (page 1), type P5, read by sight"
+            }
+          }
+        ],
+        "flags": [
+          {
+            "why": "the 3 5/8\" stud was read off the drawing, not a printed size \u2014 check it against the section",
+            "phrase": ""
+          }
+        ],
+        "read": {
+          "studWidthIn": 3.625,
+          "studSpacingIn": 16,
+          "studGauge": 25,
+          "boardThicknessIn": 0.625,
+          "layersPerSide": 1,
+          "boardIsTypeX": false,
+          "insulation": null,
+          "hourlyRating": null
+        }
+      },
+      "from": "sight",
+      "disagreements": []
+    },
+    {
+      "code": "P6",
+      "name": "CMU WALL",
+      "lines": [
+        "8\" CMU, GROUT SOLID",
+        "5/8\" GYPSUM BOARD ON 7/8\" HAT CHANNEL, ONE SIDE",
+        "EXTEND TO DECK"
+      ],
+      "assembly": {
+        "components": [
+          {
+            "description": "5/8in type X gypsum board",
+            "unit": "SF",
+            "basis": "BOARDED_SQFT",
+            "factor": 1,
+            "wastePercent": 0,
+            "roundUp": false,
+            "from": {
+              "phrase": "5/8\" TYPE \"X\" GYP.",
+              "where": "A-001 WALL TYPES (page 1), type P6, read by sight"
+            }
+          }
+        ],
+        "flags": [
+          {
+            "why": "the wall is masonry \u2014 board only; the framing is not this trade's",
+            "phrase": "8\" CMU"
+          }
+        ],
+        "read": {
+          "studWidthIn": 8,
+          "studSpacingIn": null,
+          "studGauge": null,
+          "boardThicknessIn": 0.625,
+          "layersPerSide": 1,
+          "boardIsTypeX": false,
+          "insulation": null,
+          "hourlyRating": null
+        }
+      },
+      "from": "sight",
+      "disagreements": []
+    }
   ],
-  "reason": "A block headed WALL TYPES on the first sheet lists four partitions, each with its studs, board and rating on its own lines.",
-  "confidence": "HIGH"
- },
- "sightRead": {
-  "types": [
-   {
-    "code": "P1",
-    "name": null,
-    "studWidthIn": 3.625,
-    "studMaterial": "metal",
-    "studGauge": 25,
-    "studSpacingIn": 16,
-    "boardThicknessIn": 0.625,
-    "layersSideA": 1,
-    "layersSideB": 1,
-    "boardIsTypeX": true,
-    "insulation": null,
-    "hourlyRating": 1,
-    "heightNote": null,
-    "notes": [],
-    "fromDrawing": [
-     "studWidthIn",
-     "studSpacingIn"
-    ],
-    "fromSheetNote": [],
-    "optional": [],
-    "notAPartition": null,
-    "confidence": "HIGH"
-   },
-   {
-    "code": "P2",
-    "name": null,
-    "studWidthIn": 6,
-    "studMaterial": "metal",
-    "studGauge": 20,
-    "studSpacingIn": 24,
-    "boardThicknessIn": 0.625,
-    "layersSideA": 2,
-    "layersSideB": 2,
-    "boardIsTypeX": true,
-    "insulation": "3 1/2\" SOUND ATTENUATION BATTS",
-    "hourlyRating": 2,
-    "heightNote": null,
-    "notes": [],
-    "fromDrawing": [
-     "studSpacingIn",
-     "layersSideA",
-     "layersSideB"
-    ],
-    "fromSheetNote": [],
-    "optional": [],
-    "notAPartition": null,
-    "confidence": "HIGH"
-   },
-   {
-    "code": "P3",
-    "name": null,
-    "studWidthIn": 1.625,
-    "studMaterial": "metal",
-    "studGauge": null,
-    "studSpacingIn": 24,
-    "boardThicknessIn": 0.625,
-    "layersSideA": 1,
-    "layersSideB": 0,
-    "boardIsTypeX": null,
-    "insulation": null,
-    "hourlyRating": null,
-    "heightNote": "TO CEILING",
-    "notes": [],
-    "fromDrawing": [
-     "layersSideB"
-    ],
-    "fromSheetNote": [],
-    "optional": [],
-    "notAPartition": null,
-    "confidence": "HIGH"
-   },
-   {
-    "code": "P4",
-    "name": null,
-    "studWidthIn": 6,
-    "studMaterial": "metal",
-    "studGauge": 20,
-    "studSpacingIn": 16,
-    "boardThicknessIn": 0.625,
-    "layersSideA": 1,
-    "layersSideB": 1,
-    "boardIsTypeX": null,
-    "insulation": "BATT INSULATION",
-    "hourlyRating": null,
-    "heightNote": null,
-    "notes": [],
-    "fromDrawing": [
-     "studWidthIn"
-    ],
-    "fromSheetNote": [],
-    "optional": [],
-    "notAPartition": null,
-    "confidence": "HIGH"
-   }
+  "crops": [
+    {
+      "code": "P1",
+      "x": 0,
+      "y": 0,
+      "width": 100,
+      "height": 100
+    },
+    {
+      "code": "P2",
+      "x": 100,
+      "y": 0,
+      "width": 100,
+      "height": 100
+    },
+    {
+      "code": "P3",
+      "x": 0,
+      "y": 100,
+      "width": 100,
+      "height": 100
+    },
+    {
+      "code": "P4",
+      "x": 100,
+      "y": 100,
+      "width": 100,
+      "height": 100
+    },
+    {
+      "code": "P5",
+      "x": 200,
+      "y": 0,
+      "width": 100,
+      "height": 100
+    },
+    {
+      "code": "P6",
+      "x": 0,
+      "y": 200,
+      "width": 100,
+      "height": 100
+    }
   ],
   "reason": "Each type's crop shows its section: P1 and P4 single-layer on 3 5/8in and 6in studs, P2 two layers each side on 6in studs drawn at 24in centres against the words' 16in, P3 a furring channel boarded on one face only.",
-  "confidence": "HIGH"
- },
- "merged": [
-  {
-   "code": "P1",
-   "name": "INTERIOR PARTITION",
-   "lines": [
-    "3 5/8\" 25 GA. METAL STUDS AT 16\" O.C.",
-    "5/8\" TYPE X GYPSUM BOARD EACH SIDE",
-    "1 HR RATED",
-    "EXTEND TO DECK"
-   ],
-   "assembly": {
-    "components": [
-     {
-      "description": "3-5/8in metal stud, 25 ga at 16in o.c.",
-      "unit": "EA",
-      "basis": "STUDS",
-      "factor": 1,
-      "wastePercent": 0,
-      "roundUp": true,
-      "from": {
-       "phrase": "3 5/8\" METAL STUDS",
-       "where": "A-001 WALL TYPES (page 1), type P1, read by sight"
-      }
-     },
-     {
-      "description": "3-5/8in track, top and bottom",
-      "unit": "LF",
-      "basis": "LINEAR_FT",
-      "factor": 2,
-      "wastePercent": 0,
-      "roundUp": false,
-      "from": {
-       "phrase": "3 5/8\" METAL STUDS",
-       "where": "A-001 WALL TYPES (page 1), type P1, read by sight"
-      }
-     },
-     {
-      "description": "5/8in type X gypsum board",
-      "unit": "SF",
-      "basis": "BOARDED_SQFT",
-      "factor": 1,
-      "wastePercent": 0,
-      "roundUp": false,
-      "from": {
-       "phrase": "5/8\" TYPE \"X\" GYP.",
-       "where": "A-001 WALL TYPES (page 1), type P1, read by sight"
-      }
-     }
-    ],
-    "flags": [
-     {
-      "why": "the 3 5/8\" stud was read off the drawing, not a printed size — check it against the section",
-      "phrase": ""
-     }
-    ],
-    "read": {
-     "studWidthIn": 3.625,
-     "studSpacingIn": 16,
-     "studGauge": 25,
-     "boardThicknessIn": 0.625,
-     "layersPerSide": 1,
-     "boardIsTypeX": true,
-     "insulation": null,
-     "hourlyRating": 1
-    }
-   },
-   "from": "sight",
-   "disagreements": []
-  },
-  {
-   "code": "P2",
-   "name": "CORRIDOR PARTITION",
-   "lines": [
-    "6\" 20 GA. METAL STUDS AT 16\" O.C.",
-    "(2) LAYERS 5/8\" TYPE X GYPSUM BOARD EACH SIDE",
-    "3 1/2\" SOUND ATTENUATION BATTS",
-    "2 HR RATED",
-    "EXTEND TO DECK"
-   ],
-   "assembly": {
-    "components": [
-     {
-      "description": "6in metal stud, 20 ga at 24in o.c.",
-      "unit": "EA",
-      "basis": "STUDS",
-      "factor": 1,
-      "wastePercent": 0,
-      "roundUp": true,
-      "from": {
-       "phrase": "6\" METAL STUDS",
-       "where": "A-001 WALL TYPES (page 1), type P2, read by sight"
-      }
-     },
-     {
-      "description": "6in track, top and bottom",
-      "unit": "LF",
-      "basis": "LINEAR_FT",
-      "factor": 2,
-      "wastePercent": 0,
-      "roundUp": false,
-      "from": {
-       "phrase": "6\" METAL STUDS",
-       "where": "A-001 WALL TYPES (page 1), type P2, read by sight"
-      }
-     },
-     {
-      "description": "5/8in type X gypsum board, 2 layers per side",
-      "unit": "SF",
-      "basis": "BOARDED_SQFT",
-      "factor": 2,
-      "wastePercent": 0,
-      "roundUp": false,
-      "from": {
-       "phrase": "5/8\" TYPE \"X\" GYP.",
-       "where": "A-001 WALL TYPES (page 1), type P2, read by sight"
-      }
-     },
-     {
-      "description": "cavity insulation",
-      "unit": "SF",
-      "basis": "FACE_SQFT",
-      "factor": 1,
-      "wastePercent": 0,
-      "roundUp": false,
-      "from": {
-       "phrase": "BATTS",
-       "where": "A-001 WALL TYPES (page 1), type P2, read by sight"
-      }
-     }
-    ],
-    "flags": [
-     {
-      "why": "the words say studSpacingIn 16 and the drawing shows 24 — the drawing was kept; check it",
-      "phrase": "6\" 20 GA. METAL STUDS AT 16\" O.C."
-     }
-    ],
-    "read": {
-     "studWidthIn": 6,
-     "studSpacingIn": 24,
-     "studGauge": 20,
-     "boardThicknessIn": 0.625,
-     "layersPerSide": 2,
-     "boardIsTypeX": true,
-     "insulation": "BATTS",
-     "hourlyRating": 2
-    }
-   },
-   "from": "sight",
-   "disagreements": [
-    {
-     "field": "studSpacingIn",
-     "text": "16",
-     "sight": "24"
-    }
-   ]
-  },
-  {
-   "code": "P3",
-   "name": "FURRING",
-   "lines": [
-    "1 5/8\" METAL FURRING CHANNELS AT 24\" O.C.",
-    "5/8\" GYPSUM BOARD ONE SIDE",
-    "HEIGHT: TO CEILING"
-   ],
-   "assembly": {
-    "components": [
-     {
-      "description": "1-5/8in metal stud at 24in o.c.",
-      "unit": "EA",
-      "basis": "STUDS",
-      "factor": 1,
-      "wastePercent": 0,
-      "roundUp": true,
-      "from": {
-       "phrase": "1 5/8\" METAL STUDS",
-       "where": "A-001 WALL TYPES (page 1), type P3, read by sight"
-      }
-     },
-     {
-      "description": "1-5/8in track, top and bottom",
-      "unit": "LF",
-      "basis": "LINEAR_FT",
-      "factor": 2,
-      "wastePercent": 0,
-      "roundUp": false,
-      "from": {
-       "phrase": "1 5/8\" METAL STUDS",
-       "where": "A-001 WALL TYPES (page 1), type P3, read by sight"
-      }
-     },
-     {
-      "description": "5/8in gypsum board",
-      "unit": "SF",
-      "basis": "BOARDED_SQFT",
-      "factor": 1,
-      "wastePercent": 0,
-      "roundUp": false,
-      "from": {
-       "phrase": "5/8\" GYP.",
-       "where": "A-001 WALL TYPES (page 1), type P3, read by sight"
-      }
-     }
-    ],
-    "flags": [
-     {
-      "why": "the board is on one side only — set the wall type's sides to 1 before accepting, because the quantity counts sides itself",
-      "phrase": "ONE SIDE ONLY"
-     }
-    ],
-    "read": {
-     "studWidthIn": 1.625,
-     "studSpacingIn": 24,
-     "studGauge": null,
-     "boardThicknessIn": 0.625,
-     "layersPerSide": 1,
-     "boardIsTypeX": false,
-     "insulation": null,
-     "hourlyRating": null
-    }
-   },
-   "from": "sight",
-   "disagreements": []
-  },
-  {
-   "code": "P4",
-   "name": "PLUMBING WALL",
-   "lines": [
-    "6\" 20 GA. METAL STUDS AT 16\" O.C.",
-    "5/8\" MOISTURE RESISTANT GYPSUM BOARD EACH SIDE",
-    "BATT INSULATION FULL HEIGHT",
-    "EXTEND TO DECK"
-   ],
-   "assembly": {
-    "components": [
-     {
-      "description": "6in metal stud, 20 ga at 16in o.c.",
-      "unit": "EA",
-      "basis": "STUDS",
-      "factor": 1,
-      "wastePercent": 0,
-      "roundUp": true,
-      "from": {
-       "phrase": "6\" METAL STUDS",
-       "where": "A-001 WALL TYPES (page 1), type P4, read by sight"
-      }
-     },
-     {
-      "description": "6in track, top and bottom",
-      "unit": "LF",
-      "basis": "LINEAR_FT",
-      "factor": 2,
-      "wastePercent": 0,
-      "roundUp": false,
-      "from": {
-       "phrase": "6\" METAL STUDS",
-       "where": "A-001 WALL TYPES (page 1), type P4, read by sight"
-      }
-     },
-     {
-      "description": "5/8in gypsum board",
-      "unit": "SF",
-      "basis": "BOARDED_SQFT",
-      "factor": 1,
-      "wastePercent": 0,
-      "roundUp": false,
-      "from": {
-       "phrase": "5/8\" GYP.",
-       "where": "A-001 WALL TYPES (page 1), type P4, read by sight"
-      }
-     },
-     {
-      "description": "cavity insulation",
-      "unit": "SF",
-      "basis": "FACE_SQFT",
-      "factor": 1,
-      "wastePercent": 0,
-      "roundUp": false,
-      "from": {
-       "phrase": "BATT",
-       "where": "A-001 WALL TYPES (page 1), type P4, read by sight"
-      }
-     }
-    ],
-    "flags": [
-     {
-      "why": "the 6\" stud was read off the drawing, not a printed size — check it against the section",
-      "phrase": ""
-     }
-    ],
-    "read": {
-     "studWidthIn": 6,
-     "studSpacingIn": 16,
-     "studGauge": 20,
-     "boardThicknessIn": 0.625,
-     "layersPerSide": 1,
-     "boardIsTypeX": false,
-     "insulation": "BATT",
-     "hourlyRating": null
-    }
-   },
-   "from": "sight",
-   "disagreements": []
-  }
- ],
- "crops": [
-  {
-   "code": "P1",
-   "x": 0,
-   "y": 0,
-   "width": 100,
-   "height": 100
-  },
-  {
-   "code": "P2",
-   "x": 100,
-   "y": 0,
-   "width": 100,
-   "height": 100
-  },
-  {
-   "code": "P3",
-   "x": 0,
-   "y": 100,
-   "width": 100,
-   "height": 100
-  },
-  {
-   "code": "P4",
-   "x": 100,
-   "y": 100,
-   "width": 100,
-   "height": 100
-  }
- ],
- "reason": "Each type's crop shows its section: P1 and P4 single-layer on 3 5/8in and 6in studs, P2 two layers each side on 6in studs drawn at 24in centres against the words' 16in, P3 a furring channel boarded on one face only.",
- "confidence": "HIGH",
- "model": "fixture — an invented legend, no model",
- "promptVersion": "wall-legend-sight.6"
+  "confidence": "HIGH",
+  "model": "fixture \u2014 an invented legend, no model",
+  "promptVersion": "wall-legend-sight.6"
 }

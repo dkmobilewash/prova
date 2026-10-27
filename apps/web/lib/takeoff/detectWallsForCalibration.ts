@@ -9,6 +9,7 @@ import type { MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
 import { matchGroups } from "./proposalMatch";
 import { aiGate } from "@/lib/ai/settings";
+import { tagVocabulary } from "./planTextTags";
 import { doorScheduleForPlan, doorsOnSheet, legendForPlan, typedFeetOf, writeSheetResult } from "./planTextRead";
 
 /**
@@ -184,19 +185,28 @@ export async function detectWallsForCalibration(
     // the per-sheet join follow once the groups exist. A failure in any of it
     // logs and leaves the detection exactly as it would have been.
     const planTextOn = (await aiGate(target.companyId, "PLAN_TEXT_READ")).ok;
-    let planText: { legendCodes: string[] } | undefined;
+    let legendCodes: string[] | null = null;
     let legendPage: number | null = null;
     if (planTextOn) {
       try {
         const legend = await legendForPlan({ companyId: target.companyId, planId: target.planId, doc, outOfTime });
         if (legend !== null) {
-          planText = { legendCodes: legend.codes };
+          legendCodes = legend.codes;
           legendPage = legend.page;
         }
       } catch (error) {
         console.error("[takeoff] legend read failed; detecting without it", { planId: target.planId }, error);
       }
     }
+    // ── THE SYMBOL TAGS RUN WITH OR WITHOUT THE SWITCH ──
+    // The vocabulary is the company's own codes, plus the legend's when read
+    // (`tagVocabulary`). A company with no wall types has no vocabulary and
+    // gets the detection it always had.
+    const vocabulary = tagVocabulary(
+      target.wallTypes.map((type) => type.code),
+      legendCodes,
+    );
+    const planText = vocabulary.length === 0 ? undefined : { legendCodes: vocabulary };
     const found = findWallsOnSheet({
       segments: strokes.segments,
       textItems,
@@ -227,7 +237,7 @@ export async function detectWallsForCalibration(
           planId: target.planId,
           pageNumber: target.pageNumber,
           calibrationId: target.calibrationId,
-          legend: planText === undefined || legendPage === null ? null : { page: legendPage, codes: planText.legendCodes },
+          legend: legendCodes === null || legendPage === null ? null : { page: legendPage, codes: legendCodes },
           doors,
           typed: typedFeetOf(found.groups),
         });

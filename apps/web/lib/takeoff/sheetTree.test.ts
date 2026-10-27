@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { SheetRow } from "@/lib/plan-ingest/sheetIndex";
 import {
+  looksLikeFloorPlan,
+  printedScaleOffers,
   UNFILED,
   buildSheetTree,
   disciplineName,
@@ -194,6 +196,79 @@ describe("takeoffProgress", () => {
       measurementCountByPage: { 1: 3 },
       bookmarks: new Set(),
     });
-    expect(takeoffProgress(tree)).toEqual({ sheets: 2, started: 1, scaled: 2, needScale: 0 });
+    expect(takeoffProgress(tree)).toEqual({ sheets: 2, started: 1, scaled: 2, needScale: 0, plansToScale: 0 });
+  });
+});
+
+describe("looksLikeFloorPlan — the sheets to scale", () => {
+  it("is an A-sheet whose title says plan and not a plan of something else; an untitled A-1xx counts", () => {
+    expect(looksLikeFloorPlan("A101", "FLOOR PLAN", "A")).toBe(true);
+    expect(looksLikeFloorPlan("A102", "SECOND FLOOR PLAN", "A")).toBe(true);
+    expect(looksLikeFloorPlan("A111", "REFLECTED CEILING PLAN", "A")).toBe(false);
+    expect(looksLikeFloorPlan("A201", "ROOF PLAN", "A")).toBe(false);
+    expect(looksLikeFloorPlan("S2.0", "FOUNDATION PLAN", "S")).toBe(false);
+    expect(looksLikeFloorPlan("A601", "WALL TYPES", "A")).toBe(false);
+    expect(looksLikeFloorPlan("A101", null, "A")).toBe(true);
+    expect(looksLikeFloorPlan("A601", null, "A")).toBe(false);
+  });
+});
+
+describe("the sheets to scale come first in their group", () => {
+  it("puts an unscaled floor plan ahead of earlier pages, and a scaled one back in page order", () => {
+    const row = (pageNumber: number, sheetNumber: string, title: string): SheetRow => ({
+      pageNumber,
+      hasTextLayer: true,
+      proposal: { id: `p${pageNumber}`, sheetNumber, title, discipline: null, pageType: null, scale: null, revision: null, issueDate: null, reason: "", confidence: "HIGH", status: "PROPOSED", acceptedSheetNumber: null, acceptedTitle: null },
+    });
+    const groups = buildSheetTree({
+      rows: [row(1, "A001", "GENERAL NOTES"), row(2, "A101", "FLOOR PLAN"), row(3, "A111", "REFLECTED CEILING PLAN"), row(4, "A102", "SECOND FLOOR PLAN")],
+      calibratedPages: new Set([4]),
+      printedScaleByPage: { 2: "1/8\" = 1'-0\"" },
+      measurementCountByPage: {},
+      bookmarks: new Set(),
+      rankPlans: true,
+    });
+    expect(groups[0].sheets.map((s) => s.pageNumber)).toEqual([2, 1, 3, 4]);
+    expect(groups[0].sheets[0].scaleStatus).toBe("confirm");
+    expect(takeoffProgress(groups).plansToScale).toBe(1);
+    // And the group that holds it rises above the ones that do not.
+    const withGeneral = buildSheetTree({
+      rows: [row(5, "G001", "PROJECT INFORMATION"), row(6, "S2.0", "FOUNDATION PLAN"), row(2, "A101", "FLOOR PLAN")],
+      calibratedPages: new Set(),
+      printedScaleByPage: {},
+      measurementCountByPage: {},
+      bookmarks: new Set(),
+      rankPlans: true,
+    });
+    expect(withGeneral.map((g) => g.key)).toEqual(["A", "G", "S"]);
+    const pageOrder = buildSheetTree({
+      rows: [row(5, "G001", "PROJECT INFORMATION"), row(6, "S2.0", "FOUNDATION PLAN"), row(2, "A101", "FLOOR PLAN")],
+      calibratedPages: new Set(),
+      printedScaleByPage: {},
+      measurementCountByPage: {},
+      bookmarks: new Set(),
+    });
+    expect(pageOrder.map((g) => g.key)).toEqual(["G", "S", "A"]);
+  });
+
+  it("keeps page order when the ranking is off, and offers each printed scale once with its unscaled sheets", () => {
+    const row = (pageNumber: number, sheetNumber: string, title: string): SheetRow => ({
+      pageNumber,
+      hasTextLayer: true,
+      proposal: { id: `p${pageNumber}`, sheetNumber, title, discipline: null, pageType: null, scale: null, revision: null, issueDate: null, reason: "", confidence: "HIGH", status: "PROPOSED", acceptedSheetNumber: null, acceptedTitle: null },
+    });
+    const groups = buildSheetTree({
+      rows: [row(1, "A001", "GENERAL NOTES"), row(2, "A101", "FLOOR PLAN"), row(3, "A111", "REFLECTED CEILING PLAN"), row(4, "A102", "SECOND FLOOR PLAN")],
+      calibratedPages: new Set([4]),
+      printedScaleByPage: { 2: "1/8\" = 1'-0\"", 3: "1/8\" = 1'-0\"", 4: "1/8\" = 1'-0\"", 1: "1/4\" = 1'-0\"" },
+      measurementCountByPage: {},
+      bookmarks: new Set(),
+    });
+    expect(groups[0].sheets.map((s) => s.pageNumber)).toEqual([1, 2, 3, 4]);
+    // Page 4 already has its scale, so it is not offered; the bigger group leads.
+    expect(printedScaleOffers(groups)).toEqual([
+      { scale: "1/8\" = 1'-0\"", pages: [2, 3] },
+      { scale: "1/4\" = 1'-0\"", pages: [1] },
+    ]);
   });
 });

@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { type TreeGroup, type TreeSheet, buildSheetTree, takeoffProgress } from "@/lib/takeoff/sheetTree";
+import { type TreeGroup, type TreeSheet, buildSheetTree, printedScaleOffers, takeoffProgress } from "@/lib/takeoff/sheetTree";
+import { applyPrintedScales } from "@/lib/actions";
 import type { SheetRow } from "@/lib/plan-ingest/sheetIndex";
 
 /**
@@ -19,7 +20,15 @@ import type { SheetRow } from "@/lib/plan-ingest/sheetIndex";
  */
 
 type Props = {
+  jobId: string;
   planId: string;
+  /**
+   * The plan-text opt-in. On, the rail ranks the floor plans still needing a
+   * scale first, names the printed scale on each sheet's chip, and offers to
+   * set every sheet that prints the same scale in one press. Off, the rail is
+   * page order and the chip says "confirm", as before.
+   */
+  scaleHelp: boolean;
   rows: readonly SheetRow[];
   calibratedPages: ReadonlySet<number>;
   printedScaleByPage: Readonly<Record<number, string | null | undefined>>;
@@ -112,7 +121,7 @@ function useThumbnails(planId: string, enabled: boolean) {
 }
 
 /** The scale chip's three states, said in words rather than only in colour. */
-function ScaleChip({ sheet }: { sheet: TreeSheet }) {
+function ScaleChip({ sheet, named }: { sheet: TreeSheet; named: boolean }) {
   if (sheet.scaleStatus === "set") {
     return (
       <span className="rounded bg-tag-green px-1 py-px text-[10px] font-medium text-tag-green-ink" title="Scale set">
@@ -125,8 +134,9 @@ function ScaleChip({ sheet }: { sheet: TreeSheet }) {
       <span
         className="rounded bg-tag-amber px-1 py-px text-[10px] font-medium text-tag-amber-ink"
         title={`The sheet prints ${sheet.printedScale}. Confirm it against a dimension before measuring.`}
+        data-takeoff="printed-scale-chip"
       >
-        confirm
+        {named ? `${sheet.printedScale} printed` : "confirm"}
       </span>
     );
   }
@@ -143,6 +153,7 @@ function ScaleChip({ sheet }: { sheet: TreeSheet }) {
 function SheetButton({
   sheet,
   current,
+  named,
   thumb,
   onPick,
   onToggleBookmark,
@@ -150,6 +161,7 @@ function SheetButton({
 }: {
   sheet: TreeSheet;
   current: boolean;
+  named: boolean;
   thumb: string | undefined;
   onPick: () => void;
   onToggleBookmark: () => void;
@@ -216,7 +228,7 @@ function SheetButton({
             </span>
             <span className="block truncate text-[11px] text-ink-body">{sheet.title ?? "—"}</span>
             <span className="mt-0.5 flex items-center gap-1">
-              <ScaleChip sheet={sheet} />
+              <ScaleChip sheet={sheet} named={named} />
               {sheet.isScan && (
                 <span className="rounded bg-rail px-1 py-px text-[10px] text-ink-muted" title="No text layer">
                   scan
@@ -244,7 +256,9 @@ function SheetButton({
 }
 
 export function TakeoffSheetTree({
+  jobId,
   planId,
+  scaleHelp,
   rows,
   calibratedPages,
   printedScaleByPage,
@@ -268,11 +282,34 @@ export function TakeoffSheetTree({
         bookmarks,
         search,
         onlyMine,
+        rankPlans: scaleHelp,
       }),
-    [rows, calibratedPages, printedScaleByPage, measurementCountByPage, bookmarks, search, onlyMine],
+    [rows, calibratedPages, printedScaleByPage, measurementCountByPage, bookmarks, search, onlyMine, scaleHelp],
   );
 
   const progress = useMemo(() => takeoffProgress(groups), [groups]);
+  const offers = useMemo(() => (scaleHelp ? printedScaleOffers(groups) : []), [groups, scaleHelp]);
+  const [applying, setApplying] = useState<string | null>(null);
+  const [applied, setApplied] = useState<string | null>(null);
+  async function applyEverywhere(scale: string, pages: number[]) {
+    setApplying(scale);
+    setApplied(null);
+    try {
+      const result = await applyPrintedScales(jobId, planId, pages);
+      if (!result.ok) {
+        setApplied(result.error);
+        return;
+      }
+      const { applied: done, skipped } = result.value;
+      const skippedText =
+        skipped.length === 0 ? "" : ` · skipped ${skipped.map((s) => `page ${s.pageNumber} (${s.why})`).join(", ")}`;
+      setApplied(`Scale set on ${done.length} sheet${done.length === 1 ? "" : "s"} from ${scale}${skippedText}`);
+    } catch {
+      setApplied("The scales didn't save. Reload and try again.");
+    } finally {
+      setApplying(null);
+    }
+  }
   const found = groups.reduce((total, group) => total + group.sheets.length, 0);
 
   return (
@@ -299,7 +336,35 @@ export function TakeoffSheetTree({
         </label>
         <p className="mt-1.5 text-[11px] text-ink-muted" data-takeoff="tree-progress">
           {progress.started} of {progress.sheets} started · {progress.needScale} need a scale
+          {scaleHelp &&
+            progress.plansToScale > 0 &&
+            ` · ${progress.plansToScale} floor plan${progress.plansToScale === 1 ? "" : "s"} to scale, listed first`}
         </p>
+        {/* ── EVERY SHEET THAT PRINTS THE SAME SCALE, IN ONE PRESS ──
+            Each sheet is set from ITS OWN reading — the line the inventory
+            anchored and the feet it declared — never from a figure typed here.
+            A sheet the inventory could not read keeps its "no scale". */}
+        {offers.map((offer) => (
+          <button
+            key={offer.scale}
+            type="button"
+            disabled={applying !== null}
+            onClick={() => void applyEverywhere(offer.scale, offer.pages)}
+            data-takeoff="use-printed-scale-everywhere"
+            data-scale={offer.scale}
+            title={`Set the scale on page${offer.pages.length === 1 ? "" : "s"} ${offer.pages.join(", ")} from what each sheet prints.`}
+            className="mt-1.5 block w-full rounded-md border border-line-card px-2 py-1 text-left text-[11px] text-link hover:bg-rail disabled:opacity-60"
+          >
+            {applying === offer.scale
+              ? "Setting…"
+              : `Use ${offer.scale} on ${offer.pages.length} sheet${offer.pages.length === 1 ? " that prints it" : "s that print it"}`}
+          </button>
+        ))}
+        {applied !== null && (
+          <p className="mt-1 text-[11px] text-ink-body" role="status" data-takeoff="printed-scales-applied">
+            {applied}
+          </p>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -325,6 +390,7 @@ export function TakeoffSheetTree({
                   <SheetButton
                     key={sheet.pageNumber}
                     sheet={sheet}
+                    named={scaleHelp}
                     current={sheet.pageNumber === currentPage}
                     thumb={thumbs.get(sheet.pageNumber)}
                     onPick={() => onPick(sheet.pageNumber)}

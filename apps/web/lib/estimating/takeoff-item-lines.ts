@@ -2,6 +2,8 @@ import type { Prisma } from "@prova/db";
 
 import { componentRunQuantity, type RunGeometry, type WallComponentBasis } from "@/lib/wall-assemblies";
 import { itemQuantity, type ItemMeasurement, type ItemProperties } from "@/lib/takeoff/itemQuantities";
+import { studsRequired } from "@/lib/takeoff";
+import { isCheckFigureItem } from "@/lib/takeoff/roomItems";
 
 /**
  * ── A TAKEOFF ITEM'S SHARE OF THE ESTIMATE ──
@@ -47,6 +49,18 @@ export type ItemForLines = {
   depthIn: number | null;
   measurements: ItemMeasurement[];
   wallTypeId: string | null;
+  /**
+   * The assembly's stud spacing, in inches. With it, a traced wall counts its
+   * studs the way a wall run does (`studsRequired`); without one, `studs`
+   * stays at zero and a STUDS part prices nothing rather than guessing 16".
+   *
+   * This shipped behind a flag first, because every partition starter and
+   * every legend-made type carries a STUDS part and this used to hard-code
+   * zero. Diego ran the impact query against production on 2026-10-22: ZERO
+   * measured items were linked to an assembly with a STUDS part, so no
+   * existing estimate changes, and the flag came out the same day.
+   */
+  studSpacingIn?: number | null;
 };
 
 export type ItemLineSummary = {
@@ -55,6 +69,12 @@ export type ItemLineSummary = {
   removed: number;
   /** Items with measurements but no assembly — measured, not priced. */
   unpriced: { id: string; name: string }[];
+  /**
+   * Items that are a CHECK FIGURE rather than something this trade prices —
+   * "Rooms", the floor. Reported as square feet instead of as "not priced",
+   * which it said on every Send and was never going to stop saying.
+   */
+  checkFigures: { id: string; name: string; squareFeet: number }[];
   /** Items whose assembly has no parts, so it can produce no lines. */
   emptyAssembly: { id: string; name: string }[];
 };
@@ -94,12 +114,14 @@ export function itemGeometry(item: ItemForLines): RunGeometry {
     heightFt,
     faceSqFt: quantity.linearFt * heightFt,
     boardedSqFt: quantity.linearFt * heightFt * sides,
-    // An item has no stud spacing of its own in the geometry; the assembly's
-    // own `studSpacingIn` is what `runGeometry` uses for a wall run, and a
-    // part that wants studs off an item should price them per foot instead.
-    // Zero rather than a guess: a guessed stud count is a number that looks
-    // right and gets bid.
-    studs: 0,
+    // An item has no stud spacing of its own; the assembly's `studSpacingIn`
+    // is handed in (see `ItemForLines`). Without one: zero rather than a
+    // guess, because a guessed stud count is a number that looks right and
+    // gets bid.
+    studs:
+      item.studSpacingIn !== undefined && item.studSpacingIn !== null && item.studSpacingIn > 0 && quantity.linearFt > 0
+        ? studsRequired(quantity.linearFt, { spacingFt: item.studSpacingIn / 12 })
+        : 0,
     areaSqFt: quantity.areaSqFt,
     // ── PERIMETER ONLY FROM AN `AREA_WITH_PERIMETER` ITEM ──
     //
@@ -185,6 +207,7 @@ export async function syncTakeoffItemLines(
   const assemblyById = new Map(assemblies.map((assembly) => [assembly.id, assembly]));
 
   const unpriced: { id: string; name: string }[] = [];
+  const checkFigures: ItemLineSummary["checkFigures"] = [];
   const emptyAssembly: { id: string; name: string }[] = [];
 
   /** `${itemId}:${componentId}` → the line it should produce. */
@@ -205,7 +228,13 @@ export async function syncTakeoffItemLines(
   for (const item of items) {
     const measured = item.measurements.length > 0;
     if (item.wallTypeId === null) {
-      if (measured) unpriced.push({ id: item.id, name: item.name });
+      if (measured && isCheckFigureItem(item.name)) {
+        const area = itemQuantity(
+          item.measurements.map((m) => ({ id: m.id, pageNumber: m.page.pageNumber, kind: m.kind, xs: m.xs, ys: m.ys, cutouts: [], feetPerPageWidth: feetAcross(m.calibration) })),
+          { type: item.type, heightFt: null, sides: null, wastePercent: 0, depthIn: null },
+        ).areaSqFt;
+        checkFigures.push({ id: item.id, name: item.name, squareFeet: Math.round(area) });
+      } else if (measured) unpriced.push({ id: item.id, name: item.name });
       continue;
     }
     const assembly = assemblyById.get(item.wallTypeId);
@@ -224,6 +253,7 @@ export async function syncTakeoffItemLines(
       wastePercent: num(item.wastePercent),
       depthIn: num(item.depthIn),
       wallTypeId: item.wallTypeId,
+      studSpacingIn: num(assembly.studSpacingIn),
       measurements: item.measurements.map((m) => ({
         id: m.id,
         pageNumber: m.page.pageNumber,
@@ -343,7 +373,7 @@ export async function syncTakeoffItemLines(
     removed += 1;
   }
 
-  return { created, updated, removed, unpriced, emptyAssembly };
+  return { created, updated, removed, unpriced, checkFigures, emptyAssembly };
 }
 
 /**

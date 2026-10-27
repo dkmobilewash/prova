@@ -49,6 +49,7 @@ export async function loadWallTypesScreen(companyId: string) {
     sides: type.sides,
     studSpacingIn: type.studSpacingIn.toString(),
     defaultHeightFt: type.defaultHeightFt?.toString() ?? null,
+    thicknessIn: type.thicknessIn?.toString() ?? null,
     notes: type.notes,
     runCount: type._count.runs,
     components: type.components.map((c) => ({

@@ -50,3 +50,34 @@ export function feetInches(feet: number): string {
   const inches = Math.round((feet - whole) * 12);
   return inches === 12 ? `${whole + 1}'-0"` : `${whole}'-${inches}"`;
 }
+
+/** `100A · 6'-0" × 7'-0"`, or `100A · 3'-0"` where the schedule printed no height. */
+export function doorText(door: Pick<PlacedDoor, "mark" | "widthFt" | "heightFt">): string {
+  return door.heightFt === null ? `${door.mark} · ${feetInches(door.widthFt)}` : `${door.mark} · ${feetInches(door.widthFt)} × ${feetInches(door.heightFt)}`;
+}
+
+/**
+ * ── THE DOORS A GROUP CARRIES, AS THE OPENINGS ITS WALL RUN IS POSTED WITH ──
+ *
+ * A placed door with a width AND a height from the schedule becomes an
+ * opening on the run (`openingWidth` / `openingHeight`, the same fields the
+ * by-hand form posts), and `boardedArea` then deducts it or not by the
+ * company's own rule — `openingThresholdSqFt`, which NONE / LARGE_ONLY / ALL
+ * decide. Nothing is deducted here; this only hands the figures on.
+ *
+ * A door whose height the schedule did not print cannot be an opening: a
+ * width alone is not an area. It is named in `withoutHeight` so the group
+ * can say so rather than deducting a guessed 7'-0".
+ */
+export function openingsFromDoors(doors: readonly Pick<PlacedDoor, "mark" | "widthFt" | "heightFt">[]): {
+  openings: { mark: string; widthFt: number; heightFt: number }[];
+  withoutHeight: string[];
+} {
+  const openings: { mark: string; widthFt: number; heightFt: number }[] = [];
+  const withoutHeight: string[] = [];
+  for (const door of doors) {
+    if (door.heightFt !== null && door.heightFt > 0 && door.widthFt > 0) openings.push({ mark: door.mark, widthFt: door.widthFt, heightFt: door.heightFt });
+    else withoutHeight.push(door.mark);
+  }
+  return { openings, withoutHeight };
+}

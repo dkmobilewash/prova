@@ -8,7 +8,7 @@ import { missingStarterTypes, STARTER_TYPES } from "@/lib/wall-type-starters";
  */
 
 // Written out, so the list and the test have to agree.
-const ALL = ["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "FLR1", "PT1", "SLB1", "FTG1"];
+const ALL = ["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "ACT2", "GYPC1", "FLR1", "PT1", "SLB1", "FTG1"];
 
 describe("missingStarterTypes", () => {
   it("is every starter, in order, on an empty library", () => {

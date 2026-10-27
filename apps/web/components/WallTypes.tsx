@@ -38,6 +38,8 @@ export type WallTypeView = {
   sides: number;
   studSpacingIn: string;
   defaultHeightFt: string | null;
+  /** Overall thickness in inches — what the wall finder matches a drawn group against. */
+  thicknessIn: string | null;
   notes: string | null;
   runCount: number;
   components: WallComponentView[];
@@ -103,6 +105,14 @@ function WallTypeFields({ type }: { type?: WallTypeView }) {
           <option value="1">One</option>
         </select>
       </label>
+      {/* THE THICKNESS IS WHAT THE WALL FINDER MATCHES ON. A type without one
+          can be picked by hand but never offered for a drawn group — which is
+          how a library of hand-made types reads "no wall type you have is
+          11-1/4\" thick" on every group. */}
+      <label className={labelClass}>
+        Thickness (in)
+        <input name="thicknessIn" defaultValue={type?.thicknessIn ?? ""} placeholder="4.875" inputMode="decimal" className={`${field} w-20`} />
+      </label>
       <label className={labelClass}>
         Stud spacing (in)
         <input name="studSpacingIn" defaultValue={type?.studSpacingIn ?? "16"} inputMode="decimal" className={`${field} w-20`} />
@@ -115,11 +125,13 @@ function WallTypeFields({ type }: { type?: WallTypeView }) {
   );
 }
 
-export function NewWallTypeForm() {
+export function NewWallTypeForm({ initial }: { initial?: Partial<WallTypeView> } = {}) {
   const { isPending, error, onSubmit } = useSubmit((fd) => createWallType(fd));
   return (
-    <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-3 rounded-lg border border-line-card bg-surface p-4">
-      <WallTypeFields />
+    <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-3 rounded-lg border border-line-card bg-surface p-4" data-wall-types="new-form">
+      {/* `initial` arrives from the takeoff's "Create a wall type from this
+          group": the measured thickness is filled in, the rest is typed. */}
+      <WallTypeFields type={initial as WallTypeView | undefined} />
       <button type="submit" disabled={isPending} className={small}>
         {isPending ? "Adding…" : "Add wall type"}
       </button>

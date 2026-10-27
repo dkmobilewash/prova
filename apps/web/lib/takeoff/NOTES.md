@@ -2795,3 +2795,319 @@ their column's section so the variant line is read under the section it
 varies; C8B did not move. Rendered and looked at, not inferred. The migration applied to a scratch Postgres and
 `migrate status` named it; `migrate diff` against the schema reports only the
 two pre-existing `ProposalClause.updatedAt` defaults.
+
+### View detection: a drawing's title is big and ruled, and placement follows the caption (2026-10-22)
+
+**Where it started.** Step 1 (2026-10-21) measured that `sheetViews` is
+scale-limited: a view needs a caption AND a printed scale under it, and
+most sheets print one scale, so the detector found one view on sixteen of
+eighteen training sheets. The replacement signal measured there — lettering
+at >= 1.4x the sheet's median text height WITH a rule drawn under it — is
+what `viewTitles.ts` now reads, with one refinement the first sweep forced:
+the rule must be about the title's own length (at most 3x its width), or
+dense line work under a big room name scores as a rule, which is the
+"needle that cannot fail" the step-1 note warned about.
+
+**Three things the first measurement taught, each an afternoon.**
+
+1. *Most big ruled titles are not drawings.* "WALL LEGEND", "KEY NOTES",
+   "GENERAL NOTES", "WALL TYPES", "DOOR SCHEDULE", an architect's address.
+   Treated as views they took regions off the plan beside them: 6,661 ft of
+   key wall lost against 5,263 ft of junk removed. So a title whose words
+   name notes, a legend, a schedule or a table is a TEXT BLOCK: found so its
+   region is kept out of every drawing, measured by nobody, and never joined
+   to a neighbour or given one. A title that names nothing recognisable is
+   dropped unless a scale is printed under it.
+2. *A caption sits BELOW its drawing.* `viewsInRegions` shares a region
+   between captions at their MIDPOINT, and Crosslines A100 stacks three
+   plans captioned at y 0.27, 0.56 and 0.85 — the midpoint cuts put the top
+   half of each lower plan in the drawing above it, 1,014 ft of key lost on
+   that sheet. `placeDrawings` cuts just below each caption on y and just
+   left of it on x instead. The viewer still calls `viewsInRegions`, so the
+   app carries that defect today; the measured fix is in this file and not
+   yet wired.
+3. *A sheet whose only found views are headings is a single-drawing
+   sheet.* Branching on `views.length` sent Bunkie A100 (two legend
+   headings, no caption) down the multi-view path, which measured nothing.
+   `drawingCount` is what to branch on.
+
+**Measured on the app's list** (`realplan/zzViewDetection.eval.ts`, 18
+training sheets, 12 buildings, leave-one-building-out over the size ratio,
+`scoreSheet` against each sheet's accepted + traced key; junk removed =
+the fall in EXTRA feet, real lost = the rise in MISSING feet):
+
+| treatment against | junk removed | real lost |
+| --- | --- | --- |
+| the VIEWER's pipeline (captions placed by `viewsInRegions`) | 622 ft | **0 ft** |
+| `detectForSheet` as shipped (no placement at all) | 3,562 ft | 1,397 ft |
+
+Every fold picked 1.4, and 1.4 through 2.0 give identical numbers; 1.25
+loses 4,319 ft. The 1,397 ft "lost" against the as-shipped function is not
+the title detection: 1,014 ft is Crosslines, where the two plans are
+DIFFERENT FLOORS and `primaryView` keeps one (the product rule written for
+enlarged duplicates, applied to a 1st-floor plan beside a typical-floor
+plan), and 382 ft is HPL p3, whose entire key sits in the FINISH plan — a
+copy of the same floor the product deliberately leaves unmeasured. Both are
+the app's behaviour today, reproduced faithfully. Where the treatment ADDS
+junk against the app: Murray A101 (+134 ft — the keynote tables at the
+bottom-left have small headings and join the plan's region) and Camp Bow
+Wow A120 (+28 ft).
+
+**Two things found on the way that belong to the original's lane.**
+`detectForSheet` never calls `viewsInRegions` and the viewer does
+(`TakeoffPlanViewer.tsx` ~2299), which is the Murray 160-vs-32 gap the log
+has carried since 2026-10-21: the app clips captioned views to regions and
+the extraction does not. And wiring this work in is three lines in that
+function: `sheetDrawings` for `sheetViews` + `viewsInRegions`, `drawingCount`
+for `views.length`, and `textBlockBoxes` subtracted from the single-drawing
+branch's regions — the eval composes exactly that and nothing else.
+
+Crops of every sheet's detected views, outlined on the page (solid =
+measured, dashed = not), are in `shots/views/<set>-<sheet>/` outside git.
+No AI was used on titles: `takeoffRank`'s vocabulary plus the text-block
+words classified every title the training sheets print.
+
+### Every floor keeps its walls; a floor drawn twice keeps one (2026-10-22)
+
+**The rule that lost two floors.** `primaryView` keeps ONE view's
+detection, for a product rule that is right about what it was written for:
+an enlarged plan is the same construction drawn larger, a finish plan over a
+partition plan is the same walls twice, and summing them bids a bathroom
+twice. Crosslines A100 is a 1st-floor plan, a 2nd-9th typical-floor plan
+and a penthouse plan on one sheet, and the rule kept the typical floor:
+1,014 ft of key wall, every run a wall the reviewer accepted, gone.
+
+**The two cases are told apart by the LEVEL the title names.**
+`planLevel` reads "1st", "2nd - 9th", "LEVEL 1", "MAIN LEVEL", "PENTHOUSE",
+and a named level beside a number is part of the name — "LEVEL 2 -
+MEZZANINE" is not level 2, and Supreme Court A111 draws both with the
+mezzanine the bigger drawing, so a level-blind rule kept the mezzanine and
+dropped 76 ft of the level-2 key. `keptPlanViews` keeps one view per level
+named, falling to `primaryView` only among views naming the same level or
+none ("DIMENSION PLAN - WAREHOUSE" beside "FLOOR PLAN - WAREHOUSE" is one
+warehouse), and never adds an enlarged plan to a floor. `mergeViewWalls`
+makes one detection of the kept views, each already measured at its own
+scale by `wallsPerView`. "Penthouse Floor (P2)" has no PLAN in it and
+`takeoffRank` has no opinion; `viewClass` now calls a level-named FLOOR
+title a floor plan.
+
+**Placement had to learn the same convention twice more.** A caption sits
+below and to the left of its drawing, so a caption is DISQUALIFIED from a
+piece wholly below it or wholly left of it (the cell under "Penthouse Roof"
+holds the right end of the floor plans beneath, and plain distance gave it
+to the penthouse); and a block's heading sits ABOVE its words, so a shared
+region is cut just above each heading and the piece that starts at a
+heading goes to that block — only that piece, because a heading at the top
+of a column claiming every cell beneath it took the plan's right end on NG
+A3.2. The right-strip title-block rule is gone: it dropped Crosslines'
+penthouse plans, which are drawn exactly there; the title block's title is
+told apart as a REPEAT of a caption's.
+
+**Measured** (`realplan/zzViewDetection.eval.ts`; 23 training sheets, 17
+buildings now, five label files having arrived during the day; LOBO over
+the size ratio, every fold 1.4):
+
+| treatment against | junk removed | real lost |
+| --- | --- | --- |
+| the viewer's pipeline | 53 ft | 7 ft |
+| `detectForSheet` as shipped | 3,321 ft | 389 ft |
+
+The 389 ft is 382 ft of HPL p3, whose whole key is in the finish plan the
+product leaves unmeasured, and 7 ft of one run on Bunkie A104. Crosslines:
+1,014 ft lost → 0. Supreme Court: 76 → 0. Against the app the two
+multi-floor sheets ADD extra feet (Crosslines +216, Supreme Court +424)
+and that is largely not junk: the key on each was reviewed from the APP's
+list, so a candidate in a floor the app never showed was never judged and
+scores as extra whatever it is. Supreme Court's key is seven accepted walls
+from eleven candidates and no traces. Elsewhere junk falls (NG A3.2 −511,
+Baker A101 −242, Murray +134 from keynote tables with small headings).
+
+Wiring, still the original's: `detectForSheet` takes `keptPlanViews` +
+`mergeViewWalls` in place of `picked.primary.found`, beside the three lines
+already named. `KEEP_PRIMARY_ONLY=1` on the eval reproduces the app.
+
+### One pipeline: the viewer calls `detectForSheet`, and the proof that it does (2026-10-22)
+
+**The wiring.** `detectForSheet` now runs the view detection measured in the
+two entries above — `sheetDrawings` (titles ∪ captions, text blocks out),
+`drawingCount` for the branch, text blocks subtracted from a single-drawing
+sheet's regions, `keptPlanViews` + `mergeViewWalls` for a sheet with several
+floors — and returns what the viewer shows: the kept views, the others, the
+left-out. `TakeoffPlanViewer`'s inline copy of the detection is gone;
+`onFindWalls` makes one call. The answer-key `onCandidate` hook travels
+through `detectForSheet` to every finder call, whichever branch the sheet
+takes, so answer-key mode still collects pairings on multi-view sheets.
+
+**App = eval, proved in a browser rather than asserted.**
+`e2e/specs/takeoff-app-equals-eval.spec.ts` drives the real app on the real
+sheets on a throwaway stack — serves each PDF through the route stub, sets
+the scale by two clicks, finds the walls, and writes what the panel drew
+and what the finder saw to `APP_EQ_OUT`; `realplan/zzAppEquals.eval.ts`
+computes the same list in Node and holds the two side by side.
+
+| sheet | app | eval | at ft/page width |
+| --- | --- | --- | --- |
+| Murray A101 | 80 | 80 | 288.01 |
+| Crosslines A100 | 258 | 258 | 286.86 |
+| Baker A101 | 33 | 33 | 288.01 |
+| Baker A100 | 82 | 82 | 288.01 |
+
+**It took five browser runs to get there, and the fifth found a defect in
+the finder.** The first comparison differed by 1 to 14 on every sheet. The
+Node side was brought to the viewer's inputs one at a time, each checked by
+a digest the app writes to the plan port in answer-key mode
+(`data-takeoff-detect`): the scale the app STORED rather than the one
+intended (the clicks snap — Crosslines came out at 286.86, not 288); the
+finder's own filtered segments handed to the triage rather than the raw
+strokes; the sheet itself included in the template sample; blank text items
+dropped. After all of that every input matched — segments identical in
+value AND order, text, sample, page size, scale — and every stage count
+matched except `duplicateDropped`, and the walls still differed.
+
+The cause is `wallVectors.ts`'s "classifier seam": with ANY hook set
+(`onCandidate`, `decide`, `veto`) the pairing pass COLLECTS every candidate
+before it awards, and that changes which pairs win. Answer-key mode sets
+`onCandidate`, so the list a reviewer labels is the collecting path, and a
+customer's find — no hook — is the other one:
+
+| sheet | with the hook (answer-key, what was labelled) | without (a customer's find) |
+| --- | --- | --- |
+| Murray A101 | 80 | 81 |
+| Crosslines A100 | 258 | **244** |
+| Baker A101 | 33 | 35 |
+| Baker A100 | 82 | 83 |
+
+Pass the hook in Node and the four sheets match exactly. This is
+finder-lane code and is not changed here. What it means for everyone else:
+every training label and every held-out key was taken on the collecting
+path, and `zzKeyScore`/`zzTriage`, which pass no hook, score the OTHER
+path — so a score "on the app's list" has been on a list a customer does
+not quite see. The finder is also ORDER-sensitive in Node on identical
+inputs (Baker A101: 35 walls as read, 27 reversed, 30 sorted by x; the grid
+stage swings by a thousand), which is the same seam from the other side.
+
+**LOBO on the wired pipeline** (23 training sheets, 17 buildings; NOW =
+`detectForSheet`, BEFORE = the viewer's old inline pipeline): junk removed
+53 ft, real lost 7 ft, real gained 1,641 ft. Every fold picked 1.4.
+
+### A hook only observes, and the strokes' order is information (2026-10-22)
+
+**Fix 1, shipped: the answer-key list is the customer list.** In
+`wallsFromStrokes` the collecting loop (any of `onCandidate`, `decide`,
+`veto` set) skipped the `used` test so every pairing reached the hook — and
+then ran the award bookkeeping on faces already spent, so a face in one
+wall was handed a second partner. The award now skips a used face exactly
+as the non-collecting loop does, after the hook has seen the pairing.
+`finderDeterminism.test.ts` pins it on three seeded invented drawings
+(searched first: on the old finder every one of 400 seeds differed with a
+hook set); it failed 6 of 6 hook cases before the fix and passes after.
+Against the training keys the labelled list moves to the customer list:
+missing 2,388 → 2,454 ft, extra 12,393 → 12,284 ft — the labelled list had
+been 66 ft better on missing and 109 ft worse on extra than what a customer
+saw. On the real sheets the two arms now agree exactly (Crosslines A100,
+Murray A101, both Baker sheets: hook = no hook, `zzFinderArms.eval.ts`).
+
+**Fix 2, shipped at the faces and measured not to be shippable at the
+door.** `oneFacePerLine` now sorts its strokes into reading order before it
+builds faces, so the face stage and the pairing above it are order-
+independent — the same test holds `wallsFromStrokes` to that under reversal
+and three shuffles, 6 of 6 red before and green after. Cost against the
+keys: +52 ft missing, +113 ft extra over 23 sheets.
+
+Sorting at the finder's DOOR instead — the one-line change that makes the
+whole finder order-independent — was measured on four orders and every one
+is far worse than the order the PDF stores:
+
+| strokes in | missing ft | extra ft | arms differ |
+| --- | --- | --- | --- |
+| the PDF's order (before) | 2,454 | 12,284 | 23 of 23 |
+| door sort, reading order | 4,824 | 15,648 | 0 |
+| door sort, column order | 4,699 | 16,280 | 0 |
+| door sort, by length | 4,500 | 16,506 | 0 |
+| door sort, by angle | 3,524 | 16,705 | 0 |
+| **faces sorted, door as stored (shipped)** | **2,506** | **12,397** | 22 of 23 |
+
+The sequence is information upstream of the faces: `gridBubbles.ts` walks a
+bubble through the first unwalked piece at each endpoint, and
+`curvedWalls.ts` assembles an arc from "a run of pieces", greedily and on
+purpose. Sort the strokes and bubbles and arcs come apart, which is the
+missing-feet column. So full order independence is a change in those two
+stages — continue a chain by geometry rather than by sequence — and it is
+their owner's. Until then the finder is deterministic for a given FILE (the
+app and Node read identical sequences, proved by digest) and not for a
+given drawing: reversed strokes still cost 2,400 ft of key.
+
+**Label files need nothing.** `labelCollect.ts` rebuilds training rows from
+the VERDICTS against whatever finder is running, by geometric matching; the
+saved `rows` are already treated as stale. One consequence worth knowing: a
+verdict given on a candidate only the old hook path produced now stands as
+a key wall with no candidate under it, which scores as missing rather than
+vanishing — that is the +66 ft.
+
+### Finder determinism, finished as far as it honestly goes (2026-10-22)
+
+**Is the whole finder order-independent? No, and the stage that is not is
+named.** Hooks observe only (fixed above). Faces and pairing are built in
+reading order (fixed above). The arc assembler now continues a chain by
+geometry — least turn at the joint, nearest chain across an opening — and
+that is FREE against the training keys (2,506 / 12,392 with it, 2,506 /
+12,397 without). The whole-finder shuffled test holds `findWallsOnSheet` to
+the same walls under reversal and three shuffles on a sheet with arcs.
+
+The grid-bubble walker is still first-wins in file order, on purpose. A
+walker that continues by geometry was built, and a sort at the finder's
+door was tried, and each was switched on and off independently with the
+baseline as its own control (`zzFinderArms.eval.ts`, missing / extra ft over
+the 23 training sheets, every arm):
+
+| configuration | missing | extra | arms differ |
+| --- | --- | --- | --- |
+| control: old walkers, door as stored | 2,506 | 12,397 | 22 of 23 |
+| old walkers, door sorted | 4,824 | 15,648 | 0 |
+| new bubble walker alone | 5,057 | 15,256 | 4 of 23 |
+| new arc assembler alone | 2,506 | 12,392 | 22 of 23 |
+| both new, door sorted | 5,016 | 15,245 | 0 |
+
+**The step is the bubble stage and the why is its acceptance, not its
+walk.** It accepts any closed round chain from 0.06in across as a column
+bubble — a floor its own comment calls fitted to one generator — and never
+asks for the grid line that defines one; then `linesIntoBubbles` drops
+every line ending within TWO radii of it. What an order-independent walk
+additionally completes are symbol and outlined-glyph loops (Baker A101: 71
+loops as read, 88 by geometry, 111 reversed; Murray drops 34,863 of 104,000
+lines), and each one takes wall faces with it. File order masks the defect
+by consuming most such loops into longer chains that fail roundness.
+
+Six drop rules were measured to see whether the defect could be fixed in
+place: requiring a grid line of 1, 2 or 4 in to enter a bubble, dropping
+only lines over 2 in, tightening the reach to one radius, and a size split
+where a loop under 0.25in clears only strokes under 0.5, 1 or 2 in. Every
+one lowers missing feet (to 1,654 at best) and raises extra feet to between
+15,800 and 22,900, because the tiny loops' indiscriminate dropping is also
+the finder's only filter for outlined text and symbols, which have no text
+items for `wallsNotLettering` to see. So the bubble stage needs splitting
+into what it actually does — a grid-bubble detector that requires an
+entering line, and a symbol/outlined-glyph filter that is its own stage —
+before its walk can be made honest without bidding 2,000 ft of wall short.
+That is the finder owner's change; the arms eval measures it.
+
+### A `2X` with no size is still a framed wall (2026-10-22)
+
+`readPartitionAssembly` flagged a `2X` stud line with no nominal size and
+proposed nothing for the framing, so four training types (E Street 2, 3
+and 8; ELEVEN03 WA) went out as board only. A stud COUNT and the plates
+need only the spacing, so both are proposed now — "2X wood stud, size NOT
+stated on the drawing", at the stated spacing where there is one, and "2X
+plates, bottom and double top" at three per foot — with the flag kept. The
+width is still not guessed. `assemblyFromSight` writes the same `2X WOOD
+STUDS` line for a wood type whose width the model could not read, so the
+sight path proposes the same. Sized lumber now reads "wood stud" with
+plates rather than "metal stud" with track, which it had said for years.
+
+Two things seen on the way and left as they are. E Street 8's only stated
+spacing is its resilient channels', and the one-spacing rule assigns it to
+the studs; a channel spacing is a plausible stud spacing, so the number is
+not wrong, but the attribution is. And ELEVEN03's WB–WD read as 1-5/8in
+WOOD studs — 1-5/8in is a metal C-shape, and the sight read's "wood" for
+the W types is what the plates now follow; which read is right is a
+question for the crop.

@@ -592,7 +592,9 @@ export function TakeoffWorkspace({
 
   const tree = (
     <TakeoffSheetTree
+      jobId={jobId}
       planId={data.plan.id}
+      scaleHelp={data.planTextReadOn}
       rows={treeRows}
       calibratedPages={calibratedPages}
       printedScaleByPage={data.printedScaleByPage}
@@ -1319,6 +1321,7 @@ export function TakeoffWorkspace({
             )}
             <TakeoffPlanViewer
               jobId={jobId}
+              wallTypesHref={wallTypesHref}
               planId={data.plan.id}
               onSheetNumber={onSheetNumber}
               // ── ONE CURRENT SHEET ──
@@ -1445,6 +1448,9 @@ export function TakeoffWorkspace({
               sheetLabelByPage={data.sheetLabelByPage}
               wallTypes={data.viewerWallTypes}
               roomFinder={data.roomFinderOn}
+              demotedWalls={data.demotedWallsOn}
+              wallModel={data.wallModel}
+              ceilingPages={data.ceilingPages}
               initialPage={openPage}
               fill
               panelOpen={panelOpen && !phone}

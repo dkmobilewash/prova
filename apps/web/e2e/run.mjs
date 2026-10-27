@@ -262,6 +262,25 @@ try {
     BLOB_READ_WRITE_TOKEN: E2E_FAKE_BLOB_TOKEN,
     ANTHROPIC_API_KEY: "",
     E2E_RUNNER: "1",
+    // ── THE INVENTED WALL MODEL, NAMED HERE BECAUSE NOTHING ELSE NAMED IT ──
+    //
+    // `takeoff-demoted.spec.ts` says in its own header that TAKEOFF_WALL_MODEL
+    // "must name `e2e/fixtures/wall-model.invented.json` for this run". The
+    // fixture was written and the variable was never set anywhere — not here,
+    // not in ci.yml, not in the Playwright config — so `wallModelFile.ts` read
+    // an empty name, no run was ever scored, and the spec failed with its own
+    // sentence: "the model demoted nothing on the fixture, so the wiring is
+    // unproved". It was right.
+    //
+    // It belongs in the RUNNER rather than the spec: the viewer reads this on
+    // the SERVER, which the runner starts, so a spec-level variable would
+    // arrive too late to matter.
+    //
+    // One stump on lengthPercentile — the shortest runs score 0.119 and the
+    // rest 0.88 against the default 0.3 cut. It proves the wiring reads a
+    // model file and scores runs at Find time. It is not a trained model and
+    // is not right about anything.
+    TAKEOFF_WALL_MODEL: path.join(webRoot, "e2e", "fixtures", "wall-model.invented.json"),
   });
 
   log("migrations: prisma migrate deploy against the throwaway database…");

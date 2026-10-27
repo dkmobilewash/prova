@@ -120,7 +120,7 @@ export function evidenceOf(group: WallGroup): {
     return {
       source: "GENERAL_NOTE",
       sourceLabel: group.source.note,
-      // `wallGroups` puts exactly the note's type in `candidates`, so this is
+      // `wallGroups` puts the note's type FIRST in `candidates`, so this is
       // that type's own code — read from the group rather than re-parsed out
       // of the sentence, which would be a second reader for one fact.
       namedCode: group.candidates[0]?.code ?? null,
@@ -345,21 +345,20 @@ export function groupsFromProposals(
     }
 
     if (row.source === "GENERAL_NOTE") {
-      // THE TYPE THE NOTE NAMED, not every type of this thickness — which is
-      // what `wallGroups` does when it builds this group the first time
-      // (`candidates: [fromNote.type]`). Getting this wrong was caught by the
-      // round-trip test rather than by reading: `typesAtThickness` here would
-      // have offered an estimator a CHOICE on a group the drawing had already
-      // answered, which reads as the detection having found less than it did.
+      // THE TYPE THE NOTE NAMED, FIRST, then the others at this thickness —
+      // the list `wallGroups` builds the first time, so a reopened sheet shows
+      // the picker the fresh one showed. The note's type leads because
+      // `evidenceOf` reads `candidates[0]` as its code.
       const note = row.sourceLabel as string;
       const code = row.namedCode as string;
+      const named = wallTypes.filter((type) => sameDesignation(type.code, code));
       groups.push({
         inches: row.thicknessInches,
         runs: candidates,
         feet,
         itemId: row.itemId ?? null,
         source: { kind: "GENERAL_NOTE", note },
-        candidates: wallTypes.filter((type) => sameDesignation(type.code, code)),
+        candidates: [...named, ...typesAtThickness(row.thicknessInches, wallTypes).filter((t) => !named.some((n) => n.id === t.id))],
       });
       continue;
     }

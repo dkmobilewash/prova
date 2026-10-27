@@ -120,6 +120,34 @@ describe("adding a group of found walls", () => {
     await prisma.takeoffMeasurement.deleteMany({ where: { pageId } });
   });
 
+  it("A PRICED ADD AGAINST A TYPE WITH NO HEIGHT WRITES NOTHING — and writes and posts the runs once a height is typed", async () => {
+    // The refusal used to come AFTER the runs were written, so every retry of
+    // the same click left three more loose measurements on the sheet; Baker's
+    // A101 ended with 120 of them. Now the plan is checked first.
+    const type = await prisma.wallType.create({
+      data: { companyId, code: "NOH", name: "No default height", sides: 2, studSpacingIn: "16", components: { create: [{ description: "board", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1" }] } },
+      select: { id: true },
+    });
+    const priced = body([run(0.4), run(0.5), run(0.6)], "NOH wall");
+    priced.set("wallTypeId", type.id);
+    const refused = await saveTakeoffMeasurements(jobId, priced);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error).toMatch(/height/i);
+    expect(await prisma.takeoffMeasurement.count({ where: { pageId } }), "a refused priced add must leave nothing on the sheet").toBe(0);
+
+    priced.set("heightFt", "10");
+    const posted = await saveTakeoffMeasurements(jobId, priced);
+    expect(posted).toEqual({ ok: true });
+    const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId } });
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r) => r.wallRunId !== null && r.postedAt !== null), "typed height: the runs are posted, not loose").toBe(true);
+    // The posting wrote estimate lines for the run; they go before the job can.
+    await prisma.jobLineItem.deleteMany({ where: { jobId } });
+    await prisma.takeoffMeasurement.deleteMany({ where: { pageId } });
+    await prisma.wallRun.deleteMany({ where: { wallTypeId: type.id } });
+    await prisma.wallType.delete({ where: { id: type.id } });
+  });
+
   it("WRITES NOTHING when one shape in the batch is bad", async () => {
     // The property the whole action exists for. A partly-added group is
     // indistinguishable from a complete one, so the estimator would bid short
