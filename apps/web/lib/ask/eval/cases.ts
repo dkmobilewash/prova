@@ -207,6 +207,10 @@ export const EVAL_CASES: EvalCase[] = [
   ),
   command("cmd-draft-lines", "draft the line items for Riverside from the scope", "draft_estimate_lines", { jobName: "Riverside" }),
   command("cmd-catalog-line", "add a catalog line for 5/8 type X to Riverside", "add_catalog_line", { jobName: "Riverside" }),
+  // The figure travels as TYPED — "10%", never 10 or a dollar result — and
+  // "off" is a separate field set only on a discount instruction.
+  command("cmd-adjust-percent", "add 10% for night work on Riverside", "adjust_estimate", { jobName: "Riverside", value: "10%", kind: "percent" }),
+  command("cmd-adjust-discount", "take 3% off Riverside for the GC", "adjust_estimate", { jobName: "Riverside", value: "3%", direction: "off" }),
   command("cmd-field-report", "log today's report for Riverside: hung board on level 2, crew of 6", "log_daily_field_report", { jobName: "Riverside" }),
   command("cmd-send-equipment", "send the scissor lift to Riverside", "send_equipment_to_job", { jobName: "Riverside" }),
   command("cmd-bring-back", "bring the scissor lift back from Riverside", "bring_equipment_back"),

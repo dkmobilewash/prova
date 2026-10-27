@@ -55,6 +55,7 @@ export type CommandName =
   | "create_estimate_job"
   | "draft_estimate_lines"
   | "add_catalog_line"
+  | "adjust_estimate"
   | "log_daily_field_report"
   | "record_material_delivery"
   | "send_equipment_to_job"

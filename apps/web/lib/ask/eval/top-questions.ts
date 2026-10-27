@@ -324,6 +324,7 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   // to the question the command actually serves, and the one it does not
   // now sits below as a refusal rather than being lost.
   c("q-catalog-line", "put 200 sheets of 5/8 type X on the Northgate estimate", "add_catalog_line", ESTIMATOR),
+  c("q-adjust-estimate", "add 10% for night work on the Northgate bid", "adjust_estimate", ESTIMATOR),
   refused(
     "q-catalog-create",
     "add 5/8 type X to our catalog at 14.20 a sheet",
@@ -526,7 +527,7 @@ export const CENSUS_REFUSALS = 2;
  * they are routable, and a tool nobody's words reach is the shape this
  * census exists to notice. */
 /** -> 126 on 2026-10-11: one question for `record_bid_outcome`, the win/loss card the research agents learn from. */
-export const TOTAL_QUESTIONS = 126;
+export const TOTAL_QUESTIONS = 127;
 
 /**
  * The routable ninety-seven, as eval cases, so the model half of the
