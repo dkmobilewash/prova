@@ -84,4 +84,37 @@ describe("a traced wall follows its assembly's board layers", () => {
     expect(after["⅝″ Type X board, 4x8 sheets"]).toBeLessThanOrEqual(2 * sheetsBefore);
     expect({ ...after, "⅝″ Type X board, 4x8 sheets": 0 }).toEqual({ ...before, "⅝″ Type X board, 4x8 sheets": 0 });
   });
+
+  it("`onlyItemIds` re-derives THOSE items' lines and nothing else: another item's lines stay, an unsent item stays off", async () => {
+    // A second item, of an assembly with one part, already on the estimate…
+    const other = await prisma.wallType.create({
+      data: { companyId, code: `B${t}`.toUpperCase(), name: "base", components: { create: [{ description: "Base trim", unit: "lin ft", basis: "LINEAR_FT" }] } },
+    });
+    const page = await prisma.takeoffPlanPage.findFirstOrThrow({ where: { plan: { companyId } } });
+    const calibration = await prisma.takeoffScaleCalibration.findFirstOrThrow({ where: { pageId: page.id } });
+    const trace = async (name: string, wallTypeId: string) => {
+      const item = await prisma.takeoffItem.create({ data: { companyId, jobId, name, type: "LINEAR", colorHex: "#facc15", wallTypeId } });
+      await prisma.takeoffMeasurement.create({ data: { pageId: page.id, calibrationId: calibration.id, kind: "LINEAR", xs: [0.1, 0.3], ys: [0.6, 0.6], itemId: item.id } });
+      return item.id;
+    };
+    await trace("Base, sent", other.id);
+    await prisma.$transaction((tx) => syncTakeoffItemLines(tx, companyId, jobId)); // the job-wide Send
+    // …and a third item traced AFTER the Send, never sent.
+    await trace("Base, unsent", other.id);
+    const before = await itemQuantities();
+    expect(before["Base trim"]).toBe(20);
+
+    const corridor = await prisma.takeoffItem.findFirstOrThrow({ where: { companyId, name: "Corridor" } });
+    await prisma.wallType.update({ where: { id: typeId }, data: { boardLayers: 1 } });
+    await prisma.$transaction((tx) => syncTakeoffItemLines(tx, companyId, jobId, [corridor.id]));
+
+    const after = await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false, takeoffItemId: { not: null } }, select: { description: true } });
+    const names = after.map((line) => line.description.split(" — ")[0]);
+    expect(names.filter((name) => name === "Base, sent")).toHaveLength(1); // not retired
+    expect(names.filter((name) => name === "Base, unsent")).toHaveLength(0); // not created
+    // …and the one it was asked about DID move: 2 layers (from the test above) back to 1.
+    // 1,000 sq ft × 0.0313 × 1.10 = 34.43 → 35, from 68.86 → 69.
+    expect(before["⅝″ Type X board, 4x8 sheets"]).toBe(69);
+    expect((await itemQuantities())["⅝″ Type X board, 4x8 sheets"]).toBe(35);
+  });
 });

@@ -21,12 +21,26 @@ vi.mock("./wallTypes", () => ({
 const jobFindFirst = vi.fn();
 const wallTypeFindFirst = vi.fn();
 const wallRunFindMany = vi.fn();
+/** The type's takeoff items on the job — what the QUESTION counts. */
+const takeoffItemFindMany = vi.fn();
+/** Those of them already on the estimate — what the item re-sync is scoped to. */
+const sentItemsFindMany = vi.fn();
+const syncTakeoffItemLines = vi.fn();
+const TX = { tx: true };
 vi.mock("@prova/db", () => ({
   prisma: {
     job: { findFirst: (...a: unknown[]) => jobFindFirst(...a) },
     wallType: { findFirst: (...a: unknown[]) => wallTypeFindFirst(...a) },
     wallRun: { findMany: (...a: unknown[]) => wallRunFindMany(...a) },
+    takeoffItem: {
+      findMany: (args: { where: Record<string, unknown> }) =>
+        "lineItems" in args.where ? sentItemsFindMany(args) : takeoffItemFindMany(args),
+    },
+    $transaction: (fn: (tx: unknown) => unknown) => fn(TX),
   },
+}));
+vi.mock("@/lib/estimating/takeoff-item-lines", () => ({
+  syncTakeoffItemLines: (...a: unknown[]) => syncTakeoffItemLines(...a),
 }));
 
 import { runGuideAction } from "./bidGuide";
@@ -130,11 +144,15 @@ describe("runGuideAction: setWallHeight", () => {
     wallRunFindMany.mockResolvedValue(RUNS);
     updateWallType.mockResolvedValue({ ok: true });
     refreshWallSchedule.mockResolvedValue({ ok: true, value: { created: 3, updated: 0, removed: 0, unpricedRuns: [], orphanRuns: [] } });
+    takeoffItemFindMany.mockResolvedValue([]);
+    sentItemsFindMany.mockResolvedValue([]);
+    syncTakeoffItemLines.mockResolvedValue({ created: 0, updated: 2, removed: 0, unpriced: [], checkFigures: [], emptyAssembly: [] });
   });
 
   const nothingWritten = () => {
     expect(updateWallType).not.toHaveBeenCalled();
     expect(refreshWallSchedule).not.toHaveBeenCalled();
+    expect(syncTakeoffItemLines).not.toHaveBeenCalled();
     expect(revalidatePath).not.toHaveBeenCalled();
   };
 
@@ -246,6 +264,18 @@ describe("runGuideAction: setWallHeight", () => {
   it("passes the refresh's refusal through", async () => {
     refreshWallSchedule.mockResolvedValue({ ok: false, error: "This job is contracted." });
     expect(await runGuideAction("j1", "setWallHeight", ARG)).toEqual({ ok: false, error: "This job is contracted." });
+    expect(syncTakeoffItemLines).not.toHaveBeenCalled();
+  });
+
+  it("re-syncs this job's takeoff-item lines after the refresh, when this type's items are on the estimate", async () => {
+    sentItemsFindMany.mockResolvedValue([{ id: "i1" }, { id: "i2" }]);
+    expect(await runGuideAction("j1", "setWallHeight", ARG)).toEqual({ ok: true });
+    expect(sentItemsFindMany).toHaveBeenCalledWith({
+      where: { jobId: "j1", companyId: "c1", wallTypeId: "wt_w2", lineItems: { some: { isDeleted: false } } },
+      select: { id: true },
+    });
+    expect(syncTakeoffItemLines).toHaveBeenCalledWith(TX, "c1", "j1", ["i1", "i2"]);
+    expect(refreshWallSchedule.mock.invocationCallOrder[0]!).toBeLessThan(syncTakeoffItemLines.mock.invocationCallOrder[0]!);
   });
 });
 
@@ -273,7 +303,7 @@ describe("runGuideAction: setBoardLayers", () => {
     { id: "r1", wallTypeId: "wt_w2", lengthFt: 100 },
     { id: "r2", wallTypeId: "wt_w2", lengthFt: 40 },
   ];
-  const question = boardLayerQuestions(RUNS, [{ id: "wt_w2", code: "W2", sides: 2, boardLayers: null, perLayerCount: 1 }])[0]!;
+  const question = boardLayerQuestions(RUNS, [], [{ id: "wt_w2", code: "W2", sides: 2, boardLayers: null, perLayerCount: 1 }])[0]!;
   const ARG = boardLayersArg(question, 2);
 
   beforeEach(() => {
@@ -285,11 +315,15 @@ describe("runGuideAction: setBoardLayers", () => {
     wallRunFindMany.mockResolvedValue(RUNS);
     updateWallType.mockResolvedValue({ ok: true });
     refreshWallSchedule.mockResolvedValue({ ok: true, value: { created: 0, updated: 5, removed: 0, unpricedRuns: [], orphanRuns: [] } });
+    takeoffItemFindMany.mockResolvedValue([]);
+    sentItemsFindMany.mockResolvedValue([]);
+    syncTakeoffItemLines.mockResolvedValue({ created: 0, updated: 2, removed: 0, unpriced: [], checkFigures: [], emptyAssembly: [] });
   });
 
   const nothingWritten = () => {
     expect(updateWallType).not.toHaveBeenCalled();
     expect(refreshWallSchedule).not.toHaveBeenCalled();
+    expect(syncTakeoffItemLines).not.toHaveBeenCalled();
     expect(revalidatePath).not.toHaveBeenCalled();
   };
 
@@ -384,5 +418,53 @@ describe("runGuideAction: setBoardLayers", () => {
     expect(refreshWallSchedule).not.toHaveBeenCalled();
     refreshWallSchedule.mockResolvedValueOnce({ ok: false, error: "This job is contracted." });
     expect(await runGuideAction("j1", "setBoardLayers", ARG)).toEqual({ ok: false, error: "This job is contracted." });
+    expect(syncTakeoffItemLines).not.toHaveBeenCalled();
+  });
+
+  /**
+   * THE DEFECT THIS BLOCK EXISTS FOR: the answer re-ran only the wall
+   * schedule's sync, so a traced takeoff item of the same type kept one layer
+   * of board until somebody next pressed Send — and then doubled silently.
+   */
+  it("re-syncs this job's takeoff-item lines after the refresh, through THIS company, when this type's items are on the estimate", async () => {
+    sentItemsFindMany.mockResolvedValue([{ id: "i1" }]);
+    expect(await runGuideAction("j1", "setBoardLayers", ARG)).toEqual({ ok: true });
+    expect(sentItemsFindMany).toHaveBeenCalledWith({
+      where: { jobId: "j1", companyId: "c1", wallTypeId: "wt_w2", lineItems: { some: { isDeleted: false } } },
+      select: { id: true },
+    });
+    // The takeoff's own sync, in a transaction, SCOPED to this type's items
+    // already on the estimate — never the job-wide Send, which would create
+    // lines for any other type's unsent tracing.
+    expect(syncTakeoffItemLines).toHaveBeenCalledWith(TX, "c1", "j1", ["i1"]);
+    expect(refreshWallSchedule.mock.invocationCallOrder[0]!).toBeLessThan(syncTakeoffItemLines.mock.invocationCallOrder[0]!);
+    expect(revalidatePath).toHaveBeenCalledWith("/jobs/j1/estimate");
+  });
+
+  it("does not create item lines nobody sent: no item of this type on the estimate, no item sync", async () => {
+    sentItemsFindMany.mockResolvedValue([]);
+    expect(await runGuideAction("j1", "setBoardLayers", ARG)).toEqual({ ok: true });
+    expect(syncTakeoffItemLines).not.toHaveBeenCalled();
+  });
+
+  it("does not re-sync items when the type write is refused", async () => {
+    sentItemsFindMany.mockResolvedValue([{ id: "i1" }]);
+    updateWallType.mockResolvedValueOnce({ ok: false, error: "That wall type is no longer in your schedule." });
+    expect((await runGuideAction("j1", "setBoardLayers", ARG)).ok).toBe(false);
+    expect(syncTakeoffItemLines).not.toHaveBeenCalled();
+  });
+
+  it("counts this job's takeoff items of the type in the question: one asked with an item applies, one added since is stale", async () => {
+    const ITEMS = [{ id: "i1" }];
+    const withItem = boardLayerQuestions(RUNS, [{ id: "i1", wallTypeId: "wt_w2", lengthFt: 40 }], [
+      { id: "wt_w2", code: "W2", sides: 2, boardLayers: null, perLayerCount: 1 },
+    ])[0]!;
+    takeoffItemFindMany.mockResolvedValue(ITEMS);
+    expect(await runGuideAction("j1", "setBoardLayers", boardLayersArg(withItem, 2))).toEqual({ ok: true });
+    expect(takeoffItemFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { jobId: "j1", companyId: "c1", wallTypeId: "wt_w2" } }));
+    // The runs-only arg the screen drew before the item was traced is now stale.
+    updateWallType.mockClear();
+    expect(await runGuideAction("j1", "setBoardLayers", ARG)).toEqual({ ok: false, error: expect.stringContaining("changed since you saw the question") });
+    expect(updateWallType).not.toHaveBeenCalled();
   });
 });

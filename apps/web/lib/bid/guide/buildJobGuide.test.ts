@@ -432,6 +432,40 @@ describe("board-layers: how many layers of board, which the drawings often leave
     expect(buildJobGuide(ready({ wallTypes: [{ ...w2NoLayers, componentCount: 0 }] }), NOW).ask!.id).toBe("unpriced-wall-types");
   });
 
+  it("names traced takeoff items with the runs, and the footage is both", () => {
+    const mixed = { ...w2NoLayers, layersUnanswered: { runCount: 3, itemCount: 1, lengthFt: 720.4, sides: 2, token: "9f8e7d6c" } };
+    expect(buildJobGuide(ready({ wallTypes: [mixed] }), NOW).ask!.body).toMatch(
+      /^3 runs and 1 takeoff item of W2 \(720 LF\) are counted at one layer each side until you say\./,
+    );
+  });
+
+  it("asks about a type used ONLY through takeoff items — no runs, and nothing else counts it as measured", () => {
+    // As the loader adds it: runCount 0, no length of its own, no wall lines.
+    const itemOnly: GuideWallTypeFact = {
+      ...w2NoLayers,
+      wallTypeId: "wt_t1",
+      code: "T1",
+      lengthFt: 0,
+      runCount: 0,
+      openingsCount: 0,
+      lineCount: 0,
+      unpricedLineCount: 0,
+      heightless: null,
+      layersUnanswered: { runCount: 0, itemCount: 1, lengthFt: 40, sides: 2, token: "1a2b3c4d" },
+    };
+    const guide = buildJobGuide(ready({ wallTypes: [w1, itemOnly] }), NOW);
+    expect(guide.ask!.id).toBe("board-layers");
+    expect(guide.ask!.body).toMatch(/^1 takeoff item of T1 \(40 LF\) is counted at one layer each side until you say\./);
+    expect(guide.ask!.actions[0]!.actionArg).toBe("bl:wt_t1:1:1a2b3c4d");
+    // Answered, it is gone and the bid reads ready — it was never an unpriced wall type.
+    const answered = { ...itemOnly, layersUnanswered: null };
+    expect(buildJobGuide(ready({ wallTypes: [w1, answered] }), NOW).ask!.id).toBe("proposal-ready");
+    // And it cannot make "add the walls to the estimate" fire for runs of a type with no parts.
+    const bareRuns = { ...w1, componentCount: 0, lineCount: 0 };
+    const facts = ready({ wallTypes: [bareRuns, answered], wallLineCount: 0, lineCount: 0 });
+    expect(buildJobGuide(facts, NOW).ask!.id).not.toBe("walls-not-added");
+  });
+
   it("ranks AFTER the height (a run with no height produces nothing at all) and BEFORE adding the walls and every price ask", () => {
     const both = { ...w2NoHeight, layersUnanswered: w2NoLayers.layersUnanswered };
     expect(buildJobGuide(ready({ wallTypes: [both] }), NOW).ask!.id).toBe("wall-height");
@@ -943,7 +977,7 @@ describe("the words", () => {
       facts.wallTypes.filter((type) => type.heightless).length - 1,
       ...WALL_HEIGHT_CHOICES,
       // the board-layer question: its runs, their length, how many other types, and the offered answers
-      ...facts.wallTypes.flatMap((type) => (type.layersUnanswered ? [type.layersUnanswered.runCount, type.layersUnanswered.lengthFt] : [])),
+      ...facts.wallTypes.flatMap((type) => (type.layersUnanswered ? [type.layersUnanswered.runCount, type.layersUnanswered.itemCount ?? 0, type.layersUnanswered.lengthFt] : [])),
       facts.wallTypes.filter((type) => type.layersUnanswered).length - 1,
       ...BOARD_LAYER_CHOICES,
       // the addenda: how many others are missing
