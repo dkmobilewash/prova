@@ -368,10 +368,10 @@ describe("starter wall types", () => {
     expect(db.wallTypeComponent.filter((c) => c.wallTypeId === "own_w1").map((c) => c.id)).toEqual(["own_part"]);
     // After the company's own types in the list, not interleaved with them.
     const added = mine.filter((t) => !String(t.id).startsWith("own_")).map((t) => t.sortOrder);
-    expect(added).toEqual([3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(added).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
 
     // And with nothing left to add, a sentence rather than a second copy.
     expect(await addStarterWallTypes()).toMatchObject({ ok: false });
-    expect(db.wallType.filter((t) => t.companyId === "co_1")).toHaveLength(11);
+    expect(db.wallType.filter((t) => t.companyId === "co_1")).toHaveLength(13);
   });
 });

@@ -21,6 +21,8 @@ describe("missingStarterTypes", () => {
       "W2",
       "EW1",
       "FIN5",
+      "ACT2",
+      "GYPC1",
       "FLR1",
       "PT1",
       "SLB1",

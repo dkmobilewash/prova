@@ -112,19 +112,19 @@ describe("/wall-types starter assemblies (#818)", () => {
   const starterButton = (html: string) =>
     html.match(/<button[^>]*data-wall-types="add-starters"[^>]*>([^<]*)<\/button>/)?.[1] ?? null;
 
-  it("is still offered beside a library that has types of its own, and says it adds all ten", async () => {
+  it("is still offered beside a library that has types of its own, and says it adds all twelve", async () => {
     const html = renderToStaticMarkup(await WallTypesPage());
     expect(html, "the library rendered as a list").toContain('data-tour="wall-types-list"');
     expect(starterButton(html), "no starter button beside a non-empty library").toBe(
-      "Start from the common trade assemblies (adds 10)",
+      "Start from the common trade assemblies (adds 12)",
     );
   });
 
   it("counts only the missing ones, case-insensitively, and names them", async () => {
     extraTypes = [{ code: "W1" }, { code: "w2" }, { code: "ACT1" }];
     const html = renderToStaticMarkup(await WallTypesPage());
-    expect(starterButton(html)).toBe("Start from the common trade assemblies (adds 7)");
-    expect(html).toContain("W3, EW1, FIN5, FLR1, PT1, SLB1, FTG1");
+    expect(starterButton(html)).toBe("Start from the common trade assemblies (adds 9)");
+    expect(html).toContain("W3, EW1, FIN5, ACT2, GYPC1, FLR1, PT1, SLB1, FTG1");
     expect(html).toContain("left as they are");
   });
 

@@ -23,7 +23,7 @@ export const metadata = { title: "Wall types" };
  * action pushes `/ask`). The empty state's one action points at Bid's own
  * price book instead of `/catalog`.
  */
-export default async function BidWallTypesPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+export default async function BidWallTypesPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> } = {}) {
   // The takeoff's "Create a wall type from this group" lands here with the
   // measured thickness, as on the CRM page.
   const query = (await searchParams) ?? {};
