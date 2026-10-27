@@ -51,8 +51,9 @@ import { stubDocumentUpload } from "../lib/blobStub";
  * THE ASK BOX IS NOT STUBBED. The runner blanks ANTHROPIC_API_KEY, so the box
  * should say it is not set up; the walk prints exactly what it shows, and
  * never invents an answer. The invite reader ("Fill the form from it") is the
- * same: with no key it refuses in a sentence, which is printed, and the form
- * is then typed by hand as a sub would.
+ * same: with no key the paste box is replaced by a sentence saying it is not
+ * set up here, which is printed, and the form is then typed by hand as a sub
+ * would.
  *
  * THE KNOWN #418 RACE is recorded, never asserted, exactly as
  * `estimating-spine.spec.ts` records it: `journey.spec.ts` step 11 is what
@@ -360,20 +361,33 @@ test.describe("C Stream Bid — a drywall sub bids one TI job, start to finish",
       await openCollapsed(page, "+ Log a bid", logSection);
       walk(`bids · pressed "+ Log a bid": "${await textOf(logSection.getByRole("heading").first())}"`);
 
-      // THE PASTE. With no model key the reader refuses in words; with one it
-      // fills the form. Neither sentence exists before the press.
+      // THE PASTE. With no model key the box is not drawn: one sentence says
+      // the reader is not set up here (`data-bids="paste-off"`), up front,
+      // like the job screen's ask box — the first walk found it refusing only
+      // AFTER the press, blaming the invitation and charging the allowance.
+      // With a key the reader fills the form, or refuses in words; neither of
+      // those sentences exists before the press.
       const paste = logSection.locator('[data-bids="paste-invite"]');
-      await paste.locator('textarea[name="invitationText"]').fill(INVITE_EMAIL);
-      walk(`bids · pasted the GC's invite email (${INVITE_EMAIL.split("\n").length} lines, subject "ITB — Harbor Point Medical, Suite 300 TI")`);
-      await paste.getByRole("button", { name: "Fill the form from it" }).click();
-      const readError = logSection.locator('[data-bids="paste-error"]');
-      const readOk = logSection.locator('[data-bids="paste-read"]');
-      await expect(readError.or(readOk).first(), "the invite reader should answer, either way").toBeVisible({ timeout: 90_000 });
-      if (await readError.isVisible()) {
-        walk(`bids · "Fill the form from it" REFUSED: "${await textOf(readError)}"`);
+      const pasteOff = logSection.locator('[data-bids="paste-off"]');
+      await expect(paste.or(pasteOff).first(), "the paste box, or the sentence saying why there is none").toBeVisible();
+      if (await pasteOff.isVisible()) {
+        const said = await textOf(pasteOff);
+        walk(`bids · the paste box says up front: "${said}"`);
+        expect.soft(said, "no key: the box says the reader is not set up, not that the invite could not be read").toMatch(/isn't set up/);
         walk(`bids · so the form is typed in by hand from the email, as a sub would`);
       } else {
-        walk(`bids · the reader said: "${await textOf(readOk)}"`);
+        await paste.locator('textarea[name="invitationText"]').fill(INVITE_EMAIL);
+        walk(`bids · pasted the GC's invite email (${INVITE_EMAIL.split("\n").length} lines, subject "ITB — Harbor Point Medical, Suite 300 TI")`);
+        await paste.getByRole("button", { name: "Fill the form from it" }).click();
+        const readError = logSection.locator('[data-bids="paste-error"]');
+        const readOk = logSection.locator('[data-bids="paste-read"]');
+        await expect(readError.or(readOk).first(), "the invite reader should answer, either way").toBeVisible({ timeout: 90_000 });
+        if (await readError.isVisible()) {
+          walk(`bids · "Fill the form from it" REFUSED: "${await textOf(readError)}"`);
+          walk(`bids · so the form is typed in by hand from the email, as a sub would`);
+        } else {
+          walk(`bids · the reader said: "${await textOf(readOk)}"`);
+        }
       }
       const logForm = logSection.locator("form");
       const formValues = async () =>

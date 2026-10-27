@@ -5,9 +5,7 @@ import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import {
-  bidRecap,
-  applyPlan,
-  spreadTotal,
+  applyOutcome,
   RECAP_RATE_FIELDS,
   RECAP_RATE_KEYS,
   type CostCategoryValue,
@@ -395,15 +393,15 @@ export async function applyBidRecap(
       const rates: RecapRates = Object.fromEntries(
         RATE_KEYS.map((key) => [key, recapRow[key] != null ? Number(recapRow[key]) : null]),
       );
-      const recap = bidRecap(lines, rates);
+      // The SAME `applyOutcome` the panel previews and the job guide's
+      // apply-recap ask quotes: the recap, the plan, and what the lines total
+      // afterwards. Decided here from the job's own lines; nothing about it
+      // comes from the request except the second step of the confirmation.
+      const { recap, plan, landsAt } = applyOutcome(lines, rates);
       if (recap.addedTotal === 0) {
         throw new InputError("These rates add nothing to the bid, so the line prices are already the bid.");
       }
 
-      // The SAME plan the panel previews (`applyPlan`), decided here from the
-      // job's own lines. Nothing about it comes from the request except the
-      // second step of the confirmation below.
-      const plan = applyPlan(lines, recap.bidTotal);
       // The SAME sentence the panel prints beside the button (bug B).
       if (plan.kind === "NOTHING") throw new InputError(plan.reason);
       // Pricing lines that have NO price is a decision, not a side effect: it
@@ -420,12 +418,13 @@ export async function applyBidRecap(
         );
       }
       const spread = plan.spread;
-      if (spread.length === 0) throw new InputError("There is no line on this estimate to put the bid on.");
+      if (spread.length === 0 || landsAt === null) throw new InputError("There is no line on this estimate to put the bid on.");
       for (const next of spread) {
         await tx.jobLineItem.update({ where: { id: next.id }, data: { unitPrice: next.unitPrice } });
       }
 
-      const applied = spreadTotal(lines, spread);
+      // `spreadTotal` over this spread, as `applyOutcome` computed it.
+      const applied = landsAt;
       await tx.jobBidRecap.update({
         where: { id: recapRow.id },
         data: { appliedAt: new Date(), appliedTotal: applied.toFixed(2) },

@@ -1,5 +1,6 @@
 import { prisma } from "@prova/db";
-import { bidTotalOf, recapStateFor } from "@/lib/estimating/recap-state";
+import { bidTotalOf, recapLandsAt, recapStateFor } from "@/lib/estimating/recap-state";
+import { measurementPrimitive } from "@/lib/takeoff-plan";
 import { acknowledgedOnFor, paperWhereMany, papersFor } from "@/lib/estimating/bid-papers";
 import { wallHeightQuestions } from "./wallHeight";
 
@@ -30,6 +31,13 @@ import { wallHeightQuestions } from "./wallHeight";
  *                  calibration. Cover sheets and details are not in the set,
  *                  so a finished bid is not nagged about them.
  *   measured walls `WallRun` rows (the wall schedule), by wall type.
+ *   by hand        `TakeoffMeasurement` rows with no `wallRunId`: a plain
+ *                  measurement ("Add as plain measurements — priced by hand")
+ *                  or anything traced by hand. LINEAR ones are read to feet by
+ *                  `measurementPrimitive` against their own calibration. These
+ *                  count as MEASURED — the contractor walk (2026-10-27) added
+ *                  237 LF this way and the guide, which read only `WallRun`,
+ *                  kept saying no walls were measured.
  *   in the estimate  live `JobLineItem`s (`isDeleted = false`); the wall ones
  *                  carry a `wallTypeComponentId` and no `takeoffItemId`.
  *   priced         a wall type is unpriced when it has no components at all, or
@@ -41,7 +49,9 @@ import { wallHeightQuestions } from "./wallHeight";
  *                  counts — it is the estimator's.
  *   recap          `JobBidRecap`: exists, and `appliedAt` is when it was put on
  *                  the prices. `addedTotal` is recomputed by the same
- *                  `recapStateFor` the proposal page uses.
+ *                  `recapStateFor` the proposal page uses; `landsAt`, what the
+ *                  lines total after Apply, by `recapLandsAt` — the
+ *                  `applyOutcome` the recap panel previews and Apply writes.
  *   wall height    a wall type used on the job's runs with no `defaultHeightFt`,
  *                  whose runs have no `heightFt` of their own: those runs add
  *                  NOTHING to the estimate (`runGeometry` returns null). Worked
@@ -193,8 +203,29 @@ export type JobGuideFacts = {
   /** The bid as it stands: `bidTotalOf` over the live lines. */
   bidTotal: number;
 
-  /** The job's own recap row, or null when it has none. */
-  recap: { appliedAt: string | null; addedTotal: number } | null;
+  /**
+   * The job's own recap row, or null when it has none. `addedTotal` is the
+   * markup over DIRECT COST; `landsAt` is what the live lines will total once
+   * Apply is pressed (`recapLandsAt` → `applyOutcome`, the function the recap
+   * panel and `applyBidRecap` use), or null when Apply would write nothing.
+   * The ask quotes `landsAt` against `bidTotal`, never `addedTotal`: see
+   * `buildJobGuide.ts`, rule 7.
+   */
+  recap: { appliedAt: string | null; addedTotal: number; landsAt: number | null } | null;
+
+  /**
+   * What a person measured on the takeoff OUTSIDE the wall schedule: every
+   * `TakeoffMeasurement` with no `wallRunId` — "Add as plain measurements —
+   * priced by hand", or a line traced by hand. `lengthFt` sums the LINEAR
+   * ones (`measurementPrimitive`, at the scale each was traced against). A
+   * wall run's own measurements are not here: they are in `wallTypes` and
+   * `measuredFootageFt`, and counting them twice would double the footage.
+   *
+   * No "posted yet" split, on purpose: the guide asks about these only while
+   * the estimate has NO lines, when none of them is on it whatever `postedAt`
+   * says; once lines exist it does not nag (see `buildJobGuide.ts`, rule 4).
+   */
+  handMeasurements: { count: number; lengthFt: number };
 
   /** Optional — see `PastPriceSuggestion`. */
   pastPriceSuggestions?: PastPriceSuggestion[];
@@ -320,7 +351,7 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
     }
   }
 
-  const [sheetTexts, proposals, pages, ingests, wallTypes, addenda] = await Promise.all([
+  const [sheetTexts, proposals, pages, ingests, wallTypes, addenda, handRows] = await Promise.all([
     planIds.length
       ? prisma.planSheetText.findMany({ where: { planId: { in: planIds } }, select: { planId: true, pageNumber: true } })
       : [],
@@ -360,6 +391,22 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
             bidInvitationId: true,
             bidProjectId: true,
             acknowledgements: { select: { bidInvitationId: true, acknowledgedOn: true } },
+          },
+        })
+      : [],
+    // Measured by hand: every measurement NOT part of a wall run (those are
+    // counted through `WallRun` above). Scoped through the plans, which are
+    // already this company's.
+    planIds.length
+      ? prisma.takeoffMeasurement.findMany({
+          where: { wallRunId: null, page: { planId: { in: planIds } } },
+          select: {
+            kind: true,
+            xs: true,
+            ys: true,
+            label: true,
+            page: { select: { planId: true } },
+            calibration: { select: { x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } },
           },
         })
       : [],
@@ -468,6 +515,21 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
       }
     }
 
+    // ── measured by hand (not a wall run) ──
+    const handMeasurements = { count: 0, lengthFt: 0 };
+    for (const row of handRows) {
+      if (!jobPlanIds.has(row.page.planId)) continue;
+      const primitive = measurementPrimitive({
+        kind: row.kind,
+        xs: row.xs,
+        ys: row.ys,
+        label: row.label,
+        calibration: { ...row.calibration, declaredDistanceFeet: Number(row.calibration.declaredDistanceFeet) },
+      });
+      handMeasurements.count += 1;
+      if (primitive?.kind === "linear") handMeasurements.lengthFt += primitive.feet;
+    }
+
     const recapLines = jobLines;
     const recapState = recapStateFor(job.bidRecap, recapLines);
 
@@ -494,7 +556,14 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
       linesWithoutPrice: jobLines.filter((line) => priceless(line) && line.indirectKind === null).length,
       linesWithoutCost: jobLines.filter((line) => line.budgetedUnitCost === null).length,
       bidTotal: bidTotalOf(jobLines),
-      recap: recapState ? { appliedAt: day(recapState.appliedAt), addedTotal: recapState.addedTotal } : null,
+      recap: recapState
+        ? {
+            appliedAt: day(recapState.appliedAt),
+            addedTotal: recapState.addedTotal,
+            landsAt: recapLandsAt(job.bidRecap, recapLines),
+          }
+        : null,
+      handMeasurements,
       unacknowledgedAddenda,
     };
   });

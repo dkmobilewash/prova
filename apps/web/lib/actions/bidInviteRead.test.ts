@@ -21,6 +21,7 @@ let allowed = true;
 let gateOk = true;
 let allowanceOk = true;
 let extractorThrows = false;
+let configured = true;
 let extraction: Record<string, unknown> = {};
 const calls = { claimed: 0, marked: 0, extracted: 0, usage: [] as Record<string, unknown>[] };
 let openInvitations: unknown[] = [];
@@ -65,6 +66,7 @@ vi.mock("@/lib/ask/allowance", () => ({
 }));
 vi.mock("@prova/integrations", () => ({
   BID_INVITE_PROMPT_VERSION: "bid-invite.test",
+  anthropicIsConfigured: () => configured,
   extractBidInvite: async (params: { onUsage?: (usage: unknown) => Promise<void> }) => {
     calls.extracted += 1;
     await params.onUsage?.({ inputTokens: 1, outputTokens: 1 });
@@ -74,6 +76,7 @@ vi.mock("@prova/integrations", () => ({
 }));
 
 const { readBidInvitationText, checkSameJobFromOtherGc } = await import("./bidInviteRead");
+const { INVITE_READ_NOT_CONFIGURED } = await import("@/lib/bid/inviteReaderAccess");
 
 const INVITE = `Acme Builders invites you to bid Riverside Medical Office.
 Address: 4500 Brockton Ave, Riverside CA
@@ -84,6 +87,7 @@ beforeEach(() => {
   gateOk = true;
   allowanceOk = true;
   extractorThrows = false;
+  configured = true;
   calls.claimed = 0;
   calls.marked = 0;
   calls.extracted = 0;
@@ -116,6 +120,21 @@ describe("readBidInvitationText — refusals, in order, none reaching the model"
   it("refuses an empty paste without claiming or calling", async () => {
     expect(await readBidInvitationText("  ")).toEqual({ ok: false, error: "Paste the invitation text first." });
     expect(calls).toMatchObject({ claimed: 0, extracted: 0 });
+  });
+
+  // THE CONTRACTOR WALK, 2026-10-27, run in CI with no model key. The reader
+  // claimed a question, called the model, failed, and said "That invitation
+  // couldn't be read. It is recorded as a failed question on this month's
+  // allowance…" — blaming the paste and charging the allowance for a server
+  // that has no assistant at all. The job's ask box, same server, said
+  // "Asking isn't set up on this server yet."
+  it("refuses in plain words when the server has no model key, and claims, marks and sends nothing", async () => {
+    configured = false;
+    expect(await readBidInvitationText(INVITE)).toEqual({ ok: false, error: INVITE_READ_NOT_CONFIGURED });
+    expect(INVITE_READ_NOT_CONFIGURED).toMatch(/isn't set up/);
+    expect(INVITE_READ_NOT_CONFIGURED).toMatch(/type the invitation in/i);
+    expect(INVITE_READ_NOT_CONFIGURED).not.toMatch(/couldn't be read|allowance|failed question/);
+    expect(calls).toMatchObject({ claimed: 0, marked: 0, extracted: 0 });
   });
 
   it("refuses when the company's AI switch is off, says typing still works, and claims nothing", async () => {
