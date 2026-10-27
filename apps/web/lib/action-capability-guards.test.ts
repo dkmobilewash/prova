@@ -1961,6 +1961,10 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // "Find the rooms": the owner's switch (behind /settings) and the save of
   // a sheet's rooms as areas (behind the takeoff's job-costs gate).
   roomFinder: () => import("./actions/roomFinder"),
+  // Whole-set takeoff: the owner's switch (behind /settings) and the per-sheet
+  // summary read (behind the takeoff's job-costs gate). The run itself is
+  // planIngest's start/advance, listed above.
+  wholeSetTakeoff: () => import("./actions/wholeSetTakeoff"),
   takeoffItems: () => import("./actions/takeoffItems"),
   takeoffClassify: () => import("./actions/takeoffClassify"),
   takeoffReadSheet: () => import("./actions/takeoffReadSheet"),

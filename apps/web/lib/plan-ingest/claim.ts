@@ -1,4 +1,4 @@
-import { prisma } from "@prova/db";
+import { type PlanIngestStage, prisma } from "@prova/db";
 import {
   MAX_ATTEMPTS,
   ingestProgress,
@@ -308,9 +308,16 @@ export async function ingestViewOf(jobId: string, stage: IngestView["stage"]): P
  * somebody deliberately re-runs an earlier stage, the newest run is that one —
  * which is also what they should be looking at.
  */
-export async function latestIngestFor(planId: string): Promise<IngestView | null> {
+export async function latestIngestFor(
+  planId: string,
+  /** Which stages count. The reading panel asks for everything BUT the
+   *  whole-set wall run, whose panel asks for only that: the two are different
+   *  controls over different rows, and the newest of one must not hide the
+   *  other. Omitted, every stage counts — the original behaviour. */
+  stage?: PlanIngestStage | { not: PlanIngestStage },
+): Promise<IngestView | null> {
   const job = await prisma.planIngestJob.findFirst({
-    where: { planId },
+    where: { planId, ...(stage === undefined ? {} : { stage }) },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: { id: true, stage: true },
   });

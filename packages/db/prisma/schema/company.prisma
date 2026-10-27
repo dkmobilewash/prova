@@ -93,6 +93,11 @@ model Company {
   /// (no model is called), so not in `CompanyAiSettings`.
   roomFinderOn Boolean @default(false)
 
+  /// "Find walls on every floor plan" on the takeoff: one press runs the wall
+  /// finder over every scaled floor-plan sheet in the set, in the background,
+  /// behind this switch, OFF until the owner turns it on. No model is called.
+  wholeSetTakeoffOn Boolean @default(false)
+
   /// The unguessable half of this company's inbound intake address:
   /// `docs-<token>@<INTAKE_INBOUND_DOMAIN>`. The token IS the routing — an
   /// email to an address whose token matches no row is dropped — so it is
