@@ -3047,3 +3047,91 @@ not wrong, but the attribution is. And ELEVEN03's WB–WD read as 1-5/8in
 WOOD studs — 1-5/8in is a metal C-shape, and the sight read's "wood" for
 the W types is what the plates now follow; which read is right is a
 question for the crop.
+### A grid bubble is drawn round, and the stage was never deleting bubbles (2026-10-27)
+
+**The change.** `gridBubbles` accepts a closed chain as a bubble only when
+every piece of it was flattened from a Bézier (`StrokeSegment.curved`), its
+vertices and edge midpoints sit within 0.13 of one radius, its 4πA/P² is at
+least 0.9, and it ends within 0.1 radius of where it started. The file-order
+walk, the size bounds and the turn test are exactly as shipped. The shipped
+test was the vertex radii alone at 0.18, which every rectangle, hexagon and
+regular polygon passes.
+
+**What the probe found first (seven training sheets, every closed chain in
+the size range).** Real bubbles, where a sheet has them, are 12–16 curved
+pieces with vertices within 0.09 and midpoints within 0.11 of the radius and
+circularity 0.977–0.992. The straight-sided loops the shipped test accepted
+are hexagonal tags, squares, 5-point open chains that reach 1.5π before they
+close, and chains whose longest edge is a whole diameter. The straight-sided
+loops that a purely geometric circle rule (no `curved` requirement) STILL
+accepts were cropped: cooktop burners, sink basins, a flue, stool tops — all
+polylines of 12–34 `lineTo`s, none a grid bubble. ELEVEN03 has no curved loop
+in range at all; Topeka p74 has 4 against 343 straight ones.
+
+**The measurement, 26 training sheets, no-hook arm, against the shipped test
+re-run in the same tree as a control (it reproduced 4,391/13,014 exactly).**
+
+| test | missing ft | extra ft | real recovered | junk added |
+| --- | --- | --- | --- | --- |
+| shipped (vertex radii, 0.18) | 4,391 | 13,014 | | |
+| **curved pieces + radii + midpoints + circularity + closed** | 1,863 | 27,330 | +2,528 | +14,316 |
+| the same without the curved requirement | 1,866 | 26,549 | +2,525 | +13,535 |
+| stage off (measured 2026-10-27, round-4 notes) | 1,756 | 27,663 | +2,635 | +14,649 |
+
+So the fix recovers 96% of the 2,600 ft the deletion was hiding, and it
+costs what switching the stage off costs, because on the sheets that supply
+the junk the shipped stage was not deleting grid lines — it was deleting
+casework and fixtures that happened to chain into "round" loops. Per sheet:
+
+| sheet | key ft | shipped miss/extra | real recovered | junk added |
+| --- | --- | --- | --- | --- |
+| Topeka p74 | 2,945 | 1,187/184 | +937 | +1,035 |
+| Topeka p75 | 1,462 | 36/396 | +6 | +2,385 |
+| Topeka p76 | 1,399 | 4/275 | −24 | +2,495 |
+| Joplin A-101 | 1,864 | 464/1,412 | +401 | +564 |
+| ELEVEN03 A4.B.1 | 1,790 | 4/512 | −38 | +1,295 |
+| ELEVEN03 A4.B.2 | 1,534 | 20/810 | −18 | +2,047 |
+| ELEVEN03 A4.B.3 | 1,810 | 36/415 | −21 | +1,865 |
+| Camp Bow Wow A101 | 739 | 1/1,756 | −3 | +898 |
+| Camp Bow Wow A120 | 16 | 0/116 | −4 | −25 |
+| Crosslines A100 | 3,233 | 908/621 | +598 | +150 |
+| MHK A1.01 | 945 | 356/378 | +254 | +283 |
+| Murray A101 | 1,037 | 167/137 | +124 | +36 |
+| NG Green Bay A3.2 | 653 | 123/497 | +121 | +9 |
+| Bunkie A100 | 470 | 108/500 | +91 | +101 |
+| Fairgrounds A-101 | 173 | 118/521 | +51 | +50 |
+| Baker A101 | 615 | 89/32 | +47 | +6 |
+| Supreme Court A111 | 211 | 41/436 | −19 | +460 |
+| E Street A2.1 | 477 | 0/451 | 0 | +214 |
+| NG Green Bay A3.1 | 1,009 | 154/989 | +29 | +203 |
+| Baker A100 | 1,681 | 64/304 | +29 | +29 |
+| HPL p3 | 382 | 382/416 | 0 | +83 |
+| the other five | | | 0 | +73 |
+
+Two sheets tell the whole story. Topeka p74 and p75 are the same building
+one floor apart, drawn the same way; p74 carries 1,198 ft of traced misses
+and recovers 937 of them for 1,035 of junk, p75 carries 36 ft of misses and
+gains 2,385 of junk for 6. What differs is not the walls but which sheet a
+reviewer traced. The junk that appears on p75, p76 and ELEVEN03 was there
+all along and the shipped deletion was hiding it, at the price of the walls
+on p74.
+
+**The order-dependence halves as a side effect.** The reversed arm went from
+6,609/18,011 (shipped) to 1,882/27,089, within 1% of the file-order answer,
+because the bubble set is now a few dozen real circles rather than hundreds
+of chains whose membership depended on which stroke the walk reached first.
+
+**What does not ship and why.** The geometric-only variant is 800 ft less
+junk for 3 ft less wall, and it keeps deleting under burners, sinks and
+stools, which is the shape of the defect this fixes. The curved requirement
+is the test that says what a bubble IS; the other three are the belt to it.
+
+**What follows.** The 14,300 ft of junk is the unit-plan casework the round-4
+notes name: ELEVEN03 ×3 at +5,200, Topeka p75+p76 at +4,900, Camp Bow Wow
++900, Supreme Court +460. That is a junk filter's job, not a bubble stage's,
+and this change is what makes its target visible: before it, that junk was
+being removed by accident, and the walls under it with it.
+
+Branch `diego/round-bubbles` off `main`. Unit tests: five new refusals in
+`gridBubbles.test.ts` (straight-pieced 12-gon, hexagon, octagon, curved
+ellipse, unclosed curved chain). No e2e.
