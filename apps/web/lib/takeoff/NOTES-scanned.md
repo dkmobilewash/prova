@@ -51,14 +51,36 @@ between them — found footage fell by two thirds. The fix is a contour of the
 fill rather than runs; that is production work (OpenCV `findContours`), not
 a tweak.
 
-## 3. Results
+## 3. Results (26 training sheets, 26,901 key ft; full table and per-sheet rows in `shots/scanned/REPORT.md`)
 
-(filled in from `shots/scanned/full-run.log` and `scanned-arms.json`)
+| arm | real ft (found − junk) | real % | missing ft | junk ft | scale by OCR | median s |
+| --- | --- | --- | --- | --- | --- | --- |
+| vector finder | 23,793 | 88% | 4,392 | 13,014 | — | 2.3 |
+| 150 dpi clean | 18,063 | 67% | 9,962 | 28,695 | 22/26 | 2.4 |
+| 200 dpi clean | 19,076 | 71% | 8,788 | 27,758 | 22/26 | 3.0 |
+| 300 dpi clean | 18,494 | 69% | 9,286 | 26,203 | 20/26 | 4.7 |
+| 150 dpi scan-like | 18,415 | 68% | 9,679 | 34,383 | 11/26 | 3.0 |
+| 300 dpi scan-like | 17,074 | 63% | 10,494 | 22,336 | 16/26 | 6.4 |
+
+Three quarters of the vector finder's recall, twice its junk; nothing gained
+above 200 dpi. The losses concentrate in grey-filled existing walls (Baker
+A100 99 → 36), heavily shaded sheets (Alden A103, 4,899 ft of junk) and the
+view-detection branch zeroing a sheet when OCR noise reads as captions
+(Joplin, Murray at 150; NG McAllen, Bunkie at 300). Diagonal key footage is
+0.2%.
 
 ## 4. Cost and speed
 
-(filled in from the run's per-step timings)
+Per sheet on this Mac: 2.4 s at 150 dpi (render 0.1, lines 0.3, OCR 1.0,
+detect 1.1), 4.7 s at 300. No model called. Production would render with
+pdf.js + `@napi-rs/canvas` and read the scale with Tesseract or one small
+vision call; 3–6 s of CPU inside the ingest runner's 45 s per-sheet budget.
 
 ## 5. Productising
 
-(see the report)
+Route sheets with `pathOperators === 0` to the raster pass behind a company
+switch; render server-side at 150 dpi; the deskew and lines as here; a
+"no view kept → whole sheet" fallback in `detectForSheet` (finder lane);
+OCR the scale with the existing set-the-scale prompt as the fallback; fills
+by contour instead of runs (the one change that moves A100); then measure on
+REAL scans of five training sheets before trusting the synthetic arm.
