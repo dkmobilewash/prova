@@ -436,7 +436,7 @@ describe("board-layers: how many layers of board, which the drawings often leave
     const both = { ...w2NoHeight, layersUnanswered: w2NoLayers.layersUnanswered };
     expect(buildJobGuide(ready({ wallTypes: [both] }), NOW).ask!.id).toBe("wall-height");
     // height answered: now the layers
-    const noLines = ready({ wallTypes: [w2NoLayers], wallLineCount: 0, linesWithoutPrice: 4, recap: { appliedAt: null, addedTotal: 1 } });
+    const noLines = ready({ wallTypes: [w2NoLayers], wallLineCount: 0, linesWithoutPrice: 4, recap: { appliedAt: null, addedTotal: 1, landsAt: null } });
     expect(buildJobGuide(noLines, NOW).ask!.id).toBe("board-layers");
     // layers answered: the earlier rules take over again, in order
     expect(buildJobGuide({ ...noLines, wallTypes: [{ ...w2NoLayers, layersUnanswered: null }] }, NOW).ask!.id).toBe("walls-not-added");

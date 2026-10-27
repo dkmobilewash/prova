@@ -516,6 +516,7 @@ describe("tap answers (the board-layer question)", () => {
       ],
       wallRunCount: 3,
       measuredFootageFt: 680.4,
+      handMeasurements: { count: 0, lengthFt: 0 },
       openingsCount: 5,
       wallLineCount: 5,
       lineCount: 5,
