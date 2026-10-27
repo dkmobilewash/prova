@@ -63,7 +63,8 @@ describe("the hundred questions", () => {
     // the rows name for a job and a day, and the drafted message to them.
     // The refusal they follow is a KNOWN_GAP, not a census question.
     // 126 with record_bid_outcome, 2026-10-11 (124 on main before the merge).
-    expect(TOTAL_QUESTIONS).toBe(126);
+    // 127 with adjust_estimate, 2026-10-27: "add 10% for night work".
+    expect(TOTAL_QUESTIONS).toBe(127);
     expect(TOP_QUESTIONS).toHaveLength(TOTAL_QUESTIONS);
   });
 

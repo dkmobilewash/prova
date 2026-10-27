@@ -155,6 +155,7 @@ describe("who is offered what", () => {
       "create_estimate_job",
       "draft_estimate_lines",
       "add_catalog_line",
+      "adjust_estimate",
       "raise_rfi",
       "send_email",
       "ask_who_would_know",
