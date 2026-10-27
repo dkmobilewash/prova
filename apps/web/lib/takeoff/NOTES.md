@@ -3236,3 +3236,66 @@ Branch `diego/round-bubbles`; `zzLoboVeto.eval.ts` is the reusable
 instrument (`LOBO_ROWS_OUT` to build rows, `LOBO_MODEL_DIR` + `LOBO_CUT` to
 score; per-fold models from a 25-line sklearn script, same parameters as
 `train-wall-model.py`). The held-out sets are refused by `heldOutReason`.
+
+### A unit-plan junk filter, and why the junk it was built for is not there (2026-10-27)
+
+Brief: the round-bubble test (`23af9453`) adds 2,773 ft of real wall and
+13,329 ft of "junk" against shipped + veto; the model does not take the
+junk; build a casework filter (geometry and context, not thickness) and
+measure round + filter + veto against shipped + veto.
+
+**First, what the 13,329 ft is.** Every offered candidate on the 26
+sheets was scored against the key (accepted + traced), against the
+reviewer's "not a wall" runs, and against "unsure", for both bubble tests.
+The shipped finder's 13,014 ft of extra is 9,363 ft of reviewer-rejected
+runs. The round test adds 14,317 ft of extra, of which **−82 ft overlaps a
+rejection and 14,394 ft overlaps NO verdict at all** — candidates the
+shipped finder deleted the faces of before pairing, so no reviewer ever
+saw them. Cropped on Topeka p75 and ELEVEN03 A4.B.2, the biggest of them
+are corridor and exterior walls under hexagon window tags, the same walls
+the tracer traced on p74. The accepted-only keys on p75, p76, ELEVEN03,
+Camp Bow Wow, E Street, HPL, SW and McAllen cannot tell those from junk.
+
+On the 14 sheets WITH traces, where extra means junk, the round test's
+unlabelled extra is 4,237 ft: 2,125 ft in runs of 20 ft and more (dashed
+overhead lines on Joplin, magenta area-boundary lines on MHK, a balcony
+edge paired with a wall face and window sill lines on Supreme Court, a
+layout line a foot off a partition on p74, a title stamp on Joplin, and
+some walls the tracer did not trace), 940 ft in 10–20 ft runs, 1,172 ft
+under 10 ft. Casework-shaped junk is a quarter of the measurable junk at
+most. Topeka p74 is the proxy for p75/p76: there the new candidates split
+47% real / 53% extra against a complete key.
+
+**The filter** (`unitPlanJunk.ts`, not wired): a pair is set aside when
+both faces are dashed (many pieces, low cover), when a short run's faces
+are capped at both ends (a drawn box), or when a short run reaches no
+other candidate (a thing inside a room). Every constant physical.
+
+| arm, 26 sheets | missing ft | extra ft |
+| --- | --- | --- |
+| shipped + veto 0.3 (LOBO) | 4,973 | 11,852 |
+| round + veto | 2,200 | 25,181 |
+| round + filter v1 | 5,059 | 22,227 |
+| round + veto + filter v1 | 5,179 | 20,912 |
+
+v1 against shipped + veto: real −206 ft, junk +9,060 ft — it removes
+3,700 ft of key wall (1,760 on traced sheets) for 1,631 ft of rejected
+junk and 3,472 ft unlabelled. The closed-box rule takes wall segments
+between two door jambs (605 ft on p74 alone); the dashed rule takes walls
+drawn as existing (all 207 ft of Alden A103's key). v2 (box only at ≥ 11 in
+depth, dashed at 6 pieces / 60% cover) removes 332 ft of key, 564 ft of
+rejected junk and 708 ft unlabelled across all 26 sheets — too little to
+move any sheet, because the pairer's 13 in ceiling already keeps base
+cabinets and vanities out and 12 in uppers and shelves pair for about
+300 ft in total. Per sheet, v2's removals (real / rejected / unlabelled):
+Topeka p74 15/11/14, p75 29/2/54, p76 16/0/54; ELEVEN03 162/152/274
+across three sheets; Joplin 22/0/27; Camp Bow Wow 11/93/97.
+
+**Conclusion.** There is no junk filter to build against this number. The
+round-bubble test's cost is unmeasured, not measured-bad: 14,400 ft of
+candidates no reviewer has judged, on sheets whose keys were taken from
+the shipped list. What measures it is a review pass over the round-bubble
+candidate list on Topeka p75/p76, ELEVEN03 and Camp Bow Wow (and tracing
+where it misses), after which the veto, the filter and the shape test can
+all be scored on the same footing as p74. Until then p74 is the evidence:
++937 real, +1,035 unlabelled, of which the reviewer traced nothing.
