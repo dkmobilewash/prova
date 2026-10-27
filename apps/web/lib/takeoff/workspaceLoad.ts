@@ -141,7 +141,9 @@ export async function loadTakeoffWorkspace(
           wallProposals: { orderBy: { createdAt: "desc" } },
           measurements: {
             orderBy: { createdAt: "asc" },
-            include: { calibration: true },
+            // The wall run says which TYPE "Add as X — priced" posted a run
+            // against; the summary export reads it (`summaryExport.ts`).
+            include: { calibration: true, wallRun: { select: { wallTypeId: true, heightFt: true } } },
           },
         },
       },

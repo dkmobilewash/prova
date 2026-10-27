@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { PDFDocument, degrees } from "pdf-lib";
 import type { TakeoffSummary } from "./summaryExport";
-import { placeEmbedded, takeoffSummaryPdf } from "./summaryPdf";
+import { placeEmbedded, takeoffSummaryPdf, winAnsi } from "./summaryPdf";
 
 const box = { x: 40, y: 40, width: 712, height: 500 };
 
@@ -30,15 +30,23 @@ describe("placing an embedded sheet the way a viewer shows it", () => {
 });
 
 const summary: TakeoffSummary = {
-  walls: [{ name: "P1", typeCode: "P1", linearFt: 35, heightFt: 10, boardSqFt: 700, studs: 30, trackFt: 70, sheets: ["Sheet 1"] }],
-  rooms: [{ name: "OFFICE", number: "101", squareFeet: 100, perimeterFt: 40, sheet: "Sheet 1" }],
+  walls: [{ typeCode: "P1", runs: 1, linearFt: 35, heightFt: 10, boardSqFt: 700, studs: 30, trackFt: 70, sheets: ["Sheet 1"] }],
+  untypedWalls: [{ name: "6″ wall", runs: 1, linearFt: 12, sheets: ["Sheet 1"] }],
+  rooms: [
+    { name: "OFFICE", number: "101", named: true, squareFeet: 100, perimeterFt: 40, sheet: "Sheet 1" },
+    { name: "(unnamed)", number: null, named: false, squareFeet: 50, perimeterFt: 30, sheet: "Sheet 1" },
+  ],
   areas: [],
   doors: [],
+  leftOut: [{ sheet: "A601", why: "schedule", measurements: 2 }],
   sheets: [
     {
       pageNumber: 1,
       label: "Sheet 1",
-      runs: [{ x1: 0.1, y1: 0.5, x2: 0.4, y2: 0.5, name: "P1" }],
+      runs: [
+        { xs: [0.1, 0.4], ys: [0.5, 0.5], name: "P1" },
+        { xs: [0.1, 0.1, 0.2], ys: [0.6, 0.7, 0.7], name: "Untyped" },
+      ],
       polygons: [{ xs: [0.5, 0.6, 0.6, 0.5], ys: [0.5, 0.5, 0.6, 0.6], name: "101 OFFICE", kind: "room" }],
     },
   ],
@@ -46,6 +54,10 @@ const summary: TakeoffSummary = {
 const meta = { jobName: "Test job", fileName: "plan.pdf", revisionLabel: null, exportedOn: "2026-10-27" };
 
 describe("the summary PDF", () => {
+  it("spells the viewer's inch marks and fractions in the font's own alphabet instead of throwing", () => {
+    expect(winAnsi("S8B wall — 7⅜″")).toBe('S8B wall — 7-3/8"');
+    expect(winAnsi("日本")).toBe("??");
+  });
   it("is the tables then one page per measured sheet, with the sheet embedded", async () => {
     const plan = readFileSync("e2e/fixtures/plan-sheet.pdf");
     const bytes = await takeoffSummaryPdf(summary, meta, plan);

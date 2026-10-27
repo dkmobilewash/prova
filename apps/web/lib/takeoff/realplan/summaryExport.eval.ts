@@ -8,25 +8,34 @@ import { printedScalesOnPage } from "../printedScales";
 import { roomBoundary } from "../roomBoundary";
 import { roomsFromWalls } from "../roomsFromWalls";
 import { scaleFromPrinted } from "../scaleFromPrinted";
-import { takeoffSummary, takeoffSummaryCsv, type SummarySheet } from "../summaryExport";
+import { takeoffSummary, takeoffSummaryCsv, type SummaryMeasurement, type SummarySheet, type SummaryWallType } from "../summaryExport";
 import { takeoffSummaryPdf } from "../summaryPdf";
-import { takeoffSheetVerdict } from "../takeoffSheet";
-import { SheetTooDenseError, type WallCandidate } from "../wallVectors";
+import { verdictFor } from "../wallGroups";
+import type { MatchableWallType } from "../wallTypeMatch";
+import { inchLabel, SheetTooDenseError, type WallCandidate } from "../wallVectors";
 
 /**
  * ── THE TAKEOFF SUMMARY EXPORT ON A REAL SET: the files an estimator would get ──
  *
- * What the app's two buttons would produce for one set after "Find walls on
- * every floor plan" and "Find the rooms" on each of those sheets — the same
- * builders (`takeoffSummary`, `takeoffSummaryCsv`, `takeoffSummaryPdf`) fed by
- * the same finder, with every scale taken from what the sheet prints, never
- * set by hand. No wall-type library (so walls are named by tag or thickness
- * and carry no height or board figure), no item list, and no door schedule
- * (reading one calls a model). Writes the CSV, the PDF and a JSON of the lines
- * OUTSIDE git.
+ * The app's walkthrough, stood in for by code, on one TRAINING set:
+ *
+ *   1. the estimator adds their wall types (a JSON kept OUTSIDE git beside the
+ *      plans — codes, thickness, height, sides, stud spacing);
+ *   2. opens each floor plan they are taking off (`SUMMARY_EVAL_PAGES`), with
+ *      the scale read from what the sheet prints, never set by hand;
+ *   3. presses Find the walls, then Add on every group that is a wall —
+ *      "Add as <type> — priced" where the viewer's verdict names a type,
+ *      "Add these" otherwise. Groups sitting in the title block are the one
+ *      judgement stood in for: not added;
+ *   4. presses Find the rooms and saves them as areas.
+ *
+ * Then the same builders the route uses (`takeoffSummary`, the CSV, the PDF)
+ * write the files. No items, and no door schedule (reading one calls a
+ * model — not spent).
  *
  *   REAL_PLAN_DIR="…/real-plans/new" SUMMARY_EVAL_SET="2025.07.08_Baker_EOC_BID.pdf" \
- *   SUMMARY_EVAL_OUT="…/shots/takeoff-export" [SUMMARY_EVAL_PAGES="12,13"] \
+ *   SUMMARY_EVAL_PAGES="13" SUMMARY_EVAL_LIBRARY="…/shots/takeoff-export/baker-library.json" \
+ *   SUMMARY_EVAL_OUT="…/shots/takeoff-export" \
  *   node_modules/.bin/vitest run --config vitest.eval.config.mts lib/takeoff/realplan/summaryExport.eval.ts
  *
  * Training sets only: the held-out sets are named in `heldOutSets.ts` and
@@ -35,32 +44,40 @@ import { SheetTooDenseError, type WallCandidate } from "../wallVectors";
 const DIR = process.env.REAL_PLAN_DIR ?? "";
 const SET = process.env.SUMMARY_EVAL_SET ?? "";
 const OUT = process.env.SUMMARY_EVAL_OUT ?? "";
-/** Optional: only these 1-based pages, e.g. "12,13". */
+const LIBRARY = process.env.SUMMARY_EVAL_LIBRARY ?? "";
+/** The floor plans the estimator opens, 1-based. */
 const PAGES = (process.env.SUMMARY_EVAL_PAGES ?? "").split(",").map(Number).filter((n) => n > 0);
 const HELD_OUT = /central.?bank|gen.?bbq|\bSLN\b|STEM|lodi|pavilion|nall|fairchild|albany|oreilly|jefferson/i;
+/** A group whose every run lies right of this fraction of the width sits in
+ *  the title block; the estimator does not add the logo as a wall. */
+const TITLE_BLOCK_X = 0.75;
 
-describe.skipIf(DIR === "" || SET === "")("takeoff summary export on one set", () => {
-  it("builds the CSV and the PDF from what the finder finds on every scaled floor plan", async () => {
+type LibraryType = { code: string; name: string; thicknessIn: number; sides: number; studSpacingIn: number; layers: number };
+
+describe.skipIf(DIR === "" || SET === "" || PAGES.length === 0)("takeoff summary export on one set", () => {
+  it("builds the CSV and the PDF from what the estimator would add on the floor plans", async () => {
     expect(HELD_OUT.test(SET), `${SET} is held out`).toBe(false);
-    const bytes = readFileSync(join(DIR, SET));
-    const doc = await openPlanPdf(bytes);
+    const library = LIBRARY === "" ? { defaultHeightFt: null, types: [] as LibraryType[] } : (JSON.parse(readFileSync(LIBRARY, "utf8")) as { defaultHeightFt: number | null; types: LibraryType[] });
+    const matchable: MatchableWallType[] = library.types.map((t) => ({ id: t.code, code: t.code, name: t.name, hasParts: t.layers > 0, thicknessIn: t.thicknessIn }));
+    const wallTypes: SummaryWallType[] = library.types.map((t) => ({ id: t.code, code: t.code, defaultHeightFt: library.defaultHeightFt, sides: t.sides, studSpacingIn: t.studSpacingIn }));
+
+    const doc = await openPlanPdf(readFileSync(join(DIR, SET)));
     const sheets: SummarySheet[] = [];
     const notes: string[] = [];
     try {
-      for (let page = 1; page <= doc.pageCount; page++) {
-        if (PAGES.length > 0 && !PAGES.includes(page)) continue;
+      for (const page of PAGES) {
         const text = await doc.pageText(page);
         const items = text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
         const reading = sheetNumberFrom(text);
-        const verdict = takeoffSheetVerdict({ sheetNumber: reading.sheetNumber, title: reading.regionText });
         const printed = scaleFromPrinted(printedScalesOnPage(items), text.widthPt, text.heightPt);
-        if (printed === null) continue;
-        if (verdict.skipAutomatically) {
-          notes.push(`p${page} ${reading.sheetNumber ?? "—"}: not a floor plan`);
+        if (printed === null) {
+          notes.push(`p${page} ${reading.sheetNumber ?? "—"}: no printed scale, nothing added`);
           continue;
         }
         const feetPerUnit = printed.declaredDistanceFeet;
         const t0 = Date.now();
+        const measurements: SummaryMeasurement[] = [];
+        const base = { cutouts: [], itemId: null, source: "MANUAL", roomName: null, roomNumber: null, wallRun: null, feetPerUnit };
         try {
           const strokes = await doc.pageStrokes(page);
           const pairings: WallCandidate[] = [];
@@ -69,11 +86,35 @@ describe.skipIf(DIR === "" || SET === "")("takeoff summary export on one set", (
             textItems: items,
             pageSize: { widthPt: strokes.widthPt, heightPt: strokes.heightPt },
             feetPerUnit,
+            wallTypes: matchable,
             onCandidate: (_features, wall) => pairings.push(wall),
           }).found;
-          if (found.groups.length === 0) {
-            notes.push(`p${page} ${reading.sheetNumber ?? "—"} ${printed.scaleName}: nothing found, ${Date.now() - t0} ms`);
-            continue;
+          let typed = 0;
+          let plain = 0;
+          let skipped = 0;
+          for (const group of found.groups) {
+            if (group.runs.every((run) => run.x1 > TITLE_BLOCK_X && run.x2 > TITLE_BLOCK_X)) {
+              skipped += 1;
+              continue;
+            }
+            const verdict = verdictFor(group);
+            const type =
+              verdict.state === "NAMED" || verdict.state === "BY_GENERAL_NOTE" || verdict.state === "ONLY_ONE_THAT_THICK"
+                ? verdict.type
+                : null;
+            if (type) typed += 1;
+            else plain += 1;
+            const label = type ? `${type.code} wall — ${inchLabel(group.inches)}` : `${inchLabel(group.inches)} wall`;
+            for (const run of group.runs) {
+              measurements.push({
+                ...base,
+                kind: "LINEAR",
+                xs: [run.x1, run.x2],
+                ys: [run.y1, run.y2],
+                label,
+                wallRun: type ? { wallTypeId: type.id, heightFt: null } : null,
+              });
+            }
           }
           const rooms = roomsFromWalls({
             walls: roomBoundary({ pairings, runs: found.walls, drawn: [] }),
@@ -81,36 +122,32 @@ describe.skipIf(DIR === "" || SET === "")("takeoff summary export on one set", (
             text: items,
             widthPt: text.widthPt,
           });
-          sheets.push({
-            pageNumber: page,
-            label: reading.sheetNumber,
-            walls: found.groups,
-            measurements: rooms.rooms.map((room) => ({
+          for (const room of rooms.rooms) {
+            measurements.push({
+              ...base,
               kind: "AREA",
               xs: room.xs,
               ys: room.ys,
-              cutouts: [],
               label: room.tag?.name ?? null,
-              itemId: null,
               source: "ROOM_FINDER",
               roomName: room.tag?.name ?? null,
               roomNumber: room.tag?.number ?? null,
-              feetPerUnit,
-            })),
-          });
+            });
+          }
           notes.push(
-            `p${page} ${reading.sheetNumber ?? "—"} ${printed.scaleName}: ${found.groups.length} groups, ${rooms.rooms.length} rooms ` +
-              `(${rooms.rooms.filter((r) => r.tag).length} named), ${Date.now() - t0} ms`,
+            `p${page} ${reading.sheetNumber ?? "—"} ${printed.scaleName}: ${found.groups.length} groups — ${typed} added typed, ${plain} added untyped, ${skipped} in the title block not added; ` +
+              `${rooms.rooms.length} rooms saved (${rooms.rooms.filter((r) => r.tag).length} named); ${Date.now() - t0} ms`,
           );
         } catch (error) {
           if (!(error instanceof SheetTooDenseError)) throw error;
           notes.push(`p${page} ${reading.sheetNumber ?? "—"}: too dense`);
         }
+        sheets.push({ pageNumber: page, label: reading.sheetNumber, notFloorPlan: null, measurements });
       }
     } finally {
       await doc.close();
     }
-    const summary = takeoffSummary({ sheets, wallTypes: [], items: [], doors: [] });
+    const summary = takeoffSummary({ sheets, wallTypes, items: [], doors: [] });
     const csv = takeoffSummaryCsv(summary);
     const t1 = Date.now();
     // Read again: pdf.js hands the first buffer to its worker, which can leave

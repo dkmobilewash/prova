@@ -993,21 +993,31 @@ change the groups.
 
 `lib/takeoff/summaryExport.ts` (pure builder + CSV + the adapter from
 `loadTakeoffWorkspace`), `summaryPdf.ts` (pdf-lib, tables then one embedded
-sheet per measured page with runs/polygons over it, `placeEmbedded` for
-`/Rotate`), `app/api/takeoff-summary/route.ts` (`?jobId&format=csv|pdf`,
-VIEW_JOB_COSTS + `Company.takeoffExportOn`), `TakeoffSummaryExport.tsx`
-(two download links on the takeoff tab), `TakeoffExportSwitch.tsx` +
-`saveTakeoffExportSwitch` (Settings, owner). Eval
-`realplan/summaryExport.eval.ts` writes the files for one training set to
-`SUMMARY_EVAL_OUT`.
+floor-plan sheet per measured page with runs/polygons over it, `placeEmbedded`
+for `/Rotate`, `winAnsi` for the viewer's ″ and ⅜), `app/api/takeoff-summary/route.ts`
+(`?jobId&format=csv|pdf`, VIEW_JOB_COSTS + `Company.takeoffExportOn`),
+`TakeoffSummaryExport.tsx` (two download links on the takeoff tab),
+`TakeoffExportSwitch.tsx` + `saveTakeoffExportSwitch` (Settings, owner).
 
-Seen on Baker: walls and rooms sit on the drawing on A100/A101 (unrotated)
-and word boxes land on the words of G001 (`/Rotate 90`), rendered with
-PDFKit from the output file. Rooms on A100 are the room step flooding the
-existing building (29 unnamed) — the finder's boundary, not the export.
+**Accepted only.** Walls = LINEAR measurements; typed when "Add as X — priced"
+gave them a `WallRun` (type + height), else an untyped block by label, feet
+only. Rooms = saved ROOM_FINDER / named areas, named first, unnamed marked and
+last. Areas by item. Doors = newest unrejected DOOR schedule read per sheet
+(the app has no accept step for schedule reads today). Raw
+`TakeoffWallProposal` groups are not exported. Sheets the index calls not a
+floor plan (`duplicateWallsByPage`) are left out and listed as such.
 
-Not built: counts (COUNT measurements), hand-traced LINEAR lines that are
-not wall groups, opening deductions on board sf, per-sheet door marks on the
-drawing (the schedule has no positions). Deferred e2e: settings switch on →
-two links appear on the takeoff; off → absent; each link downloads a file
-whose first line / first bytes are the CSV header / `%PDF-`.
+Eval `realplan/summaryExport.eval.ts` stands in for the walkthrough (library
+JSON outside git, Find the walls, Add on every group, Find the rooms) on the
+floor plans named in `SUMMARY_EVAL_PAGES`. Baker A101 with the eight A601
+types at 15 ft (A301): 6 typed (351 ft), 8 untyped thicknesses (315 ft) that
+match no library thickness — the app offers no way to type those but the ASK
+dropdown, which only appears when two types tie — 6 named rooms.
+Files in `~/Claude Folder/takeoff/shots/takeoff-export/`.
+
+Not built: COUNT measurements, opening deductions on board sf, the "found but
+not added" appendix (off by default was offered; nothing asks for it yet).
+Deferred e2e: settings switch on → two links appear on the takeoff; off →
+absent; each link downloads a file whose first line / first bytes are the CSV
+header / `%PDF-`; Add as <type> on a found group then export → the type's
+row carries the run's feet.

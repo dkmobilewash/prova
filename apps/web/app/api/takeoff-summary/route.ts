@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@prova/db";
 import { requireCapability } from "@/lib/authz";
 import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
-import { loadScheduleProposals } from "@/lib/plan-ingest/scheduleProposalsQuery";
+import { scheduleRowsFromJson } from "@/lib/plan-ingest/scheduleRowsJson";
 import { summaryInputFrom, takeoffSummary, takeoffSummaryCsv } from "@/lib/takeoff/summaryExport";
 import { takeoffSummaryPdf } from "@/lib/takeoff/summaryPdf";
 import { loadTakeoffWorkspace } from "@/lib/takeoff/workspaceLoad";
@@ -46,7 +46,16 @@ export async function GET(request: Request) {
 
   const data = await loadTakeoffWorkspace({ id: context.company.id }, job);
   if (data === null) return plain("This job has no drawing yet.", 404);
-  const summary = takeoffSummary(summaryInputFrom({ ...data, schedules: await loadScheduleProposals(data.plan.id) }));
+  // Every schedule read with its status, newest first — the adapter keeps the
+  // newest unrejected DOOR read per sheet.
+  const schedules = (
+    await prisma.planScheduleProposal.findMany({
+      where: { planId: data.plan.id },
+      orderBy: { createdAt: "desc" },
+      select: { pageNumber: true, kind: true, status: true, rows: true },
+    })
+  ).map((row) => ({ ...row, rows: scheduleRowsFromJson(row.rows) }));
+  const summary = takeoffSummary(summaryInputFrom({ ...data, schedules }));
   // The viewer's own calendar day, not the server's (`viewerDayCensus.test.ts`).
   const today = await viewerToday();
   const stem = `takeoff-summary-${safeName(job.name)}-${today}`;

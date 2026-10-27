@@ -1,30 +1,39 @@
 import { toCsv } from "@/lib/export";
-import { ringPerimeter } from "@/lib/sheet-geometry";
+import { polylineLength, ringPerimeter } from "@/lib/sheet-geometry";
 import { studsRequired, trackRequired } from "@/lib/takeoff";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { cutoutsFromJson, netArea } from "./itemQuantities";
-import { verdictFor, type WallGroup } from "./wallGroups";
 
 /**
- * ── THE TAKEOFF SUMMARY: what was measured, by sheet, with no prices ──
+ * ── THE TAKEOFF SUMMARY: what the ESTIMATOR accepted, by sheet, no prices ──
  *
- * One pure function from the takeoff's existing rows to the lines an estimator
- * sends or keeps: walls by type (feet, height, board, studs, track), rooms
- * (square feet, perimeter), other areas by item (ceilings, floors — the item
- * IS the type; nothing on a measurement says "ceiling"), and doors from the
- * schedule the model read. Every line names the sheet(s) it came from, and
- * `sheets` carries what to draw over each sheet so the PDF can show it.
+ * One pure function from the takeoff's rows to the lines an estimator sends
+ * or keeps. Only what somebody put on the takeoff is in it:
  *
- * NOTHING NEW IS MEASURED HERE. Walls are the stored groups the viewer shows
- * (`storedWallsByPage`), named by the same `verdictFor` the viewer prices by;
- * rooms and areas are `TakeoffMeasurement` rows at their own calibration, the
- * way `itemQuantity` reads them; doors are the newest DOOR schedule read per
- * sheet. A quantity here is the quantity on screen.
+ *   - walls: LINEAR measurements. "Add as S8B — priced" writes the group's
+ *     runs as measurements with a `WallRun` naming the type and height, so a
+ *     TYPED wall is a measurement with a wall run. Those add up by type with
+ *     feet, height, board, studs and track. A LINEAR measurement with no wall
+ *     run ("Add these", or a hand-traced line) is an UNTYPED wall: one block,
+ *     by its label, FEET ONLY — no studs, track or board, because a quantity
+ *     needs a type and guessing one is what this file refuses.
+ *   - rooms: AREA measurements the room finder saved, or any area carrying a
+ *     room name/number. Named rooms first; unnamed ones marked and last.
+ *   - areas: every other AREA measurement, by the item it belongs to — the
+ *     item IS the type; nothing on a measurement says "ceiling".
+ *   - doors: the newest DOOR schedule read per sheet that nobody rejected.
  *
- * Board square feet is feet × height × sides with NO opening deduction: a
- * stored run carries opening widths but no heights, so a deduction would be
- * a guess. Height is the wall type's default; a group with no type, or a type
- * with no default height, has no board figure and says so with a blank.
+ * The finder's raw groups (`TakeoffWallProposal`) are NOT here. They are
+ * what the viewer offers; a group somebody never pressed Add on is not a
+ * takeoff.
+ *
+ * FLOOR PLANS ONLY. A sheet whose index says schedule, section, elevation or
+ * cover is left out even when something was measured on it, and the summary
+ * SAYS so (`leftOut`), so nothing disappears in silence.
+ *
+ * Board square feet is feet × height × sides with no opening deduction: the
+ * wall run records opening widths, not heights. A measurement is read at its
+ * OWN calibration, the way `itemQuantity` reads it.
  */
 
 export type SummaryMeasurement = {
@@ -37,6 +46,8 @@ export type SummaryMeasurement = {
   source: string;
   roomName: string | null;
   roomNumber: string | null;
+  /** Set when "Add as <type> — priced" posted this run against a wall type. */
+  wallRun: { wallTypeId: string; heightFt: number | null } | null;
   /** Feet per page-width unit at the measurement's OWN calibration; null when unreadable. */
   feetPerUnit: number | null;
 };
@@ -45,7 +56,8 @@ export type SummarySheet = {
   pageNumber: number;
   /** `sheetLabelByPage` — "A101 — FIRST FLOOR PLAN" — or null when the set has no index. */
   label: string | null;
-  walls: WallGroup[];
+  /** Why the index says this is not a floor plan, or null when it is one (or unknown). */
+  notFloorPlan: string | null;
   measurements: SummaryMeasurement[];
 };
 
@@ -66,21 +78,23 @@ export type SummaryInput = {
   sheets: SummarySheet[];
   wallTypes: SummaryWallType[];
   items: { id: string; name: string }[];
-  /** The newest DOOR schedule read per sheet. */
+  /** The newest unrejected DOOR schedule read per sheet. */
   doors: SummaryDoorSheet[];
 };
 
 export type WallLine = {
-  name: string;
-  typeCode: string | null;
+  typeCode: string;
   linearFt: number;
+  /** One height when every run shares it; null when they differ or none is known. */
   heightFt: number | null;
   boardSqFt: number | null;
   studs: number;
   trackFt: number;
+  runs: number;
   sheets: string[];
 };
-export type RoomLine = { name: string; number: string | null; squareFeet: number; perimeterFt: number; sheet: string };
+export type UntypedWallLine = { name: string; linearFt: number; runs: number; sheets: string[] };
+export type RoomLine = { name: string; number: string | null; named: boolean; squareFeet: number; perimeterFt: number; sheet: string };
 export type AreaLine = { item: string; measurements: number; squareFeet: number; perimeterFt: number; sheets: string[] };
 export type DoorLine = {
   mark: string;
@@ -90,46 +104,29 @@ export type DoorLine = {
   notes: string | null;
   sheet: string;
 };
+export type LeftOut = { sheet: string; why: string; measurements: number };
 export type SheetMarkup = {
   pageNumber: number;
   label: string;
-  runs: { x1: number; y1: number; x2: number; y2: number; name: string }[];
+  runs: { xs: number[]; ys: number[]; name: string }[];
   polygons: { xs: number[]; ys: number[]; name: string; kind: "room" | "area" }[];
 };
 
 export type TakeoffSummary = {
   walls: WallLine[];
+  untypedWalls: UntypedWallLine[];
   rooms: RoomLine[];
   areas: AreaLine[];
   doors: DoorLine[];
+  leftOut: LeftOut[];
   sheets: SheetMarkup[];
 };
 
+export const UNTYPED = "Untyped";
+export const UNNAMED_ROOM = "(unnamed)";
+
 const round1 = (n: number) => Math.round(n * 10) / 10;
 export const sheetName = (sheet: { pageNumber: number; label: string | null }) => sheet.label ?? `Sheet ${sheet.pageNumber}`;
-
-function inches(n: number): string {
-  return `${Math.round(n * 8) / 8} in.`;
-}
-
-/** What a group is called on the summary — the viewer's verdict, in words. */
-export function wallLineName(group: WallGroup): { name: string; typeId: string | null } {
-  const verdict = verdictFor(group);
-  switch (verdict.state) {
-    case "NAMED":
-    case "BY_GENERAL_NOTE":
-    case "ONLY_ONE_THAT_THICK":
-      return { name: verdict.type.code, typeId: verdict.type.id };
-    case "TAG_DISAGREES":
-      return { name: `${verdict.type.code} (drawn ${inches(group.inches)})`, typeId: verdict.type.id };
-    case "ASK":
-      return { name: `${inches(group.inches)} wall (${verdict.types.map((t) => t.code).join(" or ")}?)`, typeId: null };
-    case "NO_SUCH_TYPE":
-      return { name: `${verdict.tag} (not in your library, ${inches(group.inches)})`, typeId: null };
-    case "UNKNOWN":
-      return { name: `${inches(group.inches)} wall`, typeId: null };
-  }
-}
 
 const isRoom = (m: SummaryMeasurement) =>
   m.kind === "AREA" && (m.source === "ROOM_FINDER" || m.roomName !== null || m.roomNumber !== null);
@@ -137,53 +134,74 @@ const isRoom = (m: SummaryMeasurement) =>
 export function takeoffSummary(input: SummaryInput): TakeoffSummary {
   const typeById = new Map(input.wallTypes.map((type) => [type.id, type]));
   const itemById = new Map(input.items.map((item) => [item.id, item.name]));
-  const walls = new Map<string, WallLine & { sheetSet: Set<string>; sides: number }>();
-  const areas = new Map<string, AreaLine & { sheetSet: Set<string> }>();
+  type Acc<T> = T & { sheetSet: Set<string> };
+  const walls = new Map<string, Acc<WallLine> & { heights: Set<number | null>; board: number }>();
+  const untyped = new Map<string, Acc<UntypedWallLine>>();
+  const areas = new Map<string, Acc<AreaLine>>();
   const rooms: RoomLine[] = [];
+  const leftOut: LeftOut[] = [];
   const sheets: SheetMarkup[] = [];
 
   for (const sheet of input.sheets) {
     const label = sheetName(sheet);
-    const markup: SheetMarkup = { pageNumber: sheet.pageNumber, label, runs: [], polygons: [] };
-    for (const group of sheet.walls) {
-      const { name, typeId } = wallLineName(group);
-      const type = typeId === null ? null : (typeById.get(typeId) ?? null);
-      const line =
-        walls.get(name) ??
-        walls
-          .set(name, {
-            name,
-            typeCode: type?.code ?? null,
-            linearFt: 0,
-            heightFt: type?.defaultHeightFt ?? null,
-            boardSqFt: null,
-            studs: 0,
-            trackFt: 0,
-            sheets: [],
-            sheetSet: new Set(),
-            sides: type?.sides === 1 ? 1 : 2,
-          })
-          .get(name)!;
-      const spacingFt = type && type.studSpacingIn > 0 ? type.studSpacingIn / 12 : undefined;
-      line.linearFt += group.feet;
-      line.trackFt += trackRequired(group.feet);
-      for (const run of group.runs) {
-        line.studs += studsRequired(run.lengthFeet, { spacingFt });
-        markup.runs.push({ x1: run.x1, y1: run.y1, x2: run.x2, y2: run.y2, name });
-      }
-      line.sheetSet.add(label);
+    if (sheet.notFloorPlan !== null) {
+      if (sheet.measurements.length > 0) leftOut.push({ sheet: label, why: sheet.notFloorPlan, measurements: sheet.measurements.length });
+      continue;
     }
+    const markup: SheetMarkup = { pageNumber: sheet.pageNumber, label, runs: [], polygons: [] };
     for (const m of sheet.measurements) {
-      if (m.kind !== "AREA" || m.feetPerUnit === null) continue;
+      if (m.feetPerUnit === null) continue;
+      if (m.kind === "LINEAR") {
+        const feet = polylineLength(m.xs, m.ys) * m.feetPerUnit;
+        const type = m.wallRun === null ? null : (typeById.get(m.wallRun.wallTypeId) ?? null);
+        if (type === null) {
+          const name = (m.itemId === null ? null : itemById.get(m.itemId)) ?? m.label ?? "Unlabelled";
+          const line =
+            untyped.get(name) ?? untyped.set(name, { name, linearFt: 0, runs: 0, sheets: [], sheetSet: new Set() }).get(name)!;
+          line.linearFt += feet;
+          line.runs += 1;
+          line.sheetSet.add(label);
+          markup.runs.push({ xs: m.xs, ys: m.ys, name: UNTYPED });
+          continue;
+        }
+        const line =
+          walls.get(type.code) ??
+          walls
+            .set(type.code, {
+              typeCode: type.code,
+              linearFt: 0,
+              heightFt: null,
+              boardSqFt: null,
+              studs: 0,
+              trackFt: 0,
+              runs: 0,
+              sheets: [],
+              sheetSet: new Set(),
+              heights: new Set(),
+              board: 0,
+            })
+            .get(type.code)!;
+        const height = m.wallRun?.heightFt ?? type.defaultHeightFt;
+        line.linearFt += feet;
+        line.runs += 1;
+        line.heights.add(height);
+        if (height !== null) line.board += feet * height * (type.sides === 1 ? 1 : 2);
+        line.studs += studsRequired(feet, { spacingFt: type.studSpacingIn > 0 ? type.studSpacingIn / 12 : undefined });
+        line.trackFt += trackRequired(feet);
+        line.sheetSet.add(label);
+        markup.runs.push({ xs: m.xs, ys: m.ys, name: type.code });
+        continue;
+      }
+      if (m.kind !== "AREA") continue;
       const squareFeet = round1(netArea(m.xs, m.ys, m.cutouts) * m.feetPerUnit * m.feetPerUnit);
       const perimeterFt = round1((ringPerimeter(m.xs, m.ys) ?? 0) * m.feetPerUnit);
       if (isRoom(m)) {
-        const name = m.roomName ?? m.label ?? "Unnamed room";
-        rooms.push({ name, number: m.roomNumber, squareFeet, perimeterFt, sheet: label });
-        markup.polygons.push({ xs: m.xs, ys: m.ys, name: [m.roomNumber, name].filter(Boolean).join(" "), kind: "room" });
+        const name = m.roomName ?? m.label;
+        rooms.push({ name: name ?? UNNAMED_ROOM, number: m.roomNumber, named: name !== null || m.roomNumber !== null, squareFeet, perimeterFt, sheet: label });
+        markup.polygons.push({ xs: m.xs, ys: m.ys, name: [m.roomNumber, name ?? UNNAMED_ROOM].filter(Boolean).join(" "), kind: "room" });
         continue;
       }
-      const item = (m.itemId === null ? null : itemById.get(m.itemId)) ?? "Unassigned";
+      const item = (m.itemId === null ? null : itemById.get(m.itemId)) ?? "Unassigned areas";
       const line =
         areas.get(item) ??
         areas.set(item, { item, measurements: 0, squareFeet: 0, perimeterFt: 0, sheets: [], sheetSet: new Set() }).get(item)!;
@@ -208,24 +226,36 @@ export function takeoffSummary(input: SummaryInput): TakeoffSummary {
     })),
   );
 
-  const finish = <T extends { sheetSet: Set<string>; sheets: string[] }>({ sheetSet, ...line }: T) => ({
-    ...line,
-    sheets: [...sheetSet],
-  });
+  // Named rooms first, by number then name; unnamed last, in the order traced.
+  const byRoom = (a: RoomLine, b: RoomLine) =>
+    Number(b.named) - Number(a.named) || (a.number ?? "").localeCompare(b.number ?? "", undefined, { numeric: true }) || a.name.localeCompare(b.name);
+
   return {
-    walls: [...walls.values()].map(({ sides, ...line }) => ({
-      ...finish(line),
-      linearFt: round1(line.linearFt),
-      trackFt: round1(line.trackFt),
-      boardSqFt: line.heightFt === null ? null : round1(line.linearFt * line.heightFt * sides),
-    })),
-    rooms,
-    areas: [...areas.values()].map(finish).map((line) => ({
+    walls: [...walls.values()]
+      .sort((a, b) => a.typeCode.localeCompare(b.typeCode, undefined, { numeric: true }))
+      .map(({ sheetSet, heights, board, ...line }) => {
+        const one = heights.size === 1 ? [...heights][0] : null;
+        return {
+          ...line,
+          linearFt: round1(line.linearFt),
+          trackFt: round1(line.trackFt),
+          heightFt: one,
+          boardSqFt: heights.has(null) ? null : round1(board),
+          sheets: [...sheetSet],
+        };
+      }),
+    untypedWalls: [...untyped.values()]
+      .sort((a, b) => b.linearFt - a.linearFt)
+      .map(({ sheetSet, ...line }) => ({ ...line, linearFt: round1(line.linearFt), sheets: [...sheetSet] })),
+    rooms: rooms.sort(byRoom),
+    areas: [...areas.values()].map(({ sheetSet, ...line }) => ({
       ...line,
       squareFeet: round1(line.squareFeet),
       perimeterFt: round1(line.perimeterFt),
+      sheets: [...sheetSet],
     })),
     doors,
+    leftOut,
     sheets,
   };
 }
@@ -251,10 +281,12 @@ export const SUMMARY_CSV_COLUMNS = [
 /** One table, opens in a spreadsheet; blank where a figure does not apply. */
 export function takeoffSummaryCsv(summary: TakeoffSummary): string {
   const rows: Record<string, unknown>[] = [];
+  const runs = (n: number) => `${n} run${n === 1 ? "" : "s"}`;
   for (const w of summary.walls) {
     rows.push({
       section: "Walls",
-      name: w.name,
+      name: w.typeCode,
+      description: runs(w.runs),
       quantity: w.linearFt,
       unit: "ft",
       linear_ft: w.linearFt,
@@ -263,6 +295,19 @@ export function takeoffSummaryCsv(summary: TakeoffSummary): string {
       studs: w.studs,
       track_ft: w.trackFt,
       sheets: w.sheets.join("; "),
+      notes: w.heightFt === null && w.boardSqFt !== null ? "heights vary by run" : "",
+    });
+  }
+  for (const u of summary.untypedWalls) {
+    rows.push({
+      section: "Untyped walls",
+      name: u.name,
+      description: runs(u.runs),
+      quantity: u.linearFt,
+      unit: "ft",
+      linear_ft: u.linearFt,
+      sheets: u.sheets.join("; "),
+      notes: "no type: feet only",
     });
   }
   for (const r of summary.rooms) {
@@ -275,6 +320,7 @@ export function takeoffSummaryCsv(summary: TakeoffSummary): string {
       area_sqft: r.squareFeet,
       perimeter_ft: r.perimeterFt,
       sheets: r.sheet,
+      notes: r.named ? "" : "unnamed on the drawing",
     });
   }
   for (const a of summary.areas) {
@@ -301,13 +347,22 @@ export function takeoffSummaryCsv(summary: TakeoffSummary): string {
       notes: d.notes ?? "",
     });
   }
+  for (const l of summary.leftOut) {
+    rows.push({
+      section: "Left out",
+      name: l.sheet,
+      description: `${l.measurements} measurement${l.measurements === 1 ? "" : "s"} not exported`,
+      sheets: l.sheet,
+      notes: `not a floor plan: ${l.why}`,
+    });
+  }
   return toCsv([...SUMMARY_CSV_COLUMNS], rows.map((row) => Object.fromEntries(SUMMARY_CSV_COLUMNS.map((c) => [c, row[c] ?? ""]))));
 }
 
 /**
  * The adapter from what the takeoff page already loads (`loadTakeoffWorkspace`
- * plus `loadScheduleProposals`) to the pure input above. Typed structurally so
- * a test can hand it rows without a database.
+ * plus the plan's schedule reads) to the pure input above. Typed structurally
+ * so a test can hand it rows without a database.
  */
 export function summaryInputFrom(data: {
   plan: {
@@ -323,12 +378,14 @@ export function summaryInputFrom(data: {
         source: string;
         roomName: string | null;
         roomNumber: string | null;
+        wallRun: { wallTypeId: string; heightFt: { toNumber(): number } | null } | null;
         calibration: { x1: number; y1: number; x2: number; y2: number; declaredDistanceFeet: { toNumber(): number } };
       }[];
     }[];
   };
-  storedWallsByPage: Record<number, WallGroup[]>;
   sheetLabelByPage: Record<number, string>;
+  /** The index's caution per page that is not a floor plan (`sheetSuitability`). */
+  duplicateWallsByPage: Record<number, string>;
   allWallTypes: {
     id: string;
     code: string;
@@ -337,13 +394,13 @@ export function summaryInputFrom(data: {
     studSpacingIn: { toNumber(): number };
   }[];
   items: { id: string; name: string }[];
-  schedules: { pageNumber: number; kind: string; rows: SummaryDoorSheet["rows"] }[];
+  /** Newest first. */
+  schedules: { pageNumber: number; kind: string; status: string; rows: SummaryDoorSheet["rows"] }[];
 }): SummaryInput {
   const seenDoorPage = new Set<number>();
   const doors: SummaryDoorSheet[] = [];
-  // Newest first already (`loadScheduleProposals` orders by createdAt desc).
   for (const schedule of data.schedules) {
-    if (schedule.kind !== "DOOR" || seenDoorPage.has(schedule.pageNumber)) continue;
+    if (schedule.kind !== "DOOR" || schedule.status === "REJECTED" || seenDoorPage.has(schedule.pageNumber)) continue;
     seenDoorPage.add(schedule.pageNumber);
     doors.push({ pageNumber: schedule.pageNumber, rows: schedule.rows });
   }
@@ -351,7 +408,7 @@ export function summaryInputFrom(data: {
     sheets: data.plan.pages.map((page) => ({
       pageNumber: page.pageNumber,
       label: data.sheetLabelByPage[page.pageNumber] ?? null,
-      walls: data.storedWallsByPage[page.pageNumber] ?? [],
+      notFloorPlan: data.duplicateWallsByPage[page.pageNumber] ?? null,
       measurements: page.measurements.map((m) => ({
         kind: m.kind,
         xs: m.xs,
@@ -362,6 +419,10 @@ export function summaryInputFrom(data: {
         source: m.source,
         roomName: m.roomName,
         roomNumber: m.roomNumber,
+        wallRun:
+          m.wallRun === null
+            ? null
+            : { wallTypeId: m.wallRun.wallTypeId, heightFt: m.wallRun.heightFt === null ? null : m.wallRun.heightFt.toNumber() },
         feetPerUnit: feetPerPageWidth({ ...m.calibration, declaredDistanceFeet: m.calibration.declaredDistanceFeet.toNumber() }),
       })),
     })),

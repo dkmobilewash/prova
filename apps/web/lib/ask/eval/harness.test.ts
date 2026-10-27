@@ -125,7 +125,7 @@ describe("every eval refuses to run without a key", () => {
     "zzRoomKeys.eval.ts":
       "calls no model: writes the room answer keys — printed tags read by position off training pages, BIM spaces joined to their tag text, synthetic truth joined to the tag on the sheet — to a folder beside the confidential plans, outside git. Each source is guarded by its own skip and a non-zero room-count assertion",
     "summaryExport.eval.ts":
-      "calls no model: runs the finder and the room step over every scaled floor plan of one TRAINING set (held-out names refused) and writes the takeoff summary CSV and PDF the app's export buttons would produce, outside git. Guarded by a skip when REAL_PLAN_DIR or SUMMARY_EVAL_SET is unset plus a non-zero sheet-count assertion",
+      "calls no model: stands in for the estimator's walkthrough on the floor plans of one TRAINING set (held-out names refused) — library from a JSON outside git, Find the walls, Add on every group, Find the rooms — and writes the takeoff summary CSV and PDF the app's export buttons would produce, outside git. Guarded by a skip when REAL_PLAN_DIR, SUMMARY_EVAL_SET or SUMMARY_EVAL_PAGES is unset plus a non-zero sheet-count assertion",
     "zzRoomDetect.eval.ts":
       "calls no model: runs roomsFromWalls over the label files' accepted walls, the finder's raw pairings, and the BIM keys' own centrelines, and scores area per room against the keys. Guarded by skips on each directory plus a non-zero joined-room assertion, so an empty labels folder cannot read as a clean run",
     "zzRoomLeaks.eval.ts":
