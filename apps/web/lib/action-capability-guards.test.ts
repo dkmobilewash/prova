@@ -887,13 +887,13 @@ const MIXED_DOORS: Record<string, { capability: Capability | null; reason: strin
       "Reached from /settings/assistant only through the Ask command registry (record_bid_outcome, MANAGE_ESTIMATING); its real form is on the /ai bid workspace, MANAGE_ESTIMATING like /bids. Gated on MANAGE_ESTIMATING so the command, the page and the action agree.",
   },
   // Same shape again: /settings/assistant reaches addLineItem only by
-  // importing the command registry (adjust_estimate, which writes its one
-  // computed line through this action). The real door is the job's estimate,
+  // importing the command registry (adjust_estimate and add_estimate_line,
+  // which each write one line through this action). The real door is the job's estimate,
   // which withholds on VIEW_JOB_COSTS, and the command declares the same.
   "jobs.addLineItem": {
     capability: "VIEW_JOB_COSTS",
     reason:
-      "Reached from the job's estimate (VIEW_JOB_COSTS) and from /settings/assistant, which demands MANAGE_COMPLIANCE only because it imports the Ask command registry to list proposals — the adjust_estimate command calls this action, and there is no line form on that page. VIEW_JOB_COSTS is what the action already asserts and what the command declares, so the page, the command and the action agree.",
+      "Reached from the job's estimate (VIEW_JOB_COSTS) and from /settings/assistant, which demands MANAGE_COMPLIANCE only because it imports the Ask command registry to list proposals — the adjust_estimate and add_estimate_line commands both call this action, and there is no line form on that page. VIEW_JOB_COSTS is what the action already asserts and what both commands declare, so the page, the commands and the action agree.",
   },
   "billing.logPayment": {
     capability: "MANAGE_BILLING",

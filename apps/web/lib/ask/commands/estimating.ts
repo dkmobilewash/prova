@@ -11,6 +11,7 @@ import { parseNumericInput } from "@/lib/numeric-input";
 import { addLineItem } from "@/lib/actions/jobs";
 import { bidTotalOf } from "@/lib/estimating/recap-state";
 import { centsOf, dollars, planEstimateAdjustment } from "@/lib/estimating/estimate-adjustment";
+import { planTypedLine } from "@/lib/estimating/typed-line";
 import { can } from "@/lib/permissions";
 import { formDataFrom, throughAction } from "./adapter";
 import type {
@@ -25,10 +26,11 @@ import type {
 } from "../commands";
 
 /**
- * Diego's lane: estimating. Four commands, all T1 drafts on ESTIMATE-stage
+ * Diego's lane: estimating. Five commands, all T1 drafts on ESTIMATE-stage
  * jobs, all DIRECT — three through the lifted cores in lib/estimating, the
  * first capability the Ask box could complete rather than describe, and
- * `adjust_estimate` through the job page's own `addLineItem` action.
+ * `adjust_estimate` and `add_estimate_line` through the job page's own
+ * `addLineItem` action.
  *
  * What every `resolve` here has in common: it reads, it never writes, and
  * every figure it puts on a card was read from a row (a catalog price),
@@ -576,7 +578,7 @@ async function executeCatalogLine(ctx: CommandContext, payload: ResolvedPayload)
 export const addCatalogLineCommand: DirectCommandDefinition = {
   name: "add_catalog_line",
   description:
-    "Adds ONE line to an estimate-stage job from the company's own catalog, at the catalog's price. Needs the job's name, the catalog item as the person named it, and a quantity; ask for whichever is missing. Does NOT invent an item or a price: when the catalog has no such item it refuses and says so. Does NOT total anything.",
+    "Adds ONE line to an estimate-stage job from the company's own catalog, at the catalog's price. Needs the job's name, the catalog item as the person named it, and a quantity; ask for whichever is missing. Does NOT invent an item or a price: when the catalog has no such item it refuses and says so (a line at a price the person states is add_estimate_line). Does NOT total anything.",
   capability: "MANAGE_ESTIMATING",
   requiresAlso: ["VIEW_JOB_COSTS"],
   tier: "T1_DRAFT",
@@ -789,7 +791,7 @@ async function executeAdjustEstimate(ctx: CommandContext, payload: ResolvedPaylo
 export const adjustEstimateCommand: DirectCommandDefinition = {
   name: "adjust_estimate",
   description:
-    "Adds ONE lump-sum line to an estimate-stage job's bid for an adjustment the person states as a percentage of the bid or a dollar amount: 'add 10% for night work', 'add $2,500 for mobilization', 'add 5% contingency', 'take 3% off for the GC'. Pass the figure EXACTLY as the person typed it and their own short name for the line. Does NOT compute anything: never pass a dollar result you worked out yourself — the percentage is applied in code to the bid as it stands, and the card shows the base, the percentage and the result. Does NOT discount unless the person said off, discount, less or knock off. Does NOT touch existing lines, the bid recap's markups, or a contracted job. It proposes only: the person confirms on a card before anything is added.",
+    "Adds ONE lump-sum line to an estimate-stage job's bid for an adjustment the person states as a percentage of the bid or a dollar amount: 'add 10% for night work', 'add $2,500 for mobilization', 'add 5% contingency', 'take 3% off for the GC'. Pass the figure EXACTLY as the person typed it and their own short name for the line. Does NOT compute anything: never pass a dollar result you worked out yourself — the percentage is applied in code to the bid as it stands, and the card shows the base, the percentage and the result. Does NOT discount unless the person said off, discount, less or knock off. Does NOT add a line with a quantity at a unit price ('40 hours of cleanup at $65') — that is add_estimate_line. Does NOT touch existing lines, the bid recap's markups, or a contracted job. It proposes only: the person confirms on a card before anything is added.",
   capability: "MANAGE_ESTIMATING",
   requiresAlso: ["VIEW_JOB_COSTS"],
   tier: "T1_DRAFT",
@@ -829,20 +831,237 @@ export const adjustEstimateCommand: DirectCommandDefinition = {
   execute: executeAdjustEstimate,
 };
 
+// ----------------------------------------------------------- typed line
+
+/**
+ * "Add a line for 40 hours of cleanup at $65", "add 200 SF of patching at
+ * $4.50" — one priced line on an estimate-stage job, at a price the PERSON
+ * stated.
+ *
+ * ── WHERE THE NUMBERS COME FROM ──
+ *
+ * The design rule is that every number on a card was read from a row or
+ * typed by the person. The strongest way to enforce "typed by the person"
+ * would be to require each figure to appear in the question text — and the
+ * question is NOT reachable from `resolve`: `CommandContext` carries no
+ * question, and the loop holds it only in `runCommand`. Plumbing it through
+ * would also be wrong on its own terms, because a figure is legitimately
+ * typed in an EARLIER turn ("what price?" — "65"), so a check against the
+ * current question would refuse exactly the follow-ups the `need` path
+ * produces.
+ *
+ * So this follows the precedent of the other commands that take typed
+ * numbers — `log_payment` and `draft_invoice` (an amount), `log_time_entry`
+ * (hours): the schema demands the figure as the person said it, a strict
+ * deterministic parser (here `lib/numeric-input.ts`, the job page form's own)
+ * refuses anything that is not plainly a number, nothing is ever computed by
+ * the model, and every figure is read back on the card for the person to
+ * check before the tap. The line total and the bid after it are computed in
+ * `lib/estimating/typed-line.ts`.
+ *
+ * ── WHICH OF THE THREE LINE COMMANDS ──
+ *
+ * A percent or flat adder to the whole bid is `adjust_estimate`; an item from
+ * the company's price book is `add_catalog_line`; a quantity at a price the
+ * person states is this. The descriptions say so in both directions.
+ */
+
+/** An estimate-stage job of this company, by chip id or by name. */
+async function estimateJob(
+  ctx: CommandContext,
+  input: CommandInput,
+  noneReason: (jobName: string) => string,
+): Promise<{ job: { id: string; name: string } } | Resolution> {
+  if (input.jobId) {
+    const row = await prisma.job.findFirst({
+      where: { id: input.jobId, companyId: ctx.companyId, status: "ESTIMATE" },
+      select: { id: true, name: true },
+    });
+    if (!row) return { kind: "refuse", reason: "That job isn't on your account at the estimate stage." };
+    return { job: row };
+  }
+  const jobName = input.jobName ?? "";
+  const found = await resolveJob(ctx.companyId, jobName, { status: "ESTIMATE" });
+  if (found.kind === "none") return { kind: "refuse", reason: noneReason(jobName), href: "/dashboard" };
+  if (found.kind === "many") return { kind: "clarify", field: "jobId", question: "Which job?", options: found.options };
+  return { job: { id: found.match.id, name: found.match.name } };
+}
+
+async function resolveTypedLine(ctx: CommandContext, input: CommandInput): Promise<Resolution> {
+  const missing: string[] = [];
+  if (!input.jobName && !input.jobId) missing.push("which job");
+  if (!input.description) missing.push("what the line is for, in the person's words");
+  if (!input.quantity) missing.push("the quantity");
+  // A price nobody said is a QUESTION to the person, never a gap the model
+  // fills: no card exists until they say one.
+  if (!input.unitPrice) missing.push("the price per unit, as the person states it — never estimate one");
+  if (missing.length > 0) return { kind: "need", missing: missing.join(", ") };
+
+  const located = await estimateJob(
+    ctx,
+    input,
+    (jobName) => `No estimate-stage job matches "${jobName}". Lines can only be added while a job is still an estimate; after award it is a change order.`,
+  );
+  if (!("job" in located)) return located;
+  const { job } = located;
+
+  const lines = await liveLines(job.id);
+  const baseCents = centsOf(bidTotalOf(lines));
+  const plan = planTypedLine({
+    description: input.description ?? "",
+    quantity: input.quantity ?? "",
+    unit: input.unit,
+    unitPrice: input.unitPrice ?? "",
+    unitCost: input.unitCost,
+    baseCents,
+  });
+  if (!plan.ok) return { kind: "refuse", reason: plan.reason, href: `/jobs/${job.id}` };
+
+  const resolved = {
+    jobId: job.id,
+    jobName: job.name,
+    description: plan.description,
+    quantity: plan.quantity,
+    unit: plan.unit,
+    unitPrice: plan.unitPrice,
+    unitCost: plan.unitCost,
+    totalCents: plan.totalCents,
+  };
+  const preview: PreviewLine[] = [
+    { label: "Job", value: job.name },
+    { label: "Line", value: plan.cardLine },
+    ...(plan.costLine ? [{ label: "Cost", value: plan.costLine }] : []),
+    { label: "Bid so far", value: dollars(baseCents) },
+    { label: "Bid with this line", value: dollars(baseCents + plan.totalCents) },
+  ];
+
+  const same = lines.find((line) => line.description.trim().toLowerCase() === plan.description.toLowerCase());
+  if (same) {
+    return {
+      kind: "ready",
+      resolved,
+      preview,
+      warnings: [],
+      existing: { label: `${job.name} already has a line "${plan.description}"`, href: `/jobs/${job.id}` },
+    };
+  }
+
+  const warnings: string[] = [];
+  if (plan.rounded) warnings.push("Rounded to the nearest cent; half a cent rounds away from zero.");
+  if (!plan.unit) warnings.push("No unit given, so the line has none. Say it now if it is per hour, per SF or similar.");
+  if (!plan.unitCost) warnings.push("The line carries a price and no cost. Add a cost on the job page, or say it now, if it has one.");
+  return { kind: "ready", resolved, preview, warnings };
+}
+
+async function executeTypedLine(ctx: CommandContext, payload: ResolvedPayload) {
+  const jobId = str(payload, "jobId");
+  const jobName = str(payload, "jobName");
+  const description = str(payload, "description");
+  const quantity = str(payload, "quantity");
+  const unitPrice = str(payload, "unitPrice");
+  const unit = str(payload, "unit");
+  const unitCost = str(payload, "unitCost");
+  const totalCents = typeof payload.totalCents === "number" ? payload.totalCents : null;
+  if (!jobId || !jobName || !description || !quantity || !unitPrice || totalCents === null) {
+    return { ok: false as const, error: "That card can't be executed. Ask again." };
+  }
+
+  // Again, here, rather than trusting the list the model was offered: a
+  // role can change between the card and the tap.
+  if (!can(ctx.principal, "MANAGE_ESTIMATING") || !can(ctx.principal, "VIEW_JOB_COSTS")) {
+    return { ok: false as const, error: "Changing a bid needs estimating access and access to job costs. The account owner sets that on the Team page." };
+  }
+
+  const job = await prisma.job.findFirst({
+    where: { id: jobId, companyId: ctx.companyId },
+    select: { status: true },
+  });
+  if (!job) return { ok: false as const, error: "That job isn't on your account any more." };
+  if (job.status !== "ESTIMATE") {
+    return {
+      ok: false as const,
+      error: `${jobName} is past the estimate stage, so its bid can't be changed directly. A change after award is a change order.`,
+    };
+  }
+
+  const added = await throughAction("Add line", () =>
+    addLineItem(
+      jobId,
+      formDataFrom({ description, unit: unit ?? undefined, quantity, unitPrice, budgetedUnitCost: unitCost ?? undefined }),
+    ),
+  );
+  if (!added.ok) return { ok: false as const, error: added.error };
+  return {
+    ok: true as const,
+    message: `Added "${description}" to ${jobName} at ${dollars(totalCents)}.`,
+    created: { label: jobName, href: `/jobs/${jobId}`, targetType: "Job", targetId: jobId },
+    revalidate: [`/jobs/${jobId}/estimate`],
+  };
+}
+
+export const addEstimateLineCommand: DirectCommandDefinition = {
+  name: "add_estimate_line",
+  description:
+    "Adds ONE priced line to an estimate-stage job at a price the PERSON states: 'add a line for 40 hours of cleanup at $65', 'add 200 SF of patching at $4.50'. Pass the description, quantity, unit and unit price exactly as the person said them, and a unit cost only if they gave one. Does NOT price anything itself: if the person gave no price, ask for one — never suggest, look up or estimate it. Does NOT compute the total; the card does. Does NOT handle a percentage or a flat adder to the whole bid ('add 10% for night work', 'add $2,500 for mobilization') — that is adjust_estimate. Does NOT pull an item from the company's price book — that is add_catalog_line. Does NOT touch existing lines or a contracted job. It proposes only: the person confirms on a card before anything is added.",
+  capability: "MANAGE_ESTIMATING",
+  requiresAlso: ["VIEW_JOB_COSTS"],
+  tier: "T1_DRAFT",
+  mode: "DIRECT",
+  action: "addLineItem",
+  core: "addLineItem",
+  title: "Add the line",
+  verb: "Pricing the line",
+  button: "Add line",
+  input_schema: {
+    type: "object",
+    properties: {
+      jobName: {
+        type: "string",
+        description: "The job's name or part of it, as the person said it — or the job they are looking at when they say 'this job' or name none. Required.",
+      },
+      description: {
+        type: "string",
+        description: "What the line is for, in the person's own words, e.g. 'Cleanup', 'Patching'. Required.",
+      },
+      quantity: {
+        type: "string",
+        description: "The quantity exactly as the person typed it, e.g. '40', '200', '1,250'. Never a figure you calculated or converted. Required.",
+      },
+      unit: {
+        type: "string",
+        description: "The unit as the person said it, e.g. 'hours', 'SF', 'LF', 'each'. Omit if they gave none.",
+      },
+      unitPrice: {
+        type: "string",
+        description: "The price per unit exactly as the person typed it, e.g. '$65', '4.50'. Never one you suggested, looked up or computed. Required: ask if they gave none.",
+      },
+      unitCost: {
+        type: "string",
+        description: "What one unit costs the company, ONLY if the person said so separately from the price, exactly as typed. Omit otherwise.",
+      },
+    },
+  },
+  continuationKeys: ["jobId"],
+  resolve: resolveTypedLine,
+  execute: executeTypedLine,
+};
+
 export const estimatingCommands: CommandDefinition[] = [
   createEstimateJobCommand,
   draftEstimateLinesCommand,
   addCatalogLineCommand,
   adjustEstimateCommand,
+  addEstimateLineCommand,
 ];
 
 /** Every other export of jobs.ts and estimating.ts, each with the reason it
  * is not a command. Per action rather than a wildcard, because these are
  * the two files this lane just read line by line. */
 export const estimatingExclusions: Exclusion[] = [
-  // addLineItem left this list: registered as adjust_estimate, whose unit
-  // price is computed in code from the bid and a figure the person typed —
-  // never a number the model supplies.
+  // addLineItem left this list: registered by adjust_estimate (a price
+  // computed in code from the bid and a figure the person typed) and by
+  // add_estimate_line (a quantity and a price the person typed, parsed by
+  // code) — never a number the model supplies.
   { action: "updateLineItem", reason: "Editing a priced line is done on the job page, where the row it changes is visible." },
   { action: "updateLineItemForecast", reason: "A cost forecast is job-costing money; phase 3 territory once natural keys exist." },
   { action: "deleteLineItem", reason: "Deletes are never commands (T5); the page's own two-step delete is the path." },

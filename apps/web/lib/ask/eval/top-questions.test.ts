@@ -64,7 +64,8 @@ describe("the hundred questions", () => {
     // The refusal they follow is a KNOWN_GAP, not a census question.
     // 126 with record_bid_outcome, 2026-10-11 (124 on main before the merge).
     // 127 with adjust_estimate, 2026-10-27: "add 10% for night work".
-    expect(TOTAL_QUESTIONS).toBe(127);
+    // 128 with add_estimate_line, 2026-10-27: "200 SF of patching at $4.50".
+    expect(TOTAL_QUESTIONS).toBe(128);
     expect(TOP_QUESTIONS).toHaveLength(TOTAL_QUESTIONS);
   });
 
