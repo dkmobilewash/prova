@@ -15,6 +15,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type Ctx = { businessScope?: Record<string, unknown>; companyId?: string };
 let handed: Ctx | null = null;
+let request: { surface?: unknown; continuation?: unknown } | null = null;
 let company: Record<string, unknown> = {};
 
 vi.mock("@/lib/auth", () => ({
@@ -29,8 +30,9 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("@/lib/viewerToday", () => ({ viewerToday: async () => "2026-09-21" }));
 
 vi.mock("@/lib/ask/answer", () => ({
-  streamAnswer: (ctx: Ctx) => {
+  streamAnswer: (ctx: Ctx, req: { surface?: unknown }) => {
     handed = ctx;
+    request = req;
     return (async function* () {
       yield { type: "done", citations: [], toolsUsed: [] };
     })();
@@ -97,5 +99,24 @@ describe("the three onboarding answers", () => {
       doesPublicWork: false,
       filesMonthlyPayApps: false,
     });
+  });
+});
+
+describe("the surface flag (lib/ask/surface.ts): one known word or nothing", () => {
+  it("passes \"bid\" through, on a question and on a chip answer", async () => {
+    await post({ question: "what's the bid so far?", surface: "bid" });
+    expect(request?.surface).toBe("bid");
+    await post({ question: "add 200 sf", surface: "bid", continuation: { command: "add_catalog_line", partialInput: {}, answers: {} } });
+    expect(request?.surface).toBe("bid");
+    expect(request?.continuation).toBeTruthy();
+  });
+
+  it("drops anything else to undefined — the CRM's list, never something wider", async () => {
+    for (const forged of ["crm", "BID", " bid", "admin", 1, true, { surface: "bid" }, ["bid"], null]) {
+      await post({ question: "what's overdue?", surface: forged });
+      expect(request?.surface, JSON.stringify(forged)).toBeUndefined();
+    }
+    await post({ question: "what's overdue?" });
+    expect(request?.surface).toBeUndefined();
   });
 });

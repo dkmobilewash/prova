@@ -47,6 +47,16 @@ const ID = /^[a-z0-9]{20,32}$/;
  *
  * `/jobs` on its own is NOT a hint — it is a list, and "this job" on a list
  * of five jobs means nothing.
+ *
+ * C STREAM BID'S TWO JOB ROUTES are the same job seen from the estimating
+ * product, and the id in them is the same `Job` id: `/bid/estimates/<id>` and
+ * everything under it (takeoff, estimate, recap, proposal), and the full-screen
+ * takeoff `/bid/workspace/<id>`. Nothing else under `/bid` is a hint — in
+ * particular `/bid/bids/<id>` names a bid INVITATION, not a job, and
+ * `/bid/estimates/new` is a form (its segment is not an id, so the shape check
+ * refuses it before any of this matters). The hint is no stronger for being a
+ * Bid path: it still goes through `resolvePageJob`'s company scope like any
+ * other.
  */
 export function parsePageContext(path: string | null | undefined): PageHint | null {
   if (!path) return null;
@@ -57,8 +67,10 @@ export function parsePageContext(path: string | null | undefined): PageHint | nu
   const clean = path.split("?")[0].split("#")[0].replace(/\/+$/, "");
   const parts = clean.split("/").filter(Boolean);
 
-  if (parts[0] !== "jobs") return null;
-  const id = parts[1];
+  let id: string | undefined;
+  if (parts[0] === "jobs") id = parts[1];
+  else if (parts[0] === "bid" && (parts[1] === "estimates" || parts[1] === "workspace")) id = parts[2];
+  else return null;
   if (!id || !ID.test(id)) return null;
 
   return { kind: "job", id };

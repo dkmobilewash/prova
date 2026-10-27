@@ -26,6 +26,17 @@ beforeEach(() => {
   findFirst.mockResolvedValue({ id: ID, name: "Riverside Medical Office Building" });
 });
 
+describe("resolvePageJob — a Bid job path is scoped exactly like a CRM one", () => {
+  it("looks the Bid estimate's id up through the caller's company, and nothing wider", async () => {
+    for (const path of [`/bid/estimates/${ID}/estimate`, `/bid/workspace/${ID}`]) {
+      findFirst.mockClear();
+      await resolvePageJob(COMPANY, path);
+      expect(findFirst, path).toHaveBeenCalledTimes(1);
+      expect(findFirst.mock.calls[0][0].where, path).toEqual({ id: ID, companyId: COMPANY });
+    }
+  });
+});
+
 describe("resolvePageJob", () => {
   it("SCOPES THE QUERY TO THE CALLER'S COMPANY — the whole point of this module", () => {
     return resolvePageJob(COMPANY, `/jobs/${ID}`).then(() => {

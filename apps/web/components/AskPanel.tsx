@@ -6,6 +6,7 @@ import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { Spinner } from "@/components/Spinner";
 import { usePathname } from "next/navigation";
 import { boundTurns, type AskTurn } from "@/lib/ask/turns";
+import { readAskStream } from "@/lib/ask/streamClient";
 import { useRouter } from "next/navigation";
 import { deleteThread, loadAskThread, renameThread } from "@/lib/actions/askThreads";
 import {
@@ -826,30 +827,13 @@ export function AskPanel({
         return;
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        // One JSON object per line. A chunk can split a line anywhere, so
-        // the trailing fragment stays in the buffer until its newline
-        // arrives — parsing it early would throw on valid output.
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const event = JSON.parse(line) as PanelStreamEvent;
-            if (event.type === "thread") applyThread(event);
-            else apply(event);
-          } catch {
-            // A malformed line is a bug on our side; dropping it beats
-            // killing an answer that is otherwise arriving fine.
-          }
-        }
-      }
+      // One JSON object per line, split and parsed by the shared reader
+      // (lib/ask/streamClient.ts) — the same loop that lived here, lifted so
+      // the Bid job box reads the stream by the same rule.
+      await readAskStream<PanelStreamEvent>(response.body, (event) => {
+        if (event.type === "thread") applyThread(event);
+        else apply(event);
+      });
     } catch (err) {
       // An abort is us, not a failure — the next question is already
       // running and owns the panel now.

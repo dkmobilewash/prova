@@ -3,12 +3,15 @@ import { JobGuideAsk } from "@/components/bid/guide/JobGuideAsk";
 import { JobGuideAskBox } from "@/components/bid/guide/JobGuideAskBox";
 import { JobGuideRail } from "@/components/bid/guide/JobGuideRail";
 import type { JobGuide } from "@/lib/bid/guide/types";
+import type { BidAskAccess } from "@/lib/bid/guide/askAccess";
 
 /**
  * A job's screen, composed: the rail on the left (a step strip on top on a
  * phone), and in the main column the AI headline, the ask card, the job's own
  * working area for the current step (`children` — the takeoff, estimate, recap
- * or proposal page), and the disabled "Ask or tell me anything" box.
+ * or proposal page), and the "Ask or tell me anything" box — which asks Ask
+ * about this job, or says plainly why it cannot (`askAccess`, decided by the
+ * layout on the server).
  *
  * `tabs` is the compact secondary row the layout passes in (Takeoff · Estimate ·
  * Bid recap · Proposal). The rail leads, but "Bid recap" has no step of its own
@@ -22,7 +25,17 @@ import type { JobGuide } from "@/lib/bid/guide/types";
  *
  * Presentational — it takes the `JobGuide` and decides nothing.
  */
-export function JobGuideShell({ guide, tabs, children }: { guide: JobGuide; tabs: ReactNode; children: ReactNode }) {
+export function JobGuideShell({
+  guide,
+  tabs,
+  askAccess,
+  children,
+}: {
+  guide: JobGuide;
+  tabs: ReactNode;
+  askAccess: BidAskAccess;
+  children: ReactNode;
+}) {
   return (
     <div
       className="mx-auto max-w-7xl px-4 pb-8 pt-2 sm:px-6 lg:grid lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-8 print:block print:max-w-none print:p-0"
@@ -45,7 +58,7 @@ export function JobGuideShell({ guide, tabs, children }: { guide: JobGuide; tabs
         <div className="print:hidden">{tabs}</div>
         <div className="-mx-4 min-w-0 sm:-mx-6 lg:mx-0 print:mx-0">{children}</div>
         <div className="mt-6">
-          <JobGuideAskBox jobName={guide.name} />
+          <JobGuideAskBox jobId={guide.jobId} jobName={guide.name} access={askAccess} />
         </div>
       </div>
     </div>

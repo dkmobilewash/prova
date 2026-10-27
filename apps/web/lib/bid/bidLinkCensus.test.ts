@@ -144,6 +144,8 @@ const BID_LOG_HREF =
   "A per-row link from `bidLogHrefs(surface)` (lib/bid/bidLogHrefs.ts): the CRM's literal, or `null` on Bid, where the log draws plain text instead of a link. Every value `bidLogHrefs(\"bid\")` returns is classified in its section below.";
 const BID_PAGE_HREF =
   "Chosen by `surface` for the bid's own page (`bidLogHrefs`, `bidPageCrumbs`) or re-pointed by `bidPageData`/`storedHref` (lib/bid), which the page runs every stored agent link through: a Bid value is a /bid path or null. Every value those return is classified in the \"the bid's own page\" section below, and the Bid page's source is pinned to call `bidPageData`.";
+const ASK_CARD_HREF =
+  "An Ask card's server-built link, through `askHref(surface, …)` (lib/bid/askHrefs.ts): the CRM's href untouched, or on Bid the href only when it is a /bid path and null otherwise, drawn as plain text. The Bid box renders the card with `surface=\"bid\"`, which the \"rendered as Bid\" section below requires; askHrefs.test.ts feeds askHref every CRM shape Ask builds and requires null for each.";
 const BLOB_URL =
   "An object URL from URL.createObjectURL for a file the browser is saving (the anchor has a `download` attribute) — not a page navigation.";
 
@@ -154,6 +156,13 @@ const DYNAMIC_ALLOWED: Record<string, string> = {
     "bidEstimateTabs() in components/bid/bidEstimateTabs.ts — every entry is a literal `href:` template starting /bid/estimates/, read here as a prop-href sink.",
   "components/bid/guide/JobGuideAsk.tsx: action.href":
     "A guide's ask actions (`JobGuide.ask.actions[].href`, built by the guide engine). JobGuideAsk draws a link only when `isBidPath(href)` holds and drops the action otherwise, so a target outside /bid cannot reach the page by construction; jobGuideScreen.test.tsx also requires every fixture href to start with /bid.",
+  "components/bid/guide/JobGuideAskBox.tsx: citationHref":
+    "An Ask answer's citation, run through `askHref(\"bid\", …)` (lib/bid/askHrefs.ts), which returns the href only when it is a /bid path and null otherwise — and a null is drawn as the label in plain text. askHrefs.test.ts feeds it every CRM shape Ask builds; jobGuideScreen.test.tsx renders a /jobs citation and requires no anchor for it.",
+  "components/AskProposalCard.tsx: existingHref": ASK_CARD_HREF,
+  "components/AskProposalCard.tsx: createdHref": ASK_CARD_HREF,
+  "components/AskProposalCard.tsx: handoff": ASK_CARD_HREF,
+  "components/AskProposalCard.tsx: sourceHref":
+    "A web research source on a card, through `askWebHref(surface, …)`: the CRM keeps it; Bid keeps it only via `webPage()`, which refuses any cstream.ai host (askHrefs.test.ts). The Bid box never offers the one command that carries sources (create_estimate_job, lib/ask/surface.ts).",
   "components/bid/guide/JobGuideRail.tsx: href":
     "`guideStepLink()` in lib/bid/guide/stepHrefs.ts — every return is a literal /bid/estimates/<id>/(takeoff|estimate|proposal) template; jobGuideScreen.test.tsx renders every fixture and requires each rail href to start with /bid.",
   "app/(app)/jobs/[id]/(tabs)/takeoff/page.tsx: hrefs.workspace": SURFACE_PROP,
@@ -509,6 +518,8 @@ describe("Server Actions Bid calls: the redirects its sight cannot reach", () =>
       "lib/bid/jobStartDestination.ts: `returnTo` is a WORD from a fixed list, never a URL, and every word's destination is classified in the jobStartDestination section above.",
     "startEstimateFromProject: estimateStartDestination(returnTo, started.value.jobId)":
       "lib/bid/jobStartDestination.ts: the same WORD-from-a-fixed-list rule, with its own destination table (`ESTIMATE_DESTINATIONS`), classified in the estimateStartDestination section above.",
+    "confirmAskProposal: executed.created.href":
+      "Not a redirect: the confirmed card's `created` link, RETURNED as data (and revalidated). The Bid job box draws it through AskProposalCard with surface=\"bid\", where `askHref` turns any non-/bid href into plain text — see ASK_CARD_HREF above. And the Bid box only offers commands whose card writes in place (lib/ask/surface.ts).",
   };
 
   const actionFiles = readdirSync(ACTIONS_DIR)

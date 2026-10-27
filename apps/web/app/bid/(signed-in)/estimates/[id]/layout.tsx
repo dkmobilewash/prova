@@ -8,6 +8,7 @@ import { BidEstimateTabs } from "@/components/bid/BidEstimateTabs";
 import { BidNoAccess } from "@/components/bid/BidNoAccess";
 import { JobGuideShell } from "@/components/bid/guide/JobGuideShell";
 import { getJobGuide } from "@/lib/bid/guide";
+import { loadBidAskAccess } from "@/lib/bid/guide/askAccessLoad";
 import { BID_CAPABILITY } from "@/components/bid/bidNav";
 
 /**
@@ -55,8 +56,16 @@ export default async function BidEstimateLayout({
 
   const guide = header.status === "ESTIMATE" ? await getJobGuide(context.company.id, id) : null;
   if (guide) {
+    // Whether the ask box can ask, read up front so it can SAY so: the
+    // company's AI switch and the server key, plus whether this person may
+    // be offered the box's commands at all. Every question is still gated
+    // again by /api/ask (lib/bid/guide/askAccess.ts says what this is not).
+    const askAccess = await loadBidAskAccess(context.company.id, {
+      role: context.role,
+      jobFunction: context.jobFunction,
+    });
     return (
-      <JobGuideShell guide={guide} tabs={<BidEstimateTabs jobId={id} />}>
+      <JobGuideShell guide={guide} tabs={<BidEstimateTabs jobId={id} />} askAccess={askAccess}>
         {children}
       </JobGuideShell>
     );
