@@ -10,6 +10,7 @@ import { collectSheets } from "../labelCollect";
 import type { LabelCandidate } from "../labelRows";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { sheetStrokes } from "../sheetStrokes";
+import { withoutUnitPlanJunk } from "../unitPlanJunk";
 import { deciderFor, type WallModel } from "../wallClassifier";
 import { FEATURE_NAMES } from "../wallFeatures";
 import type { WallCandidate } from "../wallVectors";
@@ -40,6 +41,8 @@ const CUT = Number(process.env.LOBO_CUT ?? "0.3");
 const OUT = process.env.LOBO_OUT ?? "";
 const TAG = process.env.LOBO_TAG ?? "run";
 const ONLY = process.env.LOBO_ONLY ?? "";
+/** LOBO_JUNK=1 adds two arms: the unit-plan junk filter alone, and veto + filter. */
+const JUNK = process.env.LOBO_JUNK === "1";
 
 type Saved = Parameters<typeof keyFromLabels>[0] & Parameters<typeof collectSheets>[0][number]["saved"] & { page: number; set: string };
 
@@ -65,6 +68,7 @@ describe.skipIf(DIR === "" || LABELS === "" || (ROWS_OUT === "" && MODEL_DIR ===
     const models = new Map<string, ReturnType<typeof deciderFor>>();
     let tm = [0, 0];
     let tv = [0, 0];
+    let tb = [0, 0];
     for (const file of files) {
       const pdf = findPdf(file.dir);
       if (pdf === null) continue;
@@ -107,19 +111,24 @@ describe.skipIf(DIR === "" || LABELS === "" || (ROWS_OUT === "" && MODEL_DIR ===
       }
       const scorer = models.get(family)!;
       const { key } = keyFromLabels(saved);
-      const arm = (veto?: (f: number[], w: WallCandidate) => boolean) => {
+      const arm = (veto?: (f: number[], w: WallCandidate) => boolean, junk = false) => {
         const d = detectForSheet({ ...base, veto });
-        const offered = offeredCandidates({ walls: d.found.walls, segments: d.found.inUnits.map((one) => ({ ...one, x1: one.x1 * strokes.widthPt, y1: one.y1 * strokes.widthPt, x2: one.x2 * strokes.widthPt, y2: one.y2 * strokes.widthPt })), widthPt: strokes.widthPt, feetPerUnit: saved.feetPerUnit, planBoxes: d.planBoxes });
+        const walls = junk ? withoutUnitPlanJunk({ walls: d.found.walls, segments: d.found.inUnits, feetPerUnit: saved.feetPerUnit }).kept : d.found.walls;
+        const offered = offeredCandidates({ walls, segments: d.found.inUnits.map((one) => ({ ...one, x1: one.x1 * strokes.widthPt, y1: one.y1 * strokes.widthPt, x2: one.x2 * strokes.widthPt, y2: one.y2 * strokes.widthPt })), widthPt: strokes.widthPt, feetPerUnit: saved.feetPerUnit, planBoxes: d.planBoxes });
         const proposed: ScoredRun[] = offered.candidates.map((w) => ({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, lengthFeet: w.lengthFeet, thicknessFeet: w.thicknessIn === null ? undefined : w.thicknessIn / 12 }));
         const s = scoreSheet({ set: file.dir, sheet: file.sheet, key, proposed, feetPerUnit: saved.feetPerUnit });
         return { n: offered.candidates.length, walls: d.found.walls.length, missing: Math.round(s.missingFeet), extra: Math.round(s.extraFeet), keyFeet: Math.round(s.keyFeet) };
       };
       const plain = arm();
-      const vetoed = arm((f) => scorer!(f, undefined as never) < CUT);
+      const veto = (f: number[]) => scorer!(f, undefined as never) < CUT;
+      const vetoed = arm(veto);
+      const junked = JUNK ? arm(undefined, true) : null;
+      const both = JUNK ? arm(veto, true) : null;
       tm = [tm[0] + plain.missing, tm[1] + plain.extra];
       tv = [tv[0] + vetoed.missing, tv[1] + vetoed.extra];
-      rows.push({ set: file.dir, sheet: file.sheet, family, keyFeet: plain.keyFeet, plain, vetoed });
-      console.log(`  ${`${file.dir.slice(0, 26)}/${file.sheet}`.padEnd(34)} key ${String(plain.keyFeet).padStart(5)} · rules ${plain.walls}/${plain.n} miss ${plain.missing} extra ${plain.extra} · veto@${CUT} ${vetoed.walls}/${vetoed.n} miss ${vetoed.missing} extra ${vetoed.extra}`);
+      if (both !== null) tb = [tb[0] + both.missing, tb[1] + both.extra];
+      rows.push({ set: file.dir, sheet: file.sheet, family, keyFeet: plain.keyFeet, plain, vetoed, junked, both });
+      console.log(`  ${`${file.dir.slice(0, 26)}/${file.sheet}`.padEnd(34)} key ${String(plain.keyFeet).padStart(5)} · rules ${plain.walls}/${plain.n} miss ${plain.missing} extra ${plain.extra} · veto@${CUT} ${vetoed.walls}/${vetoed.n} miss ${vetoed.missing} extra ${vetoed.extra}${junked === null || both === null ? "" : ` · junk ${junked.walls}/${junked.n} miss ${junked.missing} extra ${junked.extra} · veto+junk ${both.walls}/${both.n} miss ${both.missing} extra ${both.extra}`}`);
     }
 
     if (ROWS_OUT !== "") {
@@ -136,6 +145,6 @@ describe.skipIf(DIR === "" || LABELS === "" || (ROWS_OUT === "" && MODEL_DIR ===
       mkdirSync(OUT, { recursive: true });
       writeFileSync(join(OUT, `lobo-${TAG}.json`), JSON.stringify(rows, null, 1));
     }
-    console.log(`\n  TOTAL (${rows.length} sheets): rules miss ${tm[0]} extra ${tm[1]} · veto@${CUT} LOBO miss ${tv[0]} extra ${tv[1]}`);
+    console.log(`\n  TOTAL (${rows.length} sheets): rules miss ${tm[0]} extra ${tm[1]} · veto@${CUT} LOBO miss ${tv[0]} extra ${tv[1]}${JUNK ? ` · veto+junk miss ${tb[0]} extra ${tb[1]}` : ""}`);
   });
 });

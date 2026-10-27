@@ -41,3 +41,15 @@ veto at 0.3, leave-one-building-out on the 26 training sheets, removes
 2,149 ft of the 14,316 ft of casework the round-bubble test uncovers and
 costs 337 ft of real wall. The junk filter is still needed; the per-sheet
 table is in `NOTES.md`, and `zzLoboVeto.eval.ts` is the instrument.
+
+**And the junk filter that was asked for next is not the next thing.** The
+14,300 ft the round-bubble test adds overlaps no reviewer verdict at all:
+it is candidates the shipped finder never offered, on sheets whose keys
+were taken from the shipped list, and the biggest of them are the same
+corridor and exterior walls the tracer marked on the one floor that was
+traced. A geometry filter for casework (`unitPlanJunk.ts`, not wired,
+measured through the LOBO eval) takes 3,700 ft of real wall as first
+written and about 1,600 ft of anything once it only takes boxes at
+cabinet depth, because the pairer's 13 in ceiling already keeps cabinets
+out. What measures the round test is a review pass over its candidates on
+Topeka p75/p76, ELEVEN03 and Camp Bow Wow; the numbers are in `NOTES.md`.
