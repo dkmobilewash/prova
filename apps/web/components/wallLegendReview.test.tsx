@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LegendProposalView } from "@/lib/plan-ingest/legendProposalsQuery";
 import type { LegendHeightResult } from "@/lib/takeoff/legendHeights";
@@ -26,11 +26,28 @@ vi.mock("pdfjs-dist/legacy/build/pdf.mjs", () => ({
 const { WallLegendReview, shortFlag } = await import("./WallLegendReview");
 
 let host: HTMLDivElement;
+// ── THE ROOT IS UNMOUNTED, NOT JUST DETACHED ──
+//
+// `host.remove()` takes the node out of the document and leaves the React
+// root mounted, so the screen's effect cleanup never runs. That effect opens
+// the PDF page and guards its result with a `cancelled` flag the cleanup is
+// what sets — so the flag stayed false, the promise settled after vitest had
+// torn the environment down, and `setPageError` reached React with no window:
+//
+//     Unhandled Rejection: ReferenceError: window is not defined
+//       at dispatchSetState … components/WallLegendReview.tsx:162
+//
+// EVERY TEST PASSED WHILE THAT HAPPENED. Vitest reported 13,500 passing and
+// exited non-zero on the unhandled rejection alone, which is why the failure
+// could not be found by looking for a failing assertion.
+let root: Root | null = null;
 beforeEach(() => {
   host = document.createElement("div");
   document.body.appendChild(host);
 });
 afterEach(() => {
+  if (root) act(() => root!.unmount());
+  root = null;
   host.remove();
 });
 
@@ -63,12 +80,17 @@ const proposal = (): LegendProposalView => ({
 });
 
 function render(canAdd: boolean, libraryCodes: string[] = [], heights?: Record<string, Record<string, LegendHeightResult>>) {
+  // A second render in one test replaces the first, so the first is unmounted
+  // for the same reason afterEach unmounts: its effects must be allowed to
+  // clean up after themselves.
+  if (root) act(() => root!.unmount());
   host.remove();
   host = document.createElement("div");
   document.body.appendChild(host);
-  const root = createRoot(host);
+  const mounted = createRoot(host);
+  root = mounted;
   act(() => {
-    root.render(
+    mounted.render(
       createElement(WallLegendReview, {
         jobId: "job_1",
         proposals: [proposal()],
