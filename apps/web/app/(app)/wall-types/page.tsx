@@ -13,7 +13,7 @@ import { missingStarterTypes } from "@/lib/wall-type-starters";
  * one is made of. A job's wall runs are priced from these; editing one here
  * changes an existing estimate only when that job's schedule is refreshed.
  */
-export default async function WallTypesPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> } = {}) {
+export default async function WallTypesPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   // "Create a wall type from this group" on the takeoff lands here with the
   // measured thickness, so the one number the drawing gave is not retyped.
   const query = (await searchParams) ?? {};

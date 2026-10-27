@@ -113,7 +113,7 @@ describe("/wall-types starter assemblies (#818)", () => {
     html.match(/<button[^>]*data-wall-types="add-starters"[^>]*>([^<]*)<\/button>/)?.[1] ?? null;
 
   it("is still offered beside a library that has types of its own, and says it adds all twelve", async () => {
-    const html = renderToStaticMarkup(await WallTypesPage());
+    const html = renderToStaticMarkup(await WallTypesPage({}));
     expect(html, "the library rendered as a list").toContain('data-tour="wall-types-list"');
     expect(starterButton(html), "no starter button beside a non-empty library").toBe(
       "Start from the common trade assemblies (adds 12)",
@@ -122,7 +122,7 @@ describe("/wall-types starter assemblies (#818)", () => {
 
   it("counts only the missing ones, case-insensitively, and names them", async () => {
     extraTypes = [{ code: "W1" }, { code: "w2" }, { code: "ACT1" }];
-    const html = renderToStaticMarkup(await WallTypesPage());
+    const html = renderToStaticMarkup(await WallTypesPage({}));
     expect(starterButton(html)).toBe("Start from the common trade assemblies (adds 9)");
     expect(html).toContain("W3, EW1, FIN5, ACT2, GYPC1, FLR1, PT1, SLB1, FTG1");
     expect(html).toContain("left as they are");
@@ -130,13 +130,13 @@ describe("/wall-types starter assemblies (#818)", () => {
 
   it("says one, not ones, for the last missing starter", async () => {
     extraTypes = ["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "ACT2", "GYPC1", "FLR1", "PT1", "SLB1"].map((code) => ({ code }));
-    const html = renderToStaticMarkup(await WallTypesPage());
+    const html = renderToStaticMarkup(await WallTypesPage({}));
     expect(starterButton(html)).toBe("Start from the common trade assemblies (adds 1)");
   });
 
   it("is gone once every starter is in the library", async () => {
     extraTypes = ["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "ACT2", "GYPC1", "FLR1", "PT1", "SLB1", "FTG1"].map((code) => ({ code }));
-    const html = renderToStaticMarkup(await WallTypesPage());
+    const html = renderToStaticMarkup(await WallTypesPage({}));
     expect(html).toContain("FTG1");
     expect(starterButton(html)).toBeNull();
     expect(html).not.toContain("common trade assemblies");
