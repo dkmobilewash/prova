@@ -31,6 +31,7 @@ import { CompanyProfileForm } from "@/components/CompanyProfileForm";
 import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
 import { BusinessScopeSettingsForm } from "@/components/BusinessScopeSettingsForm";
 import { OpeningDeductionForm } from "@/components/OpeningDeductionForm";
+import { TakeoffExportSwitch } from "@/components/TakeoffExportSwitch";
 import { RoomFinderSwitch } from "@/components/RoomFinderSwitch";
 import { DemotedWallsSwitch } from "@/components/DemotedWallsSwitch";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
@@ -175,10 +176,11 @@ export default async function SettingsPage({
   const { company, ...currentUser } = context;
   const switches = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOn: true },
+    select: { roomFinderOn: true, demotedWallsOn: true, takeoffExportOn: true },
   });
   const roomFinderOn = switches?.roomFinderOn ?? false;
   const demotedWallsOn = switches?.demotedWallsOn ?? false;
+  const takeoffExportOn = switches?.takeoffExportOn ?? false;
   const { qb, qb_detail, tab: tabParam } = await searchParams;
   // The same rule PageTabs highlights by, so the tab lit is the group shown.
   const tab =
@@ -612,6 +614,10 @@ export default async function SettingsPage({
             </div>
             <div className="mt-4">
               <DemotedWallsSwitch on={demotedWallsOn} isOwner={currentUser.role === "OWNER"} />
+            </div>
+            {/* The takeoff summary export, same posture: off until chosen. */}
+            <div className="mt-4">
+              <TakeoffExportSwitch on={takeoffExportOn} isOwner={currentUser.role === "OWNER"} />
             </div>
           </section>
 

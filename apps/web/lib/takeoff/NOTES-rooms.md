@@ -989,3 +989,25 @@ TAG_DISAGREES group must show "Add as <code> — priced" and the
 `data-takeoff="update-thickness"` button, and pressing it must change the
 type under /wall-types; then the same with the read ON, which must not
 change the groups.
+## 23. Takeoff summary export (2026-10-27, `diego/takeoff-export`, switch OFF, not merged)
+
+`lib/takeoff/summaryExport.ts` (pure builder + CSV + the adapter from
+`loadTakeoffWorkspace`), `summaryPdf.ts` (pdf-lib, tables then one embedded
+sheet per measured page with runs/polygons over it, `placeEmbedded` for
+`/Rotate`), `app/api/takeoff-summary/route.ts` (`?jobId&format=csv|pdf`,
+VIEW_JOB_COSTS + `Company.takeoffExportOn`), `TakeoffSummaryExport.tsx`
+(two download links on the takeoff tab), `TakeoffExportSwitch.tsx` +
+`saveTakeoffExportSwitch` (Settings, owner). Eval
+`realplan/summaryExport.eval.ts` writes the files for one training set to
+`SUMMARY_EVAL_OUT`.
+
+Seen on Baker: walls and rooms sit on the drawing on A100/A101 (unrotated)
+and word boxes land on the words of G001 (`/Rotate 90`), rendered with
+PDFKit from the output file. Rooms on A100 are the room step flooding the
+existing building (29 unnamed) — the finder's boundary, not the export.
+
+Not built: counts (COUNT measurements), hand-traced LINEAR lines that are
+not wall groups, opening deductions on board sf, per-sheet door marks on the
+drawing (the schedule has no positions). Deferred e2e: settings switch on →
+two links appear on the takeoff; off → absent; each link downloads a file
+whose first line / first bytes are the CSV header / `%PDF-`.

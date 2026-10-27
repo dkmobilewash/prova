@@ -20,6 +20,7 @@ import { sheetSuitability, duplicateWallsCaution } from "@/lib/takeoff/sheetSuit
 import { latestIngestFor } from "@/lib/plan-ingest/claim";
 import { TakeoffCurrencyBanner } from "@/components/TakeoffCurrencyBanner";
 import { TakeoffPlanRevisionForm } from "@/components/TakeoffPlanRevisionForm";
+import { TakeoffSummaryExport } from "@/components/TakeoffSummaryExport";
 import { loadTakeoffCurrency } from "@/lib/takeoff-currency-query";
 import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
 import { deleteTakeoffPlan } from "@/lib/actions";
@@ -137,6 +138,9 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   // finder could not see — see `MatchableWallType` for the measurement.
   const loaded = await loadTakeoffWorkspace(company, job);
   const isEstimateStage = job.status === "ESTIMATE";
+  // The summary export is off until the owner turns it on (Settings).
+  const takeoffExportOn =
+    (await prisma.company.findUnique({ where: { id: company.id }, select: { takeoffExportOn: true } }))?.takeoffExportOn ?? false;
 
   if (loaded === null) {
     return (
@@ -254,6 +258,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           )}
         </p>
         <div className="flex flex-wrap items-center gap-2">
+          {takeoffExportOn && <TakeoffSummaryExport jobId={job.id} />}
           {/* Which issue this is. Beside the file name because that is where
               somebody looks to identify the sheet, and its button says when
               the date is MISSING — the state the currency check cannot judge. */}

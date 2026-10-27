@@ -1963,6 +1963,9 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   roomFinder: () => import("./actions/roomFinder"),
   // "Demote, don't hide": the owner's switch (behind /settings).
   demotedWalls: () => import("./actions/demotedWalls"),
+  // The takeoff summary export's switch (behind /settings); the export itself
+  // is a Route Handler, not an action.
+  takeoffExport: () => import("./actions/takeoffExport"),
   takeoffItems: () => import("./actions/takeoffItems"),
   takeoffClassify: () => import("./actions/takeoffClassify"),
   takeoffReadSheet: () => import("./actions/takeoffReadSheet"),
