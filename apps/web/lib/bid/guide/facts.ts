@@ -1,5 +1,7 @@
 import { prisma } from "@prova/db";
 import { bidTotalOf, recapStateFor } from "@/lib/estimating/recap-state";
+import { acknowledgedOnFor, paperWhereMany, papersFor } from "@/lib/estimating/bid-papers";
+import { wallHeightQuestions } from "./wallHeight";
 
 /**
  * THE FACTS A JOB GUIDE IS BUILT FROM — one plain, serialisable snapshot per
@@ -40,6 +42,22 @@ import { bidTotalOf, recapStateFor } from "@/lib/estimating/recap-state";
  *   recap          `JobBidRecap`: exists, and `appliedAt` is when it was put on
  *                  the prices. `addedTotal` is recomputed by the same
  *                  `recapStateFor` the proposal page uses.
+ *   wall height    a wall type used on the job's runs with no `defaultHeightFt`,
+ *                  whose runs have no `heightFt` of their own: those runs add
+ *                  NOTHING to the estimate (`runGeometry` returns null). Worked
+ *                  out by `wallHeightQuestions` (`./wallHeight.ts`), the same
+ *                  function the answer's action re-derives with.
+ *   walk / RFIs    `BidInvitation.walkDate`/`walkMinute`/`rfiCutoffDate` of each
+ *                  linked invitation, as entered. The walk's minute is the GC's
+ *                  wall clock, exactly like `dueMinute`.
+ *   addenda        `BidAddendum` rows the PROJECT shows (read through
+ *                  `bid-papers.ts`, never by filing invitation alone), and for
+ *                  each still-INVITED invitation whether it is acknowledged on
+ *                  THAT GC's form (`acknowledgedOnFor`: the filing GC's is the
+ *                  addendum's own column, every other GC's is a
+ *                  `BidAddendumAcknowledgement` row). Only the missing pairs are
+ *                  kept. A SENT or DECLINED invitation is not asked about: what
+ *                  went out went out.
  *   sent           ONLY `BidInvitation.status`. THE SCHEMA DOES NOT RECORD THAT
  *                  A PROPOSAL WAS GENERATED OR OPENED: the proposal is a
  *                  print-styled page, and the bid package is merged in the
@@ -62,6 +80,28 @@ export type GuideInvitationFact = {
   dueDate: string | null;
   /** Minutes after midnight on the GC's wall clock, or null (the day alone is the deadline). */
   dueMinute: number | null;
+  /** The GC on this invitation (its contact), when known. Absent in older fixtures = null. */
+  gcName?: string | null;
+  /** The job walk / pre-bid meeting day, `YYYY-MM-DD`, and its wall-clock minute. Absent = none. */
+  walkDate?: string | null;
+  walkMinute?: number | null;
+  /** The last day questions (RFIs) are accepted, `YYYY-MM-DD`. Absent = none. */
+  rfiCutoffDate?: string | null;
+};
+
+/**
+ * One addendum not yet acknowledged on one still-open GC's bid form. The same
+ * addendum missing on two GCs' forms is two of these: each form is its own.
+ */
+export type GuideAddendumFact = {
+  addendumId: string;
+  /** The GC's own words: "Addendum 2", "ASI 3", or just "2". */
+  reference: string;
+  /** The day the GC issued it, `YYYY-MM-DD`, or null when nobody entered one. */
+  issuedOn: string | null;
+  /** The invitation (GC) whose form is missing it. */
+  invitationId: string;
+  gcName: string | null;
 };
 
 export type GuideWallTypeFact = {
@@ -78,6 +118,12 @@ export type GuideWallTypeFact = {
   lineCount: number;
   /** Of those, how many have no unit price. */
   unpricedLineCount: number;
+  /**
+   * Set when the type has no default height AND some of its runs here have no
+   * height of their own, so those runs add nothing to the estimate. Absent or
+   * null = nothing to ask. See `./wallHeight.ts`.
+   */
+  heightless?: { runCount: number; lengthFt: number; token: string } | null;
 };
 
 /**
@@ -152,6 +198,9 @@ export type JobGuideFacts = {
 
   /** Optional — see `PastPriceSuggestion`. */
   pastPriceSuggestions?: PastPriceSuggestion[];
+
+  /** Addenda not acknowledged on a still-open GC's form, in issued order. Absent = none. */
+  unacknowledgedAddenda?: GuideAddendumFact[];
 };
 
 // ── the pure half ────────────────────────────────────────────────────────────
@@ -183,6 +232,19 @@ const OPEN_JOB_LIMIT = 200;
 
 type LoadedJob = Awaited<ReturnType<typeof loadJobRows>>[number];
 
+const INVITATION_SELECT = {
+  id: true,
+  projectName: true,
+  status: true,
+  dueDate: true,
+  dueMinute: true,
+  walkDate: true,
+  walkMinute: true,
+  rfiCutoffDate: true,
+  bidProjectId: true,
+  contact: { select: { name: true } },
+} as const;
+
 function loadJobRows(companyId: string, where: { id?: string; status?: "ESTIMATE" }, take?: number) {
   return prisma.job.findMany({
     where: { companyId, ...where },
@@ -194,18 +256,23 @@ function loadJobRows(companyId: string, where: { id?: string; status?: "ESTIMATE
       status: true,
       bidDueDate: true,
       contact: { select: { name: true } },
-      wonFromBid: { select: { id: true, projectName: true, status: true, dueDate: true, dueMinute: true } },
+      wonFromBid: { select: INVITATION_SELECT },
       bidProject: {
         select: {
           id: true,
           name: true,
           bidDueDate: true,
-          invitations: { select: { id: true, projectName: true, status: true, dueDate: true, dueMinute: true } },
+          invitations: { select: INVITATION_SELECT },
         },
       },
       bidRecap: true,
     },
   });
+}
+
+function heightlessOf(questions: ReturnType<typeof wallHeightQuestions>, wallTypeId: string): GuideWallTypeFact["heightless"] {
+  const question = questions.find((q) => q.wallTypeId === wallTypeId);
+  return question ? { runCount: question.runCount, lengthFt: question.lengthFt, token: question.token } : null;
 }
 
 /**
@@ -234,7 +301,7 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
     }),
     prisma.wallRun.findMany({
       where: { jobId: { in: jobIds }, companyId },
-      select: { jobId: true, wallTypeId: true, lengthFt: true, openings: true },
+      select: { id: true, jobId: true, wallTypeId: true, lengthFt: true, heightFt: true, openings: true },
     }),
     prisma.takeoffPlan.findMany({
       where: { jobId: { in: jobIds }, companyId },
@@ -245,7 +312,15 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
   const planIds = plans.map((plan) => plan.id);
   const typeIds = [...new Set(runs.map((run) => run.wallTypeId))];
 
-  const [sheetTexts, proposals, pages, ingests, wallTypes] = await Promise.all([
+  // Every invitation any of these jobs is the same work as, for the addenda.
+  const anchors = new Map<string, { id: string; bidProjectId: string | null }>();
+  for (const job of jobs) {
+    for (const invitation of [job.wonFromBid, ...(job.bidProject?.invitations ?? [])]) {
+      if (invitation) anchors.set(invitation.id, { id: invitation.id, bidProjectId: invitation.bidProjectId });
+    }
+  }
+
+  const [sheetTexts, proposals, pages, ingests, wallTypes, addenda] = await Promise.all([
     planIds.length
       ? prisma.planSheetText.findMany({ where: { planId: { in: planIds } }, select: { planId: true, pageNumber: true } })
       : [],
@@ -268,7 +343,24 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
     typeIds.length
       ? prisma.wallType.findMany({
           where: { id: { in: typeIds }, companyId },
-          select: { id: true, code: true, name: true, components: { select: { id: true } } },
+          select: { id: true, code: true, name: true, defaultHeightFt: true, components: { select: { id: true } } },
+        })
+      : [],
+    // One query for the whole set: the papers every anchor shows (bid-papers.ts),
+    // with each OTHER GC's acknowledgement row beside the filing GC's column.
+    anchors.size
+      ? prisma.bidAddendum.findMany({
+          where: { companyId, ...paperWhereMany([...anchors.values()]) },
+          orderBy: [{ issuedOn: "asc" }, { createdAt: "asc" }],
+          select: {
+            id: true,
+            reference: true,
+            issuedOn: true,
+            acknowledgedOn: true,
+            bidInvitationId: true,
+            bidProjectId: true,
+            acknowledgements: { select: { bidInvitationId: true, acknowledgedOn: true } },
+          },
         })
       : [],
   ]);
@@ -285,6 +377,20 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
 
     // ── measured walls, by type ──
     const jobRuns = runs.filter((run) => run.jobId === job.id);
+    const heightQuestions = wallHeightQuestions(
+      jobRuns.map((run) => ({
+        id: run.id,
+        wallTypeId: run.wallTypeId,
+        lengthFt: num(run.lengthFt),
+        heightFt: run.heightFt == null ? null : Number(run.heightFt),
+      })),
+      wallTypes.map((type) => ({
+        id: type.id,
+        code: type.code,
+        defaultHeightFt: type.defaultHeightFt == null ? null : Number(type.defaultHeightFt),
+        componentCount: type.components.length,
+      })),
+    );
     const wallTypeFacts: GuideWallTypeFact[] = [];
     for (const typeId of [...new Set(jobRuns.map((run) => run.wallTypeId))]) {
       const type = typeById.get(typeId);
@@ -301,6 +407,7 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
         componentCount: type.components.length,
         lineCount: typeLines.length,
         unpricedLineCount: typeLines.filter(priceless).length,
+        heightless: heightlessOf(heightQuestions, typeId),
       });
     }
     wallTypeFacts.sort((a, b) => a.code.localeCompare(b.code));
@@ -328,15 +435,37 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
 
     // ── invitations: the one linked by wonJobId plus the project's ──
     const byId = new Map<string, GuideInvitationFact>();
+    const openAnchors: { id: string; bidProjectId: string | null; gcName: string | null }[] = [];
     for (const invitation of [job.wonFromBid, ...(job.bidProject?.invitations ?? [])]) {
-      if (!invitation) continue;
+      if (!invitation || byId.has(invitation.id)) continue;
+      const gcName = invitation.contact?.name ?? null;
       byId.set(invitation.id, {
         id: invitation.id,
         projectName: invitation.projectName,
         status: invitation.status as GuideInvitationStatus,
         dueDate: day(invitation.dueDate),
         dueMinute: invitation.dueMinute,
+        gcName,
+        walkDate: day(invitation.walkDate),
+        walkMinute: invitation.walkMinute,
+        rfiCutoffDate: day(invitation.rfiCutoffDate),
       });
+      if (invitation.status === "INVITED") openAnchors.push({ id: invitation.id, bidProjectId: invitation.bidProjectId, gcName });
+    }
+
+    // ── addenda not acknowledged on a still-open GC's form ──
+    const unacknowledgedAddenda: GuideAddendumFact[] = [];
+    for (const anchor of openAnchors) {
+      for (const addendum of papersFor(anchor, addenda)) {
+        if (acknowledgedOnFor(addendum, anchor.id) !== null) continue;
+        unacknowledgedAddenda.push({
+          addendumId: addendum.id,
+          reference: addendum.reference,
+          issuedOn: day(addendum.issuedOn),
+          invitationId: anchor.id,
+          gcName: anchor.gcName,
+        });
+      }
     }
 
     const recapLines = jobLines;
@@ -366,6 +495,7 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
       linesWithoutCost: jobLines.filter((line) => line.budgetedUnitCost === null).length,
       bidTotal: bidTotalOf(jobLines),
       recap: recapState ? { appliedAt: day(recapState.appliedAt), addedTotal: recapState.addedTotal } : null,
+      unacknowledgedAddenda,
     };
   });
 }

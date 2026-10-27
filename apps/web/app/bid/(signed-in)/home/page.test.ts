@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { GUIDE_FIXTURES } from "@/lib/bid/guide/homeFixtures";
+import { GUIDE_FIXTURES, GUIDE_FIXTURES_QUESTIONS } from "@/lib/bid/guide/homeFixtures";
 import { askButtonLabel, needsYou, progressLabel, progressSegments, dueLine, TONE_LABEL } from "@/lib/bid/guide/homeView";
 import type { JobGuide } from "@/lib/bid/guide/types";
 
@@ -113,6 +113,51 @@ describe("/bid/home with bids", () => {
 
   it("orders 'Needs you' by urgency: blocked, then a question, then ready, then an update", () => {
     expect(needsYou(GUIDE_FIXTURES).map((g) => g.tone)).toEqual(["blocked", "question", "ready", "update"]);
+  });
+});
+
+describe("/bid/home with the question and date asks", () => {
+  it("a job walk ranks just under a blocked bid, above a question and a ready bid", () => {
+    // Given in the engine's order (ready first), the walk still comes to the top
+    // of everything that is not blocked: a ready bid is still ready tomorrow.
+    expect(needsYou(GUIDE_FIXTURES_QUESTIONS).map((g) => g.ask!.id)).toEqual([
+      "job-walk",
+      "wall-height",
+      "addendum-unacknowledged",
+      "proposal-ready",
+    ]);
+    // ...and below a blocked one, whatever order they come in.
+    const blocked = GUIDE_FIXTURES.find((g) => g.tone === "blocked")!;
+    expect(needsYou([...GUIDE_FIXTURES_QUESTIONS, blocked]).map((g) => g.jobId).slice(0, 2)).toEqual([blocked.jobId, "job_walk"]);
+  });
+
+  it("the ranking reads the ask, not the tone: an 'update' that is not a date stays where updates go", () => {
+    const update = GUIDE_FIXTURES.find((g) => g.tone === "update")!;
+    expect(needsYou([update, ...GUIDE_FIXTURES_QUESTIONS]).at(-1)!.jobId).toBe(update.jobId);
+  });
+
+  it("the height question's button says Answer, not a height", () => {
+    const height = GUIDE_FIXTURES_QUESTIONS.find((g) => g.ask?.id === "wall-height")!;
+    expect(askButtonLabel(height)).toBe("Answer");
+  });
+
+  it("renders each with its button words, every one linking to its job inside Bid", async () => {
+    guides = GUIDE_FIXTURES_QUESTIONS;
+    const html = await render();
+    const rows = html.match(/data-bid="home-needs"[\s\S]*?<\/li>/g) ?? [];
+    expect(rows.length).toBe(GUIDE_FIXTURES_QUESTIONS.length);
+    const expected: [string, string][] = [
+      ["Oak Ave Apartments", "See the bid"],
+      ["Riverside Medical, L2", "Answer"],
+      ["Harbor Point Clinic", "Open the bid log"],
+      ["Civic Center Annex", "Open the proposal"],
+    ];
+    expected.forEach(([name, label], i) => {
+      expect(rows[i], name).toContain(name);
+      expect(rows[i]).toMatch(new RegExp(`href="/bid/estimates/job_[a-z]+"[^>]*>${label}</a>`));
+    });
+    expect(html).toContain("Job walk tomorrow 9:00 AM");
+    expect(hrefs(html).filter((href) => !href.startsWith("/bid"))).toEqual([]);
   });
 });
 

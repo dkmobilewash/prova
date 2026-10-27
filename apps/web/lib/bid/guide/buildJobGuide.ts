@@ -1,12 +1,16 @@
-import { dayAndTime, formatClock } from "@/lib/bid-dates";
+import { dayAndTime, formatClock, upcomingBidDates, type UpcomingBidDate } from "@/lib/bid-dates";
 import { money } from "@/lib/money";
 import { surfaceHrefs } from "@/lib/bid/surfaceHrefs";
+import { bidLogHrefs } from "@/lib/bid/bidLogHrefs";
 import {
   invitationWasSent,
+  type GuideAddendumFact,
+  type GuideInvitationFact,
   type GuideWallTypeFact,
   type JobGuideFacts,
   type PastPriceSuggestion,
 } from "./facts";
+import { WALL_HEIGHT_CHOICES, wallHeightArg } from "./wallHeight";
 import {
   GUIDE_STEP_KEYS,
   type GuideAction,
@@ -28,16 +32,39 @@ import {
  * The first rule that fires wins, earliest missing step first. When the bid has
  * not gone out:
  *
+ *   0. job-walk             the job walk is today, tomorrow or the day after
+ *      rfi-cutoff           RFI questions close today, tomorrow or the day after
+ *                           — both SKIPPED while the bid itself is due inside
+ *                           DUE_SOON_HOURS (or past): see "dates that pass" below
  *   1. no-drawings          no plan, nothing measured, no lines at all
  *   2. no-scale             floor-plan sheets with no scale, before any wall is measured
  *   3. no-walls-measured    drawings are in, nothing measured, no lines
+ *  3b. wall-height          a measured wall type has no height, so its runs add nothing
  *   4. walls-not-added      walls are measured but none is in the estimate
  *   5. unpriced-wall-types  a used wall type has no price (past-price offer if one exists)
  *   6. unpriced-lines       other lines still have no price (cost-only indirects excepted)
  *   7. apply-recap          the job has a bid recap that was never applied
+ *  7b. addendum-unacknowledged  an addendum is not acknowledged on a still-open GC's form
  *   8. proposal-ready       priced; read the proposal and send it
  *      send-due-soon        the same moment, but the deadline is inside DUE_SOON_HOURS
  *                           (or past), so the ask is the sending, not the reading
+ *
+ * DATES THAT PASS (rule 0). Every other ask waits for the person: drawings can
+ * be uploaded and walls priced tomorrow as well as today. A job walk and an RFI
+ * cutoff do not wait — once the day goes by the chance is gone and nothing in
+ * the app can bring it back — so inside DATE_HEADS_UP_DAYS they come FIRST. The
+ * one thing they do not beat is the bid's own deadline: inside DUE_SOON_HOURS
+ * the bid going out is the more expensive thing to miss, and a blocked bid due
+ * tomorrow must still say what blocks it rather than talk about a walk. A walk
+ * today is shown all day, whatever its minute: the minute is the GC's wall
+ * clock and is never zoned (same as `dueMinute`), so hiding a walk "already
+ * past" could hide one that has not started where the job is.
+ *
+ * PAPER (rule 7b). An unacknowledged addendum gets a bid thrown out unread
+ * (bid-compliance.prisma), but acknowledging it is something done ON the form
+ * that goes out. So it is asked the moment the bid is otherwise priced — after
+ * the work, before "open the proposal" and before "send it now", so nobody is
+ * told to send a form that is missing it.
  *
  * Rules 3 and 6 are not in the first brief; they close two dead ends (a plan with
  * nothing measured, and a hand-built line with no price) that would otherwise
@@ -63,6 +90,9 @@ import {
 /** "Due soon": inside this many hours of the deadline, or past it. */
 export const DUE_SOON_HOURS = 48;
 
+/** A walk or an RFI cutoff this many calendar days out (0 = today) is asked about. */
+export const DATE_HEADS_UP_DAYS = 2;
+
 const MS_HOUR = 3_600_000;
 const MS_DAY = 86_400_000;
 const PRICE_BOOK_HREF = "/bid/price-book";
@@ -83,6 +113,28 @@ function monthDay(iso: string): string {
 function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${from}T00:00:00.000Z`)) / MS_DAY);
 }
+
+const WEEKDAY_NAME = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** A day said the way a person says it, relative to today: "today", "tomorrow",
+ * "yesterday", "Thursday" inside a week either way, else "Oct 14". UTC, like
+ * every stored day. */
+function spokenDay(iso: string, now: Date): string {
+  const days = daysBetween(now.toISOString().slice(0, 10), iso);
+  if (days === 0) return "today";
+  if (days === 1) return "tomorrow";
+  if (days === -1) return "yesterday";
+  if (Math.abs(days) <= 6) return WEEKDAY_NAME[new Date(`${iso}T00:00:00.000Z`).getUTCDay()]!;
+  return monthDay(iso);
+}
+
+/** "Addendum 2" for a bare "2" or "3R"; the GC's own words otherwise ("ASI 3"). */
+function addendumName(reference: string): string {
+  const text = reference.trim();
+  return /^\d+[A-Za-z]?$/.test(text) ? `Addendum ${text}` : text;
+}
+
+const possessive = (name: string): string => (name.endsWith("s") ? `${name}'` : `${name}'s`);
 
 // ── the deadline ─────────────────────────────────────────────────────────────
 
@@ -152,6 +204,41 @@ function pastPriceFor(facts: JobGuideFacts, type: GuideWallTypeFact): PastPriceS
   return facts.pastPriceSuggestions?.find((suggestion) => suggestion.wallTypeCode === type.code) ?? null;
 }
 
+/** Measured wall types whose heightless runs price nothing, by code. */
+function heightlessWallTypes(facts: JobGuideFacts): (GuideWallTypeFact & { heightless: NonNullable<GuideWallTypeFact["heightless"]> })[] {
+  return facts.wallTypes.filter(
+    (type): type is GuideWallTypeFact & { heightless: NonNullable<GuideWallTypeFact["heightless"]> } =>
+      !!type.heightless && type.heightless.runCount > 0 && type.componentCount > 0,
+  );
+}
+
+type DatedItem = UpcomingBidDate & { invitation: GuideInvitationFact };
+
+/**
+ * The walks and RFI cutoffs of still-open invitations inside
+ * DATE_HEADS_UP_DAYS, soonest first; a walk before an RFI cutoff on the same
+ * day (it has a place and a time to be at). `upcomingBidDates` is the bid log's
+ * own rule for "coming up", so the two cannot disagree about what is near.
+ */
+function upcomingDates(facts: JobGuideFacts, now: Date): DatedItem[] {
+  const today = now.toISOString().slice(0, 10);
+  const asDate = (iso: string | null | undefined) => (iso ? new Date(`${iso}T00:00:00.000Z`) : null);
+  const out: DatedItem[] = [];
+  for (const invitation of facts.invitations) {
+    if (invitation.status !== "INVITED") continue;
+    const dates = upcomingBidDates(
+      { walkDate: asDate(invitation.walkDate), walkMinute: invitation.walkMinute ?? null, rfiCutoffDate: asDate(invitation.rfiCutoffDate) },
+      today,
+      DATE_HEADS_UP_DAYS,
+    );
+    for (const date of dates) out.push({ ...date, invitation });
+  }
+  const kindOrder = (kind: DatedItem["kind"]) => (kind === "walk" ? 0 : 1);
+  return out.sort(
+    (a, b) => a.daysLeft - b.daysLeft || kindOrder(a.kind) - kindOrder(b.kind) || (a.minute ?? 1440) - (b.minute ?? 1440),
+  );
+}
+
 function decide(facts: JobGuideFacts, now: Date): Decision {
   const hrefs = surfaceHrefs("bid", facts.jobId);
   const open = (label: string, href: string, primary = false): GuideAction => ({ label, href, ...(primary ? { primary } : {}) });
@@ -168,6 +255,43 @@ function decide(facts: JobGuideFacts, now: Date): Decision {
   /** A bid past its deadline reads as blocked whatever the ask is. */
   const toneFor = (tone: GuideTone): GuideTone => (pastDue ? "blocked" : tone);
   const lateLine = (line: string): string => (pastDue ? `Past due. ${line}` : line);
+
+  // 0. A job walk or an RFI cutoff about to pass — unless the bid itself is due
+  // first (see "dates that pass" in the header).
+  const dated = dueSoon ? undefined : upcomingDates(facts, now)[0];
+  if (dated) {
+    const when = spokenDay(dated.iso, now);
+    const bidLog = `${bidLogHrefs("bid").list}#${dated.invitation.id}`;
+    const gc = dated.invitation.gcName ?? null;
+    const step = GUIDE_STEP_KEYS[Math.min(firstUnfinished(facts), GUIDE_STEP_KEYS.length - 1)]!;
+    if (dated.kind === "walk") {
+      const at = dated.minute === null ? "" : ` at ${formatClock(dated.minute)}`;
+      return {
+        ask: {
+          id: "job-walk",
+          step,
+          title: `The job walk is ${when}${at}.`,
+          body: "Bring the plan set and a list of what the drawings leave open.",
+          actions: [open("See the bid", bidLog, true)],
+        },
+        headline: "The job walk is coming up.",
+        oneLine: dated.label,
+        tone: "update",
+      };
+    }
+    return {
+      ask: {
+        id: "rfi-cutoff",
+        step,
+        title: `RFI questions are due ${when}.`,
+        body: `Send ${gc ?? "the GC"} anything the drawings leave open before then. After that, you price what you assume.`,
+        actions: [open("See the bid", bidLog, true)],
+      },
+      headline: "Questions to the GC close soon.",
+      oneLine: dated.label,
+      tone: "update",
+    };
+  }
 
   // 1. No drawings at all.
   if (!facts.hasTakeoffPlan && facts.wallRunCount === 0 && facts.lineCount === 0) {
@@ -215,6 +339,47 @@ function decide(facts: JobGuideFacts, now: Date): Decision {
       },
       headline: "Drawings are in. One thing needs you.",
       oneLine: lateLine("Walls not measured yet"),
+      tone: toneFor("question"),
+    };
+  }
+
+  // 3b. A measured wall type with no height. WHY HERE: a run with no height of
+  // its own on a type with no default produces NOTHING (`runGeometry` returns
+  // null), so its walls never become lines. Asked after "measure the walls"
+  // (there is nothing to ask until a run exists) and BEFORE "add the walls to
+  // the estimate" and every price ask, because both of those read LINES: rule 4
+  // would add walls that turn into nothing, and rule 5 cannot see a type that
+  // has no lines to be unpriced — the walls would be missing from the bid with
+  // no ask saying so, and the guide would fall through to "proposal ready".
+  const heightless = heightlessWallTypes(facts);
+  if (heightless.length > 0) {
+    const first = heightless[0]!;
+    const { runCount, lengthFt } = first.heightless;
+    const more = heightless.length - 1;
+    const moreSentence = more > 0 ? ` ${plural(more, "other wall type needs", "other wall types need")} a height too.` : "";
+    return {
+      ask: {
+        id: "wall-height",
+        step: "walls",
+        title: `How tall are the ${first.code} walls on ${facts.name}?`,
+        body:
+          `${count(runCount)} ${runCount === 1 ? "run" : "runs"} of ${first.code} (${feet(lengthFt)}) ${runCount === 1 ? "has" : "have"} no height, ` +
+          `so ${runCount === 1 ? "it adds" : "they add"} nothing to the estimate yet. Your answer becomes ${possessive(first.code)} default height in your wall types.${moreSentence}`,
+        actions: [
+          ...WALL_HEIGHT_CHOICES.map(
+            (heightFt): GuideAction => ({
+              label: `${heightFt} ft`,
+              actionId: "setWallHeight",
+              actionArg: wallHeightArg({ wallTypeId: first.wallTypeId, token: first.heightless.token }, heightFt),
+              chip: true,
+              confirm: `Make ${first.code} ${heightFt} ft tall in your wall types, and work this estimate's walls out again from them?`,
+            }),
+          ),
+          open("Another height", hrefs.wallTypes),
+        ],
+      },
+      headline: "Walls are measured. One thing needs you.",
+      oneLine: lateLine(more > 0 ? `${first.code} and ${plural(more, "more wall type", "more wall types")} need a height` : `${first.code} walls need a height`),
       tone: toneFor("question"),
     };
   }
@@ -305,6 +470,32 @@ function decide(facts: JobGuideFacts, now: Date): Decision {
       headline: "Priced. One thing needs you.",
       oneLine: lateLine("Markup recap not applied"),
       tone: toneFor("update"),
+    };
+  }
+
+  // 7b. An addendum not acknowledged on a still-open GC's form (header: PAPER).
+  const missingAcks = facts.unacknowledgedAddenda ?? [];
+  if (missingAcks.length > 0) {
+    const first: GuideAddendumFact = missingAcks[0]!;
+    const name = addendumName(first.reference);
+    const issued = first.issuedOn ? ` was issued ${spokenDay(first.issuedOn, now)} and` : "";
+    const form = first.gcName ? `${possessive(first.gcName)} bid form` : "the bid form";
+    const more = missingAcks.length - 1;
+    const moreSentence = more > 0 ? ` ${plural(more, "other acknowledgement is", "other acknowledgements are")} missing too.` : "";
+    return {
+      ask: {
+        id: "addendum-unacknowledged",
+        step: "proposal",
+        title: `${name}${issued} isn't acknowledged on ${form} yet.`,
+        body: `A bid form missing an acknowledgement can be thrown out unread. Once it is on the form, record the date in the bid log.${moreSentence}`,
+        actions: [
+          open("Open the bid log", `${bidLogHrefs("bid").list}#${first.invitationId}`, true),
+          open("Read the addendum", `${bidLogHrefs("bid").bidPage(first.invitationId) ?? bidLogHrefs("bid").list}?tab=addenda`),
+        ],
+      },
+      headline: "Priced. One paper needs you.",
+      oneLine: lateLine(more > 0 ? `${name} and ${plural(more, "more", "more")} not acknowledged` : `${name} not acknowledged`),
+      tone: toneFor("question"),
     };
   }
 

@@ -104,3 +104,96 @@ export const GUIDE_FIXTURES: JobGuide[] = [
     oneLine: "No drawings uploaded",
   },
 ];
+
+/**
+ * The question and date asks on the home list, beside the kinds above: a job
+ * walk tomorrow (tone "update", but a date that passes on its own), a wall
+ * type's height (tap answers, which the home cannot give — its button says
+ * "Answer"), and an addendum nobody has acknowledged. Kept apart from
+ * `GUIDE_FIXTURES` so the counts asserted over that list do not move.
+ */
+export const GUIDE_FIXTURES_QUESTIONS: JobGuide[] = [
+  {
+    jobId: "job_ready",
+    name: "Civic Center Annex",
+    gcName: "Brightline",
+    dueLabel: "due Fri",
+    steps: steps(["done", "done", "done", "current", "todo"]),
+    headline: "Ready to go out.",
+    ask: {
+      id: "proposal-ready",
+      step: "proposal",
+      title: "The proposal is ready to open at $96,400.00.",
+      body: null,
+      actions: [{ label: "Open the proposal", href: "/bid/estimates/job_ready/proposal", primary: true }],
+    },
+    bidSoFar: 96400,
+    tone: "ready",
+    oneLine: "Ready to send, $96,400.00",
+  },
+  {
+    jobId: "job_height",
+    name: "Riverside Medical, L2",
+    gcName: "Hartwell",
+    dueLabel: "due Thu",
+    steps: steps(["done", "current", "todo", "todo", "todo"]),
+    headline: "Walls are measured. One thing needs you.",
+    ask: {
+      id: "wall-height",
+      step: "walls",
+      title: "How tall are the W2 walls on Riverside Medical, L2?",
+      body: null,
+      actions: [
+        ...[8, 9, 10, 12].map((h) => ({
+          label: `${h} ft`,
+          actionId: "setWallHeight" as const,
+          actionArg: `wh:wt_w2:${h}:0a1b2c3d`,
+          chip: true,
+        })),
+        { label: "Another height", href: "/bid/wall-types" },
+      ],
+    },
+    bidSoFar: null,
+    tone: "question",
+    oneLine: "W2 walls need a height",
+  },
+  {
+    jobId: "job_walk",
+    name: "Oak Ave Apartments",
+    gcName: "Brightline",
+    dueLabel: "due Nov 5",
+    steps: steps(["done", "current", "todo", "todo", "todo"]),
+    headline: "The job walk is coming up.",
+    ask: {
+      id: "job-walk",
+      step: "walls",
+      title: "The job walk is tomorrow at 9:00 AM.",
+      body: null,
+      actions: [{ label: "See the bid", href: "/bid/bids#inv_oak", primary: true }],
+    },
+    bidSoFar: null,
+    tone: "update",
+    oneLine: "Job walk tomorrow 9:00 AM",
+  },
+  {
+    jobId: "job_addendum",
+    name: "Harbor Point Clinic",
+    gcName: "Hartwell",
+    dueLabel: "due Mon",
+    steps: steps(["done", "done", "done", "current", "todo"]),
+    headline: "Priced. One paper needs you.",
+    ask: {
+      id: "addendum-unacknowledged",
+      step: "proposal",
+      title: "Addendum 2 was issued Tuesday and isn't acknowledged on Hartwell's bid form yet.",
+      body: null,
+      actions: [
+        { label: "Open the bid log", href: "/bid/bids#inv_harbor", primary: true },
+        { label: "Read the addendum", href: "/bid/bids/inv_harbor?tab=addenda" },
+      ],
+    },
+    bidSoFar: 187450,
+    tone: "question",
+    oneLine: "Addendum 2 not acknowledged",
+  },
+];

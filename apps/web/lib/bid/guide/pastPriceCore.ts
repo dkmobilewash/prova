@@ -148,7 +148,7 @@ function writeOf(source: Pick<PastLine, "unitCost" | "unitPrice">, recapApplied:
 
 /** FNV-1a, 32 bits, hex. A fingerprint for staleness, not a security token:
  * the server recomputes it and nothing is trusted from it but equality. */
-function fingerprint(text: string): string {
+export function fingerprint(text: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i += 1) {
     h ^= text.charCodeAt(i);

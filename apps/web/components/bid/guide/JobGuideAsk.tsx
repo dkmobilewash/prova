@@ -30,11 +30,21 @@ import type { GuideAction, JobGuide } from "@/lib/bid/guide/types";
  * first action marked `primary` wins and any other is drawn outlined. While a
  * confirm is armed the confirm is the only primary on the card.
  *
+ * TAP ANSWERS. An action marked `chip` ("8 ft", "9 ft"…) is drawn in a row of
+ * its own above the other buttons, as outlined pills at least 48px tall (a
+ * gloved thumb), and is never the primary. A chip WRITES like any action, so it
+ * arms the same two-step confirm, and its own `confirm` sentence (when the
+ * guide gives one) replaces the general one — a wall type's height reaches past
+ * this estimate, and the confirm says so before anything is written.
+ *
  * A refusal comes back as a sentence and is shown under the buttons
  * (`role="alert"`); production redacts a thrown message, so the action returns
  * rather than throws. Nothing here computes a figure — the card prints what the
  * guide hands it.
  */
+const chipClass =
+  "inline-flex min-h-12 min-w-20 items-center justify-center rounded-full border border-line-card px-5 text-sm font-semibold text-ink hover:bg-rail-hover";
+
 export function JobGuideAsk({ guide }: { guide: JobGuide }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -48,7 +58,9 @@ export function JobGuideAsk({ guide }: { guide: JobGuide }) {
   // A link out of Bid is dropped, not drawn: on the Bid host a CRM path would
   // bounce to the Bid home instead of where the button said (bidLinkCensus).
   const actions = ask.actions.filter((action) => !action.href || isBidPath(action.href));
-  const firstPrimary = actions.findIndex((action) => action.primary);
+  // A chip is an answer, never the yellow button (types.ts, `chip`).
+  const firstPrimary = actions.findIndex((action) => action.primary && !action.chip);
+  const chips = actions.map((action, index) => ({ action, index })).filter(({ action }) => action.chip && action.actionId);
   const armedAction: GuideAction | null = armed != null ? (actions[armed] ?? null) : null;
 
   function confirm(action: GuideAction) {
@@ -81,7 +93,7 @@ export function JobGuideAsk({ guide }: { guide: JobGuide }) {
 
       {armedAction ? (
         <div className="mt-4" data-guide="confirm">
-          <p className="mb-2 text-sm text-ink-body">This changes your estimate. Go ahead?</p>
+          <p className="mb-2 break-words text-sm text-ink-body">{armedAction.confirm ?? "This changes your estimate. Go ahead?"}</p>
           <div className="flex flex-col gap-2 sm:grid sm:max-w-xl sm:grid-cols-2">
             <button
               type="button"
@@ -114,8 +126,29 @@ export function JobGuideAsk({ guide }: { guide: JobGuide }) {
           </div>
         </div>
       ) : (
+        <>
+        {chips.length > 0 ? (
+          <div role="group" aria-label="Answers" className="mt-4 flex flex-wrap gap-2" data-guide="chips">
+            {chips.map(({ action, index }) => (
+              <button
+                key={`${action.label}-${index}`}
+                type="button"
+                className={chipClass}
+                data-chip="true"
+                onClick={() => {
+                  setDone(false);
+                  setError(null);
+                  setArmed(index);
+                }}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap" data-guide="actions">
           {actions.map((action, index) => {
+            if (action.chip) return null;
             const primary = index === firstPrimary;
             const className = primary ? primaryActionClass : secondaryActionClass;
             if (action.href) {
@@ -142,6 +175,7 @@ export function JobGuideAsk({ guide }: { guide: JobGuide }) {
             );
           })}
         </div>
+        </>
       )}
 
       {error ? (
