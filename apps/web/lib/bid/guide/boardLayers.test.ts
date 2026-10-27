@@ -4,9 +4,11 @@ import {
   boardLayerQuestions,
   boardLayersArg,
   parseBoardLayersArg,
+  type BoardLayerItem,
   type BoardLayerRun,
   type BoardLayerType,
 } from "./boardLayers";
+import { fingerprint } from "./pastPriceCore";
 import { wallHeightQuestions } from "./wallHeight";
 
 /**
@@ -26,32 +28,32 @@ const runs: BoardLayerRun[] = [
 
 describe("boardLayerQuestions", () => {
   it("asks about an unanswered type with a per-layer part, counting every run of it here", () => {
-    const [question, ...rest] = boardLayerQuestions(runs, [w1, w2]);
+    const [question, ...rest] = boardLayerQuestions(runs, [], [w1, w2]);
     expect(rest).toEqual([]);
     expect(question).toMatchObject({ wallTypeId: "wt_w2", code: "W2", sides: 2, runCount: 2, lengthFt: 150.5 });
     expect(question!.token).toMatch(/^[0-9a-f]{8}$/);
   });
 
   it("asks nothing of an answered type, one with no per-layer part, or one with no runs on the job", () => {
-    expect(boardLayerQuestions(runs, [{ ...w2, boardLayers: 2 }])).toEqual([]);
+    expect(boardLayerQuestions(runs, [], [{ ...w2, boardLayers: 2 }])).toEqual([]);
     // No per-layer part: no answer would change any quantity — a legend-made
     // type, whose board factor already IS the layer count, is this case.
-    expect(boardLayerQuestions(runs, [{ ...w2, perLayerCount: 0 }])).toEqual([]);
-    expect(boardLayerQuestions(runs.filter((run) => run.wallTypeId !== "wt_w2"), [w2])).toEqual([]);
+    expect(boardLayerQuestions(runs, [], [{ ...w2, perLayerCount: 0 }])).toEqual([]);
+    expect(boardLayerQuestions(runs.filter((run) => run.wallTypeId !== "wt_w2"), [], [w2])).toEqual([]);
   });
 
   it("carries a one-sided type's sides, so the words can say so", () => {
-    expect(boardLayerQuestions(runs, [{ ...w2, sides: 1 }])[0]!.sides).toBe(1);
+    expect(boardLayerQuestions(runs, [], [{ ...w2, sides: 1 }])[0]!.sides).toBe(1);
   });
 
   it("sorts by code", () => {
     const a1 = { ...w2, id: "wt_a1", code: "A1" };
-    const both = boardLayerQuestions([...runs, { id: "r9", wallTypeId: "wt_a1", lengthFt: 1 }], [w2, a1]);
+    const both = boardLayerQuestions([...runs, { id: "r9", wallTypeId: "wt_a1", lengthFt: 1 }], [], [w2, a1]);
     expect(both.map((q) => q.code)).toEqual(["A1", "W2"]);
   });
 
   it("the token follows the set of walls and nothing else", () => {
-    const token = (r: BoardLayerRun[]) => boardLayerQuestions(r, [w2])[0]?.token;
+    const token = (r: BoardLayerRun[]) => boardLayerQuestions(r, [], [w2])[0]?.token;
     const base = token(runs);
     expect(token([...runs].reverse())).toBe(base); // order does not matter
     expect(token(runs.map((run) => (run.id === "r1" ? { ...run, lengthFt: 999 } : run)))).toBe(base); // a re-measure is the same walls
@@ -62,9 +64,45 @@ describe("boardLayerQuestions", () => {
   it("is not the height question's token for the same walls, so one answer's token cannot pass for the other's", () => {
     const heightless = runs.map((run) => ({ ...run, heightFt: null }));
     const height = wallHeightQuestions(heightless, [{ id: "wt_w2", code: "W2", defaultHeightFt: null, componentCount: 3 }])[0]!;
-    const layers = boardLayerQuestions(runs, [w2])[0]!;
+    const layers = boardLayerQuestions(runs, [], [w2])[0]!;
     expect(height.runCount).toBe(layers.runCount); // the same two walls
     expect(layers.token).not.toBe(height.token);
+  });
+});
+
+/**
+ * TAKEOFF ITEMS carry a wall type's board as surely as runs do
+ * (`syncTakeoffItemLines` applies `boardLayers`), so they count toward
+ * asking, toward the footage, and toward the token.
+ */
+describe("boardLayerQuestions: takeoff items", () => {
+  const items: BoardLayerItem[] = [{ id: "i1", wallTypeId: "wt_w2", lengthFt: 40 }];
+
+  it("counts a type's items with its runs, in the count and the footage", () => {
+    expect(boardLayerQuestions(runs, items, [w2])[0]).toMatchObject({ runCount: 2, itemCount: 1, lengthFt: 190.5 });
+  });
+
+  it("asks about a type used ONLY through takeoff items", () => {
+    const [question] = boardLayerQuestions([], items, [w2]);
+    expect(question).toMatchObject({ wallTypeId: "wt_w2", runCount: 0, itemCount: 1, lengthFt: 40 });
+    // …but not when answered, or with nothing per layer, exactly as for runs
+    expect(boardLayerQuestions([], items, [{ ...w2, boardLayers: 2 }])).toEqual([]);
+    expect(boardLayerQuestions([], items, [{ ...w2, perLayerCount: 0 }])).toEqual([]);
+  });
+
+  it("the token follows the items too, but not their traced length", () => {
+    const token = (i: BoardLayerItem[]) => boardLayerQuestions(runs, i, [w2])[0]!.token;
+    const base = token(items);
+    expect(token([{ ...items[0]!, lengthFt: 999 }])).toBe(base); // a re-trace is the same wall
+    expect(token([...items, { id: "i2", wallTypeId: "wt_w2", lengthFt: 1 }])).not.toBe(base); // an item added
+    expect(token([])).not.toBe(base); // an item removed
+    // another type's item is not this question's
+    expect(token([...items, { id: "i9", wallTypeId: "wt_w1", lengthFt: 1 }])).toBe(base);
+  });
+
+  it("a type with no items keeps the token it had before items were counted", () => {
+    // `layers|<type>|<sorted run ids>` — what a screen drawn before this change carries.
+    expect(boardLayerQuestions(runs, [], [w2])[0]!.token).toBe(fingerprint("layers|wt_w2|r1,r2"));
   });
 });
 

@@ -11,6 +11,7 @@ import { applyBidRecap } from "./bidRecap";
 import { usePastPrice as applyPastPrice } from "./bidGuidePastPrice";
 import { refreshWallSchedule, updateWallType } from "./wallTypes";
 import { actionFail, actionOk, type ActionResult } from "./shared";
+import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
 
 /**
  * The server side of the buttons on a job's guide card (`GuideAction.actionId`
@@ -242,6 +243,7 @@ async function setWallHeight(jobId: string, actionArg: string | undefined): Prom
 
   const refreshed = await refreshWallSchedule(jobId);
   if (!refreshed.ok) return actionFail(refreshed.error);
+  await resyncTakeoffItemLines(companyId, jobId, type.id);
   return actionOk;
 }
 
@@ -253,13 +255,14 @@ async function setWallHeight(jobId: string, actionArg: string | undefined): Prom
  * `arg` is `bl:<WallType id>:<layers>:<token>`. The count must be one of the
  * offered answers, and the QUESTION is re-derived here from this company's
  * rows by the same `boardLayerQuestions` the screen used: if the type was
- * answered since, lost its last per-layer part, or this job's runs of it
- * changed, there is no matching question and the tap is refused as stale
- * rather than applied to a different wall.
+ * answered since, lost its last per-layer part, or this job's runs or takeoff
+ * items of it changed, there is no matching question and the tap is refused as
+ * stale rather than applied to a different wall.
  *
  * The write is `updateWallType` (the row as it stands, `boardLayers` changed)
  * then `refreshWallSchedule` for this job, under VIEW_JOB_COSTS checked before
- * anything is written — exactly the height answer's pair.
+ * anything is written — exactly the height answer's pair — and then
+ * `resyncTakeoffItemLines`, so traced walls of the type move with its runs.
  */
 async function setBoardLayers(jobId: string, actionArg: string | undefined): Promise<ActionResult> {
   const context = await requireCompanyContext();
@@ -273,7 +276,7 @@ async function setBoardLayers(jobId: string, actionArg: string | undefined): Pro
   if (!job) return actionFail(NO_JOB);
   if (job.status !== "ESTIMATE") return actionFail(NOT_ESTIMATE_STAGE);
 
-  const [type, runs] = await Promise.all([
+  const [type, runs, items] = await Promise.all([
     prisma.wallType.findFirst({
       where: { id: parsed.wallTypeId, companyId },
       select: { ...WALL_TYPE_ROW, components: { select: { perLayer: true } } },
@@ -282,11 +285,20 @@ async function setBoardLayers(jobId: string, actionArg: string | undefined): Pro
       where: { jobId, companyId, wallTypeId: parsed.wallTypeId },
       select: { id: true, wallTypeId: true, lengthFt: true },
     }),
+    // The takeoff items priced through this type: the question counts them,
+    // so the token covers them (`boardLayerQuestions`).
+    prisma.takeoffItem.findMany({
+      where: { jobId, companyId, wallTypeId: parsed.wallTypeId },
+      select: { id: true },
+    }),
   ]);
   if (!type) return actionFail(STALE_LAYERS);
 
   const question = boardLayerQuestions(
     runs.map((run) => ({ id: run.id, wallTypeId: run.wallTypeId, lengthFt: Number(run.lengthFt) })),
+    // Only the ids reach the token; the traced length is the screen's words,
+    // and a re-trace is the same walls, so it is not re-read here.
+    items.map((item) => ({ id: item.id, wallTypeId: type.id, lengthFt: 0 })),
     [
       {
         id: type.id,
@@ -307,5 +319,48 @@ async function setBoardLayers(jobId: string, actionArg: string | undefined): Pro
 
   const refreshed = await refreshWallSchedule(jobId);
   if (!refreshed.ok) return actionFail(refreshed.error);
+  await resyncTakeoffItemLines(companyId, jobId, type.id);
   return actionOk;
+}
+
+/**
+ * ── THE TRACED WALLS MOVE IN THE SAME PRESS AS THE RUNS ──
+ *
+ * A wall type prices two kinds of estimate line: the wall schedule's (runs,
+ * `syncWallScheduleLines`, which `refreshWallSchedule` re-runs) and the
+ * takeoff's (traced items, `syncTakeoffItemLines`). The tap answers used to
+ * re-run only the first. So "2 layers each side" doubled the RUN lines' board
+ * and left the ITEM lines of the same type at one layer — and the next press
+ * of "Send takeoff to estimate", for any reason, doubled them silently.
+ *
+ * So after either answer this re-runs the takeoff's own sync —
+ * `syncTakeoffItemLines`, the function `sendTakeoffItemsToEstimate` calls, in
+ * a transaction the same way — under the checks the caller has already passed
+ * (VIEW_JOB_COSTS, this company's job, still an ESTIMATE).
+ *
+ * ONLY FOR THIS TYPE'S ITEMS THAT ARE ALREADY ON THE ESTIMATE, through the
+ * sync's `onlyItemIds`. The job-wide form is "Send takeoff to estimate", and
+ * it CREATES lines for every item with an assembly. Run from here it put a
+ * DIFFERENT type's traced wall — one nobody had sent — onto the bid, in a
+ * press that was about W1's board (`bidGuideBoardLayersItems.dbtest.ts`
+ * caught it). An item of this type that is not on the estimate yet has
+ * nothing the answer could leave stale: the next Send prices it from the type
+ * as it now stands.
+ *
+ * For the height answer this changes no item quantity — an item carries its
+ * own height and never reads the type's default (`itemGeometry`) — and is run
+ * anyway so the two answers leave a job's estimate in the same state: the
+ * type's lines, run and traced, re-derived from the type as it now stands.
+ */
+async function resyncTakeoffItemLines(companyId: string, jobId: string, wallTypeId: string): Promise<void> {
+  const sent = await prisma.takeoffItem.findMany({
+    where: { jobId, companyId, wallTypeId, lineItems: { some: { isDeleted: false } } },
+    select: { id: true },
+  });
+  if (sent.length === 0) return;
+  const onlyItemIds = sent.map((item) => item.id);
+  await prisma.$transaction((tx) => syncTakeoffItemLines(tx, companyId, jobId, onlyItemIds));
+  revalidatePath(`/jobs/${jobId}/estimate`);
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/takeoff/${jobId}`);
 }

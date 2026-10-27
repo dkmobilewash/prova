@@ -7,6 +7,7 @@ import { reachedProvider } from "@/components/messageLabels";
 import { todayInZone } from "@/lib/viewer-timezone";
 import { BID_INVITATION_RELATED_TYPE } from "@/lib/estimating/proposal-send";
 import { boardLayerQuestions } from "./boardLayers";
+import { itemTracedFeet } from "@/lib/estimating/takeoff-item-lines";
 
 /**
  * THE FACTS A JOB GUIDE IS BUILT FROM — one plain, serialisable snapshot per
@@ -161,11 +162,15 @@ export type GuideWallTypeFact = {
   heightless?: { runCount: number; lengthFt: number; token: string } | null;
   /**
    * Set when the type has no board-layer answer AND has a part whose factor is
-   * per layer, so the answer would change its board. `runCount`/`lengthFt` are
-   * every run of the type on this job. Absent or null = nothing to ask. See
-   * `./boardLayers.ts`.
+   * per layer, so the answer would change its board. `runCount` is every run of
+   * the type on this job, `itemCount` every takeoff item priced through it
+   * (absent = 0), and `lengthFt` both together. Absent or null = nothing to
+   * ask. See `./boardLayers.ts`.
+   *
+   * A type used ONLY through takeoff items appears in `wallTypes` just for this
+   * question — with `runCount` 0, so nothing that reads runs counts it.
    */
-  layersUnanswered?: { runCount: number; lengthFt: number; sides: number; token: string } | null;
+  layersUnanswered?: { runCount: number; itemCount?: number; lengthFt: number; sides: number; token: string } | null;
 };
 
 /**
@@ -346,7 +351,9 @@ function heightlessOf(questions: ReturnType<typeof wallHeightQuestions>, wallTyp
 
 function layersOf(questions: ReturnType<typeof boardLayerQuestions>, wallTypeId: string): GuideWallTypeFact["layersUnanswered"] {
   const question = questions.find((q) => q.wallTypeId === wallTypeId);
-  return question ? { runCount: question.runCount, lengthFt: question.lengthFt, sides: question.sides, token: question.token } : null;
+  return question
+    ? { runCount: question.runCount, itemCount: question.itemCount, lengthFt: question.lengthFt, sides: question.sides, token: question.token }
+    : null;
 }
 
 /**
@@ -358,7 +365,7 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[], timeZone: stri
   if (jobs.length === 0) return [];
   const jobIds = jobs.map((job) => job.id);
 
-  const [lines, runs, plans] = await Promise.all([
+  const [lines, runs, plans, items] = await Promise.all([
     prisma.jobLineItem.findMany({
       where: { jobId: { in: jobIds }, isDeleted: false, job: { companyId } },
       select: {
@@ -381,10 +388,33 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[], timeZone: stri
       where: { jobId: { in: jobIds }, companyId },
       select: { id: true, jobId: true },
     }),
+    // Traced takeoff items priced through a wall type: they carry its board
+    // too (`syncTakeoffItemLines`), so the board-layer question counts them.
+    prisma.takeoffItem.findMany({
+      where: { jobId: { in: jobIds }, companyId, wallTypeId: { not: null } },
+      select: {
+        id: true,
+        jobId: true,
+        name: true,
+        type: true,
+        wallTypeId: true,
+        measurements: {
+          select: {
+            id: true,
+            kind: true,
+            xs: true,
+            ys: true,
+            cutouts: true,
+            page: { select: { pageNumber: true } },
+            calibration: { select: { x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } },
+          },
+        },
+      },
+    }),
   ]);
 
   const planIds = plans.map((plan) => plan.id);
-  const typeIds = [...new Set(runs.map((run) => run.wallTypeId))];
+  const typeIds = [...new Set([...runs.map((run) => run.wallTypeId), ...items.map((item) => item.wallTypeId as string)])];
 
   // Every invitation any of these jobs is the same work as, for the addenda.
   const anchors = new Map<string, { id: string; bidProjectId: string | null }>();
@@ -507,8 +537,10 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[], timeZone: stri
         componentCount: type.components.length,
       })),
     );
+    const jobItems = items.filter((item) => item.jobId === job.id);
     const layerQuestions = boardLayerQuestions(
       jobRuns.map((run) => ({ id: run.id, wallTypeId: run.wallTypeId, lengthFt: num(run.lengthFt) })),
+      jobItems.map((item) => ({ id: item.id, wallTypeId: item.wallTypeId as string, lengthFt: itemTracedFeet(item) })),
       wallTypes.map((type) => ({
         id: type.id,
         code: type.code,
@@ -535,6 +567,27 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[], timeZone: stri
         unpricedLineCount: typeLines.filter(priceless).length,
         heightless: heightlessOf(heightQuestions, typeId),
         layersUnanswered: layersOf(layerQuestions, typeId),
+      });
+    }
+    // A type used ONLY through takeoff items, here just for its board-layer
+    // question: no runs, so the height, the measured footage and "add the
+    // walls" never count it, and it has no wall-schedule lines to be unpriced.
+    for (const question of layerQuestions) {
+      if (question.runCount > 0) continue;
+      const type = typeById.get(question.wallTypeId);
+      if (!type) continue;
+      wallTypeFacts.push({
+        wallTypeId: type.id,
+        code: type.code,
+        name: type.name,
+        lengthFt: 0,
+        runCount: 0,
+        openingsCount: 0,
+        componentCount: type.components.length,
+        lineCount: 0,
+        unpricedLineCount: 0,
+        heightless: null,
+        layersUnanswered: layersOf(layerQuestions, type.id),
       });
     }
     wallTypeFacts.sort((a, b) => a.code.localeCompare(b.code));

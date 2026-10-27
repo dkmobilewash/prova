@@ -232,7 +232,7 @@ type Layerless = GuideWallTypeFact & { layersUnanswered: NonNullable<GuideWallTy
 /** Measured wall types whose board-layer answer would change their board, by code. */
 function layerlessWallTypes(facts: JobGuideFacts): Layerless[] {
   return facts.wallTypes.filter(
-    (type): type is Layerless => !!type.layersUnanswered && type.layersUnanswered.runCount > 0 && type.componentCount > 0,
+    (type): type is Layerless => !!type.layersUnanswered && type.layersUnanswered.runCount + (type.layersUnanswered.itemCount ?? 0) > 0 && type.componentCount > 0,
   );
 }
 
@@ -436,6 +436,16 @@ function decide(facts: JobGuideFacts, now: Date): Decision {
   if (layerless.length > 0) {
     const first = layerless[0]!;
     const { runCount, lengthFt, sides } = first.layersUnanswered;
+    const itemCount = first.layersUnanswered.itemCount ?? 0;
+    // "3 runs", "1 takeoff item", "3 runs and 1 takeoff item" — both carry the
+    // type's board (`./boardLayers.ts`), so the sentence names both.
+    const walls = [
+      runCount > 0 ? plural(runCount, "run", "runs") : null,
+      itemCount > 0 ? plural(itemCount, "takeoff item", "takeoff items") : null,
+    ]
+      .filter((part): part is string => part !== null)
+      .join(" and ");
+    const one = runCount + itemCount === 1;
     const side = sides === 1 ? "on its one boarded side" : "each side";
     const more = layerless.length - 1;
     const moreSentence = more > 0 ? ` ${plural(more, "other wall type needs", "other wall types need")} a layer count too.` : "";
@@ -446,7 +456,7 @@ function decide(facts: JobGuideFacts, now: Date): Decision {
         step: "walls",
         title: `How many layers of board are on the ${first.code} walls on ${facts.name}?`,
         body:
-          `${count(runCount)} ${runCount === 1 ? "run" : "runs"} of ${first.code} (${feet(lengthFt)}) ${runCount === 1 ? "is" : "are"} counted at one layer ${side} until you say. ` +
+          `${walls} of ${first.code} (${feet(lengthFt)}) ${one ? "is" : "are"} counted at one layer ${side} until you say. ` +
           `Two layers doubles the board. Your answer becomes ${possessive(first.code)} board layers in your wall types.${moreSentence}`,
         actions: [
           ...BOARD_LAYER_CHOICES.map(
@@ -474,7 +484,7 @@ function decide(facts: JobGuideFacts, now: Date): Decision {
   }
 
   // 4. Walls measured, none of them in the estimate.
-  if (facts.wallRunCount > 0 && facts.wallLineCount === 0 && facts.wallTypes.some((type) => type.componentCount > 0)) {
+  if (facts.wallRunCount > 0 && facts.wallLineCount === 0 && facts.wallTypes.some((type) => type.runCount > 0 && type.componentCount > 0)) {
     return {
       ask: {
         id: "walls-not-added",

@@ -33,11 +33,12 @@ import { fingerprint } from "./pastPriceCore";
  *
  * ── WHEN IT IS ASKED ──
  *
- * A wall type used on this job's runs, with `boardLayers` still null, that has
- * at least one `perLayer` component. A type with none is never asked: no
- * answer would change anything, and a legend-made type (which writes the
- * layer count into the factor) is exactly that case. The footage is every run
- * of the type on this job, since every run's board follows the answer.
+ * A wall type used on this job's runs OR takeoff items, with `boardLayers`
+ * still null, that has at least one `perLayer` component. A type with none is
+ * never asked: no answer would change anything, and a legend-made type (which
+ * writes the layer count into the factor) is exactly that case. The footage is
+ * every run and every traced item of the type on this job, since all of their
+ * board follows the answer.
  *
  * ── THE ANSWER ──
  *
@@ -45,7 +46,9 @@ import { fingerprint } from "./pastPriceCore";
  * partition. Three or four (shaft and some 2-hour walls) go to the wall-type
  * library, where the person picks it. Written as the TYPE's `boardLayers`
  * through the existing `updateWallType` action, then `refreshWallSchedule` for
- * this job — the same pair the height answer uses. It reaches every job using
+ * this job — the same pair the height answer uses — and then this job's
+ * takeoff-item lines are re-synced too, so a traced wall's board moves in the
+ * same press as a run's (`lib/actions/bidGuide.ts`). It reaches every job using
  * the type, and the confirm says so.
  */
 
@@ -53,7 +56,9 @@ import { fingerprint } from "./pastPriceCore";
 export const BOARD_LAYER_CHOICES: readonly number[] = [1, 2];
 
 export type BoardLayerRun = { id: string; wallTypeId: string; lengthFt: number };
-export type BoardLayerType = { id: string; code: string; sides: number; boardLayers: number | null; perLayerCount: number };
+/** A takeoff item priced through a wall type. `lengthFt` is its traced length (0 for a non-line). */
+export type BoardLayerItem = { id: string; wallTypeId: string; lengthFt: number };
+export type BoardLayerType ={ id: string; code: string; sides: number; boardLayers: number | null; perLayerCount: number };
 
 export type BoardLayerQuestion = {
   wallTypeId: string;
@@ -62,33 +67,54 @@ export type BoardLayerQuestion = {
   sides: number;
   /** Runs of this type on the job. */
   runCount: number;
-  /** Their total length, feet. */
+  /** Takeoff items of this type on the job — traced walls priced through it. */
+  itemCount: number;
+  /** The runs' length plus the items' traced length, feet. */
   lengthFt: number;
-  /** Fingerprint of the question as asked: which type, which runs. */
+  /** Fingerprint of the question as asked: which type, which runs, which items. */
   token: string;
 };
 
 /**
- * Every board-layer question a job has, by wall type code. The token covers
- * the type and the exact set of its runs here, so an answer to a question that
- * has since changed (a run added or removed) is refused; one already answered
- * elsewhere, or whose type lost its last per-layer part, is not re-derived at
- * all and is refused the same way.
+ * Every board-layer question a job has, by wall type code.
+ *
+ * ── RUNS AND TAKEOFF ITEMS BOTH COUNT ──
+ *
+ * A wall type prices two kinds of measured wall: wall RUNS (the schedule,
+ * `syncWallScheduleLines`) and traced TAKEOFF ITEMS (`syncTakeoffItemLines`),
+ * and both multiply a per-layer part by the type's answer. So a type used
+ * only through takeoff items is asked about too, and the footage quoted is
+ * both. (`wallHeight.ts` is deliberately runs-only: an item carries its own
+ * height and never reads the type's default — see `itemGeometry`.)
+ *
+ * The token covers the type and the exact set of its runs and items here, so
+ * an answer to a question that has since changed (a run or an item added or
+ * removed) is refused; one already answered elsewhere, or whose type lost its
+ * last per-layer part, is not re-derived at all and is refused the same way.
+ * A type with no items keeps the token it had before items were counted.
  */
-export function boardLayerQuestions(runs: readonly BoardLayerRun[], types: readonly BoardLayerType[]): BoardLayerQuestion[] {
+export function boardLayerQuestions(
+  runs: readonly BoardLayerRun[],
+  items: readonly BoardLayerItem[],
+  types: readonly BoardLayerType[],
+): BoardLayerQuestion[] {
   const out: BoardLayerQuestion[] = [];
   for (const type of types) {
     if (type.boardLayers != null || type.perLayerCount === 0) continue;
     const typeRuns = runs.filter((run) => run.wallTypeId === type.id);
-    if (typeRuns.length === 0) continue;
-    const ids = typeRuns.map((run) => run.id).sort();
+    const typeItems = items.filter((item) => item.wallTypeId === type.id);
+    if (typeRuns.length + typeItems.length === 0) continue;
+    const runIds = typeRuns.map((run) => run.id).sort();
+    const itemIds = typeItems.map((item) => item.id).sort();
+    const itemPart = itemIds.length > 0 ? `|items:${itemIds.join(",")}` : "";
     out.push({
       wallTypeId: type.id,
       code: type.code,
       sides: type.sides === 1 ? 1 : 2,
       runCount: typeRuns.length,
-      lengthFt: typeRuns.reduce((sum, run) => sum + run.lengthFt, 0),
-      token: fingerprint(`layers|${type.id}|${ids.join(",")}`),
+      itemCount: typeItems.length,
+      lengthFt: [...typeRuns, ...typeItems].reduce((sum, wall) => sum + wall.lengthFt, 0),
+      token: fingerprint(`layers|${type.id}|${runIds.join(",")}${itemPart}`),
     });
   }
   return out.sort((a, b) => a.code.localeCompare(b.code));
