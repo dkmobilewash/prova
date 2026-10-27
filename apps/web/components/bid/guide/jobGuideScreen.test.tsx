@@ -4,11 +4,14 @@ import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  GUIDE_ADDENDUM,
   GUIDE_FIXTURES,
+  GUIDE_JOB_WALK,
   GUIDE_NO_DRAWINGS,
   GUIDE_RECAP_READY,
   GUIDE_SENT,
   GUIDE_UNPRICED,
+  GUIDE_WALL_HEIGHT,
 } from "@/lib/bid/guide/fixtures";
 import { GUIDE_STEP_KEYS, type JobGuide } from "@/lib/bid/guide/types";
 import type { BidAskAccess } from "@/lib/bid/guide/askAccess";
@@ -53,7 +56,7 @@ const hrefs = (markup: string) => [...markup.matchAll(/href="([^"]*)"/g)].map((m
 
 describe("fixtures", () => {
   it("covers every stage and is not empty", () => {
-    expect(GUIDE_FIXTURES.length).toBe(6);
+    expect(GUIDE_FIXTURES.length).toBe(9);
     expect(new Set(GUIDE_FIXTURES.map((g) => g.steps.find((s) => s.status === "current")?.key ?? "none")).size).toBeGreaterThanOrEqual(3);
   });
 });
@@ -472,5 +475,84 @@ describe("an action button WRITES, so it is two steps", () => {
   it("a guide with no ask renders nothing", async () => {
     const host = await mount(GUIDE_SENT);
     expect(host.innerHTML).toBe("");
+  });
+});
+
+describe("tap answers (the wall-height question)", () => {
+  beforeEach(() => {
+    run.mockReset();
+    refresh.mockReset();
+  });
+
+  async function mount(guide: JobGuide) {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => root.render(createElement(JobGuideAsk, { guide })));
+    return host;
+  }
+  const chipButtons = (host: HTMLElement) => [...host.querySelectorAll<HTMLButtonElement>('[data-guide="chips"] button')];
+  const confirmButton = (host: HTMLElement) => [...host.querySelectorAll("button")].find((b) => b.textContent === "Yes, do it")!;
+
+  it("draws every chip in one labelled group, none of them yellow, and the other height as a link", () => {
+    const out = html(createElement(JobGuideAsk, { guide: GUIDE_WALL_HEIGHT }));
+    const group = /<div role="group" aria-label="Answers"[^>]*data-guide="chips">([\s\S]*?)<\/div>/.exec(out);
+    expect(group).not.toBeNull();
+    const labels = [...group![1]!.matchAll(/<button[^>]*data-chip="true"[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
+    expect(labels).toEqual(["8 ft", "9 ft", "10 ft", "12 ft"]);
+    // A gloved thumb: every chip clears 48px.
+    for (const button of group![1]!.match(/<button[^>]*>/g) ?? []) expect(button).toContain("min-h-12");
+    expect(out).not.toContain('data-primary="true"');
+    expect(out).toMatch(/<a [^>]*href="\/bid\/wall-types"[^>]*>Another height<\/a>/);
+    // the chips are not drawn a second time in the ordinary row
+    const row = /data-guide="actions">([\s\S]*?)<\/div>/.exec(out)![1]!;
+    expect(row).not.toContain("ft</button>");
+  });
+
+  it("a chip arms the confirm with its own sentence and runs nothing", async () => {
+    const host = await mount(GUIDE_WALL_HEIGHT);
+    expect(chipButtons(host).length).toBe(4);
+    await act(async () => chipButtons(host)[1]!.click());
+    expect(run).not.toHaveBeenCalled();
+    expect(host.querySelector('[data-guide="chips"]')).toBeNull();
+    expect(host.querySelector('[data-guide="actions"]')).toBeNull();
+    expect(host.querySelector('[data-guide="confirm"] p')?.textContent).toBe(
+      "Make W2 9 ft tall in your wall types, and work this estimate's walls out again from them?",
+    );
+    expect([...host.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Cancel", "Yes, do it"]);
+  });
+
+  it("the second press sends THAT chip's arg, then refreshes", async () => {
+    run.mockResolvedValue({ ok: true });
+    const host = await mount(GUIDE_WALL_HEIGHT);
+    await act(async () => chipButtons(host)[2]!.click());
+    await act(async () => confirmButton(host).click());
+    expect(run).toHaveBeenCalledWith("job_height", "setWallHeight", "wh:wt_w2:10:0a1b2c3d");
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("a stale answer is refused in words and nothing refreshes", async () => {
+    run.mockResolvedValue({ ok: false, error: "Those walls have changed since you saw the question." });
+    const host = await mount(GUIDE_WALL_HEIGHT);
+    await act(async () => chipButtons(host)[0]!.click());
+    await act(async () => confirmButton(host).click());
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe("Those walls have changed since you saw the question.");
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("an action without its own confirm keeps the general sentence", async () => {
+    const host = await mount(GUIDE_RECAP_READY);
+    await act(async () => [...host.querySelectorAll("button")].find((b) => b.textContent === "Put the bid on the lines")!.click());
+    expect(host.querySelector('[data-guide="confirm"] p')?.textContent).toBe("This changes your estimate. Go ahead?");
+  });
+
+  it("the date and paper asks are plain links that stay in Bid, and draw no chips", () => {
+    for (const guide of [GUIDE_ADDENDUM, GUIDE_JOB_WALK]) {
+      const out = html(createElement(JobGuideAsk, { guide }));
+      expect(out).not.toContain('data-guide="chips"');
+      expect(out.match(/<button/g)).toBeNull();
+      expect(hrefs(out).length).toBe(guide.ask!.actions.length);
+      for (const h of hrefs(out)) expect(h.startsWith("/bid/bids")).toBe(true);
+    }
   });
 });

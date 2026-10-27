@@ -47,6 +47,17 @@ export type GuideAction = {
   /** Opaque argument for the action (an id), never a URL. */
   actionArg?: string;
   primary?: boolean;
+  /**
+   * A TAP ANSWER to the ask's question ("8 ft", "9 ft"…), drawn as a chip in a
+   * row of its own rather than as a button. An ask whose actions include chips
+   * marks NONE of them primary: the answers are equals, and choosing one for
+   * the person would be the guess the question exists to avoid.
+   */
+  chip?: boolean;
+  /** The sentence over [Cancel] [Yes, do it] when this action is armed, in
+   * place of the general "This changes your estimate. Go ahead?" — for a write
+   * whose reach is wider than this estimate (a wall type's default height). */
+  confirm?: string;
 };
 
 /**
@@ -56,7 +67,16 @@ export type GuideAction = {
  */
 export type GuideActionId =
   | "applyRecap" // put the recap's bid onto the line prices (applyBidRecap)
-  | "usePastPrice"; // price a wall type from the same type on a past job (lib/bid/guide/pastPrice)
+  | "usePastPrice" // price a wall type from the same type on a past job (lib/bid/guide/pastPrice)
+  | "setWallHeight"; // a wall type's default height, from a tap answer (lib/bid/guide/wallHeight, updateWallType)
+
+/**
+ * Asks about a DATE that passes on its own — the job walk, the RFI cutoff.
+ * Unlike every other ask, nothing in the app finishes them: they stop being
+ * true when the day goes by, and a missed one cannot be made up later. The home
+ * list ranks them just under a blocked bid for that reason (`homeView.ts`).
+ */
+export const TIME_BOXED_ASK_IDS: readonly string[] = ["job-walk", "rfi-cutoff"];
 
 /** The ONE thing that needs the person now, or null when nothing does. */
 export type GuideAsk = {

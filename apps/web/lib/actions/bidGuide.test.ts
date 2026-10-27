@@ -12,7 +12,25 @@ vi.mock("@/lib/permissions", () => ({ can: (...a: unknown[]) => can(...a) }));
 vi.mock("./bidRecap", () => ({ applyBidRecap: (...a: unknown[]) => applyBidRecap(...a) }));
 vi.mock("./bidGuidePastPrice", () => ({ usePastPrice: (...a: unknown[]) => applyPastPrice(...a) }));
 
+const updateWallType = vi.fn();
+const refreshWallSchedule = vi.fn();
+vi.mock("./wallTypes", () => ({
+  updateWallType: (...a: unknown[]) => updateWallType(...a),
+  refreshWallSchedule: (...a: unknown[]) => refreshWallSchedule(...a),
+}));
+const jobFindFirst = vi.fn();
+const wallTypeFindFirst = vi.fn();
+const wallRunFindMany = vi.fn();
+vi.mock("@prova/db", () => ({
+  prisma: {
+    job: { findFirst: (...a: unknown[]) => jobFindFirst(...a) },
+    wallType: { findFirst: (...a: unknown[]) => wallTypeFindFirst(...a) },
+    wallRun: { findMany: (...a: unknown[]) => wallRunFindMany(...a) },
+  },
+}));
+
 import { runGuideAction } from "./bidGuide";
+import { wallHeightArg, wallHeightQuestions } from "@/lib/bid/guide/wallHeight";
 
 /**
  * The guide's buttons reach the server through ONE action, and it must refuse
@@ -70,5 +88,155 @@ describe("runGuideAction", () => {
     const result = await runGuideAction("j1", "dropTheDatabase");
     expect(result.ok).toBe(false);
     expect(applyBidRecap).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * "How tall are the W2 walls?" — the tap answer. Refused before anything is
+ * read or written for a missing capability; refused for another company's job
+ * or wall type, a contracted job, a height nobody offered, and a question that
+ * has moved since the screen asked it. The write itself is the EXISTING
+ * `updateWallType` (with every other field as it stands) and then the existing
+ * `refreshWallSchedule` for this job — never raw prisma.
+ */
+describe("runGuideAction: setWallHeight", () => {
+  const TYPE_ROW = {
+    id: "wt_w2",
+    code: "W2",
+    name: "rated wall",
+    sides: 2,
+    studSpacingIn: { toString: () => "16" },
+    notes: null,
+    defaultHeightFt: null,
+    _count: { components: 3 },
+  };
+  const RUNS = [
+    { id: "r1", wallTypeId: "wt_w2", lengthFt: 100, heightFt: null },
+    { id: "r2", wallTypeId: "wt_w2", lengthFt: 40, heightFt: null },
+  ];
+  // The arg the screen was handed, built by the same function the facts use.
+  const question = wallHeightQuestions(RUNS, [{ id: "wt_w2", code: "W2", defaultHeightFt: null, componentCount: 3 }])[0]!;
+  const ARG = wallHeightArg(question, 9);
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    requireCompanyContext.mockResolvedValue({ company: { id: "c1" } });
+    can.mockReturnValue(true);
+    jobFindFirst.mockResolvedValue({ id: "j1", status: "ESTIMATE" });
+    wallTypeFindFirst.mockResolvedValue(TYPE_ROW);
+    wallRunFindMany.mockResolvedValue(RUNS);
+    updateWallType.mockResolvedValue({ ok: true });
+    refreshWallSchedule.mockResolvedValue({ ok: true, value: { created: 3, updated: 0, removed: 0, unpricedRuns: [], orphanRuns: [] } });
+  });
+
+  const nothingWritten = () => {
+    expect(updateWallType).not.toHaveBeenCalled();
+    expect(refreshWallSchedule).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  };
+
+  it("writes the height through updateWallType with the row as it stands, then refreshes this job's walls", async () => {
+    expect(await runGuideAction("j1", "setWallHeight", ARG)).toEqual({ ok: true });
+    expect(updateWallType).toHaveBeenCalledTimes(1);
+    const [typeId, form] = updateWallType.mock.calls[0] as [string, FormData];
+    expect(typeId).toBe("wt_w2");
+    expect(Object.fromEntries(form.entries())).toEqual({
+      code: "W2",
+      name: "rated wall",
+      sides: "2",
+      studSpacingIn: "16",
+      notes: "",
+      defaultHeightFt: "9",
+    });
+    expect(refreshWallSchedule).toHaveBeenCalledWith("j1");
+    expect(revalidatePath).toHaveBeenCalledWith("/bid/estimates/j1", "layout");
+    expect(revalidatePath).toHaveBeenCalledWith("/bid/wall-types");
+  });
+
+  it("reads the job, the type and the runs through THIS company", async () => {
+    await runGuideAction("j1", "setWallHeight", ARG);
+    expect(jobFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "j1", companyId: "c1" } }));
+    expect(wallTypeFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "wt_w2", companyId: "c1" } }));
+    expect(wallRunFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { jobId: "j1", companyId: "c1", wallTypeId: "wt_w2" } }));
+  });
+
+  it("refuses without MANAGE_ESTIMATING, before reading anything", async () => {
+    can.mockImplementation((_c: unknown, capability: string) => capability !== "MANAGE_ESTIMATING");
+    expect((await runGuideAction("j1", "setWallHeight", ARG)).ok).toBe(false);
+    expect(jobFindFirst).not.toHaveBeenCalled();
+    nothingWritten();
+  });
+
+  it("refuses without VIEW_JOB_COSTS (the refresh's gate) before writing the height", async () => {
+    can.mockImplementation((_c: unknown, capability: string) => capability !== "VIEW_JOB_COSTS");
+    const result = await runGuideAction("j1", "setWallHeight", ARG);
+    expect(result).toEqual({ ok: false, error: expect.stringContaining("costs and pricing") });
+    expect(jobFindFirst).not.toHaveBeenCalled();
+    nothingWritten();
+  });
+
+  it("refuses another company's job (it is not found through this company)", async () => {
+    jobFindFirst.mockResolvedValue(null);
+    expect(await runGuideAction("j_other", "setWallHeight", ARG)).toEqual({ ok: false, error: "That job isn't on your account any more." });
+    nothingWritten();
+  });
+
+  it("refuses another company's wall type (not found through this company)", async () => {
+    wallTypeFindFirst.mockResolvedValue(null);
+    expect((await runGuideAction("j1", "setWallHeight", ARG)).ok).toBe(false);
+    nothingWritten();
+  });
+
+  it("refuses a contracted job", async () => {
+    jobFindFirst.mockResolvedValue({ id: "j1", status: "CONTRACTED" });
+    expect((await runGuideAction("j1", "setWallHeight", ARG)).ok).toBe(false);
+    nothingWritten();
+  });
+
+  it("refuses a height nobody offered, a malformed arg, and a missing one", async () => {
+    for (const arg of [ARG.replace(":9:", ":11:"), "wh:wt_w2:9", "not an arg", undefined]) {
+      expect((await runGuideAction("j1", "setWallHeight", arg)).ok, String(arg)).toBe(false);
+    }
+    nothingWritten();
+  });
+
+  it("refuses a stale question: a run given its own height since", async () => {
+    wallRunFindMany.mockResolvedValue([RUNS[0], { ...RUNS[1], heightFt: 10 }]);
+    const result = await runGuideAction("j1", "setWallHeight", ARG);
+    expect(result).toEqual({ ok: false, error: expect.stringContaining("changed since you saw the question") });
+    nothingWritten();
+  });
+
+  it("refuses a stale question: a run added since", async () => {
+    wallRunFindMany.mockResolvedValue([...RUNS, { id: "r3", wallTypeId: "wt_w2", lengthFt: 5, heightFt: null }]);
+    expect((await runGuideAction("j1", "setWallHeight", ARG)).ok).toBe(false);
+    nothingWritten();
+  });
+
+  it("refuses a stale question: the type got a default height elsewhere", async () => {
+    wallTypeFindFirst.mockResolvedValue({ ...TYPE_ROW, defaultHeightFt: { toString: () => "10" } });
+    expect((await runGuideAction("j1", "setWallHeight", ARG)).ok).toBe(false);
+    nothingWritten();
+  });
+
+  it("refuses rather than let updateWallType's normalising rename the type (a lower-case tag, an untrimmed name)", async () => {
+    for (const row of [{ ...TYPE_ROW, code: "W2a" }, { ...TYPE_ROW, name: " rated wall" }, { ...TYPE_ROW, notes: "note\n" }]) {
+      wallTypeFindFirst.mockResolvedValue(row);
+      const result = await runGuideAction("j1", "setWallHeight", ARG);
+      expect(result).toEqual({ ok: false, error: expect.stringContaining("would be renamed") });
+    }
+    nothingWritten();
+  });
+
+  it("passes updateWallType's refusal through and does not refresh", async () => {
+    updateWallType.mockResolvedValue({ ok: false, error: "That wall type is no longer in your schedule." });
+    expect(await runGuideAction("j1", "setWallHeight", ARG)).toEqual({ ok: false, error: "That wall type is no longer in your schedule." });
+    expect(refreshWallSchedule).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("passes the refresh's refusal through", async () => {
+    refreshWallSchedule.mockResolvedValue({ ok: false, error: "This job is contracted." });
+    expect(await runGuideAction("j1", "setWallHeight", ARG)).toEqual({ ok: false, error: "This job is contracted." });
   });
 });

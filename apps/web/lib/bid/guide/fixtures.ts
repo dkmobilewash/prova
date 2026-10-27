@@ -180,6 +180,84 @@ export const GUIDE_SENT: JobGuide = {
   oneLine: "Waiting on the GC",
 };
 
+/** A wall type with no height: tap answers (chips), none primary, and a link for any other height. */
+export const GUIDE_WALL_HEIGHT: JobGuide = {
+  ...BASE,
+  jobId: "job_height",
+  name: "Civic Center",
+  steps: steps(
+    { invite: "done", walls: "current", price: "todo", proposal: "todo", send: "todo" },
+    { invite: "Hartwell Builders · due Thu 2:00 PM", walls: "1,920 LF · 14 openings · 6 sheets" },
+  ),
+  headline: "Walls are measured. One thing needs you.",
+  ask: {
+    id: "wall-height",
+    step: "walls",
+    title: "How tall are the W2 walls on Civic Center?",
+    body: "3 runs of W2 (680 LF) have no height, so they add nothing to the estimate yet. Your answer becomes W2's default height in your wall types.",
+    actions: [
+      ...[8, 9, 10, 12].map((h) => ({
+        label: `${h} ft`,
+        actionId: "setWallHeight" as const,
+        actionArg: `wh:wt_w2:${h}:0a1b2c3d`,
+        chip: true,
+        confirm: `Make W2 ${h} ft tall in your wall types, and work this estimate's walls out again from them?`,
+      })),
+      { label: "Another height", href: "/bid/wall-types" },
+    ],
+  },
+  bidSoFar: null,
+  tone: "question",
+  oneLine: "W2 walls need a height",
+};
+
+/** Priced, with an addendum not acknowledged on the GC's form: two links, one primary. */
+export const GUIDE_ADDENDUM: JobGuide = {
+  ...BASE,
+  jobId: "job_addendum",
+  name: "Harbor Point Clinic",
+  steps: steps(
+    { invite: "done", walls: "done", price: "done", proposal: "current", send: "todo" },
+    { invite: "Hartwell Builders · due Thu 2:00 PM", walls: "2,310 LF · 22 openings · 9 sheets", price: "$187,450 · 41 lines" },
+  ),
+  headline: "Priced. One paper needs you.",
+  ask: {
+    id: "addendum-unacknowledged",
+    step: "proposal",
+    title: "Addendum 2 was issued Tuesday and isn't acknowledged on Hartwell Builders' bid form yet.",
+    body: "A bid form missing an acknowledgement can be thrown out unread. Once it is on the form, record the date in the bid log.",
+    actions: [
+      { label: "Open the bid log", href: "/bid/bids#inv_hartwell", primary: true },
+      { label: "Read the addendum", href: "/bid/bids/inv_hartwell?tab=addenda" },
+    ],
+  },
+  bidSoFar: 187450,
+  tone: "question",
+  oneLine: "Addendum 2 not acknowledged",
+};
+
+/** A job walk tomorrow, before the drawings are in: the rail stays where the work is. */
+export const GUIDE_JOB_WALK: JobGuide = {
+  ...BASE,
+  jobId: "job_walk",
+  name: "Oak Ave Apartments",
+  steps: steps(
+    { invite: "done", walls: "current", price: "todo", proposal: "todo", send: "todo" },
+    { invite: "Hartwell Builders · due Thu 2:00 PM" },
+  ),
+  headline: "The job walk is coming up.",
+  ask: {
+    id: "job-walk",
+    step: "walls",
+    title: "The job walk is tomorrow at 9:00 AM.",
+    body: "Bring the plan set and a list of what the drawings leave open.",
+    actions: [{ label: "See the bid", href: "/bid/bids#inv_oak", primary: true }],
+  },
+  bidSoFar: null,
+  tone: "update",
+  oneLine: "Job walk tomorrow 9:00 AM",
+};
+
 export const GUIDE_FIXTURES: readonly JobGuide[] = [
   GUIDE_NO_DRAWINGS,
   GUIDE_NO_SCALE,
@@ -187,4 +265,7 @@ export const GUIDE_FIXTURES: readonly JobGuide[] = [
   GUIDE_RECAP_READY,
   GUIDE_PROPOSAL,
   GUIDE_SENT,
+  GUIDE_WALL_HEIGHT,
+  GUIDE_ADDENDUM,
+  GUIDE_JOB_WALK,
 ];

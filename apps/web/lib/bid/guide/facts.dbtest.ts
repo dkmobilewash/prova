@@ -325,6 +325,7 @@ describe("job guide facts against a real database", () => {
         "takeoffPlanPage",
         "planIngestJob",
         "wallType",
+        "bidAddendum",
       ] as const;
       const spies = tables.map((table) => {
         const delegate = prisma[table] as { findMany: (...args: unknown[]) => unknown };
@@ -345,5 +346,188 @@ describe("job guide facts against a real database", () => {
       for (const job of extra) jobs[`bulk${job.id}`] = job.id;
       expect(await calls()).toEqual(before);
     });
+  });
+});
+
+/**
+ * The two new families of facts, from real rows: the wall-height question and
+ * the dates and papers of the bid. One job on a two-GC project; a second company
+ * with its own addendum on its own project must stay invisible.
+ */
+describe("questions the drawings don't settle, and the bid's dates and papers", () => {
+  const t = `q_${Date.now()}`;
+  let co = "";
+  let otherCo = "";
+  let gcA = "";
+  let gcB = "";
+  let otherGc = "";
+  let jobId = "";
+  let otherJob = "";
+  let invA = "";
+  let invB = "";
+  let typeWh = "";
+  const addenda: Record<string, string> = {};
+
+  beforeAll(async () => {
+    co = (await prisma.company.create({ data: { name: `Q Co ${t}` } })).id;
+    otherCo = (await prisma.company.create({ data: { name: `Q Other ${t}` } })).id;
+    gcA = (await prisma.contact.create({ data: { companyId: co, name: `Hartwell ${t}` } })).id;
+    gcB = (await prisma.contact.create({ data: { companyId: co, name: `Marlow ${t}` } })).id;
+    otherGc = (await prisma.contact.create({ data: { companyId: otherCo, name: `Theirs ${t}` } })).id;
+    jobId = (await prisma.job.create({ data: { companyId: co, contactId: gcA, name: `Civic Center ${t}`, status: "ESTIMATE" } })).id;
+    otherJob = (await prisma.job.create({ data: { companyId: otherCo, contactId: otherGc, name: `Other ${t}`, status: "ESTIMATE" } })).id;
+
+    // ── walls: WH has no default and two runs with no height; WD has a default ──
+    const wh = await prisma.wallType.create({ data: { companyId: co, code: `WH${t}`, name: "no height" } });
+    const wd = await prisma.wallType.create({ data: { companyId: co, code: `WD${t}`, name: "has default", defaultHeightFt: 9 } });
+    typeWh = wh.id;
+    for (const type of [wh, wd]) {
+      await prisma.wallTypeComponent.create({ data: { wallTypeId: type.id, description: "Board", unit: "SF", basis: "BOARDED_SQFT" } });
+    }
+    await prisma.wallRun.createMany({
+      data: [
+        { companyId: co, jobId, wallTypeId: wh.id, label: "A", lengthFt: 100 },
+        { companyId: co, jobId, wallTypeId: wh.id, label: "B", lengthFt: 40.5 },
+        { companyId: co, jobId, wallTypeId: wh.id, label: "C", lengthFt: 10, heightFt: 12 }, // its own height
+        { companyId: co, jobId, wallTypeId: wd.id, label: "D", lengthFt: 300 }, // the default covers it
+      ],
+    });
+
+    // ── the bid: one project, two GCs, both still being priced ──
+    const project = await prisma.bidProject.create({ data: { companyId: co, name: `Civic ${t}`, estimateJobId: jobId } });
+    invA = (
+      await prisma.bidInvitation.create({
+        data: {
+          companyId: co,
+          contactId: gcA,
+          projectName: `Civic A ${t}`,
+          bidProjectId: project.id,
+          dueDate: new Date("2026-11-05T00:00:00Z"),
+          dueMinute: 840,
+          walkDate: new Date("2026-10-27T00:00:00Z"),
+          walkMinute: 540,
+        },
+      })
+    ).id;
+    invB = (
+      await prisma.bidInvitation.create({
+        data: {
+          companyId: co,
+          contactId: gcB,
+          projectName: `Civic B ${t}`,
+          bidProjectId: project.id,
+          rfiCutoffDate: new Date("2026-10-28T00:00:00Z"),
+        },
+      })
+    ).id;
+
+    // A1: acknowledged on BOTH forms — A's in the column, B's as a row.
+    addenda.a1 = (
+      await prisma.bidAddendum.create({
+        data: { companyId: co, bidInvitationId: invA, bidProjectId: project.id, reference: "1", issuedOn: new Date("2026-10-13T00:00:00Z"), acknowledgedOn: new Date("2026-10-14T00:00:00Z") },
+      })
+    ).id;
+    await prisma.bidAddendumAcknowledgement.create({ data: { bidAddendumId: addenda.a1, bidInvitationId: invB, acknowledgedOn: new Date("2026-10-15T00:00:00Z") } });
+    // A2: on neither form — missing on A's AND on B's.
+    addenda.a2 = (
+      await prisma.bidAddendum.create({
+        data: { companyId: co, bidInvitationId: invA, bidProjectId: project.id, reference: "2", issuedOn: new Date("2026-10-20T00:00:00Z") },
+      })
+    ).id;
+    // A4: acknowledged on A's form only (the column) — missing on B's, which a
+    // column-only read would call acknowledged.
+    addenda.a4 = (
+      await prisma.bidAddendum.create({
+        data: { companyId: co, bidInvitationId: invA, bidProjectId: project.id, reference: "4", acknowledgedOn: new Date("2026-10-21T00:00:00Z") },
+      })
+    ).id;
+    // A5: acknowledged on B's form only (a row) — missing on A's.
+    addenda.a5 = (
+      await prisma.bidAddendum.create({ data: { companyId: co, bidInvitationId: invA, bidProjectId: project.id, reference: "5" } })
+    ).id;
+    await prisma.bidAddendumAcknowledgement.create({ data: { bidAddendumId: addenda.a5, bidInvitationId: invB, acknowledgedOn: new Date("2026-10-22T00:00:00Z") } });
+    // A3: a legacy row with no project, filed under B — only B shows it.
+    addenda.a3 = (
+      await prisma.bidAddendum.create({ data: { companyId: co, bidInvitationId: invB, bidProjectId: null, reference: "ASI 3" } })
+    ).id;
+
+    // Another company's bid and addendum, never acknowledged: invisible here.
+    const theirInv = await prisma.bidInvitation.create({
+      data: { companyId: otherCo, contactId: otherGc, projectName: `Theirs ${t}`, wonJobId: otherJob, walkDate: new Date("2026-10-27T00:00:00Z") },
+    });
+    await prisma.bidAddendum.create({ data: { companyId: otherCo, bidInvitationId: theirInv.id, reference: "9" } });
+  });
+
+  afterAll(async () => {
+    await prisma.bidInvitation.deleteMany({ where: { companyId: { in: [co, otherCo] } } }); // addenda and acks cascade
+    await prisma.bidProject.deleteMany({ where: { companyId: { in: [co, otherCo] } } });
+    await prisma.wallRun.deleteMany({ where: { jobId: { in: [jobId, otherJob] } } });
+    await prisma.wallTypeComponent.deleteMany({ where: { wallType: { companyId: co } } });
+    await prisma.wallType.deleteMany({ where: { companyId: co } });
+    await prisma.job.deleteMany({ where: { id: { in: [jobId, otherJob] } } });
+    await prisma.contact.deleteMany({ where: { companyId: { in: [co, otherCo] } } });
+    await prisma.company.deleteMany({ where: { id: { in: [co, otherCo] } } });
+  });
+
+  it("the height question: only the type with no default, counting only its runs with no height", async () => {
+    const facts = (await loadJobGuideFacts(co, jobId))!;
+    const wh = facts.wallTypes.find((type) => type.wallTypeId === typeWh)!;
+    expect(wh.heightless).toEqual({ runCount: 2, lengthFt: 140.5, token: expect.stringMatching(/^[0-9a-f]{8}$/) });
+    expect(facts.wallTypes.filter((type) => type.heightless).length).toBe(1);
+  });
+
+  it("walk and RFI dates come off each invitation, with each GC's name", async () => {
+    const facts = (await loadJobGuideFacts(co, jobId))!;
+    const a = facts.invitations.find((invitation) => invitation.id === invA)!;
+    const b = facts.invitations.find((invitation) => invitation.id === invB)!;
+    expect(a).toMatchObject({ gcName: `Hartwell ${t}`, walkDate: "2026-10-27", walkMinute: 540, rfiCutoffDate: null });
+    expect(b).toMatchObject({ gcName: `Marlow ${t}`, walkDate: null, walkMinute: null, rfiCutoffDate: "2026-10-28" });
+  });
+
+  it("an addendum is missing per GC form: the column for the filing GC, a row for every other", async () => {
+    const facts = (await loadJobGuideFacts(co, jobId))!;
+    const missing = facts.unacknowledgedAddenda!.map((row) => `${row.reference}@${row.invitationId === invA ? "A" : "B"}`).sort();
+    // A1 is acknowledged on both; A2 on neither; 4 only on A's form, 5 only on B's;
+    // ASI 3 is a legacy row only B shows.
+    expect(missing).toEqual(["2@A", "2@B", "4@B", "5@A", "ASI 3@B"]);
+    expect(facts.unacknowledgedAddenda!.find((row) => row.invitationId === invA)).toEqual({
+      addendumId: addenda.a2,
+      reference: "2",
+      issuedOn: "2026-10-20",
+      invitationId: invA,
+      gcName: `Hartwell ${t}`,
+    });
+    // another company's never-acknowledged "9" is not here
+    expect(facts.unacknowledgedAddenda!.some((row) => row.reference === "9")).toBe(false);
+  });
+
+  it("a GC whose bid went out is no longer asked about its form", async () => {
+    await prisma.bidInvitation.update({ where: { id: invB }, data: { status: "DECLINED" } });
+    try {
+      const facts = (await loadJobGuideFacts(co, jobId))!;
+      expect(new Set(facts.unacknowledgedAddenda!.map((row) => row.invitationId))).toEqual(new Set([invA]));
+    } finally {
+      await prisma.bidInvitation.update({ where: { id: invB }, data: { status: "INVITED" } });
+    }
+  });
+
+  it("builds into the asks in their order: the walk tomorrow first, then the height", async () => {
+    const guide = (await getJobGuide(co, jobId, NOW))!;
+    expect(guide.ask!.id).toBe("job-walk");
+    expect(guide.ask!.title).toBe("The job walk is tomorrow at 9:00 AM.");
+    expect(guide.ask!.actions[0]!.href).toBe(`/bid/bids#${invA}`);
+    // three days on, the walk and the RFI cutoff have passed and the height question is next
+    const later = (await getJobGuide(co, jobId, new Date("2026-10-29T15:00:00Z")))!;
+    expect(later.ask!.id).toBe("wall-height");
+    expect(later.ask!.title).toBe(`How tall are the WH${t} walls on Civic Center ${t}?`);
+  });
+
+  it("another company's walk is not on this company's home list", async () => {
+    const guides = await getOpenJobGuides(co, NOW);
+    expect(guides.map((guide) => guide.jobId)).toEqual([jobId]);
+    const theirs = await getOpenJobGuides(otherCo, NOW);
+    expect(theirs.map((guide) => guide.jobId)).toEqual([otherJob]);
+    // their own walk IS theirs
+    expect(theirs[0]!.ask!.id).toBe("job-walk");
   });
 });

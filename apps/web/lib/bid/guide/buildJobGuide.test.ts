@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildJobGuide, DUE_SOON_HOURS, guideDueMs } from "./buildJobGuide";
+import { buildJobGuide, DATE_HEADS_UP_DAYS, DUE_SOON_HOURS, guideDueMs } from "./buildJobGuide";
 import { buildGuidesFromFacts } from "./index";
-import { isOpenForGuide, type GuideWallTypeFact, type JobGuideFacts } from "./facts";
+import { isOpenForGuide, type GuideAddendumFact, type GuideWallTypeFact, type JobGuideFacts } from "./facts";
 import { GUIDE_STEP_KEYS, type GuideStepStatus } from "./types";
+import { WALL_HEIGHT_CHOICES, parseWallHeightArg } from "./wallHeight";
 import { money } from "@/lib/money";
 
 /**
@@ -36,6 +37,22 @@ const w1: GuideWallTypeFact = {
   componentCount: 3,
   lineCount: 3,
   unpricedLineCount: 0,
+};
+
+/** W2 with three runs and no height anywhere: those runs add nothing to the estimate. */
+const w2NoHeight: GuideWallTypeFact = {
+  ...w2,
+  lineCount: 0,
+  unpricedLineCount: 0,
+  heightless: { runCount: 3, lengthFt: 680.4, token: "0a1b2c3d" },
+};
+
+const addendum2: GuideAddendumFact = {
+  addendumId: "ad_2",
+  reference: "2",
+  issuedOn: "2026-10-20", // the Tuesday before NOW
+  invitationId: "inv_hartwell",
+  gcName: "Hartwell",
 };
 
 const invited = (dueDate: string | null, dueMinute: number | null = null) => [
@@ -108,14 +125,28 @@ const FIXTURES = {
   "apply-recap": ready({ recap: { appliedAt: null, addedTotal: 38_250.75 } }),
   "proposal-ready": ready(),
   "send-due-soon": ready({ invitations: invited("2026-10-27", 840) }),
+  "wall-height": ready({ wallTypes: [w1, w2NoHeight], wallLineCount: 3 }),
+  "job-walk": empty({ invitations: [{ ...invited("2026-11-05", 840)[0]!, walkDate: "2026-10-27", walkMinute: 540 }] }),
+  "rfi-cutoff": ready({ invitations: [{ ...invited("2026-11-05", 840)[0]!, rfiCutoffDate: "2026-10-28", gcName: "Marlow" }] }),
+  "addendum-unacknowledged": ready({ unacknowledgedAddenda: [addendum2] }),
 } satisfies Record<string, JobGuideFacts>;
+
+/** The asks whose actions are tap answers: no primary, and the answers are chips. */
+const CHIP_ASKS = new Set(["wall-height"]);
 
 describe("one fixture per ask", () => {
   for (const [id, facts] of Object.entries(FIXTURES)) {
     it(`${id} fires, on its own step, with one primary action`, () => {
       const guide = buildJobGuide(facts, NOW);
       expect(guide.ask?.id).toBe(id);
-      expect(guide.ask!.actions.filter((action) => action.primary).length).toBe(1);
+      if (CHIP_ASKS.has(id)) {
+        // Tap answers are equals: none is chosen for the person.
+        expect(guide.ask!.actions.filter((action) => action.primary).length).toBe(0);
+        expect(guide.ask!.actions.filter((action) => action.chip).length).toBeGreaterThanOrEqual(2);
+      } else {
+        expect(guide.ask!.actions.filter((action) => action.primary).length).toBe(1);
+        expect(guide.ask!.actions.some((action) => action.chip)).toBe(false);
+      }
       for (const action of guide.ask!.actions) {
         expect(Boolean(action.href) !== Boolean(action.actionId)).toBe(true); // exactly one of the two
       }
@@ -223,6 +254,255 @@ describe("usePastPrice", () => {
     const ask = buildJobGuide(facts, NOW).ask!;
     expect(ask.actions[0]).toMatchObject({ label: "Add a price", href: "/bid/price-book", primary: true });
     expect(ask.body).not.toContain("Civic Center");
+  });
+});
+
+describe("wall-height: the question the drawings do not settle", () => {
+  const guide = buildJobGuide(FIXTURES["wall-height"], NOW);
+  const ask = guide.ask!;
+
+  it("asks it short, by the type's tag and the job's name, and says why it matters", () => {
+    expect(ask.title).toBe("How tall are the W2 walls on Harbor Point Tower?");
+    expect(ask.body).toBe(
+      "3 runs of W2 (680 LF) have no height, so they add nothing to the estimate yet. Your answer becomes W2's default height in your wall types.",
+    );
+    expect(ask.step).toBe("walls");
+    expect(guide.oneLine).toBe("W2 walls need a height");
+    expect(guide.tone).toBe("question");
+  });
+
+  it("offers the common heights as tap answers, each carrying the question's own arg", () => {
+    const chips = ask.actions.filter((action) => action.chip);
+    expect(chips.map((action) => action.label)).toEqual(WALL_HEIGHT_CHOICES.map((h) => `${h} ft`));
+    for (const [i, chip] of chips.entries()) {
+      expect(chip.actionId).toBe("setWallHeight");
+      expect(chip.href).toBeUndefined();
+      expect(parseWallHeightArg(chip.actionArg)).toEqual({ wallTypeId: "wt_w2", heightFt: WALL_HEIGHT_CHOICES[i], token: "0a1b2c3d" });
+      // The write reaches past this estimate, and the confirm says so.
+      expect(chip.confirm).toBe(
+        `Make W2 ${WALL_HEIGHT_CHOICES[i]} ft tall in your wall types, and work this estimate's walls out again from them?`,
+      );
+    }
+  });
+
+  it("anything else is typed in Bid's own wall-type library", () => {
+    const other = ask.actions.find((action) => !action.chip)!;
+    expect(other).toEqual({ label: "Another height", href: "/bid/wall-types" });
+  });
+
+  it("names the other types that need a height too, singular and plural", () => {
+    const w3 = { ...w2NoHeight, code: "W3", wallTypeId: "wt_w3" };
+    const two = buildJobGuide(ready({ wallTypes: [w2NoHeight, w3] }), NOW);
+    expect(two.ask!.body).toContain(" 1 other wall type needs a height too.");
+    expect(two.oneLine).toBe("W2 and 1 more wall type need a height");
+    const w4 = { ...w3, code: "W4", wallTypeId: "wt_w4" };
+    expect(buildJobGuide(ready({ wallTypes: [w2NoHeight, w3, w4] }), NOW).ask!.body).toContain(" 2 other wall types need a height too.");
+  });
+
+  it("one run reads in the singular", () => {
+    const one = { ...w2NoHeight, heightless: { runCount: 1, lengthFt: 42, token: "0a1b2c3d" } };
+    expect(buildJobGuide(ready({ wallTypes: [one] }), NOW).ask!.body).toMatch(/^1 run of W2 \(42 LF\) has no height, so it adds nothing/);
+  });
+
+  it("is not asked of a type with no components — that one is unpriced, and says so", () => {
+    const bare = { ...w2NoHeight, componentCount: 0 };
+    const other = buildJobGuide(ready({ wallTypes: [bare] }), NOW).ask!;
+    expect(other.id).toBe("unpriced-wall-types");
+    expect(other.body).toContain("no materials or labor set up");
+  });
+
+  it("is not asked once the type has a height (heightless cleared)", () => {
+    expect(buildJobGuide(ready({ wallTypes: [w1, { ...w2NoHeight, heightless: null }] }), NOW).ask!.id).toBe("proposal-ready");
+    expect(buildJobGuide(ready({ wallTypes: [w1, { ...w2NoHeight, heightless: { runCount: 0, lengthFt: 0, token: "x" } }] }), NOW).ask!.id).toBe(
+      "proposal-ready",
+    );
+  });
+});
+
+describe("dates that pass on their own: the job walk and the RFI cutoff", () => {
+  const withDates = (dates: Partial<JobGuideFacts["invitations"][number]>, over: Partial<JobGuideFacts> = {}, dueDate = "2026-11-05") =>
+    ready({ invitations: [{ ...invited(dueDate, 840)[0]!, ...dates }], ...over });
+
+  it("job-walk says when, at the GC's wall-clock time, and points at the bid in the bid log", () => {
+    const guide = buildJobGuide(FIXTURES["job-walk"], NOW);
+    expect(guide.ask!.title).toBe("The job walk is tomorrow at 9:00 AM.");
+    expect(guide.ask!.body).toBe("Bring the plan set and a list of what the drawings leave open.");
+    expect(guide.ask!.actions).toEqual([{ label: "See the bid", href: "/bid/bids#i-2026-11-05", primary: true }]);
+    expect(guide.oneLine).toBe("Job walk tomorrow 9:00 AM");
+    expect(guide.headline).toBe("The job walk is coming up.");
+    expect(guide.tone).toBe("update");
+  });
+
+  it("job-walk sits on the step the work is on, so the rail does not move", () => {
+    expect(buildJobGuide(FIXTURES["job-walk"], NOW).ask!.step).toBe("walls");
+    expect(buildJobGuide(withDates({ walkDate: "2026-10-27" }), NOW).ask!.step).toBe("proposal");
+    expect(statuses(withDates({ walkDate: "2026-10-27" }))).toEqual(statuses(ready({ invitations: invited("2026-11-05", 840) })));
+  });
+
+  it("a walk with no time, and one today, read as people say them", () => {
+    expect(buildJobGuide(withDates({ walkDate: "2026-10-26", walkMinute: null }), NOW).ask!.title).toBe("The job walk is today.");
+    expect(buildJobGuide(withDates({ walkDate: "2026-10-28", walkMinute: 600 }), NOW).ask!.title).toBe(
+      "The job walk is Wednesday at 10:00 AM.",
+    );
+  });
+
+  it("a walk today is shown all day, even after its (unzoned) minute", () => {
+    // NOW is 15:00 UTC; a 9:00 AM walk on the GC's clock may not have started yet.
+    expect(buildJobGuide(withDates({ walkDate: "2026-10-26", walkMinute: 540 }), NOW).ask!.id).toBe("job-walk");
+  });
+
+  it(`fires up to ${DATE_HEADS_UP_DAYS} days out and not one day more; never for a day gone by`, () => {
+    expect(DATE_HEADS_UP_DAYS).toBe(2);
+    expect(buildJobGuide(withDates({ walkDate: "2026-10-28" }), NOW).ask!.id).toBe("job-walk");
+    expect(buildJobGuide(withDates({ walkDate: "2026-10-29" }), NOW).ask!.id).toBe("proposal-ready");
+    expect(buildJobGuide(withDates({ walkDate: "2026-10-25" }), NOW).ask!.id).toBe("proposal-ready");
+    expect(buildJobGuide(withDates({ rfiCutoffDate: "2026-10-28" }), NOW).ask!.id).toBe("rfi-cutoff");
+    expect(buildJobGuide(withDates({ rfiCutoffDate: "2026-10-29" }), NOW).ask!.id).toBe("proposal-ready");
+    expect(buildJobGuide(withDates({ rfiCutoffDate: "2026-10-25" }), NOW).ask!.id).toBe("proposal-ready");
+  });
+
+  it("rfi-cutoff names the day and the GC", () => {
+    const guide = buildJobGuide(FIXTURES["rfi-cutoff"], NOW);
+    expect(guide.ask!.title).toBe("RFI questions are due Wednesday.");
+    expect(guide.ask!.body).toBe("Send Marlow anything the drawings leave open before then. After that, you price what you assume.");
+    expect(guide.oneLine).toBe("RFIs close Wed");
+    expect(buildJobGuide(withDates({ rfiCutoffDate: "2026-10-27" }), NOW).ask!.body).toContain("Send the GC anything");
+    expect(buildJobGuide(withDates({ rfiCutoffDate: "2026-10-27" }), NOW).ask!.title).toBe("RFI questions are due tomorrow.");
+  });
+
+  it("the sooner date wins; on the same day the walk comes first", () => {
+    expect(buildJobGuide(withDates({ walkDate: "2026-10-28", rfiCutoffDate: "2026-10-27" }), NOW).ask!.id).toBe("rfi-cutoff");
+    expect(buildJobGuide(withDates({ walkDate: "2026-10-27", rfiCutoffDate: "2026-10-27" }), NOW).ask!.id).toBe("job-walk");
+    // Across two GCs: the earlier walk.
+    const two = ready({
+      invitations: [
+        { ...invited("2026-11-05")[0]!, id: "a", walkDate: "2026-10-28", walkMinute: 600 },
+        { ...invited("2026-11-06")[0]!, id: "b", walkDate: "2026-10-27", walkMinute: 840 },
+      ],
+    });
+    expect(buildJobGuide(two, NOW).ask!.actions[0]!.href).toBe("/bid/bids#b");
+  });
+
+  it("only a still-open invitation's dates count", () => {
+    const declined = ready({
+      invitations: [{ id: "d", projectName: "p", status: "DECLINED", dueDate: null, dueMinute: null, walkDate: "2026-10-27" }],
+    });
+    expect(buildJobGuide(declined, NOW).ask!.id).toBe("proposal-ready");
+    const sent = ready({
+      invitations: [{ id: "s", projectName: "p", status: "SUBMITTED", dueDate: null, dueMinute: null, walkDate: "2026-10-27" }],
+    });
+    expect(buildJobGuide(sent, NOW).ask).toBeNull();
+  });
+});
+
+describe("addendum-unacknowledged: the paper that gets a bid thrown out", () => {
+  it("names the addendum, when it was issued and whose form is missing it", () => {
+    const guide = buildJobGuide(FIXTURES["addendum-unacknowledged"], NOW);
+    expect(guide.ask!.title).toBe("Addendum 2 was issued Tuesday and isn't acknowledged on Hartwell's bid form yet.");
+    expect(guide.ask!.body).toBe(
+      "A bid form missing an acknowledgement can be thrown out unread. Once it is on the form, record the date in the bid log.",
+    );
+    expect(guide.ask!.step).toBe("proposal");
+    expect(guide.oneLine).toBe("Addendum 2 not acknowledged");
+    expect(guide.tone).toBe("question");
+  });
+
+  it("links to the bid log row (where it is recorded) and the bid's addenda (where it is read), both in Bid", () => {
+    const ask = buildJobGuide(FIXTURES["addendum-unacknowledged"], NOW).ask!;
+    expect(ask.actions).toEqual([
+      { label: "Open the bid log", href: "/bid/bids#inv_hartwell", primary: true },
+      { label: "Read the addendum", href: "/bid/bids/inv_hartwell?tab=addenda" },
+    ]);
+  });
+
+  it("keeps the GC's own words, and reads without a date or a GC", () => {
+    const asi = { ...addendum2, reference: "ASI 3", issuedOn: null, gcName: null };
+    expect(buildJobGuide(ready({ unacknowledgedAddenda: [asi] }), NOW).ask!.title).toBe("ASI 3 isn't acknowledged on the bid form yet.");
+    const old = { ...addendum2, reference: "Addendum No. 4", issuedOn: "2026-10-02", gcName: "Ross Builders" };
+    expect(buildJobGuide(ready({ unacknowledgedAddenda: [old] }), NOW).ask!.title).toBe(
+      "Addendum No. 4 was issued Oct 2 and isn't acknowledged on Ross Builders' bid form yet.",
+    );
+    expect(buildJobGuide(ready({ unacknowledgedAddenda: [{ ...addendum2, issuedOn: "2026-10-26" }] }), NOW).ask!.title).toContain(
+      "was issued today",
+    );
+  });
+
+  it("counts the others, each GC's form on its own", () => {
+    const onTwoForms = [addendum2, { ...addendum2, invitationId: "inv_marlow", gcName: "Marlow" }];
+    const guide = buildJobGuide(ready({ unacknowledgedAddenda: onTwoForms }), NOW);
+    expect(guide.ask!.body).toContain(" 1 other acknowledgement is missing too.");
+    expect(guide.oneLine).toBe("Addendum 2 and 1 more not acknowledged");
+  });
+});
+
+describe("priority: where the new asks sit", () => {
+  const walkTomorrow = { walkDate: "2026-10-27", walkMinute: 540 };
+
+  it("a walk or an RFI cutoff inside two days comes before even the drawings", () => {
+    expect(buildJobGuide(FIXTURES["job-walk"], NOW).ask!.id).toBe("job-walk");
+    const noDrawings = empty({ invitations: [{ ...invited("2026-11-05")[0]!, rfiCutoffDate: "2026-10-27" }] });
+    expect(buildJobGuide(noDrawings, NOW).ask!.id).toBe("rfi-cutoff");
+    expect(buildJobGuide({ ...FIXTURES["wall-height"], invitations: FIXTURES["job-walk"].invitations }, NOW).ask!.id).toBe("job-walk");
+  });
+
+  it("but a bid due inside the window still says what blocks it, not the walk", () => {
+    // Due tomorrow 2:00 PM (inside 48h) with the walk also tomorrow: the work comes first.
+    const blocked = empty({ invitations: [{ ...invited("2026-10-27", 840)[0]!, ...walkTomorrow }] });
+    const guide = buildJobGuide(blocked, NOW);
+    expect(guide.ask!.id).toBe("no-drawings");
+    expect(guide.dueLabel).toBe("due tomorrow 2:00 PM");
+    // And priced, it is the sending, not the walk.
+    expect(buildJobGuide(ready({ invitations: [{ ...invited("2026-10-27", 840)[0]!, ...walkTomorrow }] }), NOW).ask!.id).toBe(
+      "send-due-soon",
+    );
+    // 49 hours out is outside the window again, and the walk is back.
+    expect(buildJobGuide(ready({ invitations: [{ ...invited("2026-10-28", 16 * 60)[0]!, ...walkTomorrow }] }), NOW).ask!.id).toBe(
+      "job-walk",
+    );
+    // Past due is "due soon" too.
+    expect(buildJobGuide(ready({ invitations: [{ ...invited("2026-10-26", 600)[0]!, ...walkTomorrow }] }), NOW).ask!.id).toBe(
+      "send-due-soon",
+    );
+  });
+
+  it("wall-height beats adding the walls, and every price ask", () => {
+    const noLines = ready({ wallTypes: [w2NoHeight], wallLineCount: 0, linesWithoutPrice: 4, recap: { appliedAt: null, addedTotal: 1 } });
+    expect(buildJobGuide(noLines, NOW).ask!.id).toBe("wall-height");
+    // with the height answered, the earlier rules take over again in order
+    const answered = { ...noLines, wallTypes: [{ ...w2NoHeight, heightless: null }] };
+    expect(buildJobGuide(answered, NOW).ask!.id).toBe("walls-not-added");
+    const unpriced = ready({ wallTypes: [w2, w2NoHeight], linesWithoutPrice: 3 });
+    expect(buildJobGuide(unpriced, NOW).ask!.id).toBe("wall-height");
+    expect(buildJobGuide({ ...unpriced, wallTypes: [w2] }, NOW).ask!.id).toBe("unpriced-wall-types");
+  });
+
+  it("measuring comes before the height question (no run, nothing to ask)", () => {
+    const nothingMeasured = FIXTURES["no-walls-measured"];
+    expect(buildJobGuide({ ...nothingMeasured, wallTypes: [] }, NOW).ask!.id).toBe("no-walls-measured");
+  });
+
+  it("the addendum waits for the pricing, and comes before the proposal and the sending", () => {
+    const base = ready({ unacknowledgedAddenda: [addendum2], linesWithoutPrice: 2, recap: { appliedAt: null, addedTotal: 1 } });
+    expect(buildJobGuide(base, NOW).ask!.id).toBe("unpriced-lines");
+    expect(buildJobGuide({ ...base, linesWithoutPrice: 0 }, NOW).ask!.id).toBe("apply-recap");
+    expect(buildJobGuide({ ...base, linesWithoutPrice: 0, recap: null }, NOW).ask!.id).toBe("addendum-unacknowledged");
+    expect(buildJobGuide({ ...base, linesWithoutPrice: 0, recap: null, unacknowledgedAddenda: [] }, NOW).ask!.id).toBe("proposal-ready");
+    // due tomorrow: still the addendum before "send it now", and it says it is late once past due
+    const dueSoon = ready({ unacknowledgedAddenda: [addendum2], invitations: invited("2026-10-27", 840) });
+    expect(buildJobGuide(dueSoon, NOW).ask!.id).toBe("addendum-unacknowledged");
+    const late = buildJobGuide(ready({ unacknowledgedAddenda: [addendum2], invitations: invited("2026-10-26", 600) }), NOW);
+    expect(late.ask!.id).toBe("addendum-unacknowledged");
+    expect(late.tone).toBe("blocked");
+    expect(late.oneLine).toBe("Past due. Addendum 2 not acknowledged");
+  });
+
+  it("once the bid is sent, none of them asks", () => {
+    const sent = ready({
+      invitations: [{ id: "s", projectName: "p", status: "SUBMITTED", dueDate: null, dueMinute: null }],
+      wallTypes: [w2NoHeight],
+      unacknowledgedAddenda: [addendum2],
+    });
+    expect(buildJobGuide(sent, NOW).ask).toBeNull();
   });
 });
 
@@ -366,6 +646,7 @@ describe("the words", () => {
       guide.ask?.title ?? "",
       guide.ask?.body ?? "",
       ...(guide.ask?.actions.map((action) => action.label) ?? []),
+      ...(guide.ask?.actions.map((action) => action.confirm ?? "") ?? []),
       ...guide.steps.map((step) => step.summary ?? ""),
     ].filter(Boolean);
 
@@ -402,6 +683,12 @@ describe("the words", () => {
       facts.recap?.addedTotal ?? 0,
       facts.wallTypes.filter((type) => type.componentCount === 0 || type.unpricedLineCount > 0).length - 1, // "N more wall types"
       ...facts.wallTypes.map((type) => type.lengthFt),
+      // the height question: its runs, their length, how many other types, and the offered answers
+      ...facts.wallTypes.flatMap((type) => (type.heightless ? [type.heightless.runCount, type.heightless.lengthFt] : [])),
+      facts.wallTypes.filter((type) => type.heightless).length - 1,
+      ...WALL_HEIGHT_CHOICES,
+      // the addenda: how many others are missing
+      (facts.unacknowledgedAddenda ?? []).length - 1,
     ]) {
       figures.add(Math.round(value).toLocaleString("en-US"));
       figures.add(money(value));
@@ -410,10 +697,16 @@ describe("the words", () => {
       if (date) figures.add(String(Number(date.slice(8, 10)))); // day of month
     }
     for (const invitation of facts.invitations) {
-      if (invitation.dueMinute !== null) {
-        const hh = Math.floor(invitation.dueMinute / 60);
-        figures.add(`${hh % 12 === 0 ? 12 : hh % 12}:${String(invitation.dueMinute % 60).padStart(2, "0")}`);
+      for (const minute of [invitation.dueMinute, invitation.walkMinute ?? null]) {
+        if (minute === null) continue;
+        const hh = Math.floor(minute / 60);
+        figures.add(`${hh % 12 === 0 ? 12 : hh % 12}:${String(minute % 60).padStart(2, "0")}`);
       }
+      for (const date of [invitation.walkDate, invitation.rfiCutoffDate]) if (date) figures.add(String(Number(date.slice(8, 10))));
+    }
+    for (const addendum of facts.unacknowledgedAddenda ?? []) {
+      for (const digits of addendum.reference.match(/\d+/g) ?? []) figures.add(digits); // "Addendum 2" is its own label
+      if (addendum.issuedOn) figures.add(String(Number(addendum.issuedOn.slice(8, 10))));
     }
     return figures;
   }
