@@ -2767,3 +2767,29 @@ after; `disableAutoFetch` alone 12.2 s; both fetches off with 1 MB chunks 6.9 s,
 document for thumbnails — a second full stream — now on the same transport.
 Remaining floor is round trips: 13 × the hop. Fewer would need the route to
 serve a linearized file or the first chunk larger; not done.
+
+**Follow-up 1 — labelling mode at its real size (2026-10-27).** The harness's
+`labeling:` scenario draws what `?key=1` draws on Topeka p74 with its saved
+review: 1,562 candidate lines (decided ones at their recorded coordinates, the
+rest the same lines shifted, since the label keeps coordinates only for
+decisions), 38 of them rejected at 35% opacity, plus 157 traced walls as a
+32 px hit line under a 4 px green one — 1,876 SVG elements. Headless / headed:
+scroll 33 / 16 ms (same as bare canvas), zoom with the overlay up 85–173 /
+42–59 ms painted. Nothing to fix on that path.
+
+**Follow-up 2 — linearizing at upload (2026-10-27).** `qpdf --linearize` on a
+copy of the set (10 s, +0.4 MB; `--object-streams=generate` −0.5 MB), same
+harness, 500 ms per request, first page drawn:
+
+| file | default transport | PLAN_PDF_TRANSPORT |
+| --- | --- | --- |
+| as uploaded | 12.1 s, 21 requests | **6.9 s, 13 requests, 15 MB** |
+| linearized (qpdf defaults) | 18.4 s, 35 requests, whole file first | 26.8 s, 53 requests, 56 MB |
+| linearized, object streams regenerated | 18.5 s, 36 requests | 19.6 s, 38 requests, 41 MB |
+
+pdf.js 4.10.38 does not use the hint tables; on the linearized file it walks
+the main cross-reference region DOWNWARDS a megabyte at a time (ranges logged
+in `shots/viewer-speed/ranges-*.json`: 98.6, 97.5, 94.4 … 5.2 MB) before the
+first page, where the as-uploaded file needs the head, the tail and ten reads.
+**Do not linearize at ingest for this viewer.** qpdf was installed with
+Homebrew for this measurement and nothing in the ingest changed.

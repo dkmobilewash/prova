@@ -45,6 +45,8 @@ const size = statSync(PDF).size;
 let sent = 0;
 let pacing = false;
 let requests = 0;
+/** Every Range asked for, in order — what pdf.js decided it needed. */
+let ranges: string[] = [];
 /** The line between the estimator and the file: a per-request delay like a
  *  serverless hop, and a shared byte budget like a real downlink. Paced here
  *  on the server because CDP's network emulation did not touch pdf.js's
@@ -55,16 +57,32 @@ let budget = 0;
 setInterval(() => { budget = Math.min(budget + (MBPS * 1024 * 1024) / 8 / 20, (MBPS * 1024 * 1024) / 8 / 4); }, 50).unref();
 async function pace(bytes: number) { while (budget < bytes) await new Promise((r) => setTimeout(r, 10)); budget -= bytes; }
 
+type OverlayLine = { x1: number; y1: number; x2: number; y2: number; traced?: boolean; rejected?: boolean };
 /** Overlay lines as the viewer stores them: fractions of the page width. */
-function overlayLines(): { x1: number; y1: number; x2: number; y2: number }[] {
+function overlayLines(): OverlayLine[] {
   if (!LINES) return [];
   const label = JSON.parse(readFileSync(LINES, "utf8")) as {
-    verdicts?: Record<string, { x1: number; y1: number; x2: number; y2: number }>;
+    verdicts?: Record<string, { x1: number; y1: number; x2: number; y2: number; verdict?: string }>;
     traced?: { x1: number; y1: number; x2: number; y2: number }[];
   };
-  return [...Object.values(label.verdicts ?? {}), ...(label.traced ?? [])].map(
-    ({ x1, y1, x2, y2 }) => ({ x1, y1, x2, y2 }),
-  );
+  return [
+    ...Object.values(label.verdicts ?? {}).map(({ x1, y1, x2, y2, verdict }) => ({ x1, y1, x2, y2, rejected: verdict === "not-a-wall" })),
+    ...(label.traced ?? []).map(({ x1, y1, x2, y2 }) => ({ x1, y1, x2, y2, traced: true })),
+  ];
+}
+/** Labelling mode draws EVERY candidate the finder offered, decided or not —
+ *  the label file keeps coordinates only for decided ones, so the rest are the
+ *  decided lines again, shifted. `BENCH_CANDIDATES` is that count (Topeka p74: 1,562). */
+function labelingLines(real: OverlayLine[]): OverlayLine[] {
+  const wanted = Number(process.env.BENCH_CANDIDATES ?? "0");
+  const candidates = real.filter((l) => !l.traced);
+  const out: OverlayLine[] = [...candidates];
+  for (let i = 0; candidates.length > 0 && out.length < wanted; i++) {
+    const l = candidates[i % candidates.length];
+    const shift = 0.003 * (1 + Math.floor(i / candidates.length));
+    out.push({ ...l, y1: l.y1 + shift, y2: l.y2 + shift, rejected: false });
+  }
+  return [...out, ...real.filter((l) => l.traced)];
 }
 
 const HTML = `<!doctype html><meta charset="utf-8">
@@ -90,8 +108,14 @@ window.bench = {
     const drawn = now() - t0; await twoFrames(); return { renderMs: drawn, paintedMs: now() - t0 };
   },
   overlay(lines, aspect) {
+    // Each line the way the viewer's key overlay draws it: a candidate is one
+    // non-scaling stroke with a pointer cursor (rejected ones at 35% opacity);
+    // a traced wall is a 32px transparent hit line under a 4px green one.
     svg.setAttribute("viewBox", "0 0 1 " + aspect); svg.setAttribute("preserveAspectRatio", "none");
-    svg.innerHTML = lines.map(l => '<line x1="' + l.x1 + '" y1="' + l.y1 + '" x2="' + l.x2 + '" y2="' + l.y2 + '" stroke="#f59e0b" stroke-width="3" stroke-linecap="round" vector-effect="non-scaling-stroke"/>').join("");
+    const at = (l) => 'x1="' + l.x1 + '" y1="' + l.y1 + '" x2="' + l.x2 + '" y2="' + l.y2 + '" vector-effect="non-scaling-stroke" stroke-linecap="round"';
+    svg.innerHTML = lines.map(l => l.traced
+      ? '<line ' + at(l) + ' stroke="transparent" stroke-width="32"/><line ' + at(l) + ' stroke="#16a34a" stroke-width="4"/>'
+      : '<line ' + at(l) + ' stroke="' + (l.rejected ? "#9ca3af" : "#f59e0b") + '" stroke-width="3" style="cursor:pointer"' + (l.rejected ? ' opacity="0.35"' : '') + '/>').join("");
     return svg.childElementCount;
   },
   async scroll(dx, dy) { frame.scrollBy(dx, dy); const t0 = now(); await twoFrames(); return now() - t0; },
@@ -120,6 +144,7 @@ const server = createServer((req, res) => {
     const start = asked?.[1] ? Number(asked[1]) : 0;
     const end = asked?.[2] ? Math.min(Number(asked[2]), size - 1) : size - 1;
     requests += 1;
+    ranges.push(asked ? `${start}-${end}` : "full");
     res.writeHead(asked ? 206 : 200, {
       "content-type": "application/pdf",
       "accept-ranges": "bytes",
@@ -198,10 +223,12 @@ report.zoom = zoom;
 // ── pan: scroll the frame over the 200% render, bare and with the overlay ──
 await page.evaluate((p) => (window as unknown as { bench: { render: (p: object) => Promise<unknown> } }).bench.render(p), plan200);
 const lines = overlayLines();
+const labeling = labelingLines(lines);
 const pan: Record<string, unknown> = {};
 for (const [label, set] of [
   ["canvas only", []],
   [`canvas + ${lines.length} overlay lines`, lines],
+  [`labeling: ${labeling.length} lines (${labeling.filter((l) => !l.traced).length} candidates, ${labeling.filter((l) => l.traced).length} traced)`, labeling],
 ] as const) {
   const count = await page.evaluate(([l, a]) => (window as unknown as { bench: { overlay: (l: unknown, a: number) => number } }).bench.overlay(l, a), [set, aspect] as const);
   await page.evaluate(() => (window as unknown as { bench: { scrollTo: (x: number, y: number) => void } }).bench.scrollTo(0, 0));
@@ -217,6 +244,19 @@ for (const [label, set] of [
   console.log(`pan ${label}`, JSON.stringify(pan[label]));
 }
 report.pan = pan;
+
+// ── zoom with the labelling overlay up: the SVG re-lays out every line ──
+const zoomLabeling: Record<string, unknown> = {};
+await page.evaluate(([l, a]) => (window as unknown as { bench: { overlay: (l: unknown, a: number) => number } }).bench.overlay(l, a), [labeling, aspect] as const);
+for (const label of ["fit", "100%", "200%"]) {
+  const plan = canvasPlan({ pageWidth: pg.width, pageHeight: pg.height, scale: BASE_SCALE * zooms[label], devicePixelRatio: 2 });
+  const { result, top } = await traced(page, () =>
+    page.evaluate((p) => (window as unknown as { bench: { render: (p: object) => Promise<unknown> } }).bench.render(p), plan),
+  );
+  zoomLabeling[label] = { lines: labeling.length, ...(result as object), top };
+  console.log(`zoom+labeling ${label}`, JSON.stringify(zoomLabeling[label]));
+}
+report.zoomLabeling = zoomLabeling;
 await page.close();
 
 // ── load: first page drawn, per pdf.js transport option, over the paced line ──
@@ -231,9 +271,12 @@ const transports: [string, object][] = [
   // The app's own setting, read from the module so this row cannot drift from it.
   ["app: PLAN_PDF_TRANSPORT", PLAN_PDF_TRANSPORT],
 ];
-for (const [label, opts] of process.env.BENCH_SKIP_LOAD === "1" ? [] : transports) {
+// BENCH_ROWS="default,app" runs only the rows whose label starts with one of these.
+const rows = process.env.BENCH_ROWS?.split(",").map((r) => r.trim()).filter(Boolean);
+for (const [label, opts] of process.env.BENCH_SKIP_LOAD === "1" ? [] : transports.filter(([l]) => !rows || rows.some((r) => l.startsWith(r)))) {
   sent = 0;
   requests = 0;
+  ranges = [];
   const p = await context.newPage();
   await p.goto(origin);
   await p.waitForFunction(() => (window as unknown as { ready?: boolean }).ready === true);
@@ -245,7 +288,7 @@ for (const [label, opts] of process.env.BENCH_SKIP_LOAD === "1" ? [] : transport
   const firstDrawnMs = Date.now() - t0;
   const atFirst = { bytes: sent, requests };
   await p.waitForTimeout(5000);
-  firstLoad[label] = { firstDrawnMs, load: l, render: r, atFirstDraw: atFirst, fiveSecondsLater: { bytes: sent, requests }, pdfBytes: size, line: { latencyMs: LATENCY_MS, mbps: MBPS } };
+  firstLoad[label] = { firstDrawnMs, load: l, render: r, atFirstDraw: atFirst, fiveSecondsLater: { bytes: sent, requests }, pdfBytes: size, line: { latencyMs: LATENCY_MS, mbps: MBPS }, ranges: [...ranges] };
   console.log(`load ${label}`, JSON.stringify(firstLoad[label]));
   await p.close();
 }

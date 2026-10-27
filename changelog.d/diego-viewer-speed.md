@@ -29,3 +29,12 @@ which includes the operator list crossing from the worker; later zooms are
 `TakeoffPlanViewer` re-renders with 1,562 candidates in 20 ms. Nothing in the
 viewer's drawing reproduces the report, so nothing in it was changed on a guess.
 Timings in `~/Claude Folder/takeoff/shots/viewer-speed/`, outside git.
+
+**Two follow-ups, measured, neither a code change.** Labelling mode with a
+saved review loaded — 1,562 candidates and 157 traces, 1,876 SVG elements —
+scrolls in 16–33 ms and re-zooms in 42–173 ms, same as the bare sheet. And
+linearizing the PDF at upload makes first load WORSE under pdf.js 4.10.38:
+a `qpdf --linearize` copy of the same set took 26.8 s and 53 requests where
+the uploaded file takes 6.9 s and 13, because pdf.js ignores the hint tables
+and walks the cross-reference region a megabyte at a time. The ingest is
+unchanged; the ranges pdf.js asked for are logged beside the numbers.
