@@ -42,6 +42,7 @@ import {
   saveTakeoffMeasurement,
   saveTakeoffMeasurements,
   updateMeasurementGeometry,
+  setWallTypeThickness,
 } from "@/lib/actions";
 import type {
   PlanSheet,
@@ -64,17 +65,22 @@ import {
   type WallCandidate,
   inchLabel,
   type StrokeSegment,
+  toEighth,
 } from "@/lib/takeoff/wallVectors";
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
 import { loadPlanText, type PlanTextView } from "@/lib/actions/planTextRead";
 import { PlanTextPanel } from "@/components/PlanTextPanel";
 import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
-import { doorsByGroup, feetInches } from "@/lib/takeoff/planTextView";
+import { doorsByGroup, doorText, feetInches, openingsFromDoors } from "@/lib/takeoff/planTextView";
 import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
 import { BLANK_TILE_INK, TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
+import { demotedRuns, demotedSentence, demotedWord, demotes, modelVerdicts, type RunVerdict } from "@/lib/takeoff/demotedRuns";
+import type { WallModel } from "@/lib/takeoff/wallClassifier";
 import type { WallClassifyLabel } from "@prova/integrations";
+import { ceilingsForRooms, type CeilingPageText, type RoomCeiling } from "@/lib/takeoff/roomCeilings";
+import { tableRowsFromPage } from "@/lib/plan-ingest/scheduleTable";
 import { pagesToSample } from "@/lib/takeoff/sheetTemplate";
-import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "@/lib/takeoff/findWallsOnSheet";
+import { inPageWidthUnits, type FoundOnSheet } from "@/lib/takeoff/findWallsOnSheet";
 import { SheetTooDenseError, oneFacePerLine, wallFromPair } from "@/lib/takeoff/wallVectors";
 import { layersOf, segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
 import { droppedLayersSentence, type LayerDrop } from "@/lib/takeoff/layerNames";
@@ -88,12 +94,7 @@ import {
 } from "@/lib/takeoff/sheetSuitability";
 import { printedScalesOnPage } from "@/lib/takeoff/printedScales";
 import {
-  excludedViews,
-  primaryView,
   sheetViews,
-  viewRegions,
-  viewsInRegions,
-  wallsPerView,
   type ExcludedView,
   type ViewWalls,
 } from "@/lib/takeoff/sheetViews";
@@ -101,16 +102,18 @@ import { tagSentence } from "@/lib/takeoff/wallTags";
 import {
   verdictFor,
   groupSentence,
+  groupChoices,
+  typeOptionLabel,
   wallsOnThisSheet,
   storedWallsFor,
   type WallGroup,
   type GroupVerdict,
+  settledType,
 } from "@/lib/takeoff/wallGroups";
 import { proposalSections, showsHeadings } from "@/lib/takeoff/proposalSections";
 import { calibrationForView, type ViewScale } from "@/lib/takeoff/sheetScale";
 import { SINGLE_LINE_COLOUR, VERDICT_COLOURS } from "@/components/AnswerKeyPanel";
 import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
-import { drawingRegions, segmentsInRegions } from "@/lib/takeoff/planRegion";
 import { takeoffSheetVerdict, type TakeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
 import {
   candidatesFromSheet,
@@ -119,7 +122,7 @@ import {
   type Candidate,
   type ReviewState,
 } from "@/lib/takeoff/answerKeyReview";
-import { offeredCandidates } from "@/lib/takeoff/offeredCandidates";
+import { detectForSheet, offeredCandidates } from "@/lib/takeoff/offeredCandidates";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { TakeoffRoomsPanel } from "./TakeoffRoomsPanel";
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
@@ -268,6 +271,9 @@ export function TakeoffPlanViewer({
   panelOpen = true,
   readOnly = false,
   roomFinder = false,
+  demotedWalls = false,
+  wallModel = null,
+  ceilingPages = [],
   onMeasurementSaved,
   activeItemId = null,
 }: {
@@ -350,6 +356,26 @@ export function TakeoffPlanViewer({
    * button absent. See `lib/takeoff/NOTES-rooms.md`.
    */
   roomFinder?: boolean;
+  /**
+   * "Demote, don't hide": a run the check labels casework or reference stays
+   * on the sheet greyed, out of the total, one click to take back. Read from
+   * `Company.demotedWallsOn`, false for everyone until chosen; never in
+   * labelling mode. See `lib/takeoff/demotedRuns.ts`.
+   */
+  demotedWalls?: boolean;
+  /**
+   * The trained wall classifier and its cut, read from the file
+   * `TAKEOFF_WALL_MODEL` names (`lib/takeoff/wallModelFile.ts`). With the
+   * switch on, a run it scores below the cut is demoted at Find time, with
+   * no model call. Null when no file is configured; inert with the switch off.
+   */
+  wallModel?: { model: WallModel; cut: number } | null;
+  /**
+   * The plan's pages whose title block names a reflected ceiling plan or a
+   * finish schedule. When the rooms are found, their text is read from the
+   * open PDF and each room's ceiling comes from it — see `roomCeilings.ts`.
+   */
+  ceilingPages?: number[];
   /**
    * Told when a measurement has been saved, so a HOST can offer to undo it.
    *
@@ -712,11 +738,11 @@ export function TakeoffPlanViewer({
    * it away.
    */
   const [labelsByPage, setLabelsByPage] = useState<
-    Record<number, Map<number, WallClassifyLabel>>
+    Record<number, Map<number, RunVerdict>>
   >({});
   const labels = onThisSheet(labelsByPage, pageNumber);
   const setLabels = useCallback(
-    (next: Map<number, WallClassifyLabel> | null) =>
+    (next: Map<number, RunVerdict> | null) =>
       setLabelsByPage((prev) => setOnThisSheet(prev, pageNumber, next)),
     [pageNumber],
   );
@@ -810,7 +836,11 @@ export function TakeoffPlanViewer({
    * tag and its own candidates, so the three can no longer fall out of step
    * with each other, which is a class of bug rather than a tidy-up.
    */
+  const [thicknessBusy, setThicknessBusy] = useState<string | null>(null);
+  const [thicknessNote, setThicknessNote] = useState<string | null>(null);
   const [chosen, setChosen] = useState<Record<number, string>>({});
+  /** A height typed for a group whose type has no default — the posting refuses without one. */
+  const [groupHeight, setGroupHeight] = useState<Record<number, string>>({});
   /** Whether the groups below the fold are showing. See `SHOWN_AT_FIRST`. */
   const [showingAll, setShowingAll] = useState(false);
   /** The rows on screen. Indexes into this ARE the indexes into `found`,
@@ -846,6 +876,9 @@ export function TakeoffPlanViewer({
   /** How many strokes the sheet held when it was last read, so an empty result
    *  can say which kind of empty it is. See the message below. */
   const [strokesSeen, setStrokesSeen] = useState(0);
+  /** What the finder saw and dropped on the last detection, for the labelling
+   *  harness to read off the DOM and hold against the eval's own numbers. */
+  const [detectSeen, setDetectSeen] = useState<string | null>(null);
   // ── READING A SCANNED SHEET ──
   // `reading` drives the button; `readError` and `wordsRead` are what the
   // estimator is told. The WORDS themselves go in a ref rather than state
@@ -867,6 +900,9 @@ export function TakeoffPlanViewer({
   /** The page box, straight from the viewer — the ONLY place this number is
    * ever produced. Posted with a calibration so the scale can be named. */
   const [pageSize, setPageSize] = useState<{ widthPt: number; heightPt: number } | null>(null);
+  // Which of the find's three preconditions was missing, for the error
+  // element's `data-missing`. Diagnostic only — never shown as words.
+  const [missingToFind, setMissingToFind] = useState<string>("");
   /** The scrolling box the sheet sits in — measured, so FIT knows what it is
    *  fitting into. */
   const frameRef = useRef<HTMLDivElement | null>(null);
@@ -1933,7 +1969,7 @@ export function TakeoffPlanViewer({
         const run = inView[one.id - 1];
         if (!run) continue;
         const at = runsRef.current.indexOf(run);
-        if (at >= 0) next.set(at, one.label);
+        if (at >= 0) next.set(at, { label: one.label, reason: one.reason });
       }
       setLabels(next);
       setMissed(result.value.missing);
@@ -1943,8 +1979,8 @@ export function TakeoffPlanViewer({
       setFound(
         regroup(
           runsRef.current.filter((_, at) => {
-            const label = next.get(at);
-            return label === undefined || label === "WALL" || label === "UNSURE";
+            const verdict = next.get(at);
+            return verdict === undefined || !demotes(verdict.label);
           }),
         ),
       );
@@ -1954,6 +1990,41 @@ export function TakeoffPlanViewer({
       setChecking(false);
     }
   }, [labels]);
+  /**
+   * The demoted runs, for the panel and the overlay — only with the company's
+   * switch on and outside labelling mode. Empty otherwise, so nothing below
+   * renders and the switch-off behaviour is byte-for-byte what it was.
+   */
+  const demote = demotedWalls && answerKey === undefined;
+  const demoted = demote ? demotedRuns(labels, runsRef.current) : [];
+  /** The model the find scores with — a ref, so the find callback need not re-bind on it. */
+  const wallModelRef = useRef<{ model: WallModel; cut: number } | null>(null);
+  wallModelRef.current = demote ? wallModel : null;
+  const [hoveredDemoted, setHoveredDemoted] = useState<number | null>(null);
+  /**
+   * Taking a run back is its verdict becoming WALL, then the list rebuilt from
+   * every run the way the check builds it. Same rule as the check: a run the
+   * estimator removed by hand after checking comes back too, because the
+   * verdicts are the only record kept and removal is not one of them.
+   */
+  const onAcceptDemoted = useCallback(
+    (at: number) => {
+      const regroup = regroupRef.current;
+      if (!regroup || labels === null) return;
+      const next = new Map(labels);
+      next.set(at, { label: "WALL", reason: "you put it back" });
+      setLabels(next);
+      setFound(
+        regroup(
+          runsRef.current.filter((_, i) => {
+            const verdict = next.get(i);
+            return verdict === undefined || !demotes(verdict.label);
+          }),
+        ),
+      );
+    },
+    [labels, setLabels],
+  );
 
   /**
    * ── THE WALLS FOUND EARLIER, PUT BACK ON THE SHEET ──
@@ -1995,10 +2066,22 @@ export function TakeoffPlanViewer({
       live = false;
     };
   }, [jobId, planId, pageNumber, storedWallsByPage]);
-  const planTextDoors = useMemo(
-    () => doorsByGroup(found ?? [], planText?.sheet?.doors?.placed ?? [], feetPerUnit),
-    [found, planText, feetPerUnit],
-  );
+  /**
+   * ── A DOOR IS POSTED ONCE, with the group it sat on ──
+   *
+   * `doorsByGroup` puts each placed door on its nearest group among the
+   * groups STILL LISTED. Once a group is added it leaves the list, and a door
+   * that sat on it would land on the next-nearest group within reach — and
+   * be deducted a second time with that one. Baker's 109 and 112 did exactly
+   * that. So the marks already posted are kept here and left out of the
+   * next assignment; a fresh Find starts the list again.
+   */
+  const [postedDoorMarks, setPostedDoorMarks] = useState<string[]>([]);
+  const planTextDoors = useMemo(() => {
+    const posted = new Set(postedDoorMarks.map((m) => m.trim().toUpperCase()));
+    const placed = (planText?.sheet?.doors?.placed ?? []).filter((d) => !posted.has(d.mark.trim().toUpperCase()));
+    return doorsByGroup(found ?? [], placed, feetPerUnit);
+  }, [found, planText, feetPerUnit, postedDoorMarks]);
 
   useEffect(() => {
     if (seeded.current.has(pageNumber)) return;
@@ -2187,7 +2270,8 @@ export function TakeoffPlanViewer({
    * the lines drawn by hand on this sheet, which is how an estimator closes a
    * room the finder left open. Pure and synchronous; no PDF is re-read.
    */
-  function onFindRooms() {
+  const [roomCeilings, setRoomCeilings] = useState<Map<number, RoomCeiling> | null>(null);
+  async function onFindRooms() {
     if (!pageSize || feetPerUnit === null) return;
     const walls = roomBoundary({
       pairings: pairingsRef.current,
@@ -2198,7 +2282,63 @@ export function TakeoffPlanViewer({
     setRooms(result);
     setRoomsOnPage(pageNumber);
     setHoveredRoom(null);
+    setRoomCeilings(null);
+    // ── THE CEILINGS, FROM THIS SHEET AND THE PLAN'S CEILING PAGES ──
+    // Read from the open PDF here in the browser, the way the words above were;
+    // a page that fails to read is left out rather than failing the rooms.
+    try {
+      const doc = docRef.current as { getPage: (n: number) => Promise<unknown> } | null;
+      const others: CeilingPageText[] = [];
+      if (doc) {
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        // With no stored title block naming a ceiling page, every page of a small plan is
+        // tried by its own text — a two-sheet extract has no index to say which is which.
+        const numPages = (doc as unknown as { numPages?: number }).numPages ?? 0;
+        const candidates =
+          ceilingPages.length > 0 ? ceilingPages : numPages > 0 && numPages <= 40 ? Array.from({ length: numPages }, (_, i) => i + 1) : [];
+        for (const n of candidates.filter((p) => p !== pageNumber).slice(0, 40)) {
+          try {
+            const page = (await doc.getPage(n)) as { getViewport: (o: { scale: number }) => { width: number; height: number } };
+            const items = await pageTextItems(page, pdfjs);
+            if (ceilingPages.length === 0 && !items.some((i) => /REFLECTED\s+CEILING|\bRCP\b|CEILING\s+PLAN|FINISH\s+SCHEDULE|ROOM\s+FINISH/i.test(i.str))) continue;
+            const viewport = page.getViewport({ scale: 1 });
+            const asPage = { items, widthPt: viewport.width, heightPt: viewport.height } as unknown as Parameters<typeof tableRowsFromPage>[0];
+            others.push({ pageNumber: n, items, widthPt: viewport.width, tableRows: tableRowsFromPage(asPage) });
+          } catch {
+            // this page did not read; the others still count
+          }
+        }
+      }
+      const last = lastDetect.current;
+      const strokes =
+        last !== null && last.page === pageNumber && last.widthPt > 0
+          ? last.segments.map((s) => ({ x1: s.x1 / last.widthPt, y1: s.y1 / last.widthPt, x2: s.x2 / last.widthPt, y2: s.y2 / last.widthPt }))
+          : undefined;
+      const here = { items: wordsRef.current, widthPt: pageSize.widthPt, heightPt: pageSize.heightPt } as unknown as Parameters<typeof tableRowsFromPage>[0];
+      setRoomCeilings(
+        ceilingsForRooms({
+          rooms: result.rooms,
+          current: { pageNumber, items: wordsRef.current, widthPt: pageSize.widthPt, tableRows: tableRowsFromPage(here) },
+          strokes,
+          feetPerUnit,
+          others,
+        }),
+      );
+    } catch {
+      setRoomCeilings(new Map());
+    }
   }
+  /** Every saved room on the job with a ceiling, as square feet by family, for the job summary. */
+  const savedRoomCeilings = sheets.flatMap((s) =>
+    s.measurements
+      .filter((m) => m.ceiling !== null && m.ceiling !== undefined && m.kind === "AREA")
+      .map((m) => {
+        const span = Math.hypot(m.calibration.x2 - m.calibration.x1, m.calibration.y2 - m.calibration.y1);
+        const fpu = span > 0 ? m.calibration.declaredDistanceFeet / span : 0;
+        const units = ringArea(m.xs, m.ys) ?? 0;
+        return { pageNumber: s.pageNumber, squareFeet: Math.abs(units) * fpu * fpu, family: m.ceiling!.family, code: m.ceiling!.code };
+      }),
+  );
 
   async function onFindWalls() {
     const doc = docRef.current;
@@ -2223,6 +2363,22 @@ export function TakeoffPlanViewer({
     // a queued action: a find that starts by itself some seconds after a
     // click nobody remembers making is worse than one that says "not yet".
     if (!doc || !pageSize || feetPerUnit === null) {
+      // ── AND THE MESSAGE HAS TO SAY WHICH PIECE IS MISSING ──
+      //
+      // This fired in CI on a sheet that was VISIBLY DRAWN, with the scale
+      // line reading "sheet reads 128 ft across" — a number computed from
+      // `feetPerUnit`, which the guard says is null. The screenshot
+      // contradicts all three conditions at once, so reasoning from it goes
+      // in circles. Naming the missing piece turns the next run into an
+      // answer rather than another theory.
+      //
+      // The person still reads one plain sentence; the detail goes in an
+      // attribute, where a spec can report it and nobody else has to look.
+      setMissingToFind(
+        [!doc && "document", !pageSize && "page size", feetPerUnit === null && "scale"]
+          .filter(Boolean)
+          .join(", "),
+      );
       setFindError("The sheet is still loading. Try that again in a moment.");
       return;
     }
@@ -2231,6 +2387,7 @@ export function TakeoffPlanViewer({
     setFound(null);
     setRooms(null);
     setChosen({});
+    setPostedDoorMarks([]);
     setShowingAll(false);
     try {
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -2319,21 +2476,15 @@ export function TakeoffPlanViewer({
       // `sheetViews.ts` carries why a view must be clipped before it is
       // re-scaled, and why the captions are used as a RATIO against the
       // calibration rather than as absolute scales.
-      const views = viewsInRegions(
-        sheetViews(textItems, pageSize.widthPt),
-        viewRegions(segments, pageSize),
-      );
-      let found: FoundOnSheet;
-      /**
-       * Every pairing the finder considered on this sheet, with its feature
-       * vector, for answer-key mode.
-       *
-       * Declared out here because the sheet is measured by one of TWO paths —
-       * `wallsPerView` when the sheet carries several plan views, the single
-       * call below when it carries one — and a reviewed sheet is training data
-       * only if both report. Collecting at just the second one meant Save to
-       * labels refused every multi-view sheet, which is most real ones.
-       */
+      // ── ONE PIPELINE, SHARED WITH EVERY EVAL ──
+      //
+      // This block carried its own copy of the detection — captions, regions,
+      // per-view measurement, the primary pick — and `detectForSheet` was an
+      // extraction of it that omitted one call, which is the whole of "Murray
+      // 160 against the app's 32". A copy drifts; a call cannot. What the
+      // sheet shows (the kept views, the others, the left-out) comes back from
+      // the same function the evals score, so a number measured there is a
+      // number a customer sees.
       const pairings: {
         x1: number;
         y1: number;
@@ -2356,97 +2507,80 @@ export function TakeoffPlanViewer({
                 features: [...features],
               });
             };
-      void collect;
-      let otherViews: ViewWalls[] = [];
-      let leftOut: ExcludedView[] = [];
-      let primaryShown: { name: string; scaleName: string | null } | null = null;
-      /** The parts of the page the measured PLAN views own — see `lastDetect`. */
-      let planBoxes: { from: number; to: number; fromY: number; toY: number }[] | null = null;
-      if (views.length >= 2) {
-        const measured = wallsPerView({
-          segments,
-          textItems,
-          pageSize,
-          views,
-          wallTypes,
-          feetPerUnit,
-          sampledSheets,
-          onCandidate: collect,
-        });
-        const picked = primaryView(measured);
-        otherViews = picked.others;
-        leftOut = excludedViews(views);
-        // Every view that was actually measured, which after the view-kind
-        // filter is every PLAN on the sheet. `wallsPerView` has already
-        // refused the elevations, the sections and the schedules.
-        planBoxes = measured.flatMap(
-          (one) =>
-            one.view.boxes ?? [
-              {
-                from: one.view.from,
-                to: one.view.to,
-                fromY: one.view.fromY,
-                toY: one.view.toY,
-              },
-            ],
-        );
-        primaryShown = picked.primary
-          ? { name: picked.primary.view.name, scaleName: picked.primary.view.scaleName }
-          : null;
-        // ── A SHEET WITH NO PLAN ON IT MEASURES NOTHING ──
-        //
-        // This used to fall back to measuring the WHOLE SHEET when no view
-        // produced a primary, which is the worst possible answer for the sheet
-        // that most needs a good one: a page of eight interior elevations has
-        // every one of them measured as wall, at an elevation's own scale,
-        // with the caution saying they were left out. `excludedViews` names
-        // what happened and the quantities stay empty, which is the honest
-        // pair.
-        found =
-          picked.primary?.found ??
-          // The real pipeline on NO geometry, rather than a hand-built empty
-          // result: every field of `FoundOnSheet` comes out consistent, and
-          // nothing here has to be kept in step with that type.
-          findWallsOnSheet({
-            segments: [],
-            textItems,
-            pageSize,
-            feetPerUnit,
-            wallTypes,
-            sampledSheets: null,
-          });
-      } else {
-        // ── ONE DRAWING ON THE SHEET STILL IS NOT THE WHOLE SHEET ──
-        //
-        // `viewRegions` has already separated the title block, the notes and
-        // the legend boxes from the drawing; with one caption they were all
-        // handed to it, because a region with no caption joins the nearest.
-        // That rule is right and stays — it is what keeps a plan's dimension
-        // column with its plan — but it meant a one-drawing sheet measured its
-        // own title block, and offered its ruled lines as possible walls.
-        //
-        // `planRegion.ts` carries why this cannot reintroduce the S05/S07
-        // scar: it keeps the BUSIEST region and whatever is comparable to it,
-        // which is where a building is.
-        const drawing = drawingRegions(
-          viewRegions(segments, pageSize),
-          segments,
-          pageSize.widthPt,
-        );
-        const onTheDrawing = segmentsInRegions(segments, drawing, pageSize.widthPt);
-        planBoxes = drawing.length > 0 ? [...drawing] : null;
-        // `onCandidate` fires after the sheet-relative columns are filled, so
-        // what is reported is what a model would be scored on.
-        found = findWallsOnSheet({
-          segments: onTheDrawing,
-          textItems,
-          pageSize,
-          feetPerUnit,
-          wallTypes,
-          sampledSheets,
-          onCandidate: collect,
-        });
+      const detected = detectForSheet({
+        segments,
+        textItems,
+        pageSize,
+        feetPerUnit,
+        wallTypes,
+        sampledSheets,
+        onCandidate: collect,
+      });
+      const found: FoundOnSheet = detected.found;
+      // ── WHAT THE FINDER SAW, FOR THE LABELLING HARNESS ONLY ──
+      //
+      // Digests of every input (segments in value and in order, text, the
+      // template sample, the page size, the scale) and the stage counts,
+      // written to the plan port so `e2e/specs/takeoff-app-equals-eval.spec.ts`
+      // can hold the app against `realplan/zzAppEquals.eval.ts` number for
+      // number. That comparison is what found that the finder's answer
+      // depends on whether an answer-key hook is set. Customers never pay
+      // for it: it runs only in answer-key mode.
+      if (answerKey) {
+      let sum = 0;
+      let seq = 2166136261;
+      for (const one of segments) {
+        sum += Math.abs(one.x1) + Math.abs(one.y1) + Math.abs(one.x2) + Math.abs(one.y2);
+        seq = Math.imul(seq ^ Math.round(one.x1 * 10 + one.y1 * 100 + one.x2 * 1000 + one.y2), 16777619) >>> 0;
       }
+
+      const fnv = (seed: number, value: number) => Math.imul(seed ^ Math.round(value * 1000), 16777619) >>> 0;
+      let textHash = 2166136261;
+      for (const t of textItems) textHash = fnv(fnv(fnv(fnv(textHash, t.x), t.y), t.height), t.str.length);
+      let sampleHash = 2166136261;
+      let sampleN = 0;
+      for (const sheet of sampledSheets ?? []) for (const one of sheet) { sampleHash = fnv(fnv(sampleHash, one.x1 + one.y1), one.x2 + one.y2); sampleN += 1; }
+      let wallsHash = 2166136261;
+      for (const wll of detected.found.walls) wallsHash = fnv(fnv(wallsHash, wll.x1 + wll.y1), wll.x2 + wll.y2);
+      setDetectSeen(
+        JSON.stringify({
+          sumAbs: Math.round(sum),
+          seqHash: seq,
+          textHash,
+          sampleHash,
+          sampleN,
+          wallsHash,
+          pageSize: [pageSize.widthPt, pageSize.heightPt],
+          segments: segments.length,
+          text: textItems.length,
+          sampled: sampledSheets?.length ?? 0,
+          wallTypes: wallTypes.length,
+          feetPerUnit,
+          walls: detected.found.walls.length,
+          template: detected.found.templateDropped,
+          grid: detected.found.gridDropped,
+          hatch: detected.found.hatchDropped,
+          dup: detected.found.duplicateDropped,
+          layers: detected.found.layerDropped.length,
+          drawings: detected.views,
+          kept: detected.kept.map((k) => k.name),
+        }),
+      );
+      }
+      const otherViews: ViewWalls[] = detected.others;
+      const leftOut: ExcludedView[] = detected.leftOut;
+      // Several floors kept read as one name for the caution: "1st Floor Plan
+      // + 2nd - 9th Floor Plan", at their common scale or none.
+      const primaryShown: { name: string; scaleName: string | null } | null =
+        detected.kept.length === 0
+          ? null
+          : {
+              name: detected.kept.map((k) => k.name).join(" + "),
+              scaleName: detected.kept.every((k) => k.scaleName === detected.kept[0].scaleName)
+                ? detected.kept[0].scaleName
+                : null,
+            };
+      const planBoxes = detected.planBoxes;
       setOtherViewsByPage((prev) => ({ ...prev, [pageNumber]: otherViews }));
       setExcludedByPage((prev) => ({ ...prev, [pageNumber]: leftOut }));
       setPrimaryViewShown(primaryShown);
@@ -2462,7 +2596,17 @@ export function TakeoffPlanViewer({
       runsRef.current = walls;
       feetAcrossRef.current = feetPerUnit;
       regroupRef.current = regroup;
-      setLabels(null);
+      // ── THE MODEL'S FIRST OPINION, AT FIND TIME ──
+      // Null unless the switch is on, a model file is configured and this is
+      // not labelling mode, in which case every run scoring below the cut
+      // leaves the list demoted — the same walls the finder's veto would have
+      // dropped, kept on screen instead. See `modelVerdicts`.
+      const byModel =
+        wallModelRef.current !== null
+          ? modelVerdicts(wallModelRef.current.model, wallModelRef.current.cut, walls, pairings, feetPerUnit)
+          : null;
+      const doubted = byModel !== null && byModel.size > 0 ? byModel : null;
+      setLabels(doubted);
       setMissed([]);
       setCheckError(null);
       // `found.groups` IS `regroup(walls)`, computed once inside the pipeline
@@ -2470,7 +2614,7 @@ export function TakeoffPlanViewer({
       // next line went with it: `clusterByThickness` was called, assigned and
       // then deliberately discarded, because the real clustering happens inside
       // `regroup`. The pipeline still returns it for the bench.
-      setFound(found.groups);
+      setFound(doubted !== null ? regroup(walls.filter((_, at) => !doubted.has(at))) : found.groups);
 
       // ── AND, FOR A REVIEWER, EVERYTHING THE DETECTOR COULD NOT REACH ──
       //
@@ -2540,6 +2684,13 @@ export function TakeoffPlanViewer({
   async function onAcceptCluster(index: number) {
     const group = found?.[index];
     if (!group || !sheet) return;
+    // "Create a wall type from this group" leaves for the library with the
+    // thickness filled in; nothing is written here. Plain measurements are
+    // written only when that was the answer chosen, never as the default.
+    if (chosen[index] === "create") {
+      window.location.assign(`/wall-types?thicknessIn=${group.inches.toFixed(3)}`);
+      return;
+    }
     const priced = pricedTypeFor(group, chosen[index]);
     // THE LABEL FOLLOWS THE NAME, NOT THE PRICE. A group the drawing calls A1
     // is "A1 wall" in the measurement list whether or not A1 has layers yet —
@@ -2548,6 +2699,18 @@ export function TakeoffPlanViewer({
     const named = namedTypeFor(group, chosen[index]);
     const body = new FormData();
     body.set("pageId", sheet.id);
+    // The height the panel asked for, when the type has none of its own.
+    const typedHeight = Number(groupHeight[index] ?? "");
+    if (priced && priced.defaultHeightFt == null && typedHeight > 0) body.set("heightFt", String(typedHeight));
+    // ── THE SCHEDULE'S DOORS RIDE ALONG AS THE RUN'S OPENINGS ──
+    // Width and height from the door schedule, placed on this group's runs
+    // by the plan-text read; `boardedArea` deducts them or not by the
+    // company's own rule (`openingThresholdSqFt`). A door with no height in
+    // the schedule is left out and the row says so.
+    for (const opening of openingsFromDoors(planTextDoors.get(index) ?? []).openings) {
+      body.append("openingWidth", String(opening.widthFt));
+      body.append("openingHeight", String(opening.heightFt));
+    }
     // ── THE LABEL CARRIES THE DRAWING'S OWN WORD WHERE THERE IS ONE ──
     //
     // `4⅞" wall` is what the app measured; `W1 wall` is what the drawing calls
@@ -2570,6 +2733,7 @@ export function TakeoffPlanViewer({
     // Only the accepted group leaves the list. The rest stay on screen, because
     // an estimator works through them one at a time and re-running the finder
     // to get back to where they were would be a punishment for accepting one.
+    setPostedDoorMarks((current) => [...current, ...(planTextDoors.get(index) ?? []).map((d) => d.mark)]);
     setFound((current) => (current ?? []).filter((_, i) => i !== index));
   }
 
@@ -2584,16 +2748,22 @@ export function TakeoffPlanViewer({
    */
   function namedTypeFor(group: WallGroup, pick: string | undefined): MatchableWallType | null {
     const verdict = verdictFor(group);
-    // A SHEET NOTE IS AN ANSWER, not a question. It names one type for
-    // everything untagged, and the group only reaches this state when its
-    // measured thickness agrees — see `wallGroups`.
-    if (
-      verdict.state === "NAMED" ||
-      verdict.state === "BY_GENERAL_NOTE" ||
-      verdict.state === "ONLY_ONE_THAT_THICK"
-    ) {
-      return verdict.type;
+    // AN EXPLICIT PICK FROM THE CHOOSER NAMES ANY UNPRICED GROUP — the
+    // chooser lists every type with parts (`groupChoices`), so a type the
+    // thickness never matched can still be chosen on purpose. "plain" and
+    // "create" are the chooser's other answers and name nothing.
+    if (pick && pick !== "plain" && pick !== "create") {
+      const picked = wallTypes.find((type) => type.id === pick);
+      if (picked && settledType(verdict) === null) return picked;
     }
+    // A SHEET NOTE IS AN OFFER, not an answer: its type leads the ASK picker
+    // (`verdict.suggested`) and the group is priced only once a person picks
+    // it — see `wallGroups`.
+    // A TAG WINS OVER THE THICKNESS: a TAG_DISAGREES group is settled as its
+    // tag too, with the disagreement said in its sentence and a one-press fix
+    // for the library's figure beside it — see `settledType`.
+    const settled = settledType(verdict);
+    if (settled !== null) return settled;
     // An ASK is priced only once a PERSON has answered it. No default, no
     // first-in-the-list: that is the guess this whole module refuses to make.
     if (verdict.state === "ASK") return verdict.types.find((type) => type.id === pick) ?? null;
@@ -2783,14 +2953,16 @@ export function TakeoffPlanViewer({
         <button
           type="button"
           onClick={onFindWalls}
-          disabled={finding || !calibration || notATakeoffSheet}
+          disabled={finding || !calibration || notATakeoffSheet || !pageSize}
           data-takeoff="find-walls"
           title={
             notATakeoffSheet
               ? (takeoffVerdict?.why ?? undefined)
-              : calibration
-                ? undefined
-                : "Set the scale on this sheet first — wall thickness is measured in feet of building."
+              : !calibration
+                ? "Set the scale on this sheet first — wall thickness is measured in feet of building."
+                : !pageSize
+                  ? "The sheet is still loading."
+                  : undefined
           }
           className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
         >
@@ -2917,11 +3089,55 @@ export function TakeoffPlanViewer({
             {checkError}
           </p>
         )}
-        {labels !== null && checkError === null && (
+        {labels !== null && checkError === null && !demote && (
           <p data-takeoff="check-done" className="text-xs text-ink-muted">
-            {[...labels.values()].filter((one) => one !== "WALL" && one !== "UNSURE").length} run(s)
+            {[...labels.values()].filter((one) => demotes(one.label)).length} run(s)
             set aside as casework or reference. Press Find the walls again to start over.
           </p>
+        )}
+        {/* ── DEMOTE, DON'T HIDE ──
+            With the switch on, a set-aside run keeps its row and its line:
+            greyed, with the model's reason, out of the total, one press to
+            take back. The total above this never includes one, which is the
+            "excluded by default" half; the row is the "visible" half. */}
+        {demote && labels !== null && checkError === null && demoted.length === 0 && (
+          <p data-takeoff="check-done" className="text-xs text-ink-muted">
+            Every run checked looks like a wall.
+          </p>
+        )}
+        {demote && labels !== null && checkError === null && demoted.length > 0 && (
+          <div data-takeoff="demoted" className="w-full rounded-md border border-line-card bg-surface p-3">
+            <p className="text-xs font-medium text-ink">{demotedSentence(demoted)}</p>
+            <p className="text-xs text-ink-muted">
+              Greyed on the drawing. If one is a wall, put it back — it rejoins the list and the total.
+            </p>
+            <ul className="mt-2 flex flex-col gap-1">
+              {demoted.map((d) => (
+                <li
+                  key={d.at}
+                  data-takeoff="demoted-row"
+                  onMouseEnter={() => setHoveredDemoted(d.at)}
+                  onMouseLeave={() => setHoveredDemoted(null)}
+                  className="flex flex-wrap items-center gap-2 text-xs text-ink-muted"
+                >
+                  <span className="text-ink-body">{feetInches(d.lengthFeet)}</span>
+                  <span>
+                    {demotedWord(d.label) === null
+                      ? `probably not a wall — ${d.reason}`
+                      : `probably not a wall — ${demotedWord(d.label)}${d.reason ? `: ${d.reason}` : ""}`}
+                  </span>
+                  <button
+                    type="button"
+                    data-takeoff="accept-demoted"
+                    onClick={() => onAcceptDemoted(d.at)}
+                    className="ml-auto min-h-[36px] rounded-md border border-line-card px-3 text-xs font-medium text-ink-body hover:bg-rail-hover"
+                  >
+                    It is a wall
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
         {/* ── AND WHAT IT SAYS IS MISSING ──
             The other half of the question, and the half nothing else in this
@@ -2984,7 +3200,7 @@ export function TakeoffPlanViewer({
           </span>
         )}
 
-        <span className="ml-auto text-xs text-ink-muted">
+        <span className="ml-auto text-xs text-ink-muted" data-takeoff="sheet-scale-state">
           {calibration ? (
             <>
               Scale set{scaleReading?.name ? `: ${scaleReading.name}` : ""}
@@ -2998,7 +3214,11 @@ export function TakeoffPlanViewer({
       )}
 
       {findError && (
-        <p className="mt-2 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-tag-amber-ink">
+        <p
+          data-takeoff="find-error"
+          data-missing={missingToFind || undefined}
+          className="mt-2 rounded-md border border-line-card bg-surface px-3 py-2 text-sm text-tag-amber-ink"
+        >
           {findError}
         </p>
       )}
@@ -3266,8 +3486,12 @@ export function TakeoffPlanViewer({
                           <span className="text-ink-body" data-takeoff="group-doors">
                             {" "}
                             · door{doors.length === 1 ? "" : "s"}{" "}
-                            {doors.map((d) => `${d.mark} ${feetInches(d.widthFt)}`).join(", ")}
+                            {doors.map((d) => doorText(d)).join(", ")}
                             {doors.some((d) => d.widthFrom === "schedule") ? " from the schedule" : ""}
+                            {(() => {
+                              const missing = openingsFromDoors(doors).withoutHeight;
+                              return missing.length === 0 ? "" : ` (no height in the schedule for ${missing.join(", ")}, so not deducted)`;
+                            })()}
                           </span>
                         );
                       })()}
@@ -3280,21 +3504,45 @@ export function TakeoffPlanViewer({
                         ONCE for the group rather than once for each of its
                         runs, and the button stays unpriced until it is
                         answered. */}
-                    {verdict.state === "ASK" && (
+                    {/* ── AN UNPRICED GROUP IS ASKED, AND A TYPE IS THE FIRST ANSWER ──
+                        "Add these" used to write plain measurements for any
+                        group nothing named — 36 of them on one Baker sheet,
+                        none of them on the estimate. Now a group with no priced
+                        type cannot be added until the estimator says what it
+                        is: a type (the verdict's candidates first, the sheet's
+                        note before them), a new type from this group, or plain
+                        measurements — last, and said in words. */}
+                    {priced === null && namedOnly === null && (
                       <select
-                        aria-label={`Which wall type are the untagged ${inchLabel(group.inches)} walls?`}
+                        aria-label={`What are the ${inchLabel(group.inches)} walls?`}
                         value={chosen[index] ?? ""}
+                        data-takeoff="group-choice"
                         onChange={(event) =>
                           setChosen((current) => ({ ...current, [index]: event.target.value }))
                         }
-                        className="min-h-[36px] rounded-md border border-line-card bg-surface px-2 text-xs text-ink-body"
+                        className="min-h-[36px] max-w-[22rem] rounded-md border border-line-card bg-surface px-2 text-xs text-ink-body"
                       >
-                        <option value="">Which type?</option>
-                        {verdict.types.map((type) => (
-                          <option key={type.id} value={type.id}>
-                            {type.code} — {type.name}
-                          </option>
-                        ))}
+                        <option value="">What are these?</option>
+                        {groupChoices(verdict, wallTypes).map((choice) =>
+                          choice.kind === "type" ? (
+                            <option
+                              key={choice.type.id}
+                              value={choice.type.id}
+                              data-takeoff={choice.why === "note" ? "uno-option" : undefined}
+                            >
+                              {typeOptionLabel(choice.type)}
+                              {choice.why === "note" ? " · the sheet's note names this" : choice.why === "tag" ? " · the drawing's tag" : ""}
+                            </option>
+                          ) : choice.kind === "create" ? (
+                            <option key="create" value="create">
+                              Create a wall type from this group ({inchLabel(group.inches)})…
+                            </option>
+                          ) : (
+                            <option key="plain" value="plain">
+                              Add as plain measurements — priced by hand
+                            </option>
+                          ),
+                        )}
                       </select>
                     )}
 
@@ -3314,10 +3562,34 @@ export function TakeoffPlanViewer({
                         sent somebody to the wall-types page looking for a fault
                         that was not there. It still writes plain measurements;
                         it just says which type they are waiting on. */}
+                    {/* ── A TYPE WITH NO DEFAULT HEIGHT ASKS FOR ONE HERE ──
+                        The posting refuses a run with no height, and it used
+                        to refuse AFTER the runs were written — the error at
+                        the top, the group still listed, nowhere to type the
+                        figure. The box sits beside the button; the sections
+                        or the legend say what to put in it. */}
+                    {priced !== null && priced.defaultHeightFt == null && (
+                      <label className="flex items-center gap-1 text-xs text-ink-body">
+                        Height ft
+                        <input
+                          inputMode="decimal"
+                          value={groupHeight[index] ?? ""}
+                          placeholder={`${priced.code} has none`}
+                          data-takeoff="group-height"
+                          onChange={(event) => setGroupHeight((current) => ({ ...current, [index]: event.target.value }))}
+                          className="w-20 rounded-md border border-line-card bg-surface px-2 py-1 text-xs text-ink-body"
+                        />
+                      </label>
+                    )}
                     <button
                       type="button"
                       onClick={() => void onAcceptCluster(index)}
-                      className={`ml-auto min-h-[36px] rounded-md border px-3 text-xs font-medium ${
+                      disabled={
+                        (priced === null && namedOnly === null && !chosen[index]) ||
+                        (priced !== null && priced.defaultHeightFt == null && !(Number(groupHeight[index] ?? "") > 0))
+                      }
+                      data-takeoff="add-group"
+                      className={`ml-auto min-h-[36px] rounded-md border px-3 text-xs font-medium disabled:opacity-40 ${
                         priced
                           ? "border-brand bg-tag-brand text-tag-brand-ink hover:opacity-90"
                           : "border-line-card text-ink-body hover:bg-rail-hover"
@@ -3327,7 +3599,11 @@ export function TakeoffPlanViewer({
                         ? `Add as ${priced.code} — priced`
                         : namedOnly
                           ? `Add as ${namedOnly.code} — not priced yet`
-                          : "Add these"}
+                          : chosen[index] === "create"
+                            ? "Create a wall type…"
+                            : chosen[index] === "plain"
+                              ? "Add as plain measurements"
+                              : "Add these"}
                     </button>
 
                     {/* ── AND WHY, UNDERNEATH ──
@@ -3337,6 +3613,34 @@ export function TakeoffPlanViewer({
                         pricing a bid is entitled to know which they have. */}
                     {groupSentence(group, verdict) !== null && (
                       <p className="w-full text-xs text-ink-muted">{groupSentence(group, verdict)}</p>
+                    )}
+                    {/* ── THE LIBRARY'S FIGURE, MOVED TO WHAT IS DRAWN, IN ONE PRESS ──
+                        Offered only where the drawing's tag and the library's
+                        thickness disagree. Pricing does not wait on it; it is
+                        there so the next untagged wall this thick can match. */}
+                    {verdict.state === "TAG_DISAGREES" && (
+                      <button
+                        type="button"
+                        data-takeoff="update-thickness"
+                        disabled={thicknessBusy === verdict.type.id}
+                        onClick={() => {
+                          const id = verdict.type.id;
+                          setThicknessBusy(id);
+                          setThicknessNote(null);
+                          void setWallTypeThickness(jobId, id, toEighth(group.inches))
+                            .then((result) => setThicknessNote(result.ok ? `${verdict.type.code} is now ${inchLabel(group.inches)} in your library.` : result.error))
+                            .catch(() => setThicknessNote("The thickness didn't save. Reload and try again."))
+                            .finally(() => setThicknessBusy(null));
+                        }}
+                        className="rounded-md border border-line-card px-2 py-1 text-xs text-link hover:bg-rail-hover disabled:opacity-60"
+                      >
+                        {thicknessBusy === verdict.type.id ? "Updating…" : `Update ${verdict.type.code}'s thickness to ${inchLabel(group.inches)}`}
+                      </button>
+                    )}
+                    {thicknessNote !== null && verdict.state === "TAG_DISAGREES" && (
+                      <span className="text-xs text-ink-body" role="status" data-takeoff="thickness-updated">
+                        {thicknessNote}
+                      </span>
                     )}
                   </li>
                   </Fragment>
@@ -3361,6 +3665,21 @@ export function TakeoffPlanViewer({
                   {Math.round(found.slice(SHOWN_AT_FIRST).reduce((f, c) => f + c.feet, 0)).toLocaleString()} ft
                 </button>
               )}
+              {/* ── THE SCHEDULE'S DOORS THAT NO RUN ON THIS SHEET CARRIES ──
+                  A door schedule covers the building; this sheet is one floor
+                  plan. A row placed nowhere here is either on another sheet or
+                  a mark the join could not find — either way an estimator
+                  deducting openings wants the list, not a silent shortfall. */}
+              {(() => {
+                const doors = planText?.sheet?.doors ?? null;
+                if (doors === null || doors.unplaced.length === 0) return null;
+                return (
+                  <p className="mt-2 text-xs text-ink-muted" data-takeoff="doors-unplaced">
+                    Scheduled, not found on this sheet: {doors.unplaced.join(", ")} ({doors.unplaced.length} of {doors.rowsTotal} rows
+                    in the door schedule on page {doors.schedulePage}).
+                  </p>
+                );
+              })()}
               {/* ── WHERE THE MARKS RUN OUT, SAID OUT LOUD ──
                   Eighteen distinct marks is not an arbitrary number of groups,
                   and a panel that quietly reuses one is how a reviewer
@@ -3383,6 +3702,8 @@ export function TakeoffPlanViewer({
               jobId={jobId}
               pageId={sheet.id}
               result={rooms}
+              ceilings={roomCeilings}
+              savedRooms={savedRoomCeilings}
               feetPerUnit={feetPerUnit}
               hovered={hoveredRoom}
               onHover={setHoveredRoom}
@@ -3420,6 +3741,21 @@ export function TakeoffPlanViewer({
             : "relative max-h-[calc(var(--shell-port)-22rem)] min-h-[24rem] overflow-auto rounded-lg border border-line-card bg-rail xl:flex-1 xl:max-h-[calc(var(--shell-port)-11rem)]"
         }
         data-testid="takeoff-plan-port"
+        // ── THE SHEET SAYS WHEN IT IS ACTUALLY READY TO BE ASKED ──
+        //
+        // A DRAWN CANVAS IS NOT THE SIGNAL. CI refused a find on a sheet that
+        // was visibly drawn, naming "document, page size" — both of which
+        // reset together when this viewer remounts and reloads the PDF, while
+        // the canvas it painted before the remount still measures a real
+        // width. A waiter watching the canvas therefore sees ready, clicks,
+        // and is refused.
+        //
+        // `pageCount` is set in the same breath as `docRef.current`, so it
+        // stands for the document; `pageSize` is the page box. Together they
+        // are exactly what `onFindWalls` requires, minus the scale, which the
+        // button's own `disabled` already covers.
+        data-sheet-ready={pageCount !== null && pageSize !== null ? "true" : "false"}
+        data-takeoff-detect={detectSeen ?? undefined}
       >
         {/* ── THE BANNER THAT SAYS TRACING IS ON, AND WHAT TO DO NEXT ──
 
@@ -3941,6 +4277,26 @@ export function TakeoffPlanViewer({
                   together. Nothing is lost, because it was never actionable —
                   only visible. */}
               <FoundWalls clusters={shownGroups} hovered={hovered} />
+              {/* The demoted runs: grey and dashed so nobody reads one as found. */}
+              {demoted.map((d) => {
+                const run = runsRef.current[d.at];
+                return run === undefined ? null : (
+                  <line
+                    key={`demoted-${d.at}`}
+                    data-takeoff="demoted-wall"
+                    className="text-ink-muted"
+                    x1={run.x1}
+                    y1={run.y1}
+                    x2={run.x2}
+                    y2={run.y2}
+                    stroke="currentColor"
+                    strokeWidth={hoveredDemoted === d.at ? STROKE_PX * 2.5 : STROKE_PX}
+                    strokeDasharray="6 4"
+                    strokeOpacity={hoveredDemoted === null || hoveredDemoted === d.at ? 0.9 : 0.35}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                );
+              })}
               {rooms !== null &&
                 roomsOnPage === pageNumber &&
                 rooms.rooms.map((room) => (
@@ -4079,7 +4435,7 @@ export function TakeoffPlanViewer({
                 // quantity on the sheet.
                 setDraft({ xs: [...xs], ys: [...ys] });
               }}
-              existingLabel={sheet?.label ?? ""}
+              existingLabel={sheet?.label ?? sheetLabelByPage[pageNumber]?.replace(" · ", " ") ?? ""}
               existingNote={calibration?.note ?? ""}
               draft={calibrationDraft}
               onSaved={() => {

@@ -201,6 +201,11 @@ export const notYetRegistered: Exclusion[] = [
       "Rooms are found in the browser from the walls on the screen and saved from the Rooms panel; the switch is an owner's settings choice. Neither is a thing to ask for in words.",
   },
   {
+    action: "demotedWalls.*",
+    reason:
+      "\"Demote, don't hide\" on the takeoff is an owner's settings switch, flipped under Settings; not a thing to ask for in words.",
+  },
+  {
     action: "wholeSetTakeoff.*",
     reason:
       "Finding walls across a set is one button on the takeoff with a count beside it; the summary is read off that panel and the switch is an owner's settings choice. Nothing to ask for in words.",

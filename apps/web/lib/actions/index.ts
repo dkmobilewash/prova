@@ -100,6 +100,7 @@ export * from "./planIngest";
 export * from "./planSheets";
 export * from "./takeoff";
 export * from "./roomFinder";
+export * from "./demotedWalls";
 export * from "./wholeSetTakeoff";
 export * from "./takeoffItems";
 export * from "./outboundPush";

@@ -28,9 +28,10 @@ import {
  *      from a single group's runs returns a different number. Bounded by
  *      `CLUSTER_INCHES`, which is twice `THICKNESS_SLACK_IN`, so it silently
  *      changes which wall types a group is matched against.
- *   2. A GENERAL_NOTE group's candidates are `[fromNote.type]` — the one type
- *      the note names — not every type of that thickness. Reading it back the
- *      second way turns an answered group into a question.
+ *   2. A GENERAL_NOTE group's candidates put the note's type FIRST, then the
+ *      others at that thickness — the picker the fresh detection showed.
+ *      Reading it back with the note's type anywhere else changes which
+ *      option the sheet's note is seen to name.
  */
 
 const TYPES: MatchableWallType[] = [
@@ -92,19 +93,19 @@ describe("a stored proposal reads back as the same group", () => {
     }
   });
 
-  it("A GENERAL NOTE READS BACK AS AN ANSWER, not as a choice", () => {
+  it("A GENERAL NOTE READS BACK AS THE SAME OFFER, the note's type first", () => {
     // Untagged runs at the note's own thickness: `wallGroups` covers them with
-    // the note and offers exactly A1. A1 and A2 are BOTH 4.875in here on
-    // purpose — `typesAtThickness` would return two, so a read-back that used
-    // it offers a question the drawing already answered.
+    // the note and offers A1 FIRST. A1 and A2 are BOTH 4.875in here on
+    // purpose — the read-back must keep A1 in front, since `evidenceOf` reads
+    // the note's type off `candidates[0]`.
     const one = run(0.1, 0.4, 0.40625);
     const groups = detect([one], new Map(), { type: TYPES[0], note: "ALL PARTITIONS TYPE A1 U.N.O." });
     expect(groups[0].source.kind).toBe("GENERAL_NOTE");
-    expect(groups[0].candidates.map((t) => t.code)).toEqual(["A1"]);
+    expect(groups[0].candidates.map((t) => t.code)).toEqual(["A1", "A2"]);
 
     const back = roundTrip(groups, 100);
     expect(back![0].source).toEqual(groups[0].source);
-    expect(back![0].candidates.map((type) => type.code)).toEqual(["A1"]);
+    expect(back![0].candidates.map((type) => type.code)).toEqual(["A1", "A2"]);
   });
 
   it("the footage follows the CALIBRATION, not the stored number", () => {

@@ -57,3 +57,23 @@ export function storedCropsFromJson(value: unknown): StoredCrop[] {
       typeof v === "object" && v !== null && typeof (v as StoredCrop).code === "string" && typeof (v as StoredCrop).width === "number",
   );
 }
+
+export type StudMaterial = "metal" | "wood" | "concrete" | "masonry";
+
+/**
+ * Two fields the merged view drops but the library needs, read straight off
+ * the stored sight read by code: the legend's own height note, and the stud
+ * material — which is what keeps an ICF or CMU type from being written with
+ * metal studs. Malformed or missing reads yield nulls, never a guess.
+ */
+export function sightFieldsFor(sightRead: unknown, code: string): { heightNote: string | null; studMaterial: StudMaterial | null } {
+  const types = (sightRead as { types?: unknown } | null)?.types;
+  const own = Array.isArray(types)
+    ? (types as { code?: unknown; heightNote?: unknown; studMaterial?: unknown }[]).find((t) => typeof t.code === "string" && sameCode(t.code, code))
+    : undefined;
+  const material = typeof own?.studMaterial === "string" ? own.studMaterial.toLowerCase() : null;
+  return {
+    heightNote: typeof own?.heightNote === "string" && own.heightNote.trim() !== "" ? own.heightNote : null,
+    studMaterial: material === "metal" || material === "wood" || material === "concrete" || material === "masonry" ? material : material === "steel" ? "metal" : null,
+  };
+}

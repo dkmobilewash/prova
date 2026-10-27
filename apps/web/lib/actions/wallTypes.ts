@@ -65,6 +65,7 @@ function wallTypeFields(formData: FormData) {
     name,
     sides,
     defaultHeightFt: nullableDecimalFromForm(formData, "defaultHeightFt", { label: "Default height", min: 0.5, max: 100 }),
+    thicknessIn: nullableDecimalFromForm(formData, "thicknessIn", { label: "Thickness", min: 0.5, max: 48 }),
     studSpacingIn: decimalFromForm(formData, "studSpacingIn", { label: "Stud spacing", min: 4, max: 48 }),
     notes: text(formData, "notes") || null,
   };
@@ -104,6 +105,32 @@ export async function updateWallType(wallTypeId: string, formData: FormData): Pr
     revalidateLibrary();
     return actionOk;
   });
+}
+
+/**
+ * ── "UPDATE C8B'S THICKNESS TO WHAT IS DRAWN", ONE PRESS FROM A FOUND GROUP ──
+ *
+ * The found-walls row says the drawing tags a group C8B at 11-1/4" while the
+ * library has C8B at 9-1/4" (a legend's stud-plus-board figure). The tag wins
+ * for pricing either way; this moves the library's figure to the drawn one so
+ * the next untagged 11-1/4" wall can match it. Only the thickness changes.
+ */
+export async function setWallTypeThickness(jobId: string, wallTypeId: string, thicknessIn: number): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  // The takeoff page's own capability, because that is the page this is
+  // pressed from (`action-capability-guards.test.ts`).
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const inches = Number(thicknessIn);
+  if (!Number.isFinite(inches) || inches < 0.5 || inches > 48) return actionFail("A wall thickness has to be between 1/2 and 48 inches.");
+  const updated = await prisma.wallType.updateMany({
+    where: { id: wallTypeId, companyId: context.company.id },
+    data: { thicknessIn: inches.toFixed(2) },
+  });
+  if (updated.count === 0) return actionFail(NO_TYPE);
+  revalidateLibrary();
+  revalidatePath(`/takeoff/${jobId}`);
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  return actionOk;
 }
 
 export async function deleteWallType(wallTypeId: string): Promise<ActionResult> {
@@ -335,6 +362,38 @@ const STARTER_TYPES: { code: string; name: string; parts: StarterPart[] }[] = [
       { description: "Main tee and cross tee", unit: "lin ft", basis: "AREA_SQFT", factor: "1.1" },
       { description: "Wall angle", unit: "lin ft", basis: "PERIMETER_FT", factor: "1", wastePercent: "5" },
       { description: "Hang grid and lay tile", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+    ],
+  },
+  {
+    code: "ACT2",
+    name: "Acoustic ceiling — 2x2 lay-in grid and tile, each tee on its own line",
+    parts: [
+      // QUANTITY FACTORS FOR A 2x2 LAYOUT, per square foot of ceiling: mains
+      // at 4' o.c. (0.25 lf/sf), 4' cross tees at 2' o.c. between them
+      // (0.5 lf/sf), 2' cross tees closing each 2x2 cell (0.25 lf/sf), and
+      // one hanger wire per 4x4 (1/16 per sf). Wall angle is the room's
+      // perimeter, which is why this prices a TAKEOFF ITEM traced as an
+      // area WITH a perimeter — the Rooms panel saves ceilings that way.
+      { description: "2x2 acoustic tile", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "5" },
+      { description: "Main tee, 4' o.c.", unit: "lin ft", basis: "AREA_SQFT", factor: "0.25", wastePercent: "5" },
+      { description: "4' cross tee", unit: "lin ft", basis: "AREA_SQFT", factor: "0.5", wastePercent: "5" },
+      { description: "2' cross tee", unit: "lin ft", basis: "AREA_SQFT", factor: "0.25", wastePercent: "5" },
+      { description: "Hanger wire, one per 4x4", unit: "ea", basis: "AREA_SQFT", factor: "0.0625", roundUp: true },
+      { description: "Wall angle", unit: "lin ft", basis: "PERIMETER_FT", factor: "1", wastePercent: "5" },
+      { description: "Hang grid and lay tile", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+    ],
+  },
+  {
+    code: "GYPC1",
+    name: "Gypsum board ceiling — ⅝″ board on hat channel at 16″ o.c.",
+    parts: [
+      // Priced off the item's AREA, not a boarded wall face: a ceiling item
+      // has no height or sides, so BOARDED_SQFT would be zero on it.
+      { description: "⅝″ board, 4x8 sheets", unit: "sheets", basis: "AREA_SQFT", factor: "0.03125", wastePercent: "10", roundUp: true },
+      { description: "⅞″ hat channel at 16″ o.c.", unit: "lin ft", basis: "AREA_SQFT", factor: "0.75", wastePercent: "5" },
+      { description: "1½″ carrying channel at 4' o.c.", unit: "lin ft", basis: "AREA_SQFT", factor: "0.25", wastePercent: "5" },
+      { description: "Hanger wire, one per 4x4", unit: "ea", basis: "AREA_SQFT", factor: "0.0625", roundUp: true },
+      { description: "Hang, tape and finish ⅝″ ceiling board", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
     ],
   },
   {
