@@ -1,4 +1,5 @@
 import { prisma } from "@prova/db";
+import { viewerTimeZone } from "@/lib/viewerToday";
 import { loadJobGuideFacts, loadOpenJobGuideFacts, type JobGuideFacts, type PastPriceSuggestion } from "./facts";
 import { loadPastPriceSuggestions } from "./pastPrice";
 import { buildJobGuide, guideDueMs } from "./buildJobGuide";
@@ -19,15 +20,20 @@ export { buildJobGuide } from "./buildJobGuide";
 export type { JobGuideFacts } from "./facts";
 export * from "./types";
 
-export async function getJobGuide(companyId: string, jobId: string, now: Date = new Date()): Promise<JobGuide | null> {
-  const facts = await loadJobGuideFacts(companyId, jobId);
+export async function getJobGuide(
+  companyId: string,
+  jobId: string,
+  now: Date = new Date(),
+  timeZone?: string,
+): Promise<JobGuide | null> {
+  const facts = await loadJobGuideFacts(companyId, jobId, timeZone ?? (await viewerTimeZone()));
   if (!facts) return null;
   await attachPastPrices(companyId, [facts], now);
   return buildJobGuide(facts, now);
 }
 
-export async function getOpenJobGuides(companyId: string, now: Date = new Date()): Promise<JobGuide[]> {
-  const factsList = await loadOpenJobGuideFacts(companyId);
+export async function getOpenJobGuides(companyId: string, now: Date = new Date(), timeZone?: string): Promise<JobGuide[]> {
+  const factsList = await loadOpenJobGuideFacts(companyId, timeZone ?? (await viewerTimeZone()));
   await attachPastPrices(companyId, factsList, now);
   return buildGuidesFromFacts(factsList, now);
 }

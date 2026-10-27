@@ -151,6 +151,7 @@ beforeEach(() => {
       subject: "s",
       coverNote: "n",
       documentText: "d",
+      documentFingerprint: "f".repeat(64),
       history: [],
     },
   }));

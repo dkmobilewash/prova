@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { BidFormSections, ProposalPresentation } from "@/lib/estimating/proposal-presentation";
 
 /**
@@ -193,6 +194,41 @@ export function proposalSendBlocker(input: {
   if (input.recipientProblem) return input.recipientProblem;
   return null;
 }
+
+/**
+ * A FINGERPRINT OF THE WHOLE DOCUMENT, not only its total.
+ *
+ * The email is rebuilt from the rows at the moment of sending, so anything in
+ * it — an alternate, a unit price, an itemized line, the scope, a clause — can
+ * change between page load and "Yes, send it" with the total untouched. The
+ * composer posts the fingerprint of the text it SHOWED and the action compares
+ * it with the text it REBUILT; any difference refuses. SHA-256 hex of the exact
+ * text: one changed character is a different figure the person never read.
+ */
+export function proposalFingerprint(documentText: string): string {
+  return createHash("sha256").update(documentText, "utf8").digest("hex");
+}
+
+export function documentStillMatches(shown: string, rebuiltText: string): boolean {
+  const claimed = shown.trim().toLowerCase();
+  return /^[0-9a-f]{64}$/.test(claimed) && claimed === proposalFingerprint(rebuiltText);
+}
+
+/** The sentence when the document moved. */
+export const DOCUMENT_CHANGED =
+  "This proposal changed since the page was opened — a price, a line or a clause is different now. Reload the page and read it again before sending.";
+
+/**
+ * What the send returns. `note` is set when the EMAIL WENT and something after
+ * it did not — the success is real (the GC has it) and must not read as a
+ * failure, or the obvious next press is a duplicate in their inbox.
+ */
+export type ProposalSendResult =
+  | { ok: true; note?: string }
+  | { ok: false; error: string; fieldErrors?: Record<string, string> };
+
+export const FOLLOW_UP_FAILED =
+  "Sent. The bid log couldn't be updated — mark it Submitted by hand. Don't send it again.";
 
 /**
  * The price the person was looking at, as the form carried it, against the

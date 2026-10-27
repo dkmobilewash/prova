@@ -25,7 +25,10 @@ let allowed = true;
 let env: Record<string, string | undefined> = {};
 let view: View;
 let loadResult: { ok: true; view: View } | { ok: false; problem: string };
-let updated: { where: unknown; data: Record<string, unknown> }[] = [];
+let updated: { where: Record<string, unknown>; data: Record<string, unknown> }[] = [];
+/** What the conditional writes find: how many rows still match their `where`. */
+let invitationRow: { status: string; bidAmount: string | null } = { status: "INVITED", bidAmount: null };
+let updateThrows = false;
 let messages: Record<string, unknown>[] = [];
 let events: Record<string, unknown>[] = [];
 const loadCalls: unknown[] = [];
@@ -61,9 +64,16 @@ vi.mock("@prova/integrations", () => ({
 vi.mock("@prova/db", () => ({
   prisma: {
     bidInvitation: {
-      update: async (args: { where: unknown; data: Record<string, unknown> }) => {
+      // A real-enough updateMany: it writes only when the row still matches.
+      updateMany: async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+        if (updateThrows) throw new Error("connection reset");
+        const matches = Object.entries(args.where).every(([key, value]) =>
+          key === "id" || key === "companyId" ? true : (invitationRow as Record<string, unknown>)[key] === value,
+        );
+        if (!matches) return { count: 0 };
         updated.push(args);
-        return {};
+        Object.assign(invitationRow, args.data);
+        return { count: 1 };
       },
     },
     outboundMessage: {
@@ -88,11 +98,14 @@ vi.mock("@prova/db", () => ({
 }));
 
 const { sendBidProposal } = await import("./messages");
+const { proposalFingerprint } = await import("@/lib/estimating/proposal-send");
 
 beforeEach(() => {
   allowed = true;
   env = { VERCEL_ENV: "production" };
   updated = [];
+  invitationRow = { status: "INVITED", bidAmount: null };
+  updateThrows = false;
   messages = [];
   events = [];
   loadCalls.length = 0;
@@ -128,6 +141,7 @@ function form(over: Record<string, string> = {}) {
   const fd = new FormData();
   fd.set("mode", "lump");
   fd.set("priceCents", "350000");
+  fd.set("documentFingerprint", proposalFingerprint(String(view.documentText)));
   fd.set("toAddress", "dana@turner.com");
   fd.set("subject", "Proposal — Riverside Medical — Cyrus Drywall");
   fd.set("body", "Hello Turner, our proposal is below.");
@@ -180,23 +194,60 @@ describe("it sends the proposal and records the copy that went", () => {
   });
 
   it("marks an INVITED bid SUBMITTED, fills a blank bid amount with the price sent, and runs the estimate check", async () => {
-    await send();
-    expect(updated).toEqual([{ where: { id: "inv_1" }, data: { status: "SUBMITTED", bidAmount: "3500.00" } }]);
+    expect(await send()).toEqual({ ok: true });
+    expect(updated).toEqual([
+      { where: { id: "inv_1", companyId: "co_1", status: "INVITED" }, data: { status: "SUBMITTED" } },
+      { where: { id: "inv_1", companyId: "co_1", bidAmount: null }, data: { bidAmount: "3500.00" } },
+    ]);
     expect(runAgent).toHaveBeenCalledWith({ companyId: "co_1", agent: "ESTIMATE_CHECK", bidInvitationId: "inv_1" });
   });
 
   it("leaves a SUBMITTED bid's status and an entered bid amount alone on a re-send", async () => {
     view.status = "SUBMITTED";
     view.bidAmountIsBlank = false;
+    invitationRow = { status: "SUBMITTED", bidAmount: "3400.00" };
     expect(await send()).toEqual({ ok: true });
     expect(updated).toEqual([]);
     expect(runAgent).not.toHaveBeenCalled();
     expect(messages).toHaveLength(1);
   });
 
+  it("never overwrites a WON or DECLINED set by somebody else while the page was open", async () => {
+    // The page read INVITED; by the time the email has gone, the row says otherwise.
+    for (const status of ["WON", "DECLINED", "LOST"]) {
+      updated = [];
+      runAgent.mockClear();
+      invitationRow = { status, bidAmount: null };
+      expect(await send()).toEqual({ ok: true });
+      expect(invitationRow.status).toBe(status);
+      expect(updated.some((one) => "status" in one.data)).toBe(false);
+      expect(runAgent).not.toHaveBeenCalled();
+    }
+  });
+
+  it("does not overwrite an amount typed in while the page was open", async () => {
+    invitationRow = { status: "INVITED", bidAmount: "3333.00" };
+    await send();
+    expect(invitationRow.bidAmount).toBe("3333.00");
+  });
+
   it("defaults to the first recorded address when none is chosen", async () => {
     await send({ toAddress: "" });
     expect((sendEmail.mock.calls[0]![0] as { to: string }).to).toBe("dana@turner.com");
+  });
+});
+
+describe("ONCE THE EMAIL HAS GONE, THE ANSWER IS SENT", () => {
+  it("a bid-log write that throws after delivery is a success with a note, not an error", async () => {
+    updateThrows = true;
+    const result = await send();
+    expect(result).toEqual({
+      ok: true,
+      note: "Sent. The bid log couldn't be updated — mark it Submitted by hand. Don't send it again.",
+    });
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(messages).toHaveLength(1);
+    expect(runAgent).not.toHaveBeenCalled();
   });
 });
 
@@ -246,6 +297,22 @@ describe("every refusal comes before a message row exists", () => {
   it("refuses with the blocker's own sentence", async () => {
     view.blocker = "This bid is marked won, so there is no proposal to send for it.";
     expect(await send()).toEqual({ ok: false, error: "This bid is marked won, so there is no proposal to send for it." });
+    nothingWritten();
+  });
+
+  it("refuses when ANY of the document moved, even with the total unchanged", async () => {
+    // The page showed one alternate price; the bid form now says another.
+    const shown = proposalFingerprint(String(view.documentText));
+    view.documentText = `${view.documentText}\nALTERNATES\nAlt 1: Add $900.00`;
+    expect(await send({ documentFingerprint: shown })).toEqual({
+      ok: false,
+      error: "This proposal changed since the page was opened — a price, a line or a clause is different now. Reload the page and read it again before sending.",
+    });
+    nothingWritten();
+  });
+
+  it.each(["", "abc", "0".repeat(64)])("refuses a missing or forged fingerprint %j", async (fingerprint) => {
+    expect(await send({ documentFingerprint: fingerprint })).toMatchObject({ ok: false, error: expect.stringContaining("changed since") });
     nothingWritten();
   });
 

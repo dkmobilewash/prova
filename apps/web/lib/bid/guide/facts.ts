@@ -4,6 +4,7 @@ import { measurementPrimitive } from "@/lib/takeoff-plan";
 import { acknowledgedOnFor, paperWhereMany, papersFor } from "@/lib/estimating/bid-papers";
 import { wallHeightQuestions } from "./wallHeight";
 import { reachedProvider } from "@/components/messageLabels";
+import { todayInZone } from "@/lib/viewer-timezone";
 import { BID_INVITATION_RELATED_TYPE } from "@/lib/estimating/proposal-send";
 import { boardLayerQuestions } from "./boardLayers";
 
@@ -116,8 +117,10 @@ export type GuideInvitationFact = {
   /** The last day questions (RFIs) are accepted, `YYYY-MM-DD`. Absent = none. */
   rfiCutoffDate?: string | null;
   /** The day the app first emailed this GC the bid (a proposal or a package)
-   *  and the provider took it, `YYYY-MM-DD`. Absent or null = never sent from
-   *  the app. Derived from `OutboundMessage` on every read; see the header. */
+   *  and the provider took it, `YYYY-MM-DD` ON THE VIEWER'S CALENDAR — the
+   *  loader is handed the zone, so a 6:30pm Pacific send reads as that day and
+   *  not the UTC day after it, and `buildJobGuide` stays pure. Absent or null =
+   *  never sent from the app. Derived from `OutboundMessage` on every read. */
   proposalSentOn?: string | null;
 };
 
@@ -351,7 +354,7 @@ function layersOf(questions: ReturnType<typeof boardLayerQuestions>, wallTypeId:
  * query below is one round trip for the whole set (`jobId in (…)`), never one
  * per job, and each also carries `companyId` where the table has it.
  */
-async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGuideFacts[]> {
+async function factsForJobs(companyId: string, jobs: LoadedJob[], timeZone: string): Promise<JobGuideFacts[]> {
   if (jobs.length === 0) return [];
   const jobIds = jobs.map((job) => job.id);
 
@@ -473,7 +476,9 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
   for (const send of sends) {
     if (!send.relatedId || sentOnByInvitation.has(send.relatedId)) continue;
     if (!reachedProvider(send.providerMessageId, send.events)) continue;
-    sentOnByInvitation.set(send.relatedId, day(send.createdAt) as string);
+    // An INSTANT, so it is read on the viewer's calendar — unlike every other
+    // day here, which is an entered calendar day stored at UTC midnight.
+    sentOnByInvitation.set(send.relatedId, todayInZone(timeZone, send.createdAt));
   }
 
   const typeById = new Map(wallTypes.map((type) => [type.id, type]));
@@ -649,19 +654,24 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
  * One estimate-stage job's facts, or null when the job is not this company's
  * (or does not exist, or has left the estimate stage) — the caller 404s.
  */
-export async function loadJobGuideFacts(companyId: string, jobId: string): Promise<JobGuideFacts | null> {
+export async function loadJobGuideFacts(
+  companyId: string,
+  jobId: string,
+  /** The viewer's IANA zone, for the one fact that is an instant (`proposalSentOn`). */
+  timeZone = "UTC",
+): Promise<JobGuideFacts | null> {
   const jobs = await loadJobRows(companyId, { id: jobId });
   const job = jobs[0];
   if (!job || job.status !== "ESTIMATE") return null;
-  return (await factsForJobs(companyId, [job]))[0] ?? null;
+  return (await factsForJobs(companyId, [job], timeZone))[0] ?? null;
 }
 
 /**
  * Every open estimate-stage job of the company, for the home list — a fixed
  * number of queries however many jobs there are (see `factsForJobs`).
  */
-export async function loadOpenJobGuideFacts(companyId: string): Promise<JobGuideFacts[]> {
+export async function loadOpenJobGuideFacts(companyId: string, timeZone = "UTC"): Promise<JobGuideFacts[]> {
   const jobs = await loadJobRows(companyId, { status: "ESTIMATE" }, OPEN_JOB_LIMIT);
-  const facts = await factsForJobs(companyId, jobs);
+  const facts = await factsForJobs(companyId, jobs, timeZone);
   return facts.filter(isOpenForGuide);
 }

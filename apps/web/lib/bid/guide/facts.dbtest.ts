@@ -651,4 +651,18 @@ describe("the send record", () => {
     const home = await getOpenJobGuides(co, NOW);
     expect(home.map((one) => [one.jobId, one.ask])).toEqual([[jobId, null]]);
   });
+
+  it("the day is the VIEWER'S calendar day: a 6:30pm Pacific send is that day, not the UTC day after", async () => {
+    // 2026-10-26T15:30Z above is Oct 26 everywhere in the Americas; this one
+    // is earlier still, at 01:30Z on Oct 26 = 6:30pm Oct 25 in Los Angeles.
+    await message(co, "2026-10-26T01:30:00Z", "QUEUED");
+    expect((await loadJobGuideFacts(co, jobId))!.invitations[0]!.proposalSentOn).toBe("2026-10-26"); // UTC default
+    const pacific = (await loadJobGuideFacts(co, jobId, "America/Los_Angeles"))!;
+    expect(pacific.invitations[0]!.proposalSentOn).toBe("2026-10-25");
+    expect(buildJobGuide(pacific, NOW).steps[4]!.summary).toBe("Sent Oct 25");
+    // and the entry points pass the zone through
+    expect((await getJobGuide(co, jobId, NOW, "America/Los_Angeles"))!.steps[4]!.summary).toBe("Sent Oct 25");
+    const home = await getOpenJobGuides(co, NOW, "America/Los_Angeles");
+    expect(home[0]!.steps[4]!.summary).toBe("Sent Oct 25");
+  });
 });

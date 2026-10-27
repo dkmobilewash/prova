@@ -18,6 +18,7 @@ import {
   deploymentSendRefusal,
   proposalCoverNote,
   proposalEmailText,
+  proposalFingerprint,
   proposalSendBlocker,
   proposalSendSubject,
   type SendableInvitationStatus,
@@ -66,6 +67,9 @@ export type ProposalSendView = {
   coverNote: string;
   /** The proposal itself, as the text that goes under the cover note. */
   documentText: string;
+  /** `proposalFingerprint(documentText)`: what the composer posts back, so the
+   *  action can refuse a document that changed after it was read. */
+  documentFingerprint: string;
   /** This invitation's earlier sends, newest first. */
   history: ProposalSendHistoryRow[];
 };
@@ -225,6 +229,7 @@ export async function loadProposalSend(input: {
         companyName: input.companyName,
       }),
       documentText,
+      documentFingerprint: proposalFingerprint(documentText),
       history: sends.map((send) => ({
         id: send.id,
         at: send.createdAt,

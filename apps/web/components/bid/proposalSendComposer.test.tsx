@@ -54,6 +54,7 @@ const PROPS = {
   subject: "Proposal — Riverside — Cyrus Drywall",
   coverNote: "Hello Turner Construction,",
   documentText: "PROPOSAL — Riverside\nLump sum for the work described in this proposal: $3,600.00",
+  documentFingerprint: "f".repeat(64),
   blocker: null as string | null,
   history: [] as { id: string; when: string; toAddress: string; reached: boolean; detail: string | null }[],
 };
@@ -117,7 +118,22 @@ describe("the composer", () => {
     expect(form.get("confirmSend")).toBe("yes");
     expect(form.get("toAddress")).toBe("dana@turner.com");
     expect(form.get("mode")).toBe("lump");
+    expect(form.get("documentFingerprint")).toBe("f".repeat(64));
     expect(q('[data-proposal="send-done"]')!.textContent).toContain("Sent to Dana Reyes at dana@turner.com");
+  });
+
+  it("a send that went with a follow-up failure says SENT first, and offers no second press", async () => {
+    sendBidProposal.mockResolvedValue({ ok: true, note: "Sent. The bid log couldn't be updated — mark it Submitted by hand." });
+    paint();
+    await click(q('[data-proposal="send-arm"]'));
+    await act(async () => {
+      q<HTMLFormElement>("form")!.requestSubmit();
+    });
+    const done = q('[data-proposal="send-done"]')!.textContent!;
+    expect(done.startsWith("Sent to Dana Reyes at dana@turner.com.")).toBe(true);
+    expect(done).toContain("mark it Submitted by hand");
+    expect(q("form")).toBeNull();
+    expect(host.querySelector('[role="alert"]')).toBeNull();
   });
 
   it("shows the action's refusal and keeps the form", async () => {

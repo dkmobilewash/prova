@@ -50,6 +50,7 @@ export function ProposalSendComposer({
   subject,
   coverNote,
   documentText,
+  documentFingerprint,
   blocker,
   history,
 }: {
@@ -64,6 +65,9 @@ export function ProposalSendComposer({
   subject: string;
   coverNote: string;
   documentText: string;
+  /** Fingerprint of `documentText`, posted back; the action refuses if the
+   *  document it rebuilds is not this one. */
+  documentFingerprint: string;
   blocker: string | null;
   history: ProposalSendHistoryItem[];
 }) {
@@ -71,6 +75,7 @@ export function ProposalSendComposer({
   const [to, setTo] = useState(recipients[0]?.address ?? "");
   const [error, setError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
+  const [sentNote, setSentNote] = useState<string | null>(null);
   const [sending, startSending] = useTransition();
 
   const chosen = recipients.find((one) => one.address === to) ?? recipients[0] ?? null;
@@ -86,6 +91,7 @@ export function ProposalSendComposer({
       const result = await sendBidProposal(jobId, invitationId, form);
       if (result.ok) {
         setSentTo(chosenWords);
+        setSentNote(result.note ?? null);
         setArmed(false);
       } else {
         setError(result.error);
@@ -121,9 +127,17 @@ export function ProposalSendComposer({
       )}
 
       {sentTo ? (
-        <p className="mt-3 rounded-md bg-tag-green px-3 py-2 text-sm text-tag-green-ink" role="status" data-proposal="send-done">
-          Sent to {sentTo}. The bid is marked submitted, and the copy that went out is kept against this bid.
-        </p>
+        sentNote ? (
+          // THE EMAIL WENT; something after it did not. Still a success, said
+          // so first, so nobody presses again and sends the GC a second copy.
+          <p className="mt-3 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink" role="status" data-proposal="send-done">
+            Sent to {sentTo}. {sentNote}
+          </p>
+        ) : (
+          <p className="mt-3 rounded-md bg-tag-green px-3 py-2 text-sm text-tag-green-ink" role="status" data-proposal="send-done">
+            Sent to {sentTo}. The bid is marked submitted, and the copy that went out is kept against this bid.
+          </p>
+        )
       ) : blocker ? (
         <p className="mt-3 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink" data-proposal="send-blocked">
           {blocker}
@@ -132,6 +146,7 @@ export function ProposalSendComposer({
         <form onSubmit={send} className="mt-3 flex flex-col gap-3">
           <input type="hidden" name="mode" value={mode} />
           <input type="hidden" name="priceCents" value={String(priceCents)} />
+          <input type="hidden" name="documentFingerprint" value={documentFingerprint} />
           {armed && <input type="hidden" name="confirmSend" value="yes" />}
 
           <label className="flex flex-col text-sm text-ink-label">

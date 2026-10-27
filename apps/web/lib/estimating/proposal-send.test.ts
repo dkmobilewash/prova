@@ -4,7 +4,9 @@ import { bidFormSections, proposalPresentation, type ProposalLineInput } from "@
 import {
   PROPOSAL_DIVIDER,
   deploymentSendRefusal,
+  documentStillMatches,
   priceStillMatches,
+  proposalFingerprint,
   proposalCoverNote,
   proposalEmailBody,
   proposalEmailText,
@@ -183,5 +185,39 @@ describe("the price the person read is the price that goes", () => {
 
   it.each(["350001", "3500.00", "", "abc", "3.5e5"])("refuses %j", (shown) => {
     expect(priceStillMatches(shown, 350_000)).toBe(false);
+  });
+});
+
+describe("the document the person read is the document that goes", () => {
+  const text = proposalEmailText(doc(), money);
+
+  it("is a SHA-256 of the exact text", () => {
+    expect(proposalFingerprint(text)).toMatch(/^[0-9a-f]{64}$/);
+    expect(proposalFingerprint(text)).toBe(proposalFingerprint(proposalEmailText(doc(), money)));
+  });
+
+  it("matches the same text, upper or lower case hex", () => {
+    expect(documentStillMatches(proposalFingerprint(text), text)).toBe(true);
+    expect(documentStillMatches(` ${proposalFingerprint(text).toUpperCase()} `, text)).toBe(true);
+  });
+
+  it("refuses an alternate that changed with the total untouched", () => {
+    const withAlt = (amount: number) =>
+      proposalEmailText(
+        doc({
+          bidForm: bidFormSections([{ kind: "ALTERNATE", label: "Alt 1", description: null, amount, unit: null, unitPrice: null }], money),
+        }),
+        money,
+      );
+    expect(withAlt(500)).toContain("Lump sum for the work described in this proposal: $3,500.00");
+    expect(withAlt(900)).toContain("Lump sum for the work described in this proposal: $3,500.00");
+    expect(documentStillMatches(proposalFingerprint(withAlt(500)), withAlt(900))).toBe(false);
+  });
+
+  it("refuses a changed clause, and anything that is not a fingerprint", () => {
+    const changed = proposalEmailText(doc({ clauseGroups: [{ heading: "Exclusions", texts: ["Insulation"] }] }), money);
+    expect(documentStillMatches(proposalFingerprint(text), changed)).toBe(false);
+    expect(documentStillMatches("", text)).toBe(false);
+    expect(documentStillMatches("not-a-hash", text)).toBe(false);
   });
 });

@@ -325,6 +325,39 @@ describe("sendOutboundEmail obeys the daily rate cap", () => {
 });
 
 /**
+ * A FORGED "BID SENT". The Bid guide and the proposal composer read an
+ * `OutboundMessage` with `relatedType = BID_INVITATION` as "this bid went out".
+ * The generic composer takes the pair from its form, so without this guard any
+ * MANAGE_JOBS user could write one and mark a bid sent that nobody sent.
+ */
+describe("sendOutboundEmail refuses a relatedType only a dedicated sender may write", () => {
+  it.each(["BID_INVITATION", "bid_invitation", " BID_INVITATION ", "BID_QUOTE", "HELP_REQUEST", "ALERT_DIGEST"])(
+    "refuses %j before writing a row or reaching the provider",
+    async (relatedType) => {
+      const fd = composed();
+      fd.set("relatedType", relatedType);
+      fd.set("relatedId", "inv_someone_elses");
+      const result = await sendOutboundEmail(fd);
+      expect(result).toEqual({
+        ok: false,
+        error: "That kind of message can only be sent from its own screen, not from the general composer.",
+      });
+      expect(sendEmail).not.toHaveBeenCalled();
+      expect(db.rows("outboundMessage")).toHaveLength(0);
+    },
+  );
+
+  it("still records an ordinary label like RFI", async () => {
+    sendEmail.mockResolvedValue({ ok: true, providerMessageId: "prov_1", from: "office@example.test" });
+    const fd = composed();
+    fd.set("relatedType", "RFI");
+    fd.set("relatedId", "rfi_1");
+    expect(await sendOutboundEmail(fd)).toEqual({ ok: true });
+    expect(messageRow()).toMatchObject({ relatedType: "RFI", relatedId: "rfi_1" });
+  });
+});
+
+/**
  * The other half of #352: help must stay reachable by everyone, and must
  * be unable to send anywhere but support — enforced here by the fact that
  * `sendHelpRequestEmail` takes no recipient argument at all, not by

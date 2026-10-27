@@ -27,14 +27,19 @@ import {
 } from "./shared";
 import { failureEventType, reachedProvider } from "@/components/messageLabels";
 import { runAgentAfterResponse } from "@/lib/agents/onEvent";
+import { isReservedRelatedType } from "@/lib/outbound-related";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { parseProposalMode } from "@/lib/estimating/proposal-presentation";
 import { loadProposalSend } from "@/lib/estimating/proposal-send-query";
 import {
   BID_INVITATION_RELATED_TYPE,
+  DOCUMENT_CHANGED,
+  FOLLOW_UP_FAILED,
   deploymentSendRefusal,
+  documentStillMatches,
   priceStillMatches,
   proposalEmailBody,
+  type ProposalSendResult,
 } from "@/lib/estimating/proposal-send";
 
 /** Actions here RETURN their failures. Production redacts thrown Server
@@ -296,6 +301,15 @@ export async function sendOutboundEmail(formData: FormData): Promise<ActionResul
     const subject = required(formData, "subject", "Subject");
     const body = required(formData, "body", "Message");
 
+    // A RESERVED TYPE IS A CLAIM SOMETHING ELSE READS AS A FACT — "this bid
+    // was sent" for BID_INVITATION — so the generic composer may not write one.
+    // Refused rather than silently dropped: a caller sending it is either a
+    // bug or a forgery, and both should hear about it (`lib/outbound-related.ts`).
+    const relatedType = text(formData, "relatedType") || null;
+    if (isReservedRelatedType(relatedType)) {
+      return fail("That kind of message can only be sent from its own screen, not from the general composer.");
+    }
+
     const jobIdRaw = text(formData, "jobId");
     let jobId: string | null = null;
     if (jobIdRaw) {
@@ -314,7 +328,7 @@ export async function sendOutboundEmail(formData: FormData): Promise<ActionResul
       toName: text(formData, "toName") || null,
       subject,
       body,
-      relatedType: text(formData, "relatedType") || null,
+      relatedType,
       relatedId: text(formData, "relatedId") || null,
       sentByUserId: user.id,
     });
@@ -776,19 +790,32 @@ export async function sendQuoteRequest(
  *   - not the production deployment (`deploymentSendRefusal`) — a preview must
  *     never email a real GC, and the email pipeline itself has no such guard;
  *   - sending not set up; the bid closed; no price; no address on file;
- *   - the price moved since the page was drawn (`priceStillMatches`);
+ *   - the price moved since the page was drawn (`priceStillMatches`), or ANY
+ *     of the document did (`documentStillMatches`: the fingerprint of the text
+ *     the composer showed against the text rebuilt here) — an alternate, a
+ *     line or a clause can change with the total untouched;
  *   - the two-step confirm not pressed (`confirmSend=yes`);
  *   - the company's outbound cap reached.
  *
  * ── ON A SEND THAT WENT ──
  *
- * The invitation moves INVITED → SUBMITTED (a SUBMITTED one stays as it is, so
- * a re-send changes nothing but the log), `bidAmount` is filled with the price
+ * The invitation moves INVITED → SUBMITTED — CONDITIONALLY, an `updateMany`
+ * on `status: "INVITED"`, so a WON or DECLINED set by somebody else in the
+ * meantime is never overwritten, and a SUBMITTED one stays as it is (a re-send
+ * changes nothing but the log). `bidAmount` is filled with the price
  * sent when nobody had entered one, and the estimate check runs as it does when
  * the status is changed by hand (`updateBidInvitationStatus`). THE DATE IS NOT
  * A COLUMN: there is none on `BidInvitation`, and the message's own handover is
  * the date it was submitted — the guide reads it from there (`facts.ts`). A
  * failed send moves nothing.
+ *
+ * ── ONCE THE EMAIL HAS GONE, THE ANSWER IS "SENT" ──
+ *
+ * Those writes happen AFTER delivery. If one throws, the GC already has the
+ * email: reporting a failure would invite a second press and a second copy in
+ * their inbox. So a follow-up failure returns `{ ok: true, note }` with the
+ * sentence telling the person to mark it Submitted by hand
+ * (`FOLLOW_UP_FAILED`), and nothing after delivery can turn it into an error.
  *
  * NEVER DELETABLE: once it reached the provider, `deleteOutboundMessage`
  * refuses it, and C Stream Bid draws no delete for a message at all.
@@ -797,14 +824,23 @@ export async function sendBidProposal(
   jobId: string,
   bidInvitationId: string,
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<ProposalSendResult> {
   const context = await requireCompanyContext();
   const { company, ...user } = context;
   if (!can(context, "MANAGE_ESTIMATING")) {
     return fail("Estimating isn't part of your job function.");
   }
 
-  return runAction(async () => {
+  // Set only once `deliverEmail` reports the email went. Everything after that
+  // point runs OUTSIDE `runAction`, so no later failure can masquerade as a
+  // failed send.
+  // A holder rather than a `let`: TypeScript does not see an assignment made
+  // inside the callback, and would narrow a bare `let` to `null` for good.
+  const outcome: {
+    delivered: { invitationId: string; jobId: string; contactId: string; bidAmountIsBlank: boolean; totalCents: number } | null;
+  } = { delivered: null };
+
+  const result = await runAction(async () => {
     // FIRST, before a single row is read: a test copy of the app sends nothing.
     const deployment = deploymentSendRefusal(process.env);
     if (deployment) return fail(deployment);
@@ -825,6 +861,10 @@ export async function sendBidProposal(
       return fail(
         "The price on this proposal changed since the page was opened. Reload it and read the new figure before sending.",
       );
+    }
+    // The whole document, not only its total.
+    if (!documentStillMatches(text(formData, "documentFingerprint"), view.documentText)) {
+      return fail(DOCUMENT_CHANGED);
     }
 
     // CHOSEN FROM THE SET, never supplied.
@@ -863,21 +903,49 @@ export async function sendBidProposal(
     // A failure moves nothing: "submitted" on a bid the GC never got is the lie.
     if (!sent.ok) return sent;
 
-    const data: { status?: "SUBMITTED"; bidAmount?: string } = {};
-    if (view.status === "INVITED") data.status = "SUBMITTED";
-    if (view.bidAmountIsBlank) data.bidAmount = (view.totalCents / 100).toFixed(2);
-    if (data.status || data.bidAmount) {
-      await prisma.bidInvitation.update({ where: { id: view.invitationId }, data });
-    }
-    if (data.status === "SUBMITTED") {
-      runAgentAfterResponse({ companyId: company.id, agent: "ESTIMATE_CHECK", bidInvitationId: view.invitationId });
-    }
+    outcome.delivered = {
+      invitationId: view.invitationId,
+      jobId: view.jobId,
+      contactId: view.contactId,
+      bidAmountIsBlank: view.bidAmountIsBlank,
+      totalCents: view.totalCents,
+    };
+    return ok;
+  });
+  const sentFor = outcome.delivered;
+  if (!result.ok || sentFor === null) return result;
 
-    revalidatePath(`/bid/estimates/${view.jobId}`, "layout");
+  // ── AFTER DELIVERY: the GC has it, so nothing below may report a failure ──
+  let note: string | undefined;
+  try {
+    // CONDITIONAL: only an INVITED bid becomes SUBMITTED. A WON, LOST or
+    // DECLINED set in between is somebody's later decision and stays.
+    const moved = await prisma.bidInvitation.updateMany({
+      where: { id: sentFor.invitationId, companyId: company.id, status: "INVITED" },
+      data: { status: "SUBMITTED" },
+    });
+    if (sentFor.bidAmountIsBlank) {
+      // Conditional too: an amount somebody typed in the meantime stays.
+      await prisma.bidInvitation.updateMany({
+        where: { id: sentFor.invitationId, companyId: company.id, bidAmount: null },
+        data: { bidAmount: (sentFor.totalCents / 100).toFixed(2) },
+      });
+    }
+    if (moved.count > 0) {
+      runAgentAfterResponse({ companyId: company.id, agent: "ESTIMATE_CHECK", bidInvitationId: sentFor.invitationId });
+    }
+  } catch {
+    note = FOLLOW_UP_FAILED;
+  }
+
+  try {
+    revalidatePath(`/bid/estimates/${sentFor.jobId}`, "layout");
     revalidatePath("/bid/home");
     revalidatePath("/bid/bids");
     revalidatePath("/bids");
-    revalidatePath(`/contacts/${view.contactId}`);
-    return ok;
-  });
+    revalidatePath(`/contacts/${sentFor.contactId}`);
+  } catch {
+    // A stale screen is not a failed send.
+  }
+  return note ? { ok: true, note } : ok;
 }

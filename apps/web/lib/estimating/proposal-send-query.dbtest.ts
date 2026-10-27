@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@prova/db";
 import { loadProposalSend } from "./proposal-send-query";
+import { proposalFingerprint } from "./proposal-send";
 
 /**
  * `loadProposalSend` against a real Postgres: the one reader the Bid proposal
@@ -146,6 +147,18 @@ describe("loadProposalSend", () => {
     expect(text).toContain("EXCLUSIONS\n- Insulation");
     expect(text).not.toContain("$999");
     expect(loaded.view.subject).toBe(`Proposal — Riverside ${t} — Cyrus Drywall`);
+    // The fingerprint the composer posts back is of exactly this text.
+    expect(loaded.view.documentFingerprint).toBe(proposalFingerprint(text));
+    // and a changed alternate moves it while the total stays put
+    await prisma.bidLine.updateMany({ where: { bidInvitationId: invitationId }, data: { amount: 900 } });
+    try {
+      const again = await load();
+      if (!again.ok) throw new Error(again.problem);
+      expect(again.view.totalCents).toBe(loaded.view.totalCents);
+      expect(again.view.documentFingerprint).not.toBe(loaded.view.documentFingerprint);
+    } finally {
+      await prisma.bidLine.updateMany({ where: { bidInvitationId: invitationId }, data: { amount: 500 } });
+    }
   });
 
   it("follows the chosen presentation", async () => {

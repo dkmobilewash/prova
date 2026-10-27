@@ -640,6 +640,7 @@ export default async function JobProposalPage({
           subject={sendLoad.view.subject}
           coverNote={sendLoad.view.coverNote}
           documentText={sendLoad.view.documentText}
+          documentFingerprint={sendLoad.view.documentFingerprint}
           blocker={sendLoad.view.blocker}
           history={sendLoad.view.history.map((one) => ({
             id: one.id,
