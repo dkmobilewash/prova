@@ -19,6 +19,10 @@ import { cutoutsFromJson, netArea } from "./itemQuantities";
  *     needs a type and guessing one is what this file refuses.
  *   - rooms: AREA measurements the room finder saved, or any area carrying a
  *     room name/number. Named rooms first; unnamed ones marked and last.
+ *   - ceilings: the rooms again, added up by the ceiling type each room
+ *     carries (code when the drawing printed one, else the family), with the
+ *     rooms nobody read a ceiling for on their own line. A guessed ceiling
+ *     the estimator never confirmed is counted and SAID to be a guess.
  *   - areas: every other AREA measurement, by the item it belongs to — the
  *     item IS the type; nothing on a measurement says "ceiling".
  *   - doors: the newest DOOR schedule read per sheet that nobody rejected.
@@ -48,6 +52,8 @@ export type SummaryMeasurement = {
   roomNumber: string | null;
   /** Set when "Add as <type> — priced" posted this run against a wall type. */
   wallRun: { wallTypeId: string; heightFt: number | null } | null;
+  /** The ceiling over a room, when one was read or typed. */
+  ceiling: { family: string | null; code: string | null; heightFeet: number | null; guess: boolean } | null;
   /** Feet per page-width unit at the measurement's OWN calibration; null when unreadable. */
   feetPerUnit: number | null;
 };
@@ -96,6 +102,16 @@ export type WallLine = {
 export type UntypedWallLine = { name: string; linearFt: number; runs: number; sheets: string[] };
 export type RoomLine = { name: string; number: string | null; named: boolean; squareFeet: number; perimeterFt: number; sheet: string };
 export type AreaLine = { item: string; measurements: number; squareFeet: number; perimeterFt: number; sheets: string[] };
+export type CeilingLine = {
+  /** The drawing's code (`GB`, `C2`) or the family (`ACT`, `GYP`) when it printed none; `NO_CEILING_TYPE` for rooms nobody read. */
+  type: string;
+  rooms: number;
+  squareFeet: number;
+  /** One height when every room shares it, else null. */
+  heightFeet: number | null;
+  guessed: number;
+  sheets: string[];
+};
 export type DoorLine = {
   mark: string;
   description: string | null;
@@ -116,6 +132,7 @@ export type TakeoffSummary = {
   walls: WallLine[];
   untypedWalls: UntypedWallLine[];
   rooms: RoomLine[];
+  ceilings: CeilingLine[];
   areas: AreaLine[];
   doors: DoorLine[];
   leftOut: LeftOut[];
@@ -124,6 +141,7 @@ export type TakeoffSummary = {
 
 export const UNTYPED = "Untyped";
 export const UNNAMED_ROOM = "(unnamed)";
+export const NO_CEILING_TYPE = "(no ceiling type on the room)";
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 export const sheetName = (sheet: { pageNumber: number; label: string | null }) => sheet.label ?? `Sheet ${sheet.pageNumber}`;
@@ -138,6 +156,7 @@ export function takeoffSummary(input: SummaryInput): TakeoffSummary {
   const walls = new Map<string, Acc<WallLine> & { heights: Set<number | null>; board: number }>();
   const untyped = new Map<string, Acc<UntypedWallLine>>();
   const areas = new Map<string, Acc<AreaLine>>();
+  const ceilings = new Map<string, Acc<CeilingLine> & { heights: Set<number | null> }>();
   const rooms: RoomLine[] = [];
   const leftOut: LeftOut[] = [];
   const sheets: SheetMarkup[] = [];
@@ -198,6 +217,17 @@ export function takeoffSummary(input: SummaryInput): TakeoffSummary {
       if (isRoom(m)) {
         const name = m.roomName ?? m.label;
         rooms.push({ name: name ?? UNNAMED_ROOM, number: m.roomNumber, named: name !== null || m.roomNumber !== null, squareFeet, perimeterFt, sheet: label });
+        const ceilingType = m.ceiling?.code ?? m.ceiling?.family ?? NO_CEILING_TYPE;
+        const ceiling =
+          ceilings.get(ceilingType) ??
+          ceilings
+            .set(ceilingType, { type: ceilingType, rooms: 0, squareFeet: 0, heightFeet: null, guessed: 0, sheets: [], sheetSet: new Set(), heights: new Set() })
+            .get(ceilingType)!;
+        ceiling.rooms += 1;
+        ceiling.squareFeet += squareFeet;
+        ceiling.heights.add(m.ceiling?.heightFeet ?? null);
+        if (m.ceiling?.guess) ceiling.guessed += 1;
+        ceiling.sheetSet.add(label);
         markup.polygons.push({ xs: m.xs, ys: m.ys, name: [m.roomNumber, name ?? UNNAMED_ROOM].filter(Boolean).join(" "), kind: "room" });
         continue;
       }
@@ -248,6 +278,14 @@ export function takeoffSummary(input: SummaryInput): TakeoffSummary {
       .sort((a, b) => b.linearFt - a.linearFt)
       .map(({ sheetSet, ...line }) => ({ ...line, linearFt: round1(line.linearFt), sheets: [...sheetSet] })),
     rooms: rooms.sort(byRoom),
+    ceilings: [...ceilings.values()]
+      .sort((a, b) => Number(a.type === NO_CEILING_TYPE) - Number(b.type === NO_CEILING_TYPE) || b.squareFeet - a.squareFeet)
+      .map(({ sheetSet, heights, ...line }) => ({
+        ...line,
+        squareFeet: round1(line.squareFeet),
+        heightFeet: heights.size === 1 ? [...heights][0] : null,
+        sheets: [...sheetSet],
+      })),
     areas: [...areas.values()].map(({ sheetSet, ...line }) => ({
       ...line,
       squareFeet: round1(line.squareFeet),
@@ -323,6 +361,19 @@ export function takeoffSummaryCsv(summary: TakeoffSummary): string {
       notes: r.named ? "" : "unnamed on the drawing",
     });
   }
+  for (const c of summary.ceilings) {
+    rows.push({
+      section: "Ceilings",
+      name: c.type,
+      description: `${c.rooms} room${c.rooms === 1 ? "" : "s"}`,
+      quantity: c.squareFeet,
+      unit: "sq ft",
+      height_ft: c.heightFeet ?? "",
+      area_sqft: c.squareFeet,
+      sheets: c.sheets.join("; "),
+      notes: c.guessed > 0 ? `${c.guessed} guessed, not confirmed` : "",
+    });
+  }
   for (const a of summary.areas) {
     rows.push({
       section: "Areas",
@@ -378,6 +429,10 @@ export function summaryInputFrom(data: {
         source: string;
         roomName: string | null;
         roomNumber: string | null;
+        ceilingFamily: string | null;
+        ceilingCode: string | null;
+        ceilingHeightFeet: number | null;
+        ceilingGuess: boolean;
         wallRun: { wallTypeId: string; heightFt: { toNumber(): number } | null } | null;
         calibration: { x1: number; y1: number; x2: number; y2: number; declaredDistanceFeet: { toNumber(): number } };
       }[];
@@ -419,6 +474,10 @@ export function summaryInputFrom(data: {
         source: m.source,
         roomName: m.roomName,
         roomNumber: m.roomNumber,
+        ceiling:
+          m.ceilingFamily === null && m.ceilingCode === null
+            ? null
+            : { family: m.ceilingFamily, code: m.ceilingCode, heightFeet: m.ceilingHeightFeet, guess: m.ceilingGuess },
         wallRun:
           m.wallRun === null
             ? null

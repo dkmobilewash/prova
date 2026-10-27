@@ -204,6 +204,8 @@ export const notYetRegistered: Exclusion[] = [
     action: "demotedWalls.*",
     reason:
       "\"Demote, don't hide\" on the takeoff is an owner's settings switch, flipped under Settings; not a thing to ask for in words.",
+  },
+  {
     action: "takeoffExport.*",
     reason: "The takeoff export's switch is an owner's settings choice; the files themselves are downloaded from the takeoff tab, not asked for in words.",
   },

@@ -202,7 +202,20 @@ export async function takeoffSummaryPdf(
     y -= LINE * 2;
   }
   table(
-    "Areas by item (ceilings, floors, …)",
+    "Ceilings by type, from the rooms",
+    [
+      { head: "Ceiling", width: 220 },
+      { head: "Rooms", width: 60, align: "right" },
+      { head: "Sq ft", width: 70, align: "right" },
+      { head: "Height ft", width: 70, align: "right" },
+      { head: "Sheets", width: 200 },
+      { head: "Notes", width: 90 },
+    ],
+    summary.ceilings.map((c) => [c.type, n(c.rooms), n(c.squareFeet), n(c.heightFeet), c.sheets.join("; "), c.guessed > 0 ? `${c.guessed} guessed` : ""]),
+    "No rooms saved yet, so no ceilings.",
+  );
+  table(
+    "Areas by item (floors, soffits, …)",
     [
       { head: "Item", width: 220 },
       { head: "Measured", width: 70, align: "right" },

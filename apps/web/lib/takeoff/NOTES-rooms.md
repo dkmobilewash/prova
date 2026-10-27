@@ -1003,14 +1003,16 @@ for `/Rotate`, `winAnsi` for the viewer's ″ and ⅜), `app/api/takeoff-summary
 gave them a `WallRun` (type + height), else an untyped block by label, feet
 only. Rooms = saved ROOM_FINDER / named areas, named first, unnamed marked and
 last. Areas by item. Doors = newest unrejected DOOR schedule read per sheet
-(the app has no accept step for schedule reads today). Raw
+(the app has no accept step for schedule reads today). Ceilings by type from
+the rooms' `ceilingCode`/`ceilingFamily` (#816), unread rooms on their own
+line, guesses counted and flagged. Raw
 `TakeoffWallProposal` groups are not exported. Sheets the index calls not a
 floor plan (`duplicateWallsByPage`) are left out and listed as such.
 
 Eval `realplan/summaryExport.eval.ts` stands in for the walkthrough (library
 JSON outside git, Find the walls, Add on every group, Find the rooms) on the
 floor plans named in `SUMMARY_EVAL_PAGES`. Baker A101 with the eight A601
-types at 15 ft (A301): 6 typed (351 ft), 8 untyped thicknesses (315 ft) that
+types at 15 ft (A301): 6 typed (390 ft), 8 untyped thicknesses (276 ft) that
 match no library thickness — the app offers no way to type those but the ASK
 dropdown, which only appears when two types tie — 6 named rooms.
 Files in `~/Claude Folder/takeoff/shots/takeoff-export/`.

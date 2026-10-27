@@ -29,7 +29,9 @@ coloured by type, untyped in grey, rooms and areas filled, and a legend.
 
 Measured on Baker (training) by standing in for the walkthrough on A101 —
 library of eight types read off A601 and A301, Find the walls, Add on every
-group, Find the rooms: 6 types typed from tags and thickness (351 ft), 8
-untyped thicknesses (315 ft, feet only), 6 named rooms, one sheet page.
+group, Find the rooms: 6 types typed from tags and thickness (390 ft), 8
+untyped thicknesses (276 ft, feet only), 6 named rooms with no ceiling read
+yet, one sheet page. Ceilings add up by the type each room carries (#816's
+columns), with a guessed one counted and said to be a guess.
 
 Schema: one additive boolean, `Company.takeoffExportOn`, default false.

@@ -10,7 +10,7 @@ import { roomsFromWalls } from "../roomsFromWalls";
 import { scaleFromPrinted } from "../scaleFromPrinted";
 import { takeoffSummary, takeoffSummaryCsv, type SummaryMeasurement, type SummarySheet, type SummaryWallType } from "../summaryExport";
 import { takeoffSummaryPdf } from "../summaryPdf";
-import { verdictFor } from "../wallGroups";
+import { settledType, verdictFor } from "../wallGroups";
 import type { MatchableWallType } from "../wallTypeMatch";
 import { inchLabel, SheetTooDenseError, type WallCandidate } from "../wallVectors";
 
@@ -27,7 +27,9 @@ import { inchLabel, SheetTooDenseError, type WallCandidate } from "../wallVector
  *      "Add as <type> — priced" where the viewer's verdict names a type,
  *      "Add these" otherwise. Groups sitting in the title block are the one
  *      judgement stood in for: not added;
- *   4. presses Find the rooms and saves them as areas.
+ *   4. presses Find the rooms and saves them as areas (without reading the
+ *      reflected ceiling plan, so the ceilings table says every room is
+ *      without a type — the app's RCP read runs in the browser).
  *
  * Then the same builders the route uses (`takeoffSummary`, the CSV, the PDF)
  * write the files. No items, and no door schedule (reading one calls a
@@ -77,7 +79,7 @@ describe.skipIf(DIR === "" || SET === "" || PAGES.length === 0)("takeoff summary
         const feetPerUnit = printed.declaredDistanceFeet;
         const t0 = Date.now();
         const measurements: SummaryMeasurement[] = [];
-        const base = { cutouts: [], itemId: null, source: "MANUAL", roomName: null, roomNumber: null, wallRun: null, feetPerUnit };
+        const base = { cutouts: [], itemId: null, source: "MANUAL", roomName: null, roomNumber: null, wallRun: null, ceiling: null, feetPerUnit };
         try {
           const strokes = await doc.pageStrokes(page);
           const pairings: WallCandidate[] = [];
@@ -97,11 +99,8 @@ describe.skipIf(DIR === "" || SET === "" || PAGES.length === 0)("takeoff summary
               skipped += 1;
               continue;
             }
-            const verdict = verdictFor(group);
-            const type =
-              verdict.state === "NAMED" || verdict.state === "BY_GENERAL_NOTE" || verdict.state === "ONLY_ONE_THAT_THICK"
-                ? verdict.type
-                : null;
+            // The viewer's own rule for which type "Add as" names (`namedTypeFor`).
+            const type = settledType(verdictFor(group));
             if (type) typed += 1;
             else plain += 1;
             const label = type ? `${type.code} wall — ${inchLabel(group.inches)}` : `${inchLabel(group.inches)} wall`;

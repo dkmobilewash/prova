@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { takeoffSummary, takeoffSummaryCsv, UNNAMED_ROOM, UNTYPED, type SummaryInput, type SummaryMeasurement } from "./summaryExport";
+import { NO_CEILING_TYPE, takeoffSummary, takeoffSummaryCsv, UNNAMED_ROOM, UNTYPED, type SummaryInput, type SummaryMeasurement } from "./summaryExport";
 
 const m = (over: Partial<SummaryMeasurement> = {}): SummaryMeasurement => ({
   kind: "LINEAR",
@@ -12,6 +12,7 @@ const m = (over: Partial<SummaryMeasurement> = {}): SummaryMeasurement => ({
   roomName: null,
   roomNumber: null,
   wallRun: null,
+  ceiling: null,
   feetPerUnit: 100,
   ...over,
 });
@@ -29,9 +30,9 @@ const input: SummaryInput = {
         typed(), // 30 ft
         typed({ xs: [0, 0.1, 0.1], ys: [0, 0, 0.1] }), // 20 ft polyline, one run
         m({ label: "6″ wall" }), // untyped, 30 ft
-        square({ source: "ROOM_FINDER", roomName: "OFFICE", roomNumber: "101", label: "OFFICE" }),
+        square({ source: "ROOM_FINDER", roomName: "OFFICE", roomNumber: "101", label: "OFFICE", ceiling: { family: "GYP", code: "GB", heightFeet: 10, guess: false } }),
         square({ source: "ROOM_FINDER", roomName: null, roomNumber: null, label: null }),
-        square({ source: "ROOM_FINDER", roomName: "CORRIDOR", roomNumber: "100" }),
+        square({ source: "ROOM_FINDER", roomName: "CORRIDOR", roomNumber: "100", ceiling: { family: "ACT", code: null, heightFeet: 9, guess: true } }),
         square({ itemId: "i1", xs: [0, 0.2, 0.2, 0], ys: [0, 0, 0.1, 0.1] }),
       ],
     },
@@ -98,6 +99,14 @@ describe("takeoff summary", () => {
     ]);
   });
 
+  it("ceilings add up by the type each room carries — the drawing's code, else the family — with the unread rooms on their own line, last", () => {
+    expect(summary.ceilings).toEqual([
+      { type: "GB", rooms: 1, squareFeet: 100, heightFeet: 10, guessed: 0, sheets: ["A100 — FIRST FLOOR PLAN"] },
+      { type: "ACT", rooms: 1, squareFeet: 100, heightFeet: 9, guessed: 1, sheets: ["A100 — FIRST FLOOR PLAN"] },
+      { type: NO_CEILING_TYPE, rooms: 1, squareFeet: 100, heightFeet: null, guessed: 0, sheets: ["A100 — FIRST FLOOR PLAN"] },
+    ]);
+  });
+
   it("other areas add up by item, counting how many shapes made the figure", () => {
     expect(summary.areas).toEqual([
       { item: "ACT ceiling", measurements: 2, squareFeet: 200 + 100, perimeterFt: 60 + 40, sheets: ["A100 — FIRST FLOOR PLAN", "Sheet 13"] },
@@ -133,6 +142,8 @@ describe("takeoff summary", () => {
     expect(lines).toContain("Untyped walls,6″ wall,1 run,,30,ft,30,,,,,,,A100 — FIRST FLOOR PLAN,no type: feet only");
     expect(lines).toContain("Rooms,CORRIDOR,100,,100,sq ft,,,,,,100,40,A100 — FIRST FLOOR PLAN,");
     expect(lines).toContain(`Rooms,${UNNAMED_ROOM},,,100,sq ft,,,,,,100,40,A100 — FIRST FLOOR PLAN,unnamed on the drawing`);
+    expect(lines).toContain("Ceilings,GB,1 room,,100,sq ft,,10,,,,100,,A100 — FIRST FLOOR PLAN,");
+    expect(lines).toContain("Ceilings,ACT,1 room,,100,sq ft,,9,,,,100,,A100 — FIRST FLOOR PLAN,\"1 guessed, not confirmed\"");
     expect(lines).toContain(`Doors,101,HM,"3'-0"" x 7'-0""",1,ea,,,,,,,,Sheet 40,20 min`);
     expect(lines).toContain(
       'Left out,A601 — DOOR SCHEDULE,1 measurement not exported,,,,,,,,,,,A601 — DOOR SCHEDULE,"not a floor plan: table rules, which pair up as though they were wall faces"',

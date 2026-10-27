@@ -36,6 +36,7 @@ const summary: TakeoffSummary = {
     { name: "OFFICE", number: "101", named: true, squareFeet: 100, perimeterFt: 40, sheet: "Sheet 1" },
     { name: "(unnamed)", number: null, named: false, squareFeet: 50, perimeterFt: 30, sheet: "Sheet 1" },
   ],
+  ceilings: [{ type: "GB", rooms: 1, squareFeet: 100, heightFeet: 10, guessed: 0, sheets: ["Sheet 1"] }],
   areas: [],
   doors: [],
   leftOut: [{ sheet: "A601", why: "schedule", measurements: 2 }],

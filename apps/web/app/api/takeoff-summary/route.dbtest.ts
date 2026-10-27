@@ -93,6 +93,10 @@ beforeAll(async () => {
         source: "ROOM_FINDER",
         roomName: "OFFICE",
         roomNumber: "101",
+        ceilingFamily: "GYP",
+        ceilingCode: "GB",
+        ceilingHeightFeet: 10,
+        ceilingFrom: "tag",
       },
       { pageId: page.id, calibrationId: calibration.id, kind: "AREA", xs: [0, 0.2, 0.2, 0], ys: [0, 0, 0.1, 0.1], itemId: item.id },
       { pageId: page.id, calibrationId: calibration.id, kind: "LINEAR", xs: [0.1, 0.4], ys: [0.5, 0.5], label: "P1 wall — 6″", wallRunId: run.id, postedAt: new Date() },
@@ -165,6 +169,7 @@ describe("GET /api/takeoff-summary", () => {
     // The raw finder group's 80 ft is nowhere in the file.
     expect(csvText).not.toMatch(/\b80\b/);
     expect(lines).toContain("Rooms,OFFICE,101,,100,sq ft,,,,,,100,40,Sheet 1,");
+    expect(lines).toContain("Ceilings,GB,1 room,,100,sq ft,,10,,,,100,,Sheet 1,");
     expect(lines).toContain("Areas,ACT ceiling,1 measurement,,200,sq ft,,,,,,200,60,Sheet 1,");
     expect(lines).toContain(`Doors,101,HM,"3'-0"" x 7'-0""",1,ea,,,,,,,,Sheet 1,`);
   });
