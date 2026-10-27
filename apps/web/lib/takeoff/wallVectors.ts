@@ -573,10 +573,74 @@ const ANGLE_BUCKETS = Math.max(3, Math.ceil(Math.PI / ANGLE_BUCKET));
  * about faces: a line interrupted by a hole is one line. It is bounded by
  * `SAME_FACE_GAP_FEET` so that two walls on one grid line stay two faces.
  */
+/**
+ * ── THE SAME DRAWING IN ANY ORDER IS THE SAME DRAWING — AT THE FACES AND THE ARCS ──
+ *
+ * The finder's stages are each deterministic, and several are first-wins: a
+ * stroke joins the first face within tolerance, a face takes the first
+ * partner among equals. So the walls found depended on the order the PDF
+ * happened to store its strokes in. Measured 2026-10-22 on Baker A101: 35
+ * walls as read, 27 with the same strokes reversed, 30 sorted by x.
+ *
+ * The faces are built from strokes sorted into READING order first — top to
+ * bottom, left to right, then the rest of the coordinates — so `oneFacePerLine`
+ * and the pairing above it answer from the geometry alone.
+ * `finderDeterminism.test.ts` holds `wallsFromStrokes` to that under reversal
+ * and three shuffles.
+ *
+ * ── WHY ONLY THE FACES, MEASURED ──
+ *
+ * Sorting at the finder's DOOR instead, so every stage saw a canonical order,
+ * made the whole finder order-independent (0 of 23 training sheets differed
+ * reversed or shuffled) and cost more than any order dependence does. Against
+ * the training keys, missing / extra feet over the 23 sheets:
+ *
+ *     as the PDF stores them      2,454 / 12,284
+ *     door sort, reading order    4,824 / 15,648
+ *     door sort, column order     4,699 / 16,280
+ *     door sort, by length        4,500 / 16,506
+ *     door sort, by angle         3,524 / 16,705
+ *     FACES ONLY, reading order   2,506 / 12,397   ← this
+ *
+ * `curvedWalls.ts` now assembles an arc by geometry (least turn at the joint,
+ * nearest chain across an opening) from pieces in this order, and that costs
+ * nothing against the keys (2,506 / 12,392 with it). `gridBubbles.ts` does
+ * not: a bubble walker that continues by geometry, or a sort at the finder's
+ * door, both make the stage order-independent and both cost 2,300–2,550 ft
+ * of missing key, for a reason that is not the walk — see that file's own
+ * comment. So the order the PDF stores, which the app and Node read
+ * identically (proved by digest), is kept at the door, and the finder is
+ * deterministic for a given FILE but not yet for a given drawing. Reversed
+ * strokes still cost 2,400 ft (`zzFinderArms.eval.ts`), and all of it is the
+ * bubble stage.
+ */
+export function canonicalStrokeOrder<T extends StrokeSegment>(segments: readonly T[]): T[] {
+  const keyed = segments.map((s) => ({
+    s,
+    k: [
+      Math.min(s.y1, s.y2),
+      Math.min(s.x1, s.x2),
+      Math.max(s.y1, s.y2),
+      Math.max(s.x1, s.x2),
+      s.x1,
+      s.y1,
+      s.width ?? -1,
+    ],
+  }));
+  keyed.sort((p, q) => {
+    for (let i = 0; i < p.k.length; i += 1) {
+      if (p.k[i] !== q.k[i]) return p.k[i] - q.k[i];
+    }
+    return 0;
+  });
+  return keyed.map((one) => one.s);
+}
+
 export function oneFacePerLine(
-  segments: readonly StrokeSegment[],
+  segmentsAsGiven: readonly StrokeSegment[],
   feetPerPoint: number,
 ): StrokeSegment[] {
+  const segments = canonicalStrokeOrder(segmentsAsGiven);
   const offsetTolerance = SAME_FACE_OFFSET_FEET / feetPerPoint;
   const gapLimit = SAME_FACE_GAP_FEET / feetPerPoint;
   type Line = { ux: number; uy: number; offset: number; pieces: StrokeSegment[] };
@@ -1485,7 +1549,19 @@ export function wallsFromStrokes(
   );
 
   for (let i = 0; i < order.length; i += 1) {
-    if (!collecting && used.has(i)) continue;
+    // ── A HOOK ONLY OBSERVES ──
+    //
+    // When collecting, a used face is still VISITED so every pairing it
+    // takes part in reaches the hook — but it is never AWARDED again. This
+    // loop used to skip the `used` test entirely while collecting, so a face
+    // already spent on one wall was handed a second partner below, and the
+    // list a reviewer labelled (hook set) was not the list a customer saw
+    // (no hook): Crosslines A100 258 walls against 244, Murray A101 80
+    // against 81. Measured 2026-10-22 by holding the app against the eval
+    // with every input matched by digest; `finderDeterminism.test.ts` keeps
+    // it fixed.
+    const iUsed = used.has(i);
+    if (!collecting && iUsed) continue;
     // ── THE OUTERMOST PARTNER, NOT THE FIRST ONE ──
     //
     // This used to take the first valid partner it met in length order and
@@ -1539,7 +1615,8 @@ export function wallsFromStrokes(
     const knownIn = options.knownThicknessesIn ?? [];
     const iLength = lengthOf(order[i]);
     for (let j = i + 1; j < order.length; j += 1) {
-      if (!collecting && used.has(j)) continue;
+      const jUsed = used.has(j);
+      if (!collecting && jUsed) continue;
       if (tooFarApart(i, j)) continue;
       pairTests += 1;
       if (pairTests > (options.maxPairTests ?? MAX_PAIR_TESTS)) {
@@ -1566,6 +1643,10 @@ export function wallsFromStrokes(
         collected.push({ i, j, wall, balanced: ratio <= BALANCED_FACE_RATIO, features });
       }
       if (hatchSeries) continue;
+      // Observed above, where the hook wanted it; not awardable, because one
+      // of its faces is already in a wall. Exactly what the non-collecting
+      // loop does by skipping the face before `wallFromPair`.
+      if (iUsed || jUsed) continue;
       // A PAIR INSIDE A WALL YOU BUILD IS THAT WALL'S LAYER, whatever it
       // measures. Applied to every candidate rather than only the thin ones:
       // D1 is a 14-1/2in chase wall drawn as four lines whose inner pair is

@@ -1,5 +1,5 @@
 import { CAP_SLACK_FEET, MAX_OPENING_FEET } from "./mergeWalls";
-import type { StrokeSegment, WallCandidate } from "./wallVectors";
+import { canonicalStrokeOrder, type StrokeSegment, type WallCandidate } from "./wallVectors";
 
 /**
  * ── A CURVED WALL IS MEASURED ALONG ITS CENTRELINE, NOT ACROSS ITS CHORD ──
@@ -299,7 +299,14 @@ function signedTurnAt(
  * tolerance exists for the case where two separate path operators draw the
  * same arc in two halves.
  */
-function assemble(pieces: readonly StrokeSegment[], jointUnits: number): Chain[] {
+function assemble(piecesAsGiven: readonly StrokeSegment[], jointUnits: number): Chain[] {
+  // ── ASSEMBLED BY GEOMETRY, NOT BY THE ORDER THE FILE STORES ──
+  //
+  // Seeds ran in file order and a chain grew by the FIRST unused piece that
+  // touched its tip inside the turn limit, so the same strokes reversed made
+  // different chains. Seeds now run in reading order and the chain takes the
+  // piece that turns LEAST at the joint, nearest joint first among equals.
+  const pieces = canonicalStrokeOrder(piecesAsGiven);
   const used = new Array(pieces.length).fill(false);
   const chains: Chain[] = [];
 
@@ -318,19 +325,34 @@ function assemble(pieces: readonly StrokeSegment[], jointUnits: number): Chain[]
         growing = false;
         const tip = atEnd ? points[points.length - 1] : points[0];
         const before = atEnd ? points[points.length - 2] : points[1];
+        let bestJ = -1;
+        let bestNext: { x: number; y: number } | null = null;
+        let bestTurn = Number.POSITIVE_INFINITY;
+        let bestJoint = Number.POSITIVE_INFINITY;
         for (let j = 0; j < pieces.length; j += 1) {
           if (used[j]) continue;
           const piece = pieces[j];
-          const heads = Math.hypot(piece.x1 - tip.x, piece.y1 - tip.y) <= jointUnits;
-          const tails = Math.hypot(piece.x2 - tip.x, piece.y2 - tip.y) <= jointUnits;
+          const headGap = Math.hypot(piece.x1 - tip.x, piece.y1 - tip.y);
+          const tailGap = Math.hypot(piece.x2 - tip.x, piece.y2 - tip.y);
+          const heads = headGap <= jointUnits;
+          const tails = tailGap <= jointUnits;
           if (!heads && !tails) continue;
           const next = heads ? { x: piece.x2, y: piece.y2 } : { x: piece.x1, y: piece.y1 };
-          if (turnAt(before, tip, next) > TURN_RAD) continue;
-          used[j] = true;
-          if (atEnd) points.push(next);
-          else points.unshift(next);
+          const turn = turnAt(before, tip, next);
+          if (turn > TURN_RAD) continue;
+          const joint = heads ? headGap : tailGap;
+          if (turn < bestTurn || (turn === bestTurn && joint < bestJoint)) {
+            bestJ = j;
+            bestNext = next;
+            bestTurn = turn;
+            bestJoint = joint;
+          }
+        }
+        if (bestJ !== -1 && bestNext !== null) {
+          used[bestJ] = true;
+          if (atEnd) points.push(bestNext);
+          else points.unshift(bestNext);
           growing = true;
-          break;
         }
       }
     }
@@ -490,40 +512,40 @@ function joinAcrossOpenings(chains: readonly Chain[], feetPerUnit: number): Chai
         const before = atEnd ? points[points.length - 2] : points[1];
         if (before === undefined) break;
 
+        // The NEAREST chain across the opening, not the first in the list.
+        let bestJ = -1;
+        let bestGap = Number.POSITIVE_INFINITY;
+        let bestFromHead = true;
         for (let j = 0; j < chains.length; j += 1) {
           if (used[j]) continue;
           const other = chains[j];
           if (other.points.length < 2) continue;
-
           // A STRAIGHT PIECE IS NOT PART OF AN ARC, so an opening cannot
           // extend it. Checked on both chains: joining is symmetric, and a real
           // arc fragment bends at both ends of the gap.
           if (!looksLikeArc(other.points)) continue;
-          // AND THEY MUST BE THE SAME ARC. This is the test that holds: a
-          // window leaves the wall on its own circle, and hatching never was
-          // on one.
           if (!sameCircle(points, other.points)) continue;
           for (const fromHead of [true, false]) {
             const otherTip = fromHead ? other.points[0] : other.points[other.points.length - 1];
             const otherNext = fromHead ? other.points[1] : other.points[other.points.length - 2];
             const gap = Math.hypot(otherTip.x - tip.x, otherTip.y - tip.y);
             if (gap <= touching || gap > widest) continue;
-            // THE DIRECTION MUST CONTINUE THROUGH THE GAP, at both ends: this
-            // is what separates a window in a wall from two walls that happen
-            // to face each other across a corridor.
             if (turnAt(before, tip, otherTip) > TURN_RAD) continue;
             if (turnAt(tip, otherTip, otherNext) > TURN_RAD) continue;
-
-            const add = fromHead ? other.points : [...other.points].reverse();
-            points = atEnd ? [...points, ...add] : [...[...add].reverse(), ...points];
-            // GROSS: the opening is part of the wall's length, the same way
-            // `mergeWalls` reports a straight wall with a door in it.
-            lengthUnits += gap + other.lengthUnits;
-            used[j] = true;
-            growing = true;
-            break;
+            if (gap < bestGap) {
+              bestGap = gap;
+              bestJ = j;
+              bestFromHead = fromHead;
+            }
           }
-          if (growing) break;
+        }
+        if (bestJ !== -1) {
+          const other = chains[bestJ];
+          const add = bestFromHead ? other.points : [...other.points].reverse();
+          points = atEnd ? [...points, ...add] : [...[...add].reverse(), ...points];
+          lengthUnits += bestGap + other.lengthUnits;
+          used[bestJ] = true;
+          growing = true;
         }
       }
     }
