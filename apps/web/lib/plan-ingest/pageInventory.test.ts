@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { pageInventoryWork, type PageInventoryDeps, type SheetTextRow, type ScaleReadingRow } from "./pageInventory";
+import { pageInventoryWork, type PageInventoryDeps, type SheetTextRow, type ScaleReadingRow, type SheetProposalRow } from "./pageInventory";
 import { planSetPdf, scannedSheet, sheetWithTitleBlock } from "./planFixtures";
 import { openPlanPdf } from "./planPdf";
 import type { ClaimedTask } from "./runner";
@@ -38,8 +38,9 @@ function task(pageNumber: number): ClaimedTask {
 function deps(over: Partial<PageInventoryDeps> = {}) {
   const saved: SheetTextRow[] = [];
   const scales: ScaleReadingRow[] = [];
+  const proposals: SheetProposalRow[] = [];
   const bytes = planSetPdf([
-    sheetWithTitleBlock({ sheetNumber: "A-101", title: "FIRST FLOOR PLAN" }),
+    sheetWithTitleBlock({ sheetNumber: "A-101", title: "FIRST FLOOR PLAN", titleSize: 18 }),
     sheetWithTitleBlock({ sheetNumber: "A-102", title: "SECOND FLOOR PLAN", rotation: 90 }),
     scannedSheet(),
   ]);
@@ -53,9 +54,40 @@ function deps(over: Partial<PageInventoryDeps> = {}) {
     saveScaleReading: async (row) => {
       scales.push(row);
     },
+    saveSheetProposal: async (row) => {
+      proposals.push(row);
+    },
+    planTextReadOn: async () => true,
   };
-  return { deps: { ...base, ...over }, saved, scales, openPdf, readPlanBytes: base.readPlanBytes };
+  return { deps: { ...base, ...over }, saved, scales, proposals, openPdf, readPlanBytes: base.readPlanBytes };
 }
+
+describe("naming the sheet without a model", () => {
+  it("proposes nothing while the company has not opted into plan-text reading", async () => {
+    const d = deps({ planTextReadOn: async () => false });
+    const work = pageInventoryWork(CTX, d.deps);
+    expect(await work(task(1))).toEqual({ ok: true });
+    expect(d.proposals).toEqual([]);
+    expect(d.saved).toHaveLength(1);
+  });
+
+  it("proposes the corner's designation and the title block's title, HIGH, and nothing for a scan", async () => {
+    const d = deps();
+    const work = pageInventoryWork(CTX, d.deps);
+    expect(await work(task(1))).toEqual({ ok: true });
+    expect(await work(task(2))).toEqual({ ok: true });
+    expect(await work(task(3))).toEqual({ ok: true });
+    // Page 1 letters its title at 18pt over 9pt boilerplate, so the title is
+    // believed; page 2 letters everything at 9pt, so only its NUMBER is — a
+    // title at the block's own size is boilerplate until a model reads it.
+    expect(d.proposals.map((p) => [p.pageNumber, p.sheetNumber, p.title, p.confidence])).toEqual([
+      [1, "A-101", "FIRST FLOOR PLAN", "HIGH"],
+      [2, "A-102", null, "HIGH"],
+    ]);
+    expect(d.proposals[0].ingestJobId).toBe(CTX.ingestJobId);
+    expect(d.proposals[0].reason).toMatch(/without a model/);
+  });
+});
 
 describe("reading what each page says", () => {
   it("records the title block, its size and its rotation", async () => {

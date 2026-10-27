@@ -100,13 +100,15 @@ export const BOILER =
  * vary by a percent or two within one run of type.
  */
 const TITLE_TIER = 0.8;
+/** A title has to be this much taller than the block's typical lettering before it is proposed as one. */
+const DISTINCT_TITLE = 1.3;
 
 export type TitleBlockItem = { str: string; x: number; y: number; height: number };
 
 export function nameSheet(
   items: readonly TitleBlockItem[],
   page: { widthPt: number; heightPt: number },
-): { number: string; title: string } {
+): { number: string; title: string; /** The title's lettering is distinctly taller than the block's — a title to believe, not boilerplate at the same size. */ distinct: boolean } {
   const inBlock = items.filter(
     (i) => i.x >= page.widthPt * TITLE_BLOCK_RIGHT_FRACTION && i.y >= page.heightPt * TITLE_BLOCK_BOTTOM_FRACTION,
   );
@@ -133,13 +135,16 @@ export function nameSheet(
    * run-on is worse than a truncation in a 232px rail.
    */
   const qualifies = (w: string) =>
-    w.length > 2 && !/^[\d.\-/'" ]+$/.test(w) && !BOILER.test(w) && !SHEET_NO.test(w.replace(/\s+/g, ""));
+    w.length > 2 && !/^[\d.\-/'"_ ]+$/.test(w) && !BOILER.test(w) && !SHEET_NO.test(w.replace(/\s+/g, ""));
   const titleItems = bySize.slice(0, 24).filter((i) => qualifies(i.str.trim()));
   const tallest = titleItems[0]?.height ?? 0;
+  const heights = inBlock.map((i) => i.height).sort((a, b) => a - b);
+  const median = heights.length === 0 ? 0 : heights[Math.floor(heights.length / 2)];
+  const distinct = tallest > 0 && tallest >= median * DISTINCT_TITLE;
   const title = titleItems
     .filter((i) => i.height >= tallest * TITLE_TIER)
     .slice(0, 6)
     .map((i) => i.str.trim())
     .join(" ");
-  return { number, title };
+  return { number, title, distinct };
 }

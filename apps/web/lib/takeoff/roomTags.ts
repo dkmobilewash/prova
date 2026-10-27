@@ -71,7 +71,32 @@ function areaSqft(str: string): number | null {
   return /^(m2|m²|SM)$/i.test(m[2]) ? Math.round(value * SQFT_PER_M2 * 10) / 10 : value;
 }
 
+/**
+ * ── TEXT THAT STACKS LIKE A TAG AND IS NOT ONE ──
+ *
+ * Baker's A101 listed "SHEET NUMBER A101" and "TEMPORARY MARKED EXIT ROUTES.
+ * REFERENCE WALL ASSEMBLIES AND TAG LEGEND ARE TO BE PROVIDED…" under "Not
+ * enclosed": a title-block label above its value, and a general note whose
+ * lines stack over a keynote number, both read as NAME / NUMBER. A room tag
+ * is a few words and no sentence; these are the title block's vocabulary, or
+ * a sentence, or more words than any room is called.
+ */
+const TITLE_BLOCK_WORDS = /^(?:SHEET\s+(?:NUMBER|NO\.?|NAME|TITLE)|DRAWN\s+BY|CHECKED\s+BY|PROJECT\s+(?:NUMBER|NO\.?|NAME)|JOB\s+(?:NUMBER|NO\.?)|DATE|SCALE|REVISIONS?|ISSUE[DS]?|PHASE|KEY\s*PLAN|CONSULTANT|STAMP)\b/i;
+export function looksLikeNoteText(name: string): boolean {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length > 6) return true;
+  // A sentence: punctuation with more words after it. A trailing period is
+  // an abbreviation ("STAFF TLT.") and stays.
+  if (/[.;:]\s+\S/.test(name)) return true;
+  if (TITLE_BLOCK_WORDS.test(name.trim())) return true;
+  return false;
+}
+
 export function readRoomTags(items: readonly PositionedText[]): RoomTag[] {
+  return readRoomTagsRaw(items).filter((tag) => !looksLikeNoteText(tag.name));
+}
+
+function readRoomTagsRaw(items: readonly PositionedText[]): RoomTag[] {
   const trimmed = items.map((i) => ({ ...i, str: i.str.trim() })).filter((i) => i.str.length > 0);
   const centre = (i: PositionedText) => i.x + i.width / 2;
   const used = new Set<PositionedText>();

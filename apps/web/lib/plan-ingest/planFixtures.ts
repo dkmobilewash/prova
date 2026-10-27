@@ -23,7 +23,7 @@
  */
 
 /** One string placed on a sheet, in PDF user-space points from the bottom-left. */
-export type PlacedText = { x: number; y: number; text: string };
+export type PlacedText = { x: number; y: number; text: string; /** Font size in points; 9 unless said — a sheet title is lettered larger. */ size?: number };
 
 /** One sheet of a synthetic set. */
 export type SyntheticSheet = {
@@ -55,8 +55,9 @@ const SYNTHETIC_MARK = "Ref: ZZ SYNTHETIC 0001";
 function contentFor(sheet: SyntheticSheet): string {
   const ops = ["BT", "/F1 9 Tf"];
   for (const item of sheet.items) {
-    ops.push(`1 0 0 1 ${item.x.toFixed(2)} ${item.y.toFixed(2)} Tm`, `(${pdfString(item.text)}) Tj`);
+    ops.push(`/F1 ${item.size ?? 9} Tf`, `1 0 0 1 ${item.x.toFixed(2)} ${item.y.toFixed(2)} Tm`, `(${pdfString(item.text)}) Tj`);
   }
+  ops.push("/F1 9 Tf");
   // The marking goes to the DISPLAYED TOP-LEFT, which is the one corner outside
   // every region `titleBlockRegion` looks in — it takes the right 40% of the width
   // OR the bottom 25% of the height, so a bottom-left marking lands inside the
@@ -180,6 +181,8 @@ export function displayedSize(rotation: 0 | 90 | 180 | 270, mediaWidthPt: number
  * from one that worked.
  */
 export function sheetWithTitleBlock(opts: {
+  /** Letter the title larger than the rest of the block, as a real title block does. */
+  titleSize?: number;
   sheetNumber: string;
   title: string;
   discipline?: string;
@@ -210,7 +213,7 @@ export function sheetWithTitleBlock(opts: {
       // The title block, displayed bottom-right, where every architect puts one.
       at(blockX, blockBottom - 300, "ZZ SYNTHETIC ARCHITECTS"),
       at(blockX, blockBottom - 250, "PROJECT: NORTHGATE MEDICAL OFFICE"),
-      at(blockX, blockBottom - 200, opts.title),
+      { ...at(blockX, blockBottom - 200, opts.title), size: opts.titleSize },
       at(blockX, blockBottom - 150, opts.discipline ?? "ARCHITECTURAL"),
       at(blockX, blockBottom - 110, "SCALE: 1/4\" = 1'-0\""),
       at(blockX, blockBottom - 80, "ISSUED: 2026-03-04   REV 2"),

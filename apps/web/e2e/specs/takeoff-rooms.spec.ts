@@ -187,7 +187,10 @@ test.describe("find the rooms", () => {
     const findRooms = page.locator('[data-takeoff="find-rooms"]');
     await expect(findRooms, "switch on, button absent").toBeVisible();
     await expect(findRooms, "rooms cannot be found before walls").toBeDisabled();
-    expect(await findWalls.isEnabled(), "S05 prints its scale, so Find the walls should be enabled").toBe(true);
+    // The button now waits for the sheet itself (the comment below describes
+    // the race it used to lose), so "enabled" is a thing to wait for, not to
+    // read off the first paint.
+    await expect(findWalls, "S05 prints its scale, so Find the walls should be enabled once the sheet has rendered").toBeEnabled({ timeout: 60_000 });
     // ── WAIT FOR THE SHEET TO SAY IT IS READY, NOT FOR IT TO LOOK DRAWN ──
     //
     // This waited on the canvas having a width, and CI then refused the find
@@ -280,7 +283,12 @@ test.describe("find the rooms", () => {
     // `lib/actions/roomFinder.dbtest.ts`'s job.
     await page.reload();
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
-    await expect(page.locator('[data-takeoff="unassigned"]')).toContainText(`${rowsBefore} measurement`, { timeout: 60_000 });
+    // The save lands every room in a "Rooms" item now (and ceilings in their
+    // own), so the rail shows an item with square feet rather than N loose
+    // measurements under Unassigned.
+    const roomsItem = page.locator('[data-takeoff="items-rail"] [data-takeoff="item-row"]').filter({ hasText: "Rooms" });
+    await expect(roomsItem).toHaveCount(1, { timeout: 60_000 });
+    await expect(roomsItem.locator('[data-takeoff="item-total"]')).toContainText(/sq ft/);
     await page.screenshot({ path: path.join(SHOTS, "03-rooms-saved.png") });
     expect(rowsBefore).toBeGreaterThanOrEqual(3);
     // The full-screen workspace has no app shell by design, like takeoff-workspace.spec.ts.

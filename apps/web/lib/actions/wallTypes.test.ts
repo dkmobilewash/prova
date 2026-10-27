@@ -317,15 +317,16 @@ describe("who may do what", () => {
 
 describe("starter wall types", () => {
   it("adds the starter library, unpriced and without crew rates, and not twice", async () => {
-    // TEN ENTRIES NOW, NOT TWO. The set grew in Phase 3 to cover the trades
+    // TWELVE ENTRIES NOW, NOT TWO. The set grew in Phase 3 to cover the trades
     // the workspace measures — ceilings, flooring, painting, slabs, footings
-    // — which need the bases a wall run cannot produce. Written out rather
+    // — which need the bases a wall run cannot produce — and again for the
+    // Rooms panel's ceilings (ACT2, GYPC1). Written out rather
     // than derived from STARTER_TYPES, so the list and the test have to
     // agree: a census checked against itself asserts nothing.
     db.wallType = db.wallType.filter((t) => t.companyId !== "co_1");
     db.wallTypeComponent = [];
     const { addStarterWallTypes } = await actions();
-    const expected = ["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "FLR1", "PT1", "SLB1", "FTG1"];
+    const expected = ["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "ACT2", "GYPC1", "FLR1", "PT1", "SLB1", "FTG1"];
     expect(await addStarterWallTypes()).toEqual({ ok: true, value: { added: expected } });
     const mine = db.wallType.filter((t) => t.companyId === "co_1");
     expect(mine.map((t) => t.code)).toEqual(expected);

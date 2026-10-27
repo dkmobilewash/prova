@@ -91,7 +91,29 @@ export type TreeSheet = {
   itemCount: number;
   isScan: boolean;
   bookmarked: boolean;
+  /** True when the sheet's number and title say it is a plan an estimator measures — ranked first while it still needs a scale. */
+  isPlan: boolean;
 };
+
+/**
+ * ── WHICH SHEETS ARE THE ONES TO SCALE ──
+ *
+ * "65 need a scale" was true and useless: two of Baker's 65 are floor plans.
+ * A sheet counts as a plan when it is an A-sheet whose title says plan and no
+ * title word says it is a plan of something else (the ceiling, the roof, the
+ * site, the framing), or an A-1xx sheet with no title read yet.
+ * `sheetSuitability` knows the disciplines that repeat the architectural plan;
+ * this is the title's half of the same question.
+ */
+const PLAN_TITLE = /\b(?:PLANS?|LEVEL\s+\d|(?:FIRST|SECOND|THIRD|GROUND|MAIN|UPPER|LOWER)\s+FLOOR)\b/i;
+const NOT_A_FLOOR_PLAN =
+  /REFLECTED|CEILING|\bRCP\b|ROOF|SITE|KEY\s*PLAN|DEMO|FRAMING|FOUNDATION|ELECTRICAL|MECHANICAL|PLUMBING|LIGHTING|POWER|HVAC|FIRE|LANDSCAP|GRADING|CIVIL|STRUCTURAL|FINISH\s+PLAN|FURNITURE|ENLARGED|CODE\s+PLAN|LIFE\s+SAFETY/i;
+export function looksLikeFloorPlan(sheetNumber: string | null, title: string | null, discipline: string): boolean {
+  if (discipline !== "A") return false;
+  const name = (title ?? "").trim();
+  if (name !== "") return PLAN_TITLE.test(name) && !NOT_A_FLOOR_PLAN.test(name);
+  return /^A-?1\d\d/i.test((sheetNumber ?? "").trim());
+}
 
 export type TreeGroup = {
   /** The discipline letter, or UNFILED. */
@@ -164,6 +186,8 @@ export type TreeInput = {
   search?: string;
   /** When true, only sheets that are bookmarked or carry measurements. */
   onlyMine?: boolean;
+  /** Rank the floor plans still needing a scale first in their group (the plan-text opt-in). */
+  rankPlans?: boolean;
 };
 
 /**
@@ -190,6 +214,11 @@ function matches(sheet: TreeSheet, needle: string): boolean {
  * one heading. The group ORDER is the standard's, not the match count's: a
  * result list that reorders itself as you type cannot be aimed at.
  */
+/** The sheets the rail exists to surface: a plan with no scale set yet. */
+export function toScale(sheet: TreeSheet): boolean {
+  return sheet.isPlan && sheet.scaleStatus !== "set";
+}
+
 export function buildSheetTree(input: TreeInput): TreeGroup[] {
   const needle = (input.search ?? "").trim().toLowerCase();
 
@@ -207,6 +236,7 @@ export function buildSheetTree(input: TreeInput): TreeGroup[] {
       itemCount: input.measurementCountByPage[row.pageNumber] ?? 0,
       isScan: !row.hasTextLayer,
       bookmarked: input.bookmarks.has(row.pageNumber),
+      isPlan: looksLikeFloorPlan(accepted ?? proposed, acceptedTitle ?? row.proposal?.title ?? null, disciplineOf(row)),
     };
   });
 
@@ -228,15 +258,22 @@ export function buildSheetTree(input: TreeInput): TreeGroup[] {
     return at === -1 ? (key === UNFILED ? 1_000_000 : 1_000 + key.charCodeAt(0)) : at;
   };
 
+  // With the ranking on, a GROUP holding a plan to scale rises above the
+  // groups that hold none — otherwise "listed first" means first inside
+  // ARCHITECTURAL, two groups below the top of the rail on any real set.
+  const holdsPlanToScale = (list: TreeSheet[]) => (input.rankPlans ? Number(!list.some(toScale)) : 0);
   return [...byKey.entries()]
-    .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
+    .sort(([a, la], [b, lb]) => holdsPlanToScale(la) - holdsPlanToScale(lb) || rank(a) - rank(b) || a.localeCompare(b))
     .map(([key, list]) => ({
       key,
       name: disciplineName(key),
-      // Within a group, the page order of the file — which is the order the
-      // set was issued in, and the only order both numbered and unnumbered
-      // sheets share.
-      sheets: list.sort((a, b) => a.pageNumber - b.pageNumber),
+      // A plan that still needs its scale comes first — it is the sheet the
+      // estimator opened the list to find — then the page order of the file,
+      // which is the order the set was issued in and the only order both
+      // numbered and unnumbered sheets share.
+      sheets: list.sort(
+        (a, b) => (input.rankPlans ? Number(!toScale(a)) - Number(!toScale(b)) : 0) || a.pageNumber - b.pageNumber,
+      ),
     }));
 }
 
@@ -248,11 +285,30 @@ export function buildSheetTree(input: TreeInput): TreeGroup[] {
  * bar that counts it is a progress bar that reads 100% before anything has
  * been taken off.
  */
+/**
+ * The printed scales the rail can apply in one press: every sheet that prints
+ * a scale and has none set yet, grouped by what it prints, most sheets first.
+ */
+export function printedScaleOffers(groups: readonly TreeGroup[]): { scale: string; pages: number[] }[] {
+  const byScale = new Map<string, number[]>();
+  for (const sheet of groups.flatMap((group) => group.sheets)) {
+    if (sheet.scaleStatus !== "confirm" || !sheet.printedScale) continue;
+    const list = byScale.get(sheet.printedScale);
+    if (list) list.push(sheet.pageNumber);
+    else byScale.set(sheet.printedScale, [sheet.pageNumber]);
+  }
+  return [...byScale.entries()]
+    .map(([scale, pages]) => ({ scale, pages: pages.sort((a, b) => a - b) }))
+    .sort((a, b) => b.pages.length - a.pages.length || a.scale.localeCompare(b.scale));
+}
+
 export function takeoffProgress(groups: readonly TreeGroup[]): {
   sheets: number;
   started: number;
   scaled: number;
   needScale: number;
+  /** Floor plans (by number and title) still without a scale — the sheets the rail ranks first. */
+  plansToScale: number;
 } {
   const all = groups.flatMap((group) => group.sheets);
   return {
@@ -260,5 +316,6 @@ export function takeoffProgress(groups: readonly TreeGroup[]): {
     started: all.filter((sheet) => sheet.itemCount > 0).length,
     scaled: all.filter((sheet) => sheet.scaleStatus === "set").length,
     needScale: all.filter((sheet) => sheet.scaleStatus !== "set").length,
+    plansToScale: all.filter(toScale).length,
   };
 }

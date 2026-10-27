@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LegendProposalView } from "@/lib/plan-ingest/legendProposalsQuery";
+import type { LegendHeightResult } from "@/lib/takeoff/legendHeights";
 
 /**
  * The half `action-capability-guards.test.ts` cannot see: that the Add button
@@ -74,10 +75,11 @@ const proposal = (): LegendProposalView => ({
   reason: "a legend titled WALL TYPES",
   confidence: "HIGH",
   hasSight: false,
+  heightNotes: {},
   status: "PROPOSED",
 });
 
-function render(canAdd: boolean, libraryCodes: string[] = []) {
+function render(canAdd: boolean, libraryCodes: string[] = [], heights?: Record<string, Record<string, LegendHeightResult>>) {
   // A second render in one test replaces the first, so the first is unmounted
   // for the same reason afterEach unmounts: its effects must be allowed to
   // clean up after themselves.
@@ -94,6 +96,7 @@ function render(canAdd: boolean, libraryCodes: string[] = []) {
         proposals: [proposal()],
         plans: [{ id: "plan_1", label: "Bid set" }],
         libraryCodes,
+        heights,
         canAdd,
       }),
     );
@@ -102,6 +105,23 @@ function render(canAdd: boolean, libraryCodes: string[] = []) {
 }
 
 describe("the wall legend review screen", () => {
+  it("SHOWS EACH TYPE'S HEIGHT AND CONFIDENCE BEFORE ADD, in the row, with the general-note grade spelled out", () => {
+    const out = render(true, [], {
+      lp_1: {
+        P1: { heightFt: 15, confidence: "LOW", generalNoteOnly: true, sentence: "Height 15 ft (LOW — general note only, check the sheet): …" },
+        P2: { heightFt: null, confidence: null, generalNoteOnly: false, sentence: "No height read: to the deck, and no deck elevation was found." },
+      },
+    });
+    const p1 = out.querySelector('[data-legend="type"][data-legend-code="P1"] [data-legend="height"]');
+    expect(p1?.textContent).toBe("15 ft · LOW — general note only, check the sheet");
+    expect(p1?.getAttribute("data-legend-height-confidence")).toBe("LOW");
+    const p2 = out.querySelector('[data-legend="type"][data-legend-code="P2"] [data-legend="height"]');
+    expect(p2?.textContent).toBe("no height read");
+    expect(p2?.getAttribute("title")).toMatch(/^No height read: /);
+    // No heights handed in: no line, rather than a line that says nothing.
+    expect(render(true).querySelector('[data-legend="height"]')).toBeNull();
+  });
+
   it("offers Add on every type for someone who may write the library", () => {
     const out = render(true);
     expect(out.querySelectorAll('[data-legend="type"]')).toHaveLength(2);

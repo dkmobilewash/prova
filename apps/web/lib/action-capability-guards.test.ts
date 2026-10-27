@@ -1961,6 +1961,8 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // "Find the rooms": the owner's switch (behind /settings) and the save of
   // a sheet's rooms as areas (behind the takeoff's job-costs gate).
   roomFinder: () => import("./actions/roomFinder"),
+  // "Demote, don't hide": the owner's switch (behind /settings).
+  demotedWalls: () => import("./actions/demotedWalls"),
   takeoffItems: () => import("./actions/takeoffItems"),
   takeoffClassify: () => import("./actions/takeoffClassify"),
   takeoffReadSheet: () => import("./actions/takeoffReadSheet"),

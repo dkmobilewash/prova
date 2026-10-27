@@ -113,9 +113,13 @@ describe("the wall finder's control", () => {
     expect(button?.getAttribute("title")).toContain("Set the scale");
   });
 
-  it("is enabled once the sheet has a scale", () => {
+  it("with a scale, only the sheet's rendering still holds it — and the title says loading, not scale", () => {
+    // happy-dom never renders the PDF, so `pageSize` stays null here: the
+    // button must be held by THAT, in those words, and by nothing else. A
+    // click before the drawing rendered used to return silently.
     const button = paint([sheet()]).querySelector('[data-takeoff="find-walls"]');
-    expect((button as HTMLButtonElement).disabled).toBe(false);
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button?.getAttribute("title")).toBe("The sheet is still loading.");
   });
 
   it("says what it does in words an estimator reads, not a tool name", () => {
@@ -931,5 +935,42 @@ describe("the caution on a sheet that carries two drawings", () => {
     const effectDeps = code.match(/\}, \[found, pageNumber, duplicateWallsByPage, pageSize[^\]]*\]\);/);
     expect(effectDeps, "the sheet-reading effect's dependency array moved").not.toBeNull();
     expect(effectDeps?.[0]).toContain("scalePrefillByPage");
+  });
+
+  it("WAITS FOR THE SHEET: Find the walls is disabled until the page has a size, and says so", () => {
+    // A click before the drawing rendered used to return silently; the
+    // demote spec's run after the rebase caught it as "The sheet is still
+    // loading". The gate is on the button, so the person is never the one
+    // who waits and retries.
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    expect(viewer).toMatch(/disabled=\{finding \|\| !calibration \|\| notATakeoffSheet \|\| !pageSize\}\s*data-takeoff="find-walls"/);
+    expect(viewer).toMatch(/"The sheet is still loading\."/);
+  });
+
+  it("ASKS FOR A HEIGHT beside the button when the picked type has none, and sends it with the add", () => {
+    // The posting refuses a run with no height. Before this the refusal came
+    // after the runs were written, so every retry added loose measurements;
+    // the box is the only place the figure can be typed from this panel.
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    expect(viewer).toMatch(/priced !== null && priced\.defaultHeightFt == null && \(\s*<label/);
+    expect(viewer).toMatch(/data-takeoff="group-height"/);
+    expect(viewer).toMatch(/body\.set\("heightFt", String\(typedHeight\)\)/);
+  });
+
+  it("POSTS THE SCHEDULE'S DOORS AS THE RUN'S OPENINGS, and lists the rows no run here carries", () => {
+    // The plan-text read places scheduled doors on a group's runs; adding the
+    // group sends each one's width and height as the openings the posting
+    // deducts by the company's rule. A door the schedule gives no height is
+    // left out and named. The unplaced rows are listed under the groups.
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    expect(viewer).toMatch(/openingsFromDoors\(planTextDoors\.get\(index\) \?\? \[\]\)\.openings/);
+    expect(viewer).toMatch(/body\.append\("openingWidth", String\(opening\.widthFt\)\)/);
+    expect(viewer).toMatch(/body\.append\("openingHeight", String\(opening\.heightFt\)\)/);
+    expect(viewer).toMatch(/data-takeoff="doors-unplaced"/);
+    expect(viewer).toMatch(/doorText\(d\)/);
+    // A posted door leaves the assignment, so it cannot land on the next
+    // group and be deducted twice — Baker's 109 and 112 did, before this.
+    expect(viewer).toMatch(/filter\(\(d\) => !posted\.has\(d\.mark\.trim\(\)\.toUpperCase\(\)\)\)/);
+    expect(viewer).toMatch(/setPostedDoorMarks\(\(current\) => \[\.\.\.current, \.\.\.\(planTextDoors\.get\(index\) \?\? \[\]\)\.map\(\(d\) => d\.mark\)\]\)/);
   });
 });

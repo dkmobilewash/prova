@@ -28,7 +28,7 @@ describe("joining a read schedule to a sheet", () => {
       ],
     });
     expect(got.rowsTotal).toBe(2);
-    expect(got.placed.map((p) => [p.mark, p.widthFt, p.widthFrom, p.placedBy])).toEqual([["101A", 3, "schedule", "mark"]]);
+    expect(got.placed.map((p) => [p.mark, p.widthFt, p.heightFt, p.widthFrom, p.placedBy])).toEqual([["101A", 3, 7, "schedule", "mark"]]);
     expect(got.unplaced).toEqual(["102"]);
   });
 });

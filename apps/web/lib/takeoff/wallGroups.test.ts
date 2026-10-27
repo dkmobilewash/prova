@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   wallGroups,
+  settledType,
   verdictFor,
   groupSentence,
   typesAtThickness,
@@ -152,20 +153,28 @@ describe("when the drawing's name and the measurement disagree", () => {
     return group;
   };
 
-  it("REFUSES TO PRICE a tagged group that is the wrong thickness for its type", () => {
-    // 3-3/8" of wall tagged B1, where B1 is recorded at 7-3/8". Pricing it as
-    // B1 prices an assembly twice as thick as what was drawn.
+  it("PRICES a tagged group as its tag even where the thickness disagrees, and keeps saying so", () => {
+    // 3-3/8" of wall tagged B1, where B1 is on file at 7-3/8". The drawing
+    // printed the name; the thickness on file is studs plus board and the
+    // drawn wall often is not. The tag wins, the disagreement is reported.
     const verdict = verdictFor(tagged(3.375, type("B1", 7.375)));
-    expect(verdict.state, "a wall was priced as a type it cannot be").toBe("TAG_DISAGREES");
+    expect(verdict.state).toBe("TAG_DISAGREES");
+    expect(settledType(verdict)?.code).toBe("B1");
+    // An untagged group is still matched by thickness only.
+    const a = run(40);
+    const [untagged] = wallGroups([cluster(3.375, [a])], new Map(), [type("B1", 7.375)]);
+    expect(verdictFor(untagged).state).toBe("UNKNOWN");
+    expect(settledType(verdictFor(untagged))).toBeNull();
   });
 
-  it("names BOTH numbers and both possibilities, and resolves neither", () => {
+  it("names BOTH numbers, says the tag wins, and still names the other possibility", () => {
     const group = tagged(3.375, type("B1", 7.375));
     const text = groupSentence(group, verdictFor(group)) ?? "";
     expect(text).toContain('3-3/8"');
+    expect(text).toContain("the tag wins");
     expect(text).toContain('7-3/8"');
-    expect(text).toContain("tag belongs to a different wall");
-    expect(text).toContain("thickness on your B1 is wrong");
+    expect(text).toContain("price as B1");
+    expect(text).toContain("the tag may belong to the wall beside these");
   });
 
   it("still prices a tagged group that AGREES", () => {
@@ -554,13 +563,16 @@ describe("a sheet's general note naming the default", () => {
   const A1 = type("A1", 4.875);
   const note = { type: A1, note: "1. ALL PARTITIONS TYPE A1 U.N.O." };
 
-  it("NAMES AN UNTAGGED GROUP THAT MEASURES LIKE IT", () => {
+  it("OFFERS ITS TYPE FIRST FOR AN UNTAGGED GROUP THAT MEASURES LIKE IT — an ASK, never an answer", () => {
     const a = run(40);
     const [group] = wallGroups([cluster(4.875, [a])], new Map(), [A1, type("A2", 4.875)], note);
     expect(group.source.kind).toBe("GENERAL_NOTE");
+    expect(group.candidates.map((t) => t.code), "the note's type leads, the other at this thickness follows").toEqual(["A1", "A2"]);
     const verdict = verdictFor(group);
-    expect(verdict.state).toBe("BY_GENERAL_NOTE");
-    expect(verdict.state === "BY_GENERAL_NOTE" && verdict.type.code).toBe("A1");
+    expect(verdict.state).toBe("ASK");
+    expect(verdict.state === "ASK" && verdict.suggested?.code).toBe("A1");
+    expect(verdict.state === "ASK" && verdict.note).toBe(note.note);
+    expect(groupSentence(group, verdict)).toMatch(/offered first/);
   });
 
   it("DOES NOT TOUCH A GROUP OF A DIFFERENT THICKNESS — the exterior shell", () => {
@@ -570,7 +582,8 @@ describe("a sheet's general note naming the default", () => {
     const a = run(140);
     const [group] = wallGroups([cluster(6.625, [a])], new Map(), [A1], note);
     expect(group.source.kind, "the note swallowed a wall of another thickness").toBe("REMAINDER");
-    expect(verdictFor(group).state).not.toBe("BY_GENERAL_NOTE");
+    const verdict = verdictFor(group);
+    expect(verdict.state === "ASK" ? verdict.suggested : undefined, "no note type offered on the shell").toBeUndefined();
   });
 
   it("NEVER OVERRULES A TAG, because a tag is printed beside its own wall", () => {
@@ -592,7 +605,8 @@ describe("a sheet's general note naming the default", () => {
     const sentence = groupSentence(group, verdictFor(group)) ?? "";
     expect(sentence, "the note is not quoted").toContain("ALL PARTITIONS TYPE A1 U.N.O.");
     expect(sentence).toContain("A1");
-    expect(sentence, "nothing says the estimator can overrule it").toMatch(/unless you say otherwise/);
+    expect(sentence, "nothing says the estimator decides").toMatch(/nothing is priced until you do/);
+    expect(sentence, "the note's type must read as an offer").toMatch(/offered first/);
   });
 
   it("behaves exactly as before when no note was found", () => {
@@ -604,16 +618,17 @@ describe("a sheet's general note naming the default", () => {
     expect(verdictFor(group).state).toBe("ASK");
   });
 
-  it("is ignored when the named type has NO recorded thickness", () => {
-    // Null means "cannot be matched by thickness", so the guard above cannot be
-    // applied and the note must not be trusted on its own.
+  it("is still OFFERED when the named type has NO recorded thickness, because offering is not applying", () => {
+    // Null means "cannot be matched by thickness". Applying it would be a
+    // guess; offering it first in a picker the estimator must answer is not.
     const bare = type("A1", null);
     const a = run(40);
     const [group] = wallGroups([cluster(4.875, [a])], new Map(), [bare], {
       type: bare,
       note: "ALL PARTITIONS TYPE A1 U.N.O.",
     });
-    expect(group.source.kind).toBe("REMAINDER");
+    expect(group.source.kind).toBe("GENERAL_NOTE");
+    expect(verdictFor(group).state).toBe("ASK");
   });
 });
 

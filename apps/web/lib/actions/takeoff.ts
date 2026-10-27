@@ -325,6 +325,107 @@ function pointsFromForm(formData: FormData): { xs: number[]; ys: number[] } | nu
  * both halves: that it is OUR store, and that the path is this job's plan
  * prefix. A URL is not proof of anything on its own (#195).
  */
+/**
+ * ── THE SCALE A SHEET PRINTS, APPLIED TO EVERY SHEET THAT PRINTS IT, IN ONE PRESS ──
+ *
+ * Baker's rail said "65 need a scale". The inventory had already read a
+ * printed scale off most of them (`PlanSheetScaleReading`, source PRINTED or
+ * DIMENSIONS), and the viewer offered each one — one sheet at a time. This
+ * takes the pages the rail asked for and writes a calibration on each from
+ * ITS OWN reading: the line the reader anchored, the feet it declared. Never
+ * a figure somebody typed, never one sheet's scale copied onto another; a page
+ * with no reading, or one already calibrated, is skipped and named.
+ *
+ * No wall detection is kicked off here — that is per sheet, on opening it.
+ */
+export async function applyPrintedScales(
+  jobId: string,
+  planId: string,
+  pageNumbers: number[],
+): Promise<ActionResultWith<{ applied: number[]; skipped: { pageNumber: number; why: string }[] }>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY) as ActionResultWith<never>;
+  const { company, id: userId } = context;
+  const plan = await prisma.takeoffPlan.findFirst({ where: planScope(planId, jobId, company.id), select: { id: true } });
+  if (!plan) return actionFail("That plan is no longer on this job. Reload the page.") as ActionResultWith<never>;
+  const wanted = [...new Set(pageNumbers.map((n) => Math.trunc(Number(n))).filter((n) => Number.isFinite(n) && n >= 1))];
+  if (wanted.length === 0) return actionFail("No sheets were named.") as ActionResultWith<never>;
+
+  const readings = await prisma.planSheetScaleReading.findMany({
+    where: { planId: plan.id, pageNumber: { in: wanted } },
+  });
+  const calibrated = new Set(
+    (
+      await prisma.takeoffPlanPage.findMany({
+        where: { planId: plan.id, pageNumber: { in: wanted }, calibrations: { some: {} } },
+        select: { pageNumber: true },
+      })
+    ).map((p) => p.pageNumber),
+  );
+  const labels = new Map(
+    (
+      await prisma.planSheetProposal.findMany({
+        where: { planId: plan.id, pageNumber: { in: wanted } },
+        orderBy: { createdAt: "desc" },
+        select: { pageNumber: true, acceptedSheetNumber: true, proposedSheetNumber: true },
+      })
+    )
+      .reverse()
+      .map((p) => [p.pageNumber, p.acceptedSheetNumber ?? p.proposedSheetNumber ?? null] as const),
+  );
+  const texts = new Map(
+    (await prisma.planSheetText.findMany({ where: { planId: plan.id, pageNumber: { in: wanted } }, select: { pageNumber: true, widthPt: true } })).map(
+      (t) => [t.pageNumber, t.widthPt] as const,
+    ),
+  );
+
+  const applied: number[] = [];
+  const skipped: { pageNumber: number; why: string }[] = [];
+  await prisma.$transaction(async (tx) => {
+    for (const pageNumber of wanted.sort((a, b) => a - b)) {
+      if (calibrated.has(pageNumber)) {
+        skipped.push({ pageNumber, why: "already has a scale" });
+        continue;
+      }
+      const reading = readings.find((r) => r.pageNumber === pageNumber);
+      if (!reading || reading.scaleName === null || reading.x1 === null || reading.y1 === null || reading.x2 === null || reading.y2 === null || reading.declaredDistanceFeet === null) {
+        skipped.push({ pageNumber, why: "no scale was read off this sheet" });
+        continue;
+      }
+      const line = { x1: reading.x1, y1: reading.y1, x2: reading.x2, y2: reading.y2, declaredDistanceFeet: Number(reading.declaredDistanceFeet) };
+      const pageWidthPt = texts.get(pageNumber) ?? null;
+      const refusal = calibrationRefusal(calibrationNotices(line, pageWidthPt, null, null));
+      if (refusal) {
+        skipped.push({ pageNumber, why: refusal });
+        continue;
+      }
+      const label = labels.get(pageNumber) ?? null;
+      const page = await tx.takeoffPlanPage.upsert({
+        where: { planId_pageNumber: { planId: plan.id, pageNumber } },
+        create: { planId: plan.id, pageNumber, label, pageWidthPt },
+        update: { ...(label ? { label } : {}), ...(pageWidthPt === null ? {} : { pageWidthPt }) },
+      });
+      await tx.takeoffScaleCalibration.create({
+        data: {
+          pageId: page.id,
+          x1: line.x1,
+          y1: line.y1,
+          x2: line.x2,
+          y2: line.y2,
+          declaredDistanceFeet: line.declaredDistanceFeet.toFixed(4),
+          note: `From the ${reading.scaleName} this sheet prints (${reading.source === "DIMENSIONS" ? "checked against its dimensions" : "not checked against a dimension"}), applied from the sheet list.`,
+          createdByUserId: userId,
+        },
+      });
+      applied.push(pageNumber);
+    }
+  });
+
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/takeoff/${jobId}`);
+  return { ok: true, value: { applied, skipped } };
+}
+
 export async function recordTakeoffPlan(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
@@ -677,6 +778,18 @@ export async function saveTakeoffMeasurement(
 export async function saveTakeoffMeasurements(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  // The priced path parses a typed height before anything is written, and a
+  // parser that refuses throws InputError — `runAction` turns that into the
+  // readable refusal this action promises (actionErrorBoundaryCensus). The
+  // capability check stays up here, where the guard census reads it.
+  return runAction(() => saveTakeoffMeasurementsFor(context, jobId, formData));
+}
+
+async function saveTakeoffMeasurementsFor(
+  context: Awaited<ReturnType<typeof requireCompanyContext>>,
+  jobId: string,
+  formData: FormData,
+): Promise<ActionResult> {
   const { company, id: userId } = context;
 
   const pageId = String(formData.get("pageId") ?? "");
@@ -747,6 +860,50 @@ export async function saveTakeoffMeasurements(jobId: string, formData: FormData)
   // `createManyAndReturn` rather than `createMany`, because an optional
   // `wallTypeId` turns this into the priced path and that needs the ids. The
   // ordinary path ignores them, so nothing is paid for it.
+  // ── A PRICED ADD THAT CANNOT BE PRICED WRITES NOTHING ──
+  //
+  // The runs used to be written first and posted second, so a refusal from
+  // the posting ("W1 has no default height…") left them on the sheet as
+  // loose measurements — and every retry of the same click wrote them again.
+  // Baker's A101 ended with 120 of them, 90 from one group clicked thirty
+  // times against one refusal. The plan is checked first now, by the same
+  // rule the posting applies, and a refusal is the whole answer.
+  const wallTypeId = String(formData.get("wallTypeId") ?? "").trim();
+  if (wallTypeId !== "") {
+    const wallType = await prisma.wallType.findFirst({
+      where: { id: wallTypeId, companyId: company.id },
+      select: { id: true, code: true, defaultHeightFt: true, sides: true },
+    });
+    // ── A TYPE THAT IS GONE IS REFUSED BELOW, NOT HERE ──
+    //
+    // Refusing here discarded the tracing. `takeoff-wall-run.dbtest.ts` says
+    // why that is the wrong trade, and it says it in the test's own words:
+    // the measurements belong "on the sheet, in the list and postable by
+    // hand — exactly where the old flow left every accepted group", and
+    // "silently discarding a traced group because a type lookup failed would
+    // be the worst of both".
+    //
+    // `postMeasuredWallRun`, after the write, already produces WALL_TYPE_GONE
+    // — that is where this refusal lived before and still lives. Checking it
+    // twice bought nothing and cost the work.
+    //
+    // THE CHECK BELOW STAYS EARLY, because it is the one the Baker
+    // walkthrough was about: a type that EXISTS and cannot be priced ("W1 has
+    // no default height") left loose measurements behind on every retry, 120
+    // of them on A101, 90 from one group clicked thirty times. That case is
+    // retried by a person and must refuse before it writes. A type that is
+    // GONE is not retried the same way — the picker cannot keep offering it.
+    if (wallType) {
+      const plan = planMeasuredWallRun({
+        wallType: { code: wallType.code, defaultHeightFt: wallType.defaultHeightFt != null ? wallType.defaultHeightFt.toNumber() : null, sides: wallType.sides },
+        layerCount: await prisma.wallTypeComponent.count({ where: { wallTypeId: wallType.id } }),
+        typedHeightFt: optionalNumberFromForm(formData, "heightFt", { min: 0.01 })?.n ?? null,
+        label,
+      });
+      if (!plan.ok) return actionFail(plan.error);
+    }
+  }
+
   const created = await prisma.takeoffMeasurement.createManyAndReturn({
     data: shapes.map((shape) => ({
       pageId: page.id,
@@ -775,7 +932,6 @@ export async function saveTakeoffMeasurements(jobId: string, formData: FormData)
   // height, a contracted job. Writing a second path here would be a second
   // authority on what a priced wall run is, which is the trap this file's
   // neighbours keep recording.
-  const wallTypeId = String(formData.get("wallTypeId") ?? "").trim();
   if (wallTypeId !== "") {
     const stored: StoredMeasurement[] = created.map((row) => ({
       kind: row.kind,

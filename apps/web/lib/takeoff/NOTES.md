@@ -3026,3 +3026,24 @@ into what it actually does — a grid-bubble detector that requires an
 entering line, and a symbol/outlined-glyph filter that is its own stage —
 before its walk can be made honest without bidding 2,000 ft of wall short.
 That is the finder owner's change; the arms eval measures it.
+
+### A `2X` with no size is still a framed wall (2026-10-22)
+
+`readPartitionAssembly` flagged a `2X` stud line with no nominal size and
+proposed nothing for the framing, so four training types (E Street 2, 3
+and 8; ELEVEN03 WA) went out as board only. A stud COUNT and the plates
+need only the spacing, so both are proposed now — "2X wood stud, size NOT
+stated on the drawing", at the stated spacing where there is one, and "2X
+plates, bottom and double top" at three per foot — with the flag kept. The
+width is still not guessed. `assemblyFromSight` writes the same `2X WOOD
+STUDS` line for a wood type whose width the model could not read, so the
+sight path proposes the same. Sized lumber now reads "wood stud" with
+plates rather than "metal stud" with track, which it had said for years.
+
+Two things seen on the way and left as they are. E Street 8's only stated
+spacing is its resilient channels', and the one-spacing rule assigns it to
+the studs; a channel spacing is a plausible stud spacing, so the number is
+not wrong, but the attribution is. And ELEVEN03's WB–WD read as 1-5/8in
+WOOD studs — 1-5/8in is a metal C-shape, and the sight read's "wood" for
+the W types is what the plates now follow; which read is right is a
+question for the crop.

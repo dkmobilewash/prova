@@ -115,6 +115,16 @@ describe("itemGeometry", () => {
     // guessed 16″ o.c. is a stud count that gets bid.
     expect(itemGeometry(item({ measurements: [linear([0, 0.5], [0, 0])], heightFt: 9 })).studs).toBe(0);
   });
+  it("COUNTS STUDS ONLY WHEN THE ASSEMBLY'S SPACING IS HANDED IN, the way a wall run does", () => {
+    // 50 ft at 16" o.c.: 38 bays + 1 = 39, `studsRequired`'s own arithmetic.
+    // The spacing is the assembly's; null and zero both leave the count at
+    // zero rather than guessing 16".
+    const line = linear([0, 0.5], [0, 0]);
+    expect(itemGeometry(item({ measurements: [line], heightFt: 9, studSpacingIn: 16 })).studs).toBe(39);
+    expect(itemGeometry(item({ measurements: [line], heightFt: 9, studSpacingIn: 24 })).studs).toBe(26);
+    expect(itemGeometry(item({ measurements: [line], heightFt: 9, studSpacingIn: null })).studs).toBe(0);
+    expect(itemGeometry(item({ measurements: [line], heightFt: 9, studSpacingIn: 0 })).studs).toBe(0);
+  });
 });
 
 describe("the bases an assembly can ask for", () => {
