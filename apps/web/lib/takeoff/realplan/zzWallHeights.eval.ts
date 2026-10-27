@@ -146,7 +146,7 @@ describe.skipIf(DIR === "" || CACHE === "" || SET === "" || LEGEND_PAGE === 0)("
         if (reading.feet === null) continue;
         const geometry = runGeometry(
           { id: code, label: code, wallTypeId: code, lengthFt: e.feet, heightFt: reading.feet, openings: [] },
-          { id: code, code, defaultHeightFt: null, sides: 2, studSpacingIn: spacing, components: [] },
+          { id: code, code, defaultHeightFt: null, sides: 2, studSpacingIn: spacing, boardLayers: null, components: [] },
         );
         if (geometry === null) continue;
         const sides = (s.layersSideA ?? 0) > 0 && (s.layersSideB ?? 0) > 0 ? 2 : 1;

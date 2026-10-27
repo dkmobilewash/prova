@@ -22,7 +22,9 @@ enum WallComponentBasis {
   /// Length × height of ONE face, openings deducted — insulation, sound batt.
   FACE_SQFT
   /// Face area × the type's boarded sides — board, tape, finish. Layers are
-  /// the factor, so two layers of ⅝″ each side is BOARDED_SQFT × 2.
+  /// the factor, so two layers of ⅝″ each side is BOARDED_SQFT × 2 — or, on a
+  /// component marked `perLayer`, the factor for one layer × the type's
+  /// `boardLayers`.
   BOARDED_SQFT
   /// Studs at the type's spacing, including the one closing the run.
   STUDS
@@ -87,6 +89,23 @@ model WallType {
   /// 1 or 2 boarded sides. A demising wall is 2; furring against masonry is 1.
   sides           Int      @default(2)
   studSpacingIn   Decimal  @default(16) @db.Decimal(6, 2)
+  /// Layers of board on EACH boarded side: 1 for an ordinary partition, 2 for
+  /// most rated and shaft-adjacent walls. A drawing's partition schedule often
+  /// names the board and leaves the count to a UL detail nobody attached, and
+  /// the count doubles the board — so the sub has to say it.
+  ///
+  /// NULLABLE, AND NULL MEANS "NOT ANSWERED", not "one". With no answer every
+  /// component prices exactly as its factor says, which is what every type did
+  /// before this column existed — so an existing estimate does not move.
+  ///
+  /// It reaches a quantity ONLY through a component marked `perLayer` below:
+  /// such a component's factor is for ONE layer, and the quantity is that ×
+  /// this count. A component that is not marked is untouched by any answer,
+  /// which is what keeps a type whose board factor already says "2" (a
+  /// legend-made type writes the layer count INTO the factor) from being
+  /// doubled again. A type with no `perLayer` component is never asked
+  /// (`lib/bid/guide/boardLayers.ts`), because no answer would change anything.
+  boardLayers     Int?
   notes           String?
   sortOrder       Int      @default(0)
 
@@ -116,6 +135,15 @@ model WallTypeComponent {
   wastePercent Decimal @default(0) @db.Decimal(5, 2)
   /// Round the total up to a whole unit — sheets and studs are bought whole.
   roundUp      Boolean @default(false)
+  /// The factor is for ONE layer of board, and the quantity is multiplied by
+  /// the wall type's `boardLayers` when that is answered. The board itself is;
+  /// tape and finish are NOT — only the face layer is finished, so a finished
+  /// square foot does not change with the count.
+  ///
+  /// Default false, no backfill: an existing component prices exactly as it
+  /// did whatever is answered. Guessing "per layer" from the word "board" is
+  /// the inference this column replaces (the same call `costCategory` makes).
+  perLayer     Boolean @default(false)
 
   /// The kind of cost this component IS, carried onto the line the wall
   /// schedule derives from it (#513).

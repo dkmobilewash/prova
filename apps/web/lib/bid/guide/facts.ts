@@ -2,6 +2,7 @@ import { prisma } from "@prova/db";
 import { bidTotalOf, recapStateFor } from "@/lib/estimating/recap-state";
 import { acknowledgedOnFor, paperWhereMany, papersFor } from "@/lib/estimating/bid-papers";
 import { wallHeightQuestions } from "./wallHeight";
+import { boardLayerQuestions } from "./boardLayers";
 
 /**
  * THE FACTS A JOB GUIDE IS BUILT FROM — one plain, serialisable snapshot per
@@ -47,6 +48,11 @@ import { wallHeightQuestions } from "./wallHeight";
  *                  NOTHING to the estimate (`runGeometry` returns null). Worked
  *                  out by `wallHeightQuestions` (`./wallHeight.ts`), the same
  *                  function the answer's action re-derives with.
+ *   board layers   a wall type used on the job's runs with no `boardLayers`
+ *                  answer and at least one `perLayer` component, so the answer
+ *                  would multiply its board. Worked out by
+ *                  `boardLayerQuestions` (`./boardLayers.ts`), the same function
+ *                  the answer's action re-derives with.
  *   walk / RFIs    `BidInvitation.walkDate`/`walkMinute`/`rfiCutoffDate` of each
  *                  linked invitation, as entered. The walk's minute is the GC's
  *                  wall clock, exactly like `dueMinute`.
@@ -124,6 +130,13 @@ export type GuideWallTypeFact = {
    * null = nothing to ask. See `./wallHeight.ts`.
    */
   heightless?: { runCount: number; lengthFt: number; token: string } | null;
+  /**
+   * Set when the type has no board-layer answer AND has a part whose factor is
+   * per layer, so the answer would change its board. `runCount`/`lengthFt` are
+   * every run of the type on this job. Absent or null = nothing to ask. See
+   * `./boardLayers.ts`.
+   */
+  layersUnanswered?: { runCount: number; lengthFt: number; sides: number; token: string } | null;
 };
 
 /**
@@ -275,6 +288,11 @@ function heightlessOf(questions: ReturnType<typeof wallHeightQuestions>, wallTyp
   return question ? { runCount: question.runCount, lengthFt: question.lengthFt, token: question.token } : null;
 }
 
+function layersOf(questions: ReturnType<typeof boardLayerQuestions>, wallTypeId: string): GuideWallTypeFact["layersUnanswered"] {
+  const question = questions.find((q) => q.wallTypeId === wallTypeId);
+  return question ? { runCount: question.runCount, lengthFt: question.lengthFt, sides: question.sides, token: question.token } : null;
+}
+
 /**
  * Facts for a set of jobs the caller has ALREADY scoped to one company. Every
  * query below is one round trip for the whole set (`jobId in (…)`), never one
@@ -343,7 +361,15 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
     typeIds.length
       ? prisma.wallType.findMany({
           where: { id: { in: typeIds }, companyId },
-          select: { id: true, code: true, name: true, defaultHeightFt: true, components: { select: { id: true } } },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            sides: true,
+            defaultHeightFt: true,
+            boardLayers: true,
+            components: { select: { id: true, perLayer: true } },
+          },
         })
       : [],
     // One query for the whole set: the papers every anchor shows (bid-papers.ts),
@@ -391,6 +417,16 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
         componentCount: type.components.length,
       })),
     );
+    const layerQuestions = boardLayerQuestions(
+      jobRuns.map((run) => ({ id: run.id, wallTypeId: run.wallTypeId, lengthFt: num(run.lengthFt) })),
+      wallTypes.map((type) => ({
+        id: type.id,
+        code: type.code,
+        sides: type.sides,
+        boardLayers: type.boardLayers,
+        perLayerCount: type.components.filter((component) => component.perLayer).length,
+      })),
+    );
     const wallTypeFacts: GuideWallTypeFact[] = [];
     for (const typeId of [...new Set(jobRuns.map((run) => run.wallTypeId))]) {
       const type = typeById.get(typeId);
@@ -408,6 +444,7 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[]): Promise<JobGu
         lineCount: typeLines.length,
         unpricedLineCount: typeLines.filter(priceless).length,
         heightless: heightlessOf(heightQuestions, typeId),
+        layersUnanswered: layersOf(layerQuestions, typeId),
       });
     }
     wallTypeFacts.sort((a, b) => a.code.localeCompare(b.code));

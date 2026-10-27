@@ -14,8 +14,11 @@ import {
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
 import { Disclosure } from "@/components/Disclosure";
-import { WALL_BASIS_LABELS, WALL_COMPONENT_BASES, type WallComponentBasis } from "@/lib/wall-assemblies";
+import { MAX_BOARD_LAYERS, WALL_BASIS_LABELS, WALL_COMPONENT_BASES, type WallComponentBasis } from "@/lib/wall-assemblies";
 import { DEFAULT_WASTE_PERCENT } from "@/lib/takeoff";
+
+/** 1 … MAX_BOARD_LAYERS — the answers the action accepts, and no others. */
+const BOARD_LAYER_OPTIONS: readonly number[] = Array.from({ length: MAX_BOARD_LAYERS }, (_, index) => index + 1);
 
 /**
  * The partition schedule on /wall-types: a card per wall type, its parts
@@ -40,6 +43,8 @@ export type WallTypeView = {
   defaultHeightFt: string | null;
   /** Overall thickness in inches — what the wall finder matches a drawn group against. */
   thicknessIn: string | null;
+  /** Layers of board each boarded side, or null when nobody has answered. */
+  boardLayers: number | null;
   notes: string | null;
   runCount: number;
   components: WallComponentView[];
@@ -53,6 +58,8 @@ export type WallComponentView = {
   factor: string;
   wastePercent: string;
   roundUp: boolean;
+  /** The factor is for one layer; the type's board layers multiply it. */
+  perLayer: boolean;
   productionRate: string | null;
   costCategory: string | null;
   catalogEntryId: string | null;
@@ -103,6 +110,21 @@ function WallTypeFields({ type }: { type?: WallTypeView }) {
         <select name="sides" defaultValue={String(type?.sides ?? 2)} className={field}>
           <option value="2">Both</option>
           <option value="1">One</option>
+        </select>
+      </label>
+      {/* BOARD LAYERS, which the drawings often leave to a UL detail. It
+          changes only the parts marked "Per layer" below — blank prices every
+          part exactly as its factor says, which is how a type with no answer
+          has always priced. The Bid guide asks this as a tap question. */}
+      <label className={labelClass}>
+        Board layers each side
+        <select name="boardLayers" defaultValue={type?.boardLayers == null ? "" : String(type.boardLayers)} className={field}>
+          <option value="">Not answered</option>
+          {BOARD_LAYER_OPTIONS.map((layers) => (
+            <option key={layers} value={String(layers)}>
+              {layers}
+            </option>
+          ))}
         </select>
       </label>
       {/* THE THICKNESS IS WHAT THE WALL FINDER MATCHES ON. A type without one
@@ -344,7 +366,7 @@ function ComponentFields({
       </label>
       <label className={labelClass}>
         × factor
-        <input name="factor" defaultValue={component?.factor ?? "1"} inputMode="decimal" title="2 for top-and-bottom track, the layer count for board, 0.03125 to turn sq ft into 4x8 sheets" className={`${field} w-20`} />
+        <input name="factor" defaultValue={component?.factor ?? "1"} inputMode="decimal" title="2 for top-and-bottom track, the layer count for board (or 1 with Per layer ticked), 0.03125 to turn sq ft into 4x8 sheets" className={`${field} w-20`} />
       </label>
       <label className={labelClass}>
         Waste %
@@ -358,6 +380,17 @@ function ComponentFields({
       <label className="flex items-center gap-1 self-end pb-2 text-xs text-ink-label">
         <input type="checkbox" name="roundUp" defaultChecked={component?.roundUp ?? false} />
         Whole units
+      </label>
+      {/* PER LAYER: the factor is for ONE layer of board, and the wall type's
+          "Board layers each side" multiplies it. Tick it on the board, not on
+          tape and finish — only the face layer is finished. Leave it off on a
+          part whose factor already counts the layers, or they count twice. */}
+      <label
+        className="flex items-center gap-1 self-end pb-2 text-xs text-ink-label"
+        title="The factor is for one layer of board; the wall type's board layers multiply it."
+      >
+        <input type="checkbox" name="perLayer" defaultChecked={component?.perLayer ?? false} className="h-4 w-4" />
+        Per layer
       </label>
       <label className={labelClass}>
         Crew rate (units/hr)

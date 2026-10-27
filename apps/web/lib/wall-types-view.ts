@@ -50,6 +50,7 @@ export async function loadWallTypesScreen(companyId: string) {
     studSpacingIn: type.studSpacingIn.toString(),
     defaultHeightFt: type.defaultHeightFt?.toString() ?? null,
     thicknessIn: type.thicknessIn?.toString() ?? null,
+    boardLayers: type.boardLayers,
     notes: type.notes,
     runCount: type._count.runs,
     components: type.components.map((c) => ({
@@ -60,6 +61,7 @@ export async function loadWallTypesScreen(companyId: string) {
       factor: c.factor.toString(),
       wastePercent: c.wastePercent.toString(),
       roundUp: c.roundUp,
+      perLayer: c.perLayer,
       productionRate: c.productionRate?.toString() ?? null,
       costCategory: c.costCategory,
       catalogEntryId: c.catalogEntryId,

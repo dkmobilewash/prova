@@ -136,31 +136,33 @@ describe("the bases an assembly can ask for", () => {
     factor,
     wastePercent,
     roundUp: false,
+    perLayer: false,
     productionRate: null,
   });
+  const NO_LAYERS = { boardLayers: null };
 
   it("prices a ceiling off AREA_SQFT and PERIMETER_FT", () => {
     const geometry = itemGeometry(
       item({ type: "AREA_WITH_PERIMETER", measurements: [area(SQUARE.xs, SQUARE.ys)] }),
     );
-    expect(componentRunQuantity(part("AREA_SQFT"), geometry)).toBe(100);
-    expect(componentRunQuantity(part("PERIMETER_FT"), geometry)).toBe(40);
+    expect(componentRunQuantity(part("AREA_SQFT"), geometry, NO_LAYERS)).toBe(100);
+    expect(componentRunQuantity(part("PERIMETER_FT"), geometry, NO_LAYERS)).toBe(40);
     // And the part's own waste, which the geometry did not apply.
-    expect(componentRunQuantity(part("AREA_SQFT", 1, 5), geometry)).toBeCloseTo(105, 6);
+    expect(componentRunQuantity(part("AREA_SQFT", 1, 5), geometry, NO_LAYERS)).toBeCloseTo(105, 6);
   });
 
   it("GIVES A WALL RUN'S BASES NOTHING FROM AN AREA, rather than something plausible", () => {
     // A traced ceiling has no studs and no boarded face. Zero is a figure an
     // estimator notices; a face area computed from a perimeter is not.
     const ceiling = itemGeometry(item({ type: "AREA", measurements: [area(SQUARE.xs, SQUARE.ys)] }));
-    expect(componentRunQuantity(part("STUDS"), ceiling)).toBe(0);
-    expect(componentRunQuantity(part("BOARDED_SQFT"), ceiling)).toBe(0);
+    expect(componentRunQuantity(part("STUDS"), ceiling, NO_LAYERS)).toBe(0);
+    expect(componentRunQuantity(part("BOARDED_SQFT"), ceiling, NO_LAYERS)).toBe(0);
   });
 
   it("gives an area's bases nothing from a traced line, for the same reason", () => {
     const wall = itemGeometry(item({ measurements: [linear([0, 0.1], [0, 0])], heightFt: 9, sides: 2 }));
-    expect(componentRunQuantity(part("AREA_SQFT"), wall)).toBe(0);
-    expect(componentRunQuantity(part("VOLUME_CY"), wall)).toBe(0);
+    expect(componentRunQuantity(part("AREA_SQFT"), wall, NO_LAYERS)).toBe(0);
+    expect(componentRunQuantity(part("VOLUME_CY"), wall, NO_LAYERS)).toBe(0);
   });
 
   it("is PER_RUN once per item, not once per measurement", () => {
@@ -173,7 +175,7 @@ describe("the bases an assembly can ask for", () => {
         sides: 2,
       }),
     );
-    expect(componentRunQuantity(part("PER_RUN"), geometry)).toBe(1);
+    expect(componentRunQuantity(part("PER_RUN"), geometry, NO_LAYERS)).toBe(1);
     // …while the footage is all three.
     expect(geometry.linearFt).toBe(30);
   });

@@ -11,6 +11,7 @@ import {
   type PastPriceSuggestion,
 } from "./facts";
 import { WALL_HEIGHT_CHOICES, wallHeightArg } from "./wallHeight";
+import { BOARD_LAYER_CHOICES, boardLayersArg } from "./boardLayers";
 import {
   GUIDE_STEP_KEYS,
   type GuideAction,
@@ -40,6 +41,8 @@ import {
  *   2. no-scale             floor-plan sheets with no scale, before any wall is measured
  *   3. no-walls-measured    drawings are in, nothing measured, no lines
  *  3b. wall-height          a measured wall type has no height, so its runs add nothing
+ *  3c. board-layers         a measured wall type's board layers are unanswered, and
+ *                           it has a per-layer part, so the answer moves its board
  *   4. walls-not-added      walls are measured but none is in the estimate
  *   5. unpriced-wall-types  a used wall type has no price (past-price offer if one exists)
  *   6. unpriced-lines       other lines still have no price (cost-only indirects excepted)
@@ -212,6 +215,15 @@ function heightlessWallTypes(facts: JobGuideFacts): (GuideWallTypeFact & { heigh
   );
 }
 
+type Layerless = GuideWallTypeFact & { layersUnanswered: NonNullable<GuideWallTypeFact["layersUnanswered"]> };
+
+/** Measured wall types whose board-layer answer would change their board, by code. */
+function layerlessWallTypes(facts: JobGuideFacts): Layerless[] {
+  return facts.wallTypes.filter(
+    (type): type is Layerless => !!type.layersUnanswered && type.layersUnanswered.runCount > 0 && type.componentCount > 0,
+  );
+}
+
 type DatedItem = UpcomingBidDate & { invitation: GuideInvitationFact };
 
 /**
@@ -380,6 +392,53 @@ function decide(facts: JobGuideFacts, now: Date): Decision {
       },
       headline: "Walls are measured. One thing needs you.",
       oneLine: lateLine(more > 0 ? `${first.code} and ${plural(more, "more wall type", "more wall types")} need a height` : `${first.code} walls need a height`),
+      tone: toneFor("question"),
+    };
+  }
+
+  // 3c. A measured wall type whose board layers nobody has said. WHY HERE:
+  // after the height (a run with no height produces nothing at all, so its
+  // board cannot be wrong yet), and BEFORE adding the walls and every price
+  // ask, because the answer moves the board quantity — pricing first would
+  // price a number that is about to change. Only a type with a per-layer part
+  // is asked (`./boardLayers.ts`): for any other, no answer changes anything.
+  const layerless = layerlessWallTypes(facts);
+  if (layerless.length > 0) {
+    const first = layerless[0]!;
+    const { runCount, lengthFt, sides } = first.layersUnanswered;
+    const side = sides === 1 ? "on its one boarded side" : "each side";
+    const more = layerless.length - 1;
+    const moreSentence = more > 0 ? ` ${plural(more, "other wall type needs", "other wall types need")} a layer count too.` : "";
+    const layersOf = (n: number) => `${n} ${n === 1 ? "layer" : "layers"}`;
+    return {
+      ask: {
+        id: "board-layers",
+        step: "walls",
+        title: `How many layers of board are on the ${first.code} walls on ${facts.name}?`,
+        body:
+          `${count(runCount)} ${runCount === 1 ? "run" : "runs"} of ${first.code} (${feet(lengthFt)}) ${runCount === 1 ? "is" : "are"} counted at one layer ${side} until you say. ` +
+          `Two layers doubles the board. Your answer becomes ${possessive(first.code)} board layers in your wall types.${moreSentence}`,
+        actions: [
+          ...BOARD_LAYER_CHOICES.map(
+            (layers): GuideAction => ({
+              // "1 layer each side" on a two-sided wall; "1 layer" on furring,
+              // whose one side the title has already named.
+              label: sides === 1 ? layersOf(layers) : `${layersOf(layers)} each side`,
+              actionId: "setBoardLayers",
+              actionArg: boardLayersArg({ wallTypeId: first.wallTypeId, token: first.layersUnanswered.token }, layers),
+              chip: true,
+              confirm: `Make ${first.code} ${layersOf(layers)} of board ${side} in your wall types, and work this estimate's walls out again from them?`,
+            }),
+          ),
+          open("Three or more", hrefs.wallTypes),
+        ],
+      },
+      headline: "Walls are measured. One thing needs you.",
+      oneLine: lateLine(
+        more > 0
+          ? `${first.code} and ${plural(more, "more wall type", "more wall types")} need a board layer count`
+          : `${first.code} walls need a board layer count`,
+      ),
       tone: toneFor("question"),
     };
   }

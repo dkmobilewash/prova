@@ -481,11 +481,14 @@ export function wallTypeInputs(): WallTypeInput[] {
         factor,
         wastePercent: 0,
         roundUp,
+        // The layer count is already IN the board factor (`totalLayers`), the
+        // way a legend-made type writes it — so no part is per-layer.
+        perLayer: false,
         productionRate: null,
       });
       const components = [comp("studs", "STUDS", t.studRows, true), comp("track", "LINEAR_FT", 2 * t.studRows, false), comp("board", "FACE_SQFT", totalLayers(c), false)];
       if (t.insulation) components.push(comp("insulation", "FACE_SQFT", 1, false));
-      return { id: c, code: c, defaultHeightFt: null, sides: t.layers[1] === 0 ? 1 : 2, studSpacingIn: t.studSpacingIn, components };
+      return { id: c, code: c, defaultHeightFt: null, sides: t.layers[1] === 0 ? 1 : 2, studSpacingIn: t.studSpacingIn, boardLayers: null, components };
     });
 }
 
