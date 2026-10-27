@@ -62,6 +62,10 @@ export function askSurfaceOf(value: unknown): AskSurface | undefined {
  *     10% for night work"), the amount computed in code from the bid as it
  *     stands. Estimate-stage jobs only; refuses if the bid moved since the card.
  *
+ *   - `add_estimate_line`: one line at a quantity and a unit price the person
+ *     stated ("40 hours of cleanup at $65"), the total computed in code.
+ *     Estimate-stage jobs only.
+ *
  * Everything else is in `BID_EXCLUDED_COMMANDS` below with its reason, and
  * `surface.test.ts` requires every registered command to be in exactly one of
  * the two — so a new command cannot reach Bid, or sit unexamined, without
@@ -71,6 +75,7 @@ export const BID_ASK_COMMANDS: readonly CommandName[] = [
   "draft_estimate_lines",
   "add_catalog_line",
   "adjust_estimate",
+  "add_estimate_line",
 ];
 
 /** Every other command, and why the Bid box does not offer it. */

@@ -210,6 +210,9 @@ export const EVAL_CASES: EvalCase[] = [
   // The figure travels as TYPED — "10%", never 10 or a dollar result — and
   // "off" is a separate field set only on a discount instruction.
   command("cmd-adjust-percent", "add 10% for night work on Riverside", "adjust_estimate", { jobName: "Riverside", value: "10%", kind: "percent" }),
+  // A quantity at the person's own price: the price travels as typed, and
+  // the total is the card's job, not the model's.
+  command("cmd-typed-line", "add a line for 40 hours of cleanup at $65 on Riverside", "add_estimate_line", { jobName: "Riverside", quantity: "40", unitPrice: "$65" }),
   command("cmd-adjust-discount", "take 3% off Riverside for the GC", "adjust_estimate", { jobName: "Riverside", value: "3%", direction: "off" }),
   command("cmd-field-report", "log today's report for Riverside: hung board on level 2, crew of 6", "log_daily_field_report", { jobName: "Riverside" }),
   command("cmd-send-equipment", "send the scissor lift to Riverside", "send_equipment_to_job", { jobName: "Riverside" }),
