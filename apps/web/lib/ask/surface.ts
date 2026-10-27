@@ -58,10 +58,9 @@ export function askSurfaceOf(value: unknown): AskSurface | undefined {
  *   - `add_catalog_line`: one line from the company's own catalog, at the
  *     catalog's price. Estimate-stage jobs only.
  *
- * `adjust_estimate` (a percent or flat adder — "add 10% for night work") is
- * being written as a separate command; when it is registered in
- * `lib/ask/commands.ts`, add its name HERE. That is the only edit needed, and
- * `surface.test.ts` will then require it to be a real, DIRECT command.
+ *   - `adjust_estimate`: one lump-sum line for a percent or flat adder ("add
+ *     10% for night work"), the amount computed in code from the bid as it
+ *     stands. Estimate-stage jobs only; refuses if the bid moved since the card.
  *
  * Everything else is in `BID_EXCLUDED_COMMANDS` below with its reason, and
  * `surface.test.ts` requires every registered command to be in exactly one of
@@ -71,7 +70,7 @@ export function askSurfaceOf(value: unknown): AskSurface | undefined {
 export const BID_ASK_COMMANDS: readonly CommandName[] = [
   "draft_estimate_lines",
   "add_catalog_line",
-  // "adjust_estimate" — add once that command is registered (see above).
+  "adjust_estimate",
 ];
 
 /** Every other command, and why the Bid box does not offer it. */
