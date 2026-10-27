@@ -16,6 +16,7 @@ import {
 import { GUIDE_STEP_KEYS, type JobGuide } from "@/lib/bid/guide/types";
 import type { BidAskAccess } from "@/lib/bid/guide/askAccess";
 import { guideStepHref, guideStepLink } from "@/lib/bid/guide/stepHrefs";
+import { buildJobGuide } from "@/lib/bid/guide/buildJobGuide";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const run = vi.fn();
@@ -475,6 +476,113 @@ describe("an action button WRITES, so it is two steps", () => {
   it("a guide with no ask renders nothing", async () => {
     const host = await mount(GUIDE_SENT);
     expect(host.innerHTML).toBe("");
+  });
+});
+
+/**
+ * The board-layer question, drawn from the ENGINE'S OWN OUTPUT rather than a
+ * hand-written fixture: the facts a job would load, through `buildJobGuide`,
+ * onto the screen. So the words asserted here are the words a person sees.
+ */
+describe("tap answers (the board-layer question)", () => {
+  const NOW = new Date("2026-10-26T15:00:00.000Z");
+  const guide = buildJobGuide(
+    {
+      jobId: "job_layers",
+      name: "Civic Center",
+      gcName: "Hartwell Builders",
+      jobBidDueDate: null,
+      project: null,
+      invitations: [{ id: "inv", projectName: "Civic Center", status: "INVITED", dueDate: "2026-10-29", dueMinute: 840 }],
+      hasTakeoffPlan: true,
+      planCount: 1,
+      sheetCount: 6,
+      sheetsRead: 6,
+      sheetsMissingScale: 0,
+      wallTypes: [
+        {
+          wallTypeId: "wt_w2",
+          code: "W2",
+          name: "rated wall",
+          lengthFt: 680.4,
+          runCount: 3,
+          openingsCount: 5,
+          componentCount: 5,
+          lineCount: 5,
+          unpricedLineCount: 0,
+          heightless: null,
+          layersUnanswered: { runCount: 3, lengthFt: 680.4, sides: 2, token: "9f8e7d6c" },
+        },
+      ],
+      wallRunCount: 3,
+      measuredFootageFt: 680.4,
+      openingsCount: 5,
+      wallLineCount: 5,
+      lineCount: 5,
+      linesWithoutPrice: 0,
+      linesWithoutCost: 0,
+      bidTotal: 0,
+      recap: null,
+    },
+    NOW,
+  );
+
+  beforeEach(() => {
+    run.mockReset();
+    refresh.mockReset();
+  });
+
+  async function mount(g: JobGuide) {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => root.render(createElement(JobGuideAsk, { guide: g })));
+    return host;
+  }
+  const chipButtons = (host: HTMLElement) => [...host.querySelectorAll<HTMLButtonElement>('[data-guide="chips"] button')];
+  const confirmButton = (host: HTMLElement) => [...host.querySelectorAll("button")].find((b) => b.textContent === "Yes, do it")!;
+
+  it("is the board-layer ask, and draws its two answers as chips in one group, none yellow, with three-or-more as a link", () => {
+    expect(guide.ask!.id).toBe("board-layers");
+    const out = html(createElement(JobGuideAsk, { guide }));
+    expect(out).toContain("How many layers of board are on the W2 walls on Civic Center?");
+    expect(out).toContain("3 runs of W2 (680 LF) are counted at one layer each side until you say.");
+    const group = /<div role="group" aria-label="Answers"[^>]*data-guide="chips">([\s\S]*?)<\/div>/.exec(out);
+    expect(group).not.toBeNull();
+    const labels = [...group![1]!.matchAll(/<button[^>]*data-chip="true"[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
+    expect(labels).toEqual(["1 layer each side", "2 layers each side"]);
+    for (const button of group![1]!.match(/<button[^>]*>/g) ?? []) expect(button).toContain("min-h-12");
+    expect(out).not.toContain('data-primary="true"');
+    expect(out).toMatch(/<a [^>]*href="\/bid\/wall-types"[^>]*>Three or more<\/a>/);
+  });
+
+  it("a chip arms the confirm with its own sentence and runs nothing", async () => {
+    const host = await mount(guide);
+    await act(async () => chipButtons(host)[1]!.click());
+    expect(run).not.toHaveBeenCalled();
+    expect(host.querySelector('[data-guide="confirm"] p')?.textContent).toBe(
+      "Make W2 2 layers of board each side in your wall types, and work this estimate's walls out again from them?",
+    );
+    expect([...host.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Cancel", "Yes, do it"]);
+  });
+
+  it("the second press sends THAT chip's arg to setBoardLayers, then refreshes", async () => {
+    run.mockResolvedValue({ ok: true });
+    const host = await mount(guide);
+    await act(async () => chipButtons(host)[1]!.click());
+    await act(async () => confirmButton(host).click());
+    expect(run).toHaveBeenCalledWith("job_layers", "setBoardLayers", "bl:wt_w2:2:9f8e7d6c");
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("a stale answer is refused in words and nothing refreshes", async () => {
+    run.mockResolvedValue({ ok: false, error: "Those walls have changed since you saw the question." });
+    const host = await mount(guide);
+    await act(async () => chipButtons(host)[0]!.click());
+    await act(async () => confirmButton(host).click());
+    expect(run).toHaveBeenCalledWith("job_layers", "setBoardLayers", "bl:wt_w2:1:9f8e7d6c");
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe("Those walls have changed since you saw the question.");
+    expect(refresh).not.toHaveBeenCalled();
   });
 });
 

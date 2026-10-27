@@ -8,7 +8,7 @@ import { asCostCategory, type CostCategory } from "@/lib/cost-category";
 import { restoreRemovedWallLines, syncWallScheduleLines, type WallSyncSummary } from "@/lib/estimating/wall-schedule";
 import { wallTypesFromSchedule, type PartitionScheduleRow } from "@/lib/estimating/partitionTypes";
 import { NOT_ESTIMATE_STAGE } from "@/lib/estimating/draft-lines";
-import { openingsFromJson, WALL_COMPONENT_BASES, type WallComponentBasis } from "@/lib/wall-assemblies";
+import { MAX_BOARD_LAYERS, openingsFromJson, WALL_COMPONENT_BASES, type WallComponentBasis } from "@/lib/wall-assemblies";
 import { missingStarterTypes, STARTER_TYPES } from "@/lib/wall-type-starters";
 import {
   actionFail,
@@ -55,6 +55,40 @@ function revalidateLibrary() {
 
 /* ------------------------------------------------------------ wall types */
 
+/**
+ * The board-layer answer: blank is "not answered" (null), a whole number from
+ * 1 to MAX_BOARD_LAYERS is the answer, anything else is refused in words.
+ * Not exported: this file is "use server" and may export only async functions.
+ */
+function boardLayersFromForm(formData: FormData): number | null {
+  const raw = text(formData, "boardLayers");
+  if (raw === "") return null;
+  const layers = Number(raw);
+  if (!/^\d+$/.test(raw) || layers < 1 || layers > MAX_BOARD_LAYERS) {
+    throw new InputError(
+      `Board layers each side is a whole number from 1 to ${MAX_BOARD_LAYERS}, or blank if nobody has said.`,
+      "boardLayers",
+    );
+  }
+  return layers;
+}
+
+/**
+ * ── A FIELD THE FORM DID NOT SEND IS LEFT AS IT IS ──
+ *
+ * For the two columns a caller can reasonably not know about: `thicknessIn`
+ * and `boardLayers`. `updateWallType` writes what `wallTypeFields` returns,
+ * and an absent key used to read as blank — so the guide's height answer,
+ * which re-sends the row without a thickness, CLEARED the thickness the wall
+ * finder matches on (found while adding `boardLayers`, which would have been
+ * wiped the same way by the same tap). `undefined` is Prisma's "do not
+ * touch"; on a create it is the column's own default, null. A form that shows
+ * the field sends it, and blank there still clears it.
+ */
+function keptUnlessSent<T>(formData: FormData, key: string, read: () => T): T | undefined {
+  return formData.has(key) ? read() : undefined;
+}
+
 function wallTypeFields(formData: FormData) {
   const code = text(formData, "code").toUpperCase();
   const name = text(formData, "name");
@@ -66,7 +100,10 @@ function wallTypeFields(formData: FormData) {
     name,
     sides,
     defaultHeightFt: nullableDecimalFromForm(formData, "defaultHeightFt", { label: "Default height", min: 0.5, max: 100 }),
-    thicknessIn: nullableDecimalFromForm(formData, "thicknessIn", { label: "Thickness", min: 0.5, max: 48 }),
+    thicknessIn: keptUnlessSent(formData, "thicknessIn", () =>
+      nullableDecimalFromForm(formData, "thicknessIn", { label: "Thickness", min: 0.5, max: 48 }),
+    ),
+    boardLayers: keptUnlessSent(formData, "boardLayers", () => boardLayersFromForm(formData)),
     studSpacingIn: decimalFromForm(formData, "studSpacingIn", { label: "Stud spacing", min: 4, max: 48 }),
     notes: text(formData, "notes") || null,
   };
@@ -187,6 +224,9 @@ async function componentFields(formData: FormData, companyId: string) {
     factor: decimalFromForm(formData, "factor", { label: "Factor", min: 0.0001, max: 1000 }),
     wastePercent: nullableDecimalFromForm(formData, "wastePercent", { label: "Waste", min: 0, max: 100, unit: "%" }) ?? "0",
     roundUp: formData.get("roundUp") === "on",
+    // A checkbox, like `roundUp`: the factor is for ONE layer of board, and
+    // the type's `boardLayers` answer multiplies it (`layerMultiplier`).
+    perLayer: formData.get("perLayer") === "on",
     productionRate: nullableDecimalFromForm(formData, "productionRate", { label: "Production rate", min: 0.0001, max: 100000 }),
     // #513. A wall type is the one place a cost type is knowable up front —
     // board and studs are material, hang-and-finish is labor — and every run of

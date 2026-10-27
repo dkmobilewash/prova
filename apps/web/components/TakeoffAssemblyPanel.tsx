@@ -39,6 +39,8 @@ type Assembly = {
   defaultHeightFt: number | null;
   sides: number;
   studSpacingIn: number;
+  /** Layers of board each side, or null when unanswered — `layerMultiplier`. */
+  boardLayers: number | null;
   components: {
     id: string;
     description: string;
@@ -47,6 +49,7 @@ type Assembly = {
     factor: number;
     wastePercent: number;
     roundUp: boolean;
+    perLayer: boolean;
     unitPrice: number | null;
   }[];
 };
@@ -103,9 +106,11 @@ export function TakeoffAssemblyPanel({ jobId, assemblies, item, pinnedAt, readOn
           factor: component.factor,
           wastePercent: component.wastePercent,
           roundUp: component.roundUp,
+          perLayer: component.perLayer,
           productionRate: null,
         },
         geometry,
+        assembly,
       );
       const quantity = component.roundUp ? Math.ceil(raw) : Math.round(raw * 100) / 100;
       return {

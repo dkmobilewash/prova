@@ -28,6 +28,11 @@ import { fingerprint } from "./pastPriceCore";
  *     (the wall finder). It changes no quantity of a run already typed, so it
  *     does not change this job's price and is not asked here.
  *
+ * (Since 2026-10-27 there is one more: `boardLayers`, which is never MISSING —
+ * unanswered prices as the factor says — but which the drawings often leave
+ * open and which doubles the board. It is its own question, asked after this
+ * one: `./boardLayers.ts`.)
+ *
  * ── WHEN IT IS ASKED ──
  *
  * A wall type used on this job's runs, with no default height, that has at

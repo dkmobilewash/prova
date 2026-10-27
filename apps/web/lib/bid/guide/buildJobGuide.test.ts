@@ -5,6 +5,7 @@ import { isOpenForGuide, type GuideAddendumFact, type GuideWallTypeFact, type Jo
 import { GUIDE_STEP_KEYS, type GuideStepStatus } from "./types";
 import { WALL_HEIGHT_CHOICES, parseWallHeightArg } from "./wallHeight";
 import { needsYou } from "./homeView";
+import { BOARD_LAYER_CHOICES, parseBoardLayersArg } from "./boardLayers";
 import { money } from "@/lib/money";
 
 /**
@@ -46,6 +47,14 @@ const w2NoHeight: GuideWallTypeFact = {
   lineCount: 0,
   unpricedLineCount: 0,
   heightless: { runCount: 3, lengthFt: 680.4, token: "0a1b2c3d" },
+};
+
+/** W2 measured and sized, with a per-layer board part and no layer answer: the board can still double. */
+const w2NoLayers: GuideWallTypeFact = {
+  ...w2,
+  lineCount: 0,
+  unpricedLineCount: 0,
+  layersUnanswered: { runCount: 3, lengthFt: 680.4, sides: 2, token: "9f8e7d6c" },
 };
 
 const addendum2: GuideAddendumFact = {
@@ -127,13 +136,14 @@ const FIXTURES = {
   "proposal-ready": ready(),
   "send-due-soon": ready({ invitations: invited("2026-10-27", 840) }),
   "wall-height": ready({ wallTypes: [w1, w2NoHeight], wallLineCount: 3 }),
+  "board-layers": ready({ wallTypes: [w1, w2NoLayers], wallLineCount: 3 }),
   "job-walk": empty({ invitations: [{ ...invited("2026-11-05", 840)[0]!, walkDate: "2026-10-27", walkMinute: 540 }] }),
   "rfi-cutoff": ready({ invitations: [{ ...invited("2026-11-05", 840)[0]!, rfiCutoffDate: "2026-10-28", gcName: "Marlow" }] }),
   "addendum-unacknowledged": ready({ unacknowledgedAddenda: [addendum2] }),
 } satisfies Record<string, JobGuideFacts>;
 
 /** The asks whose actions are tap answers: no primary, and the answers are chips. */
-const CHIP_ASKS = new Set(["wall-height"]);
+const CHIP_ASKS = new Set(["wall-height", "board-layers"]);
 
 describe("one fixture per ask", () => {
   for (const [id, facts] of Object.entries(FIXTURES)) {
@@ -317,6 +327,81 @@ describe("wall-height: the question the drawings do not settle", () => {
     expect(buildJobGuide(ready({ wallTypes: [w1, { ...w2NoHeight, heightless: { runCount: 0, lengthFt: 0, token: "x" } }] }), NOW).ask!.id).toBe(
       "proposal-ready",
     );
+  });
+});
+
+describe("board-layers: how many layers of board, which the drawings often leave to a detail", () => {
+  const guide = buildJobGuide(FIXTURES["board-layers"], NOW);
+  const ask = guide.ask!;
+
+  it("asks it short, by the type's tag and the job's name, with the footage it affects", () => {
+    expect(ask.title).toBe("How many layers of board are on the W2 walls on Harbor Point Tower?");
+    expect(ask.body).toBe(
+      "3 runs of W2 (680 LF) are counted at one layer each side until you say. Two layers doubles the board. Your answer becomes W2's board layers in your wall types.",
+    );
+    expect(ask.step).toBe("walls");
+    expect(guide.headline).toBe("Walls are measured. One thing needs you.");
+    expect(guide.oneLine).toBe("W2 walls need a board layer count");
+    expect(guide.tone).toBe("question");
+  });
+
+  it("offers 1 and 2 layers as tap answers, each carrying the question's own arg and its own confirm", () => {
+    const chips = ask.actions.filter((action) => action.chip);
+    expect(chips.map((action) => action.label)).toEqual(["1 layer each side", "2 layers each side"]);
+    for (const [i, chip] of chips.entries()) {
+      expect(chip.actionId).toBe("setBoardLayers");
+      expect(chip.href).toBeUndefined();
+      expect(chip.primary).toBeUndefined();
+      expect(parseBoardLayersArg(chip.actionArg)).toEqual({ wallTypeId: "wt_w2", layers: BOARD_LAYER_CHOICES[i], token: "9f8e7d6c" });
+    }
+    // The write reaches past this estimate, and the confirm says so.
+    expect(chips.map((chip) => chip.confirm)).toEqual([
+      "Make W2 1 layer of board each side in your wall types, and work this estimate's walls out again from them?",
+      "Make W2 2 layers of board each side in your wall types, and work this estimate's walls out again from them?",
+    ]);
+  });
+
+  it("three or more is picked in Bid's own wall-type library", () => {
+    expect(ask.actions.find((action) => !action.chip)).toEqual({ label: "Three or more", href: "/bid/wall-types" });
+  });
+
+  it("a one-sided type (furring) says its one side, and the chips do not say 'each side'", () => {
+    const furring = { ...w2NoLayers, layersUnanswered: { ...w2NoLayers.layersUnanswered!, sides: 1 } };
+    const one = buildJobGuide(ready({ wallTypes: [furring] }), NOW).ask!;
+    expect(one.body).toContain("counted at one layer on its one boarded side until you say");
+    expect(one.actions.filter((action) => action.chip).map((action) => action.label)).toEqual(["1 layer", "2 layers"]);
+    expect(one.actions[1]!.confirm).toBe(
+      "Make W2 2 layers of board on its one boarded side in your wall types, and work this estimate's walls out again from them?",
+    );
+  });
+
+  it("names the other types that need a count too, and one run reads in the singular", () => {
+    const w3 = { ...w2NoLayers, code: "W3", wallTypeId: "wt_w3" };
+    const two = buildJobGuide(ready({ wallTypes: [w2NoLayers, w3] }), NOW);
+    expect(two.ask!.body).toContain(" 1 other wall type needs a layer count too.");
+    expect(two.oneLine).toBe("W2 and 1 more wall type need a board layer count");
+    const single = { ...w2NoLayers, layersUnanswered: { runCount: 1, lengthFt: 42, sides: 2, token: "9f8e7d6c" } };
+    expect(buildJobGuide(ready({ wallTypes: [single] }), NOW).ask!.body).toMatch(/^1 run of W2 \(42 LF\) is counted at one layer/);
+  });
+
+  it("is not asked once answered, or of a type with no parts (that one is unpriced, and says so)", () => {
+    expect(buildJobGuide(ready({ wallTypes: [w1, { ...w2NoLayers, layersUnanswered: null }] }), NOW).ask!.id).toBe("proposal-ready");
+    const noRuns = { ...w2NoLayers, layersUnanswered: { runCount: 0, lengthFt: 0, sides: 2, token: "x" } };
+    expect(buildJobGuide(ready({ wallTypes: [w1, noRuns] }), NOW).ask!.id).toBe("proposal-ready");
+    expect(buildJobGuide(ready({ wallTypes: [{ ...w2NoLayers, componentCount: 0 }] }), NOW).ask!.id).toBe("unpriced-wall-types");
+  });
+
+  it("ranks AFTER the height (a run with no height produces nothing at all) and BEFORE adding the walls and every price ask", () => {
+    const both = { ...w2NoHeight, layersUnanswered: w2NoLayers.layersUnanswered };
+    expect(buildJobGuide(ready({ wallTypes: [both] }), NOW).ask!.id).toBe("wall-height");
+    // height answered: now the layers
+    const noLines = ready({ wallTypes: [w2NoLayers], wallLineCount: 0, linesWithoutPrice: 4, recap: { appliedAt: null, addedTotal: 1 } });
+    expect(buildJobGuide(noLines, NOW).ask!.id).toBe("board-layers");
+    // layers answered: the earlier rules take over again, in order
+    expect(buildJobGuide({ ...noLines, wallTypes: [{ ...w2NoLayers, layersUnanswered: null }] }, NOW).ask!.id).toBe("walls-not-added");
+    const unpriced = ready({ wallTypes: [w2, w2NoLayers], linesWithoutPrice: 3 });
+    expect(buildJobGuide(unpriced, NOW).ask!.id).toBe("board-layers");
+    expect(buildJobGuide({ ...unpriced, wallTypes: [w2] }, NOW).ask!.id).toBe("unpriced-wall-types");
   });
 });
 
@@ -736,6 +821,10 @@ describe("the words", () => {
       ...facts.wallTypes.flatMap((type) => (type.heightless ? [type.heightless.runCount, type.heightless.lengthFt] : [])),
       facts.wallTypes.filter((type) => type.heightless).length - 1,
       ...WALL_HEIGHT_CHOICES,
+      // the board-layer question: its runs, their length, how many other types, and the offered answers
+      ...facts.wallTypes.flatMap((type) => (type.layersUnanswered ? [type.layersUnanswered.runCount, type.layersUnanswered.lengthFt] : [])),
+      facts.wallTypes.filter((type) => type.layersUnanswered).length - 1,
+      ...BOARD_LAYER_CHOICES,
       // the addenda: how many others are missing
       (facts.unacknowledgedAddenda ?? []).length - 1,
     ]) {

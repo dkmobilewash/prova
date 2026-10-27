@@ -6,6 +6,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { NOT_ESTIMATE_STAGE } from "@/lib/estimating/draft-lines";
 import { parseWallHeightArg, wallHeightQuestions } from "@/lib/bid/guide/wallHeight";
+import { boardLayerQuestions, parseBoardLayersArg } from "@/lib/bid/guide/boardLayers";
 import { applyBidRecap } from "./bidRecap";
 import { usePastPrice as applyPastPrice } from "./bidGuidePastPrice";
 import { refreshWallSchedule, updateWallType } from "./wallTypes";
@@ -23,8 +24,9 @@ import { actionFail, actionOk, type ActionResult } from "./shared";
  * Gate: MANAGE_ESTIMATING, the one capability the whole Bid surface asks for.
  * `applyBidRecap` additionally asserts VIEW_JOB_COSTS and that the job is this
  * company's and still an estimate; its refusal sentence is passed through as it
- * is. `setWallHeight` additionally needs VIEW_JOB_COSTS, because answering it
- * refreshes the estimate's wall lines (see `setWallHeight` below). Every refusal is RETURNED, never thrown — production redacts a thrown
+ * is. `setWallHeight` and `setBoardLayers` additionally need VIEW_JOB_COSTS,
+ * because answering either refreshes the estimate's wall lines (see
+ * `setWallHeight` below). Every refusal is RETURNED, never thrown — production redacts a thrown
  * message (CLAUDE.md, Errors).
  *
  * `actionId` is a plain string at this boundary, not `GuideActionId`: a Server
@@ -66,6 +68,13 @@ export async function runGuideAction(jobId: string, actionId: string, actionArg?
       revalidatePath("/bid/wall-types");
       return actionOk;
     }
+    case "setBoardLayers": {
+      const result = await setBoardLayers(jobId, actionArg);
+      if (!result.ok) return result;
+      revalidatePath(`/bid/estimates/${jobId}`, "layout");
+      revalidatePath("/bid/wall-types");
+      return actionOk;
+    }
     default:
       return actionFail("That action isn't one this screen knows how to run.");
   }
@@ -80,10 +89,68 @@ const STALE_HEIGHT =
 const EDIT_IN_LIBRARY = (code: string) =>
   `${code} would be renamed if it were saved from here. Set its height on your wall types page instead, with "Another height".`;
 
-/** Would `updateWallType`'s own normalising leave every field but the height as it is? */
+const BAD_LAYERS = "That answer isn't one this page can apply. Reload the job and try again.";
+const STALE_LAYERS =
+  "Those walls have changed since you saw the question — the layers were set, a per-layer part was changed, or a run was added or removed. Reload the job to see where it stands.";
+const EDIT_LAYERS_IN_LIBRARY = (code: string) =>
+  `${code} would be renamed if it were saved from here. Set its board layers on your wall types page instead.`;
+
+/** Would `updateWallType`'s own normalising leave every field but the answer as it is? */
 function roundTrips(type: { code: string; name: string; notes: string | null }): boolean {
   const notes = type.notes ?? "";
   return type.code === type.code.trim().toUpperCase() && type.name === type.name.trim() && notes === notes.trim();
+}
+
+/** The wall-type columns a tap answer re-sends, read the same way by both questions. */
+const WALL_TYPE_ROW = {
+  id: true,
+  code: true,
+  name: true,
+  sides: true,
+  studSpacingIn: true,
+  notes: true,
+  defaultHeightFt: true,
+  thicknessIn: true,
+  boardLayers: true,
+} as const;
+
+type Decimalish = { toString(): string };
+
+type WallTypeRowForForm = {
+  code: string;
+  name: string;
+  sides: number;
+  studSpacingIn: Decimalish;
+  notes: string | null;
+  defaultHeightFt: Decimalish | null;
+  thicknessIn: Decimalish | null;
+  boardLayers: number | null;
+};
+
+/**
+ * ── THE ROW AS IT STANDS, WITH ONE ANSWER CHANGED ──
+ *
+ * `updateWallType` writes every field its form names, so a tap answer re-sends
+ * the whole row. ONE builder for both tap answers, and it sends every column
+ * the library's own form sends — the thickness included. The height answer
+ * used to build its own form without `thicknessIn`, and `updateWallType` read
+ * the missing key as blank: answering "how tall are the W2 walls?" quietly
+ * CLEARED W2's thickness, which is what the wall finder matches a drawn group
+ * on. (`updateWallType` now also leaves an unsent thickness alone; this is the
+ * other half, so neither side relies on the other.)
+ */
+function wallTypeForm(type: WallTypeRowForForm, answer: { defaultHeightFt?: number; boardLayers?: number }): FormData {
+  const asText = (value: Decimalish | number | null): string => (value == null ? "" : value.toString());
+  const form = new FormData();
+  form.set("code", type.code);
+  form.set("name", type.name);
+  form.set("sides", String(type.sides));
+  form.set("studSpacingIn", type.studSpacingIn.toString());
+  form.set("notes", type.notes ?? "");
+  form.set("thicknessIn", asText(type.thicknessIn));
+  form.set("defaultHeightFt", asText(answer.defaultHeightFt ?? type.defaultHeightFt));
+  form.set("boardLayers", asText(answer.boardLayers ?? type.boardLayers));
+  return form;
 }
 
 /**
@@ -132,16 +199,7 @@ async function setWallHeight(jobId: string, actionArg: string | undefined): Prom
   const [type, runs] = await Promise.all([
     prisma.wallType.findFirst({
       where: { id: parsed.wallTypeId, companyId },
-      select: {
-        id: true,
-        code: true,
-        name: true,
-        sides: true,
-        studSpacingIn: true,
-        notes: true,
-        defaultHeightFt: true,
-        _count: { select: { components: true } },
-      },
+      select: { ...WALL_TYPE_ROW, _count: { select: { components: true } } },
     }),
     prisma.wallRun.findMany({
       where: { jobId, companyId, wallTypeId: parsed.wallTypeId },
@@ -178,15 +236,73 @@ async function setWallHeight(jobId: string, actionArg: string | undefined): Prom
   if (!roundTrips(type)) return actionFail(EDIT_IN_LIBRARY(type.code));
 
   // The row as it stands, with the one answer changed: `updateWallType` writes
-  // every field it is given, so every field is given.
-  const form = new FormData();
-  form.set("code", type.code);
-  form.set("name", type.name);
-  form.set("sides", String(type.sides));
-  form.set("studSpacingIn", type.studSpacingIn.toString());
-  form.set("notes", type.notes ?? "");
-  form.set("defaultHeightFt", String(parsed.heightFt));
-  const updated = await updateWallType(type.id, form);
+  // every field it is given, so every field is given (`wallTypeForm`).
+  const updated = await updateWallType(type.id, wallTypeForm(type, { defaultHeightFt: parsed.heightFt }));
+  if (!updated.ok) return updated;
+
+  const refreshed = await refreshWallSchedule(jobId);
+  if (!refreshed.ok) return actionFail(refreshed.error);
+  return actionOk;
+}
+
+/**
+ * "How many layers of board are on the W2 walls?" — the answer, from a tap
+ * (`lib/bid/guide/boardLayers.ts`). The same shape as `setWallHeight` above,
+ * deliberately, and NOT EXPORTED for the same reason.
+ *
+ * `arg` is `bl:<WallType id>:<layers>:<token>`. The count must be one of the
+ * offered answers, and the QUESTION is re-derived here from this company's
+ * rows by the same `boardLayerQuestions` the screen used: if the type was
+ * answered since, lost its last per-layer part, or this job's runs of it
+ * changed, there is no matching question and the tap is refused as stale
+ * rather than applied to a different wall.
+ *
+ * The write is `updateWallType` (the row as it stands, `boardLayers` changed)
+ * then `refreshWallSchedule` for this job, under VIEW_JOB_COSTS checked before
+ * anything is written — exactly the height answer's pair.
+ */
+async function setBoardLayers(jobId: string, actionArg: string | undefined): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const companyId = context.company.id;
+
+  const parsed = parseBoardLayersArg(actionArg);
+  if (!parsed || typeof jobId !== "string" || jobId.length === 0) return actionFail(BAD_LAYERS);
+
+  const job = await prisma.job.findFirst({ where: { id: jobId, companyId }, select: { id: true, status: true } });
+  if (!job) return actionFail(NO_JOB);
+  if (job.status !== "ESTIMATE") return actionFail(NOT_ESTIMATE_STAGE);
+
+  const [type, runs] = await Promise.all([
+    prisma.wallType.findFirst({
+      where: { id: parsed.wallTypeId, companyId },
+      select: { ...WALL_TYPE_ROW, components: { select: { perLayer: true } } },
+    }),
+    prisma.wallRun.findMany({
+      where: { jobId, companyId, wallTypeId: parsed.wallTypeId },
+      select: { id: true, wallTypeId: true, lengthFt: true },
+    }),
+  ]);
+  if (!type) return actionFail(STALE_LAYERS);
+
+  const question = boardLayerQuestions(
+    runs.map((run) => ({ id: run.id, wallTypeId: run.wallTypeId, lengthFt: Number(run.lengthFt) })),
+    [
+      {
+        id: type.id,
+        code: type.code,
+        sides: type.sides,
+        boardLayers: type.boardLayers,
+        perLayerCount: type.components.filter((component) => component.perLayer).length,
+      },
+    ],
+  ).find((q) => q.wallTypeId === type.id);
+  if (!question || question.token !== parsed.token) return actionFail(STALE_LAYERS);
+
+  // See `setWallHeight`: a row `updateWallType` would rename is refused.
+  if (!roundTrips(type)) return actionFail(EDIT_LAYERS_IN_LIBRARY(type.code));
+
+  const updated = await updateWallType(type.id, wallTypeForm(type, { boardLayers: parsed.layers }));
   if (!updated.ok) return updated;
 
   const refreshed = await refreshWallSchedule(jobId);

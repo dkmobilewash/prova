@@ -56,7 +56,8 @@ export type GuideAction = {
   chip?: boolean;
   /** The sentence over [Cancel] [Yes, do it] when this action is armed, in
    * place of the general "This changes your estimate. Go ahead?" — for a write
-   * whose reach is wider than this estimate (a wall type's default height). */
+   * whose reach is wider than this estimate (a wall type's default height or
+   * board layers). */
   confirm?: string;
 };
 
@@ -68,7 +69,8 @@ export type GuideAction = {
 export type GuideActionId =
   | "applyRecap" // put the recap's bid onto the line prices (applyBidRecap)
   | "usePastPrice" // price a wall type from the same type on a past job (lib/bid/guide/pastPrice)
-  | "setWallHeight"; // a wall type's default height, from a tap answer (lib/bid/guide/wallHeight, updateWallType)
+  | "setWallHeight" // a wall type's default height, from a tap answer (lib/bid/guide/wallHeight, updateWallType)
+  | "setBoardLayers"; // a wall type's board layers each side, from a tap answer (lib/bid/guide/boardLayers, updateWallType)
 
 /**
  * Asks about a DATE that passes on its own — the job walk, the RFI cutoff.

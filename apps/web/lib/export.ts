@@ -281,7 +281,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     model: "wallType",
     label: "Wall types",
     note: "Your partition schedule — each wall type by its tag from the drawings.",
-    columns: ["id", "code", "name", "thicknessIn", "defaultHeightFt", "sides", "studSpacingIn", "notes", "sortOrder", "createdAt", "updatedAt"],
+    columns: ["id", "code", "name", "thicknessIn", "defaultHeightFt", "sides", "studSpacingIn", "boardLayers", "notes", "sortOrder", "createdAt", "updatedAt"],
     scope: byCompany,
   },
   {
@@ -316,7 +316,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Wall type parts",
     note: "What each wall type is built from, and how each part is counted.",
     columns: [
-      "id", "wallTypeId", "description", "unit", "basis", "factor", "wastePercent", "roundUp",
+      "id", "wallTypeId", "description", "unit", "basis", "factor", "wastePercent", "roundUp", "perLayer",
       "catalogEntryId", "productionRate", "costCategory", "craftClassificationId", "sortOrder", "createdAt", "updatedAt",
     ],
     scope: (companyId: string) => ({ wallType: { companyId } }),

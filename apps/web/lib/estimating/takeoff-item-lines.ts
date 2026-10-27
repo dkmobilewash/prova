@@ -275,9 +275,13 @@ export async function syncTakeoffItemLines(
           factor: Number(component.factor),
           wastePercent: Number(component.wastePercent),
           roundUp: component.roundUp,
+          perLayer: component.perLayer,
           productionRate: num(component.productionRate),
         },
         geometry,
+        // The assembly's own board-layer answer, so a traced wall and a wall
+        // run of the same type count the same board (`layerMultiplier`).
+        { boardLayers: assembly.boardLayers },
       );
       // `roundUp` is the part's own answer to "can you buy a fraction of
       // this" — a sheet of board cannot be half-bought, a foot of track can.

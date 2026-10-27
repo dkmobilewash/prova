@@ -51,6 +51,14 @@ export type StarterPart = {
   factor: string;
   wastePercent?: string;
   roundUp?: boolean;
+  /**
+   * The factor is for ONE layer of board, so the wall type's `boardLayers`
+   * answer multiplies it. Set on the BOARD only: tape and finish cover the
+   * face layer whatever is behind it, so a finished square foot does not
+   * change with the count. Every starter names one layer each side, so with
+   * no answer these price exactly as they always have.
+   */
+  perLayer?: boolean;
 };
 
 export type StarterType = { code: string; name: string; parts: StarterPart[] };
@@ -58,7 +66,7 @@ export type StarterType = { code: string; name: string; parts: StarterPart[] };
 const STARTER_COMPONENTS: StarterPart[] = [
   { description: "3⅝″ 20ga studs", unit: "ea", basis: "STUDS", factor: "1", roundUp: true },
   { description: "3⅝″ 20ga track, top and bottom", unit: "lin ft", basis: "LINEAR_FT", factor: "2" },
-  { description: "⅝″ Type X board, 4x8 sheets", unit: "sheets", basis: "BOARDED_SQFT", factor: "0.03125", wastePercent: "10", roundUp: true },
+  { description: "⅝″ Type X board, 4x8 sheets", unit: "sheets", basis: "BOARDED_SQFT", factor: "0.03125", wastePercent: "10", roundUp: true, perLayer: true },
   { description: "Hang, tape and finish ⅝″ board", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1" },
 ];
 
@@ -82,7 +90,7 @@ export const STARTER_TYPES: readonly StarterType[] = [
     parts: [
       { description: "2x4 studs", unit: "ea", basis: "STUDS", factor: "1", roundUp: true },
       { description: "2x4 plate, one bottom and two top", unit: "lin ft", basis: "LINEAR_FT", factor: "3" },
-      { description: "½″ board, 4x8 sheets", unit: "sheets", basis: "BOARDED_SQFT", factor: "0.03125", wastePercent: "10", roundUp: true },
+      { description: "½″ board, 4x8 sheets", unit: "sheets", basis: "BOARDED_SQFT", factor: "0.03125", wastePercent: "10", roundUp: true, perLayer: true },
       { description: "Hang, tape and finish ½″ board", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1" },
     ],
   },
@@ -94,7 +102,7 @@ export const STARTER_TYPES: readonly StarterType[] = [
       { description: "6″ 18ga track, top and bottom", unit: "lin ft", basis: "LINEAR_FT", factor: "2" },
       { description: "½″ exterior sheathing", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "10" },
       { description: "R-21 batt insulation", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
-      { description: "⅝″ Type X board, inside face only", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "10" },
+      { description: "⅝″ Type X board, inside face only", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "10", perLayer: true },
       { description: "Hang, tape and finish inside face", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
     ],
   },

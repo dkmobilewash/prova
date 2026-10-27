@@ -16,6 +16,7 @@ const component = (over: Partial<WallComponentInput> & Pick<WallComponentInput, 
   factor: 1,
   wastePercent: 0,
   roundUp: false,
+  perLayer: false,
   productionRate: null,
   ...over,
 });
@@ -27,6 +28,7 @@ const W1: WallTypeInput = {
   defaultHeightFt: 10,
   sides: 2,
   studSpacingIn: 16,
+  boardLayers: null,
   components: [
     component({ id: "studs", description: "3⅝″ 20ga studs", unit: "ea", basis: "STUDS" }),
     component({ id: "track", description: "3⅝″ track", unit: "lin ft", basis: "LINEAR_FT", factor: 2 }),
@@ -83,7 +85,7 @@ describe("a component on a run", () => {
   it("is basis × factor × (1 + waste)", () => {
     const g = runGeometry(run({ id: "r" }), W1)!;
     // 2000 sq ft boarded / 32 × 1.10 = 68.75 sheets (rounded later, on the total).
-    expect(componentRunQuantity(W1.components[3], g)).toBeCloseTo(68.75);
+    expect(componentRunQuantity(W1.components[3], g, W1)).toBeCloseTo(68.75);
   });
 });
 

@@ -146,6 +146,7 @@ describe.skipIf(DIR === "")("one wall type, end to end", () => {
         defaultHeightFt: null,
         sides: 2,
         studSpacingIn: assembly.read.studSpacingIn ?? 16,
+        boardLayers: null,
         components: assembly.components.map((c, at) => ({
           id: `c${at}`,
           description: c.description,
@@ -154,6 +155,8 @@ describe.skipIf(DIR === "")("one wall type, end to end", () => {
           factor: c.factor,
           wastePercent: c.wastePercent,
           roundUp: c.roundUp,
+          // A proposal writes its layer count into the board factor.
+          perLayer: false,
           // The consumer's type carries the PRICE half; the proposal does not
           // have these fields at all. Null here is the boundary working, not a
           // missing value — see `partitionAssembly.ts`.
@@ -181,7 +184,7 @@ describe.skipIf(DIR === "")("one wall type, end to end", () => {
           : wallType.components.map((c) => ({
               description: c.description,
               unit: c.unit,
-              quantity: componentRunQuantity(c, geometry),
+              quantity: componentRunQuantity(c, geometry, wallType),
             }));
       // eslint-disable-next-line no-console
       console.log(

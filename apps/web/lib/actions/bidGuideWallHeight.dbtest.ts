@@ -61,7 +61,13 @@ beforeAll(async () => {
   contractedJobId = (await prisma.job.create({ data: { companyId, contactId: gc.id, name: `Signed ${t}`, status: "CONTRACTED" } })).id;
   otherJobId = (await prisma.job.create({ data: { companyId: otherCompanyId, contactId: otherGc.id, name: `Theirs ${t}`, status: "ESTIMATE" } })).id;
 
-  w2 = (await prisma.wallType.create({ data: { companyId, code: CODE, name: "rated wall", sides: 2, studSpacingIn: 16, notes: "keep me" } })).id;
+  // A thickness and a board-layer answer, because the height tap re-sends the
+  // whole row and once cleared the thickness by leaving it out.
+  w2 = (
+    await prisma.wallType.create({
+      data: { companyId, code: CODE, name: "rated wall", sides: 2, studSpacingIn: 16, notes: "keep me", thicknessIn: "4.88", boardLayers: 2 },
+    })
+  ).id;
   await prisma.wallTypeComponent.create({ data: { wallTypeId: w2, description: "Board", unit: "SF", basis: "BOARDED_SQFT" } });
   otherType = (await prisma.wallType.create({ data: { companyId: otherCompanyId, code: CODE, name: "theirs" } })).id;
   await prisma.wallTypeComponent.create({ data: { wallTypeId: otherType, description: "Board", unit: "SF", basis: "BOARDED_SQFT" } });
@@ -155,8 +161,10 @@ describe("setWallHeight through runGuideAction, real rows", () => {
 
     const row = await prisma.wallType.findUniqueOrThrow({ where: { id: w2 } });
     expect(Number(row.defaultHeightFt)).toBe(9);
-    expect(row).toMatchObject({ code: CODE, name: "rated wall", sides: 2, notes: "keep me" });
+    expect(row).toMatchObject({ code: CODE, name: "rated wall", sides: 2, notes: "keep me", boardLayers: 2 });
     expect(Number(row.studSpacingIn)).toBe(16);
+    // The wall finder matches on this; the height tap used to clear it.
+    expect(Number(row.thicknessIn)).toBe(4.88);
 
     // 150 LF × 9 ft × 2 sides of board, on THIS job only.
     const lines = await wallLines(jobId);

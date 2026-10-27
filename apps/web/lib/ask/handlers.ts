@@ -89,7 +89,7 @@ import { gettingStartedChecklist, type GettingStartedStepId } from "@/lib/gettin
 import { loadGettingStartedCounts } from "@/lib/getting-started-counts";
 import { GETTING_STARTED_HIDDEN_COOKIE, isGettingStartedHidden } from "@/lib/getting-started-cookie";
 import { loadTakeoffCurrency } from "@/lib/takeoff-currency-query";
-import { openingsFromJson, scheduleLines, type WallComponentBasis, type WallTypeInput } from "@/lib/wall-assemblies";
+import { openingsFromJson, scheduleLines, wallTypeInputFromRow, type WallTypeInput } from "@/lib/wall-assemblies";
 import { levelBid, outstandingNote, requestState } from "@/lib/bid-levelling";
 import { acknowledgedOnFor, paperWhereMany, papersFor } from "@/lib/estimating/bid-papers";
 import { bidResponsiveness, responsivenessSentence } from "@/lib/bid-responsiveness";
@@ -4972,23 +4972,7 @@ async function wallSchedule(companyId: string, input: Input): Promise<ToolResult
 
   // Mapped exactly as the Estimate tab maps it, so the two cannot disagree
   // about what a wall type is.
-  const typeInputs: WallTypeInput[] = types.map((type) => ({
-    id: type.id,
-    code: type.code,
-    defaultHeightFt: type.defaultHeightFt != null ? Number(type.defaultHeightFt) : null,
-    sides: type.sides,
-    studSpacingIn: Number(type.studSpacingIn),
-    components: type.components.map((component) => ({
-      id: component.id,
-      description: component.description,
-      unit: component.unit,
-      basis: component.basis as WallComponentBasis,
-      factor: Number(component.factor),
-      wastePercent: Number(component.wastePercent),
-      roundUp: component.roundUp,
-      productionRate: component.productionRate != null ? Number(component.productionRate) : null,
-    })),
-  }));
+  const typeInputs: WallTypeInput[] = types.map(wallTypeInputFromRow);
 
   const byJob = new Map<string, { id: string; name: string; runs: typeof runs }>();
   for (const run of runs) {

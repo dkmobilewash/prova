@@ -3,7 +3,7 @@ import type { Prisma } from "@prova/db";
 import {
   openingsFromJson,
   scheduleLines,
-  type WallComponentBasis,
+  wallTypeInputFromRow,
   type WallRunInput,
   type WallSchedule,
   type WallTypeInput,
@@ -76,23 +76,7 @@ export async function loadWallSchedule(tx: Tx, companyId: string, jobId: string)
     heightFt: num(run.heightFt),
     openings: openingsFromJson(run.openings),
   }));
-  const typeInputs: WallTypeInput[] = types.map((type) => ({
-    id: type.id,
-    code: type.code,
-    defaultHeightFt: num(type.defaultHeightFt),
-    sides: type.sides,
-    studSpacingIn: Number(type.studSpacingIn),
-    components: type.components.map((component) => ({
-      id: component.id,
-      description: component.description,
-      unit: component.unit,
-      basis: component.basis as WallComponentBasis,
-      factor: Number(component.factor),
-      wastePercent: Number(component.wastePercent),
-      roundUp: component.roundUp,
-      productionRate: num(component.productionRate),
-    })),
-  }));
+  const typeInputs: WallTypeInput[] = types.map(wallTypeInputFromRow);
   const componentById = new Map(types.flatMap((type) => type.components).map((c) => [c.id, c]));
 
   // ── THE SHOP'S OWN ANSWER ABOUT OPENINGS ──

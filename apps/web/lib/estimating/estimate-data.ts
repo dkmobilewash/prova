@@ -17,7 +17,7 @@ import { employerBurdenPercentOn, employerBurdenPercentOnDay } from "@/lib/emplo
 import { serverToday } from "@/lib/serverToday";
 import { burdenedHourlyRate, estimateBurdenedLaborCost, laborRateDateFor } from "@/lib/estimate-labor-cost";
 import { estimatedHours, productionBackCheck } from "@/lib/labor-productivity";
-import { openingsFromJson, scheduleLines, type WallComponentBasis, type WallTypeInput } from "@/lib/wall-assemblies";
+import { openingsFromJson, scheduleLines, wallTypeInputFromRow, type WallTypeInput } from "@/lib/wall-assemblies";
 import type { RecapLineView } from "@/components/BidRecapPanel";
 import { RECAP_RATE_KEYS, type CostCategoryValue, type RecapRates } from "@/lib/bid-recap";
 
@@ -158,23 +158,7 @@ export async function loadJobEstimateData(jobId: string, companyId: string) {
       : Promise.resolve([]),
   ]);
 
-  const wallTypeInputs: WallTypeInput[] = wallTypes.map((type) => ({
-    id: type.id,
-    code: type.code,
-    defaultHeightFt: type.defaultHeightFt != null ? Number(type.defaultHeightFt) : null,
-    sides: type.sides,
-    studSpacingIn: Number(type.studSpacingIn),
-    components: type.components.map((c) => ({
-      id: c.id,
-      description: c.description,
-      unit: c.unit,
-      basis: c.basis as WallComponentBasis,
-      factor: Number(c.factor),
-      wastePercent: Number(c.wastePercent),
-      roundUp: c.roundUp,
-      productionRate: c.productionRate != null ? Number(c.productionRate) : null,
-    })),
-  }));
+  const wallTypeInputs: WallTypeInput[] = wallTypes.map(wallTypeInputFromRow);
   const wallRunViews = wallRuns.map((run) => ({
     id: run.id,
     label: run.label,
