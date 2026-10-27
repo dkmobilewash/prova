@@ -326,6 +326,7 @@ describe("job guide facts against a real database", () => {
         "planIngestJob",
         "wallType",
         "bidAddendum",
+        "outboundMessage",
       ] as const;
       const spies = tables.map((table) => {
         const delegate = prisma[table] as { findMany: (...args: unknown[]) => unknown };
@@ -529,5 +530,88 @@ describe("questions the drawings don't settle, and the bid's dates and papers", 
     expect(theirs.map((guide) => guide.jobId)).toEqual([otherJob]);
     // their own walk IS theirs
     expect(theirs[0]!.ask!.id).toBe("job-walk");
+  });
+});
+
+/**
+ * THE SEND RECORD — the guide's "sent" read off the email the app sent for the
+ * invitation (`sendBidProposal`, `submitBidPackage`), not only off the status.
+ * A send the provider never took (only a FAILED event) does not count, and
+ * another company's message that names this invitation's id does not either:
+ * `relatedId` is a bare string with no foreign key (`messaging.prisma`).
+ */
+describe("the send record", () => {
+  const t = `send_${Date.now()}`;
+  let co = "";
+  let otherCo = "";
+  let jobId = "";
+  let invitationId = "";
+
+  beforeAll(async () => {
+    co = (await prisma.company.create({ data: { name: `Send Co ${t}` } })).id;
+    otherCo = (await prisma.company.create({ data: { name: `Send Other ${t}` } })).id;
+    const gc = (await prisma.contact.create({ data: { companyId: co, name: `Turner ${t}`, email: "bids@turner.test" } })).id;
+    jobId = (await prisma.job.create({ data: { companyId: co, contactId: gc, name: `Send job ${t}`, status: "ESTIMATE" } })).id;
+    await prisma.jobLineItem.create({ data: { jobId, description: "Board", unit: "SF", quantity: 100, unitPrice: 2, budgetedUnitCost: 1 } });
+    const project = await prisma.bidProject.create({ data: { companyId: co, name: `Send project ${t}`, estimateJobId: jobId } });
+    invitationId = (
+      await prisma.bidInvitation.create({
+        data: { companyId: co, contactId: gc, projectName: `Send ${t}`, bidProjectId: project.id, dueDate: new Date("2026-10-27T00:00:00Z") },
+      })
+    ).id;
+  });
+
+  afterAll(async () => {
+    await prisma.outboundMessageEvent.deleteMany({ where: { message: { companyId: { in: [co, otherCo] } } } });
+    await prisma.outboundMessage.deleteMany({ where: { companyId: { in: [co, otherCo] } } });
+    await prisma.bidInvitation.deleteMany({ where: { companyId: co } });
+    await prisma.bidProject.deleteMany({ where: { companyId: co } });
+    await prisma.jobLineItem.deleteMany({ where: { jobId } });
+    await prisma.job.deleteMany({ where: { id: jobId } });
+    await prisma.contact.deleteMany({ where: { companyId: co } });
+    await prisma.company.deleteMany({ where: { id: { in: [co, otherCo] } } });
+  });
+
+  const message = (companyId: string, createdAt: string, type: "QUEUED" | "FAILED") =>
+    prisma.outboundMessage.create({
+      data: {
+        companyId,
+        channel: "EMAIL",
+        toAddress: "bids@turner.test",
+        subject: "Proposal",
+        body: "Proposal text",
+        fromAddress: "office@cyrus.test",
+        relatedType: "BID_INVITATION",
+        relatedId: invitationId,
+        createdAt: new Date(createdAt),
+        events: { create: { type, occurredAt: new Date(createdAt) } },
+      },
+    });
+
+  it("an invitation never emailed has no send day, and a ready bid still asks to be sent", async () => {
+    const facts = (await loadJobGuideFacts(co, jobId))!;
+    expect(facts.invitations).toEqual([expect.objectContaining({ id: invitationId, status: "INVITED", proposalSentOn: null })]);
+    expect(buildJobGuide(facts, NOW).ask).not.toBeNull();
+  });
+
+  it("a send that never reached the provider, or another company's message, is not a send", async () => {
+    await message(co, "2026-10-24T18:00:00Z", "FAILED");
+    await message(otherCo, "2026-10-23T18:00:00Z", "QUEUED");
+    const facts = (await loadJobGuideFacts(co, jobId))!;
+    expect(facts.invitations[0]!.proposalSentOn).toBeNull();
+  });
+
+  it("the first send that reached the provider is the day, and the guide reads done with the status still INVITED", async () => {
+    await message(co, "2026-10-26T15:30:00Z", "QUEUED");
+    await message(co, "2026-10-27T09:00:00Z", "QUEUED");
+    const facts = (await loadJobGuideFacts(co, jobId))!;
+    expect(facts.invitations[0]).toMatchObject({ status: "INVITED", proposalSentOn: "2026-10-26" });
+    const guide = buildJobGuide(facts, NOW);
+    expect(guide.ask).toBeNull();
+    expect(guide.steps.every((step) => step.status === "done")).toBe(true);
+    expect(guide.steps[4]!.summary).toBe("Sent Oct 26");
+    // still on the home list (a sent bid waits on a decision), with no ask
+    const home = await getOpenJobGuides(co, NOW);
+    expect(home.map((one) => [one.jobId, one.ask])).toEqual([[jobId, null]]);
   });
 });

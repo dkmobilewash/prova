@@ -50,6 +50,8 @@ const KNOWN_EXCEPTIONS: Record<string, string> = {
     "the shared component itself — this is where the arming state is supposed to live",
   "components/bid/guide/JobGuideAsk.tsx":
     "arms a WRITE (apply the recap, use a past price), not a delete, and it has no row of ordinary actions beside it to hide — the whole button row is REPLACED by [Cancel][Yes, do it] while armed (jobGuideScreen.test.tsx asserts the ordinary actions are gone and Cancel is first). RowActions wraps a row with a destructive slot; this card has no such row.",
+  "components/bid/ProposalSendComposer.tsx":
+    "arms a SEND (the proposal to a GC), not a delete, and it is a form rather than a row: there are no ordinary actions beside it to hide. The single \"Send to <GC>\" button is REPLACED by [Cancel][Yes, send it] while armed, Cancel first so it takes the vacated pixel, stacked Cancel-on-top below sm. The action refuses a send without the second press (bidProposalSend.test.ts).",
   /* The three sales rows (SalesActivityRow, SalesLeadRow,
      SalesOpportunityRow) sat here from #176 until they became <RowActions>.
      Removing them was tried once before that, when #183 landed, and the

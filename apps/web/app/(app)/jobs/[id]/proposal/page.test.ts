@@ -103,6 +103,15 @@ vi.mock("@/components/BidPackageBuilder", () => ({
     createElement("i", { "data-submit": submit ? `${submit.bidInvitationId}:${submit.gcName}` : "none" }),
 }));
 
+// C Stream Bid's send: the loader has its own database test and the composer
+// its own render test; here only WHERE they appear, and with what.
+const loadProposalSend = vi.fn();
+vi.mock("@/lib/estimating/proposal-send-query", () => ({ loadProposalSend: (input: unknown) => loadProposalSend(input) }));
+vi.mock("@/components/bid/ProposalSendComposer", () => ({
+  ProposalSendComposer: (props: { invitationId: string; gcName: string; totalLabel: string; priceCents: number; mode: string }) =>
+    createElement("i", { "data-composer": `${props.invitationId}:${props.gcName}:${props.totalLabel}:${props.priceCents}:${props.mode}` }),
+}));
+
 const { default: JobProposalPage } = await import("./page");
 
 async function render(search: { mode?: string; invitation?: string }, surface?: "crm" | "bid") {
@@ -122,6 +131,29 @@ const text = (html: string) =>
     .replace(/\s+/g, " ");
 
 beforeEach(() => {
+  loadProposalSend.mockReset();
+  loadProposalSend.mockImplementation(async (input: { invitationId: string; mode: string }) => ({
+    ok: true,
+    view: {
+      jobId: "job-1",
+      invitationId: input.invitationId,
+      contactId: "c",
+      status: "INVITED",
+      bidAmountIsBlank: true,
+      gcName: "Acme GC",
+      projectName: "p",
+      companyName: "Test Drywall",
+      mode: input.mode,
+      lineCount: 2,
+      totalCents: 1_100_000,
+      recipients: [{ address: "bids@acme.example", name: "Acme GC" }],
+      blocker: null,
+      subject: "s",
+      coverNote: "n",
+      documentText: "d",
+      history: [],
+    },
+  }));
   invitationFindFirst.mockReset();
   invitationFindFirst.mockImplementation(async ({ where }) => {
     const id = where.id as string | undefined;
@@ -225,5 +257,38 @@ describe("proposal opened for one invitation", () => {
     const html = await render({ invitation: "inv-a" }, "bid");
     expect(html).toContain('href="/bid/estimates/job-1/proposal?mode=lump&amp;invitation=inv-a"');
     expect(html).not.toMatch(/href="\/jobs\//);
+  });
+});
+
+describe("C Stream Bid: send the proposal to one GC", () => {
+  it("draws the composer for the GC this page is opened for, at that price and mode", async () => {
+    const html = await render({ invitation: "inv-a", mode: "scope" }, "bid");
+    expect(html).toContain('data-composer="inv-a:Acme GC:$11,000.00:1100000:scope"');
+    expect(loadProposalSend).toHaveBeenCalledWith(
+      expect.objectContaining({ companyId: "company-1", jobId: "job-1", invitationId: "inv-a", mode: "scope" }),
+    );
+  });
+
+  it("is Bid's alone: the CRM page reads nothing for it and draws nothing", async () => {
+    const html = await render({ invitation: "inv-a" }, "crm");
+    expect(html).not.toContain("data-composer");
+    expect(html).not.toContain("send-pick");
+    expect(loadProposalSend).not.toHaveBeenCalled();
+  });
+
+  it("with no GC chosen, offers one way in per GC, inside Bid", async () => {
+    const html = await render({}, "bid");
+    expect(html).not.toContain("data-composer");
+    expect(text(html)).toContain("Send to Acme GC");
+    expect(text(html)).toContain("Send to BuildCo");
+    expect(html).toContain('href="/bid/estimates/job-1/proposal?mode=lump&amp;invitation=inv-b"');
+    expect(loadProposalSend).not.toHaveBeenCalled();
+  });
+
+  it("says why when the send cannot be loaded, instead of drawing a composer", async () => {
+    loadProposalSend.mockResolvedValueOnce({ ok: false, problem: "That GC's bid isn't on this estimate any more. Reload the page." });
+    const html = await render({ invitation: "inv-a" }, "bid");
+    expect(html).not.toContain("data-composer");
+    expect(text(html)).toContain("That GC's bid isn't on this estimate any more.");
   });
 });

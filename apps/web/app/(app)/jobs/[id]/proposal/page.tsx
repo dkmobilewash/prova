@@ -28,6 +28,8 @@ import {
 } from "@/lib/estimating/proposal-presentation";
 import { surfaceHrefs, type Surface } from "@/lib/bid/surfaceHrefs";
 import { adjustmentLabel, gcPrice } from "@/lib/estimating/gc-price";
+import { loadProposalSend } from "@/lib/estimating/proposal-send-query";
+import { ProposalSendComposer } from "@/components/bid/ProposalSendComposer";
 
 /**
  * A job's bid proposal — the scope + price + exclusions document a sub sends
@@ -290,6 +292,25 @@ export default async function JobProposalPage({
       </PageShell>
     );
   }
+
+  // ── C STREAM BID: SEND THE PROPOSAL TO THIS GC ──
+  //
+  // Bid's own send (`ProposalSendComposer`), drawn only on the Bid surface and
+  // only for one GC at a time. Everything it shows — the price, the addresses,
+  // the text under the note and why it may not be sendable — comes from
+  // `loadProposalSend`, the same function the action re-reads with at the
+  // moment it sends, so the screen and the email cannot disagree.
+  const sendLoad =
+    surface === "bid" && forInvitation
+      ? await loadProposalSend({
+          companyId: company.id,
+          companyName: company.name,
+          jobId: job.id,
+          invitationId: forInvitation.id,
+          mode,
+          timeZone,
+        })
+      : null;
 
   let submitTarget: SubmitTarget | undefined;
   if (linkedBid) {
@@ -601,6 +622,51 @@ export default async function JobProposalPage({
         canOfferLibrary={context.role === "OWNER"}
       />
       </section>
+
+      {sendLoad && !sendLoad.ok && (
+        <p className="mt-8 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink print:hidden" data-proposal="send-blocked">
+          {sendLoad.problem}
+        </p>
+      )}
+      {sendLoad?.ok && (
+        <ProposalSendComposer
+          jobId={job.id}
+          invitationId={sendLoad.view.invitationId}
+          mode={sendLoad.view.mode}
+          priceCents={sendLoad.view.totalCents}
+          totalLabel={money(sendLoad.view.totalCents / 100)}
+          gcName={sendLoad.view.gcName}
+          recipients={sendLoad.view.recipients}
+          subject={sendLoad.view.subject}
+          coverNote={sendLoad.view.coverNote}
+          documentText={sendLoad.view.documentText}
+          blocker={sendLoad.view.blocker}
+          history={sendLoad.view.history.map((one) => ({
+            id: one.id,
+            when: formatInstant(one.at, timeZone),
+            toAddress: one.toAddress,
+            reached: one.reached,
+            detail: one.detail,
+          }))}
+        />
+      )}
+      {/* NO GC CHOSEN YET, ON BID: one way in per GC. The composer belongs to a
+          single invitation, because the price and the addressee are that GC's. */}
+      {surface === "bid" && !forInvitation && projectInvitations.length > 0 && (
+        <section className="mt-8 rounded-lg border border-line-card bg-surface p-4 print:hidden" data-proposal="send-pick">
+          <h2 className="text-base font-semibold text-ink">Send the proposal</h2>
+          <p className="mt-1 text-sm text-ink-body">Pick the GC. Each one gets the proposal at their own price.</p>
+          <ul className="mt-2 flex flex-col gap-1">
+            {projectInvitations.map((row) => (
+              <li key={row.id}>
+                <Link href={proposalHref(mode, row.id)} className="inline-flex min-h-11 items-center text-sm text-link hover:underline">
+                  Send to {row.contact.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* LAST ON THE PAGE, because it is the last thing done to a bid: the
           proposal has to exist and be printed before there is a package to

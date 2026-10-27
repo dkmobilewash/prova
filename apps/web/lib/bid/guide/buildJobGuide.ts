@@ -3,7 +3,7 @@ import { money } from "@/lib/money";
 import { surfaceHrefs } from "@/lib/bid/surfaceHrefs";
 import { bidLogHrefs } from "@/lib/bid/bidLogHrefs";
 import {
-  invitationWasSent,
+  invitationFactWasSent,
   type GuideAddendumFact,
   type GuideInvitationFact,
   type GuideWallTypeFact,
@@ -71,7 +71,8 @@ import {
  * fall through to "proposal ready" on a bid that cannot be proposed. Rule 8's two
  * faces are one slot because the schema cannot say the proposal was opened (see
  * facts.ts): a ready bid is always "open the proposal" until the clock says it is
- * "send it now". Once any invitation is SUBMITTED (or WON/LOST) there is no ask.
+ * "send it now". Once any invitation is SUBMITTED (or WON/LOST), or the app has
+ * a record of emailing one (`proposalSentOn`, facts.ts), there is no ask.
  *
  * The rail follows the ask: steps before its step are done, its step is current,
  * the rest are todo. With no ask the bid is sent and all five are done.
@@ -141,7 +142,14 @@ const possessive = (name: string): string => (name.endsWith("s") ? `${name}'` : 
 export type GuideDue = { iso: string; minute: number | null };
 
 export function guideWasSent(facts: Pick<JobGuideFacts, "invitations">): boolean {
-  return facts.invitations.some((invitation) => invitationWasSent(invitation.status));
+  return facts.invitations.some(invitationFactWasSent);
+}
+
+/** The first day the app emailed any of this job's GCs the bid, `YYYY-MM-DD`,
+ *  or null when it never has (a status set by hand carries no date). */
+export function guideSentOn(facts: Pick<JobGuideFacts, "invitations">): string | null {
+  const days = facts.invitations.map((invitation) => invitation.proposalSentOn).filter((value): value is string => !!value);
+  return days.length > 0 ? days.sort()[0]! : null;
 }
 
 /**
@@ -569,7 +577,11 @@ function summaryFor(key: GuideStepKey, facts: JobGuideFacts, dueLabel: string | 
     case "proposal":
       return ask && (ask.id === "proposal-ready" || ask.id === "send-due-soon") ? "Ready to open" : null;
     case "send":
-      return guideWasSent(facts) ? "Sent" : dueLabel ? capitalise(dueLabel) : null;
+      if (guideWasSent(facts)) {
+        const sentOn = guideSentOn(facts);
+        return sentOn ? `Sent ${monthDay(sentOn)}` : "Sent";
+      }
+      return dueLabel ? capitalise(dueLabel) : null;
   }
 }
 
