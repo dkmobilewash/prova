@@ -41,6 +41,11 @@ describe.skipIf(DIR === "" || SET === "")("the raster stage over a set", () => {
         if (String(error).includes("Invalid page")) break;
         throw error;
       }
+      // With `NODE_OPTIONS=--expose-gc`, collect before sampling, so the
+      // figure is what the process KEEPS after a sheet rather than garbage
+      // the collector has not reached — the number a server's limit sees
+      // once the allocator returns freed pages.
+      (globalThis as { gc?: () => void }).gc?.();
       const mem = process.memoryUsage();
       const mb = (b: number) => Math.round(b / 1048576);
       // What the finder would then do with it, where the sheet's own caption

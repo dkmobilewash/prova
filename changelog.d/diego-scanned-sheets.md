@@ -56,3 +56,18 @@ sweep is byte-identical before and after; and on the four scanned cases it
 was written for it does not fire, because their zeros turned out to have
 names — `NOTES-scanned.md` §8 has the table and the one rule change that
 would reach Bunkie A100, left for a decision.
+
+**Third round — one worker per sheet, and captions a scan can be trusted
+on.** The render and OCR of a sheet run in a `worker_threads` Worker closed
+with the sheet, so what a sheet costs leaves the process with it; the
+memory figures, sampled after a forced collection, are in
+`NOTES-scanned.md` §7. On a SCANNED sheet, detection believes a caption
+only when OCR scored its line at 70 or better and every word is a word a
+caption uses; fewer than two such captions and the sheet is one drawing.
+That is where the scanned zeros came from — OCR noise read as "elevations"
+or "notes" and set aside for reasons that sounded real: Bunkie A100 at
+300 dpi 0 → 774 of 470 key ft, Murray A101 at 150 dpi 126 → 2,383 of
+1,037; rasterized Baker A201 stays at 0; the vector sweep's detection
+columns are identical on all 36 sheets (the keys moved under it, not the
+code). The Bunkie-style widening is written down and not built (§10); the
+e2e list for the PR is §11.

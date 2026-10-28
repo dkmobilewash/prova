@@ -200,21 +200,48 @@ Baker pages at any size; the early stop goes by the title words it does
 read ("COVER SHEET", "SCHEDULE"), which is why 31 sheets stop and the
 floor plans do not.
 
-**The memory target, honestly.** Under 1 GB was the target; 1.19 GB
-after-sheet high-water and 1.66 GB mid-sheet is what fifty sheets back to
-back in one process reach. The JS heap never passes 190 MB; the rest is
-typed-array garbage the collector has not reclaimed yet plus pdf.js's and
-the WASM worker's native memory, and a process keeps its high-water mark.
-A single sheet's working set is 450–760 MB. So the server-side answer is
-ISOLATION, not another buffer: one sheet per process. On Vercel each
-advance is already its own invocation; what the number warns about is a
-Fluid instance reused across many advances, which then carries the
-high-water mark. Running `rasterizeSheet` in a `worker_threads` Worker that
-is terminated after each sheet returns the WASM heap and the typed arrays
-with it; a child process does the same more surely. Neither is built here
-— a worker entry has to survive the Next build, which only a preview can
-prove — and the stage runs one sheet per advance meanwhile, which is the
-450–760 MB case, inside a 1 GB function.
+**Memory, with one worker per sheet (2026-10-28).** The render and the
+OCR now run in a `worker_threads` Worker closed with the sheet
+(`SheetWorker`, `rasterWorker.mjs`), so pdf.js's decoded page, the
+canvases and Tesseract's WASM heap are torn down with the isolate instead
+of staying in the process. Measured on the same 50 pages, resident memory
+AFTER a forced collection at the end of each sheet:
+
+| | in one process, no isolation | worker per sheet |
+| --- | --- | --- |
+| after the first five sheets | 381 → 846 MB | 192, 161, 172, 289, 293 MB |
+| after a sheet, median over 50 | 756 MB | 726 MB |
+| after a sheet, worst | 1,188 MB | 1,471 MB |
+| mid-sheet, worst | 1,663 MB | 1,629 MB |
+| JS heap after collection | 116 MB | 21 MB |
+
+So the per-sheet RESIDUE is gone — the first sheets end where the process
+started, and the JS heap holds nothing — but the resident high-water mark
+on THIS host did not come under 1 GB: once the dense sheets (p6 onward)
+have been read, RSS sits at 0.5–0.95 GB between sheets and peaks at 1.5 GB
+inside one. With 21 MB of live heap that figure is the allocator keeping
+pages the isolates freed, which macOS libmalloc does; glibc on Linux
+unmaps large blocks on free, so a Linux function should see the first
+column's shape, and that is a claim this Mac cannot prove. Timing is
+unchanged by the worker (median 6.2 s, p90 12.6 s on the uncontended run).
+
+**The host limit assumed:** a Vercel Fluid function of 1,769 MB, with
+1 GB as the design budget for one sheet so two never need to overlap.
+What would settle it, in order: the same eval in a Linux container
+(none on this machine), or the stage on a preview with a real scanned set
+and the function's memory read off the runtime log. If Linux disagrees
+with the expectation, the next step is a child PROCESS per sheet, whose
+exit returns everything by construction; the worker file is the half of
+that work that already exists.
+
+**A gap the early stop opens, for the record.** A scanned sheet whose
+title stopped OCR (an elevation sheet, say) has no scale caption read, so
+detection never runs on it unless the estimator sets a scale by hand; if
+they do, its captions were never read either, so the sheet takes the
+single-drawing path and measures the elevations as walls. The cure is to
+carry the OCR'd title into the sheet index so `sheetSuitability`'s own
+"not a floor plan" caution and the whole-set skip apply to scans — one
+field the stage already has; not wired here.
 
 ## 8. The whole-sheet fallback (2026-10-28)
 
@@ -248,3 +275,86 @@ caption was read as the equipment plan's, so the only drawing left is
 "not to scale" and named. Treating a not-to-scale exclusion on a SCANNED
 sheet as unnamed when the sheet's scale is already known would measure it
 — a widening of the rule that is Diego's call, not made here.
+
+## 9. Captions a scan can be trusted on (2026-10-28)
+
+The scanned zeros were OCR noise read as NAMED views: a hatch read as
+"ELEVATIONS", a title block as "NOTES", a caption misread into a word that
+happens to be real — and `excludedViews` then set the pieces aside for
+reasons that sounded like an estimator's, so nothing was measured and the
+whole-sheet fallback (§8) could not fire, by its own rule.
+
+`scannedCaptions.ts`: on a sheet whose lines came off a bitmap
+(`detectForSheet({ scanned: true })`, set by the server when a
+`PlanSheetRaster` row exists and by the viewer when it has one), a caption
+is believed only when the OCR line behind it scored ≥ 70 AND every word of
+it is a word a drawing caption uses (the classifiers' own vocabulary plus
+the ordinary qualifiers; a letter outside A–Z is OCR reading a stroke). A
+sheet with fewer than two believable captions takes the single-drawing
+path. A vector sheet never sets the flag.
+
+| case (Mac stack, where the zeros were) | before | after |
+| --- | --- | --- |
+| Bunkie A100, 300 dpi | 0 of 470 ft; views 2, "Equipment: an equipment plan, not to scale", legends | 774 found, 12 missing; views 0 → single drawing |
+| Murray A101, 150 dpi | 126 of 1,037; views 6, two kept, 1,548 ft lost to placement | 2,383 found, 236 missing; views 0 |
+| Joplin A-101, 150 dpi | 4,585 found | unchanged, now via the single-drawing path |
+| NG McAllen A3.2, 300 dpi | 1,646 found | unchanged, same path |
+| rasterized Baker A201 (elevations), 200 dpi, Tesseract | — | OCR stops at the title block ("elevations"), no scale caption read, no detection run: 0 |
+
+**The vector sweep**: `sweep-before.json` against `sweep-after2.json`, 36
+labelled sheets — every detection column (proposed, views, kept, others,
+leftOut) identical on every sheet. The files are not byte-identical
+because the KEY changed on 16 sheets between the two runs (another session
+relabelled; `key`, `missing`, `extra` moved with it), which is why the
+comparison is by column and says so.
+
+## 10. Bunkie A100's rule widening — what it would take, and the risk (not built)
+
+Bunkie's zero is gone by §9, so this is for the record. Had the caption
+been a REAL word with high confidence — "EQUIPMENT PLAN" read off the
+equipment plan, while the floor plan's own caption went unread — the sheet
+would still measure nothing: one named not-a-plan view, no plan view.
+
+What it would take: in `wholeSheetFallback`, treat a not-to-scale or
+not-a-plan exclusion on a SCANNED sheet as not disqualifying when the
+sheet's scale is already known (`feetPerUnit` is), so the whole sheet is
+measured as one drawing; or, narrower, re-run the caption detector with the
+untrusted captions removed and keep the largest region as "the plan".
+Both are a few lines in the multi-view branch.
+
+The risk is the one the rule exists to stop: a scanned sheet of eight
+interior elevations, correctly captioned, would be measured as one drawing
+and offer hundreds of feet of elevation lines as walls — the "worst
+available answer" the comment in `detectForSheet` names. On a scan the
+estimator cannot tell the two cases apart from the panel; only the caution
+would say "check it". So it should wait for a real scanned set with that
+shape in it, and be decided on that set's numbers.
+
+## 11. PR-ready (2026-10-28)
+
+- `Company.scannedPlansOn` OFF by default; nothing on the takeoff changes
+  until the owner flips it under Settings.
+- Migration `20261027200000_scanned_sheets`: additive only — two nullable
+  counts on `PlanSheetText`, the `PlanSheetRaster` table, the `RASTER` enum
+  value, one company boolean. Applied to a throwaway local Postgres for the
+  db test, dropped after.
+- Unit suite and db test green on the final tree (numbers in the log line).
+- Not built, by design, listed in §6; the whole-sheet fallback (§8) is in
+  and inert on every sheet measured so far.
+- Memory: one sheet per worker, closed with the sheet (§7); the host limit
+  assumed is 1 GB of a 1,769 MB Fluid function.
+
+**E2E to run when Clerk is quiet** (none run here):
+
+1. Settings → the owner ticks "Read scanned sheets", saves; the switch
+   survives a reload. With it off, the takeoff of a set with a scanned page
+   shows no "Read N scanned sheets" panel.
+2. Takeoff of a set with one scanned page and the switch on: the panel
+   says "1 sheet is scanned", press Read → "1 of 1 sheets — done".
+3. Open that sheet: the caution "Scanned sheet: the lines were read from an
+   image…" shows; Find the walls offers groups; the calibration prefill
+   shows the OCR'd scale when the caption was read; with no caption read,
+   the ordinary set-the-scale prompt shows and nothing else.
+4. A vector sheet in the same set: no caution, Find the walls unchanged.
+5. The whole-set stage (PR D) on a scanned page writes proposals from the
+   stored lines (detectWallsForCalibration reads the raster row).
