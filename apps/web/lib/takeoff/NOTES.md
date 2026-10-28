@@ -3047,3 +3047,79 @@ not wrong, but the attribution is. And ELEVEN03's WB–WD read as 1-5/8in
 WOOD studs — 1-5/8in is a metal C-shape, and the sight read's "wood" for
 the W types is what the plates now follow; which read is right is a
 question for the crop.
+
+### Recall program, steps 1 and 2: never paired, merged into a neighbour (2026-10-28)
+
+Main at `0beccb22`, the 14 traced training sheets, 5,768 traced ft; the
+stage table is unchanged from round 4 (never paired 1,434 ft, merged into a
+neighbour 799, paired-not-awarded 291). Every never-paired and merged trace
+was attributed by (a) which stage dropped each face along it — layer, grid
+bubble, other — and (b) re-running the pair test on the faces that
+survived, then by whether any COLLECTED pairing (awarded or not) lay over
+it, and where the nearest found wall sits relative to it.
+
+**Never paired is the grid-bubble deletion in another coat.** 1,316 of
+1,434 ft (101 of 110 traces) have at least 30% of their faces deleted by
+the grid stage; what survives pairs only in isolation (614 ft), is refused
+on short pieces (363), is gone entirely (156), or has no two survivors at a
+wall thickness (122). The remainder without the grid stage is 118 ft over
+nine traces, five causes, none above 47 ft. Nothing in remit is worth a
+run here; `diego/round-bubbles` is the fix and waits on Chrome's review.
+
+**"Merged into a neighbour" is misnamed: 759 of 799 ft lie ON THE LINE of
+a found wall but beyond its end** (overlap under 20%), with 40 ft beside a
+parallel neighbour — stretches never paired whose neighbour along the line
+was. 533 ft of it is grid-involved; 266 ft is not, and 199 ft across the
+three unpaired stages (117 ft more once the grid stage is out of the way)
+share one shape, measured on every trace: a long kept line along the wall
+and kept pieces on one side of it, a wall thickness away, together
+covering at least half of it. Crosslines A100's demising wall is the case:
+one 135 ft line, the face across from it drawn per unit in 4–22 ft pieces
+with 6–8 ft between (wider than `SAME_FACE_GAP_FEET`) at offsets a tenth
+of an inch apart (wider than `SAME_FACE_OFFSET_FEET`), so nothing merges,
+every (long, piece) pair fails `wallFromPair`'s both-ends-overhang gate —
+whose own comment says the broken-face case "cannot reach this rule" —
+and even one awarded piece would have spent the long face for the rest.
+92 ft traced, zero found.
+
+**The fix: `splitFacePass`** (`wallVectors.ts`), a pass that only adds,
+after `secondAssemblyPass`. For a long face (≥ 20 ft, a line pen), the
+pieces that pair with it once the overhang gate is waived, grouped by side
+and thickness (within 0.06 ft); the group whose UNION covers at least half
+the long face is awarded piece by piece, each the overlap of the two. A
+grid line has one stray partner and never reaches half. Guards found by
+measuring what the first version added: pieces under 4 ft (dashes, ticks)
+are not pieces, and a stroke wider than 20 pt is a filled band the reader
+handed over as a stroke, not a face (Camp Bow Wow A101's site bands carry
+1,877 and 14,882 pt). Two guards were tried and withdrawn: "equal pieces
+are a dash pattern" (unit plans repeat, Crosslines' pieces are 16.7, 16.7,
+16.7, 22 ft; cost 394 ft of key) and "overlapping pieces are duplicates"
+(Bunkie A100's face is drawn twice, 51 ft on 51 ft; cost 119 ft). These
+walls carry no feature vector, so the veto never sees them, as with the
+second pass.
+
+**Measured, LOBO fold models trained on the shipped finder's rows, veto
+0.3, 26 training sheets (`zzLoboVeto.eval.ts`), before reproducing the
+baseline exactly:**
+
+| arm | missing ft | extra ft | real recovered | junk added |
+| --- | --- | --- | --- | --- |
+| rules, before | 4,391 | 13,014 | | |
+| rules, after | 4,237 | 13,065 | +154 | +51 |
+| veto 0.3, before | 4,973 | 11,852 | | |
+| veto 0.3, after | 4,764 | 11,905 | +209 | +53 |
+
+Five sheets move (veto arm, real / junk): Crosslines +147 / +29, Bunkie
+A100 +51 / −5, Baker A101 +11 / 0, Camp Bow Wow A101 0 / +19, Joplin
+0 / +10. What the pass adds, scored by overlap: Crosslines 437 ft (394
+key, 4 rejected, 39 unlabelled — a roof-overhang dash-dot line beside the
+exterior wall), Bunkie 122 ft (119 key), Camp Bow Wow 96 ft (61 rejected,
+36 unlabelled — the outdoor-run fence, a solid line with posts beside a
+second line), Joplin 36 ft (25 rejected — a grid dash-dot line). The
+first version, with no piece or pen guard, was +234 / +129 on the veto arm.
+
+**Against the bar as set — ship only if the classifier-on result improves
+BOTH — this does not ship:** real +209 ft, junk +53 ft, four to one. The
+residual junk is two drawings: a fence line and a grid dash-dot line, both
+"a solid line with a companion a wall thickness away", which is also what
+a wall is. Left on the branch for the call.

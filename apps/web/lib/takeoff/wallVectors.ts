@@ -261,6 +261,9 @@ export type WallFinderOptions = {
   /** The shortest wall worth reporting, in feet. Below this a pair is as likely
    *  to be a jamb detail, a hatch stroke or a leader as a wall. */
   minLengthFeet?: number;
+  /** Waive the both-ends overhang gate — only `splitFacePass` sets it, and only
+   *  for a piece whose siblings together cover the long face. See there. */
+  ignoreBothEndsOverhang?: boolean;
 };
 
 /**
@@ -1342,7 +1345,7 @@ export function wallFromPair(
   // fragment floating inside it — that case cannot reach this rule.
   const [headGap, tailGap] = overhangsAlong(a, b);
   const loose = shorter * BOTH_ENDS_OVERHANG;
-  if (headGap > loose && tailGap > loose) return null;
+  if (options.ignoreBothEndsOverhang !== true && headGap > loose && tailGap > loose) return null;
 
   // ── A DIMENSION STRING REACHES HERE AND PASSES, AND NO RULE BELOW STOPS IT.
   //    DO NOT SPEND THE AFTERNOON ON A DISTANCE THRESHOLD; IT IS ELIMINATED. ──
@@ -1773,6 +1776,7 @@ export function wallsFromStrokes(
   }
 
   walls.push(...secondAssemblyPass(order, walls, used, claimedSides, options));
+  walls.push(...splitFacePass(order, walls, used, options));
 
   if (options.veto !== undefined) {
     // ── SUBTRACTION ONLY, AND AFTER EVERYTHING ELSE ──
@@ -1798,6 +1802,117 @@ export function wallsFromStrokes(
   }
 
   return oneWallPerPlace(walls, options.feetPerPoint);
+}
+
+/** A face this long can have its other face drawn in pieces; shorter, the
+ *  pieces are the wall and the gate above already handles it. */
+const SPLIT_FACE_MIN_FEET = 20;
+/** How much of the long face its pieces must cover, together. A column grid
+ *  line has one stray partner — a door leaf, a counter edge — and a wall's
+ *  broken face has most of its length in pieces. Half sits between them. */
+const SPLIT_FACE_COVERAGE = 0.5;
+/** Pieces at the same thickness from the long face, within this, are one
+ *  face: Crosslines' pieces sit at 3.6–3.9 in from the line they face. */
+const SPLIT_FACE_SAME_THICKNESS_FEET = 0.06;
+/** A piece shorter than this is a dash, a jamb or a tick, not a stretch of
+ *  face between two openings. */
+const SPLIT_FACE_MIN_PIECE_FEET = 4;
+/** A drafting pen is a fraction of an inch; a stroke whose width is a foot
+ *  or more is a filled region the reader handed over as a stroke, and it is
+ *  not a face. Camp Bow Wow's site bands carry widths of 1,877 and 14,882 pt. */
+const SPLIT_FACE_MAX_PEN_PT = 20;
+
+/**
+ * ── A LONG FACE SERVES THE PIECES OF ITS OTHER FACE ──
+ *
+ * `wallFromPair` refuses a pair whose long face overhangs the short one at
+ * both ends, because that is the shape of a column grid line claiming a door
+ * leaf. The gate's own comment says a face broken by partitions arrives
+ * merged "co-extensive with its outer" — and on Crosslines A100 it does not:
+ * the demising wall's one continuous line is 135 ft, the face across from it
+ * is drawn per unit in 4–17 ft pieces with 6–8 ft between them, wider than
+ * `SAME_FACE_GAP_FEET`, at offsets that differ by a tenth of an inch, wider
+ * than `SAME_FACE_OFFSET_FEET`. Every piece is "loose at both ends", every
+ * pair is refused, and 92 ft of traced wall comes back as nothing (NOTES,
+ * recall step 2, 2026-10-28: 199 ft of the traced misses have this shape
+ * with the grid stage out of it, 117 ft more with it in).
+ *
+ * The thing a grid line does not have is a SERIES of partners: pieces on one
+ * side, at one thickness, that together cover most of its length. That is
+ * the discriminator, and it is read here rather than in the pair test
+ * because it is a property of the set, not of a pair.
+ *
+ * A pass that only ADDS, like `secondAssemblyPass` and for the same reason:
+ * nothing the loop found changes. Each piece becomes its own wall, the
+ * overlap of the two, so a door opening stays an opening. The long face is
+ * not spent — it may be the other face's partner on its other side too —
+ * and the veto never sees these (no feature vector, as for the second pass),
+ * which the measurement states rather than hides.
+ */
+function splitFacePass(
+  order: readonly StrokeSegment[],
+  found: readonly WallCandidate[],
+  used: ReadonlySet<number>,
+  options: WallFinderOptions,
+): WallCandidate[] {
+  const feetPerPoint = options.feetPerPoint;
+  const minLong = SPLIT_FACE_MIN_FEET / feetPerPoint;
+  const extra: WallCandidate[] = [];
+  const loose: WallFinderOptions = { ...options, ignoreBothEndsOverhang: true };
+  for (let i = 0; i < order.length; i += 1) {
+    const long = order[i];
+    const longLen = lengthOf(long);
+    if (longLen < minLong || long.curved === true || (long.width ?? 0) > SPLIT_FACE_MAX_PEN_PT) continue;
+    // Every unused shorter piece the geometry accepts once the gate is waived,
+    // keyed by which side of the long face it sits and how far from it.
+    const pieces: { j: number; wall: WallCandidate; side: number; thickness: number }[] = [];
+    for (let j = 0; j < order.length; j += 1) {
+      if (j === i || used.has(j)) continue;
+      const piece = order[j];
+      if (piece.curved === true || lengthOf(piece) >= longLen * 0.6) continue;
+      if (lengthOf(piece) * feetPerPoint < SPLIT_FACE_MIN_PIECE_FEET || (piece.width ?? 0) > SPLIT_FACE_MAX_PEN_PT) continue;
+      const wall = wallFromPair(long, piece, loose);
+      if (wall === null) continue;
+      if (inAHatchSeries(order, i, j, options)) continue;
+      pieces.push({ j, wall, side: sideOf(long, piece), thickness: wall.thicknessFeet });
+    }
+    if (pieces.length < 2) continue;
+    // Group: same side, same thickness within tolerance; take the group that
+    // covers the most of the long face, and only if it covers half.
+    const ux = (long.x2 - long.x1) / longLen;
+    const uy = (long.y2 - long.y1) / longLen;
+    const span = (w: WallCandidate): [number, number] => {
+      const a = (w.x1 - long.x1) * ux + (w.y1 - long.y1) * uy;
+      const b = (w.x2 - long.x1) * ux + (w.y2 - long.y1) * uy;
+      return [Math.max(0, Math.min(a, b)), Math.min(longLen, Math.max(a, b))];
+    };
+    let best: typeof pieces = [];
+    let bestCover = 0;
+    for (const seed of pieces) {
+      const group = pieces.filter((p) => p.side === seed.side && Math.abs(p.thickness - seed.thickness) <= SPLIT_FACE_SAME_THICKNESS_FEET);
+      const spans = group.map((p) => span(p.wall)).filter(([a, b]) => b > a).sort((p, q) => p[0] - q[0]);
+      // Union, so a face drawn twice (Bunkie A100 has one, 51 ft on 51 ft)
+      // counts once and a band's several outlines do not add up to a face.
+      let cover = 0;
+      let end = -Infinity;
+      for (const [a, b] of spans) {
+        if (b <= end) continue;
+        cover += b - Math.max(a, end);
+        end = b;
+      }
+      if (cover > bestCover) {
+        bestCover = cover;
+        best = group;
+      }
+    }
+    if (bestCover / longLen < SPLIT_FACE_COVERAGE) continue;
+    for (const p of best) {
+      if (found.some((already) => foundTwice(already, p.wall, feetPerPoint))) continue;
+      if (extra.some((already) => foundTwice(already, p.wall, feetPerPoint))) continue;
+      extra.push({ ...p.wall, fromBalancedFaces: false });
+    }
+  }
+  return extra;
 }
 
 /**
