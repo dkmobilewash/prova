@@ -30,7 +30,7 @@ function findPdf(dir: string): string | null {
   for (const root of [DIR, DIR2].filter((r) => r !== "")) for (const name of readdirSync(root)) if (name.toLowerCase().endsWith(".pdf") && flat(name) === flat(dir)) return join(root, name);
   return null;
 }
-type Saved = Parameters<typeof keyFromLabels>[0] & { page: number };
+type Saved = Parameters<typeof keyFromLabels>[0] & { page: number; feetPerUnit: number };
 
 describe.skipIf(DIR === "" || LABELS === "")("every labelled sheet, rules only", () => {
   it("scores each sheet and says how it was split", { timeout: 7_200_000 }, async () => {
