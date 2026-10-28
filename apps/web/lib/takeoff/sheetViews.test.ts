@@ -552,3 +552,34 @@ describe("a piece belongs to the captions of its own region first", () => {
     expect(got[0].from).toBe(0);
   });
 });
+
+describe("a heading owns its words, not the column beneath them", () => {
+  // NG McAllen A3.2: DIMENSION PLAN NOTES lettered at the top of the plan's own
+  // region, no other caption line crossing that column, so the heading's piece
+  // ran the page height and the plan's east wall sat in a text block.
+  const view = (name: string, x: number, y: number, textBlock = false): SheetView => ({
+    name, scaleName: textBlock ? null : '1/8" = 1\'-0"', feetPerInch: textBlock ? null : 8, captionX: x, captionY: y,
+    from: 0, to: 1, fromY: 0, toY: Number.POSITIVE_INFINITY, textBlock, foundBy: textBlock ? "title" : "caption",
+  });
+  const region = [{ from: 0, to: 0.7, fromY: 0, toY: 0.667 }];
+  const plan = view("CRITICAL DIMENSION PLAN - MAIN LEVEL", 0.05, 0.635);
+  const notes = view("DIMENSION PLAN NOTES", 0.53, 0.028, true);
+  // Six lines of notes under the heading, then the plan's own dimension words far below.
+  const words = [0.04, 0.055, 0.07, 0.085, 0.1, 0.13].map((y) => ({ x: 0.55, y })).concat([0.25, 0.4, 0.55].map((y) => ({ x: 0.6, y })));
+
+  it("GIVES THE HEADING ITS LINES AND THE DRAWING THE REST OF THE COLUMN", () => {
+    const got = placeDrawings([plan, notes], region, words);
+    const block = got.find((v) => v.name === "DIMENSION PLAN NOTES")!;
+    expect(block.boxes).toHaveLength(1);
+    expect(block.boxes![0].fromY).toBe(0);
+    expect(block.boxes![0].toY).toBeCloseTo(0.15, 3);
+    const drawing = got.find((v) => v.name.startsWith("CRITICAL"))!;
+    expect(drawing.boxes!.some((b) => b.from >= 0.5 && b.fromY >= 0.14 && b.toY >= 0.66)).toBe(true);
+  });
+
+  it("without words a heading keeps the whole piece, as before", () => {
+    const got = placeDrawings([plan, notes], region);
+    const block = got.find((v) => v.name === "DIMENSION PLAN NOTES")!;
+    expect(block.boxes![0].toY).toBeCloseTo(0.667, 3);
+  });
+});

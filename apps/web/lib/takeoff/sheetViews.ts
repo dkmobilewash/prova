@@ -1053,7 +1053,17 @@ type Box = { from: number; to: number; fromY: number; toY: number };
  * caption, for the reason `viewsInRegions` records (the S05/S07 dimension
  * strip).
  */
-export function placeDrawings(views: readonly SheetView[], regions: readonly Box[]): SheetView[] {
+/** How much empty paper, in page-width units, ends a column of notes: the
+ *  next word further down than this belongs to the drawing, not the heading.
+ *  About an inch on an ARCH D sheet; a paragraph break is a third of that. */
+const NOTES_END_GAP = 0.03;
+
+export function placeDrawings(
+  views: readonly SheetView[],
+  regions: readonly Box[],
+  /** Every word on the sheet, in page-width units. Without it a heading keeps the whole piece, as before. */
+  words: readonly { x: number; y: number }[] = [],
+): SheetView[] {
   if (views.length === 0) return [];
   const drawings = views.filter((v) => v.textBlock !== true);
   const blocks = views.filter((v) => v.textBlock === true);
@@ -1119,8 +1129,20 @@ export function placeDrawings(views: readonly SheetView[], regions: readonly Box
   // plan's. Only that piece — the cuts above put the next caption line at its
   // bottom — because a heading at the top of a column claiming every cell
   // beneath it took the plan's right end on NG A3.2.
+  //
+  // ── AND ONLY AS FAR DOWN AS ITS WORDS GO ──
+  //
+  // "Only that piece" still handed NG McAllen A3.2's plan its east wall's
+  // column: DIMENSION PLAN NOTES is lettered at the TOP of the plan's own
+  // region, no other caption line crosses that column, so the piece under the
+  // heading ran the full page height — 14% of it notes, the rest the plan,
+  // 118 ft of traced wall among it, outside every plan box. A heading owns
+  // the words beneath it; where the words stop and an inch of paper follows,
+  // the drawing resumes. The remainder goes back to the pool and is placed
+  // like any other piece.
   const claimedByBlock = new Set<Box>();
-  for (const { box: piece } of shared) {
+  const remainders: { box: Box; here: SheetView[] }[] = [];
+  for (const { box: piece, here } of shared) {
     if (drawings.some((d) => inside(d, piece))) continue;
     let at: SheetView | null = null;
     let bestD = Number.POSITIVE_INFINITY;
@@ -1133,11 +1155,30 @@ export function placeDrawings(views: readonly SheetView[], regions: readonly Box
         at = b;
       }
     }
-    if (at !== null) {
-      blockBoxes.set(at, [...(blockBoxes.get(at) ?? []), piece]);
-      claimedByBlock.add(piece);
+    if (at === null) continue;
+    let end = piece.toY;
+    if (words.length > 0) {
+      const ys = words
+        .filter((w) => w.x >= piece.from && w.x < piece.to && w.y >= piece.fromY && w.y < piece.toY)
+        .map((w) => w.y)
+        .sort((a, b) => a - b);
+      let reach = at.captionY;
+      for (const y of ys) {
+        if (y - reach > NOTES_END_GAP) break;
+        reach = Math.max(reach, y);
+      }
+      end = Math.min(piece.toY, reach + CAPTION_MARGIN);
     }
+    if (end < piece.toY - CAPTION_MARGIN) {
+      const own = { ...piece, toY: end };
+      blockBoxes.set(at, [...(blockBoxes.get(at) ?? []), own]);
+      remainders.push({ box: { ...piece, fromY: end }, here });
+    } else {
+      blockBoxes.set(at, [...(blockBoxes.get(at) ?? []), piece]);
+    }
+    claimedByBlock.add(piece);
   }
+  shared.push(...remainders);
 
   // Each piece goes to the nearest drawing caption that could OWN it. A
   // drawing sits above and to the right of its caption, so a caption is
@@ -1258,7 +1299,11 @@ export function sheetDrawings(input: {
     const repeats = found.some((o) => o !== v && (o.foundBy === "caption" || o.captionX < v.captionX) && titleKey(o.name) === titleKey(v.name));
     return !repeats;
   });
-  return placeDrawings(kept, viewRegions(input.segments, input.pageSize));
+  return placeDrawings(
+    kept,
+    viewRegions(input.segments, input.pageSize),
+    input.items.map((i) => ({ x: i.x / W, y: i.y / W })),
+  );
 }
 
 /**

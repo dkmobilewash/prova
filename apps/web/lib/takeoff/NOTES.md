@@ -3153,3 +3153,24 @@ Totals 51,585→51,390 proposed, 6,883→6,876 missing, 17,944→17,743 extra.
 Unit: two placement tests in `sheetViews.test.ts`, one the A104 shape.
 No change to `detectForSheet`, where the original session is adding the
 no-view-kept fallback.
+
+### McAllen A3.2's east wall: a heading's claim ends where its words do (2026-10-28)
+
+The recall pass above listed it as cause 3, "walls outside the kept plan region", and
+blamed `drawingRegions`' share-of-busiest rule. Wrong stage: the probe showed
+`viewRegions` returned only two regions (x 0..0.703 and the title column), both kept as
+drawing, and the plan's `boxes` were `[0,0.031]`, `[0.031,0.51]` and a sliver at the
+right — nothing from x 0.51 to 0.703. That column was a TEXT-BLOCK box: WALL & PARTITION
+NOTES / DIMENSION PLAN NOTES sit at y 0.028 at the top of the plan's region, no other
+caption line crosses x 0.51..0.703, so #823's "only that piece" rule — the piece under
+a heading is the heading's — gave it the piece from y 0 to 0.667. 14% of it is notes.
+
+Fix in `placeDrawings`: a heading's claim ends at the last word reachable from it without
+a gap over `NOTES_END_GAP` (0.03 page-width units, about an inch on ARCH D), plus
+`CAPTION_MARGIN`; the remainder rejoins the shared pieces and is placed as a drawing
+piece. McAllen's block now ends at y 0.234 and the plan's boxes reach x 0.703.
+
+36-sheet sweep (`zzViewSweep`, current labels): only McAllen changed — missing 274 → 141,
+extra 80 → 119 (133 real for 39 junk, 3.4×). The 39 ft of junk is on McAllen itself and
+was not looked at: at 3.4× it meets the board's rule, and the strip it comes from is the
+one that held the wall.
