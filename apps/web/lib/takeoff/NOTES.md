@@ -3382,3 +3382,44 @@ at exactly that kind of pitch. What separates a kennel panel from a
 partition on this sheet is the note that says who furnishes it, not its
 geometry. The classifier does see these pairs; on this sheet the LOBO
 veto removed 55 ft of the 740.
+
+### Camp Bow Wow A101: context where geometry failed, and how far it reaches (2026-10-28)
+
+Geometry could not separate the kennel panels, runs, fences and curbs from
+partitions (round 5 above). Two context signals were measured on every
+offered candidate of the 26 training sheets, each candidate scored by what
+it overlaps — key, reviewer-rejected, unlabelled:
+
+**Words near the candidate.** For each of the words a kennel plan prints —
+KENNEL, RUN, FENCE, CHAIN LINK, GATE, PLAY YARD, BOARDING, CURB, TRENCH
+DRAIN, PANEL, LATCH, SHELVING, BY OWNER, OWNER PROVIDED, NIC, RACK — the
+footage within 10, 15, 20 and 30 ft of it. At 10 ft, PLAY YARD (0 key /
+246 rejected), RUN (0 / 153), CHAIN LINK (0 / 142), GATE (0 / 142), CURB
+(0 / 45), SHELVING (0 / 65) and TRENCH DRAIN flag rejected footage and no
+key wall on any sheet. KENNEL does not: it is written beside the room's
+real walls as often as beside the panels (281 key / 107 rejected at
+10 ft), and so are BOARDING (455 / 181 at 20 ft) and FENCE (152 / 174).
+At 15 ft even the clean words reach Camp Bow Wow's real room walls
+(365 ft). So the rule is the clean words at 10 ft, as a union: 529 ft of
+rejected footage flagged — Camp Bow Wow 322, Joplin 142, SW 65 — and 0 ft
+of key, on 20 candidates across three sheets.
+
+**Repetition inside one room.** Membership in a regular parallel series
+(≥ 3 others of comparable length at multiples of one pitch ≤ 6 ft, see
+round 5) catches 122 ft of Camp Bow Wow's rejected footage and flags
+1,403 ft of real wall on the unit plans, whose units repeat at exactly
+that pitch. Not used.
+
+**Shipped as a set-aside, not a drop:** `offeredCandidates` takes the
+sheet's text (optional — a caller without it offers as before; the viewer
+and the LOBO eval pass it) and sets a paired wall aside with the kind
+`site-equipment` and the word and its distance, so a reviewer who
+disagrees still sees it. Measured LOBO, veto 0.3, 26 sheets, on top of
+round-bubbles: extra −503 ft, missing unchanged on every sheet — Camp Bow
+Wow A101 2,293 → 1,997, Joplin 1,340 → 1,198, SW 1,687 → 1,622. Camp Bow
+Wow keeps 1,997 ft of extra: the rule reaches the runs, yards, curbs and
+drains that are labelled, which is 13% of what the sheet draws like a
+wall and is not one. The kennel grid itself carries numbers, not words,
+and its perimeter is the room. A vocabulary read off one building and
+measured on twenty-six; the words are the drafter's, the reach is the one
+measurement set, and both are stated beside the rule.

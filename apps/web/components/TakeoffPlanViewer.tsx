@@ -945,6 +945,8 @@ export function TakeoffPlanViewer({
      * a single-view sheet is.
      */
     planBoxes: { from: number; to: number; fromY: number; toY: number }[] | null;
+    /** The page's words, for the site-equipment rule in `offeredCandidates`. */
+    textItems: { str: string; x: number; y: number; width: number; height: number }[];
   } | null>(null);
 
   /**
@@ -977,6 +979,7 @@ export function TakeoffPlanViewer({
         widthPt: last.widthPt,
         feetPerUnit: last.feetPerUnit,
         planBoxes: last.planBoxes,
+        textItems: last.textItems,
       },
       offerAll,
       // ── ON FOR LABELLING, OFF FOR CUSTOMERS ──
@@ -2643,6 +2646,7 @@ export function TakeoffPlanViewer({
         widthPt: pageSize.widthPt,
         walls: [...found.walls],
         planBoxes,
+        textItems,
       };
       if (answerKey?.onCandidates) {
         const candidates = candidatesFromLastDetect();

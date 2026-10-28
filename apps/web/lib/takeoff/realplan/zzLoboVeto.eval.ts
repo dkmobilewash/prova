@@ -29,6 +29,9 @@ import type { WallCandidate } from "../wallVectors";
  *                              been trained WITHOUT that family's rows
  *   LOBO_CUT=0.3               the veto refuses a candidate scoring below this
  *   LOBO_OUT=dir LOBO_TAG=x    per-sheet JSON
+ *   LOBO_SITE=1                hand the sheet's text to `offeredCandidates`, so
+ *                              the site-equipment rule runs (off by default, so a
+ *                              measurement of something else is not moved by it)
  *
  * No database: the PDF is found by name under REAL_PLAN_DIR / REAL_PLAN_DIR2.
  */
@@ -114,7 +117,7 @@ describe.skipIf(DIR === "" || LABELS === "" || (ROWS_OUT === "" && MODEL_DIR ===
       const arm = (veto?: (f: number[], w: WallCandidate) => boolean, junk = false) => {
         const d = detectForSheet({ ...base, veto });
         const walls = junk ? withoutUnitPlanJunk({ walls: d.found.walls, segments: d.found.inUnits, feetPerUnit: saved.feetPerUnit }).kept : d.found.walls;
-        const offered = offeredCandidates({ walls, segments: d.found.inUnits.map((one) => ({ ...one, x1: one.x1 * strokes.widthPt, y1: one.y1 * strokes.widthPt, x2: one.x2 * strokes.widthPt, y2: one.y2 * strokes.widthPt })), widthPt: strokes.widthPt, feetPerUnit: saved.feetPerUnit, planBoxes: d.planBoxes });
+        const offered = offeredCandidates({ walls, segments: d.found.inUnits.map((one) => ({ ...one, x1: one.x1 * strokes.widthPt, y1: one.y1 * strokes.widthPt, x2: one.x2 * strokes.widthPt, y2: one.y2 * strokes.widthPt })), widthPt: strokes.widthPt, feetPerUnit: saved.feetPerUnit, planBoxes: d.planBoxes, textItems: process.env.LOBO_SITE === "1" ? textItems : undefined });
         const proposed: ScoredRun[] = offered.candidates.map((w) => ({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, lengthFeet: w.lengthFeet, thicknessFeet: w.thicknessIn === null ? undefined : w.thicknessIn / 12 }));
         const s = scoreSheet({ set: file.dir, sheet: file.sheet, key, proposed, feetPerUnit: saved.feetPerUnit });
         return { n: offered.candidates.length, walls: d.found.walls.length, missing: Math.round(s.missingFeet), extra: Math.round(s.extraFeet), keyFeet: Math.round(s.keyFeet) };
