@@ -3047,3 +3047,109 @@ not wrong, but the attribution is. And ELEVEN03's WB–WD read as 1-5/8in
 WOOD studs — 1-5/8in is a metal C-shape, and the sight read's "wood" for
 the W types is what the plates now follow; which read is right is a
 question for the crop.
+## Viewer speed — 2026-10-27 (third session)
+
+**Instrument.** `scripts/viewer-bench.mts`: a Node server pacing each request
+(`BENCH_LATENCY_MS`, `BENCH_MBPS`) and serving the PDF with Range, the app's
+pdf.js build, a page built like the viewer's surface (overflow frame, canvas
+sized by `canvasPlan`, SVG overlay with non-scaling strokes from a label file),
+driven by Playwright's Chromium with a trace per scenario. `BENCH_HEADED=1`
+uses the GPU. Results in `shots/viewer-speed/*.json` (outside git).
+
+**Pan and zoom, Topeka p74, 95,455 ops, dpr 2.** Headless / headed:
+
+| step | canvas | render | scroll (median of 8) |
+| --- | --- | --- | --- |
+| fit (first draw of the page) | 2700×1800 | 146 / 371 ms | — |
+| 100% | 7776×5184 (40 MP) | 173 / 110 ms | — |
+| 200% | 9797×6531 (64 MP, the cap) | 199 / 51 ms | 33 / 16 ms bare; 33 / 16 ms with 530 lines |
+| 400% | 9797×6531 | 258 / 135 ms | — |
+
+The first draw's extra is `HandlePostMessage` — the operator list crossing from
+the worker, once per page. The real component in happy-dom with 1,562 key-mode
+candidates: mount 90 ms, a focus change 20 ms, a zoom click 17 ms, twenty pointer
+moves while tracing 1 ms. **The reported ~10 s per pan/zoom is not reproduced by
+the viewer's own drawing on this machine**, headed or headless. Left on the
+table, unmeasured: what the labelling Chrome's machine and the extension's
+screenshot path do with a 64 MP (256 MB) canvas; a dev-mode build on :3010
+(it is BUILT, so no); and the `?key=1` panel's 1,562 rows. The one knob if the
+canvas is it: `MAX_CANVAS_AREA` in `canvasPlan.ts`.
+
+**First load.** See `planPdfTransport.ts` for the table. Default transport at
+500 ms/request: 12.1 s to the first page, 77 MB by then and the whole 114 MB
+after; `disableAutoFetch` alone 12.2 s; both fetches off with 1 MB chunks 6.9 s,
+13 requests, 15 MB, then idle. The sheet tree opened a second default-transport
+document for thumbnails — a second full stream — now on the same transport.
+Remaining floor is round trips: 13 × the hop. Fewer would need the route to
+serve a linearized file or the first chunk larger; not done.
+
+**Follow-up 1 — labelling mode at its real size (2026-10-27).** The harness's
+`labeling:` scenario draws what `?key=1` draws on Topeka p74 with its saved
+review: 1,562 candidate lines (decided ones at their recorded coordinates, the
+rest the same lines shifted, since the label keeps coordinates only for
+decisions), 38 of them rejected at 35% opacity, plus 157 traced walls as a
+32 px hit line under a 4 px green one — 1,876 SVG elements. Headless / headed:
+scroll 33 / 16 ms (same as bare canvas), zoom with the overlay up 85–173 /
+42–59 ms painted. Nothing to fix on that path.
+
+**Follow-up 2 — linearizing at upload (2026-10-27).** `qpdf --linearize` on a
+copy of the set (10 s, +0.4 MB; `--object-streams=generate` −0.5 MB), same
+harness, 500 ms per request, first page drawn:
+
+| file | default transport | PLAN_PDF_TRANSPORT |
+| --- | --- | --- |
+| as uploaded | 12.1 s, 21 requests | **6.9 s, 13 requests, 15 MB** |
+| linearized (qpdf defaults) | 18.4 s, 35 requests, whole file first | 26.8 s, 53 requests, 56 MB |
+| linearized, object streams regenerated | 18.5 s, 36 requests | 19.6 s, 38 requests, 41 MB |
+
+pdf.js 4.10.38 does not use the hint tables; on the linearized file it walks
+the main cross-reference region DOWNWARDS a megabyte at a time (ranges logged
+in `shots/viewer-speed/ranges-*.json`: 98.6, 97.5, 94.4 … 5.2 MB) before the
+first page, where the as-uploaded file needs the head, the tail and ten reads.
+**Do not linearize at ingest for this viewer.** qpdf was installed with
+Homebrew for this measurement and nothing in the ingest changed.
+
+### Four sheets the sweep said lost half their walls to view detection (2026-10-28)
+
+The original session's sweep on main after #822 listed HPL p3 1,627→416,
+Bunkie A104 546→147, Camp Bow Wow A120 380→132 and Bunkie A100 views=0.
+Each probed with the view stage opened up (views, kinds, regions, text
+blocks, per-view feet, kept) against the key's extent. One is a defect;
+three are the stage doing its job against a number that was never right.
+
+- **HPL p3** — three captioned plans of ONE tier: a finish plan, a
+  decorative lighting plan and a partition plan, side by side at 1/4".
+  The partition plan is kept and measures 416 ft; the 1,627 was all three
+  copies of the same walls. The 382 ft key sits entirely inside the
+  LIGHTING plan (x 0.41–0.58), because the whole-sheet finder proposed
+  there and the reviewer accepted there — a key-placement artefact. The
+  product answer is right; the key needs re-taking on the partition plan.
+- **Camp Bow Wow A120** — nine views, the enlarged plan kept at 132 ft
+  with the 16 ft key inside it; the other 248 ft were eight interior
+  elevations, now left out by name. Not a loss.
+- **Bunkie A100** — views=0 is cosmetic: the plan's caption is not found
+  on main (no drawing word reaches the caption rule — fixed separately on
+  `diego/round-bubbles`), three notes headings become text blocks at 34%
+  of the page (under the 40% cap), and the single-drawing path keeps
+  69,462 of 70,439 strokes. Key 470 ft, missing 17. Nothing to fix here.
+- **Bunkie A104 — the defect, and it is region placement.** The dimension
+  plan and the floor plan are the same warehouse a gutter apart. The
+  floor plan's caption is lettered under the MIDDLE of its drawing, so the
+  cells left of the caption were "wholly to its left", disqualified by the
+  caption-side rule, and handed across the gutter to the dimension plan:
+  floor plan 147 ft, dimension plan 459 ft, and `keptPlanViews` keeps the
+  floor plan. Not the Central Bank cause (its text blocks are 2–5% each
+  and own only the cell under their heading) and not caption reading.
+
+**Fix.** A piece remembers the region it was cut from, and goes to a
+caption INSIDE that region before any other: the caption-side rules choose
+among those, a region with no caption of its own still joins the nearest
+anywhere (the S05/S07 dimension strip), and text blocks are untouched.
+Bunkie A104: floor plan 147→195 ft, dimension plan 459→351, missing
+27→20. Sweep of all 36 label files before/after (`zzViewSweep.eval.ts`,
+rules only, product path): two lines differ — A104 as above, and Albany
+A-100 (held-out, read as a delta only) missing 11→11, extra 581→338.
+Totals 51,585→51,390 proposed, 6,883→6,876 missing, 17,944→17,743 extra.
+Unit: two placement tests in `sheetViews.test.ts`, one the A104 shape.
+No change to `detectForSheet`, where the original session is adding the
+no-view-kept fallback.

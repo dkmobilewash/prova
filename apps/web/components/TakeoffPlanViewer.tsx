@@ -21,6 +21,7 @@ import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
 import { SubmitButton } from "@/components/SubmitButton";
 import { canvasPlan } from "@/lib/takeoff/canvasPlan";
+import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
 import { DISTINCT_MARKS, SHOWN_AT_FIRST, markFor } from "@/lib/takeoff/clusterMarks";
 import { formatFeetInches, parseFeetInches } from "@/lib/feet-inches";
 import {
@@ -1213,6 +1214,7 @@ export function TakeoffPlanViewer({
           // are no credentials to send and nothing is lost by not sending
           // them. See `blobPdfCredentials.test.ts`.
           standardFontDataUrl: "/pdfjs/standard_fonts/",
+          ...PLAN_PDF_TRANSPORT,
         }).promise;
         if (cancelled) return;
         docRef.current = doc as never;
