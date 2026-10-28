@@ -26,7 +26,8 @@ describe.skipIf(DIR === "" || SET === "")("the raster stage over a set", () => {
   it("times and measures every page as if it were a scan", { timeout: 3_600_000 }, async () => {
     expect(HELD_OUT.test(SET), `${SET} is held out`).toBe(false);
     const bytes = new Uint8Array(readFileSync(join(DIR, SET)));
-    const rows: { page: number; ms: { render: number; lines: number; ocr: number; total: number }; lines: number; text: number; scale: string | null; rssMb: number; heapMb: number }[] = [];
+    console.log(`baseline rss ${Math.round(process.memoryUsage().rss / 1048576)} MB before any sheet`);
+    const rows: { page: number; ms: { render: number; lines: number; ocr: number; total: number }; lines: number; text: number; scale: string | null; sheet: string | null; stoppedEarly: boolean; rssMb: number; rssSteps: number[]; heapMb: number }[] = [];
     for (let page = 1; page <= PAGES; page += 1) {
       let read;
       try {
@@ -39,8 +40,9 @@ describe.skipIf(DIR === "" || SET === "")("the raster stage over a set", () => {
         throw error;
       }
       const mem = process.memoryUsage();
-      rows.push({ page, ms: read.ms, lines: read.lines.length, text: read.text.length, scale: read.printedScale, rssMb: Math.round(mem.rss / 1048576), heapMb: Math.round(mem.heapUsed / 1048576) });
-      console.log(`p${page}: ${read.ms.total} ms (render ${read.ms.render}, lines ${read.ms.lines}, ocr ${read.ms.ocr}) · ${read.lines.length} lines · ${read.text.length} words · scale ${read.printedScale ?? "—"} · rss ${rows[rows.length - 1].rssMb} MB`);
+      const mb = (b: number) => Math.round(b / 1048576);
+      rows.push({ page, ms: read.ms, lines: read.lines.length, text: read.text.length, scale: read.printedScale, sheet: read.sheetNumber, stoppedEarly: read.ocrStoppedEarly, rssMb: mb(mem.rss), rssSteps: [mb(read.rss.afterRender), mb(read.rss.afterLines), mb(read.rss.afterOcr)], heapMb: mb(mem.heapUsed) });
+      console.log(`p${page} ${read.sheetNumber ?? "—"}${read.ocrStoppedEarly ? " (stopped early)" : ""}: ${read.ms.total} ms (render ${read.ms.render}, lines ${read.ms.lines}, ocr ${read.ms.ocr}) · ${read.lines.length} lines · ${read.text.length} words · scale ${read.printedScale ?? "—"} · rss render/lines/ocr ${rows[rows.length - 1].rssSteps.join("/")} MB · title "${read.titleBlockText.replace(/\s+/g, " ").slice(0, 70)}"`);
     }
     const sorted = rows.map((r) => r.ms.total).sort((a, b) => a - b);
     const summary = {
@@ -52,6 +54,7 @@ describe.skipIf(DIR === "" || SET === "")("the raster stage over a set", () => {
       peakRssMb: Math.max(0, ...rows.map((r) => r.rssMb)),
       peakHeapMb: Math.max(0, ...rows.map((r) => r.heapMb)),
       scaleRead: rows.filter((r) => r.scale !== null).length,
+      stoppedEarly: rows.filter((r) => r.stoppedEarly).length,
     };
     console.log(JSON.stringify(summary));
     if (OUT) {

@@ -162,46 +162,86 @@ scan; press Read → the count climbs to done; open the sheet → the caution
 shows and Find the walls offers groups; a sheet whose caption OCR read has
 the one-press scale, one it did not shows the set-the-scale prompt.
 
-## 7. Time and memory per sheet, measured (2026-10-27, `realplan/rasterStage.eval.ts`)
+## 7. Time and memory per sheet, measured (2026-10-28, `realplan/rasterStage.eval.ts`)
 
-Baker EOC, the first 50 pages, every page read as if it were a scan, at 200
-dpi with Tesseract, one page after another in ONE Node process on this Mac
-(M-series). Raw rows in `shots/scanned-stage/`.
+Baker EOC, the first 50 pages, every page read as if it were a scan, at
+200 dpi with Tesseract, one page after another in ONE Node process on this
+Mac, nothing else running. Raw rows in `shots/scanned-stage/{v1,v6}/`.
 
-| | |
-| --- | --- |
-| per sheet, median / mean | 8.8 s / 12.6 s |
-| per sheet, p90 / worst | 33 s / 45 s (A511 and A521 detail sheets, dense small text — Tesseract 42 s) |
-| of which, median | render 0.3 s · lines 0.7 s · OCR 7.7 s |
-| printed scale read | 26 of 50 (the rest are covers, schedules and details with no caption) |
-| JS heap, peak | 180 MB |
-| resident memory | 381 MB after the first sheet · 846 MB median · **2,027 MB peak** by the 50th, in one long-lived process |
+| | before the mitigations | after |
+| --- | --- | --- |
+| per sheet, median / mean | 8.8 s / 12.6 s | **6.1 s / 7.3 s** |
+| per sheet, p90 / worst | 33 s / 45 s | **12.5 s / 17.4 s** (one sheet over 15 s: S2.0, dense small text) |
+| Tesseract, median / worst | 7.7 s / 42 s | 4.8 s / 16 s |
+| sheets whose number or title stopped OCR after the title block and bottom band | 0 | 31 of 50 |
+| resident memory after a sheet, median / high-water | 846 MB / 2,027 MB | 756 MB / 1,188 MB |
+| resident memory mid-sheet, worst | not sampled | 1,663 MB (A401, after the lines step) |
+| lines found, per page | — | within 0.14% of before (band seams), scale read on 24 vs 26 |
 
-**What fits the server and what does not.** The runner does one sheet per
-advance, and the pdf, the canvas and the Tesseract worker are created and
-destroyed inside that one task, so the WORKING SET per sheet is the first
-row — about 400 MB — not the last. The 2 GB is native memory the process
-keeps after fifty sheets (the JS heap never passes 180 MB), which is a
-long-lived-instance problem: Fluid compute reuses an instance across
-invocations, so a hot instance that has read many scans holds the high-water
-mark. Three things keep it inside a 1 GB function, in order of payoff:
+**What the mitigations were.** The render draws the page in 600-px bands
+into one reused canvas instead of a 138 MB full-page RGBA canvas, and the
+page's pdf.js caches are dropped after it. OCR cuts its tiles straight from
+the 8-bit grey into ONE reused tile canvas, never a full-page RGBA copy.
+OCR reads the title block and the bottom band first, puts the sheet's own
+number and title to `takeoffSheetVerdict`, and reads the rest of the page
+only for a floor plan or a sheet it cannot name — a cover, a schedule, an
+elevation sheet stops there with its lines kept. One Tesseract worker per
+sheet, not one per pass. The lines are the same code at the same dpi, so
+recall is unchanged by construction; the stage's own step scored on the
+training keys is in §8.
 
-1. **No full-page RGBA canvas for OCR.** `grayToCanvas` copies the 8-bit page
-   into a 32-bit canvas (138 MB at 200 dpi ARCH D) only so tiles can be cut
-   from it; cutting tiles straight from the grey buffer into small canvases
-   removes that copy. The render's own canvas is unavoidable and is released
-   after the grey is taken.
-2. **Cap OCR by region, not by page.** Lines cost 0.7 s; Tesseract is 7.7 s
-   median and 42 s on a dense detail sheet. The finder needs the scale
-   caption, the view titles and the lettering near the drawing; a first pass
-   on the bottom band and the title block gives the sheet number and the
-   scale in a second, and a sheet whose number says schedule, detail or
-   cover needs no second pass at all. That turns the worst case into the
-   cheap case.
-3. **The per-advance budget.** 45 s is longer than the runner's slice; the
-   claim lease must outlast the slowest sheet or the task is reclaimed
-   mid-OCR. Set the RASTER task lease to 120 s, or run OCR as item 2 and
-   the question goes away.
+**Tried and left out, measured:** a second pass over the title block at
+half size, for the big numerals Tesseract misses — read nothing new on
+Baker and cost 5–7 s a sheet. Tesseract reads the sheet number on 1 of 50
+Baker pages at any size; the early stop goes by the title words it does
+read ("COVER SHEET", "SCHEDULE"), which is why 31 sheets stop and the
+floor plans do not.
 
-None of the three is built here; the numbers are what decides them, and
-the first real scanned set may change the order.
+**The memory target, honestly.** Under 1 GB was the target; 1.19 GB
+after-sheet high-water and 1.66 GB mid-sheet is what fifty sheets back to
+back in one process reach. The JS heap never passes 190 MB; the rest is
+typed-array garbage the collector has not reclaimed yet plus pdf.js's and
+the WASM worker's native memory, and a process keeps its high-water mark.
+A single sheet's working set is 450–760 MB. So the server-side answer is
+ISOLATION, not another buffer: one sheet per process. On Vercel each
+advance is already its own invocation; what the number warns about is a
+Fluid instance reused across many advances, which then carries the
+high-water mark. Running `rasterizeSheet` in a `worker_threads` Worker that
+is terminated after each sheet returns the WASM heap and the typed arrays
+with it; a child process does the same more surely. Neither is built here
+— a worker entry has to survive the Next build, which only a preview can
+prove — and the stage runs one sheet per advance meanwhile, which is the
+450–760 MB case, inside a 1 GB function.
+
+## 8. The whole-sheet fallback (2026-10-28)
+
+`wholeSheetFallback` in `offeredCandidates.ts`, in `detectForSheet`'s
+multi-view branch only: when drawings were found, none could be measured,
+and none was set aside for a NAMED reason (notes, legend, schedule,
+elevation, section, detail), the whole sheet is measured as one drawing and
+the caution says so ("check each group against the sheet"). A drawing the
+caption reader could only mark "check it", or could not scale, is not a
+named reason — that is the shape OCR noise takes. Baker A201 names all its
+views and stays at zero. Pure rule, four tests.
+
+**The 31-sheet vector sweep is byte-identical** before and after
+(`shots/scanned-stage/sweep/sweep-{before,after}.json`, `cmp` clean).
+
+**It does not fire on the four bench cases, and here is why.** With the
+contour fills and line-level OCR now on the branch, the zeros that named
+those cases are gone or have another cause:
+
+| case | stack | before the fallback | the view path says |
+| --- | --- | --- | --- |
+| Joplin A-101, 150 dpi | Tesseract / Vision | 4,887 / 4,585 ft found | views kept |
+| Murray A101, 150 dpi | Vision | 126 of 1,037 ft | views 6, kept 2 ("or Plan", "1st Floor Plan") — region placement, not an unkept view |
+| NG McAllen A3.2, 300 dpi | Tesseract / Vision | 759 / 1,646 ft | views kept |
+| Bunkie A100, 300 dpi | Vision | **0 of 470 ft** | views 2, kept none, leftOut "Equipment: an equipment plan, not to scale" + legends — every view NAMED, so by the rule it stays at 0 |
+
+Over all 26 training sheets at 150 and 300 dpi, clean and scan-like, on
+the Mac stack: the fallback fired on none, and every arm's footage is
+unchanged. Bunkie's zero is the one worth a decision: the floor plan's
+caption was read as the equipment plan's, so the only drawing left is
+"not to scale" and named. Treating a not-to-scale exclusion on a SCANNED
+sheet as unnamed when the sheet's scale is already known would measure it
+— a widening of the rule that is Diego's call, not made here.

@@ -16,7 +16,12 @@ import type { Gray } from "./pgm";
 export type OcrItem = { str: string; x: number; y: number; width: number; height: number; confidence: number };
 
 type PdfDoc = { getPage(n: number): Promise<PdfPage>; canvasFactory: CanvasFactory; destroy(): Promise<void> };
-type PdfPage = { getViewport(o: { scale: number }): { width: number; height: number }; render(o: { canvasContext: unknown; viewport: unknown }): { promise: Promise<void> } };
+type PdfPage = {
+  getViewport(o: { scale: number; offsetX?: number; offsetY?: number }): { width: number; height: number };
+  render(o: { canvasContext: unknown; viewport: unknown }): { promise: Promise<void> };
+  /** Drops the page's cached operator list and decoded images. */
+  cleanup?(): void;
+};
 type CanvasFactory = { create(w: number, h: number): { canvas: NodeCanvas; context: NodeContext } };
 type NodeCanvas = { width: number; height: number; toBuffer(mime: "image/png"): Buffer };
 type NodeContext = {
@@ -34,33 +39,40 @@ export async function openPdf(bytes: Uint8Array): Promise<PdfDoc> {
   return (await pdfjs.getDocument({ data: bytes, useWorkerFetch: false, isEvalSupported: false, disableFontFace: true, verbosity: 0 }).promise) as unknown as PdfDoc;
 }
 
-/** One page as 8-bit grey at `dpi`, rotation applied the way the viewer shows it. */
-export async function renderGray(doc: PdfDoc, pageNumber: number, dpi: number): Promise<{ gray: Gray; canvas: NodeCanvas; context: NodeContext }> {
+/**
+ * One page as 8-bit grey at `dpi`, rotation applied the way the viewer shows it.
+ *
+ * RENDERED IN BANDS. A whole ARCH D sheet at 200 dpi is a 7,200 × 4,800 RGBA
+ * canvas — 138 MB — and that canvas was the biggest single thing a sheet
+ * cost (NOTES-scanned.md §7). pdf.js can render any window of the page by
+ * offsetting the viewport, so the page is drawn into a band `bandPx` rows
+ * tall, converted to grey, and the band reused; the only full-page buffer
+ * is the grey itself, one byte per pixel. The operator list runs once per
+ * band, which costs a few hundred milliseconds on a plan sheet.
+ */
+export async function renderGray(doc: PdfDoc, pageNumber: number, dpi: number, bandPx = 600): Promise<{ gray: Gray }> {
   const page = await doc.getPage(pageNumber);
-  const viewport = page.getViewport({ scale: dpi / 72 });
-  const width = Math.round(viewport.width);
-  const height = Math.round(viewport.height);
-  const { canvas, context } = doc.canvasFactory.create(width, height);
-  context.fillStyle = "white";
-  context.fillRect(0, 0, width, height);
-  await page.render({ canvasContext: context, viewport }).promise;
-  const rgba = context.getImageData(0, 0, width, height).data;
+  const full = page.getViewport({ scale: dpi / 72 });
+  const width = Math.round(full.width);
+  const height = Math.round(full.height);
   const data = new Uint8Array(width * height);
-  for (let i = 0; i < data.length; i += 1) data[i] = (rgba[i * 4] * 299 + rgba[i * 4 + 1] * 587 + rgba[i * 4 + 2] * 114) / 1000;
-  return { gray: { width, height, data }, canvas, context };
-}
-
-/** A grey page back onto a canvas, for OCR of a degraded or deskewed page. The
- *  canvas's own ImageData is written into: the Node canvas refuses a plain object. */
-export function grayToCanvas(doc: PdfDoc, gray: Gray): { canvas: NodeCanvas; context: NodeContext } {
-  const { canvas, context } = doc.canvasFactory.create(gray.width, gray.height);
-  const image = context.getImageData(0, 0, gray.width, gray.height);
-  for (let i = 0; i < gray.data.length; i += 1) {
-    image.data[i * 4] = image.data[i * 4 + 1] = image.data[i * 4 + 2] = gray.data[i];
-    image.data[i * 4 + 3] = 255;
+  const bandHeight = Math.min(bandPx, height);
+  const { canvas, context } = doc.canvasFactory.create(width, bandHeight);
+  for (let top = 0; top < height; top += bandHeight) {
+    const rows = Math.min(bandHeight, height - top);
+    context.fillStyle = "white";
+    context.fillRect(0, 0, width, bandHeight);
+    const viewport = page.getViewport({ scale: dpi / 72, offsetY: -top });
+    await page.render({ canvasContext: context, viewport }).promise;
+    const rgba = context.getImageData(0, 0, width, rows).data;
+    for (let i = 0; i < width * rows; i += 1) data[top * width + i] = (rgba[i * 4] * 299 + rgba[i * 4 + 1] * 587 + rgba[i * 4 + 2] * 114) / 1000;
   }
-  context.putImageData(image, 0, 0);
-  return { canvas, context };
+  void canvas;
+  // The page's operator list and its decoded images are pdf.js's cache for
+  // drawing it again; nothing here will, so they go now rather than with the
+  // document.
+  page.cleanup?.();
+  return { gray: { width, height, data } };
 }
 
 /**
@@ -92,28 +104,93 @@ export type OcrOptions = {
  * Measured on Baker A101: at 150 dpi, native tiles of 1200 px read the
  * caption; 2× upscaled tiles did not and took twice as long.
  */
+/** A window of the page, in pixels; `ocrTiles` reads only the tiles that touch one. */
+export type PxRegion = { x: number; y: number; width: number; height: number };
+
+/**
+ * Tiles are cut STRAIGHT FROM THE GREY into a tile-sized canvas — never a
+ * full-page RGBA canvas (138 MB at 200 dpi) for Tesseract to crop from.
+ * With `regions`, only the tiles that touch a region are read: the title
+ * block and the bottom band hold the sheet number and the scale caption,
+ * and a sheet whose number says schedule or detail needs no more than that.
+ */
+/** One Tesseract worker, to be shared by every OCR pass on a sheet and terminated once. */
+export async function ocrWorker(cachePath: string): Promise<OcrWorker> {
+  const { createWorker } = await import("tesseract.js");
+  return (await createWorker("eng", 1, { cachePath, logger: () => {} })) as unknown as OcrWorker;
+}
+export type OcrWorker = {
+  recognize(image: Buffer, o: object, out: { blocks: true }): Promise<{ data: unknown }>;
+  terminate(): Promise<unknown>;
+};
+
 export async function ocrTiles(
   doc: PdfDoc,
-  canvas: NodeCanvas,
-  context: NodeContext,
-  options: OcrOptions,
-): Promise<{ items: OcrItem[]; tiles: number; ms: number }> {
-  const { createWorker } = await import("tesseract.js");
-  const worker = await createWorker("eng", 1, { cachePath: options.cachePath, logger: () => {} });
+  gray: Gray,
+  options: OcrOptions & {
+    regions?: readonly PxRegion[];
+    skipTiles?: ReadonlySet<string>;
+    worker?: OcrWorker;
+  },
+): Promise<{ items: OcrItem[]; tiles: number; ms: number; tileKeys: string[] }> {
+  // A worker handed in is the caller's to terminate; one made here is not.
+  const own = options.worker === undefined;
+  const worker = options.worker ?? (await ocrWorker(options.cachePath));
+  const shrink = 1;
   const tile = Math.round(((options.tilePxAt150 ?? 1200) * options.dpi) / 150);
   const overlap = Math.round(tile / 12);
   const minConfidence = options.minConfidence ?? 40;
   const items: OcrItem[] = [];
   const seen = new Set<string>();
+  const tileKeys: string[] = [];
   const t0 = Date.now();
   let tiles = 0;
+  const touches = (x0: number, y0: number, tw: number, th: number) =>
+    options.regions === undefined || options.regions.some((r) => x0 < r.x + r.width && x0 + tw > r.x && y0 < r.y + r.height && y0 + th > r.y);
+  // ONE tile canvas for every full tile, written into in place: a fresh
+  // 10 MB canvas per tile was most of a sheet's garbage. Edge tiles get a
+  // canvas of their own size, because the PNG is of the whole canvas.
+  const side = Math.ceil(tile / shrink);
+  const shared = doc.canvasFactory.create(side, side);
+  const sharedImage = shared.context.getImageData(0, 0, side, side);
   try {
-    for (let y0 = 0; y0 < canvas.height; y0 += tile - overlap) {
-      const th = Math.min(tile, canvas.height - y0);
-      for (let x0 = 0; x0 < canvas.width; x0 += tile - overlap) {
-        const tw = Math.min(tile, canvas.width - x0);
-        const piece = doc.canvasFactory.create(tw, th);
-        piece.context.putImageData(context.getImageData(x0, y0, tw, th), 0, 0);
+    for (let y0 = 0; y0 < gray.height; y0 += tile - overlap) {
+      const th = Math.min(tile, gray.height - y0);
+      for (let x0 = 0; x0 < gray.width; x0 += tile - overlap) {
+        const tw = Math.min(tile, gray.width - x0);
+        const key = `${x0}:${y0}`;
+        if (!touches(x0, y0, tw, th) || options.skipTiles?.has(key)) {
+          if (x0 + tw >= gray.width) break;
+          continue;
+        }
+        tileKeys.push(key);
+        const ow = Math.ceil(tw / shrink);
+        const oh = Math.ceil(th / shrink);
+        const full = ow === side && oh === side;
+        const piece = full ? shared : doc.canvasFactory.create(ow, oh);
+        const image = full ? sharedImage : piece.context.getImageData(0, 0, ow, oh);
+        for (let y = 0; y < oh; y += 1) {
+          for (let x = 0; x < ow; x += 1) {
+            // The block's mean when shrinking, the pixel itself otherwise.
+            let sum = 0;
+            let n = 0;
+            for (let dy = 0; dy < shrink; dy += 1) {
+              const yy = y0 + y * shrink + dy;
+              if (yy >= y0 + th) break;
+              for (let dx = 0; dx < shrink; dx += 1) {
+                const xx = x0 + x * shrink + dx;
+                if (xx >= x0 + tw) break;
+                sum += gray.data[yy * gray.width + xx];
+                n += 1;
+              }
+            }
+            const v = n === 0 ? 255 : sum / n;
+            const o = (y * ow + x) * 4;
+            image.data[o] = image.data[o + 1] = image.data[o + 2] = v;
+            image.data[o + 3] = 255;
+          }
+        }
+        piece.context.putImageData(image, 0, 0);
         const { data } = await worker.recognize(piece.canvas.toBuffer("image/png"), {}, { blocks: true });
         tiles += 1;
         type Line = { text: string; confidence: number; bbox: { x0: number; y0: number; x1: number; y1: number } };
@@ -124,22 +201,22 @@ export async function ocrTiles(
               if (line.confidence < minConfidence) continue;
               const str = tidyOcrLine(line.text.trim());
               if (str === "") continue;
-              const x = x0 + line.bbox.x0;
-              const y = y0 + line.bbox.y1;
+              const x = x0 + line.bbox.x0 * shrink;
+              const y = y0 + line.bbox.y1 * shrink;
               // The same line read in two tiles' overlap is kept once.
               const key = `${Math.round(x / 6)}:${Math.round(y / 6)}:${str}`;
               if (seen.has(key)) continue;
               seen.add(key);
-              items.push({ str, x, y, width: line.bbox.x1 - line.bbox.x0, height: line.bbox.y1 - line.bbox.y0, confidence: line.confidence });
+              items.push({ str, x, y, width: (line.bbox.x1 - line.bbox.x0) * shrink, height: (line.bbox.y1 - line.bbox.y0) * shrink, confidence: line.confidence });
             }
           }
         }
-        if (x0 + tw >= canvas.width) break;
+        if (x0 + tw >= gray.width) break;
       }
-      if (y0 + th >= canvas.height) break;
+      if (y0 + th >= gray.height) break;
     }
   } finally {
-    await worker.terminate();
+    if (own) await worker.terminate();
   }
-  return { items, tiles, ms: Date.now() - t0 };
+  return { items, tiles, ms: Date.now() - t0, tileKeys };
 }

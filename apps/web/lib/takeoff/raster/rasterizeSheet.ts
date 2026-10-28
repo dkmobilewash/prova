@@ -1,8 +1,10 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sheetNumberFrom } from "../../plan-ingest/sheetNumber";
 import { printedScalesOnPage } from "../printedScales";
 import { scaleFromPrinted } from "../scaleFromPrinted";
-import { grayToCanvas, ocrTiles, openPdf, renderGray, type OcrItem } from "./nodeStack";
+import { takeoffSheetVerdict } from "../takeoffSheet";
+import { ocrTiles, ocrWorker, openPdf, renderGray, type OcrItem, type PxRegion } from "./nodeStack";
 import { skew } from "./rasterDegrade";
 import { estimateSkewDegrees, pageSizeOf, rasterLines } from "./rasterLines";
 
@@ -19,9 +21,25 @@ import { estimateSkewDegrees, pageSizeOf, rasterLines } from "./rasterLines";
  * 200 dpi, because the bench measured 200 as the sweet spot — 150 loses
  * four points, 300 gains nothing and doubles the time (`NOTES-scanned.md`).
  *
- * The canvas is dropped before the lines are read and the document is
- * destroyed in `finally`: one sheet at a time, nothing held between pages.
+ * ── OCR IN TWO STEPS, BECAUSE TESSERACT WAS THE WHOLE COST ──
+ *
+ * Measured on 50 pages (NOTES-scanned.md §7): lines 0.7 s, Tesseract 7.7 s
+ * median and 42 s on a detail sheet dense with small text. So the title
+ * block and the bottom band are read FIRST — the sheet number and the scale
+ * caption live there — and the sheet's own number is put to
+ * `takeoffSheetVerdict`. A schedule, a detail, a cover or an elevation sheet
+ * stops there: the lines are kept (cheap, and Find the walls still works if
+ * somebody insists) and the rest of the page is never read. A floor plan, or
+ * a sheet nobody can name, gets the rest of its tiles read too, so the
+ * finder sees the same words it would have seen before.
+ *
+ * The render is drawn in bands and the OCR cuts its tiles from the grey, so
+ * no full-page RGBA canvas exists at any point; the document is destroyed in
+ * `finally`. One sheet at a time, nothing held between pages.
  */
+
+/** The strips the sheet number and the scale caption live in, as fractions of the page. */
+export const FIRST_LOOK = { bottom: 0.22, right: 0.22 } as const;
 
 export const RASTER_DPI = 200;
 
@@ -33,9 +51,14 @@ export type RasterizedSheet = {
   lines: { x1: number; y1: number; x2: number; y2: number; width: number }[];
   text: { str: string; x: number; y: number; width: number; height: number }[];
   printedScale: string | null;
+  /** What the title block said the sheet is, when OCR read it, and the words it was read from. */
+  sheetNumber: string | null;
+  titleBlockText: string;
+  /** True when the sheet's number said it is not a floor plan and the rest of the page was not read. */
+  ocrStoppedEarly: boolean;
   ms: { render: number; lines: number; ocr: number; total: number };
-  /** `process.memoryUsage().rss` at the end, bytes — for the budget report. */
-  rssBytes: number;
+  /** `process.memoryUsage().rss` after each step, bytes — for the budget report. */
+  rss: { afterRender: number; afterLines: number; afterOcr: number };
 };
 
 export type RasterizeOptions = {
@@ -52,6 +75,7 @@ export async function rasterizeSheet(bytes: Uint8Array, pageNumber: number, opti
   const doc = await openPdf(bytes);
   try {
     let { gray } = await renderGray(doc, pageNumber, dpi);
+    const rssAfterRender = process.memoryUsage().rss;
     const t1 = Date.now();
     let lines = rasterLines(gray, { dpi });
     const tilt = estimateSkewDegrees(lines);
@@ -60,17 +84,49 @@ export async function rasterizeSheet(bytes: Uint8Array, pageNumber: number, opti
       lines = rasterLines(gray, { dpi });
     }
     const t2 = Date.now();
+    const rssAfterLines = process.memoryUsage().rss;
+    const ptPerPx = 72 / dpi;
+    const size = pageSizeOf(gray, dpi);
+    const toPoints = (list: OcrItem[]) => list.map((i) => ({ str: i.str, x: i.x * ptPerPx, y: i.y * ptPerPx, width: i.width * ptPerPx, height: i.height * ptPerPx }));
     let items: OcrItem[];
+    let sheetNumber: string | null = null;
+    let titleBlockText = "";
+    let ocrStoppedEarly = false;
     if (options.ocr) {
       items = await options.ocr(gray);
     } else {
-      const { canvas, context } = grayToCanvas(doc, gray);
-      items = (await ocrTiles(doc, canvas, context, { cachePath: options.cachePath ?? join(tmpdir(), "prova-tessdata"), dpi })).items;
+      const cachePath = options.cachePath ?? join(tmpdir(), "prova-tessdata");
+      const regions: PxRegion[] = [
+        { x: 0, y: Math.round(gray.height * (1 - FIRST_LOOK.bottom)), width: gray.width, height: Math.round(gray.height * FIRST_LOOK.bottom) },
+        { x: Math.round(gray.width * (1 - FIRST_LOOK.right)), y: 0, width: Math.round(gray.width * FIRST_LOOK.right), height: gray.height },
+      ];
+      // One worker for both passes: a Tesseract worker is a WASM heap of its
+      // own, and starting a second one per sheet was a second copy of it.
+      const worker = await ocrWorker(cachePath);
+      try {
+        // MEASURED AND LEFT: a second pass over the strips at half size, for
+        // the big title-block numerals, read nothing new on Baker and cost
+        // 5–7 s a sheet. Tesseract misses those numerals at any size; the
+        // early stop goes by the title words it does read ("COVER SHEET").
+        const first = await ocrTiles(doc, gray, { cachePath, dpi, regions, worker });
+        const firstItems = first.items;
+        const reading = sheetNumberFrom({ pageNumber, widthPt: size.widthPt, heightPt: size.heightPt, rotation: 0, items: toPoints(firstItems) });
+        sheetNumber = reading.sheetNumber;
+        titleBlockText = reading.regionText;
+        const verdict = takeoffSheetVerdict({ sheetNumber: reading.sheetNumber, title: reading.regionText });
+        if (verdict.skipAutomatically) {
+          items = firstItems;
+          ocrStoppedEarly = true;
+        } else {
+          const rest = await ocrTiles(doc, gray, { cachePath, dpi, skipTiles: new Set(first.tileKeys), worker });
+          items = [...firstItems, ...rest.items];
+        }
+      } finally {
+        await worker.terminate();
+      }
     }
     const t3 = Date.now();
-    const ptPerPx = 72 / dpi;
-    const text = items.map((i) => ({ str: i.str, x: i.x * ptPerPx, y: i.y * ptPerPx, width: i.width * ptPerPx, height: i.height * ptPerPx }));
-    const size = pageSizeOf(gray, dpi);
+    const text = toPoints(items);
     const printed = scaleFromPrinted(printedScalesOnPage(text), size.widthPt, size.heightPt);
     return {
       dpi,
@@ -80,8 +136,11 @@ export async function rasterizeSheet(bytes: Uint8Array, pageNumber: number, opti
       lines: lines.map((l) => ({ x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2, width: l.width })),
       text,
       printedScale: printed?.scaleName ?? null,
+      sheetNumber,
+      titleBlockText,
+      ocrStoppedEarly,
       ms: { render: t1 - t0, lines: t2 - t1, ocr: t3 - t2, total: Date.now() - t0 },
-      rssBytes: process.memoryUsage().rss,
+      rss: { afterRender: rssAfterRender, afterLines: rssAfterLines, afterOcr: process.memoryUsage().rss },
     };
   } finally {
     await doc.destroy();

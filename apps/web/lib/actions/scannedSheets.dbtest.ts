@@ -68,8 +68,11 @@ const read: RasterizedSheet = {
   ],
   text: [{ str: `SCALE: 1/8" = 1'-0"`, x: 20, y: 190, width: 80, height: 6 }],
   printedScale: `1/8" = 1'-0"`,
+  sheetNumber: "A101",
+  titleBlockText: "SHEET NUMBER A101 FLOOR PLAN",
+  ocrStoppedEarly: false,
   ms: { render: 1, lines: 1, ocr: 1, total: 3 },
-  rssBytes: 0,
+  rss: { afterRender: 0, afterLines: 0, afterOcr: 0 },
 };
 
 describe("scanned sheets", () => {

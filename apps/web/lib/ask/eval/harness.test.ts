@@ -128,6 +128,10 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: writes the room answer keys — printed tags read by position off training pages, BIM spaces joined to their tag text, synthetic truth joined to the tag on the sheet — to a folder beside the confidential plans, outside git. Each source is guarded by its own skip and a non-zero room-count assertion",
     "rasterStage.eval.ts":
       "calls no model: runs the RASTER ingest stage's own per-sheet step (render, lines, Tesseract, scale) over the first N pages of one TRAINING set as if every page were a scan, recording time and resident memory per page for the server-budget report. Guarded by a skip when REAL_PLAN_DIR or RASTER_EVAL_SET is unset plus a non-zero page-count assertion",
+    "zzViewSweep.eval.ts":
+      "calls no model: walks every labelled sheet and prints what the view path keeps against the whole-sheet measure, so a sheet losing its drawing is a listed row rather than an anecdote. Guarded by a skip on the plans and labels folders plus an assertion that at least one labelled sheet was read — with neither folder present it would otherwise print an empty table and read as nothing being lost.",
+    "scanned.eval.ts":
+      "calls no model: rasterises TRAINING sheets (held-out names refused) at several dpi, clean and scan-like, reads lines and the printed scale off the bitmap (Apple's frameworks or pdf.js + tesseract.js), hands them to the same detectForSheet as the vector path and scores every arm against the keys. Guarded by a skip when REAL_PLAN_DIR or TAKEOFF_LABEL_DIR is unset plus a non-zero label-count assertion",
     "zzRoomDetect.eval.ts":
       "calls no model: runs roomsFromWalls over the label files' accepted walls, the finder's raw pairings, and the BIM keys' own centrelines, and scores area per room against the keys. Guarded by skips on each directory plus a non-zero joined-room assertion, so an empty labels folder cannot read as a clean run",
     "zzRoomLeaks.eval.ts":
