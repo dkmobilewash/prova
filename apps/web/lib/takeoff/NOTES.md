@@ -3319,3 +3319,66 @@ candidate list on Topeka p75/p76, ELEVEN03 and Camp Bow Wow (and tracing
 where it misses), after which the veto, the filter and the shape test can
 all be scored on the same footing as p74. Until then p74 is the evidence:
 +937 real, +1,035 unlabelled, of which the reviewer traced nothing.
+
+### Round 5: the new candidates judged, and round-bubbles against the shipping rule (2026-10-28)
+
+Chrome reviewed the candidates the round-bubble test uncovers (Topeka p74
+134 accepted / 46 rejected, p75 161/75, p76 177/66, ELEVEN03 66/50,
+126/56, 118/40, Crosslines 125/64, Joplin 43/23, MHK 19/11; Camp Bow Wow
+A101 14/104), and the original session trimmed the traces an accepted
+candidate now covers (p74 −165 ft, MHK −8, Crosslines −348). Each label
+stores a trace twice, in `traced[]` and as a `traced` verdict;
+`keyFromLabels` reads the verdicts only, so a trace counts once.
+
+Re-measured on the new labels, LOBO fold models retrained per arm (shipped
+rows 21,510 real + 130,457 synthetic; round 33,039 + 142,331), veto 0.3,
+26 training sheets:
+
+| arm | rules miss / extra | veto 0.3 miss / extra |
+| --- | --- | --- |
+| shipped | 13,637 / 12,606 | 14,274 / 11,506 |
+| round-bubbles | 1,566 / 16,844 | 2,257 / 15,091 |
+| round-bubbles + splitFacePass | 1,566 / 16,940 | 2,257 / 15,174 |
+
+The shipped finder's missing feet went from 4,391 to 13,637 on the same
+sheets: that is round 5's acceptances entering the key, walls the shipped
+finder never offered. **Round-bubbles with the classifier on: real
++12,017 ft, junk +3,585 ft, 3.4 ft per ft — passes the 3× rule.**
+Per sheet (veto arm, real recovered / junk added): Topeka p76 +2,054 /
++247, p75 +1,927 / +352, p74 +1,767 / +160, ELEVEN03 A4.B.3 +1,539 / +98,
+A4.B.2 +1,394 / +280, A4.B.1 +755 / +369, Joplin +871 / +42, Crosslines
++770 / −27, MHK +263 / +255, NG Green Bay A3.2 +124 / −76, Murray +121 /
++38, Baker A101 +64 / −3; Camp Bow Wow A101 +219 / +685, Supreme Court
++57 / +408, E Street +3 / +206, NG Green Bay A3.1 +29 / +191, HPL 0 / +85,
+SW 0 / +95 (−11 real), McAllen −23 / +60.
+
+**Four buildings are worse by more than 100 ft net, and three of them
+were not in round 5:** E Street (−203), Supreme Court (−351) and SW
+(−106) have accepted-only keys and no reviewer has seen their new
+candidates, which on every sheet that WAS reviewed came back 60–80% real.
+Their "junk" is the unlabelled kind. Camp Bow Wow A101 (−443) was
+reviewed and is junk: see below.
+
+**splitFacePass adds nothing on top of round-bubbles**: missing identical
+(2,257), extra +83 ft. The walls it recovered on main — Crosslines'
+demising wall, Bunkie's twice-drawn face — are proposed by the pairer
+once the grid stage stops deleting faces around them, and round 5
+accepted them. The pass is left on `diego/recall-never-paired` and is not
+in this PR.
+
+**Camp Bow Wow A101, and why no narrow fix.** The sheet is a dog-boarding
+floor plan at 1/8": 113 kennel enclosures ("kennels as selected, owner
+provided; G.C. to install") in rows of 4×4 and 4×6 ft, indoor play-yard
+fencing, outdoor runs with 8 ft fence, concrete curbs and trench drains —
+all drawn as two parallel lines a wall thickness apart, in regular rows.
+The shipped bubble stage hid most of them by accident through the kennel
+tags. Two signatures were measured across the training sheets as a
+possible narrow filter: "a face drawn as a regular dash pattern" covers
+187 of Camp Bow Wow's 2,378 rejected ft and removes real walls elsewhere
+(Alden A103's existing walls are dashed, 199 ft; Joplin 284 ft mixed), and
+"one of a regular parallel series at a ≤ 6 ft pitch" catches 122 ft there
+while flagging 1,403 ft of real wall on the unit plans, whose units repeat
+at exactly that kind of pitch. What separates a kennel panel from a
+partition on this sheet is the note that says who furnishes it, not its
+geometry. The classifier does see these pairs; on this sheet the LOBO
+veto removed 55 ft of the 740.
