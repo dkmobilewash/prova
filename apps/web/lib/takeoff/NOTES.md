@@ -3423,3 +3423,40 @@ wall and is not one. The kennel grid itself carries numbers, not words,
 and its perimeter is the room. A vocabulary read off one building and
 measured on twenty-six; the words are the drafter's, the reach is the one
 measurement set, and both are stated beside the rule.
+
+### The veto's cut, retrained on every label including round 5, with round-bubbles in (2026-10-28)
+
+Fold models retrained per building on the round-bubble finder's rows from
+all labels (33,039 real + 142,331 synthetic), LOBO, 26 training sheets,
+each cut's veto against its own rules arm. HPL p3 had been re-keyed after
+the round-5 run (its 382 ft of lighting-plan key cleared), so these rows
+are 382 ft lower in missing than the round-5 table; E Street's key grew
+from 477 to 620 ft between the 0.5 and 0.6 runs (Chrome's round 6), which
+is why the 0.6 rules arm differs by 11 / −142.
+
+| cut | rules miss / extra | veto miss / extra | real lost | junk removed | removed per lost | buildings losing > 100 ft |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0.2 | 1,184 / 16,844 | 1,574 / 15,744 | 390 | 1,100 | 2.8 | Topeka 216 |
+| 0.3 | 1,184 / 16,844 | 1,875 / 15,091 | 691 | 1,753 | 2.5 | Topeka 282, ELEVEN03 150 |
+| 0.4 | 1,184 / 16,844 | 2,307 / 14,303 | 1,123 | 2,541 | 2.3 | Topeka 345, ELEVEN03 343 |
+| 0.5 | 1,184 / 16,844 | 2,681 / 13,171 | 1,497 | 3,673 | 2.5 | six buildings, Topeka 414 |
+| 0.6 | 1,195 / 16,702 | 3,654 / 11,626 | 2,459 | 5,076 | 2.1 | seven buildings, Topeka 828 |
+
+**Read against the board's rule — 3 ft of junk removed per foot of real
+wall lost — no cut passes, and the ratio falls as the cut rises.** Before
+round-bubbles the veto at 0.3 on the shipped finder removed 1,162 ft for
+582 lost, 2.0 per foot, so the classifier is better on the new finder
+than on the old one at every cut, and still short of 3. The loss sits on
+the unit plans at every cut: Topeka p74 loses 116 ft at 0.2 for 35 ft
+removed, p75 61 for 62 — a fold that has never seen a unit plan vetoes
+the unit plan's walls. That is leave-one-building-out's honest cost, and a
+lower bound on the production model, which is trained on every building.
+
+**Recommendation: 0.2 if a veto runs at all.** It is the cut closest to
+the rule (2.8), the only one with a single building over the 100 ft line,
+and it keeps the walls round-bubbles recovered: 390 ft lost against
+12,017 gained. 0.3, the cut chosen on 2026-10-21 against the shipped
+finder, is no longer the best point on the new finder's curve. Whether a
+veto that does not meet the rule should run is Diego's call; its removal
+is a product setting, not a code change, and the setting is measured
+here either way.
