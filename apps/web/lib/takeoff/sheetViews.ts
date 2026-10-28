@@ -1138,12 +1138,25 @@ export function placeDrawings(views: readonly SheetView[], regions: readonly Box
   // heading sits over its words — and just left of either on x. A notes
   // column that shares a gutter-free region with the plan's caption (NG A3.2)
   // otherwise leaves its blocks with no pieces and the plan with the column.
-  const shared: Box[] = [];
+  // ── A PIECE REMEMBERS WHICH REGION IT WAS CUT FROM ──
+  //
+  // A region is the sheet's own statement that what is inside it belongs
+  // together: gutters are what separate two drawings. So a piece cut from a
+  // region that holds a drawing's caption is that drawing's before it is
+  // anybody else's — the caption-side rules below only choose AMONG the
+  // captions in the region. Bunkie A104 is the case: its floor plan is
+  // captioned under the middle of its drawing, so the cells left of the
+  // caption were "wholly to its left", disqualified, and handed across a
+  // gutter to the dimension plan next door; the floor plan measured 147 ft
+  // against the dimension plan's 459 for the same warehouse. Only a region
+  // with no caption of its own — the S05/S07 dimension strip — joins the
+  // nearest caption anywhere.
+  const shared: { box: Box; here: SheetView[] }[] = [];
   for (const r of pool) {
     const here = drawings.filter((d) => inside(d, r));
     const heads = blocks.filter((b) => inside(b, r));
     if (here.length + heads.length < 2) {
-      shared.push(r);
+      shared.push({ box: r, here });
       continue;
     }
     const lines = (values: number[], lo: number, hi: number) => {
@@ -1159,7 +1172,7 @@ export function placeDrawings(views: readonly SheetView[], regions: readonly Box
     const xs = lines([...here, ...heads].map((d) => d.captionX - CAPTION_MARGIN), r.from, r.to);
     const ys = lines([...here.map((d) => d.captionY + CAPTION_MARGIN), ...heads.map((b) => b.captionY - CAPTION_MARGIN)], r.fromY, r.toY);
     for (let i = 0; i < xs.length - 1; i += 1) {
-      for (let j = 0; j < ys.length - 1; j += 1) shared.push({ from: xs[i], to: xs[i + 1], fromY: ys[j], toY: ys[j + 1] });
+      for (let j = 0; j < ys.length - 1; j += 1) shared.push({ box: { from: xs[i], to: xs[i + 1], fromY: ys[j], toY: ys[j + 1] }, here });
     }
   }
 
@@ -1169,7 +1182,7 @@ export function placeDrawings(views: readonly SheetView[], regions: readonly Box
   // bottom — because a heading at the top of a column claiming every cell
   // beneath it took the plan's right end on NG A3.2.
   const claimedByBlock = new Set<Box>();
-  for (const piece of shared) {
+  for (const { box: piece } of shared) {
     if (drawings.some((d) => inside(d, piece))) continue;
     let at: SheetView | null = null;
     let bestD = Number.POSITIVE_INFINITY;
@@ -1202,10 +1215,11 @@ export function placeDrawings(views: readonly SheetView[], regions: readonly Box
     const dy = Math.max(piece.fromY - d.captionY - CAPTION_MARGIN, 0, d.captionY - piece.toY);
     return Math.hypot(dx, dy);
   };
-  for (const piece of shared) {
+  for (const { box: piece, here } of shared) {
     if (claimedByBlock.has(piece)) continue;
+    const own = here.filter((d) => qualifies(d, piece));
     const pool2 = drawings.filter((d) => qualifies(d, piece));
-    const candidates = pool2.length > 0 ? pool2 : drawings;
+    const candidates = own.length > 0 ? own : here.length > 0 ? here : pool2.length > 0 ? pool2 : drawings;
     let at: SheetView | null = null;
     let bestD = Number.POSITIVE_INFINITY;
     for (const d of candidates) {
