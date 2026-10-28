@@ -161,3 +161,47 @@ with the original session. Validation on REAL scans waits for Diego's sets.
 scan; press Read → the count climbs to done; open the sheet → the caution
 shows and Find the walls offers groups; a sheet whose caption OCR read has
 the one-press scale, one it did not shows the set-the-scale prompt.
+
+## 7. Time and memory per sheet, measured (2026-10-27, `realplan/rasterStage.eval.ts`)
+
+Baker EOC, the first 50 pages, every page read as if it were a scan, at 200
+dpi with Tesseract, one page after another in ONE Node process on this Mac
+(M-series). Raw rows in `shots/scanned-stage/`.
+
+| | |
+| --- | --- |
+| per sheet, median / mean | 8.8 s / 12.6 s |
+| per sheet, p90 / worst | 33 s / 45 s (A511 and A521 detail sheets, dense small text — Tesseract 42 s) |
+| of which, median | render 0.3 s · lines 0.7 s · OCR 7.7 s |
+| printed scale read | 26 of 50 (the rest are covers, schedules and details with no caption) |
+| JS heap, peak | 180 MB |
+| resident memory | 381 MB after the first sheet · 846 MB median · **2,027 MB peak** by the 50th, in one long-lived process |
+
+**What fits the server and what does not.** The runner does one sheet per
+advance, and the pdf, the canvas and the Tesseract worker are created and
+destroyed inside that one task, so the WORKING SET per sheet is the first
+row — about 400 MB — not the last. The 2 GB is native memory the process
+keeps after fifty sheets (the JS heap never passes 180 MB), which is a
+long-lived-instance problem: Fluid compute reuses an instance across
+invocations, so a hot instance that has read many scans holds the high-water
+mark. Three things keep it inside a 1 GB function, in order of payoff:
+
+1. **No full-page RGBA canvas for OCR.** `grayToCanvas` copies the 8-bit page
+   into a 32-bit canvas (138 MB at 200 dpi ARCH D) only so tiles can be cut
+   from it; cutting tiles straight from the grey buffer into small canvases
+   removes that copy. The render's own canvas is unavoidable and is released
+   after the grey is taken.
+2. **Cap OCR by region, not by page.** Lines cost 0.7 s; Tesseract is 7.7 s
+   median and 42 s on a dense detail sheet. The finder needs the scale
+   caption, the view titles and the lettering near the drawing; a first pass
+   on the bottom band and the title block gives the sheet number and the
+   scale in a second, and a sheet whose number says schedule, detail or
+   cover needs no second pass at all. That turns the worst case into the
+   cheap case.
+3. **The per-advance budget.** 45 s is longer than the runner's slice; the
+   claim lease must outlast the slowest sheet or the task is reclaimed
+   mid-OCR. Set the RASTER task lease to 120 s, or run OCR as item 2 and
+   the question goes away.
+
+None of the three is built here; the numbers are what decides them, and
+the first real scanned set may change the order.
