@@ -689,6 +689,13 @@ export function wallsPerView(input: {
    * recurring shape wearing a type signature.
    */
   veto?: Parameters<typeof findWallsOnSheet>[0]["veto"];
+  /**
+   * The symbol-tag vocabulary, declared here for the reason the veto above
+   * is: a caller spreading `{ ...base, views }` would hand it in and
+   * TypeScript would say nothing, and it would be dropped on exactly the
+   * multi-view sheets. Same trap, same cure.
+   */
+  planText?: Parameters<typeof findWallsOnSheet>[0]["planText"];
 }): ViewWalls[] {
   const bands = input.views
     .map((view) => ({
@@ -758,6 +765,7 @@ export function wallsPerView(input: {
       feetPerUnit,
       wallTypes: input.wallTypes,
       sampledSheets: input.sampledSheets ?? null,
+      ...(input.planText === undefined ? {} : { planText: input.planText }),
       // ── WHY THIS IS HERE AND NOT ONLY AT THE VIEWER'S OWN CALL ──
       //
       // A sheet carrying several plan views is measured view by view, and the
@@ -1250,8 +1258,37 @@ export function drawingCount(views: readonly SheetView[]): number {
 }
 
 /** The regions the sheet's text blocks own — a legend, a notes column, a schedule — to keep out of any drawing. */
+/**
+ * ── A BLOCK OF NOTES CANNOT BE MOST OF THE SHEET ──
+ *
+ * These boxes are SUBTRACTED from the sheet before the drawing is measured, so
+ * one that is too big does not merely add noise — it removes the building.
+ *
+ * Central Bank A100 proposed 1,816 ft when measured whole and ZERO through the
+ * view path. Its caption "GENERAL NOTES (FLOOR PLANS):" was read as a text
+ * block, and the box that came back ran 0.113 to 1.0 across and 0 to 0.714
+ * down — 63% of the page. Everything inside it was dropped, which left 26 of
+ * 19,187 strokes, and 26 strokes make no walls. A whole floor plan was removed
+ * by a heading that mentions floor plans.
+ *
+ * The feature is still needed and still works: Baker A101's notes column is a
+ * real one, 31% across and 21% of the page, and excluding it is what stopped
+ * that column measuring as 242 ft of wall. The two are not close — 21% against
+ * 63% — so the rule is stated as a share of the page and both measurements are
+ * written here rather than a number appearing from nowhere.
+ *
+ * A block over this share is not refused because it is "probably wrong"; it is
+ * refused because of what subtracting it would do. Measuring a notes column as
+ * wall is a bad day. Measuring nothing at all is a blank screen with no
+ * explanation, which is worse and says less.
+ */
+const MOST_OF_THE_SHEET = 0.4;
+
 export function textBlockBoxes(views: readonly SheetView[]): { from: number; to: number; fromY: number; toY: number }[] {
-  return views.filter((v) => v.textBlock === true).flatMap((v) => v.boxes ?? []);
+  return views
+    .filter((v) => v.textBlock === true)
+    .flatMap((v) => v.boxes ?? [])
+    .filter((b) => (b.to - b.from) * (b.toY - b.fromY) <= MOST_OF_THE_SHEET);
 }
 
 /**
