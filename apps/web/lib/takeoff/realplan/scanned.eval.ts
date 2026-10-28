@@ -8,7 +8,7 @@ import { heldOutReason } from "../heldOutSets";
 import { keyFromLabels, scoreSheet, type SheetScore } from "../heldOutScore";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { printedScalesOnPage } from "../printedScales";
-import { ocrTiles, openPdf, renderGray } from "../raster/nodeStack";
+import { SheetWorker } from "../raster/nodeStack";
 import { rasterizeSheet } from "../raster/rasterizeSheet";
 import { readPgm, writePgm, type Gray } from "../raster/pgm";
 import { degrade, SCAN_LIKE, skew } from "../raster/rasterDegrade";
@@ -119,7 +119,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
     }
     const arms: Arm[] = [];
     const notes: string[] = [];
-    const nodeDocs: Awaited<ReturnType<typeof openPdf>>[] = [];
+    const workers: SheetWorker[] = [];
     for (const file of labels) {
       const saved = JSON.parse(readFileSync(file.path, "utf8")) as Saved;
       const { key, fromTracedFeet } = keyFromLabels(saved);
@@ -174,16 +174,16 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
         const pgmPath = join(work, `${flat(file.dir)}-${file.sheet}-${dpi}${STACK === "node" ? "-node" : ""}.pgm`);
         const t0 = Date.now();
         let clean: Gray;
-        let nodeDoc: Awaited<ReturnType<typeof openPdf>> | null = null;
+        let sheetWorker: SheetWorker | null = null;
         if (STACK === "mac") {
           execFileSync(bin, ["render", pdf, String(saved.page), String(dpi), pgmPath], { stdio: "pipe" });
           clean = readPgm(new Uint8Array(readFileSync(pgmPath)));
         } else {
-          nodeDoc = await openPdf(new Uint8Array(readFileSync(pdf)));
-          clean = (await renderGray(nodeDoc, saved.page, dpi)).gray;
+          sheetWorker = SheetWorker.start();
+          clean = await sheetWorker.render(new Uint8Array(readFileSync(pdf)), saved.page, dpi);
           writeFileSync(pgmPath, writePgm(clean));
         }
-        if (nodeDoc) nodeDocs.push(nodeDoc);
+        if (sheetWorker) workers.push(sheetWorker);
         const renderMs = ms(t0);
         for (const variant of VARIANTS) {
           let gray: Gray = clean;
@@ -198,7 +198,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
             // The product's own step, end to end, on the file.
             const read = await rasterizeSheet(new Uint8Array(readFileSync(pdf)), saved.page, { dpi });
             const pageSizeS = { widthPt: read.widthPt, heightPt: read.heightPt };
-            const detectedS = detectForSheet({ segments: read.lines, textItems: read.text, pageSize: pageSizeS, feetPerUnit: saved.feetPerUnit });
+            const detectedS = detectForSheet({ segments: read.lines, textItems: read.text, pageSize: pageSizeS, feetPerUnit: saved.feetPerUnit, scanned: true });
             const offeredS = offeredCandidates({
               walls: detectedS.found.walls,
               segments: detectedS.found.inUnits.map((s) => ({ ...s, x1: s.x1 * pageSizeS.widthPt, y1: s.y1 * pageSizeS.widthPt, x2: s.x2 * pageSizeS.widthPt, y2: s.y2 * pageSizeS.widthPt })),
@@ -239,11 +239,13 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
             ocr = JSON.parse(readFileSync(ocrPath, "utf8")) as { items: OcrItem[] };
           } else {
             // Tesseract reads the (possibly degraded, deskewed) grey, put back on a canvas.
-            ocr = await ocrTiles(nodeDoc!, gray, { cachePath: tessCache, dpi });
+            const read = await sheetWorker!.ocr(gray, { cachePath: tessCache, dpi });
+            gray = read.gray;
+            ocr = { items: read.items };
           }
           const ocrMs = ms(t2);
           const ptPerPx = 72 / dpi;
-          const textItems = ocr.items.map((i) => ({ str: i.str, x: i.x * ptPerPx, y: i.y * ptPerPx, width: i.width * ptPerPx, height: i.height * ptPerPx }));
+          const textItems = ocr.items.map((i) => ({ str: i.str, x: i.x * ptPerPx, y: i.y * ptPerPx, width: i.width * ptPerPx, height: i.height * ptPerPx, confidence: i.confidence }));
           const pageSize = pageSizeOf(gray, dpi);
           // The scale the way the app would get it on a scan: OCR'd caption through the
           // same reader as a vector sheet. Falls back to the key's, and SAYS so.
@@ -251,7 +253,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
           const feetPerUnit = printed?.declaredDistanceFeet ?? saved.feetPerUnit;
           const t3 = Date.now();
           const segments: StrokeSegment[] = lines.map((l) => ({ x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2, width: l.width }));
-          const detected = detectForSheet({ segments, textItems, pageSize, feetPerUnit });
+          const detected = detectForSheet({ segments, textItems, pageSize, feetPerUnit, scanned: true });
           notes.push(
             `${tag} ${dpi}dpi-${variant}: views ${detected.views}, kept [${detected.kept.map((k) => k.name).join(", ")}], others ${detected.others.length}, ` +
               `leftOut [${detected.leftOut.map((l) => `${l.name}: ${l.reason}`).join("; ")}]${detected.wholeSheet ? " → WHOLE SHEET" : ""}`,
@@ -293,7 +295,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
           });
         }
       }
-      if (nodeDocs.length > 0) for (const d of nodeDocs.splice(0)) await d.destroy();
+      for (const w of workers.splice(0)) await w.close();
       const mine = arms.filter((a) => a.score.set === file.dir && a.score.sheet === file.sheet);
       console.log(
         `${tag}: ` +

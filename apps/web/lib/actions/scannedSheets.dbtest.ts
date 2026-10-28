@@ -66,7 +66,7 @@ const read: RasterizedSheet = {
     { x1: 20, y1: 100, x2: 180, y2: 100, width: 1 },
     { x1: 20, y1: 110, x2: 180, y2: 110, width: 1 },
   ],
-  text: [{ str: `SCALE: 1/8" = 1'-0"`, x: 20, y: 190, width: 80, height: 6 }],
+  text: [{ str: `SCALE: 1/8" = 1'-0"`, x: 20, y: 190, width: 80, height: 6, confidence: 91 }],
   printedScale: `1/8" = 1'-0"`,
   sheetNumber: "A101",
   titleBlockText: "SHEET NUMBER A101 FLOOR PLAN",

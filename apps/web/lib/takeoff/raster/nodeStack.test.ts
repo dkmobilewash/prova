@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { openPdf, renderGray, tidyOcrLine } from "./nodeStack";
+import { SheetWorker, tidyOcrLine } from "./nodeStack";
 import { rasterLines } from "./rasterLines";
 
 describe("tidying a Tesseract line", () => {
@@ -11,11 +11,11 @@ describe("tidying a Tesseract line", () => {
   });
 });
 
-describe("rendering a page with pdf.js and its Node canvas", () => {
-  it("gives an 8-bit grey of the page at the asked dpi, with ink the line pass can read", async () => {
-    const doc = await openPdf(new Uint8Array(readFileSync("e2e/fixtures/plan-sheet.pdf")));
+describe("rendering a page in a sheet's own worker", () => {
+  it("gives an 8-bit grey of the page at the asked dpi, with ink the line pass can read, and the worker goes away after", async () => {
+    const sheet = SheetWorker.start();
     try {
-      const { gray } = await renderGray(doc, 1, 150);
+      const gray = await sheet.render(new Uint8Array(readFileSync("e2e/fixtures/plan-sheet.pdf")), 1, 150);
       // 200 pt at 150 dpi.
       expect([gray.width, gray.height]).toEqual([417, 417]);
       const ink = gray.data.filter((v) => v < 200).length;
@@ -23,7 +23,7 @@ describe("rendering a page with pdf.js and its Node canvas", () => {
       expect(ink).toBeLessThan(gray.data.length / 2);
       expect(rasterLines(gray, { dpi: 150 }).length).toBeGreaterThan(0);
     } finally {
-      await doc.destroy();
+      await sheet.close();
     }
   });
 });

@@ -1,7 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { detectForSheet } from "../offeredCandidates";
 import { rasterizeSheet } from "../raster/rasterizeSheet";
+import { scaleFromPrinted } from "../scaleFromPrinted";
 
 /**
  * ── THE RASTER STAGE'S COST, SHEET BY SHEET, ON A WHOLE SET ──
@@ -41,8 +43,17 @@ describe.skipIf(DIR === "" || SET === "")("the raster stage over a set", () => {
       }
       const mem = process.memoryUsage();
       const mb = (b: number) => Math.round(b / 1048576);
+      // What the finder would then do with it, where the sheet's own caption
+      // gave a scale: the walls it offers and whether it took the whole sheet.
+      let detectNote = "";
+      const printed = read.printedScale === null ? null : scaleFromPrinted([read.printedScale], read.widthPt, read.heightPt);
+      if (printed) {
+        const detected = detectForSheet({ segments: read.lines, textItems: read.text, pageSize: { widthPt: read.widthPt, heightPt: read.heightPt }, feetPerUnit: printed.declaredDistanceFeet, scanned: true });
+        const feet = Math.round(detected.found.walls.reduce((n, w) => n + w.lengthFeet, 0));
+        detectNote = ` · detect: ${feet} ft in ${detected.found.walls.length} runs, views ${detected.views}, kept [${detected.kept.map((k) => k.name).join(", ")}]${detected.wholeSheet ? " WHOLE SHEET" : ""}`;
+      }
       rows.push({ page, ms: read.ms, lines: read.lines.length, text: read.text.length, scale: read.printedScale, sheet: read.sheetNumber, stoppedEarly: read.ocrStoppedEarly, rssMb: mb(mem.rss), rssSteps: [mb(read.rss.afterRender), mb(read.rss.afterLines), mb(read.rss.afterOcr)], heapMb: mb(mem.heapUsed) });
-      console.log(`p${page} ${read.sheetNumber ?? "—"}${read.ocrStoppedEarly ? " (stopped early)" : ""}: ${read.ms.total} ms (render ${read.ms.render}, lines ${read.ms.lines}, ocr ${read.ms.ocr}) · ${read.lines.length} lines · ${read.text.length} words · scale ${read.printedScale ?? "—"} · rss render/lines/ocr ${rows[rows.length - 1].rssSteps.join("/")} MB · title "${read.titleBlockText.replace(/\s+/g, " ").slice(0, 70)}"`);
+      console.log(`p${page} ${read.sheetNumber ?? "—"}${read.ocrStoppedEarly ? " (stopped early)" : ""}: ${read.ms.total} ms (render ${read.ms.render}, lines ${read.ms.lines}, ocr ${read.ms.ocr}) · ${read.lines.length} lines · ${read.text.length} words · scale ${read.printedScale ?? "—"} · rss render/lines/ocr ${rows[rows.length - 1].rssSteps.join("/")} MB · title "${read.titleBlockText.replace(/\s+/g, " ").slice(0, 70)}"${detectNote}`);
     }
     const sorted = rows.map((r) => r.ms.total).sort((a, b) => a - b);
     const summary = {

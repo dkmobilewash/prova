@@ -421,7 +421,7 @@ export function TakeoffPlanViewer({
    * and the words in points, for Find the walls to use instead of the file's
    * strokes (a scan has none). Absent for every sheet the stage has not read.
    */
-  rasterByPage?: Record<number, { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number }[] }>;
+  rasterByPage?: Record<number, { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[] }>;
   /**
    * THE WALLS ALREADY FOUND ON EACH SHEET, from `TakeoffWallProposal`, keyed by
    * page number.
@@ -2526,6 +2526,7 @@ export function TakeoffPlanViewer({
         wallTypes,
         sampledSheets,
         onCandidate: collect,
+        scanned: raster !== undefined,
       });
       const found: FoundOnSheet = detected.found;
       // ── WHAT THE FINDER SAW, FOR THE LABELLING HARNESS ONLY ──

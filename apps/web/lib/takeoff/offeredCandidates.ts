@@ -15,6 +15,7 @@ import {
 } from "./sheetViews";
 import { drawingRegions, segmentsInRegions } from "./planRegion";
 import { classifySingleLines, worthOffering } from "./singleLines";
+import { trustedScanViews } from "./scannedCaptions";
 import { viewKind } from "./viewKind";
 import { oneFacePerLine, wallFromPair, type StrokeSegment, type WallCandidate } from "./wallVectors";
 
@@ -238,7 +239,15 @@ export function offeredCandidates(
  */
 export type SheetDetectInput = {
   segments: readonly StrokeSegment[];
-  textItems: readonly { str: string; x: number; y: number; width: number; height: number }[];
+  /** `confidence` travels with a word OCR read off a scan; a vector sheet's words have none. */
+  textItems: readonly { str: string; x: number; y: number; width: number; height: number; confidence?: number }[];
+  /**
+   * True when the lines and words came off a BITMAP (the RASTER stage). The
+   * view detector then believes a caption only when OCR was sure of it and
+   * its words are real — see `scannedCaptions.ts` — and a sheet with fewer
+   * than two believable captions is measured as one drawing.
+   */
+  scanned?: boolean;
   pageSize: { widthPt: number; heightPt: number };
   feetPerUnit: number;
   wallTypes?: Parameters<typeof findWallsOnSheet>[0]["wallTypes"];
@@ -333,7 +342,8 @@ export function wholeSheetFallback(
 }
 
 export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
-  const views = sheetDrawings({ items: input.textItems, segments: input.segments, pageSize: input.pageSize, sizeRatio: input.titleSizeRatio });
+  const everyView = sheetDrawings({ items: input.textItems, segments: input.segments, pageSize: input.pageSize, sizeRatio: input.titleSizeRatio });
+  const views = input.scanned ? trustedScanViews(everyView, input.textItems) : everyView;
   const base = {
     segments: [...input.segments],
     textItems: [...input.textItems],

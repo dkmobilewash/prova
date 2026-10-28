@@ -77,7 +77,7 @@ export type StoredRaster = {
   widthPt: number;
   heightPt: number;
   segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[];
-  textItems: { str: string; x: number; y: number; width: number; height: number }[];
+  textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[];
   printedScale: string | null;
 };
 

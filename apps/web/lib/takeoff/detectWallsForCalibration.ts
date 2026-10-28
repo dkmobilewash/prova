@@ -230,6 +230,7 @@ export async function detectWallsForCalibration(
       pageSize: { widthPt: strokes.widthPt, heightPt: strokes.heightPt },
       feetPerUnit: target.feetPerUnit,
       wallTypes: target.wallTypes,
+      scanned: raster !== null,
       sampledSheets: sampleFailed ? null : sampledSheets,
       ...(planText === undefined ? {} : { planText }),
     });
