@@ -20,7 +20,26 @@ import { FEATURE_NAMES } from "./wallFeatures";
  */
 export type WallModelConfig = { model: WallModel; cut: number };
 
-export const DEFAULT_WALL_MODEL_CUT = 0.3;
+/**
+ * ── 0.2, AND THE MODEL NEVER HIDES A LINE ──
+ *
+ * Diego's decision, 2026-10-28, on the measurement that NO cut meets the
+ * board's rule: there is no threshold at which this classifier recovers 3 ft
+ * of real wall per 1 ft of junk by removing lines. So it is not used to remove
+ * them.
+ *
+ * What it is used for is DEMOTE mode, which is a different question. Greying a
+ * run the model doubts, with its reason, out of the total and one click from
+ * coming back, is a suggestion a person can overrule in a second. A cut that
+ * is wrong there costs a click; the same cut applied as a veto costs a wall
+ * nobody is told about. That asymmetry is why 0.2 is defensible here and no
+ * cut was defensible there.
+ *
+ * `TakeoffPlanViewer` holds the model only when the demote switch is on
+ * (`wallModelRef.current = demote ? wallModel : null`), so this number reaches
+ * nothing until an owner turns that on.
+ */
+export const DEFAULT_WALL_MODEL_CUT = 0.2;
 
 export function loadWallModel(env: Record<string, string | undefined> = process.env): WallModelConfig | null {
   const file = env.TAKEOFF_WALL_MODEL ?? "";

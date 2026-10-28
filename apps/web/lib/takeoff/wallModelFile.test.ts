@@ -19,7 +19,7 @@ describe("loadWallModel", () => {
   });
   it("loads a matching model at the default cut, the env cut, or the file's own cut (file wins)", () => {
     const file = write("good.json", good);
-    expect(loadWallModel({ TAKEOFF_WALL_MODEL: file })).toEqual({ model: good, cut: 0.3 });
+    expect(loadWallModel({ TAKEOFF_WALL_MODEL: file })).toEqual({ model: good, cut: 0.2 });
     expect(loadWallModel({ TAKEOFF_WALL_MODEL: file, TAKEOFF_WALL_MODEL_CUT: "0.45" })?.cut).toBe(0.45);
     const withCut = write("cut.json", { ...good, cut: 0.25 });
     expect(loadWallModel({ TAKEOFF_WALL_MODEL: withCut, TAKEOFF_WALL_MODEL_CUT: "0.45" })?.cut).toBe(0.25);
