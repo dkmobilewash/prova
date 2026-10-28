@@ -102,6 +102,10 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: reads the TEXT LAYER of twenty committed fixtures and writes the answer key from what each drawing prints, guarded by a skip when the fixtures are absent plus a non-zero file assertion — a key built from no files would be an empty key that scores everything as unknown",
     "benchMultiView.eval.ts":
       "calls no model: splits the bench's A-401 — two drawings at two scales plus one at NTS — and prints each view's scale and footage beside the single-scale baseline, so the split can be read against per-wall ground truth. Guarded by a skip when the bench PDFs are absent, plus an assertion that at least one A-401 PDF was found",
+    "zzViewSweep.eval.ts":
+      "calls no model: walks every labelled sheet and prints what the view path keeps against the whole-sheet measure, so a sheet losing its drawing is a listed row rather than an anecdote. Guarded by a skip on the plans and labels folders plus an assertion that at least one labelled sheet was read — with neither folder present it would otherwise print an empty table and read as nothing being lost.",
+    "zzOnePipeline.eval.ts":
+      "calls no model: measures the SAME five real sheets twice — once the way the server used to (findWallsOnSheet over the whole sheet) and once the way every path runs now (detectForSheet) — so the claim that the two pipelines were different is a printed number rather than a description. Guarded by a skip on REAL_PLAN_DIR and on each file existing, plus an assertion that the page carries >200 strokes: a mistyped page or a scanned sheet would otherwise print 0 and 0 in both columns and read as the paths agreeing.",
     "tagTyping.eval.ts":
       "calls no model: runs `findWallsOnSheet` over the TRAINING floor plans under REAL_PLAN_DIR with the set's CACHED legend read (LEGEND_CACHE) as the library, four vocabularies at once — none, the library's codes, the legend's, both — and tallies tagged footage per verdict. Held-out sets excluded by name, including the plan-text ones. Guarded by a skip on both inputs; writes outside the tree.",
     "realSheets.eval.ts":

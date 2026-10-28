@@ -689,6 +689,13 @@ export function wallsPerView(input: {
    * recurring shape wearing a type signature.
    */
   veto?: Parameters<typeof findWallsOnSheet>[0]["veto"];
+  /**
+   * The symbol-tag vocabulary, declared here for the reason the veto above
+   * is: a caller spreading `{ ...base, views }` would hand it in and
+   * TypeScript would say nothing, and it would be dropped on exactly the
+   * multi-view sheets. Same trap, same cure.
+   */
+  planText?: Parameters<typeof findWallsOnSheet>[0]["planText"];
 }): ViewWalls[] {
   const bands = input.views
     .map((view) => ({
@@ -758,6 +765,7 @@ export function wallsPerView(input: {
       feetPerUnit,
       wallTypes: input.wallTypes,
       sampledSheets: input.sampledSheets ?? null,
+      ...(input.planText === undefined ? {} : { planText: input.planText }),
       // ── WHY THIS IS HERE AND NOT ONLY AT THE VIEWER'S OWN CALL ──
       //
       // A sheet carrying several plan views is measured view by view, and the
@@ -1068,12 +1076,25 @@ export function placeDrawings(views: readonly SheetView[], regions: readonly Box
   // heading sits over its words — and just left of either on x. A notes
   // column that shares a gutter-free region with the plan's caption (NG A3.2)
   // otherwise leaves its blocks with no pieces and the plan with the column.
-  const shared: Box[] = [];
+  // ── A PIECE REMEMBERS WHICH REGION IT WAS CUT FROM ──
+  //
+  // A region is the sheet's own statement that what is inside it belongs
+  // together: gutters are what separate two drawings. So a piece cut from a
+  // region that holds a drawing's caption is that drawing's before it is
+  // anybody else's — the caption-side rules below only choose AMONG the
+  // captions in the region. Bunkie A104 is the case: its floor plan is
+  // captioned under the middle of its drawing, so the cells left of the
+  // caption were "wholly to its left", disqualified, and handed across a
+  // gutter to the dimension plan next door; the floor plan measured 147 ft
+  // against the dimension plan's 459 for the same warehouse. Only a region
+  // with no caption of its own — the S05/S07 dimension strip — joins the
+  // nearest caption anywhere.
+  const shared: { box: Box; here: SheetView[] }[] = [];
   for (const r of pool) {
     const here = drawings.filter((d) => inside(d, r));
     const heads = blocks.filter((b) => inside(b, r));
     if (here.length + heads.length < 2) {
-      shared.push(r);
+      shared.push({ box: r, here });
       continue;
     }
     const lines = (values: number[], lo: number, hi: number) => {
@@ -1089,7 +1110,7 @@ export function placeDrawings(views: readonly SheetView[], regions: readonly Box
     const xs = lines([...here, ...heads].map((d) => d.captionX - CAPTION_MARGIN), r.from, r.to);
     const ys = lines([...here.map((d) => d.captionY + CAPTION_MARGIN), ...heads.map((b) => b.captionY - CAPTION_MARGIN)], r.fromY, r.toY);
     for (let i = 0; i < xs.length - 1; i += 1) {
-      for (let j = 0; j < ys.length - 1; j += 1) shared.push({ from: xs[i], to: xs[i + 1], fromY: ys[j], toY: ys[j + 1] });
+      for (let j = 0; j < ys.length - 1; j += 1) shared.push({ box: { from: xs[i], to: xs[i + 1], fromY: ys[j], toY: ys[j + 1] }, here });
     }
   }
 
@@ -1099,7 +1120,7 @@ export function placeDrawings(views: readonly SheetView[], regions: readonly Box
   // bottom — because a heading at the top of a column claiming every cell
   // beneath it took the plan's right end on NG A3.2.
   const claimedByBlock = new Set<Box>();
-  for (const piece of shared) {
+  for (const { box: piece } of shared) {
     if (drawings.some((d) => inside(d, piece))) continue;
     let at: SheetView | null = null;
     let bestD = Number.POSITIVE_INFINITY;
@@ -1132,10 +1153,11 @@ export function placeDrawings(views: readonly SheetView[], regions: readonly Box
     const dy = Math.max(piece.fromY - d.captionY - CAPTION_MARGIN, 0, d.captionY - piece.toY);
     return Math.hypot(dx, dy);
   };
-  for (const piece of shared) {
+  for (const { box: piece, here } of shared) {
     if (claimedByBlock.has(piece)) continue;
+    const own = here.filter((d) => qualifies(d, piece));
     const pool2 = drawings.filter((d) => qualifies(d, piece));
-    const candidates = pool2.length > 0 ? pool2 : drawings;
+    const candidates = own.length > 0 ? own : here.length > 0 ? here : pool2.length > 0 ? pool2 : drawings;
     let at: SheetView | null = null;
     let bestD = Number.POSITIVE_INFINITY;
     for (const d of candidates) {
@@ -1250,8 +1272,37 @@ export function drawingCount(views: readonly SheetView[]): number {
 }
 
 /** The regions the sheet's text blocks own — a legend, a notes column, a schedule — to keep out of any drawing. */
+/**
+ * ── A BLOCK OF NOTES CANNOT BE MOST OF THE SHEET ──
+ *
+ * These boxes are SUBTRACTED from the sheet before the drawing is measured, so
+ * one that is too big does not merely add noise — it removes the building.
+ *
+ * Central Bank A100 proposed 1,816 ft when measured whole and ZERO through the
+ * view path. Its caption "GENERAL NOTES (FLOOR PLANS):" was read as a text
+ * block, and the box that came back ran 0.113 to 1.0 across and 0 to 0.714
+ * down — 63% of the page. Everything inside it was dropped, which left 26 of
+ * 19,187 strokes, and 26 strokes make no walls. A whole floor plan was removed
+ * by a heading that mentions floor plans.
+ *
+ * The feature is still needed and still works: Baker A101's notes column is a
+ * real one, 31% across and 21% of the page, and excluding it is what stopped
+ * that column measuring as 242 ft of wall. The two are not close — 21% against
+ * 63% — so the rule is stated as a share of the page and both measurements are
+ * written here rather than a number appearing from nowhere.
+ *
+ * A block over this share is not refused because it is "probably wrong"; it is
+ * refused because of what subtracting it would do. Measuring a notes column as
+ * wall is a bad day. Measuring nothing at all is a blank screen with no
+ * explanation, which is worse and says less.
+ */
+const MOST_OF_THE_SHEET = 0.4;
+
 export function textBlockBoxes(views: readonly SheetView[]): { from: number; to: number; fromY: number; toY: number }[] {
-  return views.filter((v) => v.textBlock === true).flatMap((v) => v.boxes ?? []);
+  return views
+    .filter((v) => v.textBlock === true)
+    .flatMap((v) => v.boxes ?? [])
+    .filter((b) => (b.to - b.from) * (b.toY - b.fromY) <= MOST_OF_THE_SHEET);
 }
 
 /**
