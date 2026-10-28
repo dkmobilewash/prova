@@ -33,6 +33,10 @@ import { BusinessScopeSettingsForm } from "@/components/BusinessScopeSettingsFor
 import { OpeningDeductionForm } from "@/components/OpeningDeductionForm";
 import { RoomFinderSwitch } from "@/components/RoomFinderSwitch";
 import { DemotedWallsSwitch } from "@/components/DemotedWallsSwitch";
+import { TakeoffFeaturesSection } from "@/components/TakeoffFeaturesSection";
+import { takeoffFeatureRows } from "@/lib/takeoff/features";
+import { aiSettingsFor } from "@/lib/ai/settings";
+import { anthropicIsConfigured } from "@prova/integrations";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
 import { QuickBooksReconcile } from "@/components/QuickBooksReconcile";
@@ -179,6 +183,15 @@ export default async function SettingsPage({
   });
   const roomFinderOn = switches?.roomFinderOn ?? false;
   const demotedWallsOn = switches?.demotedWallsOn ?? false;
+  // Every takeoff switch in one list (PILOT.md's first finding); the switches
+  // themselves stay in their own sections below and on the Assistant page.
+  const aiSettings = await aiSettingsFor(company.id);
+  const featureRows = takeoffFeatureRows({
+    roomFinderOn,
+    demotedWallsOn,
+    ai: { aiEnabled: aiSettings.aiEnabled, planTextReadOptedIn: aiSettings.optedInFeatures.includes("PLAN_TEXT_READ") },
+    anthropicConfigured: anthropicIsConfigured(),
+  });
   const { qb, qb_detail, tab: tabParam } = await searchParams;
   // The same rule PageTabs highlights by, so the tab lit is the group shown.
   const tab =
@@ -549,6 +562,7 @@ export default async function SettingsPage({
       )}
       {tab === "estimating" && (
         <>
+          <TakeoffFeaturesSection rows={featureRows} isOwner={currentUser.role === "OWNER"} />
           <Disclosure summary="How this works" className="mb-8">
             <div className="flex flex-col gap-3 text-sm text-ink-body">
               <p>
@@ -607,10 +621,10 @@ export default async function SettingsPage({
                 Shown to everyone so the absence of the button on the takeoff
                 has an explanation somewhere a person can find; saved by the
                 owner only. See `lib/takeoff/NOTES-rooms.md`. */}
-            <div className="mt-4">
+            <div id="room-finder" className="mt-4 scroll-mt-20">
               <RoomFinderSwitch on={roomFinderOn} isOwner={currentUser.role === "OWNER"} />
             </div>
-            <div className="mt-4">
+            <div id="demoted-walls" className="mt-4 scroll-mt-20">
               <DemotedWallsSwitch on={demotedWallsOn} isOwner={currentUser.role === "OWNER"} />
             </div>
           </section>
