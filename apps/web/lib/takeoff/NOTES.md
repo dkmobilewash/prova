@@ -3047,3 +3047,48 @@ not wrong, but the attribution is. And ELEVEN03's WB–WD read as 1-5/8in
 WOOD studs — 1-5/8in is a metal C-shape, and the sight read's "wood" for
 the W types is what the plates now follow; which read is right is a
 question for the crop.
+
+### Four sheets the sweep said lost half their walls to view detection (2026-10-28)
+
+The original session's sweep on main after #822 listed HPL p3 1,627→416,
+Bunkie A104 546→147, Camp Bow Wow A120 380→132 and Bunkie A100 views=0.
+Each probed with the view stage opened up (views, kinds, regions, text
+blocks, per-view feet, kept) against the key's extent. One is a defect;
+three are the stage doing its job against a number that was never right.
+
+- **HPL p3** — three captioned plans of ONE tier: a finish plan, a
+  decorative lighting plan and a partition plan, side by side at 1/4".
+  The partition plan is kept and measures 416 ft; the 1,627 was all three
+  copies of the same walls. The 382 ft key sits entirely inside the
+  LIGHTING plan (x 0.41–0.58), because the whole-sheet finder proposed
+  there and the reviewer accepted there — a key-placement artefact. The
+  product answer is right; the key needs re-taking on the partition plan.
+- **Camp Bow Wow A120** — nine views, the enlarged plan kept at 132 ft
+  with the 16 ft key inside it; the other 248 ft were eight interior
+  elevations, now left out by name. Not a loss.
+- **Bunkie A100** — views=0 is cosmetic: the plan's caption is not found
+  on main (no drawing word reaches the caption rule — fixed separately on
+  `diego/round-bubbles`), three notes headings become text blocks at 34%
+  of the page (under the 40% cap), and the single-drawing path keeps
+  69,462 of 70,439 strokes. Key 470 ft, missing 17. Nothing to fix here.
+- **Bunkie A104 — the defect, and it is region placement.** The dimension
+  plan and the floor plan are the same warehouse a gutter apart. The
+  floor plan's caption is lettered under the MIDDLE of its drawing, so the
+  cells left of the caption were "wholly to its left", disqualified by the
+  caption-side rule, and handed across the gutter to the dimension plan:
+  floor plan 147 ft, dimension plan 459 ft, and `keptPlanViews` keeps the
+  floor plan. Not the Central Bank cause (its text blocks are 2–5% each
+  and own only the cell under their heading) and not caption reading.
+
+**Fix.** A piece remembers the region it was cut from, and goes to a
+caption INSIDE that region before any other: the caption-side rules choose
+among those, a region with no caption of its own still joins the nearest
+anywhere (the S05/S07 dimension strip), and text blocks are untouched.
+Bunkie A104: floor plan 147→195 ft, dimension plan 459→351, missing
+27→20. Sweep of all 36 label files before/after (`zzViewSweep.eval.ts`,
+rules only, product path): two lines differ — A104 as above, and Albany
+A-100 (held-out, read as a delta only) missing 11→11, extra 581→338.
+Totals 51,585→51,390 proposed, 6,883→6,876 missing, 17,944→17,743 extra.
+Unit: two placement tests in `sheetViews.test.ts`, one the A104 shape.
+No change to `detectForSheet`, where the original session is adding the
+no-view-kept fallback.

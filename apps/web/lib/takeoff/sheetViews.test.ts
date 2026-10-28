@@ -10,8 +10,7 @@ import {
   viewRegions,
   viewsInRegions,
   wallsPerView,
-  withDimensionScale,
-} from "./sheetViews";
+  withDimensionScale, placeDrawings } from "./sheetViews";
 
 /**
  * Positions are in POINTS on a 2592pt sheet, which is the real S15 geometry —
@@ -522,5 +521,34 @@ describe("which drawings were left out", () => {
 
   it("is empty when every drawing could be measured", () => {
     expect(excludedViews([view("FLOOR PLAN", 4), view("ENLARGED BATH PLAN", 2)])).toEqual([]);
+  });
+});
+
+describe("a piece belongs to the captions of its own region first", () => {
+  // Bunkie A104: two plans of one warehouse, a gutter between them. The floor
+  // plan's caption is lettered under the MIDDLE of its drawing, so the cells
+  // left of the caption were "wholly to its left" and went across the gutter
+  // to the dimension plan — 147 ft against 459 for the same building.
+  const view = (name: string, x: number, y: number, textBlock = false): SheetView => ({
+    name, scaleName: textBlock ? null : '1/4" = 1\'-0"', feetPerInch: textBlock ? null : 4, captionX: x, captionY: y,
+    from: 0, to: 1, fromY: 0, toY: Number.POSITIVE_INFINITY, textBlock, foundBy: textBlock ? "title" : "caption",
+  });
+  const regions = [{ from: 0.07, to: 0.43, fromY: 0, toY: 0.71 }, { from: 0.43, to: 0.99, fromY: 0, toY: 0.71 }];
+
+  it("KEEPS THE CELLS LEFT OF A MID-DRAWING CAPTION with the drawing in that region, not the neighbour across the gutter", () => {
+    const got = placeDrawings([view("DIMENSION PLAN - WAREHOUSE", 0.3, 0.674), view("FLOOR PLAN - WAREHOUSE", 0.655, 0.674), view("KEY NOTES", 0.693, 0.058, true)], regions);
+    const floor = got.find((v) => v.name === "FLOOR PLAN - WAREHOUSE")!;
+    const dim = got.find((v) => v.name === "DIMENSION PLAN - WAREHOUSE")!;
+    expect(floor.from).toBeCloseTo(0.43, 6);
+    expect(dim.to).toBeCloseTo(0.43, 6);
+    // The notes heading still owns the cell under it, and nothing more.
+    const notes = got.find((v) => v.name === "KEY NOTES")!;
+    expect(notes.boxes).toHaveLength(1);
+    expect(notes.boxes![0].fromY).toBeCloseTo(0.038, 6);
+  });
+
+  it("still joins a region with no caption of its own to the nearest caption anywhere", () => {
+    const got = placeDrawings([view("FLOOR PLAN", 0.5, 0.6)], [{ from: 0, to: 0.1, fromY: 0, toY: 1 }, { from: 0.1, to: 0.9, fromY: 0, toY: 1 }]);
+    expect(got[0].from).toBe(0);
   });
 });
