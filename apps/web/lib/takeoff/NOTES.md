@@ -3460,3 +3460,72 @@ finder, is no longer the best point on the new finder's curve. Whether a
 veto that does not meet the rule should run is Diego's call; its removal
 is a product setting, not a code change, and the setting is measured
 here either way.
+
+### Recall on the round-5 and round-6 labels, round-bubbles in: what is left and what it is worth (2026-10-28)
+
+`zzMissKinds.eval.ts` (the database-free version from `diego/miss-round4`,
+now on this branch) over the 14 traced training sheets, labels as of
+11:11 today. Traced misses fell from 5,768 ft to 2,775 ft.
+
+| stage | ft | share |
+| --- | --- | --- |
+| proposed after all (a current candidate lies over the trace) | 1,821 | 66% |
+| merged into a neighbour | 317 | 11% |
+| never paired | 267 | 10% |
+| set aside by triage, all in-a-hatch | 214 | 8% |
+| paired, not awarded | 61 | 2% |
+| lost to the post-pairing filters | 95 | 3% |
+
+By style: two faces, ordinary pen 2,273 ft (82%), short closet wall 465
+(17%); the "dense area" kind is 95% of everything, which is to say the
+styles no longer separate anything and the stage is the useful axis.
+
+**The 1,821 ft "proposed after all" is mostly a labelling gap, not a
+loss.** Each of those traces was matched to the candidate over it and that
+candidate to the reviewer's verdicts: 1,005 ft lie on the same line as a
+candidate covering ≥ 80% of the trace that has NO verdict within 1 ft of
+it (843 ft with no verdict anywhere near) — on Murray 552, NG Green Bay
+227, Bunkie 95, Baker 92, Fairgrounds 39, none of which was in round 5 or
+6. These are walls round-bubbles now proposes over old traces nobody has
+judged; trimming them the way the round-5 sheets were trimmed, after a
+review, is what makes this table honest. 171 ft sit under a candidate the
+reviewer REJECTED (the finder drew the wall wrong — thickness or extent —
+and the reviewer traced instead), 122 ft under a parallel accepted wall
+within 2.5 ft (a double wall or a band artefact).
+
+**The real finder losses are 954 ft, in three causes:**
+
+1. **Pairs refused on partial faces — about 300 ft.** Merged 243 ft and
+   never-paired 53 ft of "pair refused at N in": the faces are there and
+   kept, and the pair test refuses them on overlap or overhang. Crosslines
+   112 (the exterior wall traced across a window run: the window's frame
+   lines at 15.6 ft against the wall band's 4.5 ft pieces), Topeka 84,
+   Baker 41, NG Green Bay 26. The split-face pass that answered the
+   Crosslines demising wall on main was measured on these labels on top
+   of round-bubbles: 0 ft real, +83 ft junk. What is left needs a bridge
+   across a window run, which has not been built or measured; the ceiling
+   is 300 ft.
+2. **In-a-hatch set-aside — 214 ft.** Supreme Court 98 (two 38 ft walls
+   drawn as a grey-filled band with thin edge lines), Fairgrounds 33,
+   Crosslines 24, MHK 15, Bunkie 13, Joplin 12, Baker 10. The hatch pitch
+   rule was measured in round 4 at +29 ft real for +6,944 ft junk on the
+   customer path, and offering everything in-a-hatch at +626 / +69,000; no
+   rule meeting the board's 3-to-1 is known. The third session's
+   contour-face reader for grey fills (scanned-plans branch) is the one
+   instrument that reads this style, and it is a different pipeline.
+3. **Walls outside the kept plan region — about 140 ft.** NG McAllen A3.2
+   118 (two 39 ft walls at x 0.613, every one of their 248 faces outside
+   `planBoxes`: the single-drawing path's `drawingRegions` kept the
+   busiest region and dropped the strip they are in, which held under a
+   tenth of its strokes), Crosslines 16, Murray 8. Same family as Bunkie
+   A104 on `diego/view-losses` (region placement), different rule: the
+   share-of-busiest threshold. A fix is one line and must be swept for
+   collateral (a dimension strip or legend re-admitted is the risk); it
+   was not built here because at 140 ft it is not the biggest cause and
+   the sweep is a separate run.
+
+None of the three carries a fix that meets the rule today, so nothing
+ships from this pass. Crops: McAllen's two walls are a storefront-style
+wall of a thick line and a grey double line with mullion rectangles;
+Crosslines' is the window run under a dash-dot overhang; Supreme Court's
+is the filled band.
