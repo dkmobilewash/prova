@@ -1,3 +1,4 @@
+import { CORNER_X } from "../plan-ingest/sheetNumber";
 import { describe, expect, it } from "vitest";
 import {
   excludedViews,
@@ -552,5 +553,17 @@ describe("a caption is whatever is written over the scale", () => {
 
   it("does not invent a view for a word-less name over `SCALE: NTS`", () => {
     expect(sheetViews([at("RESTROOM 1 NORTH", 12.7, 14.3), at("SCALE: NTS", 12.7, 14.8)], W)).toEqual([]);
+  });
+});
+
+describe("the title-block strip is the sheet-number reader's corner", () => {
+  it("keeps the caption rule's strip equal to CORNER_X, so the two cannot drift apart", () => {
+    // `sheetViews` holds the value rather than importing it (see TITLE_BLOCK_STRIP there).
+    const views = sheetViews([at("DATE: 10/15/2026", CORNER_X * 100 + 0.5, 60.9), at('SCALE: 1/4" = 1\'-0"', CORNER_X * 100 + 0.5, 61.4)], W);
+    expect(views).toEqual([]);
+    const justLeft = sheetViews([at("RESTROOM 1 NORTH", CORNER_X * 100 - 1, 60.9), at('SCALE: 1/4" = 1\'-0"', CORNER_X * 100 - 1, 61.4)], W);
+    expect(justLeft).toHaveLength(1);
+    const justRight = sheetViews([at("RESTROOM 1 NORTH", CORNER_X * 100 + 0.5, 60.9), at('SCALE: 1/4" = 1\'-0"', CORNER_X * 100 + 0.5, 61.4)], W);
+    expect(justRight).toEqual([]);
   });
 });

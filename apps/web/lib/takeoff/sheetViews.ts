@@ -1,5 +1,4 @@
 import { findWallsOnSheet, type FoundOnSheet, type SheetTextItem } from "./findWallsOnSheet";
-import { CORNER_X } from "../plan-ingest/sheetNumber";
 import { printedScalesAt } from "./printedScales";
 import { takeoffRank } from "./sheetSuitability";
 import { isPlanView, viewKind } from "./viewKind";
@@ -209,6 +208,15 @@ const NAME_BESIDE = 0.04;
 const VIEW_NAME =
   /\b(PLAN|ELEVATION|ELEV\.?|SECTION|SECT\.?|DETAIL|DET\.?|SCHEDULE|SCHED\.?|DIAGRAM|VIEW|LAYOUT|RCP)\b/i;
 
+/** Where the title-block strip begins on a sheet that carries one at the
+ *  right, in page-width units. The same edge `sheetNumber.ts` reads the sheet
+ *  number from (`CORNER_X`), kept as a value here rather than an import:
+ *  `detectWallsForCalibration.test.ts` mocks `planPdf` down to `openPlanPdf`,
+ *  and importing `sheetNumber` into the finder's graph reaches that module's
+ *  other constants through the mock and throws. `sheetViews.test.ts` holds
+ *  the two equal. */
+const TITLE_BLOCK_STRIP = 0.82;
+
 /** A title-block field's bare label — what sits over the title block's own
  *  scale line when the drafter prints the label and the value on two lines. */
 const TITLE_FIELD = /^(SCALE|DATE|DRAWN|CHECKED|DESIGNED|REVISION|REV|JOB|PROJECT|SHEET|FILE|ISSUE|PHASE|MARK|NO\.?|NUMBER)\b/i;
@@ -306,10 +314,10 @@ export function sheetViews(
     // caption. A name with a drawing word is a caption wherever it sits; one
     // without is taken only when it is not a `LABEL: value` field, not a
     // field's bare label, and not in the title-block strip at the right
-    // (`CORNER_X`, the same edge the sheet-number reader uses).
+    // (`TITLE_BLOCK_STRIP`, the same edge the sheet-number reader uses).
     if (!VIEW_NAME.test(name.str)) {
       const text = name.str.trim();
-      if (/:\s*\S/.test(text) || TITLE_FIELD.test(text) || name.x / widthPt >= CORNER_X) continue;
+      if (/:\s*\S/.test(text) || TITLE_FIELD.test(text) || name.x / widthPt >= TITLE_BLOCK_STRIP) continue;
     }
     claimed.add(name);
     named.push({
