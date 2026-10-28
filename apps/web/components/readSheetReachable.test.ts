@@ -94,7 +94,11 @@ describe("the scan reader can actually be reached", () => {
     // The COMPUTATION is in the loader both takeoff pages share; the PROP
     // below is on the page that passes it.
     const loader = readFileSync(resolve(process.cwd(), "lib/takeoff/workspaceLoad.ts"), "utf8");
-    expect(loader).toMatch(/scannedPages\s*=\s*sheetRows\.filter\(\(row\) => !row\.hasTextLayer\)/);
+    // `isScannedSheet` reads the inventory's own facts — the text layer, and
+    // for a page without one the operator counts it recorded — so the viewer
+    // still derives nothing.
+    expect(loader).toMatch(/scannedPages\s*=\s*sheetRows\.filter\(isScannedSheet\)/);
+    expect(loader).toMatch(/import \{ isScannedSheet \} from "@\/lib\/plan-ingest\/scannedSheet"/);
     expect(page).toMatch(/scannedPages=\{scannedPages\}/);
   });
 

@@ -84,6 +84,8 @@ export type SheetStrokes = {
    * the eval asserts it is non-zero before reading any other figure off a run.
    */
   pathOperators: number;
+  /** Image-drawing operators: a scan is one of these and no paths. */
+  imageOperators: number;
 };
 
 /**
@@ -265,6 +267,7 @@ export async function segmentsFromOpenPage(
 
       const segments: StrokeSegment[] = [];
       let pathOperators = 0;
+      let imageOperators = 0;
 
       // The CTM stack. `ctm` is the matrix in force now; `q` pushes a copy and
       // `Q` pops back to it. A `Q` with nothing pushed is malformed PDF, so the
@@ -413,6 +416,15 @@ export async function segmentsFromOpenPage(
         // operator. `cm` is the only way to change the CTM and it always
         // concatenates, so `q`/`Q` are the only way back. Typecheck caught a
         // first version of this that guessed at an `OPS.setTransform`.
+        if (
+          fn === OPS.paintImageXObject ||
+          fn === OPS.paintInlineImageXObject ||
+          fn === OPS.paintImageMaskXObject ||
+          fn === OPS.paintImageXObjectRepeat
+        ) {
+          imageOperators += 1;
+          continue;
+        }
         if (fn !== OPS.constructPath) continue;
         pathOperators += 1;
 
@@ -549,6 +561,7 @@ export async function segmentsFromOpenPage(
         rotation: page.rotate,
         segments,
         pathOperators,
+        imageOperators,
       };
     }
   }

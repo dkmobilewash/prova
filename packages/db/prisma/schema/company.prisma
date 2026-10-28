@@ -98,6 +98,11 @@ model Company {
   /// click to take back. OFF for every company until the owner turns it on.
   demotedWallsOn Boolean @default(false)
 
+  /// Scanned sheets read as lines and text for the wall finder (the RASTER
+  /// ingest stage): OFF for every company until the owner turns it on under
+  /// Settings. No model is called.
+  scannedPlansOn Boolean @default(false)
+
   /// The unguessable half of this company's inbound intake address:
   /// `docs-<token>@<INTAKE_INBOUND_DOMAIN>`. The token IS the routing — an
   /// email to an address whose token matches no row is dropped — so it is

@@ -1,4 +1,5 @@
 import { prisma } from "@prova/db";
+import type { PlanIngestStage } from "@prova/db";
 import {
   MAX_ATTEMPTS,
   ingestProgress,
@@ -308,9 +309,13 @@ export async function ingestViewOf(jobId: string, stage: IngestView["stage"]): P
  * somebody deliberately re-runs an earlier stage, the newest run is that one —
  * which is also what they should be looking at.
  */
-export async function latestIngestFor(planId: string): Promise<IngestView | null> {
+export async function latestIngestFor(
+  planId: string,
+  /** One stage, or every stage but one: the RASTER panel wants its own run and the inventory panel wants everything else. */
+  stage?: PlanIngestStage | { not: PlanIngestStage },
+): Promise<IngestView | null> {
   const job = await prisma.planIngestJob.findFirst({
-    where: { planId },
+    where: { planId, ...(stage === undefined ? {} : typeof stage === "string" ? { stage } : { stage: { not: stage.not } }) },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: { id: true, stage: true },
   });

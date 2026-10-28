@@ -32,6 +32,7 @@ import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
 import { BusinessScopeSettingsForm } from "@/components/BusinessScopeSettingsForm";
 import { OpeningDeductionForm } from "@/components/OpeningDeductionForm";
 import { RoomFinderSwitch } from "@/components/RoomFinderSwitch";
+import { ScannedPlansSwitch } from "@/components/ScannedPlansSwitch";
 import { DemotedWallsSwitch } from "@/components/DemotedWallsSwitch";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
@@ -175,10 +176,11 @@ export default async function SettingsPage({
   const { company, ...currentUser } = context;
   const switches = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOn: true },
+    select: { roomFinderOn: true, demotedWallsOn: true, scannedPlansOn: true },
   });
   const roomFinderOn = switches?.roomFinderOn ?? false;
   const demotedWallsOn = switches?.demotedWallsOn ?? false;
+  const scannedPlansOn = switches?.scannedPlansOn ?? false;
   const { qb, qb_detail, tab: tabParam } = await searchParams;
   // The same rule PageTabs highlights by, so the tab lit is the group shown.
   const tab =
@@ -612,6 +614,10 @@ export default async function SettingsPage({
             </div>
             <div className="mt-4">
               <DemotedWallsSwitch on={demotedWallsOn} isOwner={currentUser.role === "OWNER"} />
+            </div>
+            {/* Scanned sheets, same posture: off until chosen. */}
+            <div className="mt-4">
+              <ScannedPlansSwitch on={scannedPlansOn} isOwner={currentUser.role === "OWNER"} />
             </div>
           </section>
 

@@ -8,6 +8,7 @@ import { claimPorts, closeIfSettled, ingestViewOf } from "@/lib/plan-ingest/clai
 import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
 import { runIngest, MAX_ATTEMPTS, type IngestView } from "@/lib/plan-ingest/runner";
 import { isRunnableStage, stageWork, STAGE_SPENDS } from "@/lib/plan-ingest/stages";
+import { scannedPageNumbers } from "@/lib/plan-ingest/raster";
 import { actionFail, actionOk, type ActionResult, type ActionResultWith } from "./shared";
 
 /**
@@ -136,6 +137,18 @@ export async function startPlanIngest(planId: string, stage: PlanIngestStage): P
   // plan set would otherwise create two jobs over the same pages, and the
   // progress figure would be over whichever one was queried — a bar that jumps
   // backwards depending on who is looking.
+  // ── RASTER: only the scanned pages, and only with the switch on ──
+  let pages: number[] | null = null;
+  if (stage === "RASTER") {
+    const company = await prisma.company.findUnique({ where: { id: companyId }, select: { scannedPlansOn: true } });
+    if (!company?.scannedPlansOn) {
+      return { ok: false, error: "Reading scanned sheets is off for your company. The account owner can turn it on under Settings." };
+    }
+    pages = (await scannedPageNumbers(planId)).filter((n) => n <= pageCount);
+    if (pages.length === 0) {
+      return { ok: false, error: "No sheet of this set is a scan, so there is nothing to read this way." };
+    }
+  }
   const existing = await prisma.planIngestJob.findFirst({
     where: { planId, stage, finishedAt: null },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -148,13 +161,10 @@ export async function startPlanIngest(planId: string, stage: PlanIngestStage): P
       data: { planId, companyId, stage, pageCount, startedByUserId: context.id },
       select: { id: true, stage: true },
     });
-    if (pageCount > 0) {
+    const numbers = pages ?? Array.from({ length: pageCount }, (_, index) => index + 1);
+    if (numbers.length > 0) {
       await tx.planIngestTask.createMany({
-        data: Array.from({ length: pageCount }, (_, index) => ({
-          jobId: job.id,
-          pageNumber: index + 1,
-          stage,
-        })),
+        data: numbers.map((pageNumber) => ({ jobId: job.id, pageNumber, stage })),
       });
     }
     return job;

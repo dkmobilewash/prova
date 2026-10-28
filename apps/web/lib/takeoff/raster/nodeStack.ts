@@ -26,6 +26,9 @@ type NodeContext = {
   putImageData(img: { data: Uint8ClampedArray }, x: number, y: number): void;
 };
 
+/** Opens the bytes with pdf.js. The bytes are SPENT by this: pdf.js transfers
+ *  the buffer to its worker, so a caller that opens the same file twice hands
+ *  over a copy the second time. */
 export async function openPdf(bytes: Uint8Array): Promise<PdfDoc> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   return (await pdfjs.getDocument({ data: bytes, useWorkerFetch: false, isEvalSupported: false, disableFontFace: true, verbosity: 0 }).promise) as unknown as PdfDoc;

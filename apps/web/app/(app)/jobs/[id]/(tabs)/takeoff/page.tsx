@@ -8,6 +8,7 @@ import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { TakeoffMeasurementList } from "@/components/TakeoffMeasurementList";
 import { TakeoffPlanUploader } from "@/components/TakeoffPlanUploader";
 import { PlanIngestPanel } from "@/components/PlanIngestPanel";
+import { ScannedSheetsPanel } from "@/components/ScannedSheetsPanel";
 import { ScheduleProposals } from "@/components/ScheduleProposals";
 import { loadScheduleProposals, scheduleSheetCountFor } from "@/lib/plan-ingest/scheduleProposalsQuery";
 import { legendTypeCountFor } from "@/lib/plan-ingest/legendProposalsQuery";
@@ -163,6 +164,8 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
     postableWallTypes,
     printedScaleByPage,
     scannedPages,
+    rasterByPage,
+    scannedPlansOn,
     storedWallsByPage,
     levelByPage,
     scalePrefillByPage,
@@ -221,6 +224,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         sheets={sheets}
         printedScaleByPage={printedScaleByPage}
         scannedPages={scannedPages}
+        rasterByPage={rasterByPage}
         storedWallsByPage={storedWallsByPage}
         scalePrefillByPage={scalePrefillByPage}
         viewScalesByPage={viewScalesByPage}
@@ -291,13 +295,25 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
       {isEstimateStage && (
         <PlanIngestPanel
           planId={plan.id}
-          existing={await latestIngestFor(plan.id)}
+          existing={await latestIngestFor(plan.id, { not: "RASTER" })}
           scheduleSheetCount={scheduleSheetCount}
           legend={{
             on: (await aiGate(company.id, "PLAN_TEXT_READ")).ok,
             reviewHref: `/jobs/${job.id}/takeoff/legend`,
             typeCount: await legendTypeCountFor(plan.id),
           }}
+        />
+      )}
+
+      {/* ── SCANNED SHEETS, read as lines and text for the finder — behind the
+          company's switch, and only when the set has some. The viewer marks
+          those sheets as read from an image once the stage has run. */}
+      {isEstimateStage && scannedPlansOn && scannedPages.length > 0 && (
+        <ScannedSheetsPanel
+          planId={plan.id}
+          scanned={scannedPages.length}
+          unread={scannedPages.filter((page) => rasterByPage[page] === undefined).length}
+          existing={await latestIngestFor(plan.id, "RASTER")}
         />
       )}
 

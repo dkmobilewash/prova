@@ -29,6 +29,9 @@ export type SheetRow = {
   /** False when the sheet is a scan. There is then no proposal and never will be
    *  one until somebody types the number in. */
   hasTextLayer: boolean;
+  /** The inventory's operator counts for a page with no text layer, else null — `isScannedSheet` reads them. */
+  pathOperators?: number | null;
+  imageOperators?: number | null;
   /** Null when `TITLE_BLOCK` has not reached this page yet, or never will because
    *  there is no text to read. */
   proposal: {

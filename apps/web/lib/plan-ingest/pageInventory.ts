@@ -136,6 +136,9 @@ export type SheetTextRow = {
   widthPt: number;
   heightPt: number;
   rotation: number;
+  /** Counted only for a page with no text layer; see `scannedSheet.ts`. */
+  pathOperators: number | null;
+  imageOperators: number | null;
 };
 
 /**
@@ -204,6 +207,10 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
 
     const page = await doc.pdf.pageText(task.pageNumber);
     const readable = hasTextLayer(page);
+    // A page with no text layer is either a scan or a drawing with its
+    // lettering outlined; the operator counts tell which (`isScannedSheet`).
+    // Only then: for a normal sheet the operator list is the expensive read.
+    const operators = readable ? null : await doc.pdf.pageStrokes(task.pageNumber);
     const block = readable ? titleBlockText(page) : null;
 
     // ── THE SCALE THE SHEET DECLARES ABOUT ITSELF ──
@@ -229,6 +236,8 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
       widthPt: page.widthPt,
       heightPt: page.heightPt,
       rotation: page.rotation,
+      pathOperators: operators === null ? null : operators.pathOperators,
+      imageOperators: operators === null ? null : operators.imageOperators,
     });
 
     // AFTER the text write and never instead of it: a page whose scale cannot

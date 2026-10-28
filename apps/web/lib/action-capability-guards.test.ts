@@ -1963,6 +1963,8 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   roomFinder: () => import("./actions/roomFinder"),
   // "Demote, don't hide": the owner's switch (behind /settings).
   demotedWalls: () => import("./actions/demotedWalls"),
+  // Scanned sheets: the owner's switch (behind /settings).
+  scannedSheets: () => import("./actions/scannedSheets"),
   takeoffItems: () => import("./actions/takeoffItems"),
   takeoffClassify: () => import("./actions/takeoffClassify"),
   takeoffReadSheet: () => import("./actions/takeoffReadSheet"),

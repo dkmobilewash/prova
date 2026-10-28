@@ -56,5 +56,7 @@ export const STAGE_SPENDS: Record<PlanIngestStage, boolean> = {
   // Reads the partition legend with a model call on the page or two that
   // carry one; every other page is a text parse and free.
   WALL_LEGEND: true,
+  // Render, lines and Tesseract — CPU, no model.
+  RASTER: false,
 };
 

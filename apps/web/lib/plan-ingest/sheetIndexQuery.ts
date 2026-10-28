@@ -22,7 +22,7 @@ export async function sheetIndexFor(planId: string, companyId: string): Promise<
   const [texts, proposals] = await Promise.all([
     prisma.planSheetText.findMany({
       where: { planId, plan: { companyId } },
-      select: { pageNumber: true, hasTextLayer: true },
+      select: { pageNumber: true, hasTextLayer: true, pathOperators: true, imageOperators: true },
       orderBy: { pageNumber: "asc" },
     }),
     prisma.planSheetProposal.findMany({
@@ -58,6 +58,8 @@ export async function sheetIndexFor(planId: string, companyId: string): Promise<
     return {
       pageNumber: text.pageNumber,
       hasTextLayer: text.hasTextLayer,
+      pathOperators: text.pathOperators,
+      imageOperators: text.imageOperators,
       proposal: proposal
         ? {
             id: proposal.id,

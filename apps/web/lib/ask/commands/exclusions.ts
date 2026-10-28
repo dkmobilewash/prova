@@ -205,6 +205,10 @@ export const notYetRegistered: Exclusion[] = [
     reason:
       "\"Demote, don't hide\" on the takeoff is an owner's settings switch, flipped under Settings; not a thing to ask for in words.",
   },
+  {
+    action: "scannedSheets.*",
+    reason: "Reading scanned sheets is an owner's settings switch, flipped under Settings; not a thing to ask for in words.",
+  },
   { action: "sales.*", reason: "Prova-operator-only CRM, unreachable for any contractor tenant; excluded from the agent surface entirely." },
   { action: "emailFinder.*", reason: "Prova-operator-only sales tooling (finds cold-lead emails, spends search and verifier credits); excluded with the rest of the sales CRM." },
   { action: "alerts.*", reason: "Snooze and dismiss are done on the alert being read; nothing to resolve by name." },
