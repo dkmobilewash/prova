@@ -3174,3 +3174,52 @@ piece. McAllen's block now ends at y 0.234 and the plan's boxes reach x 0.703.
 extra 80 → 119 (133 real for 39 junk, 3.4×). The 39 ft of junk is on McAllen itself and
 was not looked at: at 3.4× it meets the board's rule, and the strip it comes from is the
 one that held the wall.
+
+### "Pairs refused on partial faces" is not a product-path cause, and the grid-label rule that replaced it fails on top of #824 (2026-10-28)
+
+The recall pass two entries up named "pairs refused on partial faces, ~300 ft" the
+biggest real loss. It was measured by `zzMissKinds`, which runs `findWallsOnSheet` on
+the RAW page — no view restriction, no triage — and against main's finder. Replayed on
+the product path (`detectForSheet` → `offeredCandidates` → `scoreSheet`, the sweep's
+own instruments) over the same 645 ft of unpaired traces, 539 ft is still missing and
+no shape reaches 100 ft:
+
+| what the replay found, product path, main's finder | ft |
+| --- | --- |
+| strokes removed before pairing — every one by the grid-bubble filter | 140 |
+| pair refused: overlap (an opening traced as wall: Joplin's hall, E Street's door) | 99 |
+| pair refused: overhang (filled bands, staggered jamb pieces) | 96 |
+| a pair formed in the real pass and the greedy pass discarded it (Baker's W4 window run, Topeka, Crosslines) | 66 |
+| fewer than two faces (a wall drawn as one thick stroke: McAllen's IW-7) | 40 |
+| no pair at wall thickness / too short / outside the plan boxes | 90 |
+
+The window-run shape the entry imagined — a run between two found walls with window
+lines inside — is 15 ft. Crops in the session scratchpad (`crops-miss/m0-m9`).
+
+**The 140 ft was the one clean shape, and it was the grid filter.** `gridBubbles`'
+shape test on main admits every closed round thing of plausible size — Supreme Court
+A111 has 272 of them and ONE holds a grid label, Topeka p74 347 and 115 — and
+`linesIntoBubbles` drops every stroke ending within two radii of any of them: 46,243 of
+Supreme Court's 67,368 strokes, 29,200 of Topeka's 78,254 to the label-less circles
+alone. McAllen's east wall lost 130 strokes to two detail callouts beside it.
+
+So a rule was built: a bubble is a grid bubble only if exactly one short label (A, 12,
+A.1) sits inside its circle; with no words on the sheet, the shape test stands alone.
+Measured on main + the region fix, 36 sheets: training real +12,006 ft / junk +3,551,
+3.4 to 1 — which is, to within 11 ft, the gain #824's round-bubble shape test gets
+from main. Two fixes for one loss, from opposite ends.
+
+**On top of #824 it is a wash and does not ship.** #824's round-bubble test already
+removes the blank circles; what it leaves are the two-word detail callouts (Supreme
+Court 22 of 23 bubbles, Camp Bow Wow 13, Topeka/E Street/MHK three each). Removing
+those too: training real +105 / junk +119 (0.9×), held-out +65 / +262; NG Green Bay
+A3.1 −98 missing, Murray −21, but E Street +86 extra, STEM +253 extra, and Supreme
+Court 26 ft MORE missing. The rule is twenty lines (`labelledBubbles(bubbles, words)`
+filtering `gridBubbles`' output in `findWallsOnSheet`) and is not in the tree;
+re-measure it only if #824's test changes.
+
+What is left for the unpaired residual on #824's finder is small and mixed: the
+greedy pass discarding a window run's pair when a longer neighbour claims the face
+(~66 ft, Baker W4 the clearest: pairs at 3.7 in and 2.6 in formed over 1.6–8.7 ft and
+the found walls stop at 0 and start at 13.2), and styles the pair test cannot read (one
+thick stroke, filled bands). Neither has a measured fix.
