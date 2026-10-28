@@ -9,6 +9,7 @@ import { sameCode } from "@/lib/takeoff/legendMerge";
 import type { StoredCrop, StoredLegendType } from "@/lib/takeoff/legendProposal";
 import { nominalThicknessIn } from "@/lib/takeoff/legendBands";
 import { fraction } from "@/lib/takeoff/partitionAssembly";
+import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
 
 /**
  * ── THE REVIEW SCREEN FOR A SET'S WALL LEGEND ──
@@ -44,7 +45,7 @@ const POINTS_PER_INCH = 72;
 async function openPage(planId: string, pageNumber: number): Promise<PdfPage> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.mjs", import.meta.url).toString();
-  const doc = await pdfjs.getDocument({ url: `/api/takeoff/plan/${planId}`, standardFontDataUrl: "/pdfjs/standard_fonts/" }).promise;
+  const doc = await pdfjs.getDocument({ url: `/api/takeoff/plan/${planId}`, standardFontDataUrl: "/pdfjs/standard_fonts/", ...PLAN_PDF_TRANSPORT }).promise;
   return doc.getPage(pageNumber);
 }
 
