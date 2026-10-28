@@ -187,8 +187,11 @@ number and title to `takeoffSheetVerdict`, and reads the rest of the page
 only for a floor plan or a sheet it cannot name — a cover, a schedule, an
 elevation sheet stops there with its lines kept. One Tesseract worker per
 sheet, not one per pass. The lines are the same code at the same dpi, so
-recall is unchanged by construction; the stage's own step scored on the
-training keys is in §8.
+recall is unchanged by construction, and measured: the stage's own step
+(`SCAN_EVAL_PIPELINE=stage`, region-first OCR and all) scored on the 26
+training keys at 200 dpi gives 20,743 real ft (77.1%) against the bench's
+full-page-OCR arm's 20,384 (75.8%), junk 32,365 against 32,806, the scale
+read by OCR on 19 of 26 both times (`shots/scanned-stage/stage-arm/`).
 
 **Tried and left out, measured:** a second pass over the title block at
 half size, for the big numerals Tesseract misses — read nothing new on

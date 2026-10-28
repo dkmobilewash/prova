@@ -45,7 +45,9 @@ there, one Tesseract worker per sheet: on 50 Baker pages read as scans,
 8.8 → 6.1 s median and 33 → 12.5 s p90, high-water memory 2.0 → 1.2 GB in
 one long-lived process (a single sheet's working set is 450–760 MB; the
 rest is what a process keeps, and one sheet per worker is the next step,
-not built). Lines unchanged within 0.14% a page.
+not built). Lines unchanged within 0.14% a page; the stage's own step
+scores 77% of the key footage on the 26 training sheets against the
+bench's 76%.
 
 `wholeSheetFallback` in `detectForSheet`: drawings found, none measured,
 none set aside for a named reason → the whole sheet is measured and the
