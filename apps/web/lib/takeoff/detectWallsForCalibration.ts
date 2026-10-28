@@ -3,7 +3,8 @@ import { prisma } from "@prova/db";
 import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
 import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
 import { pagesToSample } from "./sheetTemplate";
-import { findWallsOnSheet, inPageWidthUnits, type SheetTextItem } from "./findWallsOnSheet";
+import { inPageWidthUnits, type SheetTextItem } from "./findWallsOnSheet";
+import { detectForSheet } from "./offeredCandidates";
 import { SheetTooDenseError, type StrokeSegment } from "./wallVectors";
 import type { MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
@@ -207,7 +208,18 @@ export async function detectWallsForCalibration(
       legendCodes,
     );
     const planText = vocabulary.length === 0 ? undefined : { legendCodes: vocabulary };
-    const found = findWallsOnSheet({
+    // ── THE SAME PIPELINE THE VIEWER RUNS, NOT THE FINDER UNDERNEATH IT ──
+    //
+    // This called `findWallsOnSheet` on the WHOLE SHEET. The viewer has not
+    // done that since view detection landed — it calls `detectForSheet`, which
+    // splits the sheet into drawings, keeps the plan views and measures each
+    // at its own scale. So the two paths disagreed about what a sheet even
+    // contains, and this one measured ELEVATIONS as walls: Baker A401 came
+    // back as 88 walls, 796 ft.
+    //
+    // Everything downstream inherited it — the calibration save, the whole-set
+    // takeoff, and every row they wrote. One pipeline, one answer.
+    const detected = detectForSheet({
       segments: strokes.segments,
       textItems,
       pageSize: { widthPt: strokes.widthPt, heightPt: strokes.heightPt },
@@ -216,6 +228,7 @@ export async function detectWallsForCalibration(
       sampledSheets: sampleFailed ? null : sampledSheets,
       ...(planText === undefined ? {} : { planText }),
     });
+    const found = detected.found;
     if (planTextOn) {
       try {
         const schedule = await doorScheduleForPlan({ companyId: target.companyId, planId: target.planId, doc, outOfTime });
