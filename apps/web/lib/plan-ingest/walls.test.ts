@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { wallsNoteFor, wallsSkipReason, wallsSummaryRows, type WallsSheet } from "./walls";
+import { wallsNoteFor, wallsPlan, wallsSkipReason, wallsSummaryRows, type WallsSheet } from "./walls";
 
 const sheet = (over: Partial<WallsSheet> = {}): WallsSheet => ({
   pageNumber: 1,
@@ -79,5 +79,72 @@ describe("the set-level summary", () => {
   it("calls an eligible sheet no run has touched pending", () => {
     const [only] = wallsSummaryRows({ sheets: [sheet()], walls: new Map(), tasks: new Map(), maxAttempts: 3 });
     expect(only.status).toEqual({ kind: "pending" });
+  });
+});
+
+describe("one plan per floor — the set-level plan", () => {
+  const sheet = (over: Partial<WallsSheet> = {}): WallsSheet => ({ pageNumber: 1, sheetNumber: "A101", title: "FIRST FLOOR PLAN", hasScale: true, hasWalls: false, ...over });
+  it("keeps the OVERALL plan of a level and lists the other as the same level", () => {
+    // Baker EOC, 2026-10-29: A100 overall + A101 floor plan, both measured, both added.
+    const plan = wallsPlan([
+      sheet({ pageNumber: 12, sheetNumber: "A100", title: "OVERALL FLOOR PLAN" }),
+      sheet({ pageNumber: 13, sheetNumber: "A101", title: "FLOOR PLAN" }),
+    ]);
+    expect(plan.get(12)).toBeNull();
+    expect(plan.get(13)).toBe("same level as A100");
+  });
+  it("groups by the level the title names, and leaves different levels alone", () => {
+    const plan = wallsPlan([
+      sheet({ pageNumber: 1, sheetNumber: "A101", title: "LEVEL 1 FLOOR PLAN" }),
+      sheet({ pageNumber: 2, sheetNumber: "A102", title: "LEVEL 2 FLOOR PLAN" }),
+      sheet({ pageNumber: 3, sheetNumber: "A111", title: "LEVEL 1 ENLARGED PLAN" }),
+    ]);
+    expect(plan.get(1)).toBeNull();
+    expect(plan.get(2)).toBeNull();
+    expect(plan.get(3)).toBe("same level as A101");
+  });
+  it("prefers the sheet whose walls are already found, so a re-run adds nothing", () => {
+    const plan = wallsPlan([
+      sheet({ pageNumber: 12, sheetNumber: "A100", title: "OVERALL FLOOR PLAN" }),
+      sheet({ pageNumber: 13, sheetNumber: "A101", title: "FLOOR PLAN", hasWalls: true }),
+    ]);
+    expect(plan.get(13)).toBe("already found");
+    expect(plan.get(12)).toBe("same level as A101");
+  });
+  it("leaves an unlevelled plan alone when the set names its levels", () => {
+    const plan = wallsPlan([
+      sheet({ pageNumber: 1, sheetNumber: "A101", title: "LEVEL 1 FLOOR PLAN" }),
+      sheet({ pageNumber: 9, sheetNumber: "A150", title: "ENLARGED PLAN - STAIR" }),
+    ]);
+    expect(plan.get(9)).toBeNull();
+  });
+  it("never turns a sheet that is not a task into one, and keeps every other reason", () => {
+    const plan = wallsPlan([
+      sheet({ pageNumber: 1, sheetNumber: "A100", title: "OVERALL FLOOR PLAN" }),
+      sheet({ pageNumber: 2, sheetNumber: "M101", title: "LEVEL 1 PLAN" }),
+      sheet({ pageNumber: 3, sheetNumber: "A101", title: "FLOOR PLAN", hasScale: false }),
+    ]);
+    expect(plan.get(2)).toBe("not a floor plan");
+    expect(plan.get(3)).toBe("no scale");
+  });
+});
+
+describe("one plan per floor — what is NOT grouped", () => {
+  const sheet = (over: Partial<WallsSheet> = {}): WallsSheet => ({ pageNumber: 1, sheetNumber: null, title: null, hasScale: true, hasWalls: false, ...over });
+  it("never groups sheets with no title: nothing says which floor they are", () => {
+    const plan = wallsPlan([sheet({ pageNumber: 1 }), sheet({ pageNumber: 2, hasWalls: true }), sheet({ pageNumber: 5 })]);
+    expect(plan.get(1)).toBeNull();
+    expect(plan.get(2)).toBe("already found");
+    expect(plan.get(5)).toBeNull();
+  });
+  it("on a set naming no level, groups only the whole-floor plans", () => {
+    const plan = wallsPlan([
+      sheet({ pageNumber: 1, sheetNumber: "A100", title: "OVERALL FLOOR PLAN" }),
+      sheet({ pageNumber: 2, sheetNumber: "A101", title: "FLOOR PLAN" }),
+      sheet({ pageNumber: 3, sheetNumber: "A111", title: "ENLARGED PLAN - TOILETS" }),
+    ]);
+    expect(plan.get(1)).toBeNull();
+    expect(plan.get(2)).toBe("same level as A100");
+    expect(plan.get(3)).toBeNull();
   });
 });

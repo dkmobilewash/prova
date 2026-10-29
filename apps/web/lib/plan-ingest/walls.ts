@@ -5,6 +5,7 @@ import { takeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { effectiveSheetNumber, effectiveTitle, type SheetRow } from "./sheetIndex";
+import { levelFromTitle } from "./sheetLevel";
 import { sheetIndexFor } from "./sheetIndexQuery";
 import type { StageCtx, StageWork } from "./stages";
 
@@ -48,10 +49,10 @@ export type WallsSheet = {
   hasWalls: boolean;
 };
 
-export type WallsSkip = "no scale" | "not a floor plan" | "already found";
+export type WallsSkip = "no scale" | "not a floor plan" | "already found" | `same level as ${string}`;
 
-/** Why a sheet is not a task, or null when it is one. Pure, and the whole
- *  of the planning rule, so the test can say it in four lines. */
+/** Why a sheet, on its own, is not a task — or null when it could be one.
+ *  Pure. The set-level rule, one plan per floor, is `wallsPlan` below. */
 export function wallsSkipReason(sheet: WallsSheet): WallsSkip | null {
   if (!sheet.hasScale) return "no scale";
   if (sheet.hasWalls) return "already found";
@@ -59,6 +60,71 @@ export function wallsSkipReason(sheet: WallsSheet): WallsSkip | null {
     return "not a floor plan";
   }
   return null;
+}
+
+/**
+ * ── ONE PLAN PER FLOOR ──
+ *
+ * Measured 2026-10-29 on two training sets: Baker's A100 (overall floor
+ * plan) and A101 (floor plan) are the same level, and the one-press run
+ * measured both and the estimate added them. A set shows a floor more than
+ * once — an overall plan and a dimensioned one, a plan and its enlarged
+ * areas — and the walls are the same walls.
+ *
+ * So the plan is made for the SET, not sheet by sheet. Sheets that could be
+ * tasks (or already have walls) are grouped by the level their title names;
+ * one is kept per level — the one with walls already, else the OVERALL plan,
+ * else a plan that is not ENLARGED, else the lowest sheet number — and the
+ * others are "same level as A100", listed as such in the summary and never
+ * measured. A set that names no level at all is one floor, and its
+ * whole-floor plans are grouped the same way; a sheet with no title, or a
+ * set that names levels and a plan that does not, is left alone, because
+ * nothing says which floor it repeats.
+ */
+export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip | null> {
+  const out = new Map<number, WallsSkip | null>(sheets.map((sheet) => [sheet.pageNumber, wallsSkipReason(sheet)]));
+  const candidates = sheets.filter((sheet) => {
+    const reason = out.get(sheet.pageNumber);
+    return reason === null || reason === "already found";
+  });
+  const named = new Map<WallsSheet, string>();
+  for (const sheet of candidates) {
+    const level = levelFromTitle(sheet.title, "PLAN");
+    if (level) named.set(sheet, level.label);
+  }
+  // With no level named anywhere, only the sheets whose titles say they are
+  // whole-floor plans are taken as one floor; a sheet with no title at all
+  // says nothing about which floor it is, and is left alone.
+  const groups = new Map<string, WallsSheet[]>();
+  for (const sheet of candidates) {
+    const key = named.get(sheet) ?? (named.size === 0 && isWholeFloorTitle(sheet.title) ? "" : null);
+    if (key === null) continue;
+    (groups.get(key) ?? groups.set(key, []).get(key)!).push(sheet);
+  }
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const keep = [...group].sort(preferWholeFloor)[0];
+    for (const sheet of group) {
+      if (sheet !== keep && out.get(sheet.pageNumber) === null) {
+        out.set(sheet.pageNumber, `same level as ${keep.sheetNumber ?? `sheet ${keep.pageNumber}`}`);
+      }
+    }
+  }
+  return out;
+}
+
+/** A title that names a plan of the whole floor rather than a part of it. */
+export function isWholeFloorTitle(title: string | null): boolean {
+  const text = title ?? "";
+  return /\bFLOOR\s+PLAN\b|\bOVERALL\b/i.test(text) && !/\bENLARGED\b/i.test(text);
+}
+
+function preferWholeFloor(a: WallsSheet, b: WallsSheet): number {
+  const score = (s: WallsSheet) =>
+    (s.hasWalls ? 8 : 0) + (/\bOVERALL\b/i.test(s.title ?? "") ? 4 : 0) + (/\bENLARGED\b/i.test(s.title ?? "") ? 0 : 2);
+  const byScore = score(b) - score(a);
+  if (byScore !== 0) return byScore;
+  return (a.sheetNumber ?? "").localeCompare(b.sheetNumber ?? "", undefined, { numeric: true }) || a.pageNumber - b.pageNumber;
 }
 
 /** Every sheet of the set as the planner sees it: the inventory's rows joined
@@ -212,6 +278,7 @@ export function wallsSummaryRows(input: {
   tasks: Map<number, { finishedAt: Date | null; note: string | null; error: string | null; attempts: number }>;
   maxAttempts: number;
 }): WallsSummaryRow[] {
+  const plan = wallsPlan(input.sheets);
   return input.sheets.map((sheet) => {
     const label = [sheet.sheetNumber, sheet.title].filter(Boolean).join(" — ") || `Sheet ${sheet.pageNumber}`;
     const found = input.walls.get(sheet.pageNumber);
@@ -222,7 +289,7 @@ export function wallsSummaryRows(input: {
     else if (task && !task.finishedAt && task.error && task.attempts >= input.maxAttempts) status = { kind: "failed", error: task.error };
     else if (task && !task.finishedAt) status = { kind: "pending" };
     else {
-      const why = wallsSkipReason(sheet);
+      const why = plan.get(sheet.pageNumber) ?? null;
       status = why === null ? { kind: "pending" } : { kind: "skipped", why };
     }
     return { pageNumber: sheet.pageNumber, label, status };
