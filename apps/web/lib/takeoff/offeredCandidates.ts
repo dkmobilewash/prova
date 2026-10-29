@@ -229,6 +229,8 @@ export function offeredCandidates(
     // Both faces dash patterns: a hidden, overhead or demolished line — see `dashedFaces.ts`.
     if (bothFacesDashedInPoints(w, sheet.segments, sheet.widthPt, sheet.feetPerUnit)) {
       dashed.push(w);
+      return false;
+    }
     // Rows of text between the faces and nothing meeting the run: a schedule, a notes box — see `textRows.ts`.
     if (sheet.textItems !== undefined && isTableRows(w, sheet.textItems, sheet.walls, sheet.widthPt, sheet.feetPerUnit)) {
       tables.push(w);
@@ -241,6 +243,8 @@ export function offeredCandidates(
       kind: "dashed-faces",
       why: "both faces are dashed lines — a canopy, mezzanine, setback or demolished wall drawn above or beside the plan, not a wall to build",
       n: dashed.length,
+    });
+  }
   if (tables.length > 0) {
     aside.set("table-rows", {
       kind: "table-rows",
