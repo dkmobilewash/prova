@@ -1,10 +1,9 @@
 import { Buffer } from "node:buffer";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { prisma } from "@prova/db";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
-import { findWallsOnSheet } from "../findWallsOnSheet";
+import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { sheetStrokes } from "../sheetStrokes";
 import { heldOutReason } from "../heldOutSets";
 import type { WallCandidate } from "../wallVectors";
@@ -47,9 +46,17 @@ import type { WallCandidate } from "../wallVectors";
  * for it is tuning on the test key.
  */
 const DIR = process.env.REAL_PLAN_DIR ?? "";
+const DIR2 = process.env.REAL_PLAN_DIR2 ?? "";
 const LABELS = process.env.TAKEOFF_LABEL_DIR ?? "";
+/** Where the per-trace rows go, for rendering crops of a bucket. */
+const OUT = process.env.MISS_OUT ?? "";
+/** Sheets to break out on their own lines, by a substring of the set name. */
+const FOCUS = (process.env.MISS_FOCUS ?? "").split(",").filter((f) => f !== "");
+/** Only these sheets (substring of the set name), for a fast rerun. */
+const ONLY = (process.env.MISS_ONLY ?? "").split(",").filter((f) => f !== "");
 
 type Saved = {
+  set?: string;
   page: number;
   feetPerUnit: number;
   verdicts: {
@@ -63,14 +70,33 @@ type Saved = {
   }[];
 };
 
+/**
+ * ── THE STAGES, IN THE ORDER THE FINDER RUNS THEM ──
+ *
+ * This list used to test `inBuilding` before `notLettering`, which is not
+ * the finder's order (`everywhere` → lettering → border → scale bar, stubs,
+ * hatch → in-building → duplicates, corners → `walls` → triage), so two
+ * buckets were swapped. Corrected 2026-10-27, and triage added: a wall the
+ * finder found and the classifier set aside is a wall the reviewer never
+ * saw, which is why they traced it.
+ */
 type Stage =
   | "never paired"
-  | "lost: outside the building"
+  | "paired, not awarded"
   | "lost: lettering"
   | "lost: border"
-  | "lost: the last filters"
+  | "lost: scale bar, stubs, hatch, outside building"
+  | "lost: duplicates, corners"
   | "merged into a neighbour"
+  | "set aside by triage"
   | "proposed after all";
+type Style = "light single-pen partition" | "two faces, ordinary pen" | "hatched masonry" | "short closet wall" | "nothing drawn along it";
+const flat = (t: string) => t.replace(/[^a-z0-9]+/gi, "").toUpperCase();
+function findPdf(dir: string): string | null {
+  for (const root of [DIR, DIR2].filter((r) => r !== "")) for (const name of readdirSync(root)) if (name.toLowerCase().endsWith(".pdf") && flat(name) === flat(dir)) return join(root, name);
+  return null;
+}
+const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length === 0 ? 0 : s[Math.floor(s.length / 2)]; };
 
 type Kind =
   | "single line drawn"
@@ -134,287 +160,131 @@ function coversTrace(
 }
 
 describe.skipIf(DIR === "" || LABELS === "")("why the finder missed the traced walls", () => {
-  it("attributes every traced wall to a stage and a kind, in feet", { timeout: 7_200_000 }, async () => {
-    const plans = await prisma.takeoffPlan.findMany({ select: { fileName: true, fileUrl: true } });
-    const flat = (t: string) => t.replace(/[^a-z0-9]+/gi, "").toUpperCase();
-
+  it("attributes every traced wall to a stage, a kind and a drawing style, in feet", { timeout: 7_200_000 }, async () => {
     const files: { dir: string; sheet: string }[] = [];
     for (const dir of readdirSync(LABELS)) {
       const here = join(LABELS, dir);
-      if (!existsSync(here)) continue;
-      for (const name of readdirSync(here)) {
-        if (name.endsWith(".json")) files.push({ dir, sheet: name.replace(/\.json$/, "") });
-      }
+      if (!existsSync(here) || heldOutReason(dir) !== null) continue;
+      for (const name of readdirSync(here)) if (name.endsWith(".json")) files.push({ dir, sheet: name.replace(/\.json$/, "") });
     }
-
-    const stageFeet = new Map<Stage, number>();
-    const stageRuns = new Map<Stage, number>();
-    const kindFeet = new Map<Kind, number>();
-    const kindRuns = new Map<Kind, number>();
-    const examples: { sheet: string; kind: Kind; stage: Stage; feet: number; x1: number; y1: number; x2: number; y2: number }[] = [];
+    files.sort((a, b) => a.dir.localeCompare(b.dir) || a.sheet.localeCompare(b.sheet));
+    type Row = { sheet: string; stage: Stage; kind: Kind; style: Style; feet: number; x1: number; y1: number; x2: number; y2: number; spread: number; penRatio: number; faces: number;
+      /** The long parallel strokes along the trace: offset from its line (ft), length (ft), pen width, whether it survived into the finder's input. */
+      along: { off: number; len: number; pen: number; kept: boolean }[]; alongAll: number; widthPt: number };
+    const rows: Row[] = [];
     const read: string[] = [];
-    let tracedFeetTotal = 0;
-    let doubleCountedFeet = 0;
-    let doubleCountedRuns = 0;
-    let tracedOverRejectedFeet = 0;
-    let tracedOverRejectedRuns = 0;
-    let tracedOverUnjudgedFeet = 0;
-    let tracedOverUnjudgedRuns = 0;
-
+    /** Feet of traces set aside by triage, by the classifier's own reason. */
+    const asideWhy = new Map<string, number>();
     for (const file of files) {
-      if (heldOutReason(file.dir) !== null) continue;
-      const saved = JSON.parse(
-        readFileSync(join(LABELS, file.dir, `${file.sheet}.json`), "utf8"),
-      ) as Saved;
+      if (ONLY.length > 0 && !ONLY.some((o) => file.dir.toLowerCase().includes(o.toLowerCase()))) continue;
+      const saved = JSON.parse(readFileSync(join(LABELS, file.dir, `${file.sheet}.json`), "utf8")) as Saved;
       const traces = (saved.verdicts ?? []).filter((v) => v.verdict === "traced");
       if (traces.length === 0) continue;
-
-      const pdf =
-        plans.find((p) => flat(p.fileName ?? "") === flat(file.dir))?.fileUrl?.replace(/^local:/, "") ??
-        null;
+      const pdf = findPdf(file.dir);
       if (pdf === null) continue;
-
-      const bytes = Buffer.from(readFileSync(join(DIR, pdf)));
-      const strokes = await sheetStrokes(bytes, saved.page);
-      const doc = await openPlanPdf(bytes);
+      const strokes = await sheetStrokes(Buffer.from(readFileSync(pdf)), saved.page);
+      const doc = await openPlanPdf(Buffer.from(readFileSync(pdf)));
       const text = await doc.pageText(saved.page);
-      const items = text.items.map((i) => ({
-        str: i.str,
-        x: i.x / strokes.widthPt,
-        y: i.y / strokes.widthPt,
-      }));
-
-      // Every pairing the finder ever considered, including the ones the
-      // greedy pass throws away.
+      await doc.close();
+      const textItems = text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
+      const items = text.items.map((i) => ({ str: i.str, x: i.x / strokes.widthPt, y: i.y / strokes.widthPt }));
+      // ── THE PRODUCT PIPELINE, NOT THE RAW FINDER ──
+      // Views, sampled-sheet template, triage: what a reviewer was shown.
       const everyPairing: WallCandidate[] = [];
-      const found = findWallsOnSheet({
+      const d = detectForSheet({
         segments: strokes.segments,
-        textItems: text.items.map((i) => ({
-          str: i.str,
-          x: i.x,
-          y: i.y,
-          width: i.width,
-          height: i.height,
-        })),
+        textItems,
         pageSize: { widthPt: strokes.widthPt, heightPt: strokes.heightPt },
         feetPerUnit: saved.feetPerUnit,
-        wallTypes: [],
-        sampledSheets: null,
         onCandidate: (_features, wall) => everyPairing.push(wall),
       });
-
+      const found = d.found;
+      const offered = offeredCandidates({
+        walls: found.walls,
+        segments: found.inUnits.map((one) => ({ ...one, x1: one.x1 * strokes.widthPt, y1: one.y1 * strokes.widthPt, x2: one.x2 * strokes.widthPt, y2: one.y2 * strokes.widthPt })),
+        widthPt: strokes.widthPt,
+        feetPerUnit: saved.feetPerUnit,
+        planBoxes: d.planBoxes,
+      });
       read.push(`${file.dir}/${file.sheet}`);
       const fpu = saved.feetPerUnit;
-
+      const normalised = strokes.segments.map((seg) => ({ x1: seg.x1 / strokes.widthPt, y1: seg.y1 / strokes.widthPt, x2: seg.x2 / strokes.widthPt, y2: seg.y2 / strokes.widthPt, width: seg.width ?? 0 }));
+      const sheetPen = median(normalised.map((s) => s.width).filter((w) => w > 0));
       for (const trace of traces) {
-        tracedFeetTotal += trace.lengthFeet;
-
-        // ── WHICH STAGE LOST IT ──
-        const inStage = (list: readonly WallCandidate[]) =>
-          list.some((c) => coversTrace(trace, c, fpu));
+        const inStage = (list: readonly { x1: number; y1: number; x2: number; y2: number; lengthFeet: number }[]) => list.some((c) => coversTrace(trace, c, fpu));
         let stage: Stage;
-        if (inStage(found.walls)) {
-          // The trace duplicates something the finder DID propose. Recorded
-          // rather than dropped: a reviewer tracing over a proposed wall is a
-          // fact about the review, not about the finder.
-          stage = "proposed after all";
-        } else if (
-          found.walls.some(
-            (c) => parallel(trace, c) && offLine(c, (trace.x1 + trace.x2) / 2, (trace.y1 + trace.y2) / 2, fpu) <= 2.5 && c.lengthFeet > trace.lengthFeet * 1.8,
-          )
-        ) {
-          stage = "merged into a neighbour";
-        } else if (inStage(found.notBorder)) {
-          stage = "lost: the last filters";
-        } else if (inStage(found.notLettering)) {
-          stage = "lost: border";
-        } else if (inStage(found.inBuilding)) {
-          stage = "lost: lettering";
-        } else if (inStage(found.everywhere) || everyPairing.some((c) => coversTrace(trace, c, fpu))) {
-          stage = "lost: outside the building";
-        } else {
-          stage = "never paired";
+        if (inStage(offered.candidates)) stage = "proposed after all";
+        else if (inStage(found.walls) || inStage(offered.setAsideLines)) {
+          stage = "set aside by triage";
+          const line = offered.setAsideLines.find((c) => coversTrace(trace, c, fpu));
+          asideWhy.set(line?.kind ?? "(found wall, no set-aside line covers it)", (asideWhy.get(line?.kind ?? "(found wall, no set-aside line covers it)") ?? 0) + trace.lengthFeet);
         }
-
-        // ── AND WHAT KIND OF WALL IT IS ──
-        //
-        // Only the strokes and the text can say, and both are read near the
-        // trace rather than at it: a wall's own faces sit a thickness away.
-        // ── SEGMENTS ARE IN PAGE POINTS, THE TRACE IS NOT ──
-        //
-        // `sheetStrokes` applies the page matrix and returns POINTS; a trace
-        // and a candidate are normalised by the page WIDTH. Comparing them
-        // directly made every distance enormous, so 96.8% of the traced
-        // footage came back as "nothing drawn along it" — a reviewer tracing
-        // thin air, which is not a thing that happens. Third time this exact
-        // mismatch has bitten in this work: `pageText` is in points too.
-        const normalised = strokes.segments.map((seg) => ({
-          x1: seg.x1 / strokes.widthPt,
-          y1: seg.y1 / strokes.widthPt,
-          x2: seg.x2 / strokes.widthPt,
-          y2: seg.y2 / strokes.widthPt,
-        }));
-        const along = normalised.filter(
-          (seg) =>
-            parallel(trace, seg, 0.97) &&
-            Math.max(
-              offLine(trace, seg.x1, seg.y1, fpu),
-              offLine(trace, seg.x2, seg.y2, fpu),
-            ) <= 2.5,
-        );
-        const longAlong = along.filter(
-          (seg) => Math.hypot(seg.x2 - seg.x1, seg.y2 - seg.y1) * fpu >= Math.min(4, trace.lengthFeet * 0.4),
-        );
+        else if (found.walls.some((c) => parallel(trace, c) && offLine(c, (trace.x1 + trace.x2) / 2, (trace.y1 + trace.y2) / 2, fpu) <= 2.5 && c.lengthFeet > trace.lengthFeet * 1.8)) stage = "merged into a neighbour";
+        else if (inStage(found.inBuilding)) stage = "lost: duplicates, corners";
+        else if (inStage(found.notBorder)) stage = "lost: scale bar, stubs, hatch, outside building";
+        else if (inStage(found.notLettering)) stage = "lost: border";
+        else if (inStage(found.everywhere)) stage = "lost: lettering";
+        else if (inStage(everyPairing)) stage = "paired, not awarded";
+        else stage = "never paired";
+        const along = normalised.filter((seg) => parallel(trace, seg, 0.97) && Math.max(offLine(trace, seg.x1, seg.y1, fpu), offLine(trace, seg.x2, seg.y2, fpu)) <= 2.5);
+        const longAlong = along.filter((seg) => len(seg) * fpu >= Math.min(4, trace.lengthFeet * 0.4));
         const offsets = longAlong.map((seg) => offLine(trace, seg.x1, seg.y1, fpu));
         const spread = offsets.length < 2 ? 0 : Math.max(...offsets) - Math.min(...offsets);
-        const nearText = (re: RegExp, ft: number) =>
-          items.some(
-            (i) =>
-              re.test(i.str) &&
-              Math.hypot((trace.x1 + trace.x2) / 2 - i.x, (trace.y1 + trace.y2) / 2 - i.y) * fpu <= ft,
-          );
-
+        const pens = longAlong.map((s) => s.width).filter((w) => w > 0);
+        const penRatio = sheetPen > 0 && pens.length > 0 ? median(pens) / sheetPen : 1;
+        const nearText = (re: RegExp, ft: number) => items.some((i) => re.test(i.str) && Math.hypot((trace.x1 + trace.x2) / 2 - i.x, (trace.y1 + trace.y2) / 2 - i.y) * fpu <= ft);
         let kind: Kind;
-        if (nearText(/STOREFRONT|CURTAIN ?WALL|GLAZ|ALUM.*FRAME/i, 12)) {
-          kind = "storefront or curtain wall";
-        } else if (nearText(/\(E\)|EXIST|TO REMAIN|E\.T\.R/i, 10)) {
-          kind = "existing to remain";
-        } else if (trace.lengthFeet < 3) {
-          kind = "short stub";
-        } else if (longAlong.length === 0) {
-          kind = "nothing drawn along it";
-        } else if (longAlong.length === 1) {
-          kind = "single line drawn";
-        } else if (along.length >= 12 && longAlong.length <= 2) {
-          // Many short strokes along it and no long faces: hatch or fill.
-          kind = "hatched or filled";
-        } else if (spread > 2.5) {
-          kind = "faces too far apart";
-        } else if (along.length >= 20) {
-          kind = "dense area";
-        } else {
-          kind = "unattributed";
-        }
-
-        // ── DOES THE KEY COUNT THIS WALL TWICE? ──
-        //
-        // The key is ACCEPTED plus TRACED. A trace lying on a candidate the
-        // reviewer also ACCEPTED counts that wall twice, and the key's total
-        // footage is what every score is measured against. This is the part
-        // of "proposed after all" with money attached.
-        const onAccepted = (saved.verdicts ?? []).some(
-          (v) => v.verdict === "wall" && coversTrace(trace, { ...v, lengthFeet: v.lengthFeet }, fpu),
-        );
-        if (onAccepted) {
-          doubleCountedFeet += trace.lengthFeet;
-          doubleCountedRuns += 1;
-        } else if (stage === "proposed after all") {
-          // ── TRACED INSTEAD OF ACCEPTED, AND WHY IT MATTERS WHICH ──
-          //
-          // The wall was proposed and the reviewer drew their own line over
-          // it rather than accepting the proposal. Two very different
-          // reasons, needing opposite fixes:
-          //
-          //   REJECTED underneath — the reviewer looked at the proposal and
-          //   said no, then traced the same wall. That is a disagreement
-          //   about the run's geometry (wrong length, wrong thickness), and
-          //   the proposal is the thing to fix.
-          //
-          //   UNREVIEWED underneath — nobody judged it. Tracing was simply
-          //   easier than finding the row, which is a REVIEW problem: the
-          //   candidate was there and went unseen.
-          const under = (saved.verdicts ?? []).find(
-            (v) =>
-              (v.verdict === "not-wall" || v.verdict === "unsure") &&
-              coversTrace(trace, { ...v, lengthFeet: v.lengthFeet }, fpu),
-          );
-          if (under !== undefined) {
-            tracedOverRejectedFeet += trace.lengthFeet;
-            tracedOverRejectedRuns += 1;
-          } else {
-            tracedOverUnjudgedFeet += trace.lengthFeet;
-            tracedOverUnjudgedRuns += 1;
-          }
-        }
-
-        stageFeet.set(stage, (stageFeet.get(stage) ?? 0) + trace.lengthFeet);
-        stageRuns.set(stage, (stageRuns.get(stage) ?? 0) + 1);
-        kindFeet.set(kind, (kindFeet.get(kind) ?? 0) + trace.lengthFeet);
-        kindRuns.set(kind, (kindRuns.get(kind) ?? 0) + 1);
-        if (trace.lengthFeet >= 2) {
-          examples.push({
-            sheet: `${file.dir}/${file.sheet}`,
-            kind,
-            stage,
-            feet: trace.lengthFeet,
-            x1: trace.x1,
-            y1: trace.y1,
-            x2: trace.x2,
-            y2: trace.y2,
-          });
-        }
+        if (nearText(/STOREFRONT|CURTAIN ?WALL|GLAZ|ALUM.*FRAME/i, 12)) kind = "storefront or curtain wall";
+        else if (nearText(/\(E\)|EXIST|TO REMAIN|E\.T\.R/i, 10)) kind = "existing to remain";
+        else if (trace.lengthFeet < 3) kind = "short stub";
+        else if (longAlong.length === 0) kind = "nothing drawn along it";
+        else if (longAlong.length === 1) kind = "single line drawn";
+        else if (along.length >= 12 && longAlong.length <= 2) kind = "hatched or filled";
+        else if (spread > 2.5) kind = "faces too far apart";
+        else if (along.length >= 20) kind = "dense area";
+        else kind = "unattributed";
+        // ── THE DRAWING STYLE, WHICH IS WHAT A FIX IS WRITTEN FOR ──
+        let style: Style;
+        if (longAlong.length === 0) style = "nothing drawn along it";
+        else if (along.length >= 12 && longAlong.length <= 2) style = "hatched masonry";
+        else if (trace.lengthFeet < 6) style = "short closet wall";
+        else if (longAlong.length === 1 || penRatio < 0.6) style = "light single-pen partition";
+        else style = "two faces, ordinary pen";
+        const keptSet = new Set(found.inUnits.map((u) => `${u.x1.toFixed(6)},${u.y1.toFixed(6)},${u.x2.toFixed(6)},${u.y2.toFixed(6)}`));
+        const diag = longAlong.map((seg) => ({
+          off: Number(((offLine(trace, seg.x1, seg.y1, fpu) + offLine(trace, seg.x2, seg.y2, fpu)) / 2).toFixed(2)),
+          len: Number((len(seg) * fpu).toFixed(1)),
+          pen: seg.width,
+          kept: keptSet.has(`${seg.x1.toFixed(6)},${seg.y1.toFixed(6)},${seg.x2.toFixed(6)},${seg.y2.toFixed(6)}`),
+        })).sort((a, b) => a.off - b.off);
+        rows.push({ sheet: `${file.dir.slice(0, 24)}/${file.sheet}`, stage, kind, style, feet: trace.lengthFeet, x1: trace.x1, y1: trace.y1, x2: trace.x2, y2: trace.y2, spread, penRatio, faces: longAlong.length, along: diag, alongAll: along.length, widthPt: strokes.widthPt });
       }
     }
-
-    expect(
-      read.length,
-      "no training sheet with traces was read, so every number below would be zero",
-    ).toBeGreaterThan(0);
-
-    // The band is printed because the whole analysis rests on it, and because
-    // four runs at four different bands produced identical numbers — which is
-    // either a decisive geometry or an environment variable that never
-    // arrived, and those look the same from the outside.
-    console.log(
-      `\n${read.length} training sheets with traces · ${tracedFeetTotal.toFixed(0)} ft traced as missed ` +
-        `· band ${Number(process.env.MISS_BAND ?? "1.5")} ft\n`,
-    );
-    console.log(
-      `DOUBLE-COUNTED IN THE KEY: ${doubleCountedFeet.toFixed(0)} ft over ${doubleCountedRuns} traces ` +
-        `lie on a candidate the reviewer ALSO accepted — the key counts those walls twice\n`,
-    );
-    console.log(
-      `  of the proposed-after-all footage: ${tracedOverRejectedFeet.toFixed(0)} ft over ` +
-        `${tracedOverRejectedRuns} traces sit on a candidate the reviewer REJECTED (a disagreement ` +
-        `about the run), and ${tracedOverUnjudgedFeet.toFixed(0)} ft over ${tracedOverUnjudgedRuns} ` +
-        `sit on one NOBODY JUDGED (the row was there and went unseen)\n`,
-    );
-    console.log("WHERE IT WAS LOST");
-    console.log(`  ${"stage".padEnd(28)} ${"feet".padStart(9)} ${"share".padStart(7)} ${"runs".padStart(6)}`);
-    for (const [stage, ft] of [...stageFeet.entries()].sort((a, b) => b[1] - a[1])) {
-      console.log(
-        `  ${stage.padEnd(28)} ${ft.toFixed(0).padStart(9)} ` +
-          `${((ft / Math.max(tracedFeetTotal, 1)) * 100).toFixed(1).padStart(6)}% ` +
-          `${String(stageRuns.get(stage) ?? 0).padStart(6)}`,
-      );
+    expect(read.length, "no training sheet with traces was read").toBeGreaterThan(0);
+    const total = rows.reduce((t, r) => t + r.feet, 0);
+    const table = <K extends string>(title: string, key: (r: Row) => K, subset = rows) => {
+      const sub = subset.reduce((t, r) => t + r.feet, 0);
+      const by = new Map<K, { feet: number; runs: number }>();
+      for (const r of subset) { const e = by.get(key(r)) ?? { feet: 0, runs: 0 }; e.feet += r.feet; e.runs += 1; by.set(key(r), e); }
+      console.log(`\n${title} (${sub.toFixed(0)} ft, ${subset.length} traces)`);
+      for (const [k, e] of [...by.entries()].sort((a, b) => b[1].feet - a[1].feet)) console.log(`  ${k.padEnd(46)} ${e.feet.toFixed(0).padStart(7)} ft ${(100 * e.feet / Math.max(sub, 1e-9)).toFixed(1).padStart(6)}% ${String(e.runs).padStart(5)} runs`);
+    };
+    console.log(`\nTRACED, ALL TRAINING SHEETS: ${total.toFixed(0)} ft on ${rows.length} traces across ${read.length} sheets`);
+    table("BY STAGE", (r) => r.stage);
+    table("BY STYLE", (r) => r.style);
+    table("BY KIND", (r) => r.kind);
+    console.log("\nSET ASIDE BY TRIAGE, BY THE CLASSIFIER'S REASON");
+    for (const [why, ft] of [...asideWhy.entries()].sort((a, b) => b[1] - a[1])) console.log(`  ${why.padEnd(46)} ${ft.toFixed(0).padStart(7)} ft`);
+    table("BY STAGE × STYLE", (r) => `${r.stage} · ${r.style}`);
+    for (const f of FOCUS) {
+      const sub = rows.filter((r) => r.sheet.toLowerCase().includes(f.toLowerCase()));
+      if (sub.length === 0) continue;
+      table(`FOCUS ${f}: BY STAGE`, (r) => r.stage, sub);
+      table(`FOCUS ${f}: BY STAGE × STYLE`, (r) => `${r.stage} · ${r.style}`, sub);
     }
-
-    console.log("\nWHAT KIND OF WALL");
-    console.log(`  ${"kind".padEnd(28)} ${"feet".padStart(9)} ${"share".padStart(7)} ${"runs".padStart(6)}`);
-    for (const [kind, ft] of [...kindFeet.entries()].sort((a, b) => b[1] - a[1])) {
-      console.log(
-        `  ${kind.padEnd(28)} ${ft.toFixed(0).padStart(9)} ` +
-          `${((ft / Math.max(tracedFeetTotal, 1)) * 100).toFixed(1).padStart(6)}% ` +
-          `${String(kindRuns.get(kind) ?? 0).padStart(6)}`,
-      );
-    }
-
-    // ── CROPPED BY STAGE, NOT BY KIND ──
-    //
-    // The kind heuristics collapsed: 96.8% as "nothing drawn along it" on the
-    // first run (a units bug), then 98.3% as "dense area" once that was
-    // fixed, because a 2.5 ft band along a real wall catches dozens of
-    // strokes and every branch after that is unreachable. A crop list is only
-    // worth rendering if its groups mean something, and the STAGE groups come
-    // from the finder's own passes rather than from my guesses.
-    console.log("\nCROPS");
-    for (const [stageName] of [...stageFeet.entries()].sort((a, b) => b[1] - a[1])) {
-      for (const e of examples.filter((x) => x.stage === stageName).sort((a, b) => b.feet - a.feet).slice(0, 3)) {
-        console.log(
-          `  ${stageName}\t${e.sheet}\t${e.feet.toFixed(1)}\t` +
-            `${e.x1.toFixed(4)}\t${e.y1.toFixed(4)}\t${e.x2.toFixed(4)}\t${e.y2.toFixed(4)}\t${e.stage}`,
-        );
-      }
+    if (OUT !== "") {
+      mkdirSync(OUT, { recursive: true });
+      writeFileSync(join(OUT, "miss-rows.json"), JSON.stringify(rows, null, 1));
     }
   });
 });
