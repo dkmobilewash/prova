@@ -146,7 +146,8 @@ export class SheetWorker {
           warm.worker.ref();
           return warm;
         }
-        void warm.worker.terminate();
+        // `dead` is set from the thread's own `error`/`exit`, so this thread
+        // has already ended; it is dropped from the pool and nothing is awaited.
       }
     }
     return new SheetWorker(new Worker(options.script ?? rasterWorkerPath()), options.timeoutMs ?? SHEET_WORKER_TIMEOUT_MS);
