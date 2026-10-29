@@ -126,6 +126,8 @@ import {
 import { detectForSheet, offeredCandidates } from "@/lib/takeoff/offeredCandidates";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { TakeoffRoomsPanel } from "./TakeoffRoomsPanel";
+import { TakeoffSymbolPanel } from "./TakeoffSymbolPanel";
+import { findSymbols, type Box as SymbolBox, type SymbolMatch } from "@/lib/takeoff/symbolSignature";
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
 import { roomsFromWalls, type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 
@@ -273,6 +275,7 @@ export function TakeoffPlanViewer({
   panelOpen = true,
   readOnly = false,
   roomFinder = false,
+  symbolCount = false,
   demotedWalls = false,
   wallModel = null,
   ceilingPages = [],
@@ -358,6 +361,8 @@ export function TakeoffPlanViewer({
    * button absent. See `lib/takeoff/NOTES-rooms.md`.
    */
   roomFinder?: boolean;
+  /** "Find all like this": box one symbol, count every match on the sheet. `Company.symbolCountOn`. */
+  symbolCount?: boolean;
   /**
    * "Demote, don't hide": a run the check labels casework or reference stays
    * on the sheet greyed, out of the total, one click to take back. Read from
@@ -715,6 +720,9 @@ export function TakeoffPlanViewer({
   const pairingsRef = useRef<{ x1: number; y1: number; x2: number; y2: number; lengthFeet: number; thicknessFeet: number }[]>([]);
   const wordsRef = useRef<{ str: string; x: number; y: number; width: number; height: number }[]>([]);
   const [rooms, setRooms] = useState<RoomsFromWallsResult | null>(null);
+  /** "Count like this": the box being dragged, and the matches it found, with the ones the estimator dropped. */
+  const [symbolBox, setSymbolBox] = useState<SymbolBox | null>(null);
+  const [symbols, setSymbols] = useState<{ page: number; matches: SymbolMatch[]; dropped: Set<number>; ms: number; busy: boolean; error: string | null } | null>(null);
   const [roomsOnPage, setRoomsOnPage] = useState<number | null>(null);
   const [hoveredRoom, setHoveredRoom] = useState<number | null>(null);
   /**
@@ -1362,6 +1370,33 @@ export function TakeoffPlanViewer({
   const drawing = tool !== "pan";
 
   /**
+   * ── "COUNT LIKE THIS": EVERY MATCH OF THE BOXED SYMBOL ON THIS SHEET ──
+   * The sheet's strokes and words are read the way Find the walls reads
+   * them, the box and the strokes go to `findSymbols` in page-width units,
+   * and the matches come back as footprints to mark. Pure geometry; no
+   * model. See `lib/takeoff/symbolSignature.ts` and NOTES-symbols.md.
+   */
+  const searchSymbols = async (box: SymbolBox) => {
+    const doc = docRef.current;
+    if (!doc || !pageSize) return;
+    setSymbols({ page: pageNumber, matches: [], dropped: new Set(), ms: 0, busy: true, error: null });
+    try {
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const page = await doc.getPage(pageNumber);
+      const layers = await layersOf(doc as never).catch(() => null);
+      const { segments } = await segmentsFromOpenPage(page as never, pdfjs as never, pageNumber, layers as never);
+      const words = await pageTextItems(page as never, pdfjs as never);
+      const W = pageSize.widthPt;
+      const text = words.map((w) => ({ x: w.x / W, y: (w.y - w.height) / W, width: w.width / W, height: w.height / W }));
+      const t0 = performance.now();
+      const found = findSymbols(segments.map((s) => ({ ...s, x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W })), text, box);
+      setSymbols({ page: pageNumber, matches: found.matches, dropped: new Set(), ms: performance.now() - t0, busy: false, error: found.template === null ? "Nothing drawn inside that box — draw it round the symbol's lines." : null });
+    } catch {
+      setSymbols({ page: pageNumber, matches: [], dropped: new Set(), ms: 0, busy: false, error: "The sheet could not be read for symbols. Try again in a moment." });
+    }
+  };
+
+  /**
    * ── WHAT A CLICK CAN SNAP TO ──
    *
    * The sheet's own strokes, plus the vertices of everything already measured
@@ -1518,6 +1553,14 @@ export function TakeoffPlanViewer({
       event.preventDefault();
       setKeyShift(event.shiftKey);
       setKeyBox({ x1: raw.x, y1: raw.y, x2: raw.x, y2: raw.y });
+      return;
+    }
+    // ── "COUNT LIKE THIS" DRAGS A BOX ROUND ONE SYMBOL ──
+    if (tool === "symbol") {
+      const raw = pointAt(event);
+      if (!raw) return;
+      event.preventDefault();
+      setSymbolBox({ x1: raw.x, y1: raw.y, x2: raw.x, y2: raw.y });
       return;
     }
     if (!drawing) return;
@@ -2852,7 +2895,7 @@ export function TakeoffPlanViewer({
       {!readOnly && (
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line-card bg-surface-card p-2">
         <div className="flex items-center gap-1">
-          {TOOLS.map((entry) => {
+          {TOOLS.filter((entry) => entry.id !== "symbol" || symbolCount).map((entry) => {
             const disabled = entry.id !== "pan" && entry.id !== "calibrate" && !calibration;
             return (
               <button
@@ -3744,6 +3787,19 @@ export function TakeoffPlanViewer({
         </div>
       )}
 
+      {symbols !== null && symbols.page === pageNumber && sheet !== null && (
+        <TakeoffSymbolPanel
+          jobId={jobId}
+          pageId={sheet.id}
+          itemId={activeItemId}
+          state={symbols}
+          onClear={() => setSymbols(null)}
+          onSaved={(saved) => {
+            setSymbols(null);
+            onMeasurementSaved?.({ id: saved.id, kind: "COUNT" });
+          }}
+        />
+      )}
       {/* ── The sheet ─────────────────────────────────────────────── */}
       {/* The height reserve shrinks to 11rem once the panel is beside rather
           than above; that reserve is the toolbar and the page's own padding,
@@ -3865,6 +3921,10 @@ export function TakeoffPlanViewer({
                   if (traceAdded !== null) setTraceAdded(null);
                   if (traceTo !== null) return;
                 }
+                if (symbolBox !== null) {
+                  const raw = pointAt(event);
+                  if (raw) setSymbolBox({ ...symbolBox, x2: raw.x, y2: raw.y });
+                }
                 if (keyBox !== null) {
                   const raw = pointAt(event);
                   if (raw) setKeyBox({ ...keyBox, x2: raw.x, y2: raw.y });
@@ -3884,6 +3944,12 @@ export function TakeoffPlanViewer({
                 setEditDraft(moveVertex(editDraft.xs, editDraft.ys, draggingVertex, point));
               }}
               onPointerUp={() => {
+                if (symbolBox !== null) {
+                  const box = symbolBox;
+                  setSymbolBox(null);
+                  if (Math.abs(box.x2 - box.x1) > 0.001 && Math.abs(box.y2 - box.y1) > 0.001) void searchSymbols(box);
+                  return;
+                }
                 if (keyBox !== null && answerKey !== undefined) {
                   // ── SHIFT-CLICK ACTS ON THE SELECTION, NEVER ON WHAT WAS HIT ──
                   //
@@ -4180,6 +4246,56 @@ export function TakeoffPlanViewer({
                   strokeWidth={STROKE_PX}
                   vectorEffect="non-scaling-stroke"
                 />
+              )}
+              {/* "Count like this": the box being dragged, then every match as a
+                  footprint. A click on a match drops it from the count. */}
+              {symbolBox !== null && (
+                <rect
+                  data-takeoff="symbol-box"
+                  x={Math.min(symbolBox.x1, symbolBox.x2)}
+                  y={Math.min(symbolBox.y1, symbolBox.y2)}
+                  width={Math.abs(symbolBox.x2 - symbolBox.x1)}
+                  height={Math.abs(symbolBox.y2 - symbolBox.y1)}
+                  fill="#2563eb"
+                  fillOpacity={0.08}
+                  stroke="#2563eb"
+                  strokeWidth={STROKE_PX}
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+              {symbols !== null && symbols.page === pageNumber && (
+                <g data-takeoff="symbol-matches">
+                  {symbols.matches.map((m, i) => {
+                    const dropped = symbols.dropped.has(i);
+                    const pad = 0.002;
+                    return (
+                      <rect
+                        key={i}
+                        data-takeoff="symbol-match"
+                        data-dropped={dropped ? "true" : undefined}
+                        x={Math.min(m.box.x1, m.box.x2) - pad}
+                        y={Math.min(m.box.y1, m.box.y2) - pad}
+                        width={Math.abs(m.box.x2 - m.box.x1) + 2 * pad}
+                        height={Math.abs(m.box.y2 - m.box.y1) + 2 * pad}
+                        fill={dropped ? "#9ca3af" : "#16a34a"}
+                        fillOpacity={dropped ? 0.12 : 0.18}
+                        stroke={dropped ? "#9ca3af" : "#16a34a"}
+                        strokeWidth={STROKE_PX * 1.5}
+                        vectorEffect="non-scaling-stroke"
+                        style={{ cursor: "pointer" }}
+                        onClick={() => {
+                          setSymbols((current) => {
+                            if (current === null) return current;
+                            const next = new Set(current.dropped);
+                            if (next.has(i)) next.delete(i);
+                            else next.add(i);
+                            return { ...current, dropped: next };
+                          });
+                        }}
+                      />
+                    );
+                  })}
+                </g>
               )}
               {/* The calibration line, redrawn over the sheet so the scale is
                   something a reviewer can SEE rather than take on faith.

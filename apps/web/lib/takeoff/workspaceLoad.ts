@@ -584,12 +584,13 @@ export async function loadTakeoffWorkspace(
   // same load that decides everything else on the screen.
   const roomFinder = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOn: true, scannedPlansOn: true },
+    select: { roomFinderOn: true, demotedWallsOn: true, scannedPlansOn: true, symbolCountOn: true },
   });
 
   return {
     plan,
     sheets,
+    symbolCountOn: roomFinder?.symbolCountOn ?? false,
     roomFinderOn: roomFinder?.roomFinderOn ?? false,
     demotedWallsOn: roomFinder?.demotedWallsOn ?? false,
     scannedPlansOn: roomFinder?.scannedPlansOn ?? false,

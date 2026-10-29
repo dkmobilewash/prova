@@ -1436,6 +1436,7 @@ export function TakeoffWorkspace({
               sheetLabelByPage={data.sheetLabelByPage}
               wallTypes={data.viewerWallTypes}
               roomFinder={data.roomFinderOn}
+              symbolCount={data.symbolCountOn}
               demotedWalls={data.demotedWallsOn}
               wallModel={data.wallModel}
               ceilingPages={data.ceilingPages}
