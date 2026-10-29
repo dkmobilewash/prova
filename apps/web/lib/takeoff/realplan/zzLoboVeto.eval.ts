@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { finderVersion } from "../finderVersion";
-import { heldOutReason } from "../heldOutSets";
+import { excludedSheetReason, heldOutReason } from "../heldOutSets";
 import { keyFromLabels, scoreSheet, type ScoredRun } from "../heldOutScore";
 import { collectSheets } from "../labelCollect";
 import type { LabelCandidate } from "../labelRows";
@@ -63,7 +63,13 @@ describe.skipIf(DIR === "" || LABELS === "" || (ROWS_OUT === "" && MODEL_DIR ===
     for (const dir of readdirSync(LABELS)) {
       if (!existsSync(join(LABELS, dir)) || heldOutReason(dir) !== null) continue;
       if (ONLY !== "" && !dir.toLowerCase().includes(ONLY.toLowerCase())) continue;
-      for (const name of readdirSync(join(LABELS, dir))) if (name.endsWith(".json")) files.push({ dir, sheet: name.replace(/\.json$/, "") });
+      for (const name of readdirSync(join(LABELS, dir))) {
+        if (!name.endsWith(".json")) continue;
+        const sheet = name.replace(/\.json$/, "");
+        // A sheet that is the wrong question (Michigan A3's existing walls) — see `EXCLUDED_SHEETS`.
+        if (excludedSheetReason(dir, sheet) !== null) continue;
+        files.push({ dir, sheet });
+      }
     }
     files.sort((a, b) => a.dir.localeCompare(b.dir) || a.sheet.localeCompare(b.sheet));
     const prepared: Parameters<typeof collectSheets>[0][number][] = [];

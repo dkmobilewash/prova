@@ -1,15 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  dashedFaceCount,
-  FEATURE_NAMES,
-  featuresFor,
-  normaliseAcrossSheet,
-  penPercentileFor,
-  runsMeeting,
-  SHEET_RELATIVE_NAMES,
-  twinFaces,
-  wordsBetween,
-} from "./wallFeatures";
+import { FEATURE_NAMES, SHEET_RELATIVE_NAMES, centredNumbers, crossingTicks, dashedFaceCount, extensionEnds, faceGray, facesTwoFeetOff, featuresFor, normaliseAcrossSheet, penPercentileFor, runsMeeting, twinFaces, wordsBetween } from "./wallFeatures";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /**
@@ -181,5 +171,49 @@ describe("the four signals from the junk census", () => {
     const longer: StrokeSegment = { x1: 0.1, y1: 0.9, x2: 0.35, y2: 0.9 };
     // faceB is the pair's own other face, 6 in away: not a twin. The three at 10, 20 and 30 ft are.
     expect(twinFaces(wall, faceA, [faceA, faceB, ...twins, longer])).toBe(3);
+  });
+});
+
+describe("the second round of census signals", () => {
+  // 1 ft per unit: a 20 ft run along y = 0, 0.5 ft thick, faces at ±0.25
+  const run = { x1: 0, y1: 0, x2: 20, y2: 0, lengthFeet: 20, thicknessFeet: 0.5 } as WallCandidate;
+  const seg = (x1: number, y1: number, x2: number, y2: number, gray?: number): StrokeSegment => ({ x1, y1, x2, y2, gray });
+
+  it("counts a 45° tick that CROSSES a face and not a hatch stroke clipped inside the wall", () => {
+    const tick = seg(5, 0.25 - 0.3, 5.6, 0.25 + 0.3);
+    const hatch = seg(8, -0.2, 8.4, 0.2);
+    expect(crossingTicks(run, [tick, hatch])).toBe(1);
+    expect(crossingTicks(run, [hatch])).toBe(0);
+  });
+
+  it("reads the faces' colour and says when there is none", () => {
+    expect(faceGray(seg(0, 0, 1, 0, 0.5), seg(0, 1, 1, 1, 0.5))).toBeCloseTo(0.5, 6);
+    expect(faceGray(seg(0, 0, 1, 0), seg(0, 1, 1, 1))).toBe(0);
+  });
+
+  it("counts a dimension number on the run's line and not a room name beside it", () => {
+    expect(centredNumbers(run, [{ str: "12'-6\"", x: 10, y: 0.2 }, { str: "VESTIBULE", x: 10, y: 0.2 }, { str: "3'-0\"", x: 10, y: 2 }])).toBe(1);
+  });
+
+  it("counts the ends an extension line reaches", () => {
+    const left = seg(0, -2, 0, 2);
+    const right = seg(20, -2, 20, 2);
+    expect(extensionEnds(run, [left, right])).toBe(2);
+    expect(extensionEnds(run, [left])).toBe(1);
+    expect(extensionEnds(run, [seg(10, -2, 10, 2)])).toBe(0);
+  });
+});
+
+describe("a face two feet off the run", () => {
+  const run = { x1: 0, y1: 0, x2: 20, y2: 0, lengthFeet: 20, thicknessFeet: 2 / 12 } as WallCandidate;
+  const seg = (x1: number, y1: number, x2: number, y2: number): StrokeSegment => ({ x1, y1, x2, y2 });
+  const a = seg(0, -1 / 12, 20, -1 / 12), b = seg(0, 1 / 12, 20, 1 / 12);
+
+  it("COUNTS A PARALLEL FACE AT CABINET DEPTH ALONG THE RUN, AND NOT ONE BESIDE OR FAR", () => {
+    const wallFace = seg(1, 1 / 12 + 2, 19, 1 / 12 + 2);
+    const far = seg(1, 4, 19, 4);
+    const stub = seg(17, 1 / 12 + 2, 30, 1 / 12 + 2);
+    expect(facesTwoFeetOff(run, [a, b, wallFace, far, stub], a, b)).toBe(1);
+    expect(facesTwoFeetOff(run, [a, b, far, stub], a, b)).toBe(0);
   });
 });

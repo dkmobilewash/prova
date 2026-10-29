@@ -3870,3 +3870,48 @@ new-model run and 623 ft in the other two, from the same code and labels. 96 ft 
 difference in what the product offered between two runs is either a nondeterminism in
 `detectForSheet` on that sheet or an artefact of the run; it does not move the totals'
 conclusion and is recorded so the next person checks it rather than inherits it.
+
+## Classifier, second round of signals — 2026-10-29 (second session, `diego/classifier-signals-2`)
+
+Ten census signals in `FEATURE_NAMES` (34 columns): the first round's four
+(`wordsBetween`, `dashedFaces`, `runsMeeting`, `twinFaces`) and six more —
+`faceGray`/`hasGray` (the faces' stroke luminance, from `StrokeSegment.gray`),
+`crossingTicks` (45° strokes crossing a face), `centredNumbers` (a dimension
+number on the run's line), `extensionEnds` (perpendicular strokes reaching
+the run's ends), `facesTwoFeetOff` (parallel faces at cabinet depth along the
+run — the casework signal, a feature per Diego rather than the set-aside
+`diego/casework` measured at 6.8:1 training / 1.6:1 held-out).
+
+Trained leave-one-building-out on the 30 training sheets of 20 buildings —
+round 8's glen-hazel and HACP in, Michigan A3 out (`EXCLUDED_SHEETS`, #843),
+no held-out set in (the first extraction on a pre-#832 branch HAD Modbox,
+Darrington and Hillside in it and was discarded) — plus 142,331 synthetic
+rows. Measured by `zzDemote` at cut 0.2, the app's default; held-out scored
+with `model-all` in `DEMOTE_HELD_OUT=1` mode as a before/after delta only.
+
+| model | training junk greyed | real greyed | precision | held-out junk greyed | real greyed | precision |
+| --- | --- | --- | --- | --- | --- | --- |
+| **28 cols, round 8** (first-round signals, retrained) | 804 of 12,058 (7%) | 194 ft | 81% | **579 of 3,708 (16%)** | 145 ft | **80%** |
+| 34 cols (all ten signals) | 952 (8%) | 240 ft | 80% | 415 (11%) | 136 ft | 75% |
+| shipped (24 cols, `train-20261027-094015`) | 716 (6%) | 239 ft | 75% | 311 (8%) | 293 ft | 51% |
+
+The earlier figure for the 28-column set — 88% / 8% / 146 ft — was on 26
+sheets with round-7 labels; these three rows are on the same 30 sheets, so
+they compare with each other and not with it.
+
+**The six new signals do not help.** On training the 34-column model greys
+148 ft more junk for 46 ft more real (Topeka +28 ft real greyed, precision
+65%); on held-out it greys LESS junk (415 against 579) at lower precision.
+By kind: dimension-line junk greyed 145 of 1,974 ft (7%) against 210 (11%)
+for the 28-column model and 216 for the shipped; casework junk greyed 47 of
+470 ft against 15 and 14. The ticks and numbers added noise the trees used
+on Topeka's real walls; the casework signal adds 32 ft.
+
+**So the 28-column model retrained with round 8 is the one to ship.** It
+beats the current model on every axis, training and held-out: more junk
+greyed, less real greyed, 81% / 80% precision against 75% / 51%. Neither
+target (90% precision, 40% junk share) is met. The six new feature columns
+stay in `FEATURE_NAMES` and in the census as measured inputs; the model's
+columns are a prefix of the build's, which the loader accepts. Model file:
+`~/Claude Folder/takeoff/train-20261029-164211-signals28-round8/wall-model.json`
+(28 columns; the 34-column one is beside it, not shipped).

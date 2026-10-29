@@ -113,6 +113,30 @@ export const FEATURE_NAMES = [
   /** Other faces on the sheet, parallel, of the same length to the quarter
    *  foot — a unit plan's repeated partition, a kennel grid's bay. Capped at 50. */
   "twinFaces",
+  // ── ADDED 2026-10-29, SECOND ROUND: THE PEN'S COLOUR AND THE DIMENSION LINE'S OWN MARKS ──
+  /** The faces' stroke luminance, 0 black to 1 white, averaged; 0 when the
+   *  content set no colour (`hasGray` says which). Grey carries 11,457 ft of
+   *  real wall on the training sets, so it is a feature, never a rule. */
+  "faceGray",
+  "hasGray",
+  /** Short 30–60° strokes that CROSS one of the run's faces — a dimension
+   *  line's ticks; hatching inside a wall never crosses its face.
+   *  Capped at 20. Needs `context.strokes`; 0 without. */
+  "crossingTicks",
+  /** Dimension-looking words (digits, feet and inch marks) whose centre lies
+   *  on the run's line within 0.6 ft — the number a dimension line carries.
+   *  Capped at 10. */
+  "centredNumbers",
+  /** Ends of the run that a short perpendicular stroke reaches — an extension
+   *  line at a dimension's end, 0, 1 or 2. Needs `context.strokes`. */
+  "extensionEnds",
+  /** Parallel faces whose line sits 20–28 in from this run's near face and
+   *  lie along it for most of its length — the wall behind a cabinet front,
+   *  or the cabinet front beside a wall. Casework depth. Capped at 5. The
+   *  set-aside form of this (`diego/casework`) was 6.8:1 on training and
+   *  1.6:1 on the held-out delta, so it is a feature the grey-out can weigh
+   *  rather than a rule that hides. */
+  "facesTwoFeetOff",
 ] as const;
 
 /**
@@ -392,7 +416,126 @@ export function featuresFor(
     dashedFaceCount(wall, context.strokes ?? []),
     runsMeeting(wall, faces, a, b),
     twinFaces(wall, a, faces),
+    faceGray(a, b),
+    a.gray !== undefined || b.gray !== undefined ? 1 : 0,
+    crossingTicks(wall, context.strokes ?? []),
+    centredNumbers(wall, context.words ?? []),
+    extensionEnds(wall, context.strokes ?? []),
+    facesTwoFeetOff(wall, faces, a, b),
   ];
+}
+
+const TWO_FEET_MIN = 20 / 12;
+const TWO_FEET_MAX = 28 / 12;
+
+export function facesTwoFeetOff(wall: WallCandidate, faces: readonly StrokeSegment[], a: StrokeSegment, b: StrokeSegment): number {
+  const fpu = feetPerUnitOf(wall);
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
+  const l = Math.hypot(dx, dy);
+  if (l === 0) return 0;
+  const half = wall.thicknessFeet / 2;
+  let n = 0;
+  for (const o of faces) {
+    if (o === a || o === b) continue;
+    const ol = lengthOf(o);
+    if (ol === 0 || Math.abs(((o.x2 - o.x1) * dx + (o.y2 - o.y1) * dy) / (ol * l)) < 0.97) continue;
+    const t1 = alongT(wall, o.x1, o.y1), t2 = alongT(wall, o.x2, o.y2);
+    const along = Math.min(1, Math.max(t1, t2)) - Math.max(0, Math.min(t1, t2));
+    if (along < 0.7) continue;
+    const gap = offLineOf(wall, (o.x1 + o.x2) / 2, (o.y1 + o.y2) / 2) * fpu - half;
+    if (gap < TWO_FEET_MIN || gap > TWO_FEET_MAX) continue;
+    n += 1;
+    if (n >= 5) break;
+  }
+  return n;
+}
+
+// ── THE SECOND ROUND: COLOUR AND THE DIMENSION LINE'S OWN MARKS ──
+
+export function faceGray(a: StrokeSegment, b: StrokeSegment): number {
+  const g = [a.gray, b.gray].filter((v): v is number => v !== undefined);
+  return g.length === 0 ? 0 : g.reduce((n, v) => n + v, 0) / g.length;
+}
+
+/** Signed distance from the run's centreline, in the run's units. */
+function signedOff(wall: WallCandidate, x: number, y: number): number {
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
+  const l = Math.hypot(dx, dy);
+  return l === 0 ? 0 : ((x - wall.x1) * -dy + (y - wall.y1) * dx) / l;
+}
+
+export function crossingTicks(wall: WallCandidate, strokes: readonly StrokeSegment[]): number {
+  const fpu = feetPerUnitOf(wall);
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
+  const l = Math.hypot(dx, dy);
+  if (l === 0) return 0;
+  const half = wall.thicknessFeet / 2 / fpu;
+  let n = 0;
+  for (const s of strokes) {
+    const sl = lengthOf(s);
+    if (sl === 0) continue;
+    const lf = sl * fpu;
+    if (lf < 0.25 || lf > 1.2) continue;
+    const cosA = Math.abs(((s.x2 - s.x1) * dx + (s.y2 - s.y1) * dy) / (sl * l));
+    if (cosA < 0.5 || cosA > 0.87) continue;
+    const t = alongT(wall, (s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2);
+    if (t < -0.05 || t > 1.05) continue;
+    const o1 = signedOff(wall, s.x1, s.y1), o2 = signedOff(wall, s.x2, s.y2);
+    const min = 0.08 / fpu;
+    // The FACES only: a pair of dimension strings has its ticks on the lines
+    // themselves, and hatching inside a wall crosses the centreline all day.
+    for (const line of [half, -half]) {
+      const d1 = o1 - line, d2 = o2 - line;
+      if (d1 * d2 < 0 && Math.min(Math.abs(d1), Math.abs(d2)) >= min) { n += 1; break; }
+    }
+    if (n >= 20) break;
+  }
+  return n;
+}
+
+export function centredNumbers(wall: WallCandidate, words: readonly { str: string; x: number; y: number }[]): number {
+  const fpu = feetPerUnitOf(wall);
+  let n = 0;
+  for (const w of words) {
+    const str = w.str.trim();
+    if (str === "" || !DIMENSION_WORD.test(str) || !/\d/.test(str)) continue;
+    const t = alongT(wall, w.x, w.y);
+    if (t < -0.02 || t > 1.02) continue;
+    if (offLineOf(wall, w.x, w.y) * fpu > 0.6) continue;
+    n += 1;
+    if (n >= 10) break;
+  }
+  return n;
+}
+
+export function extensionEnds(wall: WallCandidate, strokes: readonly StrokeSegment[]): number {
+  const fpu = feetPerUnitOf(wall);
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
+  const l = Math.hypot(dx, dy);
+  if (l === 0) return 0;
+  const reach = 0.5 / fpu;
+  const ends: [number, number][] = [[wall.x1, wall.y1], [wall.x2, wall.y2]];
+  let n = 0;
+  for (const [ex, ey] of ends) {
+    for (const s of strokes) {
+      const sl = lengthOf(s);
+      if (sl === 0) continue;
+      const lf = sl * fpu;
+      if (lf < 1 || lf > 8) continue;
+      if (Math.abs(((s.x2 - s.x1) * dx + (s.y2 - s.y1) * dy) / (sl * l)) > 0.26) continue;
+      // the stroke passes the end: one point within reach of it, or it crosses the run's line near the end
+      const near = Math.hypot(s.x1 - ex, s.y1 - ey) <= reach || Math.hypot(s.x2 - ex, s.y2 - ey) <= reach;
+      const crossesNearEnd = (() => {
+        const o1 = signedOff(wall, s.x1, s.y1), o2 = signedOff(wall, s.x2, s.y2);
+        if (o1 * o2 > 0) return false;
+        const t = alongT(wall, (s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2);
+        const tEnd = ex === wall.x1 && ey === wall.y1 ? 0 : 1;
+        return Math.abs(t - tEnd) * l <= reach;
+      })();
+      if (near || crossesNearEnd) { n += 1; break; }
+    }
+  }
+  return n;
 }
 
 // ── THE FOUR SIGNALS FROM THE JUNK CENSUS ──
