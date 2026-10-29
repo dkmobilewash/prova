@@ -189,6 +189,10 @@ export type WallFinderOptions = {
    * Extraction only — it changes nothing about what is returned.
    */
   onCandidate?: (features: number[], wall: WallCandidate, i: number, j: number) => void;
+  /** The sheet's words, centred, in page units — for `wordsBetween`. */
+  words?: readonly { str: string; x: number; y: number }[];
+  /** The sheet's raw strokes in page units — for `dashedFaces`. */
+  strokes?: readonly StrokeSegment[];
   /**
    * Scores a candidate pairing, higher being more wall-like.
    *
@@ -1636,6 +1640,8 @@ export function wallsFromStrokes(
           inHatchSeries: hatchSeries,
           sheetSpan,
           penPercentile,
+          words: options.words,
+          strokes: options.strokes,
         });
         const iLen = lengthOf(order[i]);
         const jLen = lengthOf(order[j]);
