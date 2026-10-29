@@ -47,10 +47,12 @@ import type { IngestView } from "@/lib/plan-ingest/runner";
 const STAGES = [
   "PAGE_INVENTORY",
   "CLASSIFY",
+  "RASTER",
   "TITLE_BLOCK",
   "SCHEDULE_ROWS",
   "SHEET_INDEX",
   "WALL_LEGEND",
+  "WALLS",
 ] as const satisfies readonly PlanIngestStage[];
 
 const view = (over: Partial<IngestView> = {}): IngestView => ({
