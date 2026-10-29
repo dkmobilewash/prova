@@ -429,7 +429,56 @@ export function windowSymbols(
     }
     out.push({ kind: "window", x1, y1, x2, y2, widthFeet: (aHi - aLo) * feetPerUnit, wall, lines: offs.length });
   }
-  return out;
+  return mergeLites(out, feetPerUnit);
+}
+
+/** A storefront's lites sit this close, mullion to mullion; farther apart they are two windows. */
+export const MULLION_FEET = 0.6;
+
+/**
+ * ── ONE STOREFRONT IS ONE WINDOW, NOT A WINDOW PER LITE ──
+ *
+ * Seen by eye on Joplin A-101 (2026-10-29): the vestibule's glazing read as
+ * three windows of 2.1–2.3 ft — one per lite between mullions — and
+ * Sherwin-Williams' storefront as six of 1.6 ft. A contractor counts the
+ * opening. So symbols on the same wall, collinear, with no more than a
+ * mullion between their ends, are joined into one window of the whole
+ * width. Joining only ever lowers the count; it cannot invent a window.
+ */
+export function mergeLites(windows: readonly WindowSymbol[], feetPerUnit: number): WindowSymbol[] {
+  const gapMax = MULLION_FEET / feetPerUnit;
+  const inside = 2 / 12 / feetPerUnit;
+  const merged: WindowSymbol[] = windows.map((w) => ({ ...w }));
+  let joined = true;
+  while (joined) {
+    joined = false;
+    for (let i = 0; i < merged.length && !joined; i += 1) {
+      const a = merged[i]!;
+      const ax = a.x2 - a.x1, ay = a.y2 - a.y1, al = Math.hypot(ax, ay);
+      if (al === 0) continue;
+      const ux = ax / al, uy = ay / al;
+      for (let j = i + 1; j < merged.length; j += 1) {
+        const b = merged[j]!;
+        if (a.wall !== b.wall) continue;
+        const bx = b.x2 - b.x1, by = b.y2 - b.y1, bl = Math.hypot(bx, by);
+        if (bl === 0) continue;
+        if (Math.abs(ux * bx + uy * by) / bl < Math.cos((3 * Math.PI) / 180)) continue;
+        const off = (p: number, q: number) => Math.abs((p - a.x1) * -uy + (q - a.y1) * ux);
+        if (off(b.x1, b.y1) > inside || off(b.x2, b.y2) > inside) continue;
+        const t = (p: number, q: number) => (p - a.x1) * ux + (q - a.y1) * uy;
+        const aLo = Math.min(t(a.x1, a.y1), t(a.x2, a.y2)), aHi = Math.max(t(a.x1, a.y1), t(a.x2, a.y2));
+        const bLo = Math.min(t(b.x1, b.y1), t(b.x2, b.y2)), bHi = Math.max(t(b.x1, b.y1), t(b.x2, b.y2));
+        const gap = Math.max(bLo - aHi, aLo - bHi);
+        if (gap > gapMax) continue;
+        const lo = Math.min(aLo, bLo), hi = Math.max(aHi, bHi);
+        merged[i] = { ...a, x1: a.x1 + ux * lo, y1: a.y1 + uy * lo, x2: a.x1 + ux * hi, y2: a.y1 + uy * hi, widthFeet: (hi - lo) * feetPerUnit, lines: Math.max(a.lines, b.lines) };
+        merged.splice(j, 1);
+        joined = true;
+        break;
+      }
+    }
+  }
+  return merged;
 }
 
 /** How far to look for another wall before calling a side of a wall "outside". */
