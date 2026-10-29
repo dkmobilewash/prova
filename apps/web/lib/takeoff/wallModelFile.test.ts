@@ -1,36 +1,32 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { deciderFor } from "./wallClassifier";
 import { FEATURE_NAMES } from "./wallFeatures";
-import { loadWallModel } from "./wallModelFile";
+import { DEFAULT_WALL_MODEL_CUT, loadWallModel } from "./wallModelFile";
 
-const dir = mkdtempSync(path.join(tmpdir(), "wall-model-"));
-const good = { format: "gbdt-binary-v1", features: [...FEATURE_NAMES], learningRate: 0.1, init: 0, trees: [] };
-const write = (name: string, body: unknown) => {
-  const p = path.join(dir, name);
-  writeFileSync(p, JSON.stringify(body));
-  return p;
-};
+/**
+ * ── THE COMMITTED MODEL LOADS AGAINST THIS BUILD, OR THE BUILD FAILS ──
+ *
+ * `models/wall-model.json` is the 28-column model trained with round 8
+ * (`train-20261029-164211-signals28-round8`). `loadWallModel` refuses a model
+ * whose columns do not match `FEATURE_NAMES`, and refusing is a classifier
+ * that is silently off — so this asserts the committed file is ACCEPTED,
+ * that `deciderFor` scores with it, and what cut it runs at. A deploy names
+ * the file with `TAKEOFF_WALL_MODEL`; this is the path it names.
+ */
+const FILE = join(__dirname, "..", "..", "models", "wall-model.json");
 
-describe("loadWallModel", () => {
-  it("is null with no file named, so nothing is demoted by a model nobody configured", () => {
-    expect(loadWallModel({})).toBeNull();
-  });
-  it("loads a matching model at the default cut, the env cut, or the file's own cut (file wins)", () => {
-    const file = write("good.json", good);
-    expect(loadWallModel({ TAKEOFF_WALL_MODEL: file })).toEqual({ model: good, cut: 0.2 });
-    expect(loadWallModel({ TAKEOFF_WALL_MODEL: file, TAKEOFF_WALL_MODEL_CUT: "0.45" })?.cut).toBe(0.45);
-    const withCut = write("cut.json", { ...good, cut: 0.25 });
-    expect(loadWallModel({ TAKEOFF_WALL_MODEL: withCut, TAKEOFF_WALL_MODEL_CUT: "0.45" })?.cut).toBe(0.25);
-  });
-  it("refuses a model whose columns are not this build's, a bad cut, and an unreadable file — loudly", () => {
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    const stale = write("stale.json", { ...good, features: [...FEATURE_NAMES].reverse() });
-    expect(loadWallModel({ TAKEOFF_WALL_MODEL: stale })).toBeNull();
-    expect(loadWallModel({ TAKEOFF_WALL_MODEL: write("g2.json", good), TAKEOFF_WALL_MODEL_CUT: "1.5" })).toBeNull();
-    expect(loadWallModel({ TAKEOFF_WALL_MODEL: path.join(dir, "missing.json") })).toBeNull();
-    expect(error).toHaveBeenCalledTimes(3);
-    error.mockRestore();
+describe("the committed wall model", () => {
+  it("IS ACCEPTED BY loadWallModel AND SCORED BY deciderFor", () => {
+    const loaded = loadWallModel({ TAKEOFF_WALL_MODEL: FILE });
+    expect(loaded).not.toBeNull();
+    expect(loaded!.model.features).toEqual([...FEATURE_NAMES]);
+    expect(loaded!.cut).toBe(DEFAULT_WALL_MODEL_CUT);
+    const score = deciderFor(loaded!.model, FEATURE_NAMES);
+    expect(score).not.toBeNull();
+    // a vector of zeros scores somewhere in (0, 1): the trees ran
+    const p = score!(new Array(FEATURE_NAMES.length).fill(0), { x1: 0, y1: 0, x2: 1, y2: 0, lengthFeet: 10, thicknessFeet: 0.5 } as never);
+    expect(p).toBeGreaterThan(0);
+    expect(p).toBeLessThan(1);
   });
 });

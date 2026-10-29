@@ -34,9 +34,10 @@ further signals measured on `diego/classifier-signals-2` (stroke colour,
 crossing ticks, centred numbers, extension ends, faces two feet off) do not
 help — 952 / 240 / 80% training and 415 / 136 / 75% held-out against this
 set's 804 / 194 / 81% and 579 / 145 / 80% — so they stay off this branch
-and the model trained on exactly these 28 columns
-(`train-20261029-164211-signals28-round8/wall-model.json`, named by
-`TAKEOFF_WALL_MODEL`) is the one to deploy. `wallModelColumns.test.ts` pins
+and the model trained on exactly these 28 columns is committed as
+`apps/web/models/wall-model.json` (from
+`train-20261029-164211-signals28-round8`), for `TAKEOFF_WALL_MODEL` to
+name; `wallModelFile.test.ts` asserts the build accepts it and scores with it. `wallModelColumns.test.ts` pins
 `FEATURE_NAMES` to those 28 names in order, so a column added or moved
 without a new model fails the build instead of silently switching the
 classifier off. `zzLoboVeto` and `zzDemote` honour #843's excluded sheets,
