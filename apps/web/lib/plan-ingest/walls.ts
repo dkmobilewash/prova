@@ -120,12 +120,14 @@ export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip 
 /** A title that names a plan of the whole floor rather than a part of it. */
 export function isWholeFloorTitle(title: string | null): boolean {
   const text = title ?? "";
-  return /\bFLOOR\s+PLAN\b|\bOVERALL\b/i.test(text) && !/\bENLARGED\b/i.test(text);
+  // "PLANS" too: Joplin's A-111 is titled ENLARGED FLOOR PLANS, and a
+  // singular pattern let its 103 ft through on the first re-run.
+  return /\bFLOOR\s+PLANS?\b|\bOVERALL\b/i.test(text) && !/\bENLARGED\b/i.test(text);
 }
 
 /** A title that names a part of a floor drawn larger — walls the floor plan already has. */
 export function isEnlargedPlanTitle(title: string | null): boolean {
-  return /\bENLARGED\b[^.]*\bPLAN\b/i.test(title ?? "");
+  return /\bENLARGED\b[^.]*\bPLANS?\b/i.test(title ?? "");
 }
 
 function preferWholeFloor(a: WallsSheet, b: WallsSheet): number {
