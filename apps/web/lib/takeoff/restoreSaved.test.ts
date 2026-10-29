@@ -166,6 +166,19 @@ describe("restoring a saved sheet", () => {
     expect(got.message).toContain("TRACING");
     // And it must not say the work is gone, because it is not.
     expect(got.message).not.toContain("Nothing was restored");
+
+    // ── IT LEADS WITH WHAT CAME BACK ──
+    //
+    // Chrome reported Bunkie A100 as "restored silently": 64 decisions and 3
+    // traces came back and the only sentence on screen was about the 19 that
+    // did not. The notice existed and never said "Restored", because this
+    // branch opened on the carried count. A reviewer reopening a sheet is
+    // asking whether their work is there, and the answer was buried in the
+    // second clause of a sentence that began with bad news.
+    expect(got.message, "the trace-only notice does not say what was restored").toContain("Restored 1 saved decision");
+    expect(got.message.indexOf("Restored"), "the notice does not LEAD with what came back").toBeLessThan(
+      got.message.indexOf("kept but not shown"),
+    );
   });
 
   it("says so when the file holds nothing", () => {

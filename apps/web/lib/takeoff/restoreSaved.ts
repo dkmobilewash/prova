@@ -442,8 +442,22 @@ export function restoreSaved(
     decisions: pairs.length,
     traces: traces.length,
     unmatched,
+    // ── BOTH BRANCHES LEAD WITH WHAT CAME BACK ──
+    //
+    // This branch used to open on what did NOT match, and never said the word
+    // "Restored" at all. Chrome reported Bunkie A100 as "restored silently":
+    // 64 decisions and 3 traces came back, and the only sentence on screen was
+    // about the 19 that did not. The reviewer's question when they reopen a
+    // sheet is "is my work here", and the answer was in the second clause of a
+    // sentence that began with bad news.
+    //
+    // The threshold is untouched — below `MIN_MATCH_SHARE` the sheet really is
+    // for tracing. Only the order of the telling changes.
     message: traceOnly
-      ? `${carried.length} saved decision${carried.length === 1 ? "" : "s"} kept but not shown: ` +
+      ? `Restored ${pairs.length} saved decision${pairs.length === 1 ? "" : "s"}` +
+        (traces.length > 0 ? ` and ${traces.length} trace${traces.length === 1 ? "" : "s"}` : "") +
+        (prepared.splits > 0 ? `, ${prepared.splits} split re-applied` : "") +
+        `. ${carried.length} more ${carried.length === 1 ? "is" : "are"} kept but not shown: ` +
         `the candidates they were about have moved` +
         (saved.finderVersion === undefined
           ? ""
